@@ -11,7 +11,11 @@ vi.mock('../../src/lib/supabase', () => ({ supabase: { rpc: (...a: unknown[]) =>
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 
 import { reportError } from '../../src/utils/errorReporter';
-import { PRESENCE_HEARTBEAT_MS, signalOffline } from '../../src/lib/presenceHeartbeat';
+import {
+  PRESENCE_HEARTBEAT_MS,
+  resetPresenceHeartbeatForTests,
+  signalOffline,
+} from '../../src/lib/presenceHeartbeat';
 import { usePresenceHeartbeat } from '../../src/hooks/usePresenceHeartbeat';
 
 let visibility: DocumentVisibilityState = 'visible';
@@ -22,6 +26,7 @@ const flush = async () => {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  resetPresenceHeartbeatForTests();
   rpc.mockReset();
   rpc.mockResolvedValue({ data: null, error: null });
   vi.mocked(reportError).mockReset();
@@ -103,5 +108,66 @@ describe('signalOffline', () => {
     rpc.mockRejectedValueOnce(new Error('network'));
     await expect(signalOffline('u1')).resolves.toBeUndefined();
     expect(reportError).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('sign-out is the last beat (2026-10-05 audit)', () => {
+  const online = () => beats().filter((c) => (c[1] as { p_is_online: boolean }).p_is_online);
+
+  it('no beat goes out for the account between signing out and the user clearing', async () => {
+    renderHook(() => usePresenceHeartbeat('u1'));
+    expect(online()).toHaveLength(1);
+    await signalOffline('u1');
+    // The auth listener has not cleared the user yet: the interval and a
+    // return to the tab both fire.
+    await vi.advanceTimersByTimeAsync(PRESENCE_HEARTBEAT_MS * 2);
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flush();
+    expect(online()).toHaveLength(1);
+    expect(beats().at(-1)?.[1]).toEqual({ p_user_id: 'u1', p_is_online: false });
+  });
+
+  it('the offline beat is sent after a beat already in flight lands', async () => {
+    let land!: () => void;
+    const order: string[] = [];
+    rpc.mockImplementation((_fn: string, args: { p_is_online: boolean }) => {
+      order.push(args.p_is_online ? 'sent online' : 'sent offline');
+      if (!args.p_is_online) return Promise.resolve({ data: null, error: null });
+      return new Promise((resolve) => {
+        land = () => {
+          order.push('online landed');
+          resolve({ data: null, error: null });
+        };
+      });
+    });
+    renderHook(() => usePresenceHeartbeat('u1'));
+    const done = signalOffline('u1');
+    await flush();
+    expect(order).toEqual(['sent online']);
+    land();
+    await done;
+    expect(order).toEqual(['sent online', 'online landed', 'sent offline']);
+  });
+
+  it('signing in again beats again', async () => {
+    const first = renderHook(() => usePresenceHeartbeat('u1'));
+    await signalOffline('u1');
+    first.unmount();
+    renderHook(() => usePresenceHeartbeat('u1'));
+    expect(online()).toHaveLength(2);
+  });
+
+  it('each beat is one request, even though the offline beat waits on it', async () => {
+    let thens = 0;
+    rpc.mockImplementation(() => ({
+      then(resolve: (v: unknown) => void) {
+        thens++;
+        resolve({ data: null, error: null });
+      },
+    }));
+    renderHook(() => usePresenceHeartbeat('u1'));
+    await signalOffline('u1');
+    // one online beat + one offline beat, each executed once
+    expect(thens).toBe(2);
   });
 });

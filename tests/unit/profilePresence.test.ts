@@ -191,3 +191,81 @@ describe('useProfilePresence / useIsProfileOnline / useOnlineNow', () => {
     expect(asked).not.toHaveBeenCalled();
   });
 });
+
+describe('watchProfilePresence never shows an answer older than the last ask (2026-10-05 audit)', () => {
+  /** A read that answers only when told to. */
+  const deferredRead = () => {
+    let resolve!: (m: Map<string, boolean>) => void;
+    const promise = new Promise<Map<string, boolean>>((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  };
+
+  it('a slow read that lands after a newer one does not overwrite it', async () => {
+    const slow = deferredRead();
+    asked.mockImplementationOnce(() => slow.promise);
+    const seen: PresenceAnswer[] = [];
+    watchProfilePresence(['a'], (m) => seen.push(m));
+    await flush();
+
+    // The re-ask overtakes the first read and says offline.
+    fresh = new Map([['a', false]]);
+    await vi.advanceTimersByTimeAsync(PRESENCE_RECHECK_MS);
+    await flush();
+    expect(seen.at(-1)?.get('a')).toBe(false);
+
+    // The first read finally lands, with what was true a minute ago.
+    slow.resolve(new Map([['a', true]]));
+    await flush();
+    expect(seen.at(-1)?.get('a')).toBe(false);
+  });
+
+  it('a read still in flight when the last watcher leaves does not refill the cache', async () => {
+    const slow = deferredRead();
+    asked.mockImplementationOnce(() => slow.promise);
+    const stop = watchProfilePresence(['a'], () => {});
+    await flush();
+    stop();
+    slow.resolve(new Map([['a', true]]));
+    await flush();
+
+    // The next watcher must ask, not trust the orphaned answer.
+    fresh = new Map([['a', false]]);
+    const seen: PresenceAnswer[] = [];
+    watchProfilePresence(['a'], (m) => seen.push(m));
+    expect(seen).toEqual([]);
+    await flush();
+    expect(asked).toHaveBeenCalledTimes(2);
+    expect(seen.at(-1)?.get('a')).toBe(false);
+  });
+
+  it('an account that left the screen is asked afresh when it comes back', async () => {
+    fresh = new Map([
+      ['a', true],
+      ['b', true],
+    ]);
+    watchProfilePresence(['a'], () => {});
+    const stopB = watchProfilePresence(['b'], () => {});
+    await flush();
+    stopB();
+
+    // b's heartbeat goes stale while nobody is looking at b.
+    fresh = new Map([
+      ['a', true],
+      ['b', false],
+    ]);
+    const seen: PresenceAnswer[] = [];
+    watchProfilePresence(['b'], (m) => seen.push(m));
+    expect(seen.some((m) => m.get('b') === true)).toBe(false);
+    await flush();
+    expect(seen.at(-1)?.get('b')).toBe(false);
+  });
+
+  it('a batch whose watchers all left before it was sent is not sent', async () => {
+    const stop = watchProfilePresence(['a'], () => {});
+    stop();
+    await flush();
+    expect(asked).not.toHaveBeenCalled();
+  });
+});

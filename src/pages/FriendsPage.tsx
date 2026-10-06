@@ -119,7 +119,16 @@ function getCachedFriends(userId: string): Friend[] | null {
 
 function setCachedFriends(userId: string, data: Friend[]) {
   try {
-    sessionStorage.setItem(FR_CACHE_PREFIX + userId, JSON.stringify(data));
+    /* The cache keeps who your friends are, never who was online when it was
+       written: an answer up to FR_CACHE_TTL old would show a stale "online"
+       until the presence door is re-asked. Restored rows start offline and
+       light up from the live answer (2026-10-05 audit). */
+    const withoutPresence = data.map((friend) => ({
+      ...friend,
+      source_online: false,
+      is_online: false,
+    }));
+    sessionStorage.setItem(FR_CACHE_PREFIX + userId, JSON.stringify(withoutPresence));
     sessionStorage.setItem(FR_CACHE_TS_PREFIX + userId, String(Date.now()));
   } catch {
     // A full session cache must never block the live friends experience.

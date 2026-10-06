@@ -49,6 +49,17 @@ let answers = new Map<string, boolean>();
 let timer: ReturnType<typeof setInterval> | null = null;
 let queuedIds: Set<string> | null = null;
 let visibilityBound = false;
+/*
+ * Every ask is numbered, and each account remembers the number of the ask
+ * whose answer it holds. An answer lands only if no later ask has already
+ * answered that account, so a slow first read cannot overwrite the re-ask
+ * that overtook it (2026-10-05 audit). `epoch` changes whenever every watcher
+ * has gone: a read still in flight from before then answers nobody and must
+ * not refill the cache the next watcher would trust without asking.
+ */
+let askSeq = 0;
+const answeredBy = new Map<string, number>();
+let epoch = 0;
 
 function watchedIds(): Set<string> {
   const ids = new Set<string>();
@@ -63,14 +74,37 @@ function notify(): void {
 
 async function ask(ids: readonly string[]): Promise<void> {
   if (ids.length === 0) return;
+  const seq = ++askSeq;
+  const askedIn = epoch;
+  let fresh: Map<string, boolean> | null = null;
   try {
-    const fresh = await readPresence(ids);
-    for (const id of ids) answers.set(id, fresh.get(id) === true);
+    fresh = await readPresence(ids);
   } catch (e) {
     reportError(e, 'profilePresence.ask');
-    for (const id of ids) answers.set(id, false);
   }
-  notify();
+  if (askedIn !== epoch) return;
+  const stillWatched = watchedIds();
+  let changed = false;
+  for (const id of ids) {
+    if (!stillWatched.has(id)) continue;
+    if ((answeredBy.get(id) ?? 0) > seq) continue;
+    answeredBy.set(id, seq);
+    // Unreadable is offline: a failed read never leaves the last "online".
+    answers.set(id, fresh?.get(id) === true);
+    changed = true;
+  }
+  if (changed) notify();
+}
+
+/** Forget every answer no watcher is looking at, so a later watcher asks afresh. */
+function forgetUnwatched(): void {
+  const stillWatched = watchedIds();
+  for (const id of [...answers.keys()]) {
+    if (!stillWatched.has(id)) {
+      answers.delete(id);
+      answeredBy.delete(id);
+    }
+  }
 }
 
 function tabHidden(): boolean {
@@ -92,7 +126,8 @@ function queue(ids: Iterable<string>): void {
   for (const id of ids) queuedIds.add(id);
   if (!first) return;
   queueMicrotask(() => {
-    const batch = [...(queuedIds ?? [])];
+    const watched = watchedIds();
+    const batch = [...(queuedIds ?? [])].filter((id) => watched.has(id));
     queuedIds = null;
     void ask(batch);
   });
@@ -129,13 +164,20 @@ export function watchProfilePresence(userIds: readonly string[], listener: Liste
   if (unknown.length > 0) queue(unknown);
   if (unknown.length < ids.size) listener(new Map(answers));
   return () => {
-    watches.delete(watch);
+    if (!watches.delete(watch)) return;
     if (watches.size === 0) {
       stop();
       // Nothing is watching: forget, so the next watcher asks afresh rather
-      // than starting from an answer that may be minutes old.
+      // than starting from an answer that may be minutes old - and a read
+      // still in flight from now on answers nobody.
       answers = new Map();
+      answeredBy.clear();
+      epoch++;
+      return;
     }
+    // An account that is no longer on screen is not re-asked, so its answer
+    // ages; drop it rather than hand it, minutes old, to the next watcher.
+    forgetUnwatched();
   };
 }
 
@@ -144,5 +186,7 @@ export function resetProfilePresenceForTests(): void {
   watches.clear();
   stop();
   answers = new Map();
+  answeredBy.clear();
+  epoch++;
   queuedIds = null;
 }

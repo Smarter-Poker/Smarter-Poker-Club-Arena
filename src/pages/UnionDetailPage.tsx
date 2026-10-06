@@ -227,24 +227,35 @@ export default function UnionDetailPage() {
   useEffect(() => {
     if (!unionId) return;
     let alive = true;
+    /* Only the latest ask may answer: a slow read must not overwrite the
+       newer figure that overtook it. */
+    let latest = 0;
     setOnlineNow(null);
     const ask = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      const seq = ++latest;
       unionService.getOnlineCount(unionId).then(
         (n) => {
-          if (alive) setOnlineNow(n);
+          if (alive && seq === latest) setOnlineNow(n);
         },
         (e) => {
           reportError(e, 'UnionDetailPage.onlineCount');
-          if (alive) setOnlineNow(COUNT_UNKNOWN);
+          if (alive && seq === latest) setOnlineNow(COUNT_UNKNOWN);
         }
       );
     };
+    /* A hidden tab is not re-asked; it is re-asked the moment it returns,
+       rather than showing a figure up to a minute old. */
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') ask();
+    };
     ask();
     const timer = setInterval(ask, PRESENCE_RECHECK_MS);
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
       alive = false;
       clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [unionId]);
 

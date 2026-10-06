@@ -317,10 +317,11 @@ export function useShellUpdateGate(): void {
 
     /* The resume-path probe. See the block comment above the hook. */
     let lastStaleCheckAt = 0;
-    const checkStaleness = () => {
-      if (!armed) return;
+    /** Returns whether the probe ran (false: unmounted or inside the throttle). */
+    const checkStaleness = (): boolean => {
+      if (!armed) return false;
       const now = Date.now();
-      if (now - lastStaleCheckAt < STALE_CHECK_MIN_INTERVAL_MS) return;
+      if (now - lastStaleCheckAt < STALE_CHECK_MIN_INTERVAL_MS) return false;
       lastStaleCheckAt = now;
 
       // 1. Let the browser discover a rotated sw-bus.js without a navigation.
@@ -331,7 +332,7 @@ export function useShellUpdateGate(): void {
 
       // 2. Compare the deployed shell's entry chunk against the one running.
       const running = extractEntryScript(document.documentElement.outerHTML);
-      if (!running) return; // dev server or a shell shape we do not recognise
+      if (!running) return true; // dev server or a shell shape we do not recognise
       const base =
         import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/'
           ? import.meta.env.BASE_URL
@@ -358,6 +359,7 @@ export function useShellUpdateGate(): void {
         .catch(() => {
           /* offline or blocked: nothing to adopt, nothing to do */
         });
+      return true;
     };
 
     const onVisibility = () => {
@@ -376,6 +378,10 @@ export function useShellUpdateGate(): void {
        path without touching the SW. Poll cheaply instead of reaching into
        the router from the app root. */
     const poll = window.setInterval(() => {
+      /* A route change is consumed only by a probe that actually ran: one
+         that lands inside the throttle (say, a minute after a focus check)
+         stays due and is retried on the next tick, rather than being
+         forgotten until the 15-minute idle check. */
       if (
         staleCheckDue({
           pathname: window.location.pathname,
@@ -383,10 +389,10 @@ export function useShellUpdateGate(): void {
           visible: document.visibilityState === 'visible',
           lastCheckAt: lastStaleCheckAt,
           now: Date.now(),
-        })
+        }) &&
+        checkStaleness()
       ) {
         lastPathname = window.location.pathname;
-        checkStaleness();
       }
       attempt();
     }, 5000);

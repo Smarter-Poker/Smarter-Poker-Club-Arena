@@ -10,8 +10,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 187319,
-      "sha256": "72832049eaebb04b646352004f25412f4390684586d930b12584edc1a18c0f14"
+      "bytes": 188063,
+      "sha256": "da7e11de4a53dc2fbb7ea15c795fc3d099c9e5abae2937aa2e9531302219df20"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1674,6 +1674,13 @@
           "sha256": "2fc728ea5555ced40641d89f8c85b8f094a09f9f14d5decaa405ffbc5e11ea2a"
         }
       }
+    }
+  },
+  "retired_cash_custody_enforcement_20261006": {
+    "reason": "Adds exact native private custody transition regression to existing accounting shard 3. All existing cash financial SQL, capture and test assertions unchanged. Full four-case native financial proof retained separately; this binding is source integrity only.",
+    "previousWorkflowPin": {
+      "bytes": 187319,
+      "sha256": "72832049eaebb04b646352004f25412f4390684586d930b12584edc1a18c0f14"
     }
   }
 }

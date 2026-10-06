@@ -1,0 +1,35 @@
+name: Leaderboard Current Schema Isolation Preflight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: leaderboard-isolation-preflight
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Record exact source provenance
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git rev-parse HEAD
+      - name: Check source safeguards
+        run: |
+          bash scripts/verification-harness/leaderboard-isolation-preflight.sh --check
+          node --test scripts/verification-harness/leaderboard-isolation-preflight.test.mjs
+      - name: Export metadata and verify isolated catalog coverage
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          LEADERBOARD_ISOLATION_SCRATCH_PARENT: ${{ runner.temp }}
+        run: bash scripts/verification-harness/leaderboard-isolation-preflight.sh

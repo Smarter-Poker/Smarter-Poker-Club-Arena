@@ -346,7 +346,7 @@ test('Leaderboard Cache Paints Before Real Revalidation And Expires Safely', asy
     'aria-pressed',
     'true'
   );
-  await coldResponse;
+  expect((await coldResponse).ok(), 'cold leaderboard refresh should succeed').toBe(true);
   const coldRpcResponseMs = Date.now() - coldStartedAt;
   await expect(board.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'false', {
     timeout: 30000,
@@ -368,6 +368,10 @@ test('Leaderboard Cache Paints Before Real Revalidation And Expires Safely', asy
     cached?.entryCount,
     'the cache record should contain a valid ranked result'
   ).toBeGreaterThan(0);
+  const firstRankedName = board.locator('.entry-name').first();
+  await expect(firstRankedName).toBeVisible();
+  const coldRankedName = await firstRankedName.innerText();
+  expect(coldRankedName.trim()).not.toBe('');
 
   let releaseWarmRefresh!: () => void;
   let notifyWarmRequest!: () => void;
@@ -391,6 +395,7 @@ test('Leaderboard Cache Paints Before Real Revalidation And Expires Safely', asy
     await board.getByRole('button', { name: 'Global', exact: true }).click();
     await warmRequestSeen;
     await expect(board.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'false');
+    await expect(firstRankedName).toHaveText(coldRankedName);
     warmCachedPaintMs = Date.now() - warmStartedAt;
     const sameCacheStillPresent = await page.evaluate(
       (key) => sessionStorage.getItem(key) !== null,
@@ -401,7 +406,7 @@ test('Leaderboard Cache Paints Before Real Revalidation And Expires Safely', asy
     releaseWarmRefresh();
     await page.unroute('**/rest/v1/rpc/fn_global_leaderboard_period**');
   }
-  await warmResponse;
+  expect((await warmResponse).ok(), 'warm leaderboard revalidation should succeed').toBe(true);
   const warmRpcResponseMs = Date.now() - warmStartedAt;
   await expect(board.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'false', {
     timeout: 30000,
@@ -450,11 +455,20 @@ test('Leaderboard Cache Paints Before Real Revalidation And Expires Safely', asy
     releaseExpiredRefresh();
     await page.unroute('**/rest/v1/rpc/fn_global_leaderboard_period**');
   }
-  await expiredResponse;
+  expect((await expiredResponse).ok(), 'expired leaderboard refresh should succeed').toBe(true);
   await expect(board.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'false', {
     timeout: 30000,
   });
   const expiredFirstReadyMs = Date.now() - expiredStartedAt;
+  await expect(firstRankedName).toBeVisible();
+  const refreshedEntryCount = await page.evaluate((key) => {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return 0;
+    const record = JSON.parse(raw) as { version?: number; entries?: unknown[] };
+    return record.version === 2 && Array.isArray(record.entries) ? record.entries.length : 0;
+  }, cacheKey);
+  expect(refreshedEntryCount, 'expiry recovery should repopulate ranked data').toBeGreaterThan(0);
+  await expect(board.locator('.lb-error-state')).toHaveCount(0);
 
   console.log(
     'LEADERBOARD_CACHE_PERF ' +

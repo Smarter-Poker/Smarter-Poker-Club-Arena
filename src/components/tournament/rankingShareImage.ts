@@ -8,7 +8,7 @@
  * system sheet an image of the result alongside that sentence.
  *
  * THE IMAGE IS PAINTED FROM THE SAME MASTER AS THE CARD. The head is the VIP
- * console's own top-vip.png, the body is mid.png repeated, the foot is the flat
+ * console's own top-vip-v2.png, the body is mid.png repeated, the foot is the flat
  * cap - the approved art at its native 1000px width, never redrawn - and every
  * line is printed in the inks the console prints in (SpadeConsole.css). Only
  * the medal is drawn, exactly as it is on the card, with the card's own trophy
@@ -16,7 +16,7 @@
  *
  * Painting happens AHEAD of the tap (TournamentRankingCard pre-paints when it
  * opens): iOS Safari refuses navigator.share once the tap's activation has
- * been spent awaiting image loads, so the PNG must already exist when the
+ * been spent awaiting image loads, so the image must already exist when the
  * player presses Share. Everything here fails soft - no canvas, a blocked
  * image, a missing font - by returning null, and Share falls back to the text.
  */
@@ -253,7 +253,7 @@ export async function paintRankingShareImage(input: RankingShareInput): Promise<
   let top: HTMLImageElement, mid: HTMLImageElement, foot: HTMLImageElement;
   try {
     [top, mid, foot] = await Promise.all([
-      loadImage(`${ART}top-vip.png`),
+      loadImage(`${ART}top-vip-v2.png`),
       loadImage(`${ART}mid.png`),
       loadImage(`${ART}bottom-foot.png`),
     ]);
@@ -393,7 +393,9 @@ export async function paintRankingShareImage(input: RankingShareInput): Promise<
 
   return new Promise((resolve) => {
     try {
-      canvas.toBlob((b) => resolve(b), 'image/png');
+      // The ground is opaque: quality 0.9 preserves the chrome and text while
+      // avoiding a near-megabyte lossless payload in mobile share targets.
+      canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.9);
     } catch {
       resolve(null);
     }

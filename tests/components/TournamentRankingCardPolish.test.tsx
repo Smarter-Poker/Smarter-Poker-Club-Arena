@@ -133,13 +133,16 @@ describe('the result card, finished', () => {
     expect(value.textContent).toBe('4,200');
   });
 
-  it('shares the painted image through the system sheet when it can carry files', async () => {
-    painted.blob = new Blob(['png'], { type: 'image/png' });
+  it.each([
+    ['image/jpeg', 'jpg'],
+    ['image/png', 'png'],
+  ])('shares %s with the matching extension through the system sheet', async (mime, extension) => {
+    painted.blob = new Blob(['encoded image'], { type: mime });
     const share = vi.fn(async () => {});
     nav.share = share;
     nav.canShare = vi.fn((d: ShareData) => Array.isArray(d.files) && d.files.length === 1);
     renderCard();
-    // The painter is loaded on demand; let it be fetched and the PNG land,
+    // The painter is loaded on demand; let it be fetched and the image land,
     // as it does in a browser long before a player reaches for Share.
     await waitFor(() => expect(paintRankingShareImage).toHaveBeenCalled());
     await act(async () => {
@@ -150,15 +153,19 @@ describe('the result card, finished', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Share' }));
     await waitFor(() => expect(share).toHaveBeenCalledTimes(1));
     const data = share.mock.calls[0][0] as ShareData;
-    expect(data.files?.[0]?.type).toBe('image/png');
+    expect(data.files?.[0]?.type).toBe(mime);
+    expect(data.files?.[0]?.name).toBe(`smarter-poker-result.${extension}`);
     expect(data.text).toMatch(/I finished 1st in NLH Heads-Up 1 on Smarter\.Poker for 1\.90\./);
     expect(data.text).toContain('/hub/club-arena');
   });
 
-  it('saves the image through the one file door when there is no share sheet', async () => {
-    painted.blob = new Blob(['png'], { type: 'image/png' });
+  it.each([
+    ['image/jpeg', 'jpg'],
+    ['image/png', 'png'],
+  ])('saves %s through the one file door with its matching extension', async (mime, extension) => {
+    painted.blob = new Blob(['encoded image'], { type: mime });
     renderCard();
-    // The painter is loaded on demand; let it be fetched and the PNG land,
+    // The painter is loaded on demand; let it be fetched and the image land,
     // as it does in a browser long before a player reaches for Share.
     await waitFor(() => expect(paintRankingShareImage).toHaveBeenCalled());
     await act(async () => {
@@ -168,7 +175,10 @@ describe('the result card, finished', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Share' }));
     await waitFor(() =>
-      expect(door.downloadBlob).toHaveBeenCalledWith('smarter-poker-result.png', painted.blob)
+      expect(door.downloadBlob).toHaveBeenCalledWith(
+        `smarter-poker-result.${extension}`,
+        painted.blob
+      )
     );
     expect(await screen.findByText('Image Saved')).toBeInTheDocument();
   });

@@ -13859,16 +13859,36 @@ function LiveTablePage({
                 // no participation across this tournament, including departed
                 // seats; a cleared live seat alone cannot identify a spectator.
                 if (!resultError && !data && !durableParticipantWitnessed) {
-                  const { count: historicalSeats, error: seatError } = await supabase
+                  const {
+                    data: historicalSeats,
+                    count: seatCount,
+                    error: seatError,
+                  } = await supabase
                     .from('table_seats')
-                    .select('id, tables!table_seats_table_id_fkey!inner(tournament_id)', {
+                    .select('id, tables!table_seats_table_id_fkey(tournament_id)', {
                       count: 'exact',
-                      head: true,
                     })
                     .eq('user_id', userId)
-                    .eq('tables.tournament_id', durableTournamentId);
+                    .range(0, 999);
                   if (!isMounted) return;
-                  if (!seatError && historicalSeats === 0) {
+                  // A left relationship preserves seats whose private table is
+                  // hidden by RLS. Neither hidden rows nor a truncated history
+                  // may masquerade as proof that this viewer never participated.
+                  const completeReadableHistory =
+                    !seatError &&
+                    Array.isArray(historicalSeats) &&
+                    seatCount === historicalSeats.length &&
+                    historicalSeats.every(
+                      (seat) =>
+                        seat.tables &&
+                        !Array.isArray(seat.tables) &&
+                        (seat.tables.tournament_id === null ||
+                          typeof seat.tables.tournament_id === 'string')
+                    );
+                  const participated = historicalSeats?.some(
+                    (seat) => seat.tables?.tournament_id === durableTournamentId
+                  );
+                  if (completeReadableHistory && !participated) {
                     durableCompletionHandled = true;
                     if (durableCompletionRetryTimer) {
                       clearTimeout(durableCompletionRetryTimer);
@@ -13876,9 +13896,7 @@ function LiveTablePage({
                     }
                     return;
                   }
-                  if (!seatError && historicalSeats !== null && historicalSeats > 0) {
-                    durableParticipantWitnessed = true;
-                  }
+                  if (!seatError && participated) durableParticipantWitnessed = true;
                   lastError =
                     seatError ?? new Error('Tournament participant result is unavailable');
                 } else {

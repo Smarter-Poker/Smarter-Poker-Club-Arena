@@ -481,6 +481,7 @@ describe('The actual TablePage qualifier completion caller', () => {
       resultError?: unknown;
       seatError?: unknown;
       seatCount?: number | null;
+      seatRows?: Array<{ id: string; tables: { tournament_id: string | null } | null }>;
     } = {}
   ) {
     const exit = vi.fn(),
@@ -495,8 +496,10 @@ describe('The actual TablePage qualifier completion caller', () => {
     const seatQuery = {
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
+      range: vi.fn().mockReturnThis(),
       then: (resolve: (value: unknown) => unknown) =>
         Promise.resolve({
+          data: options.seatRows ?? [],
           count: options.seatCount === undefined ? 0 : options.seatCount,
           error: options.seatError ?? null,
         }).then(resolve),
@@ -544,15 +547,35 @@ describe('The actual TablePage qualifier completion caller', () => {
     await c.run();
     expect(c.query.maybeSingle).toHaveBeenCalledTimes(1);
     expect(c.seatQuery.eq).toHaveBeenCalledWith('user_id', uid);
-    expect(c.seatQuery.eq).toHaveBeenCalledWith('tables.tournament_id', tid);
+    expect(c.seatQuery.select).toHaveBeenCalledWith(
+      'id, tables!table_seats_table_id_fkey(tournament_id)',
+      { count: 'exact' }
+    );
+    expect(c.seatQuery.eq).toHaveBeenCalledExactlyOnceWith('user_id', uid);
+    expect(c.seatQuery.range).toHaveBeenCalledWith(0, 999);
     expect(c.exit).not.toHaveBeenCalled();
     expect(c.champion).not.toHaveBeenCalled();
     expect(c.report).not.toHaveBeenCalled();
     expect(c.retry).not.toHaveBeenCalled();
   });
+  it('permits a spectator with fully readable history in other games', async () => {
+    const c = actualCaller(null, {
+      seatCount: 1,
+      seatRows: [{ id: 's', tables: { tournament_id: targetId } }],
+    });
+    await c.run();
+    await c.run();
+    expect(c.query.maybeSingle).toHaveBeenCalledTimes(1);
+    expect(c.report).not.toHaveBeenCalled();
+    expect(c.retry).not.toHaveBeenCalled();
+    expect(c.exit).not.toHaveBeenCalled();
+  });
   it.each([
     ['known participant', { known: true }],
-    ['historical seat', { seatCount: 1 }],
+    ['historical seat', { seatCount: 1, seatRows: [{ id: 's', tables: { tournament_id: tid } }] }],
+    ['RLS-hidden table', { seatCount: 1, seatRows: [{ id: 's', tables: null }] }],
+    ['unreadable relationship', { seatCount: 1, seatRows: [{ id: 's', tables: {} as never }] }],
+    ['truncated history', { seatCount: 1001, seatRows: [] }],
     ['unreadable result', { resultError: new Error('result read failed') }],
     ['unreadable seat proof', { seatError: new Error('seat read failed') }],
     ['missing seat count', { seatCount: null }],

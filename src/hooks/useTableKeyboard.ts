@@ -93,10 +93,40 @@ export interface UseTableKeyboardOptions {
   onRabbitHunt?: () => void;
 }
 
+/**
+ * WHO OWNS THE NUMBER ROW RIGHT NOW (launch audit 2026-10-05).
+ *
+ * 1-4 size a bet while the sizing panel is open and switch tables otherwise.
+ * Both listeners sit on `window`, and the switcher's ran regardless of what
+ * this one did: with two tables open, pressing 2 for half pot also flipped to
+ * table two and left the raise unconfirmed. Which listener runs first depends
+ * on mount order, so `defaultPrevented` cannot settle it. The switcher asks
+ * this instead, and the answer is computed from the same options, by the same
+ * conditions, as the branch below that takes the key.
+ */
+const mountedTableKeyboards = new Set<{ current: UseTableKeyboardOptions }>();
+
+export function tableSizingOwnsNumberRow(): boolean {
+  for (const ref of mountedTableKeyboards) {
+    const o = ref.current;
+    if (o.isActive && o.isHeroTurn && !o.isSpectator && !o.isModalOpen && o.isSizingOpen) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function useTableKeyboard(options: UseTableKeyboardOptions): void {
   // Store all options in a ref — updated every render, always fresh in the listener
   const optionsRef = useRef(options);
   optionsRef.current = options;
+
+  useEffect(() => {
+    mountedTableKeyboards.add(optionsRef);
+    return () => {
+      mountedTableKeyboards.delete(optionsRef);
+    };
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

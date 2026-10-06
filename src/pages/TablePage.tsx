@@ -26937,7 +26937,9 @@ function LiveTablePage({
                            the denomination the derived sizings snap to are one
                            Diamond; a chip table keeps the cent and the small
                            blind it has always had. */
-                        unit={tableState.arenaAsset === 'diamonds' ? 1 : 0.01}
+                        unit={
+                          tableState.arenaAsset === 'diamonds' || tableState.isTournament ? 1 : 0.01
+                        }
                         /* Multiplier presets are multiples of the bet being
                            faced, not of the blind — without this they all
                            clamped to minRaise and 2X/3X/4X/5X produced the

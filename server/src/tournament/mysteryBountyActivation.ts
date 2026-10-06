@@ -95,7 +95,7 @@ export interface MysteryBountyActivationDecision {
  * count `totalEntriesFromRows` produces) is at most this number plays the whole
  * event on the flat pre-activation bounty, whatever activation mode the club
  * chose. Its prize pool is paid 50/30/20 by the entry close
- * (`fn_ca_mtt_payout_structure`). Before this rule the chests stayed shut at
+ * (`fn_finalize_tournament_entry_pool_locked`). Before this rule the chests stayed shut at
  * 10 or fewer only by accident - one paid place meant "at the money" was the
  * last two players - and the 3-place ladder would have opened them at three
  * players left, so the rule is stated here rather than left to the ladder.

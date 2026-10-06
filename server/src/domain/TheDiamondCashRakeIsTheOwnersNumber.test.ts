@@ -88,10 +88,22 @@ function publishedRows(): EconomicsRow[] {
 const scheduleAt = (bigBlind: number, rows = publishedRows()) =>
   resolveDiamondCashRakeSchedule(rows, bigBlind);
 
-/** The number a row says, pulled out of the rows rather than retyped. */
+/**
+ * The number the rows say, pulled out of them rather than retyped - newest
+ * first, which is how an append-only settings table states a change. Written
+ * out here rather than borrowed from the reader so that the expectations
+ * below are a second reading of the rows and not a second call to the code
+ * under test.
+ */
 function rowNumber(rows: readonly EconomicsRow[], name: string, scope: string): number {
-  const found = rows.filter((row) => row.name === name && row.scope === scope);
-  expect(found.length, `${name}/${scope} is not published`).toBe(1);
+  const found = [...rows]
+    .filter((row) => row.name === name && row.scope === scope)
+    .sort((a, b) =>
+      a.recorded_at === b.recorded_at
+        ? b.id - a.id
+        : String(b.recorded_at).localeCompare(String(a.recorded_at))
+    );
+  expect(found.length, `${name}/${scope} is not published`).toBeGreaterThan(0);
   return Number(found[0].value);
 }
 
@@ -257,6 +269,47 @@ describe("the engine prices a Diamond cash hand at the owner's published number"
         Math.round(exact)
       );
     }
+  });
+
+  it('honours a minimum pot the owner raises, and rakes normally above it', () => {
+    /* MUTATION FINDING (2026-10-06). `cash_rake_min_pot` reads 0 on
+       production, so `pot < min_pot` is unreachable with the published rows:
+       deleting the branch entirely left every other test green. A branch no
+       test can reach is a branch that will be wrong the first day the owner
+       uses it, and the settings table exists precisely so that he can. So the
+       answer is CHANGED here - one row, exactly as he would change it - and
+       the branch is driven on both sides of the line. */
+    const raised = 50;
+    const rows: EconomicsRow[] = [
+      ...publishedRows(),
+      {
+        name: 'cash_rake_min_pot',
+        scope: 'all',
+        value: raised,
+        value_text: null,
+        recorded_at: '2026-10-06T00:00:00.000Z',
+        id: 9100,
+      },
+    ];
+    const schedule = scheduleAt(2, rows);
+    const minPot = rowNumber(rows, 'cash_rake_min_pot', 'all');
+    expect(minPot).toBe(raised);
+    /* Below the minimum, nothing - even though the percent would take plenty. */
+    for (const pot of [0, 1, raised - 1]) {
+      expect(scheduledRake(rows, 2, pot, 3, true)).toBe(0);
+      expect(priceDiamondCashRake(schedule, { pot, dealtIn: 3, sawFlop: true })).toBe(0);
+    }
+    /* At the minimum it is raked: the comparison is `<`, not `<=`. */
+    for (const pot of [raised, raised + 1, raised * 4]) {
+      const expected = scheduledRake(rows, 2, pot, 3, true);
+      expect(expected).toBeGreaterThan(0);
+      expect(priceDiamondCashRake(schedule, { pot, dealtIn: 3, sawFlop: true })).toBe(expected);
+    }
+    /* And the same pot under the PUBLISHED minimum of zero is raked, so the
+       zeros above are the raised row firing rather than the pot being small. */
+    expect(
+      priceDiamondCashRake(scheduleAt(2), { pot: raised - 1, dealtIn: 3, sawFlop: true })
+    ).toBeGreaterThan(0);
   });
 
   it('rakes nothing when fewer than two players were dealt in', () => {

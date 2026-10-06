@@ -347,6 +347,61 @@ describe('a Diamond cash hand charges the rake the owner published', () => {
   });
 });
 
+describe('the bracket is the count the settler counts', () => {
+  it('brackets by seats DEALT IN, not by seats that are not sitting out', () => {
+    /* MUTATION FINDING (2026-10-06). The chip ladder brackets on
+       `players.filter(p => !p.is_sitting_out).length`; the settler brackets on
+       `count(*) FILTER (WHERE dealt_in)`, and `dealt_in` is membership of the
+       map the hand was DEALT from - a sitting-out seat in that roster is
+       dealt in and is counted. The two counts are equal in every ordinary
+       hand, so swapping one for the other left every other test green while
+       changing the bracket, the percent and the cap on any hand where they
+       differ. This is the hand where they differ.
+
+       Three seats, one sitting out, at 50/100. On the settler's count of
+       three the three-handed percent applies; on the chip count of two it
+       would be the heads-up percent and the heads-up cap - a different
+       number, and a refused hand. */
+    const schedule = scheduleAt(100);
+    const seats = players([1000, 1000, 1000]);
+    (seats[2] as unknown as { is_sitting_out: boolean }).is_sitting_out = true;
+    const hc = new HandController(
+      handConfig({ smallBlind: 50, bigBlind: 100, diamondRakeSchedule: schedule }),
+      seats,
+      1
+    );
+    hc.start();
+    /* To the flop, so the rake is priced on a board that corroborates it -
+       the same rule every money path is held to. */
+    for (let step = 0; step < 20 && hc.getState().communityCards.length < 3; step++) {
+      const live = hc.getState();
+      const actor = live.players.find((p) => p.seat === live.currentPlayerSeat);
+      if (!actor) break;
+      if (!hc.performAction(actor.seat, actor.bet < live.currentBet ? 'call' : 'check')) break;
+    }
+    const state = hc.getState();
+    expect(state.communityCards.length).toBeGreaterThanOrEqual(3);
+    const dealtRoster = state.players.length;
+    const notSittingOut = state.players.filter((p) => !p.is_sitting_out).length;
+    /* The premise of the test: the two counts really do disagree here. */
+    expect(dealtRoster).toBe(3);
+    expect(notSittingOut).toBe(2);
+    const pot = state.players.reduce((sum, p) => sum + (p.totalInvested ?? 0), 0);
+    expect(pot).toBeGreaterThan(0);
+    const priced = hc.priceDeductions(true, pot);
+    /* And the two brackets really do price this pot differently, or the
+       assertion below would hold either way. */
+    const atDealtIn = priceDiamondCashRake(schedule, { pot, dealtIn: dealtRoster, sawFlop: true });
+    const atNotSittingOut = priceDiamondCashRake(schedule, {
+      pot,
+      dealtIn: notSittingOut,
+      sawFlop: true,
+    });
+    expect(atDealtIn).not.toBe(atNotSittingOut);
+    expect(priced.rake).toBe(atDealtIn);
+  });
+});
+
 describe('the chip path is not touched by any of this', () => {
   it('prices a chip hand with calculateRake, exactly as it did', () => {
     /* No schedule, a real chip rake config: the number is `calculateRake`'s,

@@ -22,6 +22,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { sliceEnclosingBlock } from './helpers/sourceWindow.js';
 import { join } from 'node:path';
 
 const ROOT = join(__dirname, '..');
@@ -408,6 +409,38 @@ describe('the Diamond cash rake is priced by its settings and by nothing else', 
     );
   });
 
+  it('prices the Diamond hand on the pot the SETTLER adds up, not on state.pot', () => {
+    /* MUTATION FINDING (2026-10-06). `this.state.pot` and the sum of every
+       seat's `totalInvested` are the same number in any hand the engine can
+       produce - the uncalled bet is returned off both before the rake is
+       priced - so swapping one for the other left every test green. They are
+       not the same QUESTION. The settler recomputes from `sum(contributed)`
+       over the roster it is sent, and `contributed` IS `totalInvested`; a
+       pricer that reads `state.pot` instead agrees only for as long as that
+       invariant holds, and the day it does not, every hand at that table
+       refuses with the engine and the database each confident in its own pot.
+       So the SOURCE is pinned: the Diamond arm sums the contributions, and
+       does not read the pot it was handed.
+
+       The chip arm is the other half of the same pin: it prices on the `pot`
+       argument, exactly as it always has. */
+    const code = ts(CONTROLLER);
+    const branch = code.slice(
+      code.indexOf('const diamondSchedule = this.config.diamondRakeSchedule;'),
+      code.indexOf('const rake = calculateRake(')
+    );
+    expect(branch).toContain('wholeDiamondsContributed(player.totalInvested ?? 0)');
+    expect(branch).not.toMatch(/this\.state\.pot/);
+    expect(branch).not.toMatch(/\bpot\b\s*:\s*pot\b/);
+    /* The bracket is the dealt roster, never the chip ladder's count of
+       seats that are not sitting out. */
+    expect(branch).toContain('dealtIn: this.state.players.length');
+    expect(branch).not.toContain('playerCount');
+    /* And the one normalisation is the facts module's own, so the number
+       summed here is the number each roster element will carry. */
+    expect(code).toContain("import { wholeDiamondsContributed } from './diamondCashRakeFacts.js';");
+  });
+
   it('re-prices the accepted hand rather than trusting the number it is handed', () => {
     const code = ts(BOUNDARY);
     expect(code).toContain('priceDiamondCashRake(');
@@ -447,6 +480,7 @@ describe('the Diamond cash rake is priced by its settings and by nothing else', 
        the snapshot dies with the hand. */
     const reader = ts(READER);
     expect(reader).not.toMatch(/\b(cache|Cache|ttl|TTL|expires?At|staleAfter)\b/);
+    const dealingSource = read('server/src/engine/ServerTableEngineDealing.ts');
     const dealing = ts('server/src/engine/ServerTableEngineDealing.ts');
     const call = dealing.indexOf('readDiamondCashRakeSchedule(');
     expect(call).toBeGreaterThan(-1);
@@ -459,9 +493,15 @@ describe('the Diamond cash rake is priced by its settings and by nothing else', 
     );
     expect(allocation).toBeGreaterThan(-1);
     expect(call).toBeLessThan(allocation);
-    /* And a failed read deals nothing at all. */
-    const guarded = dealing.slice(call, call + 900);
-    expect(guarded).toContain('return;');
+    /* And a failed read deals nothing at all: the refusal returns out of
+       dealHand rather than carrying on without a schedule. Bounded by the
+       catch block that handles it, so the window grows with the code. */
+    const refusal = sliceEnclosingBlock(
+      dealingSource,
+      'ServerTableEngineDealing.diamond_cash_rake_schedule_unreadable'
+    );
+    expect(refusal).toContain('reportError(');
+    expect(refusal).toContain('return;');
   });
 
   it('never opens the cash-game door', () => {

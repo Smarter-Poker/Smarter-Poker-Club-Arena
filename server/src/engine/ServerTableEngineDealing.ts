@@ -3925,7 +3925,17 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
     // Horses have their own recovery pass with its own stop-loss and treasury
     // accounting; removing them here too would double-handle the same seat.
-    const seated = this.seatedPlayers.filter((p) => p.user_id && !p.is_horse);
+    //
+    // EXCEPT AT A DIAMOND CASH TABLE (2026-10-06). That pass returns at once
+    // there (`recoverBustedSeatedHorses`: no treasury funds a Diamond seat, and
+    // settlement skips the horse rebuy too), so a horse that busted at the
+    // Diamond Arena was neither rebought nor released and held its chair at
+    // zero for ever - a seat no person could take and a table that could not
+    // deal. A Diamond cash seat has no rebuy prompt for anybody, so a busted
+    // person is stood up here after the grace; a busted horse now is too,
+    // through the same door, the same grace and the same cash-out (10.5).
+    const diamondCash = this.tableInfo?.arena?.asset === 'diamonds';
+    const seated = this.seatedPlayers.filter((p) => p.user_id && (!p.is_horse || diamondCash));
     const broke = seated.filter((p) => Number(p.stack ?? 0) <= 0);
 
     // Anyone who is funded again stops being watched.

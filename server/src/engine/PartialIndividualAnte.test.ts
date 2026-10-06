@@ -343,12 +343,15 @@ describe('uncalled money behind an ante-only all-in is returned before rake', ()
     h.onEvent((e) => events.push(e));
     h.start();
     const seat = (n: number) => h.getState().players.find((p) => p.seat === n)!;
-    // The postings recorded on the hand: 2.00 BB + 1.00 ante; 0.70 ante all-in.
-    expect(seat(1).totalInvested).toBe(3);
+    // The postings: 2.00 BB + 1.00 ante against a 0.70 ante all-in. Seat 1
+    // already covers that all-in, so it is not asked to act (2026-10-06: this
+    // used to pin a turn and a check here, with seat 1 showing 3.00 invested
+    // until the check). The hand goes straight to the runout, the refund is
+    // already made when start() returns, and the arithmetic below is
+    // unchanged.
     expect(seat(3).totalInvested).toBe(0.7);
     expect(seat(3).is_all_in).toBe(true);
-    expect(h.getState().currentPlayerSeat).toBe(1);
-    expect(h.performAction(1, 'check')).toBe(true);
+    expect(h.getState().currentPlayerSeat).toBe(-1);
 
     // 3.00 matched - 0.70 matched = 2.30, of which 2.00 is the live blind and
     // 0.30 the unmatched part of the BB's own ante.
@@ -392,7 +395,7 @@ describe('uncalled money behind an ante-only all-in is returned before rake', ()
     h.onEvent((e) => events.push(e));
     h.start();
     expect(h.getState().players.find((p) => p.seat === 2)!.is_all_in).toBe(true);
-    expect(h.performAction(1, 'check')).toBe(true);
+    // Seat 1 covers the all-in ante and is not asked to act (2026-10-06).
     expect(events.some((e) => e.type === 'ALL_IN_RUNOUT')).toBe(true);
     const internal = (h as any).state;
     internal.players.find((p: SeatPlayer) => p.seat === 1).cards = cards(['7c', '2d']);

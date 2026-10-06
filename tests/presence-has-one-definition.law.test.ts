@@ -200,7 +200,16 @@ describe('LAW: an answer is re-asked before its heartbeat can go stale', () => {
 
   it('an unreadable answer is offline, never the last "online"', () => {
     const ask = sliceMethod(WATCHER, 'async function ask(');
-    expect(ask).toContain('for (const id of ids) answers.set(id, false);');
+    // A failed read leaves `fresh` null, and every asked id is set from it.
+    expect(ask).toContain('let fresh: Map<string, boolean> | null = null;');
+    expect(ask).toContain('answers.set(id, fresh?.get(id) === true);');
+    // The behaviour itself: tests/unit/profilePresence.test.ts.
+  });
+
+  it('an answer older than the last ask, or than the last watcher, is never shown (2026-10-05 audit)', () => {
+    const ask = sliceMethod(WATCHER, 'async function ask(');
+    expect(ask).toContain('if (askedIn !== epoch) return;');
+    expect(ask).toContain('if ((answeredBy.get(id) ?? 0) > seq) continue;');
   });
 });
 
@@ -234,6 +243,22 @@ describe('LAW: every surface that shows a person online asks the door', () => {
     expect(blankNonCode(read('src/pages/MemberManagementPage.tsx'))).not.toMatch(
       /presence\.is_online\s*\?/
     );
+  });
+
+  it('a seat is online wherever the row is lit (2026-10-05 audit)', () => {
+    /* The re-asked door answers heartbeats only. A seated person's open tab
+       keeps one and a seated horse's need not, so a ring lit by the door
+       alone would light a person's seat and not a horse's. */
+    const page = blankNonCode(read('src/pages/MemberManagementPage.tsx'));
+    expect(page).toContain('const avatarLit = detail?.presence.is_seated === true || onlineNow;');
+    expect(read('src/pages/MemberManagementPage.tsx')).toContain(
+      "className={`mm-avatar${avatarLit ? ' mm-avatar--online' : ''}`}"
+    );
+  });
+
+  it('the friends cache never restores an "online" (2026-10-05 audit)', () => {
+    const page = blankNonCode(read('src/pages/FriendsPage.tsx'));
+    expect(page).toMatch(/source_online: false,\s*is_online: false,/);
   });
 });
 
@@ -315,9 +340,12 @@ describe('LAW: an online figure is counted by the database, never invented', () 
       expect(code, file).not.toContain('presenceService');
     }
     // The detail page follows heartbeats going stale on the presence cadence.
-    expect(blankNonCode(read('src/pages/UnionDetailPage.tsx'))).toContain(
-      'setInterval(ask, PRESENCE_RECHECK_MS)'
-    );
+    const detail = blankNonCode(read('src/pages/UnionDetailPage.tsx'));
+    expect(detail).toContain('setInterval(ask, PRESENCE_RECHECK_MS)');
+    // ...and the moment a hidden tab returns, with only the latest ask answering.
+    expect(detail).toMatch(/addEventListener\([^)]*onVisibility\)/);
+    expect(detail).toMatch(/removeEventListener\([^)]*onVisibility\)/);
+    expect(detail).toContain('seq === latest');
   });
 
   it('nothing reads the union online column that does not exist', () => {

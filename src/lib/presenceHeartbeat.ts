@@ -24,12 +24,37 @@ import { reportError } from '../utils/errorReporter';
 /** How often a visible arena tab beats. Well inside the five-minute window. */
 export const PRESENCE_HEARTBEAT_MS = 120_000;
 
+/*
+ * SIGN-OUT IS THE LAST BEAT (2026-10-05 audit). signalOffline runs while the
+ * session still exists, and the signed-in tab keeps its interval until the
+ * auth listener clears the user, which can be seconds later. A beat that fired
+ * in that gap - or one already in flight that landed after the offline beat -
+ * stamped the player online again, and they read online for five more minutes
+ * after signing out. So signing out silences that account's beats until it
+ * signs in again (resumePresence, called when the heartbeat starts for a
+ * user), and the offline beat waits for any beat already sent.
+ */
+let silenced: string | null = null;
+let inFlight: Promise<unknown> | null = null;
+
+/** A heartbeat is starting for this user: a fresh sign-in may beat again. */
+export function resumePresence(userId: string): void {
+  if (silenced === userId) silenced = null;
+}
+
 /** One beat: the signed-in player is (or is no longer) here. */
 export async function sendPresence(userId: string, online: boolean): Promise<void> {
-  const { error } = await supabase.rpc('fn_update_presence', {
-    p_user_id: userId,
-    p_is_online: online,
-  });
+  if (online && silenced === userId) return;
+  /* Promise.resolve runs the request exactly once; the Supabase builder would
+     send it again for every `then`, and the offline beat awaits this one. */
+  const request = Promise.resolve(
+    supabase.rpc('fn_update_presence', {
+      p_user_id: userId,
+      p_is_online: online,
+    })
+  );
+  if (online) inFlight = request;
+  const { error } = await request;
   if (error) throw error;
 }
 
@@ -40,10 +65,15 @@ export async function sendPresence(userId: string, online: boolean): Promise<voi
  * minutes anyway.
  */
 export async function signalOffline(userId: string, timeoutMs = 2_000): Promise<void> {
+  silenced = userId;
+  const pending = inFlight;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([
-      sendPresence(userId, false),
+      (async () => {
+        if (pending) await pending.catch(() => undefined);
+        await sendPresence(userId, false);
+      })(),
       new Promise<void>((resolve) => {
         timer = setTimeout(resolve, timeoutMs);
       }),
@@ -53,4 +83,10 @@ export async function signalOffline(userId: string, timeoutMs = 2_000): Promise<
   } finally {
     if (timer !== undefined) clearTimeout(timer);
   }
+}
+
+/** Test seam: forget any sign-out and in-flight beat. */
+export function resetPresenceHeartbeatForTests(): void {
+  silenced = null;
+  inFlight = null;
 }

@@ -293,16 +293,19 @@ class FriendSuggestionServiceClass {
          decision. Dan: "HORSES ARE NEVER EVER DISCLUDED BY DESIGN ON
          ANYTHING! THEY MUST ALWAYS BE TREATED LIKE REAL LIVE PLAYERS!"
 
-         A horse you sat with is an opponent you sat with. `is_horse` stays in
-         the SELECT — identification is one of the two sanctioned uses, and
-         the caller may badge the row — but it no longer decides who is
-         suggestible. */
+         A horse you sat with is an opponent you sat with.
+
+         2026-10-05 audit: `is_horse` is not in this read either. The browser
+         role holds no SELECT on profiles.is_horse (horse identity is not
+         readable by a player), so naming it here refused the whole query with
+         42501 and every recent opponent - person or horse - vanished from the
+         suggestions, while nothing used the column anyway. */
       const { data: opponents, error: oErr } = await supabase
         .from('table_seats')
         .select(
           `
           user_id,
-          profiles:user_id!inner(${PLAYER_NAME_COLUMNS}, avatar_url, is_horse)
+          profiles:user_id!inner(${PLAYER_NAME_COLUMNS}, avatar_url)
         `
         )
         .in('table_id', tableIds)

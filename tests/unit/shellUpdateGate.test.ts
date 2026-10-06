@@ -208,9 +208,12 @@ describe('staleCheckDue — a visible tab that never navigates still learns it i
     const src = readFileSync(path.join(__dirname, '../../src/hooks/useShellUpdateGate.ts'), 'utf8');
     expect(src).toContain("window.addEventListener('focus', onFocus);");
     expect(src).toContain("window.removeEventListener('focus', onFocus);");
+    /* A route change is consumed only by a probe that ran; one inside the
+       throttle stays due for the next tick (2026-10-05 audit). */
     expect(src).toMatch(
-      /staleCheckDue\(\{[\s\S]*?\}\)\s*\)\s*\{\s*lastPathname = window\.location\.pathname;\s*checkStaleness\(\);/
+      /staleCheckDue\(\{[\s\S]*?\}\)\s*&&\s*checkStaleness\(\)\s*\)\s*\{\s*lastPathname = window\.location\.pathname;/
     );
+    expect(src).toContain('const checkStaleness = (): boolean => {');
     expect(STALE_CHECK_IDLE_MS).toBe(15 * 60 * 1000);
   });
 });

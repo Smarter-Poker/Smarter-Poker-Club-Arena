@@ -6,7 +6,7 @@
  * src/components/common/PresenceHeartbeat.tsx).
  */
 import { useEffect } from 'react';
-import { PRESENCE_HEARTBEAT_MS, sendPresence } from '../lib/presenceHeartbeat';
+import { PRESENCE_HEARTBEAT_MS, resumePresence, sendPresence } from '../lib/presenceHeartbeat';
 import { reportError } from '../utils/errorReporter';
 
 const tabHidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden';
@@ -14,6 +14,9 @@ const tabHidden = () => typeof document !== 'undefined' && document.visibilitySt
 export function usePresenceHeartbeat(userId: string | null | undefined): void {
   useEffect(() => {
     if (!userId) return;
+    // A heartbeat starting for this user is a sign-in; a sign-out before it
+    // silenced this account (src/lib/presenceHeartbeat.ts).
+    resumePresence(userId);
     let stopped = false;
     // One report per run of failures, not one every two minutes while offline.
     let failing = false;

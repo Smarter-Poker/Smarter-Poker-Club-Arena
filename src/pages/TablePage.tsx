@@ -280,6 +280,7 @@ import { sessionStatsService } from '../services/SessionStatsService';
 import { parseTableArenaIdentity, seatCanAddFunds } from '../../server/src/domain/ArenaContext';
 import { arenaAssetUnitCents, arenaAssetUnitCentsIfRead } from '../lib/arenaUnitCents';
 import { topUpCashierPath } from '../utils/topUpCashierPath';
+import { sessionBuyInTotal } from '../utils/sessionBuyInTotal';
 import { bustPromptMustWait } from '../utils/bustPromptGate';
 import { bootExplanation, seatCopy } from '../components/table/seatExitCopy';
 import { readTableFundingBalance } from '../services/TableFundingService';
@@ -2593,6 +2594,11 @@ function LiveTablePage({
     };
   }, [tableId, userId]);
 
+  /* Which table the server's session baseline has been asked for, and which
+     table this page is on now (so a late answer for another table is dropped). */
+  const sessionBaselineAskedRef = useRef<string | null>(null);
+  const sessionBaselineTableRef = useRef<string | undefined>(tableId);
+  sessionBaselineTableRef.current = tableId;
   // Phase 1.1 PR-3: apply authoritative engine snapshot to tableState when
   // the feature flag is on. This one effect replaces the entire Supabase-
   // Realtime-as-game-state path (which PR-5 deletes). The mapping is pure
@@ -2629,7 +2635,34 @@ function LiveTablePage({
     // or after a Seat-First buy-in. Seed it with the hero's current stack so the Session Complete card doesn't drop the stat.
     const mappedHero = mapped.players.find((p) => p && p.id === userId);
     if (mappedHero && mappedHero.stack > 0) {
-      if (totalBuyInRef.current === 0) totalBuyInRef.current = mappedHero.stack;
+      if (totalBuyInRef.current === 0) {
+        totalBuyInRef.current = mappedHero.stack;
+        /* THE STACK IS ONLY A PLACEHOLDER (launch audit 2026-10-05). After a
+           reload the stack at this moment is not what was bought in: a player
+           down 300 was shown roughly break-even at leave. The platform keeps
+           the true figure for the open cash session; ask for it once and use
+           it (see utils/sessionBuyInTotal). A table with no cash session, or
+           a read that fails, leaves the placeholder exactly as before. */
+        const askedFor = tableId;
+        const totalAtAsk = totalBuyInRef.current;
+        if (askedFor && userId && sessionBaselineAskedRef.current !== askedFor) {
+          sessionBaselineAskedRef.current = askedFor;
+          void Promise.resolve(
+            supabase.rpc('fn_my_cash_session_baseline', { p_table_id: askedFor })
+          )
+            .then(({ data, error }) => {
+              if (error || sessionBaselineTableRef.current !== askedFor) return;
+              totalBuyInRef.current = sessionBuyInTotal({
+                serverBaseline: data,
+                totalAtAsk,
+                totalNow: totalBuyInRef.current,
+              });
+            })
+            .catch(() => {
+              /* the placeholder stands */
+            });
+        }
+      }
       if (peakStackRef.current === 0) peakStackRef.current = mappedHero.stack;
     }
 

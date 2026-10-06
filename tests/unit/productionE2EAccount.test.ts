@@ -11,6 +11,7 @@ import {
   prepareProductionE2EStaffMembership,
   prepareProductionE2ETemplateMembership,
   DEFAULT_E2E_TEMPLATE_CLUB_ID,
+  STALE_ACCOUNT_AGE_MS,
   retireCertificationClubWithRetry,
   retireProductionCreateClubFixtures,
 } from '../../scripts/ci/production-e2e-account.mjs';
@@ -24,6 +25,27 @@ const CLEANUP_MIGRATION = readFileSync(
   ),
   'utf8'
 );
+const POST_DEPLOY_WORKFLOW = readFileSync(
+  resolve(process.cwd(), '.github/workflows/post-deploy-e2e.yml'),
+  'utf8'
+);
+const CLUB_CREATE_WORKFLOW = readFileSync(
+  resolve(process.cwd(), '.github/workflows/club-create-certification.yml'),
+  'utf8'
+);
+
+function workflowJobTimeoutMinutes(source: string, job: string) {
+  const marker = `\n  ${job}:\n`;
+  const start = source.indexOf(marker);
+  expect(start).toBeGreaterThanOrEqual(0);
+  const bodyStart = start + marker.length;
+  const remaining = source.slice(bodyStart);
+  const nextJob = remaining.search(/\n {2}[a-z0-9-]+:\n/);
+  const body = nextJob === -1 ? remaining : remaining.slice(0, nextJob);
+  const timeout = body.match(/^ {4}timeout-minutes: (\d+)$/m);
+  expect(timeout).not.toBeNull();
+  return Number(timeout?.[1]);
+}
 
 function environment(directory: string) {
   return {
@@ -526,7 +548,16 @@ describe('post-deploy production account', () => {
     const query = decodeURIComponent(String(fetchMock.mock.calls[0]?.[0]));
     expect(query).toContain('/rpc/fn_ca_stale_certification_accounts');
     const request = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(JSON.parse(String(request[1]?.body))).toEqual({ p_before: '2026-09-04T23:20:00.000Z' });
+    expect(JSON.parse(String(request[1]?.body))).toEqual({ p_before: '2026-09-04T22:30:00.000Z' });
+  });
+
+  it('cannot classify an account stale while any fixture-owning job may still run', () => {
+    const longestOwningJobMinutes = Math.max(
+      workflowJobTimeoutMinutes(POST_DEPLOY_WORKFLOW, 'production-e2e'),
+      workflowJobTimeoutMinutes(POST_DEPLOY_WORKFLOW, 'live-table-e2e'),
+      workflowJobTimeoutMinutes(CLUB_CREATE_WORKFLOW, 'certify')
+    );
+    expect(STALE_ACCOUNT_AGE_MS).toBeGreaterThanOrEqual((longestOwningJobMinutes + 10) * 60_000);
   });
 
   it('waits out the maintenance freeze instead of abandoning the fixture', async () => {

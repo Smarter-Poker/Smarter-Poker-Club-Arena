@@ -1806,6 +1806,16 @@ export abstract class ServerTableEngineBase {
    */
   protected currentHandSawFlopForMoney: boolean = false;
   /**
+   * The owner's Diamond cash rake schedule this hand was DEALT under, read
+   * once at the deal from `ca_diamond_economics`. Carried to settlement so
+   * the accepted-hand guard re-prices the hand against the same rows the
+   * settler will, rather than against whatever is published by the time the
+   * hand finishes. Null on every chip hand and every tournament hand.
+   */
+  protected currentHandDiamondRakeSchedule:
+    | import('../domain/diamondCashRakeSchedule.js').DiamondCashRakeSchedule
+    | null = null;
+  /**
    * userId → uncalled amount returned to the player this hand. Persisted for
    * audit alongside contributions (gross = eligible + returned). Zero-entry
    * players are omitted.
@@ -9737,6 +9747,10 @@ export abstract class ServerTableEngineBase {
             // and the full cap on a 6/7/8-max one, Dan 2026-09-14).
             playerCountCaps: getPlayerCountCaps(fullRakeConfig.rakeCap, this.tableSeatCount()),
           },
+      /* The snapshot records how this hand WAS priced, so it carries the
+         Diamond schedule the live controller is holding rather than a fresh
+         read that could differ from it. Null on every chip hand. */
+      diamondRakeSchedule: this.handController.getDiamondRakeScheduleSnapshot(),
       bbjConfig: {
         enabled:
           !this.isTournamentTable() &&

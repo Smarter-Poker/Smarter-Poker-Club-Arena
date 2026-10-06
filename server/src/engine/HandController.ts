@@ -21,6 +21,8 @@ import {
   compareHands,
   compareLowHands,
 } from './PokerEngine.js';
+import { priceDiamondCashRake } from '../domain/diamondCashRakeSchedule.js';
+import { wholeDiamondsContributed } from './diamondCashRakeFacts.js';
 import {
   isFixedLimitVariant,
   isPotLimitVariant,
@@ -3881,6 +3883,11 @@ export class HandController {
   }
 
   /** Exact per-hand rake rules; cloned so a decision cannot mutate settlement. */
+  /** The owner's Diamond schedule this hand was dealt under, or null. */
+  public getDiamondRakeScheduleSnapshot(): HandConfig['diamondRakeSchedule'] {
+    return this.config.diamondRakeSchedule ?? null;
+  }
+
   public getRakeConfigSnapshot(): RakeConfig {
     return {
       ...this.config.rakeConfig,
@@ -4090,6 +4097,49 @@ export class HandController {
     }
 
     const playerCount = this.state.players.filter((p) => !p.is_sitting_out).length;
+    /* ═══ A DIAMOND CASH HAND IS PRICED BY ITS SETTINGS (2026-10-06) ══════
+       The chip ladder cannot price this hand and must not be asked to: a
+       Diamond table's `rake_percent` and `rake_cap_bb` are required to be
+       EXPLICITLY ZERO by DiamondCashBoundary, so `calculateRake` answers zero
+       on every Diamond hand - which is exactly the defect this replaces. The
+       owner's published Diamond schedule arrives on the hand config, read
+       once at the deal, and prices it here, where the rake is taken out of
+       the pot before anyone is paid.
+
+       THE POT IS THE SETTLER'S POT. `fn_poker_diamond_settle_cash_hand`
+       recomputes from `sum(contributed)` over the roster the engine sends,
+       and `contributed` is each seat's `totalInvested` net of a returned
+       uncalled bet - already returned, a few lines into completeHandInner,
+       before this runs. Summing that here rather than reading `state.pot` a
+       second time is what makes the engine's number and the settler's number
+       the same number instead of two numbers that usually agree.
+
+       AND THE SAME DEALT COUNT. The bracket is `count(*) FILTER (WHERE
+       dealt_in)`, and this controller's roster IS the hand's dealt roster, so
+       it is counted and not filtered by anything else - `playerCount` above
+       filters sitting-out seats for the chip ladder and is a different
+       question. HORSES ARE PLAYERS (CLAUDE.md 10.5): there is no seat
+       identity in any of these three numbers. */
+    const diamondSchedule = this.config.diamondRakeSchedule;
+    if (diamondSchedule) {
+      const diamondRake = priceDiamondCashRake(diamondSchedule, {
+        pot: this.state.players.reduce(
+          (total, player) => total + wholeDiamondsContributed(player.totalInvested ?? 0),
+          0
+        ),
+        dealtIn: this.state.players.length,
+        /* The hand's own money-facing flop fact: `flopCounts` is
+           `state.sawFlop` AND a board that corroborates it, which is
+           `handSawFlopForMoney()` by construction on every path that moves
+           money. The settler reads that same expression as `hand_saw_flop`. */
+        sawFlop: flopCounts,
+      });
+      /* A Diamond pays no jackpot drop - B14 to B22 are unanswered and the
+         settler refuses a non-zero one by name - so there is nothing for the
+         pot-overage clamp below to yield, and the pricer has already refused
+         a rake larger than the pot. */
+      return { rake: diamondRake, bbjFee: 0 };
+    }
     const rake = calculateRake(pot, flopCounts, this.config.rakeConfig, playerCount);
 
     let bbjFee = 0;

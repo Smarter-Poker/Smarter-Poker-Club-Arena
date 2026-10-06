@@ -1208,10 +1208,8 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // Optional call: RIT test harnesses inject minimal HandController mocks
     // that predate this method — absent method means single board.
     const doubleBoardHand = this.handController.isDoubleBoardActive?.() ?? false;
-    const insuranceEnabled =
-      this.insuranceEngine.isEnabled(this.tableId) &&
-      !doubleBoardHand &&
-      insuranceContractIsExact(this.handController);
+    const insuranceOnThisHand = this.insuranceEngine.isEnabled(this.tableId) && !doubleBoardHand;
+    const insuranceEnabled = insuranceOnThisHand && insuranceContractIsExact(this.handController);
     const insuranceCanPriceStandingBoard =
       insuranceEnabled && board.length < 5 && allInPlayers.length >= 2;
     let standaloneEquityRequested = false;

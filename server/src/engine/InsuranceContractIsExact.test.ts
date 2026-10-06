@@ -80,6 +80,8 @@ describe('insurance is offered only on a one-pot hand', () => {
 
   it('the runout asks before it enables the offer', () => {
     const src = readFileSync(resolve(__dirname, 'ServerTableEngineRunout.ts'), 'utf8');
-    expect(src).toContain('insuranceContractIsExact(this.handController);');
+    expect(src).toContain(
+      'const insuranceEnabled = insuranceOnThisHand && insuranceContractIsExact(this.handController);'
+    );
   });
 });

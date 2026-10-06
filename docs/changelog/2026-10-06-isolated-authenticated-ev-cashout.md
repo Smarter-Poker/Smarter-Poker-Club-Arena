@@ -16,3 +16,5 @@ triggers and browser/WebSocket behavior remain outside this precise boundary.
 Local source composition, syntax, compiler and owning runner checks are required;
 the genuine Linux service execution result must come from the hosted native
 workflow before claiming the EV launch gap closed.
+
+The first hosted run (37405723911) passed the original native smoke and reached genuine authentication plus critical-authority readback, then failed PostgREST readiness before either EV actor. The readiness request now follows the maintained full fixture and authenticates with the fixture service identity; anonymous grants are unchanged. A fixed numeric HTTP status and allowlisted PostgREST or SQLSTATE code are retained for readiness failure. The first artifact did not retain its HTTP reason, so the initial failure cause remains unproven. Both owned cleanup checks passed. This result does not qualify either EV outcome.

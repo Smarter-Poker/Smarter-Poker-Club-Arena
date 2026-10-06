@@ -39,7 +39,7 @@ async function ready(check) {
     if (await check()) return;
     await wait(100);
   }
-  throw new Error('native readiness absent');
+  throw Object.assign(new Error('native readiness absent'), { code: 'NATIVE_READINESS_ABSENT' });
 }
 async function start(name, binary, args, env = {}) {
   const log = await open(`/run/ev/${name}.log`, 'wx', 0o600);
@@ -60,9 +60,17 @@ async function connect(user, db = database) {
   connections.push(c);
   return c;
 }
-async function healthy(url) {
+let readinessStatus = null,
+  readinessCode = null;
+async function healthy(url, headers = {}) {
   try {
-    return (await fetch(url, { signal: AbortSignal.timeout(1000) })).ok;
+    const response = await fetch(url, { headers, signal: AbortSignal.timeout(1000) });
+    readinessStatus = response.status;
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      readinessCode = /^(PGRST[0-9]{3}|[0-9A-Z]{5})$/.test(body?.code || '') ? body.code : null;
+    }
+    return response.ok;
   } catch {
     return false;
   }
@@ -185,7 +193,11 @@ try {
     PGRST_SERVER_PORT: '3000',
     PGRST_LOG_LEVEL: 'error',
   });
-  await ready(() => healthy('http://127.0.0.1:3000/'));
+  // Readiness uses the engine's service identity, as does the maintained
+  // readiness path as the maintained full fixture; do not broaden anon grants.
+  await ready(() =>
+    healthy('http://127.0.0.1:3000/', { authorization: `Bearer ${secrets.serviceKey}` })
+  );
   // Only fixed loopback service routes; no fake auth response or remote target.
   gateway = http.createServer((req, res) => {
     const auth = req.url.startsWith('/auth/v1/'),
@@ -274,6 +286,8 @@ try {
       status: 'failed',
       product_certificate: false,
       stage,
+      readiness_http_status: stage === 'postgrest' ? readinessStatus : undefined,
+      readiness_error_code: stage === 'postgrest' ? readinessCode : undefined,
       error_code: /^[A-Z0-9_]{3,50}$/.test(error.code || '')
         ? error.code
         : 'ASSERTION_OR_RUNTIME_FAILURE',

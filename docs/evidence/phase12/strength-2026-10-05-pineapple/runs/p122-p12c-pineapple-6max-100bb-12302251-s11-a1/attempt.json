@@ -1,0 +1,9 @@
+{
+  "schema": "horse-phase12-strength-attempt-v1",
+  "runAttempt": 1,
+  "job": "league",
+  "variant": "pineapple",
+  "startedAt": "2026-10-05T18:31:18Z",
+  "finishedAt": "2026-10-05T18:36:30Z",
+  "exitCode": 0
+}

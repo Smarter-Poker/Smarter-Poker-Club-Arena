@@ -154,7 +154,7 @@ describe('MysteryBountyPanel', () => {
     );
     expect(
       screen.getByText(
-        'Mystery Bounties Begin After The Rebuy And Add-On Period Ends And The Tournament Reaches The Money'
+        'Mystery Bounties Begin After The Rebuy And Add-On Period Ends And The Tournament Reaches The Money. Fields Of Ten Or Fewer Entries Pay Flat Bounties Only'
       )
     ).toBeInTheDocument();
   });

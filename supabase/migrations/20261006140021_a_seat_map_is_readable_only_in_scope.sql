@@ -85,6 +85,8 @@
 --
 -- @live-proof: (NOT has_table_privilege('anon', 'public.table_seats', 'SELECT') AND NOT has_column_privilege('anon', 'public.table_seats', 'stack', 'SELECT') AND NOT has_column_privilege('anon', 'public.table_seats', 'user_id', 'SELECT') AND has_column_privilege('authenticated', 'public.table_seats', 'stack', 'SELECT'))
 
+BEGIN;
+
 -- ─── PRE: the hole is still here, and the engine's own access is unaffected ─
 DO $pre$
 DECLARE n_anon int; n_auth int;
@@ -181,3 +183,5 @@ BEGIN
   END IF;
 END
 $post$;
+
+COMMIT;

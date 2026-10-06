@@ -600,11 +600,38 @@ export class HandController {
     // emitTurnChange() no-op'd on currentPlayerSeat === -1 and the hand hung
     // until the 10-minute safety void (blinds effectively refunded). Advance
     // straight into the runout instead.
+    // A BLIND THAT ALREADY COVERS EVERY ALL-IN HAS NOTHING TO DECIDE (launch
+    // audit 2026-10-05). Heads-up, blinds 0.5/1, big blind all-in for 0.2: the
+    // small blind was put on the clock with fold, call and raise, though
+    // nobody is left to call a raise and it cannot lose more than the 0.2 it
+    // has already matched. A slow or disconnected seat was then auto-folded
+    // out of a pot it had covered. When one seat alone can still act and its
+    // posted money already meets every all-in stack, the hand is the same one
+    // the all-everyone-in case above describes: run it out.
+    if (this.state.currentPlayerSeat !== -1 && this.soleLiveSeatCoversEveryAllIn()) {
+      this.state.currentPlayerSeat = -1;
+    }
     if (this.state.currentPlayerSeat === -1) {
       this.advanceGame();
     } else {
       this.emitTurnChange();
     }
+  }
+
+  /**
+   * Exactly one seat can still act, at least one opponent is all-in, and that
+   * seat's money on this street is already at least every all-in opponent's.
+   * Nothing it could do changes what it can win or lose, and its excess is
+   * returned as uncalled when the hand completes. True at the deal (a blind
+   * facing an all-in for less) and after the others fold to that same spot.
+   */
+  private soleLiveSeatCoversEveryAllIn(): boolean {
+    const active = this.getActivePlayers();
+    const live = active.filter((p) => !p.is_all_in);
+    const allIn = active.filter((p) => p.is_all_in);
+    if (live.length !== 1 || allIn.length === 0) return false;
+    const mine = live[0].bet ?? 0;
+    return allIn.every((p) => (p.bet ?? 0) <= mine + 0.005);
   }
 
   /**
@@ -1772,6 +1799,8 @@ export class HandController {
       const stageActions = this.state.actionHistory.filter((a) => a.stage === this.state.stage);
       const hasActed = stageActions.some((a) => a.seat === playersToAct[0].seat);
       if (hasActed && playersToAct[0].bet >= this.state.currentBet) return true;
+      // Nothing to decide: see soleLiveSeatCoversEveryAllIn.
+      if (!hasActed && this.soleLiveSeatCoversEveryAllIn()) return true;
       if (!hasActed) return false;
     }
 

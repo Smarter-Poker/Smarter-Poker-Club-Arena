@@ -2,6 +2,7 @@ import type { Page, Request, Route } from '@playwright/test';
 import { describe, expect, it, vi } from 'vitest';
 import {
   FINANCIAL_ADMIN_CONSOLE_READ_ONLY_RPC_PATHS,
+  FINANCIAL_ADMIN_QUARANTINED_SHELL_POST_PATHS,
   FINANCIAL_ADMIN_READ_ONLY_RPC_PATHS,
   classifyFinancialReadOnlyRequest,
   installFinancialReadOnlyGuard,
@@ -94,6 +95,27 @@ describe('financial read-only request classification', () => {
     ).toEqual({ action: 'block', method, path: '/rest/v1/financial_alerts' });
   });
 
+  it('quarantines only exact reviewed shell POSTs and still blocks other methods', () => {
+    for (const path of FINANCIAL_ADMIN_QUARANTINED_SHELL_POST_PATHS) {
+      expect(
+        classifyFinancialReadOnlyRequest(
+          'POST',
+          `https://project.supabase.co${path}?apikey=hidden`,
+          FINANCIAL_ADMIN_CONSOLE_READ_ONLY_RPC_PATHS,
+          FINANCIAL_ADMIN_QUARANTINED_SHELL_POST_PATHS
+        )
+      ).toEqual({ action: 'quarantine', method: 'POST', path });
+      expect(
+        classifyFinancialReadOnlyRequest(
+          'PATCH',
+          `https://project.supabase.co${path}`,
+          FINANCIAL_ADMIN_CONSOLE_READ_ONLY_RPC_PATHS,
+          FINANCIAL_ADMIN_QUARANTINED_SHELL_POST_PATHS
+        )
+      ).toEqual({ action: 'block', method: 'PATCH', path });
+    }
+  });
+
   it('ignores auth and non-REST endpoints', () => {
     expect(
       classifyFinancialReadOnlyRequest(
@@ -126,6 +148,15 @@ describe('financial read-only request classification', () => {
     }
     expect(message).toContain('exact /rest/v1/rpc/<name> paths');
     expect(message).not.toContain('never-report-this');
+
+    expect(() =>
+      classifyFinancialReadOnlyRequest(
+        'POST',
+        'https://project.supabase.co/rest/v1/client_shell_telemetry',
+        FINANCIAL_ADMIN_READ_ONLY_RPC_PATHS,
+        ['/rest/v1/*']
+      )
+    ).toThrow('exact /rest/v1 paths');
   });
 });
 
@@ -183,6 +214,28 @@ describe('financial read-only Playwright guard', () => {
     expect(safeRead.abort).not.toHaveBeenCalled();
     expect(reviewedRpc.abort).not.toHaveBeenCalled();
     expect(guard.violations).toEqual([]);
+    expect(() => guard.assertNoViolations()).not.toThrow();
+  });
+
+  it('aborts exact shell writes without forwarding or treating them as page violations', async () => {
+    const harness = pageHarness();
+    const guard = await installFinancialReadOnlyGuard(harness.page, {
+      allowedRpcPaths: FINANCIAL_ADMIN_CONSOLE_READ_ONLY_RPC_PATHS,
+      quarantinedPostPaths: FINANCIAL_ADMIN_QUARANTINED_SHELL_POST_PATHS,
+    });
+    const shellWrite = routeHarness(
+      'POST',
+      'https://project.supabase.co/rest/v1/rpc/fn_update_presence?apikey=hidden'
+    );
+
+    await harness.handler()(shellWrite.route, shellWrite.route.request());
+
+    expect(shellWrite.abort).toHaveBeenCalledWith('blockedbyclient');
+    expect(shellWrite.fallback).not.toHaveBeenCalled();
+    expect(guard.violations).toEqual([]);
+    expect(guard.quarantinedShellWrites).toEqual([
+      { method: 'POST', path: '/rest/v1/rpc/fn_update_presence' },
+    ]);
     expect(() => guard.assertNoViolations()).not.toThrow();
   });
 });

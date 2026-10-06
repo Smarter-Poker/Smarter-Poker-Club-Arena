@@ -58,6 +58,19 @@ BEGIN
     RAISE EXCEPTION 'DRIFT_INCIDENT_TIMELINE_OBJECT_ALREADY_EXISTS';
   END IF;
 
+  /* This is an alert-mirroring trigger, not a money/invariant guard. Production
+     intentionally excludes it from fn_ca_guard_watchlist(), so trying to move
+     a guard baseline for it is itself refused by the declaration function. */
+  IF 'fn_ca_alert_resolution_reaches_the_incident' =
+       ANY (public.fn_ca_guard_watchlist())
+     OR EXISTS (
+       SELECT 1
+         FROM public.ca_guard_defs d
+        WHERE d.proname='fn_ca_alert_resolution_reaches_the_incident'
+     ) THEN
+    RAISE EXCEPTION 'DRIFT_INCIDENT_ALERT_MIRROR_REGISTRY_CHANGED';
+  END IF;
+
   IF NOT EXISTS (
     SELECT 1
       FROM pg_proc p
@@ -158,11 +171,6 @@ REVOKE ALL ON FUNCTION public.fn_ca_alert_resolution_reaches_the_incident()
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_ca_alert_resolution_reaches_the_incident()
   TO postgres, service_role;
-
-SELECT public.fn_ca_declare_guard_redefinition(
-  'fn_ca_alert_resolution_reaches_the_incident',
-  'migration 20261006012010_a_resolved_incident_never_predates_its_detection'
-);
 
 CREATE FUNCTION public.fn_ca_drift_incident_timeline_guard()
  RETURNS trigger
@@ -322,13 +330,14 @@ BEGIN
            '{postgres=X/postgres,service_role=X/postgres}'
        AND md5(p.prosrc)='0e11283b0fb32102007958c70d631773'
        AND md5(pg_get_functiondef(p.oid))='e4a7c3e2099706adf19c4bd3885c6dbb'
-  ) OR NOT EXISTS (
-    SELECT 1 FROM public.ca_guard_defs d
-     WHERE d.proname='fn_ca_alert_resolution_reaches_the_incident'
-       AND d.declared_ref=
-         'migration 20261006012010_a_resolved_incident_never_predates_its_detection'
-       AND d.def_hash='e4a7c3e2099706adf19c4bd3885c6dbb'
-  ) OR NOT EXISTS (
+  ) OR 'fn_ca_alert_resolution_reaches_the_incident' =
+         ANY (public.fn_ca_guard_watchlist())
+     OR EXISTS (
+       SELECT 1
+         FROM public.ca_guard_defs d
+        WHERE d.proname='fn_ca_alert_resolution_reaches_the_incident'
+     )
+     OR NOT EXISTS (
     SELECT 1
       FROM pg_trigger t
      WHERE t.tgrelid='public.financial_alerts'::regclass

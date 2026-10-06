@@ -1089,6 +1089,11 @@ jobs:
         if: always() && steps.live.outputs.ready == 'true' && steps.gameplay.outputs.resumed != 'false'
         run: node scripts/ci/assert-e2e-actually-ran.mjs e2e-report/live-table-realtime.json
 
+      - name: Did all required live-table cases pass?
+        id: live_coverage
+        if: always() && steps.live.outputs.ready == 'true' && steps.gameplay.outputs.resumed != 'false'
+        run: node scripts/ci/live-table-certificate-coverage.mjs e2e-report/live-table-realtime.json
+
       - name: Hard-delete the isolated production E2E account
         if: always() && steps.live.outputs.ready == 'true'
         env:
@@ -1133,6 +1138,7 @@ jobs:
         env:
           EXPECTED_LIVE_SHA: ${{ steps.live.outputs.sha }}
           RUNTIME_RESUMED: ${{ steps.gameplay.outputs.resumed }}
+          LIVE_COVERAGE_COMPLETE: ${{ steps.live_coverage.outputs.complete }}
         run: |
           set -uo pipefail
           echo 'certified=false' >> "$GITHUB_OUTPUT"
@@ -1152,12 +1158,12 @@ jobs:
             | node scripts/ci/production-e2e-provenance.mjs release-window "$EXPECTED_LIVE_SHA")" || STATUS=$?
           case "$STATUS" in
             0)
-              if [ "$RUNTIME_RESUMED" = 'true' ]; then
+              if [ "$RUNTIME_RESUMED" = 'true' ] && [ "${LIVE_COVERAGE_COMPLETE:-false}" = 'true' ]; then
                 echo 'certified=true' >> "$GITHUB_OUTPUT"
               else
-                echo "NON-VERDICT: the exact engine never entered the verified gameplay state." >> "$GITHUB_STEP_SUMMARY"
+                echo "NON-VERDICT: the exact engine did not resume or not all required live-table cases passed." >> "$GITHUB_STEP_SUMMARY"
               fi
-              echo "Production stayed on \`$EXPECTED_LIVE_SHA\` for the complete browser certificate." >> "$GITHUB_STEP_SUMMARY"
+              echo "Production stayed on \`$EXPECTED_LIVE_SHA\` during the live-table observation window." >> "$GITHUB_STEP_SUMMARY"
               ;;
             3)
               echo "::warning::UNKNOWN: production advanced during certification ($WINDOW). This run could not certify one exact release; it is not a report of a defect."
@@ -1177,7 +1183,7 @@ jobs:
         # old condition therefore discarded the only report from exactly the
         # run that exposed the obsolete timeout. Preserve evidence for both
         # kinds of non-verdict, while still skipping uploads on a clean run.
-        if: always() && (failure() || cancelled())
+        if: always() && (failure() || cancelled() || steps.live_coverage.outputs.complete != 'true')
         uses: actions/upload-artifact@v4
         with:
           name: post-deploy-live-table-report

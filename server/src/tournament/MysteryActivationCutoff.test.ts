@@ -318,6 +318,38 @@ describe('mystery activation uses the closed entry pool', () => {
     expect(f.subject.mysteryBountyStage).toBe('pending');
   });
 
+  /* Dan, 2026-10-05: "MYSTERY BOUNTY OF 10 OR FEWER DON'T GET CHESTS". The
+     sweep reads the closed entry count in EVERY mode now, and a field of 10
+     or fewer seeds nothing however the threshold reads. */
+  it('a mystery bounty of 10 or fewer entries seeds nothing, in every mode', async () => {
+    for (const [mode, modeValue] of [
+      ['at_the_money', null],
+      ['percent_field', 100],
+      ['player_count', 9],
+    ] as const) {
+      const f = fixture({ finalized: true, mode, modeValue, currentPlayers: 3, totalEntries: 10 });
+      await f.subject.maybeActivateMysteryBounty(3);
+      expect(f.subject.readMysteryTotalEntries).toHaveBeenCalledOnce();
+      expect(f.seedCalls()).toHaveLength(0);
+      expect(f.subject.mysteryBountyStage).toBe('pending');
+      expect(f.subject.broadcast).not.toHaveBeenCalled();
+    }
+  });
+
+  it('11 entries still opens at the money', async () => {
+    const f = fixture({ finalized: true, currentPlayers: 3, totalEntries: 11 });
+    await f.subject.maybeActivateMysteryBounty(3);
+    expect(f.seedCalls()).toHaveLength(1);
+    expect(f.subject.mysteryBountyStage).toBe('active');
+  });
+
+  it('an unreadable entry count waits at the money too', async () => {
+    const f = fixture({ finalized: true, currentPlayers: 27, totalEntries: null });
+    await f.subject.maybeActivateMysteryBounty(27);
+    expect(f.seedCalls()).toHaveLength(0);
+    expect(f.subject.mysteryBountyStage).toBe('pending');
+  });
+
   it('draws no chest for a bust already played but not yet recorded (b5102d84)', async () => {
     // 27 still recorded as playing, 2 of them already busted in a committed
     // hand and paid flat from the regular half: 25 can still be knocked out

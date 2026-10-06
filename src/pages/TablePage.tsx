@@ -13874,19 +13874,23 @@ function LiveTablePage({
                   // A left relationship preserves seats whose private table is
                   // hidden by RLS. Neither hidden rows nor a truncated history
                   // may masquerade as proof that this viewer never participated.
+                  const readableTable = (
+                    relation: unknown
+                  ): relation is { tournament_id: string | null } =>
+                    !!relation &&
+                    typeof relation === 'object' &&
+                    !Array.isArray(relation) &&
+                    'tournament_id' in relation &&
+                    (relation.tournament_id === null || typeof relation.tournament_id === 'string');
                   const completeReadableHistory =
                     !seatError &&
                     Array.isArray(historicalSeats) &&
                     seatCount === historicalSeats.length &&
-                    historicalSeats.every(
-                      (seat) =>
-                        seat.tables &&
-                        !Array.isArray(seat.tables) &&
-                        (seat.tables.tournament_id === null ||
-                          typeof seat.tables.tournament_id === 'string')
-                    );
+                    historicalSeats.every((seat) => readableTable(seat.tables));
                   const participated = historicalSeats?.some(
-                    (seat) => seat.tables?.tournament_id === durableTournamentId
+                    (seat) =>
+                      readableTable(seat.tables) &&
+                      seat.tables.tournament_id === durableTournamentId
                   );
                   if (completeReadableHistory && !participated) {
                     durableCompletionHandled = true;

@@ -77,10 +77,10 @@ describe('the live Table Management certificate cannot go blind', () => {
     );
     const jobMinutes = Number(productionJob.match(/timeout-minutes:\s*(\d+)/)?.[1]);
 
-    // The former 50-minute ceiling terminated run 37397055463 before the
-    // always-run honesty, cleanup, release-window, and report steps. The
-    // corrected nine-route sweep can own 11.5 minutes by itself, so 65 keeps
-    // the job bounded while retaining explicit completion headroom.
-    expect(jobMinutes).toBeGreaterThanOrEqual(65);
+    // The former 50- and 65-minute ceilings terminated runs 37397055463 and
+    // 37407226104 before the always-run honesty, cleanup, release-window, and
+    // report steps. The second job ran for 67 minutes, so 80 keeps the job
+    // bounded while retaining measured completion headroom.
+    expect(jobMinutes).toBeGreaterThanOrEqual(80);
   });
 });

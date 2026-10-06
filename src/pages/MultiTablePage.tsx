@@ -51,6 +51,7 @@ import {
 import { quickJoinSpinRows } from '../lib/quickJoinSpins';
 import { fetchFavoriteTableIds } from '../components/quickactions/favoriteTables';
 import { useUserTableSettings } from '../hooks/useUserTableSettings';
+import { tableSizingOwnsNumberRow } from '../hooks/useTableKeyboard';
 import { formatGameTitle } from '../utils/formatGameTitle';
 import { useToast } from '../components/common/Toast';
 import { supabase } from '../lib/supabase';
@@ -4231,6 +4232,9 @@ export default function MultiTablePage() {
       // Number keys 1..MAX_TABLES to switch tables. Derived from the constant
       // rather than a hardcoded '4' so the cap has exactly one definition.
       if (e.key >= '1' && e.key <= String(MAX_TABLES)) {
+        // The active table is sizing a bet: the number row is its presets,
+        // and this press is not a request to change tables.
+        if (tableSizingOwnsNumberRow()) return;
         const idx = parseInt(e.key) - 1;
         if (idx < tables.length) {
           setActiveIndex(idx);

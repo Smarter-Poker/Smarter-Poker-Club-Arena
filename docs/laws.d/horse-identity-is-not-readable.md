@@ -68,3 +68,11 @@ that names `is_horse`, `horse_status`, `horse_profile`, `horse_id` or `is_bot`
 (the one exemption is `horse_bug_reports`, whose `horse_id` is a free-text
 reporter label, not the identity mark), and pins that both services stay
 deleted.
+
+2026-10-06: the eleventh door. `bot_profiles` (139 rows, 100 usernames matching
+live profiles) and `personas` were readable by anyone, as were the content
+engine's settings, runs, schedule, stats and clip library; trivia PvP
+participants could read `horse_side`. World Hub #2151 moved the last browser
+readers behind operator routes; migration 20261006024500 closes the tables and
+the `pipeline_stats` view to every browser role and grants the trivia tables
+column by column less the horse columns. The law pins it.

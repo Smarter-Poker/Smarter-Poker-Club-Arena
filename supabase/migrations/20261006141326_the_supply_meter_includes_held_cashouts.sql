@@ -470,6 +470,8 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $function$;
 -- Preserve the existing operator-only surface explicitly for fresh readers.
+REVOKE ALL ON FUNCTION public.fn_ca_supply_snapshot() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_supply_snapshot() TO service_role;
 REVOKE ALL ON FUNCTION public.fn_ca_trial_balance(timestamptz) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_ca_trial_balance(timestamptz) TO service_role;
 REVOKE ALL ON FUNCTION public.fn_ca_kill_switch_trip(text,numeric,text) FROM PUBLIC, anon, authenticated;

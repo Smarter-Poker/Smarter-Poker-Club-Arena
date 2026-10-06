@@ -22,6 +22,10 @@ import { resolve } from 'node:path';
 
 const SPEC = resolve(__dirname, '../e2e/production-table-management.spec.ts');
 const source = readFileSync(SPEC, 'utf8');
+const WORKFLOW = readFileSync(
+  resolve(__dirname, '../../.github/workflows/post-deploy-e2e.yml'),
+  'utf8'
+);
 
 describe('the live Table Management certificate cannot go blind', () => {
   it('certifies the board on the standalone reserved club, not the union member one', () => {
@@ -64,5 +68,19 @@ describe('the live Table Management certificate cannot go blind', () => {
     expect(source).toMatch(
       /no surface scrolls sideways[\s\S]*?setTimeout\(MOBILE_SWEEP_TIMEOUT_MS\)/
     );
+  });
+
+  it('keeps the containing production job alive through cleanup and reporting', () => {
+    const productionJob = WORKFLOW.slice(
+      WORKFLOW.indexOf('  production-e2e:'),
+      WORKFLOW.indexOf('  live-table-e2e:')
+    );
+    const jobMinutes = Number(productionJob.match(/timeout-minutes:\s*(\d+)/)?.[1]);
+
+    // The former 50-minute ceiling terminated run 37397055463 before the
+    // always-run honesty, cleanup, release-window, and report steps. The
+    // corrected nine-route sweep can own 11.5 minutes by itself, so 65 keeps
+    // the job bounded while retaining explicit completion headroom.
+    expect(jobMinutes).toBeGreaterThanOrEqual(65);
   });
 });

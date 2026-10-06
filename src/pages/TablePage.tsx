@@ -20387,6 +20387,15 @@ function LiveTablePage({
       return;
     }
     if (!tableState.players.length) return; // table not painted yet - wait
+    /* AND ITS FUNDING IS KNOWN (launch audit 2026-10-05). The seat array is
+       painted before the table's asset is read, and handleSeatClick answers a
+       tap in that gap with "Verifying Table Funding" and returns. This effect
+       latched itself on that first render, so the one automatic tap was spent
+       on a refusal and never repeated: a waitlisted player with a 60-second
+       seat hold landed on the table with no buy-in sheet. Wait for the asset
+       here, before the latch, so the tap is made once handleSeatClick can
+       act on it. */
+    if (!tableState.arenaAsset) return;
     autoBuyInFiredRef.current = true;
     if (heroSeatRef.current > 0 || tableState.heroSeat > 0) return;
     if (tableState.players.some((p) => p && p.id === userId)) return;
@@ -20394,7 +20403,7 @@ function LiveTablePage({
     if (openIdx < 0) return;
     handleSeatClick(openIdx + 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tableState.players, tableState.heroSeat]);
+  }, [tableState.players, tableState.heroSeat, tableState.arenaAsset]);
 
   /**
    * SEAT-FIRST COMMIT (Dan 2026-08-23). The only place a seat-first buy-in

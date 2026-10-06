@@ -861,6 +861,32 @@ export abstract class ServerTableEngineBase {
   }
 
   /**
+   * AN IDLE TABLE FINDS THE CHIPS IT OWES (launch audit 2026-10-05).
+   *
+   * A browser rebuy is only a `table_pending_addons` row; the wallet is
+   * already debited. The engine reads that ledger only when the sweep flag is
+   * up, and nothing raised it for a row written from outside this process
+   * unless the seat was BROKE (the rebuy pause and the stand-up sweep ask
+   * about broke seats only). A row for a seat with chips was therefore found
+   * at the next hand commit, and a table that is not dealing has none:
+   * production row 8ba60255 sat 36 minutes with the wallet debited and
+   * nothing on the felt, until the hourly restart's first pass.
+   *
+   * The wait loop is where a table that is not dealing lives, so that is
+   * where the question is asked: one indexed read per pass for the seated
+   * roster, skipped when a sweep is already requested. A hit raises the flag
+   * (inside the helper) and `processPendingAddOns`, called right after,
+   * delivers or refunds in this same pass. An unreadable ledger changes
+   * nothing; the next pass asks again.
+   */
+  protected async findLedgerChipsOwedWhileWaiting(): Promise<void> {
+    if (this.pendingAddOnSweepNeeded) return;
+    const seated = (this.seatedPlayers ?? []).map((p) => p.user_id);
+    if (seated.length === 0) return;
+    await this.usersWithPendingLedgerChips(seated);
+  }
+
+  /**
    * Which of `userIds` have money in flight on the durable ledger for this
    * table - an unresolved `table_pending_addons` row of ANY kind (a mid-hand
    * add-on or a bust rebuy). A hit also requests a sweep so the chips are on
@@ -3810,6 +3836,8 @@ export abstract class ServerTableEngineBase {
            few funded seats. The sweep flag starts true once per engine and is
            raised again by every in-process add-on / observed bust rebuy. */
         if (!this.isTournamentTable()) {
+          await this.findLedgerChipsOwedWhileWaiting();
+          if (!this.lifecycleCanMutate()) return;
           await this.processPendingAddOns(this.seatedPlayers);
           if (!this.lifecycleCanMutate()) return;
         }

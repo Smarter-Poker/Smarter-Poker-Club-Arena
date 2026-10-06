@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 const read = (path: string) => readFileSync(new URL('../' + path, import.meta.url), 'utf8');
 const custody = read(
   'supabase/migrations/20261006140948_cashout_escrow_balances_with_its_own_ledger_leg.sql'
@@ -84,5 +85,33 @@ describe('cashout custody is part of the existing conservation contract', () => 
     expect(read('scripts/dev/test-ledger-invariant.sh')).toContain(
       'scripts/dev/cashout-reader-sql.py'
     );
+  });
+  it('reports an unobserved first basis interval as unavailable under the existing live policy', () => {
+    const source = read('scripts/ci/check-chip-conservation.mjs');
+    const policy = source.slice(source.indexOf('let fail = 0;'), source.indexOf('// ── 1.'));
+    const decision = source.slice(
+      source.indexOf('    const s = Math.abs(Number(trailing.rows[0].s));'),
+      source.indexOf('    // ca_settlements')
+    );
+    const probe = (required: boolean, n: number, sum: string) => {
+      const messages: string[] = [];
+      const fail = runInNewContext(policy + decision + '\nfail;', {
+        process: { env: { REQUIRE_LIVE: required ? '1' : '0' } },
+        trailing: { rows: [{ n, s: sum }] },
+        console: { log: (m: string) => messages.push(m), error: (m: string) => messages.push(m) },
+      });
+      return { fail, messages: messages.join('\n') };
+    };
+    expect(probe(true, 0, '0')).toEqual({
+      fail: 1,
+      messages:
+        '  FAIL  live invariants unavailable: no comparable supply interval in the current accounting basis',
+    });
+    expect(probe(false, 0, '0').messages).toContain('SKIP');
+    expect(probe(true, 1, '0')).toEqual({
+      fail: 0,
+      messages: '  ok    trailing 4h unexplained chip supply 0 (n=1)',
+    });
+    expect(probe(true, 1, '5000.01').fail).toBe(1);
   });
 });

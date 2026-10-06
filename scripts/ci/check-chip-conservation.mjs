@@ -132,7 +132,10 @@ async function liveChecks() {
                 ORDER BY latest.taken_at DESC LIMIT 1)`
     );
     const s = Math.abs(Number(trailing.rows[0].s));
-    if (s > 5000) bad(`trailing 4h unexplained chip supply is ${trailing.rows[0].s}`);
+    const comparable = Number(trailing.rows[0].n);
+    if (!Number.isFinite(comparable) || comparable < 1)
+      unavailable('no comparable supply interval in the current accounting basis');
+    else if (s > 5000) bad(`trailing 4h unexplained chip supply is ${trailing.rows[0].s}`);
     else ok(`trailing 4h unexplained chip supply ${trailing.rows[0].s} (n=${trailing.rows[0].n})`);
 
     // ca_settlements is an append-only ledger with millions of rows. Reading

@@ -120,8 +120,7 @@ $function$;
 COMMENT ON FUNCTION public.user_reel_topics() IS
   'Reel topics a player may attest in publish_user_video_reel; the composer offers exactly these.';
 
-REVOKE ALL ON FUNCTION public.user_reel_topics() FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.user_reel_topics() FROM anon;
+REVOKE ALL ON FUNCTION public.user_reel_topics() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.user_reel_topics() TO authenticated, service_role;
 
 -- ── The one YouTube Reel thumbnail ─────────────────────────────────────────
@@ -142,8 +141,7 @@ $function$;
 COMMENT ON FUNCTION public.fn_youtube_reel_thumbnail_url(text) IS
   'The thumbnail every YouTube Reel gets at insert, whoever the author is.';
 
-REVOKE ALL ON FUNCTION public.fn_youtube_reel_thumbnail_url(text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.fn_youtube_reel_thumbnail_url(text) FROM anon;
+REVOKE ALL ON FUNCTION public.fn_youtube_reel_thumbnail_url(text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.fn_youtube_reel_thumbnail_url(text) TO authenticated, service_role;
 
 -- ── publish_user_video_reel ────────────────────────────────────────────────

@@ -470,7 +470,19 @@ describe('The actual TablePage qualifier completion caller', () => {
     settled_at: '2026-09-17T21:00:00.000Z',
   });
 
-  function actualCaller(row = { status: 'winner', position: null as number | null, prize: 50 }) {
+  function actualCaller(
+    row: { status: string; position: number | null; prize: number } | null = {
+      status: 'winner',
+      position: null,
+      prize: 50,
+    },
+    options: {
+      known?: boolean;
+      resultError?: unknown;
+      seatError?: unknown;
+      seatCount?: number | null;
+    } = {}
+  ) {
     const exit = vi.fn(),
       champion = vi.fn(),
       retry = vi.fn(),
@@ -478,7 +490,16 @@ describe('The actual TablePage qualifier completion caller', () => {
     const query = {
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
-      maybeSingle: vi.fn(async () => ({ data: row, error: null })),
+      maybeSingle: vi.fn(async () => ({ data: row, error: options.resultError ?? null })),
+    };
+    const seatQuery = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      then: (resolve: (value: unknown) => unknown) =>
+        Promise.resolve({
+          count: options.seatCount === undefined ? 0 : options.seatCount,
+          error: options.seatError ?? null,
+        }).then(resolve),
     };
     // Execute the maintained caller, not a copied approximation. Only its
     // browser/REST boundaries are controlled; the receipt decoder is real.
@@ -496,6 +517,7 @@ describe('The actual TablePage qualifier completion caller', () => {
       `let isMounted=true, durableCompletionLookupInFlight=false, durableCompletionHandled=false;
        let durableCompletionFailureReported=false, durableCompletionRetryTimer=null;
        let committedSatelliteQualification=null;
+       let durableParticipantWitnessed=${Boolean(options.known)};
        const durableTournamentId=${JSON.stringify(tid)}, userId=${JSON.stringify(uid)};
        const durableTournamentName='Native Satellite', formatGameTitle=(s)=>s;
        ${compiled}
@@ -503,19 +525,54 @@ describe('The actual TablePage qualifier completion caller', () => {
          qualification:()=>committedSatelliteQualification };`
     );
     const actual = factory(
-      { from: () => query },
+      { from: (name: string) => (name === 'table_seats' ? seatQuery : query) },
       readMySatelliteQualifierResult,
       exit,
       champion,
       retry,
       report
     );
-    return { ...actual, exit, champion, retry, report, query };
+    return { ...actual, exit, champion, retry, report, query, seatQuery };
   }
   beforeEach(() => {
     receiptTransport.rpc.mockReset();
   });
 
+  it('handles a proven spectator once without a result, error, retry or navigation', async () => {
+    const c = actualCaller(null);
+    await c.run();
+    await c.run();
+    expect(c.query.maybeSingle).toHaveBeenCalledTimes(1);
+    expect(c.seatQuery.eq).toHaveBeenCalledWith('user_id', uid);
+    expect(c.seatQuery.eq).toHaveBeenCalledWith('tables.tournament_id', tid);
+    expect(c.exit).not.toHaveBeenCalled();
+    expect(c.champion).not.toHaveBeenCalled();
+    expect(c.report).not.toHaveBeenCalled();
+    expect(c.retry).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['known participant', { known: true }],
+    ['historical seat', { seatCount: 1 }],
+    ['unreadable result', { resultError: new Error('result read failed') }],
+    ['unreadable seat proof', { seatError: new Error('seat read failed') }],
+    ['missing seat count', { seatCount: null }],
+  ])('preserves missing-result recovery for %s', async (_label, options) => {
+    vi.useFakeTimers();
+    try {
+      const c = actualCaller(null, options);
+      const pending = c.run();
+      await vi.runAllTimersAsync();
+      await pending;
+      expect(c.query.maybeSingle).toHaveBeenCalledTimes(3);
+      expect(c.report).toHaveBeenCalledTimes(1);
+      expect(c.retry).toHaveBeenCalledTimes(1);
+      expect(c.exit).not.toHaveBeenCalled();
+      expect(c.champion).not.toHaveBeenCalled();
+      if (options.known || options.resultError) expect(c.seatQuery.select).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it('exits an unranked qualifier from the committed own-result receipt', async () => {
     receiptTransport.rpc.mockResolvedValue({ data: receipt(), error: null });
     const c = actualCaller();

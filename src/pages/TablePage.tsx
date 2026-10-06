@@ -12713,6 +12713,7 @@ function LiveTablePage({
           return;
         }
         let loadedTournamentStatus: string | null = null;
+        let durableParticipantWitnessed = false;
         setTableState((prev) => {
           if (!isMounted) return prev;
           // Metadata can resolve after the socket has already painted a hand.
@@ -13411,6 +13412,7 @@ function LiveTablePage({
                   tournamentId: table.tournament_id,
                 });
               } else {
+                if (myEntry) durableParticipantWitnessed = true;
                 const live = myEntry?.status === 'registered' || myEntry?.status === 'playing';
                 // "Seated" is table_seats, NEVER tournament_players.table_id.
                 // createTablesAndSeatPlayers historically wrote the seat row and
@@ -13848,11 +13850,40 @@ function LiveTablePage({
                   .eq('user_id', userId)
                   .maybeSingle();
                 if (!resultError && data) {
+                  durableParticipantWitnessed = true;
                   result = data;
                   lastError = null;
                   break;
                 }
-                lastError = resultError ?? new Error('Tournament result row is unavailable');
+                // A successful absent result is normal for a spectator. Prove
+                // no participation across this tournament, including departed
+                // seats; a cleared live seat alone cannot identify a spectator.
+                if (!resultError && !data && !durableParticipantWitnessed) {
+                  const { count: historicalSeats, error: seatError } = await supabase
+                    .from('table_seats')
+                    .select('id, tables!table_seats_table_id_fkey!inner(tournament_id)', {
+                      count: 'exact',
+                      head: true,
+                    })
+                    .eq('user_id', userId)
+                    .eq('tables.tournament_id', durableTournamentId);
+                  if (!isMounted) return;
+                  if (!seatError && historicalSeats === 0) {
+                    durableCompletionHandled = true;
+                    if (durableCompletionRetryTimer) {
+                      clearTimeout(durableCompletionRetryTimer);
+                      durableCompletionRetryTimer = null;
+                    }
+                    return;
+                  }
+                  if (!seatError && historicalSeats !== null && historicalSeats > 0) {
+                    durableParticipantWitnessed = true;
+                  }
+                  lastError =
+                    seatError ?? new Error('Tournament participant result is unavailable');
+                } else {
+                  lastError = resultError ?? new Error('Tournament result row is unavailable');
+                }
                 if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
               }
               if (!isMounted) return;

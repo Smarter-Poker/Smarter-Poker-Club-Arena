@@ -186,6 +186,10 @@ import {
   countAbandonedGenerationOutcome,
 } from './abandonedGenerationDoor.js';
 import { levelResumeRemainingMs } from './levelClockOutage.js';
+import {
+  everyOtherTableIsAtAHandBoundary,
+  unprovedHandNeedsSuccessorGeneration,
+} from './unprovedHandSuccessor.js';
 
 /**
  * What one ask of the abandoned-generation door came to.
@@ -1872,6 +1876,39 @@ export abstract class TournamentManagerBase {
     _engine: ServerTableEngine
   ): Promise<void> {}
 
+  /**
+   * A stopped original still holding an `attempted` permit of THIS lease
+   * generation cannot be resolved by this generation (unprovedHandSuccessor.ts).
+   * Let every other table finish the hand in front of its players, then hand
+   * the event to a successor generation, whose admission replays the retained
+   * hand or voids the unretained one through the platform's own doors.
+   *
+   * Returns true only when the hand-off was requested. While another table
+   * still has cards in the air the ordinary causal retry asks again.
+   */
+  private handUnprovedOriginalToSuccessorGeneration(engine: ServerTableEngine): boolean {
+    if (
+      !unprovedHandNeedsSuccessorGeneration({
+        permit: engine.getF06RetainedPermit?.(),
+        managerLeaseGeneration: this.tournamentLeaseGeneration,
+        engineReleasedProcessOwnership: engine.hasReleasedProcessOwnership(),
+      })
+    )
+      return false;
+    for (const other of this.tableEngines.values()) {
+      // No table of this generation deals another hand: the event is leaving it.
+      if (other !== engine && other.isRunning())
+        other.pauseAfterHand(undefined, { untilResumed: true });
+    }
+    if (!everyOtherTableIsAtAHandBoundary(this.tableEngines.values(), engine)) return false;
+    console.info(
+      `[Tournament:${this.tournamentId.slice(0, 8)}] A stopped table holds a hand this lease generation cannot resolve - handing the event to a successor generation`
+    );
+    // Not awaited: the manager's stop drains this very recovery job.
+    this.gameServer.handTournamentToSuccessorGeneration(this.tournamentId, this);
+    return true;
+  }
+
   private async performManagedTableEngineRecovery(
     tableId: string,
     engine: ServerTableEngine,
@@ -1902,6 +1939,8 @@ export abstract class TournamentManagerBase {
     await this.recoverStoppedOriginalAdmission(tableId, engine);
     if (!this.lifecycleIsCurrent(lifecycle) || this.tableEngines.get(tableId) !== engine) return;
     if (!(await this.resolveTournamentSeatMoveQuarantine(tableId, engine))) {
+      if (!this.lifecycleIsCurrent(lifecycle) || this.tableEngines.get(tableId) !== engine) return;
+      if (this.handUnprovedOriginalToSuccessorGeneration(engine)) return;
       this.requestEliminationSweep('seat_move_outcome_pending');
       this.scheduleManagedTableEngineRecovery(tableId, engine, lifecycle, reason);
       return;

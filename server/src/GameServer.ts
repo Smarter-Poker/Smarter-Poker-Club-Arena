@@ -2215,6 +2215,30 @@ export class GameServer {
   }
 
   /**
+   * A manager asks for this when one of its stopped tables holds a hand only a
+   * different lease generation may resolve (tournament/unprovedHandSuccessor.ts).
+   * The exact manager is stopped and its lease released through the same
+   * identity-CAS owner a lost lease uses; the running-event discovery then
+   * admits a manager under a fresh generation. A stop already in flight, or
+   * one the quarantine is retrying, is left to its owner.
+   */
+  handTournamentToSuccessorGeneration(tournamentId: string, manager: unknown): void {
+    const exact = this.tournamentEngines.get(tournamentId);
+    if (!exact || exact !== manager) return;
+    if (this.tournamentManagerRetirementOperations.has(exact)) return;
+    if (this.tournamentManagerQuarantine?.heldBy(tournamentId) === exact) return;
+    this.launchServerLifecycleJob(
+      this.stopTournamentManagerIfOwned(
+        tournamentId,
+        exact,
+        'GameServer.unproved_hand_successor_stop_failed'
+      ),
+      'GameServer.unproved_hand_successor_handoff_failed',
+      { tournamentId }
+    );
+  }
+
+  /**
    * Stop one exact manager generation and release its slot only after every
    * table engine has completed teardown. A replacement installed while the
    * await is in flight wins the CAS and is never deleted by this continuation.

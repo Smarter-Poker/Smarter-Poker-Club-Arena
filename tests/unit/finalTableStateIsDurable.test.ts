@@ -187,6 +187,7 @@ describe('the Final Table database rollout is safe and ordered', () => {
     expect(sealJob).toContain('needs: [publication-gate, production-e2e, live-table-e2e]');
     expect(sealJob).toContain("needs.production-e2e.outputs.certified == 'true'");
     expect(sealJob).toContain("needs.live-table-e2e.outputs.certified == 'true'");
+    expect(sealJob).toContain("needs.live-table-e2e.outputs.phase1_mtt_certified == 'true'");
     expect(sealJob).toContain(
       'needs.production-e2e.outputs.client_sha == needs.live-table-e2e.outputs.client_sha'
     );
@@ -201,6 +202,11 @@ describe('the Final Table database rollout is safe and ordered', () => {
     expect(POST_DEPLOY.indexOf('Did the live-table certificate actually execute?')).toBeLessThan(
       POST_DEPLOY.indexOf('  phase1-customization-cutover-seal:')
     );
+    expect(POST_DEPLOY).toContain(
+      'phase1_mtt_certified: ${{ steps.phase1_mtt.outputs.certified }}'
+    );
+    expect(POST_DEPLOY).toContain('Did the Phase 1 MTT certificate actually execute?');
+    expect(POST_DEPLOY).toContain('phase1-mtt-certificate-verdict.mjs');
   });
 
   it('fails closed when a fresh heartbeat has no exact runtime version', () => {

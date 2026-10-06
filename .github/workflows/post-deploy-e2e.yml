@@ -842,6 +842,7 @@ jobs:
       client_sha: ${{ steps.live.outputs.sha }}
       engine_sha: ${{ steps.engine.outputs.sha }}
       certified: ${{ steps.release_window.outputs.certified }}
+      phase1_mtt_certified: ${{ steps.phase1_mtt.outputs.certified }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -1089,6 +1090,15 @@ jobs:
         if: always() && steps.live.outputs.ready == 'true' && steps.gameplay.outputs.resumed != 'false'
         run: node scripts/ci/assert-e2e-actually-ran.mjs e2e-report/live-table-realtime.json
 
+      # The general live-table job may remain a named non-verdict when one
+      # natural production subject is absent. The Phase 1 seal is narrower:
+      # its MTT-only Final Table cutover requires this exact MTT case to have
+      # executed and passed, even when Spin, SNG and cash all passed.
+      - name: Did the Phase 1 MTT certificate actually execute?
+        id: phase1_mtt
+        if: always() && steps.live.outputs.ready == 'true' && steps.gameplay.outputs.resumed != 'false'
+        run: node scripts/ci/phase1-mtt-certificate-verdict.mjs e2e-report/live-table-realtime.json
+
       - name: Hard-delete the isolated production E2E account
         if: always() && steps.live.outputs.ready == 'true'
         env:
@@ -1202,6 +1212,7 @@ jobs:
         needs.live-table-e2e.result == 'success' &&
         needs.production-e2e.outputs.certified == 'true' &&
         needs.live-table-e2e.outputs.certified == 'true' &&
+        needs.live-table-e2e.outputs.phase1_mtt_certified == 'true' &&
         needs.production-e2e.outputs.client_sha == needs.live-table-e2e.outputs.client_sha
       }}
     name: Seal certified Phase 1 customization cutover

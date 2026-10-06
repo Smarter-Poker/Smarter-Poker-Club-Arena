@@ -9276,6 +9276,16 @@ function LiveTablePage({
       if (b !== null) setBalanceIfCurrent(revision, b);
     });
   }, [userId, tableId, readBustBalance, readBalanceRevision, setBalanceIfCurrent]);
+  /* THE TOURNAMENT REBUY PROMPT READS THE BALANCE WHEN IT OPENS (launch audit
+     2026-10-05). `accountBalance` is read once at table load and refreshed
+     only by balance bus events, so a prompt opening an hour into an event was
+     judged on an hour-old figure: a player with the funds could be shown red
+     and a disabled Rebuy, and was eliminated when the window closed. The cash
+     bust prompt has always re-read; this one now does too. A read that fails
+     leaves the figure as it was, and a null balance no longer blocks. */
+  useEffect(() => {
+    if (showRebuyModal) retryAccountBalance();
+  }, [showRebuyModal, retryAccountBalance]);
 
   // Watch for the hero's stack to drop to 0 AND the hand to complete; at
   // that moment, look up the wallet balance and pop the BuyInModal (reused

@@ -128,7 +128,7 @@ test.describe('Visible achievement and rate history readers', () => {
     expect(response.status()).toBe(200);
     const url = new URL(response.url());
     expect(url.searchParams.get('select')?.replace(/\s/g, '')).toBe(
-      'id,period_id,invoice_type,gross_amount,net_amount,breakdown,status,created_at'
+      'id,club_id,period_id,invoice_type,gross_amount,net_amount,breakdown,status,created_at'
     );
     expect(url.searchParams.get('club_id')).toBe(`eq.${clubId}`);
     expect(url.searchParams.get('invoice_type')).toBe('eq.union_to_club');

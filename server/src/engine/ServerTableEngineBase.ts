@@ -7873,8 +7873,46 @@ export abstract class ServerTableEngineBase {
        * hand-for-hand.
        */
       const maxWaitMs = this.pauseMaxWaitMs ?? 120000;
-      this.pauseGateTimer = setTimeout(() => {
+      const onSafetyTimeout = (): void => {
         if (this.handForHandResolve === resolve) {
+          /**
+           * THE BREAK IS NOT TIMED OUT FROM UNDER ITSELF (2026-10-06).
+           *
+           * A self-resume while the maintenance break still holds this table
+           * cannot deal: every gate in both loops checks `maintenancePaused`
+           * and parks again. All it can do is walk the loop out of the gate
+           * and back - and that walk is what was condemning tables.
+           *
+           * An engine adopted after a release cutover is parked with
+           * MaintenanceBreak.remainingParkBudgetMs(): the SCHEDULED end
+           * (:00:00) plus 30s. After a cutover the break does not end on
+           * schedule - it ends on the certified release (`break_ended_at`
+           * 23:00:28.17 and 00:00:28.07 on 2026-10-05/06) and its resume waves
+           * then run another 10.5s, to :00:38.5. So at :00:30 this timer let
+           * every table still waiting for wave 2-7 out into a pass of the
+           * start-up wait loop (roster read, Cluster halt read, add-ons,
+           * sit-out eviction, idle seat moves - inside the freeze) on its way
+           * back to the gate. A wave that landed during that pass found
+           * `handForHandResolve === null`, so releasePauseGate() gave no
+           * progress credit, and the table came off the break with its clock
+           * still anchored at process boot (:55:4x), 280s+ "without
+           * progress". The next zombie sweep killed and rebuilt it: 51 tables
+           * at 23:00, 24 at 00:00, 30 at 02:00 - and none in any hour whose
+           * break ended at or after :00:31, or had no cutover (tables parked
+           * at :53 carry PARK_BUDGET_MS, which runs to :01).
+           *
+           * So while the break holds the table the timer re-arms instead of
+           * firing. The break's own resume reaches every engine
+           * (MaintenanceBreak.resumeEveryEngine) and credits a parked one.
+           * Re-arming rather than retiring keeps the safety net in place for
+           * whichever authority still holds the table after the break lets
+           * go (resumeFromMaintenance defers to hand-for-hand and friends).
+           */
+          if (this.maintenancePaused && this.running) {
+            this.pauseGateTimer = setTimeout(onSafetyTimeout, maxWaitMs);
+            (this.pauseGateTimer as { unref?: () => void }).unref?.();
+            return;
+          }
           if (
             this.f06MovementAdmission !== null ||
             this.pauseRequiresExplicitResume ||
@@ -7899,7 +7937,8 @@ export abstract class ServerTableEngineBase {
           this.handForHandResolve = null;
           resolve();
         }
-      }, maxWaitMs);
+      };
+      this.pauseGateTimer = setTimeout(onSafetyTimeout, maxWaitMs);
       // The break is minutes long and this timer is the only thing keeping a
       // reference; unref so a shutdown inside a break is not held open by it.
       (this.pauseGateTimer as { unref?: () => void }).unref?.();

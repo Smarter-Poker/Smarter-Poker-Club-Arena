@@ -23,6 +23,8 @@
 --     mark_clip_used) lose EXECUTE for every role but service_role.
 -- The service role keeps its explicit grants, so the pipeline, the hub API
 -- routes and the engine are unaffected.
+--
+-- @live-proof: (NOT has_table_privilege('anon', 'public.content_authors', 'SELECT') AND NOT has_table_privilege('authenticated', 'public.content_authors', 'SELECT') AND NOT has_table_privilege('anon', 'public.clip_usage_log', 'SELECT'))
 
 DO $pre$
 DECLARE v text;

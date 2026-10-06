@@ -15,6 +15,8 @@
 -- list built from the catalogue, less those two columns, and proves it as each
 -- role. A column added later is unreadable by the browser until it is granted,
 -- so it fails closed. The service role is untouched.
+--
+-- @live-proof: (NOT has_table_privilege('anon', 'public.social_posts', 'SELECT') AND NOT has_column_privilege('anon', 'public.social_posts', 'origin_type', 'SELECT') AND NOT has_column_privilege('authenticated', 'public.social_posts', 'metadata', 'SELECT') AND has_column_privilege('authenticated', 'public.social_posts', 'content', 'SELECT'))
 
 REVOKE SELECT ON TABLE public.social_posts FROM anon, authenticated;
 REVOKE SELECT (origin_type, metadata) ON TABLE public.social_posts FROM anon, authenticated;

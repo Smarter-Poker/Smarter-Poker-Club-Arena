@@ -20,6 +20,8 @@
 -- 20261005115325_a_browser_cannot_read_which_seat_or_member_is_a_horse stay.
 -- No REVOKE ALL here, because revoking a table privilege also revokes the
 -- same privilege on every column, and that would take the column SELECTs too.
+--
+-- @live-proof: (NOT has_table_privilege('anon', 'public.table_seats', 'INSERT') AND NOT has_table_privilege('authenticated', 'public.table_seats', 'UPDATE') AND NOT has_table_privilege('anon', 'public.club_members', 'INSERT') AND has_table_privilege('authenticated', 'public.club_members', 'INSERT'))
 
 DO $pre$
 DECLARE v text;

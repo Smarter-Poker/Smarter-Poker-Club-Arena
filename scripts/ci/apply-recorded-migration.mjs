@@ -67,6 +67,8 @@ import {
   recoverySnapshotDiagnostic,
 } from './contract-index-recovery.mjs';
 
+import { batchRequest, applyFinalTablePages } from './final-table-cleanup-batches.mjs';
+
 const DIR = 'supabase/migrations';
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
@@ -110,6 +112,18 @@ try {
     argValue('--recover-oid'),
     argValue('--recover-before'),
     argValue('--recover-transient-oid')
+  );
+} catch (e) {
+  refused(e.message);
+}
+
+let batches;
+try {
+  batches = batchRequest(
+    file,
+    argValue('--final-table-pages'),
+    argValue('--final-table-operation'),
+    recovery
   );
 } catch (e) {
   refused(e.message);
@@ -178,6 +192,17 @@ try {
 } catch (e) {
   await client.end().catch(() => {});
   unknown(`could not read schema_migrations: ${e.message}`);
+}
+
+if (batches) {
+  try {
+    await applyFinalTablePages(client, batches, sql, DRY_RUN);
+    await client.end();
+    process.exit(EXIT_OK);
+  } catch (e) {
+    await client.end().catch(() => {});
+    unknown(`bounded cleanup stopped: ${e.message}`);
+  }
 }
 
 if (already.length > 0) {

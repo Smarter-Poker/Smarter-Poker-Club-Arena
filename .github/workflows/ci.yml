@@ -1915,7 +1915,9 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
           PHASE1_PG_WORK_ROOT: ${{ runner.temp }}
-        run: python3 scripts/ci/test-phase1-customization-postgres.py
+        run: |
+          node --test scripts/ci/final-table-cleanup-batches.test.mjs
+          python3 scripts/ci/test-phase1-customization-postgres.py
       - name: Private account signals preserve source and owner isolation
         if: matrix.shard == 1
         env:

@@ -197,7 +197,9 @@ describe('the PostgreSQL accounting qualification runs as four shards of one job
     expect(shardsOf(phaseOne!)).toEqual([1]);
     expect(phaseOne!.env!.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
     expect(phaseOne!.env!.PHASE1_PG_WORK_ROOT).toBe('${{ runner.temp }}');
-    expect(phaseOne!.run).toBe('python3 scripts/ci/test-phase1-customization-postgres.py');
+    expect(phaseOne!.run).toBe(
+      'node --test scripts/ci/final-table-cleanup-batches.test.mjs\npython3 scripts/ci/test-phase1-customization-postgres.py\n'
+    );
   });
 
   it('still feeds the required Server Engine aggregate, which needs every shard', () => {

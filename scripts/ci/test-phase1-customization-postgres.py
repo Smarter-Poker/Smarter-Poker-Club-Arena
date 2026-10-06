@@ -29,6 +29,8 @@ MIGRATION_CUSTOMIZATION = ROOT / (
 MIGRATION_FINAL_TABLE = ROOT / (
     "supabase/migrations/20261005111523_short_formats_never_reach_final_table.sql"
 )
+MIGRATION_BATCH = ROOT / "supabase/migrations/20261005230204_the_final_table_cleanup_advances_in_bounded_transactions.sql"
+MIGRATION_FINALIZER = ROOT / "supabase/migrations/20261005230230_the_final_table_cleanup_seals_its_completed_transition.sql"
 PURCHASE_SOURCE = ROOT / "supabase/migrations/20260930235000_a_retry_gets_its_first_receipt.sql"
 OWNED_RUNTIME_ROOT = Path(
     os.environ.get("PHASE1_PG_WORK_ROOT")
@@ -194,7 +196,7 @@ try:
     require(re.search(r"PostgreSQL\) 17\.", version.stdout) is not None, "PostgreSQL 17 is required")
     RESULTS["postgres"] = version.stdout.strip()
 
-    for migration in (MIGRATION_CUSTOMIZATION, MIGRATION_FINAL_TABLE):
+    for migration in (MIGRATION_CUSTOMIZATION, MIGRATION_FINAL_TABLE, MIGRATION_BATCH, MIGRATION_FINALIZER):
         require(migration.is_file(), f"candidate migration is missing: {migration}")
         sha_map = RESULTS["migrationSha256"]
         assert isinstance(sha_map, dict)
@@ -1243,11 +1245,101 @@ try:
         post_image_map[signature] = digest
     require(len(post_image_map) == 6, f"expected six post-image hashes, got {post_image_map!r}")
 
+    # Reproduce the production interrupted cleanup independently of its ledger:
+    # old constraint absent, legacy privileges present, 450 incorrect historical flags.
+    fixture = psql("""
+      ALTER TABLE public.tournaments DROP CONSTRAINT tournaments_final_table_requires_mtt_check;
+      GRANT UPDATE ON public.user_theme_settings TO authenticated;
+      GRANT EXECUTE ON FUNCTION public.fn_set_interface_theme(text) TO authenticated;
+      CREATE FUNCTION public.fn_platform_frozen() RETURNS boolean LANGUAGE sql AS
+        $$ SELECT coalesce(current_setting('fixture.frozen',true),'false')::boolean $$;
+      CREATE FUNCTION public.fn_ca_break_window_refuses_migrations(timestamptz)
+        RETURNS text LANGUAGE sql AS $$ SELECT NULL::text $$;
+      INSERT INTO public.tournaments(id,format_contract,final_table_triggered)
+        SELECT ('e0000000-0000-4000-8000-' || lpad(n::text,12,'0'))::uuid,NULL,true
+        FROM generate_series(1,450) n;
+      CREATE TABLE public.fixture_updates(id uuid);
+      CREATE FUNCTION public.fixture_collateral_update() RETURNS trigger LANGUAGE plpgsql AS
+        $$ BEGIN IF current_setting('fixture.collateral',true)='true' THEN NEW.format_contract:='sng-v1'; END IF; RETURN NEW; END $$;
+      CREATE TRIGGER fixture_collateral BEFORE UPDATE ON public.tournaments
+        FOR EACH ROW EXECUTE FUNCTION public.fixture_collateral_update();
+      CREATE FUNCTION public.fixture_count_update() RETURNS trigger LANGUAGE plpgsql AS
+        $$ BEGIN IF current_setting('fixture.slow',true)='true' THEN PERFORM pg_sleep(1); END IF; INSERT INTO public.fixture_updates VALUES(NEW.id); RETURN NEW; END $$;
+      CREATE TRIGGER fixture_update AFTER UPDATE ON public.tournaments
+        FOR EACH ROW EXECUTE FUNCTION public.fixture_count_update();
+    """)
+    require(fixture.returncode == 0, output_tail(fixture))
+    batch_install = psql_file(MIGRATION_BATCH)
+    require(batch_install.returncode == 0, output_tail(batch_install))
+    expect_file_error("forward-finalizer-refuses-incomplete-pages", MIGRATION_FINALIZER, "55000")
+    expect_value("refusal-preserves-legacy-access-and-no-constraint",
+      "SELECT has_table_privilege('authenticated','public.user_theme_settings','UPDATE') "
+      "AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='tournaments_final_table_requires_mtt_check');")
+    call = "SELECT public.fn_advance_final_table_cleanup('90000000-0000-4000-8000-000000000001');"
+    expect_error("batch-requires-top-level-timeout",call,"55000")
+    expect_error("batch-refuses-authenticated",as_user(OWNER,"SET statement_timeout='5s';"+call),"42501")
+    expect_error("batch-refuses-service-role",as_service("SET statement_timeout='5s';"+call),"42501")
+    expect_error("batch-refuses-platform-freeze","SET statement_timeout='5s'; SET fixture.frozen='true';"+call,"55000")
+    expect_value("refused-batches-have-no-receipt","SELECT count(*)=0 FROM public.final_table_cleanup_receipts;")
+    expect_error("statement-deadline-rolls-back-entire-page",
+      "SET statement_timeout='100ms'; SET fixture.slow='true';"+call,"57014")
+    expect_value("deadline-preserves-cursor-receipts-and-triggers",
+      "SELECT (SELECT last_id IS NULL FROM public.final_table_cleanup_progress) "
+      "AND NOT EXISTS (SELECT 1 FROM public.final_table_cleanup_receipts) "
+      "AND NOT EXISTS (SELECT 1 FROM public.fixture_updates);")
+    expect_error("collateral-trigger-change-rolls-back-entire-page",
+      "SET statement_timeout='5s'; SET fixture.collateral='true';"+call,"55000")
+    expect_value("collateral-refusal-preserves-all-state",
+      "SELECT (SELECT last_id IS NULL FROM public.final_table_cleanup_progress) "
+      "AND NOT EXISTS (SELECT 1 FROM public.final_table_cleanup_receipts) "
+      "AND NOT EXISTS (SELECT 1 FROM public.fixture_updates) "
+      "AND (SELECT count(*)=450 FROM public.tournaments WHERE format_contract IS NULL AND final_table_triggered);")
+    # A locked row refuses the whole page. A cursor must never skip it.
+    locker = subprocess.Popen([str(x) for x in PSQL], stdin=subprocess.PIPE,
+      stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=ENV)
+    assert locker.stdin is not None and locker.stdout is not None
+    locker.stdin.write("BEGIN; SELECT id FROM public.tournaments ORDER BY id LIMIT 1 FOR UPDATE;\n")
+    locker.stdin.flush()
+    require(bool(locker.stdout.readline().strip()), "row lock fixture did not acquire")
+    try:
+      expect_error("locked-row-refuses-without-skipping","SET statement_timeout='5s';"+call,"55P03")
+    finally:
+      locker.stdin.write("ROLLBACK;\n"); locker.stdin.close(); locker.wait(timeout=10)
+    expect_value("locked-page-cursor-unchanged","SELECT last_id IS NULL FROM public.final_table_cleanup_progress;")
+    first = psql("SET statement_timeout='5s';"+call)
+    require(first.returncode == 0,output_tail(first))
+    first_result = json.loads(first.stdout)
+    record("first-page-boundary",first_result["visited"] == 200 and first_result["updated"] == 192 and not first_result["complete"],first_result)
+    duplicate = psql("SET statement_timeout='5s';"+call)
+    record("same-request-returns-first-receipt",duplicate.returncode == 0 and json.loads(duplicate.stdout)==first_result)
+    expect_value("duplicate-does-not-fire-triggers-again","SELECT count(*)=192 FROM public.fixture_updates;")
+    second = psql("SET statement_timeout='5s'; SELECT public.fn_advance_final_table_cleanup('90000000-0000-4000-8000-000000000002');")
+    require(second.returncode == 0,output_tail(second))
+    record("second-page-boundary",json.loads(second.stdout)["updated"]==200 and not json.loads(second.stdout)["complete"])
+    third = psql("SET statement_timeout='5s'; SELECT public.fn_advance_final_table_cleanup('90000000-0000-4000-8000-000000000003');")
+    require(third.returncode == 0,output_tail(third))
+    record("last-page-boundary",json.loads(third.stdout)["updated"]==58 and json.loads(third.stdout)["complete"])
+    expect_value("all-and-only-invalid-rows-updated-with-triggers","SELECT count(*)=450 AND count(DISTINCT id)=450 FROM public.fixture_updates;")
+    # A late invalid insert behind the cursor must still make finalization refuse.
+    expect_value("late-invalid-row-fixture","INSERT INTO public.tournaments VALUES ('01000000-0000-4000-8000-000000000001',NULL,true); SELECT true;")
+    expect_file_error("finalizer-does-not-trust-cursor-over-rows",MIGRATION_FINALIZER,"55000")
+    expect_value("remove-isolated-late-row","DELETE FROM public.tournaments WHERE id='01000000-0000-4000-8000-000000000001'; SELECT true;")
+    expect_value("forward-sealed-engine-mismatch-fixture",
+      "UPDATE public.engine_leader SET engine_version='deadbeef'; SELECT true;")
+    expect_file_error("forward-finalizer-refuses-current-engine-mismatch",MIGRATION_FINALIZER,"55000")
+    expect_value("forward-restore-sealed-engine-fixture",
+      f"UPDATE public.engine_leader SET engine_version='{ENGINE_VERSION}',heartbeat_at=clock_timestamp(); SELECT true;")
+    finish = psql_file(MIGRATION_FINALIZER)
+    require(finish.returncode == 0,output_tail(finish))
+    invariants = psql_file(FIXTURES / "post-apply-invariants.sql")
+    require(invariants.returncode == 0,output_tail(invariants))
+    record("forward-finalizer-restores-all-original-invariants",True)
+
     sha_map = RESULTS["migrationSha256"]
     assert isinstance(sha_map, dict)
     unchanged = all(
         hashlib.sha256(migration.read_bytes()).hexdigest() == sha_map[migration.name]
-        for migration in (MIGRATION_CUSTOMIZATION, MIGRATION_FINAL_TABLE)
+        for migration in (MIGRATION_CUSTOMIZATION, MIGRATION_FINAL_TABLE, MIGRATION_BATCH, MIGRATION_FINALIZER)
     )
     record(
         "qualified-migration-bytes-remained-unchanged-through-the-native-proof",

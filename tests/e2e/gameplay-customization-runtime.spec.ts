@@ -9,6 +9,7 @@ import {
 } from '@playwright/test';
 import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
+import { OneShotRequestGate, runWithOneShotRequestGate } from './support/oneShotRequestGate';
 import {
   CLEANUP_FREEZE_ALLOWANCE_MS,
   cleanupTemporaryCustomizationAccount,
@@ -69,44 +70,6 @@ type TableAuthorizationAnchor = {
     | { id: string; asset: string; is_platform: boolean; union_id: string | null }
     | Array<{ id: string; asset: string; is_platform: boolean; union_id: string | null }>;
 };
-
-class OneShotRequestGate {
-  private armed = false;
-  private seenResolve: (() => void) | null = null;
-  private releaseResolve: (() => void) | null = null;
-  private seen: Promise<void> = Promise.resolve();
-  private released: Promise<void> = Promise.resolve();
-
-  arm() {
-    if (this.armed) throw new Error('The previous persistence gate is still armed.');
-    this.armed = true;
-    this.seen = new Promise<void>((resolve) => {
-      this.seenResolve = resolve;
-    });
-    this.released = new Promise<void>((resolve) => {
-      this.releaseResolve = resolve;
-    });
-  }
-
-  async holdIfArmed(route: Route): Promise<boolean> {
-    if (!this.armed) return false;
-    this.armed = false;
-    this.seenResolve?.();
-    await this.released;
-    await route.continue();
-    return true;
-  }
-
-  async waitForRequest() {
-    await this.seen;
-  }
-
-  release() {
-    this.releaseResolve?.();
-    this.seenResolve = null;
-    this.releaseResolve = null;
-  }
-}
 
 const jsonHeaders = {
   'access-control-allow-origin': '*',
@@ -588,13 +551,18 @@ async function chooseAppearance(options: {
         new URL(response.url()).pathname.endsWith('/rest/v1/rpc/fn_patch_table_appearance'),
       { timeout: RESPONSE_TIMEOUT }
     );
-  gate.arm();
-  await tapReady(tile);
-  await gate.waitForRequest();
-  await expect(writerRoot).toHaveAttribute(attribute, value);
-  await verifyImmediate?.();
-  gate.release();
-  const response = await persisted;
+  const response = await runWithOneShotRequestGate({
+    gate,
+    persisted,
+    timeoutMs: RESPONSE_TIMEOUT,
+    action: () => tapReady(tile),
+    verifyImmediate: async () => {
+      // The writing table must repaint while its network request is still held.
+      // A second browser cannot reconcile until that write is allowed to commit.
+      await expect(writerRoot).toHaveAttribute(attribute, value);
+      await verifyImmediate?.();
+    },
+  });
   if (!response.ok()) throw new Error(`${tab} persistence failed with HTTP ${response.status()}.`);
   await expect(readerRoot).toHaveAttribute(attribute, value, { timeout: RESPONSE_TIMEOUT });
 }
@@ -989,13 +957,20 @@ test.describe('production routed gameplay customization', () => {
           new URL(response.url()).pathname.endsWith('/rest/v1/profiles'),
         { timeout: RESPONSE_TIMEOUT }
       );
-      writerProfileGate.arm();
-      await tapReady(gallery.getByRole('button', { name: 'Slate Frame, Owned', exact: true }));
-      await writerProfileGate.waitForRequest();
-      await expect(writerHero.locator('.sp-cosmetic--frame.frame-slate')).toBeVisible();
-      await expect(gallery.locator('.ag-preview .sp-cosmetic--frame.frame-slate')).toHaveCount(2);
-      writerProfileGate.release();
-      if (!(await frameResponse).ok()) throw new Error('Frame persistence was refused.');
+      const persistedFrame = await runWithOneShotRequestGate({
+        gate: writerProfileGate,
+        persisted: frameResponse,
+        timeoutMs: RESPONSE_TIMEOUT,
+        action: () =>
+          tapReady(gallery.getByRole('button', { name: 'Slate Frame, Owned', exact: true })),
+        verifyImmediate: async () => {
+          await expect(writerHero.locator('.sp-cosmetic--frame.frame-slate')).toBeVisible();
+          await expect(gallery.locator('.ag-preview .sp-cosmetic--frame.frame-slate')).toHaveCount(
+            2
+          );
+        },
+      });
+      if (!persistedFrame.ok()) throw new Error('Frame persistence was refused.');
       await expect
         .poll(() => readCosmetics(environment, account!.id), { timeout: RESPONSE_TIMEOUT })
         .toMatchObject({ equipped_frame: 'frame-slate', equipped_aura: null });
@@ -1006,13 +981,18 @@ test.describe('production routed gameplay customization', () => {
           new URL(response.url()).pathname.endsWith('/rest/v1/profiles'),
         { timeout: RESPONSE_TIMEOUT }
       );
-      writerProfileGate.arm();
-      await tapReady(gallery.getByRole('button', { name: 'Mist Aura, Owned', exact: true }));
-      await writerProfileGate.waitForRequest();
-      await expect(writerHero.locator('.sp-cosmetic--aura.aura-mist')).toBeVisible();
-      await expect(gallery.locator('.ag-preview .sp-cosmetic--aura.aura-mist')).toHaveCount(2);
-      writerProfileGate.release();
-      if (!(await auraResponse).ok()) throw new Error('Aura persistence was refused.');
+      const persistedAura = await runWithOneShotRequestGate({
+        gate: writerProfileGate,
+        persisted: auraResponse,
+        timeoutMs: RESPONSE_TIMEOUT,
+        action: () =>
+          tapReady(gallery.getByRole('button', { name: 'Mist Aura, Owned', exact: true })),
+        verifyImmediate: async () => {
+          await expect(writerHero.locator('.sp-cosmetic--aura.aura-mist')).toBeVisible();
+          await expect(gallery.locator('.ag-preview .sp-cosmetic--aura.aura-mist')).toHaveCount(2);
+        },
+      });
+      if (!persistedAura.ok()) throw new Error('Aura persistence was refused.');
       await expect
         .poll(() => readCosmetics(environment, account!.id), { timeout: RESPONSE_TIMEOUT })
         .toMatchObject({ equipped_frame: 'frame-slate', equipped_aura: 'aura-mist' });

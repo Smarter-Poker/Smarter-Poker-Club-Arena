@@ -3,9 +3,14 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   eligibleHudClock,
+  hudCandidateTableIdBatches,
+  mergeHudCandidateTableIds,
   MTT_HUD_LEVEL_CAP_MS,
   MTT_SELECTION_LOOKAHEAD_LEVELS,
+  qualifyHudTournamentRows,
+  scanHudCandidateBatches,
   selectableHudClock,
+  selectHudTableCandidatesRoundRobin,
 } from '../e2e/support/tournamentHudWitness';
 
 /**
@@ -24,6 +29,7 @@ const level = (minutes: number, extra: Record<string, unknown> = {}) => ({
 });
 const running = {
   id,
+  format_contract: 'mtt-v1',
   status: 'RUNNING',
   current_players: 381,
   started_at: '2026-09-29T05:00:00Z',
@@ -92,6 +98,96 @@ describe('an MTT table is selected only if its tournament can yield an eligible 
     const short = { ...running, current_level: 5 };
     expect(selectableHudClock(short, now)).not.toBeNull();
   });
+
+  it('finds a lower-occupancy eligible field behind forty tables from one ineligible field', () => {
+    const ineligibleId = '44444444-4444-4444-8444-444444444444';
+    const eligibleId = '55555555-5555-4555-8555-555555555555';
+    const tournaments = [
+      {
+        ...running,
+        id: ineligibleId,
+        current_players: 360,
+        addon_period_started_at: '2026-09-29T05:09:47.640Z',
+        addon_period_ends_at: '2026-09-29T06:07:47.640Z',
+      },
+      { ...running, id: eligibleId, current_players: 8 },
+    ];
+    const highOccupancyTables = Array.from({ length: 40 }, (_, index) => ({
+      id: `aaaaaaaa-aaaa-4aaa-8aaa-${String(index).padStart(12, '0')}`,
+      tournament_id: ineligibleId,
+      status: 'running',
+      current_players: 9,
+    }));
+    const eligibleTableId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const qualifications = qualifyHudTournamentRows(tournaments, now);
+
+    expect(
+      qualifications.map(({ tournamentId, category }) => ({ tournamentId, category }))
+    ).toEqual([
+      { tournamentId: ineligibleId, category: 'addon_period_open' },
+      { tournamentId: eligibleId, category: 'eligible' },
+    ]);
+    expect(
+      selectHudTableCandidatesRoundRobin(qualifications, [
+        ...highOccupancyTables,
+        {
+          id: eligibleTableId,
+          tournament_id: eligibleId,
+          status: 'running',
+          current_players: 4,
+        },
+      ])
+    ).toEqual([eligibleTableId]);
+  });
+
+  it('orders fields fairly, keeps a live backup after a stale top row, and rejects SNG contracts', () => {
+    const firstMtt = '11111111-aaaa-4111-8111-111111111111';
+    const secondMtt = '22222222-bbbb-4222-8222-222222222222';
+    const sng = '33333333-cccc-4333-8333-333333333333';
+    const qualifications = qualifyHudTournamentRows(
+      [
+        { ...running, id: firstMtt },
+        { ...running, id: secondMtt },
+        { ...running, id: sng, format_contract: 'sng-v1' },
+      ],
+      now
+    );
+    const staleTop = 'aaaaaaaa-0000-4000-8000-000000000001';
+    const liveBackup = 'aaaaaaaa-0000-4000-8000-000000000002';
+    const otherField = 'bbbbbbbb-0000-4000-8000-000000000001';
+    const sngTable = 'cccccccc-0000-4000-8000-000000000001';
+
+    expect(qualifications.at(-1)?.category).toBe('not_mtt_format');
+    expect(
+      selectHudTableCandidatesRoundRobin(
+        qualifications,
+        [
+          { id: staleTop, tournament_id: firstMtt, status: 'running', current_players: 9 },
+          { id: liveBackup, tournament_id: firstMtt, status: 'running', current_players: 8 },
+          { id: otherField, tournament_id: secondMtt, status: 'running', current_players: 4 },
+          { id: sngTable, tournament_id: sng, status: 'running', current_players: 9 },
+        ],
+        4
+      )
+    ).toEqual([staleTop, otherField, liveBackup]);
+  });
+
+  it('keeps discovered IDs ahead of scoped fallbacks and advances to a healthy backup batch', async () => {
+    const ids = mergeHudCandidateTableIds(['stale-top', 'live-backup'], ['scoped-first'], 3);
+    expect(ids).toEqual(['stale-top', 'live-backup', 'scoped-first']);
+    const reads: string[][] = [];
+    const scan = await scanHudCandidateBatches({
+      batches: hudCandidateTableIdBatches(ids, 1),
+      read: async (batch) => {
+        reads.push(batch);
+        return batch[0] === 'live-backup' ? ['live-backup'] : [];
+      },
+      usable: (rows) => rows.includes('live-backup'),
+    });
+    expect(reads).toEqual([['stale-top'], ['live-backup']]);
+    expect(scan.requestedTableIds).toEqual(['stale-top', 'live-backup']);
+    expect(scan.results).toEqual([[], ['live-backup']]);
+  });
 });
 
 describe('the certificate spec applies that selection and a cash budget sized from real hands', () => {
@@ -111,6 +207,11 @@ describe('the certificate spec applies that selection and a cash budget sized fr
 
   it('qualifies MTT tables by the HUD clock at selection, and only MTT', () => {
     expect(tournament).toContain("gameFormat === 'mtt' ? boardReader : undefined");
+    expect(selection).toContain('options.hudReader.discoverSelectableTableIds(');
+    expect(selection).toContain('mergeHudCandidateTableIds(');
+    expect(selection).toContain('scanHudCandidateBatches({');
+    expect(selection).toContain('readEngineHealth(request, { tableIds: batch }');
+    expect(selection).toContain('operationalPollFailure.rethrowIfPresent();');
     expect(selection).toContain('options.hudReader.clocks(');
     expect(selection).toContain('selectableHudClock');
     expect(selection).toContain('return fresh.filter((table) => clocks.has(table.tableId));');

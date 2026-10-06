@@ -914,7 +914,7 @@ export default function RakeSnapshotPanel({
       pill={SCOPE_COPY[scope].label}
       pillInk="blue"
       crest="spade"
-      family="shark"
+      family="spade"
       foot="foot"
       className={styles.panel}
       aria-labelledby="rake-snapshot-title"

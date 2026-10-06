@@ -6,6 +6,7 @@ import { useFinancialAdminScope } from '../hooks/useFinancialAdminScope';
 import FinancialAdminScopeState from '../components/common/FinancialAdminScopeState';
 import TransactionLedgerView from '../components/common/TransactionLedgerView';
 import WeeklyAccountingWorkspace from '../components/accounting/WeeklyAccountingWorkspace';
+import { SpadeConsole } from '../components/console/SpadeConsole';
 import styles from './SettlementPage.module.css';
 
 export default function SettlementDashboardPage() {
@@ -19,46 +20,88 @@ export default function SettlementDashboardPage() {
   );
   if (scope.status !== 'ready') return <FinancialAdminScopeState scope={scope} />;
   if (!user?.id || isHydrating || scope.userId !== user.id || !current())
-    return <p role="alert">Accounting Is Unavailable Until This Account Is Ready.</p>;
+    return (
+      <main className={styles.page}>
+        <SpadeConsole
+          className={styles.console}
+          family="spade"
+          eyebrow="Club Arena"
+          title="Weekly Accounting"
+          titleAs="h1"
+          pill="Unavailable"
+          pillInk="red"
+          foot="foot"
+        >
+          <p className={`${styles.state} sc-ink--red`} role="alert">
+            Accounting Is Unavailable Until This Account Is Ready.
+          </p>
+        </SpadeConsole>
+      </main>
+    );
   const scopeClubId = scope.clubId;
+  const ledgerTitle = scopeClubId ? 'Club Transaction Records' : 'Your Account Transactions';
   return (
     <main className={styles.page}>
-      <button type="button" onClick={() => navigate(-1)}>
-        Back
-      </button>
-      <h1>Weekly Accounting</h1>
-      {scopeClubId ? (
-        <WeeklyAccountingWorkspace
-          key={`${scopeClubId}:${user.id}`}
-          scopeKind="club"
-          scopeRef={scopeClubId}
-        />
-      ) : (
-        <section>
-          <p>Choose A Club Or Union From Its Accounting Page To View A Specific Weekly Record.</p>
-          <button type="button" onClick={() => navigate('/clubs')}>
-            Open Clubs
-          </button>
-          {canOperateUnionNetwork && (
-            <button type="button" onClick={() => navigate('/unions')}>
-              Open Unions
-            </button>
-          )}
-        </section>
-      )}
-      <section aria-label="Transaction Records">
-        <h2>Transaction Records</h2>
+      <SpadeConsole
+        className={styles.console}
+        family="spade"
+        eyebrow="Club Arena"
+        title="Weekly Accounting"
+        titleAs="h1"
+        subtitle="Verified Settlement Records"
+        pill={scopeClubId ? 'Club' : 'Account'}
+        pillInk="blue"
+        foot="foot"
+      >
+        <button type="button" className={styles.backButton} onClick={() => navigate(-1)}>
+          Back
+        </button>
+        {scopeClubId ? (
+          <WeeklyAccountingWorkspace
+            key={`${scopeClubId}:${user.id}`}
+            scopeKind="club"
+            scopeRef={scopeClubId}
+          />
+        ) : (
+          <section className={styles.scopeChooser} aria-label="Choose Accounting Scope">
+            <p>Choose A Club Or Union From Its Accounting Page To View A Specific Weekly Record.</p>
+            <div className={styles.scopeActions}>
+              <button type="button" onClick={() => navigate('/clubs')}>
+                Open Clubs
+              </button>
+              {canOperateUnionNetwork && (
+                <button type="button" onClick={() => navigate('/unions')}>
+                  Open Unions
+                </button>
+              )}
+            </div>
+          </section>
+        )}
+      </SpadeConsole>
+
+      <SpadeConsole
+        className={styles.ledgerConsole}
+        family="spade"
+        crest="flat"
+        eyebrow="Settlement Center"
+        title={ledgerTitle}
+        pill="Verified"
+        pillInk="blue"
+        foot="foot"
+        aria-label={ledgerTitle}
+      >
         {scopeClubId ? (
           <TransactionLedgerView
             clubId={scopeClubId}
             clubScoped
             key={`${scopeClubId}:${user.id}`}
             limit={25}
+            title={ledgerTitle}
           />
         ) : (
-          <TransactionLedgerView key={user.id} userId={user.id} limit={25} />
+          <TransactionLedgerView key={user.id} userId={user.id} limit={25} title={ledgerTitle} />
         )}
-      </section>
+      </SpadeConsole>
     </main>
   );
 }

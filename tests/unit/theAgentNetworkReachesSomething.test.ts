@@ -244,9 +244,14 @@ describe('the identifiers and the labels', () => {
     );
   });
 
-  it('resolves the club before it reaches a uuid argument', () => {
-    expect(AGENTS).toContain('const resolvedCreateClubId = await resolveClubUUID(input.clubId)');
+  it('resolves and validates the club before it reaches a uuid argument', () => {
+    expect(AGENTS).toContain(
+      "const resolvedCreateClubId = uuidValue(await resolveClubUUID(input.clubId), 'create.club_id')"
+    );
     expect(AGENTS).toContain('p_club_id: resolvedCreateClubId');
+    expect(AGENTS.indexOf('const resolvedCreateClubId = uuidValue(')).toBeLessThan(
+      AGENTS.indexOf('p_club_id: resolvedCreateClubId')
+    );
     expect(DASHBOARD).toContain('const resolvedCreditClub = await resolveClubUUID(');
   });
 

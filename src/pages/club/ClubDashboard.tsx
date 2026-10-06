@@ -1047,9 +1047,6 @@ export default function ClubDashboard() {
           <Link to={`/clubs/${clubId}/announcements`} className={styles.actionBtn}>
             Announce
           </Link>
-          <Link to={`/financial-health`} className={styles.actionBtn}>
-            Health
-          </Link>
           <Link to={`/financial-admin`} className={styles.actionBtn}>
             Admin Hub
           </Link>

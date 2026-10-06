@@ -63,6 +63,10 @@ describe('ClubInsuranceReportPage export refusal', () => {
     state.downloadCsv.mockReturnValue(false);
     state.rpc.mockResolvedValue({
       data: {
+        contract: 'ca_club_insurance_report.v2',
+        contract_version: 2,
+        club_id: '11111111-1111-4111-8111-111111111111',
+        requested_days: 30,
         window_days: 30,
         window_start: '2026-09-05',
         window_end: '2026-10-04',

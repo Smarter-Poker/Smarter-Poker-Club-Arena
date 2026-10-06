@@ -21,6 +21,85 @@ const preview = () => ({
   has_blockers: false,
 });
 
+const distribution = () => ({
+  period_start: '2026-09-07T07:00:00+00:00',
+  rake_collected: 100,
+  agent_commissions: 60,
+  player_rakeback: 20,
+  total_distributed: 80,
+  over_distributed_by: 0,
+  healthy: true,
+  note: 'Server-owned explanation',
+});
+
+const lawStatus = () => ({
+  available: true,
+  healthy: true,
+  breaches: [] as Array<Record<string, unknown>>,
+  warnings: [] as Array<Record<string, unknown>>,
+  run_status: 'succeeded',
+  started_at: '2026-10-05T06:00:00+00:00',
+  checked_at: '2026-10-05T06:01:00+00:00',
+});
+
+const riskRow = () => ({
+  agent_user_id: AGENT_ID,
+  agent_name: 'River Captain',
+  club_name: 'Shark Club',
+  role: 'super_agent',
+  players: 3,
+  seated_now: 1,
+  rake_generated: 12.34,
+  player_net: -4.5,
+  commission_accrued: 2.25,
+  credit_extended: 10.01,
+});
+
+const settlementRound = () => ({
+  round_no: 2,
+  round_name: 'club_to_agents',
+  payees: 3,
+  amount: 12.34,
+  shortfalls: 0,
+  executed_at: '2026-10-05T06:01:00+00:00',
+  detail: { status: 'complete' },
+});
+
+const coverage = () => ({
+  require_agent_for_players: true,
+  players_total: 4,
+  players_with_agent: 3,
+  players_without_agent: 1,
+  player_coverage_pct: 75,
+  super_agents: 1,
+  agents: 2,
+  sub_agents: 1,
+  agents_under_a_super_agent: 1,
+  agents_orphaned: 1,
+  sub_agents_under_an_agent: 1,
+  sub_agents_orphaned: 0,
+  agents_that_have_sub_agents: 1,
+  commission_rates_out_of_policy: 0,
+  player_rakeback_deals: 2,
+  player_rakeback_gap_breaches: 1,
+  policy_band: { min: 0.2, max: 0.7 },
+});
+
+function mockSettlementRoundRead(data: unknown, error: unknown = null) {
+  const limit = vi.fn().mockResolvedValue({ data, error });
+  const chain = {
+    select: vi.fn(),
+    eq: vi.fn(),
+    order: vi.fn(),
+    limit,
+  };
+  chain.select.mockReturnValue(chain);
+  chain.eq.mockReturnValue(chain);
+  chain.order.mockReturnValue(chain);
+  mocks.from.mockReturnValue(chain);
+  return { chain, limit };
+}
+
 beforeEach(() => vi.resetAllMocks());
 
 describe('union settlement preview receipt', () => {
@@ -117,6 +196,26 @@ describe('union settlement preview receipt', () => {
     {
       ...preview(),
       round2: { ...preview().round2, clubs_short: 1, detail: [] },
+      has_blockers: true,
+    },
+    {
+      ...preview(),
+      round2: {
+        ...preview().round2,
+        clubs_short: 1,
+        short_by: 2,
+        detail: [{ club_id: CLUB_ID, club: null, owed: 4, treasury: 1, short_by: 2 }],
+      },
+      has_blockers: true,
+    },
+    {
+      ...preview(),
+      round2: {
+        ...preview().round2,
+        clubs_short: 1,
+        short_by: 2,
+        detail: [{ club_id: CLUB_ID, club: null, owed: 4, treasury: 1, short_by: 3 }],
+      },
       has_blockers: true,
     },
     { ...preview(), round3: { ...preview().round3, payees: '1' } },
@@ -231,8 +330,28 @@ describe('union settlement preview receipt', () => {
       round3: { ...preview().round3, agents_short: 1, detail: [] },
       has_blockers: true,
     },
+    {
+      ...preview(),
+      round3: {
+        ...preview().round3,
+        agents_short: 1,
+        short_by: 2,
+        detail: [
+          {
+            agent_user_id: AGENT_ID,
+            club_id: CLUB_ID,
+            agent: null,
+            owed: 5,
+            agent_balance: 3,
+            short_by: 1,
+          },
+        ],
+      },
+      has_blockers: true,
+    },
     { ...preview(), total_to_move: Number.NaN },
     { ...preview(), total_to_move: -1 },
+    { ...preview(), total_to_move: 14.99 },
     { ...preview(), has_blockers: 'false' },
     { ...preview(), has_blockers: true },
   ])('refuses a malformed same-union settlement preview', async (data) => {
@@ -309,6 +428,149 @@ describe('union integrity sweep receipt', () => {
   });
 });
 
+describe('union distribution verdict boundary', () => {
+  it('returns only a finite, arithmetically coherent distribution verdict', async () => {
+    const data = distribution();
+    mocks.rpc.mockResolvedValue({ data, error: null });
+
+    await expect(UnionOpsService.getDistributionCheck(UNION_ID)).resolves.toEqual({
+      period_start: data.period_start,
+      rake_collected: 100,
+      agent_commissions: 60,
+      player_rakeback: 20,
+      total_distributed: 80,
+      over_distributed_by: 0,
+      healthy: true,
+    });
+  });
+
+  it('allows the one-cent skew created by independently rounded components', async () => {
+    const data = {
+      ...distribution(),
+      agent_commissions: 0.01,
+      player_rakeback: 0.01,
+      total_distributed: 0.01,
+    };
+    mocks.rpc.mockResolvedValue({ data, error: null });
+    await expect(UnionOpsService.getDistributionCheck(UNION_ID)).resolves.toMatchObject({
+      agent_commissions: 0.01,
+      player_rakeback: 0.01,
+      total_distributed: 0.01,
+      healthy: true,
+    });
+  });
+
+  it.each([
+    null,
+    [],
+    { ...distribution(), period_start: 'not-a-time' },
+    { ...distribution(), rake_collected: Number.NaN },
+    { ...distribution(), agent_commissions: '60' },
+    { ...distribution(), player_rakeback: Number.POSITIVE_INFINITY },
+    { ...distribution(), total_distributed: 79 },
+    { ...distribution(), over_distributed_by: -1 },
+    { ...distribution(), over_distributed_by: 1 },
+    { ...distribution(), healthy: 'true' },
+    { ...distribution(), healthy: false },
+    {
+      ...distribution(),
+      rake_collected: 50,
+      total_distributed: 80,
+      over_distributed_by: 30,
+      healthy: true,
+    },
+  ])('rejects malformed or internally contradictory distribution truth %#', async (data) => {
+    mocks.rpc.mockResolvedValue({ data, error: null });
+    await expect(UnionOpsService.getDistributionCheck(UNION_ID)).rejects.toThrow(
+      'Union Distribution Reading Could Not Be Verified'
+    );
+  });
+
+  it('binds an explicit distribution window before asking the database', async () => {
+    await expect(UnionOpsService.getDistributionCheck(UNION_ID, 'not-a-time')).rejects.toThrow(
+      'Union Distribution Window Could Not Be Verified'
+    );
+    expect(mocks.rpc).not.toHaveBeenCalled();
+
+    mocks.rpc.mockResolvedValue({ data: distribution(), error: null });
+    await expect(
+      UnionOpsService.getDistributionCheck(UNION_ID, '2026-09-08T07:00:00+00:00')
+    ).rejects.toThrow('Union Distribution Reading Could Not Be Verified');
+  });
+});
+
+describe('persisted union-law verdict boundary', () => {
+  it('accepts a current healthy run while preserving actionable warnings', async () => {
+    const data = {
+      ...lawStatus(),
+      warnings: [{ check: 'players_without_agent', count: 12 }],
+    };
+    mocks.rpc.mockResolvedValue({ data, error: null });
+    await expect(UnionOpsService.getLawSelfTest()).resolves.toEqual(data);
+  });
+
+  it('accepts only an explicit unavailable state as unavailable', async () => {
+    const data = {
+      available: false,
+      healthy: false,
+      breaches: [],
+      warnings: [],
+      run_status: 'pending',
+      started_at: null,
+      checked_at: null,
+      note: 'The Scheduled Union Law Audit Has Not Run Yet.',
+    };
+    mocks.rpc.mockResolvedValue({ data, error: null });
+    await expect(UnionOpsService.getLawSelfTest()).resolves.toEqual(data);
+  });
+
+  it.each([
+    null,
+    [],
+    { ...lawStatus(), available: 'true' },
+    { ...lawStatus(), healthy: 'true' },
+    { ...lawStatus(), breaches: {} },
+    { ...lawStatus(), warnings: [null] },
+    { ...lawStatus(), breaches: [{}] },
+    { ...lawStatus(), healthy: true, breaches: [{ check: 'ledger_gap', count: 1 }] },
+    { ...lawStatus(), healthy: false, breaches: [] },
+    { ...lawStatus(), run_status: 'failed' },
+    { ...lawStatus(), started_at: 'not-a-time' },
+    {
+      ...lawStatus(),
+      started_at: '2026-10-05T06:02:00+00:00',
+      checked_at: '2026-10-05T06:01:00+00:00',
+    },
+    {
+      ...lawStatus(),
+      available: false,
+      healthy: true,
+      run_status: 'pending',
+      note: 'Pending',
+    },
+    {
+      ...lawStatus(),
+      available: false,
+      healthy: false,
+      run_status: 'pending',
+      note: 'Pending',
+      warnings: [{ check: 'stale_warning' }],
+    },
+    {
+      ...lawStatus(),
+      available: false,
+      healthy: false,
+      run_status: 'succeeded',
+      note: 'Pending',
+    },
+  ])('rejects malformed or internally contradictory law status %#', async (data) => {
+    mocks.rpc.mockResolvedValue({ data, error: null });
+    await expect(UnionOpsService.getLawSelfTest()).rejects.toThrow(
+      'Union Law Audit Status Could Not Be Verified'
+    );
+  });
+});
+
 describe('authorized union option list', () => {
   const OTHER_UNION = '33333333-3333-4333-8333-333333333333';
 
@@ -354,6 +616,103 @@ describe('authorized union option list', () => {
   });
 });
 
+describe('union operations reads fail closed on malformed success payloads', () => {
+  it('preserves a structurally and arithmetically verified hierarchy coverage result', async () => {
+    const data = coverage();
+    mocks.rpc.mockResolvedValue({ data, error: null });
+
+    await expect(UnionOpsService.getCoverageStrict(UNION_ID)).resolves.toEqual(data);
+  });
+
+  it('accepts the producer contract for an empty union as one hundred percent coverage', async () => {
+    const data = {
+      ...coverage(),
+      players_total: 0,
+      players_with_agent: 0,
+      players_without_agent: 0,
+      player_coverage_pct: 100,
+      player_rakeback_deals: 0,
+      player_rakeback_gap_breaches: 0,
+    };
+    mocks.rpc.mockResolvedValue({ data, error: null });
+
+    await expect(UnionOpsService.getCoverageStrict(UNION_ID)).resolves.toEqual(data);
+  });
+
+  it.each([
+    null,
+    [],
+    { ...coverage(), require_agent_for_players: 'true' },
+    { ...coverage(), players_total: Number.NaN },
+    { ...coverage(), players_with_agent: Number.POSITIVE_INFINITY },
+    { ...coverage(), players_without_agent: 2 },
+    { ...coverage(), player_coverage_pct: 74.9 },
+    { ...coverage(), agents_under_a_super_agent: 3 },
+    { ...coverage(), agents_orphaned: 0 },
+    { ...coverage(), sub_agents_orphaned: 1 },
+    { ...coverage(), agents_that_have_sub_agents: 3 },
+    { ...coverage(), commission_rates_out_of_policy: 5 },
+    { ...coverage(), player_rakeback_deals: 4 },
+    { ...coverage(), player_rakeback_gap_breaches: 3 },
+    { ...coverage(), policy_band: { min: Number.NEGATIVE_INFINITY, max: 0.7 } },
+    { ...coverage(), policy_band: { min: 0.8, max: 0.7 } },
+    { ...coverage(), policy_band: { min: 0.2, max: 1.1 } },
+  ])('rejects malformed or contradictory hierarchy coverage truth %#', async (data) => {
+    mocks.rpc.mockResolvedValue({ data, error: null });
+
+    await expect(UnionOpsService.getCoverageStrict(UNION_ID)).rejects.toThrow(
+      'Union Hierarchy Coverage Could Not Be Verified'
+    );
+  });
+
+  it.each([
+    null,
+    {},
+    [null],
+    [{ ...riskRow(), rake_generated: '12.34' }],
+    [{ ...riskRow(), commission_accrued: Number.NaN }],
+    [{ ...riskRow(), players: '3' }],
+  ])(
+    'rejects an unverifiable agent-risk payload %# instead of showing no activity',
+    async (data) => {
+      mocks.rpc.mockResolvedValue({ data, error: null });
+
+      await expect(UnionOpsService.getAgentRisk(UNION_ID)).rejects.toThrow(
+        'Union Agent Risk Reading Could Not Be Verified'
+      );
+    }
+  );
+
+  it('preserves verified signed risk money without coercion', async () => {
+    const row = riskRow();
+    mocks.rpc.mockResolvedValue({ data: [row], error: null });
+
+    await expect(UnionOpsService.getAgentRisk(UNION_ID)).resolves.toEqual([row]);
+  });
+
+  it.each([
+    null,
+    {},
+    [null],
+    [{ ...settlementRound(), amount: '12.34' }],
+    [{ ...settlementRound(), amount: Number.NaN }],
+    [{ ...settlementRound(), executed_at: 'not-a-time' }],
+  ])('rejects unverifiable settlement-round rows %# instead of showing no runs', async (data) => {
+    mockSettlementRoundRead(data);
+
+    await expect(UnionOpsService.getSettlementRounds(UNION_ID)).rejects.toThrow(
+      'Settlement Round Records Could Not Be Verified'
+    );
+  });
+
+  it('preserves a verified settlement amount without converting or rounding it', async () => {
+    const row = settlementRound();
+    mockSettlementRoundRead([row]);
+
+    await expect(UnionOpsService.getSettlementRounds(UNION_ID)).resolves.toEqual([row]);
+  });
+});
+
 /* These methods used to default a missing union id to Midway's, so a
    surface that had not resolved its union read or swept one hardcoded
    union instead. A missing id is now refused before the database is asked. */
@@ -393,24 +752,14 @@ describe('union oversight reads preserve database failure', () => {
   });
 
   it('getSettlementRounds never turns a table timeout into empty success', async () => {
-    const limit = vi.fn().mockResolvedValue({ data: null, error: timeout });
-    const chain = {
-      select: vi.fn(),
-      eq: vi.fn(),
-      order: vi.fn(),
-      limit,
-    };
-    chain.select.mockReturnValue(chain);
-    chain.eq.mockReturnValue(chain);
-    chain.order.mockReturnValue(chain);
-    mocks.from.mockReturnValue(chain);
+    mockSettlementRoundRead(null, timeout);
 
     await expect(UnionOpsService.getSettlementRounds(UNION_ID)).rejects.toBe(timeout);
     expect(mocks.from).toHaveBeenCalledWith('union_settlement_rounds');
   });
 
   it('reads the persisted law status instead of executing the global self-test', async () => {
-    const status = { available: true, healthy: true, breaches: [], warnings: [] };
+    const status = lawStatus();
     mocks.rpc.mockResolvedValue({ data: status, error: null });
     await expect(UnionOpsService.getLawSelfTest()).resolves.toEqual(status);
     expect(mocks.rpc).toHaveBeenCalledWith('fn_union_law_selftest_status');

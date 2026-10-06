@@ -18,13 +18,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const buildChain = (row: unknown = null): any => {
+const buildChain = (
+  row: unknown = null,
+  error: unknown = null,
+  count: number | null = null
+): any => {
   const handler: ProxyHandler<any> = {
     get: (_target, prop) => {
       if (prop === 'maybeSingle' || prop === 'single')
-        return () => Promise.resolve({ data: row, error: null });
+        return () => Promise.resolve({ data: row, error });
       if (prop === 'then')
-        return (resolve: (v: any) => void) => resolve({ data: row, error: null });
+        return (resolve: (v: any) => void) => resolve({ data: row, error, count });
       return vi.fn().mockReturnValue(new Proxy({}, handler));
     },
   };
@@ -40,6 +44,10 @@ vi.mock('../../src/lib/supabase', () => ({
 
 vi.mock('../../src/core/MasterBus', () => ({
   masterBus: { emit: vi.fn(), subscribe: vi.fn(() => vi.fn()) },
+}));
+
+vi.mock('../../src/services/FinancialAlertService', () => ({
+  FinancialAlertService: { logWarning: vi.fn().mockResolvedValue(undefined) },
 }));
 
 vi.mock('../../src/utils/retryAsync', () => ({
@@ -121,8 +129,21 @@ describe('DisputeService', () => {
 
   describe('getOpenCount', () => {
     it('should return 0 when no open disputes', async () => {
+      from.mockImplementationOnce(() => buildChain(null, null, 0));
       const count = await DisputeService.getOpenCount('club-1');
       expect(count).toBe(0);
+    });
+
+    it('does not turn a failed count read into a false zero', async () => {
+      from.mockImplementationOnce(() => buildChain(null, new Error('count refused'), null));
+      await expect(DisputeService.getOpenCount('club-1')).rejects.toThrow('count refused');
+    });
+
+    it('refuses a successful response without an exact count', async () => {
+      from.mockImplementationOnce(() => buildChain(null, null, null));
+      await expect(DisputeService.getOpenCount('club-1')).rejects.toThrow(
+        'count could not be verified'
+      );
     });
   });
 
@@ -140,7 +161,10 @@ describe('DisputeService', () => {
 
   describe('submitDispute', () => {
     it('files through the definer entry point, not through a table write', async () => {
-      rpc.mockResolvedValueOnce({ data: { ok: true, dispute_id: 'd-1' }, error: null });
+      rpc.mockResolvedValueOnce({
+        data: { ok: true, dispute_id: 'd-1', status: 'open' },
+        error: null,
+      });
       from.mockImplementationOnce(() => buildChain(disputeRow()));
 
       const filed = await DisputeService.submitDispute('ignored-caller-id', aDispute);
@@ -160,7 +184,10 @@ describe('DisputeService', () => {
     });
 
     it('never sends a caller-supplied user id, because the server takes the session', async () => {
-      rpc.mockResolvedValueOnce({ data: { ok: true, dispute_id: 'd-2' }, error: null });
+      rpc.mockResolvedValueOnce({
+        data: { ok: true, dispute_id: 'd-2', status: 'open' },
+        error: null,
+      });
       from.mockImplementationOnce(() => buildChain(disputeRow({ id: 'd-2' })));
 
       await DisputeService.submitDispute('someone-elses-id', aDispute);
@@ -190,14 +217,200 @@ describe('DisputeService', () => {
         'Could not file the dispute'
       );
     });
+
+    it.each([
+      {},
+      { ok: 'true', dispute_id: 'd-1', status: 'open' },
+      { ok: true, dispute_id: 'd-1' },
+      { ok: true, dispute_id: 'd-1', status: 'resolved' },
+    ])('refuses the malformed filing receipt %#', async (receipt) => {
+      rpc.mockResolvedValueOnce({ data: receipt, error: null });
+      await expect(DisputeService.submitDispute('u', aDispute)).rejects.toThrow(/receipt/i);
+      expect(from).not.toHaveBeenCalled();
+    });
+
+    it('refuses a filing read-back for another dispute', async () => {
+      rpc.mockResolvedValueOnce({
+        data: { ok: true, dispute_id: 'd-1', status: 'open' },
+        error: null,
+      });
+      from.mockImplementationOnce(() => buildChain(disputeRow({ id: 'd-other' })));
+
+      await expect(DisputeService.submitDispute('u', aDispute)).rejects.toThrow(
+        'read-back did not match'
+      );
+    });
+  });
+
+  describe('verified review transition', () => {
+    it('requires a request-bound receipt and matching under-review read-back', async () => {
+      rpc.mockResolvedValueOnce({
+        data: {
+          ok: true,
+          dispute_id: 'd-1',
+          status: 'under_review',
+          assigned_to: 'reviewer-1',
+        },
+        error: null,
+      });
+      from.mockImplementationOnce(() =>
+        buildChain(disputeRow({ status: 'under_review', assigned_to: 'reviewer-1' }))
+      );
+
+      const reviewed = await DisputeService.startReview('d-1', 'reviewer-1');
+      expect(reviewed.status).toBe('under_review');
+      expect(reviewed.assignedTo).toBe('reviewer-1');
+    });
+
+    it.each([
+      { ok: 'false', dispute_id: 'd-1', status: 'under_review', assigned_to: 'reviewer-1' },
+      { ok: true, dispute_id: 'd-other', status: 'under_review', assigned_to: 'reviewer-1' },
+      { ok: true, dispute_id: 'd-1', status: 'open', assigned_to: 'reviewer-1' },
+      { ok: true, dispute_id: 'd-1', status: 'under_review', assigned_to: 'someone-else' },
+    ])('refuses the malformed review receipt %#', async (receipt) => {
+      rpc.mockResolvedValueOnce({ data: receipt, error: null });
+      await expect(DisputeService.startReview('d-1', 'reviewer-1')).rejects.toThrow();
+      expect(from).not.toHaveBeenCalled();
+    });
+
+    it('refuses a successful receipt whose read-back stayed open', async () => {
+      rpc.mockResolvedValueOnce({
+        data: {
+          ok: true,
+          dispute_id: 'd-1',
+          status: 'under_review',
+          assigned_to: 'reviewer-1',
+        },
+        error: null,
+      });
+      from.mockImplementationOnce(() => buildChain(disputeRow({ status: 'open' })));
+
+      await expect(DisputeService.startReview('d-1', 'reviewer-1')).rejects.toThrow(
+        'read-back did not match'
+      );
+    });
+  });
+
+  describe('verified resolution transition', () => {
+    const request = {
+      resolution: 'Reviewed And Corrected',
+      adjustmentType: 'credit' as const,
+      adjustmentAmount: 12.5,
+    };
+
+    it('requires an exact adjustment receipt and matching resolved read-back', async () => {
+      rpc.mockResolvedValueOnce({
+        data: {
+          ok: true,
+          dispute_id: 'd-1',
+          status: 'resolved',
+          adjustment_type: 'credit',
+          amount: 12.5,
+        },
+        error: null,
+      });
+      from.mockImplementationOnce(() =>
+        buildChain(
+          disputeRow({
+            status: 'resolved',
+            resolution: request.resolution,
+            resolved_at: '2026-10-03T12:01:00Z',
+            updated_at: '2026-10-03T12:01:00Z',
+          })
+        )
+      );
+
+      const resolved = await DisputeService.resolveDispute('d-1', 'reviewer-1', request);
+      expect(resolved.status).toBe('resolved');
+      expect(resolved.resolution).toBe(request.resolution);
+    });
+
+    it.each([
+      {
+        ok: 'false',
+        dispute_id: 'd-1',
+        status: 'resolved',
+        adjustment_type: 'credit',
+        amount: 12.5,
+      },
+      {
+        ok: true,
+        dispute_id: 'd-other',
+        status: 'resolved',
+        adjustment_type: 'credit',
+        amount: 12.5,
+      },
+      { ok: true, dispute_id: 'd-1', status: 'open', adjustment_type: 'credit', amount: 12.5 },
+      { ok: true, dispute_id: 'd-1', status: 'resolved', adjustment_type: 'debit', amount: 12.5 },
+      { ok: true, dispute_id: 'd-1', status: 'resolved', adjustment_type: 'credit', amount: 10 },
+    ])('refuses the malformed resolution receipt %#', async (receipt) => {
+      rpc.mockResolvedValueOnce({ data: receipt, error: null });
+      await expect(DisputeService.resolveDispute('d-1', 'reviewer-1', request)).rejects.toThrow();
+      expect(from).not.toHaveBeenCalled();
+    });
+
+    it('does not discard a resolved-row read-back error', async () => {
+      rpc.mockResolvedValueOnce({
+        data: {
+          ok: true,
+          dispute_id: 'd-1',
+          status: 'resolved',
+          adjustment_type: 'credit',
+          amount: 12.5,
+        },
+        error: null,
+      });
+      from.mockImplementationOnce(() => buildChain(null, new Error('read refused')));
+
+      await expect(DisputeService.resolveDispute('d-1', 'reviewer-1', request)).rejects.toThrow(
+        'read refused'
+      );
+    });
+  });
+
+  describe('verified escalation transition', () => {
+    it('requires a request-bound receipt and matching escalated read-back', async () => {
+      rpc.mockResolvedValueOnce({
+        data: { ok: true, dispute_id: 'd-1', status: 'escalated' },
+        error: null,
+      });
+      from.mockImplementationOnce(() =>
+        buildChain(
+          disputeRow({
+            status: 'escalated',
+            resolution: 'Escalated: Complex Review',
+            updated_at: '2026-10-03T12:01:00Z',
+          })
+        )
+      );
+
+      const escalated = await DisputeService.escalateDispute('d-1', 'Complex Review');
+      expect(escalated.status).toBe('escalated');
+    });
+
+    it('refuses a string success flag without reading or alerting', async () => {
+      rpc.mockResolvedValueOnce({
+        data: { ok: 'true', dispute_id: 'd-1', status: 'escalated' },
+        error: null,
+      });
+
+      await expect(DisputeService.escalateDispute('d-1', 'Complex Review')).rejects.toThrow(
+        'receipt'
+      );
+      expect(from).not.toHaveBeenCalled();
+    });
   });
 
   describe('withdrawDispute', () => {
     it('withdraws through the definer entry point', async () => {
-      rpc.mockResolvedValueOnce({ data: { ok: true, status: 'withdrawn' }, error: null });
+      rpc.mockResolvedValueOnce({
+        data: { ok: true, dispute_id: 'd-1', status: 'withdrawn' },
+        error: null,
+      });
+      from.mockImplementationOnce(() => buildChain(disputeRow({ status: 'withdrawn' })));
       await DisputeService.withdrawDispute('d-1', 'ignored-caller-id');
       expect(rpc).toHaveBeenCalledWith('fn_dispute_withdraw', { p_dispute_id: 'd-1' });
-      expect(from).not.toHaveBeenCalled();
+      expect(from).toHaveBeenCalledWith('disputes');
     });
 
     it('says why a dispute cannot be withdrawn instead of silently succeeding', async () => {
@@ -206,6 +419,15 @@ describe('DisputeService', () => {
         error: null,
       });
       await expect(DisputeService.withdrawDispute('d-1', 'u')).rejects.toThrow('already resolved');
+    });
+
+    it('refuses a truthy string success flag', async () => {
+      rpc.mockResolvedValueOnce({
+        data: { ok: 'false', dispute_id: 'd-1', status: 'withdrawn' },
+        error: null,
+      });
+      await expect(DisputeService.withdrawDispute('d-1', 'u')).rejects.toThrow('receipt');
+      expect(from).not.toHaveBeenCalled();
     });
   });
 

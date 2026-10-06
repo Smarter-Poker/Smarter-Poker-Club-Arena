@@ -36,6 +36,8 @@ import {
   type StatsEvidenceQuery,
 } from '../../services/StatsEvidenceService';
 import { CHIP_STATS, type StatsClubId, type StatsScope } from '../../services/statsScope';
+import { compactChips } from '../../utils/format';
+import { enumToTitleCase, titleCase } from '../../utils/titleCase';
 import './TrophyRoom.css';
 
 /** Structural shapes — deliberately not imported from the page's private types. */
@@ -190,8 +192,8 @@ function buildMilestones(o: OverallLike, t: TournLike | null, lifetimeHands: num
     unlocked: o.total_profit > 0,
     detail:
       o.total_profit > 0
-        ? `Up ${Math.round(o.total_profit).toLocaleString()}`
-        : `Down ${Math.round(Math.abs(o.total_profit)).toLocaleString()}`,
+        ? `Up ${compactChips(o.total_profit)}`
+        : `Down ${compactChips(Math.abs(o.total_profit))}`,
   });
 
   /**
@@ -239,7 +241,7 @@ function buildMilestones(o: OverallLike, t: TournLike | null, lifetimeHands: num
     progress: aggroQualified ? clamp01(o.aggression_factor / 2) : clamp01(hands / 1000),
     unlocked: aggroQualified && o.aggression_factor >= 2,
     detail: aggroQualified
-      ? `AF ${o.aggression_factor.toFixed(2)}`
+      ? `AF ${o.aggression_factor.toFixed(1)}`
       : `${hands.toLocaleString()} / 1,000 qualifying hands`,
   });
 
@@ -409,7 +411,7 @@ export default function TrophyRoom({
                   <span className="trophy-next-name" style={{ color: RARITY_COLORS[m.rarity] }}>
                     {m.name}
                   </span>
-                  <span className="trophy-next-detail">{m.detail}</span>
+                  <span className="trophy-next-detail">{titleCase(m.detail)}</span>
                 </div>
                 <div className="trophy-progress">
                   <span
@@ -470,7 +472,7 @@ export default function TrophyRoom({
               </span>
               <span className="trophy-name">{m.name}</span>
               <span className="trophy-desc">{m.description}</span>
-              <span className="trophy-detail">{m.detail}</span>
+              <span className="trophy-detail">{titleCase(m.detail)}</span>
               {evidenceQueryFor(m.id) && userId ? (
                 <button
                   type="button"
@@ -503,10 +505,14 @@ export default function TrophyRoom({
                       to={buildStatsHandEvidencePath(hand.hand_id, clubId)}
                     >
                       <span>{new Date(hand.played_at).toLocaleDateString()}</span>
-                      <span>{hand.hand_class || hand.game_variant.toUpperCase()}</span>
+                      <span>
+                        {hand.hand_class
+                          ? titleCase(hand.hand_class)
+                          : enumToTitleCase(hand.game_variant)}
+                      </span>
                       <span>
                         {hand.net >= 0 ? '+' : ''}
-                        {Math.round(hand.net).toLocaleString()}
+                        {compactChips(hand.net)}
                       </span>
                     </StatsEvidenceLink>
                   ))}

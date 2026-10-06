@@ -181,8 +181,8 @@ describe('the client knows what a void invoice is', () => {
 
   it('a cancelled invoice cannot get an agent suspended', () => {
     // checkSuspension asked `status !== 'paid'`, which counts a void invoice as
-    // debt. FinancialCronService reads that answer and calls suspendAgent, so
-    // 224 cancelled bills would have suspended every credit agent on the estate.
+    // debt. The retired global browser scan consumed that answer, so 224
+    // cancelled bills could have suspended every credit agent on the estate.
     expect(codeOnly(CREDIT_SERVICE)).not.toMatch(/i\.status !== 'paid' && new Date\(i\.dueDate\)/);
     expect(CREDIT_SERVICE).toMatch(
       /OWED_INVOICE_STATUSES\.has\(i\.status\) && new Date\(i\.dueDate\) < new Date\(\)/

@@ -56,30 +56,44 @@ vi.mock('../../src/components/console/SpadeConsole', () => ({
 
 import ClubBombPotReportPage from '../../src/pages/club/ClubBombPotReportPage';
 
+function bombReport(tableName: string | null = 'Shark Table One') {
+  return {
+    contract: 'fn_club_bomb_pot_report.v2',
+    contract_version: 2,
+    club_id: '11111111-1111-4111-8111-111111111111',
+    requested_days: 30,
+    window_days: 30,
+    window_start: '2026-09-04',
+    window_end: '2026-10-04',
+    generated_at: '2026-10-04T12:00:00.000Z',
+    rows: [
+      {
+        table_id: '22222222-2222-4222-8222-222222222222',
+        table_name: tableName,
+        trigger_reason: 'every_n_hands',
+        board_count: 2,
+        variant: 'NLH',
+        hands: 1,
+        avg_players: 6,
+        avg_pot: 100,
+        total_pot: 100,
+        total_rake: 5,
+        total_antes: 6,
+        scoops: 1,
+        splits: 0,
+        unrecorded_hands: 0,
+      },
+    ],
+  };
+}
+
 describe('ClubBombPotReportPage export refusal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     state.mounted.current = true;
     state.downloadCsv.mockReturnValue(false);
     state.rpc.mockResolvedValue({
-      data: [
-        {
-          table_id: '22222222-2222-4222-8222-222222222222',
-          table_name: 'Shark Table One',
-          trigger_reason: 'every_n_hands',
-          board_count: 2,
-          variant: 'NLH',
-          hands: 1,
-          avg_players: 6,
-          avg_pot: 100,
-          total_pot: 100,
-          total_rake: 5,
-          total_antes: 6,
-          scoops: 1,
-          splits: 0,
-          unrecorded_hands: 0,
-        },
-      ],
+      data: bombReport(),
       error: null,
     });
   });
@@ -134,5 +148,23 @@ describe('ClubBombPotReportPage export refusal', () => {
 
     expect(state.reportError).not.toHaveBeenCalled();
     expect(state.toast.error).not.toHaveBeenCalled();
+  });
+
+  it('uses a neutral table label when the report has no resolved table name', async () => {
+    state.rpc.mockResolvedValueOnce({ data: bombReport(null), error: null });
+    state.downloadCsv.mockReturnValueOnce(true);
+    render(<ClubBombPotReportPage />);
+
+    expect(await screen.findByText('Table Name Unavailable')).toBeVisible();
+    expect(screen.queryByText(/22222222/i)).toBeNull();
+
+    const exportButton = screen.getByRole('button', { name: 'Export CSV' });
+    await waitFor(() => expect(exportButton).toBeEnabled());
+    fireEvent.click(exportButton);
+
+    await waitFor(() => expect(state.downloadCsv).toHaveBeenCalledOnce());
+    const csv = String(state.downloadCsv.mock.calls[0]?.[1]);
+    expect(csv).toContain('Table Name Unavailable');
+    expect(csv).not.toContain('22222222-2222-4222-8222-222222222222');
   });
 });

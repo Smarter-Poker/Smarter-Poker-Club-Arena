@@ -15,7 +15,7 @@ export default function SettlementPage() {
     <main className={styles.page}>
       <SpadeConsole
         className={styles.console}
-        family="riveted"
+        family="spade"
         eyebrow="Club Arena"
         title="Weekly Accounting"
         titleAs="h1"

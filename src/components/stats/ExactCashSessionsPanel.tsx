@@ -62,8 +62,9 @@ export default function ExactCashSessionsPanel(props: Props) {
   if (state === 'loading')
     return (
       <SpadeConsole
-        family="shark"
-        crest="club"
+        family="spade"
+        foot="foot"
+        crest="spade"
         eyebrow="Cash Session Evidence"
         title="Opening Exact Session Ledger..."
         pill="Verifying"
@@ -74,8 +75,9 @@ export default function ExactCashSessionsPanel(props: Props) {
   if (state === 'error')
     return (
       <SpadeConsole
-        family="shark"
-        crest="club"
+        family="spade"
+        foot="foot"
+        crest="spade"
         eyebrow="Cash Session Evidence"
         title="Session Evidence Could Not Be Verified"
         pill="Interrupted"
@@ -99,8 +101,9 @@ export default function ExactCashSessionsPanel(props: Props) {
   const sessions = report?.sessions ?? [];
   return (
     <SpadeConsole
-      family="shark"
-      crest="club"
+      family="spade"
+      foot="foot"
+      crest="spade"
       eyebrow={`Cash Session Evidence // ${label(props.clubLabel)}`}
       title="Exact Session Ledger"
       titleId="exact-session-title"

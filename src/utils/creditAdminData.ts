@@ -1,10 +1,13 @@
 /** Read-only credit presentation. Missing or invalid money is never zero debt. */
+import { compactChips } from './format';
+
 export const CREDIT_ADMIN_VIEW_LIMIT = 100;
 export const CREDIT_ADMIN_AUDIT_LIMIT = 5;
 
 export interface CreditAdminAuditEntry {
   id: string;
   agentName: string;
+  clubName: string;
   oldLimit: number | null;
   newLimit: number | null;
   createdAt: string | null;
@@ -14,6 +17,7 @@ export interface AgentCredit {
   id: string;
   userId: string;
   clubId: string;
+  clubName: string;
   displayName: string;
   creditLimit: number | null;
   currentBalance: number | null;
@@ -49,7 +53,11 @@ export function readCreditMoney(value: unknown): number | null {
     : null;
 }
 
-export function creditAdminRow(row: Record<string, unknown>, displayName: string): AgentCredit {
+export function creditAdminRow(
+  row: Record<string, unknown>,
+  displayName: string,
+  clubName = 'Club Name Unavailable'
+): AgentCredit {
   if (![row.id, row.user_id, row.club_id].every((id) => typeof id === 'string' && id.length > 0)) {
     throw new Error('An agent credit record has no verified account or club identity.');
   }
@@ -57,6 +65,7 @@ export function creditAdminRow(row: Record<string, unknown>, displayName: string
     id: row.id as string,
     userId: row.user_id as string,
     clubId: row.club_id as string,
+    clubName,
     displayName,
     creditLimit: readCreditMoney(row.credit_limit),
     currentBalance: readCreditMoney(row.agent_wallet_balance),
@@ -76,6 +85,7 @@ export function creditAdminAuditRow(
   return {
     id: row.id,
     agentName: agent.displayName,
+    clubName: agent.clubName,
     oldLimit: readCreditMoney(row.old_limit),
     newLimit: readCreditMoney(row.new_limit),
     createdAt:
@@ -99,7 +109,5 @@ export function creditAdminTotal(
 }
 
 export function creditAdminMoney(value: number | null): string {
-  return value === null
-    ? 'Unavailable'
-    : value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return value === null ? 'Unavailable' : compactChips(value);
 }

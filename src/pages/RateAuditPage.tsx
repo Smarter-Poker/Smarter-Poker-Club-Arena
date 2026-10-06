@@ -17,6 +17,8 @@ import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { clubScoped, useFinancialAdminScope } from '../hooks/useFinancialAdminScope';
 import { SpadeConsole } from '../components/console/SpadeConsole';
 import { titleCase } from '../utils/titleCase';
+import { isUUID } from '../utils/clubIdResolver';
+import { compactChips } from '../utils/format';
 import styles from './RateAuditPage.module.css';
 
 interface RateChange {
@@ -38,40 +40,78 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
-export function parseRateAuditRows(value: unknown, source: RateChange['source']): RateChange[] {
+const COMMISSION_RATE_TYPES = new Set([
+  'rakeback',
+  'commission',
+  'sub_agent_split',
+  'bonus_pct',
+  'sub_agent',
+  'player',
+]);
+const RAKE_RATE_TYPES = new Set([
+  'rake_pct',
+  'rake_cap',
+  'bbj_pct',
+  'promo_pct',
+  'vip_pct',
+  'agent_default',
+  'platform_default',
+]);
+const STRICT_RATE = /^(?:0|[1-9]\d*)(?:\.\d+)?$/;
+
+function rateNumber(value: unknown): number | null {
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
+  if (typeof value === 'string' && !STRICT_RATE.test(value)) return null;
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function parseRateAuditRows(
+  value: unknown,
+  source: RateChange['source'],
+  expectedClubId: string | null
+): RateChange[] {
   if (!Array.isArray(value)) throw new Error(`${titleCase(source)} Rate Rows Were Not Returned`);
   return value.map((row) => {
     if (!isRecord(row)) throw new Error(`${titleCase(source)} Rate Row Was Invalid`);
     const entityId = source === 'commission' ? row.agent_id : row.club_id;
-    const oldRate = Number(row.old_rate);
-    const newRate = Number(row.new_rate);
+    const oldRate = rateNumber(row.old_rate);
+    const newRate = rateNumber(row.new_rate);
+    const allowedTypes = source === 'commission' ? COMMISSION_RATE_TYPES : RAKE_RATE_TYPES;
+    const maximum = source === 'rake' && row.rate_type === 'rake_cap' ? 1_000_000_000 : 1;
     if (
       typeof row.id !== 'string' ||
-      !row.id ||
+      !isUUID(row.id) ||
       typeof entityId !== 'string' ||
-      !entityId ||
+      !isUUID(entityId) ||
+      typeof row.club_id !== 'string' ||
+      !isUUID(row.club_id) ||
+      (expectedClubId !== null && row.club_id !== expectedClubId) ||
       typeof row.rate_type !== 'string' ||
-      !row.rate_type ||
+      !allowedTypes.has(row.rate_type) ||
       typeof row.created_at !== 'string' ||
       !Number.isFinite(Date.parse(row.created_at)) ||
-      !Number.isFinite(oldRate) ||
-      !Number.isFinite(newRate) ||
+      oldRate === null ||
+      newRate === null ||
       oldRate < 0 ||
       newRate < 0 ||
-      oldRate > 1 ||
-      newRate > 1 ||
-      (row.changed_by != null && typeof row.changed_by !== 'string') ||
+      oldRate > maximum ||
+      newRate > maximum ||
+      typeof row.changed_by !== 'string' ||
+      !isUUID(row.changed_by) ||
       (row.notes != null && typeof row.notes !== 'string')
     ) {
       throw new Error(`${titleCase(source)} Rate Row Was Invalid`);
     }
-    const entityWord = source === 'commission' ? 'Agent' : 'Club';
     return {
       id: row.id,
       source,
       entityId,
-      entityLabel: `${entityWord} ${entityId.slice(0, 8)}`,
-      changedBy: typeof row.changed_by === 'string' ? row.changed_by.slice(0, 8) : 'Unknown',
+      // The audit rows carry durable IDs, not display names. A UUID fragment
+      // is neither a useful identity nor safe operator-facing copy, so keep
+      // the exact IDs internal and say plainly that a name was not supplied.
+      entityLabel: source === 'commission' ? 'Agent Name Unavailable' : 'Club Name Unavailable',
+      changedBy: 'Operator Name Unavailable',
       oldRate,
       newRate,
       rateType: row.rate_type,
@@ -136,7 +176,7 @@ export default function RateAuditPage() {
       let commissionQuery = clubScoped(
         supabase
           .from('commission_rate_audit')
-          .select('id, agent_id, changed_by, old_rate, new_rate, rate_type, created_at'),
+          .select('id, agent_id, club_id, changed_by, old_rate, new_rate, rate_type, created_at'),
         /* error bound by commResult below */
         scopeKey
       );
@@ -162,8 +202,8 @@ export default function RateAuditPage() {
       ]);
       if (commResult.error) throw commResult.error;
       if (rakeResult.error) throw rakeResult.error;
-      allChanges.push(...parseRateAuditRows(commResult.data, 'commission'));
-      allChanges.push(...parseRateAuditRows(rakeResult.data, 'rake'));
+      allChanges.push(...parseRateAuditRows(commResult.data, 'commission', scopeClubId));
+      allChanges.push(...parseRateAuditRows(rakeResult.data, 'rake', scopeClubId));
 
       // Sort all by date descending
       allChanges.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -208,7 +248,8 @@ export default function RateAuditPage() {
   const filteredByType = filter === 'all' ? changes : changes.filter((c) => c.source === filter);
   const filtered = filteredByType;
 
-  const formatRate = (rate: number, source: string): string => {
+  const formatRate = (rate: number, source: string, rateType: string): string => {
+    if (source === 'rake' && rateType === 'rake_cap') return `${compactChips(rate)} Chips`;
     if (source === 'rake') return `${(rate * 10000).toFixed(1)}‱`; // basis points for rake
     return `${(rate * 100).toFixed(1)}%`;
   };
@@ -350,11 +391,11 @@ export default function RateAuditPage() {
                   </span>
                   <div className={styles.rateLine}>
                     <span className="sc-ink--muted">
-                      {formatRate(change.oldRate, change.source)}
+                      {formatRate(change.oldRate, change.source, change.rateType)}
                     </span>
                     <span className={`sc-ink--${direction.ink}`}>{direction.label}</span>
                     <strong className={`sc-ink--${direction.ink}`}>
-                      {formatRate(change.newRate, change.source)}
+                      {formatRate(change.newRate, change.source, change.rateType)}
                     </strong>
                   </div>
                   {change.notes && <p className={styles.notes}>{titleCase(change.notes)}</p>}

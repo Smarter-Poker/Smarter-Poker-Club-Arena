@@ -121,6 +121,8 @@ const ALLOWED_ORPHANS: Record<string, string> = {
     'legacy redirect to the World Hub messenger, carrying the conversation',
   'clubs/:clubId/messages': 'legacy redirect to the World Hub messenger, carrying the club',
   'agent-management': 'LegacyClubToolRedirect - resolves a club and forwards to its agents page',
+  'financial-alerts':
+    'guarded legacy bookmark redirect - platform staff are forwarded to /financial-incidents',
   players: 'LegacyClubToolRedirect - resolves a club and forwards to its members page',
   data: 'LegacyClubToolRedirect - resolves a club and forwards to its data page',
   invite: 'LegacyClubToolRedirect - resolves a club and forwards to /invite/:clubId',

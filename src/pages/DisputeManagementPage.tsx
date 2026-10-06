@@ -4,8 +4,9 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Full dispute lifecycle management:
- * - View all disputes for the club with status filters
- * - Start review, resolve, escalate, or withdraw disputes
+ * - View club casework or the signed-in player's own disputes with status filters
+ * - Club staff can start review, resolve, and escalate club disputes
+ * - Players can withdraw their own open or under-review disputes
  * - Open count badge for unresolved disputes
  * - Real-time updates via Supabase subscription
  *
@@ -79,6 +80,7 @@ export default function DisputeManagementPage() {
   const [resolving, setResolving] = useState<string | null>(null);
   const [reviewing, setReviewing] = useState<string | null>(null);
   const [escalating, setEscalating] = useState<string | null>(null);
+  const [withdrawing, setWithdrawing] = useState<string | null>(null);
   const [resolutionText, setResolutionText] = useState('');
   const [adjustmentAmount, setAdjustmentAmount] = useState('');
   const [adjustmentType, setAdjustmentType] = useState<'credit' | 'debit' | 'none'>('none');
@@ -103,6 +105,7 @@ export default function DisputeManagementPage() {
     setResolving(null);
     setReviewing(null);
     setEscalating(null);
+    setWithdrawing(null);
     setResolutionText('');
     setAdjustmentAmount('');
     setAdjustmentType('none');
@@ -207,7 +210,7 @@ export default function DisputeManagementPage() {
   }, [loadDisputes]);
 
   const handleStartReview = async (disputeId: string) => {
-    if (!user?.id || reviewing) return;
+    if (!clubId || !user?.id || reviewing) return;
     const actionScope = scopeKey;
     const isCurrent = () => isMounted.current && activeScopeRef.current === actionScope;
     setReviewing(disputeId);
@@ -224,6 +227,7 @@ export default function DisputeManagementPage() {
   };
 
   const handleResolve = async (disputeId: string) => {
+    if (!clubId) return;
     if (!resolutionText.trim()) {
       toast.error('Please enter a resolution');
       return;
@@ -259,7 +263,7 @@ export default function DisputeManagementPage() {
   };
 
   const handleEscalate = async (disputeId: string) => {
-    if (escalating) return;
+    if (!clubId || escalating) return;
     const actionScope = scopeKey;
     const isCurrent = () => isMounted.current && activeScopeRef.current === actionScope;
     setEscalating(disputeId);
@@ -273,6 +277,24 @@ export default function DisputeManagementPage() {
       if (isCurrent()) toast.error('Failed to escalate');
     }
     if (isCurrent()) setEscalating(null);
+  };
+
+  const handleWithdraw = async (disputeId: string) => {
+    if (!user?.id || clubId || withdrawing) return;
+    const actionScope = scopeKey;
+    const isCurrent = () => isMounted.current && activeScopeRef.current === actionScope;
+    setWithdrawing(disputeId);
+    try {
+      await DisputeService.withdrawDispute(disputeId, user.id);
+      if (!isCurrent()) return;
+      toast.success('Dispute withdrawn');
+      setExpandedId(null);
+      void loadDisputes();
+    } catch (err) {
+      reportError(err, 'DisputeManagementPage.Withdraw_failed');
+      if (isCurrent()) toast.error('Failed to withdraw dispute');
+    }
+    if (isCurrent()) setWithdrawing(null);
   };
 
   const filtered = (
@@ -366,7 +388,7 @@ export default function DisputeManagementPage() {
       <div className="dispute-management-page">
         <SpadeConsole
           className="dmp__console"
-          family="riveted"
+          family="spade"
           eyebrow="Live Case Docket"
           title={clubId ? 'Club Disputes' : 'Account Disputes'}
           titleId="dispute-docket-title"
@@ -516,22 +538,20 @@ export default function DisputeManagementPage() {
 
                     {/* Expanded Actions */}
                     {expandedId === dispute.id &&
-                      dispute.status !== 'resolved' &&
-                      dispute.status !== 'withdrawn' && (
+                      (dispute.status === 'open' || dispute.status === 'under_review') && (
                         <div className="dmp__actions" id={`dispute-case-${dispute.id}`}>
-                          {dispute.status === 'open' && (
-                            <button
-                              type="button"
-                              className="dmp-word sc-ink--white"
-                              onClick={() => handleStartReview(dispute.id)}
-                              disabled={reviewing === dispute.id}
-                            >
-                              {reviewing === dispute.id ? 'Reviewing...' : 'Start Review'}
-                            </button>
-                          )}
-
-                          {(dispute.status === 'open' || dispute.status === 'under_review') && (
+                          {clubId ? (
                             <div className="dmp__form">
+                              {dispute.status === 'open' && (
+                                <button
+                                  type="button"
+                                  className="dmp-word sc-ink--white"
+                                  onClick={() => handleStartReview(dispute.id)}
+                                  disabled={reviewing === dispute.id}
+                                >
+                                  {reviewing === dispute.id ? 'Reviewing...' : 'Start Review'}
+                                </button>
+                              )}
                               <textarea
                                 className="dmp__field dmp__field--area"
                                 aria-label="Resolution Notes"
@@ -584,6 +604,15 @@ export default function DisputeManagementPage() {
                                 </button>
                               </div>
                             </div>
+                          ) : (
+                            <button
+                              type="button"
+                              className="dmp-word sc-ink--red"
+                              onClick={() => handleWithdraw(dispute.id)}
+                              disabled={withdrawing === dispute.id}
+                            >
+                              {withdrawing === dispute.id ? 'Withdrawing...' : 'Withdraw Dispute'}
+                            </button>
                           )}
                         </div>
                       )}

@@ -14,6 +14,7 @@ import {
   type HandRow,
   type OverallStats,
   type LifetimeStats,
+  type TournamentSummary,
 } from './types';
 
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -81,11 +82,376 @@ export function validClubSort(value: string | null): ClubComparisonSort {
 
 export function getCachedFull(identity: StatsCacheIdentity): CachedFull | null {
   const cached = readStatsPersistentCache(identity, CACHE_TTL_MS);
-  if (!cached) return null;
+  if (!cached || !isFullStatsPayload(cached.payload)) return null;
   return { full: normalizeFull(cached.payload), cachedAt: cached.cachedAt };
 }
 export function setCachedFull(identity: StatsCacheIdentity, payload: unknown): void {
   writeStatsPersistentCache(identity, payload);
+}
+
+const validDateTime = (value: unknown): string | null =>
+  typeof value === 'string' && value.trim() !== '' && Number.isFinite(Date.parse(value))
+    ? value
+    : null;
+
+const optionalText = (value: unknown): string | null =>
+  typeof value === 'string' && value.trim() !== '' ? value : null;
+
+const positiveRank = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 1 ? value : null;
+
+const nonnegativeCount = (value: unknown): number => {
+  const parsed = num(value, Number.NaN);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0;
+};
+
+const record = (value: unknown): Record<string, unknown> | null =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+
+const finiteNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value);
+
+const nonnegativeInteger = (value: unknown): value is number =>
+  finiteNumber(value) && Number.isSafeInteger(value) && value >= 0;
+
+const allFinite = (row: Record<string, unknown>, fields: readonly string[]): boolean =>
+  fields.every((field) => finiteNumber(row[field]));
+
+const allCounts = (row: Record<string, unknown>, fields: readonly string[]): boolean =>
+  fields.every((field) => nonnegativeInteger(row[field]));
+
+const optionalFinite = (row: Record<string, unknown>, fields: readonly string[]): boolean =>
+  fields.every((field) => row[field] === undefined || finiteNumber(row[field]));
+
+const optionalCounts = (row: Record<string, unknown>, fields: readonly string[]): boolean =>
+  fields.every((field) => row[field] === undefined || nonnegativeInteger(row[field]));
+
+const nonnegativeFinite = (value: unknown): value is number => finiteNumber(value) && value >= 0;
+
+const unitFraction = (value: unknown): value is number =>
+  finiteNumber(value) && value >= 0 && value <= 1;
+
+const exactCents = (value: unknown): number | null => {
+  if (!finiteNumber(value)) return null;
+  const scaled = value * 100;
+  return Math.abs(scaled - Math.round(scaled)) <= 1e-8 ? Math.round(scaled) : null;
+};
+
+const exactCentSum = (actual: unknown, left: unknown, right: unknown): boolean => {
+  const actualCents = exactCents(actual);
+  const leftCents = exactCents(left);
+  const rightCents = exactCents(right);
+  return (
+    actualCents !== null &&
+    leftCents !== null &&
+    rightCents !== null &&
+    actualCents === leftCents + rightCents
+  );
+};
+
+const roundedFraction = (numerator: number, denominator: number, places: number): number => {
+  if (denominator === 0) return 0;
+  const scale = 10 ** places;
+  const raw = numerator / denominator;
+  return (raw < 0 ? -1 : 1) * (Math.round(Math.abs(raw) * scale + Number.EPSILON) / scale);
+};
+
+const exactRoundedFraction = (
+  actual: unknown,
+  numerator: number,
+  denominator: number,
+  places: number
+): boolean =>
+  finiteNumber(actual) &&
+  Math.abs(actual - roundedFraction(numerator, denominator, places)) <= 1e-9;
+
+const nullableTimestamp = (value: unknown): boolean =>
+  value === null ||
+  (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Date.parse(value)));
+
+/**
+ * Runtime contract for the owner overview RPC.
+ *
+ * `normalizeFull` is deliberately tolerant at the presentation boundary so one
+ * nullable legacy field cannot crash a tile. It must not, however, decide that
+ * a malformed successful financial response means zero. This validator runs
+ * before cache or render and distinguishes a verified zero/empty payload from
+ * an unreadable one.
+ */
+export function isFullStatsPayload(value: unknown): boolean {
+  const data = record(value);
+  const overall = record(data?.overall);
+  const lifetime = record(data?.lifetime);
+  const tournaments = record(data?.tournaments);
+  const quality = record(data?.quality);
+  const coverage = record(data?.coverage);
+  if (!data || !overall || !lifetime || !tournaments || !quality || !coverage) return false;
+
+  if (
+    !allCounts(overall, [
+      'total_hands',
+      'cash_hands',
+      'tourney_hands',
+      'tournaments_with_hands',
+      'hands_won',
+      'hands_lost',
+      'showdowns_total',
+      'showdowns_won',
+      'hand_cap',
+    ]) ||
+    !allFinite(overall, [
+      'vpip',
+      'pfr',
+      'three_bet_percent',
+      'fold_to_three_bet',
+      'cbet_flop',
+      'aggression_factor',
+      'wtsd',
+      'total_profit',
+      'total_winnings',
+      'total_invested',
+      'biggest_pot_won',
+      'biggest_hand_loss',
+      'bb_per_100',
+      'hours_played',
+    ]) ||
+    typeof overall.hands_capped !== 'boolean' ||
+    !nullableTimestamp(overall.first_hand_at ?? null) ||
+    !nullableTimestamp(overall.last_hand_at ?? null)
+  ) {
+    return false;
+  }
+
+  const verifiedOverall = overall as unknown as OverallStats;
+  if (
+    verifiedOverall.hand_cap <= 0 ||
+    verifiedOverall.cash_hands + verifiedOverall.tourney_hands !== verifiedOverall.total_hands ||
+    verifiedOverall.hands_won + verifiedOverall.hands_lost !== verifiedOverall.total_hands ||
+    verifiedOverall.tournaments_with_hands > verifiedOverall.tourney_hands ||
+    verifiedOverall.showdowns_won > verifiedOverall.showdowns_total ||
+    verifiedOverall.showdowns_total > verifiedOverall.total_hands ||
+    !unitFraction(verifiedOverall.vpip) ||
+    !unitFraction(verifiedOverall.pfr) ||
+    verifiedOverall.pfr > verifiedOverall.vpip ||
+    !unitFraction(verifiedOverall.three_bet_percent) ||
+    !unitFraction(verifiedOverall.fold_to_three_bet) ||
+    !unitFraction(verifiedOverall.cbet_flop) ||
+    !unitFraction(verifiedOverall.wtsd) ||
+    !nonnegativeFinite(verifiedOverall.aggression_factor) ||
+    !nonnegativeFinite(verifiedOverall.total_winnings) ||
+    !nonnegativeFinite(verifiedOverall.total_invested) ||
+    !nonnegativeFinite(verifiedOverall.biggest_pot_won) ||
+    !nonnegativeFinite(verifiedOverall.hours_played)
+  ) {
+    return false;
+  }
+
+  const exactCashHands = quality.exact_cash_hands;
+  const expectedCashSource =
+    verifiedOverall.cash_hands === 0 || exactCashHands === verifiedOverall.cash_hands
+      ? 'exact_settlement'
+      : exactCashHands === 0
+        ? 'reconstructed_actions'
+        : 'mixed';
+  if (
+    !nonnegativeInteger(exactCashHands) ||
+    exactCashHands > verifiedOverall.cash_hands ||
+    typeof quality.cash_money_exact !== 'boolean' ||
+    quality.cash_money_exact !==
+      (verifiedOverall.cash_hands === 0 || exactCashHands === verifiedOverall.cash_hands) ||
+    quality.cash_money_source !== expectedCashSource ||
+    !nonnegativeInteger(coverage.analysis_hand_cap) ||
+    coverage.analysis_hand_cap <= 0 ||
+    coverage.analysis_hand_cap !== verifiedOverall.hand_cap ||
+    typeof coverage.analysis_hands_capped !== 'boolean' ||
+    coverage.analysis_hands_capped !== verifiedOverall.total_hands > coverage.analysis_hand_cap
+  ) {
+    return false;
+  }
+
+  if (
+    !allCounts(lifetime, ['hands']) ||
+    typeof lifetime.indexed_complete !== 'boolean' ||
+    !nullableTimestamp(lifetime.first_hand_at ?? null) ||
+    !nullableTimestamp(lifetime.last_hand_at ?? null)
+  ) {
+    return false;
+  }
+
+  if (
+    !allCounts(tournaments, ['entries', 'cashes', 'wins']) ||
+    !allFinite(tournaments, [
+      'itm_percent',
+      'total_buyins',
+      'total_winnings',
+      'net_profit',
+      'roi',
+    ]) ||
+    !allFinite(tournaments, ['total_prizes', 'total_bounty_winnings']) ||
+    !optionalFinite(tournaments, ['total_bounties']) ||
+    !(
+      tournaments.best_finish === null ||
+      (nonnegativeInteger(tournaments.best_finish) && tournaments.best_finish >= 1)
+    )
+  ) {
+    return false;
+  }
+  const verifiedTournaments = tournaments as unknown as TournamentSummary;
+  if (
+    verifiedTournaments.cashes > verifiedTournaments.entries ||
+    verifiedTournaments.wins > verifiedTournaments.cashes ||
+    !exactRoundedFraction(
+      verifiedTournaments.itm_percent,
+      verifiedTournaments.cashes,
+      verifiedTournaments.entries,
+      4
+    ) ||
+    !nonnegativeFinite(verifiedTournaments.total_buyins) ||
+    !nonnegativeFinite(verifiedTournaments.total_winnings) ||
+    !nonnegativeFinite(verifiedTournaments.total_prizes) ||
+    !nonnegativeFinite(verifiedTournaments.total_bounty_winnings) ||
+    !exactCentSum(
+      verifiedTournaments.total_winnings,
+      verifiedTournaments.total_prizes,
+      verifiedTournaments.total_bounty_winnings
+    ) ||
+    !exactCentSum(
+      verifiedTournaments.total_winnings,
+      verifiedTournaments.net_profit,
+      verifiedTournaments.total_buyins
+    ) ||
+    !exactRoundedFraction(
+      verifiedTournaments.roi,
+      verifiedTournaments.net_profit,
+      verifiedTournaments.total_buyins,
+      4
+    ) ||
+    (verifiedTournaments.total_bounties !== undefined &&
+      !nonnegativeInteger(verifiedTournaments.total_bounties))
+  ) {
+    return false;
+  }
+
+  if (!(data.window_days === null || nonnegativeInteger(data.window_days))) return false;
+
+  const daily = Array.isArray(data.daily) ? data.daily : null;
+  const sessions = Array.isArray(data.sessions) ? data.sessions : null;
+  const positions = Array.isArray(data.positions) ? data.positions : null;
+  const variants = Array.isArray(data.variants) ? data.variants : null;
+  const stakes = Array.isArray(data.stakes) ? data.stakes : null;
+  const recentTournaments = Array.isArray(data.recent_tournaments) ? data.recent_tournaments : null;
+  if (!daily || !sessions || !positions || !variants || !stakes || !recentTournaments) return false;
+
+  if (
+    daily.some((value) => {
+      const row = record(value);
+      return (
+        !row ||
+        typeof row.date !== 'string' ||
+        !Number.isFinite(Date.parse(row.date)) ||
+        !allCounts(row, ['hands']) ||
+        !allFinite(row, ['profit'])
+      );
+    }) ||
+    sessions.some((value) => {
+      const row = record(value);
+      if (
+        !row ||
+        !allCounts(row, ['id', 'duration_minutes', 'hands_played']) ||
+        !allFinite(row, ['buy_in', 'cash_out', 'profit_loss']) ||
+        row.id === 0 ||
+        row.duration_minutes === 0 ||
+        !nonnegativeFinite(row.buy_in) ||
+        !nonnegativeFinite(row.cash_out) ||
+        typeof row.date !== 'string' ||
+        typeof row.ended !== 'string' ||
+        !nullableTimestamp(row.date) ||
+        !nullableTimestamp(row.ended)
+      ) {
+        return true;
+      }
+      return (
+        Date.parse(row.ended) < Date.parse(row.date) ||
+        !exactCentSum(row.cash_out, row.buy_in, row.profit_loss)
+      );
+    }) ||
+    positions.some((value) => {
+      const row = record(value);
+      if (
+        !row ||
+        !allCounts(row, ['hands_played', 'vpip_count', 'pfr_count', 'hands_won']) ||
+        !optionalCounts(row, ['three_bet_count', 'three_bet_opps']) ||
+        !allFinite(row, ['total_profit']) ||
+        !(row.bb100 === null || finiteNumber(row.bb100))
+      ) {
+        return true;
+      }
+      const hands = row.hands_played as number;
+      const vpip = row.vpip_count as number;
+      const pfr = row.pfr_count as number;
+      const won = row.hands_won as number;
+      const threeBet = row.three_bet_count as number | undefined;
+      const threeBetOpps = row.three_bet_opps as number | undefined;
+      return (
+        vpip > hands ||
+        pfr > vpip ||
+        won > hands ||
+        (threeBet !== undefined && threeBet > hands) ||
+        (threeBetOpps !== undefined && threeBetOpps > hands) ||
+        (threeBet !== undefined && threeBetOpps !== undefined && threeBet > threeBetOpps)
+      );
+    }) ||
+    variants.some((value) => {
+      const row = record(value);
+      if (!row || !allCounts(row, ['hands', 'hands_won']) || !allFinite(row, ['profit', 'bb100'])) {
+        return true;
+      }
+      return (row.hands_won as number) > (row.hands as number);
+    }) ||
+    stakes.some((value) => {
+      const row = record(value);
+      if (
+        !row ||
+        !allCounts(row, ['hands', 'hands_won']) ||
+        !allFinite(row, ['big_blind', 'profit', 'bb100'])
+      ) {
+        return true;
+      }
+      return (row.hands_won as number) > (row.hands as number) || (row.big_blind as number) <= 0;
+    }) ||
+    recentTournaments.some((value) => {
+      const row = record(value);
+      return (
+        !row ||
+        typeof row.tournament_id !== 'string' ||
+        row.tournament_id.trim() === '' ||
+        typeof row.name !== 'string' ||
+        row.name.trim() === '' ||
+        typeof row.is_mystery_bounty !== 'boolean' ||
+        !allFinite(row, ['prize', 'bounty_winnings', 'total_won', 'buyin']) ||
+        !allCounts(row, ['bounties']) ||
+        !nonnegativeFinite(row.prize) ||
+        !nonnegativeFinite(row.bounty_winnings) ||
+        !nonnegativeFinite(row.total_won) ||
+        !nonnegativeFinite(row.buyin) ||
+        !exactCentSum(row.total_won, row.prize, row.bounty_winnings) ||
+        !(
+          row.finish_rank === undefined ||
+          row.finish_rank === null ||
+          (nonnegativeInteger(row.finish_rank) && row.finish_rank >= 1)
+        ) ||
+        !nullableTimestamp(row.start_time ?? null) ||
+        typeof row.ended_at !== 'string' ||
+        !nullableTimestamp(row.ended_at)
+      );
+    })
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 // Types, RANGES and num/str live in ./stats/types.ts (phase 2 split).
@@ -216,37 +582,102 @@ export const EMPTY_FULL: FullStats = {
   recent_tournaments: [],
 };
 
+export interface NotableHandsRequest {
+  targetUserId: string;
+  clubId: string | null;
+  asset: 'chips' | 'diamonds';
+  visibility: 'owner';
+}
+
+const POSTGRES_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const exactMoney = (value: unknown, nonnegative = false): value is number => {
+  if (!finiteNumber(value) || (nonnegative && value < 0)) return false;
+  const cents = value * 100;
+  return Number.isSafeInteger(Math.round(cents)) && Math.abs(cents - Math.round(cents)) <= 1e-6;
+};
+
+const cardArrayOrNull = (value: unknown): value is string[] | null =>
+  value === null ||
+  (Array.isArray(value) &&
+    value.every((card) => typeof card === 'string' && card.trim().length > 0));
+
 /**
- * Harden the notable-hands payload (Dan 2026-08-25).
+ * Parse the owner-only notable-hands v2 envelope without inventing evidence.
  *
- * The hand list is the only section that formatted RPC values directly:
- * `h.profit.toLocaleString()`, `h.pot_size.toLocaleString()`, `h.big_blind`,
- * `new Date(h.played_at)`. `data as HandRow[]` is a compile-time claim about
- * a runtime payload; one null column and the whole page goes to the error
- * boundary, because this is also the one numeric section with no PanelBoundary
- * around it. Both halves of that are fixed - this normalizer and the boundary.
+ * The former normalizer accepted a bare array, non-objects and missing fields,
+ * then manufactured ids, timestamps, variants and zero-valued money. Analysis
+ * subsequently rendered those defaults as real hands and linked the invented id
+ * to Hand History. A successful transport is now usable only when its v2 scope
+ * exactly matches the request and every row satisfies the RPC's JSON contract.
  */
-export function normalizeHands(data: unknown): HandRow[] {
-  const rows = Array.isArray(data)
-    ? data
-    : Array.isArray((data as any)?.hands)
-      ? (data as any).hands
-      : [];
-  return rows.map((h: any, i: number) => ({
-    id: str(h?.id, `hand-${i}`),
-    played_at: str(h?.played_at),
-    variant: str(h?.variant, 'Unknown'),
-    big_blind: num(h?.big_blind),
-    is_tournament: h?.is_tournament === true,
-    position: typeof h?.position === 'string' ? h.position : null,
-    pot_size: num(h?.pot_size),
-    won: num(h?.won),
-    profit: num(h?.profit),
-    is_winner: h?.is_winner === true,
-    players: num(h?.players),
-    board: Array.isArray(h?.board) ? h.board.filter((c: unknown) => typeof c === 'string') : null,
-    hole_cards: h?.hole_cards ?? null,
-  }));
+export function normalizeHands(data: unknown, request: NotableHandsRequest): HandRow[] | null {
+  const payload = record(data);
+  const scope = record(payload?.scope);
+  const rows = payload?.hands;
+  if (
+    !payload ||
+    payload.contract_version !== 2 ||
+    !scope ||
+    scope.target_user_id !== request.targetUserId ||
+    scope.club_id !== request.clubId ||
+    scope.asset !== request.asset ||
+    scope.visibility !== request.visibility ||
+    !validDateTime(payload.generated_at) ||
+    !Array.isArray(rows) ||
+    rows.length > 100
+  ) {
+    return null;
+  }
+
+  const normalized: HandRow[] = [];
+  const ids = new Set<string>();
+  for (const value of rows) {
+    const hand = record(value);
+    if (
+      !hand ||
+      typeof hand.id !== 'string' ||
+      !POSTGRES_UUID.test(hand.id) ||
+      ids.has(hand.id) ||
+      !validDateTime(hand.played_at) ||
+      typeof hand.variant !== 'string' ||
+      hand.variant.trim().length === 0 ||
+      !exactMoney(hand.big_blind, true) ||
+      hand.big_blind <= 0 ||
+      typeof hand.is_tournament !== 'boolean' ||
+      !(
+        hand.position === null ||
+        (typeof hand.position === 'string' && hand.position.trim().length > 0)
+      ) ||
+      !exactMoney(hand.pot_size, true) ||
+      !exactMoney(hand.won, true) ||
+      !exactMoney(hand.profit) ||
+      typeof hand.is_winner !== 'boolean' ||
+      !nonnegativeInteger(hand.players) ||
+      hand.players < 1 ||
+      !cardArrayOrNull(hand.board) ||
+      !cardArrayOrNull(hand.hole_cards)
+    ) {
+      return null;
+    }
+    ids.add(hand.id);
+    normalized.push({
+      id: hand.id,
+      played_at: hand.played_at as string,
+      variant: hand.variant,
+      big_blind: hand.big_blind,
+      is_tournament: hand.is_tournament,
+      position: hand.position as string | null,
+      pot_size: hand.pot_size,
+      won: hand.won,
+      profit: hand.profit,
+      is_winner: hand.is_winner,
+      players: hand.players,
+      board: hand.board as string[] | null,
+      hole_cards: hand.hole_cards as string[] | null,
+    });
+  }
+  return normalized;
 }
 
 export function normalizeFull(data: any): FullStats {
@@ -314,9 +745,15 @@ export function normalizeFull(data: any): FullStats {
       vpip_count: num(x?.vpip_count),
       pfr_count: num(x?.pfr_count),
       three_bet_count: num(x?.three_bet_count),
+      three_bet_opps: nonnegativeCount(x?.three_bet_opps),
       hands_won: num(x?.hands_won),
       total_profit: num(x?.total_profit),
-      bb100: num(x?.bb100),
+      bb100:
+        (typeof x?.bb100 === 'number' || typeof x?.bb100 === 'string') &&
+        String(x.bb100).trim() !== '' &&
+        Number.isFinite(Number(x.bb100))
+          ? Number(x.bb100)
+          : null,
     })),
     variants: arr(data?.variants).map((x) => ({
       variant: str(x?.variant, 'unknown'),
@@ -349,18 +786,16 @@ export function normalizeFull(data: any): FullStats {
     recent_tournaments: arr(data?.recent_tournaments).map((x) => ({
       tournament_id: typeof x?.tournament_id === 'string' ? x.tournament_id : null,
       name: str(x?.name, 'Tournament'),
-      start_time: x?.start_time ?? null,
-      variant: x?.variant ?? null,
+      start_time: validDateTime(x?.start_time),
+      ended_at: validDateTime(x?.ended_at),
+      variant: optionalText(x?.variant),
       is_mystery_bounty: x?.is_mystery_bounty === true,
-      finish_rank: typeof x?.finish_rank === 'number' ? x.finish_rank : null,
-      status: x?.status ?? null,
+      finish_rank: positiveRank(x?.finish_rank),
+      status: optionalText(x?.status),
       prize: num(x?.prize),
       bounty_winnings: num(x?.bounty_winnings),
       bounties: num(x?.bounties),
-      /* An older cached payload has no total_won and its `prize` was already
-         the sum. Falling back to `prize` keeps such a row's net figure right
-         rather than reporting a bounty-heavy result as a loss. */
-      total_won: x?.total_won == null ? num(x?.prize) : num(x?.total_won),
+      total_won: num(x?.total_won),
       buyin: num(x?.buyin),
     })),
   };

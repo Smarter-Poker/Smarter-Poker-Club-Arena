@@ -62,7 +62,7 @@ export interface LeakPosition {
   three_bet_count: number;
   hands_won: number;
   total_profit: number;
-  bb100: number;
+  bb100: number | null;
 }
 
 const SEVERITY_RANK: Record<LeakSeverity, number> = { high: 0, medium: 1, low: 2 };
@@ -284,7 +284,13 @@ export function findLeaks(
   // Deliberately last and capped at one: a per-position win rate is noisy, so
   // only the worst offender is reported, and only with a real sample.
   const bleeding = (positions ?? [])
-    .filter((p) => p.hands_played >= 200 && p.bb100 < -25)
+    .filter(
+      (p): p is LeakPosition & { bb100: number } =>
+        p.hands_played >= 200 &&
+        typeof p.bb100 === 'number' &&
+        Number.isFinite(p.bb100) &&
+        p.bb100 < -25
+    )
     .sort((a, b) => a.bb100 - b.bb100)[0];
   if (bleeding) {
     leaks.push({

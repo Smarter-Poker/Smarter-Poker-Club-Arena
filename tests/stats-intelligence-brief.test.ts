@@ -29,7 +29,7 @@ describe('buildStatsIntelligenceBrief', () => {
           value: 'BTN',
           detail: '+8.6 BB/100 across 1,200 hands.',
         }),
-        expect.objectContaining({ id: 'game', value: 'HOLDEM' }),
+        expect.objectContaining({ id: 'game', value: 'Holdem' }),
         expect.objectContaining({
           id: 'trend',
           value: 'Positive',
@@ -73,6 +73,21 @@ describe('buildStatsIntelligenceBrief', () => {
       detail: 'No cash results recorded from Aug 24 to Aug 30.',
       tone: 'neutral',
     });
+  });
+
+  it.each([
+    [12_999, '+12.9K'],
+    [-12_999, '-12.9K'],
+  ])('compacts a recent chip result of %i without changing the hand count', (profit, display) => {
+    const brief = buildStatsIntelligenceBrief({
+      overall: { total_hands: 2_000, cash_hands: 2_000 },
+      daily: [{ date: '2026-08-30', hands: 1_234, profit }],
+      asOf: new Date('2026-08-30T18:00:00Z'),
+    });
+
+    expect(brief.find((item) => item.id === 'trend')?.detail).toBe(
+      `${display} across 1,234 hands, Aug 24 to Aug 30.`
+    );
   });
 
   it('says it is building a sample instead of ranking noise', () => {

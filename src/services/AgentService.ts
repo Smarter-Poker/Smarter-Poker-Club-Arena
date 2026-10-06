@@ -12,11 +12,8 @@
 
 import { supabase, getAuthUser } from '../lib/supabase';
 import { readPresence } from '../lib/ownProfile';
-import { WalletService } from './WalletService';
 import { masterBus } from '../core/MasterBus';
-import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
-import { uuid } from '../utils/uuid';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
 import {
@@ -24,6 +21,178 @@ import {
   PLAYER_NAME_COLUMNS,
   type NameableProfile,
 } from '../utils/playerDisplayName';
+import { UUID_TOKEN } from '../utils/agentManagementPayload';
+
+const AGENT_ADMIN_AUTHZ_REFUSAL = /not authorized to manage this club's agents/i;
+
+type AgentAdminMutationError = Error & { code?: string };
+
+/**
+ * The agent-admin RPCs predate the platform-wide convention of raising 42501:
+ * their authoritative owner/admin refusal is returned inside a successful
+ * JSON response. Normalize only that exact contract (plus a real 42501) so a
+ * caller can retire protected rows immediately without mistaking validation
+ * failures for an authority change.
+ */
+function agentAdminAuthzError(error: unknown, responseMessage?: unknown): unknown | null {
+  const transport = error as { code?: string; message?: string } | null;
+  if (transport?.code === '42501') return error;
+
+  const message =
+    typeof responseMessage === 'string'
+      ? responseMessage
+      : typeof transport?.message === 'string'
+        ? transport.message
+        : '';
+  if (!AGENT_ADMIN_AUTHZ_REFUSAL.test(message)) return null;
+
+  const refusal = new Error(message) as AgentAdminMutationError;
+  refusal.code = '42501';
+  return refusal;
+}
+
+type JsonRecord = Record<string, unknown>;
+
+function malformedAgentPayload(detail: string): never {
+  throw new Error(`The Agent Record Is Malformed (${detail}).`);
+}
+
+function recordValue(value: unknown, detail: string): JsonRecord {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return malformedAgentPayload(detail);
+  }
+  return value as JsonRecord;
+}
+
+function uuidValue(value: unknown, detail: string): string {
+  if (typeof value !== 'string' || !UUID_TOKEN.test(value)) {
+    return malformedAgentPayload(detail);
+  }
+  return value.toLowerCase();
+}
+
+function optionalUuid(value: unknown, detail: string): string | undefined {
+  if (value === null || value === undefined) return undefined;
+  return uuidValue(value, detail);
+}
+
+function numericValue(
+  value: unknown,
+  detail: string,
+  options: { min?: number; max?: number; integer?: boolean; scale?: number } = {}
+): number {
+  const parsed =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && /^-?(?:\d+)(?:\.\d+)?$/.test(value.trim())
+        ? Number(value)
+        : Number.NaN;
+  if (!Number.isFinite(parsed)) return malformedAgentPayload(detail);
+  if (options.min !== undefined && parsed < options.min) return malformedAgentPayload(detail);
+  if (options.max !== undefined && parsed > options.max) return malformedAgentPayload(detail);
+  if (options.integer && !Number.isInteger(parsed)) return malformedAgentPayload(detail);
+  if (options.scale !== undefined) {
+    const factor = 10 ** options.scale;
+    if (Math.abs(parsed * factor - Math.round(parsed * factor)) > 1e-6) {
+      return malformedAgentPayload(detail);
+    }
+  }
+  return parsed;
+}
+
+function timestampValue(value: unknown, detail: string, optional = false): string | undefined {
+  if ((value === null || value === undefined) && optional) return undefined;
+  if (typeof value !== 'string' || !value.trim() || !Number.isFinite(Date.parse(value))) {
+    return malformedAgentPayload(detail);
+  }
+  return value;
+}
+
+function textValue(value: unknown, detail: string, optional = false): string | undefined {
+  if ((value === null || value === undefined) && optional) return undefined;
+  if (typeof value !== 'string' || !value.trim() || value.length > 512) {
+    return malformedAgentPayload(detail);
+  }
+  return value.trim();
+}
+
+function booleanValue(value: unknown, detail: string): boolean {
+  if (typeof value !== 'boolean') return malformedAgentPayload(detail);
+  return value;
+}
+
+function mutationEnvelope(
+  value: unknown,
+  operation: string
+): { receipt: JsonRecord; success: boolean; error?: string } {
+  const receipt = recordValue(value, `${operation}.receipt`);
+  if (typeof receipt.success !== 'boolean') {
+    return malformedAgentPayload(`${operation}.success`);
+  }
+  if (!receipt.success) {
+    return {
+      receipt,
+      success: false,
+      error: textValue(receipt.error, `${operation}.error`),
+    };
+  }
+  return { receipt, success: true };
+}
+
+function confirmedAgentMutationReceipt(
+  receipt: JsonRecord,
+  expectedAgentId: string,
+  expectedClubId: string | undefined,
+  operation: string
+): string {
+  const agentId = uuidValue(receipt.agent_id, `${operation}.agent_id`);
+  const clubId = uuidValue(receipt.club_id, `${operation}.club_id`);
+  if (agentId !== expectedAgentId.toLowerCase()) {
+    return malformedAgentPayload(`${operation}.agent_id`);
+  }
+  if (expectedClubId && clubId !== expectedClubId.toLowerCase()) {
+    return malformedAgentPayload(`${operation}.club_id`);
+  }
+  return clubId;
+}
+
+function parseProfile(
+  value: unknown,
+  expectedUserIds: ReadonlySet<string>,
+  detail: string
+): NameableProfile & { id: string; avatar_url?: string } {
+  const row = recordValue(value, detail);
+  const id = uuidValue(row.id, `${detail}.id`);
+  if (!expectedUserIds.has(id)) return malformedAgentPayload(`${detail}.id`);
+  for (const field of ['username', 'display_name', 'alias', 'display_name_preference'] as const) {
+    if (row[field] !== null && row[field] !== undefined && typeof row[field] !== 'string') {
+      return malformedAgentPayload(`${detail}.${field}`);
+    }
+  }
+  if (
+    row.use_real_name !== null &&
+    row.use_real_name !== undefined &&
+    typeof row.use_real_name !== 'boolean'
+  ) {
+    return malformedAgentPayload(`${detail}.use_real_name`);
+  }
+  if (
+    row.avatar_url !== null &&
+    row.avatar_url !== undefined &&
+    typeof row.avatar_url !== 'string'
+  ) {
+    return malformedAgentPayload(`${detail}.avatar_url`);
+  }
+  return {
+    id,
+    username: row.username as string | null | undefined,
+    display_name: row.display_name as string | null | undefined,
+    alias: row.alias as string | null | undefined,
+    display_name_preference: row.display_name_preference as string | null | undefined,
+    use_real_name: row.use_real_name as boolean | null | undefined,
+    avatar_url: (row.avatar_url as string | null | undefined) || undefined,
+  };
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -74,6 +243,101 @@ export interface Agent {
   // Timestamps
   joinedAt: string;
   lastActiveAt?: string;
+}
+
+function parseAgentRow(value: unknown, expectedClubId?: string, expectedAgentId?: string): Agent {
+  const row = recordValue(value, 'agent');
+  const id = uuidValue(row.id, 'agent.id');
+  const userId = uuidValue(row.user_id, 'agent.user_id');
+  const clubId = uuidValue(row.club_id, 'agent.club_id');
+  if (expectedAgentId && id !== expectedAgentId.toLowerCase()) {
+    return malformedAgentPayload('agent.id');
+  }
+  if (expectedClubId && clubId !== expectedClubId.toLowerCase()) {
+    return malformedAgentPayload('agent.club_id');
+  }
+
+  if (row.role !== 'super_agent' && row.role !== 'agent' && row.role !== 'sub_agent') {
+    return malformedAgentPayload('agent.role');
+  }
+  if (row.status !== 'active' && row.status !== 'suspended' && row.status !== 'frozen') {
+    return malformedAgentPayload('agent.status');
+  }
+
+  const parentAgentId = optionalUuid(row.parent_agent_id, 'agent.parent_agent_id');
+  if (parentAgentId === id) return malformedAgentPayload('agent.parent_agent_id');
+  const commissionRate = numericValue(row.commission_rate, 'agent.commission_rate', {
+    min: 0,
+    max: 0.7,
+    scale: 4,
+  });
+  const playerRakebackRate = numericValue(row.player_rakeback_rate, 'agent.player_rakeback_rate', {
+    min: 0,
+    max: 0.5,
+    scale: 4,
+  });
+  const creditLimit = numericValue(row.credit_limit, 'agent.credit_limit', {
+    min: 0,
+    scale: 2,
+  });
+  const creditUsed = numericValue(row.credit_used, 'agent.credit_used', {
+    min: 0,
+    scale: 2,
+  });
+  const isPrepaid = booleanValue(row.is_prepaid, 'agent.is_prepaid');
+  if (!isPrepaid && creditUsed > creditLimit) return malformedAgentPayload('agent.credit_used');
+  const totalPlayers = numericValue(row.total_players, 'agent.total_players', {
+    min: 0,
+    integer: true,
+  });
+  const activePlayerCount = numericValue(row.active_player_count, 'agent.active_player_count', {
+    min: 0,
+    integer: true,
+  });
+  if (activePlayerCount > totalPlayers) return malformedAgentPayload('agent.active_player_count');
+
+  return {
+    id,
+    userId,
+    clubId,
+    membershipId: optionalUuid(row.membership_id, 'agent.membership_id'),
+    role: row.role,
+    status: row.status,
+    parentAgentId,
+    commissionRate,
+    playerRakebackRate,
+    creditLimit,
+    creditUsed,
+    isPrepaid,
+    businessBalance: numericValue(row.business_balance, 'agent.business_balance', {
+      min: 0,
+      scale: 2,
+    }),
+    playerBalance: numericValue(row.player_balance, 'agent.player_balance', {
+      min: 0,
+      scale: 2,
+    }),
+    promoBalance: numericValue(row.promo_balance, 'agent.promo_balance', {
+      min: 0,
+      scale: 2,
+    }),
+    totalPlayers,
+    activePlayerCount,
+    subAgentCount: numericValue(row.sub_agent_count, 'agent.sub_agent_count', {
+      min: 0,
+      integer: true,
+    }),
+    weeklyRakeGenerated: numericValue(row.weekly_rake_generated, 'agent.weekly_rake_generated', {
+      min: 0,
+      scale: 2,
+    }),
+    lifetimeEarnings: numericValue(row.lifetime_earnings, 'agent.lifetime_earnings', {
+      min: 0,
+      scale: 2,
+    }),
+    joinedAt: timestampValue(row.joined_at, 'agent.joined_at')!,
+    lastActiveAt: timestampValue(row.last_active_at, 'agent.last_active_at', true),
+  };
 }
 
 export interface CreateAgentInput {
@@ -130,153 +394,169 @@ class AgentServiceClass {
    * Get all agents for a club
    */
   async getAgents(clubId: string): Promise<Agent[]> {
-    const resolvedId = await resolveClubUUID(clubId);
+    const resolvedId = uuidValue(await resolveClubUUID(clubId), 'scope.club_id');
     const { data, error } = await supabase
       .from('agents')
       .select('*')
       .eq('club_id', resolvedId)
       .order('joined_at', { ascending: false })
-      .limit(QUERY_LIMITS.MODERATE);
+      // Read one sentinel row beyond the display/export bound. Returning an
+      // exact 500 without this row would make every headline a silent lower
+      // bound when a club has more agents than the maintained client cap.
+      .limit(QUERY_LIMITS.MODERATE + 1);
 
     if (error) throw error;
-    if (!data || data.length === 0) return [];
+    if (!Array.isArray(data) || data.length > QUERY_LIMITS.MODERATE) {
+      return malformedAgentPayload('agents');
+    }
+    if (data.length === 0) return [];
+    const agents = data.map((row) => parseAgentRow(row, resolvedId));
+    const agentIds = new Set<string>();
+    const agentUserIds = new Set<string>();
+    for (const agent of agents) {
+      if (agentIds.has(agent.id)) return malformedAgentPayload('agents.id');
+      if (agentUserIds.has(agent.userId)) return malformedAgentPayload('agents.user_id');
+      agentIds.add(agent.id);
+      agentUserIds.add(agent.userId);
+    }
 
     // Batch-fetch display names for all agent user_ids + parent user_ids
-    const allUserIds = new Set<string>();
-    for (const a of data) {
-      if (a.user_id) allUserIds.add(a.user_id);
-    }
+    const allUserIds = new Set(agents.map((agent) => agent.userId));
     // Fetch parent agents to get their user_ids
-    const parentIds = data.filter((a) => a.parent_agent_id).map((a) => a.parent_agent_id);
+    const parentIds = [...new Set(agents.flatMap((agent) => agent.parentAgentId || []))];
     const parentMap: Record<string, string> = {};
     if (parentIds.length > 0) {
-      const { data: parents } = await supabase
+      const { data: parents, error: parentsError } = await supabase
         .from('agents')
-        .select('id, user_id')
+        .select('id, user_id, club_id')
         .in('id', parentIds);
-      if (parents) {
-        for (const p of parents) {
-          parentMap[p.id] = p.user_id;
-          allUserIds.add(p.user_id);
+      if (parentsError) throw parentsError;
+      if (!Array.isArray(parents) || parents.length !== parentIds.length) {
+        return malformedAgentPayload('parents');
+      }
+      const expectedParents = new Set(parentIds);
+      for (const [index, value] of parents.entries()) {
+        const parent = recordValue(value, `parents[${index}]`);
+        const parentId = uuidValue(parent.id, `parents[${index}].id`);
+        const parentUserId = uuidValue(parent.user_id, `parents[${index}].user_id`);
+        const parentClubId = uuidValue(parent.club_id, `parents[${index}].club_id`);
+        if (
+          !expectedParents.has(parentId) ||
+          parentClubId !== resolvedId ||
+          parentMap[parentId] !== undefined
+        ) {
+          return malformedAgentPayload(`parents[${index}]`);
         }
+        parentMap[parentId] = parentUserId;
+        allUserIds.add(parentUserId);
       }
     }
 
     // Fetch all profiles in one query
     const profileMap: Record<string, NameableProfile & { avatar_url?: string }> = {};
     if (allUserIds.size > 0) {
-      const { data: profiles } = await supabase
+      const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
         .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
         .in('id', [...allUserIds]);
-      if (profiles) {
-        for (const p of profiles) profileMap[p.id] = p;
+      if (profilesError) throw profilesError;
+      if (!Array.isArray(profiles) || profiles.length > allUserIds.size) {
+        return malformedAgentPayload('profiles');
+      }
+      for (const [index, value] of profiles.entries()) {
+        const profile = parseProfile(value, allUserIds, `profiles[${index}]`);
+        if (profileMap[profile.id]) return malformedAgentPayload(`profiles[${index}].id`);
+        profileMap[profile.id] = profile;
       }
     }
 
-    return data.map((a) => ({
-      id: a.id,
-      userId: a.user_id,
-      clubId: a.club_id,
-      membershipId: a.membership_id,
-      role: a.role as AgentRole,
-      status: a.status as AgentStatus,
-      parentAgentId: a.parent_agent_id,
-      parentAgentName: a.parent_agent_id
-        ? playerDisplayName(profileMap[parentMap[a.parent_agent_id]])
+    return agents.map((agent) => ({
+      ...agent,
+      parentAgentName: agent.parentAgentId
+        ? playerDisplayName(profileMap[parentMap[agent.parentAgentId]])
         : undefined,
-      commissionRate: Number(a.commission_rate),
-      playerRakebackRate: Number(a.player_rakeback_rate),
-      creditLimit: Number(a.credit_limit),
-      creditUsed: Number(a.credit_used),
-      isPrepaid: a.is_prepaid,
-      businessBalance: Number(a.business_balance),
-      playerBalance: Number(a.player_balance),
-      promoBalance: Number(a.promo_balance),
-      totalPlayers: a.total_players,
-      activePlayerCount: a.active_player_count,
-      subAgentCount: a.sub_agent_count,
-      weeklyRakeGenerated: Number(a.weekly_rake_generated),
-      lifetimeEarnings: Number(a.lifetime_earnings),
-      displayName: playerDisplayName(profileMap[a.user_id]),
-      avatarUrl: profileMap[a.user_id]?.avatar_url,
-      joinedAt: a.joined_at,
-      lastActiveAt: a.last_active_at,
+      displayName: playerDisplayName(profileMap[agent.userId]),
+      avatarUrl: profileMap[agent.userId]?.avatar_url,
     }));
   }
 
   /**
    * Get a single agent by ID
    */
-  async getAgent(agentId: string): Promise<Agent | null> {
+  async getAgent(agentId: string, expectedClubId?: string): Promise<Agent | null> {
+    const verifiedAgentId = uuidValue(agentId, 'agent_id');
+    const verifiedClubId = expectedClubId
+      ? uuidValue(await resolveClubUUID(expectedClubId), 'scope.club_id')
+      : undefined;
     const { data, error } = await supabase
       .from('agents')
       .select('*')
-      .eq('id', agentId)
+      .eq('id', verifiedAgentId)
       .maybeSingle();
 
-    if (error || !data) return null;
+    if (error) throw error;
+    if (data === null) return null;
+    const agent = parseAgentRow(data, verifiedClubId, verifiedAgentId);
 
     // Fetch profile info separately
     let displayName: string | undefined;
     let avatarUrl: string | undefined;
     let parentAgentName: string | undefined;
     try {
-      if (data.user_id) {
-        const { data: profile } = await supabase
+      const expectedProfile = new Set([agent.userId]);
+      {
+        const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select(`${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
-          .eq('id', data.user_id)
+          .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
+          .eq('id', agent.userId)
           .maybeSingle();
-        displayName = playerDisplayName(profile);
-        avatarUrl = profile?.avatar_url;
+        if (profileError) throw profileError;
+        if (profile !== null) {
+          const verifiedProfile = parseProfile(profile, expectedProfile, 'profile');
+          displayName = playerDisplayName(verifiedProfile);
+          avatarUrl = verifiedProfile.avatar_url;
+        }
       }
-      if (data.parent_agent_id) {
-        const { data: parent } = await supabase
+      if (agent.parentAgentId) {
+        const { data: parent, error: parentError } = await supabase
           .from('agents')
-          .select('user_id')
-          .eq('id', data.parent_agent_id)
+          .select('id, user_id, club_id')
+          .eq('id', agent.parentAgentId)
           .maybeSingle();
-        if (parent?.user_id) {
-          const { data: parentProfile } = await supabase
+        if (parentError) throw parentError;
+        if (parent !== null) {
+          const parentRow = recordValue(parent, 'parent');
+          if (
+            uuidValue(parentRow.id, 'parent.id') !== agent.parentAgentId ||
+            uuidValue(parentRow.club_id, 'parent.club_id') !== agent.clubId
+          ) {
+            return malformedAgentPayload('parent');
+          }
+          const parentUserId = uuidValue(parentRow.user_id, 'parent.user_id');
+          const { data: parentProfile, error: parentProfileError } = await supabase
             .from('profiles')
-            .select(PLAYER_NAME_COLUMNS)
-            .eq('id', parent.user_id)
+            .select(`id, ${PLAYER_NAME_COLUMNS}`)
+            .eq('id', parentUserId)
             .maybeSingle();
-          parentAgentName = playerDisplayName(parentProfile);
+          if (parentProfileError) throw parentProfileError;
+          if (parentProfile !== null) {
+            parentAgentName = playerDisplayName(
+              parseProfile(parentProfile, new Set([parentUserId]), 'parent_profile')
+            );
+          }
         }
       }
     } catch (e) {
+      if (e instanceof Error && e.message.startsWith('The Agent Record Is Malformed')) throw e;
       reportError(e, 'AgentService');
       /* non-critical */
     }
 
     return {
-      id: data.id,
-      userId: data.user_id,
-      clubId: data.club_id,
-      membershipId: data.membership_id,
-      role: data.role as AgentRole,
-      status: data.status as AgentStatus,
-      parentAgentId: data.parent_agent_id,
+      ...agent,
       parentAgentName,
-      commissionRate: Number(data.commission_rate),
-      playerRakebackRate: Number(data.player_rakeback_rate),
-      creditLimit: Number(data.credit_limit),
-      creditUsed: Number(data.credit_used),
-      isPrepaid: data.is_prepaid,
-      businessBalance: Number(data.business_balance),
-      playerBalance: Number(data.player_balance),
-      promoBalance: Number(data.promo_balance),
-      totalPlayers: data.total_players,
-      activePlayerCount: data.active_player_count,
-      subAgentCount: data.sub_agent_count,
-      weeklyRakeGenerated: Number(data.weekly_rake_generated),
-      lifetimeEarnings: Number(data.lifetime_earnings),
       displayName,
       avatarUrl,
-      joinedAt: data.joined_at,
-      lastActiveAt: data.last_active_at,
     };
   }
 
@@ -291,11 +571,32 @@ class AgentServiceClass {
     if (input.creditLimit === undefined) throw new Error('Credit limit is required');
 
     // Validate ranges (must be non-negative and within caps)
-    if (input.commissionRate < 0 || input.commissionRate > 0.7)
+    const commissionRate = numericValue(input.commissionRate, 'create.commission_rate', {
+      scale: 4,
+    });
+    const playerRakebackRate = numericValue(
+      input.playerRakebackRate,
+      'create.player_rakeback_rate',
+      { scale: 4 }
+    );
+    const creditLimit = numericValue(input.creditLimit, 'create.credit_limit', {
+      scale: 2,
+    });
+    if (commissionRate < 0 || commissionRate > 0.7)
       throw new Error('Commission rate must be between 0% and 70%');
-    if (input.playerRakebackRate < 0 || input.playerRakebackRate > 0.5)
+    if (playerRakebackRate < 0 || playerRakebackRate > 0.5)
       throw new Error('Rakeback rate must be between 0% and 50%');
-    if (input.creditLimit < 0) throw new Error('Credit limit cannot be negative');
+    if (creditLimit < 0) throw new Error('Credit limit cannot be negative');
+    const userId = uuidValue(input.userId, 'create.user_id');
+    if (input.role !== 'super_agent' && input.role !== 'agent' && input.role !== 'sub_agent') {
+      return malformedAgentPayload('create.role');
+    }
+    const parentAgentId = input.parentAgentId
+      ? uuidValue(input.parentAgentId, 'create.parent_agent_id')
+      : undefined;
+    if (input.isPrepaid !== undefined && typeof input.isPrepaid !== 'boolean') {
+      return malformedAgentPayload('create.is_prepaid');
+    }
 
     // agents is service-role-write-only under RLS — create via the SECURITY
     // DEFINER RPC, which authorizes the caller as the club owner/admin, enforces
@@ -305,67 +606,140 @@ class AgentServiceClass {
        the club id reaching here comes from a route param, which is a slug or a
        six-digit code as often as it is a uuid, so "Create Agent" failed with an
        invalid-uuid error on every club URL that was not already a uuid. */
-    const resolvedCreateClubId = await resolveClubUUID(input.clubId);
+    const resolvedCreateClubId = uuidValue(await resolveClubUUID(input.clubId), 'create.club_id');
 
     const { data: res, error } = await supabase.rpc('fn_create_agent', {
-      p_user_id: input.userId,
+      p_user_id: userId,
       p_club_id: resolvedCreateClubId,
       p_role: input.role,
-      p_parent_agent_id: input.parentAgentId ?? null,
-      p_commission_rate: input.commissionRate,
-      p_player_rakeback_rate: input.playerRakebackRate,
-      p_credit_limit: input.creditLimit,
+      p_parent_agent_id: parentAgentId ?? null,
+      p_commission_rate: commissionRate,
+      p_player_rakeback_rate: playerRakebackRate,
+      p_credit_limit: creditLimit,
       p_is_prepaid: input.isPrepaid ?? false,
     });
 
-    if (error || !res?.success) {
-      throw new Error(res?.error || error?.message || 'Failed to create agent');
+    if (error) {
+      const authzError = agentAdminAuthzError(error);
+      if (authzError) throw authzError;
+      throw error;
     }
+    const outcome = mutationEnvelope(res, 'create');
+    if (!outcome.success) {
+      const authzError = agentAdminAuthzError(null, outcome.error);
+      if (authzError) throw authzError;
+      throw new Error(outcome.error || 'Failed to create agent');
+    }
+    const createdAgentId = uuidValue(outcome.receipt.agent_id, 'create.agent_id');
 
-    return this.getAgent(res.agent_id) as Promise<Agent>;
+    const created = await this.getAgent(createdAgentId, resolvedCreateClubId);
+    if (
+      !created ||
+      created.id !== createdAgentId ||
+      created.userId !== userId ||
+      created.clubId !== resolvedCreateClubId ||
+      created.role !== input.role
+    ) {
+      return malformedAgentPayload('create.readback');
+    }
+    return created;
   }
 
   /**
    * Update agent status
    */
-  async updateAgentStatus(agentId: string, status: AgentStatus): Promise<boolean> {
+  async updateAgentStatus(
+    agentId: string,
+    status: AgentStatus,
+    expectedClubId?: string
+  ): Promise<boolean> {
+    const verifiedAgentId = uuidValue(agentId, 'status.agent_id');
+    if (status !== 'active' && status !== 'suspended' && status !== 'frozen') {
+      return malformedAgentPayload('status.value');
+    }
+    const verifiedClubId = expectedClubId
+      ? uuidValue(await resolveClubUUID(expectedClubId), 'status.club_id')
+      : undefined;
     // agents is service-role-write-only under RLS — a direct browser update
     // silently no-ops and returns success. Go through the SECURITY DEFINER RPC
     // (authorizes the caller as the agent's club owner/admin).
     const { data, error } = await supabase.rpc('fn_admin_update_agent', {
-      p_agent_id: agentId,
+      p_agent_id: verifiedAgentId,
       p_status: status,
     });
-    if (error || !data?.success) {
+    if (error) {
+      const authzError = agentAdminAuthzError(error);
+      if (authzError) {
+        reportError(authzError, 'AgentService.updateAgentStatus');
+        throw authzError;
+      }
+      reportError(error, 'AgentService.updateAgentStatus');
+      return false;
+    }
+    const outcome = mutationEnvelope(data, 'status');
+    if (!outcome.success) {
+      const authzError = agentAdminAuthzError(null, outcome.error);
+      if (authzError) {
+        reportError(authzError, 'AgentService.updateAgentStatus');
+        throw authzError;
+      }
       reportError(
-        error || new Error(data?.error || 'agent status update failed'),
+        new Error(outcome.error || 'agent status update failed'),
         'AgentService.updateAgentStatus'
       );
       return false;
     }
+    confirmedAgentMutationReceipt(outcome.receipt, verifiedAgentId, verifiedClubId, 'status');
     return true;
   }
 
   /**
    * Update agent role (promote/demote)
    */
-  async updateAgentRole(agentId: string, newRole: AgentRole): Promise<boolean> {
+  async updateAgentRole(
+    agentId: string,
+    newRole: AgentRole,
+    expectedClubId?: string
+  ): Promise<boolean> {
+    const verifiedAgentId = uuidValue(agentId, 'role.agent_id');
+    if (newRole !== 'super_agent' && newRole !== 'agent' && newRole !== 'sub_agent') {
+      return malformedAgentPayload('role.value');
+    }
+    const verifiedClubId = expectedClubId
+      ? uuidValue(await resolveClubUUID(expectedClubId), 'role.club_id')
+      : undefined;
     // agents is service-role-write-only AND read-own-row-only under RLS, so the
     // whole flow (existence check, agents update, club_members role sync) must
     // run server-side. fn_admin_update_agent authorizes the caller as the club
     // owner/admin, updates the role, and syncs club_members.role in one call.
     const { data: roleRes, error } = await supabase.rpc('fn_admin_update_agent', {
-      p_agent_id: agentId,
+      p_agent_id: verifiedAgentId,
       p_role: newRole,
     });
 
-    if (error || !roleRes?.success) {
+    if (error) {
+      const authzError = agentAdminAuthzError(error);
+      if (authzError) {
+        reportError(authzError, 'AgentService.updateAgentRole');
+        throw authzError;
+      }
+      reportError(error, 'AgentService.updateAgentRole');
+      return false;
+    }
+    const outcome = mutationEnvelope(roleRes, 'role');
+    if (!outcome.success) {
+      const authzError = agentAdminAuthzError(null, outcome.error);
+      if (authzError) {
+        reportError(authzError, 'AgentService.updateAgentRole');
+        throw authzError;
+      }
       reportError(
-        error || new Error(roleRes?.error || 'agent role update failed'),
+        new Error(outcome.error || 'agent role update failed'),
         'AgentService.updateAgentRole'
       );
       return false;
     }
+    confirmedAgentMutationReceipt(outcome.receipt, verifiedAgentId, verifiedClubId, 'role');
 
     return true;
   }
@@ -521,32 +895,70 @@ class AgentServiceClass {
     agentId: string,
     newLimit: number,
     assignedBy: string,
-    reason?: string
+    reason?: string,
+    expectedClubId?: string
   ): Promise<boolean> {
-    if (newLimit < 0) throw new Error('Credit limit cannot be negative');
+    const verifiedLimit = numericValue(newLimit, 'credit.limit', { scale: 2 });
+    if (verifiedLimit < 0) throw new Error('Credit limit cannot be negative');
+    const verifiedAgentId = uuidValue(agentId, 'credit.agent_id');
+    const verifiedAssignedBy = uuidValue(assignedBy, 'credit.assigned_by');
+    if (reason !== undefined && (typeof reason !== 'string' || reason.length > 1_000)) {
+      return malformedAgentPayload('credit.reason');
+    }
+    const verifiedClubId = expectedClubId
+      ? uuidValue(await resolveClubUUID(expectedClubId), 'credit.club_id')
+      : undefined;
 
     // agents is service-role-write-only AND read-own-row-only under RLS, so the
     // parent-limit check, the update, and the credit_assignments audit all run
     // server-side in fn_admin_update_agent (which authorizes the caller as the
     // club owner/admin). Direct browser reads/writes here silently failed.
     const { data: res, error } = await supabase.rpc('fn_admin_update_agent', {
-      p_agent_id: agentId,
-      p_credit_limit: newLimit,
-      p_assigned_by: assignedBy,
+      p_agent_id: verifiedAgentId,
+      p_credit_limit: verifiedLimit,
+      p_assigned_by: verifiedAssignedBy,
       p_credit_reason: reason ?? null,
     });
 
-    if (error || !res?.success) {
-      const msg = error?.message || res?.error || 'credit limit update failed';
+    if (error) {
+      // Preserve Postgres error identity for authority revocation. Collapsing
+      // 42501 into `false` leaves callers unable to remove protected rows and
+      // controls after a same-user role change.
+      reportError(error, 'AgentService.setCreditLimit');
+      throw error;
+    }
+
+    const outcome = mutationEnvelope(res, 'credit');
+    if (!outcome.success) {
+      const msg = outcome.error || 'credit limit update failed';
+      const authzError = agentAdminAuthzError(null, msg);
+      if (authzError) {
+        reportError(authzError, 'AgentService.setCreditLimit');
+        throw authzError;
+      }
       // Preserve the parent-limit rule as a throw so callers can surface it.
       if (msg.includes('parent')) throw new Error('Credit limit cannot exceed parent agent limit');
-      reportError(error || new Error(msg), 'AgentService.setCreditLimit');
+      reportError(new Error(msg), 'AgentService.setCreditLimit');
       return false;
     }
 
-    if (res.club_id) {
-      masterBus.emit('CLUB_UPDATED', { clubId: res.club_id });
+    const receiptClubId = confirmedAgentMutationReceipt(
+      outcome.receipt,
+      verifiedAgentId,
+      verifiedClubId,
+      'credit'
+    );
+    const receiptLimit = numericValue(outcome.receipt.credit_limit, 'credit.credit_limit', {
+      min: 0,
+      scale: 2,
+    });
+    if (Math.abs(receiptLimit - verifiedLimit) > 1e-9) {
+      return malformedAgentPayload('credit.credit_limit');
     }
+    if (typeof outcome.receipt.is_prepaid !== 'boolean') {
+      return malformedAgentPayload('credit.is_prepaid');
+    }
+    masterBus.emit('CLUB_UPDATED', { clubId: receiptClubId });
 
     return true;
   }
@@ -557,41 +969,64 @@ class AgentServiceClass {
   async updateRates(
     agentId: string,
     commissionRate?: number,
-    playerRakebackRate?: number
+    playerRakebackRate?: number,
+    expectedClubId?: string
   ): Promise<boolean> {
-    const updates: any = {};
+    const updates: { commission_rate?: number; player_rakeback_rate?: number } = {};
 
     if (commissionRate !== undefined) {
-      if (commissionRate > 0.7) throw new Error('Commission rate cannot exceed 70%');
-      updates.commission_rate = commissionRate;
+      const verified = numericValue(commissionRate, 'rates.commission_rate', { scale: 4 });
+      if (verified < 0) throw new Error('Commission rate cannot be negative');
+      if (verified > 0.7) throw new Error('Commission rate cannot exceed 70%');
+      updates.commission_rate = verified;
     }
 
     if (playerRakebackRate !== undefined) {
-      if (playerRakebackRate > 0.5) throw new Error('Rakeback rate cannot exceed 50%');
-      updates.player_rakeback_rate = playerRakebackRate;
+      const verified = numericValue(playerRakebackRate, 'rates.player_rakeback_rate', {
+        scale: 4,
+      });
+      if (verified < 0) throw new Error('Rakeback rate cannot be negative');
+      if (verified > 0.5) throw new Error('Rakeback rate cannot exceed 50%');
+      updates.player_rakeback_rate = verified;
     }
 
     if (Object.keys(updates).length === 0) return true;
+    const verifiedAgentId = uuidValue(agentId, 'rates.agent_id');
+    const verifiedClubId = expectedClubId
+      ? uuidValue(await resolveClubUUID(expectedClubId), 'rates.club_id')
+      : undefined;
 
     // agents is service-role-write-only under RLS — go through the SECURITY
     // DEFINER RPC (authorizes the caller as the agent's club owner/admin).
     const { data: res, error } = await supabase.rpc('fn_admin_update_agent', {
-      p_agent_id: agentId,
+      p_agent_id: verifiedAgentId,
       p_commission_rate: updates.commission_rate,
       p_player_rakeback_rate: updates.player_rakeback_rate,
     });
 
-    if (error || !res?.success) {
+    if (error) {
+      const authzError = agentAdminAuthzError(error);
+      if (authzError) throw authzError;
+      reportError(error, 'AgentService.updateRates');
+      return false;
+    }
+    const outcome = mutationEnvelope(res, 'rates');
+    if (!outcome.success) {
+      const authzError = agentAdminAuthzError(null, outcome.error);
+      if (authzError) throw authzError;
       reportError(
-        error || new Error(res?.error || 'agent rates update failed'),
+        new Error(outcome.error || 'agent rates update failed'),
         'AgentService.updateRates'
       );
       return false;
     }
-
-    if (res.club_id) {
-      masterBus.emit('CLUB_UPDATED', { clubId: res.club_id });
-    }
+    const receiptClubId = confirmedAgentMutationReceipt(
+      outcome.receipt,
+      verifiedAgentId,
+      verifiedClubId,
+      'rates'
+    );
+    masterBus.emit('CLUB_UPDATED', { clubId: receiptClubId });
 
     return true;
   }
@@ -830,12 +1265,70 @@ class AgentServiceClass {
    * used to keep in parallel with it.
    */
   async reversibleDistributions(clubId: string): Promise<ReversibleDistribution[]> {
-    const resolvedClubId = await resolveClubUUID(clubId);
+    const resolvedClubId = uuidValue(await resolveClubUUID(clubId), 'reversible.club_id');
     const { data, error } = await supabase.rpc('fn_agent_wallet_reversible', {
       p_club_id: resolvedClubId,
     });
     if (error) throw error;
-    return (data || []) as ReversibleDistribution[];
+    if (!Array.isArray(data) || data.length > 50) {
+      return malformedAgentPayload('reversible.rows');
+    }
+    const seen = new Set<string>();
+    return data.map((value, index) => {
+      const row = recordValue(value, `reversible.rows[${index}]`);
+      const transactionId = uuidValue(
+        row.transaction_id,
+        `reversible.rows[${index}].transaction_id`
+      );
+      if (seen.has(transactionId)) {
+        return malformedAgentPayload(`reversible.rows[${index}].transaction_id`);
+      }
+      seen.add(transactionId);
+      const amount = numericValue(row.amount, `reversible.rows[${index}].amount`, {
+        min: 0.01,
+        max: 1_000_000_000,
+        scale: 2,
+      });
+      const claimedBack = numericValue(row.claimed_back, `reversible.rows[${index}].claimed_back`, {
+        min: 0,
+        max: amount,
+        scale: 2,
+      });
+      const remaining = numericValue(row.remaining, `reversible.rows[${index}].remaining`, {
+        min: 0.01,
+        max: amount,
+        scale: 2,
+      });
+      if (Math.round((amount - claimedBack) * 100) !== Math.round(remaining * 100)) {
+        return malformedAgentPayload(`reversible.rows[${index}].remaining`);
+      }
+      if (row.destination !== 'player_wallet' && row.destination !== 'agent_wallet') {
+        return malformedAgentPayload(`reversible.rows[${index}].destination`);
+      }
+      const createdAt = timestampValue(row.created_at, `reversible.rows[${index}].created_at`)!;
+      const reversibleUntil = timestampValue(
+        row.reversible_until,
+        `reversible.rows[${index}].reversible_until`
+      )!;
+      if (Date.parse(reversibleUntil) <= Date.parse(createdAt)) {
+        return malformedAgentPayload(`reversible.rows[${index}].reversible_until`);
+      }
+      return {
+        transaction_id: transactionId,
+        to_user_id: uuidValue(row.to_user_id, `reversible.rows[${index}].to_user_id`),
+        to_name: textValue(row.to_name, `reversible.rows[${index}].to_name`)!,
+        amount,
+        claimed_back: claimedBack,
+        remaining,
+        destination: row.destination,
+        created_at: createdAt,
+        reversible_until: reversibleUntil,
+        seconds_left: numericValue(row.seconds_left, `reversible.rows[${index}].seconds_left`, {
+          min: 1,
+          integer: true,
+        }),
+      };
+    });
   }
 
   /**
@@ -852,28 +1345,56 @@ class AgentServiceClass {
     reason?: string,
     opId?: string
   ): Promise<{ success: boolean; error?: string; claimedBack?: number; replayed?: boolean }> {
-    const resolvedClubId = await resolveClubUUID(clubId);
+    const resolvedClubId = uuidValue(await resolveClubUUID(clubId), 'claim.club_id');
+    const verifiedTransactionId = uuidValue(transactionId, 'claim.transaction_id');
+    const verifiedAmount = numericValue(amount, 'claim.amount', {
+      min: 0.01,
+      max: 1_000_000_000,
+      scale: 2,
+    });
+    if (reason !== undefined && (typeof reason !== 'string' || reason.length > 1_000)) {
+      return malformedAgentPayload('claim.reason');
+    }
+    const operationId = opId ? uuidValue(opId, 'claim.op_id') : crypto.randomUUID();
     const { data, error } = await supabase.rpc('fn_agent_wallet_claim_back', {
       p_club_id: resolvedClubId,
-      p_transaction_id: transactionId,
-      p_amount: amount,
+      p_transaction_id: verifiedTransactionId,
+      p_amount: verifiedAmount,
       p_reason: reason ?? null,
-      p_op_id: opId ?? crypto.randomUUID(),
+      p_op_id: operationId,
     });
-    if (error) return { success: false, error: error.message };
-    const res = (data || {}) as {
-      success?: boolean;
-      error?: string;
-      amount?: number;
-      replayed?: boolean;
-    };
-    if (!res.success) return { success: false, error: res.error || 'That Claim Back Was Refused.' };
+    if (error) {
+      if ((error as { code?: string }).code === '42501') throw error;
+      return {
+        success: false,
+        error:
+          typeof (error as { message?: unknown }).message === 'string'
+            ? (error as { message: string }).message
+            : 'That Claim Back Was Refused.',
+      };
+    }
+    const outcome = mutationEnvelope(data, 'claim');
+    if (!outcome.success) {
+      return { success: false, error: outcome.error || 'That Claim Back Was Refused.' };
+    }
+    uuidValue(outcome.receipt.transaction_id, 'claim.receipt.transaction_id');
+    const claimedBack = numericValue(outcome.receipt.amount, 'claim.receipt.amount', {
+      min: 0.01,
+      max: 1_000_000_000,
+      scale: 2,
+    });
+    if (Math.round(claimedBack * 100) !== Math.round(verifiedAmount * 100)) {
+      return malformedAgentPayload('claim.receipt.amount');
+    }
+    if (typeof outcome.receipt.replayed !== 'boolean') {
+      return malformedAgentPayload('claim.receipt.replayed');
+    }
 
     masterBus.emit('BALANCE_UPDATED', {
       source: 'agent_wallet_claim_back',
       clubId: resolvedClubId,
     });
-    return { success: true, claimedBack: res.amount ?? amount, replayed: res.replayed };
+    return { success: true, claimedBack, replayed: outcome.receipt.replayed };
   }
 }
 

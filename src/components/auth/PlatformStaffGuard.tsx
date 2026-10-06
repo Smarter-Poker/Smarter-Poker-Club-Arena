@@ -3,7 +3,7 @@
  *  A PLATFORM-STAFF ROUTE IS CLOSED TO EVERYONE ELSE (2026-09-10)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * /engine, /financial-alerts and /financial-incidents were behind <AuthGuard>
+ * /engine and the legacy /financial-alerts redirect were behind <AuthGuard>
  * alone. The pages themselves carried no role check, so any signed-in account
  * could open the engine control panel and the financial alert queue. The data
  * behind them is gated in Postgres (`fn_admin_horse_fleet_counts` raises
@@ -28,34 +28,50 @@ import { LoadingState } from '../common/EmptyState';
 
 export default function PlatformStaffGuard({ children }: { children: ReactNode }) {
   const { user, isHydrating } = useAuthUser();
-  const [allowed, setAllowed] = useState<boolean | null>(null);
+  const [decision, setDecision] = useState<{
+    userId: string | null;
+    allowed: boolean;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    if (!user?.id) {
-      if (!isHydrating) setAllowed(false);
+    if (isHydrating) {
+      setDecision(null);
       return undefined;
     }
-    setAllowed(null);
+    if (!user?.id) {
+      setDecision({ userId: null, allowed: false });
+      return undefined;
+    }
+    const verifiedUserId = user.id;
+    setDecision(null);
     (async () => {
       try {
         const { data, error } = await supabase
           .from('profiles')
           .select('role')
-          .eq('id', user.id)
+          .eq('id', verifiedUserId)
           .maybeSingle();
         if (error) throw error;
-        if (!cancelled) setAllowed(isPlatformStaffRole(data?.role));
+        if (!cancelled) {
+          setDecision({
+            userId: verifiedUserId,
+            allowed: isPlatformStaffRole(data?.role),
+          });
+        }
       } catch (e) {
         reportError(e, 'PlatformStaffGuard.role_lookup');
         // An unreadable role is not a grant.
-        if (!cancelled) setAllowed(false);
+        if (!cancelled) setDecision({ userId: verifiedUserId, allowed: false });
       }
     })();
     return () => {
       cancelled = true;
     };
   }, [user?.id, isHydrating]);
+
+  const activeUserId = user?.id ?? null;
+  const allowed = !isHydrating && decision?.userId === activeUserId ? decision.allowed : null;
 
   if (allowed === null) return <LoadingState message="Checking Your Access" />;
   if (!allowed) return <Navigate to="/" replace />;

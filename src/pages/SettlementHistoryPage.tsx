@@ -12,6 +12,7 @@ import { masterBus } from '../core/MasterBus';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useToast } from '../components/common/Toast';
 import { SpadeConsole } from '../components/console/SpadeConsole';
+import { useAuthUser } from '../hooks/useAuthUser';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
@@ -26,8 +27,10 @@ import styles from './SettlementHistoryPage.module.css';
 export default function SettlementHistoryPage() {
   const navigate = useNavigate();
   const toast = useToast();
+  const { user } = useAuthUser();
 
-  const [cycles, setCycles] = useState<SettlementHistoryCycle[]>([]);
+  const [storedCycles, setCycles] = useState<SettlementHistoryCycle[]>([]);
+  const [loadedScope, setLoadedScope] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   /* A FAILED READ IS NOT "THE PERIOD HAD NO SETTLEMENTS" (2026-09-10). The
      settlement_invoices read discarded its error, so a refused or failed
@@ -45,16 +48,32 @@ export default function SettlementHistoryPage() {
   const scopeStatus = scope.status;
   const scopeClubId = scope.clubId;
   const scopePlatformWide = scope.platformWide;
+  const readScope = `${user?.id ?? 'signed-out'}:${scope.userId ?? 'unverified'}:${scopeStatus}:${scopeClubId ?? 'no-club'}:${scopePlatformWide}`;
+  const activeScopeRef = useRef(readScope);
+  activeScopeRef.current = readScope;
+  const cycles = loadedScope === readScope ? storedCycles : [];
 
   const requestSequence = useRef(0);
 
   const loadHistory = useCallback(async () => {
-    if (scopeStatus !== 'ready') return;
+    if (
+      scopeStatus !== 'ready' ||
+      !user?.id ||
+      scope.userId !== user.id ||
+      !scopeClubId ||
+      scopePlatformWide
+    )
+      return;
+    const requestScope = readScope;
     const request = ++requestSequence.current;
-    const current = () => requestSequence.current === request && isMounted.current;
+    const current = () =>
+      requestSequence.current === request &&
+      isMounted.current &&
+      activeScopeRef.current === requestScope;
     setLoading(true);
     setLoadError(null);
     setCycles([]);
+    setLoadedScope(null);
     setVisibleRows(new Set());
     staggerTimersRef.current.forEach(clearTimeout);
     staggerTimersRef.current = [];
@@ -75,7 +94,7 @@ export default function SettlementHistoryPage() {
         supabase
           .from('settlement_invoices')
           .select(
-            'id, period_id, invoice_type, gross_amount, net_amount, breakdown, status, created_at'
+            'id, club_id, period_id, invoice_type, gross_amount, net_amount, breakdown, status, created_at'
           )
           .eq('invoice_type', 'union_to_club')
           // invoice_type records transfer direction, so later rakeback and
@@ -92,9 +111,10 @@ export default function SettlementHistoryPage() {
       if (error) throw error;
 
       if (current()) {
-        const mapped = parseSettlementHistory(data);
+        const mapped = parseSettlementHistory(data, scopeClubId);
         if (!mapped) throw new Error('Settlement history response was malformed');
         setCycles(mapped);
+        setLoadedScope(requestScope);
         // Clear previous stagger timers before starting new ones
         staggerTimersRef.current.forEach(clearTimeout);
         staggerTimersRef.current = mapped.map((_, i) =>
@@ -107,6 +127,7 @@ export default function SettlementHistoryPage() {
       if (!current()) return;
       reportError(err, 'SettlementHistoryPage.Load_failed');
       setCycles([]);
+      setLoadedScope(requestScope);
       setLoadError(
         safeErrorMessage(
           err,
@@ -117,7 +138,16 @@ export default function SettlementHistoryPage() {
     } finally {
       if (current()) setLoading(false);
     }
-  }, [scopeStatus, scopeClubId, scopePlatformWide, toast, isMounted]);
+  }, [
+    scopeStatus,
+    scopeClubId,
+    scopePlatformWide,
+    scope.userId,
+    user?.id,
+    readScope,
+    toast,
+    isMounted,
+  ]);
 
   useVisibilityRefresh(() => loadHistory());
 
@@ -140,7 +170,14 @@ export default function SettlementHistoryPage() {
 
   useEffect(() => {
     // WebSocket: live settlement updates
-    if (scopeStatus !== 'ready') return;
+    if (
+      scopeStatus !== 'ready' ||
+      !user?.id ||
+      scope.userId !== user.id ||
+      !scopeClubId ||
+      scopePlatformWide
+    )
+      return;
     const channelKey = `settlement-history-updates:${scopeClubId ?? 'platform'}`;
     const channel = masterBus.getOrCreateChannel(channelKey);
     channel
@@ -172,14 +209,36 @@ export default function SettlementHistoryPage() {
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
     };
-  }, [loadHistory, scopeStatus, scopeClubId]);
+  }, [loadHistory, scopeStatus, scopeClubId, scopePlatformWide, scope.userId, user?.id]);
 
   const totalRakeAllTime = cycles.reduce((s, c) => s + c.totalRake, 0);
   const totalSettled = cycles.reduce((s, c) => s + c.netSettlement, 0);
   const maxRake = Math.max(...cycles.map((c) => c.totalRake), 1);
 
-  if (scope.status !== 'ready') {
+  if (scope.status !== 'ready' || scope.userId !== user?.id) {
     return <FinancialAdminScopeState scope={scope} />;
+  }
+
+  if (!scopeClubId || scopePlatformWide) {
+    return (
+      <main className={styles.page}>
+        <SpadeConsole
+          className={styles.console}
+          family="shark"
+          crest="flat"
+          eyebrow="Club Arena Data"
+          title="Settlement History Needs A Club"
+          subtitle="Open This Console From A Club Financial Scope"
+          pill="Club Required"
+          pillInk="gold"
+          plates={{ primary: { label: 'Back', onClick: () => navigate(-1) } }}
+        >
+          <p className="sc-copy sc-copy--center" role="status">
+            Platform-Wide Rows Are Never Combined Into One Club Settlement History.
+          </p>
+        </SpadeConsole>
+      </main>
+    );
   }
 
   return (

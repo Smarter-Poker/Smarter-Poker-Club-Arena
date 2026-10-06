@@ -26,7 +26,7 @@ export default function FinancialAdminScopeState({ scope }: { scope: FinancialAd
   return (
     <main className={styles.page}>
       <SpadeConsole
-        family={failed ? 'riveted' : 'shark'}
+        family={failed ? 'riveted' : denied ? 'shark' : 'spade'}
         crest={denied ? 'flat' : 'spade'}
         eyebrow="Club Arena Data"
         title={denied ? 'Financial Access Restricted' : 'Financial Access'}

@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { parseClubFinancialsPayload } from '../../src/utils/clubFinancialsPayload';
 
-const request = { start: '2026-10-02', end: '2026-10-03' };
+const CLUB_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const OTHER_CLUB_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const request = { clubId: CLUB_ID, start: '2026-10-02', end: '2026-10-03' };
 
 const payload = () => ({
+  contract: 'ca_club_financials.v2',
+  contract_version: 2,
+  club_id: CLUB_ID,
+  requested_start: request.start,
+  requested_end: request.end,
   range: {
     start: '2026-10-02',
     end: '2026-10-03',
@@ -67,7 +74,7 @@ const payload = () => ({
   recent: [
     {
       id: 'rake-a',
-      hand_id: 'hand-a',
+      hand_id: '11111111-1111-4111-8111-111111111111',
       global_hand_id: 42,
       table_name: 'Table One',
       kind: 'cash_rake',
@@ -97,9 +104,26 @@ describe('parseClubFinancialsPayload', () => {
   it('accepts the RPC start clamp when the club first appears after the requested start', () => {
     const value = payload();
     value.range.first_day = '2026-10-02';
+    value.requested_start = '2026-01-01';
     expect(
-      parseClubFinancialsPayload(value, { start: '2026-01-01', end: request.end }).range
+      parseClubFinancialsPayload(value, {
+        clubId: CLUB_ID,
+        start: '2026-01-01',
+        end: request.end,
+      }).range
     ).toEqual(value.range);
+  });
+
+  it('refuses a wrong club, contract or requested-range receipt before painting money', () => {
+    expect(() =>
+      parseClubFinancialsPayload({ ...payload(), club_id: OTHER_CLUB_ID }, request)
+    ).toThrow(/scope receipt/);
+    expect(() => parseClubFinancialsPayload({ ...payload(), contract: 'legacy' }, request)).toThrow(
+      /scope receipt/
+    );
+    expect(() =>
+      parseClubFinancialsPayload({ ...payload(), requested_end: '2026-10-04' }, request)
+    ).toThrow(/scope receipt/);
   });
 
   it('allows only the derived per-day rounding bound for contribution-split cash rake', () => {
@@ -135,6 +159,10 @@ describe('parseClubFinancialsPayload', () => {
       'a sub-cent amount',
       (value: ReturnType<typeof payload>) => (value.daily[0].gross_rake = 10.251),
     ],
+    [
+      'a negative source amount',
+      (value: ReturnType<typeof payload>) => (value.daily[0].pot_volume = -1),
+    ],
     ['a false net rake', (value: ReturnType<typeof payload>) => (value.totals.net_rake = 28)],
     ['a false net revenue', (value: ReturnType<typeof payload>) => (value.totals.net_revenue = 1)],
     [
@@ -159,6 +187,7 @@ describe('parseClubFinancialsPayload', () => {
       first_day: '2026-01-01',
       series_from: isoDay(seriesStart),
     };
+    value.requested_start = '2026-01-01';
     value.daily = Array.from({ length: 92 }, (_, index) => {
       const d = new Date(seriesStart);
       d.setUTCDate(d.getUTCDate() + index);
@@ -176,8 +205,11 @@ describe('parseClubFinancialsPayload', () => {
     });
 
     expect(
-      parseClubFinancialsPayload(value, { start: '2026-01-01', end: '2026-10-03' }).totals
-        .gross_rake
+      parseClubFinancialsPayload(value, {
+        clubId: CLUB_ID,
+        start: '2026-01-01',
+        end: '2026-10-03',
+      }).totals.gross_rake
     ).toBe(30.25);
   });
 
@@ -189,5 +221,11 @@ describe('parseClubFinancialsPayload', () => {
     const outsideRange = payload();
     outsideRange.recent[0].created_at = '2026-10-04T00:00:00Z';
     expect(() => parseClubFinancialsPayload(outsideRange, request)).toThrow(/order or range/);
+
+    const malformedHandIdentity = payload();
+    malformedHandIdentity.recent[0].hand_id = 'hand-a';
+    expect(() => parseClubFinancialsPayload(malformedHandIdentity, request)).toThrow(
+      /recent hand identity/
+    );
   });
 });

@@ -15,6 +15,8 @@ import type { AdvancedStatsInput } from '../../components/stats/AdvancedStatsSum
 import { formatCard, handDate } from './format';
 import StatsEvidenceLink from '../../components/stats/StatsEvidenceLink';
 import { buildStatsHandEvidencePath } from '../../lib/statsEvidenceNavigation';
+import { compactChips } from '../../utils/format';
+import { enumToTitleCase } from '../../utils/titleCase';
 import {
   RANGES,
   type FullStats,
@@ -209,7 +211,7 @@ export default function AnalysisTab({
                     <span className="hand-row-meta">
                       {handDate(h.played_at)}
                       {' · '}
-                      {String(h.variant || '').toUpperCase()}
+                      {enumToTitleCase(h.variant)}
                       {h.position ? ` · ${h.position}` : ''}
                       {h.is_tournament ? ' · MTT' : ` · ${h.big_blind} BB`}
                       {` · ${h.players} Players`}
@@ -223,9 +225,9 @@ export default function AnalysisTab({
                   <div className="hand-row-result">
                     <span className={`hand-row-profit ${h.profit >= 0 ? 'positive' : 'negative'}`}>
                       {h.profit >= 0 ? '+' : ''}
-                      {h.profit.toLocaleString()}
+                      {compactChips(h.profit)}
                     </span>
-                    <span className="hand-row-pot">Pot {h.pot_size.toLocaleString()}</span>
+                    <span className="hand-row-pot">Pot {compactChips(h.pot_size)}</span>
                     {h.id ? (
                       <StatsEvidenceLink
                         className="stats-evidence-action"

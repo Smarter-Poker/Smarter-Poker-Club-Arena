@@ -220,6 +220,20 @@ describe('UnionOpsPanel cannot render or run without a union', () => {
     expect(await screen.findByText('Union Law Verdict Is Unavailable.')).toBeTruthy();
   });
 
+  it('renders malformed hierarchy coverage as a failed read instead of authoritative stats', async () => {
+    vi.mocked(UnionOpsService.getCoverageStrict).mockRejectedValueOnce(
+      new Error('Union Hierarchy Coverage Could Not Be Verified.')
+    );
+    render(<UnionOpsPanel unionId={UNION_A} canRun />);
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'Hierarchy' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Union Hierarchy Coverage Could Not Be Verified.'
+    );
+    expect(screen.queryByText('Hierarchy Coverage Is Unavailable.')).toBeNull();
+    expect(screen.queryByText('Player Coverage')).toBeNull();
+  });
+
   it('prints half-point commission policy bands without rounding them to whole percentages', async () => {
     vi.mocked(UnionOpsService.getCoverageStrict).mockResolvedValueOnce({
       require_agent_for_players: true,
@@ -322,6 +336,24 @@ describe('UnionOpsPanel cannot render or run without a union', () => {
     expect(screen.getByRole('button', { name: 'Run Integrity Sweep (24h)' })).toBeEnabled();
   });
 
+  it('never calls union law healthy while its own findings need attention', async () => {
+    vi.mocked(UnionOpsService.getLawSelfTest).mockResolvedValueOnce({
+      available: true,
+      healthy: true,
+      breaches: [],
+      warnings: [
+        { check: 'players_without_agent', count: 12 },
+        { check: 'agents_without_super_agent', count: 1 },
+      ],
+    });
+    render(<UnionOpsPanel unionId={UNION_A} canRun />);
+    fireEvent.click(await screen.findByRole('tab', { name: 'Integrity' }));
+
+    expect(await screen.findByText('Union Law Attention Required - 2 Finding(s)')).toBeTruthy();
+    expect(screen.queryByText('Union Law Healthy')).toBeNull();
+    expect(screen.getByText(/Players Without Agent/)).toBeTruthy();
+  });
+
   it('does not let a completed sweep refresh the tab selected before it', async () => {
     let resolveSweep!: (value: { union_id: string; window_hours: number; signals: number }) => void;
     vi.mocked(UnionOpsService.runIntegritySweep).mockImplementationOnce(
@@ -414,7 +446,7 @@ describe('UnionOpsPanel cannot render or run without a union', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Scheduled Settlement Review' });
     expect(dialog.parentElement).toBe(document.body);
     expect(document.body.style.overflow).toBe('hidden');
-    expect(dialog.querySelector('.sc--family-riveted')).not.toBeNull();
+    expect(dialog.querySelector('.sc--family-spade')).not.toBeNull();
     expect(dialog.querySelector('[style*="border-radius"]')).toBeNull();
     const context = screen.getByText(
       'The Audited Weekly Close Runs Automatically. This Review Cannot Execute A Settlement.'

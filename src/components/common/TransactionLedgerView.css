@@ -42,9 +42,8 @@
 
 .tlv-path,
 .tlv-description {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .tlv-path {
@@ -72,7 +71,7 @@
   display: block;
   margin-top: 0.6cqw;
   font-size: clamp(0.58rem, 2.3cqw, 0.7rem);
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .tlv-state {
@@ -106,5 +105,26 @@
 @media (min-width: 640px) {
   .tlv {
     padding-inline: 5rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .tlv-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.5cqw;
+  }
+
+  .tlv-amount {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 3cqw;
+    min-width: 0;
+    text-align: left;
+  }
+
+  .tlv-time {
+    margin-top: 0;
+    text-align: right;
   }
 }

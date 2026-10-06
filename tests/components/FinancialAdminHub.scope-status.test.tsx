@@ -66,8 +66,8 @@ const m = vi.hoisted(() => ({
 }));
 
 function fallback(read: Read) {
-  if (read.table === 'financial_health_checks' && read.columns === 'passed') {
-    return { data: { passed: true }, count: null, error: null };
+  if (read.table === 'fn_ca_can_view_drift_console') {
+    return { data: m.scope.isPlatformStaff, count: null, error: null };
   }
   if (read.table === 'fn_ca_incident_dashboard') {
     return { data: [], count: null, error: null };
@@ -211,21 +211,37 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('financial admin reading identity and health truth', () => {
-  it('shows an unverified state when one dependent read fails, never a false all clear', async () => {
-    m.response.mockImplementation((read: Read) =>
-      read.table === 'financial_alerts'
-        ? { data: null, count: null, error: new Error('Alert Read Refused') }
-        : fallback(read)
-    );
+  it('isolates an authorized incident-read failure from verified club financial data', async () => {
+    m.response.mockImplementation((read: Read) => {
+      if (read.table === 'fn_ca_can_view_drift_console') {
+        return { data: true, count: null, error: null };
+      }
+      if (read.table === 'fn_ca_incident_dashboard') {
+        return { data: null, count: null, error: new Error('Incident Read Refused') };
+      }
+      return fallback(read);
+    });
     mount();
 
+    expect(await screen.findByText('6K Chips')).toBeInTheDocument();
+    expect(screen.getByText('Incident Status Unavailable')).toBeInTheDocument();
+    expect(screen.queryByText('Loaded Drift Incidents')).toBeNull();
+    expect(screen.queryByRole('link', { name: /Drift Incidents/i })).toBeNull();
     expect(
-      await screen.findByText(
-        'Financial Status Could Not Be Verified. No All Clear Is Being Shown.'
-      )
-    ).toBeInTheDocument();
-    expect(screen.queryByText('Checks Passing')).toBeNull();
+      screen.queryByText('Financial Status Could Not Be Verified. No All Clear Is Being Shown.')
+    ).toBeNull();
     expect(screen.queryByText(/All Services Operational/)).toBeNull();
+  });
+
+  it('does not query or advertise drift incidents when the exact capability is denied', async () => {
+    mount();
+
+    expect(await screen.findByText('6K Chips')).toBeInTheDocument();
+    expect(screen.queryByText('Loaded Drift Incidents')).toBeNull();
+    expect(screen.queryByRole('link', { name: /Drift Incidents/i })).toBeNull();
+    expect(m.response).not.toHaveBeenCalledWith(
+      expect.objectContaining({ table: 'fn_ca_incident_dashboard' })
+    );
   });
 
   it('shows an unverified state for a malformed successful revenue response', async () => {
@@ -248,7 +264,7 @@ describe('financial admin reading identity and health truth', () => {
         'Financial Status Could Not Be Verified. No All Clear Is Being Shown.'
       )
     ).toBeInTheDocument();
-    expect(screen.queryByText('Checks Passing')).toBeNull();
+    expect(screen.queryByText('Scope Reading Complete')).toBeNull();
   });
 
   it('rejects coercible non-numeric values instead of treating them as ledger money', async () => {
@@ -298,19 +314,70 @@ describe('financial admin reading identity and health truth', () => {
       })
     );
     expect(m.response).not.toHaveBeenCalledWith(expect.objectContaining({ table: 'rake_records' }));
+    expect(m.response).not.toHaveBeenCalledWith(
+      expect.objectContaining({ table: 'financial_alerts' })
+    );
+    expect(m.response).not.toHaveBeenCalledWith(
+      expect.objectContaining({ table: 'financial_health_checks' })
+    );
     expect(m.responsiveContainer).toHaveBeenCalledWith(
       expect.objectContaining({ initialDimension: { width: 280, height: 132 } })
     );
   });
 
-  it('hides the platform-only Financial Alerts door from club finance operators', async () => {
+  it('does not expose the retired Financial Alerts door to club finance operators', async () => {
     mount();
 
-    expect(await screen.findByRole('navigation', { name: 'Financial Tools' })).toBeInTheDocument();
+    const tools = await screen.findByRole('navigation', { name: 'Financial Tools' });
+    expect(tools).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Financial Alerts/i })).toBeNull();
   });
 
-  it('shows the Financial Alerts door to verified platform staff', async () => {
+  it('preserves the selected club on scoped financial tools and exposes only truthful doors', async () => {
+    mount();
+
+    const tools = await screen.findByRole('navigation', { name: 'Financial Tools' });
+    expect(tools).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Credit Admin/i })).toHaveAttribute(
+      'href',
+      '/credit-admin?club=club-a'
+    );
+    expect(screen.getByRole('link', { name: /Rate Audit Trail/i })).toHaveAttribute(
+      'href',
+      '/rate-audit?club=club-a'
+    );
+    expect(
+      screen.getByRole('link', { name: /Open Club Disputes Needing Resolution/i })
+    ).toHaveAttribute('href', '/clubs/club-a/disputes');
+    expect(screen.getByRole('link', { name: /Settlement History/i })).toHaveAttribute(
+      'href',
+      '/settlement-history?club=club-a'
+    );
+    expect(screen.getByRole('link', { name: /Settlement Center/i })).toHaveAttribute(
+      'href',
+      '/settlement-dashboard?club=club-a'
+    );
+    expect(screen.queryByRole('link', { name: /^Settlements(?:\s|$)/i })).toBeNull();
+    expect(screen.getByRole('link', { name: /Agent Portal/i })).toHaveAttribute(
+      'href',
+      '/agent-portal'
+    );
+    expect(screen.queryByRole('link', { name: /Rakeback Dashboard/i })).toBeNull();
+    expect(screen.getByRole('link', { name: /CSV Exports/i })).toHaveAttribute(
+      'href',
+      '/clubs/club-a/financials'
+    );
+    expect(screen.getByRole('link', { name: /CSV Exports/i })).not.toHaveAttribute(
+      'href',
+      '/wallet'
+    );
+    expect(screen.getByRole('link', { name: /CSV Exports/i })).not.toHaveAttribute(
+      'href',
+      '/transactions'
+    );
+  });
+
+  it('does not expose the retired Financial Alerts door to platform staff', async () => {
     m.scope = {
       ...m.scope,
       clubId: null,
@@ -320,7 +387,36 @@ describe('financial admin reading identity and health truth', () => {
     };
     mount();
 
-    expect(await screen.findByRole('link', { name: /Financial Alerts/i })).toBeInTheDocument();
+    const tools = await screen.findByRole('navigation', { name: 'Financial Tools' });
+    expect(tools).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Financial Alerts/i })).toBeNull();
+    expect(screen.getByRole('link', { name: /Drift Incidents/i })).toHaveAttribute(
+      'href',
+      '/financial-incidents'
+    );
+    expect(screen.queryByRole('link', { name: /CSV Exports/i })).toBeNull();
+    expect(screen.queryByRole('link', { name: /Credit Admin/i })).toBeNull();
+    expect(screen.queryByRole('link', { name: /Club Disputes/i })).toBeNull();
+    expect(screen.getByRole('link', { name: /My Disputes/i })).toHaveAttribute('href', '/disputes');
+    expect(
+      within(tools)
+        .getAllByRole('link')
+        .some((link) => link.getAttribute('href')?.startsWith('/clubs/'))
+    ).toBe(false);
+    expect(screen.queryByRole('link', { name: /Agent Portal/i })).toBeNull();
+    expect(screen.queryByRole('link', { name: /Settlement History/i })).toBeNull();
+  });
+
+  it('hides Credit Admin from platform staff without a qualifying role in the selected club', async () => {
+    m.scope = {
+      ...m.scope,
+      clubRole: null,
+      isPlatformStaff: true,
+    };
+    mount();
+
+    expect(await screen.findByRole('navigation', { name: 'Financial Tools' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Credit Admin/i })).toBeNull();
   });
 
   it('rejects a late club A reading after the signed-in viewer moves to club B', async () => {
@@ -330,8 +426,18 @@ describe('financial admin reading identity and health truth', () => {
     });
     m.response.mockImplementation((read: Read) => {
       if (read.table === 'disputes' && read.filters.club_id === 'club-a') return oldDisputes;
-      if (read.table === 'financial_alerts' && m.scope.clubId === 'club-b') {
-        return { data: [], count: 2, error: null };
+      if (read.table === 'fn_ca_can_view_drift_console') {
+        return { data: m.scope.clubId === 'club-b', count: null, error: null };
+      }
+      if (read.table === 'fn_ca_incident_dashboard' && m.scope.clubId === 'club-b') {
+        return {
+          data: [
+            { status: 'open', club_id: 'club-b' },
+            { status: 'acknowledged', club_id: 'club-b' },
+          ],
+          count: null,
+          error: null,
+        };
       }
       return fallback(read);
     });
@@ -345,12 +451,12 @@ describe('financial admin reading identity and health truth', () => {
       </MemoryRouter>
     );
 
-    const alerts = await screen.findByText('Active Alerts');
-    expect(within(alerts.closest('div')!).getByText('2')).toBeInTheDocument();
+    const incidents = await screen.findByText('Loaded Drift Incidents');
+    expect(within(incidents.closest('div')!).getByText('2')).toBeInTheDocument();
     await act(async () => resolveOld({ data: [], count: 99, error: null }));
     await waitFor(() => expect(screen.queryByText('99')).toBeNull());
     expect(
-      within(screen.getByText('Active Alerts').closest('div')!).getByText('2')
+      within(screen.getByText('Loaded Drift Incidents').closest('div')!).getByText('2')
     ).toBeInTheDocument();
   });
 });

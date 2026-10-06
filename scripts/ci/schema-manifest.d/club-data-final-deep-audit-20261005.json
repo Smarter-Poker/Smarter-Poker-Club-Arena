@@ -1,0 +1,18 @@
+{
+  "_owner": "agent/codex/club-data-final-deep-audit-20261005. Migrations 20261006012010, 20261006024259, 20261006040022, and 20261006040331 create the drift-incident timeline trigger guard, exact drift-console admission capability, owner-only report cores, the additive Bomb Pot v2 envelope, and owner-only dispute mutation cores used by exact-scope receipt wrappers. They remain PROMISED functions until the protected merge is installed through Apply Merged Migration; production readback and the nightly manifest refresh must replace these declarations with observed state.",
+  "functions": [
+    "ca_club_chip_ledger_core_20261006",
+    "ca_club_financials_core_20261006",
+    "ca_club_game_page_core_20261006",
+    "ca_club_insurance_report_core_20261006",
+    "ca_club_player_page_core_20261006",
+    "fn_ca_can_view_drift_console",
+    "fn_ca_drift_incident_timeline_guard",
+    "fn_club_bomb_pot_report_v2",
+    "fn_dispute_escalate_receipt_core_20261006",
+    "fn_dispute_start_review_receipt_core_20261006",
+    "fn_dispute_submit_receipt_core_20261006",
+    "fn_dispute_withdraw_receipt_core_20261006",
+    "fn_resolve_dispute_receipt_core_20261006"
+  ]
+}

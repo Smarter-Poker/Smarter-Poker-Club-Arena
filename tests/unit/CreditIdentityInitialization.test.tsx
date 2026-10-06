@@ -6,7 +6,6 @@ vi.mock('../../src/core/IdentityDNA', () => ({
 }));
 const m = vi.hoisted(() => ({
   invoices: [] as any[],
-  scans: [] as any[],
   listeners: [] as any[],
   rpc: vi.fn(),
   warning: vi.fn(),
@@ -16,19 +15,17 @@ vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     rpc: m.rpc,
     from: (table: string) => {
-      let scan = false;
       const filters: any[] = [];
       const c: any = {};
       for (const op of ['select', 'eq', 'order', 'limit', 'gt'])
         c[op] = (...args: any[]) => {
           filters.push([op, ...args]);
-          if (op === 'gt') scan = true;
           return c;
         };
       c.maybeSingle = async () => ({ data: null, error: null });
       c.then = (yes: any, no: any) => {
         m.queries.push({ table, filters });
-        const value = (table === 'credit_invoices' ? m.invoices : scan ? m.scans : []).shift() ?? {
+        const value = (table === 'credit_invoices' ? m.invoices : []).shift() ?? {
           data: [],
           error: null,
         };
@@ -59,7 +56,7 @@ vi.mock('../../src/services/FinancialAlertService', () => ({
 }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../../src/utils/clubIdResolver', () => ({ resolveClubUUID: vi.fn() }));
-let credit: any, cron: any;
+let credit: any;
 beforeEach(async () => {
   vi.resetModules();
   const { getIdentityDNAStatus } = await import('../../src/core/IdentityDNA');
@@ -69,13 +66,11 @@ beforeEach(async () => {
     userId: 'a',
   } as any);
   m.invoices = [];
-  m.scans = [];
   m.listeners = [];
   m.queries = [];
   m.rpc.mockReset().mockResolvedValue({ data: { success: true }, error: null });
   m.warning.mockReset().mockResolvedValue(undefined);
   credit = (await import('../../src/services/CreditService')).CreditService;
-  cron = (await import('../../src/services/FinancialCronService')).FinancialCronService;
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -93,13 +88,6 @@ const owed = (status = 'overdue') => ({
   ],
   error: null,
 });
-const agents = (n = 1) => ({
-  data: Array.from({ length: n }, (_, i) => ({
-    id: 'a' + i,
-    status: 'active',
-  })),
-  error: null,
-});
 const switchAccount = () =>
   m.listeners.forEach((fn) => fn({ payload: { isAuthenticated: true, userId: 'b' } }));
 
@@ -112,16 +100,6 @@ vi.mock('../../src/hooks/useVisibilityRefresh', () => ({ useVisibilityRefresh: (
 vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
 afterEach(() => cleanup());
 
-it('ADD01 corrected: lazy-loaded service resets existing circuit on first observed same-user refresh', async () => {
-  // Account A was authenticated before these deferred modules subscribed.
-  // MasterBus.subscribe does not replay AUTH_STATE_CHANGED; there is no seed here.
-  m.scans.push(new Error('1'), new Error('2'));
-  await cron.runSuspensionCheck();
-  await cron.runSuspensionCheck();
-  expect(cron._suspensionCheckDisabled).toBe(true);
-  m.listeners.forEach((fn) => fn({ payload: { isAuthenticated: true, userId: 'a' } }));
-  expect(cron._suspensionCheckDisabled).toBe(true);
-});
 it('ADD01 corrected: first observed same-user refresh rejects a valid pending invoice read', async () => {
   let finish: any;
   m.invoices.push(new Promise((r) => (finish = r)));
@@ -143,11 +121,10 @@ it('ADD01 protection: same initialized identity preserves pending reinstatement 
   await expect(result).resolves.toBe(true);
 });
 
-it('defers reads and scans until canonical identity initialization is complete', async () => {
+it('defers invoice reads until canonical identity initialization is complete', async () => {
   const { getIdentityDNAStatus } = await import('../../src/core/IdentityDNA');
   vi.mocked(getIdentityDNAStatus).mockReturnValue(null);
   await expect(credit.getAgentInvoices('a')).rejects.toThrow(/not initialized/);
-  expect((await cron.runSuspensionCheck()).unavailable).toBe(true);
   expect(m.queries).toHaveLength(0);
   expect(m.rpc).not.toHaveBeenCalled();
   // Actual replacement arrives during initialization, then canonical status completes.
@@ -157,12 +134,6 @@ it('defers reads and scans until canonical identity initialization is complete',
     authenticated: true,
     userId: 'b',
   } as any);
-  m.scans.push(new Error('1'), new Error('2'));
-  await cron.runSuspensionCheck();
-  await cron.runSuspensionCheck();
-  expect(cron._suspensionCheckDisabled).toBe(true);
-  m.listeners.forEach((fn) => fn({ payload: { isAuthenticated: true, userId: 'b' } }));
-  expect(cron._suspensionCheckDisabled).toBe(true);
   let finish: any;
   m.invoices.push(new Promise((r) => (finish = r)));
   const read = credit.getAgentInvoices('b');

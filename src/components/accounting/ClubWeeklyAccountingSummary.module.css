@@ -36,6 +36,12 @@
   color: #9aa5b3;
 }
 
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1cqw 3cqw;
+}
+
 .word {
   min-height: 44px;
   margin: 1cqw 0 0;
@@ -70,6 +76,11 @@
   margin: 0;
   padding: 5cqw 0;
   text-align: center;
+}
+
+.exportNotice {
+  margin: 0 0 2cqw;
+  font-size: clamp(0.68rem, 3cqw, 0.86rem);
 }
 
 .tableScroll {

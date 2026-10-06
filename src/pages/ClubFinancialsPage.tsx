@@ -82,12 +82,16 @@ import { formatDateShort as formatDate, compactChips } from '../utils/format';
 import { downloadCsv, toCsv } from '../utils/downloadCsv';
 import { reportError } from '../utils/errorReporter';
 import { formatPopupText } from '../utils/popupStyle';
+import { titleCase } from '../utils/titleCase';
 import { parseClubFinancialsPayload, type FinancialsPayload } from '../utils/clubFinancialsPayload';
 
 type Period = 'week' | 'month' | 'all';
 
 interface FinancialSnapshot {
   scope: string;
+  resolvedClubId: string;
+  requestedStart: string;
+  requestedEnd: string;
   data: FinancialsPayload;
 }
 
@@ -167,6 +171,18 @@ export default function ClubFinancialsPage() {
   activeRoleScopeRef.current = roleScopeKey;
 
   const data = snapshot?.scope === scopeKey ? snapshot.data : null;
+  const embeddedWeekSnapshot = useMemo(
+    () =>
+      period === 'week' && snapshot?.scope === scopeKey
+        ? {
+            resolvedClubId: snapshot.resolvedClubId,
+            requestedStart: snapshot.requestedStart,
+            requestedEnd: snapshot.requestedEnd,
+            financials: snapshot.data,
+          }
+        : undefined,
+    [period, scopeKey, snapshot]
+  );
   const stateForScope: FinancialRequestState =
     requestState.scope === scopeKey
       ? requestState
@@ -287,7 +303,10 @@ export default function ClubFinancialsPage() {
       }
       setSnapshot({
         scope: requestScope,
-        data: parseClubFinancialsPayload(payload, { start, end }),
+        resolvedClubId: resolved,
+        requestedStart: start,
+        requestedEnd: end,
+        data: parseClubFinancialsPayload(payload, { clubId: resolved, start, end }),
       });
     } catch (error) {
       if (!isCurrent()) return;
@@ -418,14 +437,16 @@ export default function ClubFinancialsPage() {
           title="Club Not Found"
           pill="Missing"
           pillInk="muted"
-          plates={{
-            primary: {
-              label: 'Back To Clubs',
-              onClick: () => navigate('/clubs', { replace: true }),
-            },
-          }}
+          foot="foot"
         >
           <p className="sc-copy sc-copy--center">That Club Could Not Be Found.</p>
+          <button
+            type="button"
+            className="cf-word sc-ink--blue"
+            onClick={() => navigate('/clubs', { replace: true })}
+          >
+            Back To Clubs
+          </button>
         </SpadeConsole>
       </StandardContentLayout>
     );
@@ -436,21 +457,23 @@ export default function ClubFinancialsPage() {
       <StandardContentLayout className="financials-page">
         <SpadeConsole
           className="cf-console"
-          family="riveted"
+          family="spade"
           eyebrow="Club Arena"
           title="Financials Are Restricted"
           pill="Staff"
           pillInk="red"
-          plates={{
-            primary: {
-              label: 'Back To Club',
-              onClick: () => navigate(`/clubs/${clubId}`),
-            },
-          }}
+          foot="foot"
         >
           <p className="sc-copy sc-copy--center">
             Club Financials Are Available To Club Owners, Admins And Super Agents.
           </p>
+          <button
+            type="button"
+            className="cf-word sc-ink--blue"
+            onClick={() => navigate(`/clubs/${clubId}`)}
+          >
+            Back To Club
+          </button>
         </SpadeConsole>
       </StandardContentLayout>
     );
@@ -461,7 +484,7 @@ export default function ClubFinancialsPage() {
       <StandardContentLayout className="financials-page">
         <SpadeConsole
           className="cf-console"
-          family="riveted"
+          family="spade"
           aria-busy
           eyebrow="Club Arena"
           title="Financials"
@@ -487,13 +510,14 @@ export default function ClubFinancialsPage() {
           title="Financials Unavailable"
           pill="Retry"
           pillInk="red"
-          plates={{
-            primary: { label: 'Retry Financials', onClick: () => void load() },
-          }}
+          foot="foot"
         >
           <p className="sc-copy sc-copy--center sc-ink--red" role="alert">
             {loadError}
           </p>
+          <button type="button" className="cf-word sc-ink--blue" onClick={() => void load()}>
+            Retry Financials
+          </button>
         </SpadeConsole>
       </StandardContentLayout>
     );
@@ -582,15 +606,13 @@ export default function ClubFinancialsPage() {
       {/* ── The window: three lit words and the export ───────────────── */}
       <SpadeConsole
         className="cf-console"
-        family="shark"
+        family="spade"
         aria-busy={loading || undefined}
         eyebrow="Club Arena"
         title="Financials"
         pill={period === 'week' ? 'Week' : period === 'month' ? 'Month' : 'All Time'}
         pillInk="blue"
-        plates={{
-          primary: { label: 'Export CSV', onClick: exportCsv, disabled: !data },
-        }}
+        foot="foot"
       >
         {/* The master paints no tab, so nothing here draws one: the three
             windows are lit words cut into the glass. */}
@@ -617,6 +639,10 @@ export default function ClubFinancialsPage() {
           </p>
         )}
 
+        <button type="button" className="cf-word sc-ink--blue" onClick={exportCsv} disabled={!data}>
+          Export CSV
+        </button>
+
         {loadError && data && (
           <p className="sc-copy sc-copy--center sc-ink--red" role="alert">
             {loadError}
@@ -631,7 +657,7 @@ export default function ClubFinancialsPage() {
           the numbers. */}
       <SpadeConsole
         className="cf-console"
-        family="shark"
+        family="spade"
         eyebrow="Club Arena"
         title="Revenue Trend"
         subtitle={
@@ -648,7 +674,7 @@ export default function ClubFinancialsPage() {
       {totals && (
         <SpadeConsole
           className="cf-console"
-          family="riveted"
+          family="spade"
           eyebrow={rangeNote || 'Club Arena'}
           title="Summary"
           pill={totals.net_revenue >= 0 ? 'Up' : 'Down'}
@@ -683,7 +709,7 @@ export default function ClubFinancialsPage() {
       {data && data.by_table.length > 0 && (
         <SpadeConsole
           className="cf-console"
-          family="shark"
+          family="spade"
           eyebrow="Club Arena"
           title="Top Tables By Rake"
           pill={count(data.by_table.length)}
@@ -693,10 +719,10 @@ export default function ClubFinancialsPage() {
           <ol className="cf-list">
             {data.by_table.map((t) => (
               <li key={t.table_id} className="cf-row">
-                <span className="cf-row__name sc-ink--silver">{t.name}</span>
+                <span className="cf-row__name sc-ink--silver">{titleCase(t.name)}</span>
                 <span className="cf-row__meta sc-ink--muted">
-                  {[t.variant, t.stakes].filter(Boolean).join(' ')} - {count(t.raked_hands)} Raked
-                  Hands
+                  {titleCase([t.variant, t.stakes].filter(Boolean).join(' '))} -{' '}
+                  {count(t.raked_hands)} Raked Hands
                 </span>
                 <span className="cf-row__amount sc-ink--green">{chips(t.rake)}</span>
               </li>
@@ -705,24 +731,24 @@ export default function ClubFinancialsPage() {
         </SpadeConsole>
       )}
 
-      {/* Club Financial Dashboard - Chip Minting & Commission (club staff).
-          This was owner-only, which left a co-owner - "everything an owner can
-          do except appoint another co owner" - without the one screen that
-          mints chips. fn_actor_can_manage_club_treasury admits all three. */}
-      {clubId && isClubStaff(userRole) && (
-        /* ClubFinancialDashboard and RakeReports below are separate
-           components with their own markup and their own stylesheets. They
-           are not part of this rebuild, so they are given room rather than a
-           frame: a card drawn here would be a frame on their frame. */
+      {/* Club Financial Dashboard (club staff). Money-changing work stays in
+          the maintained Club Bank Cashier and Agent Management surfaces. */}
+      {clubId && (isClubStaff(userRole) || userRole === 'super_agent') && (
+        /* ClubFinancialDashboard owns its approved painted consoles. This
+           embed supplies layout room only, so no frame sits on its frames. */
         <section className="cf-embed">
-          <ClubFinancialDashboard clubId={clubId} />
+          <ClubFinancialDashboard
+            clubId={clubId}
+            canManageAgents={isClubStaff(userRole)}
+            initialSnapshot={embeddedWeekSnapshot}
+          />
         </section>
       )}
 
       {/* Rake Analytics Reports */}
       {clubId && (
         <section className="cf-embed">
-          <RakeReports clubId={clubId} />
+          <RakeReports clubId={clubId} initialSnapshot={embeddedWeekSnapshot} />
         </section>
       )}
 
@@ -785,7 +811,7 @@ export default function ClubFinancialsPage() {
       {resolvedClubId && (
         <SpadeConsole
           className="cf-console"
-          family="riveted"
+          family="spade"
           eyebrow="Club Arena"
           title="Club Chip Audit Trail"
           foot="foot"

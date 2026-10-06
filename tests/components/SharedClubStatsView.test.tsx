@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const service = vi.hoisted(() => ({
@@ -18,11 +18,19 @@ vi.mock('../../src/utils/errorReporter', () => ({
   reportError: service.reportError,
 }));
 
+vi.mock('../../src/pages/stats/types', async (original) => {
+  const actual = await original<typeof import('../../src/pages/stats/types')>();
+  return {
+    ...actual,
+    RANGES: actual.RANGES.map((range) => ({ ...range, label: range.label.toLowerCase() })),
+  };
+});
+
 import SharedClubStatsView from '../../src/pages/stats/SharedClubStatsView';
 
 const CLUBS = [
-  { id: 'club-a', name: 'Alpha Club' },
-  { id: 'club-b', name: 'Bravo Club' },
+  { id: 'club-a', name: 'alpha club' },
+  { id: 'club-b', name: 'bravo club' },
 ];
 
 const overview = (hands: number) => ({
@@ -68,6 +76,34 @@ beforeEach(() => {
 });
 
 describe('SharedClubStatsView request coordination', () => {
+  it('preserves exact zero counts without presenting zero-sample rates as measured', async () => {
+    service.listClubs.mockResolvedValue([CLUBS[0]]);
+    service.getOverview.mockResolvedValue({
+      overview: {
+        hands: 0,
+        cash_hands: 0,
+        tournament_hands: 0,
+        hands_won: 0,
+        bb_per_100: 0,
+        vpip: 0,
+        pfr: 0,
+        last_played_at: null,
+      },
+      tournaments: { entries: 0, cashes: 0, wins: 0 },
+    });
+
+    render(view('club-a'));
+
+    const row = await screen.findByRole('row', { name: /Not Yet Measured/ });
+    const cells = within(row).getAllByRole('cell');
+    expect(cells[0]).toHaveTextContent('0');
+    expect(cells[1]).toHaveTextContent('0');
+    expect(cells[2]).toHaveTextContent('Not Yet Measured');
+    expect(cells[3]).toHaveTextContent('Not Yet Measured');
+    expect(cells[4]).toHaveTextContent('Not Yet Measured');
+    expect(row).not.toHaveTextContent('0.0%');
+  });
+
   it('follows A to B to A Back and B Forward URL changes without rewriting valid history', async () => {
     const onClubChange = vi.fn();
     service.listClubs.mockResolvedValue(CLUBS);
@@ -78,6 +114,8 @@ describe('SharedClubStatsView request coordination', () => {
     const { rerender } = render(view('club-a', onClubChange));
 
     expect(await screen.findByRole('cell', { name: '101' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Alpha Club' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '30 Days' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Alpha Club' })).toHaveAttribute(
       'aria-pressed',
       'true'

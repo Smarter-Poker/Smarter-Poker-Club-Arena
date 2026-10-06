@@ -13,6 +13,8 @@ import { ratioOrUnmeasured } from './format';
 import { num, type FullStats, type OverallStats, type TournamentSummary } from './types';
 import StatsEvidenceLink from '../../components/stats/StatsEvidenceLink';
 import { buildStatsTournamentEvidencePath } from '../../lib/statsEvidenceNavigation';
+import { compactChips } from '../../utils/format';
+import { enumToTitleCase, titleCase } from '../../utils/titleCase';
 import type { ReactNode } from 'react';
 
 export interface TournamentsTabProps {
@@ -63,17 +65,17 @@ export default function TournamentsTab({
           />
           <StatRow
             label="Estimated Entry Costs"
-            value={tourn.total_buyins.toLocaleString()}
+            value={compactChips(tourn.total_buyins)}
             color="#06b6d4"
           />
           <StatRow
             label="Recorded Prize And Bounty Amounts"
-            value={tourn.total_winnings.toLocaleString()}
+            value={compactChips(tourn.total_winnings)}
             color="#10b981"
           />
           <StatRow
             label="Reconstructed Net"
-            value={`${tourn.net_profit >= 0 ? '+' : ''}${tourn.net_profit.toLocaleString()}`}
+            value={`${tourn.net_profit >= 0 ? '+' : ''}${compactChips(tourn.net_profit)}`}
             color={tourn.net_profit >= 0 ? '#22c55e' : '#ef4444'}
             highlight
           />
@@ -105,7 +107,7 @@ export default function TournamentsTab({
             {(full?.recent_tournaments || []).map((t, i) => (
               <div className="tournament-item" key={i}>
                 <div className="tournament-item-main">
-                  <span className="tournament-item-name">{t.name}</span>
+                  <span className="tournament-item-name">{titleCase(t.name)}</span>
                   <span className="tournament-item-date">
                     {t.ended_at
                       ? `Finalized ${new Date(t.ended_at).toLocaleDateString('en-US', {
@@ -120,13 +122,15 @@ export default function TournamentsTab({
                             year: 'numeric',
                           })} · Result May Be Provisional`
                         : 'Finalization Date Unavailable'}
-                    {t.variant ? ` · ${t.variant.toUpperCase()}` : ''}
-                    {t.is_mystery_bounty ? ' · MYSTERY BOUNTY' : ''}
+                    {t.variant ? ` · ${enumToTitleCase(t.variant)}` : ''}
+                    {t.is_mystery_bounty && enumToTitleCase(t.variant) !== 'Mystery Bounty'
+                      ? ' · Mystery Bounty'
+                      : ''}
                   </span>
                 </div>
                 <div className="tournament-item-result">
                   <span className="tournament-item-rank">
-                    {t.finish_rank ? `#${t.finish_rank}` : t.status || '-'}
+                    {t.finish_rank ? `#${t.finish_rank}` : enumToTitleCase(t.status) || '-'}
                   </span>
                   {/* Dan section 45: Finish / Prize / Bounties / Bounty
                         Earnings / Total Won. The net below is
@@ -142,28 +146,28 @@ export default function TournamentsTab({
                       marginTop: 2,
                     }}
                   >
-                    Prize {num(t.prize).toLocaleString()}
+                    Prize {compactChips(num(t.prize))}
                     {num(t.bounty_winnings) > 0 && (
                       <>
                         {' '}
                         / {num(t.bounties).toLocaleString()} KO
-                        {num(t.bounties) === 1 ? '' : 's'} {num(t.bounty_winnings).toLocaleString()}
+                        {num(t.bounties) === 1 ? '' : 's'} {compactChips(num(t.bounty_winnings))}
                       </>
                     )}
                     {' / Total '}
-                    {num(t.total_won).toLocaleString()}
+                    {compactChips(num(t.total_won))}
                   </span>
                   <span
                     className={`tournament-item-net ${num(t.total_won) - num(t.buyin) >= 0 ? 'positive' : 'negative'}`}
                   >
                     {num(t.total_won) - num(t.buyin) >= 0 ? '+' : ''}
-                    {(num(t.total_won) - num(t.buyin)).toLocaleString()}
+                    {compactChips(num(t.total_won) - num(t.buyin))}
                   </span>
                   {t.tournament_id ? (
                     <StatsEvidenceLink
                       className="stats-evidence-action"
                       to={buildStatsTournamentEvidencePath(t.tournament_id)}
-                      aria-label={`Open ${t.name} Tournament Evidence`}
+                      aria-label={`Open ${titleCase(t.name)} Tournament Evidence`}
                     >
                       Open Tournament
                     </StatsEvidenceLink>

@@ -40,6 +40,7 @@ import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { retryFetch } from '../utils/retryFetch';
+import { compactChips } from '../utils/format';
 import { useIsMounted } from '../hooks/useIsMounted';
 /**
  * ONE LAZY CHUNK PER TAB (Stats Page Programme phase 2, 2026-09-04).
@@ -105,6 +106,7 @@ import {
   EMPTY_OVERALL,
   TAB_LABELS,
   getCachedFull,
+  isFullStatsPayload,
   normalizeFull,
   normalizeHands,
   normalizeDashboardLayout,
@@ -751,7 +753,7 @@ export default function PlayerStatsPage() {
         clearStatsRangeMemo();
       } else {
         const memoPayload = readStatsRangeMemo(cacheIdentityFor(rangeKey, windowDays));
-        const memo = memoPayload ? normalizeFull(memoPayload) : null;
+        const memo = isFullStatsPayload(memoPayload) ? normalizeFull(memoPayload) : null;
         if (memo) {
           setFull(memo);
           loadedRangeKeyRef.current = loadScopeKey;
@@ -810,7 +812,8 @@ export default function PlayerStatsPage() {
           timezone: statsTimezone,
           visibility: 'owner',
         });
-        if (!error && data && data.overall && scopeMatches) {
+        const payloadMatches = isFullStatsPayload(data);
+        if (!error && scopeMatches && payloadMatches) {
           const resolved = normalizeFull(data);
           const loadedAt = resolved.contract.generated_at
             ? Date.parse(resolved.contract.generated_at)
@@ -840,29 +843,9 @@ export default function PlayerStatsPage() {
             cache_source: 'network',
             outcome: 'success',
           });
-          // A PAGE VIEW MUST NOT TRIGGER A MAINTENANCE JOB. (removed 2026-08-24)
-          //
-          // This used to fire ca_refresh_hand_player_index({ p_max_hands: 3000 })
-          // whenever a player opened their stats page. The comment claimed the
-          // batch was "sized to finish inside the 8s statement_timeout".
-          // Production disagreed: pg_stat_statements put that RPC at a 73,901 ms
-          // MEAN and a 173,487 ms max, and it was caught live in pg_stat_activity
-          // at 26.9s waiting on IO/DataFileRead - i.e. dragging the 10GB
-          // hand_history table off disk and evicting everyone else's working set
-          // from shared_buffers. That is why unrelated queries all over the
-          // platform went slow at once; a trivial PostgREST health probe was
-          // taking 14.4 SECONDS while raw Postgres answered the same shape in
-          // 0.17ms.
-          //
-          // The 5-minute guard below did not bound it either: lastIndexRefreshRef
-          // is per component instance, so it throttled one tab, not the platform.
-          //
-          // It is already done properly server-side:
-          // pages/api/cron/club-stats-maintenance.js runs the same RPC every 15
-          // minutes with p_max_hands: 60000, under service_role, off the request
-          // path. That route's own comment records the decision to own it there.
-          // So this call was redundant as well as harmful, and the index it
-          // maintains stays just as fresh without it.
+          // A page view must never run index maintenance. The retired client RPC
+          // exceeded the authenticated timeout and evicted the shared Postgres
+          // working set; the server-owned maintenance path owns that work.
         } else {
           if (hasStatsRef.current && loadedRangeKeyRef.current === loadScopeKey) {
             // Something is already on screen (cache or an earlier load). Keep it,
@@ -875,6 +858,16 @@ export default function PlayerStatsPage() {
             setLoadError(true);
           }
           if (error) reportError(error, 'PlayerStatsPage.rpc_ca_player_stats_overview_v2');
+          else if (!scopeMatches || !payloadMatches) {
+            reportError(
+              new Error(
+                scopeMatches
+                  ? 'Player Stats Payload Could Not Be Verified'
+                  : 'Player Stats Scope Could Not Be Verified'
+              ),
+              'PlayerStatsPage.rpc_ca_player_stats_overview_v2'
+            );
+          }
           capture('stats_rpc_load', {
             duration_ms: Math.round(performance.now() - loadStartedAt),
             payload_bytes: 0,
@@ -966,10 +959,22 @@ export default function PlayerStatsPage() {
             setHandsError(true);
             setHands([]);
           } else {
-            // The only place on this page that formats numbers straight off the
-            // wire. `as HandRow[]` is a compile-time claim, not a runtime one,
-            // so harden here the way normalizeFull hardens the main payload.
-            setHands(normalizeHands(data));
+            const verifiedHands = normalizeHands(data, {
+              targetUserId,
+              clubId: selectedClubId,
+              asset: statsScope,
+              visibility: 'owner',
+            });
+            if (verifiedHands === null) {
+              reportError(
+                new Error('notable hands payload did not match its v2 request contract'),
+                'PlayerStatsPage.rpc_ca_player_hands_v2_shape'
+              );
+              setHandsError(true);
+              setHands([]);
+            } else {
+              setHands(verifiedHands);
+            }
           }
           setHandsLoading(false);
         },
@@ -1007,23 +1012,8 @@ export default function PlayerStatsPage() {
       behavior: reduceMotion ? 'auto' : 'smooth',
     });
   }, [category, reduceMotion]);
-  /* Kept current for the debouncer and the in-flight replay above.
-   *
-   * ASSIGNED IN A LAYOUT EFFECT, NOT DURING RENDER. This used to be a bare
-   * `loadRef.current = loadAllData` at render scope. Mutating a ref while
-   * rendering is a side effect in a function React is allowed to call more than
-   * once and to throw away - StrictMode double-invokes it in development, and
-   * concurrent rendering may abandon a render entirely - so an abandoned render
-   * could leave the ref pointing at a loader belonging to state that was never
-   * committed. That is precisely the stale-closure bug the ref exists to prevent,
-   * reintroduced one level up.
-   *
-   * useLayoutEffect runs synchronously after every commit and before paint, and
-   * both readers are post-commit: one is inside an async load's `finally`, the
-   * other inside a setTimeout owned by a MasterBus subscription created in a
-   * passive effect. Passive effects run after layout effects, so the ref is
-   * always populated before anything can read it.
-   */
+  /* Keep the shared debouncer on the last committed loader. Assigning during
+   * render lets an abandoned concurrent render publish a stale closure. */
   useLayoutEffect(() => {
     loadRef.current = loadAllData;
   });
@@ -1033,23 +1023,9 @@ export default function PlayerStatsPage() {
   useLayoutEffect(() => {
     activeClubIdRef.current = selectedClubId;
   }, [selectedClubId]);
-  /**
-   * ── ONE debounce window for everything that says "something changed" ────
-   *
-   * MEASURED 2026-08-25. The underlying overview rollup costs 2.6s warm and 15s
-   * COLD for a heavy account, against an 8s statement_timeout on the
-   * `authenticated` role. This used to be five INDEPENDENT `subscribeDebounced`
-   * calls, each with its own 2000ms window - and a single completed hand emits
-   * HAND_COMPLETED, BALANCE_UPDATED and CHIPS_DISTRIBUTED within milliseconds
-   * of each other. Three windows, three refetches per hand, plus the
-   * pendingRefreshRef replay for a fourth. One shared debouncer collapses
-   * that to one, and the pulse below feeds the same window, so a hand that
-   * arrives by both routes still costs one refetch.
-   *
-   * The loader goes through loadRef so the timer always calls the CURRENT
-   * loader: `loadAllData` closes over `rangeKey`, and firing a stale copy
-   * refetches the previous window and overwrites newer data with it.
-   */
+  /** One debounce window collapses the several events emitted by one hand and
+   * the pulse fallback into one read. The committed loadRef prevents an old
+   * range closure from overwriting the current window. */
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scheduleRefresh = useCallback(() => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
@@ -1153,7 +1129,7 @@ export default function PlayerStatsPage() {
   useEffect(() => {
     if (!targetUserId || !isOwnProfile || !wantsAllTime || rangeKey === 'all') return;
     const memoPayload = readStatsRangeMemo(cacheIdentityFor('all', null));
-    if (memoPayload) {
+    if (isFullStatsPayload(memoPayload)) {
       const memo = normalizeFull(memoPayload);
       setAllTimeFetched(memo);
       setAllTimeError(false);
@@ -1173,8 +1149,27 @@ export default function PlayerStatsPage() {
         ({ data, error }: any) => {
           if (cancelled || !isMounted.current) return;
           const contract = normalizeStatsContractMetadata(data);
-          if (error || !data?.overall || !contract.valid) {
+          const scopeMatches = statsContractMatchesRequest(contract, {
+            targetUserId,
+            clubId: selectedClubId,
+            asset: statsScope,
+            rangeDays: null,
+            timezone: statsTimezone,
+            visibility: 'owner',
+          });
+          const payloadMatches = isFullStatsPayload(data);
+          if (error || !scopeMatches || !payloadMatches) {
             if (error) reportError(error, 'PlayerStatsPage.rpc_all_time_for_trophies');
+            else {
+              reportError(
+                new Error(
+                  scopeMatches
+                    ? 'Player Stats Lifetime Payload Could Not Be Verified'
+                    : 'Player Stats Lifetime Scope Could Not Be Verified'
+                ),
+                'PlayerStatsPage.rpc_all_time_for_trophies'
+              );
+            }
             setAllTimeError(true);
             return;
           }
@@ -1377,7 +1372,7 @@ export default function PlayerStatsPage() {
     const last = dailySeries[dailySeries.length - 1];
     const best = dailySeries.reduce((a, b) => (b.profit > a.profit ? b : a));
     const worst = dailySeries.reduce((a, b) => (b.profit < a.profit ? b : a));
-    return `Cumulative cash profit across ${dailySeries.length.toLocaleString()} days, ${dailySeries[0].date} to ${last.date}, ending at ${last.cumulative.toLocaleString()}. Best day ${best.date} at ${best.profit.toLocaleString()}. Worst day ${worst.date} at ${worst.profit.toLocaleString()}.`;
+    return `Cumulative cash profit across ${dailySeries.length.toLocaleString()} days, ${dailySeries[0].date} to ${last.date}, ending at ${compactChips(last.cumulative)}. Best day ${best.date} at ${compactChips(best.profit)}. Worst day ${worst.date} at ${compactChips(worst.profit)}.`;
   }, [dailySeries]);
   const dailyChartSummary = useMemo(() => {
     if (dailySeries.length === 0) return 'No daily results in this range.';

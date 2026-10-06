@@ -338,6 +338,73 @@ describe('Union Statements request identity', () => {
     expect(screen.getByText('Beta Club')).toBeVisible();
   });
 
+  it.each([
+    ['an empty object', {}],
+    ['a string success flag', { success: 'true', issued: 1 }],
+    ['a string issued count', { success: true, issued: '1' }],
+    ['a negative issued count', { success: true, issued: -1 }],
+    ['conflicting issued counts', { success: true, issued: 1, invoices: 2 }],
+    ['another union receipt', { success: true, issued: 1, union_id: 'union-b' }],
+    ['another period receipt', { success: true, issued: 1, period_end: '2026-09-21' }],
+  ])('refuses %s as a successful statement-delivery receipt', async (_label, payload) => {
+    testState.rpc.mockImplementation((name: string) => {
+      if (name === 'ca_union_insurance_pnl') return Promise.resolve(insurance());
+      return Promise.resolve({
+        data: statementBoard('union-a', 'alpha union', 'alpha club'),
+        error: null,
+      });
+    });
+    testState.fetch.mockResolvedValue({ ok: true, json: async () => payload });
+
+    render(<UnionStatementsPage />);
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Issue Statements For The Closed Week' })
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, Issue And Deliver' }));
+
+    await waitFor(() =>
+      expect(testState.toast.error).toHaveBeenCalledWith(
+        'Statement Delivery Receipt Could Not Be Verified. Review The Board.'
+      )
+    );
+    expect(testState.toast.success).not.toHaveBeenCalled();
+    expect(testState.reportError).toHaveBeenCalledWith(
+      expect.any(Error),
+      'UnionStatementsPage.issue_receipt',
+      { unionId: 'union-a', periodEnd: '2026-09-14' }
+    );
+  });
+
+  it('accepts a literal, scope-bound statement-delivery receipt', async () => {
+    testState.rpc.mockImplementation((name: string) => {
+      if (name === 'ca_union_insurance_pnl') return Promise.resolve(insurance());
+      return Promise.resolve({
+        data: statementBoard('union-a', 'alpha union', 'alpha club'),
+        error: null,
+      });
+    });
+    testState.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        issued: 1,
+        union_id: 'union-a',
+        period_end: '2026-09-14',
+      }),
+    });
+
+    render(<UnionStatementsPage />);
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Issue Statements For The Closed Week' })
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, Issue And Deliver' }));
+
+    await waitFor(() =>
+      expect(testState.toast.success).toHaveBeenCalledWith('Issued And Delivered 1 Statements')
+    );
+    expect(testState.toast.error).not.toHaveBeenCalled();
+  });
+
   it('uses the maintained presettlement RPC and refuses a mismatched success receipt', async () => {
     testState.rpc.mockImplementation((name: string) => {
       if (name === 'ca_union_insurance_pnl') return Promise.resolve(insurance());

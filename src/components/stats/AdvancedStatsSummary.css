@@ -45,21 +45,23 @@
   flex-direction: column;
   gap: 0.75rem;
   padding: 1rem;
-  background: linear-gradient(155deg, rgba(17, 26, 35, 0.96), rgba(3, 7, 11, 0.99));
-  border: 1px solid rgba(199, 210, 220, 0.14);
-  border-radius: 2px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.045),
-    inset 0 -2px 0 rgba(22, 140, 255, 0.28);
+  box-shadow: none;
   overflow: hidden;
 }
 
 .advanced-stat-card.selected {
-  background: linear-gradient(145deg, rgba(0, 212, 255, 0.12) 0%, rgba(0, 212, 255, 0.04) 100%);
-  border-color: rgba(0, 212, 255, 0.5);
-  box-shadow: 0 0 20px rgba(0, 212, 255, 0.2);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.advanced-stat-card.selected .stat-title {
+  color: #45adff;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -150,7 +152,7 @@
 .card-description {
   padding-top: 0.75rem;
   border-top: 1px solid rgba(0, 212, 255, 0.1);
-  background: rgba(0, 212, 255, 0.05);
+  background: transparent;
   padding: 0.75rem;
   border-radius: 1px;
   margin: -1rem -1rem 0 -1rem;

@@ -39,6 +39,7 @@ import {
   Tooltip,
 } from 'recharts';
 import StatsDataTable from './StatsDataTable';
+import { compactChips } from '../../utils/format';
 
 const CHART_COLORS = ['#4169E1', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#10b981'];
 
@@ -123,7 +124,11 @@ export default function StatsCharts({
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
               <XAxis dataKey="date" stroke={axisStroke} fontSize={11} />
-              <YAxis stroke={axisStroke} fontSize={11} />
+              <YAxis
+                stroke={axisStroke}
+                fontSize={11}
+                tickFormatter={(value) => compactChips(Number(value))}
+              />
               <Tooltip
                 contentStyle={{
                   background: 'rgba(14, 14, 28, 0.95)',
@@ -131,6 +136,7 @@ export default function StatsCharts({
                   borderRadius: '2px',
                 }}
                 labelStyle={{ color: '#fff' }}
+                formatter={(value, name) => [compactChips(Number(value)), String(name)]}
               />
               <Area
                 isAnimationActive={!still}
@@ -153,7 +159,7 @@ export default function StatsCharts({
             {
               key: 'cumulative',
               label: 'Cumulative Profit',
-              render: (row) => row.cumulative.toLocaleString(),
+              render: (row) => compactChips(row.cumulative),
             },
           ]}
         />
@@ -171,7 +177,11 @@ export default function StatsCharts({
             <BarChart data={dailySeries}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
               <XAxis dataKey="date" stroke={axisStroke} fontSize={11} />
-              <YAxis stroke={axisStroke} fontSize={11} />
+              <YAxis
+                stroke={axisStroke}
+                fontSize={11}
+                tickFormatter={(value) => compactChips(Number(value))}
+              />
               <Tooltip
                 contentStyle={{
                   background: 'rgba(14, 14, 28, 0.95)',
@@ -179,6 +189,7 @@ export default function StatsCharts({
                   borderRadius: '2px',
                 }}
                 labelStyle={{ color: '#fff' }}
+                formatter={(value, name) => [compactChips(Number(value)), String(name)]}
               />
               <Bar dataKey="profit" name="Profit" radius={[1, 1, 0, 0]} isAnimationActive={!still}>
                 {dailySeries.map((entry, index) => (
@@ -194,7 +205,7 @@ export default function StatsCharts({
           rowKey={(row) => row.date}
           columns={[
             { key: 'date', label: 'Date', render: (row) => row.date },
-            { key: 'profit', label: 'Profit', render: (row) => row.profit.toLocaleString() },
+            { key: 'profit', label: 'Profit', render: (row) => compactChips(row.profit) },
             { key: 'hands', label: 'Hands', render: (row) => row.hands.toLocaleString() },
           ]}
         />

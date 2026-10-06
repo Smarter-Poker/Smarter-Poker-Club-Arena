@@ -24,11 +24,12 @@ describe('operator Data surfaces use intentional Club Arena console families', (
     const agent = read(pages[2]);
 
     expect(hub).toMatch(/family="spade"[\s\S]*?crest="flat"/);
-    expect(hub).toMatch(/family="shark"[\s\S]*?crest="flat"/);
+    expect(hub).toMatch(/family="spade"[\s\S]*?crest="spade"/);
+    expect(hub).not.toContain('family="shark"');
     expect(rates).toMatch(/family="shark"[\s\S]*?crest="flat"/);
     expect(agent).toMatch(/family="riveted"[\s\S]*?crest="spade"/);
-    expect(agent).toMatch(/family="shark"[\s\S]*?crest="flat"/);
     expect(agent).toMatch(/family="spade"[\s\S]*?crest="flat"/);
+    expect(agent).not.toContain('family="shark"');
 
     for (const path of pages) {
       const source = read(path);
@@ -65,6 +66,7 @@ describe('operator Data surfaces use intentional Club Arena console families', (
     const phoneFit = read('tests/e2e/mobile-fit-audit.spec.ts');
     const thumbSweep = read('tests/e2e/mobile-tap-targets.spec.ts');
 
+    expect(phoneFit).toContain("'financial-admin'");
     expect(phoneFit).toContain('`rate-audit?club=${');
     expect(phoneFit).toContain("'settlement-history'");
     for (const route of [
@@ -75,6 +77,23 @@ describe('operator Data surfaces use intentional Club Arena console families', (
     ]) {
       expect(thumbSweep).toContain(route);
     }
+  });
+
+  it('keeps database identifiers internal when a display name is unavailable', () => {
+    const rates = read('src/pages/RateAuditPage.tsx');
+    const clubData = read('src/pages/club/ClubDataPage.tsx');
+    const bombPots = read('src/pages/club/ClubBombPotReportPage.tsx');
+
+    expect(rates).toContain("'Agent Name Unavailable'");
+    expect(rates).toContain("'Club Name Unavailable'");
+    expect(rates).toContain("changedBy: 'Operator Name Unavailable'");
+    expect(rates).not.toMatch(/entityId\.slice\s*\(/);
+    expect(rates).not.toMatch(/changed_by\.slice\s*\(/);
+
+    expect(clubData).toContain("'Creator Name Unavailable'");
+    expect(clubData).not.toMatch(/creator_id\.slice\s*\(/);
+    expect(bombPots).toContain("d.table_name ?? 'Table Name Unavailable'");
+    expect(bombPots).not.toMatch(/table_id\.slice\s*\(/);
   });
 
   it('keeps scope generations and failed reads explicit rather than false zeroes', () => {

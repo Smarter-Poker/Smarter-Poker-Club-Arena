@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { parseClubBombPotReport } from '../../src/pages/club/ClubBombPotReportPage';
 import { parseClubInsuranceReport } from '../../src/pages/club/ClubInsuranceReportPage';
 
+const CLUB_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
 const bombRow = {
   table_id: '11111111-1111-4111-8111-111111111111',
   table_name: 'Bomb Room',
@@ -20,6 +22,10 @@ const bombRow = {
 };
 
 const insuranceReport = {
+  contract: 'ca_club_insurance_report.v2',
+  contract_version: 2,
+  club_id: CLUB_ID,
+  requested_days: 7,
   window_days: 7,
   window_start: '2026-10-01',
   window_end: '2026-10-07',
@@ -73,24 +79,51 @@ const insuranceReport = {
 
 describe('Club Data report payload validation', () => {
   it('accepts a reconciled bomb-pot report and refuses malformed or contradictory rows', () => {
-    expect(parseClubBombPotReport([bombRow])).toEqual([bombRow]);
-    expect(() => parseClubBombPotReport({ rows: [bombRow] })).toThrow('response is invalid');
-    expect(() => parseClubBombPotReport([{ ...bombRow, unrecorded_hands: 0 }])).toThrow(
-      'outcomes do not reconcile'
-    );
-    expect(() => parseClubBombPotReport([bombRow, bombRow])).toThrow('duplicated');
+    const envelope = {
+      contract: 'fn_club_bomb_pot_report.v2',
+      contract_version: 2,
+      club_id: CLUB_ID,
+      requested_days: 7,
+      window_days: 7,
+      window_start: '2026-09-30',
+      window_end: '2026-10-07',
+      generated_at: '2026-10-07T12:00:00.000Z',
+      rows: [bombRow],
+    };
+    expect(parseClubBombPotReport(envelope, CLUB_ID, 7)).toEqual([bombRow]);
+    expect(parseClubBombPotReport({ ...envelope, rows: [] }, CLUB_ID, 7)).toEqual([]);
+    expect(() => parseClubBombPotReport([bombRow], CLUB_ID, 7)).toThrow('response is invalid');
+    expect(() =>
+      parseClubBombPotReport({ ...envelope, club_id: bombRow.table_id }, CLUB_ID, 7)
+    ).toThrow('scope receipt is invalid');
+    expect(() =>
+      parseClubBombPotReport(
+        { ...envelope, rows: [{ ...bombRow, unrecorded_hands: 0 }] },
+        CLUB_ID,
+        7
+      )
+    ).toThrow('outcomes do not reconcile');
+    expect(() =>
+      parseClubBombPotReport({ ...envelope, rows: [bombRow, bombRow] }, CLUB_ID, 7)
+    ).toThrow('duplicated');
   });
 
   it('binds insurance reports to the requested window and exact ledger arithmetic', () => {
-    expect(parseClubInsuranceReport(insuranceReport, 7)).toMatchObject({
+    expect(parseClubInsuranceReport(insuranceReport, CLUB_ID, 7)).toMatchObject({
       window_days: 7,
       money: { bank_net: 4 },
       totals: { take_rate_pct: 66.7 },
     });
-    expect(() => parseClubInsuranceReport(insuranceReport, 30)).toThrow('window is invalid');
+    expect(() => parseClubInsuranceReport(insuranceReport, CLUB_ID, 30)).toThrow(
+      'scope receipt is invalid'
+    );
+    expect(() =>
+      parseClubInsuranceReport({ ...insuranceReport, club_id: bombRow.table_id }, CLUB_ID, 7)
+    ).toThrow('scope receipt is invalid');
     expect(() =>
       parseClubInsuranceReport(
         { ...insuranceReport, money: { ...insuranceReport.money, bank_net: 5 } },
+        CLUB_ID,
         7
       )
     ).toThrow('money does not reconcile');
@@ -100,8 +133,38 @@ describe('Club Data report payload validation', () => {
           ...insuranceReport,
           days: [{ ...insuranceReport.days[0], bank_net: 7 }, insuranceReport.days[1]],
         },
+        CLUB_ID,
         7
       )
     ).toThrow('daily money does not reconcile');
+  });
+
+  it('accepts only a scoped zero-row insurance receipt', () => {
+    const empty = {
+      ...insuranceReport,
+      totals: {
+        offers: 0,
+        accepted: 0,
+        declined: 0,
+        timeouts: 0,
+        cashouts: 0,
+        take_rate_pct: null,
+        avg_offer_equity: null,
+        avg_offer_pot: null,
+      },
+      money: {
+        contracts: 0,
+        insurance_contracts: 0,
+        cashout_contracts: 0,
+        bank_in: 0,
+        bank_out: 0,
+        bank_net: 0,
+      },
+      days: [],
+    };
+    expect(parseClubInsuranceReport(empty, CLUB_ID, 7).days).toEqual([]);
+    expect(() => parseClubInsuranceReport({ ...empty, contract: 'legacy' }, CLUB_ID, 7)).toThrow(
+      'scope receipt is invalid'
+    );
   });
 });

@@ -28,6 +28,13 @@ function text(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value : null;
 }
 
+function uuid(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+  );
+}
+
 function timestamp(value: unknown): value is string {
   return (
     typeof value === 'string' &&
@@ -107,7 +114,10 @@ function amountFromCents(cents: bigint): number | null {
  * The parser requires those mirrors and verifies them against the exact-cent
  * authorities, tolerating only historical binary-serialization dust.
  */
-export function parseSettlementHistory(value: unknown): SettlementHistoryCycle[] | null {
+export function parseSettlementHistory(
+  value: unknown,
+  expectedClubId: string
+): SettlementHistoryCycle[] | null {
   if (!Array.isArray(value)) return null;
   const cycles: SettlementHistoryCycle[] = [];
   const seen = new Set<string>();
@@ -115,13 +125,18 @@ export function parseSettlementHistory(value: unknown): SettlementHistoryCycle[]
   for (const row of value) {
     if (!record(row) || !record(row.breakdown)) return null;
     const id = text(row.id);
+    const clubId = text(row.club_id);
     const status = text(row.status);
     const periodId = row.period_id === null ? 'N/A' : text(row.period_id);
     const gross = exactCents(row.gross_amount);
     const net = exactCents(row.net_amount);
     if (
       !id ||
+      !uuid(id) ||
       seen.has(id) ||
+      !clubId ||
+      !uuid(clubId) ||
+      clubId !== expectedClubId ||
       row.invoice_type !== 'union_to_club' ||
       !periodId ||
       !status ||

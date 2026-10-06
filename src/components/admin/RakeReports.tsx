@@ -1,85 +1,84 @@
-/**
- * ♠ CLUB ARENA — Rake Reports
- * Club rake analytics and reports
- */
-
-import React, { useState, useEffect } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
-import { useStaggerAnimation } from '../../hooks/useStaggerAnimation';
 import { supabase } from '../../lib/supabase';
-import { useToast } from '../common/Toast';
 import { isAuthzError } from '../../utils/clubDashboard';
+import {
+  parseClubFinancialsPayload,
+  type FinancialDay,
+  type FinancialTable,
+  type RecentRake,
+} from '../../utils/clubFinancialsPayload';
 import { downloadCsv, toCsv } from '../../utils/downloadCsv';
-import './RakeReports.css';
+import { compactChips, pct } from '../../utils/format';
 import { reportError } from '../../utils/errorReporter';
+import { resolveClubUUIDStrict } from '../../utils/strictClubIdResolver';
+import { titleCase } from '../../utils/titleCase';
+import { SpadeConsole } from '../console/SpadeConsole';
+import { useToast } from '../common/Toast';
+import './RakeReports.css';
+
+type Period = 'today' | 'week' | 'month' | 'year';
+
+interface DailyBreakdown {
+  date: string;
+  rake: number;
+  hands: number;
+}
 
 interface RakeData {
-  period: string;
+  periodLabel: string;
+  rangeStart: string;
+  rangeEnd: string;
+  seriesStart: string;
+  trendStart: string;
   totalRake: number;
   totalHands: number;
   avgRakePerHand: number;
-  topGames: { game: string; rake: number; hands: number }[];
-  dailyBreakdown: { date: string; rake: number; hands: number }[];
+  topGames: FinancialTable[];
+  dailyBreakdown: DailyBreakdown[];
+  rawRecords: FinancialDay[];
+  recentHands: Array<RecentRake & { hand_id: string }>;
 }
 
-/** One day of ca_club_financials. */
-interface DailyRow {
-  d: string;
-  raked_hands: number;
-  gross_rake: number;
-  bbj_drop: number;
-  pot_volume: number;
-  tournament_fees: number;
-}
-
-interface TableRow {
-  name: string;
-  stakes: string | null;
-  rake: number;
-  raked_hands: number;
-}
-
-/** "Sep 3", from a UTC date string, without letting the local zone shift it. */
-function dayLabel(iso: string): string {
-  const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number);
-  if (!y || !m || !d) return String(iso);
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-  });
+interface RakeReportState {
+  scope: string;
+  status: 'loading' | 'ready' | 'denied' | 'error';
+  message: string | null;
+  data: RakeData | null;
 }
 
 interface RakeReportsProps {
   clubId: string;
+  initialSnapshot?: {
+    resolvedClubId: string;
+    requestedStart: string;
+    requestedEnd: string;
+    financials: ReturnType<typeof parseClubFinancialsPayload>;
+  };
 }
 
-/**
- * WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): per-hand breakdown returned by
- * fn_hand_rake_breakdown — the operator's dispute/audit drill-down. The RPC is
- * authorised server-side (club owner, union overseer, or engine); this panel
- * is a viewer, not the control.
- */
-interface HandBreakdown {
-  found: boolean;
-  error?: string;
-  hand_id?: string;
-  rake_method?: string;
-  gross_pot?: number | null;
-  regular_rake_collected?: number;
-  bbj_drop_collected?: number | null;
-  net_pot_paid_to_players?: number | null;
-  total_eligible_contributions?: number;
-  players?: Array<{
-    player_id: string;
-    gross_contribution: number | null;
-    returned_uncalled: number | null;
-    eligible_contribution: number | null;
-    contribution_weight: number | null;
-    weighted_rake_credit: number | null;
-    bbj_attributed_contribution: number | null;
-  }>;
-  reconciliation?: {
+interface HandPlayerBreakdown {
+  player_id: string;
+  gross_contribution: number | null;
+  returned_uncalled: number | null;
+  eligible_contribution: number | null;
+  contribution_weight: number | null;
+  weighted_rake_credit: number | null;
+  bbj_attributed_contribution: number | null;
+}
+
+interface VerifiedHandBreakdown {
+  found: true;
+  hand_id: string;
+  rake_method: 'WEIGHTED_CONTRIBUTED' | 'DEALT_EQUAL';
+  gross_pot: number | null;
+  regular_rake_collected: number;
+  bbj_drop_collected: number | null;
+  net_pot_paid_to_players: number | null;
+  total_eligible_contributions: number;
+  players: HandPlayerBreakdown[];
+  reconciliation: {
     expected_regular_rake: number;
     allocated_regular_rake: number;
     difference: number;
@@ -87,363 +86,901 @@ interface HandBreakdown {
   };
 }
 
-export const RakeReports: React.FC<RakeReportsProps> = ({ clubId }) => {
+interface MissingHandBreakdown {
+  found: false;
+  denied: boolean;
+}
+
+type ParsedHandBreakdown = VerifiedHandBreakdown | MissingHandBreakdown;
+type LookupState = 'idle' | 'not-found' | 'denied' | 'error';
+
+type JsonRecord = Record<string, unknown>;
+
+const UUID_TOKEN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function invalidBreakdown(label: string): never {
+  throw new Error(`Hand Rake Breakdown ${label} Is Invalid`);
+}
+
+function objectValue(value: unknown, label: string): JsonRecord {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) invalidBreakdown(label);
+  return value as JsonRecord;
+}
+
+function uuidValue(value: unknown, label: string): string {
+  if (typeof value !== 'string' || !UUID_TOKEN.test(value)) invalidBreakdown(label);
+  return value.toLowerCase();
+}
+
+function moneyValue(
+  value: unknown,
+  label: string,
+  options: { nullable?: boolean; signed?: boolean } = {}
+): number | null {
+  if (value === null && options.nullable) return null;
+  if (typeof value !== 'number' || !Number.isFinite(value)) invalidBreakdown(label);
+  if (!options.signed && value < 0) invalidBreakdown(label);
+  const cents = Math.round(value * 100);
+  if (!Number.isSafeInteger(cents) || Math.abs(value * 100 - cents) > 0.000001) {
+    invalidBreakdown(label);
+  }
+  return cents / 100;
+}
+
+function moneyCents(value: number): number {
+  return Math.round(value * 100);
+}
+
+function weightValue(value: unknown, label: string): number | null {
+  if (value === null) return null;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
+    invalidBreakdown(label);
+  }
+  return value;
+}
+
+function expectedWeightedCredits(
+  amount: number,
+  players: Array<{ player_id: string; eligible_contribution: number }>
+): Map<string, number> {
+  const amountCents = BigInt(moneyCents(amount));
+  const totalCents = players.reduce(
+    (sum, player) => sum + BigInt(moneyCents(player.eligible_contribution)),
+    0n
+  );
+  if (totalCents <= 0n) invalidBreakdown('Weighted Allocation Basis');
+
+  const allocations = players.map((player) => {
+    const numerator = amountCents * BigInt(moneyCents(player.eligible_contribution));
+    return {
+      playerId: player.player_id,
+      cents: numerator / totalCents,
+      remainder: numerator % totalCents,
+    };
+  });
+  const floorTotal = allocations.reduce((sum, allocation) => sum + allocation.cents, 0n);
+  const remainderCount = Number(amountCents - floorTotal);
+  if (
+    !Number.isSafeInteger(remainderCount) ||
+    remainderCount < 0 ||
+    remainderCount > players.length
+  ) {
+    invalidBreakdown('Weighted Allocation Remainder');
+  }
+  allocations
+    .slice()
+    .sort((left, right) => {
+      if (left.remainder !== right.remainder) {
+        return left.remainder > right.remainder ? -1 : 1;
+      }
+      return left.playerId < right.playerId ? -1 : left.playerId > right.playerId ? 1 : 0;
+    })
+    .slice(0, remainderCount)
+    .forEach((allocation) => {
+      allocation.cents += 1n;
+    });
+  return new Map(allocations.map((allocation) => [allocation.playerId, Number(allocation.cents)]));
+}
+
+/** Strictly validates the receipt returned by fn_hand_rake_breakdown. */
+export function parseHandBreakdownPayload(
+  value: unknown,
+  expectedHandId: string
+): ParsedHandBreakdown {
+  const expected = uuidValue(expectedHandId, 'Expected Hand Identity');
+  const record = objectValue(value, 'Receipt');
+  if (record.found === false) {
+    if (record.error !== undefined && record.error !== 'not_authorised') {
+      invalidBreakdown('Refusal');
+    }
+    return { found: false, denied: record.error === 'not_authorised' };
+  }
+  if (record.found !== true) invalidBreakdown('Found State');
+
+  const handId = uuidValue(record.hand_id, 'Hand Identity');
+  if (handId !== expected) invalidBreakdown('Hand Binding');
+  if (record.rake_method !== 'WEIGHTED_CONTRIBUTED' && record.rake_method !== 'DEALT_EQUAL') {
+    invalidBreakdown('Rake Method');
+  }
+  if (!Array.isArray(record.players) || record.players.length > 12) {
+    invalidBreakdown('Player Rows');
+  }
+
+  const seenPlayers = new Set<string>();
+  const players = record.players.map((entry): HandPlayerBreakdown => {
+    const player = objectValue(entry, 'Player Row');
+    const playerId = uuidValue(player.player_id, 'Player Identity');
+    if (seenPlayers.has(playerId)) invalidBreakdown('Duplicate Player Identity');
+    seenPlayers.add(playerId);
+    return {
+      player_id: playerId,
+      gross_contribution: moneyValue(player.gross_contribution, 'Gross Contribution', {
+        nullable: true,
+      }),
+      returned_uncalled: moneyValue(player.returned_uncalled, 'Returned Uncalled', {
+        nullable: true,
+      }),
+      eligible_contribution: moneyValue(player.eligible_contribution, 'Eligible Contribution', {
+        nullable: true,
+      }),
+      contribution_weight: weightValue(player.contribution_weight, 'Contribution Weight'),
+      weighted_rake_credit: moneyValue(player.weighted_rake_credit, 'Weighted Rake Credit', {
+        nullable: true,
+      }),
+      bbj_attributed_contribution: moneyValue(
+        player.bbj_attributed_contribution,
+        'Bad Beat Attributed Contribution',
+        { nullable: true }
+      ),
+    };
+  });
+
+  const regularRake = moneyValue(record.regular_rake_collected, 'Regular Rake');
+  const reconciliationValue = objectValue(record.reconciliation, 'Reconciliation');
+  const expectedRake = moneyValue(
+    reconciliationValue.expected_regular_rake,
+    'Expected Regular Rake'
+  );
+  const allocatedRake = moneyValue(
+    reconciliationValue.allocated_regular_rake,
+    'Allocated Regular Rake'
+  );
+  const difference = moneyValue(reconciliationValue.difference, 'Reconciliation Difference', {
+    signed: true,
+  });
+  if (typeof reconciliationValue.valid !== 'boolean') invalidBreakdown('Reconciliation State');
+  if (
+    regularRake === null ||
+    expectedRake === null ||
+    allocatedRake === null ||
+    difference === null
+  ) {
+    invalidBreakdown('Required Money');
+  }
+  if (
+    moneyCents(expectedRake) !== moneyCents(regularRake) ||
+    moneyCents(expectedRake) - moneyCents(allocatedRake) !== moneyCents(difference) ||
+    reconciliationValue.valid !== (moneyCents(difference) === 0)
+  ) {
+    invalidBreakdown('Reconciliation Arithmetic');
+  }
+  const credits = players.map((player) => player.weighted_rake_credit);
+  if (
+    credits.every((credit): credit is number => credit !== null) &&
+    credits.reduce((sum, credit) => sum + moneyCents(credit), 0) !== moneyCents(allocatedRake)
+  ) {
+    invalidBreakdown('Player Allocation');
+  }
+
+  const totalEligible = moneyValue(
+    record.total_eligible_contributions,
+    'Total Eligible Contributions'
+  );
+  if (totalEligible === null) invalidBreakdown('Total Eligible Contributions');
+  players.forEach((player) => {
+    if (player.returned_uncalled === null || player.bbj_attributed_contribution === null) {
+      invalidBreakdown('Player Ledger Completeness');
+    }
+    const coreFields = [
+      player.gross_contribution,
+      player.eligible_contribution,
+      player.contribution_weight,
+      player.weighted_rake_credit,
+    ];
+    const coreFieldsPresent = coreFields.filter((field) => field !== null).length;
+    if (coreFieldsPresent !== 0 && coreFieldsPresent !== coreFields.length) {
+      invalidBreakdown('Player Ledger Completeness');
+    }
+    if (player.eligible_contribution !== null && moneyCents(player.eligible_contribution) <= 0) {
+      invalidBreakdown('Eligible Contribution');
+    }
+    if (
+      player.gross_contribution !== null &&
+      player.returned_uncalled !== null &&
+      player.eligible_contribution !== null &&
+      moneyCents(player.gross_contribution) - moneyCents(player.returned_uncalled) !==
+        moneyCents(player.eligible_contribution)
+    ) {
+      invalidBreakdown('Player Contribution Arithmetic');
+    }
+  });
+  const completeEligibleRows = players.every(
+    (player): player is HandPlayerBreakdown & { eligible_contribution: number } =>
+      player.eligible_contribution !== null
+  );
+  if (
+    players.length > 0 &&
+    completeEligibleRows &&
+    players.reduce((sum, player) => sum + moneyCents(player.eligible_contribution), 0) !==
+      moneyCents(totalEligible)
+  ) {
+    invalidBreakdown('Eligible Contribution Total');
+  }
+  if (players.length > 0 && completeEligibleRows && moneyCents(totalEligible) > 0) {
+    players.forEach((player) => {
+      if (player.contribution_weight === null) return;
+      const expectedWeight =
+        Math.round(
+          (moneyCents(player.eligible_contribution) / moneyCents(totalEligible)) * 100_000_000
+        ) / 100_000_000;
+      if (Math.abs(player.contribution_weight - expectedWeight) > 0.000000001) {
+        invalidBreakdown('Contribution Weight');
+      }
+    });
+
+    const completeWeightedRows = players.every(
+      (
+        player
+      ): player is HandPlayerBreakdown & {
+        eligible_contribution: number;
+        weighted_rake_credit: number;
+      } => player.weighted_rake_credit !== null
+    );
+    if (record.rake_method === 'WEIGHTED_CONTRIBUTED' && completeWeightedRows) {
+      const weightedRows = players.map((player) => ({
+        ...player,
+        eligible_contribution: player.eligible_contribution as number,
+        weighted_rake_credit: player.weighted_rake_credit as number,
+      }));
+      const expectedRegularCredits = expectedWeightedCredits(regularRake, weightedRows);
+      weightedRows.forEach((player) => {
+        if (
+          expectedRegularCredits.get(player.player_id) !== moneyCents(player.weighted_rake_credit)
+        ) {
+          invalidBreakdown('Weighted Rake Credit');
+        }
+      });
+    }
+  }
+  const grossPot = moneyValue(record.gross_pot, 'Gross Pot', { nullable: true });
+  const badBeatDrop = moneyValue(record.bbj_drop_collected, 'Bad Beat Drop', {
+    nullable: true,
+  });
+  const netPot = moneyValue(record.net_pot_paid_to_players, 'Net Pot', { nullable: true });
+  if (
+    (grossPot === null && netPot !== null) ||
+    (grossPot !== null &&
+      (netPot === null ||
+        moneyCents(netPot) !==
+          moneyCents(grossPot) - moneyCents(regularRake) - moneyCents(badBeatDrop ?? 0)))
+  ) {
+    invalidBreakdown('Pot Arithmetic');
+  }
+  return {
+    found: true,
+    hand_id: handId,
+    rake_method: record.rake_method,
+    gross_pot: grossPot,
+    regular_rake_collected: regularRake,
+    bbj_drop_collected: badBeatDrop,
+    net_pot_paid_to_players: netPot,
+    total_eligible_contributions: totalEligible,
+    players,
+    reconciliation: {
+      expected_regular_rake: expectedRake,
+      allocated_regular_rake: allocatedRake,
+      difference,
+      valid: reconciliationValue.valid,
+    },
+  };
+}
+
+function reportWindow(period: Period): { start: string; end: string } {
+  const endDate = new Date();
+  const end = endDate.toISOString().slice(0, 10);
+  const startDate = new Date(endDate);
+  if (period === 'week') startDate.setUTCDate(startDate.getUTCDate() - 6);
+  if (period === 'month') startDate.setUTCDate(startDate.getUTCDate() - 29);
+  if (period === 'year') startDate.setUTCDate(startDate.getUTCDate() - 364);
+  return { start: period === 'today' ? end : startDate.toISOString().slice(0, 10), end };
+}
+
+function periodLabel(period: Period): string {
+  if (period === 'today') return 'Today';
+  if (period === 'week') return 'Seven Days';
+  if (period === 'month') return 'Thirty Days';
+  return 'One Year';
+}
+
+function dayLabel(iso: string): string {
+  const [year, month, day] = iso.split('-').map(Number);
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(Date.UTC(year, month - 1, day)));
+}
+
+function rangeLabel(iso: string): string {
+  const [year, month, day] = iso.split('-').map(Number);
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(Date.UTC(year, month - 1, day)));
+}
+
+function recentHandTimeLabel(iso: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'UTC',
+  }).format(new Date(iso));
+}
+
+function chipLabel(value: number | null): string {
+  if (value === null) return 'Unavailable';
+  if (value > 0 && value < 1) return 'Under 1 Chip';
+  return compactChips(value);
+}
+
+function weightLabel(value: number | null): string {
+  if (value === null) return 'Unavailable';
+  if (value > 0 && value < 0.01) return 'Under 1%';
+  return pct(value);
+}
+
+function lookupMessage(state: LookupState): string | null {
+  if (state === 'not-found') return 'No Raked Hand Was Found In This Club For That Entry.';
+  if (state === 'denied') return 'This Hand Breakdown Is Restricted.';
+  if (state === 'error') return 'The Hand Breakdown Could Not Be Verified.';
+  return null;
+}
+
+export const RakeReports = ({ clubId, initialSnapshot }: RakeReportsProps) => {
   const toast = useToast();
-  const [data, setData] = useState<RakeData | null>(null);
-  const [rawRecords, setRawRecords] = useState<DailyRow[]>([]);
-  const [period, setPeriod] = useState<'today' | 'week' | 'month' | 'year'>('week');
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [denied, setDenied] = useState(false);
-  const [lookupInput, setLookupInput] = useState('');
-  const [lookupBusy, setLookupBusy] = useState(false);
-  const [breakdown, setBreakdown] = useState<HandBreakdown | null>(null);
   const isMounted = useIsMounted();
-  const { style: barStyle } = useStaggerAnimation(data?.dailyBreakdown.length || 0);
+  const [period, setPeriod] = useState<Period>('week');
+  const scope = `${clubId}:${period}`;
+  const currentScopeRef = useRef(scope);
+  const reportRequestRef = useRef(0);
+  const lookupRequestRef = useRef(0);
+  const lookupInFlightRef = useRef<number | null>(null);
+  currentScopeRef.current = scope;
+
+  const [state, setState] = useState<RakeReportState>({
+    scope,
+    status: 'loading',
+    message: null,
+    data: null,
+  });
+  const [lookupBusy, setLookupBusy] = useState(false);
+  const [lookupState, setLookupState] = useState<LookupState>('idle');
+  const [breakdown, setBreakdown] = useState<VerifiedHandBreakdown | null>(null);
+  const [selectedHandId, setSelectedHandId] = useState<string | null>(null);
+
+  const loadRakeData = useCallback(
+    async (forceFresh = false) => {
+      const requestScope = scope;
+      const requestId = ++reportRequestRef.current;
+      const isCurrent = () =>
+        isMounted.current &&
+        currentScopeRef.current === requestScope &&
+        reportRequestRef.current === requestId;
+      lookupRequestRef.current += 1;
+      lookupInFlightRef.current = null;
+      setLookupBusy(false);
+      setLookupState('idle');
+      setBreakdown(null);
+      setSelectedHandId(null);
+      setState({ scope: requestScope, status: 'loading', message: null, data: null });
+      try {
+        const range = reportWindow(period);
+        const snapshot = initialSnapshot;
+        const canReuseSnapshot =
+          !forceFresh &&
+          snapshot !== undefined &&
+          UUID_TOKEN.test(snapshot.resolvedClubId) &&
+          snapshot.requestedStart === range.start &&
+          snapshot.requestedEnd === range.end &&
+          snapshot.financials.range.end === range.end &&
+          snapshot.financials.range.start >= range.start;
+        let financials: ReturnType<typeof parseClubFinancialsPayload>;
+        if (canReuseSnapshot && snapshot) {
+          financials = parseClubFinancialsPayload(snapshot.financials, {
+            clubId: snapshot.resolvedClubId,
+            ...range,
+          });
+        } else {
+          const resolvedId = await resolveClubUUIDStrict(clubId);
+          const { data: payload, error } = await supabase.rpc('ca_club_financials', {
+            p_club_id: resolvedId,
+            p_start: range.start,
+            p_end: range.end,
+          });
+          if (error) {
+            if (isAuthzError(error)) {
+              if (isCurrent()) {
+                setState({ scope: requestScope, status: 'denied', message: null, data: null });
+              }
+              return;
+            }
+            throw error;
+          }
+          financials = parseClubFinancialsPayload(payload, { clubId: resolvedId, ...range });
+        }
+        const visibleDaily = financials.daily.slice(-7);
+        const dailyBreakdown = visibleDaily.map((day) => ({
+          date: dayLabel(day.d),
+          rake: day.gross_rake,
+          hands: day.raked_hands,
+        }));
+        const nextData: RakeData = {
+          periodLabel: periodLabel(period),
+          rangeStart: financials.range.start,
+          rangeEnd: financials.range.end,
+          seriesStart: financials.range.series_from,
+          trendStart: visibleDaily[0]?.d ?? financials.range.series_from,
+          totalRake: financials.totals.gross_rake,
+          totalHands: financials.totals.raked_hands,
+          avgRakePerHand:
+            financials.totals.raked_hands > 0
+              ? financials.totals.gross_rake / financials.totals.raked_hands
+              : 0,
+          topGames: financials.by_table,
+          dailyBreakdown,
+          rawRecords: financials.daily,
+          recentHands: financials.recent.filter(
+            (row): row is RecentRake & { hand_id: string } => row.hand_id !== null
+          ),
+        };
+        if (!isCurrent()) return;
+        setState({ scope: requestScope, status: 'ready', message: null, data: nextData });
+      } catch (error) {
+        const notFound = (error as { name?: string } | null)?.name === 'ClubNotFoundError';
+        reportError(error, 'RakeReports.read');
+        if (isCurrent()) {
+          setState({
+            scope: requestScope,
+            status: 'error',
+            message: notFound
+              ? 'That Club Could Not Be Found.'
+              : 'The Rake Report Could Not Be Verified. No Zero Report Is Being Shown.',
+            data: null,
+          });
+        }
+      }
+    },
+    [clubId, initialSnapshot, isMounted, period, scope]
+  );
 
   useEffect(() => {
-    loadRakeData();
-  }, [clubId, period]);
+    void loadRakeData(false);
+  }, [loadRakeData]);
 
-  const loadRakeData = async () => {
-    setLoading(true);
-    setLoadError(null);
-    try {
-      // PHASE 6 (2026-09-04): this pulled EVERY rake_records row in the window
-      // into the browser with no limit and summed them there - 93,465 rows for
-      // one day of one club, and "Year" would have asked for 1.9 million. The
-      // per-day rollup answers the same question in one row per day, and the
-      // RPC is gated on ca_can_view_club_finances rather than on nothing.
-      const { resolveClubUUIDStrict } = await import('../../utils/strictClubIdResolver');
-      const resolvedId = await resolveClubUUIDStrict(clubId);
-      const today = new Date();
-      const end = today.toISOString().slice(0, 10);
-      const from = new Date(today);
-      if (period === 'week') from.setUTCDate(from.getUTCDate() - 6);
-      else if (period === 'month') from.setUTCDate(from.getUTCDate() - 29);
-      else if (period === 'year') from.setUTCDate(from.getUTCDate() - 364);
-      const start = period === 'today' ? end : from.toISOString().slice(0, 10);
+  useEffect(() => {
+    lookupRequestRef.current += 1;
+    lookupInFlightRef.current = null;
+    setLookupBusy(false);
+    setLookupState('idle');
+    setBreakdown(null);
+    setSelectedHandId(null);
+  }, [scope]);
 
-      const { data: payload, error } = await supabase.rpc('ca_club_financials', {
-        p_club_id: resolvedId,
-        p_start: start,
-        p_end: end,
-      });
-      if (error) {
-        if (isAuthzError(error)) {
-          setDenied(true);
-          setData(null);
-          return;
-        }
-        throw error;
-      }
-      setDenied(false);
+  const activeState: RakeReportState =
+    state.scope === scope ? state : { scope, status: 'loading', message: null, data: null };
+  const data = activeState.status === 'ready' ? activeState.data : null;
 
-      const days = ((payload as any)?.daily || []) as DailyRow[];
-      const totals = (payload as any)?.totals || {};
-      setRawRecords(days);
-
-      const totalRake = Number(totals.gross_rake) || 0;
-      const totalHands = Number(totals.raked_hands) || 0;
-      const dailyBreakdown = days.slice(-7).map((d) => ({
-        date: dayLabel(d.d),
-        rake: Math.round((Number(d.gross_rake) || 0) * 100) / 100,
-        hands: Number(d.raked_hands) || 0,
-      }));
-
-      setData({
-        period: period === 'today' ? 'Today' : `Past ${period}`,
-        totalRake: Math.round(totalRake * 100) / 100,
-        totalHands,
-        avgRakePerHand: totalHands > 0 ? totalRake / totalHands : 0,
-        // The rake by table, which this panel drew an empty list for since it
-        // was written ("Need table joins for this, empty for now").
-        topGames: (((payload as any)?.by_table || []) as TableRow[]).map((t) => ({
-          game: [t.name, t.stakes].filter(Boolean).join(' - '),
-          rake: Number(t.rake) || 0,
-          hands: Number(t.raked_hands) || 0,
-        })),
-        dailyBreakdown:
-          dailyBreakdown.length > 0 ? dailyBreakdown : [{ date: 'Today', rake: 0, hands: 0 }],
-      });
-    } catch (error) {
-      if ((error as { name?: string } | null)?.name === 'ClubNotFoundError') {
-        setLoadError('That Club Could Not Be Found.');
-        setData(null);
-        return;
-      }
-      reportError(error, 'RakeReports.Failed_to_load_rake_data');
-      setLoadError('The Rake Report Could Not Be Loaded');
-      setData(null);
-    } finally {
-      if (isMounted.current) setLoading(false);
-    }
-  };
-
-  const exportCSV = () => {
-    if (rawRecords.length === 0) {
-      toast.info('No Rake Records Found For This Period.');
+  const exportCSV = useCallback(() => {
+    if (!data || data.rawRecords.length === 0) {
+      toast.info('No Daily Rake Rows Are Available For This Window.');
       return;
     }
     const ok = downloadCsv(
-      `rake-report-${clubId}-${period}-${new Date().toISOString().slice(0, 10)}.csv`,
+      `club-rake-daily-${data.seriesStart}-to-${data.rangeEnd}.csv`,
       toCsv(
         ['Day', 'Raked Hands', 'Gross Rake', 'Bad Beat Drop', 'Pot Volume', 'Tournament Fees'],
-        rawRecords.map((d) => [
-          d.d,
-          d.raked_hands,
-          d.gross_rake,
-          d.bbj_drop,
-          d.pot_volume,
-          d.tournament_fees,
+        data.rawRecords.map((day) => [
+          day.d,
+          day.raked_hands,
+          day.gross_rake,
+          day.bbj_drop,
+          day.pot_volume,
+          day.tournament_fees,
         ])
       )
     );
     if (!ok) toast.error('This Browser Could Not Start The Download');
-  };
+  }, [data, toast]);
 
-  const lookupHand = async () => {
-    const raw = lookupInput.trim();
-    if (!raw) {
-      toast.info('Enter a hand id or hand number to look up.');
-      return;
-    }
-    setLookupBusy(true);
+  const lookupHand = useCallback(
+    async (handId: string) => {
+      if (lookupInFlightRef.current !== null) return;
+      const requestId = ++lookupRequestRef.current;
+      lookupInFlightRef.current = requestId;
+      const requestScope = scope;
+      const isCurrent = () =>
+        isMounted.current &&
+        currentScopeRef.current === requestScope &&
+        lookupRequestRef.current === requestId;
+      setLookupBusy(true);
+      setLookupState('idle');
+      setBreakdown(null);
+      setSelectedHandId(handId);
+      try {
+        const verifiedHandId = uuidValue(handId, 'Selected Hand Identity');
+        const { data: result, error } = await supabase.rpc('fn_hand_rake_breakdown', {
+          p_hand_id: verifiedHandId,
+        });
+        if (error) {
+          if (isAuthzError(error)) {
+            if (isCurrent()) setLookupState('denied');
+            return;
+          }
+          throw error;
+        }
+        const parsed = parseHandBreakdownPayload(result, verifiedHandId);
+        if (!parsed.found) {
+          if (isCurrent()) setLookupState(parsed.denied ? 'denied' : 'not-found');
+          return;
+        }
+        if (!isCurrent()) return;
+        setBreakdown(parsed);
+      } catch (error) {
+        reportError(error, 'RakeReports.handBreakdown');
+        if (isCurrent()) setLookupState('error');
+      } finally {
+        if (lookupInFlightRef.current === requestId) {
+          lookupInFlightRef.current = null;
+        }
+        if (isCurrent()) setLookupBusy(false);
+      }
+    },
+    [isMounted, scope]
+  );
+
+  const clearLookup = () => {
+    lookupRequestRef.current += 1;
+    lookupInFlightRef.current = null;
+    setLookupBusy(false);
+    setLookupState('idle');
     setBreakdown(null);
-    try {
-      let handId: string | null = null;
-      const isUuid =
-        /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(raw);
-      if (isUuid) {
-        handId = raw;
-      } else if (/^\d+$/.test(raw)) {
-        // A hand NUMBER: resolve it to the hand id through this club's
-        // rake_records (RLS keeps the lookup club-scoped).
-        const { resolveClubUUIDStrict } = await import('../../utils/strictClubIdResolver');
-        const resolvedId = await resolveClubUUIDStrict(clubId);
-        const { data: rec, error: lookupErr } = await supabase
-          .from('rake_records')
-          .select('hand_id')
-          .eq('club_id', resolvedId)
-          .eq('global_hand_id', Number(raw))
-          .not('hand_id', 'is', null)
-          .limit(1)
-          .maybeSingle();
-        if (lookupErr) throw lookupErr;
-        handId = (rec?.hand_id as string) ?? null;
-      }
-      if (!handId) {
-        toast.info('No raked hand found for that id or number in this club.');
-        return;
-      }
-      const { data: result, error } = await supabase.rpc('fn_hand_rake_breakdown', {
-        p_hand_id: handId,
-      });
-      if (error) throw error;
-      const bd = result as HandBreakdown;
-      if (!bd?.found) {
-        toast.info(
-          bd?.error === 'not_authorised'
-            ? 'Only the club owner or a union overseer can view hand breakdowns.'
-            : 'No rake record exists for that hand.'
-        );
-        return;
-      }
-      setBreakdown(bd);
-    } catch (err) {
-      reportError(err, 'RakeReports.Hand_breakdown_lookup_failed');
-      toast.error('Could not load the hand breakdown.');
-    } finally {
-      if (isMounted.current) setLookupBusy(false);
-    }
+    setSelectedHandId(null);
   };
 
-  if (denied) {
+  if (activeState.status === 'loading') {
     return (
-      <div className="rake-reports">
-        <div className="reports-header">
-          <h2>Rake Reports</h2>
-        </div>
-        <p className="rake-reports-note">
-          Rake Reports Are Available To Club Owners, Admins And Super Agents.
-        </p>
+      <div className="rr">
+        <SpadeConsole
+          family="spade"
+          crest="spade"
+          eyebrow="Club Arena Data"
+          title="Rake Reports"
+          pill="Reading"
+          pillInk="gold"
+          foot="foot"
+          aria-busy
+        >
+          <p className="sc-copy sc-copy--center" role="status">
+            Verifying The Selected Club Rake Ledger
+          </p>
+        </SpadeConsole>
       </div>
     );
   }
 
-  if (loadError && !data) {
+  if (activeState.status === 'denied') {
     return (
-      <div className="rake-reports">
-        <div className="reports-header">
-          <h2>Rake Reports</h2>
-        </div>
-        <p className="rake-reports-note" role="alert">
-          {loadError}
-        </p>
-        <button className="export-btn" onClick={() => void loadRakeData()}>
-          Try Again
-        </button>
+      <div className="rr">
+        <SpadeConsole
+          family="spade"
+          crest="spade"
+          eyebrow="Club Arena Data"
+          title="Rake Reports"
+          pill="Restricted"
+          pillInk="red"
+          foot="foot"
+        >
+          <p className="sc-copy sc-copy--center" role="alert">
+            Rake Reports Are Available To Authorized Club Financial Staff.
+          </p>
+        </SpadeConsole>
       </div>
     );
   }
 
-  if (loading || !data) {
+  if (!data) {
     return (
-      <div className="rake-reports loading">
-        <div className="spinner" />
+      <div className="rr">
+        <SpadeConsole
+          family="spade"
+          crest="spade"
+          eyebrow="Club Arena Data"
+          title="Rake Reports"
+          pill="Unavailable"
+          pillInk="red"
+          foot="foot"
+        >
+          <p className="sc-copy sc-copy--center" role="alert">
+            {activeState.message}
+          </p>
+          <button type="button" className="rr__word-action" onClick={() => void loadRakeData(true)}>
+            Try Again
+          </button>
+        </SpadeConsole>
       </div>
     );
   }
 
   // Math.max of an empty list is -Infinity, and every bar height became NaN%.
-  const maxRake = Math.max(0, ...data.dailyBreakdown.map((d) => d.rake));
+  const maxRake = Math.max(0, ...data.dailyBreakdown.map((day) => day.rake));
+  const visibleLookupMessage = lookupMessage(lookupState);
 
   return (
-    <div className="rake-reports">
-      <div className="reports-header">
-        <h2>Rake Reports</h2>
-        <div className="period-selector">
-          {(['today', 'week', 'month', 'year'] as const).map((p) => (
-            <button key={p} className={period === p ? 'active' : ''} onClick={() => setPeriod(p)}>
-              {p.charAt(0).toUpperCase() + p.slice(1)}
+    <div className="rr">
+      <SpadeConsole
+        family="riveted"
+        crest="spade"
+        eyebrow="Club Arena Data"
+        title="Rake Reports"
+        subtitle="Authoritative Club Rollup"
+        pill={data.periodLabel}
+        pillInk="blue"
+        plates={{
+          secondary: { label: 'Export Daily CSV', onClick: exportCSV },
+          primary: { label: 'Refresh Report', onClick: () => void loadRakeData(true) },
+        }}
+      >
+        <div className="rr__rail" role="tablist" aria-label="Rake Reporting Window">
+          {(['today', 'week', 'month', 'year'] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              role="tab"
+              className={`rr__rail-word ${period === option ? 'sc-ink--silver' : 'sc-ink--muted'}`}
+              aria-selected={period === option}
+              aria-pressed={period === option}
+              onClick={() => setPeriod(option)}
+            >
+              {periodLabel(option)}
             </button>
           ))}
         </div>
-      </div>
-
-      {/* Summary Cards */}
-      <div className="summary-cards">
-        <div className="summary-card">
-          <span className="card-value">{data.totalRake.toLocaleString()}</span>
-          <span className="card-label">Total Rake</span>
-        </div>
-        <div className="summary-card">
-          <span className="card-value">{data.totalHands.toLocaleString()}</span>
-          {/* RAKED hands, which is the denominator under "Avg Per Hand" beside
-              it. "Hands Played" counted rake_records ROWS, and a tournament
-              entry fee is a row with no hand behind it. */}
-          <span className="card-label">Raked Hands</span>
-        </div>
-        <div className="summary-card">
-          <span className="card-value">{Math.trunc(data.avgRakePerHand * 100) / 100}</span>
-          <span className="card-label">Avg Per Hand</span>
-        </div>
-      </div>
-
-      {/* Daily Chart */}
-      <div className="daily-chart">
-        <h3>Daily Breakdown</h3>
-        <div className="chart-bars">
-          {data.dailyBreakdown.map((day, i) => (
-            <div key={day.date} className="bar-group" style={barStyle(i)}>
-              <div className="bar-container">
-                <div
-                  className="bar-fill"
-                  style={{ height: `${maxRake > 0 ? (day.rake / maxRake) * 100 : 0}%` }}
-                />
-              </div>
-              <span className="bar-label">{day.date}</span>
-              <span className="bar-value">{day.rake}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Top Games */}
-      <div className="top-games">
-        <h3>Top Games By Rake</h3>
-        <div className="games-list">
-          {data.topGames.map((game, index) => (
-            <div key={game.game} className="game-row">
-              <span className="game-rank">#{index + 1}</span>
-              <span className="game-name">{game.game}</span>
-              <div className="game-stats">
-                <span className="game-rake">{game.rake.toLocaleString()}</span>
-                <span className="game-hands">{game.hands.toLocaleString()} Hands</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Hand Rake Breakdown (weighted contributed rake drill-down) */}
-      <div className="top-games">
-        <h3>Hand Rake Breakdown</h3>
-        <p style={{ opacity: 0.7, fontSize: '0.85rem', margin: '4px 0 10px' }}>
-          Look Up Any Raked Hand By Hand ID Or Hand Number To See Each Player&apos;S Contribution,
-          Weight And Credited Rake.
+        <dl className="rr__facts" aria-label="Verified Rake Summary">
+          <div className="rr__fact">
+            <dt className="sc-label sc-ink--blue">Gross Rake</dt>
+            <dd className="sc-ink--silver">{chipLabel(data.totalRake)}</dd>
+          </div>
+          <div className="rr__fact">
+            <dt className="sc-label sc-ink--blue">Raked Hands</dt>
+            <dd className="sc-ink--silver">{compactChips(data.totalHands)}</dd>
+          </div>
+          <div className="rr__fact">
+            <dt className="sc-label sc-ink--blue">Average Rake Per Hand</dt>
+            <dd className="sc-ink--silver">{chipLabel(data.avgRakePerHand)}</dd>
+          </div>
+        </dl>
+        <p className="sc-copy sc-copy--center">
+          Totals Cover {rangeLabel(data.rangeStart)} Through {rangeLabel(data.rangeEnd)}. The Trend
+          Shows The Latest {data.dailyBreakdown.length}{' '}
+          {data.dailyBreakdown.length === 1 ? 'Daily Point' : 'Daily Points'} From{' '}
+          {rangeLabel(data.trendStart)} Through {rangeLabel(data.rangeEnd)}. The CSV Covers All{' '}
+          {data.rawRecords.length} Returned Daily{' '}
+          {data.rawRecords.length === 1 ? 'Point' : 'Points'} From {rangeLabel(data.seriesStart)}{' '}
+          Through {rangeLabel(data.rangeEnd)}.
         </p>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          <input
-            value={lookupInput}
-            onChange={(e) => setLookupInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') lookupHand();
-            }}
-            placeholder="Hand ID Or Hand Number"
-            style={{ flex: 1, padding: '8px 10px', borderRadius: 8 }}
-            aria-label="Hand ID Or Hand Number"
-          />
-          <button className="export-btn" onClick={lookupHand} disabled={lookupBusy}>
-            {lookupBusy ? 'Loading' : 'Look Up'}
-          </button>
-        </div>
-        {breakdown && breakdown.found && (
-          <div>
-            <div className="summary-cards">
-              <div className="summary-card">
-                <span className="card-value">
-                  {Number(breakdown.regular_rake_collected ?? 0).toLocaleString()}
-                </span>
-                <span className="card-label">Rake Collected</span>
-              </div>
-              <div className="summary-card">
-                <span className="card-value">
-                  {Number(breakdown.bbj_drop_collected ?? 0).toLocaleString()}
-                </span>
-                <span className="card-label">BBJ Drop</span>
-              </div>
-              <div className="summary-card">
-                <span className="card-value">
-                  {breakdown.reconciliation?.valid ? 'Valid' : 'MISMATCH'}
-                </span>
-                <span className="card-label">
-                  Reconciliation (
-                  {breakdown.rake_method === 'WEIGHTED_CONTRIBUTED' ? 'Weighted' : 'Legacy Equal'})
-                </span>
-              </div>
-            </div>
-            <div className="games-list">
-              {(breakdown.players ?? []).map((p, index) => (
-                <div key={p.player_id} className="game-row">
-                  <span className="game-rank">#{index + 1}</span>
-                  <span className="game-name" title={p.player_id}>
-                    {p.player_id.slice(0, 8)}
-                  </span>
-                  <div className="game-stats">
-                    <span className="game-rake">
-                      Credit {Number(p.weighted_rake_credit ?? 0).toFixed(2)}
-                    </span>
-                    <span className="game-hands">
-                      In {Number(p.eligible_contribution ?? 0).toLocaleString()}
-                      {Number(p.returned_uncalled ?? 0) > 0
-                        ? ` (Returned ${Number(p.returned_uncalled).toLocaleString()})`
-                        : ''}
-                      {' | '}
-                      {(Number(p.contribution_weight ?? 0) * 100).toFixed(1)}%
-                    </span>
-                  </div>
+      </SpadeConsole>
+
+      <SpadeConsole
+        family="spade"
+        crest="spade"
+        eyebrow="Verified Daily Series"
+        title="Daily Rake Trend"
+        pill={`${data.dailyBreakdown.length} ${data.dailyBreakdown.length === 1 ? 'Day' : 'Days'}`}
+        pillInk={maxRake > 0 ? 'blue' : 'muted'}
+        foot="foot"
+      >
+        {maxRake === 0 ? (
+          <p className="sc-copy sc-copy--center">No Rake Was Recorded In This Daily Series.</p>
+        ) : (
+          <div className="rr__bars" aria-label="Daily Gross Rake">
+            {data.dailyBreakdown.map((day) => (
+              <div
+                className="rr__bar-group"
+                key={day.date}
+                aria-label={`${day.date}, ${compactChips(day.rake)} Gross Rake, ${compactChips(day.hands)} Raked Hands`}
+              >
+                <div className="rr__bar-track" aria-hidden="true">
+                  <span
+                    className="rr__bar-fill"
+                    style={{ '--rr-bar-height': `${(day.rake / maxRake) * 100}%` } as CSSProperties}
+                  />
                 </div>
-              ))}
-            </div>
+                <span className="rr__bar-value sc-ink--silver">{chipLabel(day.rake)}</span>
+                <span className="rr__bar-label sc-ink--muted">{day.date}</span>
+              </div>
+            ))}
           </div>
         )}
-      </div>
+      </SpadeConsole>
 
-      {/* Export Button */}
-      <button className="export-btn" onClick={exportCSV}>
-        Export Report
-      </button>
+      <SpadeConsole
+        family="spade"
+        crest="spade"
+        eyebrow="Selected Club"
+        title="Top Tables By Rake"
+        pill={data.topGames.length === 0 ? 'Empty' : compactChips(data.topGames.length)}
+        pillInk={data.topGames.length === 0 ? 'muted' : 'blue'}
+        foot="foot"
+      >
+        {data.topGames.length === 0 ? (
+          <p className="sc-copy sc-copy--center">No Table Rake Was Recorded In This Window.</p>
+        ) : (
+          <ol className="rr__list">
+            {data.topGames.map((game, index) => (
+              <li className="rr__row" key={game.table_id}>
+                <span className="rr__rank sc-ink--gold">{index + 1}</span>
+                <span className="rr__row-copy">
+                  <strong className="sc-ink--silver">{titleCase(game.name)}</strong>
+                  <small className="sc-ink--muted">
+                    {[game.variant, game.stakes]
+                      .filter((value): value is string => Boolean(value))
+                      .map((value) => titleCase(value))
+                      .join(' ')}
+                  </small>
+                </span>
+                <span className="rr__row-value sc-ink--blue">
+                  {chipLabel(game.rake)}
+                  <small>{compactChips(game.raked_hands)} Hands</small>
+                </span>
+              </li>
+            ))}
+          </ol>
+        )}
+      </SpadeConsole>
+
+      <SpadeConsole
+        family="spade"
+        crest="spade"
+        eyebrow="Server Guarded"
+        title="Hand Rake Breakdown"
+        pill={
+          lookupBusy
+            ? 'Reading'
+            : breakdown
+              ? 'Verified'
+              : data.recentHands.length === 0
+                ? 'No Recent Hands'
+                : 'Choose Hand'
+        }
+        pillInk={lookupBusy ? 'gold' : breakdown ? 'blue' : 'muted'}
+        foot="foot"
+      >
+        {data.recentHands.length === 0 ? (
+          <p className="sc-copy sc-copy--center">
+            No Recent Raked Hands Are Available In This Returned Window.
+          </p>
+        ) : (
+          <ol className="rr__recent-list" aria-label="Recent Raked Hands">
+            {data.recentHands.map((hand) => {
+              const handNumber =
+                hand.global_hand_id === null
+                  ? 'Recorded Hand'
+                  : `Hand ${compactChips(hand.global_hand_id)}`;
+              const label = `${titleCase(hand.table_name)}, ${handNumber}, ${recentHandTimeLabel(hand.created_at)}`;
+              return (
+                <li key={hand.id}>
+                  <button
+                    type="button"
+                    className="rr__recent-button"
+                    aria-label={label}
+                    aria-pressed={selectedHandId === hand.hand_id}
+                    disabled={lookupBusy}
+                    onClick={() => void lookupHand(hand.hand_id)}
+                  >
+                    <strong className="sc-ink--silver">{titleCase(hand.table_name)}</strong>
+                    <small className="sc-ink--muted">
+                      {handNumber} - {recentHandTimeLabel(hand.created_at)}
+                    </small>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+
+        {visibleLookupMessage && (
+          <p
+            className={`sc-copy sc-copy--center ${lookupState === 'not-found' ? 'sc-ink--muted' : 'sc-ink--red'}`}
+            role={lookupState === 'not-found' ? 'status' : 'alert'}
+          >
+            {visibleLookupMessage}
+          </p>
+        )}
+
+        {!breakdown && lookupState === 'idle' && (
+          <p className="sc-copy sc-copy--center">
+            Choose A Recent Raked Hand To Verify Its Player Allocation.
+          </p>
+        )}
+
+        {breakdown && (
+          <div className="rr__breakdown">
+            <dl className="rr__facts" aria-label="Verified Hand Rake Summary">
+              <div className="rr__fact">
+                <dt className="sc-label sc-ink--blue">Rake Collected</dt>
+                <dd className="sc-ink--silver">{chipLabel(breakdown.regular_rake_collected)}</dd>
+              </div>
+              <div className="rr__fact">
+                <dt className="sc-label sc-ink--blue">Bad Beat Drop</dt>
+                <dd className="sc-ink--silver">{chipLabel(breakdown.bbj_drop_collected)}</dd>
+              </div>
+              <div className="rr__fact">
+                <dt className="sc-label sc-ink--blue">Method</dt>
+                <dd className="sc-ink--silver">
+                  {breakdown.rake_method === 'WEIGHTED_CONTRIBUTED'
+                    ? 'Weighted Contributed'
+                    : 'Dealt Equal'}
+                </dd>
+              </div>
+              <div className="rr__fact">
+                <dt className="sc-label sc-ink--blue">Reconciliation</dt>
+                <dd className={breakdown.reconciliation.valid ? 'sc-ink--blue' : 'sc-ink--red'}>
+                  {breakdown.reconciliation.valid ? 'Valid' : 'Mismatch'}
+                </dd>
+              </div>
+            </dl>
+
+            {breakdown.players.length === 0 ? (
+              <p className="sc-copy sc-copy--center">No Player Allocation Rows Were Recorded.</p>
+            ) : (
+              <ol className="rr__list" aria-label="Player Rake Allocations">
+                {breakdown.players.map((player, index) => (
+                  <li className="rr__row" key={player.player_id}>
+                    <span className="rr__rank sc-ink--gold">{index + 1}</span>
+                    <span className="rr__row-copy">
+                      <strong className="sc-ink--silver">Player {index + 1}</strong>
+                      <small className="sc-ink--muted">
+                        Eligible {chipLabel(player.eligible_contribution)}
+                        {player.returned_uncalled !== null && player.returned_uncalled > 0
+                          ? `, Returned ${chipLabel(player.returned_uncalled)}`
+                          : ''}
+                      </small>
+                    </span>
+                    <span className="rr__row-value sc-ink--blue">
+                      Credit {chipLabel(player.weighted_rake_credit)}
+                      <small>{weightLabel(player.contribution_weight)}</small>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+        )}
+        {(selectedHandId !== null || lookupState !== 'idle') && (
+          <button
+            type="button"
+            className="rr__word-action"
+            disabled={lookupBusy}
+            onClick={clearLookup}
+          >
+            Clear Selection
+          </button>
+        )}
+      </SpadeConsole>
     </div>
   );
 };

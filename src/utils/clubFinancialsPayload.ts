@@ -70,6 +70,7 @@ export interface FinancialsPayload {
 }
 
 export interface FinancialsRequestRange {
+  clubId: string;
   start: string;
   end: string;
 }
@@ -77,6 +78,8 @@ export interface FinancialsRequestRange {
 type JsonRecord = Record<string, unknown>;
 
 const DAY_MS = 86_400_000;
+const UUID_TOKEN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const CLUB_FINANCIALS_CONTRACT = 'ca_club_financials.v2';
 
 function invalid(label: string): never {
   throw new Error(`Club financials ${label} is invalid`);
@@ -96,6 +99,13 @@ function nullableText(value: unknown, label: string): string | null {
   return value === null ? null : textValue(value, label);
 }
 
+function nullableUuid(value: unknown, label: string): string | null {
+  if (value === null) return null;
+  const uuid = textValue(value, label);
+  if (!UUID_TOKEN.test(uuid)) invalid(label);
+  return uuid.toLowerCase();
+}
+
 function countValue(value: unknown, label: string): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) invalid(label);
   return value;
@@ -110,6 +120,12 @@ function moneyValue(value: unknown, label: string): number {
   const cents = Math.round(value * 100);
   if (!Number.isSafeInteger(cents) || Math.abs(value * 100 - cents) > 0.000001) invalid(label);
   return cents / 100;
+}
+
+function nonnegativeMoneyValue(value: unknown, label: string): number {
+  const amount = moneyValue(value, label);
+  if (amount < 0) invalid(label);
+  return amount;
 }
 
 function dateMillis(value: string): number {
@@ -153,15 +169,15 @@ function parseTotals(value: unknown): FinancialTotals {
   const totals = objectValue(value, 'totals');
   const parsed: FinancialTotals = {
     raked_hands: countValue(totals.raked_hands, 'total raked hands'),
-    gross_rake: moneyValue(totals.gross_rake, 'total gross rake'),
-    bbj_drop: moneyValue(totals.bbj_drop, 'total bad beat drop'),
-    net_rake: moneyValue(totals.net_rake, 'total net rake'),
-    pot_volume: moneyValue(totals.pot_volume, 'total pot volume'),
-    tournament_fees: moneyValue(totals.tournament_fees, 'total tournament fees'),
-    rakeback_paid: moneyValue(totals.rakeback_paid, 'total rakeback paid'),
+    gross_rake: nonnegativeMoneyValue(totals.gross_rake, 'total gross rake'),
+    bbj_drop: nonnegativeMoneyValue(totals.bbj_drop, 'total bad beat drop'),
+    net_rake: nonnegativeMoneyValue(totals.net_rake, 'total net rake'),
+    pot_volume: nonnegativeMoneyValue(totals.pot_volume, 'total pot volume'),
+    tournament_fees: nonnegativeMoneyValue(totals.tournament_fees, 'total tournament fees'),
+    rakeback_paid: nonnegativeMoneyValue(totals.rakeback_paid, 'total rakeback paid'),
     rakeback_rows: countValue(totals.rakeback_rows, 'total rakeback row count'),
-    agent_commissions: moneyValue(totals.agent_commissions, 'total agent commissions'),
-    union_fee: moneyValue(totals.union_fee, 'total union fee'),
+    agent_commissions: nonnegativeMoneyValue(totals.agent_commissions, 'total agent commissions'),
+    union_fee: nonnegativeMoneyValue(totals.union_fee, 'total union fee'),
     union_statements: countValue(totals.union_statements, 'total union statement count'),
     union_squareup: moneyValue(totals.union_squareup, 'total union squareup'),
     net_revenue: moneyValue(totals.net_revenue, 'total net revenue'),
@@ -191,13 +207,13 @@ function parseDay(value: unknown, expectedDate: string): FinancialDay {
   return {
     d,
     raked_hands: countValue(row.raked_hands, 'daily raked hands'),
-    gross_rake: moneyValue(row.gross_rake, 'daily gross rake'),
-    bbj_drop: moneyValue(row.bbj_drop, 'daily bad beat drop'),
-    pot_volume: moneyValue(row.pot_volume, 'daily pot volume'),
-    tournament_fees: moneyValue(row.tournament_fees, 'daily tournament fees'),
-    rakeback_paid: moneyValue(row.rakeback_paid, 'daily rakeback paid'),
-    agent_commissions: moneyValue(row.agent_commissions, 'daily agent commissions'),
-    union_fee: moneyValue(row.union_fee, 'daily union fee'),
+    gross_rake: nonnegativeMoneyValue(row.gross_rake, 'daily gross rake'),
+    bbj_drop: nonnegativeMoneyValue(row.bbj_drop, 'daily bad beat drop'),
+    pot_volume: nonnegativeMoneyValue(row.pot_volume, 'daily pot volume'),
+    tournament_fees: nonnegativeMoneyValue(row.tournament_fees, 'daily tournament fees'),
+    rakeback_paid: nonnegativeMoneyValue(row.rakeback_paid, 'daily rakeback paid'),
+    agent_commissions: nonnegativeMoneyValue(row.agent_commissions, 'daily agent commissions'),
+    union_fee: nonnegativeMoneyValue(row.union_fee, 'daily union fee'),
   };
 }
 
@@ -210,7 +226,7 @@ function parseTables(value: unknown): FinancialTable[] {
     const tableId = textValue(row.table_id, 'table identity');
     if (seen.has(tableId)) invalid('duplicate table identity');
     seen.add(tableId);
-    const rake = moneyValue(row.rake, 'table rake');
+    const rake = nonnegativeMoneyValue(row.rake, 'table rake');
     if (previousRake !== null && cents(rake) > previousRake) invalid('table rake order');
     previousRake = cents(rake);
     return {
@@ -243,17 +259,17 @@ function parseRecent(value: unknown, rangeStart: string, rangeEnd: string): Rece
       invalid('recent rake order or range');
     }
     previousTime = createdMillis;
-    const rakeAmount = moneyValue(row.rake_amount, 'recent rake amount');
+    const rakeAmount = nonnegativeMoneyValue(row.rake_amount, 'recent rake amount');
     if (cents(rakeAmount) <= 0) invalid('recent rake amount');
     return {
       id,
-      hand_id: nullableText(row.hand_id, 'recent hand identity'),
+      hand_id: nullableUuid(row.hand_id, 'recent hand identity'),
       global_hand_id: nullableCount(row.global_hand_id, 'recent global hand identity'),
       table_name: textValue(row.table_name, 'recent table name'),
       kind: textValue(row.kind, 'recent rake kind'),
       rake_amount: rakeAmount,
-      bbj_contribution: moneyValue(row.bbj_contribution, 'recent bad beat contribution'),
-      pot_size: moneyValue(row.pot_size, 'recent pot size'),
+      bbj_contribution: nonnegativeMoneyValue(row.bbj_contribution, 'recent bad beat contribution'),
+      pot_size: nonnegativeMoneyValue(row.pot_size, 'recent pot size'),
       num_players: nullableCount(row.num_players, 'recent player count'),
       created_at: createdAt,
     };
@@ -299,11 +315,22 @@ export function parseClubFinancialsPayload(
   value: unknown,
   requestedRange: FinancialsRequestRange
 ): FinancialsPayload {
+  const requestedClubId = textValue(requestedRange.clubId, 'requested club identity');
+  if (!UUID_TOKEN.test(requestedClubId)) invalid('requested club identity');
   const requestedStart = isoDate(requestedRange.start, 'requested start date');
   const requestedEnd = isoDate(requestedRange.end, 'requested end date');
   if (requestedStart > requestedEnd) invalid('requested range');
 
   const payload = objectValue(value, 'payload');
+  if (
+    payload.contract !== CLUB_FINANCIALS_CONTRACT ||
+    payload.contract_version !== 2 ||
+    payload.club_id !== requestedClubId ||
+    payload.requested_start !== requestedStart ||
+    payload.requested_end !== requestedEnd
+  ) {
+    invalid('scope receipt');
+  }
   const rangeValue = objectValue(payload.range, 'range');
   const rangeEnd = isoDate(rangeValue.end, 'range end');
   if (rangeEnd !== requestedEnd) invalid('range end binding');

@@ -152,14 +152,22 @@ const progress = (user = 'owner-a', n: any = 10, unlocked: any = null) => ({
   progress: n,
   unlocked_at: unlocked,
 });
-const rate = (id = 'audit-a', value = 0.1) => ({
+const RATE_AUDIT_A = '11111111-1111-4111-8111-111111111111';
+const RATE_AUDIT_B = '22222222-2222-4222-8222-222222222222';
+const RATE_AUDIT_C = '33333333-3333-4333-8333-333333333333';
+const RATE_AUDIT_D = '44444444-4444-4444-8444-444444444444';
+const RATE_AGENT = '55555555-5555-4555-8555-555555555555';
+const RATE_OPERATOR = '66666666-6666-4666-8666-666666666666';
+const RATE_CLUB_A = '77777777-7777-4777-8777-777777777777';
+const RATE_CLUB_B = '88888888-8888-4888-8888-888888888888';
+const rate = (id = RATE_AUDIT_A, value: any = 0.1, clubId = RATE_CLUB_A) => ({
   id,
-  agent_id: 'agentabc',
-  club_id: 'club-a',
-  changed_by: 'operator',
+  agent_id: RATE_AGENT,
+  club_id: clubId,
+  changed_by: RATE_OPERATOR,
   old_rate: 0.05,
   new_rate: value,
-  rate_type: id,
+  rate_type: 'commission',
   created_at: '2026-09-20T12:00:00Z',
 });
 const count = (table: string) => h.requests.filter((q) => q.table === table).length;
@@ -407,6 +415,15 @@ describe('achievement reads and page-owned notification invalidation', () => {
 });
 
 describe('visible scoped rate history', () => {
+  beforeEach(() => {
+    h.scope = {
+      status: 'ready',
+      userId: 'owner-a',
+      clubId: RATE_CLUB_A,
+      platformWide: false,
+    };
+  });
+
   it('labels an authorized empty history as zero changes without offering a retry', async () => {
     h.response = () => ({ data: [], error: null });
     render(<RateAuditPage />);
@@ -429,12 +446,12 @@ describe('visible scoped rate history', () => {
     expect(screen.getByText('10.0%')).toBeTruthy();
     expect(h.requests).toHaveLength(2);
     for (const q of h.requests) {
-      expect(q.filters.club_id).toBe('club-a');
+      expect(q.filters.club_id).toBe(RATE_CLUB_A);
       expect(q.limitCount).toBe(100);
       expect(q.signal).toBeInstanceOf(AbortSignal);
     }
     h.response = (q) => ({
-      data: q.table === 'commission_rate_audit' ? [rate('audit-b', 0.15)] : [],
+      data: q.table === 'commission_rate_audit' ? [rate(RATE_AUDIT_B, 0.15)] : [],
       error: null,
     });
     await act(() => vi.advanceTimersByTimeAsync(30_000));
@@ -474,17 +491,49 @@ describe('visible scoped rate history', () => {
     expect(screen.getByText('Verify Club Access')).toBeTruthy();
     expect(h.requests).toHaveLength(2);
     expect(old.signal.aborted).toBe(true);
-    h.scope = { status: 'ready', userId: 'owner-b', clubId: 'club-b', platformWide: false };
+    h.scope = {
+      status: 'ready',
+      userId: 'owner-b',
+      clubId: RATE_CLUB_B,
+      platformWide: false,
+    };
     h.response = (q) => ({
-      data: q.table === 'commission_rate_audit' ? [rate('new-club', 0.2)] : [],
+      data: q.table === 'commission_rate_audit' ? [rate(RATE_AUDIT_C, 0.2, RATE_CLUB_B)] : [],
       error: null,
     });
     view.rerender(<RateAuditPage />);
     await settle();
     expect(screen.getByText('20.0%')).toBeTruthy();
-    await act(async () => resolve({ data: [rate('old-club', 0.8)], error: null }));
+    await act(async () => resolve({ data: [rate(RATE_AUDIT_D, 0.8, RATE_CLUB_A)], error: null }));
     expect(screen.queryByText('80.0%')).toBeNull();
-    expect(h.requests.slice(2).every((q) => q.filters.club_id === 'club-b')).toBe(true);
+    expect(h.requests.slice(2).every((q) => q.filters.club_id === RATE_CLUB_B)).toBe(true);
+  });
+
+  it.each([null, '', false, 'not-a-rate', Number.POSITIVE_INFINITY])(
+    'refuses the malformed rate value %s instead of coercing it to zero',
+    async (value) => {
+      h.response = (q) => ({
+        data: q.table === 'commission_rate_audit' ? [{ ...rate(), old_rate: value }] : [],
+        error: null,
+      });
+      render(<RateAuditPage />);
+      await settle();
+
+      expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+      expect(screen.queryByText('0.0%')).toBeNull();
+    }
+  );
+
+  it('refuses a well-formed rate row from another club', async () => {
+    h.response = (q) => ({
+      data: q.table === 'commission_rate_audit' ? [rate(RATE_AUDIT_B, 0.2, RATE_CLUB_B)] : [],
+      error: null,
+    });
+    render(<RateAuditPage />);
+    await settle();
+
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+    expect(screen.queryByText('20.0%')).toBeNull();
   });
 
   it('renders either failed source as unavailable, then recovers both histories on retry', async () => {

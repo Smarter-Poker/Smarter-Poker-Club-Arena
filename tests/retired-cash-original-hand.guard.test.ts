@@ -106,3 +106,22 @@ describe('retired cash retains original custody inside the original financial ow
       expect(refusal).toContain(witness);
   });
 });
+
+it('enforces actual private custody regressions in the maintained accounting workflow', () => {
+  const workflow = readFileSync(resolve(root, '.github/workflows/ci.yml'), 'utf8');
+  const runner = readFileSync(resolve(root, 'scripts/ci/test-retired-cash-custody.py'), 'utf8');
+  const probe = readFileSync(
+    resolve(root, 'scripts/ci/probes/retired-cash-custody-native.sql'),
+    'utf8'
+  );
+  expect(workflow).toContain(
+    'python3 scripts/ci/test-retired-cash-custody.py --pg-bin /usr/lib/postgresql/17/bin'
+  );
+  expect(runner).toContain(
+    "header=s[:s.index('INSERT INTO smarter_private.retired_cash_hand_qualification')]"
+  );
+  expect(runner).toContain('e.close()');
+  expect(probe).toContain('RETIRED_CASH_CUSTODY_NATIVE_PASS');
+  expect(probe).toContain('RETIRED_CASH_CUSTODY_TRANSITION_REFUSED');
+  expect(probe).toContain('rollback leaked custody');
+});

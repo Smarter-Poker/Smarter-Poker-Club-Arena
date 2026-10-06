@@ -1840,6 +1840,18 @@ jobs:
           path: artifacts/f06-shared-hand-lane/
           if-no-files-found: error
           retention-days: 7
+      - name: Retired cash private custody transitions and authority
+        id: retired_cash_custody
+        if: matrix.shard == 3
+        run: python3 scripts/ci/test-retired-cash-custody.py --pg-bin /usr/lib/postgresql/17/bin --evidence artifacts/retired-cash-custody --socket-root "$RUNNER_TEMP"
+      - name: Retain retired cash custody native proof
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.retired_cash_custody.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: retired-cash-custody-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/retired-cash-custody/
+          if-no-files-found: error
+          retention-days: 7
       - name: Original hand retention, accepted receipts and successor ownership
         id: hand_submission
         if: matrix.shard == 3

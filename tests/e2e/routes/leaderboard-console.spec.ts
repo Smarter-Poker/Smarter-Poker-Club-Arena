@@ -93,7 +93,7 @@ for (const width of [393, 1440]) {
       });
     const observed = observe(page);
     await page.addInitScript(() => {
-      const metrics = { lcp: 0, cls: 0 };
+      const metrics = { lcp: null as number | null, cls: 0 };
       (window as unknown as { __lbMetrics: typeof metrics }).__lbMetrics = metrics;
       performance.setResourceTimingBufferSize(1000);
       new PerformanceObserver((list) => {
@@ -144,12 +144,15 @@ for (const width of [393, 1440]) {
         resources
           .filter((entry) => pattern.test(new URL(entry.name).pathname))
           .map((entry) => [file(entry), entry.transferSize, Math.round(entry.duration)] as const);
-      const metrics = (window as unknown as { __lbMetrics?: { lcp: number; cls: number } })
+      const metrics = (window as unknown as { __lbMetrics?: { lcp: number | null; cls: number } })
         .__lbMetrics;
       return {
         domContentLoadedMs: navigation ? Math.round(navigation.domContentLoadedEventEnd) : null,
         loadMs: navigation ? Math.round(navigation.loadEventEnd) : null,
-        lcpMs: metrics ? Math.round(metrics.lcp) : null,
+        lcpMs:
+          metrics && typeof metrics.lcp === 'number' && Number.isFinite(metrics.lcp)
+            ? Math.round(metrics.lcp)
+            : null,
         cls: metrics ? Number(metrics.cls.toFixed(3)) : null,
         resourceCount: resources.length,
         transferBytes: resources.reduce((sum, entry) => sum + (entry.transferSize || 0), 0),
@@ -172,12 +175,17 @@ for (const width of [393, 1440]) {
     expect(firstReadyMs, 'the first usable board should load within 12 seconds').toBeLessThan(
       12_000
     );
-    if (firstLoad.lcpMs !== null) {
-      expect(
-        firstLoad.lcpMs,
-        'the board should paint its main content within 8 seconds'
-      ).toBeLessThan(8_000);
-    }
+    expect(
+      firstLoad.lcpMs,
+      'the browser must report a largest-contentful-paint entry'
+    ).not.toBeNull();
+    expect(firstLoad.lcpMs ?? 0, 'the LCP measurement must be greater than zero').toBeGreaterThan(
+      0
+    );
+    expect(
+      firstLoad.lcpMs ?? Number.POSITIVE_INFINITY,
+      'the board should paint its main content within 8 seconds'
+    ).toBeLessThan(8_000);
     if (firstLoad.cls !== null) {
       expect(firstLoad.cls, 'the board should avoid disruptive layout shifts').toBeLessThan(0.15);
     }

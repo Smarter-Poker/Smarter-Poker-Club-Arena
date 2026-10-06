@@ -293,7 +293,7 @@ describe('a permissive readable policy of true never reaches a browser', () => {
         if (!isReadable(p.text)) continue;
         if (!usingIsTrue(p.text)) continue;
         if (!reachesABrowser(p.text)) continue;
-        offenders.push(`${file}: ${p.text.trim().replace(/\s+/g, ' ').slice(0, 200)}`);
+        offenders.push(`${file}: ${p.text.trim().replace(/\s+/g, ' ').slice(0, 200)}`); // window-ok: a failure-message truncation, not a source pin - every check above reads the whole CREATE POLICY statement
       }
     }
     expect(
@@ -321,7 +321,7 @@ describe('a permissive readable policy of true never reaches a browser', () => {
         const target = g.text.slice(0, g.text.length - to.length);
         const hit = SENSITIVE_TABLES.find((t) => new RegExp(`\\b${t}\\b`).test(target));
         if (!hit) continue;
-        offenders.push(`${file}: ${hit} <- ${g.text.trim().replace(/\s+/g, ' ').slice(0, 160)}`);
+        offenders.push(`${file}: ${hit} <- ${g.text.trim().replace(/\s+/g, ' ').slice(0, 160)}`); // window-ok: a failure-message truncation, not a source pin - the grantee and target checks above read the whole GRANT statement
       }
     }
     expect(

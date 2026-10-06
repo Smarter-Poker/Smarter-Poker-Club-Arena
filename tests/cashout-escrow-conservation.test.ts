@@ -69,6 +69,9 @@ describe('cashout custody is part of the existing conservation contract', () => 
     expect(supply).toContain('WITH c AS MATERIALIZED');
   });
   it('keeps charts and escalation on the same cashout basis', () => {
+    expect(read('scripts/ci/check-chip-conservation.mjs')).toContain(
+      'AND basis_version IS NOT DISTINCT FROM'
+    );
     expect(supply).toContain('AND basis_version = v_basis');
     expect(supply).toContain('s0.basis_version IS DISTINCT FROM s1.basis_version');
     expect(supply).toContain('AND s.basis_version IS NOT DISTINCT FROM');

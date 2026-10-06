@@ -126,7 +126,10 @@ async function liveChecks() {
       `SELECT round(COALESCE(sum(unexplained),0),2) AS s,
               count(*) FILTER (WHERE unexplained IS NOT NULL) AS n
          FROM public.ca_supply_snapshots
-        WHERE taken_at > now() - interval '4 hours'`
+        WHERE taken_at > now() - interval '4 hours'
+          AND basis_version IS NOT DISTINCT FROM
+              (SELECT latest.basis_version FROM public.ca_supply_snapshots latest
+                ORDER BY latest.taken_at DESC LIMIT 1)`
     );
     const s = Math.abs(Number(trailing.rows[0].s));
     if (s > 5000) bad(`trailing 4h unexplained chip supply is ${trailing.rows[0].s}`);

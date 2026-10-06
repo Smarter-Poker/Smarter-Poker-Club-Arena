@@ -228,10 +228,11 @@ BEGIN
   RAISE EXCEPTION 'RETIREMENT_ORIGINAL_PRIVATE_TABLE_AUTHORITY_CHANGED' USING ERRCODE='55000';
  END IF;
 END $postimage$;
-COMMIT;
 
 -- @live-proof: (SELECT md5(pg_get_functiondef(oid))='0f9432bbd2ac735c53731e6eec75449e' AND md5(prosrc)='65ce931706fc7e2befbb1f8ff9e7d986' AND proowner='postgres'::regrole AND prosecdef AND proconfig=ARRAY['search_path=pg_catalog, public'] AND proacl::text='{postgres=X/postgres,service_role=X/postgres}' FROM pg_proc WHERE oid='public.fn_ca_resume_hand_submission(uuid,text,uuid)'::regprocedure)
 -- @live-proof: (SELECT md5(pg_get_functiondef(oid))='d9201d7507320a4f20cdfd98293d25f8' AND md5(prosrc)='2663bfd55e57f5b2499cc7da43def579' AND proowner='postgres'::regrole AND prosecdef AND proconfig=ARRAY['search_path=pg_catalog, public, smarter_private'] AND proacl::text='{postgres=X/postgres}' FROM pg_proc WHERE oid='smarter_private.restore_retired_original_tournament_hand(uuid,text,uuid)'::regprocedure)
 -- @live-proof: (SELECT count(*)=57 AND sum(jsonb_array_length(expected->'rows'))=66 FROM smarter_private.retirement_original_hand_qualification)
 -- @live-proof: NOT EXISTS(SELECT 1 FROM unnest(ARRAY['anon','authenticated','service_role'])r CROSS JOIN unnest(ARRAY['smarter_private.retirement_original_hand_qualification','smarter_private.retirement_original_hand_restorations'])t WHERE has_table_privilege(r,t,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'))
 -- @live-proof: (SELECT count(*)=4 AND bool_and(tgenabled='O' AND tgfoid='smarter_private.hand_submission_immutable()'::regprocedure) FROM pg_trigger WHERE NOT tgisinternal AND tgrelid IN('smarter_private.retirement_original_hand_qualification'::regclass,'smarter_private.retirement_original_hand_restorations'::regclass))
+
+COMMIT;

@@ -421,7 +421,9 @@ async function installRuntimeDataProjection(
     if (path.endsWith('/fn_time_bank_allowance')) {
       return fulfillJson(route, { uses_remaining: 3, duration_seconds: 30 });
     }
-    await route.continue();
+    // Let the earlier exact persistence route observe and hold its request.
+    // continue() bypasses it and leaves waitForRequest waiting forever.
+    await route.fallback();
   });
 }
 

@@ -15,6 +15,11 @@ import {
   type RemainingVariantRangeStatus,
 } from './remainingVariants/RemainingVariantLivePolicy.js';
 import type { RemainingPolicyVariant } from './remainingVariants/RemainingVariantPolicyPack.js';
+import {
+  jointInputBindingSha256,
+  type JointRangeStatus,
+  type JointVariant,
+} from './multiway/JointInputBinding.js';
 import type { Phase8Selection } from './HorseTournamentPostflop.js';
 import type { HorseAuthorityReceipt, HorseAuthorityVerdict } from './HorseQualifiedAuthority.js';
 import {
@@ -162,6 +167,19 @@ export interface HorseExecutionWitness {
     variant: RemainingPolicyVariant;
     inputSha256: string;
     rangeStatus: RemainingVariantRangeStatus;
+  }> | null;
+  /** P13.1 compact private commitment to the facts a Phase 13 joint proposal
+   * used. Present only on decisions with a Phase 13 receipt that carries the
+   * binding field (null for a refused proposal); absent on retained witnesses
+   * and decisions the joint owner never saw. This commitment is the join from
+   * the journal's decision record (whose receipt still reads `pending`,
+   * because the worker journals it before the table acts) to this witness's
+   * accepted actions. Never strength or calibration proof. */
+  readonly phase13Inputs?: Readonly<{
+    version: 'horse-phase13-input-binding-v1';
+    variant: JointVariant;
+    inputSha256: string;
+    rangeStatus: JointRangeStatus;
   }> | null;
   readonly policyOwnership: Readonly<NonNullable<HorseDecision['policyOwnership']>> | null;
   /** Optional for retained v4 compatibility; absent means no Phase 8 receipt. */
@@ -397,6 +415,18 @@ export function createHorseExecutionWitness(
                   decision.remainingVariantPolicy.inputs
                 ),
                 rangeStatus: decision.remainingVariantPolicy.inputs.range.status,
+              })
+            : null,
+        }
+      : {}),
+    ...(decision.jointPolicy && Object.hasOwn(decision.jointPolicy, 'inputs')
+      ? {
+          phase13Inputs: decision.jointPolicy.inputs
+            ? Object.freeze({
+                version: 'horse-phase13-input-binding-v1' as const,
+                variant: decision.jointPolicy.inputs.variant,
+                inputSha256: jointInputBindingSha256(decision.jointPolicy.inputs),
+                rangeStatus: decision.jointPolicy.inputs.ranges.status,
               })
             : null,
         }

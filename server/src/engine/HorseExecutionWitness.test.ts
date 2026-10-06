@@ -15,6 +15,7 @@ import { HorseMind } from './HorseMind.js';
 import { encodeHorseDecisionReads } from './HorseDecisionReadFrame.js';
 import { saveFastRandom, restoreFastRandom, seedFastRandom } from './HorseEval.js';
 import { jointPolicyFixture } from './multiway/JointRangeFixture.test-support.js';
+import { jointInputBindingSha256 } from './multiway/JointLivePolicy.js';
 import { omahaVariantSpot } from '../benchmark/OmahaVariantPolicyEvidence.js';
 import { remainingVariantSpot } from '../benchmark/RemainingVariantPolicyEvidence.js';
 import { createHash } from 'node:crypto';
@@ -54,6 +55,62 @@ beforeEach(() => {
 });
 
 describe('private execution witness', () => {
+  it('owns a compact immutable commitment to the Phase 13 input binding (P13.1)', () => {
+    const { hero, state } = jointPolicyFixture('plo6', 2, 'cash', 'turn');
+    seedFastRandom(7301301);
+    const decision = HorseLogic.decide(
+      hero,
+      state,
+      'balanced',
+      {},
+      {
+        telemetry: false,
+        mind: false,
+        decisionTimeMs: 0,
+        phase11Omaha: 'off',
+        phase13Joint: 'shadow',
+        phase13EvidenceMode: true,
+      }
+    );
+    const inputs = decision.jointPolicy!.inputs!;
+    const witness = createHorseExecutionWitness(
+      { ...input, player: hero, gameState: state },
+      decision,
+      { requestId: 1, lane: 'fast', computeMs: 1, governorScale: 1 }
+    );
+    const expected = {
+      version: 'horse-phase13-input-binding-v1',
+      variant: 'plo6',
+      inputSha256: jointInputBindingSha256(inputs),
+      rangeStatus: 'consumed',
+    };
+    expect(witness.phase13Inputs).toEqual(expected);
+    expect(Object.isFrozen(witness.phase13Inputs)).toBe(true);
+    // The witness carries the commitment, never the binding or a card.
+    expect(JSON.stringify(witness)).not.toMatch(/"rank"|"suit"|actionOrder/);
+    settleHorseExecutionWitness(witness, {
+      applied: true,
+      acceptedActions: [
+        {
+          record: { seat: hero.seat, action: decision.action, amount: 0, stage: 'turn' },
+          intended: true,
+        },
+      ],
+    });
+    expect(witness.phase13Inputs).toEqual(expected);
+    // A refused proposal commits to null; a retained receipt to nothing.
+    const refused = make({
+      action: 'check',
+      thinkTime: 1,
+      jointPolicy: { ...decision.jointPolicy!, eligible: false, inputs: null },
+    });
+    expect(refused.phase13Inputs).toBeNull();
+    const { inputs: _drop, ...retainedReceipt } = decision.jointPolicy!;
+    const retained = make({ action: 'check', thinkTime: 1, jointPolicy: retainedReceipt });
+    expect(retained).not.toHaveProperty('phase13Inputs');
+    expect(make()).not.toHaveProperty('phase13Inputs');
+  });
+
   it('owns a compact immutable commitment to actual utility evidence and its original read frame', () => {
     const { hero, state } = jointPolicyFixture('nlh', 1, 'tournament', 'preflop');
     state.legalActions = ['check'];

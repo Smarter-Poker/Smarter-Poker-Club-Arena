@@ -3,6 +3,7 @@ import type { HorseGameStateV2 } from '../HorseLogic.js';
 import { buildTournamentActionCandidates } from '../HorseTournamentUtility.js';
 import { horseVariantRulesFor } from '../VariantRules.js';
 import { validateDealtSeatCensus } from './DealtSeatCensus.js';
+import { jointPreflopFirstSeat } from './JointResponseOrder.js';
 import type { JointRangeSamples, JointOpponentRange } from './JointRangeSampler.js';
 import { jointStateKey } from './JointRangeSampler.js';
 import { prepareJointPots, settleJointScores } from './JointPotDistribution.js';
@@ -17,6 +18,7 @@ export const JOINT_ACTION_PACK = Object.freeze({
   futureRaises: 'not_modeled',
   maxSamples: 32,
 });
+export type JointActionCandidate = ReturnType<typeof buildTournamentActionCandidates>[number];
 const clamp = (n: number, low = 0, high = 1) => Math.max(low, Math.min(high, n));
 
 /** Actual dealt-seat ring, including sparse seats and a dead button. Folded
@@ -28,11 +30,9 @@ export function jointPlayersBehind(hero: SeatPlayer, state: HorseGameStateV2): s
     throw new Error('joint_action_missing_button');
   const clockwise = [...ids.filter((s) => s > dealer!), ...ids.filter((s) => s <= dealer!)];
   let first = 0;
-  if (state.stage === 'preflop' && !state.bombPot) {
-    first =
-      ids.length === 2 ? clockwise.indexOf(dealer!) : (state.straddleActive ? 3 : 2) % ids.length;
-    if (first < 0) throw new Error('joint_action_heads_up_button_not_dealt');
-  }
+  // P13.1: the engine's own preflop order, from the blinds it posted.
+  if (state.stage === 'preflop' && !state.bombPot)
+    first = clockwise.indexOf(jointPreflopFirstSeat(state, ids));
   const order = [...clockwise.slice(first), ...clockwise.slice(0, first)];
   const index = order.indexOf(hero.seat);
   const later = new Set(order.slice(index + 1));
@@ -94,7 +94,10 @@ export function evaluateJointActions(
   state: HorseGameStateV2,
   baseline: HorseDecision,
   evidence: JointRangeSamples,
-  withinBudget: () => boolean
+  withinBudget: () => boolean,
+  /** P13.1: maps the built candidates to the exact form the caller executes
+   * (HorseLogic.legalize), before any of them is priced. */
+  candidateForm?: (candidates: JointActionCandidate[]) => JointActionCandidate[]
 ) {
   if (evidence.stateKey !== jointStateKey(hero, state))
     throw new Error('joint_action_stale_evidence');
@@ -138,7 +141,7 @@ export function evaluateJointActions(
     )
   )
     throw new Error('joint_action_incomplete_contenders');
-  const candidates = buildTournamentActionCandidates({
+  const built = buildTournamentActionCandidates({
     hero,
     toCall: Math.min(hero.stack, Math.max(0, state.currentBet - hero.bet)),
     legalActions: state.legalActions,
@@ -150,6 +153,7 @@ export function evaluateJointActions(
     baseline,
     settlement: { chipUnit: state.chipUnit! },
   });
+  const candidates = candidateForm ? candidateForm(built) : built;
   if (!candidates.length || candidates.length > 12)
     throw new Error('joint_action_no_legal_candidates');
   const rows = [];

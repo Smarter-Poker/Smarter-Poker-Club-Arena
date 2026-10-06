@@ -1,6 +1,7 @@
 import { plo4LiveReceiptBindingIsValid } from '../plo4/Plo4LivePolicy.js';
 import { omahaVariantReceiptBindingIsValid } from '../omaha/OmahaVariantLivePolicy.js';
 import { remainingVariantReceiptBindingIsValid } from '../remainingVariants/RemainingVariantLivePolicy.js';
+import { jointReceiptBindingIsValid } from '../multiway/JointLivePolicy.js';
 import { horsePhase6AttributionIsValid } from '../HorsePhase6Attribution.js';
 import { horseTournamentUtilityEvidenceIsValid } from '../HorseTournamentUtilityEvidence.js';
 import type { HorseDecision, HorseTournamentUtilityLedger, SeatPlayer } from '../../types.js';
@@ -609,6 +610,10 @@ export function horseDecisionReceiptIsValid(
   )
     return false;
   if (!horsePhase12SelectionIsValid(value.remainingVariantPolicy, value)) return false;
+  // P13.1: a Phase 13 receipt's input binding, pack versions and selection
+  // refusal are re-checked at the boundary.
+  if (value.jointPolicy !== undefined && !jointReceiptBindingIsValid(value.jointPolicy))
+    return false;
   if (
     value.tournamentPreflopAttribution !== undefined &&
     !horsePhase6AttributionIsValid(value.tournamentPreflopAttribution)

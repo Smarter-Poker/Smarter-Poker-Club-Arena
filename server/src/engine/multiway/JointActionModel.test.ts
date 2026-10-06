@@ -221,6 +221,8 @@ describe('joint action-specific rollout', () => {
     expect(jointPlayersBehind(hero, state)).toEqual(['p1', 'p2']);
     state.stage = 'preflop';
     state.dealerSeat = 4;
+    // P13.1: the blinds move with the button (HandController posts 7 and 1).
+    state.blindSeats = { smallBlind: 7, bigBlind: 1 };
     state.straddleActive = true;
     // Seat7 is SB, hero1 is BB, seat2 straddles; only seat2 remains after hero.
     expect(jointPlayersBehind(hero, state)).toEqual(['p1']);

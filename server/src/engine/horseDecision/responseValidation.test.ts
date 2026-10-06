@@ -433,3 +433,62 @@ describe('Phase 7 evidence is bound to the request at admission', () => {
     expect(horsePhase7EvidenceMismatch(single.decision, foreign)).toBe('phase7_foreign_opponent');
   });
 });
+
+describe('P13.1 the joint receipt binding at the worker boundary', () => {
+  const decide = (mode: 'shadow' | 'candidate') => {
+    const s = jointPolicyFixture('plo4', 2, 'cash', 'turn');
+    seedFastRandom(130999);
+    return structuredClone(
+      HorseLogic.decide(
+        s.hero,
+        s.state,
+        'balanced',
+        {},
+        {
+          telemetry: false,
+          mind: false,
+          decisionTimeMs: 0,
+          phase10Plo4: 'off',
+          phase13Joint: mode,
+          phase13EvidenceMode: true,
+        }
+      )
+    );
+  };
+
+  it('accepts a real bound receipt and a retained one, and refuses a forged one', () => {
+    const valid = decide('shadow');
+    expect(valid.jointPolicy?.inputs).toBeTruthy();
+    expect(horseDecisionReceiptIsValid(structuredClone(valid), 'plo4')).toBe(true);
+    const retained = structuredClone(valid) as HorseDecision & {
+      jointPolicy: Record<string, unknown>;
+    };
+    for (const key of [
+      'inputs',
+      'rangePackVersion',
+      'actionPackVersion',
+      'uniformEscapes',
+      'selectionRefusal',
+    ])
+      delete retained.jointPolicy[key];
+    expect(horseDecisionReceiptIsValid(retained, 'plo4')).toBe(true);
+    const forged = structuredClone(valid);
+    (forged.jointPolicy!.inputs!.positions as { firstToActSeat: number }).firstToActSeat = 3;
+    expect(horseDecisionReceiptIsValid(forged, 'plo4')).toBe(false);
+    const unbound = structuredClone(valid);
+    unbound.jointPolicy!.inputs = null;
+    expect(horseDecisionReceiptIsValid(unbound, 'plo4')).toBe(false);
+  });
+
+  it('refuses an unnamed selection refusal and a refusal on an applied candidate', () => {
+    const applied = decide('candidate');
+    expect(applied.jointPolicy).toMatchObject({ applied: true, selectionRefusal: null });
+    expect(horseDecisionReceiptIsValid(structuredClone(applied), 'plo4')).toBe(true);
+    const refusedButApplied = structuredClone(applied);
+    refusedButApplied.jointPolicy!.selectionRefusal = 'illegal_candidate';
+    expect(horseDecisionReceiptIsValid(refusedButApplied, 'plo4')).toBe(false);
+    const unnamed = structuredClone(decide('shadow'));
+    (unnamed.jointPolicy as { selectionRefusal: unknown }).selectionRefusal = 'busy';
+    expect(horseDecisionReceiptIsValid(unnamed, 'plo4')).toBe(false);
+  });
+});

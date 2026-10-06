@@ -62,7 +62,8 @@ function fixture(
   phase7 = false,
   phase10 = false,
   phase11 = false,
-  phase12 = false
+  phase12 = false,
+  phase13 = false
 ) {
   const raw = jointPolicyFixture(variant, 1, phase7 ? 'tournament' : 'cash', 'preflop');
   const { hero, state } = JSON.parse(JSON.stringify(raw), (k, v) =>
@@ -70,7 +71,7 @@ function fixture(
       ? `20000000-0000-4000-8000-00000000000${Number(v.slice(1)) + 1}`
       : v
   );
-  state.toCall = phase7 || phase10 || phase11 || phase12 ? 0 : 1;
+  state.toCall = phase7 || phase10 || phase11 || phase12 || phase13 ? 0 : 1;
   // The fixture's button is seat 4: the walk posts the blinds from seats 1 and 2.
   if (phase10 || phase11 || phase12) state.blindSeats = { smallBlind: 1, bigBlind: 2 };
   if (phase7) {
@@ -193,6 +194,32 @@ function fixture(
     if (!decision.remainingVariantPolicy?.inputs)
       throw Error('Phase 12 fixture did not bind its inputs');
   }
+  if (phase13) {
+    const rng = saveFastRandom();
+    try {
+      seedFastRandom(7301301);
+      decision = HorseLogic.decide(
+        hero,
+        state,
+        'balanced',
+        {},
+        {
+          telemetry: false,
+          mind: false,
+          decisionTimeMs: 1000,
+          phase8Postflop: 'off',
+          phase10Plo4: 'off',
+          phase11Omaha: 'off',
+          phase12Remaining: 'off',
+          phase13Joint: 'shadow',
+          phase13EvidenceMode: true,
+        }
+      );
+    } finally {
+      restoreFastRandom(rng);
+    }
+    if (!decision.jointPolicy?.inputs) throw Error('Phase 13 fixture did not bind its inputs');
+  }
   const d = {
     snapshot,
     readFrame: encodeHorseDecisionReads(
@@ -221,7 +248,7 @@ function fixture(
     seat: hero.seat,
     userId: hero.user_id,
     action: decision.action,
-    amount: phase7 || phase10 || phase11 || phase12 ? (decision.amount ?? 0) : 1,
+    amount: phase7 || phase10 || phase11 || phase12 || phase13 ? (decision.amount ?? 0) : 1,
     timestamp: 1001,
     stage: 'preflop' as const,
   };
@@ -443,6 +470,60 @@ describe('private retained-hand journal consumer', () => {
       });
     }
   );
+
+  it.each(['nlh', 'plo4', 'flo8', 'short_deck'] as const)(
+    'reconciles the %s Phase 13 input binding to its accepted execution (P13.1)',
+    (variant) => {
+      const f = fixture(variant, [], false, false, false, false, true);
+      expect(f.w.phase13Inputs).toMatchObject({
+        version: 'horse-phase13-input-binding-v1',
+        variant,
+        rangeStatus: 'consumed',
+      });
+      // The journal's decision record still reads `pending`: the worker
+      // journals it before the table acts. The join to the accepted action is
+      // this commitment, recomputed from the persisted decision record.
+      const persisted = JSON.parse(f.rows()[0]!.body) as typeof f.d;
+      expect(persisted.decision.jointPolicy?.executionStatus).toBe('pending');
+      const recovered = createHorseExecutionWitness(persisted.snapshot, persisted.decision, {
+        requestId: 1,
+        lane: 'fast',
+        computeMs: 1,
+        governorScale: 1,
+      });
+      expect(recovered.phase13Inputs).toEqual(f.w.phase13Inputs);
+      const accepted = JSON.parse(f.rows()[1]!.body) as typeof f.w;
+      expect(accepted.acceptedActions).toHaveLength(1);
+      expect(accepted.acceptedActions[0]!.record.action).toBe(
+        persisted.decision.jointPolicy?.finalAction
+      );
+      expect(reconcileHorseJournalHand(f.rows(), handKey)).toMatchObject({
+        status: 'reconciled',
+        matchedActions: 1,
+        gaps: [],
+        activationAllowed: false,
+      });
+    }
+  );
+
+  it('rejects a changed Phase 13 input commitment even when the accepted action still matches', () => {
+    const f = fixture('plo5', [], false, false, false, false, true);
+    f.w = { ...f.w, phase13Inputs: { ...f.w.phase13Inputs!, inputSha256: 'f'.repeat(64) } };
+    const report = reconcileHorseJournalHand(f.rows(), handKey);
+    expect(report.status).toBe('incomplete');
+    expect(report.matchedActions).toBe(0);
+    expect(report.gaps).toContain('input_mismatch');
+  });
+
+  it('rejects a Phase 13 witness that drops the commitment of a bound proposal', () => {
+    const f = fixture('nlh', [], false, false, false, false, true);
+    f.w = Object.fromEntries(
+      Object.entries(f.w).filter(([key]) => key !== 'phase13Inputs')
+    ) as typeof f.w;
+    const report = reconcileHorseJournalHand(f.rows(), handKey);
+    expect(report.status).toBe('incomplete');
+    expect(report.gaps).toContain('input_mismatch');
+  });
 
   it('rejects a changed Phase 12 input commitment even when the accepted action still matches', () => {
     const f = fixture('flo8', [], false, false, false, true);

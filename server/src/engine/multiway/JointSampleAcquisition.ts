@@ -15,7 +15,7 @@ import {
 } from './JointRangeSampler.js';
 
 export const JOINT_LIVE_DOMAIN = Object.freeze({
-  version: 'joint-multiway-round1-v3',
+  version: 'joint-multiway-round1-v4',
   defaultMode: 'shadow',
   calibratedConfidence: null,
   maxStackBB: 250,

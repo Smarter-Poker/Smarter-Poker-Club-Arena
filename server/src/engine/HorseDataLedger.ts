@@ -2160,6 +2160,26 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     0.99
   ),
   receipt(
+    'phase13_range_*',
+    'evaluateJointLivePolicy -> HorseLogic (P13.1 input binding)',
+    'range status of every bound multiway or bomb-pot proposal (consumed, unavailable); counts only, never calibration or solver evidence',
+    'Phase13',
+    'phase13_eligible',
+    0.99
+  ),
+  receipt(
+    'phase13_selection_refused_*',
+    'HorseLogic (P13.1)',
+    'an applied Phase 13 candidate refused before it could act: illegal_candidate (the legalizer would rewrite it) or earlier_phase_applied (a Phase 10/11/12 candidate already owned the action)',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_shadow_receipt_binding_dropped',
+    'horseDecision/client (P13.1, the P10 audit F8 rule)',
+    'a shadow-only Phase 13 receipt whose P13.1 binding failed the strict validator was dropped; the decision kept its actual action and the worker stayed up (an applied receipt still fails closed)',
+    'Phase13'
+  ),
+  receipt(
     'phase8_seen',
     'HorseLogic -> HorseTournamentPostflop',
     'natural tournament postflop decisions entering the Phase 8 gate',

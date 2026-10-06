@@ -37,6 +37,7 @@ import { isRemainingPolicyVariant } from '../remainingVariants/RemainingVariantP
 import { plo4LiveReceiptBindingIsValid } from '../plo4/Plo4LivePolicy.js';
 import { omahaVariantReceiptBindingIsValid } from '../omaha/OmahaVariantLivePolicy.js';
 import { remainingVariantReceiptBindingIsValid } from '../remainingVariants/RemainingVariantLivePolicy.js';
+import { jointReceiptBindingIsValid } from '../multiway/JointLivePolicy.js';
 import type {
   CommitDecisionEffectsRequest,
   CompletedHandObservation,
@@ -1337,6 +1338,21 @@ export class LiveHorseDecisionWorkerClient {
         if (message.decision.policyOwnership?.owner === 'phase12')
           delete message.decision.policyOwnership;
         noteFire('phase12_shadow_receipt_binding_dropped');
+      }
+      // P13.1, the same rule for the joint owner: a shadow-only Phase 13
+      // receipt (shadow, not applied) whose binding fails the strict validator
+      // never owned the action, so it is dropped instead of taking the worker
+      // down. An applied one still fails closed below.
+      const phase13Shadow = message.decision.jointPolicy;
+      if (
+        phase13Shadow &&
+        typeof phase13Shadow === 'object' &&
+        phase13Shadow.mode === 'shadow' &&
+        phase13Shadow.applied === false &&
+        !jointReceiptBindingIsValid(phase13Shadow)
+      ) {
+        delete message.decision.jointPolicy;
+        noteFire('phase13_shadow_receipt_binding_dropped');
       }
       if (!horseDecisionReceiptIsValid(message.decision, active.request.gameState.gameVariant)) {
         this.fail(new Error('horse decision worker returned invalid policy receipt'));

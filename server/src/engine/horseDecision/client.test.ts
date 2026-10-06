@@ -2915,6 +2915,96 @@ describe('P12.1: a Short Deck/Pineapple/FLH/FLO8 receipt whose input binding fai
   });
 });
 
+describe('P13.1: a joint multiway receipt whose input binding fails validation', () => {
+  /** A real Phase 13 cash bomb-pot decision from the brain, with its binding. */
+  const jointDecision = (mode: 'shadow' | 'candidate') => {
+    const spot = jointPolicyFixture('nlh', 2, 'cash', 'flop');
+    seedFastRandom(130999);
+    return structuredClone(
+      HorseLogic.decide(
+        spot.hero,
+        spot.state,
+        'balanced',
+        {},
+        {
+          telemetry: false,
+          mind: false,
+          decisionTimeMs: 0,
+          phase13Joint: mode,
+          phase13EvidenceMode: true,
+        }
+      )
+    );
+  };
+  const corruptBinding = (decision: ReturnType<typeof jointDecision>) => {
+    (decision.jointPolicy!.inputs!.approximation as { solverInput: unknown }).solverInput = true;
+    return decision;
+  };
+  const send = (decision: ReturnType<typeof jointDecision>, fence: string) => {
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    const input = snapshot(fence);
+    input.gameState.gameVariant = 'nlh';
+    const pending = client.decideFast(input);
+    void pending.catch(() => undefined);
+    const reply = fastResult(1, fence);
+    reply.decision = decision;
+    expect(() => worker.emitMessage(reply)).not.toThrow();
+    return { worker, client, pending };
+  };
+
+  it('drops a shadow-only receipt, keeps the actual action and the worker, and counts it by name', async () => {
+    const valid = jointDecision('shadow');
+    expect(valid.jointPolicy).toMatchObject({ mode: 'shadow', applied: false, eligible: true });
+    expect(horseDecisionReceiptIsValid(structuredClone(valid), 'nlh')).toBe(true);
+    const forged = corruptBinding(structuredClone(valid));
+    expect(horseDecisionReceiptIsValid(structuredClone(forged), 'nlh')).toBe(false);
+    enableBrainTelemetry();
+    drainFires();
+    const { worker, client, pending } = send(forged, 'p13-1-shadow');
+    const result = await pending;
+    expect({ action: result.decision.action, amount: result.decision.amount }).toEqual({
+      action: valid.action,
+      amount: valid.amount,
+    });
+    expect(result.decision.jointPolicy).toBeUndefined();
+    expect(result.decision.executionWitness).not.toHaveProperty('phase13Inputs');
+    expect(client.status().phase).not.toBe('failed');
+    expect(worker.terminateCalls).toBe(0);
+    expect(drainFires()).toContainEqual({
+      feature: 'phase13_shadow_receipt_binding_dropped',
+      fires: 1,
+    });
+  });
+
+  it('commits the valid shadow binding to the execution witness', async () => {
+    const valid = jointDecision('shadow');
+    const { pending } = send(valid, 'p13-1-valid');
+    const result = await pending;
+    expect(result.decision.executionWitness?.phase13Inputs).toMatchObject({
+      version: 'horse-phase13-input-binding-v1',
+      variant: 'nlh',
+      rangeStatus: 'consumed',
+    });
+  });
+
+  it('still fails closed for an applied receipt', async () => {
+    const applied = jointDecision('candidate');
+    expect(applied.jointPolicy).toMatchObject({ mode: 'candidate', applied: true });
+    expect(horseDecisionReceiptIsValid(structuredClone(applied), 'nlh')).toBe(true);
+    enableBrainTelemetry();
+    drainFires();
+    const { worker, client, pending } = send(corruptBinding(applied), 'p13-1-applied');
+    await expect(pending).rejects.toThrow('invalid policy receipt');
+    expect(client.status().phase).toBe('failed');
+    expect(worker.terminateCalls).toBe(1);
+    expect(drainFires().map((row) => row.feature)).not.toContain(
+      'phase13_shadow_receipt_binding_dropped'
+    );
+  });
+});
+
 describe('P10 audit F8: a PLO4 receipt whose input binding fails validation', () => {
   /** A real PLO4 cash decision from the brain, with its frozen input binding. */
   const plo4Decision = (spot: 'non_nut_flush' | 'premium_open', mode: 'shadow' | 'candidate') => {

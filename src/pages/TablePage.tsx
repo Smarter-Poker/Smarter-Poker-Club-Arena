@@ -22910,7 +22910,18 @@ function LiveTablePage({
       showBuyInModal ||
       showHandHistory ||
       showPlayerNotes ||
-      showWaitList,
+      showWaitList ||
+      /* A DIALOG THAT MOVES MONEY OR A SEAT OWNS THE KEYBOARD (launch audit
+         2026-10-05). These six were missing, so with the cashier, the leave
+         confirmation or a rebuy prompt open, F still folded the live hand and
+         Space still called it: a player typing an amount, or reaching for the
+         dialog's own button, acted at the table behind it. */
+      showCashier ||
+      showDiamondWallet ||
+      showLeaveConfirm ||
+      bustRebuyOpen ||
+      showRebuyModal ||
+      postOrWaitOpen,
     /* Every action key runs the SAME function the on-screen button runs.
        2026-08-28: these pointed at `handleFold` / `handleCall`, a parallel pair
        that skipped the VPIP/PFR counting inside handleActionPanelAction — so a

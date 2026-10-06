@@ -93,7 +93,6 @@ function fixture() {
     peakStackRef: ref(0),
     seatAcquiredAtRef: ref(0),
     bootNoticeShownRef: ref(false),
-    HydraService: { onRealPlayerJoined: vi.fn() },
     sendAction: vi.fn().mockResolvedValue(undefined),
     masterBus: { emit: vi.fn() },
     tableState: state,
@@ -149,11 +148,8 @@ describe('cash buy-in callback recovery', () => {
     expect(f.d.supabase.rpc).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps the confirmed seat when both engine notifications throw', async () => {
+  it('keeps the confirmed seat when the engine notification throws', async () => {
     const f = fixture();
-    f.d.HydraService.onRealPlayerJoined.mockImplementation(() => {
-      throw new Error('hydra');
-    });
     f.d.requestEngineSnapshot.mockImplementation(() => {
       throw new Error('socket offline');
     });

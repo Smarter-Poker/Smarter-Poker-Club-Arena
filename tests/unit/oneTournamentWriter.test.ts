@@ -52,14 +52,16 @@ function tournamentInserters(): string[] {
   return out.sort();
 }
 
+/* 2026-10-05: src/services/HorseOrchestrator.ts left the list - the browser's
+   own tournament creator, deleted with the rest of the browser horse
+   management. No browser file creates a tournament row now. */
 const EXPECTED_WRITERS = [
   'server/src/services/ScheduledTournamentService.ts',
   'server/src/services/TournamentRecurringService.ts',
-  'src/services/HorseOrchestrator.ts',
 ];
 
 describe('the tournament writers are known', () => {
-  it('is exactly these three, plus fn_create_tournament in the database', () => {
+  it('is exactly these two, plus fn_create_tournament in the database', () => {
     // Adding a writer is allowed. Adding one WITHOUT NOTICING is what this
     // stops — because a new writer inherits none of the RPC's rules and the
     // trigger only covers two of them.
@@ -119,38 +121,15 @@ describe('every writer states the seats rather than inheriting them', () => {
   });
 });
 
-describe('a realised prize pool is never written as a guarantee', () => {
-  it('HorseOrchestrator stops promising whatever it happened to collect', () => {
-    // guaranteed_prize drives trg_tournaments_guarantee_affordable and
-    // fn_apply_prize_guarantee. Writing the realised pool into it turns an
-    // attendance number into a house promise.
-    const code = fs.readFileSync(
-      path.join(process.cwd(), 'src/services/HorseOrchestrator.ts'),
-      'utf8'
+describe('the browser orchestrator that created tournaments is gone', () => {
+  /* It wrote a realised pool into guaranteed_prize (a house promise), omitted
+     tournament_type (so every Sit & Go typed itself MTT) and wrote variants in
+     the wrong case - each pinned here while it existed. It was deleted on
+     2026-10-05, so the pin is that it stays deleted. */
+  it('src/services/HorseOrchestrator.ts does not exist', () => {
+    expect(fs.existsSync(path.join(process.cwd(), 'src/services/HorseOrchestrator.ts'))).toBe(
+      false
     );
-    expect(code).not.toMatch(/guaranteed_prize:\s*prizePool/);
-  });
-});
-
-describe('a writer states its format instead of inheriting MTT', () => {
-  it('HorseOrchestrator writes tournament_type on both paths', () => {
-    // The column defaults to 'MTT', so an omitted value typed every Sit & Go
-    // this path created as a multi-table tournament.
-    const code = fs.readFileSync(
-      path.join(process.cwd(), 'src/services/HorseOrchestrator.ts'),
-      'utf8'
-    );
-    expect(code).toMatch(/tournament_type: 'SNG'/);
-    expect(code).toMatch(/tournament_type: 'MTT'/);
-  });
-
-  it('and writes variant in the case every reader compares', () => {
-    const code = fs.readFileSync(
-      path.join(process.cwd(), 'src/services/HorseOrchestrator.ts'),
-      'utf8'
-    );
-    expect(code).not.toMatch(/variant: 'SNG'/);
-    expect(code).toMatch(/variant: 'sng'/);
   });
 });
 

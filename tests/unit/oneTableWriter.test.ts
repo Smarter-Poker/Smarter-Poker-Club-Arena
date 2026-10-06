@@ -67,8 +67,8 @@ describe('exactly one writer per kind of table', () => {
         // Tournament tables. Sized from the tournament's own structure, never
         // through the cash path.
         'src/services/TournamentService.ts',
-        // The horse fleet's own tables.
-        'src/services/HorseOrchestrator.ts',
+        // 2026-10-05: HorseOrchestrator left it too, deleted with the rest of
+        // the browser's horse management. The engine's fleet owns horse tables.
       ].sort()
     );
   });

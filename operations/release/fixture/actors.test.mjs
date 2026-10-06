@@ -36,6 +36,7 @@ function snapshot(current = null, context = null) {
     stage: current ? 'preflop' : 'waiting',
     current_player: current,
     action_context: context,
+    turn_start_time_ms: current ? 1791270328275 : 0,
     current_bet: 0,
     pot: 0,
     players: ids.map((id, i) => ({
@@ -167,6 +168,7 @@ test('two native actors check/call/fold only through HTTP with exact contexts an
     patch: [
       { op: 'replace', path: '/current_player', value: ids[1] },
       { op: 'replace', path: '/action_context', value: 'decision-two' },
+      { op: 'replace', path: '/turn_start_time_ms', value: 1791270329275 },
       { op: 'replace', path: '/current_bet', value: 10 },
     ],
   });
@@ -179,6 +181,7 @@ test('two native actors check/call/fold only through HTTP with exact contexts an
     patch: [
       { op: 'replace', path: '/current_player', value: ids[0] },
       { op: 'replace', path: '/action_context', value: 'decision-three' },
+      { op: 'replace', path: '/turn_start_time_ms', value: 1791270330275 },
       { op: 'replace', path: '/players/0/stack', value: 5 },
     ],
   });
@@ -355,6 +358,38 @@ test('actors continue through a completed hand into the next fresh decision', as
   assert.deepEqual(fixture.failures, []);
 });
 
+test('a post-action context on the answered clock cannot become a second action', async (t) => {
+  // Real isolated wire: DELTA68 armed seat 2, action367 called, DELTA69
+  // advanced the context while retaining that seat and its answered clock.
+  const fixture = await harness(t, { state: snapshot(ids[1], 'hand:preflop:0:2:2') });
+  await fixture.start();
+  await until(() => fixture.actions.length === 1);
+  fixture.broadcast({
+    type: 'DELTA',
+    tableId,
+    seq: 2,
+    prev: 1,
+    patch: [{ op: 'replace', path: '/action_context', value: 'hand:preflop:1:2:2' }],
+  });
+  await wait(500);
+  assert.equal(fixture.actions.length, 1, 'an accepted turn remains spent despite a new context');
+  fixture.broadcast({
+    type: 'DELTA',
+    tableId,
+    seq: 3,
+    prev: 2,
+    patch: [
+      { op: 'replace', path: '/action_context', value: 'hand:flop:0:2:2' },
+      { op: 'replace', path: '/stage', value: 'flop' },
+      { op: 'replace', path: '/turn_start_time_ms', value: 1791270329275 },
+    ],
+  });
+  await until(() => fixture.actions.length === 2);
+  assert.equal(fixture.actions[1].actor, ids[1]);
+  assert.equal(fixture.actions[1].actionContext, 'hand:flop:0:2:2');
+  assert.deepEqual(fixture.failures, []);
+});
+
 test('a changed decision during pacing replaces the unsent intent', async (t) => {
   const fixture = await harness(t, { state: snapshot(ids[0], 'old-context') });
   await fixture.start();
@@ -465,6 +500,16 @@ for (const [name, message, expected] of [
     'PATCH',
   ],
   ['missing context', { type: 'SNAPSHOT', tableId, seq: 2, state: snapshot(ids[0]) }, 'CONTEXT'],
+  [
+    'missing turn clock',
+    {
+      type: 'SNAPSHOT',
+      tableId,
+      seq: 2,
+      state: { ...snapshot(ids[0], 'context'), turn_start_time_ms: null },
+    },
+    'TURN_CLOCK',
+  ],
   [
     'spectator enters roster',
     {

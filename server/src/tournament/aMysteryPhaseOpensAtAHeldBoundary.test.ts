@@ -2,7 +2,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
-import { mysteryBountyThresholdReached } from './mysteryBountyActivation.js';
+import {
+  mysteryBountyFieldTooSmall,
+  mysteryBountyThresholdReached,
+} from './mysteryBountyActivation.js';
 
 /*
  * Production 2026-09-11..30: 13 at-the-money mystery events whose bubble burst
@@ -53,6 +56,7 @@ function fixture(over: Record<string, unknown> = {}) {
   const Subject = new Function(
     'TournamentManagerBase',
     'mysteryBountyThresholdReached',
+    'mysteryBountyFieldTooSmall',
     'reportError',
     compiled
   );
@@ -61,6 +65,7 @@ function fixture(over: Record<string, unknown> = {}) {
   const Cls = Subject(
     { MYSTERY_ACTIVATION_HOLD_MS: 20000 },
     mysteryBountyThresholdReached,
+    mysteryBountyFieldTooSmall,
     vi.fn()
   );
   const subject = Object.assign(new Cls(), {
@@ -75,6 +80,10 @@ function fixture(over: Record<string, unknown> = {}) {
     },
     mysteryBountyStage: 'pending',
     mysteryPlayersRemainingHint: 4 as number | null,
+    // Every mode reads the closed entry count now (2026-10-05): a field of 10
+    // or fewer never opens chests, so the boundary needs to know it.
+    mysteryTotalEntries: 24 as number | null,
+    prizePoolFinalized: true,
     mysteryActivationBoundaryPending: false,
     mysteryActivationBoundaryTimer: null,
     mysteryActivationBoundaryEngines: new Set(),
@@ -123,6 +132,35 @@ describe('the mystery phase opens at a boundary the engine holds', () => {
     const plain = fixture();
     plain.subject.tournamentCache.is_mystery_bounty = false;
     expect(plain.subject.mysteryActivationMayOpenOnBust(bust)).toBe(false);
+  });
+
+  it('a mystery bounty of 10 or fewer entries never holds a boundary, in any mode (Dan 2026-10-05)', () => {
+    for (const mode of ['at_the_money', 'percent_field', 'player_count'] as const) {
+      for (const entries of [3, 7, 10]) {
+        const f = fixture({ mysteryTotalEntries: entries });
+        f.subject.tournamentCache.mystery_bounty_activation = mode;
+        f.subject.tournamentCache.mystery_bounty_activation_value =
+          mode === 'percent_field' ? 100 : mode === 'player_count' ? 9 : null;
+        expect(f.subject.mysteryActivationMayOpenOnBust(bust)).toBe(false);
+      }
+      const eleven = fixture({ mysteryTotalEntries: 11 });
+      eleven.subject.tournamentCache.mystery_bounty_activation = mode;
+      eleven.subject.tournamentCache.mystery_bounty_activation_value =
+        mode === 'percent_field' ? 100 : mode === 'player_count' ? 9 : null;
+      expect(eleven.subject.mysteryActivationMayOpenOnBust(bust)).toBe(true);
+    }
+  });
+
+  it('an unread entry count after the close holds, so the sweep reads it', () => {
+    expect(
+      fixture({ mysteryTotalEntries: null }).subject.mysteryActivationMayOpenOnBust(bust)
+    ).toBe(true);
+    expect(
+      fixture({
+        mysteryTotalEntries: null,
+        prizePoolFinalized: false,
+      }).subject.mysteryActivationMayOpenOnBust(bust)
+    ).toBe(false);
   });
 
   it('an unknown count holds, so the verified count decides', () => {

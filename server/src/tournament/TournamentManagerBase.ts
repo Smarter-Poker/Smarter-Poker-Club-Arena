@@ -110,6 +110,7 @@ import { shuffleChests } from './mysteryBountyDraw.js';
 import {
   mysteryBountyThresholdReached,
   mysteryPoolCents,
+  mysteryBountyFieldTooSmall,
   shouldActivateMysteryBounty,
   totalEntriesFromRows,
   type MysteryBountyActivationMode,
@@ -4088,12 +4089,17 @@ export abstract class TournamentManagerBase {
        that the phase cannot open at all, and an unread count after the close
        holds the boundary rather than guessing. */
     const totalEntries = this.mysteryTotalEntries;
-    if (mode === 'percent_field' && totalEntries == null) return this.prizePoolFinalized;
+    /* EVERY MODE NEEDS THE COUNT NOW (2026-10-05): a mystery bounty of 10 or
+       fewer entries never opens chests (Dan, mysteryBountyFieldTooSmall), and
+       its 50/30/20 ladder would otherwise read as "at the money" at three
+       players left. Unread after the close holds and lets the sweep read it. */
+    if (totalEntries == null) return this.prizePoolFinalized;
+    if (mysteryBountyFieldTooSmall(totalEntries)) return false;
     return mysteryBountyThresholdReached(
       mode,
       t.mystery_bounty_activation_value,
       after,
-      totalEntries ?? hint,
+      totalEntries,
       countPaidPlaces(t.payout_structure)
     );
   }
@@ -4287,8 +4293,13 @@ export abstract class TournamentManagerBase {
        percent_field event never opened a chest. The count is read from the
        entry rows once entry has closed (it cannot move after that); an
        unreadable count waits for the next sweep rather than guessing. */
-    let totalEntries = playersRemaining;
-    if (activationMode === 'percent_field' && entryClosed) {
+    /* AND IT IS READ FOR EVERY MODE (2026-10-05). Dan: "MYSTERY BOUNTY OF 10
+       OR FEWER DON'T GET CHESTS". Whether the event has chests at all is a
+       question of its entries, whichever threshold the club chose, so the
+       predicate is given the real count in every mode; `0` before the close
+       is never consulted (entry_still_open answers first). */
+    let totalEntries = 0;
+    if (entryClosed) {
       if (this.mysteryTotalEntries == null) {
         this.mysteryTotalEntries = await this.readMysteryTotalEntries();
       }

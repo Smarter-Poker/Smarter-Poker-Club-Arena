@@ -836,6 +836,12 @@ export abstract class ServerTableEngineBase {
    */
   protected pendingAddOnSweepNeeded = true;
   /**
+   * When this engine last took each player back from a sit-out. Read by
+   * `restoreSitOutsFromSeats` so a roster row from before that moment cannot
+   * sit them out again. Cleared when the engine itself sits the player out.
+   */
+  protected satBackAtMs: Map<string, number> = new Map();
+  /**
    * CHIP STANDARD C3 (2026-09-02): a sweep request counter beside the flag.
    *
    * The flag alone had a losing race once rows could arrive from OUTSIDE the
@@ -10146,6 +10152,24 @@ export abstract class ServerTableEngineBase {
     for (const p of this.seatedPlayers) {
       if (p.is_sitting_out !== true) continue;
       if (this.disconnectEngine.isSittingOut(this.tableId, p.user_id)) continue;
+      /* "I'M BACK" IS NOT UNDONE BY A ROW READ BEFORE IT LANDED (launch audit
+         2026-10-05). sitBack clears the sit-out in memory at once and writes
+         `is_sitting_out = false` without waiting. This method runs on every
+         pass, and a roster read already in flight still says `true`, with the
+         ORIGINAL `sit_out_at`. Restoring from it sat the player out again
+         seconds after they were told they were back, on the old clock: a
+         player who returned at 4:50 could be evicted and cashed out at 5:00.
+
+         A sit-out row whose stamp is not later than the moment this engine
+         took the player back describes the sit-out that just ended. It is
+         skipped. A row stamped AFTER the return is a new sit-out the database
+         knows about, and is restored as before. */
+      const backAtMs = this.satBackAtMs.get(p.user_id);
+      if (backAtMs !== undefined) {
+        const rowStampMs = p.sit_out_at ? Date.parse(p.sit_out_at) : NaN;
+        if (!Number.isFinite(rowStampMs) || rowStampMs <= backAtMs) continue;
+        this.satBackAtMs.delete(p.user_id);
+      }
       this.disconnectEngine.registerPlayer(this.tableId, p.user_id);
       /* THE CLOCK COMES FROM THE DATABASE, NOT FROM now() (2026-08-28).
        *

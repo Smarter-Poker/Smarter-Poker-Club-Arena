@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/econ-repair/fix/the-diamond-settings-contract-is-restored. fn_ca_diamond_economic_names IS live, but not by a sanctioned apply: 20261005151712_diamond_cash_rake_economics_and_accrual created it when it ran in production on 2026-10-05 between 21:55 and 22:40 UTC, which it must never have done - its own first line reads SUPERSEDED BY 20261005183028. Read back read-only on 2026-10-06: the function is there, returning TABLE(name, units, question) and listing nine names in that file's own vocabulary. 20261006004756_the_diamond_settings_contract_is_restored REPLACES it with the A-lane's 55 names and units read from fn_ca_diamond_economics_units_of. The nightly base has not caught up with an object it was never told about, so this fragment is the note that says it is really there - and the check asks production to confirm that rather than taking this file's word for it.",
+  "functions": ["fn_ca_diamond_economic_names"]
+}

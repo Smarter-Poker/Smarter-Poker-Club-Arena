@@ -46,8 +46,9 @@
  *   DATABASE_URL=postgres://... node scripts/ci/apply-recorded-migration.mjs \
  *     --migration 20260922143541_club_and_union_diamond_commerce.sql [--dry-run]
  */
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { supersededBy } from './check-migrations-are-live.mjs';
 import {
   splitConcurrentPreamble,
   minutesBeforeBreakWindow,
@@ -103,6 +104,28 @@ const path = join(DIR, file);
 if (!existsSync(path)) refused(`${path} does not exist in this checkout`);
 const sql = readFileSync(path, 'utf8');
 if (!sql.trim()) refused(`${path} is empty`);
+
+// A FILE MARKED SUPERSEDED MUST NEVER RUN, whoever hands it to this applier.
+// 20261005151712_diamond_cash_rake_economics_and_accrual carries that marker on
+// its first line and carries "THIS FILE MUST NEVER RUN" in its header, and it
+// reached production anyway on 2026-10-05 between 21:55 and 22:40 UTC - not
+// through this script (every run in the window was checked), and by what route
+// is not known. It overwrote a live settings contract and took the parameter
+// default off two readers, which broke six money-path functions at runtime.
+// This is the sanctioned route; from here the answer is no.
+//
+// The parser is check-migrations-are-live's own supersededBy and not a second
+// copy of it, so there is one definition of what the marker means. It requires
+// the marker to NAME a successor version and a file with that version to exist
+// in this directory, which is what keeps "superseded" from becoming the easiest
+// lie to tell about a migration somebody simply does not want to run.
+const superseded = supersededBy(sql, readdirSync(DIR));
+if (superseded) {
+  refused(
+    `${file} is marked "SUPERSEDED BY ${superseded}" and must never run. ` +
+      `Apply ${superseded}_* instead. Nothing was sent.`
+  );
+}
 let recovery;
 try {
   recovery = recoveryRequest(

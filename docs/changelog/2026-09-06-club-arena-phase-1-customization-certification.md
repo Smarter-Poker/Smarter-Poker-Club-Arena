@@ -218,3 +218,34 @@ after the compatible client and engine are proven live.
   and 12 of 12 affected Playwright journeys discovered. Protected merge,
   publication, authenticated execution, and fixture cleanup remain required
   before this correction can close the production certificate.
+
+## Tournament Continuity Recovery — 2026-10-06
+
+- Current owner policy was reread after resumption at
+  `2026-10-06T00:55:06.875Z`: version 2.9, manifest
+  `a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`.
+  Canonical hashes are `b9478d0331314413d8e12c41210b63479cdcabc1f86ed3fdcb3251efa36e6349`
+  (owner), `a8bc3c04dce3354ebdd51a89c0b7d715af3344edcc794d33f6b3ad64506961d5`
+  (operating law), `d5fc451ce5caf6d6b5e64597a13883e1246581678fe53c962339d0a66136993e`
+  (hardening), and
+  `adce89c3f838f2f373cd504a00329d53906404d1dd42a647f672af6c16f95555`
+  (reference index). Repository, publishing, maintenance, storage, migration,
+  and checkpoint instructions remain the active contract.
+- The fresh production MTT lane exposed a real 46.509-second causal-gameplay
+  silence while its authenticated socket remained healthy. The table-move
+  scheduler claimed every source boundary together, then serially resolved
+  requests; one ambiguous result could therefore park unrelated tables for
+  the full two-call-plus-receipt uncertainty envelope.
+- The owned correction branch is
+  `agent/codex-phase1-20261006/fix/final-continuity` in the existing Phase 1
+  SSD worktree. It claims, resolves, and releases one ordered source group at
+  a time. An unknown outcome retains only its exact source fence and immutable
+  UUID/input, and no later source from the stale plan is claimed. Receipt,
+  retry, refusal, whole-break custody, destination wake, and the strict
+  45-second production certificate remain unchanged.
+- Exact focused local proof passed 84 of 84 server tests across the move
+  boundary, no-false-detector, and tournament-fix suites; the server TypeScript
+  build, Prettier 3.8.1, canonical policy check, and `git diff --check` also
+  passed. Protected merge, exact engine activation, a fresh two-lane
+  authenticated production certificate, guarded forward database completion,
+  finalizer readback, and post-install live proof remain required.

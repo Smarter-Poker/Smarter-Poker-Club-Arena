@@ -17,6 +17,9 @@ const SOURCE_ID = '00000000-0000-4000-8000-000000000002';
 const DESTINATION_ID = '00000000-0000-4000-8000-000000000003';
 const PLAYER_ONE = '00000000-0000-4000-8000-000000000004';
 const PLAYER_TWO = '00000000-0000-4000-8000-000000000005';
+const SOURCE_TWO_ID = '00000000-0000-4000-8000-000000000008';
+const DESTINATION_TWO_ID = '00000000-0000-4000-8000-000000000009';
+const PLAYER_THREE = '00000000-0000-4000-8000-000000000010';
 
 function receipt(input: any): any {
   return {
@@ -36,12 +39,8 @@ function receipt(input: any): any {
   };
 }
 
-function liveHarness(owned = true): {
-  manager: any;
-  engine: any;
-  gameServer: any;
-} {
-  const engine = {
+function liveEngine(): any {
+  return {
     parkForTournamentMove: vi.fn().mockResolvedValue(true),
     releaseTournamentMovePause: vi.fn(),
     executeTournamentMoveAtBoundary: vi.fn(async (_owner: string, operation: () => Promise<any>) =>
@@ -50,15 +49,26 @@ function liveHarness(owned = true): {
     hasReleasedProcessOwnership: vi.fn(() => true),
     hasClaimedTournamentMoveBoundary: vi.fn(() => false),
   };
+}
+
+function liveHarness(owned = true): {
+  manager: any;
+  engine: any;
+  gameServer: any;
+} {
+  const engine = liveEngine();
+  const engines = new Map([[SOURCE_ID, engine]]);
   const gameServer = {
-    getTableEngine: vi.fn(() => engine),
-    ownsTournamentTableEngine: vi.fn(() => owned),
+    getTableEngine: vi.fn((tableId: string) => engines.get(tableId)),
+    ownsTournamentTableEngine: vi.fn(
+      (tableId: string, candidate: any) => owned && engines.get(tableId) === candidate
+    ),
   };
   const manager = new TournamentManager(TOURNAMENT_ID, gameServer as never) as any;
   manager.running = true;
   manager.eliminationSweepSignal = null;
   manager.eliminationSweepDeadlineAt = 0;
-  manager.tableEngines = new Map([[SOURCE_ID, engine]]);
+  manager.tableEngines = engines;
   manager.requestUrgentEliminationSweepAfter = vi.fn();
   return { manager, engine, gameServer };
 }
@@ -71,6 +81,14 @@ function move(playerId = PLAYER_ONE, toSeat = 3): any {
     toTableId: DESTINATION_ID,
     toSeat,
     reason: 'Balance: source to destination',
+  };
+}
+
+function moveFromSecondSource(): any {
+  return {
+    ...move(PLAYER_THREE, 5),
+    fromTableId: SOURCE_TWO_ID,
+    toTableId: DESTINATION_TWO_ID,
   };
 }
 
@@ -128,6 +146,51 @@ describe('TournamentManager source move ownership', () => {
     expect(engine.parkForTournamentMove).toHaveBeenCalledTimes(1);
     expect(engine.executeTournamentMoveAtBoundary).toHaveBeenCalledTimes(2);
     expect(engine.releaseTournamentMovePause).toHaveBeenCalledTimes(1);
+  });
+
+  it('never parks a later source behind an unresolved move on the first source', async () => {
+    const { manager, engine } = liveHarness();
+    const secondEngine = liveEngine();
+    manager.tableEngines.set(SOURCE_TWO_ID, secondEngine);
+    let finishFirst!: () => void;
+    moveRpc
+      .mockImplementationOnce(
+        (input) =>
+          new Promise((resolve) => {
+            finishFirst = () => resolve(receipt(input));
+          })
+      )
+      .mockImplementation(async (input) => receipt(input));
+
+    const operation = manager.executePlayerMoves([move(), moveFromSecondSource()]);
+    await vi.waitFor(() => expect(moveRpc).toHaveBeenCalledTimes(1));
+
+    expect(engine.parkForTournamentMove).toHaveBeenCalledTimes(1);
+    expect(secondEngine.parkForTournamentMove).not.toHaveBeenCalled();
+
+    finishFirst();
+    await expect(operation).resolves.toBe(2);
+    expect(secondEngine.parkForTournamentMove).toHaveBeenCalledTimes(1);
+    expect(engine.releaseTournamentMovePause.mock.invocationCallOrder[0]).toBeLessThan(
+      secondEngine.parkForTournamentMove.mock.invocationCallOrder[0]
+    );
+  });
+
+  it('retains only an unknown source and never claims a later source from the stale plan', async () => {
+    const { manager, engine } = liveHarness();
+    const secondEngine = liveEngine();
+    manager.tableEngines.set(SOURCE_TWO_ID, secondEngine);
+    moveRpc.mockRejectedValueOnce(new TournamentSeatMoveOutcomeUnknownError('response lost'));
+
+    await expect(manager.executePlayerMoves([move(), moveFromSecondSource()])).resolves.toBe(0);
+
+    const original = moveRpc.mock.calls[0][0];
+    expect(secondEngine.parkForTournamentMove).not.toHaveBeenCalled();
+    expect(secondEngine.executeTournamentMoveAtBoundary).not.toHaveBeenCalled();
+    expect(engine.releaseTournamentMovePause).not.toHaveBeenCalled();
+    expect(manager.pendingTournamentSeatMoveOutcomes.get(original.requestId)?.input).toEqual(
+      original
+    );
   });
 
   it('serializes detached repair work with scheduler move work for this manager', async () => {

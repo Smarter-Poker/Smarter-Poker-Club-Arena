@@ -12713,6 +12713,7 @@ function LiveTablePage({
           return;
         }
         let loadedTournamentStatus: string | null = null;
+        let durableParticipantWitnessed = false;
         setTableState((prev) => {
           if (!isMounted) return prev;
           // Metadata can resolve after the socket has already painted a hand.
@@ -13411,6 +13412,7 @@ function LiveTablePage({
                   tournamentId: table.tournament_id,
                 });
               } else {
+                if (myEntry) durableParticipantWitnessed = true;
                 const live = myEntry?.status === 'registered' || myEntry?.status === 'playing';
                 // "Seated" is table_seats, NEVER tournament_players.table_id.
                 // createTablesAndSeatPlayers historically wrote the seat row and
@@ -13848,11 +13850,62 @@ function LiveTablePage({
                   .eq('user_id', userId)
                   .maybeSingle();
                 if (!resultError && data) {
+                  durableParticipantWitnessed = true;
                   result = data;
                   lastError = null;
                   break;
                 }
-                lastError = resultError ?? new Error('Tournament result row is unavailable');
+                // A successful absent result is normal for a spectator. Prove
+                // no participation across this tournament, including departed
+                // seats; a cleared live seat alone cannot identify a spectator.
+                if (!resultError && !data && !durableParticipantWitnessed) {
+                  const {
+                    data: historicalSeats,
+                    count: seatCount,
+                    error: seatError,
+                  } = await supabase
+                    .from('table_seats')
+                    .select('id, tables!table_seats_table_id_fkey(tournament_id)', {
+                      count: 'exact',
+                    })
+                    .eq('user_id', userId)
+                    .range(0, 999);
+                  if (!isMounted) return;
+                  // A left relationship preserves seats whose private table is
+                  // hidden by RLS. Neither hidden rows nor a truncated history
+                  // may masquerade as proof that this viewer never participated.
+                  const readableTable = (
+                    relation: unknown
+                  ): relation is { tournament_id: string | null } =>
+                    !!relation &&
+                    typeof relation === 'object' &&
+                    !Array.isArray(relation) &&
+                    'tournament_id' in relation &&
+                    (relation.tournament_id === null || typeof relation.tournament_id === 'string');
+                  const completeReadableHistory =
+                    !seatError &&
+                    Array.isArray(historicalSeats) &&
+                    seatCount === historicalSeats.length &&
+                    historicalSeats.every((seat) => readableTable(seat.tables));
+                  const participated = historicalSeats?.some(
+                    (seat) =>
+                      readableTable(seat.tables) &&
+                      seat.tables.tournament_id === durableTournamentId
+                  );
+                  if (completeReadableHistory && !participated) {
+                    durableCompletionHandled = true;
+                    if (durableCompletionRetryTimer) {
+                      clearTimeout(durableCompletionRetryTimer);
+                      durableCompletionRetryTimer = null;
+                    }
+                    return;
+                  }
+                  if (!seatError && participated) durableParticipantWitnessed = true;
+                  lastError =
+                    seatError ?? new Error('Tournament participant result is unavailable');
+                } else {
+                  lastError = resultError ?? new Error('Tournament result row is unavailable');
+                }
                 if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
               }
               if (!isMounted) return;

@@ -38,7 +38,20 @@ import {
 } from '../engine/HorsePhase13PolicyDigest.js';
 // Phase 13 qualifications carry exactly the keys of the Phase 12 qualification
 // (the Stage 2 interface agreement); the Phase 13 admission is P13.3's.
-import { HORSE_PHASE13_QUALIFICATION_KEYS } from '../engine/HorsePhase13Authority.js';
+import {
+  admitHorsePhase13QualifiedAuthority,
+  HORSE_PHASE13_PACK_VERSION,
+  HORSE_PHASE13_QUALIFICATION_KEYS,
+} from '../engine/HorsePhase13Authority.js';
+import {
+  P13_TEST_CONTRACT_DIGEST,
+  P13_TEST_NOW,
+  p13CompletionBytes,
+  p13CompletionPath,
+  p13Selection,
+} from '../engine/HorsePhase13Authority.test-support.js';
+import { memoryReader } from '../engine/HorseQualifiedAuthority.test-support.js';
+import { JOINT_LIVE_DOMAIN } from '../engine/multiway/JointSampleAcquisition.js';
 
 const exec = promisify(execFile);
 const HEAD = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
@@ -157,6 +170,46 @@ function writeAttempt(
   });
 }
 
+/**
+ * A contract-shaped shard result the real verdict qualifies: every seat offset
+ * equally covered, every pair scoring the same positive amount (zero variance,
+ * zero skew, so the interval is trusted and its lower bound is the mean), no
+ * validity failure, fixed work proven, no promotion claimed. A fixture for the
+ * assembler-to-admission path, never evidence.
+ */
+function qualifyingResult(index: number): Record<string, unknown> {
+  const { profileId } = required[index];
+  const seats = PACK.matrix.profiles.find((p) => p.id === profileId)!.seats;
+  const perOffset = PACK.matrix.pairsPerShard / seats;
+  const cents = 100n;
+  const n = BigInt(perOffset);
+  const strata = Object.fromEntries(
+    Array.from({ length: seats }, (_, offset) => [
+      `${offset}|river`,
+      {
+        n: perOffset,
+        s1: String(n * cents),
+        s2: String(n * cents ** 2n),
+        s3: String(n * cents ** 3n),
+        s4: String(n * cents ** 4n),
+      },
+    ])
+  );
+  return {
+    offsetCounts: Array.from({ length: seats }, () => perOffset),
+    strata,
+    illegalActions: 0,
+    conservationErrors: 0,
+    cardErrors: 0,
+    truncatedHands: 0,
+    settlementMismatches: 0,
+    deductionMismatches: 0,
+    pairedReplayMismatches: 0,
+    fixedWork: { governor: 'off', scale: 1, moodClock: 'deal_seed_time_of_day' },
+    promotionEligible: false,
+  };
+}
+
 async function runScript(script: string, args: string[], timeout = RUN_TIMEOUT_MS) {
   try {
     const { stdout } = await exec(process.execPath, ['--import', 'tsx', script, ...args], {
@@ -251,7 +304,10 @@ describe('phase13-strength-assemble', () => {
         mode: 'development',
         variant: VARIANT,
         sourceSha: HEAD,
-        packVersion: PACK.candidate.packVersion,
+        // The joint domain (receipt) version admission compares, never the
+        // response pack version; the response identity is bound by the policy
+        // digest, which hashes the domain, range and response versions.
+        packVersion: HORSE_PHASE13_PACK_VERSION,
         contractVersion: C.version,
         contractDigest: jointStrengthContractDigest(),
         domain: PACK.domain,
@@ -288,6 +344,65 @@ describe('phase13-strength-assemble', () => {
       // One digest per variant.
       for (const other of ['nlh', 'flo8', 'plo4'] as const)
         expect(horsePhase13PolicyDigest(other)).not.toBe(horsePhase13PolicyDigest(VARIANT));
+    },
+    RUN_TIMEOUT_MS
+  );
+
+  it(
+    "the assembler's real contract-mode qualification is the file admission reads",
+    async () => {
+      // Every shard in contract mode: the assembler's own verdict, its own
+      // qualification bytes and the strength record it names, read by the
+      // real admission with a non-null selection of that file.
+      rmSync(runsDir, { recursive: true });
+      for (let i = 0; i < required.length; i++)
+        writeAttempt(i, { mode: 'contract', result: qualifyingResult(i) });
+      const outcome = await assemble(`--out=${outDir()}`);
+      expect(outcome.reasons).toEqual([]);
+      const qualificationPath = 'docs/evidence/phase13/phase13-qualification-2026-10-05-flh.json';
+      const qualificationBytes = readFileSync(path.join(repo, qualificationPath));
+      const qualification = JSON.parse(qualificationBytes.toString('utf8'));
+      expect(qualification.mode).toBe('contract');
+      const strengthBytes = readFileSync(path.join(repo, qualification.evidencePath));
+      const completion = p13CompletionBytes(VARIANT);
+      const admit = (bytes: Buffer) =>
+        admitHorsePhase13QualifiedAuthority(
+          VARIANT,
+          p13Selection(VARIANT, bytes, completion, {
+            sourceSha: HEAD,
+            qualificationPath,
+          }),
+          memoryReader({
+            [qualificationPath]: bytes,
+            [qualification.evidencePath]: strengthBytes,
+            [p13CompletionPath(VARIANT)]: completion,
+          }),
+          P13_TEST_NOW,
+          P13_TEST_CONTRACT_DIGEST
+        );
+      // The synthetic matrix is a null result (every pair scores zero), which
+      // clears the -4 BB/100 regression margin, so the assembler qualifies it
+      // and admission accepts it past the qualification, contract, policy,
+      // source, pack, domain and strength checks and the completion record.
+      expect(qualification.qualified, JSON.stringify(qualification.reasons)).toBe(true);
+      const admitted = admit(qualificationBytes);
+      expect(admitted.status === 'refused' ? admitted.reason : null).toBeNull();
+      expect(admitted).toMatchObject({ status: 'admitted' });
+      expect(qualification.packVersion).toBe(JOINT_LIVE_DOMAIN.version);
+      expect(admitted.status === 'admitted' && admitted.authority.packId).toBe(
+        JOINT_LIVE_DOMAIN.version
+      );
+      // The same file carrying the response pack version (the pre-fix
+      // assembler output) is a different continuation and is refused by name.
+      const responseVersioned = Buffer.from(
+        JSON.stringify({ ...qualification, packVersion: PACK.candidate.packVersion }, null, 2) +
+          '\n'
+      );
+      expect(PACK.candidate.packVersion).toBe('joint-action-response-round2-v1');
+      expect(admit(responseVersioned)).toMatchObject({
+        status: 'refused',
+        reason: 'continuation_mismatch',
+      });
     },
     RUN_TIMEOUT_MS
   );

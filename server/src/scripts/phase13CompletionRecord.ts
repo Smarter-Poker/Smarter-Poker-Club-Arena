@@ -6,7 +6,15 @@
  * `horsePhase13CompletionBoardCounts` (per street and per board count), so
  * the record means exactly what admission reads. The extract carries
  * single-board, multi-board and bomb hands alike; the counting decides which
- * receipts count (a bomb hand has no eligible preflop decision).
+ * receipts count (a bomb hand has no eligible preflop decision), which are
+ * excluded by name (`excluded.diamond`, from `horsePhase13CompletionExclusions`)
+ * and under which named field each counted one falls (`analysisUnavailable`
+ * included).
+ *
+ * An empty window is a record, not a refusal (audit 2026-10-06): a variant
+ * with no natural decisions gets zero eligible in every cell, which fails the
+ * floor, so admission refuses it by name (`completion_below_floor`) rather
+ * than finding no record at all.
  *
  * The policy digest is computed from the release's own sources
  * (`git show <release>:server/<path>` for every
@@ -18,7 +26,7 @@
  *   --release-unchanged=true --source=<text> < extract.ndjson > record.json
  * Refuses by name (exit 2): unknown_variant, invalid_release, invalid_window,
  * release_unchanged_not_proven, release_sources_unavailable,
- * malformed_extract_line, decision_outside_window, no_records.
+ * malformed_extract_line, decision_outside_window.
  */
 import { execFileSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
@@ -31,6 +39,7 @@ import {
   HORSE_PHASE13_PACK_VERSION,
   horsePhase13CompletionBoardCounts,
   horsePhase13CompletionCounts,
+  horsePhase13CompletionExclusions,
   horsePhase13CompletionLowerBound,
   horsePhase13CompletionRecordMeetsFloor,
   type HorsePhase13CompletionRecord,
@@ -49,8 +58,7 @@ export type Phase13CompletionRefusal =
   | 'release_unchanged_not_proven'
   | 'release_sources_unavailable'
   | 'malformed_extract_line'
-  | 'decision_outside_window'
-  | 'no_records';
+  | 'decision_outside_window';
 
 export interface Phase13CompletionInput {
   variant: string | undefined;
@@ -118,7 +126,6 @@ export function phase13CompletionRecordFrom(
     if (at < fromMs || at >= toMs) return { refused: 'decision_outside_window' };
     receipts.push((row as { receipt: unknown }).receipt);
   }
-  if (!receipts.length) return { refused: 'no_records' };
   return {
     records: receipts.length,
     record: {
@@ -138,6 +145,7 @@ export function phase13CompletionRecordFrom(
       },
       streets: horsePhase13CompletionCounts(variant, receipts),
       boardCounts: horsePhase13CompletionBoardCounts(variant, receipts),
+      excluded: horsePhase13CompletionExclusions(variant, receipts),
     },
   };
 }
@@ -165,6 +173,7 @@ async function main(): Promise<void> {
   process.stderr.write(
     `${JSON.stringify({
       records: outcome.records,
+      excluded: record.excluded,
       lowerBounds: Object.fromEntries(
         HORSE_PHASE13_COMPLETION_STREETS.map((s) => [
           s,

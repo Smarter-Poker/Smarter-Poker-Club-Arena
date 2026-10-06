@@ -86,8 +86,11 @@ const clamp = (n: number, lo: number, hi: number): number => Math.max(lo, Math.m
  * and consecutive inputs are independent. Still pure and deterministic, which
  * is the only thing the engine requires (Math.random is banned in a decision
  * path, and a replayed hand must answer the same way twice).
+ *
+ * Exported 2026-10-06 for HorseTableTalk, which picks a seated horse's chat
+ * line by the same rule: a hash of (horse, hand, event), never a roll.
  */
-function personaHash(id: string): number {
+export function personaHash(id: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < id.length; i++) {
     h ^= id.charCodeAt(i);

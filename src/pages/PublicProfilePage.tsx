@@ -53,9 +53,19 @@ export default function PublicProfilePage() {
   const isMounted = useIsMounted();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  /* The public arena record. player_stats is readable by every signed-in
-     player by policy ("Player stats are public"), one row per club; the
-     dossier folds them into one line. Null until it answers, never zeroes. */
+  /* The public arena record, one row per club, folded into one line by the
+     dossier. Null until it answers, never zeroes.
+
+     It arrives through ca_public_arena_record_v1 rather than from
+     player_stats directly. That table used to carry "Player stats are public"
+     - FOR SELECT, roles PUBLIC, USING (true) - so every player's
+     total_winnings, total_losses and total_rake were readable by an anonymous
+     browser holding the published anon key. The table is now readable only by
+     its owner and by members of the club the row belongs to, and this page is
+     the one reader that is legitimately cross-club, so it reads through a
+     SECURITY DEFINER function that returns the five play fields and NO money
+     at all. The row shape is unchanged, so aggregateArenaRecord still does
+     the weighting and its unit test still measures it. */
   const [record, setRecord] = useState<ArenaRecord | null>(null);
   const [mutualFriends, setMutualFriends] = useState<
     { id: string; arenaName: string; avatarUrl?: string }[]
@@ -98,10 +108,7 @@ export default function PublicProfilePage() {
         checkFriendship(user.id, userId),
         playerStatusService.getPlayerStatus(userId),
         supabase
-          .from('player_stats')
-          .select('hands_played, vpip, pfr, tournaments_played, tournaments_won')
-          .eq('user_id', userId)
-          .limit(100)
+          .rpc('ca_public_arena_record_v1', { p_target_user: userId })
           .then(({ data, error }) => {
             if (error) {
               reportError(error, 'PublicProfilePage.record');

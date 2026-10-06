@@ -240,13 +240,14 @@ jobs:
       group: post-deploy-e2e-production
       cancel-in-progress: false
     # Cashier, the isolated stateful groups, and the responsive route sweep
-    # normally finish well below this ceiling. Run 37397055463 proved the old
-    # 50-minute envelope could still cancel the job after the nine-surface
-    # Table Management audit received its truthful sequential route budget.
+    # normally finish well below this ceiling. Runs 37397055463 and
+    # 37407226104 proved first that 50 minutes and then that 65 minutes could
+    # cancel the job after the nine-surface Table Management audit received
+    # its truthful sequential route budget. The latter ran for 67 minutes.
     # Keep enough bounded headroom for that audit plus the honesty, cleanup,
     # release-window, and report steps. A timeout before those steps produces
     # neither a verdict nor fixture-cleanup proof.
-    timeout-minutes: 65
+    timeout-minutes: 80
     outputs:
       client_sha: ${{ steps.live.outputs.sha }}
       certified: ${{ steps.release_window.outputs.certified }}

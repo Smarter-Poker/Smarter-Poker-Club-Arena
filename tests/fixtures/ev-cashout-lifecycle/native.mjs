@@ -194,10 +194,12 @@ try {
     PGRST_SERVER_PORT: '3000',
     PGRST_LOG_LEVEL: 'error',
   });
-  // Readiness uses the engine's service identity, as does the maintained
-  // readiness path as the maintained full fixture; do not broaden anon grants.
+  // Exercise bounded REST access, not generated OpenAPI for the full catalog.
+  // Repeated abandoned OpenAPI requests can consume the connection pool.
   await ready(() =>
-    healthy('http://127.0.0.1:3000/', { authorization: `Bearer ${secrets.serviceKey}` })
+    healthy('http://127.0.0.1:3000/profiles?select=id&limit=0', {
+      authorization: `Bearer ${secrets.serviceKey}`,
+    })
   );
   // Only fixed loopback service routes; no fake auth response or remote target.
   gateway = http.createServer((req, res) => {
@@ -280,7 +282,7 @@ try {
     })
   );
 } catch (error) {
-  let providerDiagnostics;
+  let providerDiagnostics, databaseActivity;
   if (stage === 'postgrest') {
     const authorities = JSON.parse(await readFile('/ev/captured-authorities.json', 'utf8'));
     const allowed = [
@@ -295,6 +297,24 @@ try {
       await readFile('/run/ev/postgrest.log', 'utf8').catch(() => ''),
       allowed.flatMap((name) => [name, name.split('.').at(-1)])
     );
+    // Private fixture metadata only: never retain SQL text or connection details.
+    databaseActivity = await connections[0]
+      .query({
+        text: `SELECT pid, usename AS role, state, wait_event_type, wait_event,
+        pg_blocking_pids(pid) AS blocking_pids,
+        round(extract(epoch FROM clock_timestamp()-xact_start))::int AS transaction_age_seconds,
+        round(extract(epoch FROM clock_timestamp()-query_start))::int AS query_age_seconds,
+        CASE WHEN query LIKE '%pg_proc%' AND query LIKE '%pg_class%' THEN 'schema-catalog'
+             WHEN query ~* '^\\s*(begin|start transaction)' THEN 'transaction-start'
+             WHEN query ~* '^\\s*select' THEN 'select'
+             WHEN query ~* '^\\s*with' THEN 'with' ELSE 'other' END AS statement_kind
+        FROM pg_stat_activity WHERE datname=$1 AND pid<>pg_backend_pid()
+        ORDER BY pid LIMIT 16`,
+        values: [database],
+        query_timeout: 2000,
+      })
+      .then((result) => result.rows)
+      .catch(() => [{ status: 'unreadable' }]);
   }
   // Deliberately omit raw SQL, tokens, bodies, service logs and environment.
   console.error(
@@ -306,6 +326,7 @@ try {
       readiness_http_status: stage === 'postgrest' ? readinessStatus : undefined,
       readiness_error_code: stage === 'postgrest' ? readinessCode : undefined,
       provider_diagnostics: providerDiagnostics,
+      database_activity: databaseActivity,
       error_code: /^[A-Z0-9_]{3,50}$/.test(error.code || '')
         ? error.code
         : 'ASSERTION_OR_RUNTIME_FAILURE',

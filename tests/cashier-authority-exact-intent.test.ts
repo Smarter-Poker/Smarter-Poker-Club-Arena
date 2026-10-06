@@ -14,6 +14,13 @@ const releaseContract = readFileSync(
   resolve(import.meta.dirname, '../scripts/verification-harness/cashier-release-contract.sql'),
   'utf8'
 );
+const requestNotificationMigration = readFileSync(
+  resolve(
+    import.meta.dirname,
+    '../supabase/migrations/20261006022835_a_chip_request_tells_its_approver.sql'
+  ),
+  'utf8'
+);
 const manifest = JSON.parse(
   readFileSync(
     resolve(
@@ -125,12 +132,6 @@ describe('cashier authority and exact intent', () => {
         '20260831235990_cashier_authorization_and_audit_contracts.sql',
         'cf7af5fd327c68c935a58e864537cc7a',
       ],
-      [
-        'fn_request_chips_core_20261004',
-        'fn_request_chips',
-        '20260906093024_cashier_rpc_idempotency_and_telemetry_boundary.sql',
-        '7e5233ef53474fdf4f79ec8a64d6c064',
-      ],
     ] as const;
     for (const [name, sourceName, sourceFile, hash] of exactCorePins) {
       expect(releaseContract).toContain(name);
@@ -154,6 +155,51 @@ describe('cashier authority and exact intent', () => {
         hash
       );
     }
+
+    const requestSource = readFileSync(
+      resolve(
+        import.meta.dirname,
+        '../supabase/migrations/20260906093024_cashier_rpc_idempotency_and_telemetry_boundary.sql'
+      ),
+      'utf8'
+    );
+    const requestStart = requestSource.search(
+      /create\s+or\s+replace\s+function\s+public\.fn_request_chips\s*\(/i
+    );
+    expect(requestStart).toBeGreaterThanOrEqual(0);
+    const requestDefinition = requestSource.slice(requestStart);
+    const requestDelimiterMatch = requestDefinition.match(/\bas\s+(\$[A-Za-z0-9_]*\$)/i);
+    expect(requestDelimiterMatch).not.toBeNull();
+    const requestDelimiter = requestDelimiterMatch![1];
+    const requestBodyStart = requestDelimiterMatch!.index! + requestDelimiterMatch![0].length;
+    const requestBodyEnd = requestDefinition.indexOf(requestDelimiter, requestBodyStart);
+    expect(requestBodyEnd).toBeGreaterThan(requestBodyStart);
+    const requestBody = requestDefinition.slice(requestBodyStart, requestBodyEnd);
+    expect(createHash('md5').update(requestBody).digest('hex')).toBe(
+      '7e5233ef53474fdf4f79ec8a64d6c064'
+    );
+
+    const requestAnchor = '  RETURNING id INTO v_id;\n';
+    expect(requestBody.split(requestAnchor)).toHaveLength(2);
+    const notificationBlockMatch = requestNotificationMigration.match(
+      /c_anchor \|\| \$block\$([\s\S]*?)\$block\$/
+    );
+    expect(notificationBlockMatch).not.toBeNull();
+    expect(requestNotificationMigration).toContain(
+      "IF md5(v_def) <> '236c0cecc1dd32f30f7b50e790f88b63'"
+    );
+    const installedRequestBody = requestBody.replace(
+      requestAnchor,
+      requestAnchor + notificationBlockMatch![1]
+    );
+    const installedRequestHash = createHash('md5').update(installedRequestBody).digest('hex');
+    expect(installedRequestHash).toBe('1dce6c06306523ba83060f1546611648');
+    expect(releaseContract).toContain('fn_request_chips_core_20261004');
+    expect(releaseContract).toContain(`'hash', '${installedRequestHash}'`);
+    expect(releaseContract).toContain("('20261006022835')");
+    expect(releaseContract).toContain("version = '20261006022835'");
+    expect(releaseContract).toContain("name = 'a_chip_request_tells_its_approver'");
+
     const retainedProductionPins = [
       [
         'fn_club_promo_send_core_20261004',

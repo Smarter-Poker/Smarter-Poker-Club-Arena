@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
   getMemberships: vi.fn(),
   getClubLeaderboard: vi.fn(),
   getUserRank: vi.fn(),
+  getLeaderboardRewardSetup: vi.fn(),
   toastError: vi.fn(),
 }));
 
@@ -34,7 +35,7 @@ vi.mock('../../src/services/LeaderboardService', () => ({
     getPeriodWindow: vi.fn().mockResolvedValue({ start_date: '2026-09-28' }),
     getLeaderboardSettlementStatus: vi.fn().mockResolvedValue({ program: null }),
     getManageableRewardContexts: vi.fn().mockResolvedValue([]),
-    getLeaderboardRewardSetup: vi.fn().mockResolvedValue(null),
+    getLeaderboardRewardSetup: h.getLeaderboardRewardSetup,
     getRewardProgramHistory: vi.fn().mockResolvedValue([]),
   },
 }));
@@ -60,7 +61,8 @@ vi.mock('../../src/components/avatars/PlayerAvatar', () => ({
 }));
 
 vi.mock('../../src/components/leaderboard/LeaderboardPrizeWizard', () => ({
-  LeaderboardPrizeWizard: () => null,
+  LeaderboardPrizeWizard: ({ isOpen }: { isOpen: boolean }) =>
+    isOpen ? <div data-testid="leaderboard-prize-wizard" /> : null,
 }));
 
 vi.mock('../../src/components/leaderboard/LeaderboardSettlementCard', () => ({
@@ -69,9 +71,9 @@ vi.mock('../../src/components/leaderboard/LeaderboardSettlementCard', () => ({
 
 import LeaderboardPage from '../../src/pages/LeaderboardPage';
 
-function renderPage() {
+function renderPage(path = '/leaderboard') {
   return render(
-    <MemoryRouter initialEntries={['/leaderboard']}>
+    <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route path="/leaderboard" element={<LeaderboardPage />} />
       </Routes>
@@ -111,6 +113,7 @@ describe('Leaderboard Page Recovery States', () => {
     h.getMemberships.mockReset().mockResolvedValue(memberships);
     h.getClubLeaderboard.mockReset().mockResolvedValue([boardRow('Live Player', 100)]);
     h.getUserRank.mockReset().mockResolvedValue({ rank: 6, total: 20, value: 100 });
+    h.getLeaderboardRewardSetup.mockReset().mockResolvedValue(null);
     h.toastError.mockReset();
   });
 
@@ -262,5 +265,40 @@ describe('Leaderboard Page Recovery States', () => {
     });
     expect(await screen.findByText('Live Player')).toBeInTheDocument();
     dateNow.mockRestore();
+  });
+
+  it('Keeps Prize Setup Hidden For A Member Even When They Follow An Owner Deep Link', async () => {
+    h.getLeaderboardRewardSetup.mockResolvedValueOnce({
+      club_id: 'club-one',
+      club_name: 'The Club',
+      can_manage: false,
+      setup_complete: false,
+      funding_label: 'Club Promo Wallet',
+      funding_owner_type: 'club',
+      program_version: 0,
+    });
+    renderPage('/leaderboard?club=the-club&setup=prizes');
+
+    await waitFor(() => expect(h.getLeaderboardRewardSetup).toHaveBeenCalledWith('club-one'));
+    expect(screen.queryByRole('button', { name: 'Set Up Prizes' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('leaderboard-prize-wizard')).not.toBeInTheDocument();
+  });
+
+  it('Opens Prize Setup For A Club Owner Authorized By The Server', async () => {
+    h.getLeaderboardRewardSetup.mockResolvedValueOnce({
+      club_id: 'club-one',
+      club_name: 'The Club',
+      can_manage: true,
+      setup_complete: false,
+      funding_label: 'Club Promo Wallet',
+      funding_owner_type: 'club',
+      program_version: 0,
+    });
+    renderPage();
+
+    const setupButtons = await screen.findAllByRole('button', { name: 'Set Up Prizes' });
+    expect(setupButtons).toHaveLength(2);
+    fireEvent.click(setupButtons[0]);
+    expect(await screen.findByTestId('leaderboard-prize-wizard')).toBeInTheDocument();
   });
 });

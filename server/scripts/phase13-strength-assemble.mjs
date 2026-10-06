@@ -50,6 +50,11 @@
  * (`policy_source_changed`), an output name that does not carry the date and
  * the variant, or an existing output.
  *
+ * Pack version: the qualification's `packVersion` is the joint domain version
+ * every Phase 13 receipt carries (`JOINT_LIVE_DOMAIN.version`, the value Phase
+ * 13 admission compares), not the response pack version, which the strength
+ * record keeps under `source.packVersion` and the policy digest hashes.
+ *
  * Policy digest: `policyDigest` is `horsePhase13PolicyDigest(variant)`,
  * imported from server/src/engine/HorsePhase13PolicyDigest.ts and computed
  * here from this checkout, which must match the runs' head for every hashed
@@ -506,7 +511,12 @@ export async function assemble(options) {
     mode: strength.mode,
     variant,
     sourceSha: head,
-    packVersion: first.packVersion,
+    // The joint domain (receipt) version Phase 13 admission compares
+    // (HORSE_PHASE13_PACK_VERSION = JOINT_LIVE_DOMAIN.version), never the
+    // response pack version: the response identity is bound by policyDigest,
+    // which hashes the domain, range and response versions. Every counted
+    // manifest's domainVersion equals the contract's (checked above).
+    packVersion: pack.candidate.domainVersion,
     contractVersion: contract.JOINT_STRENGTH_CONTRACT.version,
     contractDigest: strength.contractDigest,
     domain: pack.domain,

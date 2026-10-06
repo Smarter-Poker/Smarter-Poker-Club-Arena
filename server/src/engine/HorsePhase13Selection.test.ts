@@ -92,11 +92,17 @@ describe('P13.3 worker-owned Phase 13 mode', () => {
           callerMode: undefined,
           gameMode: 'cash',
           variant,
+          asset: undefined,
           packVariant: variant,
           verdict: 'usable',
           ...over,
         });
       expect(mode({})).toBe('candidate');
+      expect(mode({ asset: 'chips' })).toBe('candidate');
+      // Audit 2026-10-06: a Diamond decision is outside every Phase 13
+      // qualified domain (P13.2 excludes Diamond NLH), so it stays shadow.
+      expect(mode({ asset: 'diamonds' })).toBe('shadow');
+      expect(mode({ asset: 'diamonds', callerMode: 'off' })).toBe('off');
       for (const verdict of VERDICTS) expect(mode({ verdict }), verdict).toBe('shadow');
       expect(mode({ gameMode: 'tournament' })).toBe('shadow');
       const other = HORSE_PHASE13_VARIANTS.find((v) => v !== variant)!;
@@ -114,6 +120,7 @@ describe('P13.3 worker-owned Phase 13 mode', () => {
         callerMode: undefined,
         gameMode: 'cash',
         variant: 'stud',
+        asset: undefined,
         packVariant: null,
         verdict: 'usable',
       })
@@ -131,6 +138,7 @@ describe('P13.3 a live joint selection at the worker boundary', () => {
         callerMode: undefined,
         gameMode: 'cash',
         variant,
+        asset: undefined,
         packVariant: variant,
         verdict: 'usable',
       });
@@ -247,4 +255,51 @@ describe('P13.3 Phase 7 keeps tournament objective ownership', () => {
       );
     }
   );
+});
+
+describe('P13.3 a Diamond decision never crosses as a Phase 13 selection (audit 2026-10-06)', () => {
+  it('even an offline candidate Diamond NLH cash receipt is refused at the worker boundary', () => {
+    const s = jointPolicyFixture('nlh', 2, 'cash', 'flop');
+    Object.assign(s.state, { asset: 'diamonds', chipUnit: 1 });
+    s.state.rakeConfig!.percent = 0;
+    s.state.rakeConfig!.cap = 0;
+    const r = evaluateJointLivePolicy(s.hero, s.state, s.baseline, 'candidate', () => 0);
+    const receipt = JSON.parse(JSON.stringify(r.receipt)) as Record<string, any>;
+    expect(receipt).toMatchObject({ eligible: true, fired: true, utilityOwner: 'cash' });
+    expect(receipt.inputs.objective.asset).toBe('diamonds');
+    const forged = {
+      ...receipt,
+      mode: 'candidate',
+      applied: true,
+      changed: true,
+      selection: 'selected',
+      authority: usableAuthority(horsePhase13ContinuationVersion('nlh')),
+      finalAction: receipt.proposalAction,
+      finalAmount: receipt.proposalAmount,
+    };
+    const decision = { action: receipt.proposalAction, amount: receipt.proposalAmount };
+    expect(horsePhase13SelectionIsValid(forged, decision)).toBe(false);
+    // Candidate mode alone, unapplied, is refused as well: the worker never
+    // runs a Diamond decision in candidate mode.
+    expect(
+      horsePhase13SelectionIsValid(
+        {
+          ...forged,
+          applied: false,
+          selection: 'shadow_change',
+          finalAction: receipt.baselineAction,
+          finalAmount: receipt.baselineAmount,
+        },
+        { action: receipt.baselineAction, amount: receipt.baselineAmount }
+      )
+    ).toBe(false);
+    // The Diamond asset is the only thing refusing it.
+    const chips = {
+      ...forged,
+      inputs: { ...receipt.inputs, objective: { ...receipt.inputs.objective, asset: 'chips' } },
+    };
+    expect(horsePhase13SelectionIsValid(chips, decision)).toBe(true);
+    // An applied receipt without a bound chip objective is refused too.
+    expect(horsePhase13SelectionIsValid({ ...forged, inputs: null }, decision)).toBe(false);
+  });
 });

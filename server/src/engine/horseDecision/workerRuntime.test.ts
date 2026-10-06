@@ -4670,6 +4670,37 @@ describe('P13.3 worker-owned joint multiway authority (the Phase 8 path, reused 
       expect(flh.result.phase12Authority?.[pack].state).toBe('unselected');
   });
 
+  it('a usable NLH authority never selects a Diamond NLH cash decision (outside the qualified domain)', async () => {
+    // Audit 2026-10-06: the P13.2 contract excludes Diamond NLH whole-unit
+    // cash, so the NLH authority that admits chip cash never covers it.
+    const s = jointPolicyFixture('nlh', 2, 'cash', 'flop');
+    Object.assign(s.state, { asset: 'diamonds', chipUnit: 1 });
+    s.state.rakeConfig!.percent = 0;
+    s.state.rakeConfig!.cap = 0;
+    const r = rekey({
+      ...fastRequest(737),
+      player: s.hero,
+      gameState: s.state,
+      style: 'balanced',
+      mods: {},
+      opts: { mind: false },
+    });
+    const diamond = await decideThrough(r, only('nlh'));
+    const reference = await decideThrough(r, undefined, true);
+    expect(diamond.result.phase13Authority?.nlh.state).toBe('usable');
+    expect(diamond.h.decisionOpts[0].phase13Joint).toBe('shadow');
+    expect(diamond.decision.jointPolicy).toMatchObject({
+      mode: 'shadow',
+      eligible: true,
+      fired: true,
+      applied: false,
+      inputs: { objective: { asset: 'diamonds' } },
+      authority: { state: 'usable', continuationVersion: horsePhase13ContinuationVersion('nlh') },
+    });
+    expect(act(diamond.decision)).toEqual(act(reference.decision));
+    expect(horseDecisionReceiptIsValid(structuredClone(diamond.decision), 'nlh')).toBe(true);
+  });
+
   it.each(['nlh', 'plo8', 'flo8', 'short_deck'] as const)(
     'a %s tournament decision keeps Phase 7 ownership even when the joint variant would be selected',
     async (variant) => {

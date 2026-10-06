@@ -104,7 +104,8 @@ export const p13Street = (
   samplerBudgetExhausted = 0,
   sampleUnavailable = 0,
   governorReduced = 0,
-  responseBranchUnavailable = 0
+  responseBranchUnavailable = 0,
+  analysisUnavailable = 0
 ): HorsePhase13StreetCompletion => ({
   eligible,
   completed:
@@ -113,12 +114,14 @@ export const p13Street = (
     samplerBudgetExhausted -
     sampleUnavailable -
     governorReduced -
-    responseBranchUnavailable,
+    responseBranchUnavailable -
+    analysisUnavailable,
   workBudget,
   samplerBudgetExhausted,
   sampleUnavailable,
   governorReduced,
   responseBranchUnavailable,
+  analysisUnavailable,
 });
 
 const STREET_FIELDS = [
@@ -129,6 +132,7 @@ const STREET_FIELDS = [
   'sampleUnavailable',
   'governorReduced',
   'responseBranchUnavailable',
+  'analysisUnavailable',
 ] as const;
 
 /**
@@ -150,7 +154,7 @@ export function p13BoardCountsFor(streets: Record<string, HorsePhase13StreetComp
   return { '1': one, '2': two, '3': three };
 }
 
-/** A `horse-phase13-completion-v1` record that clears the floor. When
+/** A `horse-phase13-completion-v1` record (definition v2) that clears the floor. When
  * `overrides.streets` is given without `overrides.boardCounts`, the board-count
  * tally is derived from it (`p13BoardCountsFor`), so the record stays
  * internally consistent and a street override tests the street. */
@@ -181,6 +185,7 @@ export function p13CompletionObject(
     },
     streets,
     boardCounts: p13BoardCountsFor(streets),
+    excluded: { diamond: 0 },
     ...overrides,
   };
 }

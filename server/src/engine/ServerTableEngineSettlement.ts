@@ -1599,6 +1599,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       actions: [...this.currentHandActions],
       contributions: new Map(this.currentHandContributions),
       sawFlopForMoney: this.currentHandSawFlopForMoney,
+      diamondRakeSchedule: this.currentHandDiamondRakeSchedule,
       holeCards: new Map(this.currentHandHoleCards),
       dealerSeat: this.currentHandDealerSeat,
       perPotAwards: [...this.currentHandPerPotAwards],
@@ -2050,10 +2051,39 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     await runStep('hand_history', true, async () => {
       if (this.tableInfo) {
         const tableInfo = this.tableInfo;
+        /* ═══ THE RAKE IS RE-PRICED FROM THE ROSTER THAT IS SENT ═════════
+           `fn_poker_diamond_settle_cash_hand` recomputes the rake from
+           `sum(contributed)` and `count(dealt_in)` over the stacks payload
+           built below, and refuses the hand when the engine's number differs.
+           So the guard is given those same three facts, derived from the SAME
+           roster and the SAME maps the payload reads - not from `snap.potSize`
+           or a seat count, which are different questions that usually have
+           the same answer. A mismatch is then named here, by the engine that
+           produced it, with the hand not yet submitted.
+
+           Summed RAW, and whole only because the guard says so: the guard
+           holds every contribution to a whole Diamond (it always has, through
+           `amounts`) BEFORE it re-prices, so by the time the pot is used it is
+           the same integer sum the settler will add up. Normalising here
+           instead would quietly round a fractional contribution into a rake,
+           which is the one thing this payload must never do. */
+        const diamondRakeFacts = isDiamondCash
+          ? {
+              pot: playersForRecord.reduce(
+                (total, player) => total + (snap.contributions.get(player.user_id) ?? 0),
+                0
+              ),
+              dealtIn: playersForRecord.filter((player) => snap.dealtStacks.has(player.user_id))
+                .length,
+              sawFlop: snap.sawFlopForMoney,
+            }
+          : null;
         assertDiamondAcceptedHand({
           arena: tableInfo.arena,
           verifiedLease: durablePostCommitObligations,
           variant: snap.variant || tableInfo.game_variant || 'nlh',
+          rakeSchedule: snap.diamondRakeSchedule,
+          rakeFacts: diamondRakeFacts,
           rake: snap.rake,
           bbj: snap.bbjFee,
           inflow: snap.insuranceNet,

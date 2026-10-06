@@ -62,8 +62,14 @@ export interface DiamondCashRakeFacts {
  * from the engine's running sums is removed at the cent scale every other
  * money value in settlement is normalised at; anything still fractional after
  * that is a real fraction and is refused, never rounded.
+ *
+ * EXPORTED BECAUSE THE PRICER SUMS THE SAME NUMBERS (2026-10-06). The settler
+ * recomputes the rake from `sum(contributed)` over this very payload, so the
+ * engine has to price on that sum and not on a second reading of the pot. One
+ * normalisation, used by the fact that is SENT and by the price that is
+ * CHARGED, is the only way the two can be the same number.
  */
-function wholeDiamondsContributed(raw: number): number {
+export function wholeDiamondsContributed(raw: number): number {
   if (!Number.isFinite(raw)) {
     throw new Error('atomic hand commit refused (diamond_whole_contribution_required)');
   }

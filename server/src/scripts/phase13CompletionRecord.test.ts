@@ -15,10 +15,12 @@ import { gzipSync } from 'node:zlib';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
   admitHorsePhase13QualifiedAuthority,
+  HORSE_PHASE13_COMPLETION_STREET_KEYS,
   HORSE_PHASE13_VARIANTS,
   horsePhase13CompletionBoardCounts,
   horsePhase13CompletionCounts,
   horsePhase13CompletionOutcome,
+  horsePhase13CompletionRecordMeetsFloor,
 } from '../engine/HorsePhase13Authority.js';
 import {
   horsePhase13PolicyDigest,
@@ -124,7 +126,9 @@ describe('P13.3 completion reader, stage 2: the record admission reads', () => {
         sampleUnavailable: 0,
         governorReduced: 0,
         responseBranchUnavailable: 0,
+        analysisUnavailable: 0,
       });
+      expect(out.record.excluded).toEqual({ diamond: 0 });
       expect(out.record.policyDigest).toBe(horsePhase13PolicyDigest(variant));
       // 130 complete of 131 on the river (lower bound 0.940) is below the
       // floor; without the fallback the record clears it.
@@ -195,7 +199,6 @@ describe('P13.3 completion reader, stage 2: the record admission reads', () => {
     ['malformed_extract_line', { lines: ['{not json'] }],
     ['malformed_extract_line', { lines: [JSON.stringify({ decisionTimeMs: AT })] }],
     ['decision_outside_window', { lines: [line(null, Date.parse(TO))] }],
-    ['no_records', { lines: ['', '  '] }],
   ] as const)('refuses by name: %s', (reason, overrides) => {
     expect(
       phase13CompletionRecordFrom({
@@ -209,6 +212,83 @@ describe('P13.3 completion reader, stage 2: the record admission reads', () => {
         ...(overrides as object),
       })
     ).toEqual({ refused: reason });
+  });
+
+  // Audit 2026-10-06: an empty window used to be refused (`no_records`, exit
+  // 2), so a variant with no natural decisions had no record at all. It now
+  // has a record that says so: zero eligible in every cell, which fails the
+  // floor by name at admission.
+  it.each([
+    ['an empty extract', [] as string[]],
+    ['an extract of blank lines', ['', '  ']],
+    ['an extract of decisions without a joint receipt', [line(null), line(null, AT + 1, 'f')]],
+  ])('writes a zero record for %s, which fails the floor', (_name, lines) => {
+    const out = phase13CompletionRecordFrom({
+      variant: 'nlh',
+      release: RELEASE,
+      from: FROM,
+      to: TO,
+      releaseUnchanged: 'true',
+      lines,
+      readReleaseFile: running,
+    });
+    if ('refused' in out) throw new Error(out.refused);
+    expect(out.records).toBe(lines.filter((l) => l.trim()).length);
+    const zero = Object.fromEntries(HORSE_PHASE13_COMPLETION_STREET_KEYS.map((k) => [k, 0]));
+    for (const cell of [
+      ...Object.values(out.record.streets),
+      ...Object.values(out.record.boardCounts),
+    ])
+      expect(cell).toEqual(zero);
+    expect(out.record.excluded).toEqual({ diamond: 0 });
+    expect(out.record.policyDigest).toBe(horsePhase13PolicyDigest('nlh'));
+    expect(horsePhase13CompletionRecordMeetsFloor(out.record)).toBe(false);
+    const c = Buffer.from(JSON.stringify(out.record, null, 2) + '\n');
+    const q = p13QualificationBytes('nlh');
+    expect(
+      admitHorsePhase13QualifiedAuthority(
+        'nlh',
+        p13Selection('nlh', q, c),
+        p13Reader('nlh', q, c),
+        P13_TEST_NOW,
+        P13_TEST_CONTRACT_DIGEST
+      )
+    ).toMatchObject({ status: 'refused', reason: 'completion_below_floor' });
+  });
+
+  it('counts Diamond decisions as excluded by name and analysis failures apart from completed', () => {
+    const ok = receipt('nlh', 'river', () => 0);
+    const failed = { ...ok, reason: 'joint_scores_no_winner', fired: false };
+    const s = jointPolicyFixture('nlh', 2, 'cash', 'turn');
+    Object.assign(s.state, { asset: 'diamonds', chipUnit: 1 });
+    s.state.rakeConfig!.percent = 0;
+    s.state.rakeConfig!.cap = 0;
+    const diamond = JSON.parse(
+      JSON.stringify(
+        evaluateJointLivePolicy(s.hero, s.state, s.baseline, 'shadow', () => 0).receipt
+      )
+    );
+    const out = phase13CompletionRecordFrom({
+      variant: 'nlh',
+      release: RELEASE,
+      from: FROM,
+      to: TO,
+      releaseUnchanged: 'true',
+      lines: [line(ok, AT, 'a'), line(failed, AT + 1, 'b'), line(diamond, AT + 2, 'c')],
+      readReleaseFile: running,
+    });
+    if ('refused' in out) throw new Error(out.refused);
+    expect(out.records).toBe(3);
+    expect(out.record.definition).toBe('horse-phase13-completion-definition-v2');
+    expect(out.record.excluded).toEqual({ diamond: 1 });
+    expect(out.record.streets.river).toMatchObject({
+      eligible: 2,
+      completed: 1,
+      analysisUnavailable: 1,
+      responseBranchUnavailable: 0,
+    });
+    expect(out.record.streets.turn.eligible).toBe(0);
+    expect(out.record.boardCounts['2'].eligible).toBe(0);
   });
 
   it('the command reads the release sources with git show and prints the record', () => {
@@ -247,7 +327,29 @@ describe('P13.3 completion reader, stage 2: the record admission reads', () => {
     );
     expect(refused.status).toBe(2);
     expect(refused.stderr).toContain('refused: unknown_variant');
-  }, 60_000);
+    // An empty window is a record (zero eligible everywhere), not a refusal.
+    const empty = spawnSync(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        'src/scripts/phase13CompletionRecord.ts',
+        '--variant=flo8',
+        `--release=${head}`,
+        `--from=${FROM}`,
+        `--to=${TO}`,
+        '--release-unchanged=true',
+        '--source=test',
+      ],
+      { cwd: serverRoot, input: '', encoding: 'utf8' }
+    );
+    expect(empty.status, empty.stderr).toBe(0);
+    expect(JSON.parse(empty.stdout).streets.river.eligible).toBe(0);
+    expect(JSON.parse(empty.stderr.trim().split('\n').at(-1)!)).toMatchObject({
+      records: 0,
+      meetsFloor: false,
+    });
+  }, 90_000);
 });
 
 describe('P13.3 completion reader, stage 1: the host extractor', () => {
@@ -385,6 +487,142 @@ describe('P13.3 completion reader, stage 1: the host extractor', () => {
     expect(out.record.streets.river).toMatchObject({ eligible: 1, completed: 1 });
     expect(out.record.streets.flop).toMatchObject({ eligible: 1, completed: 1 });
     expect(out.record.streets.preflop.eligible).toBe(0);
+  });
+
+  // Audit 2026-10-06: the window bounds were parsed by dropping the fraction
+  // and refusing any offset, so stage 1 and stage 2 (Date.parse) could read
+  // different windows from the same arguments.
+  it('reads the window bounds exactly as Date.parse does (Z, +00:00, fractional seconds)', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'p133-seg-iso-'));
+    dirs.push(dir);
+    const from = '2026-10-15T00:00:00.500+00:00';
+    const to = '2026-10-15T00:00:01.2509Z';
+    expect(Date.parse(from)).toBe(AT + 500);
+    expect(Date.parse(to)).toBe(AT + 1250);
+    const times = [AT, AT + 499, AT + 500, AT + 1249, AT + 1250, AT + 1251];
+    segment(
+      dir,
+      times.map((t) => record('decision', 'nlh', t, {}))
+    );
+    const run = spawnSync(
+      'python3',
+      ['scripts/phase13-completion-extract.py', from, to, RELEASE, 'nlh'],
+      {
+        cwd: serverRoot,
+        encoding: 'utf8',
+        env: { ...process.env, PHASE13_EXTRACT_SEGMENT_DIRS: dir },
+      }
+    );
+    expect(run.status, run.stderr).toBe(0);
+    const printed = run.stdout
+      .trim()
+      .split('\n')
+      .map((l) => (JSON.parse(l) as { decisionTimeMs: number }).decisionTimeMs);
+    const fromMs = Date.parse(from);
+    const toMs = Date.parse(to);
+    expect(printed).toEqual(times.filter((t) => t >= fromMs && t < toMs));
+    expect(printed).toEqual([AT + 500, AT + 1249]);
+    // Stage 2 reads the same window from the same arguments: no row is outside it.
+    const out = phase13CompletionRecordFrom({
+      variant: 'nlh',
+      release: RELEASE,
+      from,
+      to,
+      releaseUnchanged: 'true',
+      lines: run.stdout.trim().split('\n'),
+      readReleaseFile: running,
+    });
+    expect('refused' in out ? out.refused : null).toBeNull();
+    // Other offsets convert to UTC as Date.parse does; a bound without an
+    // offset (local time to Date.parse) or not ISO-8601 is refused.
+    for (const [bound, expected] of [
+      ['2026-10-15T01:00:00.750+01:00', AT + 750],
+      ['2026-10-14T19:00:00.75-05:00', AT + 750],
+      ['2026-10-15T00:00Z', AT],
+    ] as const) {
+      expect(Date.parse(bound)).toBe(expected);
+      const r = spawnSync(
+        'python3',
+        ['scripts/phase13-completion-extract.py', bound, to, RELEASE, 'nlh'],
+        {
+          cwd: serverRoot,
+          encoding: 'utf8',
+          env: { ...process.env, PHASE13_EXTRACT_SEGMENT_DIRS: dir },
+        }
+      );
+      expect(r.status, `${bound} ${r.stderr}`).toBe(0);
+      expect(
+        r.stdout
+          .trim()
+          .split('\n')
+          .filter(Boolean)
+          .map((l) => (JSON.parse(l) as { decisionTimeMs: number }).decisionTimeMs)
+      ).toEqual(times.filter((t) => t >= expected && t < toMs));
+    }
+    for (const bound of ['2026-10-15T00:00:00', '2026-10-15', 'yesterday']) {
+      const r = spawnSync(
+        'python3',
+        ['scripts/phase13-completion-extract.py', bound, to, RELEASE, 'nlh'],
+        {
+          cwd: serverRoot,
+          encoding: 'utf8',
+          env: { ...process.env, PHASE13_EXTRACT_SEGMENT_DIRS: dir },
+        }
+      );
+      expect(r.status, bound).not.toBe(0);
+      expect(r.stdout, bound).toBe('');
+    }
+  });
+
+  it('prints Diamond NLH decisions for stage 2 to exclude by name, and names them in its summary', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'p133-seg-diamond-'));
+    dirs.push(dir);
+    const ok = receipt('nlh', 'river', () => 0);
+    const s = jointPolicyFixture('nlh', 2, 'cash', 'turn');
+    Object.assign(s.state, { asset: 'diamonds', chipUnit: 1 });
+    s.state.rakeConfig!.percent = 0;
+    s.state.rakeConfig!.cap = 0;
+    const diamond = JSON.parse(
+      JSON.stringify(
+        evaluateJointLivePolicy(s.hero, s.state, s.baseline, 'shadow', () => 0).receipt
+      )
+    );
+    segment(dir, [
+      record('decision', 'nlh', AT, { action: 'check', jointPolicy: ok }),
+      record(
+        'decision',
+        'nlh',
+        AT + 1,
+        { action: 'check', jointPolicy: diamond },
+        {},
+        { asset: 'diamonds', boardCount: 2, bombPot: true }
+      ),
+    ]);
+    const run = spawnSync(
+      'python3',
+      ['scripts/phase13-completion-extract.py', FROM, TO, RELEASE, 'nlh'],
+      {
+        cwd: serverRoot,
+        encoding: 'utf8',
+        env: { ...process.env, PHASE13_EXTRACT_SEGMENT_DIRS: dir },
+      }
+    );
+    expect(run.status, run.stderr).toBe(0);
+    expect(run.stdout.trim().split('\n')).toHaveLength(2);
+    expect(JSON.parse(run.stderr)).toMatchObject({ records: 2, diamond_records: 1 });
+    const out = phase13CompletionRecordFrom({
+      variant: 'nlh',
+      release: RELEASE,
+      from: FROM,
+      to: TO,
+      releaseUnchanged: 'true',
+      lines: run.stdout.trim().split('\n'),
+      readReleaseFile: running,
+    });
+    if ('refused' in out) throw new Error(out.refused);
+    expect(out.record.excluded).toEqual({ diamond: 1 });
+    expect(out.record.streets.river).toMatchObject({ eligible: 1, completed: 1 });
+    expect(out.record.streets.turn.eligible).toBe(0);
   });
 
   it('refuses an unknown variant', () => {

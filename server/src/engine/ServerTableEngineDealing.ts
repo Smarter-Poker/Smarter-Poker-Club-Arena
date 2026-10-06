@@ -40,6 +40,8 @@ import {
 } from '../services/HorseRebuyPolicy.js';
 import type { SeatPlayer, GameVariant, HandConfig, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
+import { readDiamondCashRakeSchedule } from '../services/supabase/diamondCashRakeSettings.js';
+import type { DiamondCashRakeSchedule } from '../domain/diamondCashRakeSchedule.js';
 import { holeCardCount, deckSizeFor, maxSeatsFor } from './VariantRules.js';
 // The VARIANT'S OWN seat ceiling, which is a house rule and not deck
 // arithmetic — PLO6 is 6-max and PLO5 is 7-max by Dan's ruling, both tighter
@@ -2070,6 +2072,34 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       if (players.length < this.minPlayersToDeal()) return;
       if (!this.tableInfo) return;
 
+      /* ═══ THE DIAMOND CASH HAND IS PRICED BY ITS SETTINGS (2026-10-06) ═══
+         Read ONCE, here, before a hand number is allocated, and frozen into
+         this hand's config. The settler recomputes the rake from the owner's
+         published economics and refuses a hand whose number differs, so the
+         engine has to price from the same rows - and a hand must be priced by
+         the schedule in force when it was DEALT, not by one the owner
+         inserted while the hand was in the air. Nothing is cached across
+         hands, so there is no window in which a superseded number could price
+         money; the next deal at every Diamond table reads the new answer.
+
+         A READ THAT FAILS DEALS NOTHING. A hand the engine cannot price is a
+         hand the settler will refuse, and refusing it AFTER players' Diamonds
+         are in a pot is the one outcome worse than not dealing. Declining
+         here costs nobody a Diamond: no hand number is taken and no card is
+         dealt. */
+      let diamondRakeSchedule: DiamondCashRakeSchedule | null = null;
+      if (this.tableInfo.arena?.asset === 'diamonds' && !this.isTournamentTable()) {
+        try {
+          diamondRakeSchedule = await readDiamondCashRakeSchedule(Number(this.tableInfo.big_blind));
+        } catch (scheduleError) {
+          reportError(
+            scheduleError instanceof Error ? scheduleError : new Error(String(scheduleError)),
+            'ServerTableEngineDealing.diamond_cash_rake_schedule_unreadable'
+          );
+          return;
+        }
+      }
+
       // GLOBAL HAND NUMBER (2026-08-18). Allocated from the database sequence at
       // the moment the hand is dealt, so numbers ascend in true deal order across
       // every table, club, union, cash game and tournament, and can never repeat.
@@ -2111,6 +2141,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       this.currentHandPots = [];
       this.currentHandContributions.clear(); // Weighted contributed rake (Dan 2026-08-29): reset per-hand eligible contributions
       this.currentHandSawFlopForMoney = false; // ... and the hand's own money-facing flop fact
+      // ... and the published schedule this hand is priced by, read above.
+      this.currentHandDiamondRakeSchedule = diamondRakeSchedule;
       this.currentHandReturnedUncalled.clear(); // ... and the returned-uncalled audit map
       this.currentHandInsuranceSettlements = []; // Bible V8 §4.19: Reset insurance settlements
       this.currentHandInsuranceNet = 0; // chip standard 2026-09-04: declared to the stack write
@@ -3053,6 +3085,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               // and the full cap on a 6/7/8-max one, Dan 2026-09-14).
               playerCountCaps: getPlayerCountCaps(fullRakeConfig.rakeCap, this.tableSeatCount()),
             },
+        /* The owner's Diamond schedule, read above. Null on every chip hand
+           and every tournament hand, which leaves `rakeConfig` above the only
+           thing those hands are priced by - byte for byte as before. */
+        diamondRakeSchedule,
         bbjConfig: {
           // FIX-A2 2026-07-19 gated the BBJ fee-drop on bbj_percent > 0.
           // RAKE-AUDIT 2026-07-24: that gate killed BBJ platform-wide — every live

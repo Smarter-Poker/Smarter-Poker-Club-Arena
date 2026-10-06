@@ -1216,7 +1216,16 @@ export class HandController {
     origin: AcceptedActionOrigin = 'unknown',
     onAccepted?: (record: Readonly<ActionRecord>) => void
   ): boolean {
-    if (this.config.asset === 'diamonds' && amount !== undefined && !Number.isSafeInteger(amount)) {
+    /* A TOURNAMENT CHIP IS WHOLE, LIKE A DIAMOND (launch audit 2026-10-05).
+       Every place this controller splits or rounds already treats a
+       tournament chip as one unit (chipUnit, the ante unit, the odd-chip
+       rule). Only this door did not, so a 2.5x preset facing 75 put 187.5 on
+       the felt and stacks and pots carried half chips from then on. */
+    if (
+      (this.config.asset === 'diamonds' || this.config.isTournament) &&
+      amount !== undefined &&
+      !Number.isSafeInteger(amount)
+    ) {
       return false;
     }
     // Crazy Pineapple's discard is a simultaneous, non-betting round. The

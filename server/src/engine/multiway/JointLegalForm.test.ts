@@ -80,6 +80,7 @@ describe('P13.1 every Phase 13 candidate is in the legalizer form', () => {
         spots: 0,
         receipts: 0,
         invalidBindings: 0,
+        treeFired: 0,
         fired: 0,
         candidates: 0,
         candidateRewrites: 0,
@@ -120,6 +121,8 @@ describe('P13.1 every Phase 13 candidate is in the legalizer form', () => {
         }
         if (!receipt?.fired || !receipt.actionModel) return;
         tally.fired++;
+        // P13-A: turn and river decisions are priced by the round-2 tree.
+        if (receipt.responseModel === 'bounded_raise_tree') tally.treeFired++;
         // Every priced candidate is already what the legalizer would execute.
         for (const c of receipt.actionModel.candidates) {
           tally.candidates++;
@@ -212,6 +215,7 @@ describe('P13.1 every Phase 13 candidate is in the legalizer form', () => {
       expect(tally.illegal).toBe(0);
       expect(tally.invalidBindings).toBe(0);
       expect(tally.fired).toBeGreaterThan(10);
+      expect(tally.treeFired).toBeGreaterThan(0);
     },
     120_000
   );

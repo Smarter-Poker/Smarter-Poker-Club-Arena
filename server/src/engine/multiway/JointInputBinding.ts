@@ -5,6 +5,11 @@ import { horseCanonicalMaterialSha256 } from '../HorseTournamentUtilityEvidence.
 import { plo4BlindSeatsStatus, plo4ButtonOffset } from '../plo4/Plo4LivePolicy.js';
 import { remainingVariantChipUnit } from '../remainingVariants/RemainingVariantLivePolicy.js';
 import { JOINT_ACTION_PACK } from './JointActionModel.js';
+
+const responseModelFor = (street: unknown) =>
+  (JOINT_ACTION_PACK.limits.raiseStreets as readonly string[]).includes(street as string)
+    ? ('bounded_raise_tree' as const)
+    : ('one_response_then_showdown' as const);
 import { JOINT_RANGE_PACK, type JointRangeSamples } from './JointRangeSampler.js';
 import { JOINT_LIVE_DOMAIN } from './JointSampleAcquisition.js';
 
@@ -40,6 +45,15 @@ export interface JointInputBinding {
   readonly variant: JointVariant;
   readonly mode: 'cash' | 'tournament';
   readonly packs: Readonly<{ domain: string; range: string; action: string }>;
+  /** P13.1 over P13-A: the response model this street runs and the pack's
+   * declared work limits it was bounded by. */
+  readonly response: Readonly<{
+    model: 'one_response_then_showdown' | 'bounded_raise_tree';
+    raisesPerTree: number;
+    maxRaiseBranchOpponents: number;
+    maxTerminalBranchesPerCandidate: number;
+    riverRounds: number;
+  }>;
   readonly approximation: Readonly<{
     status: 'explicit_joint_heuristic';
     rangeSource: string;
@@ -235,6 +249,13 @@ export function buildJointInputBinding(input: {
       range: JOINT_RANGE_PACK.version,
       action: JOINT_ACTION_PACK.version,
     },
+    response: {
+      model: responseModelFor(street),
+      raisesPerTree: JOINT_ACTION_PACK.limits.raisesPerTree,
+      maxRaiseBranchOpponents: JOINT_ACTION_PACK.limits.maxRaiseBranchOpponents,
+      maxTerminalBranchesPerCandidate: JOINT_ACTION_PACK.limits.maxTerminalBranchesPerCandidate,
+      riverRounds: JOINT_ACTION_PACK.limits.riverRounds,
+    },
     approximation: {
       status: 'explicit_joint_heuristic',
       rangeSource: JOINT_RANGE_PACK.source,
@@ -358,6 +379,7 @@ export function jointInputBindingIsValid(value: unknown): value is JointInputBin
       'variant',
       'mode',
       'packs',
+      'response',
       'approximation',
       'census',
       'positions',
@@ -374,6 +396,24 @@ export function jointInputBindingIsValid(value: unknown): value is JointInputBin
     return false;
   const { packs, approximation, census, positions, geometry, depth, boards, ranges, objective } =
     value;
+  const response = value.response;
+  if (
+    !exact(response, [
+      'model',
+      'raisesPerTree',
+      'maxRaiseBranchOpponents',
+      'maxTerminalBranchesPerCandidate',
+      'riverRounds',
+    ]) ||
+    !object(boards) ||
+    response.model !== responseModelFor(boards.street) ||
+    response.raisesPerTree !== JOINT_ACTION_PACK.limits.raisesPerTree ||
+    response.maxRaiseBranchOpponents !== JOINT_ACTION_PACK.limits.maxRaiseBranchOpponents ||
+    response.maxTerminalBranchesPerCandidate !==
+      JOINT_ACTION_PACK.limits.maxTerminalBranchesPerCandidate ||
+    response.riverRounds !== JOINT_ACTION_PACK.limits.riverRounds
+  )
+    return false;
   const tournament = value.mode === 'tournament';
   if (
     !exact(packs, ['domain', 'range', 'action']) ||

@@ -492,3 +492,34 @@ describe('P13.1 the joint receipt binding at the worker boundary', () => {
     expect(horseDecisionReceiptIsValid(unnamed, 'plo4')).toBe(false);
   });
 });
+
+describe('P13.1 over P13-A: a round-2 response tree receipt at the boundary', () => {
+  it('admits the tree, its response counts and summary, and refuses a forged summary', () => {
+    const s = jointPolicyFixture('flo8', 2, 'cash', 'turn');
+    seedFastRandom(130999);
+    const d = structuredClone(
+      HorseLogic.decide(
+        s.hero,
+        s.state,
+        'balanced',
+        {},
+        {
+          telemetry: false,
+          mind: false,
+          decisionTimeMs: 0,
+          phase13Joint: 'shadow',
+          phase13EvidenceMode: true,
+        }
+      )
+    );
+    expect(d.jointPolicy?.responseModel).toBe('bounded_raise_tree');
+    const counts = Object.values(d.jointPolicy!.actionModel!.candidates[0].responseCounts)[0];
+    expect(counts).toHaveProperty('raiseProbability');
+    expect(counts).toHaveProperty('facedRaise');
+    expect(d.jointPolicy?.responseTree?.riverRoundProbability).not.toBeNull();
+    expect(horseDecisionReceiptIsValid(structuredClone(d), 'flo8')).toBe(true);
+    const forged = structuredClone(d);
+    forged.jointPolicy!.responseTree!.raiseBranches = 99;
+    expect(horseDecisionReceiptIsValid(forged, 'flo8')).toBe(false);
+  });
+});

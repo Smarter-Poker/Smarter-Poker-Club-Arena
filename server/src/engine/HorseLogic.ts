@@ -3359,6 +3359,9 @@ export class HorseLogic {
           noteFire(receipt.applied ? 'phase13_applied' : 'phase13_baseline_retained');
           noteFire(`phase13_utility_${receipt.utilityOwner}`);
           if (receipt.inputs) noteFire(`phase13_range_${receipt.inputs.ranges.status}`);
+          if (receipt.responseModel) noteFire(`phase13_response_model_${receipt.responseModel}`);
+          if (receipt.reason.startsWith('joint_response_'))
+            noteFire(`phase13_response_refused_${receipt.reason}`);
           if (receipt.selectionRefusal)
             noteFire(`phase13_selection_refused_${receipt.selectionRefusal}`);
         }

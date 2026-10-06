@@ -32,6 +32,35 @@ export {
   type JointRangeStatus,
 } from './JointInputBinding.js';
 export type JointPolicyMode = 'off' | 'shadow' | 'candidate';
+export type JointResponseModelName = 'one_response_then_showdown' | 'bounded_raise_tree';
+export type JointResponseLimits = {
+  raiseStreets: string[];
+  raisesPerTree: number;
+  maxRaiseBranchOpponents: number;
+  maxTerminalBranchesPerCandidate: number;
+  riverRounds: number;
+};
+export interface JointResponseTreeSummary {
+  terminalBranches: number;
+  raiseBranches: number;
+  raiseProbability: number;
+  heroCallsRaiseProbability: number;
+  heroFoldsToRaiseProbability: number;
+  raiseLimitedResponders: number;
+  riverRoundProbability: number | null;
+  riverBetProbability: number | null;
+}
+/** P13.1: a plain copy of the response pack's declared work limits. */
+export function jointResponseLimits(): JointResponseLimits {
+  const l = JOINT_ACTION_PACK.limits;
+  return {
+    raiseStreets: [...l.raiseStreets],
+    raisesPerTree: l.raisesPerTree,
+    maxRaiseBranchOpponents: l.maxRaiseBranchOpponents,
+    maxTerminalBranchesPerCandidate: l.maxTerminalBranchesPerCandidate,
+    riverRounds: l.riverRounds,
+  };
+}
 /** P13.1: why an applied Phase 13 candidate was not allowed to act. */
 export type JointSelectionRefusal = 'illegal_candidate' | 'earlier_phase_applied';
 type ActionModel = NonNullable<ReturnType<typeof evaluateJointActions>>;
@@ -76,6 +105,14 @@ export interface JointPolicyReceipt {
   actionPackVersion?: string;
   /** P13.1: seat draws the sampler accepted through its uniform escape. */
   uniformEscapes?: number;
+  /** P13.1 over P13-A: the response identity and model that priced the
+   * candidates (null when no model ran), the response pack's declared work
+   * limits, and the top-ranked candidate's response-tree summary (null for
+   * the one-response model). Absent on retained receipts. */
+  responseVersion?: string | null;
+  responseModel?: JointResponseModelName | null;
+  responseLimits?: JointResponseLimits;
+  responseTree?: JointResponseTreeSummary | null;
   /** P13.1: frozen inputs of an eligible proposal; null when it was refused.
    * Absent on retained receipts. */
   inputs?: JointInputBinding | null;
@@ -219,6 +256,10 @@ export function evaluateJointLivePolicy(
     rangePackVersion: JOINT_RANGE_PACK.version,
     actionPackVersion: JOINT_ACTION_PACK.version,
     uniformEscapes: 0,
+    responseVersion: null,
+    responseModel: null,
+    responseLimits: jointResponseLimits(),
+    responseTree: null,
     inputs: null,
     selectionRefusal: null,
   };
@@ -330,13 +371,15 @@ export function evaluateJointLivePolicy(
       baseline,
       jointEvidence,
       () => elapsed() < JOINT_LIVE_DOMAIN.liveBudgetMs,
-      legalForm
-        ? (built) => {
-            const legal = jointLegalCandidates(built, hero, s, legalForm);
-            legalOf = legal.legal;
-            return legal.candidates;
-          }
-        : undefined
+      {
+        candidateForm: legalForm
+          ? (built) => {
+              const legal = jointLegalCandidates(built, hero, s, legalForm);
+              legalOf = legal.legal;
+              return legal.candidates;
+            }
+          : undefined,
+      }
     );
     if (!receipt.actionModel) return finish('work_budget');
     const ranked = receipt.actionModel.candidates
@@ -348,6 +391,21 @@ export function evaluateJointLivePolicy(
             (a.expectedNetChips - 0.5 * a.standardError) || a.investment - b.investment
       );
     const selected = ranked[0];
+    receipt.responseVersion = receipt.actionModel.version;
+    receipt.responseModel = receipt.actionModel.responseModel;
+    const tree = selected.responseTree;
+    receipt.responseTree = tree
+      ? {
+          terminalBranches: tree.terminalBranches,
+          raiseBranches: tree.raiseBranches,
+          raiseProbability: tree.raiseProbability,
+          heroCallsRaiseProbability: tree.heroCallsRaiseProbability,
+          heroFoldsToRaiseProbability: tree.heroFoldsToRaiseProbability,
+          raiseLimitedResponders: tree.raiseLimitedResponders,
+          riverRoundProbability: tree.riverRoundProbability,
+          riverBetProbability: tree.riverBetProbability,
+        }
+      : null;
     // With the legalizer, the proposal is the exact legal decision that was
     // priced (a call carries its exact amount); otherwise the raw candidate.
     const exact = (legalOf as Map<string, HorseDecision> | null)?.get(selected.id);
@@ -393,11 +451,13 @@ export function jointReceiptBindingIsValid(value: unknown): boolean {
     (receipt.uniformEscapes as number) < 0
   )
     return false;
+  if (!jointResponseFieldsAreValid(receipt)) return false;
   if (receipt.inputs === null) return receipt.eligible === false;
   if (!jointInputBindingIsValid(receipt.inputs)) return false;
   const inputs = receipt.inputs;
   return (
     receipt.eligible === true &&
+    (receipt.responseModel === null || receipt.responseModel === inputs.response.model) &&
     inputs.variant === receipt.variant &&
     inputs.packs.domain === receipt.version &&
     inputs.boards.street === receipt.street &&
@@ -406,5 +466,83 @@ export function jointReceiptBindingIsValid(value: unknown): boolean {
     inputs.ranges.provenance.uniformEscapes === receipt.uniformEscapes &&
     inputs.ranges.provenance.requested === receipt.requestedSamples &&
     inputs.ranges.provenance.completed === receipt.completedSamples
+  );
+}
+
+const unitInterval = (v: unknown) =>
+  typeof v === 'number' && Number.isFinite(v) && v >= -1e-9 && v <= 1 + 1e-9;
+
+/** P13.1 over P13-A: the first-class response fields agree with the pack and
+ * with the embedded action model. */
+function jointResponseFieldsAreValid(receipt: Record<string, unknown>): boolean {
+  // Field by field: a journaled receipt is canonicalized with sorted keys.
+  const declared = jointResponseLimits();
+  const limitsSeen = receipt.responseLimits as Record<string, unknown> | null | undefined;
+  if (
+    !limitsSeen ||
+    typeof limitsSeen !== 'object' ||
+    Object.keys(limitsSeen).length !== Object.keys(declared).length ||
+    !Array.isArray(limitsSeen.raiseStreets) ||
+    limitsSeen.raiseStreets.join() !== declared.raiseStreets.join() ||
+    (
+      [
+        'raisesPerTree',
+        'maxRaiseBranchOpponents',
+        'maxTerminalBranchesPerCandidate',
+        'riverRounds',
+      ] as const
+    ).some((key) => limitsSeen[key] !== declared[key])
+  )
+    return false;
+  const model = receipt.actionModel as Record<string, unknown> | null | undefined;
+  if (receipt.responseVersion === null || receipt.responseModel === null)
+    return (
+      receipt.responseVersion === null && receipt.responseModel === null && !receipt.responseTree
+    );
+  if (
+    receipt.responseVersion !== JOINT_ACTION_PACK.version ||
+    !['one_response_then_showdown', 'bounded_raise_tree'].includes(
+      receipt.responseModel as string
+    ) ||
+    !model ||
+    model.version !== receipt.responseVersion ||
+    model.responseModel !== receipt.responseModel
+  )
+    return false;
+  const tree = receipt.responseTree as Record<string, unknown> | null | undefined;
+  if (receipt.responseModel === 'one_response_then_showdown') return tree === null;
+  const keys = [
+    'terminalBranches',
+    'raiseBranches',
+    'raiseProbability',
+    'heroCallsRaiseProbability',
+    'heroFoldsToRaiseProbability',
+    'raiseLimitedResponders',
+    'riverRoundProbability',
+    'riverBetProbability',
+  ];
+  const limits = JOINT_ACTION_PACK.limits;
+  const river = receipt.street === 'river';
+  return (
+    !!tree &&
+    typeof tree === 'object' &&
+    Object.keys(tree).length === keys.length &&
+    keys.every((k) => Object.hasOwn(tree, k)) &&
+    Number.isSafeInteger(tree.terminalBranches) &&
+    (tree.terminalBranches as number) >= 1 &&
+    (tree.terminalBranches as number) <= limits.maxTerminalBranchesPerCandidate &&
+    Number.isSafeInteger(tree.raiseBranches) &&
+    (tree.raiseBranches as number) >= 0 &&
+    (tree.raiseBranches as number) < (tree.terminalBranches as number) &&
+    Number.isSafeInteger(tree.raiseLimitedResponders) &&
+    (tree.raiseLimitedResponders as number) >= 0 &&
+    [tree.raiseProbability, tree.heroCallsRaiseProbability, tree.heroFoldsToRaiseProbability].every(
+      unitInterval
+    ) &&
+    (tree.heroCallsRaiseProbability as number) + (tree.heroFoldsToRaiseProbability as number) <=
+      (tree.raiseProbability as number) + 1e-9 &&
+    (river
+      ? tree.riverRoundProbability === null && tree.riverBetProbability === null
+      : unitInterval(tree.riverRoundProbability) && unitInterval(tree.riverBetProbability))
   );
 }

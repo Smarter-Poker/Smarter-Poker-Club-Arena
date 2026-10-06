@@ -2168,6 +2168,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     0.99
   ),
   receipt(
+    'phase13_response_*',
+    'evaluateJointActions -> evaluateJointLivePolicy -> HorseLogic (P13-A, P13.1)',
+    'response model that priced each fired proposal (one_response_then_showdown, bounded_raise_tree) and every named response-tree refusal (joint_response_branch_unavailable, joint_response_street_unavailable, joint_response_street_not_modeled, joint_response_illegal_simulated_action, joint_response_branch_mass); counts only, never calibration',
+    'Phase13'
+  ),
+  receipt(
     'phase13_selection_refused_*',
     'HorseLogic (P13.1)',
     'an applied Phase 13 candidate refused before it could act: illegal_candidate (the legalizer would rewrite it) or earlier_phase_applied (a Phase 10/11/12 candidate already owned the action)',

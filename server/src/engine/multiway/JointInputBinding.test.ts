@@ -319,3 +319,93 @@ describe('P13.1 the joint input binding', () => {
     expect(jointReceiptBindingIsValid(clone(r.receipt))).toBe(true);
   });
 });
+
+describe('P13.1 over P13-A: the response identity, limits and tree summary', () => {
+  const river = () => {
+    const s = jointPolicyFixture('nlh', 2, 'cash', 'river');
+    return evaluateJointLivePolicy(
+      s.hero,
+      s.state,
+      s.baseline,
+      'shadow',
+      () => 0,
+      undefined,
+      (d) => d
+    ).receipt;
+  };
+
+  it('records the round-2 tree on the river and the one-response model on the flop', () => {
+    const r = river();
+    expect(r.fired).toBe(true);
+    expect(r).toMatchObject({
+      responseVersion: JOINT_ACTION_PACK.version,
+      responseModel: 'bounded_raise_tree',
+      responseLimits: {
+        raiseStreets: ['turn', 'river'],
+        raisesPerTree: 1,
+        maxRaiseBranchOpponents: 1,
+        maxTerminalBranchesPerCandidate: 32,
+        riverRounds: 1,
+      },
+    });
+    expect(Object.keys(r.responseTree!).sort()).toEqual(
+      [
+        'heroCallsRaiseProbability',
+        'heroFoldsToRaiseProbability',
+        'raiseBranches',
+        'raiseLimitedResponders',
+        'raiseProbability',
+        'riverBetProbability',
+        'riverRoundProbability',
+        'terminalBranches',
+      ].sort()
+    );
+    expect(r.responseTree!.riverRoundProbability).toBeNull();
+    expect(r.inputs!.response.model).toBe('bounded_raise_tree');
+    expect(jointReceiptBindingIsValid(clone(r))).toBe(true);
+    const flop = shadow('nlh').receipt;
+    expect(flop).toMatchObject({ responseModel: 'one_response_then_showdown', responseTree: null });
+    expect(flop.inputs!.response.model).toBe('one_response_then_showdown');
+    expect(jointReceiptBindingIsValid(clone(flop))).toBe(true);
+  });
+
+  it('refuses response fields that disagree with the pack or the model', () => {
+    const r = clone(river()) as any;
+    const cases: [string, (x: any) => void][] = [
+      ['limits', (x) => (x.responseLimits.maxTerminalBranchesPerCandidate = 64)],
+      ['version', (x) => (x.responseVersion = 'joint-action-response-round1-v2')],
+      ['model', (x) => (x.responseModel = 'one_response_then_showdown')],
+      ['tree missing', (x) => (x.responseTree = null)],
+      ['tree branches', (x) => (x.responseTree.terminalBranches = 33)],
+      ['tree mass', (x) => (x.responseTree.heroCallsRaiseProbability = 2)],
+      ['binding model', (x) => (x.inputs.response.model = 'one_response_then_showdown')],
+      ['binding limits', (x) => (x.inputs.response.riverRounds = 2)],
+    ];
+    for (const [name, mutate] of cases) {
+      const x = clone(r);
+      mutate(x);
+      expect(jointReceiptBindingIsValid(x), name).toBe(false);
+    }
+  });
+
+  it.each([
+    'joint_response_branch_unavailable',
+    'joint_response_street_unavailable',
+    'joint_response_street_not_modeled',
+    'joint_response_illegal_simulated_action',
+    'joint_response_branch_mass',
+  ])('admits the named refusal %s with its binding and no response model', (reason) => {
+    const r = clone(river()) as any;
+    Object.assign(r, {
+      fired: false,
+      changed: false,
+      reason,
+      confidence: 'unavailable',
+      actionModel: null,
+      responseVersion: null,
+      responseModel: null,
+      responseTree: null,
+    });
+    expect(jointReceiptBindingIsValid(r)).toBe(true);
+  });
+});

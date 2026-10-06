@@ -21,6 +21,8 @@ import {
   compareHands,
   compareLowHands,
 } from './PokerEngine.js';
+import { priceDiamondCashRake } from '../domain/diamondCashRakeSchedule.js';
+import { wholeDiamondsContributed } from './diamondCashRakeFacts.js';
 import {
   isFixedLimitVariant,
   isPotLimitVariant,
@@ -69,88 +71,19 @@ import {
   captureHorsePublicActionNode,
   unavailablePublicActionNode,
 } from './HorsePublicActionNode.js';
+import {
+  scaleMultiBoardWinnerUnits,
+  scaleWinnerCentsForRake,
+  scaleWinnerUnitsForRake,
+} from './WinnerUnitScaling.js';
+
+// The pot-scaling helpers live in WinnerUnitScaling.ts (pure, no imports);
+// re-exported so existing imports from this module keep working.
+export { scaleMultiBoardWinnerUnits, scaleWinnerCentsForRake };
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HAND CONTROLLER
 // ═══════════════════════════════════════════════════════════════════════════════
-
-/**
- * Scale winners' pre-rake amounts down to the post-rake total, in whole cents.
- *
- * Exported and pure so the invariant below can be tested directly rather than
- * only through a 10,000-hand fuzz run.
- *
- * TWO POST-CONDITIONS, both load-bearing:
- *   1. `sum(result) === round(totalWinnings * 100)` — no chip is created or
- *      destroyed by the rake deduction.
- *   2. `result[i] <= round(preRakeAmounts[i] * 100)` — no winner is paid more
- *      than they were entitled to BEFORE rake. Rake only ever takes away, so a
- *      winner rising above their pre-rake figure means a cent moved from
- *      another winner's stack into theirs.
- *
- * (2) is the one that was broken. The rounding remainder was handed to
- * `adjusted[0]` unconditionally, and index 0 is the MAIN-pot winner — by
- * construction the shortest all-in stack at the table. In a side-pot hand that
- * player is not eligible for the chips above the main pot, so the cent came out
- * of a side-pot winner. Found by the D24 chip-conservation fuzzer (INV-7):
- * main pot 1.93, u3 all-in for 0.32, four side pots above them; u3 was eligible
- * for 1.93 and was paid 1.94. Totals still balanced, which is exactly why plain
- * conservation never caught it — the cent moved between players.
- *
- * Placing the remainder under the pre-rake caps always succeeds: total headroom
- * is `rakeCents + remainder`, which is never less than `remainder`.
- */
-export function scaleWinnerCentsForRake(
-  preRakeAmounts: readonly number[],
-  totalWinnings: number
-): number[] {
-  return scaleWinnerUnitsForRake(preRakeAmounts, totalWinnings, 100);
-}
-
-function scaleWinnerUnitsForRake(
-  preRakeAmounts: readonly number[],
-  totalWinnings: number,
-  unitsPerAmount: 1 | 100
-): number[] {
-  // Round 40 audit Pass 3 fix: integer-cents arithmetic with Math.round (NOT
-  // Math.trunc) for the float->cents conversion. IEEE 754 drift can make a pot
-  // of "$140.30" actually be 140.29999..., and Math.trunc(140.299... * 100) is
-  // 13479 rather than 13480 — exactly 1c lost per chop pot with any drift.
-  const totalCents = Math.round(totalWinnings * unitsPerAmount);
-  const entitlementCents = preRakeAmounts.map((a) => Math.round(a * unitsPerAmount));
-  const totalWinnerCents = entitlementCents.reduce((s, c) => s + c, 0) || 1;
-
-  const adjusted = entitlementCents.map((c) => Math.round((c * totalCents) / totalWinnerCents));
-
-  let remainder = totalCents - adjusted.reduce((s, a) => s + a, 0);
-
-  // Positive remainder: rounding dust. Place it only where it does not exceed
-  // the winner's pre-rake entitlement.
-  let placedOne = true;
-  while (remainder > 0 && placedOne) {
-    placedOne = false;
-    for (let i = 0; i < adjusted.length && remainder > 0; i++) {
-      if (adjusted[i] >= entitlementCents[i]) continue;
-      adjusted[i]++;
-      remainder--;
-      placedOne = true;
-    }
-  }
-
-  // Negative remainder: rounding overshot. Pull back evenly, never below zero.
-  let pulledOne = true;
-  while (remainder < 0 && pulledOne) {
-    pulledOne = false;
-    for (let i = 0; i < adjusted.length && remainder < 0; i++) {
-      if (adjusted[i] <= 0) continue;
-      adjusted[i]--;
-      remainder++;
-      pulledOne = true;
-    }
-  }
-
-  return adjusted;
-}
 
 /** Private controller receipt for a Horse audit. Never attach this to HandEvent. */
 export interface HorseDiscardControllerReceipt {
@@ -544,11 +477,38 @@ export class HandController {
     // emitTurnChange() no-op'd on currentPlayerSeat === -1 and the hand hung
     // until the 10-minute safety void (blinds effectively refunded). Advance
     // straight into the runout instead.
+    // A BLIND THAT ALREADY COVERS EVERY ALL-IN HAS NOTHING TO DECIDE (launch
+    // audit 2026-10-05). Heads-up, blinds 0.5/1, big blind all-in for 0.2: the
+    // small blind was put on the clock with fold, call and raise, though
+    // nobody is left to call a raise and it cannot lose more than the 0.2 it
+    // has already matched. A slow or disconnected seat was then auto-folded
+    // out of a pot it had covered. When one seat alone can still act and its
+    // posted money already meets every all-in stack, the hand is the same one
+    // the all-everyone-in case above describes: run it out.
+    if (this.state.currentPlayerSeat !== -1 && this.soleLiveSeatCoversEveryAllIn()) {
+      this.state.currentPlayerSeat = -1;
+    }
     if (this.state.currentPlayerSeat === -1) {
       this.advanceGame();
     } else {
       this.emitTurnChange();
     }
+  }
+
+  /**
+   * Exactly one seat can still act, at least one opponent is all-in, and that
+   * seat's money on this street is already at least every all-in opponent's.
+   * Nothing it could do changes what it can win or lose, and its excess is
+   * returned as uncalled when the hand completes. True at the deal (a blind
+   * facing an all-in for less) and after the others fold to that same spot.
+   */
+  private soleLiveSeatCoversEveryAllIn(): boolean {
+    const active = this.getActivePlayers();
+    const live = active.filter((p) => !p.is_all_in);
+    const allIn = active.filter((p) => p.is_all_in);
+    if (live.length !== 1 || allIn.length === 0) return false;
+    const mine = live[0].bet ?? 0;
+    return allIn.every((p) => (p.bet ?? 0) <= mine + 0.005);
   }
 
   /**
@@ -582,12 +542,34 @@ export class HandController {
     return { sbSeat, bbSeat: this.getNextActiveSeat(sbSeat) };
   }
 
+  /**
+   * The seats this hand posted its blinds from, recorded once by postBlinds:
+   * the small blind seat (null when it is DEAD, or no seat holds it) and the
+   * big blind seat. Null until the blinds are posted, and on a hand that posts
+   * none (a bomb pot). blindSeatsForHand itself cannot be asked later: its
+   * walk reads the active (unfolded) players, which change during the hand.
+   */
+  private postedBlindSeats: { smallBlind: number | null; bigBlind: number } | null = null;
+
+  /** The posted blind seats for the decision state (HorseGameStateV2.blindSeats). */
+  public getBlindSeatsSnapshot(): { smallBlind: number | null; bigBlind: number } | null {
+    return this.postedBlindSeats ? { ...this.postedBlindSeats } : null;
+  }
+
   private postBlinds(): void {
     const { smallBlind, bigBlind } = this.config;
     const activePlayers = this.getActivePlayers();
     if (activePlayers.length < 2) return;
 
     const { sbSeat, bbSeat } = this.blindSeatsForHand();
+    // Seats, not who paid: a killer posting the kill blind in place of a blind,
+    // or a short stack all-in for less, still holds that blind's position.
+    if (this.state.players.some((p) => p.seat === bbSeat)) {
+      this.postedBlindSeats = {
+        smallBlind: sbSeat > 0 && this.state.players.some((p) => p.seat === sbSeat) ? sbSeat : null,
+        bigBlind: bbSeat,
+      };
+    }
 
     // Individual antes precede live blinds. A short ante is all-in for that
     // contribution only; the table-wide BBA below keeps its BB-first policy.
@@ -1138,7 +1120,16 @@ export class HandController {
     origin: AcceptedActionOrigin = 'unknown',
     onAccepted?: (record: Readonly<ActionRecord>) => void
   ): boolean {
-    if (this.config.asset === 'diamonds' && amount !== undefined && !Number.isSafeInteger(amount)) {
+    /* A TOURNAMENT CHIP IS WHOLE, LIKE A DIAMOND (launch audit 2026-10-05).
+       Every place this controller splits or rounds already treats a
+       tournament chip as one unit (chipUnit, the ante unit, the odd-chip
+       rule). Only this door did not, so a 2.5x preset facing 75 put 187.5 on
+       the felt and stacks and pots carried half chips from then on. */
+    if (
+      (this.config.asset === 'diamonds' || this.config.isTournament) &&
+      amount !== undefined &&
+      !Number.isSafeInteger(amount)
+    ) {
       return false;
     }
     // Crazy Pineapple's discard is a simultaneous, non-betting round. The
@@ -1175,24 +1166,62 @@ export class HandController {
     // decides which — the nine copies of `startsWith('plo')` are gone.
     const bettingState = this.buildBettingState(player);
 
+    // Only the ALL-IN BUTTON gets the "counts as a call" treatment below. A
+    // `raise`/`bet` with an explicit amount that is illegal stays rejected.
+    const requestedAllIn = action === 'all_in';
+
     const clamped = this.clampToStructure(player, action, amount, bettingState);
-    const effAction: ActionType = clamped.action;
-    const effAmount = clamped.amount;
+    let effAction: ActionType = clamped.action;
+    let effAmount = clamped.amount;
 
-    const validation = validateAction(effAction, effAmount, player.stack, bettingState);
+    // FIX-A1 2026-07-19 (Bible V8 §4.14 / TDA Rule 44): a `raise` that cannot
+    // legally reopen betting is illegal — e.g. a player who already acted and
+    // now faces only a sub-full-raise all-in may call or fold, not re-raise.
+    // This is the authoritative server enforcement; getAvailableActions hides
+    // the button. An all-in that exceeds the call is also a raise, never an
+    // exemption.
+    const isLegalWager = (a: ActionType, amt: number | undefined): boolean => {
+      if (!validateAction(a, amt, player.stack, bettingState).valid) return false;
+      const raisesBet =
+        a === 'raise' || (a === 'all_in' && player.stack > bettingState.toCall + 0.005);
+      return !(raisesBet && !this.canReopenBetting(player));
+    };
 
-    if (!validation.valid) return false;
+    if (!isLegalWager(effAction, effAmount)) {
+      // ── Owner ruling 2026-10-04 (live tournament play) ────────────────────
+      // "IF A PLAYER IS FACING A LARGE BET, AND CLICKS 'ALL IN' INSTEAD OF CALL
+      //  THE BET, (EVEN IF THEY ARE LAST ACTION) THE 'ALL IN' CLICK COUNTS AS A
+      //  'CALL'. IT CURRENTLY SILENTLY FAILS, AND FORCES YOU TO CLICK CALL.
+      //  EITHER ONE SHOULD WORK."
+      //
+      // This used to `return false`: a covered player who may not reopen
+      // betting (TDA 44/47), or whose pot-limit shove clamps to a raise that
+      // is below a full raise, pressed ALL IN and nothing happened. The shove
+      // cannot be a raise there, so it is executed as the passive action the
+      // seat is entitled to: a plain CALL of exactly min(toCall, stack) — or a
+      // CHECK when nothing is owed. From here on it IS that action: the switch
+      // below runs the ordinary call/check case, so the record, history,
+      // PLAYER_ACTION broadcast and accepted-action receipt all say `call`,
+      // the rest of the stack stays behind, betting is not reopened, and
+      // lastRaise/minRaise/lastAggressorSeat are untouched. Fixed limit has
+      // done exactly this inside clampToStructure since 2026-08-23.
+      //
+      // The MENU is deliberately unchanged (getAvailableActions still withholds
+      // all_in here): this is tolerance for a button press, not a new legal
+      // shove, so nothing that chooses from the menu changes its semantics.
+      if (!requestedAllIn) return false;
+      const passive: ActionType = bettingState.toCall > 0 ? 'call' : 'check';
+      // All-in-or-fold preflop has no call; the degrade never widens what the
+      // table's own rules permit.
+      if (this.config.allInOrFold && this.state.stage === 'preflop' && passive !== 'check') {
+        return false;
+      }
+      if (!validateAction(passive, undefined, player.stack, bettingState).valid) return false;
+      effAction = passive;
+      effAmount = undefined;
+    }
     action = effAction;
     amount = effAmount;
-
-    // FIX-A1 2026-07-19 (Bible V8 §4.14 / TDA Rule 44): reject a `raise` that
-    // cannot legally reopen betting — e.g. a player who already acted and now
-    // faces only a sub-full-raise all-in may call or fold, not re-raise. This is
-    // the authoritative server enforcement; getAvailableActions hides the button.
-    // An all-in that exceeds the call is also a raise, never an exemption.
-    const raisesBet =
-      action === 'raise' || (action === 'all_in' && player.stack > bettingState.toCall + 0.005);
-    if (raisesBet && !this.canReopenBetting(player)) return false;
 
     let publicNode;
     try {
@@ -1242,7 +1271,9 @@ export class HandController {
         player.stack -= chipsAdded;
         this.state.pot += chipsAdded;
         player.bet = actualAmount;
-        this.state.currentBet = actualAmount;
+        // The level only ever rises. validateAction refuses a raise at or
+        // under the bet; this keeps the state true even if a caller skips it.
+        this.state.currentBet = Math.max(this.state.currentBet, actualAmount);
         // Bible V8 §4.21: Track last aggressor for showdown reveal order
         this.state.lastAggressorSeat = seat;
         if (player.stack === 0) player.is_all_in = true;
@@ -1645,6 +1676,8 @@ export class HandController {
       const stageActions = this.state.actionHistory.filter((a) => a.stage === this.state.stage);
       const hasActed = stageActions.some((a) => a.seat === playersToAct[0].seat);
       if (hasActed && playersToAct[0].bet >= this.state.currentBet) return true;
+      // Nothing to decide: see soleLiveSeatCoversEveryAllIn.
+      if (!hasActed && this.soleLiveSeatCoversEveryAllIn()) return true;
       if (!hasActed) return false;
     }
 
@@ -2116,9 +2149,36 @@ export class HandController {
    * `state.communityCards` does not hold — which today means exactly one
    * thing: markFlopSeen() above, the RIT path. It is not a second copy of
    * `sawFlop`; it is the evidence that makes an empty board legitimate, and
-   * priceDeductions is its only reader.
+   * the board-corroboration rule below is its only reader.
    */
   private boardDealtOutsideState = false;
+
+  /**
+   * THE EVIDENCE A FLOP LEAVES. Three community cards in this controller's own
+   * state, or the RIT path's markFlopSeen(). Extracted so that
+   * `priceDeductions` and `handSawFlopForMoney` read ONE definition rather
+   * than two copies of the same expression — every time the flag and the board
+   * have disagreed, the flag has been the wrong one, and a second copy of this
+   * rule is how a third disagreement would get in.
+   */
+  private boardCorroboratesAFlop(): boolean {
+    return this.state.communityCards.length >= 3 || this.boardDealtOutsideState;
+  }
+
+  /**
+   * DID THIS HAND SEE A FLOP, FOR MONEY. Exactly the question
+   * `priceDeductions` answers before it charges a rake or a jackpot drop: the
+   * flag AND a board that corroborates it. Nothing here forecasts — a hand
+   * that has not been dealt has no money fact.
+   *
+   * Read by the Diamond cash settlement payload as `hand_saw_flop`, which the
+   * owner's `cash_rake_no_flop_no_drop` answer turns into a rake of zero. It
+   * is the same number priceDeductions prices with, from the same expression,
+   * so the engine cannot tell the database one thing and itself another.
+   */
+  public handSawFlopForMoney(): boolean {
+    return this.state.sawFlop && this.boardCorroboratesAFlop();
+  }
 
   public creditRunoutWinnings(distribution: Map<string, number>): void {
     this.applyStackDeltas(distribution);
@@ -2429,29 +2489,74 @@ export class HandController {
    * front all correct at once. Returns the amount refunded (0 if none).
    */
   private returnUncalledBet(): number {
-    // Compare LIVE invested only (totalInvested minus dead money such as antes /
-    // Big Blind Ante / dead small blinds). Dead money can never be an uncalled
-    // bet — otherwise the BB who fronts a Big Blind Ante is refunded the whole
-    // table's ante whenever it is the unique top contributor.
+    /*
+     * UNCALLED MONEY IS MEASURED IN MATCHED CONTRIBUTION (2026-10-03).
+     *
+     * The uncalled excess is the top contributor's MATCHED contribution minus
+     * the next one's, where matched contribution is exactly what
+     * calculatePots builds its levels from: totalInvested minus SHARED dead
+     * money (a Big Blind Ante fronted for the table, a dead small blind) plus
+     * the INDIVIDUAL ante. Shared dead money is never refundable - the BB who
+     * fronts a BBA is not refunded the table's ante for being the unique top
+     * contributor - and that rule is unchanged.
+     *
+     * This used to compare LIVE investment only (totalInvested minus every
+     * kind of dead money, individual antes included) while calculatePots
+     * counted the individual ante as a matched contribution. The two
+     * disagreed whenever the other players still in the hand had matched only
+     * an ante. Hand 0e68afa3 (natural-evidence bad804ab1731, PLO6 run three
+     * times, heads-up, 2026-09-30): the BB posted 2.00 plus a 1.00 ante, the
+     * button was all-in for a 0.70 ante. Live investment saw ONE contributor,
+     * returned nothing, and calculatePots then built 1.40 [both] plus a 2.30
+     * pot only the BB could win - and the hand raked all 3.70 (0.19) instead
+     * of the contested 1.40 (0.07). The same mismatch let a short individual
+     * ante leave the unmatched part of a full ante in a private pot.
+     *
+     * The refund comes from the live portion first and only then from the
+     * individual ante, so a refunded ante leaves deadInvested and
+     * individualAnteInvested consistent with what stays in the pot.
+     */
+    const cents = (value: number): number => Math.round(value * 100) / 100;
     const invAll = this.state.players.map((p) => {
       const dead = p.deadInvested ?? 0;
+      const ante = Math.min(p.individualAnteInvested ?? 0, dead);
       const total = p.totalInvested ?? p.bet ?? 0;
-      return { p, live: Math.max(0, Math.round((total - dead) * 100) / 100) };
+      return {
+        p,
+        live: Math.max(0, cents(total - dead)),
+        ante,
+        matched: Math.max(0, cents(total - dead + ante)),
+      };
     });
-    const withMoney = invAll.filter((x) => x.live > 0);
+    const withMoney = invAll.filter((x) => x.matched > 0);
     if (withMoney.length < 2) {
-      // Nobody, or a single live contributor (e.g. a walk) — nothing was
-      // "called", but there's also no contest, so leave it for the award path.
+      // Nobody, or a single contributor of any kind: nothing was "called",
+      // but there's also no contest, so leave it for the award path.
       return 0;
     }
-    const sorted = [...withMoney].sort((a, b) => b.live - a.live);
+    const sorted = [...withMoney].sort((a, b) => b.matched - a.matched);
     const top = sorted[0];
     const second = sorted[1];
-    // Only a UNIQUE, non-folded highest live contributor can have an uncalled bet.
-    if (top.live <= second.live) return 0;
-    if (top.p.is_folded) return 0;
-    const uncalled = Math.round((top.live - second.live) * 100) / 100;
+    // Only a UNIQUE highest contributor can have an uncalled bet.
+    if (top.matched <= second.matched) return 0;
+    /*
+     * FOLDED OR NOT (launch audit 2026-10-05). This returned 0 when the unique
+     * top contributor had folded, on the reasoning that a folded player's
+     * chips are forfeit. The part of a contribution nobody matched was never
+     * at risk to anyone: no other player put in a chip against it, so there is
+     * no pot it can belong to. The only way a folded seat is the unique top
+     * contributor is a forced bet larger than every stack still in the hand
+     * (a blind facing an all-in for less). Probe on the old code, heads-up,
+     * blinds 0.5/1, BB all-in for 0.2: the SB folds and the BB is paid 0.7,
+     * having matched 0.4. The SB's unmatched 0.3 now goes back to the SB, as
+     * it already did when the SB called instead. Money a folded player put in
+     * that WAS matched (two players who bet level and both folded) is tied at
+     * the top, returns nothing above, and stays in the pot as before.
+     */
+    const uncalled = cents(top.matched - second.matched);
     if (uncalled <= 0) return 0;
+    const fromLive = Math.min(uncalled, top.live);
+    const fromAnte = cents(uncalled - fromLive);
 
     top.p.stack += uncalled;
     top.p.totalInvested = Math.round(((top.p.totalInvested ?? 0) - uncalled) * 100) / 100;
@@ -2461,7 +2566,13 @@ export class HandController {
     // rake_attributions.returned_uncalled). Accumulate: this function can run
     // on both the fast-fold path and completeHand, and only refunds once.
     top.p.returnedUncalled = Math.round(((top.p.returnedUncalled ?? 0) + uncalled) * 100) / 100;
-    top.p.bet = Math.max(0, Math.round((top.p.bet - uncalled) * 100) / 100);
+    // The ante never sat in `bet` (the live street wager), so only the live
+    // part of the refund comes off it.
+    top.p.bet = Math.max(0, cents(top.p.bet - fromLive));
+    if (fromAnte > 0) {
+      top.p.deadInvested = cents((top.p.deadInvested ?? 0) - fromAnte);
+      top.p.individualAnteInvested = cents((top.p.individualAnteInvested ?? 0) - fromAnte);
+    }
     this.state.pot = Math.max(0, Math.round((this.state.pot - uncalled) * 100) / 100);
     this.emit({
       type: 'UNCALLED_BET_RETURNED',
@@ -2493,6 +2604,21 @@ export class HandController {
   private emitBombPotCompleted(): void {
     if (!this.config.bombPot) return;
     this.emit({ type: 'BOMB_POT_COMPLETED', handNumber: this.config.handNumber });
+  }
+
+  /**
+   * Odd-chip order for a settlement tie: clockwise distance from the button,
+   * the button itself LAST - exactly distributePot's rule (FIX 169 / Bible V8
+   * 2.7). Lower ranks receive an indivisible unit first. A user not seated in
+   * this hand sorts after everyone.
+   */
+  private oddChipRank(userId: string): number {
+    const player = this.state.players.find((p) => p.user_id === userId);
+    if (!player) return Number.MAX_SAFE_INTEGER;
+    const dealerSeat = this.state.dealerSeat;
+    const maxSeat = Math.max(...this.state.players.map((p) => p.seat), dealerSeat) + 1;
+    const distance = (player.seat - dealerSeat + maxSeat * 10) % maxSeat;
+    return distance === 0 ? maxSeat : distance;
   }
 
   private completeHand(): void {
@@ -2588,6 +2714,8 @@ export class HandController {
     // The merged winner list sums to exactly the original pot cents, so rake
     // scaling and chip conservation downstream are untouched.
     let winners: Winner[];
+    // Multi-board awards are scaled for rake by largest remainder (F2 below).
+    let multiBoardSettlement = false;
     const settlementBoards: Card[][] = [this.state.communityCards];
     if (this.multiBoardActive && this.state.communityCards2.length === 5) {
       settlementBoards.push(this.state.communityCards2);
@@ -2596,6 +2724,7 @@ export class HandController {
       settlementBoards.push(this.state.communityCards3);
     }
     if (settlementBoards.length >= 2) {
+      multiBoardSettlement = true;
       const boardCount = settlementBoards.length;
       // Per-board pot arrays: potsByBoard[b][p] is pot layer p's share on
       // board b. splitAcrossBoards (spec §18.1): floor division, remainder
@@ -2850,11 +2979,24 @@ export class HandController {
     // After Math.round, adjustedCents.sum may be over OR under totalCents.
     // Two separate distribute loops handle both directions so the post
     // condition `sum(adjustedCents) === totalCents` always holds.
-    const adjustedCents = scaleWinnerUnitsForRake(
-      winners.map((w) => w.amount),
-      totalWinnings,
-      this.config.asset === 'diamonds' ? 1 : 100
-    );
+    //
+    // MULTI-BOARD (natural-evidence F2, 2026-10-03): the merged winners of a
+    // double/triple-board hand are scaled by largest remainder with the
+    // odd-chip seat order breaking ties, so a sole board winner keeps an
+    // exact share instead of funding two rounded-up split halves. Single-board
+    // and run-it-N hands keep scaleWinnerUnitsForRake, byte for byte.
+    const adjustedCents = multiBoardSettlement
+      ? scaleMultiBoardWinnerUnits(
+          winners.map((w) => w.amount),
+          totalWinnings,
+          this.config.asset === 'diamonds' ? 1 : 100,
+          winners.map((w) => this.oddChipRank(w.userId))
+        )
+      : scaleWinnerUnitsForRake(
+          winners.map((w) => w.amount),
+          totalWinnings,
+          this.config.asset === 'diamonds' ? 1 : 100
+        );
     const adjustedAmounts = adjustedCents.map(
       (c) => c / (this.config.asset === 'diamonds' ? 1 : 100)
     );
@@ -3409,6 +3551,13 @@ export class HandController {
     // betting state and the same clamp performAction uses - so the menu and
     // the rule can never disagree again. Calling all-in with a stack of zero
     // is likewise not an action.
+    //
+    // 2026-10-04 (owner ruling, "the ALL IN click counts as a CALL"):
+    // performAction now ACCEPTS an all_in that cannot be a legal raise and
+    // executes it as a call/check. The menu is deliberately NOT widened to
+    // match: all_in is advertised only where it is a real shove, so anything
+    // that chooses from this list (horses, solvers, the fuzzer) never picks
+    // "all in" and gets a call. Everything offered here is still accepted.
     if (player.stack > 0) {
       // 2026-08-23: probe through the SAME clamp performAction uses, so the
       // menu and the rule cannot drift apart — that drift is exactly what the
@@ -3734,6 +3883,11 @@ export class HandController {
   }
 
   /** Exact per-hand rake rules; cloned so a decision cannot mutate settlement. */
+  /** The owner's Diamond schedule this hand was dealt under, or null. */
+  public getDiamondRakeScheduleSnapshot(): HandConfig['diamondRakeSchedule'] {
+    return this.config.diamondRakeSchedule ?? null;
+  }
+
   public getRakeConfigSnapshot(): RakeConfig {
     return {
       ...this.config.rakeConfig,
@@ -3891,7 +4045,7 @@ export class HandController {
        `forecast` is the insurance dialog pricing a runout that has not been
        dealt yet (computeRakeAndBBJ(true)). It moves no chips and must keep
        quoting what the completed hand will pay, so it is exempt. */
-    const boardDealt = this.state.communityCards.length >= 3 || this.boardDealtOutsideState;
+    const boardDealt = this.boardCorroboratesAFlop();
     let flopCounts = flopSeen;
     if (flopSeen && !boardDealt && !opts.forecast) {
       flopCounts = false;
@@ -3943,6 +4097,49 @@ export class HandController {
     }
 
     const playerCount = this.state.players.filter((p) => !p.is_sitting_out).length;
+    /* ═══ A DIAMOND CASH HAND IS PRICED BY ITS SETTINGS (2026-10-06) ══════
+       The chip ladder cannot price this hand and must not be asked to: a
+       Diamond table's `rake_percent` and `rake_cap_bb` are required to be
+       EXPLICITLY ZERO by DiamondCashBoundary, so `calculateRake` answers zero
+       on every Diamond hand - which is exactly the defect this replaces. The
+       owner's published Diamond schedule arrives on the hand config, read
+       once at the deal, and prices it here, where the rake is taken out of
+       the pot before anyone is paid.
+
+       THE POT IS THE SETTLER'S POT. `fn_poker_diamond_settle_cash_hand`
+       recomputes from `sum(contributed)` over the roster the engine sends,
+       and `contributed` is each seat's `totalInvested` net of a returned
+       uncalled bet - already returned, a few lines into completeHandInner,
+       before this runs. Summing that here rather than reading `state.pot` a
+       second time is what makes the engine's number and the settler's number
+       the same number instead of two numbers that usually agree.
+
+       AND THE SAME DEALT COUNT. The bracket is `count(*) FILTER (WHERE
+       dealt_in)`, and this controller's roster IS the hand's dealt roster, so
+       it is counted and not filtered by anything else - `playerCount` above
+       filters sitting-out seats for the chip ladder and is a different
+       question. HORSES ARE PLAYERS (CLAUDE.md 10.5): there is no seat
+       identity in any of these three numbers. */
+    const diamondSchedule = this.config.diamondRakeSchedule;
+    if (diamondSchedule) {
+      const diamondRake = priceDiamondCashRake(diamondSchedule, {
+        pot: this.state.players.reduce(
+          (total, player) => total + wholeDiamondsContributed(player.totalInvested ?? 0),
+          0
+        ),
+        dealtIn: this.state.players.length,
+        /* The hand's own money-facing flop fact: `flopCounts` is
+           `state.sawFlop` AND a board that corroborates it, which is
+           `handSawFlopForMoney()` by construction on every path that moves
+           money. The settler reads that same expression as `hand_saw_flop`. */
+        sawFlop: flopCounts,
+      });
+      /* A Diamond pays no jackpot drop - B14 to B22 are unanswered and the
+         settler refuses a non-zero one by name - so there is nothing for the
+         pot-overage clamp below to yield, and the pricer has already refused
+         a rake larger than the pot. */
+      return { rake: diamondRake, bbjFee: 0 };
+    }
     const rake = calculateRake(pot, flopCounts, this.config.rakeConfig, playerCount);
 
     let bbjFee = 0;

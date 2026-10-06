@@ -31,7 +31,7 @@
  * place (128th) at any size, and gold/silver/bronze/steel by rank.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
@@ -44,8 +44,9 @@ import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDispla
 import { SpadeConsole } from '../console/SpadeConsole';
 import './TournamentRankingCard.css';
 import { publicOrigin } from '../../lib/appBase';
-import { formatPrizeAtUnit, moneySuffixAtUnit } from '../../utils/format';
-import { CHIP_UNIT_CENTS, normalizeUnitCents } from '../../../server/src/tournament/tournamentUnit';
+import { downloadBlob } from '../../utils/downloadCsv';
+import { TROPHY_PATHS, type ShareTier } from './rankingTrophy';
+import { formatPrizeCentsAtUnit, moneySuffixAtUnit } from '../../utils/format';
 
 export interface TournamentRankingCardProps {
   result: TournamentResult;
@@ -102,6 +103,28 @@ function ordinal(n: number): string {
   }
 }
 
+/**
+ * The ordinal as two prints: the numeral, which is the result, and its suffix,
+ * which is grammar. "1st" set as one string at one size gave the suffix the
+ * same weight as the place itself (Dan 2026-10-05: "it looks pretty generic").
+ */
+function ordinalParts(n: number): { num: string; suffix: string } {
+  const full = ordinal(n);
+  return { num: full.slice(0, -2), suffix: full.slice(-2) };
+}
+
+/**
+ * The word over the place. A podium finish is named for what it is; anything
+ * else is simply where the run ended - never a consolation title.
+ */
+function placeTitle(place: number | null, qualified: boolean): string {
+  if (qualified) return 'Satellite';
+  if (place === 1) return 'Champion';
+  if (place === 2) return 'Runner Up';
+  if (place === 3) return 'Third Place';
+  return 'Finished';
+}
+
 /** "20-Aug" — the reference card's date format. */
 function shortDate(d: Date): string {
   const day = String(d.getDate()).padStart(2, '0');
@@ -140,24 +163,19 @@ function medalClass(place: number | null): string {
  * and the ordinal band directly beneath already spells it out in words. Places
  * outside the podium keep the numeral, because a 47th-place trophy is a lie.
  */
-function PlacementTrophy({ place }: { place: number }) {
+function PlacementTrophy({ label }: { label: string }) {
   return (
-    <svg
-      className="trc2__trophy"
-      viewBox="0 0 48 48"
-      role="img"
-      aria-label={`${ordinal(place)} Place Trophy`}
-    >
+    <svg className="trc2__trophy" viewBox="0 0 48 48" role="img" aria-label={label}>
       {/* Handles */}
       <path
-        d="M13 10H8a1 1 0 0 0-1 1v3a8 8 0 0 0 7 7.94"
+        d={TROPHY_PATHS.handleLeft}
         fill="none"
         stroke="currentColor"
         strokeWidth="2.6"
         strokeLinecap="round"
       />
       <path
-        d="M35 10h5a1 1 0 0 1 1 1v3a8 8 0 0 1-7 7.94"
+        d={TROPHY_PATHS.handleRight}
         fill="none"
         stroke="currentColor"
         strokeWidth="2.6"
@@ -165,7 +183,7 @@ function PlacementTrophy({ place }: { place: number }) {
       />
       {/* Cup */}
       <path
-        d="M13 7h22v11c0 6.08-4.92 11-11 11S13 24.08 13 18V7Z"
+        d={TROPHY_PATHS.cup}
         fill="currentColor"
         stroke="currentColor"
         strokeWidth="2"
@@ -173,7 +191,7 @@ function PlacementTrophy({ place }: { place: number }) {
       />
       {/* Stem and base */}
       <path
-        d="M24 29v6M17 41h14a1 1 0 0 0 1-1v-1a4 4 0 0 0-4-4h-8a4 4 0 0 0-4 4v1a1 1 0 0 0 1 1Z"
+        d={TROPHY_PATHS.base}
         fill="currentColor"
         stroke="currentColor"
         strokeWidth="2.4"
@@ -184,22 +202,28 @@ function PlacementTrophy({ place }: { place: number }) {
   );
 }
 
-function formatMoney(n: number): string {
-  return (Math.round(n * 100) / 100).toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
 /**
- * The same figure at the unit the event paid on. `formatMoney` unchanged at a
- * chip event - the same function, so a chip card is byte-identical by
- * construction - and whole Diamonds at a Diamond one.
+ * EVERY FIGURE ON THIS CARD, AT THE UNIT THE EVENT PAID ON (2026-10-05).
+ *
+ * This was a private `formatMoney` that forced two decimal places on every
+ * chip figure, so a 120 chip prize read "120.00" and a 4,200 win
+ * "4,200.00" - decimal points on a forward-facing page with nothing after
+ * them but zeros, which Dan's ruling forbids ("NEVER USE DECIMAL POINTS ON ANY
+ * FORWARD FACING PAGE"). It now goes through the estate's one prize rule in
+ * the cents domain, `formatPrizeCentsAtUnit`, the same function the mystery
+ * ladder prints with:
+ *
+ *   - a whole chip amount prints whole                          120   4,200
+ *   - an amount with real cents keeps them, to the penny        1.90  12.05
+ *     (Dan 2026-09-04: under a hundred, chip money is "ACCURATE TO THE
+ *     PENNY"; and the no-decimals rule never licenses understating money)
+ *   - a Diamond amount prints whole Diamonds, as before         17
+ *
+ * Rounded to the cent first, so float noise from a sum (0.1 + 0.2) can never
+ * print as a third decimal or flip a whole number into a fraction.
  */
 function moneyAtUnit(n: number, unitCents: number): string {
-  return normalizeUnitCents(unitCents) === CHIP_UNIT_CENTS
-    ? formatMoney(n)
-    : formatPrizeAtUnit(n, unitCents);
+  return formatPrizeCentsAtUnit(Math.round((Number(n) || 0) * 100), unitCents);
 }
 
 /** 185 -> "3m 05s", 3725 -> "1h 02m". Never prints a unit that is zero. */
@@ -211,6 +235,94 @@ function formatDuration(totalSeconds: number): string {
   if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`;
   if (m > 0) return `${m}m ${String(sec).padStart(2, '0')}s`;
   return `${sec}s`;
+}
+
+/**
+ * WHAT A SATELLITE WON, IN ONE WORD (2026-10-05). A qualification has no
+ * finishing place, so the card used to leave the painted pill slot empty, put
+ * a lone "-" in the medal and print "Qualified" twice. The pill now names the
+ * prize's kind, the band says it was won, and the medal carries the cup in the
+ * first-place metal, because winning a seat is winning the satellite.
+ */
+function deliveryWord(kind: 'seat' | 'ticket' | 'cash'): string {
+  return kind === 'seat' ? 'Seat' : kind === 'ticket' ? 'Ticket' : 'Cash';
+}
+
+/**
+ * A long event name, cut at a word and marked as cut. The subtitle zone fits
+ * its line by shrinking to a floor and clips past it, and a real event name
+ * runs past fifty characters ("SUNDAY DEEPSTACK BOUNTY HEADS UP TURBO ...")
+ * - at 393px that printed microscopic and still lost its last letters.
+ */
+const SUBTITLE_MAX = 34;
+function shortEventName(name: string): string {
+  if (name.length <= SUBTITLE_MAX) return name;
+  const cut = name.slice(0, SUBTITLE_MAX + 1);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > 12 ? cut.slice(0, space) : name.slice(0, SUBTITLE_MAX)).trimEnd()}\u2026`;
+}
+
+/** The metal of a finish, for the share image (the card uses medalClass). */
+function shareTier(place: number | null, qualified: boolean): ShareTier {
+  if (qualified || place === 1) return 'gold';
+  if (place === 2) return 'silver';
+  if (place === 3) return 'bronze';
+  return 'steel';
+}
+
+/* THE REVEAL'S TIMING (2026-10-05). The card rises (0.4s), the medal lands at
+   0.18s, the place at 0.5s, the payout appears at 0.75s and counts up from
+   there. The stylesheet carries the same numbers; this one is the count's. */
+const PAYOUT_COUNT_DELAY_MS = 800;
+const PAYOUT_COUNT_MS = 900;
+
+function wantsCount(targetCents: number): boolean {
+  if (!(targetCents > 0)) return false;
+  if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+    return false;
+  }
+  return !window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+}
+
+/**
+ * THE PAYOUT COUNTS UP (2026-10-05). Returns the running figure in cents while
+ * it counts and null once it has landed. The final figure is ALWAYS in the
+ * DOM (the card prints it underneath, held invisible while the count runs), so
+ * a screen reader, a test and a player with reduced motion read the real
+ * number from the first frame, and the count can never be the only place the
+ * amount exists. Reduced motion skips the count entirely; it is decoration.
+ */
+function useCountUp(targetCents: number): number | null {
+  const [value, setValue] = useState<number | null>(() => (wantsCount(targetCents) ? 0 : null));
+  useEffect(() => {
+    if (!wantsCount(targetCents)) return;
+    let frame = 0;
+    let start = 0;
+    let live = true;
+    const tick = (now: number) => {
+      if (!live) return;
+      if (!start) start = now;
+      const t = (now - start - PAYOUT_COUNT_DELAY_MS) / PAYOUT_COUNT_MS;
+      if (t >= 1) {
+        setValue(null);
+        return;
+      }
+      if (t > 0) {
+        const running = targetCents * (1 - Math.pow(1 - t, 3));
+        /* A whole figure counts in whole chips: a count that flickers through
+           "2,511.27" on its way to "5,470" shows decimals the result has not
+           got. Cents only appear when the result really carries them. */
+        setValue(targetCents % 100 === 0 ? Math.round(running / 100) * 100 : Math.round(running));
+      }
+      frame = window.requestAnimationFrame(tick);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => {
+      live = false;
+      window.cancelAnimationFrame(frame);
+    };
+  }, [targetCents]);
+  return value;
 }
 
 export default function TournamentRankingCard({
@@ -226,7 +338,7 @@ export default function TournamentRankingCard({
   const navigate = useNavigate();
   /* Desktop has no share sheet, so the button reports the clipboard copy on
      itself rather than assuming a toast provider above this portal. */
-  const [shared, setShared] = useState(false);
+  const [shared, setShared] = useState<null | 'copied' | 'saved'>(null);
   const [profile, setProfile] = useState<{
     username: string;
     avatarUrl: string;
@@ -286,8 +398,6 @@ export default function TournamentRankingCard({
     return () => window.removeEventListener('keydown', onKey);
   }, [onDismiss]);
 
-  if (typeof document === 'undefined') return null;
-
   const qualification = result.satelliteQualification;
   const place = qualification ? null : result.finishPlace;
   const eventName = formatGameTitle(result.name || tableName || 'Tournament');
@@ -317,6 +427,84 @@ export default function TournamentRankingCard({
     .filter(Boolean)
     .join(' · ');
 
+  /* The headline figure and its label, once, for the card and the image. */
+  const payoutAmount = qualification?.amount ?? totalWon;
+  const payoutLabel = qualification
+    ? qualification.deliveryKind === 'seat'
+      ? 'Target Entry:'
+      : qualification.deliveryKind === 'ticket'
+        ? 'Entry Ticket:'
+        : 'Cash Award:'
+    : 'Total Payout:';
+  const payoutCents = Math.round((Number(payoutAmount) || 0) * 100);
+  const counting = useCountUp(payoutCents);
+
+  /* THE SHARE IMAGE IS PAINTED BEFORE THE TAP (2026-10-05). iOS Safari only
+     opens the share sheet inside the tap's own activation, and painting
+     awaits image loads, so the image is made when the card opens and repainted
+     if the player's name arrives after it. Share uses whatever is ready. */
+  const shareImage = useRef<Blob | null>(null);
+  const shareName = profile?.username ?? null;
+  const placeWord = placeTitle(place, Boolean(qualification));
+  const tier = qualification ? 'trc2__medal--gold' : medalClass(place);
+  const pillText = qualification
+    ? deliveryWord(qualification.deliveryKind)
+    : place != null
+      ? `#${place}`
+      : null;
+  const bandWord = qualification ? `${deliveryWord(qualification.deliveryKind)} Won` : 'Finished';
+  const subtitleText = shortEventName(eventName);
+  useEffect(() => {
+    let live = true;
+    /* Loaded on demand: the painter is the card's share, not its first paint,
+       and this card sits in the entry chunk every player downloads. */
+    void import('./rankingShareImage')
+      .then(({ paintRankingShareImage }) =>
+        paintRankingShareImage({
+          eyebrow: eventSubtitle,
+          title: qualification ? 'Qualified' : 'Ranking',
+          subtitle: subtitleText,
+          pill: pillText,
+          placeTitle: placeWord,
+          place: qualification
+            ? { word: bandWord }
+            : place != null
+              ? ordinalParts(place)
+              : { word: 'Finished' },
+          medal:
+            qualification || (place != null && place <= 3)
+              ? { trophy: true }
+              : { trophy: false, text: place != null ? String(place) : '-' },
+          tier: shareTier(place, Boolean(qualification)),
+          payoutLabel: payoutLabel.replace(/:$/, ''),
+          payoutValue: `${moneyAtUnit(payoutAmount, unitCents)}${moneySuffixAtUnit(unitCents)}`,
+          username: shareName,
+        })
+      )
+      .then((blob) => {
+        if (live) shareImage.current = blob;
+      })
+      .catch(() => {
+        /* No image: Share sends the sentence, as it always did. */
+      });
+    return () => {
+      live = false;
+    };
+  }, [
+    eventSubtitle,
+    eventName,
+    qualification,
+    place,
+    placeWord,
+    pillText,
+    bandWord,
+    subtitleText,
+    payoutLabel,
+    payoutAmount,
+    unitCents,
+    shareName,
+  ]);
+
   /**
    * SHARE (Dan 2026-08-23: "REMOVE 'STAY OBSERVING' WITH A SHARE BUTTON").
    *
@@ -337,21 +525,54 @@ export default function TournamentRankingCard({
             ? ` for ${moneyAtUnit(totalWon, unitCents)}${moneySuffixAtUnit(unitCents)}.`
             : '.')
         : `I just played ${eventName} on Smarter.Poker.`;
+    const url = `${publicOrigin()}/hub/club-arena`;
+    const flash = (what: 'copied' | 'saved') => {
+      setShared(what);
+      window.setTimeout(() => setShared(null), 2000);
+    };
+    const image = shareImage.current;
+    // Canvas may fall back to PNG on an encoder-limited browser. Keep the
+    // extension and the File MIME type bound to the actual returned bytes.
+    const filename = `smarter-poker-result.${image?.type === 'image/jpeg' ? 'jpg' : 'png'}`;
     try {
       const nav = navigator as Navigator & {
-        share?: (d: { title?: string; text?: string; url?: string }) => Promise<void>;
+        share?: (d: ShareData) => Promise<void>;
+        canShare?: (d: ShareData) => boolean;
       };
-      if (typeof nav.share === 'function') {
-        await nav.share({
+      /* 1. The picture and the sentence, through the system sheet. The link
+         rides in the text: most targets drop `url` once files are attached. */
+      if (image && typeof nav.share === 'function' && typeof nav.canShare === 'function') {
+        const file = new File([image], filename, { type: image.type });
+        const withImage: ShareData = {
+          files: [file],
           title: 'Smarter.Poker',
-          text,
-          url: `${publicOrigin()}/hub/club-arena`,
-        });
+          text: `${text} ${url}`,
+        };
+        if (nav.canShare(withImage)) {
+          await nav.share(withImage);
+          return;
+        }
+      }
+      /* 2. A sheet that cannot carry files still carries the sentence. */
+      if (typeof nav.share === 'function') {
+        await nav.share({ title: 'Smarter.Poker', text, url });
         return;
       }
-      await navigator.clipboard.writeText(`${text} ${publicOrigin()}/hub/club-arena`);
-      setShared(true);
-      window.setTimeout(() => setShared(false), 2000);
+      /* 3. No sheet (desktop, Android's webview): the picture goes through the
+         estate's one file door - an anchor on the web, the system share sheet
+         in the app - and the sentence goes to the clipboard beside it. */
+      if (image) {
+        downloadBlob(filename, image);
+        try {
+          await navigator.clipboard.writeText(`${text} ${url}`);
+        } catch {
+          /* The image is the share; a refused clipboard costs only the link. */
+        }
+        flash('saved');
+        return;
+      }
+      await navigator.clipboard.writeText(`${text} ${url}`);
+      flash('copied');
     } catch {
       /* A cancelled share sheet throws. Nothing to report — the player closed it. */
     }
@@ -390,10 +611,14 @@ export default function TournamentRankingCard({
      tests/unit/rankingCardPalette.test.ts parses this stylesheet and fails on
      any warm hue, which is Dan's "NO BROWNS OR YELLOWS" written down.
 
-     THE X IS STILL THE ONLY WAY OUT (Dan 2026-08-30: "USER MUST CLICK THE 'X'
-     TO CLOSE IT"). The backdrop is scenery and does not dismiss; the control
-     keeps its element and its handler and is now a lit word rather than a
-     drawn steel circle, which says what it does instead of implying it. */
+     THE X IS THE ONLY WAY OUT (Dan 2026-08-30: "USER MUST CLICK THE 'X' TO
+     CLOSE IT"). The backdrop is scenery and does not dismiss. The X is the
+     console's own, painted in the head's corner (2026-10-05); the word Close
+     that stood in for it at the foot of the glass is gone with Dan's go-ahead
+     the same day, so the card has one close control in the one place every
+     other popup has it. Escape still closes it for a keyboard. */
+  if (typeof document === 'undefined') return null;
+
   return createPortal(
     <div className="trc2" role="dialog" aria-modal="true" aria-label="Tournament Ranking">
       {/* Dan 2026-08-30: "USER MUST CLICK THE 'X' TO CLOSE IT." The backdrop
@@ -414,12 +639,23 @@ export default function TournamentRankingCard({
              "SUNDAY DEEPSTACK BOUNTY HU" at 393px. */
           eyebrow={eventSubtitle}
           title={qualification ? 'Qualified' : 'Ranking'}
-          subtitle={eventName}
-          pill={place != null ? `#${place}` : undefined}
+          subtitle={subtitleText}
+          pill={pillText ?? undefined}
           pillInk="silver"
+          /* THE X (Dan 2026-10-05: "THE TOURNAMENT RESULT CARD HAS NO 'X' OFF
+             ON IT TO CLOSE THIS OUT"). Every other popup took the console's
+             painted X on 2026-09-23; this one was written into the law's
+             no-X list on the claim that it "carries its own painted close
+             control" - which was the word Close at the very bottom of the
+             glass, under the stats, the one place the X ruling says a player
+             must never have to go. The head's corner is where the X lives on
+             every console, so it lives there here too, and the foot word is
+             retired. */
+          onClose={onDismiss}
           plates={{
             secondary: {
-              label: shared ? 'Link Copied' : 'Share',
+              label:
+                shared === 'saved' ? 'Image Saved' : shared === 'copied' ? 'Link Copied' : 'Share',
               ink: 'silver',
               onClick: () => void handleShare(),
             },
@@ -441,11 +677,17 @@ export default function TournamentRankingCard({
             {!result.isSpin && <span className="trc2__brand-mark">TOURNAMENT</span>}
           </div>
 
-          {/* ── Medal ── */}
-          <div className={`trc2__medal ${medalClass(place)}`}>
+          {/* ── Medal ──
+              The rays are the reference card's starburst, cast in the medal's
+              own light: bright cool beams for the podium, a faint steel wash
+              for everyone else. Light on the glass, not a shape on it. */}
+          <div className={`trc2__medal ${tier}`}>
+            <span className="trc2__medal-rays" aria-hidden="true" />
             <div className="trc2__medal-ring">
-              {place != null && place <= 3 ? (
-                <PlacementTrophy place={place} />
+              {qualification ? (
+                <PlacementTrophy label="Satellite Trophy" />
+              ) : place != null && place <= 3 ? (
+                <PlacementTrophy label={`${ordinal(place)} Place Trophy`} />
               ) : (
                 <span className="trc2__medal-place">{place ?? '-'}</span>
               )}
@@ -453,65 +695,69 @@ export default function TournamentRankingCard({
             <span className="trc2__medal-glow" aria-hidden="true" />
           </div>
 
-          {/* ── Place band ── */}
-          <div className={`trc2__placeband ${medalClass(place)}`}>
-            {qualification ? 'Qualified' : place != null ? ordinal(place) : 'Finished'}
+          {/* ── Place band ──
+              Was a flat blue slab with "1ST" centred in it, the one thing on
+              the card that looked like every other app. The result is now
+              set as the result: what the finish is called, lit, between two
+              engraved rules, then the place itself in the master's engraved
+              silver at the largest size on the sheet. The band colour is
+              still the finish's metal; it is the light the numeral sits in. */}
+          <div className={`trc2__placeband ${tier}`}>
+            <span className="trc2__place-title sc-ink--blue">{placeWord}</span>
+            {qualification ? (
+              <span className="trc2__place-word sc-ink--silver">{bandWord}</span>
+            ) : place != null ? (
+              <span className="trc2__place-ordinal sc-ink--silver" aria-label={ordinal(place)}>
+                <span className="trc2__place-num">{ordinalParts(place).num}</span>
+                <span className="trc2__place-suffix">{ordinalParts(place).suffix}</span>
+              </span>
+            ) : (
+              <span className="trc2__place-word sc-ink--silver">Finished</span>
+            )}
           </div>
 
-          {/* ── Player row ── */}
-          <div className="trc2__player">
-            <img
-              className="trc2__avatar"
-              src={profile?.avatarUrl || generateDefaultAvatar()}
-              alt=""
-              onError={(e) => {
-                (e.target as HTMLImageElement).src = generateDefaultAvatar();
-              }}
-            />
-            <div className="trc2__identity">
-              <span className="trc2__username sc-ink--silver">{profile?.username ?? ' '}</span>
-              {profile?.playerNumber != null && (
-                <span className="trc2__playernum sc-ink--muted">{profile.playerNumber}</span>
-              )}
-            </div>
-            <div className="trc2__reward">
-              {/* Dan section 44: the champion's card must not imply the placement
-                  prize was the whole story. It never was on this card - "Reward"
-                  has always been prize + bounties - but a single opaque figure
-                  does not SAY so, and in a mystery bounty event the split is
-                  frequently most of the interest. The label names it as the
-                  total, and the line underneath shows the two halves whenever
-                  there are two. */}
-              <span className="trc2__reward-label">
-                {qualification
-                  ? qualification.deliveryKind === 'seat'
-                    ? 'Target Entry:'
-                    : qualification.deliveryKind === 'ticket'
-                      ? 'Entry Ticket:'
-                      : 'Cash Award:'
-                  : 'Total Payout:'}
-              </span>
-              <span className="trc2__reward-value sc-ink--silver">
-                {moneyAtUnit(qualification?.amount ?? totalWon, unitCents)}
+          {/* ── What it paid ──
+              The figure a player came back to the card to read, so it is the
+              second largest print on the sheet, directly under the place,
+              rather than a corner of the player row. */}
+          <div className="trc2__reward">
+            {/* Dan section 44: the champion's card must not imply the placement
+                prize was the whole story. It never was on this card - "Reward"
+                has always been prize + bounties - but a single opaque figure
+                does not SAY so, and in a mystery bounty event the split is
+                frequently most of the interest. The label names it as the
+                total, and the line underneath shows the two halves whenever
+                there are two. */}
+            <span className="trc2__reward-label">{payoutLabel}</span>
+            <span className="trc2__reward-value sc-ink--silver">
+              {/* The real figure is always here; while the count runs it is
+                  held invisible (it still sets the width, so nothing shifts
+                  when the count lands) and the running number prints over it,
+                  hidden from assistive tech. */}
+              <span
+                className={
+                  counting != null ? 'trc2__reward-final is-counting' : 'trc2__reward-final'
+                }
+              >
+                {moneyAtUnit(payoutAmount, unitCents)}
                 {/* The headline figure is otherwise a bare number, and a bare
                     number in the Diamond Arena does not say what was won. Adds
                     nothing at a chip event. */}
                 {moneySuffixAtUnit(unitCents)}
               </span>
-            </div>
+              {counting != null && (
+                /* Printed by the stylesheet from data-count, not as a text
+                   node: the running figure is never part of the card's text,
+                   so nothing that reads the card (a screen reader, a copy, a
+                   test) can catch it mid-count. */
+                <span
+                  className="trc2__reward-count"
+                  aria-hidden="true"
+                  data-count={`${formatPrizeCentsAtUnit(counting, unitCents)}${moneySuffixAtUnit(unitCents)}`}
+                />
+              )}
+            </span>
           </div>
-
-          {/* ── Winning hand (if applicable) ── */}
-          {result.winningCards && result.winningCards.length > 0 && (
-            <div className="trc2__winning-hand">
-              <span className="trc2__winning-hand-label">Winning Hand</span>
-              <div className="trc2__winning-cards">
-                {result.winningCards.map((c, i) => (
-                  <CardImage key={i} card={c} size="lg" className="trc2__winning-card" />
-                ))}
-              </div>
-            </div>
-          )}
 
           {result.bountyWinnings > 0 && (
             <div className="trc2__payout-split">
@@ -524,6 +770,40 @@ export default function TournamentRankingCard({
               <span className="trc2__payout-part">
                 Bounties <strong>{moneyAtUnit(result.bountyWinnings, unitCents)}</strong>
               </span>
+            </div>
+          )}
+
+          {/* ── Player row: who this was ── */}
+          <div className="trc2__player">
+            <img
+              className="trc2__avatar"
+              src={profile?.avatarUrl || generateDefaultAvatar()}
+              alt=""
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = generateDefaultAvatar();
+              }}
+            />
+            <div className="trc2__identity">
+              <span className="trc2__username sc-ink--silver">{profile?.username ?? ' '}</span>
+              {profile?.playerNumber != null && (
+                /* "ID:", the label every other surface in the app prints this
+                   number with (ClubProfileModal, the cashier). Bare, a "1"
+                   directly under a "#1" finishing place read as a second
+                   placing (2026-10-05). */
+                <span className="trc2__playernum sc-ink--muted">ID: {profile.playerNumber}</span>
+              )}
+            </div>
+          </div>
+
+          {/* ── Winning hand (if applicable) ── */}
+          {result.winningCards && result.winningCards.length > 0 && (
+            <div className="trc2__winning-hand">
+              <span className="trc2__winning-hand-label">Winning Hand</span>
+              <div className="trc2__winning-cards">
+                {result.winningCards.map((c, i) => (
+                  <CardImage key={i} card={c} size="lg" className="trc2__winning-card" />
+                ))}
+              </div>
             </div>
           )}
 
@@ -565,8 +845,8 @@ export default function TournamentRankingCard({
               )}
               {largestMysteryCents > 0 && (
                 <span className="trc2__extra">
-                  <strong>{moneyAtUnit(largestMysteryCents / 100, unitCents)}</strong> Largest Mystery
-                  Bounty
+                  <strong>{moneyAtUnit(largestMysteryCents / 100, unitCents)}</strong> Largest
+                  Mystery Bounty
                 </span>
               )}
               {result.rebuys > 0 && (
@@ -609,14 +889,6 @@ export default function TournamentRankingCard({
               )}
             </div>
           )}
-
-          {/* The way out, kept as its own control because the backdrop is not
-              one. The foot's two plates belong to Share and Play Again. */}
-          <div className="trc2__exit">
-            <button className="trc2__close" onClick={onDismiss} aria-label="Close">
-              Close
-            </button>
-          </div>
         </SpadeConsole>
       </div>
     </div>,

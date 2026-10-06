@@ -1,9 +1,27 @@
+import { plo4LiveReceiptBindingIsValid } from '../plo4/Plo4LivePolicy.js';
+import { omahaVariantReceiptBindingIsValid } from '../omaha/OmahaVariantLivePolicy.js';
+import { remainingVariantReceiptBindingIsValid } from '../remainingVariants/RemainingVariantLivePolicy.js';
+import { jointReceiptBindingIsValid } from '../multiway/JointLivePolicy.js';
 import { horsePhase6AttributionIsValid } from '../HorsePhase6Attribution.js';
 import { horseTournamentUtilityEvidenceIsValid } from '../HorseTournamentUtilityEvidence.js';
-import type { HorseDecision, HorseTournamentUtilityLedger } from '../../types.js';
+import type { HorseDecision, HorseTournamentUtilityLedger, SeatPlayer } from '../../types.js';
+import type { HorseGameStateV2 } from '../HorseLogic.js';
+import { MAX_UTILITY_OUTCOMES } from '../HorseTournamentUtility.js';
+import { jointStateKey } from '../multiway/JointRangeSampler.js';
 import { HORSE_POLICY_ORDER, type HorsePolicyAction } from '../HorsePolicyGraph.js';
 import { horsePolicyOwnershipMatches } from '../HorsePolicyRegistry.js';
 import type { GovernorSnapshot } from '../EquityLoadGovernor.js';
+import { PHASE8_POLICY } from '../HorseTournamentPostflop.js';
+import { horseAuthorityReceiptIsWellFormed } from '../HorseQualifiedAuthority.js';
+import { PLO4_POLICY_PACK } from '../plo4/Plo4PolicyPack.js';
+import { isOmahaPolicyVariant, OMAHA_VARIANT_PACKS } from '../omaha/OmahaVariantPolicyPack.js';
+import {
+  isRemainingPolicyVariant,
+  REMAINING_VARIANT_PACKS,
+} from '../remainingVariants/RemainingVariantPolicyPack.js';
+import { isJointVariant } from '../multiway/JointInputBinding.js';
+import { JOINT_LIVE_DOMAIN } from '../multiway/JointLivePolicy.js';
+import { horsePhase13ContinuationVersion } from '../HorsePhase13Authority.js';
 
 const ACTIONS = ['fold', 'check', 'call', 'bet', 'raise', 'all_in'] as const;
 type RecordValue = Record<string, unknown>;
@@ -209,7 +227,7 @@ export function horseTournamentUtilityReceiptIsValid(
     value.fieldPlayersActual !== value.fieldPlayersModeled ||
     (value.fieldPlayersActual as number) < 2 ||
     (value.utilityOutcomeSamples as number) < 1 ||
-    (value.utilityOutcomeSamples as number) > 160 ||
+    (value.utilityOutcomeSamples as number) > MAX_UTILITY_OUTCOMES ||
     (value.effectiveOutcomeSamples as number) > (value.utilityOutcomeSamples as number) + 1e-9 ||
     (value.sidePotCount as number) > 10 ||
     (value.componentReconciliationError as number) > 0.005 ||
@@ -317,10 +335,298 @@ export function horseTournamentUtilityReceiptIsValid(
   return matchingSelected === 1;
 }
 
+export type HorsePhase7EvidenceMismatch =
+  | 'phase7_foreign_opponent'
+  | 'phase7_marginal_multi_board'
+  | 'phase7_sampler_single_board'
+  | 'phase7_sampler_board_count'
+  | 'phase7_sampler_state';
+
+/** Request binding for an evidence-bearing Phase 7 receipt. The structural
+ * validator above cannot see the request, so a well-formed sampler for another
+ * state or board layout, or a multi-board receipt with no physical joint
+ * acquisition (marginal draws), was admissible. Recompute each binding from the
+ * request the worker actually received and return the first named mismatch.
+ * Legacy receipts without evidence keep no new authority and are not refused. */
+export function horsePhase7EvidenceMismatch(
+  decision: Pick<HorseDecision, 'tournamentUtility'>,
+  request: { player: SeatPlayer; gameState: HorseGameStateV2 }
+): HorsePhase7EvidenceMismatch | null {
+  const evidence = decision.tournamentUtility?.evidence;
+  if (!evidence) return null;
+  const state = request.gameState;
+  const hero = request.player;
+  const opponents = new Set(
+    (Array.isArray(state?.players) ? state.players : [])
+      .filter((player) => player.user_id !== hero?.user_id)
+      .map((player) => player.user_id)
+  );
+  if (evidence.opponents.some((row) => !opponents.has(row.userId)))
+    return 'phase7_foreign_opponent';
+  // Same multi-board test as the ordinary Phase 7 caller in HorseLogic.
+  const boardCount = state.boardCount ?? 1;
+  const multiBoard =
+    (state.communityCards2?.length ?? 0) > 0 ||
+    (state.communityCards3?.length ?? 0) > 0 ||
+    boardCount > 1;
+  const sampler = evidence.sampler;
+  if (!sampler) return multiBoard ? 'phase7_marginal_multi_board' : null;
+  if (!multiBoard) return 'phase7_sampler_single_board';
+  if (sampler.boardCount !== boardCount) return 'phase7_sampler_board_count';
+  try {
+    if (sampler.stateKey !== jointStateKey(hero, state)) return 'phase7_sampler_state';
+  } catch {
+    return 'phase7_sampler_state';
+  }
+  return null;
+}
+
 /** Bounded structured-clone validation before witness construction. A graph
  * may be absent on legacy or caught-failure decisions; absence is not proof
  * of graph execution. A supplied graph must be complete, continuous and
  * action-only, and its final action must match the returned decision. */
+/**
+ * The Phase 8 receipt as the worker returns it. A changed action is legitimate
+ * only as an authority-backed selection: candidate mode, a usable worker
+ * authority receipt for the running continuation, and the final action equal
+ * to the ledger's candidate. Acceptance-time fields stay unset in the worker.
+ */
+export function horsePhase8LedgerIsValid(value: unknown, decision: RecordValue): boolean {
+  if (value === undefined) return true;
+  if (!record(value)) return false;
+  const wager = (action: unknown) => action === 'bet' || action === 'raise';
+  const authority = value.authority;
+  const authorityState = record(authority) ? authority.state : undefined;
+  const authorityVersion = record(authority) ? authority.continuationVersion : undefined;
+  if (
+    value.version !== PHASE8_POLICY.version ||
+    !['shadow', 'candidate'].includes(value.mode as string) ||
+    typeof value.applied !== 'boolean' ||
+    typeof value.changed !== 'boolean' ||
+    !['none', 'shadow_change', 'selected'].includes(value.selection as string) ||
+    value.authorityVerdict !== null ||
+    (authority !== null && !horseAuthorityReceiptIsWellFormed(authority)) ||
+    (authority !== null && authorityVersion !== PHASE8_POLICY.version)
+  )
+    return false;
+  if (value.mode === 'candidate' && authorityState !== 'usable') return false;
+  if (!value.applied) return value.selection !== 'selected';
+  return (
+    value.mode === 'candidate' &&
+    value.changed === true &&
+    value.selection === 'selected' &&
+    decision.action === value.candidateAction &&
+    (!wager(decision.action) || (decision.amount ?? null) === value.candidateAmount)
+  );
+}
+
+/**
+ * P10.3: the PLO4 receipt's selection as the worker returns it. A changed
+ * action is legitimate only as an authority-backed cash selection: candidate
+ * mode, a usable worker Phase 10 authority receipt for the running pack
+ * version, cash utility ownership (never a tournament objective decision) and
+ * the final action equal to the proposal. Acceptance-time fields stay unset.
+ * A receipt retained before P10.3 carries no selection and claims no
+ * authority, so it may not carry an applied candidate either.
+ */
+export function horsePhase10SelectionIsValid(value: unknown, decision: RecordValue): boolean {
+  if (value === undefined) return true;
+  if (!record(value)) return false;
+  const wager = (action: unknown) => action === 'bet' || action === 'raise';
+  if (!Object.hasOwn(value, 'selection'))
+    return (
+      value.applied !== true &&
+      !Object.hasOwn(value, 'authority') &&
+      !Object.hasOwn(value, 'authorityVerdict')
+    );
+  const authority = value.authority;
+  if (
+    !['none', 'shadow_change', 'selected'].includes(value.selection as string) ||
+    typeof value.applied !== 'boolean' ||
+    typeof value.changed !== 'boolean' ||
+    !['shadow', 'candidate'].includes(value.mode as string) ||
+    (value.authorityVerdict !== undefined && value.authorityVerdict !== null) ||
+    (value.selectionRefusal !== undefined &&
+      value.selectionRefusal !== null &&
+      value.selectionRefusal !== 'illegal_candidate') ||
+    (authority !== undefined &&
+      authority !== null &&
+      (!horseAuthorityReceiptIsWellFormed(authority) ||
+        authority.continuationVersion !== PLO4_POLICY_PACK.version))
+  )
+    return false;
+  if (value.mode === 'candidate' && (!record(authority) || authority.state !== 'usable'))
+    return false;
+  if (!value.applied) return value.selection !== 'selected';
+  return (
+    value.mode === 'candidate' &&
+    value.changed === true &&
+    value.selection === 'selected' &&
+    value.utilityOwner === 'cash' &&
+    decision.action === value.proposalAction &&
+    decision.action === value.finalAction &&
+    (!wager(decision.action) ||
+      ((decision.amount ?? null) === value.proposalAmount &&
+        (decision.amount ?? null) === value.finalAmount))
+  );
+}
+
+/**
+ * P11.3: a PLO5/PLO6/PLO8 receipt's selection as the worker returns it, by
+ * the P10.3 law. A changed action is legitimate only as an authority-backed
+ * cash selection: candidate mode, a usable worker authority receipt for the
+ * running version of the receipt's own pack (a PLO5 authority never backs a
+ * PLO6 receipt), cash utility ownership (never a tournament objective
+ * decision) and the final action equal to the proposal. Acceptance-time fields
+ * stay unset. A receipt retained before P11.3 carries no selection and claims
+ * no authority, so it may not carry an applied candidate either.
+ */
+export function horsePhase11SelectionIsValid(value: unknown, decision: RecordValue): boolean {
+  return packSelectionIsValid(value, decision, (variant) =>
+    isOmahaPolicyVariant(variant) ? OMAHA_VARIANT_PACKS[variant].version : null
+  );
+}
+
+/**
+ * P12.3: a Short Deck, Crazy Pineapple, FLH or FLO8 receipt's selection as the
+ * worker returns it, by the same law: a changed action only as an
+ * authority-backed cash selection under usable worker authority for the
+ * running version of the receipt's own pack (a Short Deck authority never
+ * backs a Pineapple receipt, and no Phase 11 authority backs any), with the
+ * final action equal to the proposal; acceptance-time fields unset; a
+ * retained receipt claims nothing.
+ */
+export function horsePhase12SelectionIsValid(value: unknown, decision: RecordValue): boolean {
+  return packSelectionIsValid(value, decision, (variant) =>
+    isRemainingPolicyVariant(variant) ? REMAINING_VARIANT_PACKS[variant].version : null
+  );
+}
+
+/**
+ * P13.3: a joint receipt's selection as the worker returns it, by the same
+ * law: a changed action only as an authority-backed cash selection under
+ * usable worker Phase 13 authority for the receipt's own variant (an NLH
+ * authority never backs a PLO4 receipt, and no Phase 10, 11 or 12 authority
+ * backs any), at the running joint domain version, with the final action equal
+ * to the proposal; acceptance-time fields unset; the two named selection
+ * refusals only on an unapplied receipt; and never an applied joint candidate
+ * on top of an applied Phase 10/11/12 candidate (`earlier_phase_applied`). A
+ * P13.1 receipt (a selection refusal, no selection) claims no authority and
+ * may not carry an applied candidate either.
+ */
+export function horsePhase13SelectionIsValid(value: unknown, decision: RecordValue): boolean {
+  if (value === undefined) return true;
+  if (!record(value)) return false;
+  if (!Object.hasOwn(value, 'selection'))
+    return (
+      value.applied !== true &&
+      !Object.hasOwn(value, 'authority') &&
+      !Object.hasOwn(value, 'authorityVerdict')
+    );
+  if (
+    !packSelectionIsValid(
+      value,
+      decision,
+      (variant) => (isJointVariant(variant) ? JOINT_LIVE_DOMAIN.version : null),
+      {
+        authorityVersionOf: (variant) =>
+          isJointVariant(variant) ? horsePhase13ContinuationVersion(variant) : null,
+        refusals: ['illegal_candidate', 'earlier_phase_applied'],
+      }
+    )
+  )
+    return false;
+  // Chip cash only (audit 2026-10-06): no Phase 13 qualified domain covers a
+  // Diamond decision, so the worker never runs one as candidate, and an
+  // applied candidate must carry its bound chip objective.
+  const inputs = value.inputs;
+  const objective = record(inputs) && record(inputs.objective) ? inputs.objective : null;
+  if (value.mode === 'candidate' && objective !== null && objective.asset !== 'chips') return false;
+  if (value.applied === true && objective?.asset !== 'chips') return false;
+  return (
+    value.applied !== true ||
+    // A named refusal means the candidate did not act (the P13.1 binding check
+    // refuses the same pair; this validator holds it on its own as well).
+    ((value.selectionRefusal === undefined || value.selectionRefusal === null) &&
+      ![decision.plo4Policy, decision.omahaVariantPolicy, decision.remainingVariantPolicy].some(
+        (prior) => record(prior) && prior.applied === true
+      ))
+  );
+}
+
+function packSelectionIsValid(
+  value: unknown,
+  decision: RecordValue,
+  packVersionOf: (variant: unknown) => string | null,
+  options: {
+    /** The authority continuation the receipt's holder runs (default: the pack version). */
+    authorityVersionOf?: (variant: unknown) => string | null;
+    /** The named selection refusals an unapplied receipt may carry. */
+    refusals?: readonly string[];
+  } = {}
+): boolean {
+  if (value === undefined) return true;
+  if (!record(value)) return false;
+  const wager = (action: unknown) => action === 'bet' || action === 'raise';
+  if (!Object.hasOwn(value, 'selection'))
+    return (
+      value.applied !== true &&
+      !Object.hasOwn(value, 'authority') &&
+      !Object.hasOwn(value, 'authorityVerdict') &&
+      !Object.hasOwn(value, 'selectionRefusal')
+    );
+  const packVersion = packVersionOf(value.variant);
+  const authorityVersion = (options.authorityVersionOf ?? packVersionOf)(value.variant);
+  const refusals = options.refusals ?? ['illegal_candidate'];
+  const authority = value.authority;
+  if (
+    // Audit 2026-10-05: every receipt that carries a selection is newer than
+    // its phase's input binding (P11.1, P12.1), so it carries the binding
+    // field (null when nothing was bound); a selection without it is forged.
+    !Object.hasOwn(value, 'inputs') ||
+    packVersion === null ||
+    value.version !== packVersion ||
+    !['none', 'shadow_change', 'selected'].includes(value.selection as string) ||
+    typeof value.applied !== 'boolean' ||
+    typeof value.changed !== 'boolean' ||
+    !['shadow', 'candidate'].includes(value.mode as string) ||
+    (value.authorityVerdict !== undefined && value.authorityVerdict !== null) ||
+    (value.selectionRefusal !== undefined &&
+      value.selectionRefusal !== null &&
+      !refusals.includes(value.selectionRefusal as string)) ||
+    (authority !== undefined &&
+      authority !== null &&
+      (!horseAuthorityReceiptIsWellFormed(authority) ||
+        authority.continuationVersion !== authorityVersion))
+  )
+    return false;
+  if (value.mode === 'candidate' && (!record(authority) || authority.state !== 'usable'))
+    return false;
+  if (!value.applied) return value.selection !== 'selected';
+  return (
+    value.mode === 'candidate' &&
+    value.changed === true &&
+    value.selection === 'selected' &&
+    value.utilityOwner === 'cash' &&
+    decision.action === value.proposalAction &&
+    decision.action === value.finalAction &&
+    (!wager(decision.action) ||
+      ((decision.amount ?? null) === value.proposalAmount &&
+        (decision.amount ?? null) === value.finalAmount))
+  );
+}
+
+/** Phase 7 owns the action Phase 8 received; an applied candidate replaces it. */
+function phase7Selection(value: RecordValue): Pick<HorseDecision, 'action' | 'amount'> {
+  const phase8 = value.tournamentPostflop;
+  if (record(phase8) && phase8.applied === true)
+    return {
+      action: phase8.baselineAction as HorseDecision['action'],
+      amount: (phase8.baselineAmount as number | null) ?? undefined,
+    };
+  return value as unknown as Pick<HorseDecision, 'action' | 'amount'>;
+}
+
 export function horseDecisionReceiptIsValid(
   value: unknown,
   expectedVariant?: string
@@ -345,12 +651,34 @@ export function horseDecisionReceiptIsValid(
     return false;
   if (
     value.tournamentUtility !== undefined &&
-    !horseTournamentUtilityReceiptIsValid(
-      value.tournamentUtility,
-      value as unknown as HorseDecision
-    )
+    !horseTournamentUtilityReceiptIsValid(value.tournamentUtility, phase7Selection(value))
   )
     return false;
+  if (!horsePhase8LedgerIsValid(value.tournamentPostflop, value)) return false;
+  if (value.plo4Policy !== undefined && !plo4LiveReceiptBindingIsValid(value.plo4Policy))
+    return false;
+  if (!horsePhase10SelectionIsValid(value.plo4Policy, value)) return false;
+  // P11.1: a Phase 11 receipt's input binding is shape-checked at the boundary.
+  if (
+    value.omahaVariantPolicy !== undefined &&
+    !omahaVariantReceiptBindingIsValid(value.omahaVariantPolicy)
+  )
+    return false;
+  if (!horsePhase11SelectionIsValid(value.omahaVariantPolicy, value)) return false;
+  // P12.1: a Phase 12 receipt's bindings (inputs, and the P12-B net-action
+  // economics) are re-checked at the boundary.
+  if (
+    value.remainingVariantPolicy !== undefined &&
+    !remainingVariantReceiptBindingIsValid(value.remainingVariantPolicy)
+  )
+    return false;
+  if (!horsePhase12SelectionIsValid(value.remainingVariantPolicy, value)) return false;
+  // P13.1: a Phase 13 receipt's input binding, pack versions and selection
+  // refusal are re-checked at the boundary.
+  if (value.jointPolicy !== undefined && !jointReceiptBindingIsValid(value.jointPolicy))
+    return false;
+  // P13.3: and its selection, by the Phase 10/11/12 law.
+  if (!horsePhase13SelectionIsValid(value.jointPolicy, value)) return false;
   if (
     value.tournamentPreflopAttribution !== undefined &&
     !horsePhase6AttributionIsValid(value.tournamentPreflopAttribution)

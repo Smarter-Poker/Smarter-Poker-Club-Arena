@@ -71,6 +71,12 @@
   filter: brightness(1.2);
 }
 
+.actions button:disabled {
+  opacity: 0.52;
+  filter: saturate(0.35);
+  cursor: not-allowed;
+}
+
 .actions button:focus-visible {
   outline: 3px solid #8fd4ff;
   outline-offset: -6px;

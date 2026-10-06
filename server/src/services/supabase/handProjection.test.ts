@@ -48,6 +48,7 @@ const queryCalls: Array<{
   limit?: number;
 }> = [];
 const rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
+const failureReceiptCalls: Array<Record<string, unknown>> = [];
 const requestActors: string[] = [];
 const channels: FakeChannel[] = [];
 const removedChannels: FakeChannel[] = [];
@@ -145,6 +146,10 @@ vi.mock('./client.js', () => ({
     },
     rpc: (fn: string, args: Record<string, unknown>) => {
       requestActors.push(dataActorHeaders().get('x-smarter-data-actor')!);
+      if (fn === 'ca_record_stats_projection_failure') {
+        failureReceiptCalls.push(args);
+        return Promise.resolve({ data: null, error: null });
+      }
       rpcCalls.push({ fn, args });
       rpcInFlight.now++;
       rpcInFlight.max = Math.max(rpcInFlight.max, rpcInFlight.now);
@@ -213,6 +218,7 @@ beforeEach(async () => {
   vi.unstubAllEnvs();
   queryCalls.length = 0;
   rpcCalls.length = 0;
+  failureReceiptCalls.length = 0;
   channels.length = 0;
   removedChannels.length = 0;
   mockReportError.mockReset();
@@ -226,6 +232,7 @@ beforeEach(async () => {
   await new Promise((resolve) => setTimeout(resolve, 0));
   queryCalls.length = 0;
   rpcCalls.length = 0;
+  failureReceiptCalls.length = 0;
   mockReportError.mockReset();
   requestActors.length = 0;
 });
@@ -277,6 +284,7 @@ describe('the accepted-hand projection worker', () => {
       data: [
         { hand_id: 'h-201', table_id: 't-a', hand_number: 201 },
         { hand_id: 'h-202', table_id: 't-b', hand_number: 202 },
+        { hand_id: 'h-203', table_id: 't-c', hand_number: 203 },
       ],
       error: null,
     });
@@ -288,16 +296,38 @@ describe('the accepted-hand projection worker', () => {
       data: null,
       error: { message: 'transport unavailable' },
     });
+    projectionRepliesById.set('h-203', {
+      data: null,
+      error: { message: 'stats facts refused (source_hash_conflict)' },
+    });
 
     await expect(worker.wakeHandProjection()).resolves.toEqual({
       projected: 0,
       alreadyCompleted: 0,
       deferred: 0,
-      failed: 2,
+      failed: 3,
     });
     expect(mockReportError.mock.calls.map((call) => call[1]).sort()).toEqual([
       'HandProjection.rpc_failed',
+      'HandProjection.rpc_failed',
       'HandProjection.semantic_refusal',
+    ]);
+    expect(failureReceiptCalls).toEqual([
+      {
+        p_hand_id: 'h-201',
+        p_hand_number: 201,
+        p_failure_code: 'projection_semantic_refusal',
+      },
+      {
+        p_hand_id: 'h-202',
+        p_hand_number: 202,
+        p_failure_code: 'projection_rpc_failure',
+      },
+      {
+        p_hand_id: 'h-203',
+        p_hand_number: 203,
+        p_failure_code: 'source_hash_conflict',
+      },
     ]);
   });
 
@@ -1130,7 +1160,9 @@ describe('projection worker owns its request context', () => {
     );
     await runWithTournamentDataAuthority(authority, () => worker.wakeHandProjection());
     await vi.waitFor(() => expect(rpcCalls).toHaveLength(2));
-    expect(requestActors).toEqual(['service', 'service', 'service', 'service']);
+    // Initial read + failed projection + durable sanitized failure receipt,
+    // followed by the causal retry read + successful projection.
+    expect(requestActors).toEqual(['service', 'service', 'service', 'service', 'service']);
   });
 });
 

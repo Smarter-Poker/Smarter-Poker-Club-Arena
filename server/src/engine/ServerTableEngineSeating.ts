@@ -24,6 +24,7 @@ import {
   LIGHTNING_ADD_ON_REFUSED_MESSAGE,
 } from '../lightning/rpcErrors.js';
 import { RateLimitedLog } from '../lightning/RateLimitedLog.js';
+import { lightningPlayerLiveHand } from '../services/supabase/lightningAnchor.js';
 
 /** "Add-ons wait behind a Lightning hand" is said once a minute per table. */
 const lightningAddOnWaitLog = new RateLimitedLog(60_000);
@@ -1118,6 +1119,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       // FIX 143: Bible V8 §7.12 — Can't fold mid-hand.
       // If a hand is in progress, defer the sit-out until after the hand completes.
       // The player continues playing the current hand normally.
+      this.returnedFromSitOutAtMs.delete(userId);
       if (this.handController !== null) {
         this.pendingSitOut.add(userId);
       } else {
@@ -1128,6 +1130,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       this.pendingSitOut.delete(userId);
       // CHIP CONTINUITY: sitting back in withdraws a leave the clock was holding.
       this.leaveHeldByClock.delete(userId);
+      this.returnedFromSitOutAtMs.set(userId, Date.now());
       this.disconnectEngine.sitBack(this.tableId, userId);
       // Bible V8 §4.2: Mark player as returning — must post dead blind on next hand (cash tables only)
       if (!this.isTournamentTable()) {
@@ -1642,6 +1645,25 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
           if (this.postHandTasksPromise === pending) break;
         }
 
+        /* A SEAT WHOSE CHIPS ARE IN A LIVE LIGHTNING HAND IS NOT CASHED OUT
+           (Lightning Phase 6 remediation, 2026-10-01). Its stack is out at
+           another table's hand until that hand settles, so the leave is
+           recorded as the durable leave_pending request - exactly what the
+           database's own refusal (LIGHTNING_HAND_IN_PROGRESS) leads to below -
+           and the existing sweep cashes it out once the hand has settled.
+           Asked first, rather than learned from a refused cash-out. If the
+           question cannot be answered the cash-out is attempted as before
+           and the database guard still decides. */
+        if (player.occupancy_id && (await this.inLiveLightningHand(userId))) {
+          return this.queueDepartureBehindLightningHand(
+            userId,
+            player.seat_number,
+            player.occupancy_id,
+            opts.forced ? 'forced' : 'voluntary',
+            opts.admin
+          );
+        }
+
         const teardown = () => {
           if (
             this.seatedPlayers.some(
@@ -1804,6 +1826,22 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    * authority, before the cash-out was attempted, so it is not requested
    * again here.
    */
+  /**
+   * Is this player's seat anchoring a live Lightning hand right now
+   * (fn_lightning_player_live_hand for this table's Cluster)? Only a cash
+   * table in a Cluster can anchor one; a question that cannot be answered is
+   * "no", which leaves the decision to the database guard on the cash-out.
+   */
+  protected async inLiveLightningHand(userId: string): Promise<boolean> {
+    const clusterId = this.tableInfo?.cluster_id;
+    if (this.isTournamentTable() || typeof clusterId !== 'string' || !clusterId) return false;
+    try {
+      return (await lightningPlayerLiveHand(userId, clusterId)) !== null;
+    } catch {
+      return false;
+    }
+  }
+
   private async queueDepartureBehindLightningHand(
     userId: string,
     seatNumber: number,

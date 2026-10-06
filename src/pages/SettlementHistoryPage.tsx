@@ -9,34 +9,28 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
-import { useAuthUser } from '../hooks/useAuthUser';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useToast } from '../components/common/Toast';
-import PageSkeleton from '../components/common/PageSkeleton';
+import { SpadeConsole } from '../components/console/SpadeConsole';
+import { useAuthUser } from '../hooks/useAuthUser';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import FinancialAdminScopeState from '../components/common/FinancialAdminScopeState';
 import { clubScoped, useFinancialAdminScope } from '../hooks/useFinancialAdminScope';
-
-interface SettlementCycle {
-  id: string;
-  periodId: string;
-  totalRake: number;
-  unionTax: number;
-  netSettlement: number;
-  status: string;
-  createdAt: string;
-  agentPayouts: number;
-}
+import { compactChips } from '../utils/format';
+import { parseSettlementHistory, type SettlementHistoryCycle } from '../utils/settlementHistory';
+import { titleCase } from '../utils/titleCase';
+import styles from './SettlementHistoryPage.module.css';
 
 export default function SettlementHistoryPage() {
   const navigate = useNavigate();
-  const { user } = useAuthUser();
   const toast = useToast();
+  const { user } = useAuthUser();
 
-  const [cycles, setCycles] = useState<SettlementCycle[]>([]);
+  const [storedCycles, setCycles] = useState<SettlementHistoryCycle[]>([]);
+  const [loadedScope, setLoadedScope] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   /* A FAILED READ IS NOT "THE PERIOD HAD NO SETTLEMENTS" (2026-09-10). The
      settlement_invoices read discarded its error, so a refused or failed
@@ -54,15 +48,35 @@ export default function SettlementHistoryPage() {
   const scopeStatus = scope.status;
   const scopeClubId = scope.clubId;
   const scopePlatformWide = scope.platformWide;
+  const readScope = `${user?.id ?? 'signed-out'}:${scope.userId ?? 'unverified'}:${scopeStatus}:${scopeClubId ?? 'no-club'}:${scopePlatformWide}`;
+  const activeScopeRef = useRef(readScope);
+  activeScopeRef.current = readScope;
+  const cycles = loadedScope === readScope ? storedCycles : [];
 
-  const loadingRef = useRef(false);
+  const requestSequence = useRef(0);
 
   const loadHistory = useCallback(async () => {
-    if (scopeStatus !== 'ready') return;
-    if (loadingRef.current) return;
-    loadingRef.current = true;
+    if (
+      scopeStatus !== 'ready' ||
+      !user?.id ||
+      scope.userId !== user.id ||
+      !scopeClubId ||
+      scopePlatformWide
+    )
+      return;
+    const requestScope = readScope;
+    const request = ++requestSequence.current;
+    const current = () =>
+      requestSequence.current === request &&
+      isMounted.current &&
+      activeScopeRef.current === requestScope;
     setLoading(true);
     setLoadError(null);
+    setCycles([]);
+    setLoadedScope(null);
+    setVisibleRows(new Set());
+    staggerTimersRef.current.forEach(clearTimeout);
+    staggerTimersRef.current = [];
     try {
       // SWEEP #3 (2026-07-23): repointed off the phantom club_settlements table
       // onto settlement_invoices. gross_amount = rake collected in the period;
@@ -80,41 +94,40 @@ export default function SettlementHistoryPage() {
         supabase
           .from('settlement_invoices')
           .select(
-            'id, period_id, invoice_type, gross_amount, net_amount, breakdown, status, created_at'
+            'id, club_id, period_id, invoice_type, gross_amount, net_amount, breakdown, status, created_at'
           )
-          .eq('invoice_type', 'union_to_club'),
+          .eq('invoice_type', 'union_to_club')
+          // invoice_type records transfer direction, so later rakeback and
+          // commission documents also use union_to_club. A settlement cycle
+          // is the narrower rake-split record with both duplicated split
+          // fields. Filter before ordering and limiting so unrelated transfer
+          // documents cannot displace valid history or corrupt its totals.
+          .not('breakdown->>union_hold_amount', 'is', null)
+          .not('breakdown->>club_retained', 'is', null),
         { status: scopeStatus, clubId: scopeClubId, platformWide: scopePlatformWide }
       )
         .order('created_at', { ascending: false })
         .limit(50);
       if (error) throw error;
 
-      if (data) {
-        if (!isMounted.current) return;
-        const mapped: SettlementCycle[] = data.map((s: any) => ({
-          id: s.id,
-          periodId: s.period_id || 'N/A',
-          totalRake: s.gross_amount || 0,
-          unionTax: s.breakdown?.union_hold_amount ?? s.net_amount ?? 0,
-          netSettlement:
-            s.breakdown?.club_retained ?? Math.max((s.gross_amount || 0) - (s.net_amount || 0), 0),
-          status: s.status === 'paid' ? 'completed' : s.status || 'completed',
-          createdAt: s.created_at,
-          agentPayouts: 0,
-        }));
+      if (current()) {
+        const mapped = parseSettlementHistory(data, scopeClubId);
+        if (!mapped) throw new Error('Settlement history response was malformed');
         setCycles(mapped);
+        setLoadedScope(requestScope);
         // Clear previous stagger timers before starting new ones
         staggerTimersRef.current.forEach(clearTimeout);
         staggerTimersRef.current = mapped.map((_, i) =>
           setTimeout(() => {
-            if (isMounted.current) setVisibleRows((prev) => new Set(prev).add(i));
+            if (current()) setVisibleRows((prev) => new Set(prev).add(i));
           }, i * 50)
         );
       }
     } catch (err) {
-      if (!isMounted.current) return;
+      if (!current()) return;
       reportError(err, 'SettlementHistoryPage.Load_failed');
       setCycles([]);
+      setLoadedScope(requestScope);
       setLoadError(
         safeErrorMessage(
           err,
@@ -123,27 +136,49 @@ export default function SettlementHistoryPage() {
       );
       toast.error('Failed to load settlement history');
     } finally {
-      loadingRef.current = false;
-      if (isMounted.current) setLoading(false);
+      if (current()) setLoading(false);
     }
-  }, [scopeStatus, scopeClubId, scopePlatformWide, toast]);
+  }, [
+    scopeStatus,
+    scopeClubId,
+    scopePlatformWide,
+    scope.userId,
+    user?.id,
+    readScope,
+    toast,
+    isMounted,
+  ]);
 
   useVisibilityRefresh(() => loadHistory());
 
   useEffect(() => {
-    loadHistory();
+    void loadHistory();
+    const request = requestSequence.current;
+    return () => {
+      if (requestSequence.current === request) requestSequence.current = request + 1;
+    };
   }, [loadHistory]);
 
   // Cleanup stagger timers on unmount
   useEffect(() => {
+    const request = requestSequence.current;
     return () => {
       staggerTimersRef.current.forEach(clearTimeout);
+      if (requestSequence.current === request) requestSequence.current = request + 1;
     };
   }, []);
 
   useEffect(() => {
     // WebSocket: live settlement updates
-    const channelKey = 'settlement-history-updates';
+    if (
+      scopeStatus !== 'ready' ||
+      !user?.id ||
+      scope.userId !== user.id ||
+      !scopeClubId ||
+      scopePlatformWide
+    )
+      return;
+    const channelKey = `settlement-history-updates:${scopeClubId ?? 'platform'}`;
     const channel = masterBus.getOrCreateChannel(channelKey);
     channel
       .on(
@@ -174,329 +209,151 @@ export default function SettlementHistoryPage() {
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
     };
-  }, [loadHistory]);
+  }, [loadHistory, scopeStatus, scopeClubId, scopePlatformWide, scope.userId, user?.id]);
 
   const totalRakeAllTime = cycles.reduce((s, c) => s + c.totalRake, 0);
   const totalSettled = cycles.reduce((s, c) => s + c.netSettlement, 0);
   const maxRake = Math.max(...cycles.map((c) => c.totalRake), 1);
 
-  if (scope.status !== 'ready') {
+  if (scope.status !== 'ready' || scope.userId !== user?.id) {
+    return <FinancialAdminScopeState scope={scope} />;
+  }
+
+  if (!scopeClubId || scopePlatformWide) {
     return (
-      <div style={{ padding: '16px', width: '100%', maxWidth: '800px', margin: '0 auto' }}>
-        <FinancialAdminScopeState scope={scope} />
-      </div>
+      <main className={styles.page}>
+        <SpadeConsole
+          className={styles.console}
+          family="shark"
+          crest="flat"
+          eyebrow="Club Arena Data"
+          title="Settlement History Needs A Club"
+          subtitle="Open This Console From A Club Financial Scope"
+          pill="Club Required"
+          pillInk="gold"
+          plates={{ primary: { label: 'Back', onClick: () => navigate(-1) } }}
+        >
+          <p className="sc-copy sc-copy--center" role="status">
+            Platform-Wide Rows Are Never Combined Into One Club Settlement History.
+          </p>
+        </SpadeConsole>
+      </main>
     );
   }
 
   return (
-    <div
-      style={{
-        padding: '16px',
-        width: '100%',
-        maxWidth: '800px',
-        margin: '0 auto',
-        paddingBottom: '100px',
-        overflowX: 'hidden',
-      }}
-    >
-      {/* Header */}
-      <div style={{ marginBottom: '24px' }}>
-        <button
-          onClick={() => navigate(-1)}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: '#3b82f6',
-            cursor: 'pointer',
-            fontSize: '0.85rem',
-            padding: '10px 0',
-            minHeight: 44,
-            touchAction: 'manipulation',
-            marginBottom: '6px',
-          }}
-        >
-          ← Back
-        </button>
-        <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>Settlement History</h1>
-        <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>
-          Weekly Settlement Cycles And Revenue Trends
-        </p>
-      </div>
-
-      {/* Summary */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-          gap: '10px',
-          marginBottom: '20px',
-        }}
+    <main className={styles.page}>
+      <SpadeConsole
+        className={styles.console}
+        family="shark"
+        eyebrow="Club Arena"
+        title="Settlement History"
+        subtitle="Weekly Settlement Cycles And Revenue Trends"
+        pill={loading ? 'Loading' : loadError ? 'Unavailable' : `${cycles.length} Cycles`}
+        pillInk={loadError ? 'red' : loading ? 'blue' : 'green'}
+        plates={{ primary: { label: 'Back', onClick: () => navigate(-1) } }}
       >
-        <div
-          style={{
-            padding: '14px',
-            background: 'rgba(245,158,11,0.08)',
-            borderRadius: '12px',
-            border: '1px solid rgba(245,158,11,0.2)',
-          }}
-        >
-          <div
-            style={{
-              fontSize: '0.65rem',
-              color: 'rgba(255,255,255,0.4)',
-              textTransform: 'uppercase',
-              fontWeight: 600,
-            }}
-          >
-            Total Rake
+        <section className={styles.summary} aria-label="Settlement Summary">
+          <div className={styles.fact}>
+            <span className="sc-label sc-ink--blue">Total Rake</span>
+            <strong className="sc-ink--silver">
+              {loadError ? 'Unavailable' : compactChips(totalRakeAllTime)}
+            </strong>
           </div>
-          <div
-            style={{
-              fontSize: '1.3rem',
-              fontWeight: 800,
-              color: '#f59e0b',
-              fontFamily: 'monospace',
-            }}
-          >
-            {loadError ? '--' : totalRakeAllTime.toLocaleString()}
+          <div className={styles.fact}>
+            <span className="sc-label sc-ink--blue">Net Settled</span>
+            <strong className="sc-ink--green">
+              {loadError ? 'Unavailable' : compactChips(totalSettled)}
+            </strong>
           </div>
-        </div>
-        <div
-          style={{
-            padding: '14px',
-            background: 'rgba(16,185,129,0.08)',
-            borderRadius: '12px',
-            border: '1px solid rgba(16,185,129,0.2)',
-          }}
-        >
-          <div
-            style={{
-              fontSize: '0.65rem',
-              color: 'rgba(255,255,255,0.4)',
-              textTransform: 'uppercase',
-              fontWeight: 600,
-            }}
-          >
-            Net Settled
+          <div className={styles.fact}>
+            <span className="sc-label sc-ink--blue">Cycles</span>
+            <strong className="sc-ink--silver">
+              {loadError ? 'Unavailable' : compactChips(cycles.length)}
+            </strong>
           </div>
-          <div
-            style={{
-              fontSize: '1.3rem',
-              fontWeight: 800,
-              color: '#10b981',
-              fontFamily: 'monospace',
-            }}
-          >
-            {loadError ? '--' : totalSettled.toLocaleString()}
-          </div>
-        </div>
-        <div
-          style={{
-            padding: '14px',
-            background: 'rgba(139,92,246,0.08)',
-            borderRadius: '12px',
-            border: '1px solid rgba(139,92,246,0.2)',
-          }}
-        >
-          <div
-            style={{
-              fontSize: '0.65rem',
-              color: 'rgba(255,255,255,0.4)',
-              textTransform: 'uppercase',
-              fontWeight: 600,
-            }}
-          >
-            Cycles
-          </div>
-          <div
-            style={{
-              fontSize: '1.3rem',
-              fontWeight: 800,
-              color: '#8b5cf6',
-              fontFamily: 'monospace',
-            }}
-          >
-            {loadError ? '--' : cycles.length}
-          </div>
-        </div>
-      </div>
+        </section>
 
-      {/* Visual Timeline (bar chart) */}
-      {cycles.length > 0 && (
-        <div
-          style={{
-            padding: '16px',
-            background: 'rgba(255,255,255,0.03)',
-            borderRadius: '12px',
-            border: '1px solid rgba(255,255,255,0.06)',
-            marginBottom: '20px',
-          }}
-        >
-          <div style={{ fontSize: '0.8rem', fontWeight: 700, marginBottom: '12px' }}>
-            Revenue Timeline
-          </div>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', height: '80px' }}>
-            {cycles
-              .slice(0, 20)
-              .reverse()
-              .map((c, i) => (
-                <div
-                  key={c.id}
-                  style={{
-                    flex: 1,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: '2px',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: '100%',
-                      height: `${Math.max(4, (c.totalRake / maxRake) * 60)}px`,
-                      background:
-                        c.status === 'completed'
-                          ? 'linear-gradient(180deg, #10b981, #065f46)'
-                          : 'linear-gradient(180deg, #f59e0b, #92400e)',
-                      borderRadius: '2px 2px 0 0',
-                      transition: 'height 0.5s ease',
-                    }}
-                    title={`Rake: ${c.totalRake.toLocaleString()}`}
-                  />
-                </div>
-              ))}
-          </div>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              fontSize: '0.55rem',
-              color: 'rgba(255,255,255,0.3)',
-              marginTop: '4px',
-            }}
-          >
-            <span>Oldest</span>
-            <span>Most Recent</span>
-          </div>
-        </div>
-      )}
-
-      {/* Settlement List */}
-      <div
-        style={{
-          fontSize: '0.75rem',
-          fontWeight: 600,
-          color: 'rgba(255,255,255,0.4)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.5px',
-          marginBottom: '8px',
-        }}
-      >
-        Settlement Cycles
-      </div>
-      {loading && cycles.length === 0 && !loadError ? (
-        <PageSkeleton variant="default" />
-      ) : loadError ? (
-        <div role="alert" style={{ textAlign: 'center', padding: '32px', color: '#f87171' }}>
-          <div>{loadError}</div>
-          <button
-            type="button"
-            onClick={() => loadHistory()}
-            style={{
-              marginTop: '12px',
-              padding: '8px 16px',
-              background: 'rgba(239,68,68,0.15)',
-              border: '1px solid rgba(239,68,68,0.3)',
-              borderRadius: '8px',
-              color: '#f87171',
-              cursor: 'pointer',
-              fontWeight: 600,
-            }}
-          >
-            Retry
-          </button>
-        </div>
-      ) : cycles.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.3)' }}>
-          No Settlement Cycles Yet
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          {cycles.map((cycle, idx) => (
-            <div
-              key={cycle.id}
-              style={{
-                padding: '12px 14px',
-                background: 'rgba(255,255,255,0.03)',
-                borderRadius: '10px',
-                border: '1px solid rgba(255,255,255,0.06)',
-                opacity: visibleRows.has(idx) ? 1 : 0,
-                transform: visibleRows.has(idx) ? 'translateX(0)' : 'translateX(-8px)',
-                transition: 'all 0.3s ease',
-              }}
-            >
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: '6px',
-                }}
-              >
-                <div>
-                  <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>
-                    Period: {cycle.periodId}
-                  </span>
+        {cycles.length > 0 && (
+          <section className={styles.timeline} aria-label="Revenue Timeline">
+            <div className="sc-label sc-ink--blue">Revenue Timeline</div>
+            <div className={styles.bars}>
+              {cycles
+                .slice(0, 20)
+                .reverse()
+                .map((cycle) => (
                   <span
-                    style={{
-                      fontSize: '0.7rem',
-                      color: 'rgba(255,255,255,0.4)',
-                      marginLeft: '8px',
-                    }}
-                  >
-                    {new Date(cycle.createdAt).toLocaleDateString()}
+                    key={cycle.id}
+                    className={styles.bar}
+                    data-complete={String(cycle.status === 'completed')}
+                    style={{ height: `${Math.max(4, (cycle.totalRake / maxRake) * 60)}px` }}
+                    title={`Rake: ${compactChips(cycle.totalRake)}`}
+                  />
+                ))}
+            </div>
+            <div className={styles.timelineAxis}>
+              <span>Oldest</span>
+              <span>Most Recent</span>
+            </div>
+          </section>
+        )}
+
+        <div className={`${styles.sectionLabel} sc-label sc-ink--blue`}>Settlement Cycles</div>
+        {loading && cycles.length === 0 && !loadError ? (
+          <div className={styles.state} role="status">
+            Loading Settlement Cycles...
+          </div>
+        ) : loadError ? (
+          <div className={`${styles.state} sc-ink--red`} role="alert">
+            <div>{loadError}</div>
+            <button
+              type="button"
+              onClick={() => void loadHistory()}
+              className={`${styles.word} sc-ink--white`}
+            >
+              Retry
+            </button>
+          </div>
+        ) : cycles.length === 0 ? (
+          <div className={`${styles.state} sc-ink--muted`}>No Settlement Cycles Yet</div>
+        ) : (
+          <ol className={styles.cycles}>
+            {cycles.map((cycle, idx) => (
+              <li
+                key={cycle.id}
+                className={styles.cycle}
+                data-visible={String(visibleRows.has(idx))}
+              >
+                <div className={styles.cycleHead}>
+                  <div>
+                    <strong className="sc-ink--silver">Period: {titleCase(cycle.periodId)}</strong>
+                    <time className="sc-ink--muted" dateTime={cycle.createdAt}>
+                      {new Date(cycle.createdAt).toLocaleDateString()}
+                    </time>
+                  </div>
+                  <span className={cycle.status === 'completed' ? 'sc-ink--green' : 'sc-ink--gold'}>
+                    {titleCase(cycle.status)}
                   </span>
                 </div>
-                <span
-                  style={{
-                    padding: '2px 8px',
-                    borderRadius: '4px',
-                    fontSize: '0.65rem',
-                    fontWeight: 700,
-                    background:
-                      cycle.status === 'completed'
-                        ? 'rgba(16,185,129,0.12)'
-                        : 'rgba(245,158,11,0.12)',
-                    color: cycle.status === 'completed' ? '#10b981' : '#f59e0b',
-                  }}
-                >
-                  {cycle.status.toUpperCase()}
-                </span>
-              </div>
-              <div style={{ display: 'flex', gap: '16px', fontSize: '0.75rem' }}>
-                <span>
-                  Rake:{' '}
-                  <span style={{ color: '#f59e0b', fontWeight: 700 }}>
-                    {cycle.totalRake.toLocaleString()}
-                  </span>
-                </span>
-                {cycle.unionTax > 0 && (
+                <div className={styles.amounts}>
                   <span>
-                    Fee:{' '}
-                    <span style={{ color: '#ef4444' }}>-{cycle.unionTax.toLocaleString()}</span>
+                    Rake <strong className="sc-ink--silver">{compactChips(cycle.totalRake)}</strong>
                   </span>
-                )}
-                <span>
-                  Net:{' '}
-                  <span style={{ color: '#10b981', fontWeight: 700 }}>
-                    {cycle.netSettlement.toLocaleString()}
+                  {cycle.unionTax > 0 && (
+                    <span>
+                      Fee <strong className="sc-ink--red">-{compactChips(cycle.unionTax)}</strong>
+                    </span>
+                  )}
+                  <span>
+                    Net{' '}
+                    <strong className="sc-ink--green">{compactChips(cycle.netSettlement)}</strong>
                   </span>
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </SpadeConsole>
+    </main>
   );
 }

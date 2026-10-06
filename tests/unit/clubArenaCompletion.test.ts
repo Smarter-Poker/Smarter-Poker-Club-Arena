@@ -40,6 +40,8 @@ describe('club workspace capability contract', () => {
   it.each([
     ['/clubs/club-1/operations', 'staff'],
     ['/clubs/club-1/reports', 'staff'],
+    ['/clubs/club-1/agents', 'control'],
+    ['/clubs/club-1/agent-dashboard', 'staff'],
     ['/clubs/club-1/finance', 'finance'],
     ['/clubs/club-1/cashier', null],
     ['/clubs/club-1/insurance-report', 'finance'],
@@ -61,9 +63,12 @@ describe('club workspace capability contract', () => {
 
     expect(player).toHaveLength(0);
     expect(agent.every((item) => item.access === 'staff')).toBe(true);
+    expect(agent.some((item) => item.path.endsWith('/agents'))).toBe(false);
+    expect(agent.some((item) => item.path.endsWith('/agent-dashboard'))).toBe(true);
     expect(finance.some((item) => item.path.endsWith('/finance'))).toBe(true);
     expect(finance.some((item) => item.access === 'control')).toBe(false);
     expect(owner.some((item) => item.path.endsWith('/control'))).toBe(true);
+    expect(owner.some((item) => item.path.endsWith('/agents'))).toBe(true);
   });
 });
 
@@ -88,16 +93,20 @@ describe('consolidated route families', () => {
   });
 
   it('keeps every union operations route reachable from the canonical union rail', () => {
-    const paths = getArenaSectionNavigation('/unions/union-1/operations')?.items.map(
-      (item) => item.path
-    );
+    const paths = getArenaSectionNavigation('/unions/union-1/operations', {
+      canOverseeCurrentUnion: true,
+      canManageCurrentUnionGames: true,
+    })?.items.map((item) => item.path);
     expect(paths).toEqual(
       expect.arrayContaining([
         '/unions/union-1',
         '/unions/union-1/games',
         '/unions/union-1/operations',
+        '/unions/union-1/table-management',
+        '/unions/union-1/data',
         '/unions/union-1/statements',
         '/unions/union-1/settlement',
+        '/unions/union-1/diamond-costs',
       ])
     );
   });

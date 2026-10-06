@@ -222,10 +222,9 @@ function PotChipPile({ amount }: { amount: number }) {
   const stacks = useMemo(
     () =>
       visualChipStacks(amount, {
-        // EVERY denomination, always - see "THE PILE HAS TO ADD UP" below.
-        // `maxTotal` is what bounds the width; `maxStacks` must never be the
-        // thing that bounds it, because dropping a group drops its VALUE off
-        // the felt.
+        // EVERY denomination, always. `maxTotal` is what bounds the width;
+        // `maxStacks` must never be the thing that bounds it, because
+        // dropping a group drops a whole chip COLOUR off the felt.
         maxStacks: CHIP_DENOMINATIONS.length,
         maxPerStack: 10,
         maxTotal: 10,
@@ -238,10 +237,8 @@ function PotChipPile({ amount }: { amount: number }) {
   // drawn; only the ORDER is re-dealt, by a key settled per (denomination,
   // ordinal), so the pile is stable across renders and stable as the pot grows.
   //
-  // `truncated` / `count` ride along per disc for the same reason they do on
-  // the seat chips: a denomination clamped for width prints its REAL number
-  // above the spread, so a pot of 60,000 (twelve orange 5,000s, because Dan's
-  // ladder has nothing between 5,000 and 100,000) still adds up to 60,000.
+  // A denomination clamped for width prints NOTHING about the discs it did
+  // not draw - see "NO COUNT BADGES" below.
   const flattenedChips = useMemo(() => {
     const flat: {
       denom: ChipDenomination;
@@ -282,19 +279,18 @@ function PotChipPile({ amount }: { amount: number }) {
   // already yields [] for a pot with no chips on the ladder.
   if (flattenedChips.length === 0) return null;
 
-  // ── THE PILE HAS TO ADD UP, AND YOU HAVE TO BE ABLE TO READ IT ───────────
-  // Every denomination the pot holds is drawn (see `maxStacks` above), and
-  // `maxTotal` then clamps the DISCS, so on a mixed pot several denominations
-  // are clamped at once - a 131,313 pot clamps four of them. Each one used to
-  // hang its own count badge under its own disc, absolutely positioned and
-  // centred; single-disc groups sit half a chip apart, so four badges landed
-  // on top of each other and the pot's true total became unreadable exactly
-  // when it mattered most.
+  // ── NO COUNT BADGES (owner ruling 2026-10-04) ────────────────────────────
+  // "POT STACKING AND BET SIZING NEVER EVER EVER NEEDS THE X3 X2 ETC. CHIPS
+  // INSIDE THE POT ARE JUST AN ANIMATION AND DOESN'T NEED TO BE 100% ACCURATE
+  // AS LONG AS THE ANIMATION ITS SELF IS CLOSE. REMOVE ANY AND ALL X2 X3 X4
+  // ETC MULTIPLIERS FROM POT OR BET SIZING CHIP STACKS."
   //
-  // One row instead, under the spread, in ladder order, each tinted to the
-  // chip it counts. Colour is a better pointer than position here anyway: the
-  // disc a badge belonged to was half-covered by the next one lying over it.
-  const clamped = stacks.filter((stack) => stack.truncated);
+  // The pile used to carry a row of per-denomination true counts under the
+  // spread so the discs plus the counts added up to the pot. That row is gone
+  // and must not come back. Every denomination the pot holds still gets at
+  // least one disc (see `maxStacks` above) and `maxTotal` still clamps the
+  // discs so the spread fits; the pot pill's NUMBER is the truth, the chips
+  // are illustration. Pinned by tests/chips-on-the-felt.test.tsx.
 
   return (
     /* aria-hidden: the amount is already announced by the pill's aria-label. */
@@ -314,23 +310,6 @@ function PotChipPile({ amount }: { amount: number }) {
             }
           />
         ))}
-        {clamped.length > 0 && (
-          <span className="pot-display__pile-counts">
-            {clamped.map((stack) => (
-              /* Multiplication sign, not a lowercase 'x' - check-title-case.mjs
-                 rejects the letter on a forward-facing surface, and "twelve of
-                 these" was never the letter anyway. */
-              <span
-                key={stack.denom.value}
-                className="pot-display__pile-multi"
-                style={{ '--pile-chip-color': stack.denom.color } as React.CSSProperties}
-              >
-                {'\u00d7'}
-                {stack.count.toLocaleString()}
-              </span>
-            ))}
-          </span>
-        )}
       </div>
     </div>
   );

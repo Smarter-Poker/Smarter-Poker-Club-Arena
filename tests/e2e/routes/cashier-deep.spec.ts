@@ -101,7 +101,7 @@ test.describe('Cashier Trade — deep authenticated UX', () => {
       .getByRole('region', { name: 'Every Chip. Accounted For.' })
       .getByRole('status');
     await expect(cashierStatus).toHaveText(
-      /^(Balances synchronized|Cashier ready; loading the rest of the roster after [\d,]+ members)$/,
+      /^(Balances Synchronized|Cashier Ready; Loading The Rest Of The Roster After [\d,]+ Members)$/,
       { timeout: 30_000 }
     );
     await expect(reconciliation.getByText('Not Yet Verified', { exact: true })).toHaveCount(0);

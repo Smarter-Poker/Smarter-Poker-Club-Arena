@@ -22,7 +22,33 @@ import {
 import { reportError } from '../services/errorReporter.js';
 import { ELIMINATION_SWEEP_STUCK_MS } from './eliminationLock.js';
 
-export const DEFAULT_MAX_CONCURRENT_SWEEPS = 4;
+/**
+ * A SWEEP THAT WAITS ON THE WIRE IS NOT RATIONED LIKE ONE THAT BURNS THE CORE
+ * (2026-10-03).
+ *
+ * Four general slots were set on 2026-09-08, when the engine was one core and
+ * the sweeps' own JavaScript was what saturated it. Neither is true now. Read
+ * on production 2026-10-03, engine on 8 cores, main loop p99 ~25 ms:
+ *
+ *   - a sweep averaged 3.1-3.6 s (12 h), p50 ~2 s, p95 above 5 s, and the
+ *     scheduler dispatched 1.0-2.2 sweeps a second in every half hour, which
+ *     is slots / mean sweep: the slots, not the work, set the rate;
+ *   - the queue averaged 20-95 managers and the oldest waiter exceeded 120 s
+ *     in nearly every half hour (max 532 s), so Sit & Go and Spin winners were
+ *     paid a p95 of 107-110 s after their last hand overnight;
+ *   - a sweep is a chain of awaited PostgREST round trips from Ashburn to the
+ *     us-west-2 database: ~100-300 ms each at the client, of which Postgres
+ *     itself spent 5-40 ms (x-envoy-upstream-service-time), with 35 idle
+ *     PostgREST connections. "bust preparation spent the whole 5000ms budget
+ *     with 1 player(s) to record" is that chain, not CPU.
+ *
+ * A slot spends almost all of its life waiting on the network, so the cap is
+ * raised to twelve. It stays a hard ceiling (stall compensation still bounds
+ * real concurrency at twice the cap) and it adds no database work: the same
+ * busts and finishes run, sooner, instead of queueing.
+ * anIoBoundSweepIsNotRationedLikeACpuBoundOne.law.test.ts.
+ */
+export const DEFAULT_MAX_CONCURRENT_SWEEPS = 12;
 // The engine signals only after its awaited stack-sync step now. A zero-delay
 // process timer keeps the callback fire-and-forget without guessing how long
 // settlement will take under load.
@@ -62,6 +88,59 @@ export const DEFAULT_URGENT_BURST = 3;
  */
 export const DEFAULT_CONSOLIDATION_SLOTS = 1;
 
+/**
+ * A DECIDED GAME IS NOT WAITING BEHIND LIVE ONES (2026-10-01).
+ *
+ * Read on production at 19:50-20:10 UTC on 2026-10-01: 622 managers
+ * registered, 573 queued, oldest wait 283 s, about 1.9 dispatches a second.
+ * 487 RUNNING Spins and Sit & Gos had one player left with chips for more than
+ * fifteen minutes, their winners unpaid; Spin 82bcfdfa dealt its deciding hand
+ * at 19:14:03, recorded its busts at 19:28:45 and paid at 19:50:52, one full
+ * queue cycle per admission it needed. The median Spin completed in that
+ * window was paid 44 minutes after its last hand.
+ *
+ * A manager declared decided (one table, at most one stack with chips) is
+ * served from a decided lane that the general slots read first, but never
+ * with more than all-but-one of them: live work always keeps a slot. The mark
+ * is sticky for the registration (a decided field does not become live again;
+ * the sweep stays the authority either way, the lane only orders admission),
+ * and finishing the game unregisters it, so the lane shrinks the queue it
+ * jumps instead of adding to it.
+ */
+export const DECIDED_LANE_LEAVES_LIVE_SLOTS = 1;
+
+/**
+ * A DECIDED GAME HAS SLOTS OF ITS OWN (2026-10-02).
+ *
+ * The decided lane above only ORDERS admission to the general slots, so a
+ * decided game still waits for a general slot to come free, and while the
+ * decided lane is long it waits for every decided game ahead of it as well.
+ * Read on production 16:17-16:32 UTC on 2026-10-02, engine 1-b4b20b86: the
+ * decided lane was 119 deep with its oldest waiter at 516 s, all three of the
+ * general slots it may hold were busy, and the admission that recorded a
+ * Spin's or Sit & Go's final bust waited a median 221 s for one (3 of 896
+ * inside 15 s). The work behind each of those admissions takes seconds.
+ *
+ * So, like consolidation, decided work gets DEFAULT_DECIDED_SLOTS physical
+ * slots of its own beside the general cap, served before it reaches for a
+ * general slot. The extra concurrency exists only while a decided game is
+ * actually waiting to be paid, it is bounded, and finishing the game retires
+ * its manager, so this pool drains itself. A decided field's admission runs
+ * from its last bust through its finish without yielding to the clock
+ * (TournamentManagerEliminations completedStage), so one admission per game
+ * is the normal case and the pool is sized for that.
+ */
+/**
+ * Raised from two to four on 2026-10-03 with the general cap (see
+ * DEFAULT_MAX_CONCURRENT_SWEEPS): the decided lane was up to 104 deep at
+ * 10:00-11:30 UTC on 2026-10-03, every admission waiting on round trips, not
+ * on the core. A decided admission runs its last busts and its finish, whose
+ * money is still serialized per bank scope inside Postgres
+ * (fn_ca_lock_settlement_lane_for_finish), so more of them in flight only
+ * removes the queue in front of that lock.
+ */
+export const DEFAULT_DECIDED_SLOTS = 4;
+
 const registeredGauge = alwaysOnRegistry.gauge(
   'poker_tournament_elimination_scheduler_registered',
   'Tournament managers registered with the one process-wide elimination scheduler.'
@@ -86,6 +165,10 @@ const consolidatingGauge = alwaysOnRegistry.gauge(
   'poker_tournament_elimination_scheduler_consolidating',
   'Registered tournament managers currently marked consolidating (their field is being merged onto fewer tables).'
 );
+const decidedQueueDepthGauge = alwaysOnRegistry.gauge(
+  'poker_tournament_elimination_scheduler_decided_queue_depth',
+  'Tournament sweeps waiting in the decided lane: managers whose field has one table and at most one stack with chips.'
+);
 const consolidationOldestWaitGauge = alwaysOnRegistry.gauge(
   'poker_tournament_elimination_scheduler_consolidation_oldest_wait_ms',
   'Age in milliseconds of the oldest sweep waiting in the consolidation lane.'
@@ -102,8 +185,8 @@ for (const outcome of ['completed', 'failed', 'timed_out']) {
   dispatchTotal.inc(0, { outcome });
 }
 
-type QueueKind = 'consolidation' | 'urgent' | 'routine';
-type SlotLane = 'consolidation' | 'general';
+type QueueKind = 'consolidation' | 'decided' | 'urgent' | 'routine';
+type SlotLane = 'consolidation' | 'decided' | 'general';
 
 type ManagerSnapshot = ReturnType<TournamentManagerBase['getLifecycleDiagnosticSnapshot']>;
 interface RegistrationDiagnostics {
@@ -175,6 +258,8 @@ export interface TournamentEliminationSchedulerOptions {
   urgentBurst?: number;
   /** Physical slots reserved for the consolidation lane, beside maxConcurrent. */
   consolidationSlots?: number;
+  /** Physical slots reserved for decided games, beside maxConcurrent. */
+  decidedSlots?: number;
   startTimers?: boolean;
   now?: () => number;
 }
@@ -193,6 +278,10 @@ interface Entry extends TournamentEliminationRegistration {
   runningLane: SlotLane | null;
   /** Balance stage left consolidation work outstanding; every wake uses that lane. */
   consolidating: boolean;
+  /** The field is decided; every wake uses the decided lane (sticky per registration). */
+  decided: boolean;
+  /** The current physical run was counted against the decided lane's share. */
+  runningDecided: boolean;
   warned: boolean;
   enqueuedAt: number | null;
   pendingWakeAt: number | null;
@@ -251,9 +340,21 @@ export interface TournamentEliminationSchedulerSnapshot {
   consolidationQueued: number;
   consolidationRunning: number;
   consolidationOldestWaitMs: number;
+  decided: number;
+  decidedQueued: number;
+  /** Decided games running on general slots (bounded by all-but-one of them). */
+  decidedRunning: number;
+  /** The decided lane's own physical slots, and how many of them are running. */
+  decidedCapacity: number;
+  decidedLaneRunning: number;
 }
 
-const QUEUE_KIND_RANK: Record<QueueKind, number> = { routine: 0, urgent: 1, consolidation: 2 };
+const QUEUE_KIND_RANK: Record<QueueKind, number> = {
+  routine: 0,
+  urgent: 1,
+  decided: 2,
+  consolidation: 3,
+};
 
 /**
  * Prefer urgent correctness work, but guarantee routine causal work a slot.
@@ -270,17 +371,23 @@ export class TournamentEliminationScheduler {
   private readonly sweepWarnMs: number;
   private readonly urgentBurst: number;
   private readonly consolidationSlots: number;
+  private readonly decidedSlots: number;
   private readonly now: () => number;
   private readonly entries = new Map<string, Entry>();
   /** Physical promises, including unregistered/replaced entries, by tournament. */
   private readonly activeTournamentIds = new Set<string>();
   private readonly activeEntries = new Set<Entry>();
   private readonly consolidationQueue: QueuedPlace[] = [];
+  private readonly decidedQueue: QueuedPlace[] = [];
   private readonly urgentQueue: QueuedPlace[] = [];
   private readonly routineQueue: QueuedPlace[] = [];
   private runningCount = 0;
+  /** General-slot runs of decided managers (a subset of runningCount). */
+  private decidedRunningCount = 0;
   /** Physical runs holding a consolidation-lane slot (a subset of runningCount). */
   private consolidationRunningCount = 0;
+  /** Physical runs holding a decided-lane slot of its own (a subset of runningCount). */
+  private decidedLaneRunningCount = 0;
   private urgentRunStreak = 0;
   private wakeOrder = 0;
   private allSlotsStalledReported = false;
@@ -302,6 +409,7 @@ export class TournamentEliminationScheduler {
       0,
       Math.floor(options.consolidationSlots ?? DEFAULT_CONSOLIDATION_SLOTS)
     );
+    this.decidedSlots = Math.max(0, Math.floor(options.decidedSlots ?? DEFAULT_DECIDED_SLOTS));
     this.now = options.now ?? (() => Date.now());
 
     if (options.startTimers !== false) {
@@ -355,17 +463,47 @@ export class TournamentEliminationScheduler {
     );
   }
 
-  /** A consolidating manager's every wake is consolidation work. */
+  /** The decided lane's own slots, with the same stall compensation rule. */
+  private decidedCapacityNow(): number {
+    return this.decidedSlots + Math.min(this.stalledCount('decided'), this.decidedSlots);
+  }
+
+  /** Physical runs on general slots: everything not on a reserved lane slot. */
+  private generalRunningCount(): number {
+    return this.runningCount - this.consolidationRunningCount - this.decidedLaneRunningCount;
+  }
+
+  /**
+   * A DECIDED FIELD IS NEVER CONSOLIDATION WORK (2026-10-01).
+   *
+   * A consolidating manager's every wake is consolidation work - unless its
+   * field is decided. A decided field is one table with at most one stack
+   * left: it has nothing to merge, and its finish pass belongs to the decided
+   * lane, which reads the general slots first. The consolidation lane is ONE
+   * slot (DEFAULT_CONSOLIDATION_SLOTS).
+   *
+   * Measured on production 2026-10-01 22:29-22:50 UTC, engine 71825702: the
+   * decided-but-RUNNING board marked every decided Spin and Sit & Go
+   * consolidating, so 208 managers were consolidating and 207 were queued for
+   * that one slot, oldest wait 743 s. The fields that really needed it waited
+   * behind them and dealt nothing: Five-Card Reload 7e7dabf8 and a21f7007 (a
+   * table break parked since 22:04), Sunday Deep Stack Satellite $25 d9cc8159
+   * (a held qualifier boundary, no hand since 21:20), and the decided
+   * satellite 1e0343b5 was woken 25 times without a sweep.
+   */
   private laneFor(entry: Entry, kind: QueueKind): QueueKind {
+    if (entry.decided) return 'decided';
     return entry.consolidating ? 'consolidation' : kind;
   }
 
   private queueFor(kind: QueueKind): QueuedPlace[] {
     return kind === 'consolidation'
       ? this.consolidationQueue
-      : kind === 'urgent'
-        ? this.urgentQueue
-        : this.routineQueue;
+      : kind === 'decided'
+        ? this.decidedQueue
+        : kind === 'urgent'
+          ? this.urgentQueue
+          : this.routineQueue;
   }
 
   /**
@@ -380,13 +518,43 @@ export class TournamentEliminationScheduler {
     if (!entry || !entry.registered) return false;
     if (entry.consolidating === consolidating) return true;
     entry.consolidating = consolidating;
-    if (consolidating) {
+    // A decided field keeps the decided lane (see laneFor).
+    if (consolidating && !entry.decided) {
       if (entry.pendingWakeAs !== null) entry.pendingWakeAs = 'consolidation';
       if (entry.dirtyAs !== null) entry.dirtyAs = 'consolidation';
       if (entry.queuedAs !== null) {
         this.enqueue(entry, 'consolidation');
         return true;
       }
+    }
+    this.refreshMetrics();
+    return true;
+  }
+
+  /**
+   * Mark one manager's field decided for the rest of this registration.
+   * Marking promotes whatever it already has pending into the decided lane,
+   * keeping its original place live exactly as an urgent upgrade does.
+   */
+  setDecided(tournamentId: string): boolean {
+    const entry = this.entries.get(tournamentId);
+    if (!entry || !entry.registered) return false;
+    if (entry.decided) return true;
+    entry.decided = true;
+    // Whatever it already has pending moves to the decided lane, including a
+    // place in the consolidation lane: a decided field has nothing to merge
+    // and must not hold the one consolidation slot's queue (see laneFor).
+    if (entry.pendingWakeAs !== null) entry.pendingWakeAs = 'decided';
+    if (entry.dirtyAs !== null) entry.dirtyAs = 'decided';
+    if (entry.queuedAs !== null && entry.queuedAs !== 'decided') {
+      // A new ticket retires the earlier place: a consolidation place left
+      // live would still be served from the consolidation slot.
+      entry.queuedAs = 'decided';
+      entry.queueTicket++;
+      this.decidedQueue.push({ entry, ticket: entry.queueTicket });
+      this.refreshMetrics();
+      this.pump();
+      return true;
     }
     this.refreshMetrics();
     return true;
@@ -424,6 +592,8 @@ export class TournamentEliminationScheduler {
       running: false,
       runningLane: null,
       consolidating: false,
+      decided: false,
+      runningDecided: false,
       warned: false,
       enqueuedAt: null,
       pendingWakeAt: null,
@@ -500,10 +670,14 @@ export class TournamentEliminationScheduler {
     let pendingWakes = 0;
     let consolidating = 0;
     let consolidationQueued = 0;
+    let decided = 0;
+    let decidedQueued = 0;
     let oldestEnqueuedAt: number | null = null;
     let oldestConsolidationAt: number | null = null;
     for (const entry of this.entries.values()) {
       if (entry.consolidating) consolidating++;
+      if (entry.decided) decided++;
+      if (entry.queuedAs === 'decided') decidedQueued++;
       if (entry.queuedAs) {
         queued++;
         if (
@@ -539,6 +713,11 @@ export class TournamentEliminationScheduler {
       consolidationRunning: this.consolidationRunningCount,
       consolidationOldestWaitMs:
         oldestConsolidationAt === null ? 0 : Math.max(0, now - oldestConsolidationAt),
+      decided,
+      decidedQueued,
+      decidedRunning: this.decidedRunningCount,
+      decidedCapacity: this.decidedSlots,
+      decidedLaneRunning: this.decidedLaneRunningCount,
     };
   }
 
@@ -632,12 +811,15 @@ export class TournamentEliminationScheduler {
     }
     this.entries.clear();
     this.consolidationQueue.length = 0;
+    this.decidedQueue.length = 0;
     this.urgentQueue.length = 0;
     this.routineQueue.length = 0;
     this.activeTournamentIds.clear();
     this.activeEntries.clear();
     this.runningCount = 0;
     this.consolidationRunningCount = 0;
+    this.decidedLaneRunningCount = 0;
+    this.decidedRunningCount = 0;
     this.allSlotsStalledReported = false;
     this.refreshMetrics(true);
   }
@@ -645,6 +827,7 @@ export class TournamentEliminationScheduler {
   private remove(entry: Entry): void {
     entry.registered = false;
     entry.consolidating = false;
+    entry.decided = false;
     entry.abortController?.abort();
     entry.queuedAs = null;
     entry.dirtyAs = null;
@@ -803,6 +986,15 @@ export class TournamentEliminationScheduler {
    * consolidation place is taken here only when neither lane has anything.
    */
   private next(): Entry | null {
+    // A decided game first, but never on the last general slot: live work
+    // always keeps one (DECIDED_LANE_LEAVES_LIVE_SLOTS).
+    if (
+      this.decidedQueue.length > 0 &&
+      this.decidedRunningCount < this.maxConcurrent - DECIDED_LANE_LEAVES_LIVE_SLOTS
+    ) {
+      const decided = this.shiftValid(this.decidedQueue);
+      if (decided) return decided;
+    }
     const preferUrgent =
       this.urgentQueue.length > 0 &&
       (this.urgentRunStreak < this.urgentBurst || this.routineQueue.length === 0);
@@ -823,7 +1015,8 @@ export class TournamentEliminationScheduler {
       this.urgentRunStreak++;
       return urgent;
     }
-    return this.shiftValid(this.consolidationQueue);
+    // No live work is waiting: a decided game may use the last slot too.
+    return this.shiftValid(this.decidedQueue) ?? this.shiftValid(this.consolidationQueue);
   }
 
   /**
@@ -859,7 +1052,15 @@ export class TournamentEliminationScheduler {
           if (entry.isActive?.() === false) continue;
           this.dispatch(entry, 'consolidation');
         }
-        while (this.runningCount - this.consolidationRunningCount < this.capacityNow()) {
+        while (this.decidedLaneRunningCount < this.decidedCapacityNow()) {
+          const entry = this.shiftValid(this.decidedQueue);
+          if (!entry) break;
+          entry.queuedAs = null;
+          entry.enqueuedAt = null;
+          if (entry.isActive?.() === false) continue;
+          this.dispatch(entry, 'decided');
+        }
+        while (this.generalRunningCount() < this.capacityNow()) {
           const entry = this.next();
           if (!entry) break;
           entry.queuedAs = null;
@@ -878,6 +1079,9 @@ export class TournamentEliminationScheduler {
     entry.running = true;
     entry.runningLane = lane;
     if (lane === 'consolidation') this.consolidationRunningCount++;
+    if (lane === 'decided') this.decidedLaneRunningCount++;
+    entry.runningDecided = lane === 'general' && entry.decided;
+    if (entry.runningDecided) this.decidedRunningCount++;
     entry.diagnosticOperationId = null;
     entry.abortController = new AbortController();
     this.activeTournamentIds.add(entry.tournamentId);
@@ -894,6 +1098,13 @@ export class TournamentEliminationScheduler {
       entry.running = false;
       if (entry.runningLane === 'consolidation') {
         this.consolidationRunningCount = Math.max(0, this.consolidationRunningCount - 1);
+      }
+      if (entry.runningLane === 'decided') {
+        this.decidedLaneRunningCount = Math.max(0, this.decidedLaneRunningCount - 1);
+      }
+      if (entry.runningDecided) {
+        this.decidedRunningCount = Math.max(0, this.decidedRunningCount - 1);
+        entry.runningDecided = false;
       }
       entry.runningLane = null;
       entry.diagnosticOperationId = null;
@@ -937,7 +1148,8 @@ export class TournamentEliminationScheduler {
         this.refreshMetrics(true);
         const snapshot = this.snapshot();
         if (
-          snapshot.running - snapshot.consolidationRunning >= snapshot.capacity &&
+          snapshot.running - snapshot.consolidationRunning - snapshot.decidedLaneRunning >=
+            snapshot.capacity &&
           this.stalledCount('general') >= snapshot.capacity &&
           !this.allSlotsStalledReported
         ) {
@@ -993,6 +1205,7 @@ export class TournamentEliminationScheduler {
     consolidationQueueDepthGauge.set(snapshot.consolidationQueued);
     consolidatingGauge.set(snapshot.consolidating);
     consolidationOldestWaitGauge.set(snapshot.consolidationOldestWaitMs);
+    decidedQueueDepthGauge.set(snapshot.decidedQueued);
     slotsInflightGauge.set(snapshot.running);
     stalledSlotsGauge.set(snapshot.stalled);
     oldestWaitGauge.set(snapshot.oldestWaitMs);

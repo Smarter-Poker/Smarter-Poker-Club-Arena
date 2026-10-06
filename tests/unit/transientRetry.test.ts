@@ -111,20 +111,17 @@ describe('retryTransient', () => {
   });
 });
 
-describe('certify-club-create routes its retirement through the retry', () => {
+describe('certify-club-create routes its retirement through the guarded database helper', () => {
   const source = readFileSync(
     resolve(__dirname, '../../scripts/ci/certify-club-create.mjs'),
     'utf8'
   );
 
-  it('retires each fixture club inside retryTransient, on the sanctioned door, mapping the returned error', () => {
-    expect(source).toContain("import { retryTransient } from './transient-retry.mjs'");
-    const door = source.indexOf("admin.rpc('fn_ca_retire_certification_club'");
-    expect(door).toBeGreaterThan(-1);
-    const wrapper = source.lastIndexOf('retryTransient(', door);
-    expect(wrapper).toBeGreaterThan(-1);
-    expect(door - wrapper).toBeLessThan(120);
-    expect(source).toContain('failureOf: (result) => result?.error');
+  it('retires residual fixtures through the sanctioned helper with the direct database budget', () => {
+    expect(source).toContain('retireCertificationClubWithRetry({');
+    expect(source).toContain('environment: process.env');
+    expect(source).toContain("reason: 'cert-residue-recovery'");
+    expect(source).not.toContain("admin.rpc('fn_ca_retire_welcome_certification_club'");
   });
 
   it('does not read an unreadable leak check as an empty one', () => {

@@ -38,8 +38,90 @@ import {
   deriveFlowFlags,
   computeTransfers,
   maxWinnable,
+  writeHandFacts,
   type HandAction,
 } from '../server/src/services/supabase/handFacts';
+import { dealtStacksFromAtomicCommit } from '../server/src/services/supabase/handHistory';
+
+describe('accepted-hand Stats fact payload', () => {
+  it('uses atomic stack_before instead of arithmetic corrupted by side inflows', () => {
+    const exact = dealtStacksFromAtomicCommit({
+      stacks: [
+        { user_id: 'hero', stack_before: 100, stack: 140 },
+        { user_id: 'villain', stack_before: 100, stack: 80 },
+      ],
+    });
+    // A 20-chip BBJ/insurance side inflow makes final + invested - awarded
+    // equal 120, but the immutable accepted envelope remains exactly 100.
+    expect(140 + 20 - 40).toBe(120);
+    expect(exact.get('hero')).toBe(100);
+  });
+  it('captures private folded-card facts before commit without using the direct writer', async () => {
+    const handId = '30000000-0000-4000-8000-000000000001';
+    const hero = '40000000-0000-4000-8000-000000000001';
+    const villain = '40000000-0000-4000-8000-000000000002';
+    const payload = await writeHandFacts({
+      handId,
+      tableId: '20000000-0000-4000-8000-000000000001',
+      clubId: '10000000-0000-4000-8000-000000000001',
+      handNumber: 1001,
+      gameVariant: 'nlh',
+      bigBlind: 2,
+      playedAt: '2026-10-03T12:00:00.000Z',
+      buttonSeat: 1,
+      rakeAmount: 1,
+      boardLength: 3,
+      holeCardsAll: new Map([
+        [
+          hero,
+          {
+            seat: 1,
+            cards: [
+              { rank: 'A', suit: 'spades' },
+              { rank: 'K', suit: 'spades' },
+            ],
+          },
+        ],
+        [
+          villain,
+          {
+            seat: 2,
+            cards: [
+              { rank: 'Q', suit: 'hearts' },
+              { rank: 'Q', suit: 'clubs' },
+            ],
+          },
+        ],
+      ]),
+      contributions: new Map([
+        [hero, 10],
+        [villain, 10],
+      ]),
+      winners: [{ userId: villain, amount: 19 }],
+      actions: [
+        { seat: 1, userId: hero, action: 'call', amount: 10, stage: 'preflop' },
+        { seat: 1, userId: hero, action: 'fold', amount: 0, stage: 'flop' },
+      ],
+      roster: [
+        { userId: hero, isHorse: false },
+        { userId: villain, isHorse: false },
+      ],
+      collectOnly: true,
+    });
+    expect(payload?.version).toBe(2);
+    expect(payload?.facts).toHaveLength(2);
+    expect(payload?.facts.find((row) => row.user_id === hero)).toMatchObject({
+      hand_id: handId,
+      hole_cards: [
+        { rank: 'A', suit: 'spades' },
+        { rank: 'K', suit: 'spades' },
+      ],
+      invested: 10,
+      returned: 0,
+      net: -10,
+    });
+  });
+});
 
 // ───────────────────────────────────────────────────────────────────────────
 describe('computeHandClass — the 169-grid key', () => {
@@ -265,6 +347,113 @@ describe('deriveFlowFlags', () => {
     const f = deriveFlowFlags(A, actions, { boardLength: 5, returned: 0, nonFoldedCount: 2 });
     expect(f.aggressive_actions).toBe(2);
     expect(f.passive_actions).toBe(2);
+    expect(f.aggressive_actions_flop).toBe(1);
+    expect(f.passive_actions_turn).toBe(1);
+  });
+
+  it('records exact preflop opportunity denominators only with authoritative context', () => {
+    const actions: HandAction[] = [
+      { ...act(B, 'raise', 'preflop', 3), seat: 3 },
+      { ...act(C, 'call', 'preflop', 3), seat: 4 },
+      { ...act(A, 'raise', 'preflop', 12), seat: 5 },
+    ];
+    const f = deriveFlowFlags(A, actions, {
+      boardLength: 0,
+      returned: 18,
+      nonFoldedCount: 1,
+      position: 'BTN',
+      contextAvailable: true,
+      buttonSeat: 5,
+      dealtSeats: [1, 2, 3, 4, 5],
+    });
+    expect(f.three_bet_opportunity).toBe(true);
+    expect(f.squeeze_opportunity).toBe(true);
+    expect(f.squeezed).toBe(true);
+    const unavailable = deriveFlowFlags(A, actions, {
+      boardLength: 0,
+      returned: 18,
+      nonFoldedCount: 1,
+    });
+    expect(unavailable.three_bet_opportunity).toBeNull();
+  });
+
+  it('derives check-raise and barrel opportunities from ordered street actions', () => {
+    const actions: HandAction[] = [
+      { ...act(A, 'raise', 'preflop', 3), seat: 1 },
+      { ...act(B, 'call', 'preflop', 3), seat: 2 },
+      { ...act(B, 'check', 'flop'), seat: 2 },
+      { ...act(A, 'bet', 'flop', 4), seat: 1 },
+      { ...act(A, 'bet', 'turn', 10), seat: 1 },
+      { ...act(B, 'check', 'river'), seat: 2 },
+      { ...act(A, 'bet', 'river', 20), seat: 1 },
+      { ...act(B, 'raise', 'river', 60), seat: 2 },
+    ];
+    const fa = deriveFlowFlags(A, actions, {
+      boardLength: 5,
+      returned: 100,
+      nonFoldedCount: 2,
+      position: 'BB',
+      contextAvailable: true,
+      buttonSeat: 2,
+      dealtSeats: [1, 2],
+    });
+    expect(fa.cbet_flop_opportunity).toBe(true);
+    expect(fa.barrel_turn_opportunity).toBe(true);
+    expect(fa.barrel_river_opportunity).toBe(true);
+    const fb = deriveFlowFlags(B, actions, {
+      boardLength: 5,
+      returned: 0,
+      nonFoldedCount: 2,
+      position: 'BTN',
+      contextAvailable: true,
+      buttonSeat: 2,
+      dealtSeats: [1, 2],
+    });
+    expect(fb.check_raise_opportunity).toBe(true);
+    expect(fb.check_raised).toBe(true);
+  });
+
+  it('does not offer a barrel when the c-bettor is donked into', () => {
+    const actions: HandAction[] = [
+      { ...act(A, 'raise', 'preflop', 3), seat: 1 },
+      { ...act(B, 'call', 'preflop', 3), seat: 2 },
+      { ...act(B, 'check', 'flop'), seat: 2 },
+      { ...act(A, 'bet', 'flop', 4), seat: 1 },
+      { ...act(B, 'bet', 'turn', 8), seat: 2 },
+      { ...act(A, 'call', 'turn', 8), seat: 1 },
+    ];
+    const f = deriveFlowFlags(A, actions, {
+      boardLength: 4,
+      returned: 0,
+      nonFoldedCount: 2,
+      position: 'BB',
+      contextAvailable: true,
+      buttonSeat: 2,
+      dealtSeats: [1, 2],
+    });
+    expect(f.barrel_turn_opportunity).toBe(false);
+    expect(f.barreled_turn).toBe(false);
+  });
+
+  it('carries initiative across a checked-through flop for an exact turn probe', () => {
+    const actions: HandAction[] = [
+      { ...act(A, 'raise', 'preflop', 3), seat: 2 },
+      { ...act(B, 'call', 'preflop', 3), seat: 1 },
+      { ...act(B, 'check', 'flop'), seat: 1 },
+      { ...act(A, 'check', 'flop'), seat: 2 },
+      { ...act(B, 'bet', 'turn', 4), seat: 1 },
+    ];
+    const f = deriveFlowFlags(B, actions, {
+      boardLength: 4,
+      returned: 10,
+      nonFoldedCount: 2,
+      position: 'BB',
+      contextAvailable: true,
+      buttonSeat: 2,
+      dealtSeats: [1, 2],
+    });
+    expect(f.probe_opportunity).toBe(true);
+    expect(f.probe_bet).toBe(true);
   });
 });
 

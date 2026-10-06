@@ -15,13 +15,25 @@
  * WHY SHADOW. It lets the SQL matcher be judged against live pools - who it
  * would have grouped, who it would have held and why - with nothing at stake.
  *
- * WHY 'form' IS REFUSED. `fn_lightning_match_and_form` writes formed hands.
- * Nothing in this engine deals a Lightning hand yet, so a formed hand would
- * have no dealer and would sit until the reaper took it - holding its players
- * out of every other hand for that long. Until the dealing host exists, a
- * Cluster configured 'form' gets a worker that says so (rate-limited) and
- * makes no RPC at all. The refusal is here, in the one class that could
- * call the writer, rather than trusted to a config value.
+ * FORM MODE (Lightning Phase 6, 2026-09-27). Each pass makes ONE call to
+ * `fn_lightning_match_and_form` with a fresh request id (reused only to retry
+ * a pass whose outcome is unknown, which the writer answers from its record),
+ * bounded by `maxHandsPerPass`, and hands every formed hand to the dealing
+ * host (`startHand`, LightningHosting). A host that frees a player, or ends,
+ * wakes the worker so the next pass runs at once instead of a pass interval
+ * later. `formation_invariant_failed` means the barrier FROZE the Cluster:
+ * the worker stops for good and says so. A worker built without a dealing
+ * host still refuses 'form' outright and calls nothing - a formed hand with
+ * no dealer would sit until reaped, holding its players out of every hand.
+ *
+ * DRAINING (Lightning Phase 7, 2026-10-02). A Cluster in `pending_off` is on
+ * its way back to MUST MOVE: the database refuses to form, and settles every
+ * hand already in the air. Its worker keeps running but DRAINS - each pass
+ * calls nothing at all (no matcher, no match_and_form), and says once per
+ * keepalive interval that it is draining. The hands in the air are not the
+ * worker's: their hosts deal them to settlement and keep their instances
+ * alive on their own clock. A Cluster that turns back to `lightning` (the
+ * conversion aborted) resumes forming on the next pass.
  *
  * TIMERS. One setTimeout at a time, armed only after the previous pass has
  * finished (no overlap, no pile-up behind a slow database), unref'd so it
@@ -34,8 +46,11 @@ import {
   LIGHTNING_STOP_DRAIN_MS,
   type LightningConfig,
 } from './LightningConfig.js';
+import { randomUUID } from 'node:crypto';
 import {
+  isUuid,
   lightningMatch,
+  lightningMatchAndForm,
   summarizeLightningMatch,
   type LightningDiagnosisSummary,
   type LightningRpcClient,
@@ -47,6 +62,7 @@ import {
   type LightningPassOutcome,
 } from './LightningMetrics.js';
 import { RateLimitedLog } from './RateLimitedLog.js';
+import type { LightningFormedHand } from './LightningHandHost.js';
 
 export interface LightningWorkerLogger {
   log(message: string): void;
@@ -62,11 +78,28 @@ export interface LightningClusterWorkerDeps {
   now?: () => Date;
   /** The platform freeze (CLAUDE.md 13): no pass, no I/O, while it holds. */
   frozen?: () => boolean;
+  /** The dealing host. Without it, 'form' is refused. */
+  startHand?: (hand: LightningFormedHand) => void;
+  /** A host already exists for this instance (a replayed pass names it again). */
+  hasInstance?: (instanceId: string) => boolean;
+  /** The barrier froze the Cluster: the supervisor drops this worker. */
+  onClusterFrozen?: (clusterId: string) => void;
+  /**
+   * Epoch ms before which this Cluster must not form: consecutive abandoned
+   * hands back it off (LightningHosting), a settled hand clears it.
+   */
+  formBackoffUntil?: () => number;
+  /**
+   * Does this process hold the verified lease on the Cluster's front table
+   * (the host table every hand binds to)? Without it a formed hand could only
+   * be abandoned, so the worker does not form.
+   */
+  holdsFrontTableLease?: () => Promise<boolean>;
 }
 
 export type LightningWorkerPassResult =
   | { outcome: 'matched'; summary: LightningDiagnosisSummary; disconnected: number }
-  | { outcome: Exclude<LightningPassOutcome, 'matched'>; reason?: string };
+  | { outcome: Exclude<LightningPassOutcome, 'matched'>; reason?: string; formed?: number };
 
 const consoleLogger: LightningWorkerLogger = {
   log: (m) => console.log(m),
@@ -90,6 +123,12 @@ export class LightningClusterWorker {
   private readonly now: () => Date;
   private readonly frozen: () => boolean;
   private passes = 0;
+  /** The request id of a forming pass whose outcome is unknown: retried as-is. */
+  private pendingRequestId: string | null = null;
+  private wakeRequested = false;
+  /** `pending_off`: form nothing, call nothing; the hands in the air settle. */
+  private draining = false;
+  private lastDrainLogAtMs = 0;
 
   constructor(
     readonly clusterId: string,
@@ -117,6 +156,26 @@ export class LightningClusterWorker {
 
   get passCount(): number {
     return this.passes;
+  }
+
+  get isDraining(): boolean {
+    return this.draining;
+  }
+
+  /**
+   * The supervisor's word on the Cluster's mode: `pending_off` drains,
+   * `lightning` forms. Takes effect from the next pass; a pass already in
+   * flight finishes (and the database refuses its formation anyway).
+   */
+  setDraining(draining: boolean): void {
+    if (draining === this.draining) return;
+    this.draining = draining;
+    this.lastDrainLogAtMs = 0;
+    this.logger.log(
+      draining
+        ? `[Lightning:${this.clusterId}] pending_off - forming stopped; hands in the air play on to settlement`
+        : `[Lightning:${this.clusterId}] back to lightning - forming resumes`
+    );
   }
 
   /** Arm the first pass. Idempotent; a stopped worker stays stopped. */
@@ -183,10 +242,27 @@ export class LightningClusterWorker {
         })
         .finally(() => {
           if (this.inFlight === pass) this.inFlight = null;
-          this.arm(this.config.passIntervalMs);
+          const woken = this.wakeRequested;
+          this.wakeRequested = false;
+          this.arm(woken ? 0 : this.config.passIntervalMs);
         });
     }, delayMs);
     (this.timer as { unref?: () => void }).unref?.();
+  }
+
+  /**
+   * A player was freed or a hand ended: run the next pass now rather than a
+   * pass interval from now. A pass in flight is followed at once by another.
+   */
+  wake(): void {
+    if (!this.running || this.stopped || this.config.workerMode !== 'form') return;
+    // A draining Cluster forms nothing, so a freed player is no reason to run.
+    if (this.draining) return;
+    if (this.inFlight) {
+      this.wakeRequested = true;
+      return;
+    }
+    this.arm(0);
   }
 
   /**
@@ -203,6 +279,8 @@ export class LightningClusterWorker {
   private async runPass(): Promise<LightningWorkerPassResult> {
     const mode = this.config.workerMode;
     if (mode === 'off') return { outcome: 'off' };
+    if (this.draining) return this.drainPass();
+    if (mode === 'form' && this.deps.startHand) return this.formPass();
     if (mode === 'form') {
       if (this.failureLog.shouldLog('form')) {
         this.logger.warn(
@@ -265,6 +343,136 @@ export class LightningClusterWorker {
     this.metrics.recordSummary(this.clusterId, summary);
     this.maybeLogSummary(summary, disconnected.length);
     return { outcome: 'matched', summary, disconnected: disconnected.length };
+  }
+
+  /**
+   * A draining pass: no I/O at all. The keepalive line says, at most once per
+   * keepalive interval, that the worker is alive and why it is not forming.
+   */
+  private drainPass(): LightningWorkerPassResult {
+    const nowMs = this.now().getTime();
+    if (nowMs - this.lastDrainLogAtMs >= this.config.keepaliveIntervalMs) {
+      this.lastDrainLogAtMs = nowMs;
+      this.logger.log(
+        `[Lightning:${this.clusterId}] draining (pending_off): forming nothing until the Cluster is MUST MOVE`
+      );
+    }
+    return { outcome: 'skipped', reason: 'pending_off' };
+  }
+
+  /** One forming pass: match_and_form, then a host per formed hand. */
+  private async formPass(): Promise<LightningWorkerPassResult> {
+    if (this.frozen()) return { outcome: 'frozen' };
+    const backoffUntil = this.deps.formBackoffUntil?.() ?? 0;
+    if (backoffUntil > this.now().getTime())
+      return { outcome: 'skipped', reason: 'abandon_backoff' };
+    if (this.deps.holdsFrontTableLease) {
+      let held = false;
+      try {
+        held = await this.deps.holdsFrontTableLease();
+      } catch (err) {
+        if (this.failureLog.shouldLog('front_table_lease')) {
+          this.logger.error(
+            `[Lightning:${this.clusterId}] front table lease unknown; not forming`,
+            err
+          );
+        }
+      }
+      if (!held) return { outcome: 'skipped', reason: 'front_table_lease_not_held' };
+    }
+    let disconnected: string[];
+    try {
+      disconnected = this.deps.presence.snapshot(
+        this.clusterId,
+        this.knownPoolPlayers
+      ).pDisconnected;
+    } catch (err) {
+      if (this.failureLog.shouldLog('presence')) {
+        this.logger.error(`[Lightning:${this.clusterId}] presence feed failed; pass skipped`, err);
+      }
+      return { outcome: 'error', reason: 'presence_failed' };
+    }
+    const requestId = this.pendingRequestId ?? randomUUID();
+    this.pendingRequestId = requestId;
+    const out = await lightningMatchAndForm(this.deps.rpc, {
+      clusterId: this.clusterId,
+      now: this.now(),
+      disconnected,
+      maxHands: this.config.maxHandsPerPass,
+      requestId,
+    });
+    if (out.status === 'error') {
+      // Unknown outcome: the next pass asks again under the same id.
+      if (this.failureLog.shouldLog('form_error')) {
+        this.logger.error(
+          `[Lightning:${this.clusterId}] fn_lightning_match_and_form failed`,
+          out.error
+        );
+      }
+      return { outcome: 'error', reason: 'rpc_failed' };
+    }
+    this.pendingRequestId = null;
+    if (out.status === 'unavailable') {
+      if (this.failureLog.shouldLog('unavailable')) {
+        this.logger.warn(
+          `[Lightning:${this.clusterId}] fn_lightning_match_and_form is not deployed yet`
+        );
+      }
+      return { outcome: 'unavailable', reason: out.reason };
+    }
+    if (out.status === 'invalid') return { outcome: 'invalid', reason: out.reason };
+    const result = out.value;
+    if (result.skipped === true) return { outcome: 'skipped', reason: String(result.reason ?? '') };
+    if (result.ok !== true && result.frozen !== true && result.reason) {
+      return { outcome: 'invalid', reason: String(result.reason) };
+    }
+    const formedAtMs = this.now().getTime();
+    const hands = Array.isArray(result.hands) ? result.hands : [];
+    let started = 0;
+    for (const raw of hands) {
+      const h = raw as Record<string, unknown>;
+      const players = Array.isArray(h.players) ? h.players.filter(isUuid) : [];
+      if (
+        !isUuid(h.hand_id) ||
+        !isUuid(h.instance_id) ||
+        !isUuid(h.bb) ||
+        !isUuid(h.sb) ||
+        !isUuid(h.btn) ||
+        players.length < 2
+      ) {
+        this.logger.error(
+          `[Lightning:${this.clusterId}] formed hand outside its contract; left to the reaper`
+        );
+        continue;
+      }
+      if (this.deps.hasInstance?.(h.instance_id)) continue; // a replay naming a hand already dealt
+      this.metrics.noteMatched(players, formedAtMs);
+      for (const p of players)
+        if (!this.knownPoolPlayers.includes(p)) this.knownPoolPlayers.push(p);
+      this.deps.startHand!({
+        clusterId: this.clusterId,
+        instanceId: h.instance_id,
+        handId: h.hand_id,
+        bb: h.bb,
+        sb: h.sb,
+        btn: h.btn,
+        players,
+        formedAtMs,
+      });
+      started++;
+    }
+    if (result.frozen === true || result.stopped_reason === 'frozen') {
+      this.logger.error(
+        `[Lightning:${this.clusterId}] formation_invariant_failed: the barrier froze the Cluster; worker stopping`
+      );
+      this.stopped = true;
+      this.running = false;
+      if (this.timer) clearTimeout(this.timer);
+      this.timer = null;
+      this.deps.onClusterFrozen?.(this.clusterId);
+      return { outcome: 'frozen', reason: 'formation_invariant_failed', formed: started };
+    }
+    return { outcome: 'formed', formed: started };
   }
 
   /**

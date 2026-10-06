@@ -1,0 +1,34 @@
+Horse Brain Phase 10 natural evidence: dead button on the closing release (predeclaration)
+=========================================================================================
+
+Declared at: 2026-10-03T22:06:47Z (UTC), before any journal record decided in the windows
+below was read. The blind-seats window on 62e79380 (declaration
+declaration-p10-blindseats.txt) contained no PLO4 table with four or more
+dealt seats, so its check B2 was not evaluated; an undeclared context scan
+(21:00-21:40Z on 62e79380) was read and is NOT counted here.
+
+Serving release R2: club-arena-engine label fe7f3635bb48aabdd80f661c679302babea9906d,
+container started 2026-10-03T21:55:41Z, read 22:06:26Z; it contains 795e6e45
+(#5999), b5dbef08 (#5992) and 82d391ea (#5998). Only records whose
+sourceRelease equals R2 count; others are counted as release_other.
+
+Windows (complete populations, decision time):
+  W1 = [2026-10-03T22:10:00Z, 2026-10-03T22:50:00Z)
+  W2 = [2026-10-03T23:05:00Z, 2026-10-03T23:50:00Z), read only if W1 holds
+       fewer than 10 PLO4 decisions with an empty dealer seat at three or
+       more dealt seats; then W1 and W2 are reported separately and together.
+
+Population: every single-board PLO4 decision record in the journal archive
+in the window(s). Scanner: the committed
+docs/evidence/phase10/p10-blindseats-journal-observe.py (sha256 of the
+committed file is recorded in the artifact), unchanged except the window
+and release arguments.
+
+Checks, exactly as B1-B5 in declaration-p10-blindseats.txt. B2 and B3 are
+the purpose: every dead-button decision is eligible with a v2 binding or
+refused by an accurate name other than canonical_state_unavailable, and
+positions match the posted blind seats on every eligible decision,
+including dead-button and dead-small-blind hands (counted separately).
+
+If both windows hold no dead-button PLO4 decision, B2 is reported as not
+evaluated (population), with the tournament schedule as the reason.

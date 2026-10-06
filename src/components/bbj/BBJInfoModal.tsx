@@ -134,7 +134,7 @@ export function BBJInfoModal({
     if (!node) return;
     const focusable = Array.from(
       node.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        'button:not([disabled]), [href], input:not([disabled]):not([tabindex="-1"]), [tabindex]:not([tabindex="-1"])'
       )
     ).filter((el) => el.offsetParent !== null || el === document.activeElement);
     if (focusable.length === 0) return;

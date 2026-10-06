@@ -1,0 +1,30 @@
+{
+  "schema": "horse-phase10-qualification-v1",
+  "qualified": false,
+  "mode": "contract",
+  "sourceSha": "ac4ecfb1231ab96fd34849d1e02b9929e9ccf492",
+  "packVersion": "plo4-policy-round1-v3",
+  "contractVersion": "plo4-strength-contract-v1",
+  "contractDigest": "ebdbdbb48336c0425df735fa073a4a28ef4884c199a69006e27909a6bc2b6384",
+  "domain": "plo4-cash-single-board-after-rake-horse-population",
+  "policyDigest": "a3d924450b7f8f05d1dd79242170c5c2d1c38443412e11ab2bcf114dda25c221",
+  "objectives": {
+    "cash": { "qualified": false, "status": "measured" },
+    "tournament": {
+      "status": "unavailable dependency",
+      "qualified": false,
+      "reasons": [
+        "tournament:plo4_whole_tournament_outcome_model_unavailable",
+        "tournament:qualified_plo4_tournament_reference_population_unavailable",
+        "tournament:plo4_tournament_thresholds_not_specified"
+      ]
+    }
+  },
+  "evidencePath": "docs/evidence/phase10/strength-2026-10-03/strength.json",
+  "evidenceSha256": "404bc0b71e16ea6ac1ac6fd1f4d1a3fb29cc833c233e44ed285c119bdd5ef263",
+  "reasons": [
+    "cash:primary:lower_bound_not_above_zero",
+    "cash:seed:10201109:point_estimate_not_above_zero",
+    "cash:profile:p10c-6max-2dealt-100bb:regression_margin_exceeded"
+  ]
+}

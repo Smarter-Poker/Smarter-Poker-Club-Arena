@@ -62,14 +62,29 @@ export const STATS_RPCS_ARE_SCOPED = true;
 /** The name an unreadable scope reports, so a panel can say so out loud. */
 export const STATS_SCOPE_UNREADABLE = 'stats_scope_unavailable';
 
+/** A null club is the existing All Clubs view. A UUID selects one authorized club. */
+export type StatsClubId = string | null;
+
+/** Selects the additive per-club RPC without changing the proven All Clubs door. */
+export function statsRpcName(baseName: string, clubId: StatsClubId): string {
+  return clubId ? `${baseName}_by_club` : baseName;
+}
+
 /**
  * The scope argument for an RPC call.
  *
  * Empty only while the RPCs are unscoped: passing an argument a function does
  * not declare is a hard PostgREST failure, not a no-op.
  */
-export function statsScopeArgs(scope: StatsScope): Record<string, unknown> {
-  return STATS_RPCS_ARE_SCOPED ? { p_asset: scope } : {};
+export function statsScopeArgs(
+  scope: StatsScope,
+  clubId: StatsClubId = null
+): Record<string, unknown> {
+  if (!STATS_RPCS_ARE_SCOPED) return {};
+  // Omit the optional club argument for the existing All Clubs contract. This
+  // keeps a newer client compatible while the club-scoped database migration
+  // is being installed; sending an undeclared null argument is still PGRST202.
+  return clubId ? { p_asset: scope, p_club_id: clubId } : { p_asset: scope };
 }
 
 /**

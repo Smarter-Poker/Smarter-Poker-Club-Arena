@@ -33,8 +33,9 @@ import {
   ReferenceLine,
 } from 'recharts';
 import StatsFactsService, { type EVCurvePayload } from '../../services/StatsFactsService';
-import { CHIP_STATS, type StatsScope } from '../../services/statsScope';
+import { CHIP_STATS, type StatsClubId, type StatsScope } from '../../services/statsScope';
 import { chartReveal } from './statsMotion';
+import StatsDataTable from './StatsDataTable';
 import './EVLuckChart.css';
 
 interface Props {
@@ -45,6 +46,8 @@ interface Props {
   days?: number | null;
   /** The asset the figures are in: chips by default, Diamonds in the Diamond Arena. */
   scope?: StatsScope;
+  /** Null reads All Clubs; a UUID reads the selected authorized club. */
+  clubId?: StatsClubId;
 }
 
 interface Row {
@@ -94,6 +97,7 @@ export default function EVLuckChart({
   days = null,
   still = false,
   scope = CHIP_STATS,
+  clubId = null,
 }: Props) {
   // Recharts renders axis ticks with an INLINE fill, which no stylesheet can
   // override - so on a printed white page the near-white ticks disappear and
@@ -114,7 +118,7 @@ export default function EVLuckChart({
     }
     let cancelled = false;
     setLoading(true);
-    StatsFactsService.getEVCurve(userId, scope, days)
+    StatsFactsService.getEVCurve(userId, scope, days, clubId)
       .then((payload) => {
         if (cancelled) return;
         setData(payload);
@@ -126,7 +130,7 @@ export default function EVLuckChart({
     return () => {
       cancelled = true;
     };
-  }, [userId, days, attempt, scope]);
+  }, [userId, days, attempt, scope, clubId]);
 
   const rows: Row[] = useMemo(() => {
     if (!data?.points?.length) return [];
@@ -300,6 +304,18 @@ export default function EVLuckChart({
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+
+      <StatsDataTable
+        caption="Actual Versus Expected Value By Hand"
+        rows={rows}
+        rowKey={(row) => String(row.i)}
+        columns={[
+          { key: 'hand', label: 'Hand', render: (row) => row.i.toLocaleString() },
+          { key: 'actual', label: 'Actual BB', render: (row) => fmtBB(row.actual) },
+          { key: 'expected', label: 'Expected BB', render: (row) => fmtBB(row.ev) },
+          { key: 'gap', label: 'Luck Gap BB', render: (row) => fmtBB(row.luck) },
+        ]}
+      />
 
       <div className="evluck-legend">
         <span className="evluck-key">

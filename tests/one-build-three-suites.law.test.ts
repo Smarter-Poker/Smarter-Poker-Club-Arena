@@ -57,6 +57,7 @@ import { join } from 'node:path';
 const ROOT = process.cwd();
 const CI = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8');
 const PUBLISH = readFileSync(join(ROOT, '.github/workflows/publish-club-arena.yml'), 'utf8');
+const CUSTOMIZATION_CONFIG = readFileSync(join(ROOT, 'playwright.customization.config.ts'), 'utf8');
 
 const HARNESS_FLAGS = ['VITE_CUSTOMIZATION_TEST_HARNESS', 'VITE_FINANCIAL_DECISION_TEST_HARNESS'];
 
@@ -113,6 +114,12 @@ describe('the harness never reaches a bundle a player downloads', () => {
 });
 
 describe('one preview, shared, and reaped', () => {
+  it('the Table Studio Chromium project cannot inherit the iPhone WebKit default', () => {
+    expect(CUSTOMIZATION_CONFIG).toMatch(
+      /name:\s*'mobile-chromium'[\s\S]*?use:\s*\{\s*\.\.\.devices\['iPhone 13'\],\s*browserName:\s*'chromium'\s*\}/
+    );
+  });
+
   it('the preview is started in its own step, not inside the beats', () => {
     // Started under `trap ... EXIT` inside the beats step it died with that
     // step, which is precisely why each harness suite had to compile its own

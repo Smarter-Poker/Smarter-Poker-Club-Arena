@@ -31,6 +31,7 @@ const TICKER = read('src/components/tournament/TournamentStartingTicker.tsx');
 const MENU = read('src/components/navigation/HamburgerMenu.tsx');
 const MENU_CSS = read('src/components/navigation/HamburgerMenu.module.css');
 const APP = read('src/App.tsx');
+const CLUB_SETTINGS = read('src/pages/ClubSettingsPage.tsx');
 
 describe('1. the ticker exists on tables and club lobbies, and never over the menu', () => {
   it('route gate covers /table/* and the exact club-lobby route only', () => {
@@ -108,6 +109,14 @@ describe('3. every menu destination is actually connected to a route', () => {
       expect(matchesRoute(item.path), `${item.path} has no route in App.tsx`).toBe(true);
     });
   }
+
+  it('sends controlling members to the working Share Club surface', () => {
+    expect(MENU).toContain('handleNavigate(`/clubs/${clubId}/settings`)');
+    expect(MENU).not.toContain('handleNavigate(`/invite/${clubId}`)');
+    expect(APP).toContain('path="clubs/:clubId/settings"');
+    expect(CLUB_SETTINGS).toContain('<h3>Share Club</h3>');
+    expect(CLUB_SETTINGS).toContain('Copy Invite Link');
+  });
 });
 
 describe('4. Table Studio takes control from the command drawer', () => {
@@ -156,7 +165,9 @@ describe('5. A union operator has a Table Management door', () => {
     them.
   */
   it('offers the union board when the club is operated from a union', () => {
-    expect(MENU).toContain('/unions/${unionManageId}/table-management');
+    expect(MENU).toContain('/unions/${unionManageIdInContext}/table-management');
+    expect(MENU).toContain('unionService.isUnionAdmin(routeUnionId, user.id)');
+    expect(MENU).toContain('operator ? unionRouteRef : null');
   });
 
   it('offers it only to an operator, using the same test the board applies', () => {
@@ -166,13 +177,23 @@ describe('5. A union operator has a Table Management door', () => {
     // Bounded by the block that decides it, never by a byte count: the union
     // door and the operator check must live in the SAME block, or one could be
     // moved away from the other and this would still pass.
-    const gate = sliceEnclosingBlock(MENU, 'setUnionManageId(operator');
+    const gate = sliceEnclosingBlock(MENU, 'setUnionManageId(operator ? access.unionId');
     expect(gate).toContain('await unionService.isUnionAdmin(');
     expect(gate).toMatch(/setUnionManageId\(operator \? access\.unionId : null\)/);
   });
 
-  it('clears the union door when there is no club context', () => {
-    // Otherwise the entry would survive into a signed-out or clubless menu.
-    expect(MENU).toMatch(/setCanManageGames\(false\);\s*\n\s*setUnionManageId\(null\);/);
+  it('keys the union door to the current club or union route', () => {
+    // Otherwise a slower answer for a previous route could expose its door.
+    expect(MENU).toContain('gameAuthorityContext === gameAuthorityKey');
+    expect(MENU).toContain('`${gameAuthorityScopeKey}:revision:${gameAccessRevision}`');
+    expect(MENU).toContain("useMasterBusSubscription('GAME_MANAGEMENT_ACCESS_CHANGED'");
+    expect(MENU).toMatch(
+      /setCanManageGames\(false\);\s*\n\s*setUnionManageId\(null\);\s*\n\s*setGameAuthorityContext\(''\);/
+    );
+  });
+
+  it('keeps the union route resolver outside the global first-paint chunk', () => {
+    expect(MENU).toContain("await import('../../utils/unionIdResolver')");
+    expect(MENU).not.toContain('import { useUnionRouteId }');
   });
 });

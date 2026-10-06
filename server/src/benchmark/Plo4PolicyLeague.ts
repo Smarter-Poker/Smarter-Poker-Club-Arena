@@ -18,7 +18,36 @@ import {
   type OmahaPolicyVariant,
 } from '../engine/omaha/OmahaVariantPolicyPack.js';
 import { PLO4_POLICY_PACK } from '../engine/plo4/Plo4PolicyPack.js';
-import { referenceDeck, uniqueCards } from './OmahaReference.js';
+import { createHash } from 'node:crypto';
+import {
+  contributionLayers,
+  referenceDeck,
+  settleOmahaReference,
+  uniqueCards,
+} from './OmahaReference.js';
+import { effectiveBbjDrop, effectiveRake } from '../config/rakeSpec.js';
+import { getFullRakeConfig, getPlayerCountCaps } from '../config/RakeConfig.js';
+import {
+  PLO4_DIVERGENCE_STREETS,
+  PLO4_STRENGTH_BB,
+  PLO4_STRENGTH_CONTRACT,
+  Plo4PowerAccumulator,
+  isPlo4HoldoutSeed,
+  plo4StrengthContractDigest,
+  plo4StrengthProfile,
+  plo4StrengthSeatStyle,
+  type Plo4DivergenceStreet,
+  type Plo4StrengthShardResult,
+} from './Plo4StrengthContract.js';
+import {
+  isOmahaVariantHoldoutSeed,
+  omahaVariantMoodClockMs,
+} from './OmahaVariantStrengthContract.js';
+import type { OmahaVariant } from './OmahaReference.js';
+import { isRemainingVariantHoldoutSeed } from './RemainingVariantStrengthContract.js';
+import { remainingVariantIndependentHandChecks } from './RemainingVariantStrengthChecks.js';
+import { isJointHoldoutSeed, type JointStrengthVariant } from './JointStrengthContract.js';
+import { jointIndependentHandChecks } from './JointStrengthChecks.js';
 import type { Plo4PolicyMode } from './Plo4PolicyProgram.js';
 import { equityGovernor } from '../engine/EquityLoadGovernor.js';
 import { equitySampleSizeOfLastCall, variantInfo } from '../engine/HorseEval.js';
@@ -46,6 +75,18 @@ export function plo4LeagueSeating(index: number, seats: number) {
 export interface Plo4LeagueProfile {
   variant?: OmahaPolicyVariant | RemainingPolicyVariant | 'nlh' | 'plo4';
   jointPolicy?: boolean;
+  /** P10.2 contract profiles: the table's max_players (cap ladder). */
+  tableSeats?: number;
+  /** P10.2: price the hand with the engine's published PLO4 1/2 rake, cap
+   * ladder and BBJ drop instead of rakePercent/rakeCapBB. */
+  publishedRake?: boolean;
+  /** P10.2: every seat, hero included, takes its production style from
+   * plo4StrengthSeatStyle(dealSeed, seat) instead of balanced/opponentStyle. */
+  productionStyles?: boolean;
+  /** P11.2: v9 mood on in every seat and both arms, on the deterministic
+   * decision clock omahaVariantMoodClockMs(dealSeed). Absent (every PLO4 and
+   * earlier profile): mood off at decisionTimeMs 0, exactly as before. */
+  moodClock?: 'deal_seed_time_of_day';
   bombBoards?: 1 | 2 | 3;
   asset?: 'chips' | 'diamonds';
   bbj?: boolean;
@@ -142,7 +183,22 @@ function deckFor(seed: number, shortDeck = false): Card[] {
   }
   return deck;
 }
+/** P10.2 per-hand independent checks, recorded only for contract hands. */
+export interface Plo4HandChecks {
+  trace: string[];
+  settlementMismatches: number;
+  deductionMismatches: number;
+  showdownChecked: boolean;
+  foldWinChecked: boolean;
+  /** P11.2: set only when the independent reference awarded a low half. */
+  lowHalfChecked?: boolean;
+  /** P12.2: Pineapple discards in the trace (Phase 12 profiles only). */
+  discards?: number;
+  /** P13.2: set when a joint showdown was settled on two or three boards. */
+  multiBoardChecked?: boolean;
+}
 export interface Plo4HandReceipt {
+  checks?: Plo4HandChecks;
   joint?: {
     seen: number;
     fired: number;
@@ -150,6 +206,8 @@ export interface Plo4HandReceipt {
     utilityUnavailable: number;
     boards: Record<string, number>;
     opponents: Record<string, number>;
+    /** P13.2: hero decisions the joint acquisition admitted, by board count. */
+    eligibleByBoards?: Record<string, number>;
   };
   complete: boolean;
   net: number[];
@@ -165,6 +223,12 @@ export interface Plo4HandReceipt {
   truncated: number;
   nodeCounts: Record<string, number>;
   reasons: Record<string, number>;
+  /** P12.2, Phase 12 profiles only: hero candidate proposals the HorseLogic
+   * selection guard refused (`illegal_candidate`); the reference was played. */
+  illegalCandidates?: number;
+  /** P13.2, joint profiles only: hero candidate proposals refused as
+   * `earlier_phase_applied` (a Phase 13 candidate on an applied earlier one). */
+  earlierPhaseRefusals?: number;
 }
 export async function playPlo4PolicyHand(
   profile: Plo4LeagueProfile,
@@ -172,7 +236,8 @@ export async function playPlo4PolicyHand(
   button: number,
   heroSeat: number,
   mode: Plo4PolicyMode,
-  shouldContinue = () => true
+  shouldContinue = () => true,
+  contractChecks = false
 ): Promise<Plo4HandReceipt> {
   const variant = profile.variant ?? 'plo4';
   const remainingVariant = isRemainingPolicyVariant(variant);
@@ -203,6 +268,12 @@ export async function playPlo4PolicyHand(
     truncated: 0,
     nodeCounts: {},
     reasons: {},
+    ...(remainingVariant ? { illegalCandidates: 0 } : {}),
+    // P13.2: the joint guard counters ride the contract shard runner only, so
+    // the development joint league's receipts are unchanged.
+    ...(profile.jointPolicy && contractChecks
+      ? { illegalCandidates: 0, earlierPhaseRefusals: 0 }
+      : {}),
   };
   const players: SeatPlayer[] = Array.from({ length: profile.seats }, (_, index) => ({
     seat: index + 1,
@@ -226,6 +297,7 @@ export async function playPlo4PolicyHand(
     ante: profile.anteBB * BB,
     isTournament: profile.tournament,
     rakeConfig: { percent: profile.rakePercent, cap: profile.rakeCapBB * BB, noFlopNoDrop: true },
+    ...(profile.publishedRake ? publishedCashPricing(profile) : {}),
     ...(profile.jointPolicy
       ? {
           asset: profile.asset ?? 'chips',
@@ -355,6 +427,7 @@ export async function playPlo4PolicyHand(
         minRaise: state.minRaise,
         lastRaise: state.lastRaise,
         dealerSeat: state.dealerSeat,
+        blindSeats: controller.getBlindSeatsSnapshot(),
         stateSchemaVersion: 1,
         heroSeat: hero.seat,
         currentPlayerSeat: hero.seat,
@@ -422,13 +495,17 @@ export async function playPlo4PolicyHand(
         HorseLogic.decide(
           hero,
           gs,
-          hero.seat === heroSeat ? 'balanced' : profile.opponentStyle,
+          profile.productionStyles
+            ? plo4StrengthSeatStyle(seed, hero.seat)
+            : hero.seat === heroSeat
+              ? 'balanced'
+              : profile.opponentStyle,
           {},
           {
             mind: true,
             telemetry: false,
-            decisionTimeMs: 0,
-            v9Mood: false,
+            decisionTimeMs: profile.moodClock ? omahaVariantMoodClockMs(seed) : 0,
+            v9Mood: Boolean(profile.moodClock),
             phase8Postflop: 'off',
             phase10Plo4:
               !profile.jointPolicy && !profile.variant && hero.seat === heroSeat ? mode : 'off',
@@ -468,9 +545,19 @@ export async function playPlo4PolicyHand(
           r.utilityUnavailable += Number(j.utilityOwner === 'phase7_unavailable');
           r.boards[j.boardCount] = (r.boards[j.boardCount] ?? 0) + 1;
           r.opponents[j.liveOpponents] = (r.opponents[j.liveOpponents] ?? 0) + 1;
+          if (j.eligible && contractChecks) {
+            r.eligibleByBoards ??= {};
+            r.eligibleByBoards[j.boardCount] = (r.eligibleByBoards[j.boardCount] ?? 0) + 1;
+          }
         }
         receipt.eligible += Number(policy.eligible);
         receipt.changed += Number(policy.applied);
+        if (receipt.illegalCandidates !== undefined && 'selectionRefusal' in policy)
+          receipt.illegalCandidates += Number(policy.selectionRefusal === 'illegal_candidate');
+        if (receipt.earlierPhaseRefusals !== undefined && 'selectionRefusal' in policy)
+          receipt.earlierPhaseRefusals += Number(
+            policy.selectionRefusal === 'earlier_phase_applied'
+          );
         const node = `${gs.gameMode}/${gs.stage}/${'role' in policy ? policy.role : profile.jointPolicy ? 'joint-board-' + gs.boardCount : 'outside_domain'}`;
         receipt.nodeCounts[node] = (receipt.nodeCounts[node] ?? 0) + 1;
         receipt.reasons[policy.reason] = (receipt.reasons[policy.reason] ?? 0) + 1;
@@ -511,6 +598,36 @@ export async function playPlo4PolicyHand(
     if (Math.abs(receipt.net.reduce((sum, n) => sum + n, 0) + receipt.rake + receipt.bbj) > 0.011)
       receipt.conservationErrors++;
     receipt.complete = !receipt.cardErrors && !receipt.conservationErrors;
+    if (contractChecks)
+      receipt.checks = profile.jointPolicy
+        ? // P13.2: every physical board, every variant (JointBoardReference).
+          jointIndependentHandChecks(variant as JointStrengthVariant, {
+            end,
+            startStack: profile.stackBB * BB,
+            rake: receipt.rake,
+            bbj: receipt.bbj,
+            config,
+            publishedRake: Boolean(profile.publishedRake),
+            tableSeats: profile.tableSeats ?? profile.seats,
+            boardCount: controller.getActiveBoardCount(),
+            knownDeadCards: end.players.flatMap((p) =>
+              controller.getPineappleKnownDeadCards(p.seat)
+            ),
+          })
+        : remainingVariant
+          ? remainingVariantIndependentHandChecks(variant, {
+              end,
+              startStack: profile.stackBB * BB,
+              rake: receipt.rake,
+              bbj: receipt.bbj,
+              config,
+              publishedRake: Boolean(profile.publishedRake),
+              tableSeats: profile.tableSeats ?? profile.seats,
+              knownDeadCards: end.players.flatMap((p) =>
+                controller.getPineappleKnownDeadCards(p.seat)
+              ),
+            })
+          : plo4IndependentHandChecks(profile, end, receipt, config);
     return receipt;
   } finally {
     controller.cancelPineappleSettle();
@@ -531,6 +648,22 @@ export async function runOmahaPolicyLeague(
   if ('samples' in options)
     throw new Error(
       'League sample overrides are unsupported; the frozen runtime policy owns effective work'
+    );
+  if (isPlo4HoldoutSeed(options.seed))
+    throw new Error(
+      'Held-out PLO4 strength seeds run only through the P10.2 contract shard runner'
+    );
+  if (isOmahaVariantHoldoutSeed(options.seed))
+    throw new Error(
+      'Held-out Phase 11 strength seeds run only through the P11.2 contract shard runner'
+    );
+  if (isRemainingVariantHoldoutSeed(options.seed))
+    throw new Error(
+      'Held-out Phase 12 strength seeds run only through the P12.2 contract shard runner'
+    );
+  if (isJointHoldoutSeed(options.seed))
+    throw new Error(
+      'Held-out Phase 13 strength seeds run only through the P13.2 contract shard runner'
     );
   const profile = profiles.find((p) => p.id === options.profileId);
   if (
@@ -673,4 +806,335 @@ export function runPlo4PolicyLeague(
   shouldContinue = () => true
 ) {
   return runOmahaPolicyLeague(options, shouldContinue);
+}
+
+// ── P10.2 strength contract machinery ───────────────────────────────────────
+
+/** The engine's own cash pricing for the published 1/2 game of the profile's
+ * variant (PLO4 when the profile names none), built the way
+ * ServerTableEngineBase builds a cash hand config. */
+function publishedCashPricing(
+  profile: Plo4LeagueProfile
+): Pick<HandConfig, 'rakeConfig' | 'bbjConfig'> {
+  if (profile.tournament || BB !== PLO4_STRENGTH_BB)
+    throw new Error('Published PLO4 pricing is the cash 1/2 game only');
+  const full = getFullRakeConfig(1, BB, profile.variant ?? 'plo4');
+  return {
+    rakeConfig: {
+      percent: full.rakePercent,
+      cap: full.rakeCap,
+      noFlopNoDrop: true,
+      playerCountCaps: getPlayerCountCaps(full.rakeCap, profile.tableSeats ?? profile.seats),
+    },
+    bbjConfig: {
+      enabled: full.bbjEnabled,
+      feeBB: full.bbjFeeBB,
+      minPotBB: full.rules.minPotBB,
+      minPlayersDealt: full.rules.minPlayersDealt,
+    },
+  };
+}
+
+/** Independent per-hand settlement and deduction checks (Phase 9 rules). The
+ * controller's result is compared with OmahaReference's gross awards on the
+ * same contributions and cards, and its rake/BBJ with the rake specification
+ * the database implements, on the contested pot. The variant is the profile's
+ * (PLO4 when it names none); PLO8 settles high and low halves. */
+export function plo4IndependentHandChecks(
+  profile: Plo4LeagueProfile,
+  end: ReturnType<HandController['getState']>,
+  receipt: Plo4HandReceipt,
+  config: HandConfig
+): Plo4HandChecks {
+  const checks: Plo4HandChecks = {
+    trace: end.actionHistory.map((a) => `${a.seat}:${a.action}:${a.amount ?? 0}:${a.stage}`),
+    settlementMismatches: 0,
+    deductionMismatches: 0,
+    showdownChecked: false,
+    foldWinChecked: false,
+  };
+  const start = profile.stackBB * BB;
+  const cents = (n: number) => Math.round(n * 100);
+  const variant = (profile.variant ?? 'plo4') as OmahaVariant;
+  try {
+    const players = end.players.map((p) => ({
+      id: p.user_id,
+      seat: p.seat,
+      cards: p.cards,
+      contributed: cents(p.totalInvested) / 100,
+      folded: p.is_folded,
+    }));
+    const received = new Map(
+      end.players.map((p) => [p.user_id, cents(p.stack - start + p.totalInvested)])
+    );
+    const { refunds } = contributionLayers(players, 0.01);
+    const contributed = players.reduce((s, p) => s + cents(p.contributed), 0);
+    const refunded = Object.values(refunds).reduce((s, v) => s + cents(v), 0);
+    const pot = (contributed - refunded) / 100;
+    const sawFlop = end.communityCards.length >= 3;
+    const playersDealt = end.players.filter((p) => !p.is_sitting_out).length;
+    if (profile.publishedRake) {
+      const rake = effectiveRake({
+        bb: config.bigBlind,
+        sb: config.smallBlind,
+        pot,
+        playersDealt,
+        sawFlop,
+        seats: profile.tableSeats ?? profile.seats,
+      }).rake;
+      const bbj = effectiveBbjDrop({
+        bb: config.bigBlind,
+        sb: config.smallBlind,
+        playersDealt,
+        sawFlop,
+        variant,
+        pot,
+        rake,
+      });
+      if (cents(rake) !== cents(receipt.rake) || cents(bbj) !== cents(receipt.bbj))
+        checks.deductionMismatches++;
+    }
+    const deductions = cents(receipt.rake) + cents(receipt.bbj);
+    const live = end.players.filter((p) => !p.is_folded);
+    if (live.length === 1) {
+      checks.foldWinChecked = true;
+      for (const p of end.players) {
+        const expected = p === live[0] ? contributed - deductions : 0;
+        if (Math.abs(received.get(p.user_id)! - expected) > 1) checks.settlementMismatches++;
+      }
+    } else if (end.communityCards.length === 5) {
+      checks.showdownChecked = true;
+      const reference = settleOmahaReference({
+        variant,
+        players,
+        boards: [end.communityCards],
+        chipUnit: 0.01,
+        dealerSeat: end.dealerSeat,
+      });
+      let shortfall = 0;
+      for (const p of players) {
+        const gross = cents(reference.totals[p.id] ?? 0) + cents(reference.refunds[p.id] ?? 0);
+        const got = received.get(p.id)!;
+        // One cent of tolerance for a different odd-chip seat order.
+        if (got > gross + 1 || (gross === 0 && got !== 0)) checks.settlementMismatches++;
+        shortfall += gross - got;
+      }
+      if (Math.abs(shortfall - deductions) > 1) checks.settlementMismatches++;
+      if (reference.awards.some((a) => a.half === 'low')) checks.lowHalfChecked = true;
+    } else checks.settlementMismatches++;
+  } catch {
+    checks.settlementMismatches++;
+  }
+  return checks;
+}
+
+/** Street of the first action at which two arms' traces differ. */
+export function plo4DivergenceStreet(
+  a: readonly string[],
+  b: readonly string[]
+): Plo4DivergenceStreet {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if (a[i] === b[i]) continue;
+    const stage = (a[i] ?? b[i]).split(':')[3];
+    if (!(PLO4_DIVERGENCE_STREETS as readonly string[]).includes(stage) || stage === 'none')
+      throw new Error(`Unknown divergence stage ${stage}`);
+    return stage as Plo4DivergenceStreet;
+  }
+  return 'none';
+}
+
+/** A contract profile as a league profile: published pricing, production styles. */
+export function plo4StrengthLeagueProfile(profileId: string): Plo4LeagueProfile {
+  const p = plo4StrengthProfile(profileId);
+  if (!p) throw new Error('Unknown P10.2 strength profile');
+  const full = getFullRakeConfig(1, BB, 'plo4');
+  return {
+    id: p.id,
+    seats: p.seats,
+    tableSeats: p.tableSeats,
+    stackBB: p.stackBB,
+    rakePercent: full.rakePercent,
+    rakeCapBB: full.rakeCap / BB,
+    anteBB: 0,
+    straddle: false,
+    tournament: false,
+    opponentStyle: 'balanced',
+    publishedRake: true,
+    productionStyles: true,
+  };
+}
+
+/**
+ * One shard of the P10.2 matrix: a fixed range of pair indices of one
+ * (profile, seed) cell, candidate arm then reference arm on each deal.
+ * Contract mode plays exactly the contract's pairs on a held-out seed;
+ * development mode (tests, timing) may play fewer pairs and never touches a
+ * held-out seed. Neither mode can promote: the verdict is
+ * summarizePlo4Strength over every shard.
+ */
+export async function runPlo4StrengthShard(
+  request: {
+    profileId: string;
+    seed: number;
+    shard: number;
+    mode: 'contract' | 'development';
+    pairs?: number;
+  },
+  shouldContinue = () => true
+): Promise<Plo4StrengthShardResult> {
+  const c = PLO4_STRENGTH_CONTRACT;
+  const holdout = isPlo4HoldoutSeed(request.seed);
+  if (request.mode !== 'contract' && request.mode !== 'development')
+    throw new Error('Unknown P10.2 shard mode');
+  if (isOmahaVariantHoldoutSeed(request.seed))
+    throw new Error('A P10.2 shard never runs a held-out Phase 11 seed');
+  if (isRemainingVariantHoldoutSeed(request.seed))
+    throw new Error('A P10.2 shard never runs a held-out Phase 12 seed');
+  if (isJointHoldoutSeed(request.seed))
+    throw new Error('A P10.2 shard never runs a held-out Phase 13 seed');
+  if (request.mode === 'contract' && !holdout)
+    throw new Error('A contract shard runs only a held-out seed');
+  if (request.mode === 'development' && holdout)
+    throw new Error('A development shard never runs a held-out seed');
+  if (!Number.isInteger(request.seed) || request.seed < 1 || request.seed > 0xffffffff)
+    throw new Error('Invalid P10.2 shard seed');
+  const contractProfile = plo4StrengthProfile(request.profileId);
+  if (
+    !contractProfile ||
+    !Number.isInteger(request.shard) ||
+    request.shard < 0 ||
+    request.shard >= contractProfile.shards
+  )
+    throw new Error('P10.2 shard outside the matrix');
+  const requested = request.pairs ?? c.matrix.pairsPerShard;
+  if (request.mode === 'contract' && requested !== c.matrix.pairsPerShard)
+    throw new Error('A contract shard plays exactly the contract pairs per shard');
+  if (!Number.isInteger(requested) || requested < 1 || requested > c.matrix.pairsPerShard)
+    throw new Error('Invalid P10.2 shard pair count');
+  const profile = plo4StrengthLeagueProfile(request.profileId);
+  assertFixedBudget();
+  const started = performance.now();
+  const firstPair = request.shard * c.matrix.pairsPerShard;
+  const strata = new Map<string, Plo4PowerAccumulator>();
+  const offsetCounts: number[] = Array(profile.seats).fill(0);
+  const digest = createHash('sha256');
+  const result: Plo4StrengthShardResult = {
+    schema: 'horse-phase10-strength-shard-v1',
+    contractVersion: c.version,
+    contractDigest: plo4StrengthContractDigest(),
+    packVersion: PLO4_POLICY_PACK.version,
+    evidenceMode: request.mode,
+    profileId: profile.id,
+    seed: request.seed,
+    shard: request.shard,
+    firstPair,
+    requestedPairs: requested,
+    pairs: 0,
+    complete: false,
+    positionCoverageComplete: false,
+    offsetCounts,
+    strata: {},
+    pairDigest: '',
+    candidateNetCents: 0,
+    referenceNetCents: 0,
+    changedPairs: 0,
+    decisions: 0,
+    eligible: 0,
+    changed: 0,
+    illegalActions: 0,
+    conservationErrors: 0,
+    cardErrors: 0,
+    truncatedHands: 0,
+    settlementMismatches: 0,
+    deductionMismatches: 0,
+    pairedReplayMismatches: 0,
+    showdownsChecked: 0,
+    foldWinsChecked: 0,
+    totalRake: 0,
+    totalBbj: 0,
+    nodeCounts: {},
+    reasons: {},
+    equityWork: {},
+    fixedWork: { governor: 'off', scale: 1, policyClock: 'fixed_work_no_wall_clock_branch' },
+    durationMs: 0,
+    promotionEligible: false,
+  };
+  const merge = (into: Record<string, number>, from: Record<string, number>) => {
+    for (const [k, v] of Object.entries(from)) into[k] = (into[k] ?? 0) + v;
+  };
+  const absorb = (h: Plo4HandReceipt) => {
+    result.decisions += h.decisions;
+    result.eligible += h.eligible;
+    result.changed += h.changed;
+    result.illegalActions += h.illegalActions;
+    result.conservationErrors += h.conservationErrors;
+    result.cardErrors += h.cardErrors;
+    result.truncatedHands += h.truncated;
+    result.totalRake += h.rake;
+    result.totalBbj += h.bbj;
+    merge(result.nodeCounts, h.nodeCounts);
+    merge(result.reasons, h.reasons);
+    merge(result.equityWork, h.equityWork);
+    if (h.checks) {
+      result.settlementMismatches += h.checks.settlementMismatches;
+      result.deductionMismatches += h.checks.deductionMismatches;
+      result.showdownsChecked += Number(h.checks.showdownChecked);
+      result.foldWinsChecked += Number(h.checks.foldWinChecked);
+    }
+  };
+  for (let k = 0; k < requested; k++) {
+    if (!shouldContinue()) break;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const i = firstPair + k;
+    const dealSeed = (request.seed ^ Math.imul(i + 1, 2654435761)) >>> 0 || 1;
+    const { heroSeat, button, relativePosition } = plo4LeagueSeating(i, profile.seats);
+    const candidate = await playPlo4PolicyHand(
+      profile,
+      dealSeed,
+      button,
+      heroSeat,
+      'candidate',
+      shouldContinue,
+      true
+    );
+    absorb(candidate);
+    if (!candidate.complete || !candidate.checks) break;
+    const reference = await playPlo4PolicyHand(
+      profile,
+      dealSeed,
+      button,
+      heroSeat,
+      'off',
+      shouldContinue,
+      true
+    );
+    absorb(reference);
+    if (!reference.complete || !reference.checks) break;
+    const candidateCents = Math.round(candidate.net[heroSeat - 1] * 100);
+    const referenceCents = Math.round(reference.net[heroSeat - 1] * 100);
+    const difference = candidateCents - referenceCents;
+    const street = plo4DivergenceStreet(candidate.checks.trace, reference.checks.trace);
+    if (street === 'none' && difference !== 0) result.pairedReplayMismatches++;
+    const key = `${relativePosition}|${street}`;
+    const acc = strata.get(key) ?? new Plo4PowerAccumulator();
+    acc.add(difference);
+    strata.set(key, acc);
+    offsetCounts[relativePosition]++;
+    result.candidateNetCents += candidateCents;
+    result.referenceNetCents += referenceCents;
+    result.changedPairs += Number(street !== 'none');
+    digest.update(`${i}:${difference}:${street};`);
+    result.pairs++;
+  }
+  result.strata = Object.fromEntries(
+    [...strata.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [k, v.toJSON()])
+  );
+  result.pairDigest = digest.digest('hex');
+  result.complete = result.pairs === requested;
+  result.positionCoverageComplete =
+    result.complete && offsetCounts.every((n) => n > 0 && n === offsetCounts[0]);
+  result.totalRake = Math.round(result.totalRake * 100) / 100;
+  result.totalBbj = Math.round(result.totalBbj * 100) / 100;
+  result.durationMs = Math.round(performance.now() - started);
+  return result;
 }

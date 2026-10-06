@@ -140,6 +140,10 @@ describe('the publisher hands its selected artifact to post-deploy verification'
       workflow.indexOf('  seo-contract:')
     );
     expect(gate).toContain('client_target_sha: ${{ steps.client-target.outputs.sha }}');
+    // A stood-down publisher has no client artifact to resolve.
+    expect(gate).toContain(
+      "if: github.event_name == 'workflow_run' && steps.origin.outputs.should_run == 'true'"
+    );
     expect(gate).toContain('actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100');
     expect(gate).toContain(
       'publisher-artifact "$SOURCE_RUN_ID" "$SOURCE_TRIGGER_SHA" "$REPOSITORY_ID"'

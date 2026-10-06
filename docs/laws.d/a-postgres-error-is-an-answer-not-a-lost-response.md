@@ -1,0 +1,3 @@
+# server/src/tournament/aPostgresErrorIsAnAnswerNotALostResponse.law.test.ts
+
+A satellite qualifier settlement that comes back with a Postgres SQLSTATE (55P03 lock_timeout, 40001, 40P01, a P0 or 55 refusal) rolled back and is a refusal the next sweep retries, never an unknown outcome that stops the event's manager and raises a critical alert; only a lost response (no SQLSTATE, or a class that can describe a dead connection: 08, 53, 57, 58, XX) asks the serialized resolver, and the resolver's own lane contention or transport loss is asked again, at most three times, before the outcome may be called unknown.

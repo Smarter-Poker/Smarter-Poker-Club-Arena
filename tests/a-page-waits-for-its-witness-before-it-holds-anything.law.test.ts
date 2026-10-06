@@ -23,7 +23,7 @@
  *      stand after it (their own checker is re-run here on the same body).
  */
 import { describe, it, expect } from 'vitest';
-import { latestDeclaring, functionBody } from './helpers/migrations';
+import { latestDeclaring, latestNamed, functionBody } from './helpers/migrations';
 import { recomputeDoorViolations } from './a-page-cannot-certify-an-unfinished-week.law.test';
 
 const FN = 'fn_rakeback_recompute_periods';
@@ -93,9 +93,14 @@ describe('a page waits for its witness before it holds anything', () => {
   });
 
   it('carries its measurements and its pre- and postimage', () => {
-    expect(sql).toMatch(/p95 5\.33 \/ 6\.15 \/ 8\.64 s/);
-    expect(sql).toMatch(/37a114ec314e300a5c369c80245fee7b/);
-    expect(sql).toMatch(/936ccee154e1b0cf6d88dd3fd653215b/);
+    // Historical timing and replacement witnesses belong to the introducing
+    // migration (the same rule a-page-cannot-certify-an-unfinished-week uses).
+    // The behavioral pins above keep reading the newest definition, which
+    // since 20260927154806 is the open-week request-lock replacement.
+    const origin = latestNamed('_a_page_recompute_waits_briefly_for_its_witness');
+    expect(origin.sql).toMatch(/p95 5\.33 \/ 6\.15 \/ 8\.64 s/);
+    expect(origin.sql).toMatch(/37a114ec314e300a5c369c80245fee7b/);
+    expect(origin.sql).toMatch(/936ccee154e1b0cf6d88dd3fd653215b/);
   });
 
   // Planted regressions: each is a way the wait could be broken, and the

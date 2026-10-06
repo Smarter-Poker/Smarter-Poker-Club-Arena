@@ -3,7 +3,6 @@ import { RIG_VIEWBOX, type RigProps, type ThrowableRig } from '../rig';
 import type { ThrowableSpec } from '../spec';
 import { preloadThrowableCues } from '../cues';
 import './loser_hand.css';
-// Dedicated recorded cues still pending: voice_oooh, voice_loser_x3.
 export const spec: ThrowableSpec = {
   id: 'loser_hand',
   name: 'Loser Hand',
@@ -24,7 +23,13 @@ export const spec: ThrowableSpec = {
     { at: 3400, marker: 'word-three' },
     { at: 4300, marker: 'cut' },
   ],
-  audio: [{ at: 433, sample: 'pop_soft', gain: 0.35 }],
+  audio: [
+    { at: 433, sample: 'pop_soft', gain: 0.35 },
+    { at: 600, sample: 'cheer_ooh', gain: 0.65 },
+    { at: 1800, sample: 'sad_trombone' },
+    { at: 2600, sample: 'cheer_ooh', gain: 0.55 },
+    { at: 3400, sample: 'cheer_ooh', gain: 0.5 },
+  ],
 };
 preloadThrowableCues(spec.audio.map((cue) => cue.sample));
 const RECTS: [number, number, number, number][] = [

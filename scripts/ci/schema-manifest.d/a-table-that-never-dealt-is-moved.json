@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/never-dealt-table-movement-prior",
+  "functions": ["smarter_private.f06_movement_never_dealt_prior"]
+}

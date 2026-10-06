@@ -10,7 +10,9 @@ import {
 } from '../../engine/HorseDecisionHandBinding.js';
 import {
   createHorseExecutionWitness,
+  expectedHorseExecutionAmount,
   type HorseExecutionWitness,
+  type HorseWitnessPhase8Authority,
 } from '../../engine/HorseExecutionWitness.js';
 import { decodeHorseDecisionReads } from '../../engine/HorseDecisionReadFrame.js';
 import {
@@ -24,6 +26,7 @@ import {
   horseComputeMetadataIsValid,
   horseDecisionReceiptIsValid,
   horseSamplingStateIsValid,
+  horsePhase7EvidenceMismatch,
 } from '../../engine/horseDecision/responseValidation.js';
 import {
   horseJournalJson,
@@ -131,6 +134,59 @@ const key = (x: {
     JSON.stringify([x.generation, x.fence, x.requestId, x.decisionKey, x.decisionTimeMs])
   );
 const same = (a: unknown, b: unknown) => horseJournalJson(a) === horseJournalJson(b);
+
+/**
+ * The executed witness may differ from one rebuilt from the decision record in
+ * exactly one owned way: the main scheduler's acceptance-time Phase 8 verdict
+ * (and, by the same law, the P10.3 Phase 10, P11.3 Phase 11, P12.3 Phase 12
+ * and P13.3 Phase 13 verdicts: `phase10Authority`, `phase11Authority`,
+ * `phase12Authority` and `phase13Authority` have the same shape, with the
+ * pack or joint receipt version, proposal and shadow baseline).
+ * The worker-bound authority (less the main stamp), continuation version,
+ * candidate and reference must match; a selected candidate may only end
+ * selected, controller-accepted or withdrawn before acceptance.
+ */
+function phase8BindingMatches(
+  actual: HorseWitnessPhase8Authority | null | undefined,
+  expected: HorseWitnessPhase8Authority | null | undefined
+): boolean {
+  if (!actual || !expected) return !actual && !expected;
+  const worker = (r: HorseWitnessPhase8Authority['authority']) =>
+    r ? { ...r, mainGeneration: null } : null;
+  return (
+    actual.continuationVersion === expected.continuationVersion &&
+    actual.mode === expected.mode &&
+    same(actual.candidate, expected.candidate) &&
+    same(actual.reference, expected.reference) &&
+    same(worker(actual.authority), worker(expected.authority)) &&
+    (expected.selection === 'selected'
+      ? ['selected', 'controller_accepted', 'withdrawn_before_acceptance'].includes(
+          actual.selection
+        )
+      : actual.selection === expected.selection)
+  );
+}
+/**
+ * P10.3: the final PLO4 selection must agree with the acceptance facts the
+ * witness itself records: controller acceptance only after a usable verdict
+ * and an intended execution, a withdrawal only with an unusable verdict, and a
+ * selection still open only when it never reached a usable, intended action.
+ * P11.3 applies the same law to the PLO5/PLO6/PLO8 binding, P12.3 to the
+ * Short Deck/Pineapple/FLH/FLO8 binding, and P13.3 to the joint binding.
+ */
+function qualifiedOutcomeIsCoherent(
+  w: HorseExecutionWitness,
+  binding: HorseWitnessPhase8Authority | null | undefined
+): boolean {
+  if (!binding) return true;
+  if (binding.selection === 'controller_accepted')
+    return binding.verdict === 'usable' && w.executionStatus === 'intended';
+  if (binding.selection === 'withdrawn_before_acceptance')
+    return binding.verdict !== null && binding.verdict !== 'usable';
+  if (binding.selection === 'selected')
+    return !(binding.verdict === 'usable' && w.executionStatus === 'intended');
+  return binding.verdict === null;
+}
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const uint = (x: unknown): x is number => Number.isSafeInteger(x) && Number(x) >= 0;
 // RIT appends private board metadata to accepted history after play. It is
@@ -369,6 +425,7 @@ export function reconcileHorseJournalHand(
               admission.request.gameState.gameVariant
             ) ||
             !horsePhase6AttributionMatchesSnapshot(capture.decision, admission.request) ||
+            horsePhase7EvidenceMismatch(capture.decision, admission.request) !== null ||
             !effectsMatch(capture, admission.request)
           ) {
             throw Error();
@@ -523,7 +580,11 @@ export function reconcileHorseJournalHand(
           decisionRecord.sourceRelease !== executionRecord.sourceRelease
         )
           throw Error();
-        if (!horsePhase6AttributionMatchesSnapshot(d.decision, s)) throw Error();
+        if (
+          !horsePhase6AttributionMatchesSnapshot(d.decision, s) ||
+          horsePhase7EvidenceMismatch(d.decision, s) !== null
+        )
+          throw Error();
         const anchor = anchorHorseDecisionHand(s);
         if (anchor.status !== 'anchored' || journalHash(horseHandAnchorKey(anchor)) !== handKey)
           throw Error();
@@ -533,18 +594,61 @@ export function reconcileHorseJournalHand(
           computeMs: d.computeMs,
           governorScale: d.governorScale,
         });
+        // A Phase 8, 10, 11 or 12 authority withdrawal re-selected the
+        // reference before acceptance; the executed intent and its amount follow it.
+        const phase8Withdrawn = w.phase8Authority?.selection === 'withdrawn_before_acceptance';
+        const phase10Withdrawn = w.phase10Authority?.selection === 'withdrawn_before_acceptance';
+        const phase11Withdrawn = w.phase11Authority?.selection === 'withdrawn_before_acceptance';
+        const phase12Withdrawn = w.phase12Authority?.selection === 'withdrawn_before_acceptance';
+        const phase13Withdrawn = w.phase13Authority?.selection === 'withdrawn_before_acceptance';
+        const expectedSelected = phase8Withdrawn
+          ? expectedWitness.phase8Authority?.reference
+          : phase10Withdrawn
+            ? expectedWitness.phase10Authority?.reference
+            : phase11Withdrawn
+              ? expectedWitness.phase11Authority?.reference
+              : phase12Withdrawn
+                ? expectedWitness.phase12Authority?.reference
+                : phase13Withdrawn
+                  ? expectedWitness.phase13Authority?.reference
+                  : expectedWitness.selected;
+        const expectedAmount =
+          (phase8Withdrawn ||
+            phase10Withdrawn ||
+            phase11Withdrawn ||
+            phase12Withdrawn ||
+            phase13Withdrawn) &&
+          expectedSelected
+            ? expectedHorseExecutionAmount(s, {
+                action: expectedSelected.action,
+                amount: expectedSelected.amount ?? undefined,
+              })
+            : expectedWitness.expectedExecutionAmount;
         if (
           w.version !== 'horse-execution-witness-v4' ||
           key(w.identity) !== executionRecord.turnKey ||
           !same(w.handAnchor, anchor) ||
           !same(w.identity, expectedWitness.identity) ||
-          !same(w.selected, expectedWitness.selected) ||
+          !same(w.selected, expectedSelected) ||
+          !phase8BindingMatches(w.phase8Authority, expectedWitness.phase8Authority) ||
+          !phase8BindingMatches(w.phase10Authority, expectedWitness.phase10Authority) ||
+          !qualifiedOutcomeIsCoherent(w, w.phase10Authority) ||
+          !phase8BindingMatches(w.phase11Authority, expectedWitness.phase11Authority) ||
+          !qualifiedOutcomeIsCoherent(w, w.phase11Authority) ||
+          !phase8BindingMatches(w.phase12Authority, expectedWitness.phase12Authority) ||
+          !qualifiedOutcomeIsCoherent(w, w.phase12Authority) ||
+          !phase8BindingMatches(w.phase13Authority, expectedWitness.phase13Authority) ||
+          !qualifiedOutcomeIsCoherent(w, w.phase13Authority) ||
           !same(w.policyOwnership, expectedWitness.policyOwnership) ||
           !same(w.policyGraph, expectedWitness.policyGraph) ||
           !same(w.phase6Attribution ?? null, expectedWitness.phase6Attribution ?? null) ||
           !same(w.phase7Evidence ?? null, expectedWitness.phase7Evidence ?? null) ||
+          !same(w.phase10Inputs ?? null, expectedWitness.phase10Inputs ?? null) ||
+          !same(w.phase11Inputs ?? null, expectedWitness.phase11Inputs ?? null) ||
+          !same(w.phase12Inputs ?? null, expectedWitness.phase12Inputs ?? null) ||
+          !same(w.phase13Inputs ?? null, expectedWitness.phase13Inputs ?? null) ||
           w.policyFallback !== expectedWitness.policyFallback ||
-          w.expectedExecutionAmount !== expectedWitness.expectedExecutionAmount ||
+          w.expectedExecutionAmount !== expectedAmount ||
           w.computeMs !== d.computeMs ||
           w.governorScale !== d.governorScale ||
           !Array.isArray(w.acceptedActions)
@@ -565,6 +669,11 @@ export function reconcileHorseJournalHand(
             d.decision.tournamentUtility.readFrameSha256 !== d.readFrame.sha256
           )
             throw Error('Phase 7 original observation read frame does not match');
+          if (
+            d.decision.plo4Policy?.inputs &&
+            d.decision.plo4Policy.readFrameSha256 !== d.readFrame.sha256
+          )
+            throw Error('Phase 10 original read frame does not match');
         } catch {
           gap('read_frame_unavailable');
           continue;

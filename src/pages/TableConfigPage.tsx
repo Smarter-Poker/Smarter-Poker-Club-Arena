@@ -501,13 +501,22 @@ export interface TableConfigPageProps {
   onExit?: (exit: TableConfigExit) => void;
   /** The parent Table Management console already owns the painted chassis. */
   embedded?: boolean;
+  /** The standalone route's GameCreationGuard already proved club authority. */
+  accessPrevalidated?: boolean;
 }
+
+const PREVALIDATED_STANDALONE_ACCESS: GameCreationAccess = {
+  allowed: true,
+  unionId: null,
+  reason: 'ok',
+};
 
 export default function TableConfigPage({
   clubIdOverride,
   gameTypeOverride,
   onExit,
   embedded = false,
+  accessPrevalidated = false,
 }: TableConfigPageProps = {}) {
   const params = useParams<{ clubId: string; gameType: string }>();
   const clubId = clubIdOverride || params.clubId;
@@ -557,7 +566,9 @@ export default function TableConfigPage({
   // The same builder is reached from a standalone club or from the union
   // console. fn_game_creation_access distinguishes an authorized union
   // operator from the member club's own staff.
-  const [access, setAccess] = useState<GameCreationAccess | null>(null);
+  const [access, setAccess] = useState<GameCreationAccess | null>(() =>
+    accessPrevalidated ? PREVALIDATED_STANDALONE_ACCESS : null
+  );
   const checkingAccess = access === null;
   const canBuildHere = access?.allowed === true;
 
@@ -567,10 +578,19 @@ export default function TableConfigPage({
     setStarting(false);
     setSelectedTemplateId('');
     setSavingTemplate(false);
-    setAccess(null);
-  }, [clubId]);
+    setAccess(accessPrevalidated ? PREVALIDATED_STANDALONE_ACCESS : null);
+  }, [clubId, accessPrevalidated]);
 
   useEffect(() => {
+    // The standalone route is already fail-closed behind GameCreationGuard.
+    // Repeating the same caller-bound RPC here briefly remounted an authorized
+    // form in a second "checking" state and could strand its first catalog
+    // read behind a duplicate request. Embedded hosts still require this page
+    // to perform its own authoritative check.
+    if (accessPrevalidated) {
+      setAccess(PREVALIDATED_STANDALONE_ACCESS);
+      return;
+    }
     if (!clubId) {
       setAccess({ allowed: false, unionId: null, reason: 'unknown_club' });
       return;
@@ -598,7 +618,7 @@ export default function TableConfigPage({
     return () => {
       isMounted = false;
     };
-  }, [clubId]);
+  }, [clubId, accessPrevalidated]);
 
   const gameInfo = GAME_TYPE_LABELS[gameType || 'nlh'] || GAME_TYPE_LABELS.nlh;
 
@@ -1239,8 +1259,11 @@ export default function TableConfigPage({
           games have the three house templates inside the flow) */}
       {config.gameMode !== 'regular' && templatesForThisGame.length > 0 && (
         <div className="template-selector">
-          <label className="template-label">Load Template:</label>
+          <label className="template-label" htmlFor="table-config-template">
+            Load Template:
+          </label>
           <select
+            id="table-config-template"
             className="template-dropdown"
             value={selectedTemplateId}
             onChange={(e) => loadTemplate(e.target.value)}
@@ -1267,6 +1290,7 @@ export default function TableConfigPage({
       {config.gameMode !== 'regular' && (
         <div className="config-name">
           <input
+            aria-label="Table Name"
             type="text"
             placeholder="Enter Table Name Here..."
             value={config.name}
@@ -1309,10 +1333,11 @@ export default function TableConfigPage({
             {config.gameMode === 'sng' && (
               <div className="config-toggle">
                 <span className="toggle-label">
-                  Players
+                  <span id="table-config-sng-players-label">Players</span>
                   <HelpPopover label="Players">Number Of Players In SNG</HelpPopover>
                 </span>
                 <select
+                  aria-labelledby="table-config-sng-players-label"
                   className="config-select sng-player-select"
                   value={config.sngPlayerCount}
                   onChange={(e) => handleSngPlayerChange(Number(e.target.value))}
@@ -1343,8 +1368,11 @@ export default function TableConfigPage({
               tooltip="Only Players With An Active VIP Membership, And This Club's Owners, Admins And Agents, Can Register"
             />
             <div className="config-textarea">
-              <span className="textarea-label">Short Description</span>
+              <label className="textarea-label" htmlFor="table-config-short-description">
+                Short Description
+              </label>
               <textarea
+                id="table-config-short-description"
                 className="config-textarea-input"
                 maxLength={200}
                 placeholder="Optional Line Shown On The Tournament Page..."
@@ -1479,8 +1507,14 @@ export default function TableConfigPage({
 
             {/* Blind Structure Radio */}
             <div className="config-radio-group">
-              <span className="radio-group-label">Blind Structure</span>
-              <div className="radio-options">
+              <span id="table-config-blind-structure-label" className="radio-group-label">
+                Blind Structure
+              </span>
+              <div
+                className="radio-options"
+                role="radiogroup"
+                aria-labelledby="table-config-blind-structure-label"
+              >
                 <label className="radio-option">
                   <input
                     type="radio"
@@ -1523,10 +1557,11 @@ export default function TableConfigPage({
             {/* Payout Structure Dropdown */}
             <div className="config-toggle">
               <span className="toggle-label">
-                Payout Structure
+                <span id="table-config-payout-structure-label">Payout Structure</span>
                 <HelpPopover label="Payout Structure">Prize Distribution</HelpPopover>
               </span>
               <select
+                aria-labelledby="table-config-payout-structure-label"
                 className="config-select"
                 value={config.payoutStructure}
                 onChange={(e) => updateConfig('payoutStructure', e.target.value as PayoutStructure)}
@@ -1647,7 +1682,7 @@ export default function TableConfigPage({
                     touches Prize Style. */}
                 <div className="config-toggle">
                   <span className="toggle-label">
-                    Entry Rules
+                    <span id="table-config-entry-rules-label">Entry Rules</span>
                     <HelpPopover label="Entry Rules">
                       Freezeout: One Entry, And A Player Who Busts Is Out. Rebuy: A Player Who Busts
                       May Pay For A New Stack. Re-Entry: A Player Who Busts May Pay To Enter Again.
@@ -1656,7 +1691,7 @@ export default function TableConfigPage({
                   </span>
                   <select
                     className="config-select"
-                    aria-label="Entry Rules"
+                    aria-labelledby="table-config-entry-rules-label"
                     value={config.entryRules}
                     onChange={(e) => updateConfig('entryRules', e.target.value as MttEntryRules)}
                   >
@@ -1749,7 +1784,7 @@ export default function TableConfigPage({
                 bounty or none, and it never touches Entry Rules. */}
             <div className={`config-toggle${prizeStyleLocked ? ' is-locked' : ''}`}>
               <span className="toggle-label">
-                Prize Style
+                <span id="table-config-prize-style-label">Prize Style</span>
                 <HelpPopover label="Prize Style">
                   Regular: The Whole Prize Pool Pays Finishing Places. Bounty: About Half Of Each
                   Buy-In Is A Fixed Bounty Paid For Every Knockout. Progressive Bounty: Half Of A
@@ -1760,7 +1795,7 @@ export default function TableConfigPage({
               </span>
               <select
                 className="config-select"
-                aria-label="Prize Style"
+                aria-labelledby="table-config-prize-style-label"
                 value={prizeStyleLocked ? 'regular' : config.prizeStyle}
                 disabled={prizeStyleLocked}
                 onChange={(e) => {
@@ -1850,9 +1885,12 @@ export default function TableConfigPage({
             {config.nextStepSatellite && (
               <>
                 <div className="config-toggle">
-                  <span className="toggle-label">Awards Seats Into</span>
+                  <span id="table-config-satellite-target-label" className="toggle-label">
+                    Awards Seats Into
+                  </span>
                   <select
                     className="config-select"
+                    aria-labelledby="table-config-satellite-target-label"
                     value={config.satelliteTargetId}
                     onChange={(e) => updateConfig('satelliteTargetId', e.target.value)}
                   >
@@ -1932,7 +1970,7 @@ export default function TableConfigPage({
                 the same local `YYYY-MM-DDTHH:MM` string the picker used to. */}
             <div className="config-toggle">
               <span className="toggle-label">
-                Start Date
+                <span id="table-config-start-date-label">Start Date</span>
                 <HelpPopover label="Start Date">
                   The Day This Tournament Starts, In Your Local Time. With No Date And No Time, It
                   Can Start A Minute After It Is Created, Once The Minimum Players Have Registered.
@@ -1940,7 +1978,7 @@ export default function TableConfigPage({
               </span>
               <select
                 className="config-select"
-                aria-label="Start Date"
+                aria-labelledby="table-config-start-date-label"
                 value={startParts.date}
                 onChange={(e) =>
                   updateConfig('startTime', joinLocalStart(e.target.value, startParts.time))
@@ -1956,14 +1994,14 @@ export default function TableConfigPage({
             </div>
             <div className="config-toggle">
               <span className="toggle-label">
-                Start Time
+                <span id="table-config-start-time-label">Start Time</span>
                 <HelpPopover label="Start Time">
                   The Time Of Day This Tournament Starts, In Your Local Time, In 15 Minute Steps.
                 </HelpPopover>
               </span>
               <select
                 className="config-select"
-                aria-label="Start Time"
+                aria-labelledby="table-config-start-time-label"
                 value={startParts.time}
                 onChange={(e) =>
                   updateConfig('startTime', joinLocalStart(startParts.date, e.target.value))
@@ -2017,7 +2055,7 @@ export default function TableConfigPage({
                 Tournament Schedule switch. */}
             <div className="config-toggle">
               <span className="toggle-label">
-                Repeat
+                <span id="table-config-repeat-label">Repeat</span>
                 <HelpPopover label="Repeat">
                   Repeat This Tournament Daily, Weekly Or Monthly With These Settings. With No Start
                   Date And Time Picked, Only The Repeating Schedule Is Created.
@@ -2025,7 +2063,7 @@ export default function TableConfigPage({
               </span>
               <select
                 className="config-select"
-                aria-label="Repeat"
+                aria-labelledby="table-config-repeat-label"
                 value={repeatChoice}
                 onChange={(e) => {
                   const next = e.target.value as RepeatChoice;
@@ -2047,7 +2085,7 @@ export default function TableConfigPage({
               <>
                 <div className="config-toggle">
                   <span className="toggle-label">
-                    Day Of Month
+                    <span id="table-config-day-of-month-label">Day Of Month</span>
                     <HelpPopover label="Day Of Month">
                       The Day Of The Month This Tournament Runs, Counted In UTC Like The Start Times
                       Below. A Month That Does Not Have This Day Is Skipped.
@@ -2055,7 +2093,7 @@ export default function TableConfigPage({
                   </span>
                   <select
                     className="config-select"
-                    aria-label="Day Of Month"
+                    aria-labelledby="table-config-day-of-month-label"
                     value={clampDayOfMonth(config.scheduleDayOfMonth)}
                     onChange={(e) =>
                       updateConfig('scheduleDayOfMonth', clampDayOfMonth(e.target.value))

@@ -207,6 +207,7 @@ describe('blockingRetirementReason', () => {
     openObligations: 0,
     unionAffiliated: false,
     alreadyRetired: false,
+    pristineWelcomeRetireAvailable: false,
   };
 
   it('allows retirement of a settled, idle standalone club', () => {
@@ -230,6 +231,36 @@ describe('blockingRetirementReason', () => {
 
   it('blocks while the club wallet still holds chips', () => {
     expect(blockingRetirementReason({ ...clean, walletChips: 12500 })).toMatch(/12,500 chips/);
+  });
+
+  it('allows the exact server-proven unused welcome package to reach atomic retirement', () => {
+    expect(
+      blockingRetirementReason({
+        ...clean,
+        runningTables: 9,
+        activeTournaments: 1,
+        walletChips: 100000,
+        openObligations: 14,
+        pristineWelcomeRetireAvailable: true,
+      })
+    ).toBeNull();
+  });
+
+  it('never lets the welcome exception override union or retired lifecycle gates', () => {
+    expect(
+      blockingRetirementReason({
+        ...clean,
+        unionAffiliated: true,
+        pristineWelcomeRetireAvailable: true,
+      })
+    ).toMatch(/Leave the union/);
+    expect(
+      blockingRetirementReason({
+        ...clean,
+        alreadyRetired: true,
+        pristineWelcomeRetireAvailable: true,
+      })
+    ).toMatch(/already retired/);
   });
 
   it('blocks club/member diamonds and Promo Vault inventory', () => {

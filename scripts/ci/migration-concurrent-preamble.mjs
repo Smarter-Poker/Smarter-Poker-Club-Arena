@@ -19,14 +19,14 @@
  * So the door now accepts exactly that shape and nothing wider:
  *
  *   -- comments
- *   CREATE INDEX CONCURRENTLY IF NOT EXISTS <name> ON public.<table> ...;
+ *   CREATE INDEX CONCURRENTLY IF NOT EXISTS <name> ON <public|smarter_private>.<table> ...;
  *   ... (only more of the same, and comments)
  *   BEGIN;
  *   ... the migration, ONE transaction ...
  *   COMMIT;
  *
  * Every statement before the first line that is exactly `BEGIN;` must be a
- * CREATE INDEX CONCURRENTLY IF NOT EXISTS on a public table. Anything else
+ * CREATE INDEX CONCURRENTLY IF NOT EXISTS on a public or smarter_private table. Anything else
  * there - a COMMENT, an ALTER, a DROP, a DO block, a plain CREATE INDEX -
  * is refused, because it would autocommit outside the transaction and reload
  * PostgREST on its own. IF NOT EXISTS is required so a re-dispatch after a
@@ -35,11 +35,11 @@
  */
 
 const INDEX_STATEMENT =
-  /^CREATE\s+INDEX\s+CONCURRENTLY\s+IF\s+NOT\s+EXISTS\s+([a-z_][a-z0-9_]*)\s+ON\s+public\.([a-z_][a-z0-9_]*)\s*(?:USING\s+\w+\s*)?\([\s\S]+$/i;
+  /^CREATE\s+INDEX\s+CONCURRENTLY\s+IF\s+NOT\s+EXISTS\s+([a-z_][a-z0-9_]*)\s+ON\s+(public|smarter_private)\.([a-z_][a-z0-9_]*)\s*(?:USING\s+\w+\s*)?\([\s\S]+$/i;
 
 /**
  * @param {string} sql the whole migration file
- * @returns {{ ok: true, indexes: {name: string, table: string, statement: string}[], body: string }
+ * @returns {{ ok: true, indexes: {name: string, schema: string, table: string, statement: string}[], body: string }
  *   | { ok: false, reason: string }}
  */
 export function splitConcurrentPreamble(sql) {
@@ -59,12 +59,12 @@ export function splitConcurrentPreamble(sql) {
     if (!m) {
       return {
         ok: false,
-        reason: `only CREATE INDEX CONCURRENTLY IF NOT EXISTS <name> ON public.<table> (...) may precede BEGIN; found: ${statement.replace(/\s+/g, ' ').slice(0, 120)}`,
+        reason: `only CREATE INDEX CONCURRENTLY IF NOT EXISTS <name> ON <public|smarter_private>.<table> (...) may precede BEGIN; found: ${statement.replace(/\s+/g, ' ').slice(0, 120)}`,
       };
     }
-    indexes.push({ name: m[1].toLowerCase(), table: m[2].toLowerCase(), statement: statement + ';' });
+    indexes.push({ name: m[1].toLowerCase(), schema: m[2].toLowerCase(), table: m[3].toLowerCase(), statement: statement + ';' });
   }
-  const names = new Set(indexes.map((i) => i.name));
+  const names = new Set(indexes.map((i) => `${i.schema}.${i.name}`));
   if (names.size !== indexes.length) return { ok: false, reason: 'the preamble names the same index twice' };
   return { ok: true, indexes, body };
 }

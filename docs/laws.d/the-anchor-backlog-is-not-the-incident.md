@@ -24,3 +24,18 @@ issue. The law pins that the incident verdict is the default written before
 the script runs - under `set -e` nothing after it runs when it exits 1 - that
 `git diff --exit-code` does not come back, and that the anchor file stays well
 formed with no day anchored twice as an original.
+
+Extended 2026-10-03. Separating the two verdicts left the same trap one level
+up: the backlog's only output was a `::warning` in a scheduled run, which has
+no reader, so the first thing a person could see was the job going red on the
+fourteenth day - arriving through `check-main-is-green` as "Schema Integrity
+Audit has been red", shaped exactly like the incident and masked by any open
+issue naming this workflow. It then happened: the anchor stopped at 2026-09-18
+and nobody heard until run 37110065144 on 2026-10-03, with fourteen days of
+`chip_ledger` unanchored and all 48 anchored days still hashing the same. The
+backlog now has its own reader - its own issue, its own title, filed at three
+days behind (derived from the measured one-line-a-day anchoring cadence of
+2026-09-08 through 09-11, so 0 or 1 behind never files and eleven days of
+warning remain before the hard bound) and closed when git catches up. The law
+pins the threshold, that the alarm output is set before the hard bound fails
+the step, and that the two issues can never close one another.

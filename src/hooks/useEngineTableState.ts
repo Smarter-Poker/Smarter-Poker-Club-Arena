@@ -34,6 +34,11 @@ export interface UseEngineTableStateResult {
    * EngineStateClient.reconnectNow). A no-op unless a retry is waiting.
    */
   reconnectNow: () => void;
+  /**
+   * 2026-10-04: ask an open socket to prove it is alive (see
+   * EngineStateClient.probeLink). A no-op unless the socket is open.
+   */
+  probeLink: () => void;
   snapshot: EngineSnapshot | null;
   seq: number;
   status: EngineConnectionStatus;
@@ -140,6 +145,7 @@ export function useEngineTableState(
 
   const requestSnapshot = useCallback(() => clientRef.current?.requestSnapshot(), []);
   const reconnectNow = useCallback(() => clientRef.current?.reconnectNow(), []);
+  const probeLink = useCallback(() => clientRef.current?.probeLink(), []);
   return {
     snapshot,
     seq,
@@ -149,6 +155,7 @@ export function useEngineTableState(
     lastUserEvent,
     requestSnapshot,
     reconnectNow,
+    probeLink,
   };
 }
 

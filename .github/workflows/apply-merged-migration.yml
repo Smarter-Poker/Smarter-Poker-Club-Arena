@@ -25,6 +25,36 @@ on:
         description: 'Migration filename under supabase/migrations (e.g. 20260922143541_club_and_union_diamond_commerce.sql)'
         required: true
         type: string
+      recover_index:
+        description: 'Opt-in recovery: exact public.managed_game_contract_versions_game_id_id_idx only'
+        required: false
+        default: ''
+        type: string
+      recover_oid:
+        description: 'Observed invalid index OID; required together with recover_index'
+        required: false
+        default: ''
+        type: string
+      recover_transient_oid:
+        description: 'Optional inspected invalid original-name_ccnew OID; exact interrupted recovery only'
+        required: false
+        default: ''
+        type: string
+      recover_before:
+        description: 'Inspected original operation timestamp (provenance only; admission uses fresh server time)'
+        required: false
+        default: ''
+        type: string
+      final_table_pages:
+        description: 'Explicit bounded final-table normalization: 1..3000 pages; empty installs only'
+        required: false
+        default: ''
+        type: string
+      final_table_operation:
+        description: 'UUID identifying this finite normalization operation; retain on unknown acknowledgment'
+        required: false
+        default: ''
+        type: string
       dry_run:
         description: 'Read and check only; send nothing'
         required: false
@@ -61,12 +91,42 @@ jobs:
         id: apply
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          FINAL_TABLE_PAGES: ${{ inputs.final_table_pages }}
+          FINAL_TABLE_OPERATION: ${{ inputs.final_table_operation }}
+          MIGRATION_FILE: ${{ inputs.migration }}
+          RECOVER_INDEX: ${{ inputs.recover_index }}
+          RECOVER_OID: ${{ inputs.recover_oid }}
+          RECOVER_BEFORE: ${{ inputs.recover_before }}
+          RECOVER_TRANSIENT_OID: ${{ inputs.recover_transient_oid }}
         run: |
           set -uo pipefail
+          # The pipeline below is allowed to fail WITHOUT aborting this step.
+          # GitHub runs `run:` under `bash -e`, and `set -uo pipefail` does not
+          # clear -e, so an exit 1 (REFUSED) or 3 (UNKNOWN) used to abort here
+          # BEFORE the code reached $GITHUB_OUTPUT. The summary then read an
+          # empty code and called every refusal "UNEXPECTED exit" - the three
+          # outcomes this script is careful to separate, collapsed into one
+          # that names no cause (CLAUDE.md 10.86 rule 1). Record it, then exit
+          # with it.
+          set +e
+          recovery_args=()
+          if [[ -n "$RECOVER_INDEX" || -n "$RECOVER_OID" || -n "$RECOVER_BEFORE" || -n "$RECOVER_TRANSIENT_OID" ]]; then
+            recovery_args=(--recover-index "$RECOVER_INDEX" --recover-oid "$RECOVER_OID" --recover-before "$RECOVER_BEFORE")
+          fi
+          if [[ -n "$RECOVER_TRANSIENT_OID" ]]; then
+            recovery_args+=(--recover-transient-oid "$RECOVER_TRANSIENT_OID")
+          fi
+          if [[ -n "$FINAL_TABLE_PAGES" || -n "$FINAL_TABLE_OPERATION" ]]; then
+            recovery_args+=(--final-table-pages "$FINAL_TABLE_PAGES" --final-table-operation "$FINAL_TABLE_OPERATION")
+          fi
           node scripts/ci/apply-recorded-migration.mjs \
-            --migration "${{ inputs.migration }}" \
+            --migration "$MIGRATION_FILE" \
+            "${recovery_args[@]}" \
             ${{ inputs.dry_run && '--dry-run' || '' }} 2>&1 | tee /tmp/apply.log
-          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          code=${PIPESTATUS[0]}
+          set -e
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          exit "$code"
 
       - name: Say what happened
         if: always()
@@ -79,9 +139,10 @@ jobs:
             echo "- file: \`${{ inputs.migration }}\`"
             echo "- dry run: \`${{ inputs.dry_run }}\`"
             case "$code" in
-              0) echo "- result: **APPLIED or ALREADY-APPLIED** (see the log line)";;
+              0) echo "- result: **APPLIED, ALREADY-APPLIED or BOUNDED PAGES** (see exact committed/partial log)";;
               1) echo "- result: **REFUSED** - nothing committed, or the reason is in the log";;
-              3) echo "- result: **UNKNOWN** - the state could not be read; NOTHING was sent";;
+              3) echo "- result: **UNKNOWN** - inspect the log and durable outcome before another operation";;
+              "") echo "- result: **COULD NOT TELL** - the applier recorded no exit code, so whether anything was sent is UNREAD. Inspect the log and schema_migrations before any other operation; do not re-dispatch blind.";;
               *) echo "- result: **UNEXPECTED exit $code**";;
             esac
             echo ""

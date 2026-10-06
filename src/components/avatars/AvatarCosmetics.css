@@ -1,7 +1,7 @@
 /*
  * ♠ CLUB ARENA — avatar frame + aura cosmetics
  *
- * The four frames and two auras are ported from the World Hub's
+ * The original four frames and two auras are ported from the World Hub's
  * `src/components/avatars/AvatarGallery.jsx` (lines 711-747), where they have
  * lived as an inline <style> block since Phase 4. The colours, blur radii and
  * keyframe timings are copied EXACTLY so the same equipped token looks the same
@@ -89,6 +89,29 @@
     0 0 1.2em rgba(255, 50, 0, 0.5);
 }
 
+.sp-cosmetic--frame.frame-obsidian {
+  border-color: #9aa9b8;
+  box-shadow:
+    inset 0 0 1.7em rgba(2, 6, 12, 0.94),
+    0 0 0 0.06em rgba(226, 232, 240, 0.48),
+    0 0 0.9em rgba(91, 112, 132, 0.48);
+}
+
+.sp-cosmetic--frame.frame-emerald {
+  border-color: #36e39a;
+  box-shadow:
+    inset 0 0 1.9em rgba(16, 185, 129, 0.72),
+    0 0 1em rgba(52, 211, 153, 0.5);
+}
+
+.sp-cosmetic--frame.frame-royal {
+  border-color: #9f7aea;
+  box-shadow:
+    inset 0 0 1.9em rgba(109, 40, 217, 0.76),
+    0 0 0 0.06em rgba(196, 181, 253, 0.62),
+    0 0 1.05em rgba(139, 92, 246, 0.56);
+}
+
 /* ── AURAS ────────────────────────────────────────────────────────────────── */
 
 /* THE THREE FREE AURAS (Dan 2026-08-27): one static inset halo each, no
@@ -141,6 +164,109 @@
 
 .sp-cosmetic--aura.aura-glitch {
   animation: spAuraGlitch 0.3s infinite;
+}
+
+@keyframes spAuraFrost {
+  from {
+    box-shadow:
+      inset 0 0 1.5em rgba(186, 230, 253, 0.48),
+      0 0 0.8em rgba(125, 211, 252, 0.38);
+  }
+  to {
+    box-shadow:
+      inset 0 0 2.3em rgba(224, 242, 254, 0.68),
+      0 0 1.25em rgba(56, 189, 248, 0.55);
+  }
+}
+
+.sp-cosmetic--aura.aura-frost {
+  box-shadow:
+    inset 0 0 1.8em rgba(186, 230, 253, 0.58),
+    0 0 0.9em rgba(125, 211, 252, 0.44);
+  animation: spAuraFrost 2.8s ease-in-out infinite alternate;
+}
+
+@keyframes spAuraNeon {
+  from {
+    box-shadow:
+      inset 0 0 1.4em rgba(34, 211, 238, 0.5),
+      0 0 0.75em rgba(34, 211, 238, 0.34);
+  }
+  to {
+    box-shadow:
+      inset 0 0 2.1em rgba(45, 212, 191, 0.72),
+      0 0 1.2em rgba(6, 182, 212, 0.58);
+  }
+}
+
+.sp-cosmetic--aura.aura-neon {
+  box-shadow:
+    inset 0 0 1.6em rgba(34, 211, 238, 0.58),
+    0 0 0.9em rgba(6, 182, 212, 0.42);
+  animation: spAuraNeon 2.2s ease-in-out infinite alternate;
+}
+
+@keyframes spAuraRoyal {
+  from {
+    box-shadow:
+      inset 0 0 1.5em rgba(167, 139, 250, 0.5),
+      0 0 0.75em rgba(139, 92, 246, 0.35);
+  }
+  to {
+    box-shadow:
+      inset 0 0 2.25em rgba(216, 180, 254, 0.7),
+      0 0 1.2em rgba(168, 85, 247, 0.58);
+  }
+}
+
+.sp-cosmetic--aura.aura-royal {
+  box-shadow:
+    inset 0 0 1.8em rgba(167, 139, 250, 0.58),
+    0 0 0.9em rgba(139, 92, 246, 0.44);
+  animation: spAuraRoyal 2.5s ease-in-out infinite alternate;
+}
+
+@keyframes spAuraEmber {
+  from {
+    box-shadow:
+      inset 0 -2.5em 2.8em -1.1em rgba(249, 115, 22, 0.58),
+      0 0 0.65em rgba(239, 68, 68, 0.3);
+  }
+  to {
+    box-shadow:
+      inset 0 -3.4em 3.4em -0.7em rgba(251, 146, 60, 0.78),
+      0 0 1.1em rgba(249, 115, 22, 0.52);
+  }
+}
+
+.sp-cosmetic--aura.aura-ember {
+  box-shadow:
+    inset 0 -2.8em 3em -1em rgba(249, 115, 22, 0.68),
+    0 0 0.75em rgba(239, 68, 68, 0.38);
+  animation: spAuraEmber 1.8s ease-in-out infinite alternate;
+}
+
+@keyframes spAuraAurora {
+  from {
+    box-shadow:
+      inset 1.1em 0 2.2em rgba(45, 212, 191, 0.52),
+      inset -1.1em 0 2.2em rgba(96, 165, 250, 0.48),
+      0 0 0.8em rgba(45, 212, 191, 0.32);
+  }
+  to {
+    box-shadow:
+      inset 1.1em 0 2.2em rgba(96, 165, 250, 0.56),
+      inset -1.1em 0 2.2em rgba(192, 132, 252, 0.5),
+      0 0 1.2em rgba(96, 165, 250, 0.48);
+  }
+}
+
+.sp-cosmetic--aura.aura-aurora {
+  box-shadow:
+    inset 1em 0 2em rgba(45, 212, 191, 0.5),
+    inset -1em 0 2em rgba(96, 165, 250, 0.48),
+    0 0 0.9em rgba(99, 102, 241, 0.38);
+  animation: spAuraAurora 3.2s ease-in-out infinite alternate;
 }
 
 /*

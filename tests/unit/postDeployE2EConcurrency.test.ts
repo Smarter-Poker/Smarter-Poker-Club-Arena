@@ -12,6 +12,14 @@ const realtimeCertification = readFileSync(
   resolve(__dirname, '../e2e/production-customization-realtime.spec.ts'),
   'utf8'
 );
+const gameplayCertification = readFileSync(
+  resolve(__dirname, '../e2e/gameplay-customization-runtime.spec.ts'),
+  'utf8'
+);
+const appearanceObservation = readFileSync(
+  resolve(__dirname, '../e2e/support/appearanceRealtimeObservation.ts'),
+  'utf8'
+);
 
 describe('post-deploy E2E concurrency', () => {
   it('runs only after exact publish proof or a successful safe stand-down', () => {
@@ -201,5 +209,41 @@ describe('post-deploy E2E concurrency', () => {
       realtimeCertification.indexOf('await Promise.all([hydrated, open.click()])')
     );
     expect(realtimeCertification).toContain('await Promise.all([hydrated, open.click()])');
+    expect(realtimeCertification).toContain("{ expectedLook: 'custom' }");
+    expect(realtimeCertification).toContain(".getByText('Custom Mix', { exact: true })");
+    expect(realtimeCertification).toContain(
+      'await expectSelectedAppearanceTiles(mobileStudio, finalPrimary)'
+    );
+    expect(realtimeCertification).toContain('observeAppearanceRealtime(page, account.id)');
+    expect(realtimeCertification).toContain(
+      'The primary appearance channel never completed its private join.'
+    );
+    expect(appearanceObservation).toContain("frame.event === 'phx_join' && frame.ref");
+    expect(appearanceObservation).toContain('socketState.pendingJoinRefs.has(frame.ref)');
+    expect(appearanceObservation).toContain("page.on('request'");
+    expect(appearanceObservation).toContain('request.isNavigationRequest()');
+  });
+
+  it('projects routed gameplay without depending on a currently live production game', () => {
+    expect(gameplayCertification).toContain(
+      "getByRole('button', { name: 'Open Table Studio', exact: true })"
+    );
+    expect(gameplayCertification).not.toContain("getByRole('button', { name: 'Open Studio' })");
+    expect(gameplayCertification).toContain('readable table authorization anchor');
+    expect(gameplayCertification).toContain(
+      'arena:clubs!fk_tables_club_id(id,asset,is_platform,union_id)'
+    );
+    expect(gameplayCertification).toContain("is_deleted: 'eq.false'");
+    expect(gameplayCertification).toContain("deleted_at: 'is.null'");
+    expect(gameplayCertification).toContain("order: 'created_at.asc,id.asc'");
+    expect(gameplayCertification).not.toContain("order: 'created_at.desc'");
+    expect(gameplayCertification).toContain("name: 'Customization Certification Table'");
+    expect(gameplayCertification).toContain("status: 'running'");
+    expect(gameplayCertification).not.toContain("status: 'in.(waiting,running,active)'");
+    expect(gameplayCertification).not.toContain("game_type: 'eq.cash'");
+    expect(gameplayCertification).not.toContain("tournament_id: 'is.null'");
+    expect(gameplayCertification).not.toContain(
+      'The certification club has no readable live cash table for routed proof.'
+    );
   });
 });

@@ -50,6 +50,8 @@ const shadow: LightningConfig = {
   workerMode: 'shadow',
   passIntervalMs: 2_000,
   keepaliveIntervalMs: 30_000,
+  maxHandsPerPass: 32,
+  dealWindowMs: 600_000,
 };
 
 function matchReply() {
@@ -116,6 +118,8 @@ describe('LightningConfig', () => {
       workerMode: 'shadow',
       passIntervalMs: 1500,
       keepaliveIntervalMs: 45_000,
+      maxHandsPerPass: 32,
+      dealWindowMs: 600_000,
     });
     expect(parseLightningConfig({ worker_mode: 'form', pass_interval_ms: 0 }).passIntervalMs).toBe(
       LIGHTNING_PASS_INTERVAL_MIN_MS

@@ -203,6 +203,13 @@ export function hopsToBigBlind(ringSeats: readonly number[], bbSeat: number, sea
 // TABLE BALANCER CLASS
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * A table this short is broken as soon as its players physically fit
+ * elsewhere (shouldBreakTable), and its players fill the fullest table with a
+ * free chair rather than spreading (breakTable).
+ */
+export const SHORT_TABLE_PLAYERS = 3;
+
 export class TableBalancer {
   private onEvent?: (event: TableBalancerEvent) => void;
 
@@ -441,7 +448,7 @@ export class TableBalancer {
 
     // A table this short breaks as soon as its players physically fit, which is
     // the pre-existing rule and is preserved exactly.
-    return table.playerCount <= 3;
+    return table.playerCount <= SHORT_TABLE_PLAYERS;
   }
 
   /**
@@ -465,6 +472,28 @@ export class TableBalancer {
   breakTable(table: BalancerTable, otherTables: BalancerTable[]): MoveInstruction[] {
     const moves: MoveInstruction[] = [];
     const targets = [...otherTables].sort((a, b) => a.playerCount - b.playerCount);
+    /* A SHORT TABLE IS MERGED, NOT PAIRED (2026-10-02).
+     *
+     * Spreading to the least-full table is right for a big break: six players
+     * leaving a table should land evenly. It is wrong for a table of one to
+     * three, because when the field is spread one per table every other table
+     * is also the least full, and every lone player was sent to another lone
+     * player. checkTableBalance plans all its breaks on one simulated board, so
+     * 23 lone tables were planned into about a dozen heads-up pairs, those
+     * played down to one each, and the next pass paired them again - the field
+     * shrank by elimination and never formed a full table.
+     *
+     * Production 2026-10-02 18:31-20:05 UTC: Midday Free Buy (b800c632) sat at
+     * 23 players on 23 tables, Coffee Break PLO4 (81775fa0) 14 on 14 and the
+     * $100 Freeroll (4995e9aa) 36 on 33; tournament_seat_move_receipts show
+     * each break moving one player onto another lone table.
+     *
+     * So a short table's players go to the FULLEST table that still has a
+     * chair, which is how a room breaks tables: the survivors fill. Gap
+     * rebalancing (STEP 2 of checkTableBalance) evens the survivors out once
+     * the breaks have landed; it already skips every table a pending break is
+     * moving players to or from. */
+    const shortSource = table.playerCount > 0 && table.playerCount <= SHORT_TABLE_PLAYERS;
 
     // B2 2026-08-27: leave in blind order — the player who is big blind due
     // next goes first and so gets the soonest big blind at the destination,
@@ -498,7 +527,8 @@ export class TableBalancer {
       targets.sort(
         (a, b) =>
           (a.playerCount === 0 ? 1 : 0) - (b.playerCount === 0 ? 1 : 0) ||
-          a.playerCount - b.playerCount
+          (shortSource ? b.playerCount - a.playerCount : a.playerCount - b.playerCount) ||
+          (shortSource ? a.tableId.localeCompare(b.tableId) : 0)
       );
       const sourceHops =
         sourceBB === null ? null : hopsToBigBlind(sourceRing, sourceBB, player.seat);

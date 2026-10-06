@@ -15,6 +15,13 @@ const tableResponse = (response: Response, table: string) => {
   return url.pathname.endsWith(`/rest/v1/${table}`) && response.request().method() === 'GET';
 };
 
+const expectPhoneFit = async (page: import('@playwright/test').Page) => {
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+  );
+  expect(overflow).toBeLessThanOrEqual(1);
+};
+
 test.describe('Visible achievement and rate history readers', () => {
   test.skip(
     !process.env.SP_EMAIL || !process.env.SP_PASS,
@@ -60,6 +67,7 @@ test.describe('Visible achievement and rate history readers', () => {
     page,
   }) => {
     test.setTimeout(120_000);
+    await page.setViewportSize({ width: 375, height: 812 });
     const reads = new Map<string, Response[]>([
       ['commission_rate_audit', []],
       ['rake_rate_audit', []],
@@ -88,6 +96,52 @@ test.describe('Visible achievement and rate history readers', () => {
     }
     await expect(page.getByText(`${expectedCount} Changes`, { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
+    const filterGroups = page.getByRole('group', { name: /Rate Type|Reading Window/ });
+    await expect(filterGroups).toHaveCount(2);
+    const controls = filterGroups.getByRole('button');
+    await expect(controls).toHaveCount(7);
+    for (const control of await controls.all()) {
+      const box = await control.boundingBox();
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+    await expectPhoneFit(page);
+  });
+
+  test('reads the scoped settlement ledger on a phone without substituting an empty state', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize({ width: 375, height: 812 });
+    const reads: Response[] = [];
+    page.on('response', (response) => {
+      if (tableResponse(response, 'settlement_invoices')) reads.push(response);
+    });
+
+    await page.goto(`settlement-history?club=${clubId}`, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/, { timeout: 30_000 });
+    await expect(
+      page.getByRole('heading', { name: 'Settlement History', exact: true })
+    ).toBeVisible({ timeout: 30_000 });
+    await expect.poll(() => reads.length, { timeout: 60_000 }).toBeGreaterThanOrEqual(1);
+
+    const response = reads.at(-1)!;
+    expect(response.status()).toBe(200);
+    const url = new URL(response.url());
+    expect(url.searchParams.get('select')?.replace(/\s/g, '')).toBe(
+      'id,period_id,invoice_type,gross_amount,net_amount,breakdown,status,created_at'
+    );
+    expect(url.searchParams.get('club_id')).toBe(`eq.${clubId}`);
+    expect(url.searchParams.get('invoice_type')).toBe('eq.union_to_club');
+    expect(url.searchParams.get('breakdown->>union_hold_amount')).toBe('not.is.null');
+    expect(url.searchParams.get('breakdown->>club_retained')).toBe('not.is.null');
+    expect(url.searchParams.get('limit')).toBe('50');
+    const rows = await response.json();
+    expect(Array.isArray(rows)).toBe(true);
+    expect(rows.length, 'the settlement observer needs a real rendered cycle').toBeGreaterThan(0);
+    await expect(page.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
+    await expect(page.getByText('No Settlement Cycles Yet', { exact: true })).toHaveCount(0);
+    await expect(page.getByText(/^Period:/).first()).toBeVisible({ timeout: 30_000 });
+    await expectPhoneFit(page);
   });
   test('a reserved owner notification invalidates progress without inventing an unlock', async ({
     page,

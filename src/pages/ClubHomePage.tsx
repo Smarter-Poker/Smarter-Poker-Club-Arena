@@ -49,7 +49,12 @@ import ClubLaunchProgress, {
   useClubLaunchSkips,
 } from '../components/club/ClubLaunchProgress';
 import ClubOpeningWizard from '../components/club/ClubOpeningWizard';
+import ClubWelcomePackage from '../components/club/ClubWelcomePackage';
 import { clubOpeningSetupService } from '../services/ClubOpeningSetupService';
+import {
+  clubWelcomePackageService,
+  type ClubWelcomePackageState,
+} from '../services/ClubWelcomePackageService';
 import {
   hasNewClubOpeningChecklist,
   hasOwnClubPicture,
@@ -82,6 +87,14 @@ import {
   withClubLabel,
   withClusterFigures,
 } from '../components/lobby/lobbyEntries';
+import {
+  isLightningMode,
+  lightningClusterIdsOf,
+  lightningRoute,
+  withLightningState,
+  type LightningLobbyState,
+} from '../lightning/lightningLobby';
+import { useLightningLobbyStates } from '../lightning/lightningLobbyFeed';
 import {
   TOURNAMENT_ARENA_EMBED,
   tournamentService,
@@ -342,6 +355,10 @@ interface TableData {
   cluster_state?: string | null;
   /** `cash_games.enabled`, embedded by the chain read; a disabled game is Closed on the board. */
   cluster_enabled?: boolean | null;
+  /** LIGHTNING PHASE 6: `cash_games.cluster_mode`, embedded by the chain read. */
+  cluster_mode?: string | null;
+  /** LIGHTNING PHASE 6: the pool state, stamped only on a Lightning Cluster's rows. */
+  cluster_lightning?: LightningLobbyState | null;
   role?: 'main' | 'feeder' | null;
   main_index?: number | null;
   lifecycle?: string | null;
@@ -711,14 +728,42 @@ import { useArenaAccess } from '../components/arena/arenaAccess';
 import { useDiamondFreerollCountdown } from '../hooks/useNextDiamondFreeroll';
 import { publicOrigin } from '../lib/appBase';
 
-export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: string } = {}) {
+/**
+ * Dan 2026-10-04: `initialGameType` opens the embedded lobby ON a named list.
+ * The Quick Join sheet's Browse Full Lobby passes it from a tournament table,
+ * where the lobby a player means is the club's tournaments, not its cash board.
+ * It is a landing, not a preference: nothing is saved, and the first tab the
+ * player taps takes over exactly as it does on any other visit.
+ *
+ * It is also ONE-SHOT. It is read when this page mounts and belongs to that
+ * mount only; `onInitialGameTypeConsumed` tells the tab strip the landing has
+ * been applied, so the strip can drop the request and the NEXT mount of this
+ * page (Back out of a tournament, a cash table's "+") opens on the player's
+ * own tab instead of being sent to tournaments again.
+ */
+type EmbeddedLobbyList = 'MTT' | 'SNG';
+interface ClubHomePageProps {
+  clubIdOverride?: string;
+  initialGameType?: EmbeddedLobbyList;
+  onInitialGameTypeConsumed?: () => void;
+}
+
+export default function ClubHomePage({
+  clubIdOverride,
+  initialGameType,
+  onInitialGameTypeConsumed,
+}: ClubHomePageProps = {}) {
   // Routed entry is checked by ClubMemberGuard. Embedded table lobbies need
   // the same boundary because they do not mount that route guard.
   return (
     <PageErrorBoundary pageName="ClubHomePage">
       {clubIdOverride ? (
         <ArenaAccessBoundary clubKey={clubIdOverride} cashLobby>
-          <ClubHomePageContent clubIdOverride={clubIdOverride} />
+          <ClubHomePageContent
+            clubIdOverride={clubIdOverride}
+            initialGameType={initialGameType}
+            onInitialGameTypeConsumed={onInitialGameTypeConsumed}
+          />
         </ArenaAccessBoundary>
       ) : (
         <ClubHomePageContent />
@@ -727,7 +772,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   );
 }
 
-function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {}) {
+function ClubHomePageContent({
+  clubIdOverride,
+  initialGameType,
+  onInitialGameTypeConsumed,
+}: ClubHomePageProps = {}) {
   const { register: registerMtt, isRegistering: isRegisteringMtt } = useTournamentRegistration();
 
   const { clubId: routeClubId } = useParams<{ clubId: string }>();
@@ -912,7 +961,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
      tab, a leftover from before All Games was a real tab. A club with no open
      MTTs therefore opened onto an empty screen blaming "filters" - every
      single visit. All Games is the landing view of a dense lobby. */
-  const [gameType, setGameType] = useState<GameType>('ALL');
+  const [gameType, setGameType] = useState<GameType>(initialGameType ?? 'ALL');
+  /* The landing this MOUNT was opened on. Held here, not re-read from the
+     prop: the strip clears the prop as soon as the landing is reported
+     applied, and the database's later correction of the saved view must still
+     land on the requested list for this visit. A club switch drops it. */
+  const landingGameTypeRef = useRef<EmbeddedLobbyList | undefined>(initialGameType);
+  const landingReportedRef = useRef(false);
+  const onInitialGameTypeConsumedRef = useRef(onInitialGameTypeConsumed);
+  onInitialGameTypeConsumedRef.current = onInitialGameTypeConsumed;
   const [sortKey, setSortKey] = useState<SortKey>('starting_soon');
   const [allStatusFilter, setAllStatusFilter] = useState<AllStatusFilter>('ALL');
   /* `sortOpen` used to live here. It was assigned false in three places,
@@ -981,6 +1038,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const [clubNames, setClubNames] = useState<Record<string, string>>({});
   const [showOpeningWizard, setShowOpeningWizard] = useState(false);
   const [openingSetupComplete, setOpeningSetupComplete] = useState(false);
+  const [welcomePackageState, setWelcomePackageState] = useState<ClubWelcomePackageState | null>(
+    null
+  );
   const [configuredAgentUserId, setConfiguredAgentUserId] = useState<string | null>(null);
   const [agentSetupRevision, setAgentSetupRevision] = useState(0);
   const [clubLevel, setClubLevel] = useState<ClubLevelInfo | null>(null);
@@ -1027,6 +1087,25 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     launchSkips.completedAt
   );
   const toast = useToast();
+  useEffect(() => {
+    if (!club?.id || !currentUserId || club.owner_id !== currentUserId) {
+      setWelcomePackageState(null);
+      return;
+    }
+    let current = true;
+    void clubWelcomePackageService
+      .get(club.id)
+      .then((next) => {
+        if (current) setWelcomePackageState(next);
+      })
+      .catch((error) => {
+        reportError(error, 'ClubHomePage.Welcome_package_state');
+        if (current) setWelcomePackageState(null);
+      });
+    return () => {
+      current = false;
+    };
+  }, [club?.id, club?.owner_id, currentUserId]);
   useEffect(() => {
     if (
       !club?.id ||
@@ -1976,18 +2055,29 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     const switchingClubs = viewPrefsOwner.current !== null;
     viewPrefsOwner.current = resolvedClubId;
     if (switchingClubs) viewPrefsTouched.current = false;
+    // The landing was a request about the club it was made in.
+    if (switchingClubs) landingGameTypeRef.current = undefined;
 
     const saved = loadViewPrefs(resolvedClubId);
     setViewPrefs(saved);
 
     const applyView = (p: LobbyViewPrefs) => {
-      const tab = p.tab ?? 'ALL';
+      /* A requested landing list outranks the saved tab for this mount only
+         (see `initialGameType`); the saved sort and Favorites still apply. */
+      const tab = landingGameTypeRef.current ?? p.tab ?? 'ALL';
       setGameType(tab);
       setSortKey(sortForTab(p, tab));
       setFavoritesOnly(p.favoritesOnly);
     };
 
     if (!viewPrefsTouched.current) applyView(saved);
+
+    /* The initial view is applied (or the player already chose their own):
+       either way the landing request is spent. Reported once per mount. */
+    if (!landingReportedRef.current) {
+      landingReportedRef.current = true;
+      if (landingGameTypeRef.current) onInitialGameTypeConsumedRef.current?.();
+    }
 
     /* ── THEN THE DATABASE CORRECTS IT (Dan 2026-09-07, item 5) ─────────────
        "THEY SHOULD BE SAVED REGARDLESS OF WHICH DEVICE YOU LOG INTO."
@@ -2945,7 +3035,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       const tableQuery = supabase
         .from('tables')
         .select(
-          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_ante_multiplier, bomb_pot_ante_fixed, ante_enabled, big_blind_ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, union_id, is_private, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands, cluster_id, role, main_index, lifecycle, kill_mode, kill_threshold_bb, cluster:cash_games!tables_cluster_id_fkey(template_name, must_move, state, enabled)'
+          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_ante_multiplier, bomb_pot_ante_fixed, ante_enabled, big_blind_ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, union_id, is_private, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands, cluster_id, role, main_index, lifecycle, kill_mode, kill_threshold_bb, cluster:cash_games!tables_cluster_id_fkey(template_name, must_move, state, enabled, cluster_mode)'
         );
       // ONE rule, applied. Union clubs see the UNION's tables plus their OWN
       // private games; another club's private game is never visible.
@@ -3128,6 +3218,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               must_move?: boolean | null;
               state?: string | null;
               enabled?: boolean | null;
+              cluster_mode?: string | null;
             } | null;
           } & Record<string, unknown>;
           if (!game || typeof game !== 'object') return rest;
@@ -3137,6 +3228,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             cluster_must_move: game.must_move ?? null,
             cluster_state: game.state ?? null,
             cluster_enabled: game.enabled ?? null,
+            /* LIGHTNING PHASE 6: the Cluster's mode, so a Lightning game's
+               card says LIGHTNING LIVE and its door is the Lightning route. */
+            cluster_mode: game.cluster_mode ?? null,
           };
         });
         flattenedTables = flattened as unknown as TableData[];
@@ -3290,17 +3384,26 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
      (which keeps the old aggregate), not realtime (which carries one table at
      a time) - so a seat change on the feeder moves the game's row the moment
      its `tables` UPDATE arrives. */
+  /* LIGHTNING PHASE 6: the pool state of each Cluster on the board whose
+     mode is Lightning. No Cluster is Lightning today, so the list is empty
+     and nothing is read. */
+  const lightningClusterIds = useMemo(
+    () => lightningClusterIdsOf(tables as unknown as LobbyTableRow[]),
+    [tables]
+  );
+  const lightningStates = useLightningLobbyStates(lightningClusterIds);
   const boardTables = useMemo(() => {
     /* Count exactly what is rendered. A cluster row that is not a census
        table is not part of its game (the controller has stopped counting it),
        so it leaves the board here rather than being rendered as a game while
        being excluded from that game's figures - the two-answers shape 5.2 is
        about. A table with no cluster is untouched: it is its own game. */
-    const rows = (tables as unknown as LobbyTableRow[]).filter(
-      (t) => !t.cluster_id || isCensusTable(t)
+    const rows = withLightningState(
+      (tables as unknown as LobbyTableRow[]).filter((t) => !t.cluster_id || isCensusTable(t)),
+      lightningStates
     );
     return withClusterFigures(rows) as unknown as TableData[];
-  }, [tables]);
+  }, [tables, lightningStates]);
 
   const styleCounts = useMemo(
     () =>
@@ -4025,6 +4128,13 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          table it names is opened exactly as any table is; the buy-in itself
          is still the table's own door. */
       const row = tablesRef.current.find((t) => t.id === tableId);
+      /* LIGHTNING PHASE 6: a Lightning Cluster has no table to pick and no
+         seat to choose. Its one door is the Lightning route, which opens the
+         player's pool session or takes them through the Cluster's join. */
+      if (row?.cluster_id && isLightningMode(row.cluster_mode)) {
+        navigate(`/lightning/${row.cluster_id}`);
+        return;
+      }
       if (row?.cluster_id && row.cluster_must_move !== false) {
         if (!gameEntryScope.active || gameEntryScope.busy) return;
         gameEntryScope.busy = true;
@@ -4457,29 +4567,31 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                "THE DETAILS BUTTON SHOULD TAKE YOU TO THE TOURNAMENT LOBBY
                SCREEN" — unconditionally, not only once it is running. */
       onViewTable: (e) =>
-        e.kind === 'cash'
-          ? (warmTable(e.id), navigate(`/table/${e.id}`))
-          : /* Dan 2026-08-20: "there is 'no lobby' for a spin, you just start
+        e.kind === 'cash' && e.game && isLightningMode((e.raw as LobbyTableRow).cluster_mode)
+          ? navigate(lightningRoute(e.game.id))
+          : e.kind === 'cash'
+            ? (warmTable(e.id), navigate(`/table/${e.id}`))
+            : /* Dan 2026-08-20: "there is 'no lobby' for a spin, you just start
                on a table." Watch and Return To Game on a spin therefore open
                the game's live TABLE (spinQuickJoin resolves the current one,
                stale ids and recycled siblings included) — an MTT keeps its
                own lobby screen. Heads-up SNGs ride the same table route for
                the same reason; multi-seat SNGs are registration games and
                keep the lobby. */
-            e.kind === 'spin' || (e.kind === 'sng' && e.capacity > 0 && e.capacity <= 2)
-            ? spinQuickJoin(
-                {
-                  id: e.id,
-                  name: e.name,
-                  buy_in_amount: Number(
-                    filteredTournamentsRef.current.find((t) => t.id === e.id)?.buy_in_amount ??
-                      e.buyInValue ??
-                      0
-                  ),
-                },
-                e.kind === 'sng' ? 'sng' : 'spin'
-              )
-            : openTournamentLobby(e.id),
+              e.kind === 'spin' || (e.kind === 'sng' && e.capacity > 0 && e.capacity <= 2)
+              ? spinQuickJoin(
+                  {
+                    id: e.id,
+                    name: e.name,
+                    buy_in_amount: Number(
+                      filteredTournamentsRef.current.find((t) => t.id === e.id)?.buy_in_amount ??
+                        e.buyInValue ??
+                        0
+                    ),
+                  },
+                  e.kind === 'sng' ? 'sng' : 'spin'
+                )
+              : openTournamentLobby(e.id),
     }),
     [
       waitlistedTableIds,
@@ -4754,6 +4866,19 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const tournamentKinds = tournaments.map((tournament) =>
     classifyTournament(tournament as unknown as LobbyTournamentRow)
   );
+  /* Package receipts are the creation transaction's durable truth. They make
+     these launch steps complete before delayed lobby/realtime rows arrive. */
+  const welcomeItems =
+    welcomePackageState?.status === 'provisioned'
+      ? welcomePackageState.items.filter((item) => item.retiredAt === null)
+      : [];
+  const welcomeHasCashSlot = (prefix: string) =>
+    welcomeItems.some((item) => item.entityKind === 'cash_game' && item.slotKey.startsWith(prefix));
+  const welcomeHasMttSchedule = welcomeItems.some(
+    (item) =>
+      item.entityKind === 'tournament_schedule' && item.slotKey === 'daily_25_freezeout_1900'
+  );
+  const welcomeSpinsEnabled = welcomePackageState?.economics?.spinsEnabled === true;
   /* The opening setup wizard is the one REQUIRED step: it cannot be skipped.
      Every other step is optional, may be skipped, and a skip can be undone. */
   const launchTaskList: ClubLaunchTask[] = [
@@ -4794,7 +4919,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       id: 'nlh',
       label: 'Open Your First NLH Table',
       detail: 'Create A No-Limit Hold’em Cash Game',
-      complete: hasCashCategory('HOLDEM'),
+      complete: welcomeHasCashSlot('classic_nlh_') || hasCashCategory('HOLDEM'),
       optional: true,
       actionLabel: 'Create Table',
       onAction: () => openCreationFor('HOLDEM'),
@@ -4803,7 +4928,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       id: 'plo',
       label: 'Open Your First PLO Table',
       detail: 'Create A Pot-Limit Omaha Cash Game',
-      complete: hasCashCategory('OMAHA'),
+      complete: welcomeHasCashSlot('classic_plo') || hasCashCategory('OMAHA'),
       optional: true,
       actionLabel: 'Create Table',
       onAction: () => openCreationFor('OMAHA'),
@@ -4812,7 +4937,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       id: 'limit',
       label: 'Open Your First Limit Table',
       detail: 'Create A Fixed-Limit Cash Game',
-      complete: hasCashCategory('LIMIT'),
+      complete: welcomeHasCashSlot('classic_flh_') || hasCashCategory('LIMIT'),
       optional: true,
       actionLabel: 'Create Table',
       onAction: () => openCreationFor('LIMIT'),
@@ -4821,7 +4946,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       id: 'mtt',
       label: 'Schedule Your First MTT',
       detail: 'Publish A Multi-Table Tournament',
-      complete: tournamentKinds.includes('mtt'),
+      complete: welcomeHasMttSchedule || tournamentKinds.includes('mtt'),
       optional: true,
       actionLabel: 'Create MTT',
       onAction: () => openCreationFor('MTT'),
@@ -4832,7 +4957,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       detail: club.spins_enabled
         ? 'Create A Three-Player Spin Event'
         : 'Enable And Fund Spins First',
-      complete: tournamentKinds.includes('spin'),
+      complete: welcomeSpinsEnabled || tournamentKinds.includes('spin'),
       optional: true,
       actionLabel: club.spins_enabled ? 'Create Spin' : 'Set Up Spins',
       onAction: () => (club.spins_enabled ? openCreationFor('SPIN') : setShowOpeningWizard(true)),
@@ -4841,7 +4966,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       id: 'heads-up',
       label: 'Launch Your First Heads Up Game',
       detail: 'Create A Two-Player Duel',
-      complete: tournamentKinds.includes('sng'),
+      complete: welcomeSpinsEnabled || tournamentKinds.includes('sng'),
       optional: true,
       actionLabel: 'Create Heads Up',
       onAction: () => openCreationFor('SNG'),
@@ -5564,6 +5689,17 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           }
         />
 
+        {/* The Welcome Package receipt outlives the opening checklist latch.
+            Every owner club asks its authoritative RPC; old clubs answer
+            ineligible and render nothing, while an entitled first club keeps
+            its package and reset control after the checklist is complete. */}
+        {isOwner && (
+          <ClubWelcomePackage
+            clubId={club.id}
+            clubName={club.name}
+            onStateChange={setWelcomePackageState}
+          />
+        )}
         {showLaunchChecklist && (
           <ClubLaunchProgress
             key={`${club.id}:${currentUserId || 'unknown'}`}
@@ -5988,6 +6124,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           clubName={club.name}
           clubBank={Number(club.chip_treasury) || 0}
           initialTagline={club.tagline ?? null}
+          welcomePackage={welcomePackageState}
           onClose={() => {
             setShowOpeningWizard(false);
             /* A close can follow a setup the server already holds (the

@@ -28,6 +28,8 @@ const methods = [
   'recordLifecycleDiagnostic',
   'killForRestart',
   'fenceTerminalEngine',
+  'abandonTerminalBoundaryPersistence',
+  'notifyBoundaryPauseWaiters',
 ].map((n) => method(base, n));
 const uuid = 'abcdef00-0000-4000-8000-000000000001';
 function harness(sequence, { rootB = false, onSleep, onRpc, retainSequence } = {}) {
@@ -43,7 +45,13 @@ function harness(sequence, { rootB = false, onSleep, onRpc, retainSequence } = {
   const post = method(settlement, 'postHandTasks');
   const hh = readCurrent('services/supabase/handHistory.ts');
   const ha = ts.createSourceFile('hh.ts', hh, ts.ScriptTarget.Latest, true);
-  const hfunctions = ['logHandHistory', 'insertHandHistoryRow', 'tournamentStackProofIsExact'].map(
+  const hfunctions = [
+    'logHandHistory',
+    'insertHandHistoryRow',
+    'dealtStacksFromAtomicCommit',
+    'tournamentStackProofIsExact',
+    'isLedgerInvariantRefusal',
+  ].map(
     (n) =>
       ha.statements
         .find((x) => ts.isFunctionDeclaration(x) && x.name?.text === n)
@@ -121,7 +129,8 @@ function harness(sequence, { rootB = false, onSleep, onRpc, retainSequence } = {
     wakeHandProjection: async () => {},
     getLiveHorseDecisionWorker: () => ({ observeCompletedHand: async () => {} }),
     readScopeOf: () => ({}),
-    writeHandFacts: async () => {},
+    writeHandFacts: async () => ({ version: 2, facts: [{}], transfers: [] }),
+    releaseHandFactsCapture: () => {},
     recordHorseHandReviews: async () => {},
     processHandPostCommitObligations: async () => ({ ok: true }),
   };
@@ -136,6 +145,9 @@ function harness(sequence, { rootB = false, onSleep, onRpc, retainSequence } = {
     terminal: false,
     lifecycleDiagnostics: new LifecycleDiagnostics(),
     lifecycleDiagnosticWriteFailures: 0,
+    terminalBoundaryPendingGenerations: new Set(),
+    terminalBoundaryAbandonedGenerations: new Map(),
+    boundaryPauseWaiters: new Set(),
     tableId: uuid,
     handCount: 42,
     currentHandVariant: 'nlh',

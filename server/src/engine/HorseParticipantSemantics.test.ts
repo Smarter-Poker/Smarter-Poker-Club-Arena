@@ -141,7 +141,9 @@ describe('Horse response rights and showdown rights are different populations', 
         gs as never,
         'balanced',
         {},
-        { telemetry: true, mind: false, phase7Utility: false, phase13Joint: 'off' }
+        // v16Hu is opt-in since 2026-10-05; this test is about which seats
+        // count as the one opponent, so it switches the overlay on.
+        { telemetry: true, mind: false, phase7Utility: false, phase13Joint: 'off', v16Hu: true }
       );
       const fires = Object.fromEntries(drainFires().map((f) => [f.feature, f.fires]));
       return {

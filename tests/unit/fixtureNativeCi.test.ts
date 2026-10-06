@@ -34,10 +34,18 @@ it('runs the real Diamond playfields once with an isolated software-rendering wo
   const beat = ci.jobs['css-beats-e2e'].steps.find(
     (step: { name?: string }) => step.name === "Run the beats against this commit's CSS"
   );
-  const commands = beat.run.split('\n').filter((line: string) => line.includes('playwright test'));
+  // Its own job since 2026-10-01, beside the beats; css-beats-gate requires both.
+  const playfieldStep = ci.jobs['diamond-playfield-e2e'].steps.find(
+    (step: { name?: string }) => step.name === 'Run the Diamond playfields'
+  );
+  const commands = [beat.run, playfieldStep.run]
+    .join('\n')
+    .split('\n')
+    .filter((line: string) => line.includes('playwright test'));
   const playfields = commands.filter((line: string) =>
     line.includes('tests/e2e/css/diamond-games-playfield.spec.ts')
   );
+  expect(beat.run).not.toContain('tests/e2e/css/diamond-games-playfield.spec.ts');
   expect(playfields).toHaveLength(1);
   expect(playfields[0]).toContain('--workers=1');
   // One retry since 2026-09-26, and a retried pass is named, never hidden:
@@ -63,7 +71,11 @@ describe('cash lobby verification reaches the existing browser gate', () => {
     'tests/e2e/support/observationDeadline.ts',
     'tests/e2e/support/initialTableOwnership.ts',
   ])('runs browser regressions when the individual input changes: %s', (path) => {
-    expect(classifyChangedPaths([path])).toMatchObject({ src: true, tests: true, server: false });
+    expect(classifyChangedPaths([path])).toMatchObject({
+      src: true,
+      tests: true,
+      server: false,
+    });
   });
 
   it('does not route unrelated unit tests or similarly named notes to the browser build', () => {
@@ -174,7 +186,10 @@ describe('BBJ source changes reach their existing accounting verification', () =
     expect(invoke.run).toContain('python3 scripts/ci/test-bbj-bank-replay.py');
     expect(invoke['continue-on-error']).toBeUndefined();
     const timing = steps.find((step: { id?: string }) => step.id === 'bbj_timing');
-    expect(ci.jobs.accounting_postgres.permissions).toEqual({ contents: 'read', actions: 'read' });
+    expect(ci.jobs.accounting_postgres.permissions).toEqual({
+      contents: 'read',
+      actions: 'read',
+    });
     expect(timing.env.GH_TOKEN).toBe('${{ github.token }}');
     expect(invoke.env.GH_TOKEN).toBeUndefined();
     expect(invoke.env.GITHUB_TOKEN).toBeUndefined();
@@ -238,7 +253,10 @@ describe('required CI owns native fixture verification', () => {
     'scripts/ci/probes/hand-submission-maintenance.spec',
     'scripts/ci/fixtures/hand-submission/current-authorities-20260918.json',
   ])('enforces actual retained submission qualification for %s', (path) => {
-    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+    expect(classifyChangedPaths([path])).toMatchObject({
+      server: true,
+      tests: true,
+    });
   });
 
   it('enforces and retains original submission and successor native proof', () => {
@@ -294,7 +312,10 @@ describe('required CI owns native fixture verification', () => {
     'tests/operations/f06-movement-results.test.py',
     'supabase/migrations/20260918095135_parked_tournament_movement_requires_canonical_custody.sql',
   ])('enforces movement custody qualification for fixture input %s', (path) => {
-    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+    expect(classifyChangedPaths([path])).toMatchObject({
+      server: true,
+      tests: true,
+    });
   });
 
   it.each([
@@ -303,7 +324,10 @@ describe('required CI owns native fixture verification', () => {
     'scripts/ci/probes/f06-movement-opening.sql.notes',
     'docs/changelog/movement-custody.md',
   ])('does not widen movement qualification to unrelated input %s', (path) => {
-    expect(classifyChangedPaths([path])).toMatchObject({ server: false, tests: false });
+    expect(classifyChangedPaths([path])).toMatchObject({
+      server: false,
+      tests: false,
+    });
   });
 
   it('runs native movement custody and retains failed qualification evidence', () => {
@@ -395,7 +419,10 @@ describe('required CI owns native fixture verification', () => {
     'supabase/migrations/20260918093004_original_paid_tournament_stack_keeps_its_custody.sql',
     'supabase/migrations/20260918125231_tournament_felt_guard_recognizes_conserved_hands.sql',
   ])('enforces original paid entry custody qualification for %s', (path) => {
-    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+    expect(classifyChangedPaths([path])).toMatchObject({
+      server: true,
+      tests: true,
+    });
   });
 
   it('runs the actual original paid custody owner and retains failures', () => {
@@ -429,7 +456,10 @@ describe('required CI owns native fixture verification', () => {
     'tests/operations/f06-elimination-results.test.py',
     'supabase/migrations/20260918082449_accepted_elimination_preserves_f06_source_custody.sql',
   ])('enforces accepted elimination custody qualification for %s', (path) => {
-    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+    expect(classifyChangedPaths([path])).toMatchObject({
+      server: true,
+      tests: true,
+    });
   });
 
   it('runs the actual accepted elimination callers and retains failures', () => {
@@ -541,7 +571,10 @@ describe('required CI owns native fixture verification', () => {
     'supabase/migrations/20260918233825_retain_mixed_mtt_interrupted_hands_without_changing_custody_.sql',
     'supabase/migrations/20260918154419_interrupted_hands_preserve_original_custody_without_inventin.sql',
   ])('runs the existing accounting job for F06 input %s', (path) => {
-    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+    expect(classifyChangedPaths([path])).toMatchObject({
+      server: true,
+      tests: true,
+    });
   });
 
   it('retains the actual F06 generation disposition result from the existing accounting owner', () => {
@@ -573,7 +606,10 @@ describe('required CI owns native fixture verification', () => {
     'scripts/ci/probes/satellite-qualifier-finish.spec',
     'tests/operations/satellite-qualifier-results.test.py',
   ])('runs the existing accounting job for satellite input %s', (path) => {
-    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+    expect(classifyChangedPaths([path])).toMatchObject({
+      server: true,
+      tests: true,
+    });
   });
 
   it('executes satellite settlement and retains exact receipts in accounting', () => {
@@ -638,7 +674,10 @@ describe('required CI owns native fixture verification', () => {
     'scripts/ci/probes/mtt-activation/admission-activation-first-commit.spec',
     'tests/operations/mtt-activation-results.test.py',
   ])('routes each actual activation input to accounting and its routing tests: %s', (path) => {
-    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+    expect(classifyChangedPaths([path])).toMatchObject({
+      server: true,
+      tests: true,
+    });
   });
 
   it('runs preparation and actual activation only in the existing private native job', () => {
@@ -824,7 +863,11 @@ describe('required CI owns native fixture verification', () => {
         write(path);
         const base = commit();
         git('mv', path, 'docs/retired-mtt-input.txt');
-        const result = classifyGitChanges({ cwd: directory, base, head: commit() });
+        const result = classifyGitChanges({
+          cwd: directory,
+          base,
+          head: commit(),
+        });
         expect(result.complete).toBe(true);
         expect(result.paths).toContain(path);
         expect(result.paths).toContain('docs/retired-mtt-input.txt');
@@ -868,7 +911,11 @@ describe('required CI owns native fixture verification', () => {
     withGitFixture(({ directory, base, write, commit }) => {
       for (let i = 0; i < 105; i++) write(`docs/page-${i}.md`);
       write('operations/release/fixture/native-smoke.mjs');
-      const result = classifyGitChanges({ cwd: directory, base, head: commit() });
+      const result = classifyGitChanges({
+        cwd: directory,
+        base,
+        head: commit(),
+      });
       expect(result.complete).toBe(true);
       expect(result.paths).toHaveLength(106);
       expect(result.flags.fixture).toBe(true);
@@ -993,6 +1040,15 @@ const spinExpiryAccountingPaths = [
   'scripts/qualification/test_first_archived_concurrency.py',
   'scripts/qualification/test_first_archived_locks.py',
   'scripts/qualification/test_first_archived_production_probe.py',
+  'scripts/qualification/test_first_archived_completion.py',
+  'scripts/qualification/test_first_archived_postabort.py',
+  'scripts/qualification/test_first_archived_bank_observer.py',
+  'scripts/qualification/fixtures/archived-spin/first-fee-owner-current-capture.json',
+  'scripts/qualification/fixtures/archived-spin/first-fee-owner-current-provider.sql',
+  'scripts/qualification/fixtures/archived-spin/first-fee-owner-current-readback.sql',
+  'scripts/qualification/fixtures/archived-spin/first-fee-owner-operation-absence.json',
+  'scripts/qualification/fixtures/archived-spin/first-recognition-capture.json',
+  'scripts/qualification/spin-first-archived-completion-cases.py',
   'scripts/qualification/fixtures/archived-spin/first-connected-probe.sql',
   'scripts/qualification/fixtures/archived-spin/first-atomic-failures.sql',
   'supabase/components/spin-archived-first-witness.sql',
@@ -1180,7 +1236,11 @@ describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
           if (operation === 'renamed')
             renameSync(join(directory, path), join(directory, relocated[index]));
         }
-        const result = classifyGitChanges({ cwd: directory, base, head: commit() });
+        const result = classifyGitChanges({
+          cwd: directory,
+          base,
+          head: commit(),
+        });
         expect(result.complete).toBe(true);
         for (const path of spinExpiryAccountingPaths) expect(result.paths).toContain(path);
         expect(result.flags.server).toBe(true);
@@ -1202,6 +1262,9 @@ describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
     'scripts/qualification/test_first_archived_concurrency.py.bak',
     'scripts/qualification/test_first_archived_locks.py.bak',
     'scripts/qualification/test_first_archived_production_probe.py.bak',
+    'scripts/qualification/test_first_archived_completion.py.bak',
+    'scripts/qualification/test_first_archived_postabort.py.bak',
+    'scripts/qualification/test_first_archived_bank_observer.py.bak',
     'scripts/qualification/fixtures/archived-spin-notes/input.sql',
     'supabase/components/spin-archived-first-admission.sql.bak',
     'scripts/qualification/spin-finalized-horse-admission.py.bak',
@@ -1656,7 +1719,8 @@ describe('restored provider accounting qualification', () => {
         server: true,
         tests: true,
         phase4: false,
-        fixture: false,
+        // Real engine source is now consumed by the EV native actor.
+        fixture: path.startsWith('server/'),
       });
     }
     expect(classifyChangedPaths([]).server).toBe(false);
@@ -1698,7 +1762,10 @@ describe('restored provider accounting qualification', () => {
     );
     expect(install).toBeGreaterThanOrEqual(0);
     expect(install).toBeLessThan(qualify);
-    expect(steps[install]).toMatchObject({ 'working-directory': 'server', run: 'npm ci' });
+    expect(steps[install]).toMatchObject({
+      'working-directory': 'server',
+      run: 'npm ci',
+    });
     const verifier = readFileSync(
       join(root, 'tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs'),
       'utf8'
@@ -1765,6 +1832,84 @@ describe('restored provider accounting qualification', () => {
       '${{ runner.temp }}/union-accounting-results'
     );
     expect(full.env?.ACCOUNTING_FIXTURE_PARENT).toBe('${{ runner.temp }}/union-accounting-scratch');
+  });
+
+  it('uses runtime readiness on shards 1/2 and requires native tooling only on 3/4', () => {
+    const install = ci.jobs.accounting_postgres.steps.find(
+      (step: { name?: string }) =>
+        step.name === 'Install PostgreSQL 17 tools without a default database service'
+    );
+    expect(install.env.PG_CI_SHARD).toBe('${{ matrix.shard }}');
+    expect(install.run).toContain(
+      'postgresql-17 postgresql-17-cron ${pg_ci_build_packages[@]+"${pg_ci_build_packages[@]}"}'
+    );
+    const temp = mkdtempSync(join(tmpdir(), 'pg-shard-readiness-'));
+    try {
+      for (const path of [
+        'lib/postgresql/17/bin/postgres',
+        'lib/postgresql/17/bin/initdb',
+        'lib/postgresql/17/bin/pg_ctl',
+        'lib/postgresql/17/bin/psql',
+        'lib/postgresql/17/bin/createdb',
+        'lib/postgresql/17/bin/pg_dump',
+        'share/postgresql/17/extension/pg_cron.control',
+        'lib/postgresql/17/lib/pg_cron.so',
+      ]) {
+        const file = join(temp, path);
+        mkdirSync(dirname(file), { recursive: true });
+        writeFileSync(file, '', { mode: 0o755 });
+      }
+      const prefix = install.run
+        .split('          # The hosted image')[0]
+        .split('# The hosted image')[0]
+        .replaceAll('/usr/', temp + '/');
+      for (const shard of [1, 2, 3, 4]) {
+        const output = execFileSync(
+          '/bin/bash',
+          ['-c', prefix + '\nprintf "INSTALL:%s" "${pg_ci_build_packages[*]-}"'],
+          {
+            encoding: 'utf8',
+            env: { ...process.env, PATH: '', PG_CI_SHARD: String(shard) },
+          }
+        );
+        if (shard <= 2) expect(output).toBe('');
+        else
+          expect(output).toBe(
+            'INSTALL:postgresql-server-dev-17 build-essential bison flex perl bzip2 patch'
+          );
+      }
+      expect(() =>
+        execFileSync('/bin/bash', ['-c', prefix], {
+          env: { ...process.env, PATH: '', PG_CI_SHARD: '5' },
+          stdio: 'pipe',
+        })
+      ).toThrow();
+      for (const binary of ['createdb', 'pg_dump']) {
+        const path = join(temp, 'lib/postgresql/17/bin', binary);
+        rmSync(path);
+        expect(
+          execFileSync(
+            '/bin/bash',
+            ['-c', prefix + '\nprintf "INSTALL:%s" "${pg_ci_build_packages[*]-}"'],
+            { encoding: 'utf8', env: { ...process.env, PATH: '', PG_CI_SHARD: '1' } }
+          )
+        ).toBe('INSTALL:');
+        writeFileSync(path, '', { mode: 0o755 });
+      }
+      rmSync(join(temp, 'lib/postgresql/17/lib/pg_cron.so'));
+      expect(
+        execFileSync(
+          '/bin/bash',
+          ['-c', prefix + '\nprintf "INSTALL:%s" "${pg_ci_build_packages[*]-}"'],
+          {
+            encoding: 'utf8',
+            env: { ...process.env, PATH: '', PG_CI_SHARD: '1' },
+          }
+        )
+      ).toBe('INSTALL:');
+    } finally {
+      rmSync(temp, { recursive: true, force: true });
+    }
   });
 
   it('requires real pg_cron even when PostgreSQL tools are already present', () => {
@@ -1870,7 +2015,10 @@ describe('original Breakfast witness reaches its existing accounting gate', () =
     'scripts/ci/fixtures/breakfast-original-witness/installed-terminal.json',
     'scripts/ci/probes/breakfast-original-witness/authority.sql',
   ])('selects accounting and source tests for %s', (path) => {
-    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+    expect(classifyChangedPaths([path])).toMatchObject({
+      server: true,
+      tests: true,
+    });
   });
   it('runs one real qualifier with no conditional or failure suppression', () => {
     const steps = ci.jobs.accounting_postgres.steps;
@@ -1887,5 +2035,60 @@ describe('original Breakfast witness reaches its existing accounting gate', () =
     );
     expect(artifact.if).toContain('steps.breakfast_original_witness.outcome');
     expect(artifact.with['if-no-files-found']).toBe('error');
+  });
+});
+
+describe('weekly accounting fixture background isolation', () => {
+  it('disables unsolicited maintenance and retains actual startup settings', () => {
+    const runner = readFileSync('scripts/dev/test-full-weekly-accounting-activation.sh', 'utf8');
+    expect(runner).toContain('-c cron.launch_active_jobs=off -c autovacuum=off');
+    expect(runner).toContain(
+      "SELECT json_build_object('autovacuum',current_setting('autovacuum'),'cron.launch_active_jobs',current_setting('cron.launch_active_jobs')) AS native_background_settings"
+    );
+    expect(runner).toContain(
+      "current_setting('autovacuum') <> 'off' OR current_setting('cron.launch_active_jobs') <> 'off'"
+    );
+    expect(runner).toContain("RAISE EXCEPTION 'Native fixture background writers are enabled'");
+    expect(runner).toMatch(/for artifact in background-isolation\.log /);
+    expect(runner).toContain('> "$fixture/background-isolation.log" 2>&1');
+  });
+
+  it('captures bounded failure diagnostics without replacing the original error', () => {
+    const runner = readFileSync('scripts/dev/qualify-held-fee-owner-basis.py', 'utf8');
+    expect(runner).toContain("timing','after_failed_client_exit'");
+    expect(runner).toContain("SET LOCAL statement_timeout='3s'");
+    expect(runner).toContain("'backend_type',backend_type");
+    expect(runner).toContain('pg_blocking_pids(pid)');
+    expect(runner).toContain('capture_output=True,text=True,timeout=5');
+    expect(runner).toMatch(
+      /except \(OSError,subprocess\.TimeoutExpired\) as diagnostic_error:[\s\S]*raise AssertionError\(label\+': '\+r\.stderr\[-6000:\]\)/
+    );
+  });
+});
+
+describe('authenticated EV lifecycle remains in the maintained native gate', () => {
+  it.each([
+    'tests/fixtures/ev-cashout-lifecycle/actor.mjs',
+    'tests/fixtures/ev-cashout-lifecycle/bootstrap.py',
+    'tests/fixtures/full-weekly-accounting/functions.json',
+    'tests/fixtures/cash-participant-funding/captured-hand-preimages.json',
+    'tests/fixtures/union-weekly-basis/captured-cash-dependencies.json',
+    'server/src/handlers/insurance.ts',
+    'server/src/engine/ServerTableEngineSettlement.ts',
+    'server/src/http/auth.ts',
+    'server/package-lock.json',
+  ])('qualifies its actual shared input %s', (path) => {
+    expect(classifyChangedPaths([path]).fixture).toBe(true);
+  });
+  it('keeps the existing smoke before EV execution and compiles real engine source', () => {
+    const driver = readFileSync(join(root, 'operations/release/ci/fixture-smoke.py'), 'utf8');
+    expect(driver.indexOf("PREFIX + 'smoke-image.sh'")).toBeLessThan(
+      driver.indexOf("'tests/fixtures/ev-cashout-lifecycle/run-native.py'")
+    );
+    expect(
+      native.jobs['native-smoke'].steps.some((step: { run?: string }) =>
+        step.run?.includes('npm run build --prefix server')
+      )
+    ).toBe(true);
   });
 });

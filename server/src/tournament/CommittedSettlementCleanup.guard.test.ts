@@ -316,7 +316,10 @@ describe('the seat-first watchdog leaves terminal ownership with the tournament 
     const sweep = sliceMethod(gameServer, 'private async finishSeatFirstGamesThatAreOver()');
     const decided = sweep.indexOf('if (liveStacks > 1) continue;');
     const lookup = sweep.indexOf('this.tournamentEngines.get(id)', decided);
-    const wake = sweep.indexOf("requestEliminationSweep('seat_first_terminal_stack')", lookup);
+    const wake = sweep.indexOf(
+      "requestDecidedEliminationSweep('seat_first_terminal_stack')",
+      lookup
+    );
     const admit = sweep.indexOf('ensureTournamentManagerAdmission(', lookup);
     expect(decided).toBeGreaterThanOrEqual(0);
     expect(lookup).toBeGreaterThan(decided);
@@ -395,7 +398,12 @@ describe('service-role tournament money still obeys the maintenance freeze', () 
     // holds the platform five minutes an hour and a decided event that is
     // dropped inside one has no hands left to trigger another attempt
     // (CLAUDE.md 13 rule 4 - a deadline is thawed, not burned).
-    const firstFreeze = finish.indexOf('if (isMaintenanceFrozen())');
+    // 2026-10-03: a non-satellite event decided by its last hand settles in
+    // the :53-:55 window (isTerminalSettlementFrozen); a satellite keeps the
+    // full freeze. Either way the gate precedes the terminal receipt.
+    const firstFreeze = finish.indexOf(
+      'if (terminalIsSatellite ? isMaintenanceFrozen() : isTerminalSettlementFrozen())'
+    );
     const frozenRefusal = sliceEnclosingBlock(
       finish,
       'finish deferred: the platform is frozen for the maintenance break'

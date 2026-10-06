@@ -30,7 +30,6 @@ export interface Union {
   avatarUrl?: string;
   isPublic: boolean;
   memberCount: number;
-  onlineCount: number;
   clubCount: number;
   totalRake: number;
   level: number;
@@ -440,23 +439,36 @@ class UnionServiceClass {
    * Check if user is union admin
    */
   async isUnionAdmin(unionId: string, userId: string): Promise<boolean> {
-    // Check if owner
-    const { data: union } = await supabase
-      .from('unions')
-      .select('owner_id')
-      .eq('id', unionId)
-      .maybeSingle();
+    // `union_admins` is not generally readable by an appointed operator who
+    // has no membership in one of the union's clubs. Keep every client entry
+    // surface aligned with UnionOverseerGuard and the command gateway by using
+    // the SECURITY DEFINER authority predicate instead of reconstructing it
+    // through membership-scoped table reads.
+    const { data, error } = await supabase.rpc('fn_is_union_operator', {
+      p_union_id: unionId,
+      p_user_id: userId,
+    });
 
-    if (union?.owner_id === userId) return true;
+    if (error) throw error;
 
-    // Check if admin
-    const { count } = await supabase
-      .from('union_admins')
-      .select('*', { count: 'exact', head: true })
-      .eq('union_id', unionId)
-      .eq('user_id', userId);
+    return data === true;
+  }
 
-    return (count || 0) > 0;
+  /**
+   * Whether the current authenticated player may open this union's operational
+   * and financial workspace. This is intentionally broader than
+   * isUnionAdmin(): house-club overseers and platform staff are admitted by the
+   * same database predicate used by UnionOverseerGuard, while Table Management
+   * continues to require fn_is_union_operator.
+   */
+  async canOverseeUnion(unionId: string): Promise<boolean> {
+    const { data, error } = await supabase.rpc('ca_can_oversee_union', {
+      p_union_id: unionId,
+    });
+
+    if (error) throw error;
+
+    return data === true;
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -687,13 +699,13 @@ class UnionServiceClass {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Get union stats
+   * Get union stats. No online figure: it was 20% of the member total, a
+   * number nobody measured. Online comes from getOnlineCount() below.
    */
   async getStats(unionId: string): Promise<{
     totalPlayers: number;
     totalClubs: number;
     weeklyRake: number;
-    onlinePlayers: number;
   }> {
     const clubs = await this.getUnionClubs(unionId);
 
@@ -724,8 +736,31 @@ class UnionServiceClass {
       totalPlayers: totalPlayers || 0,
       totalClubs: clubs.length,
       weeklyRake: clubs.reduce((sum, c) => sum + c.weeklyRake, 0),
-      onlinePlayers: Math.floor((totalPlayers || 0) * 0.2), // Estimate 20% online
     };
+  }
+
+  /**
+   * Who is online now in this union, by the one definition of online:
+   * fn_union_online_count counts the union's members who are seated at an
+   * open table or whose heartbeat is fresh (profiles.is_online AND last_seen
+   * under five minutes) - the same rule fn_profile_presence answers per
+   * person, so a horse and a person count alike. A number only; no name or id
+   * leaves the database. Throws when the database cannot answer, so a caller
+   * shows "Unavailable" rather than inventing a figure.
+   *
+   * It replaces getStats().onlinePlayers, which was 20% of the member total,
+   * and unions.online_count, a column that does not exist.
+   */
+  async getOnlineCount(unionId: string): Promise<number> {
+    const { data, error } = await supabase.rpc('fn_union_online_count', {
+      p_union_id: unionId,
+    });
+    if (error) throw error;
+    const n = Number(data);
+    if (data == null || !Number.isFinite(n)) {
+      throw new Error('fn_union_online_count answered no number');
+    }
+    return n;
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -747,7 +782,6 @@ class UnionServiceClass {
       avatarUrl: u.avatar_url,
       isPublic: u.is_public ?? true,
       memberCount: Math.max(u.member_count || 0, u.total_players || 0),
-      onlineCount: u.online_count || 0,
       clubCount: u.club_count || 0,
       totalRake: Number(u.total_rake) || 0,
       level: u.level || 1,

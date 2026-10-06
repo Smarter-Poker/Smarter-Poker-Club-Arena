@@ -1,0 +1,272 @@
+.page {
+  width: 100%;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: clamp(8px, 2.5vw, 20px) clamp(6px, 2vw, 16px) 100px;
+  box-sizing: border-box;
+  overflow-x: clip;
+}
+
+.page > :global(.sc) + :global(.sc),
+.page > :global(.sc) + * {
+  margin-top: clamp(16px, 4vw, 32px);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.statusBlock {
+  display: grid;
+  justify-items: center;
+  gap: 3cqw;
+  padding-block: 2cqw;
+}
+
+.litAction {
+  min-height: 44px;
+  padding: 1.5cqw 2cqw;
+  border: 0;
+  background: transparent;
+  color: #45adff;
+  font:
+    800 3.2cqw/1.15 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.08em;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.litAction:active {
+  filter: brightness(1.25);
+}
+
+.litAction:focus-visible,
+.toolRow:focus-visible,
+.select:focus-visible {
+  outline: 0.5cqw solid #8fd4ff;
+  outline-offset: 0.4cqw;
+}
+
+.metrics,
+.statusRows,
+.toolRows {
+  display: grid;
+}
+
+.metricRow,
+.statusRow,
+.toolRow,
+.sectionHeading {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  border-top: 1px solid #000;
+}
+
+.metricRow,
+.statusRow,
+.sectionHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3cqw;
+  min-height: 44px;
+  padding: 2.4cqw 1cqw;
+}
+
+.metricRow {
+  opacity: 0;
+  transform: translateY(1.5cqw);
+  transition:
+    opacity 320ms ease,
+    transform 320ms ease;
+}
+
+.metricRow[data-visible='true'] {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.metricRow strong,
+.statusRow strong,
+.sectionHeading strong {
+  min-width: 0;
+  font:
+    800 4cqw/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  text-align: right;
+}
+
+.revenue {
+  margin-top: 4cqw;
+}
+
+.chart {
+  width: 100%;
+  height: clamp(132px, 35cqw, 210px);
+  padding-top: 2cqw;
+}
+
+.glassHeading {
+  margin: 5cqw 1cqw 1cqw;
+  color: #9aa5b3;
+  font:
+    700 2.8cqw/1.2 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.toolRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3cqw;
+  min-height: 58px;
+  padding: 2.4cqw 1cqw;
+  color: #e4e7ec;
+  text-decoration: none;
+  opacity: 0;
+  transform: translateX(-1.5cqw);
+  transition:
+    opacity 300ms ease,
+    transform 300ms ease;
+  touch-action: manipulation;
+}
+
+.toolRow[data-visible='true'] {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.toolCopy {
+  display: grid;
+  gap: 0.6cqw;
+  min-width: 0;
+}
+
+.toolCopy strong {
+  color: inherit;
+  font:
+    800 3.5cqw/1.2 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.035em;
+}
+
+.toolCopy small {
+  color: #9aa5b3;
+  font:
+    500 2.8cqw/1.35 Inter,
+    system-ui,
+    sans-serif;
+}
+
+.openWord {
+  flex: 0 0 auto;
+  color: #45adff;
+  font:
+    800 2.9cqw/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.12em;
+  text-shadow: 0 0 0.9cqw rgb(49 168 255 / 60%);
+}
+
+.toneRed {
+  color: #ff5b6e;
+}
+
+.toneGold {
+  color: #ffd700;
+}
+
+.toneBlue {
+  color: #45adff;
+}
+
+.toneSilver {
+  color: #e4e7ec;
+}
+
+.statusRows {
+  margin-top: 4cqw;
+}
+
+.statusRow span {
+  color: #9aa5b3;
+  font:
+    700 2.8cqw/1.25 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.selectLabel {
+  color: #45adff;
+  font:
+    700 2.8cqw/1.2 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.select {
+  width: 100%;
+  min-height: 44px;
+  padding: 2cqw 1cqw;
+  border: 0;
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+  background: #05070b;
+  color: #e4e7ec;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 8%),
+    inset 0 -1px 0 rgb(255 255 255 / 5%);
+  font:
+    700 3.4cqw/1.25 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+}
+
+.select:disabled {
+  color: #9aa5b3;
+  cursor: not-allowed;
+}
+
+@media (min-width: 720px) {
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 3cqw;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .metricRow,
+  .toolRow {
+    transition-duration: 1ms;
+  }
+}

@@ -67,6 +67,11 @@ export function captureOfflineOmahaPolicyInput(
     bigBlind: s.bigBlind,
     gameMode: s.gameMode,
     dealerSeat: s.dealerSeat,
+    // The posted blind seats: the PLO4 pack's positions are derived from them.
+    blindSeats:
+      s.blindSeats == null
+        ? s.blindSeats
+        : { smallBlind: s.blindSeats.smallBlind, bigBlind: s.blindSeats.bigBlind },
     heroSeat: s.heroSeat,
     currentPlayerSeat: s.currentPlayerSeat,
     bettingStructure: s.bettingStructure,

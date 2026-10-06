@@ -14,6 +14,7 @@ import {
 } from './HorseTournamentFutureGame.js';
 import { CONTINUATION_POLICY } from './HorseTournamentContinuation.js';
 import { FUTURE_HAND_POLICY } from './HorseTournamentFutureHand.js';
+import type { HorseAuthorityReceipt, HorseAuthorityVerdict } from './HorseQualifiedAuthority.js';
 
 export const PHASE8_POLICY = {
   version: 'horse-tournament-postflop-round1-v4',
@@ -30,6 +31,18 @@ export const PHASE8_POLICY = {
   workBudgetMs: 4,
 } as const;
 export type Phase8Mode = 'off' | 'shadow' | 'candidate';
+/**
+ * Where this decision's candidate stands. A shadow change is a counterfactual
+ * and is never counted as applied. `selected` is worker selection under usable
+ * qualified authority; only the main scheduler's acceptance-time recheck moves
+ * it to `controller_accepted` or `withdrawn_before_acceptance`.
+ */
+export type Phase8Selection =
+  | 'none'
+  | 'shadow_change'
+  | 'selected'
+  | 'controller_accepted'
+  | 'withdrawn_before_acceptance';
 export interface HorseTournamentPostflopLedger {
   version: typeof PHASE8_POLICY.version;
   mode: Exclude<Phase8Mode, 'off'>;
@@ -39,6 +52,11 @@ export interface HorseTournamentPostflopLedger {
   completed: boolean;
   changed: boolean;
   applied: boolean;
+  selection: Phase8Selection;
+  /** Worker authority used for admission; null outside the live worker. */
+  authority: HorseAuthorityReceipt | null;
+  /** Main scheduler verdict immediately before acceptance; null until then. */
+  authorityVerdict: HorseAuthorityVerdict | null;
   reason: string;
   reasons: string[];
   baselineAction: HorseDecision['action'];
@@ -148,6 +166,9 @@ export function evaluateTournamentPostflop(
     completed: false,
     changed: false,
     applied: false,
+    selection: 'none',
+    authority: null,
+    authorityVerdict: null,
     reason: 'unavailable',
     reasons: [],
     baselineAction: baseline.action,
@@ -203,9 +224,15 @@ export function evaluateTournamentPostflop(
       ledger.reason = 'budget_exhausted';
       ledger.completed = false;
       ledger.applied = false;
+      ledger.selection = 'none';
       ledger.continuationRetained = true;
       return { decision: baseline, ledger };
     }
+    ledger.selection = ledger.applied
+      ? 'selected'
+      : ledger.changed && ledger.completed
+        ? 'shadow_change'
+        : 'none';
     return { decision, ledger };
   };
   if (!['flop', 'turn', 'river'].includes(gs.stage)) return finish('not_postflop');

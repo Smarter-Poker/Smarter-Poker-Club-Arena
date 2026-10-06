@@ -46,6 +46,11 @@ const STANDALONE_CLUB = process.env.E2E_TEMPLATE_CLUB_ID || '2a1132b9-5ba2-42e6-
 const UNION_MEMBER_CLUB = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 
 const BOARD = `clubs/${STANDALONE_CLUB}/table-management`;
+const ROUTE_NAVIGATION_TIMEOUT_MS = 30_000;
+const ROUTE_OUTCOME_TIMEOUT_MS = 45_000;
+const MOBILE_SURFACE_COUNT = 9;
+const MOBILE_SWEEP_TIMEOUT_MS =
+  MOBILE_SURFACE_COUNT * (ROUTE_NAVIGATION_TIMEOUT_MS + ROUTE_OUTCOME_TIMEOUT_MS) + 15_000;
 
 /** Every painted frame on the page: SpadeConsole's root always carries `sc`. */
 const FRAMES = '.sc';
@@ -67,10 +72,10 @@ const returnPlate = (page: Page) => page.getByRole('button', { name: 'Return' })
  * itself is observable.
  */
 async function open(page: Page, path: string): Promise<Outcome> {
-  await page.goto(path, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await page.goto(path, { waitUntil: 'domcontentloaded', timeout: ROUTE_NAVIGATION_TIMEOUT_MS });
   test.skip(/\/auth(?:\/|$|\?)/.test(page.url()), 'signed out: Table Management is behind a login');
 
-  const deadline = Date.now() + 45_000;
+  const deadline = Date.now() + ROUTE_OUTCOME_TIMEOUT_MS;
   for (;;) {
     if ((await strip(page).count()) > 0) return 'board';
     if ((await returnPlate(page).count()) > 0) return 'refused';
@@ -92,6 +97,13 @@ async function frameFamilies(page: Page) {
   );
 }
 
+async function expectNoHorizontalOverflow(page: Page, path: string) {
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+  );
+  expect(overflow, `${path} scrolls sideways by ${overflow}px`).toBeLessThanOrEqual(1);
+}
+
 /** A refusal on the standalone club is fixture drift, and it is fatal here:
  *  a silent skip is how this layer went blind on 2026-09-29. */
 function mustSeeBoard(outcome: Outcome, path: string) {
@@ -103,6 +115,20 @@ function mustSeeBoard(outcome: Outcome, path: string) {
       `joined a union or the membership was not provisioned - fix the fixture, ` +
       `do not skip this certificate.`
   ).toBe('board');
+}
+
+/** Certify the creator's composition without submitting, saving or mutating it. */
+async function expectRivetedCreator(page: Page, path: string, pill: string) {
+  mustSeeBoard(await open(page, path), path);
+
+  const dialog = page.getByRole('dialog', { name: 'Create Game' });
+  await expect(dialog).toBeVisible({ timeout: 30_000 });
+  const frames = dialog.locator(FRAMES);
+  await expect(frames).toHaveCount(1);
+  await expect(frames).toHaveClass(/sc--family-riveted/);
+  await expect(dialog.getByText(pill, { exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Create Tournament' })).toBeVisible();
 }
 
 test.describe('Table Management is its own page on its own frame, in production', () => {
@@ -165,6 +191,30 @@ test.describe('Table Management is its own page on its own frame, in production'
     await expect(page.getByRole('button', { name: 'Back To Table Management' })).toBeVisible();
   });
 
+  test('Table Config replaces the board with its own spade creator frame', async ({ page }) => {
+    const path = `${BOARD}?create=table&game=nlh`;
+    mustSeeBoard(await open(page, path), path);
+
+    await expect(page.getByRole('heading', { name: 'NLH Setup' })).toBeVisible({
+      timeout: 30_000,
+    });
+    expect(await frameFamilies(page)).toEqual(['sc--family-spade']);
+    await expect(page.getByRole('button', { name: 'Back To Game Types' })).toBeVisible();
+    expect(await page.getByRole('heading', { name: 'Table Management' }).count()).toBe(0);
+  });
+
+  test('the Event creator is its own riveted dialog and stays read-only', async ({ page }) => {
+    await expectRivetedCreator(page, `${BOARD}?create=event`, 'Event');
+  });
+
+  test('the Spins creator is its own riveted dialog and stays read-only', async ({ page }) => {
+    await expectRivetedCreator(page, `${BOARD}?create=spin`, 'Spins');
+  });
+
+  test('the Sit N Go creator is its own riveted dialog and stays read-only', async ({ page }) => {
+    await expectRivetedCreator(page, `${BOARD}?create=sng`, 'Sit N Go');
+  });
+
   test('a union member club is refused on the shark frame, with no section strip', async ({
     page,
   }) => {
@@ -185,13 +235,46 @@ test.describe('Table Management is its own page on its own frame, in production'
   });
 
   test('no surface scrolls sideways on a phone', async ({ page }) => {
+    // This one case visits nine production surfaces. Its outer budget must not
+    // undercut the explicit navigation plus outcome allowance of any surface.
+    test.setTimeout(MOBILE_SWEEP_TIMEOUT_MS);
     await page.setViewportSize({ width: 393, height: 852 });
-    for (const path of [BOARD, `${BOARD}?section=ticker`, `${BOARD}?section=messages`]) {
+
+    for (const [path, family] of [
+      [BOARD, 'sc--family-spade'],
+      [`${BOARD}?section=ticker`, 'sc--family-shark'],
+      [`${BOARD}?section=messages`, 'sc--family-riveted'],
+    ] as const) {
       mustSeeBoard(await open(page, path), path);
-      const overflow = await page.evaluate(
-        () => document.documentElement.scrollWidth - document.documentElement.clientWidth
-      );
-      expect(overflow, `${path} scrolls sideways by ${overflow}px`).toBeLessThanOrEqual(1);
+      expect(await frameFamilies(page)).toEqual([family]);
+      await expectNoHorizontalOverflow(page, path);
     }
+
+    const pickerPath = `${BOARD}?create=table`;
+    mustSeeBoard(await open(page, pickerPath), pickerPath);
+    await expect(page.getByRole('heading', { name: 'Choose Game Type' })).toBeVisible();
+    expect(await frameFamilies(page)).toEqual([]);
+    await expectNoHorizontalOverflow(page, pickerPath);
+
+    const configPath = `${BOARD}?create=table&game=nlh`;
+    mustSeeBoard(await open(page, configPath), configPath);
+    await expect(page.getByRole('heading', { name: 'NLH Setup' })).toBeVisible();
+    expect(await frameFamilies(page)).toEqual(['sc--family-spade']);
+    await expectNoHorizontalOverflow(page, configPath);
+
+    for (const [path, pill] of [
+      [`${BOARD}?create=event`, 'Event'],
+      [`${BOARD}?create=spin`, 'Spins'],
+      [`${BOARD}?create=sng`, 'Sit N Go'],
+    ] as const) {
+      await expectRivetedCreator(page, path, pill);
+      await expectNoHorizontalOverflow(page, path);
+    }
+
+    const refusalPath = `clubs/${UNION_MEMBER_CLUB}/table-management`;
+    expect(await open(page, refusalPath)).toBe('refused');
+    expect(await frameFamilies(page)).toEqual(['sc--family-shark']);
+    await expect(page.getByText('Game Management Is Restricted')).toBeVisible();
+    await expectNoHorizontalOverflow(page, refusalPath);
   });
 });

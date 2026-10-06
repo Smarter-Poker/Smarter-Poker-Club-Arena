@@ -53,9 +53,24 @@ const SETTLEMENT_CSS = 'src/components/leaderboard/LeaderboardSettlementCard.css
  * `AdminDashboardPage` is that: it is in the scanner's own INTERNAL_ONLY list,
  * which is Dan's 2026-09-14 ruling that a house tool no player and no club
  * operator reaches never gets a round of art spent on it. Its fifteen painted
- * corners and six gradients are permanent by decision, not by accident.
+ * corners are permanent by decision, not by accident.
+ *
+ * Its `grad` read six when this control was written and reads two now, because
+ * 2026-10-02 stopped counting the standard's own engraved rule (see the next
+ * describe). Four of the six were that hairline. The assertion below is
+ * deliberately `> 0` rather than a number, for exactly this reason: what
+ * counts as paint is a judgement that gets sharper, and a control should break
+ * when the counter goes QUIET, not when it gets more accurate.
  */
 const PAINTED_CONTROL = 'src/pages/AdminDashboardPage.tsx';
+
+/* The 2026-10-02 rows, one per defect. See the describe blocks below. */
+const SPIN = 'src/components/club/SpinActivationPanel.tsx';
+const SPIN_CSS = 'src/components/club/SpinActivationPanel.css';
+const CREATE_TABLE = 'src/pages/CreateTablePage.tsx';
+const DIAMOND_PLAYERS = 'src/pages/DiamondPlayersPage.tsx';
+const ROSTER_CSS = 'src/pages/ClubMembersPage.css';
+const ROSTER_CONTRACT = 'tests/components/players-casino-realism-pages.test.tsx';
 
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8');
 
@@ -64,8 +79,13 @@ interface Row {
   score: number;
   radius: number;
   grad: number;
+  hover: number;
+  master: number;
+  console: number;
+  css: string | null;
   spokenFor: boolean;
   ruled: boolean;
+  wearsPinned?: string[];
 }
 
 /** The scanner's own answer, not a re-implementation of it. */
@@ -134,6 +154,203 @@ describe('a zeroing declaration is not chrome', () => {
        by going blind rather than by running out of work. */
     expect(inventory.filter((r) => r.radius > 0).length).toBeGreaterThan(20);
     expect(inventory.filter((r) => r.grad > 0).length).toBeGreaterThan(20);
+  });
+});
+
+describe('an engraved rule is not a frame, and a comment is not a rule', () => {
+  /**
+   * 2026-10-02. The sweep read "0 to go" on 2026-09-23 and "4 to go" nine days
+   * later. THREE of those four surfaces had not changed at all and were already
+   * on an approved authority; the scanner had three defects, and each one is the
+   * 2026-09-22 lesson left standing one level up (CLAUDE.md 10.86 rule 4).
+   *
+   * Only the fourth was real: MultiDayStagePanel drew its Open Table control as
+   * a 999px pill in CSS, and that is pinned by its own stylesheet, below.
+   */
+
+  it('the engraved rule the standard prescribes is not counted as paint', () => {
+    /* SKILL.md section 5 step 5 names this divider in full: `border-top: 1px
+       solid #000` plus `box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%)`,
+       "instead of a drawn divider". 488 of the 1,985 box-shadow declarations in
+       src/ are it. Counting them scored the standard against itself. */
+    const css = read(SPIN_CSS);
+    const shadows = [...css.matchAll(/box-shadow\s*:\s*([^;}]*)/g)].map((m) =>
+      m[1]
+        .trim()
+        .replace(/\s*!important$/, '')
+        .trim()
+    );
+    expect(shadows.length, 'the premise is that this panel declares shadows').toBeGreaterThan(0);
+    /* Every one is either a refusal or a hairline: no blur, no spread. */
+    expect(
+      shadows.filter((v) => v !== 'none' && !/^inset\s+0\s+-?1px\s+0\s/.test(v)),
+      'this panel grew a shadow that is not the engraved rule, so the ruling below needs re-reading'
+    ).toEqual([]);
+    expect(css).not.toMatch(/linear-gradient|radial-gradient/);
+  });
+
+  it('a :hover inside a comment is not a :hover', () => {
+    /* The heaviest term the scorer has, weighted five times because the real
+       thing is forbidden outright - and measured across src/ on 2026-10-02 there
+       were ZERO real ones and 109 stylesheets with the word inside a comment.
+       The law (tests/no-hover-effects.law.test.ts) has masked comment bodies
+       since a sweep matched one and cut a stylesheet in half. The scanner had
+       not, so the only thing this counter could ever find was prose, usually a
+       comment promising the file has none. SpinActivationPanel.css line 19:
+       "the panel is the same picture in all three hosts. No :hover." */
+    const css = read(SPIN_CSS);
+    const masked = css.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
+    expect(css, 'the premise is that this sheet mentions the state in prose').toContain(':hover');
+    expect(masked, 'this sheet now has a real hover rule, which is a law violation').not.toContain(
+      ':hover'
+    );
+    expect(row(SPIN)!.hover, 'the scanner is counting comment text again').toBe(0);
+  });
+
+  it('so the hosted panel scores zero, having no frame of its own to rebuild', () => {
+    /* Same category as BBJBasicPanel in the scanner's RULED map: it prints rows
+       on whatever glass its three hosts give it (a settings page, the lobby's
+       Spins Wallet popup, the Union Dashboard) and owns no chassis. */
+    const r = row(SPIN);
+    expect(r, `${SPIN} fell out of the inventory`).toBeDefined();
+    expect(r!.grad).toBe(0);
+    expect(r!.hover).toBe(0);
+    expect(r!.radius).toBe(0);
+    expect(r!.score).toBe(0);
+  });
+
+  it('the lobby card art counts as a master, which the scanner only claimed before', () => {
+    /* The scanner's own comment says "ANY approved master counts, not just the
+       console's" and names three authorities, the third being "the lobby's own
+       card art". SKILL.md step 1.5 spells it `ArenaGameCard`, `game-cards/`.
+       The regex implemented two of the three. CreateTablePage renders nine
+       ArenaGameCards and deliberately draws no console around them (Dan
+       2026-09-20, quoted in the page: "DO NOT ATTACH EVERYTHING TOGETHER WITH
+       THE SAME DISPLAY WINDOWS"), so it was nominated for the one thing it was
+       right to leave out. */
+    const scanner = read(SCANNER);
+    expect(scanner, 'the master test no longer names the lobby card art').toMatch(
+      /game-cards\\\/\|ArenaGameCard/
+    );
+    const page = read(CREATE_TABLE);
+    expect(page, `${CREATE_TABLE} no longer renders the lobby card art`).toContain('ArenaGameCard');
+    const r = row(CREATE_TABLE);
+    expect(r!.master, 'the lobby card art stopped registering as a master').toBeGreaterThan(0);
+    expect(r!.score).toBe(0);
+  });
+
+  it('a surface wearing a pinned stylesheet is on that authority', () => {
+    /* DiamondPlayersPage imports ClubMembersPage.css first and its own 27 lines
+       second; its header says so in the first sentence. That sheet is pinned by
+       the Players Casino Realism asset and interaction contract, a different
+       approved master and therefore finished work (SKILL.md step 1.5). The
+       scanner resolved a stylesheet by FILENAME only, so it judged the 27-line
+       delta on one `inset 0 -2px 0 var(--members-blue)` underline - the fourth
+       of a set whose other three live in the pinned sheet. */
+    const page = read(DIAMOND_PLAYERS);
+    expect(page, `${DIAMOND_PLAYERS} no longer wears the roster stylesheet`).toMatch(
+      /import\s+['"]\.\/ClubMembersPage\.css['"]/
+    );
+    expect(
+      read(ROSTER_CONTRACT),
+      `${ROSTER_CONTRACT} no longer pins ${ROSTER_CSS}, so the inheritance below has no source`
+    ).toContain(ROSTER_CSS);
+    const r = row(DIAMOND_PLAYERS);
+    expect(r!.wearsPinned, 'the imported-stylesheet inheritance stopped resolving').toContain(
+      ROSTER_CSS
+    );
+    expect(r!.spokenFor).toBe(true);
+    expect(r!.score).toBe(0);
+  });
+
+  it('and a real shadow is still paint, across the tree', () => {
+    /* The control for all of the above. The point was to stop counting the
+       standard's own handwriting, not to stop counting - and a predicate that
+       swallowed every shadow would take the inventory to zero by going blind.
+       Measured 2026-10-02: 1,325 painted declarations over 111 surfaces, and 40
+       surfaces whose `grad` comes from shadows ALONE, their stylesheets holding
+       no gradient at all. That last number is the discriminating one: widen the
+       hairline test to match a blur or a spread and it collapses. */
+    expect(inventory.filter((r) => r.grad > 0).length).toBeGreaterThan(60);
+    expect(inventory.reduce((n, r) => n + r.grad, 0)).toBeGreaterThan(600);
+
+    const shadowOnly = inventory.filter((r) => {
+      if (!r.css || r.grad === 0) return false;
+      return !/linear-gradient|radial-gradient/.test(read(r.css));
+    });
+    expect(
+      shadowOnly.length,
+      'no surface is scored on shadows alone any more: the hairline test has swallowed real paint'
+    ).toBeGreaterThan(15);
+  });
+
+  it('the one real surface stopped drawing its control in CSS', () => {
+    /* MultiDayStagePanel was the only one of the four that needed art. Its
+       Open Table action was `border-radius: var(--tl-radius-pill, 999px)` over a
+       `--tl-surface-raised` fill with a 1px accent border: a control drawn in
+       CSS, which SKILL.md section 0 forbids outright. It is a lit word on the
+       glass now. The accessible name and the `button` role are pinned by
+       tests/components/MultiDayStagePanel.test.tsx and the navigation by
+       tests/no-auto-table-switch.law.test.ts; only the paint moved. */
+    const css = read('src/components/tournament/details/MultiDayStagePanel.css');
+    const code = css.replace(/\/\*[\s\S]*?\*\//g, ' ');
+    expect(code, 'the Open Table control is a drawn pill again').not.toMatch(/--tl-radius-pill/);
+    expect(code, 'the Open Table control grew a fill again').not.toMatch(/--tl-surface-raised/);
+    expect(code).toMatch(/\.md-stage__open\s*\{[^}]*background:\s*transparent/);
+    const r = row('src/components/tournament/details/MultiDayStagePanel.tsx');
+    expect(r!.radius).toBe(0);
+    expect(r!.score).toBe(0);
+  });
+});
+
+describe('the sweep is at zero, and a surface that lands generic says so', () => {
+  /**
+   * WHY THIS RATCHET EXISTS, AND WHO READS IT.
+   *
+   * The sweep reached "0 to go" on 2026-09-23 and was back to four nine days
+   * later. Nothing in the repo noticed: the inventory is a script an agent runs
+   * on purpose, so a surface could land generic and stay generic until somebody
+   * thought to look. That is CLAUDE.md 10.83 exactly - a check nobody can see is
+   * not a check.
+   *
+   * THE READER IS THE REQUIRED CLIENT UNIT TESTS CHECK, on the pull request that
+   * adds the surface. Not a timer, not a watcher, not a repair job (10.11,
+   * 10.12): a ratchet that goes red in the same PR as the cause, naming the
+   * file, while the author is still holding it.
+   *
+   * IF YOU ARE HERE BECAUSE THIS IS RED, you have added or changed a surface
+   * that draws its own frame. Three ways out, in order of preference:
+   *
+   *   1. Put it on an approved master. Read
+   *      .claude/skills/club-arena-console/SKILL.md and rebuild it. This is the
+   *      answer in almost every case.
+   *   2. If it is a house tool no player and no club operator can reach, add it
+   *      to INTERNAL_ONLY in the scanner (Dan 2026-09-14). A CLUB owner is a
+   *      customer: every operator page they open stays in.
+   *   3. If it is finished work on another authority, or Dan has ruled on it,
+   *      add it to RULED with the ruling written out.
+   *
+   * What is NOT a way out: widening a counter so your surface stops matching.
+   * The describe above exists because three of those counters were wrong, and it
+   * is full of controls precisely so the next correction has to prove it is one.
+   */
+  it('reports nothing left to rebuild', () => {
+    const toGo = inventory.filter((r) => r.score > 0);
+    expect(
+      toGo.map(
+        (r) => `${r.file} (score ${r.score}: radius ${r.radius}, grad ${r.grad}, hover ${r.hover})`
+      ),
+      'these surfaces draw their own frames. Put them on an approved master (SKILL.md), or rule ' +
+        'them off in the scanner with the reason. Do not widen a counter to make this pass.'
+    ).toEqual([]);
+  });
+
+  it('and it is still looking at the whole tree', () => {
+    /* A ratchet that passes because the scan found nothing is the failure mode
+       this repo keeps re-learning (10.86 rule 2). Zero to go only means
+       something if there were surfaces to judge. */
+    expect(inventory.length).toBeGreaterThan(200);
+    expect(inventory.filter((r) => r.master + r.console > 0).length).toBeGreaterThan(100);
   });
 });
 

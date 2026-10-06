@@ -130,20 +130,26 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 0.45rem;
   background: transparent;
-  border: 1px solid rgb(69 173 255 / 55%);
-  font: 700 0.75rem/1 var(--font-body, sans-serif);
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  font:
+    800 0.72rem/1 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: #45adff;
   cursor: help;
 }
 
 .config-help__button[aria-expanded='true'] {
   color: #f4f7fb;
-  border-color: #45adff;
-  background: rgb(24 119 242 / 32%);
+  border-bottom-color: #45adff;
+  background: transparent;
+  text-shadow: 0 0 10px rgb(69 173 255 / 58%);
 }
 
 .config-help__button:focus-visible {
@@ -173,11 +179,10 @@
   transform: none;
 }
 
-.table-config-switch {
-  display: flex;
-  align-items: center;
+.table-config-switch.sc-check {
   justify-content: flex-end;
   gap: 0.6rem;
+  width: auto;
   min-width: 94px;
   flex: 0 0 auto;
   position: relative;
@@ -185,48 +190,16 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.table-config-switch__input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
+.table-config-switch__input.sc-check__box {
+  appearance: none;
+  -webkit-appearance: none;
+  width: clamp(18px, 3.2cqw, 28px);
+  height: clamp(18px, 3.2cqw, 28px);
+  margin: 0;
+  cursor: pointer;
 }
 
-.table-config-switch__track {
-  width: 52px;
-  height: 28px;
-  flex: 0 0 52px;
-  box-sizing: border-box;
-  position: relative;
-  border: 1px solid rgb(154 165 179 / 56%);
-  background: #050607;
-  transition:
-    background-color 180ms ease,
-    border-color 180ms ease,
-    box-shadow 180ms ease;
-}
-
-.table-config-switch__thumb {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 20px;
-  height: 20px;
-  background: #e4e7ec;
-  transition: transform 180ms cubic-bezier(0.32, 0.72, 0, 1);
-}
-
-.table-config-switch__input:checked + .table-config-switch__track {
-  border-color: #45adff;
-  background: #1877f2;
-}
-
-.table-config-switch__input:checked + .table-config-switch__track .table-config-switch__thumb {
-  transform: translateX(24px);
-}
-
-.table-config-switch__input:focus-visible + .table-config-switch__track {
+.table-config-switch__input:focus-visible {
   outline: 2px solid #8fd4ff;
   outline-offset: 3px;
 }
@@ -266,22 +239,19 @@
   letter-spacing: 0.04em;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .table-config-switch__track,
-  .table-config-switch__thumb {
-    transition: none;
-  }
-}
-
 /* SLIDER COMPONENT - the one control the art does not paint, so the one thing
    drawn here: a flat track and a flat square thumb, no glow */
 .config-slider {
   padding: 0.75rem 0.5rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .slider-header {
-  margin-bottom: 0.5rem;
+  margin-bottom: 0;
 }
 
 .slider-label {
@@ -294,24 +264,44 @@
 
 .slider-track-container {
   position: relative;
-  padding: 0.5rem 0;
+  width: 44px;
+  min-width: 44px;
+  height: 112px;
+  min-height: 44px;
+  display: grid;
+  place-items: center;
 }
 
 .slider-input {
-  width: 100%;
-  height: 4px;
-  background: rgb(154 165 179 / 28%);
+  width: 44px;
+  min-width: 44px;
+  height: 104px;
+  min-height: 44px;
+  padding: 0;
+  background: transparent;
   -webkit-appearance: none;
   appearance: none;
   cursor: pointer;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  touch-action: none;
+  accent-color: #1877f2;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+
+.slider-input::-webkit-slider-runnable-track {
+  width: 6px;
+  height: 100%;
+  background: rgb(154 165 179 / 28%);
+  border: 1px solid rgb(0 0 0 / 72%);
 }
 
 .slider-input::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 24px;
-  height: 24px;
+  height: 16px;
+  margin-left: -10px;
   background: #1877f2;
   cursor: pointer;
   border: 2px solid #050607;
@@ -320,11 +310,18 @@
 
 .slider-input::-moz-range-thumb {
   width: 24px;
-  height: 24px;
+  height: 16px;
   background: #1877f2;
   cursor: pointer;
   border: 2px solid #050607;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+
+.slider-input::-moz-range-track {
+  width: 6px;
+  height: 100%;
+  background: rgb(154 165 179 / 28%);
+  border: 1px solid rgb(0 0 0 / 72%);
 }
 
 /* RADIO GROUP (Run It Multi-Times) */

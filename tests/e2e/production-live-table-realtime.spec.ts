@@ -61,6 +61,8 @@ const PROJECT_NAME = 'webkit-live-table-realtime';
 const ENGINE_HEALTH_URL = process.env.ENGINE_HEALTH_URL || 'https://engine.smarter.poker/health';
 const EXPECTED_ENGINE_SHA = (process.env.EXPECTED_ENGINE_SHA || '').trim();
 const CONNECT_DEADLINE_MS = 12_000;
+/** A second, cold browser context hydrating its first table state; not a realtime deadline. */
+const PEER_COLD_START_MS = 45_000;
 const MAX_GAMEPLAY_SILENCE_MS = 45_000;
 const CAUSAL_HAND_TIMEOUT_MS = 90_000;
 /** Cash only: named failures must fire before the case's own timeout can. */
@@ -68,6 +70,8 @@ const CASH_CASE_TAIL_MS = 15_000;
 /** Cash tables raced for the pre-navigation "next hand started" proof. */
 const CASH_PROGRESS_CANDIDATES = 8;
 const PRESENTATION_DEADLINE_MS = 3_000;
+/** Time to read the in-page journal; the accepted window stays PRESENTATION_DEADLINE_MS. */
+const PRESENTATION_READ_SLACK_MS = 10_000;
 const TOURNAMENT_FORMATS = ['mtt', 'spin', 'sng'] as const;
 
 /**
@@ -748,7 +752,12 @@ async function expectNextHandPresentation(
         };
       },
       {
-        timeout: PRESENTATION_DEADLINE_MS,
+        // The 3s deadline is enforced on the page's own record timestamps
+        // above. Run 37031008860: the deal was recorded 0.9s after
+        // hand_started, but the WebKit main thread held the evaluate that
+        // read it for 2.3s, so it returned after a 3s poll had already given
+        // up. Allow time to READ the journal; never widen what it accepts.
+        timeout: PRESENTATION_DEADLINE_MS + PRESENTATION_READ_SLACK_MS,
         intervals: [50, 100, 250],
         message:
           `${phase}: hand ${cycle.nextHandNumber} started, but its deal-card animation ` +
@@ -793,12 +802,12 @@ async function certifyReadOnlyTournamentFormat(
   const caseStartedAt = Date.now();
   const observationDeadline = caseStartedAt + testInfo.timeout;
   /* A heads-up Sit & Go can finish its last hand while the browser watches
-     it, and then it is COMPLETED, not broken. Only that format reads the rows
-     that prove it. Every other failure keeps its own message and evidence. */
-  const boardReader = gameFormat === 'sng' ? await createHudClockReader() : undefined;
+     it; an MTT board can close after balancing. Read durable facts for all
+     tournament formats. Every unproven failure retains its evidence. */
+  const boardReader = await createHudClockReader();
   /* The MTT alone needs a natural blind-level clock after recovery, so it alone
      qualifies its table by that clock at selection instead of by seat count. */
-  const hudReader = gameFormat === 'mtt' ? await createHudClockReader() : undefined;
+  const hudReader = gameFormat === 'mtt' ? boardReader : undefined;
   const watched: string[] = [];
   const endings: Array<Record<string, unknown>> = [];
   const pages: Page[] = [];
@@ -844,7 +853,7 @@ async function certifyReadOnlyTournamentFormat(
         contentType: 'application/json',
       });
     if (boardReader) await boardReader.close().catch(() => {});
-    if (hudReader) await hudReader.close().catch(() => {});
+    if (hudReader && hudReader !== boardReader) await hudReader.close().catch(() => {});
   }
 }
 
@@ -1013,6 +1022,19 @@ async function observeTournamentBoard(
       await expect(peerPage.getByTestId('table-connection-banner')).toBeHidden({
         timeout: CONNECT_DEADLINE_MS,
       });
+      // A hidden banner is not a hydrated table. Run 37093983125: the second
+      // WebKit context passed the banner check while its header still read
+      // "Loading..." with blinds "?/?", then spent ~20s of cold start on the
+      // shared runner (a 10s auth-lock timeout, a 5s getUser timeout, 6.5s to
+      // deliver one small chunk) before its first tournament read. The 15s
+      // agreement window below then measured that cold start instead of two
+      // live HUDs disagreeing, while the primary HUD was live on Level 3.
+      // Wait for the peer's own HUD to exist first; the agreement window and
+      // every realtime deadline after it are unchanged.
+      await expect(
+        hudLevelBadge(peerPage),
+        'the second HUD context never received its tournament state'
+      ).toBeVisible({ timeout: PEER_COLD_START_MS });
       await expect
         .poll(
           async () => {
@@ -1204,6 +1226,18 @@ async function observeTournamentBoard(
       const reader = await createHudClockReader();
       try {
         hudClock = (await reader.clocks([candidate.id])).get(candidate.id);
+        /* A LEVEL ABOUT TO ROLL OVER IS NOT A MISSING CLOCK (2026-10-04).
+           eligibleHudClock refuses a level with 20 s or less left, because
+           that level-up may fire before both HUDs are watching. Run
+           37246061086 read tournament 8c42b2c2 at 00:13:04Z, 14 s before its
+           level 7 began at 00:13:18Z, and failed "no eligible natural HUD
+           clock" on a healthy RUNNING event. Ask again across the rollover:
+           the next level is the baseline, and mttCaseTimeoutMs below sizes
+           the deadline from it. Every other refusal is still a refusal. */
+        for (let retry = 0; !hudClock && retry < 9; retry++) {
+          await new Promise((settle) => setTimeout(settle, 5_000));
+          hudClock = (await reader.clocks([candidate.id])).get(candidate.id);
+        }
       } finally {
         await testInfo.attach('mtt-hud-clock-qualification', {
           body: Buffer.from(JSON.stringify(reader.qualifications, null, 2)),
@@ -1327,7 +1361,25 @@ async function observeTournamentBoard(
         atFailure = null;
       }
     }
+    if (boardReader && selected.boardFacts && atFailure) {
+      try {
+        atFailure = await boardReader.accountClosedBoard(selected.boardFacts, atFailure);
+      } catch {
+        // Missing custody evidence cannot excuse a continuity failure.
+        atFailure = null;
+      }
+    }
+    const lastGameplayAt = journal.gameplayEvents(candidate.id, navigationStartedAt).at(-1)?.at;
+    const restartFrames = journal.countReceivedEvents(
+      candidate.id,
+      'engine_restarting',
+      navigationStartedAt
+    );
     const outcome = classifyCaseFailure({
+      terminalTeardownOnly:
+        restartFrames === 1 &&
+        lastGameplayAt !== undefined &&
+        journal.countReceivedEvents(candidate.id, 'engine_restarting', lastGameplayAt) === 1,
       engineRestartFrames: journal.countReceivedEvents(
         candidate.id,
         'engine_restarting',
@@ -1437,7 +1489,8 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
         if (!(error instanceof AbsentCertifiableSubject)) throw error;
         /* Nothing was observed, so nothing is certified AND nothing is
            condemned. Recorded as a named non-verdict, never as a defect on the
-           live site and never silently as a pass. If every case in this file
+           live site and never silently as a pass. The required-coverage gate refuses
+           certification if ANY required case is absent. If every case in this file
            reaches here, `scripts/ci/assert-e2e-actually-ran.mjs` still fails
            the run: a file that verified nothing must not report success. */
         const description = await recordNonVerdict(testInfo, {

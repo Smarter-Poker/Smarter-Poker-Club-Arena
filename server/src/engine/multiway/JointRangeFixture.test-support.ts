@@ -55,6 +55,9 @@ export function jointFixture(
     gameMode: 'cash',
     actionHistory: [],
     dealerSeat: seats,
+    // The blind seats HandController posts behind this occupied button
+    // (heads-up the button posts the small blind).
+    blindSeats: seats === 2 ? { smallBlind: seats, bigBlind: 1 } : { smallBlind: 1, bigBlind: 2 },
   };
   return { hero, state };
 }

@@ -110,7 +110,7 @@ describe('the certificate spec applies that selection and a cash budget sized fr
   const cash = spec.slice(spec.indexOf("test('an already-running table stays live"));
 
   it('qualifies MTT tables by the HUD clock at selection, and only MTT', () => {
-    expect(tournament).toContain("gameFormat === 'mtt' ? await createHudClockReader() : undefined");
+    expect(tournament).toContain("gameFormat === 'mtt' ? boardReader : undefined");
     expect(selection).toContain('options.hudReader.clocks(');
     expect(selection).toContain('selectableHudClock');
     expect(selection).toContain('return fresh.filter((table) => clocks.has(table.tableId));');

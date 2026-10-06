@@ -14,7 +14,6 @@ import { supabase } from '../lib/supabase';
 import { FinancialAlertService } from './FinancialAlertService';
 import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
-import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
 
@@ -95,6 +94,164 @@ export interface DisputeResolution {
   adjustmentType?: 'credit' | 'debit' | 'none';
 }
 
+const DISPUTE_TARGETS = new Set<DisputeTarget>([
+  'agent_settlement',
+  'cashout_request',
+  'credit_invoice',
+  'commission_payout',
+]);
+const DISPUTE_STATUSES = new Set<DisputeStatus>([
+  'open',
+  'under_review',
+  'resolved',
+  'escalated',
+  'withdrawn',
+]);
+
+function disputeRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Dispute record could not be verified');
+  }
+  return value as Record<string, unknown>;
+}
+
+function disputeText(value: unknown, label: string): string {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error(`${label} could not be verified`);
+  }
+  return value;
+}
+
+function nullableDisputeText(value: unknown, label: string): string | undefined {
+  return value === null ? undefined : disputeText(value, label);
+}
+
+function disputeTimestamp(value: unknown, label: string): string {
+  const timestamp = disputeText(value, label);
+  if (!Number.isFinite(Date.parse(timestamp))) throw new Error(`${label} could not be verified`);
+  return timestamp;
+}
+
+function disputeMoney(value: unknown, positive = false): number | null {
+  if (
+    (typeof value !== 'number' && typeof value !== 'string') ||
+    (typeof value === 'number' && !Number.isFinite(value))
+  ) {
+    return null;
+  }
+  const source = String(value).trim();
+  if (!source || source.length > 128) return null;
+  const match = /^(?:(\d+)(?:\.(\d*))?|\.(\d+))$/.exec(source);
+  const fraction = match?.[2] ?? match?.[3] ?? '';
+  if (!match || /[1-9]/.test(fraction.slice(2))) return null;
+  const cents = BigInt(match[1] ?? '0') * 100n + BigInt(fraction.padEnd(2, '0').slice(0, 2));
+  if ((positive && cents === 0n) || cents > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+  const amount = Number(cents) / 100;
+  return Math.round(amount * 100) === Number(cents) ? amount : null;
+}
+
+/** A dispute adjustment is optional, but when selected it is positive exact cents. */
+export function parseDisputeAdjustmentAmount(value: string): number | null {
+  return disputeMoney(value, true);
+}
+
+export function parseDispute(value: unknown): Dispute {
+  const row = disputeRecord(value);
+  const targetType = disputeText(row.target_type, 'Dispute target type') as DisputeTarget;
+  const status = disputeText(row.status, 'Dispute status') as DisputeStatus;
+  const amount = disputeMoney(row.amount);
+  if (!DISPUTE_TARGETS.has(targetType) || !DISPUTE_STATUSES.has(status) || amount === null) {
+    throw new Error('Dispute financial state could not be verified');
+  }
+  const createdAt = disputeTimestamp(row.created_at, 'Dispute creation time');
+  const updatedAt = disputeTimestamp(row.updated_at, 'Dispute update time');
+  const resolvedAt =
+    row.resolved_at === null
+      ? undefined
+      : disputeTimestamp(row.resolved_at, 'Dispute resolution time');
+  if (
+    Date.parse(updatedAt) < Date.parse(createdAt) ||
+    (resolvedAt !== undefined && Date.parse(resolvedAt) < Date.parse(createdAt))
+  ) {
+    throw new Error('Dispute timeline could not be verified');
+  }
+  return {
+    id: disputeText(row.id, 'Dispute identity'),
+    submittedBy: disputeText(row.submitted_by, 'Dispute submitter'),
+    submitterName: disputeText(row.submitter_name, 'Dispute submitter name'),
+    targetType,
+    targetId: disputeText(row.target_id, 'Dispute target'),
+    clubId: disputeText(row.club_id, 'Dispute club'),
+    amount,
+    reason: disputeText(row.reason, 'Dispute reason'),
+    status,
+    assignedTo: nullableDisputeText(row.assigned_to, 'Dispute assignee'),
+    resolution: nullableDisputeText(row.resolution, 'Dispute resolution'),
+    createdAt,
+    updatedAt,
+    resolvedAt,
+  };
+}
+
+function disputeMutationOutcome(value: unknown): Record<string, unknown> {
+  const outcome = disputeRecord(value);
+  if (outcome.ok !== true && outcome.ok !== false) {
+    throw new Error('Dispute mutation receipt could not be verified');
+  }
+  if (outcome.ok === false && (typeof outcome.reason !== 'string' || !outcome.reason.trim())) {
+    throw new Error('Dispute refusal receipt could not be verified');
+  }
+  return outcome;
+}
+
+function requireMutationReceipt(
+  outcome: Record<string, unknown>,
+  disputeId: string,
+  expectedStatus: DisputeStatus
+): void {
+  if (
+    outcome.ok !== true ||
+    outcome.dispute_id !== disputeId ||
+    outcome.status !== expectedStatus
+  ) {
+    throw new Error('Dispute mutation receipt did not match the requested transition');
+  }
+}
+
+async function readBackDispute(disputeId: string, expectedStatus: DisputeStatus): Promise<Dispute> {
+  const { data, error } = await supabase
+    .from('disputes')
+    .select('*')
+    .eq('id', disputeId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error('This dispute could not be read back.');
+  const dispute = parseDispute(data);
+  if (dispute.id !== disputeId || dispute.status !== expectedStatus) {
+    throw new Error('Dispute read-back did not match the requested transition');
+  }
+  return dispute;
+}
+
+function parseDisputeList(
+  value: unknown,
+  expected: { clubId?: string; submitterId?: string } = {}
+): Dispute[] {
+  if (!Array.isArray(value)) throw new Error('Dispute list could not be verified');
+  const disputes = value.map(parseDispute);
+  if (
+    new Set(disputes.map((dispute) => dispute.id)).size !== disputes.length ||
+    disputes.some(
+      (dispute) =>
+        (expected.clubId !== undefined && dispute.clubId !== expected.clubId) ||
+        (expected.submitterId !== undefined && dispute.submittedBy !== expected.submitterId)
+    )
+  ) {
+    throw new Error('Dispute list scope could not be verified');
+  }
+  return disputes;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // SERVICE
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -138,36 +295,40 @@ export const DisputeService = {
       throw new Error('Could not file the dispute');
     }
 
-    const out = (data || {}) as { ok?: boolean; reason?: string; dispute_id?: string };
-    if (!out.ok) throw new Error(disputeSubmitReasonText(out.reason));
-    if (!out.dispute_id) {
-      throw new Error('The dispute was filed but did not come back with an id');
+    const out = disputeMutationOutcome(data);
+    if (out.ok === false) throw new Error(disputeSubmitReasonText(out.reason as string));
+    if (typeof out.dispute_id !== 'string' || !out.dispute_id.trim() || out.status !== 'open') {
+      throw new Error('The dispute filing receipt could not be verified');
     }
+    const disputeId = out.dispute_id;
 
     // The club owner is told by trg_notify_dispute, which fires on the INSERT
     // itself, so a dispute filed from Commander or a back-office script
     // notifies identically. Nothing is sent from here.
-    const { data: row, error: readError } = await supabase
-      .from('disputes')
-      .select('*')
-      .eq('id', out.dispute_id)
-      .maybeSingle();
-    if (readError) throw readError;
-    if (!row) throw new Error('This dispute could not be read back.');
-
-    return this.mapDispute(row);
+    const row = await readBackDispute(disputeId, 'open');
+    if (
+      row.clubId !== dispute.clubId ||
+      row.targetType !== dispute.targetType ||
+      row.targetId !== dispute.targetId ||
+      row.amount !== dispute.amount ||
+      row.reason !== dispute.reason
+    ) {
+      throw new Error('The filed dispute did not match the submitted request');
+    }
+    return row;
   },
 
   /**
    * Get disputes for a club (owner/admin view)
    */
   async getClubDisputes(clubId: string, status?: DisputeStatus): Promise<Dispute[]> {
+    const resolvedClubId = await resolveClubUUID(clubId);
     let query = supabase
       .from('disputes')
       .select(
         'id, submitted_by, submitter_name, target_type, target_id, club_id, amount, reason, status, assigned_to, resolution, created_at, updated_at, resolved_at'
       )
-      .eq('club_id', await resolveClubUUID(clubId))
+      .eq('club_id', resolvedClubId)
       .order('created_at', { ascending: false })
       .limit(QUERY_LIMITS.LIST);
 
@@ -175,7 +336,7 @@ export const DisputeService = {
 
     const { data, error } = await query;
     if (error) throw error;
-    return (data || []).map(this.mapDispute);
+    return parseDisputeList(data, { clubId: resolvedClubId });
   },
 
   /**
@@ -192,7 +353,7 @@ export const DisputeService = {
       .limit(QUERY_LIMITS.LIST);
 
     if (error) throw error;
-    return (data || []).map(this.mapDispute);
+    return parseDisputeList(data, { submitterId: userId });
   },
 
   /**
@@ -205,8 +366,11 @@ export const DisputeService = {
       .eq('club_id', await resolveClubUUID(clubId))
       .in('status', ['open', 'under_review']);
 
-    if (error) return 0;
-    return count || 0;
+    if (error) throw error;
+    if (!Number.isSafeInteger(count) || (count as number) < 0) {
+      throw new Error('Open dispute count could not be verified');
+    }
+    return count as number;
   },
 
   /**
@@ -227,22 +391,23 @@ export const DisputeService = {
       p_dispute_id: disputeId,
     });
     if (error) throw error;
-    const outcome = (data || {}) as { ok?: boolean; reason?: string };
-    if (!outcome.ok) {
+    const outcome = disputeMutationOutcome(data);
+    if (outcome.ok === false) {
       throw new Error(
         outcome.reason === 'not_open'
           ? 'This dispute is no longer open.'
           : 'This dispute could not be moved into review.'
       );
     }
-    const { data: row, error: readError } = await supabase
-      .from('disputes')
-      .select('*')
-      .eq('id', disputeId)
-      .maybeSingle();
-    if (readError) throw readError;
-    if (!row) throw new Error('This dispute could not be read back.');
-    return this.mapDispute(row);
+    requireMutationReceipt(outcome, disputeId, 'under_review');
+    if (outcome.assigned_to !== _reviewerId) {
+      throw new Error('Dispute review receipt did not name the signed-in reviewer');
+    }
+    const row = await readBackDispute(disputeId, 'under_review');
+    if (row.assignedTo !== _reviewerId) {
+      throw new Error('Dispute review read-back did not name the signed-in reviewer');
+    }
+    return row;
   },
 
   /**
@@ -253,6 +418,12 @@ export const DisputeService = {
     reviewerId: string,
     resolution: DisputeResolution
   ): Promise<Dispute> {
+    const adjustmentType = resolution.adjustmentType ?? 'none';
+    const adjustmentAmount =
+      adjustmentType === 'none' ? 0 : disputeMoney(resolution.adjustmentAmount, true);
+    if (adjustmentAmount === null) {
+      throw new Error('Adjustment amount must be a positive whole-cent amount');
+    }
     // AUDIT M17: this used to mark the dispute resolved, then adjust the wallet
     // in a second round trip. The comment above that ordering argued it was the
     // safe direction — "if wallet adjustment fails after status update, we can
@@ -275,8 +446,8 @@ export const DisputeService = {
     const { data: res, error } = await supabase.rpc('fn_resolve_dispute', {
       p_dispute_id: disputeId,
       p_resolution: resolution.resolution,
-      p_adjustment_type: resolution.adjustmentType ?? 'none',
-      p_adjustment_amount: resolution.adjustmentAmount ?? 0,
+      p_adjustment_type: adjustmentType,
+      p_adjustment_amount: adjustmentAmount,
     });
 
     if (error) {
@@ -284,42 +455,32 @@ export const DisputeService = {
       throw new Error('Could not resolve the dispute');
     }
 
-    const out = res as {
-      ok: boolean;
-      reason?: string;
-      cap?: number;
-      amount?: number;
-      adjustment_type?: string;
-    } | null;
+    const out = disputeMutationOutcome(res);
 
-    if (!out?.ok) {
-      if (out?.reason === 'adjustment_exceeds_disputed_amount') {
-        throw new Error(
-          `Adjustment exceeds the disputed amount (cap ${(out.cap ?? 0).toLocaleString()})`
-        );
+    if (out.ok === false) {
+      if (out.reason === 'adjustment_exceeds_disputed_amount') {
+        const cap = disputeMoney(out.cap);
+        if (cap === null) throw new Error('Dispute adjustment cap could not be verified');
+        throw new Error(`Adjustment exceeds the disputed amount (cap ${cap.toLocaleString()})`);
       }
-      throw new Error(disputeReasonText(out?.reason));
+      throw new Error(disputeReasonText(out.reason as string));
     }
 
-    if ((out.amount ?? 0) > 0) {
+    requireMutationReceipt(out, disputeId, 'resolved');
+    const receiptAmount = disputeMoney(out.amount);
+    if (out.adjustment_type !== adjustmentType || receiptAmount !== adjustmentAmount) {
+      throw new Error('Dispute resolution receipt did not match the requested adjustment');
+    }
+
+    if (receiptAmount > 0) {
       masterBus.emit('BALANCE_UPDATED', { source: 'dispute_resolution', disputeId });
     }
 
-    // Re-read for the return value. The RPC owns the write; this is display
-    // state, and a failure here must not imply the resolution did not happen.
-    const { data } = await supabase.from('disputes').select('*').eq('id', disputeId).maybeSingle();
-
-    // Notify the submitter
-    if (data?.submitted_by) {
-      try {
-        // Notification removed 2026-08-30 (#1498) - trg_notify_dispute fires on the
-        // status transition to 'resolved'.
-      } catch (e: unknown) {
-        reportError(e, 'DisputeService.notification');
-      }
+    const row = await readBackDispute(disputeId, 'resolved');
+    if (row.resolution !== resolution.resolution || row.resolvedAt === undefined) {
+      throw new Error('Dispute resolution read-back did not match the requested resolution');
     }
-
-    return this.mapDispute(data);
+    return row;
   },
 
   /**
@@ -333,32 +494,32 @@ export const DisputeService = {
       p_note: `Escalated: ${reason}`,
     });
     if (error) throw error;
-    const outcome = (data || {}) as { ok?: boolean; reason?: string };
-    if (!outcome.ok) {
+    const outcome = disputeMutationOutcome(data);
+    if (outcome.ok === false) {
       throw new Error(
-        outcome.reason?.startsWith('already_')
-          ? `This dispute is already ${outcome.reason.replace('already_', '')}.`
+        (outcome.reason as string).startsWith('already_')
+          ? `This dispute is already ${(outcome.reason as string).replace('already_', '')}.`
           : 'This dispute could not be escalated.'
       );
     }
+    requireMutationReceipt(outcome, disputeId, 'escalated');
+
+    const row = await readBackDispute(disputeId, 'escalated');
+    if (row.resolution !== `Escalated: ${reason}`) {
+      throw new Error('Dispute escalation read-back did not match the requested reason');
+    }
 
     // Raise financial alert for ops team
-    await FinancialAlertService.logWarning(
-      'DisputeService',
-      `Dispute ${disputeId} escalated: ${reason}`,
-      { disputeId, reason }
-    );
-
-    // `data` is the RPC's outcome envelope, not a dispute row - read the row
-    // back rather than mapping the envelope into a Dispute shape.
-    const { data: row, error: readError } = await supabase
-      .from('disputes')
-      .select('*')
-      .eq('id', disputeId)
-      .maybeSingle();
-    if (readError) throw readError;
-    if (!row) throw new Error('This dispute could not be read back.');
-    return this.mapDispute(row);
+    try {
+      await FinancialAlertService.logWarning(
+        'DisputeService',
+        `Dispute ${disputeId} escalated: ${reason}`,
+        { disputeId, reason }
+      );
+    } catch (alertError) {
+      reportError(alertError, 'DisputeService.escalation_alert', { disputeId });
+    }
+    return row;
   },
 
   /**
@@ -383,37 +544,24 @@ export const DisputeService = {
       throw new Error('Could not withdraw the dispute');
     }
 
-    const out = (data || {}) as { ok?: boolean; reason?: string; status?: string };
-    if (!out.ok) {
+    const out = disputeMutationOutcome(data);
+    if (out.ok === false) {
       throw new Error(
         out.reason === 'not_withdrawable'
           ? `This dispute is already ${out.status ?? 'closed'} and cannot be withdrawn.`
           : 'This dispute could not be withdrawn.'
       );
     }
+    requireMutationReceipt(out, disputeId, 'withdrawn');
+    await readBackDispute(disputeId, 'withdrawn');
   },
 
   // ─────────────────────────────────────────────────────────────────────────────
   // HELPERS
   // ─────────────────────────────────────────────────────────────────────────────
 
-  mapDispute(row: any): Dispute {
-    return {
-      id: row.id,
-      submittedBy: row.submitted_by,
-      submitterName: row.submitter_name,
-      targetType: row.target_type,
-      targetId: row.target_id,
-      clubId: row.club_id,
-      amount: row.amount,
-      reason: row.reason,
-      status: row.status,
-      assignedTo: row.assigned_to,
-      resolution: row.resolution,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      resolvedAt: row.resolved_at,
-    };
+  mapDispute(row: unknown): Dispute {
+    return parseDispute(row);
   },
 };
 

@@ -3965,6 +3965,7 @@
     "fn_union_money_path_check",
     "fn_union_money_report",
     "fn_union_move_rake_to_chips_atomic",
+    "fn_union_online_count",
     "fn_union_overload_check",
     "fn_union_overseer_of_record",
     "fn_union_oversees_club",

@@ -289,4 +289,36 @@ describe('mounted home Cashier directory readiness', () => {
     expect(h.navigate).toHaveBeenCalledWith('/clubs/first-club/cashier');
     expect(h.toast.info).not.toHaveBeenCalledWith('Loading Cashier Directory');
   });
+
+  it('keeps cached direct tap fast but withholds the all-wallet menu until owned unions settle', async () => {
+    writeCachedQuickLinkClubs('viewer-a', [member().club]);
+    localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE_TS, String(Date.now()));
+    const pending = holdDirectory();
+    mount();
+    await flush();
+
+    fireEvent.click(cashier());
+    expect(h.navigate).toHaveBeenCalledWith('/clubs/first-club/cashier');
+    h.navigate.mockClear();
+
+    fireEvent.contextMenu(cashier());
+    expect(screen.getByRole('status')).toHaveTextContent(/Refreshing Wallet Directory/i);
+    expect(screen.queryByRole('menuitem')).not.toBeInTheDocument();
+
+    await act(async () => {
+      pending.memberships.resolve([member()]);
+      pending.unions.resolve([
+        {
+          id: '22222222-2222-4222-8222-222222222222',
+          slug: 'owned-union',
+          name: 'Owned Union',
+          ownerId: 'viewer-a',
+          memberCount: 2,
+        },
+      ]);
+    });
+
+    expect(screen.getByRole('menuitem', { name: /First Club/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /Owned Union Union Wallet/i })).toBeInTheDocument();
+  });
 });

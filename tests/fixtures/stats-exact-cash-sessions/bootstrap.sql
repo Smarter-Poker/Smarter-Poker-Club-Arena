@@ -1,0 +1,17 @@
+CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
+CREATE SCHEMA auth;
+CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+CREATE TABLE public.clubs(id uuid PRIMARY KEY,asset text,lifecycle_status text);
+CREATE TABLE public.club_members(user_id uuid,club_id uuid,status text);
+CREATE TABLE public.tables(id uuid PRIMARY KEY,club_id uuid,cluster_id uuid,tournament_id uuid,status text,is_deleted boolean DEFAULT false);
+CREATE TABLE public.table_seats(id uuid PRIMARY KEY,table_id uuid,user_id uuid,stack numeric,joined_at timestamptz,left_at timestamptz);
+CREATE TABLE public.cash_player_session(id uuid PRIMARY KEY,player_id uuid,club_id uuid,scope_type text,scope_id uuid,table_id uuid,cluster_id uuid,variant text,sb numeric(14,2),bb numeric(14,2),baseline numeric(14,2) NOT NULL DEFAULT 0,opened_at timestamptz NOT NULL,closed_at timestamptz,closed_reason text,rejoin_window_ms integer DEFAULT 7200000);
+CREATE TABLE public.ca_hand_facts(hand_id uuid,user_id uuid,club_id uuid,table_id uuid,tournament_id uuid,played_at timestamptz,net numeric);
+CREATE FUNCTION public.ca_assert_self(p_user uuid) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$BEGIN IF auth.uid() IS NULL OR auth.uid() IS DISTINCT FROM p_user THEN RAISE EXCEPTION 'stats access refused' USING ERRCODE='42501'; END IF; END$$;
+CREATE FUNCTION public.ca_assert_player_stats_club(p_user uuid,p_club uuid,p_asset text) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$BEGIN PERFORM public.ca_assert_self(p_user); IF NOT EXISTS(SELECT 1 FROM club_members m JOIN clubs c ON c.id=m.club_id WHERE m.user_id=p_user AND m.club_id=p_club AND m.status IN('active','approved') AND coalesce(c.lifecycle_status,'active')<>'retired' AND coalesce(c.asset,'chips')=p_asset) THEN RAISE EXCEPTION 'not authorized' USING ERRCODE='42501'; END IF; END$$;
+CREATE FUNCTION public.ca_stats_calendar_bounds(p_days integer,p_tz text,p_now timestamptz) RETURNS TABLE(range_days integer,range_tz text,from_at timestamptz,to_at timestamptz) LANGUAGE sql STABLE AS $$SELECT p_days,CASE WHEN EXISTS(SELECT 1 FROM pg_timezone_names WHERE name=p_tz) THEN p_tz ELSE 'UTC' END,CASE WHEN p_days IS NULL THEN NULL ELSE (((p_now AT TIME ZONE p_tz)::date-(p_days-1))::timestamp AT TIME ZONE p_tz) END,CASE WHEN p_days IS NULL THEN NULL ELSE ((((p_now AT TIME ZONE p_tz)::date+1)::timestamp) AT TIME ZONE p_tz) END$$;
+CREATE FUNCTION public.fn_cash_session_close(p_user_id uuid,p_table_id uuid,p_stack numeric,p_reason text) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$DECLARE v_now timestamptz:=clock_timestamp();BEGIN UPDATE public.cash_player_session SET closed_at = v_now, closed_reason = COALESCE(p_reason, 'leave') WHERE player_id=p_user_id AND scope_id=p_table_id AND closed_at IS NULL;END$$;
+CREATE FUNCTION public.trg_fn_close_session_when_seat_vacated() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN RETURN NULL;END$$;
+CREATE FUNCTION public.trg_fn_close_sessions_when_table_closes() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN RETURN NEW;END$$;
+CREATE CONSTRAINT TRIGGER zz_close_session_when_seat_vacated AFTER UPDATE OF left_at ON table_seats DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION trg_fn_close_session_when_seat_vacated();
+CREATE TRIGGER zz_close_sessions_when_table_closes AFTER UPDATE OF status,is_deleted ON tables FOR EACH ROW EXECUTE FUNCTION trg_fn_close_sessions_when_table_closes();

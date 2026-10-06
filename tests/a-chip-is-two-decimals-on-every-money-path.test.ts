@@ -72,12 +72,17 @@ describe('every client door that sizes a chip amount rounds it first', () => {
   });
 
   it('a multi-table pot-sized raise is a cent amount, not a whole chip', () => {
-    const src = strip(read('src/pages/MultiTablePage.tsx'));
-    expect(src).toMatch(
-      /Math\.round\(\(toCall \+ \(pot \+ toCall \* 2\) \* frac\) \* 100\) \/ 100/
-    );
+    /* MOVED 2026-10-05: the tile band no longer sizes its raises inline. The
+       sizing lives in src/utils/tileRaiseSizing.ts (a raise-TO, which the old
+       inline formula was not), and that is where the cent rounding is now. */
+    const page = strip(read('src/pages/MultiTablePage.tsx'));
+    expect(page).toMatch(/tilePotRaiseTo\(/);
+    const sizing = strip(read('src/utils/tileRaiseSizing.ts'));
+    expect(sizing).toMatch(/const toCents = \(n: number\) => Math\.round\(n \* 100\) \/ 100;/);
+    expect(sizing).toMatch(/toCents\(currentBet \+ \(pot \+ toCall\) \* fraction\)/);
     // Rounding the WAGER to a whole chip sent a bet the player never chose.
-    expect(src).not.toMatch(/Math\.round\(toCall \+ \(pot \+ toCall \* 2\) \* frac\)/);
+    expect(page).not.toMatch(/Math\.round\(toCall \+ \(pot \+ toCall \* 2\) \* frac\)/);
+    expect(sizing).not.toMatch(/Math\.round\(currentBet \+/);
   });
 
   it('the session record stores money to the cent', () => {

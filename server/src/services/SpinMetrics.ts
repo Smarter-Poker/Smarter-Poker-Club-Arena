@@ -109,6 +109,21 @@ export interface SpinMetricsSnapshot {
   openBoards: number;
   /** Partly filled, open, unstarted Spins; the view does not filter wait age or draws. */
   unfilledWaits: number;
+  /**
+   * WHO IS WAITING (2026-10-03, fn_spin_fill_waits). unfilledWaits above is
+   * mostly the product working: every horse-opened board holds its last seat
+   * for a human for 90-350 s (Dan's rule), so ~700 Spins an hour keep ~40
+   * boards at 2/3 at any instant. These four split that population by what a
+   * player would actually feel.
+   */
+  /** Partly filled boards holding at least one live HUMAN seat. */
+  humanUnfilledWaits: number;
+  /** Longest a live human seat on those boards has waited, seconds. 0 = nobody waiting. */
+  humanOldestWaitSeconds: number;
+  /** Partly filled boards whose human window closed more than 120 s ago. */
+  unfilledPastWindow: number;
+  /** Oldest live seat on any partly filled board, seconds. 0 = none. */
+  unfilledOldestWaitSeconds: number;
   /** Clubs whose reserve pool cannot cover the top tier. */
   reserveThinClubs: number;
   /** Smallest reserve balance across clubs. null when no club has a pool. */
@@ -138,6 +153,10 @@ const EMPTY: SpinMetricsSnapshot = {
   secondsSinceLastStart: null,
   openBoards: 0,
   unfilledWaits: 0,
+  humanUnfilledWaits: 0,
+  humanOldestWaitSeconds: 0,
+  unfilledPastWindow: 0,
+  unfilledOldestWaitSeconds: 0,
   reserveThinClubs: 0,
   reserveMinBalance: null,
   collectedAt: 0,
@@ -186,6 +205,18 @@ export class SpinMetrics {
         return;
       }
 
+      /* The fill-wait split is part of the SAME snapshot. A failed read here
+         is a failed refresh, not a zero: "nobody is waiting" is the one value
+         the human-waiting alert must never be handed by a broken read, so the
+         last good snapshot stays and poker_spin_metrics_stale_seconds climbs
+         (SpinMetricsStale) exactly as it does for fn_spin_metrics. */
+      const { data: waitData, error: waitError } = await supabase.rpc('fn_spin_fill_waits');
+      const waits = Array.isArray(waitData) ? waitData[0] : waitData;
+      if (waitError || !waits) {
+        this.noteFailure(`fn_spin_fill_waits: ${waitError?.message ?? 'no row returned'}`);
+        return;
+      }
+
       /** Non-negative integer, or 0. For counts, where 0 is a truthful floor. */
       const n = (v: unknown) => {
         const x = Number(v);
@@ -218,6 +249,10 @@ export class SpinMetrics {
         secondsSinceLastStart: f(row.seconds_since_last_start),
         openBoards: n(row.open_boards),
         unfilledWaits: n(row.unfilled_waits),
+        humanUnfilledWaits: n(waits.human_unfilled_waits),
+        humanOldestWaitSeconds: n(waits.human_oldest_wait_seconds),
+        unfilledPastWindow: n(waits.unfilled_past_window),
+        unfilledOldestWaitSeconds: n(waits.unfilled_oldest_wait_seconds),
         reserveThinClubs: n(row.reserve_thin_clubs),
         reserveMinBalance: f(row.reserve_min_balance),
         collectedAt: Date.now(),
@@ -347,6 +382,26 @@ export class SpinMetrics {
       'poker_spin_unfilled_waits',
       'Partly filled, open Spins with no recorded start; count includes all wait ages and booked draws',
       s.unfilledWaits
+    );
+    gauge(
+      'poker_spin_human_unfilled_waits',
+      'Partly filled, open Spins with at least one live HUMAN seat - a paying player waiting for opponents',
+      s.humanUnfilledWaits
+    );
+    gauge(
+      'poker_spin_human_oldest_wait_seconds',
+      'Seconds the longest-waiting live human seat on a partly filled Spin has waited; 0 when no human is waiting',
+      s.humanOldestWaitSeconds
+    );
+    gauge(
+      'poker_spin_unfilled_past_window',
+      'Partly filled, open Spins whose human window closed more than 120s ago - boards the fleet should already have filled',
+      s.unfilledPastWindow
+    );
+    gauge(
+      'poker_spin_unfilled_oldest_wait_seconds',
+      'Seconds the oldest live seat on any partly filled, open Spin has waited; 0 when there is none',
+      s.unfilledOldestWaitSeconds
     );
     gauge(
       'poker_spin_reserve_thin_clubs',

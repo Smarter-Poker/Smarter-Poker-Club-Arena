@@ -50,6 +50,55 @@ describe('Leaderboard Painted Console Contract', () => {
     const css = readFileSync('src/components/table/LeaderboardPanel.css', 'utf8');
     expect(css).toMatch(/\.leaderboard-row__amount--positive\s*\{\s*color:\s*#c8ffd2;/);
   });
+
+  it('reports malformed owner setup and history responses through first-party diagnostics', () => {
+    const page = readFileSync('src/pages/LeaderboardPage.tsx', 'utf8');
+    const setupStart = page.indexOf('LeaderboardService.getLeaderboardRewardSetup(selectedClubId)');
+    const setupCatch = page.slice(
+      setupStart,
+      page.indexOf('}, [selectedClubId, userClubs, settingsReloadKey])', setupStart)
+    );
+    const historyStart = page.indexOf(
+      'LeaderboardService.getRewardProgramHistory(programHistoryClubId'
+    );
+    const historyCatch = page.slice(
+      historyStart,
+      page.indexOf(
+        '}, [programHistoryClubId, programHistoryVersion, programHistoryReloadKey])',
+        historyStart
+      )
+    );
+
+    expect(setupCatch).toContain("error.message === 'Prize Setup Returned No Data'");
+    expect(setupCatch).toContain("reportError(error, 'LeaderboardPage.Reward_setup_invalid')");
+    expect(historyCatch).toContain("error.message === 'Program History Returned Invalid Data'");
+    expect(historyCatch).toContain("reportError(error, 'LeaderboardPage.Program_history_invalid')");
+  });
+  it('exposes a busy state until leaderboard and prize metadata finish loading', () => {
+    const page = readFileSync('src/pages/LeaderboardPage.tsx', 'utf8');
+    expect(page).toContain('aria-busy={');
+    expect(page).toMatch(
+      /settingsLoading\s*\|\|\s*settlementLoading\s*\|\|\s*programHistoryLoading/
+    );
+    expect(readFileSync('tests/e2e/mobile-chrome-occlusion.spec.ts', 'utf8')).toContain(
+      "getByRole('region', { name: 'Leaderboards' })"
+    );
+  });
+  it('title-cases player names in the podium, ranking, and tournament-stat views', () => {
+    const page = readFileSync('src/pages/LeaderboardPage.tsx', 'utf8');
+    expect(page).toContain('name={displayName}');
+    expect(page.match(/leaderboardDisplayName\(entry\.username\)/g)).toHaveLength(7);
+    expect(page.match(/leaderboardDisplayName\(stat\.username\)/g)).toHaveLength(3);
+    expect(page).not.toContain('{entry.username}');
+    expect(page).not.toContain('{stat.username}');
+    expect(page).toContain('enumToTitleCase(settings.funding_label)');
+    expect(readFileSync('src/components/leaderboard/LeaderboardPrizeWizard.tsx', 'utf8')).toContain(
+      'enumToTitleCase(setup.club_name)'
+    );
+    expect(
+      readFileSync('src/components/leaderboard/LeaderboardSettlementCard.tsx', 'utf8')
+    ).toContain('enumToTitleCase(ownerMessage)');
+  });
   it('keeps promotion row feedback when reduced motion is requested', () => {
     const css = readFileSync('src/components/leaderboard/LeaderboardCard.module.css', 'utf8');
     expect(css).not.toMatch(/(?:animation|transition):\s*none/);

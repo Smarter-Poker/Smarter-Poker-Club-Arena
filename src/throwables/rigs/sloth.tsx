@@ -3,7 +3,7 @@ import { RIG_VIEWBOX, type RigProps, type ThrowableRig } from '../rig';
 import type { ThrowableSpec } from '../spec';
 import { preloadThrowableCues } from '../cues';
 import './sloth.css';
-// Dedicated recorded cues still pending: sloth_yawn.
+// Recorded breath lands on the sloth's wide yawn.
 export const spec: ThrowableSpec = {
   id: 'sloth',
   name: 'Sloth',
@@ -24,7 +24,10 @@ export const spec: ThrowableSpec = {
     { at: 4000, marker: 'blink-two' },
     { at: 4500, marker: 'cut' },
   ],
-  audio: [{ at: 433, sample: 'pop_soft', gain: 0.25 }],
+  audio: [
+    { at: 433, sample: 'pop_soft', gain: 0.25 },
+    { at: 2700, sample: 'yawn_breath' },
+  ],
 };
 preloadThrowableCues(spec.audio.map((cue) => cue.sample));
 const RECTS: [number, number, number, number][] = [

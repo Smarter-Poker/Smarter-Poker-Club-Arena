@@ -1,200 +1,261 @@
+/* Credit requests print as engraved rows on their surrounding painted console. */
+.credit-request-inbox {
+  min-width: 0;
+  margin: 0;
+}
+
+.credit-request-heading,
+.credit-request-widget h4 {
+  margin: 0;
+  color: #9aa5b3;
+  font-size: clamp(0.66rem, 2.7cqw, 0.82rem);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 .credit-request-widget {
-  background: var(--card-bg, #1a1a2e);
-  border-radius: 12px;
-  padding: 1rem;
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  min-width: 0;
+  padding: 1cqw 0 3cqw;
+  color: #d7dee7;
 }
 
 .credit-request-widget.loading {
+  padding: 6cqw 0;
+  color: #9aa5b3;
   text-align: center;
-  color: var(--text-secondary);
-  padding: 2rem;
 }
 
-/* Credit Status Bar */
+.credit-request-widget p {
+  margin: 2cqw 0;
+  color: #9aa5b3;
+  font-size: clamp(0.68rem, 2.8cqw, 0.82rem);
+  line-height: 1.5;
+}
+
 .credit-status {
-  margin-bottom: 1rem;
+  padding: 2.5cqw 0;
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
-.credit-bar {
-  height: 8px;
-  background: var(--surface-secondary, #2a2a4e);
-  border-radius: 4px;
-  overflow: hidden;
-  margin-bottom: 0.5rem;
+.credit-meter {
+  display: block;
+  width: 100%;
+  height: 0.45rem;
+  border: 1px solid #000;
+  appearance: none;
+  background: #05070b;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
-.credit-used {
-  height: 100%;
-  background: linear-gradient(to right, #10b981, #34d399);
-  transition: width 0.3s ease;
+.credit-meter::-webkit-progress-bar {
+  background: #05070b;
+}
+
+.credit-meter::-webkit-progress-value {
+  background: #45adff;
+  box-shadow: 0 0 0.5rem rgb(69 173 255 / 55%);
+}
+
+.credit-meter::-moz-progress-bar {
+  background: #45adff;
+  box-shadow: 0 0 0.5rem rgb(69 173 255 / 55%);
 }
 
 .credit-info {
   display: flex;
   justify-content: space-between;
-  font-size: 0.85rem;
-  color: var(--text-secondary);
+  gap: 3cqw;
+  margin-top: 1.5cqw;
+  color: #9aa5b3;
+  font-size: clamp(0.68rem, 2.8cqw, 0.82rem);
 }
 
-/* Request Button */
+.request-btn,
+.request-form button,
+.approve-btn,
+.deny-btn,
+.credit-request-widget[role='alert'] button {
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 2.5cqw;
+  border: 0;
+  background: transparent;
+  color: #45adff;
+  font: inherit;
+  font-size: clamp(0.7rem, 2.8cqw, 0.84rem);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
 .request-btn {
   width: 100%;
-  padding: 0.75rem;
-  background: var(--accent-gradient, linear-gradient(135deg, #4f46e5, #7c3aed));
-  border: none;
-  border-radius: 8px;
-  color: white;
-  font-weight: 600;
-  cursor: pointer;
-  margin-bottom: 1rem;
+  margin-block: 1cqw;
 }
 
-/* Request Form */
 .request-form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
-  padding: 1rem;
-  background: var(--surface-secondary, #2a2a4e);
-  border-radius: 8px;
+  display: grid;
+  gap: 2cqw;
+  padding: 3cqw 0;
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.request-form label {
+  display: grid;
+  gap: 1cqw;
+  color: #9aa5b3;
+  font-size: clamp(0.68rem, 2.8cqw, 0.82rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .request-form input,
 .request-form textarea {
-  padding: 0.75rem;
-  background: var(--card-bg);
-  border: 1px solid var(--border-color, #333);
-  border-radius: 6px;
-  color: white;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 2cqw;
+  border: 1px solid #000;
+  background: #05070b;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 8%),
+    inset 0 0 0 1px rgb(0 0 0 / 88%);
+  color: #f4f7fb;
+  font: inherit;
+  font-size: 16px;
 }
 
 .request-form textarea {
-  min-height: 60px;
+  min-height: 5rem;
   resize: vertical;
 }
 
-.request-form button {
-  padding: 0.75rem;
-  background: #10b981;
-  border: none;
-  border-radius: 6px;
-  color: white;
-  font-weight: 600;
-  cursor: pointer;
+.pending-approvals,
+.request-history {
+  margin-top: 3cqw;
 }
 
-.request-form button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Pending Approvals */
-.pending-approvals {
-  margin-bottom: 1rem;
-}
-
-.pending-approvals h4 {
-  margin: 0 0 0.75rem 0;
-  color: #f59e0b;
-  font-size: 0.9rem;
+.approval-card,
+.request-row {
+  min-width: 0;
+  padding: 2.5cqw 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .approval-card {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  padding: 0.75rem;
-  background: var(--surface-secondary, #2a2a4e);
-  border-radius: 8px;
-  margin-bottom: 0.5rem;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  gap: 3cqw;
 }
+
+.approval-card:last-child,
+.request-row:last-child {
+  border-bottom: 1px solid #000;
+}
+
 .approval-info {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  display: grid;
+  gap: 0.7cqw;
+  min-width: 0;
 }
 
 .approval-info .requester {
-  font-weight: 600;
+  overflow-wrap: anywhere;
+  color: #e4e7ec;
+  font-weight: 800;
 }
 
 .approval-info .amount {
-  color: #10b981;
-  font-weight: 600;
+  color: #c8ffd2;
+  font-weight: 800;
 }
 
 .approval-info .reason {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+  color: #9aa5b3;
+  font-size: clamp(0.68rem, 2.8cqw, 0.82rem);
 }
 
 .approval-actions {
   display: flex;
-  gap: 0.5rem;
-}
-
-.approve-btn,
-.deny-btn {
-  width: 36px;
-  height: 36px;
-  border: none;
-  border-radius: 50%;
-  font-size: 1rem;
-  cursor: pointer;
+  align-items: center;
+  gap: 1cqw;
 }
 
 .approve-btn {
-  background: #10b981;
-  color: white;
+  color: #c8ffd2;
 }
 
 .deny-btn {
-  background: #ef4444;
-  color: white;
-}
-
-/* Request History */
-.request-history h4 {
-  margin: 0 0 0.75rem 0;
-  font-size: 0.9rem;
-  color: var(--text-secondary);
+  color: #ff5b6e;
 }
 
 .request-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.5rem 0;
-  border-bottom: 1px solid var(--border-color, #333);
-}
-
-.request-row:last-child {
-  border-bottom: none;
+  gap: 2cqw;
 }
 
 .request-amount {
-  font-weight: 600;
-  min-width: 80px;
+  min-width: 0;
+  color: #e4e7ec;
+  font-weight: 800;
 }
 
-.request-date {
-  margin-left: auto;
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-}
-
-/* Status Badge */
+.request-date,
 .status-badge {
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  color: white;
+  color: #9aa5b3;
+  font-size: clamp(0.66rem, 2.6cqw, 0.78rem);
+}
+
+.status-badge {
+  color: #45adff;
+  font-weight: 800;
+}
+
+.request-btn:disabled,
+.request-form button:disabled,
+.approve-btn:disabled,
+.deny-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.request-btn:focus-visible,
+.request-form button:focus-visible,
+.approve-btn:focus-visible,
+.deny-btn:focus-visible,
+.credit-request-widget[role='alert'] button:focus-visible,
+.request-form input:focus-visible,
+.request-form textarea:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: 2px;
+}
+
+@media (max-width: 480px) {
+  .approval-card,
+  .request-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .approval-actions {
+    justify-content: flex-start;
+  }
+
+  .approve-btn,
+  .deny-btn {
+    flex: 1 1 0;
+  }
 }

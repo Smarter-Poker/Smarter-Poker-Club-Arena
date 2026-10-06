@@ -7,6 +7,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { readPresence } from '../lib/ownProfile';
 import { masterBus } from '../core/MasterBus';
 import { generateDefaultAvatar } from '../utils/avatarGenerator';
 import { reportError } from '../utils/errorReporter';
@@ -33,26 +34,11 @@ export interface PlayerStatus {
 class PlayerStatusServiceClass {
   private currentStatus: PlayerStatus | null = null;
 
-  /**
-   * Set the user's custom status text (e.g., "Taking a break 🌴")
-   */
-  async setStatusText(userId: string, text: string | null): Promise<void> {
-    const { error } = await supabase
-      .from('profiles')
-      .update({ status_text: text })
-      .eq('id', userId);
-
-    if (error) {
-      reportError(error, 'PlayerStatusService.setStatusText');
-      return;
-    }
-
-    this.currentStatus = this.currentStatus ? { ...this.currentStatus, statusText: text } : null;
-    masterBus.emit('PROFILE_UPDATED', {
-      userId,
-      updates: { status_text: text } as Record<string, unknown>,
-    });
-  }
+  /* setStatusText is GONE (2026-10-05). It UPDATEd profiles.status_text
+     directly, and `authenticated` holds neither UPDATE nor SELECT on that
+     column - every call was a 42501 - and nothing in the app called it. A
+     custom status needs a sanctioned writer and reader (definer RPCs) first;
+     until then there is no status to set or show. */
 
   /**
    * Update the user's "playing at" table status
@@ -84,24 +70,37 @@ class PlayerStatusServiceClass {
     const { data, error } = await supabase
       .from('profiles')
       /**
-       * This used to read `status_text:status` - aliasing the ACCOUNT STATUS
-       * column into the custom-status field, because profiles.status_text did
-       * not exist. A profile therefore rendered "active" under the player's
-       * name as if they had written it. The column exists now
-       * (20260828034000_profiles_status_text.sql), so read the real one.
+       * `id` only. This read used to name `status_text`, and `authenticated`
+       * holds no SELECT on that column, so the WHOLE read was refused (42501)
+       * and the profile page lost its online dot along with the status. There
+       * is no sanctioned read path for status_text yet (no granted column, no
+       * RPC), so the custom status stays null rather than failing the read it
+       * rides on. It once read `status_text:status` instead - the ACCOUNT
+       * state shown as if the player had written it; that is not coming back.
        */
-      .select('id, status_text, is_online')
+      .select('id')
       .eq('id', userId)
       .maybeSingle();
 
     if (error || !data) return null;
 
+    /* Online-now is the presence door's answer (the flag AND a heartbeat
+       under five minutes old), never the raw is_online flag, which stays true
+       long after somebody leaves. One definition for every surface:
+       tests/presence-has-one-definition.law.test.ts. */
+    let isOnline = false;
+    try {
+      isOnline = (await readPresence([data.id])).get(data.id) === true;
+    } catch (e) {
+      reportError(e, 'PlayerStatusService.getPlayerStatus.presence');
+    }
+
     return {
       userId: data.id,
-      statusText: data.status_text || null,
+      statusText: null,
       playingAt: null,
       playingAtTableId: null,
-      isOnline: data.is_online || false,
+      isOnline,
     };
   }
 
@@ -132,18 +131,25 @@ class PlayerStatusServiceClass {
 
     if (friendIds.size === 0) return [];
 
-    // Step 2: Batch-fetch profiles for all friend IDs
-    const { data: profiles, error } = await supabase
-      .from('profiles')
-      .select('id, status_text, is_online')
-      .in('id', Array.from(friendIds))
-      .eq('is_online', true);
+    // Step 2: who of them is online now, by the presence door - not a filter
+    // on the raw is_online flag, which stays true long after somebody leaves.
+    let presence: Map<string, boolean>;
+    try {
+      presence = await readPresence(Array.from(friendIds));
+    } catch (e) {
+      reportError(e, 'PlayerStatusService.getFriendsStatus.presence');
+      return [];
+    }
+    const onlineIds = Array.from(friendIds).filter((id) => presence.get(id) === true);
+    if (onlineIds.length === 0) return [];
 
-    if (error || !profiles) return [];
-
-    return profiles.map((p: any) => ({
-      userId: p.id,
-      statusText: p.status_text || null,
+    // No third read for "their public status lines": it selected
+    // profiles.status_text, which `authenticated` cannot read, so it refused
+    // and this returned nobody. There is no status to show until a sanctioned
+    // reader exists (see getPlayerStatus).
+    return onlineIds.map((id) => ({
+      userId: id,
+      statusText: null,
       playingAt: null,
       playingAtTableId: null,
       isOnline: true,

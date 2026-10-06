@@ -25,6 +25,7 @@ const pushMocks = vi.hoisted(() => ({
   hasLocalSubscription: vi.fn(),
   isIos: vi.fn(),
   isIosStandalonePwa: vi.fn(),
+  isOptedOut: vi.fn(),
   isWebPushSupported: vi.fn(),
   notificationPermission: vi.fn(),
 }));
@@ -72,6 +73,10 @@ describe('first-run sheets: one at a time', () => {
     pushMocks.isIosStandalonePwa.mockReset().mockReturnValue(false);
     pushMocks.isWebPushSupported.mockReset().mockReturnValue(true);
     pushMocks.notificationPermission.mockReset().mockReturnValue('default');
+    pushMocks.isOptedOut.mockReset().mockReturnValue(false);
+    // happy-dom reports navigator.webdriver = true, an automated browser, which
+    // the push prompt never asks. These tests model a person's browser.
+    Object.defineProperty(window.navigator, 'webdriver', { configurable: true, get: () => false });
   });
   afterEach(() => {
     vi.useRealTimers();

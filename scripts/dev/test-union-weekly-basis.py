@@ -148,6 +148,10 @@ try:
  # pristine, so every regression below - including the real raked weekly close -
  # runs with the constraint armed.
  run(next((root/'supabase/migrations').glob('20260921022924*.sql')).read_text(),'rakeback-payout-document-source')
+ # The owner-authorized legacy discharge of a deferred week, installed while the
+ # document guard it extends is still the exact installed preimage, so every
+ # regression below runs with the extended guard armed.
+ run(next((root/'supabase/migrations').glob('20260926140858*.sql')).read_text(),'owner-legacy-discharge-source')
  # Export the exact installed candidate before any disposable test calendar or
  # fault injection. These are installation/readback contracts, not live proof.
  migration=next((root/'supabase/migrations').glob('20260917234315*.sql')).read_text()
@@ -161,6 +165,11 @@ try:
  subprocess.run([str(pg/'pg_dump'),'-U','postgres','-h',str(socket),'-p',port,'-d','postgres','--schema-only','-f',str(base/'candidate-schema.sql')],check=True,capture_output=True)
  (base/'tested-source-binding.json').write_text(json.dumps(binding,indent=2)+'\n')
  print('PASS candidate-catalog-export',flush=True)
+ if '--split-recompute-only' in sys.argv:
+  spec=importlib.util.spec_from_file_location('split_recompute_qualification',root/'tests/fixtures/weekly-recompute-split/qualify.py')
+  module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+  module.run_qualification(root,pg,base,socket,port,run)
+  sys.exit(0)
  def qualify_moves():
   result=subprocess.run(['python3',str(root/'scripts/dev/qualify-cash-move-funding.py'),str(pg/'psql'),str(socket),port,str(base)],capture_output=True,text=True)
   (base/'cash-move-qualification.log').write_text(result.stdout+result.stderr)
@@ -213,6 +222,9 @@ try:
  # Then the page path's own proof: oracle, randomized property, calculator
  # equivalence, before/after, the untouched whole period and the two guards.
  run((root/'tests/fixtures/union-weekly-basis/page-evidence-regression.sql').read_text(),'page-evidence-regression')
+ # Last: a deferred week below the floors is discharged once through the
+ # weekly stages' leg shapes and document authority, and replays nothing.
+ run((root/'tests/fixtures/owner-legacy-discharge/regression.sql').read_text(),'owner-legacy-discharge-regression')
 finally:
  if started:subprocess.run([str(pg/'pg_ctl'),'-D',str(base/'data'),'-m','immediate','-w','stop'],check=True,capture_output=True,env=dict(os.environ,LC_ALL='C',LANG='C'))
  print('Evidence retained: '+str(base),flush=True)

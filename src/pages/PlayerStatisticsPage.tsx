@@ -31,6 +31,7 @@ import { useToast } from '../components/common/Toast';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
+import { compactChips } from '../utils/format';
 import { enumToTitleCase } from '../utils/titleCase';
 import { isUUID } from '../utils/clubIdResolver';
 import { ClubNotFoundError, resolveClubUUIDStrict } from '../utils/strictClubIdResolver';
@@ -77,13 +78,6 @@ function pct(value: number): string {
 
 function count(value: number): string {
   return (value ?? 0).toLocaleString();
-}
-
-function money(value: number): string {
-  return (value ?? 0).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
 }
 
 /** 'no_limit_holdem' is not a label. 'All Variants' is the null variant. */
@@ -273,7 +267,7 @@ export default function PlayerStatisticsPage() {
               <HeroReadout label="Win Rate" value={pct(stats.win_rate)} />
               <HeroReadout
                 label="Net"
-                value={money(stats.net)}
+                value={compactChips(stats.net)}
                 tone={stats.net > 0 ? 'up' : stats.net < 0 ? 'down' : undefined}
               />
             </dl>
@@ -352,13 +346,29 @@ export default function PlayerStatisticsPage() {
         </p>
       </section>
 
+      {loadFailed && stats && (
+        <div className="ps-stale" role="alert">
+          <div>
+            <span className="ps-empty__status">Statistics Connection Interrupted</span>
+            <p className="ps-stale__body">
+              Could Not Refresh Statistics. The Figures Below Are From The Previous Successful Read.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="ps-range__pill"
+            onClick={() => setReloadKey((n) => n + 1)}
+          >
+            Try Again
+          </button>
+        </div>
+      )}
+
       {loading && !stats ? (
         <PageSkeleton variant="stats" />
       ) : loadFailed && !stats ? (
         <div className="ps-empty" role="alert">
-          <span className="ps-empty__mark" aria-hidden="true">
-            !
-          </span>
+          <span className="ps-empty__status">Statistics Connection Interrupted</span>
           <p className="ps-empty__heading">Could Not Load Statistics</p>
           <p className="ps-empty__body">
             This Player's Statistics Are Still There. We Just Could Not Reach Them Right Now.
@@ -425,8 +435,8 @@ export default function PlayerStatisticsPage() {
 
           <section className="ps-card">
             <h2 className="ps-card__title">Club Result</h2>
-            <StatRow label="Net" value={money(stats.net)} signed={stats.net} />
-            <StatRow label="Fees" value={money(stats.fees)} />
+            <StatRow label="Net" value={compactChips(stats.net)} signed={stats.net} />
+            <StatRow label="Fees" value={compactChips(stats.fees)} />
           </section>
         </div>
       )}

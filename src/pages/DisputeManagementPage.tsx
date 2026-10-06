@@ -4,8 +4,9 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Full dispute lifecycle management:
- * - View all disputes for the club with status filters
- * - Start review, resolve, escalate, or withdraw disputes
+ * - View club casework or the signed-in player's own disputes with status filters
+ * - Club staff can start review, resolve, and escalate club disputes
+ * - Players can withdraw their own open or under-review disputes
  * - Open count badge for unresolved disputes
  * - Real-time updates via Supabase subscription
  *
@@ -33,6 +34,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import ClubIntegrityHeader from '../components/club/ClubIntegrityHeader';
 import {
   DisputeService,
+  parseDisputeAdjustmentAmount,
   type Dispute,
   type DisputeStatus,
   type DisputeResolution,
@@ -41,6 +43,7 @@ import './DisputeManagementPage.css';
 import { SpadeConsole } from '../components/console/SpadeConsole';
 import { titleCase } from '../utils/titleCase';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { compactChips } from '../utils/format';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
@@ -48,26 +51,53 @@ import { reportError } from '../utils/errorReporter';
 type FilterTab = 'all' | 'open' | 'under_review' | 'resolved' | 'escalated';
 const FILTER_TABS: FilterTab[] = ['all', 'open', 'under_review', 'resolved', 'escalated'];
 
+interface DisputeSnapshot {
+  scope: string;
+  disputes: Dispute[];
+}
+
+interface DisputeRequestState {
+  scope: string;
+  loading: boolean;
+  loadError: boolean;
+}
+
 export default function DisputeManagementPage() {
   const { clubId } = useParams();
   const { user } = useAuthUser();
   const toast = useToast();
 
-  const [disputes, setDisputes] = useState<Dispute[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(false);
+  const scopeKey = clubId
+    ? `account:${user?.id ?? 'signed-out'}:club:${clubId}`
+    : `account:${user?.id ?? 'signed-out'}:personal`;
+  const [snapshot, setSnapshot] = useState<DisputeSnapshot | null>(null);
+  const [requestState, setRequestState] = useState<DisputeRequestState>({
+    scope: scopeKey,
+    loading: true,
+    loadError: false,
+  });
   const [activeTab, setActiveTab] = useState<FilterTab>('all');
   const [resolving, setResolving] = useState<string | null>(null);
   const [reviewing, setReviewing] = useState<string | null>(null);
   const [escalating, setEscalating] = useState<string | null>(null);
+  const [withdrawing, setWithdrawing] = useState<string | null>(null);
   const [resolutionText, setResolutionText] = useState('');
   const [adjustmentAmount, setAdjustmentAmount] = useState('');
   const [adjustmentType, setAdjustmentType] = useState<'credit' | 'debit' | 'none'>('none');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const isMounted = useIsMounted();
+  const requestVersionRef = useRef(0);
+  const inFlightRef = useRef<{ scope: string; requestId: number } | null>(null);
+  const activeScopeRef = useRef(scopeKey);
+  activeScopeRef.current = scopeKey;
 
-  const loadingRef = useRef(false);
+  const disputes = snapshot?.scope === scopeKey ? snapshot.disputes : [];
+  const stateForScope: DisputeRequestState =
+    requestState.scope === scopeKey
+      ? requestState
+      : { scope: scopeKey, loading: true, loadError: false };
+  const { loading, loadError } = stateForScope;
 
   // ── CRITICAL: Reset per-club state when navigating between clubs ──
   useEffect(() => {
@@ -75,42 +105,59 @@ export default function DisputeManagementPage() {
     setResolving(null);
     setReviewing(null);
     setEscalating(null);
+    setWithdrawing(null);
     setResolutionText('');
     setAdjustmentAmount('');
     setAdjustmentType('none');
     setExpandedId(null);
     setSearchQuery('');
-    loadingRef.current = false;
-    setLoadError(false);
-  }, [clubId]);
+    setRequestState({ scope: scopeKey, loading: true, loadError: false });
+  }, [scopeKey]);
 
   const loadDisputes = useCallback(async () => {
-    if (loadingRef.current) return;
-    loadingRef.current = true;
-    setLoading(true);
-    setLoadError(false);
+    if (!clubId && !user?.id) {
+      setSnapshot(null);
+      setRequestState({ scope: scopeKey, loading: false, loadError: false });
+      return;
+    }
+    const requestScope = scopeKey;
+    if (inFlightRef.current?.scope === requestScope) return;
+    const requestId = ++requestVersionRef.current;
+    inFlightRef.current = { scope: requestScope, requestId };
+    const isCurrent = () =>
+      isMounted.current &&
+      activeScopeRef.current === requestScope &&
+      requestVersionRef.current === requestId;
+
+    setRequestState({ scope: requestScope, loading: true, loadError: false });
     try {
       if (clubId) {
         // Club-scoped: load disputes for this club
         const data = await DisputeService.getClubDisputes(clubId);
-        if (isMounted.current) setDisputes(data);
+        if (isCurrent()) setSnapshot({ scope: requestScope, disputes: data });
       } else if (user?.id) {
         // Global route (/disputes): load user's own disputes
         const data = await DisputeService.getMyDisputes(user.id);
-        if (isMounted.current) setDisputes(data);
+        if (isCurrent()) setSnapshot({ scope: requestScope, disputes: data });
       }
     } catch (err) {
       reportError(err, 'DisputeManagementPage.Load_failed');
-      if (isMounted.current) {
-        setDisputes([]);
-        setLoadError(true);
+      if (isCurrent()) {
+        setSnapshot({ scope: requestScope, disputes: [] });
+        setRequestState((current) =>
+          current.scope === requestScope ? { ...current, loadError: true } : current
+        );
         toast.error('Failed to load disputes');
       }
     } finally {
-      loadingRef.current = false;
-      if (isMounted.current) setLoading(false);
+      if (inFlightRef.current?.requestId === requestId) inFlightRef.current = null;
+      if (isCurrent()) {
+        setRequestState((current) =>
+          current.scope === requestScope ? { ...current, loading: false } : current
+        );
+      }
     }
-  }, [clubId, isMounted, toast, user?.id]);
+  }, [clubId, isMounted, scopeKey, toast, user?.id]);
 
   useVisibilityRefresh(() => loadDisputes());
 
@@ -163,57 +210,91 @@ export default function DisputeManagementPage() {
   }, [loadDisputes]);
 
   const handleStartReview = async (disputeId: string) => {
-    if (!user?.id || reviewing) return;
+    if (!clubId || !user?.id || reviewing) return;
+    const actionScope = scopeKey;
+    const isCurrent = () => isMounted.current && activeScopeRef.current === actionScope;
     setReviewing(disputeId);
     try {
       await DisputeService.startReview(disputeId, user.id);
+      if (!isCurrent()) return;
       toast.success('Dispute now under review');
-      loadDisputes();
+      void loadDisputes();
     } catch (err) {
       reportError(err, 'DisputeManagementPage.Start_review_failed');
-      toast.error('Failed to start review');
+      if (isCurrent()) toast.error('Failed to start review');
     }
-    setReviewing(null);
+    if (isCurrent()) setReviewing(null);
   };
 
   const handleResolve = async (disputeId: string) => {
+    if (!clubId) return;
     if (!resolutionText.trim()) {
       toast.error('Please enter a resolution');
       return;
     }
+    const parsedAdjustment =
+      adjustmentType === 'none' ? undefined : parseDisputeAdjustmentAmount(adjustmentAmount);
+    if (parsedAdjustment === null) {
+      toast.error('Enter A Positive Adjustment In Whole Chip Cents');
+      return;
+    }
+    const actionScope = scopeKey;
+    const isCurrent = () => isMounted.current && activeScopeRef.current === actionScope;
     setResolving(disputeId);
     try {
       const resolution: DisputeResolution = {
         resolution: resolutionText.trim(),
         adjustmentType,
-        adjustmentAmount: adjustmentType !== 'none' ? parseFloat(adjustmentAmount) || 0 : undefined,
+        adjustmentAmount: parsedAdjustment,
       };
       await DisputeService.resolveDispute(disputeId, user?.id || '', resolution);
+      if (!isCurrent()) return;
       toast.success('Dispute resolved');
       setResolutionText('');
       setAdjustmentAmount('');
       setAdjustmentType('none');
       setExpandedId(null);
-      loadDisputes();
+      void loadDisputes();
     } catch (err) {
       reportError(err, 'DisputeManagementPage.Resolve_failed');
-      toast.error('Failed to resolve dispute');
+      if (isCurrent()) toast.error('Failed to resolve dispute');
     }
-    setResolving(null);
+    if (isCurrent()) setResolving(null);
   };
 
   const handleEscalate = async (disputeId: string) => {
-    if (escalating) return;
+    if (!clubId || escalating) return;
+    const actionScope = scopeKey;
+    const isCurrent = () => isMounted.current && activeScopeRef.current === actionScope;
     setEscalating(disputeId);
     try {
       await DisputeService.escalateDispute(disputeId, 'Escalated by admin for further review');
+      if (!isCurrent()) return;
       toast.success('Dispute escalated');
-      loadDisputes();
+      void loadDisputes();
     } catch (err) {
       reportError(err, 'DisputeManagementPage.Escalate_failed');
-      toast.error('Failed to escalate');
+      if (isCurrent()) toast.error('Failed to escalate');
     }
-    setEscalating(null);
+    if (isCurrent()) setEscalating(null);
+  };
+
+  const handleWithdraw = async (disputeId: string) => {
+    if (!user?.id || clubId || withdrawing) return;
+    const actionScope = scopeKey;
+    const isCurrent = () => isMounted.current && activeScopeRef.current === actionScope;
+    setWithdrawing(disputeId);
+    try {
+      await DisputeService.withdrawDispute(disputeId, user.id);
+      if (!isCurrent()) return;
+      toast.success('Dispute withdrawn');
+      setExpandedId(null);
+      void loadDisputes();
+    } catch (err) {
+      reportError(err, 'DisputeManagementPage.Withdraw_failed');
+      if (isCurrent()) toast.error('Failed to withdraw dispute');
+    }
+    if (isCurrent()) setWithdrawing(null);
   };
 
   const filtered = (
@@ -307,6 +388,7 @@ export default function DisputeManagementPage() {
       <div className="dispute-management-page">
         <SpadeConsole
           className="dmp__console"
+          family="spade"
           eyebrow="Live Case Docket"
           title={clubId ? 'Club Disputes' : 'Account Disputes'}
           titleId="dispute-docket-title"
@@ -408,10 +490,8 @@ export default function DisputeManagementPage() {
                     >
                       <span className="dmp__case-meta">
                         {getStatusBadge(dispute.status)}
-                        {/* The disputed sum is a term of the case a staff member
-                            rules on to the chip: exact, never compacted. */}
                         <span className="dmp__amount sc-ink--silver">
-                          {dispute.amount.toLocaleString()} Chips
+                          {compactChips(dispute.amount)} Chips
                         </span>
                       </span>
                       <span className="dmp__case-target">
@@ -458,22 +538,20 @@ export default function DisputeManagementPage() {
 
                     {/* Expanded Actions */}
                     {expandedId === dispute.id &&
-                      dispute.status !== 'resolved' &&
-                      dispute.status !== 'withdrawn' && (
+                      (dispute.status === 'open' || dispute.status === 'under_review') && (
                         <div className="dmp__actions" id={`dispute-case-${dispute.id}`}>
-                          {dispute.status === 'open' && (
-                            <button
-                              type="button"
-                              className="dmp-word sc-ink--white"
-                              onClick={() => handleStartReview(dispute.id)}
-                              disabled={reviewing === dispute.id}
-                            >
-                              {reviewing === dispute.id ? 'Reviewing...' : 'Start Review'}
-                            </button>
-                          )}
-
-                          {(dispute.status === 'open' || dispute.status === 'under_review') && (
+                          {clubId ? (
                             <div className="dmp__form">
+                              {dispute.status === 'open' && (
+                                <button
+                                  type="button"
+                                  className="dmp-word sc-ink--white"
+                                  onClick={() => handleStartReview(dispute.id)}
+                                  disabled={reviewing === dispute.id}
+                                >
+                                  {reviewing === dispute.id ? 'Reviewing...' : 'Start Review'}
+                                </button>
+                              )}
                               <textarea
                                 className="dmp__field dmp__field--area"
                                 aria-label="Resolution Notes"
@@ -498,6 +576,9 @@ export default function DisputeManagementPage() {
                                     className="dmp__field"
                                     aria-label="Balance Adjustment Amount"
                                     type="number"
+                                    inputMode="decimal"
+                                    min="0.01"
+                                    step="0.01"
                                     placeholder="Amount"
                                     value={adjustmentAmount}
                                     onChange={(e) => setAdjustmentAmount(e.target.value)}
@@ -523,6 +604,15 @@ export default function DisputeManagementPage() {
                                 </button>
                               </div>
                             </div>
+                          ) : (
+                            <button
+                              type="button"
+                              className="dmp-word sc-ink--red"
+                              onClick={() => handleWithdraw(dispute.id)}
+                              disabled={withdrawing === dispute.id}
+                            >
+                              {withdrawing === dispute.id ? 'Withdrawing...' : 'Withdraw Dispute'}
+                            </button>
                           )}
                         </div>
                       )}

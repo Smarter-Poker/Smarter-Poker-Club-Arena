@@ -20,7 +20,7 @@
  * compliance as a violation. See paintedDecls below.
  */
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
-import { join, dirname, basename } from 'node:path';
+import { join, dirname, basename, resolve } from 'node:path';
 
 const ROOT = process.cwd();
 const SRC = join(ROOT, 'src');
@@ -50,6 +50,91 @@ const paintedDecls = (style, prop, isZero) =>
   [...style.matchAll(new RegExp(`${prop}\\s*:\\s*([^;}]*)`, 'g'))].filter(
     (m) => !isZero(m[1].trim().replace(/\s*!important$/, '').trim())
   ).length;
+
+/**
+ * A COMMENT IS NOT A DECLARATION (2026-10-02).
+ *
+ * This is the 2026-09-22 lesson one level up (CLAUDE.md 10.86 rule 4: "a fix
+ * that leaves the same trap one level up has not landed"). That fix taught the
+ * scorer to read a declaration's VALUE before judging it. It never taught the
+ * scorer to check that it was looking at a declaration at all.
+ *
+ * `tests/no-hover-effects.law.test.ts` has blanked comment bodies out since the
+ * day a sweep matched a `:hover` inside one and cut a stylesheet in half. This
+ * scanner did not, and `:hover` is the heaviest term it has - weighted five
+ * times, because the real thing is forbidden outright.
+ *
+ * Measured across src/ on 2026-10-02: ZERO real `:hover` rules, and 109
+ * stylesheets containing the word inside a comment. The law has done its job so
+ * completely that every `:hover` this counter could ever find was prose - most
+ * of it a comment promising the file has none. `SpinActivationPanel.css` is the
+ * one that surfaced, because its other counters were clean enough for a single
+ * phantom to carry it to the top of the list at score 10; its line 19 reads
+ * "the panel is the same picture in all three hosts. No :hover."
+ *
+ * Blanked rather than deleted, keeping length and newlines, so any offset into
+ * the text still points where it did.
+ */
+const decomment = (css) => css.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
+
+/** The comma-separated layers of one shadow value, ignoring commas inside
+ *  `rgb()`, `var()` and friends. */
+const shadowLayers = (value) => {
+  const out = [];
+  let depth = 0;
+  let cur = '';
+  for (const ch of value) {
+    if (ch === '(') depth++;
+    else if (ch === ')') depth--;
+    if (ch === ',' && depth === 0) {
+      out.push(cur);
+      cur = '';
+    } else cur += ch;
+  }
+  out.push(cur);
+  return out.map((l) => l.trim()).filter(Boolean);
+};
+
+/**
+ * AN ENGRAVED RULE IS NOT A FRAME (2026-10-02).
+ *
+ * SKILL.md section 5 step 5 names the standard's own divider, in full:
+ *
+ *     border-top: 1px solid #000 + box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%)
+ *
+ * A black line with a hairline of light under it, "instead of a drawn divider".
+ * It is how every surface on this standard separates two rows on the glass, and
+ * the scorer counted every one of them as "paint the art does not need" - so,
+ * exactly as with `border-radius: 0` in September, the more correctly a surface
+ * followed the standard the more generic this said it was. Measured tree-wide:
+ * 488 of the 1,985 box-shadow declarations in src/ are this hairline.
+ *
+ * `SpinActivationPanel.css` is the worked example. It owns no frame at all - it
+ * prints rows on whatever glass its three hosts give it - and all five of its
+ * shadows are the engraved rule. That was its entire `grad` score.
+ *
+ * The test is geometric, not a name match: a shadow is a RULE when every layer
+ * has no blur, no spread, and an offset of at most 2px. Anything with a blur
+ * radius is a glow or a cast; anything with a spread is a drawn ring (a
+ * `0 0 0 1px` border by another route) and still counts as paint.
+ */
+const isHairlineRule = (value) => {
+  const layers = shadowLayers(value);
+  if (!layers.length) return false;
+  return layers.every((layer) => {
+    const lengths = layer
+      .replace(/\binset\b/g, ' ')
+      .replace(/(?:rgba?|hsla?|var|color-mix|light-dark)\([^)]*\)/g, ' ')
+      .match(/-?\d*\.?\d+(?:px|r?em|%)?/g);
+    if (!lengths || lengths.length < 2 || lengths.length > 3) return false;
+    if (!lengths.slice(0, 2).every((n) => Math.abs(parseFloat(n)) <= 2)) return false;
+    return lengths.length < 3 || parseFloat(lengths[2]) === 0;
+  });
+};
+
+/** `none` refuses a shadow (3.5); a hairline rule IS the standard's divider.
+ *  Neither is chrome. Everything else is. */
+const isNotPaintedShadow = (v) => v === 'none' || isHairlineRule(v);
 
 function walk(dir, out = []) {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -131,6 +216,8 @@ const RULED = {
     'One of three interchangeable 66px HUD tiles on an approved button asset; all-in-cannot-leave-and-the-hud-slot pins their geometry as a set.',
   'src/components/bbj/BBJBasicPanel.tsx':
     'Already on this standard: it renders as rows on the Bad Beat Jackpot console glass, so it has no frame of its own to rebuild.',
+  'src/components/table/TournamentLobbyModal.tsx':
+    'DAN RULED THE CONSOLE OFF THIS SURFACE (2026-10-04), with screenshots of it on the spade console: "remove all these large frames, and make it like a normal, industry standard tournament lobby card ... it should be full screen pop up ... this whole display REALLY SUCKS and is trash, it needs a 100% redesign". Measured at 375x667 the console head, Close row and foot around the framed lobby page left the tab panel 52px tall, which is what he reported as "zero functionality on mobile". It is a full-screen dialog holding the lobby page and draws nothing itself; the radius and gradient this row scores are the 3/4 sheet rules MustMoveLobbyModal borrows from the same stylesheet. Pinned by tests/unit/tournamentLobbyPopupIsFullScreen.test.tsx. Do not put it back on a master without a later ruling from Dan.',
   'src/components/common/Card.tsx':
     'NOT A SURFACE: nothing renders it. All six exports (Card, CardHeader, CardContent, CardFooter, StatCard, FeatureCard) have zero JSX sites in src/; the only importer is the barrel components/common/index.ts, whose only importer is main.tsx taking ErrorBoundary alone. A player never meets it, so painting a chassis on it would change nothing on screen. Retiring it is the real answer and is NOT free: Card.css is a GLOBAL sheet and its .stat-card flex-direction, its .card-header gap and padding still cascade into five live surfaces that never redeclare them (BankrollTracker, stats/StatCard, SuperAgentDashboard, PositionWinRates, admin/EngineDashboard), so the file leaves only once those declarations are re-homed and those five are re-rendered. Premise pinned by tests/unit/consoleInventoryIsHonest.test.ts.',
 };
@@ -174,6 +261,8 @@ const readRetained = () => {
 const retained = readRetained();
 
 const spokenFor = new Set();
+/** Stylesheets a visual contract pins, for the surfaces that wear them. */
+const spokenForCss = new Set();
 try {
   for (const t of walk(join(ROOT, 'tests'))) {
     if (!/\.tsx?$/.test(t)) continue;
@@ -190,6 +279,11 @@ try {
     for (const m of text.matchAll(
       /src\/(?:pages|components)\/[A-Za-z0-9/_-]+(?:\.(?:tsx|module\.css|css))?/g
     )) {
+      /* Keep the SHEET as well as the surface. A visual contract names a
+         stylesheet because the stylesheet is the artwork's wiring, and a
+         second surface can wear that same sheet whole - see wearsPinned
+         below. */
+      if (/\.(?:module\.)?css$/.test(m[0])) spokenForCss.add(m[0]);
       const hit = m[0].replace(/\.(?:module\.css|css)$/, '.tsx');
       spokenFor.add(hit.endsWith('.tsx') ? hit : `${hit}.tsx`);
     }
@@ -218,7 +312,7 @@ for (const tsx of files) {
     existsSync
   );
   const src = sources.get(tsx);
-  const style = css ? readFileSync(css, 'utf8') : '';
+  const style = decomment(css ? readFileSync(css, 'utf8') : '');
   const both = src + style;
   /* IS IT ALIVE? A stale clone keeps components main has deleted, and a
      redesign of one is a round spent on nothing. Anything with no importer is
@@ -240,7 +334,7 @@ for (const tsx of files) {
     radius: paintedDecls(style, 'border-radius', (v) => /^0[a-z%]*$/.test(v)),
     grad:
       count(style, /linear-gradient|radial-gradient/g) +
-      paintedDecls(style, 'box-shadow', (v) => v === 'none'),
+      paintedDecls(style, 'box-shadow', isNotPaintedShadow),
     /* ANY approved master counts, not just the console's. Club Arena carries
        three visual authorities: the spade console (club-buttons/), the
        cinematic route families of #SmarterCasinoRealism (images/challenges/,
@@ -251,18 +345,51 @@ for (const tsx of files) {
        and 200 despite being finished work. */
     master: count(
       both,
-      /club-buttons\/|images\/challenges\/|images\/stats\/|--realism-|data-arena-surface|RewardsSurfaceHeader|CasinoSurfaceHeader/g
+      /club-buttons\/|images\/challenges\/|images\/stats\/|--realism-|data-arena-surface|RewardsSurfaceHeader|CasinoSurfaceHeader|game-cards\/|ArenaGameCard/g
     ),
     console: count(src, /SpadeConsole|PlateButton|ZoneText|sc-ink--/g),
     hover: count(style, /:hover/g),
     px: count(style, /font-size:\s*\d+(\.\d+)?px/g),
   };
+  /**
+   * A SURFACE WEARS THE SHEET IT IMPORTS (2026-10-02).
+   *
+   * `css` above is found by FILENAME - the sheet sitting next to the component.
+   * That is usually the whole story and here it was not. `DiamondPlayersPage`
+   * imports `ClubMembersPage.css` first and its own 27-line file second; its
+   * header says so in the first sentence ("wears the chip roster's stylesheet
+   * whole, so the arena looks like the Club Arena it clones"). The roster sheet
+   * is pinned by the Players Casino Realism asset and interaction contract in
+   * tests/components/players-casino-realism-pages.test.tsx, which is a
+   * different approved authority and therefore finished work (SKILL.md step
+   * 1.5). The scanner saw none of that: it read 27 lines, found one
+   * `inset 0 -2px 0 var(--members-blue)` underline - the fourth of a set whose
+   * other three live in the pinned sheet - and nominated the page.
+   *
+   * So ask what the surface actually imports. The contract pins the artwork's
+   * wiring; a surface wearing that wiring is wearing the artwork.
+   *
+   * The blast radius is two surfaces and was measured before this shipped:
+   * DiamondPlayersPage (ClubMembersPage.css) and DiamondFlowPanel
+   * (PlayerWalletPage.css). Every other importer of a pinned sheet was already
+   * spoken for under its own name. The sheets a visual test names are
+   * page-specific, never a global, so this cannot quietly absolve the tree.
+   */
+  const wearsPinned = [...src.matchAll(/import\s+['"](\.[^'"]+\.css)['"]/g)]
+    .map((m) => resolve(dirname(tsx), m[1]).slice(ROOT.length + 1))
+    .filter((sheet) => spokenForCss.has(sheet));
+  if (wearsPinned.length) row.wearsPinned = wearsPinned;
   row.internalOnly = isInternal(rel);
   row.ruled = Object.prototype.hasOwnProperty.call(RULED, rel);
   if (row.ruled) row.ruling = RULED[rel];
   row.unreachable = retained ? retained.has(rel) : false;
   if (row.unreachable) row.retainedFor = retained.get(rel);
-  row.spokenFor = spokenFor.has(rel) || row.internalOnly || row.ruled || row.unreachable;
+  row.spokenFor =
+    spokenFor.has(rel) ||
+    wearsPinned.length > 0 ||
+    row.internalOnly ||
+    row.ruled ||
+    row.unreachable;
   row.score =
     row.master + row.console > 0 || row.spokenFor ? 0 : row.radius * 2 + row.grad + row.hover * 5;
   rows.push(row);

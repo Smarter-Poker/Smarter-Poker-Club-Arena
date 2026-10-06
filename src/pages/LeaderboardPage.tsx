@@ -38,6 +38,8 @@ import { LeaderboardPrizeWizard } from '../components/leaderboard/LeaderboardPri
 import { LeaderboardSettlementCard } from '../components/leaderboard/LeaderboardSettlementCard';
 import { SpadeConsole } from '../components/console/SpadeConsole';
 import { compactChips } from '../utils/format';
+import { enumToTitleCase } from '../utils/titleCase';
+import { leaderboardDisplayName } from '../utils/leaderboardDisplayName';
 import './LeaderboardPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { retryFetch } from '../utils/retryFetch';
@@ -49,22 +51,16 @@ import {
 } from '../utils/leaderboardPrizePlans';
 import { CLUB_CONTEXT_PARAM, findClubByParam, readClubContextParam } from '../utils/clubScopedPath';
 import { describeProgramChanges } from '../utils/leaderboardProgramHistory';
+import {
+  getCachedLeaderboardEntries,
+  leaderboardCacheKey,
+  setCachedLeaderboardEntries,
+} from '../utils/leaderboardCache';
 
 /* Owner program history: the newest versions are shown, and one extra is read
    so the oldest shown version can still say what it changed. */
 const PROGRAM_HISTORY_COLLAPSED = 3;
 const PROGRAM_HISTORY_VISIBLE = 6;
-
-// ── SWR Cache helpers ──
-const LB_CACHE_KEY = 'lb_cache_v2_';
-const LB_CACHE_TTL_MS = 5 * 60 * 1000;
-const LB_CACHE_MAX_RECORDS = 20;
-
-interface LeaderboardCacheRecord {
-  version: 2;
-  storedAt: number;
-  entries: LeaderboardEntry[];
-}
 
 // Program history is stated in the calendar the rules run on (UTC), so the
 // published moment reads the same for every member wherever they sit.
@@ -79,64 +75,6 @@ function formatUtcTimestamp(value: string): string {
     minute: '2-digit',
     timeZone: 'UTC',
   }).format(parsed)} UTC`;
-}
-
-function isLeaderboardEntry(value: unknown): value is LeaderboardEntry {
-  if (!value || typeof value !== 'object') return false;
-  const entry = value as Partial<LeaderboardEntry>;
-  return (
-    Number.isFinite(entry.rank) &&
-    typeof entry.userId === 'string' &&
-    typeof entry.username === 'string' &&
-    Number.isFinite(entry.value)
-  );
-}
-
-function getCachedEntries(key: string): LeaderboardCacheRecord | null {
-  const storageKey = LB_CACHE_KEY + key;
-  try {
-    const raw = sessionStorage.getItem(storageKey);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<LeaderboardCacheRecord>;
-    if (
-      parsed.version !== 2 ||
-      !Number.isFinite(parsed.storedAt) ||
-      Date.now() - (parsed.storedAt as number) > LB_CACHE_TTL_MS ||
-      !Array.isArray(parsed.entries) ||
-      !parsed.entries.every(isLeaderboardEntry)
-    ) {
-      sessionStorage.removeItem(storageKey);
-      return null;
-    }
-    return parsed as LeaderboardCacheRecord;
-  } catch {
-    sessionStorage.removeItem(storageKey);
-    return null;
-  }
-}
-function setCachedEntries(key: string, entries: LeaderboardEntry[]) {
-  try {
-    const record: LeaderboardCacheRecord = { version: 2, storedAt: Date.now(), entries };
-    sessionStorage.setItem(LB_CACHE_KEY + key, JSON.stringify(record));
-
-    const records: { key: string; storedAt: number }[] = [];
-    for (let index = 0; index < sessionStorage.length; index += 1) {
-      const storageKey = sessionStorage.key(index);
-      if (!storageKey?.startsWith(LB_CACHE_KEY)) continue;
-      try {
-        const cached = JSON.parse(sessionStorage.getItem(storageKey) || '{}');
-        records.push({ key: storageKey, storedAt: Number(cached.storedAt) || 0 });
-      } catch {
-        sessionStorage.removeItem(storageKey);
-      }
-    }
-    records
-      .sort((a, b) => b.storedAt - a.storedAt)
-      .slice(LB_CACHE_MAX_RECORDS)
-      .forEach((recordToRemove) => sessionStorage.removeItem(recordToRemove.key));
-  } catch {
-    /* quota */
-  }
 }
 
 const podiumAnimationStyle = {
@@ -255,9 +193,14 @@ export default function LeaderboardPage() {
   const [userRank, setUserRank] = useState<{ rank: number; total: number; value: number } | null>(
     null
   );
+  const [userRankError, setUserRankError] = useState(false);
+  const [userRankLoading, setUserRankLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isMountedRef = useRef(true);
+  const membershipRequestRef = useRef(0);
+  const userRankRequestRef = useRef(0);
+  const userRankLoadingRef = useRef(false);
 
   // Club selection
 
@@ -276,6 +219,7 @@ export default function LeaderboardPage() {
   const [programHistory, setProgramHistory] = useState<LeaderboardProgramHistoryEntry[] | null>(
     null
   );
+  const [programHistoryLoading, setProgramHistoryLoading] = useState(false);
   const [programHistoryError, setProgramHistoryError] = useState<string | null>(null);
   const [programHistoryReloadKey, setProgramHistoryReloadKey] = useState(0);
   const [showFullProgramHistory, setShowFullProgramHistory] = useState(false);
@@ -293,6 +237,7 @@ export default function LeaderboardPage() {
   const [userClubs, setUserClubs] = useState<UserClub[]>([]);
   const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
   const [clubsLoading, setClubsLoading] = useState(true);
+  const [clubsError, setClubsError] = useState(false);
 
   // Tournament stats (club-scoped)
   const [activeTab, setActiveTab] = useState<LeaderboardTab>('rankings');
@@ -322,7 +267,6 @@ export default function LeaderboardPage() {
     const timeout = setTimeout(() => {
       if (!isMountedRef.current) return;
       setLoading(false);
-      setClubsLoading(false);
     }, 5000);
     return () => {
       isMountedRef.current = false;
@@ -343,6 +287,7 @@ export default function LeaderboardPage() {
     setUserClubs([]);
     setSelectedClubId(null);
     setUserRank(null);
+    setUserRankError(false);
     setSettlementStatus(null);
     setSettlementError(null);
     setSettings(null);
@@ -350,6 +295,7 @@ export default function LeaderboardPage() {
       loadUserClubs(() => isMounted);
     } else if (user === null) {
       setClubsLoading(false);
+      setClubsError(false);
       setUserClubs([]);
       setSelectedClubId(null);
     }
@@ -454,8 +400,11 @@ export default function LeaderboardPage() {
         if (requestId !== settingsRequestRef.current) return;
         setSettings(data);
       })
-      .catch(() => {
+      .catch((error) => {
         if (requestId === settingsRequestRef.current) {
+          if (error instanceof Error && error.message === 'Prize Setup Returned No Data') {
+            reportError(error, 'LeaderboardPage.Reward_setup_invalid');
+          }
           setSettingsError('Prize Setup Could Not Be Loaded.');
         }
       })
@@ -571,9 +520,15 @@ export default function LeaderboardPage() {
   }, [selectedClubId, activeTab, scope]);
 
   const loadUserClubs = async (getIsMounted?: () => boolean) => {
+    const requestId = ++membershipRequestRef.current;
     setClubsLoading(true);
+    setClubsError(false);
     try {
+      // getUserMemberships owns bounded retry/backoff. Do not race it against a
+      // shorter UI timeout: that reported failure before its fourth retry and
+      // left the original read running after the user pressed Retry.
       const memberships = await getUserMemberships(user);
+      if (requestId !== membershipRequestRef.current) return;
       let rewardContexts: LeaderboardRewardContext[] = [];
       try {
         rewardContexts = await LeaderboardService.getManageableRewardContexts(true);
@@ -613,9 +568,10 @@ export default function LeaderboardPage() {
         });
       }
 
-      if (getIsMounted && !getIsMounted()) return;
+      if (requestId !== membershipRequestRef.current || (getIsMounted && !getIsMounted())) return;
       setUserClubs(clubs);
       setRewardContexts(rewardContexts);
+      setClubsError(false);
 
       /* ── THE REPORTED BUG LIVED IN THE LINE BELOW (Dan, 2026-09-02) ───────
          It used to read:
@@ -667,15 +623,18 @@ export default function LeaderboardPage() {
         return clubs[0]?.id || null;
       });
     } catch (error) {
-      reportError(error, 'LeaderboardPage.Failed_to_load_clubs');
-      if (!getIsMounted || getIsMounted()) {
+      if (requestId === membershipRequestRef.current && (!getIsMounted || getIsMounted())) {
+        reportError(error, 'LeaderboardPage.Failed_to_load_clubs');
         setUserClubs([]);
         setSelectedClubId(null);
+        setClubsError(true);
+        toast.error('Your Club List Could Not Be Loaded.');
       }
-      toast.error('Failed to load clubs');
+    } finally {
+      if (requestId === membershipRequestRef.current && (!getIsMounted || getIsMounted())) {
+        setClubsLoading(false);
+      }
     }
-    if (getIsMounted && !getIsMounted()) return;
-    setClubsLoading(false);
   };
 
   /**
@@ -719,9 +678,71 @@ export default function LeaderboardPage() {
   const reqSeqRef = useRef(0);
   const activeRankingRequestRef = useRef(0);
 
+  const readCurrentUserRank = async (
+    rankRequestId: number,
+    boardRequestId: number,
+    getIsMounted?: () => boolean
+  ) => {
+    if (!user?.id) return;
+    try {
+      const rank =
+        scope === 'global'
+          ? await LeaderboardService.getGlobalUserRank(user.id, metric, period, periodOffset)
+          : await LeaderboardService.getUserRank(
+              user.id,
+              selectedClubId as string,
+              metric,
+              period,
+              periodOffset
+            );
+      if (
+        rankRequestId !== userRankRequestRef.current ||
+        boardRequestId !== reqSeqRef.current ||
+        (getIsMounted && !getIsMounted())
+      ) {
+        return;
+      }
+      setUserRank(rank);
+      setUserRankError(false);
+    } catch (error) {
+      if (
+        rankRequestId === userRankRequestRef.current &&
+        boardRequestId === reqSeqRef.current &&
+        (!getIsMounted || getIsMounted())
+      ) {
+        reportError(error, 'LeaderboardPage.Personal_rank_failed');
+        setUserRankError(true);
+      }
+    } finally {
+      if (
+        rankRequestId === userRankRequestRef.current &&
+        boardRequestId === reqSeqRef.current &&
+        (!getIsMounted || getIsMounted())
+      ) {
+        userRankLoadingRef.current = false;
+        setUserRankLoading(false);
+      }
+    }
+  };
+
+  const retryUserRank = () => {
+    if (!user?.id || userRankLoadingRef.current || (!selectedClubId && scope !== 'global')) return;
+    const rankRequestId = ++userRankRequestRef.current;
+    const boardRequestId = reqSeqRef.current;
+    userRankLoadingRef.current = true;
+    setUserRankLoading(true);
+    void readCurrentUserRank(rankRequestId, boardRequestId, () => isMountedRef.current);
+  };
+
   const loadLeaderboard = async (silent = false, getIsMounted?: () => boolean) => {
     const isGlobal = scope === 'global';
     if (!isGlobal && !selectedClubId) {
+      ++reqSeqRef.current;
+      ++userRankRequestRef.current;
+      userRankLoadingRef.current = false;
+      setUserRankLoading(false);
+      setUserRank(null);
+      setUserRankError(false);
       setLoading(false);
       return;
     }
@@ -730,9 +751,19 @@ export default function LeaderboardPage() {
     // response that is no longer current is discarded rather than rendered.
     const myReq = ++reqSeqRef.current; // also invalidates any in-flight loadMore
     activeRankingRequestRef.current = myReq;
+    const rankRequestId = ++userRankRequestRef.current;
+    userRankLoadingRef.current = false;
+    setUserRankLoading(false);
 
     // SWR: show cached data instantly
-    const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}_${periodOffset}`;
+    const cacheKey = leaderboardCacheKey(
+      isGlobal
+        ? { kind: 'global' }
+        : { kind: 'club', clubId: selectedClubId as string, userId: user?.id || 'unknown' },
+      metric,
+      period,
+      periodOffset
+    );
     if (isGlobal) {
       setSettlementStatus(null);
       setRewardPlan(null);
@@ -748,7 +779,8 @@ export default function LeaderboardPage() {
         !isGlobal && Boolean(selectedClubId) && (period === 'weekly' || period === 'monthly')
       );
       setUserRank(null);
-      const cached = getCachedEntries(cacheKey);
+      setUserRankError(false);
+      const cached = getCachedLeaderboardEntries(cacheKey);
       if (cached && cached.entries.length > 0) {
         setEntries(cached.entries);
         setTotalRanked(cached.entries[0]?.totalRanked ?? null);
@@ -791,7 +823,7 @@ export default function LeaderboardPage() {
       setEntries(data);
       setTotalRanked(data[0]?.totalRanked ?? null);
       setBaselineDate(data[0]?.baselineDate ?? null);
-      setCachedEntries(cacheKey, data);
+      setCachedLeaderboardEntries(cacheKey, data);
       setLastUpdated(new Date());
       setLoadError(null);
 
@@ -839,21 +871,12 @@ export default function LeaderboardPage() {
               }
             });
 
+      if (user?.id) {
+        userRankLoadingRef.current = true;
+        setUserRankLoading(true);
+      }
       const rankPromise = user?.id
-        ? (isGlobal
-            ? LeaderboardService.getGlobalUserRank(user.id, metric, period, periodOffset)
-            : LeaderboardService.getUserRank(
-                user.id,
-                selectedClubId as string,
-                metric,
-                period,
-                periodOffset
-              )
-          ).then((rank) => {
-            if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted())) {
-              setUserRank(rank);
-            }
-          })
+        ? readCurrentUserRank(rankRequestId, myReq, getIsMounted)
         : Promise.resolve();
 
       await Promise.allSettled([periodMetadataPromise, rankPromise]);
@@ -866,6 +889,10 @@ export default function LeaderboardPage() {
     } finally {
       if (myReq === reqSeqRef.current) {
         activeRankingRequestRef.current = 0;
+        if (!user?.id) {
+          userRankLoadingRef.current = false;
+          setUserRankLoading(false);
+        }
         if (!getIsMounted || getIsMounted()) setLoading(false);
       }
     }
@@ -913,8 +940,15 @@ export default function LeaderboardPage() {
           if (prev.length !== offset) return prev;
           const seen = new Set(prev.map((e) => e.userId));
           const next = [...prev, ...more.filter((m) => !seen.has(m.userId))];
-          const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}_${periodOffset}`;
-          setCachedEntries(cacheKey, next);
+          const cacheKey = leaderboardCacheKey(
+            isGlobal
+              ? { kind: 'global' }
+              : { kind: 'club', clubId: selectedClubId as string, userId: user?.id || 'unknown' },
+            metric,
+            period,
+            periodOffset
+          );
+          setCachedLeaderboardEntries(cacheKey, next);
           return next;
         });
       }
@@ -992,8 +1026,10 @@ export default function LeaderboardPage() {
     setProgramHistoryError(null);
     if (!programHistoryClubId) {
       setProgramHistory(null);
+      setProgramHistoryLoading(false);
       return;
     }
+    setProgramHistoryLoading(true);
     // A different club's rows never stay on screen while this club loads.
     setProgramHistory((current) =>
       current && current[0]?.club_id === programHistoryClubId ? current : null
@@ -1002,10 +1038,16 @@ export default function LeaderboardPage() {
       .then((rows) => {
         if (requestId === programHistoryRequestRef.current) setProgramHistory(rows);
       })
-      .catch(() => {
+      .catch((error) => {
         if (requestId === programHistoryRequestRef.current) {
+          if (error instanceof Error && error.message === 'Program History Returned Invalid Data') {
+            reportError(error, 'LeaderboardPage.Program_history_invalid');
+          }
           setProgramHistoryError('Program History Could Not Be Loaded.');
         }
+      })
+      .finally(() => {
+        if (requestId === programHistoryRequestRef.current) setProgramHistoryLoading(false);
       });
     return () => {
       // A newer request (or unmount) retires this one's result.
@@ -1110,6 +1152,7 @@ export default function LeaderboardPage() {
   };
 
   const renderPodiumPlace = (entry: LeaderboardEntry) => {
+    const displayName = leaderboardDisplayName(entry.username);
     return (
       <div
         className={`podium-place ${entry.userId === user?.id ? 'current-user' : ''}`}
@@ -1117,12 +1160,12 @@ export default function LeaderboardPage() {
         onKeyDown={rowKeyActivate(entry.userId)}
         role="button"
         tabIndex={0}
-        aria-label={`${getRankLabel(entry.rank)}, ${entry.username}, ${formatValue(entry.value, metric)}`}
+        aria-label={`${getRankLabel(entry.rank)}, ${displayName}, ${formatValue(entry.value, metric)}`}
       >
         <span className="entry-rank">{getRankLabel(entry.rank)}</span>
         <PlayerAvatar
           src={entry.avatar}
-          name={entry.username}
+          name={displayName}
           size="sm"
           level={entry.level || 1}
           showPresence={false}
@@ -1130,7 +1173,7 @@ export default function LeaderboardPage() {
           showVipRing={false}
         />
         <div className="entry-info">
-          <span className="entry-name">{entry.username}</span>
+          <span className="entry-name">{displayName}</span>
           {entry.isVIP && <span className="entry-vip-tag">VIP</span>}
           {renderRowContext(entry)}
         </div>
@@ -1159,6 +1202,7 @@ export default function LeaderboardPage() {
   const programMetricLabel =
     METRIC_OPTIONS.find((option) => option.value === settings?.payout_metric)?.label || 'Profit';
   const selectedClubName = userClubs.find((club) => club.id === selectedClubId)?.name;
+  const selectedClubDisplayName = enumToTitleCase(selectedClubName);
   const currentError = activeTab === 'rankings' ? loadError : tournamentError;
   const canExport =
     (entries.length > 0 && activeTab === 'rankings') ||
@@ -1177,7 +1221,7 @@ export default function LeaderboardPage() {
     if (!nextTab) return;
     event.preventDefault();
     setActiveTab(nextTab);
-    requestAnimationFrame(() => document.getElementById(`leaderboard-${nextTab}-tab`)?.focus());
+    document.getElementById(`leaderboard-${nextTab}-tab`)?.focus();
   };
 
   const retryCurrentView = () => {
@@ -1228,7 +1272,7 @@ export default function LeaderboardPage() {
         title="Leaderboards"
         titleId="leaderboard-title"
         subtitle={
-          scope === 'global' ? 'Across Club Arena' : selectedClubName || 'Your Club Rankings'
+          scope === 'global' ? 'Across Club Arena' : selectedClubDisplayName || 'Your Club Rankings'
         }
         pill={
           currentError
@@ -1239,6 +1283,13 @@ export default function LeaderboardPage() {
         }
         pillInk={currentError ? 'red' : 'green'}
         aria-labelledby="leaderboard-title"
+        aria-busy={
+          clubsLoading ||
+          (activeTab === 'rankings' ? loading : tournamentsLoading) ||
+          (activeTab === 'rankings' &&
+            scope === 'my-clubs' &&
+            (settingsLoading || settlementLoading || programHistoryLoading))
+        }
       >
         <div className="lb-live-rail" aria-live="polite">
           <span>
@@ -1267,6 +1318,16 @@ export default function LeaderboardPage() {
               <span>
                 {userRank ? `Of ${userRank.total.toLocaleString('en-US')}` : 'Enter The Field'}
               </span>
+              {userRankError && (
+                <span className="lb-position-warning" role="status">
+                  {userRank
+                    ? 'Your Position Could Not Be Refreshed. Showing The Last Verified Position.'
+                    : 'Your Position Could Not Be Loaded.'}
+                  <button type="button" onClick={retryUserRank} disabled={userRankLoading}>
+                    Retry Position
+                  </button>
+                </span>
+              )}
             </div>
             <div>
               <span className="lb-telemetry-label">Measured By</span>
@@ -1311,7 +1372,7 @@ export default function LeaderboardPage() {
                 <button
                   className="lb-action-btn"
                   onClick={() => void loadUserClubs(() => isMountedRef.current)}
-                  title={ownerToolsError}
+                  title={enumToTitleCase(ownerToolsError)}
                 >
                   Retry Owner Tools
                 </button>
@@ -1320,7 +1381,7 @@ export default function LeaderboardPage() {
                 <button
                   className="lb-action-btn lb-action-prize"
                   onClick={() => setSettingsReloadKey((value) => value + 1)}
-                  title={settingsError}
+                  title={enumToTitleCase(settingsError)}
                 >
                   Retry Prize Setup
                 </button>
@@ -1365,7 +1426,7 @@ export default function LeaderboardPage() {
                     >
                       {userClubs.map((club) => (
                         <option key={club.id} value={club.id}>
-                          {club.name}
+                          {enumToTitleCase(club.name)}
                         </option>
                       ))}
                     </select>
@@ -1373,7 +1434,7 @@ export default function LeaderboardPage() {
                 )}
 
                 {scope === 'my-clubs' && userClubs.length <= 1 && (
-                  <span className="lb-club-readout">{selectedClubName || 'My Club'}</span>
+                  <span className="lb-club-readout">{selectedClubDisplayName || 'My Club'}</span>
                 )}
 
                 {/* Scope Toggle */}
@@ -1503,6 +1564,17 @@ export default function LeaderboardPage() {
             <p className="lb-loading" role="status">
               Loading Your Clubs...
             </p>
+          ) : scope === 'my-clubs' && clubsError ? (
+            <div className="empty-state lb-error-state" role="alert">
+              <p>Your Club List Could Not Be Loaded.</p>
+              <p className="empty-sub">Your Memberships Are Safe. Retry To Check Them Again.</p>
+              <button
+                className="join-club-btn"
+                onClick={() => loadUserClubs(() => isMountedRef.current)}
+              >
+                Retry Club List
+              </button>
+            </div>
           ) : scope === 'my-clubs' && userClubs.length === 0 ? (
             <div className="empty-state">
               <p>Join A Club To See Leaderboard Rankings, Or Switch To Global.</p>
@@ -1568,7 +1640,7 @@ export default function LeaderboardPage() {
                     onKeyDown={rowKeyActivate(entry.userId)}
                     role="button"
                     tabIndex={0}
-                    aria-label={`${getRankLabel(entry.rank)} ${entry.username}, ${formatValue(entry.value, metric)}`}
+                    aria-label={`${getRankLabel(entry.rank)} ${leaderboardDisplayName(entry.username)}, ${formatValue(entry.value, metric)}`}
                     style={{ ...rankingRowAnimationStyle(index), cursor: 'pointer' }}
                   >
                     <span className={`entry-rank top-3`}>{getRankLabel(entry.rank)}</span>
@@ -1576,12 +1648,14 @@ export default function LeaderboardPage() {
                       {entry.avatar ? (
                         <img src={entry.avatar} alt="" loading="lazy" />
                       ) : (
-                        <span>{(entry.username || '?')[0]?.toUpperCase()}</span>
+                        <span>
+                          {(leaderboardDisplayName(entry.username) || '?')[0]?.toUpperCase()}
+                        </span>
                       )}
                     </div>
                     <div className="entry-info">
                       <span className="entry-name">
-                        {entry.username}
+                        {leaderboardDisplayName(entry.username)}
                         {entry.isVIP && <span className="entry-vip-tag">VIP</span>}
                       </span>
                     </div>
@@ -1610,7 +1684,7 @@ export default function LeaderboardPage() {
                     onKeyDown={rowKeyActivate(entry.userId)}
                     role="button"
                     tabIndex={0}
-                    aria-label={`${getRankLabel(entry.rank)} ${entry.username}, ${formatValue(entry.value, metric)}`}
+                    aria-label={`${getRankLabel(entry.rank)} ${leaderboardDisplayName(entry.username)}, ${formatValue(entry.value, metric)}`}
                     style={{ ...rankingRowAnimationStyle(index), cursor: 'pointer' }}
                   >
                     <span className="entry-rank">{getRankLabel(entry.rank)}</span>
@@ -1618,12 +1692,14 @@ export default function LeaderboardPage() {
                       {entry.avatar ? (
                         <img src={entry.avatar} alt="" loading="lazy" />
                       ) : (
-                        <span>{(entry.username || '?')[0]?.toUpperCase()}</span>
+                        <span>
+                          {(leaderboardDisplayName(entry.username) || '?')[0]?.toUpperCase()}
+                        </span>
                       )}
                     </div>
                     <div className="entry-info">
                       <span className="entry-name">
-                        {entry.username}
+                        {leaderboardDisplayName(entry.username)}
                         {entry.isVIP && <span className="entry-vip-tag">VIP</span>}
                         {(entry.change || 0) >= 3 && (
                           <span className="hot-streak-badge" title="Hot Streak: Climbing Fast">
@@ -1714,7 +1790,7 @@ export default function LeaderboardPage() {
                     onKeyDown={rowKeyActivate(stat.userId)}
                     role="button"
                     tabIndex={0}
-                    aria-label={`Rank ${index + 1}, ${stat.username}, ${stat.totalPrizes.toLocaleString()} Total Prizes`}
+                    aria-label={`Rank ${index + 1}, ${leaderboardDisplayName(stat.username)}, ${stat.totalPrizes.toLocaleString()} Total Prizes`}
                     style={{ cursor: 'pointer' }}
                   >
                     <div className="stats-cell player-cell">
@@ -1723,10 +1799,12 @@ export default function LeaderboardPage() {
                         {stat.avatar ? (
                           <img src={stat.avatar} alt="" loading="lazy" />
                         ) : (
-                          <span>{(stat.username || '?')[0]?.toUpperCase()}</span>
+                          <span>
+                            {(leaderboardDisplayName(stat.username) || '?')[0]?.toUpperCase()}
+                          </span>
                         )}
                       </div>
-                      <span className="player-name">{stat.username}</span>
+                      <span className="player-name">{leaderboardDisplayName(stat.username)}</span>
                     </div>
                     <div className="stats-cell" data-label="Tournaments">
                       {compactChips(stat.tournamentsPlayed)}
@@ -1771,7 +1849,7 @@ export default function LeaderboardPage() {
                 <span className="lb-prize-program-kicker">Prize Program</span>
                 <h2>No Prize Program Yet</h2>
                 <p>
-                  {`${settings.funding_label} Funds Leaderboard Prizes For ${settings.club_name}. Decide Whether To Reward Players, Then Publish A Plan.`}
+                  {`${enumToTitleCase(settings.funding_label)} Funds Leaderboard Prizes For ${enumToTitleCase(settings.club_name)}. Decide Whether To Reward Players, Then Publish A Plan.`}
                 </p>
               </div>
               <button
@@ -1801,8 +1879,8 @@ export default function LeaderboardPage() {
               </h2>
               <p>
                 {settings.rewards_enabled
-                  ? `${settings.program_funding_label || settings.funding_label} Published A ${prizePlanLabel(settings.suggestion_key)} Plan Ranked By ${programMetricLabel}.`
-                  : `A Prize Plan Is Saved For ${settings.club_name}, But Rewards Are Not Published.`}
+                  ? `${enumToTitleCase(settings.program_funding_label || settings.funding_label)} Published A ${prizePlanLabel(settings.suggestion_key)} Plan Ranked By ${programMetricLabel}.`
+                  : `A Prize Plan Is Saved For ${enumToTitleCase(settings.club_name)}, But Rewards Are Not Published.`}
               </p>
               {settings.rewards_enabled && (
                 <ul className="lb-prize-rules" role="list" aria-label="Prize Rules">
@@ -1812,8 +1890,8 @@ export default function LeaderboardPage() {
                   <li>Tied Places Share Their Occupied Prizes.</li>
                   <li>
                     {settings.funding_status === 'underfunded'
-                      ? `Paid From ${settings.program_funding_label || settings.funding_label} After The Period Closes, Once It Covers The Published Prizes.`
-                      : `Paid From ${settings.program_funding_label || settings.funding_label} After The Period Closes.`}
+                      ? `Paid From ${enumToTitleCase(settings.program_funding_label || settings.funding_label)} After The Period Closes, Once It Covers The Published Prizes.`
+                      : `Paid From ${enumToTitleCase(settings.program_funding_label || settings.funding_label)} After The Period Closes.`}
                   </li>
                   <li>
                     {
@@ -1874,7 +1952,7 @@ export default function LeaderboardPage() {
                 <span className="lb-prize-program-kicker">Program History</span>
                 {programHistoryError ? (
                   <div className="lb-program-history-error">
-                    <span role="status">{programHistoryError}</span>
+                    <span role="status">{enumToTitleCase(programHistoryError)}</span>
                     <button
                       type="button"
                       onClick={() => setProgramHistoryReloadKey((value) => value + 1)}
@@ -1904,7 +1982,7 @@ export default function LeaderboardPage() {
                                 <strong>V{entry.version}</strong>
                                 <span>
                                   {formatUtcTimestamp(entry.published_at)} ·{' '}
-                                  {entry.publisher_name || 'Publisher Unavailable'}
+                                  {enumToTitleCase(entry.publisher_name || 'Publisher Unavailable')}
                                 </span>
                               </div>
                               {changes.length > 0 && (

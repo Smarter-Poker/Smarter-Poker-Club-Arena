@@ -62,6 +62,8 @@ RUNNERS = [
     ('run-diamond-cash-custody.py',
      'Diamond custody contract passed; this is not full gameplay certification.'),
     ('run-diamond-cash-admission.py', 'forgery case leaves the fixture settled again'),
+    ('run-diamond-cash-rake.py',
+     'Diamond cash rake checks passed on isolated PostgreSQL 17; this is a fixture proof, not a production certification.'),
     ('run-diamond-top-up.py',
      'Diamond top-up door certified in the isolated fixture; this is not public release.'),
     ('run-diamond-straddle.py',
@@ -98,6 +100,10 @@ RUNNERS = [
      'diamond commerce ownership, deletion and restore-shaped recovery qualified in isolation'),
     ('run-diamond-concurrency.py',
      'checks passed: one Diamond cannot be spent twice under concurrency, duplicate delivery or a crash; isolated PostgreSQL 17, not a production certification.'),
+    ('run-diamond-cross-format-conservation.py',
+     'cross-format conservation checks passed on isolated PostgreSQL 17; this is a fixture proof, not a production installation.'),
+    ('run-diamond-bad-beat-jackpot.py',
+     'Diamond bad beat jackpot certified on isolated PostgreSQL 17; the jackpot ships shut and public gameplay remains gated.'),
 ]
 # Plain psql acceptance scripts: (file, database, the line that proves it ran).
 SQL_SCRIPTS = [
@@ -114,6 +120,8 @@ SQL_SCRIPTS = [
 # (hard-wired to SOCKET_DIR and PORT). A runner therefore cannot be mislabelled
 # into a weaker check - the two contracts exclude each other by assertion.
 PRIVATE_CLUSTER_RUNNERS = [
+    'run-diamond-bad-beat-jackpot.py',
+    'run-diamond-cash-rake.py',
     'run-diamond-club-commerce-admission.py',
     'run-diamond-club-commerce-completion.py',
     'run-diamond-club-commerce-earnings.py',
@@ -122,6 +130,7 @@ PRIVATE_CLUSTER_RUNNERS = [
     'run-diamond-club-commerce-refunds.py',
     'run-diamond-club-commerce.py',
     'run-diamond-concurrency.py',
+    'run-diamond-cross-format-conservation.py',
     'run-diamond-stats-asset-dimension.py',
     'run-diamond-tournament-doors.py',
     'run-diamond-tournament-lifecycle.py',

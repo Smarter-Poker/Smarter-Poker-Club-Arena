@@ -680,10 +680,11 @@ def recent_recovery_window(run_id: str, now_ms: int) -> str:
 def cmd_reserve_recovery_window(args: argparse.Namespace) -> None:
     """Reserve one fixed announcement for this existing release transaction.
 
-    Failure receipts are written only after exact desired recovery. Unknown
-    outcomes never qualify. This adds no publisher, scheduler or v1 wire field.
-    A reservation needs a cause and a free rolling hour; with a cause but no
-    free hour the answer is `rate-limited`, which the release waits out.
+    This adds no publisher, scheduler or v1 wire field. A reservation needs a
+    NAMED emergency cause (engine-degraded, urgent or deadline) and a free
+    rolling hour; with a cause but no free hour the answer is `rate-limited`,
+    and with no such cause it is `unavailable`. Either way the release waits
+    for the scheduled break. A failed or missed release is not a cause.
     """
     target = valid_sha(args.sha)
     run_id = str(args.run_id)
@@ -704,32 +705,37 @@ def cmd_reserve_recovery_window(args: argparse.Namespace) -> None:
             if (value.get("sha") != target or value.get("runId") != run_id
                     or type(value.get("announcedAt")) is not int or value["announcedAt"] <= 0):
                 die("recovery window identity is corrupt or belongs to another target")
+            # A reservation written before the emergency-only rule (a routine
+            # cause, or none) is not honoured on a rerun: it would bring back
+            # the off-cycle break that rule removed.
+            if not RECOVERY_CAUSE_RE.fullmatch(str(value.get("cause") or "")):
+                print("unavailable")
+                return
             print(value["announcedAt"])
             return
 
-        def ancestor(older: str, newer: str) -> bool:
-            result = subprocess.run(
-                ["git", "-C", args.repo, "merge-base", "--is-ancestor", older, newer],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
-                env={**os.environ, "GIT_NO_REPLACE_OBJECTS": "1"}, timeout=10,
-            )
-            if result.returncode not in (0, 1):
-                die("recovery failure ancestry is unreadable")
-            return result.returncode == 0
-
-        cause = "observed-missed-certificate" if args.missed_window else (args.cause or "")
-        if not cause:
-            for receipt in sorted(RESULT_DIR.glob("*.json"), reverse=True):
-                if not RUN_ID_RE.fullmatch(receipt.stem):
-                    continue
-                raw = json.loads(receipt.read_text(encoding="utf-8"))
-                if raw.get("result") != "failed":
-                    continue
-                failure = load_failure(receipt.stem)
-                failed_sha = failure["sha"]
-                if ancestor(failed_sha, target) and not ancestor(failed_sha, state["highWaterSha"]):
-                    cause = f"failed-release:{receipt.stem}"
-                    break
+        # ONE SCHEDULED BREAK AN HOUR; A SECOND ONE ONLY FOR AN EMERGENCY
+        # (owner, 2026-10-04). "THERE ARE CURRENTLY TWO SCHEDULED MAINTENANCE
+        # BREAKS, ONE AT THE :55 AND THE NEXT ONE STARTS AT THE :11 FIGURE OUT
+        # WHAT THE 2ND ONE IS FOR, AND REMOVE IT IF ITS NOT NECESSARY."
+        #
+        # The second one was this reservation. Until that day two ROUTINE
+        # causes earned it: a failed release that had not shipped
+        # (`failed-release:<run>`), and a release that watched a scheduled
+        # break admit nobody (`observed-missed-certificate`). Either parked
+        # every table for seven more minutes so that a fix could ship up to an
+        # hour sooner - the 14:11Z break on 2026-10-03 followed release run
+        # 37128652461 failing at 14:09Z. Nothing about those two is urgent: the
+        # same release is admitted by the next :55 break, which the engine
+        # takes anyway. They no longer qualify, and such a release waits.
+        #
+        # What still qualifies is what cannot wait for :55, each named by the
+        # release transaction: `engine-degraded` (the serving engine is dead,
+        # stalled or wedged), `urgent` (the commit carries the urgent trailer)
+        # and `deadline` (no scheduled break can admit this release before its
+        # certificate expires). `--missed-window` is still accepted so an older
+        # transaction's call is not an error; it is no longer a cause.
+        cause = args.cause or ""
         if not cause:
             print("unavailable")
             return

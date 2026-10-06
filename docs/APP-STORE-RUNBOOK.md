@@ -178,6 +178,42 @@ Android `versionName`. Bump all three together when a new binary is cut. OTA
 bundles are versioned `<native.version>.<publish run number>`, so they are
 unique, ordered, and never below the binary that installs them.
 
+## The Diamond games in the app (2026-10-01)
+
+The mobile graphics programme (phases 1 to 6, 2026-10-01) ships in the app
+bundle unchanged; nothing in it is web-only except the iPhone browser tap
+switch. What a first device walkthrough should look at, and how each part
+behaves inside the app:
+
+- **Frame rate.** Crash, Plinko and Donkey Cross draw at the screen's own rate
+  while something moves, 30 a second while settled, and park after 20 idle
+  seconds (`src/components/games/framePacer.ts`). The quality governor drops
+  pixel ratio and shadows on a slow GPU. Inside WKWebView and the Android
+  WebView this is the same code; nothing to configure.
+- **What real phones report.** Every scene visit records how the device drew
+  it, and every scene that cannot draw records why, with the device kind set
+  to `app_ios` or `app_android` inside the app
+  (`src/components/games/sceneTelemetry.ts`). The wheel records the same as
+  game `wheel`. The numbers land in the platform's own database
+  (`fn_record_diamond_scene`, a daily rollup with no user in it) and read
+  back on the admin dashboard as Diamond Scene Health, per game and kind of
+  device. After the first TestFlight and internal-testing builds, that panel
+  answers "does it run well on phones", split by app and browser.
+- **Haptics.** Inside the app every buzz goes through `@capacitor/haptics`
+  (`src/lib/native/haptics.ts`): the Big Win receipt's heavy impact, the game
+  plates and the pop-up plates. `TapHaptic`, the invisible switch an iPhone
+  browser needs, renders nothing in the app.
+- **The wheel on a small phone.** The wheel goes lite on 2 GB devices or after
+  a slow spin (`src/components/wheel/wheelLite.ts`); a low-end Android test
+  device shows it.
+- **Screen readers.** VoiceOver and TalkBack hear the Crash start, each
+  multiplier mark and the ending from one polite line, not the per-frame
+  readout.
+
+Still waiting on Dan, unchanged by this programme: the Apple Developer account
+in App Store Connect, Xcode on the Mac (only the Command Line Tools are
+installed) and the Play Console. Nothing graphics-side blocks a first build.
+
 ## OTA (phase 6, Capgo) - WIRED 2026-09-08, waiting on the account
 
 `@capgo/capacitor-updater` is installed, `capacitor.config.ts` has

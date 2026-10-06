@@ -361,3 +361,40 @@ jobs:
             "$HOME/.ssh/hetzner_known_hosts" \
             "$HOME/.ssh/config" \
             "$HOME/hssh"
+
+  # A red monitoring deploy used to be only a red check run: no Supabase
+  # credential reached this workflow and nothing described its outcome to
+  # public.operational_alert_events. This workflow is what compares the LIVE
+  # alertmanager and Prometheus rules on the box with the ones in this repo, and
+  # on 2026-10-05 lane A2 recorded that it had not run for about 46 hours while
+  # four Club Arena post-deploy verifications failed unreported. always() so a
+  # failed, cancelled or skipped deploy admits its own verdict.
+  monitoring-deploy-verdict:
+    needs: deploy
+    if: ${{ always() }}
+    name: This monitoring deploy admits its own verdict to the operational inbox
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install the pinned database client
+        run: npm ci --ignore-scripts --prefer-offline --no-audit --no-fund
+      - name: Record the monitoring-deploy verdict
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          WORKFLOW_LABEL: Deploy Club Arena monitoring
+          ALERT_SOURCE: club-arena.deploy-monitoring
+          ALERT_NAME: MonitoringDeployFailed
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HEAD_SHA: ${{ github.sha }}
+          LANES: |
+            ${{ needs.deploy.result }}|deploy
+        run: node scripts/ci/record-post-deploy-verdict.mjs

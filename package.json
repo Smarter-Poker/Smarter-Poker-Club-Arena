@@ -30,9 +30,11 @@
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
     "test:db:rake-attribution-atomic": "python3 scripts/ci/test-rake-attribution-atomic.py",
+    "test:data:postgres": "bash scripts/ci/test-data-console-postgres-contracts.sh",
     "test:e2e": "playwright test",
     "test:e2e:customization": "playwright test --config=playwright.customization.config.ts",
     "test:e2e:financial-decisions": "playwright test --config=playwright.financial-decisions.config.ts",
+    "test:e2e:push-enrollment": "playwright test --config=playwright.push-enrollment.config.ts",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
     "test:performance": "node scripts/ci/route-performance.mjs",
@@ -46,6 +48,7 @@
     "fix:painted-text": "node scripts/ci/check-painted-text-case.mjs --fix",
     "fix:title-case": "node scripts/ci/check-title-case.mjs --fix",
     "check:club-entry-budgets": "node scripts/check-club-entry-budgets.mjs",
+    "check:stats-budgets": "node scripts/ci/check-stats-performance-budgets.mjs",
     "probe:cluster": "bash scripts/dev/probe-cluster-boards.sh"
   },
   "dependencies": {

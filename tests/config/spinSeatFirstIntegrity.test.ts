@@ -171,7 +171,12 @@ describe('horses take seats, not just places on a list', () => {
     // Exactly one read of each source across horseLoadMap + pickFreeHorses,
     // which together are one call. The batching this protects is unchanged -
     // the reads simply live in horseLoadMap now (see the note above).
-    expect((pick.match(/from\('tournament_players'\)/g) || []).length).toBe(1);
+    // Registrations are read once, through the open events that own them
+    // (2026-10-02): one batched read, embedded, never a per-event query.
+    expect(
+      (pick.match(/tournament_players!tournament_players_tournament_id_fkey!inner/g) || []).length
+    ).toBe(1);
+    expect(pick).not.toMatch(/from\('tournament_players'\)/);
     expect((pick.match(/from\('table_seats'\)/g) || []).length).toBe(1);
     expect((pick.match(/from\('profiles'\)/g) || []).length).toBe(1);
 

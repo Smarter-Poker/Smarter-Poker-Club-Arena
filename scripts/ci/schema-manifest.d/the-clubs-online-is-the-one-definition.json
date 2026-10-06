@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/roster-and-seat-writes-closed. Applied to production via apply_migration as 20261005230329_the_clubs_online_is_the_one_definition on 2026-10-05 (success); adds fn_union_online_count.",
+  "tables": [],
+  "functions": ["fn_union_online_count"]
+}

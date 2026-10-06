@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { RetainedLeaseHeartbeatBatches } from './leaseHeartbeatBatches.js';
+import {
+  RetainedLeaseHeartbeatBatches,
+  _setHeartbeatClaimsPerRequestForTests,
+} from './leaseHeartbeatBatches.js';
 
 const rpc = vi.fn();
 vi.mock('./supabase/client.js', () => ({
@@ -21,8 +24,12 @@ const kept = (claims: RpcClaim[]) => ({
   error: null,
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.resetModules();
+  // Written against the earlier 500-claim bound; the production bound (50)
+  // is pinned in aSlowHeartbeatHoldsOnlyItsOwnBatch.law.test.ts.
+  _setHeartbeatClaimsPerRequestForTests(500);
+  (await import('./leaseHeartbeatBatches.js'))._setHeartbeatClaimsPerRequestForTests(500);
   rpc.mockReset();
   vi.spyOn(console, 'warn').mockImplementation(() => {});
 });

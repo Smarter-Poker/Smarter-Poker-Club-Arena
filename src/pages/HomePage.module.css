@@ -281,53 +281,6 @@
     0 0 30px rgba(0, 212, 255, 0.15);
 }
 
-.cardSkeleton {
-  width: clamp(200px, 55vw, 300px);
-  aspect-ratio: 3 / 4;
-  /* Fallback for browsers without aspect-ratio (older Samsung/webviews) */
-  min-height: 0;
-  background: linear-gradient(
-    90deg,
-    rgba(10, 20, 40, 0.8) 0%,
-    rgba(15, 30, 55, 0.8) 50%,
-    rgba(10, 20, 40, 0.8) 100%
-  );
-  background-size: 200% 100%;
-  animation: skeletonShimmerBg 2s infinite;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: rgba(0, 212, 255, 0.4);
-  font-size: 14px;
-}
-
-/* Aspect-ratio fallback — only fires if aspect-ratio is unsupported */
-@supports not (aspect-ratio: 3 / 4) {
-  .cardSkeleton {
-    display: block; /* padding-bottom % trick requires block, not flex */
-    height: 0;
-    padding-bottom: 133.33%;
-    position: relative;
-  }
-}
-
-/* ANIMATION AUDIT 2026-08-20: this file defined `skeletonShimmer` TWICE with
-   materially different bodies — this one moves background-position, the other
-   moves transform: translateX. The later definition silently won for BOTH
-   consumers, so the skeleton below (which sets background-size: 200% 100% and
-   needs a background sweep) was instead given translateX(-100% -> 100%) and
-   slid the entire card across the screen rather than shimmering.
-   Two techniques, two names. */
-@keyframes skeletonShimmerBg {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
-}
-
 @keyframes pedestalPulse {
   0%,
   100% {
@@ -1537,10 +1490,6 @@
     width: clamp(180px, 50vw, 260px);
   }
 
-  .cardSkeleton {
-    width: clamp(180px, 50vw, 260px);
-  }
-
   .clubCarousel {
     /* gap / scroll-padding-inline are dead here: the strip is neither a flex
        row nor a scroll container any more. Removed rather than left to read
@@ -1613,10 +1562,6 @@
     width: clamp(160px, 52vw, 220px);
   }
 
-  .cardSkeleton {
-    width: clamp(160px, 52vw, 220px);
-  }
-
   .clubCarousel {
     /* The pagination dots sit INSIDE this box, under the cards: measured
        24px of dots + gap, plus 12px of padding = 36px below the cards but
@@ -1672,10 +1617,6 @@
 
 @media (max-width: 380px) {
   .featuredCard {
-    width: clamp(140px, 50vw, 180px);
-  }
-
-  .cardSkeleton {
     width: clamp(140px, 50vw, 180px);
   }
 
@@ -2220,34 +2161,6 @@
   text-overflow: ellipsis;
 }
 
-.cashierSwitchBtn {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  z-index: 0;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  border: 1px solid rgba(0, 212, 255, 0.5);
-  background: rgba(6, 12, 24, 0.85);
-  color: rgba(0, 212, 255, 0.95);
-  font-size: 14px;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  padding: 0;
-  transition:
-    background 0.2s ease,
-    transform 0.2s ease;
-}
-
-.cashierSwitchBtn:focus-visible {
-  outline: 2px solid rgba(0, 212, 255, 0.7);
-  outline-offset: 2px;
-}
-
 .cashierSwitchOverlay {
   position: fixed;
   inset: 0;
@@ -2256,33 +2169,22 @@
 }
 
 .cashierSwitchMenu {
+  --cashier-directory-body-max: min(42vh, 300px);
   position: fixed;
   bottom: var(--quick-link-anchor-bottom);
   left: var(--quick-link-anchor-x);
   transform: translateX(-50%);
   z-index: 960;
-  min-width: 160px;
-  max-width: 230px;
-  max-height: 240px;
-  overflow-y: auto;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: rgba(10, 16, 28, 0.97);
-  border: 1px solid rgba(0, 212, 255, 0.35);
-  border-radius: 10px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7);
-  padding: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  width: min(360px, calc(100vw - 16px));
 }
 
-.cashierSwitchTitle {
-  padding: 6px 10px 4px;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 1.2px;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.5);
+.cashierSwitchConsole {
+  --sc-max: 360px;
+}
+
+.cashierSwitchConsole :global(.sc__body) {
+  max-height: var(--cashier-directory-body-max);
+  overflow-y: auto;
 }
 
 .cashierSwitchStatus {
@@ -2298,12 +2200,14 @@
 }
 
 .cashierSwitchStatus button {
-  min-height: 32px;
-  padding: 0 10px;
-  border: 1px solid rgba(0, 212, 255, 0.55);
-  border-radius: 5px;
-  color: #dff8ff;
-  background: rgba(8, 33, 49, 0.96);
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: #45adff;
+  background: none;
+  box-shadow: none;
+  transform: none;
   font: inherit;
   font-weight: 700;
   cursor: pointer;
@@ -2317,7 +2221,6 @@
 .cashierSwitchItems {
   display: flex;
   flex-direction: column;
-  gap: 2px;
 }
 
 .cashierSwitchItem {
@@ -2332,10 +2235,14 @@
   font-weight: 600;
   text-align: left;
   padding: 8px 10px;
-  border-radius: 6px;
   cursor: pointer;
   min-width: 0;
   min-height: 44px;
+}
+
+.cashierSwitchItem + .cashierSwitchItem {
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .cashierSwitchItem:focus-visible {
@@ -2368,28 +2275,13 @@
 .cashierSwitchLogo {
   width: 20px;
   height: 20px;
-  border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
 }
 
-.cashierSwitchLogoFallback {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: rgba(0, 212, 255, 0.15);
-  color: #00d4ff;
-  font-size: 10px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
 .cashierSwitchItemActive {
-  color: #00d4ff;
-  background: rgba(0, 212, 255, 0.1);
+  color: #45adff;
+  text-shadow: 0 0 6px rgb(49 168 255 / 55%);
 }
 
 /* The Cashier tile is the fourth card in a five-wide phone footer. An
@@ -2398,6 +2290,7 @@
    insets, so its geometry is independent of which tile opened it. */
 @media (max-width: 480px) {
   .cashierSwitchMenu {
+    --cashier-directory-body-max: min(52vh, 420px);
     position: fixed;
     right: max(8px, env(safe-area-inset-right));
     bottom: max(12px, env(safe-area-inset-bottom));
@@ -2405,8 +2298,6 @@
     width: auto;
     min-width: 0;
     max-width: none;
-    max-height: min(70vh, 480px);
-    max-height: min(70dvh, 480px);
     transform: none;
   }
 }

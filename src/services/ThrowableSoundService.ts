@@ -3,8 +3,11 @@
  *  THROWABLE SOUND SERVICE — Per-Item Procedural SFX (2026-08-20, v2)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * PokerBros-style audio: every one of the 49 throwables has its own impact
- * sound, synthesized in real time with the Web Audio API — no audio files.
+ * Rigged throwables schedule their licensed, authored cues from the measured
+ * spec. The separate legacy path still synthesizes launch/flight/impact
+ * recipes with the Web Audio API; boxing_glove uses SoundService's measured
+ * knockout flurry. Keep these paths distinct: they have different clocks and
+ * cue sources, but each must produce audible sound for its own animation.
  *
  * Three moments per throw:
  *   playLaunch(weight, pan)         whoosh as the item leaves the thrower

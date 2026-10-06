@@ -140,9 +140,38 @@ describe('a recovered turn clock carries its actual turn state', () => {
           (args: any[]) => args[1]?.type === 'time_bank_timeout'
         )
       ).toBe(accepted);
+      // An accepted expiry is a timeout and counts toward the forced sit-out,
+      // exactly as the automatic bank's expiry does. A refused one is not.
+      expect(h.strikes.mock.calls).toEqual(accepted ? [[TABLE, PLAYER]] : []);
       expect(h.warnings.mock.calls.flat().join('\n')).not.toContain('Invalid transition');
     }
   );
+
+  it('sits out a player whose browser spends a bank on every unanswered turn', async () => {
+    // The browser posts /timebank when its own ring reaches zero, so an idle
+    // player with the app open never reaches the automatic bank. Three such
+    // turns in a row are three timeouts.
+    const h = harness();
+    h.strikes.mockRestore();
+    h.engine.disconnectEngine.registerPlayer(TABLE, PLAYER);
+    h.engine.timeBankEngine.initializePlayer(TABLE, PLAYER, {
+      remainingSeconds: 2400,
+      usesRemaining: 120,
+    });
+    for (let turn = 0; turn < 3; turn++) {
+      h.engine.timeBankActivatedThisTurn = false;
+      h.engine.timeBankEngine.resetStreetActivations(TABLE);
+      h.engine.startTurnTimer(PLAYER, 2, 15);
+      h.now.mockReturnValue(Date.now() + 15_000);
+      expect(await h.engine.activateTimeBank(PLAYER)).toMatchObject({ success: true });
+      h.expire(`timebank:${PLAYER}`);
+    }
+    expect(h.engine.disconnectEngine.getState(TABLE, PLAYER)).toMatchObject({
+      consecutiveTimeouts: 3,
+      isSittingOut: true,
+      sitOutReason: 'forced',
+    });
+  });
 
   it('does not force an already running primary clock through a recovery state', () => {
     const h = harness();

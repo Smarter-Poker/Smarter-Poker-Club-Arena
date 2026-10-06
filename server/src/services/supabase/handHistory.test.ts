@@ -14,6 +14,10 @@ const rpcCalls: { fn: string; args: Record<string, unknown> }[] = [];
 const retentionCalls: Record<string, unknown>[] = [];
 /** Ordered replies for the accepted-hand transaction. */
 let atomicRpcResults: Array<{ data: unknown; error: unknown }> = [];
+/** The reply fn_ca_resume_hand_submission gives a restarted engine. */
+let resumeReply: { data: unknown; error: unknown } = { data: null, error: null };
+/** Ordered replies for fn_ca_retain_hand_submission; empty means a fresh retention. */
+let retentionReplies: Array<{ data: unknown; error: unknown } | Error> = [];
 
 vi.mock('./client.js', () => ({
   supabase: {
@@ -24,6 +28,9 @@ vi.mock('./client.js', () => ({
     rpc: async (fn: string, args: Record<string, unknown>) => {
       if (fn === 'fn_ca_retain_hand_submission') {
         retentionCalls.push(args.p_request as Record<string, unknown>);
+        const scripted = retentionReplies.shift();
+        if (scripted instanceof Error) throw scripted;
+        if (scripted) return scripted;
         return {
           data: {
             retained: true,
@@ -33,6 +40,7 @@ vi.mock('./client.js', () => ({
           error: null,
         };
       }
+      if (fn === 'fn_ca_resume_hand_submission') return resumeReply;
       rpcCalls.push({ fn, args });
       if (fn === 'fn_ca_commit_hand_settlement' || fn === 'fn_ca_commit_hand_submission') {
         const result = atomicRpcResults.shift() ?? {
@@ -96,7 +104,15 @@ vi.mock('../../engine/horseDecision/index.js', () => ({
   getLiveHorseDecisionWorker: () => mockGetLiveHorseDecisionWorker(),
 }));
 
-import { logHandHistory, buildHandHistoryTiers } from './handHistory.js';
+import {
+  logHandHistory,
+  buildHandHistoryTiers,
+  isLedgerInvariantRefusal,
+  resumeRetainedHandSubmission,
+  RetainedHandSubmissionRefusedError,
+  LEDGER_INVARIANT_REFUSED,
+  HAND_COMMIT_RETRY_DELAYS_MS,
+} from './handHistory.js';
 import { persistedKnockoutEvidence } from '../../tournament/bountyAttributionGate.js';
 import type { HorsePublicActionNode } from '../../engine/HorsePublicActionNode.js';
 import { captureHandSeatGenerations } from '../../engine/handSeatGeneration.js';
@@ -279,7 +295,9 @@ beforeEach(() => {
   calls.length = 0;
   rpcCalls.length = 0;
   retentionCalls.length = 0;
+  retentionReplies = [];
   atomicRpcResults = [];
+  resumeReply = { data: null, error: null };
   mockReportError.mockReset();
   mockWakeHandProjection.mockClear();
   mockGetLiveHorseDecisionWorker.mockClear();
@@ -1233,5 +1251,258 @@ describe('prepared whole-receipt diagnostic redaction', () => {
     // Adding a diagnostic repair must not accidentally activate the hypothetical
     // private roster transport used as an extension in this synthetic fixture.
     expect(mockObserveCompletedHand.mock.calls[0]![0]).not.toHaveProperty('acceptedActorRoster');
+  });
+});
+
+/**
+ * A LEDGER-INVARIANT REFUSAL IS DETERMINISTIC (2026-10-02).
+ *
+ * fn_ca_balance_has_its_ledger_row refuses the whole transaction at COMMIT
+ * (23514 REFUSED: ...), records the refusal outside its rollback and raises a
+ * critical incident (migration 20261002135708). The engine used to read the
+ * PostgREST error as a lost response: thirteen identical replays over about
+ * forty seconds, then a terminal generation whose successor replayed the
+ * retained hand into the same refusal and was rebuilt every five seconds.
+ */
+describe('a ledger-invariant refusal of a hand', () => {
+  const ledgerRefusal = {
+    code: '23514',
+    message:
+      'REFUSED: balance_moved_without_its_ledger_row account=table_stack balance_delta=48.00 ledger_net=0.00',
+  };
+  const suspenseRefusal = {
+    code: '23514',
+    message:
+      'REFUSED: balance_moved_against_settlement_suspense suspense_legs=10.00 moved=player_wallet:u:c 10.00',
+  };
+
+  it('is recognised by SQLSTATE and name, and nothing else is', () => {
+    expect(isLedgerInvariantRefusal(ledgerRefusal)).toBe(true);
+    expect(isLedgerInvariantRefusal(suspenseRefusal)).toBe(true);
+    expect(isLedgerInvariantRefusal({ ...ledgerRefusal, code: 'P0001' })).toBe(false);
+    expect(
+      isLedgerInvariantRefusal({ code: '23514', message: 'tournament_full: 3 of 3 entrants' })
+    ).toBe(false);
+    expect(isLedgerInvariantRefusal({ message: 'response body timed out after commit' })).toBe(
+      false
+    );
+    expect(isLedgerInvariantRefusal(null)).toBe(false);
+  });
+
+  it.each([
+    ['the direct accepted-hand door', () => atomicParams(GLOBAL_HAND + 900)],
+    ['the retained-submission door', () => obligationsParams(GLOBAL_HAND + 901)],
+  ])(
+    'through %s is refused once, by name, and never replayed or swallowed',
+    async (_door, make) => {
+      vi.useFakeTimers();
+      try {
+        atomicRpcResults = Array.from({ length: HAND_COMMIT_RETRY_DELAYS_MS.length + 1 }, () => ({
+          data: null,
+          error: ledgerRefusal,
+        }));
+        const pending = logHandHistory(make() as any);
+        const outcome = pending.then(
+          () => null,
+          (e: unknown) => e
+        );
+        await vi.advanceTimersByTimeAsync(0);
+        const error = (await outcome) as Error;
+        expect(error).toBeInstanceOf(Error);
+        expect(error.message).toBe(
+          `atomic hand commit refused (ledger_invariant): ${ledgerRefusal.message}`
+        );
+        // the semantic classifier the settlement path reads
+        expect(/atomic hand commit refused/.test(error.message)).toBe(true);
+        expect(
+          rpcCalls.filter(
+            (c) =>
+              c.fn === 'fn_ca_commit_hand_settlement' || c.fn === 'fn_ca_commit_hand_submission'
+          )
+        ).toHaveLength(1);
+        expect(mockWakeHandProjection).not.toHaveBeenCalled();
+        expect(mockObserveCompletedHand).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+  );
+
+  it('a lost response is still replayed (the refusal rule is not a blanket no-retry)', async () => {
+    vi.useFakeTimers();
+    try {
+      atomicRpcResults = [
+        { data: null, error: { message: 'response body timed out after commit' } },
+        {
+          data: { success: true, atomic_hand_commit: true, history_id: historyId },
+          error: null,
+        },
+      ];
+      const pending = logHandHistory(atomicParams(GLOBAL_HAND + 902) as any);
+      await vi.advanceTimersByTimeAsync(250);
+      await expect(pending).resolves.toMatchObject({ settlementCommitted: true });
+      expect(rpcCalls).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a restarted engine whose retained hand is refused holds the table instead of rebuilding it', async () => {
+    resumeReply = { data: null, error: suspenseRefusal };
+    const error = await resumeRetainedHandSubmission('t-1', 'i', 'g').catch((e) => e);
+    expect(error).toBeInstanceOf(RetainedHandSubmissionRefusedError);
+    expect(error).toMatchObject({ tableId: 't-1', code: LEDGER_INVARIANT_REFUSED });
+    expect(error.message).toBe(
+      `retained_hand_submission_readback_failed: ${LEDGER_INVARIANT_REFUSED}`
+    );
+
+    resumeReply = {
+      data: null,
+      error: { code: '57014', message: 'canceling statement due to statement timeout' },
+    };
+    const transient = await resumeRetainedHandSubmission('t-1', 'i', 'g').catch((e) => e);
+    expect(transient).not.toBeInstanceOf(RetainedHandSubmissionRefusedError);
+  });
+});
+
+/**
+ * A FINISHED HAND OUTLIVES ITS DEALER'S PROOF (2026-10-04).
+ *
+ * 2026-10-03 23:43 a ~36 s database stall lapsed every cash proof while 85
+ * finished hands were in settlement. The 30 retained before the stall were
+ * settled by their successor; the 55 that were not were refused here before
+ * retention and disposed. A lapsed cash generation now retains the exact
+ * original under its own generation and only then refuses; the database
+ * (migration 20261004201926) decides whether that generation may still retain.
+ */
+describe('a lapsed cash proof retains its finished hand before refusing', () => {
+  const lapsedParams = (handNumber: number, retainWhenLeaseLapses = true) => {
+    const input = obligationsParams(handNumber);
+    const assertLeaseAuthority = vi.fn(() => {
+      throw new Error('atomic hand commit refused (lease_proof_expired)');
+    });
+    return {
+      ...input,
+      atomicCommit: { ...input.atomicCommit, assertLeaseAuthority, retainWhenLeaseLapses },
+      assertLeaseAuthority,
+    };
+  };
+
+  it('retains the exact original, then refuses, and never commits', async () => {
+    const lapsed = lapsedParams(GLOBAL_HAND + 700);
+    await expect(logHandHistory(lapsed)).rejects.toThrow(
+      /atomic hand commit refused \(lease_proof_expired\); original retained for the successor/
+    );
+    expect(retentionCalls).toHaveLength(1);
+    expect(rpcCalls).toHaveLength(0);
+    expect(mockWakeHandProjection).not.toHaveBeenCalled();
+    expect(mockObserveCompletedHand).not.toHaveBeenCalled();
+
+    // The retained request is byte-identical to the one a live proof retains.
+    const live = obligationsParams(GLOBAL_HAND + 700);
+    acceptAtomicHand();
+    atomicRpcResults[0].data = {
+      ...(atomicRpcResults[0].data as object),
+      post_commit_obligations: true,
+    };
+    await logHandHistory(live);
+    expect(retentionCalls).toHaveLength(2);
+    // Same request apart from the wall-clock stamps of two separate calls.
+    const unstamped = (request: Record<string, unknown>) => {
+      const { started_at: _s, ended_at: _e, ...row } = request.p_hand_row as Record<
+        string,
+        unknown
+      >;
+      return { ...request, p_hand_row: row };
+    };
+    expect(unstamped(retentionCalls[0])).toEqual(unstamped(retentionCalls[1]));
+    expect(retentionCalls[0]).toMatchObject({
+      p_instance_id: 'engine-instance-1',
+      p_lease_generation: leaseGeneration,
+      p_hand_row: { id: historyId },
+    });
+  });
+
+  it('is cash only: without the flag a lapsed proof refuses before any request', async () => {
+    await expect(logHandHistory(lapsedParams(GLOBAL_HAND + 701, false))).rejects.toThrow(
+      /^atomic hand commit refused \(lease_proof_expired\)$/
+    );
+    expect(retentionCalls).toHaveLength(0);
+    expect(rpcCalls).toHaveLength(0);
+  });
+
+  it('names a refusal by the door and stops asking', async () => {
+    retentionReplies = [
+      { data: null, error: { code: '55000', message: 'HAND_SUBMISSION_LEASE_UNPROVEN' } },
+    ];
+    await expect(logHandHistory(lapsedParams(GLOBAL_HAND + 702))).rejects.toThrow(
+      /\(lease_proof_expired\); retention refused: HAND_SUBMISSION_LEASE_UNPROVEN$/
+    );
+    expect(retentionCalls).toHaveLength(1);
+    expect(rpcCalls).toHaveLength(0);
+  });
+
+  it('asks again after an unanswered retention, within the commit budget', async () => {
+    vi.useFakeTimers();
+    try {
+      retentionReplies = [
+        new Error('supabase_timeout'),
+        { data: null, error: { message: 'upstream connect error' } },
+      ];
+      const pending = logHandHistory(lapsedParams(GLOBAL_HAND + 703)).catch((e: Error) => e);
+      await vi.advanceTimersByTimeAsync(HAND_COMMIT_RETRY_DELAYS_MS[0] + HAND_COMMIT_RETRY_DELAYS_MS[1]);
+      const refusal = await pending;
+      expect(String(refusal)).toMatch(/original retained for the successor/);
+      expect(retentionCalls).toHaveLength(3);
+      expect(retentionCalls[2]).toEqual(retentionCalls[0]);
+      expect(rpcCalls).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('says so when every retention attempt went unanswered', async () => {
+    vi.useFakeTimers();
+    try {
+      retentionReplies = Array.from(
+        { length: HAND_COMMIT_RETRY_DELAYS_MS.length + 1 },
+        () => new Error('supabase_timeout')
+      );
+      const pending = logHandHistory(lapsedParams(GLOBAL_HAND + 704)).catch((e: Error) => e);
+      await vi.advanceTimersByTimeAsync(
+        HAND_COMMIT_RETRY_DELAYS_MS.reduce((sum, delay) => sum + delay, 0)
+      );
+      expect(String(await pending)).toMatch(
+        /\(lease_proof_expired\); retention unknown: supabase_timeout$/
+      );
+      expect(retentionCalls).toHaveLength(HAND_COMMIT_RETRY_DELAYS_MS.length + 1);
+      expect(rpcCalls).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not retain twice when the proof lapses after a live retention', async () => {
+    vi.useFakeTimers();
+    try {
+      const input = obligationsParams(GLOBAL_HAND + 705);
+      let live = true;
+      const assertLeaseAuthority = vi.fn(() => {
+        if (!live) throw new Error('atomic hand commit refused (lease_proof_expired)');
+      });
+      atomicRpcResults = [{ data: null, error: { message: 'supabase_timeout' } }];
+      const pending = logHandHistory({
+        ...input,
+        atomicCommit: { ...input.atomicCommit, assertLeaseAuthority, retainWhenLeaseLapses: true },
+      }).catch((e: Error) => e);
+      await vi.advanceTimersByTimeAsync(0);
+      live = false;
+      await vi.advanceTimersByTimeAsync(HAND_COMMIT_RETRY_DELAYS_MS[0]);
+      expect(String(await pending)).toMatch(/^Error: atomic hand commit refused \(lease_proof_expired\)$/);
+      expect(retentionCalls).toHaveLength(1);
+      expect(rpcCalls).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

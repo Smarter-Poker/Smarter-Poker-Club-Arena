@@ -521,14 +521,33 @@ describe('the crossing scene costs a phone less every frame', () => {
     expect(BEFORE.casters / now.casters).toBeGreaterThanOrEqual(3);
   });
 
-  it('draws at thirty a second once the road has stopped moving', () => {
+  it('draws at thirty a second once the road has stopped moving, after the landing grace', () => {
     motion(false);
     mountScene();
-    // The opening walk, at sixty.
-    for (let t = 16; t <= 1000; t += 8) tick(t);
+    // The opening walk, at the display's own rate, and the grace after it
+    // (framePacer.ts: SETTLE_GRACE_MS) so the landing's tail stays smooth.
+    for (let t = 16; t <= 1000 + 1600; t += 8) tick(t);
     frames.render.mockClear();
-    for (let t = 1008; t <= 2000; t += 8) tick(t);
+    for (let t = 2608; t <= 3600; t += 8) tick(t);
     expect(frames.render.mock.calls.length).toBeLessThanOrEqual(34);
+    expect(frames.render.mock.calls.length).toBeGreaterThanOrEqual(25);
+  });
+
+  it('parks an untouched idle road, and wakes on the first tap', () => {
+    motion(false);
+    mountScene();
+    for (let t = 16; t <= 2600; t += 8) tick(t);
+    // Twenty seconds with nobody touching anything: no draws at all.
+    for (let t = 2608; t <= 23_000; t += 32) tick(t);
+    frames.render.mockClear();
+    for (let t = 23_008; t <= 24_000; t += 8) tick(t);
+    expect(frames.render).not.toHaveBeenCalled();
+    // The tap lands at 24.004 s on the same clock the frames run on.
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(24_004);
+    window.dispatchEvent(new Event('pointerdown'));
+    clock.mockRestore();
+    for (let t = 24_008; t <= 25_000; t += 8) tick(t);
+    expect(frames.render.mock.calls.length).toBeGreaterThanOrEqual(25);
   });
 
   it('draws at sixty a second while the collision is playing', () => {

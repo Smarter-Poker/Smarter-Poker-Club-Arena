@@ -149,9 +149,16 @@ describe('the extracted chart component owns the recharts dependency', () => {
     expect(CHARTS).toMatch(/from 'recharts'/);
   });
 
+  it('keeps the optional polar renderer behind its own lazy boundary', () => {
+    expect(CHARTS).toMatch(
+      /const StatsPositionPiePlot\s*=\s*lazy\(\(\)\s*=>\s*import\('\.\/StatsPositionPiePlot'\)\)/
+    );
+    expect(PAGE_CODE).toContain("import('../components/stats/StatsPositionPiePlot')");
+  });
+
   it('is presentational: it takes its data as props and fetches nothing', () => {
-    // The memos stay on the page because the CSV exports read them too. If this
-    // component starts fetching, the split stops being free.
+    // AnalysisTab owns the memos and CSV boundary. If this component starts
+    // fetching, the split stops being free.
     expect(CHARTS).not.toMatch(/supabase/);
     expect(CHARTS).not.toMatch(/useEffect/);
     expect(CHARTS).toMatch(/export default function StatsCharts\(/);

@@ -28,6 +28,18 @@ import {
   retireHorseExecutionWitness,
   onHorseExecutionFinalized,
 } from '../HorseExecutionWitness.js';
+import { liveHorsePhase8Authority } from '../HorseQualifiedAuthority.js';
+import { liveHorsePhase10Authority } from '../HorsePhase10Authority.js';
+import { HORSE_PHASE11_VARIANTS, liveHorsePhase11Authorities } from '../HorsePhase11Authority.js';
+import { isOmahaPolicyVariant } from '../omaha/OmahaVariantPolicyPack.js';
+import { HORSE_PHASE12_VARIANTS, liveHorsePhase12Authorities } from '../HorsePhase12Authority.js';
+import { isRemainingPolicyVariant } from '../remainingVariants/RemainingVariantPolicyPack.js';
+import { HORSE_PHASE13_VARIANTS, liveHorsePhase13Authorities } from '../HorsePhase13Authority.js';
+import { isJointVariant } from '../multiway/JointInputBinding.js';
+import { plo4LiveReceiptBindingIsValid } from '../plo4/Plo4LivePolicy.js';
+import { omahaVariantReceiptBindingIsValid } from '../omaha/OmahaVariantLivePolicy.js';
+import { remainingVariantReceiptBindingIsValid } from '../remainingVariants/RemainingVariantLivePolicy.js';
+import { jointReceiptBindingIsValid } from '../multiway/JointLivePolicy.js';
 import type {
   CommitDecisionEffectsRequest,
   CompletedHandObservation,
@@ -53,6 +65,7 @@ import {
   horseGovernorSnapshotIsValid,
   horseComputeMetadataIsValid,
   horseSamplingStateIsValid,
+  horsePhase7EvidenceMismatch,
 } from './responseValidation.js';
 
 export interface WorkerLike {
@@ -447,8 +460,27 @@ export class LiveHorseDecisionWorkerClient {
   private readonly readyTimer: ReturnType<typeof setTimeout>;
   private statusTimer: ReturnType<typeof setInterval> | null = null;
 
+  /** Epoch of this client's worker Phase 8 authority, once it has reported. */
+  private phase8WorkerEpoch: string | null = null;
+  /** P10.3: epoch of this client's worker Phase 10 authority. */
+  private phase10WorkerEpoch: string | null = null;
+  /** P11.3: epoch of this client's worker Phase 11 holders (one per worker). */
+  private phase11WorkerEpoch: string | null = null;
+  /** P12.3: epoch of this client's worker Phase 12 holders (one per worker). */
+  private phase12WorkerEpoch: string | null = null;
+  /** P13.3: epoch of this client's worker Phase 13 holders (one per worker). */
+  private phase13WorkerEpoch: string | null = null;
+
   constructor(options: LiveHorseDecisionWorkerClientOptions = {}) {
     this.onFatal = options.onFatal;
+    // A lane start (re)admits the main scheduler's copy of the committed
+    // release selection. A transient read failure here is a refresh failure,
+    // never a withdrawal and never a renewal.
+    liveHorsePhase8Authority.refresh();
+    liveHorsePhase10Authority.refresh();
+    for (const variant of HORSE_PHASE11_VARIANTS) liveHorsePhase11Authorities[variant].refresh();
+    for (const variant of HORSE_PHASE12_VARIANTS) liveHorsePhase12Authorities[variant].refresh();
+    for (const variant of HORSE_PHASE13_VARIANTS) liveHorsePhase13Authorities[variant].refresh();
     this.jobTimeoutMs = Math.max(
       1,
       Math.floor(options.jobTimeoutMs ?? LiveHorseDecisionWorkerClient.DEFAULT_JOB_TIMEOUT_MS)
@@ -634,6 +666,74 @@ export class LiveHorseDecisionWorkerClient {
     const owner = this.planOwners.get(result);
     if (!owner || owner.state === 'retired' || result.planIssueDisposition !== 'issued')
       return Promise.reject(new Error('Horse plan commit has no available client ownership'));
+    // Effect acceptance rechecks authority for a selected Phase 8 candidate.
+    // Effects issued beside a withdrawn selection retire instead of applying.
+    const phase8 = result.decision.tournamentPostflop;
+    if (phase8?.applied) {
+      const verdict = liveHorsePhase8Authority.check(phase8.authority);
+      if (verdict !== 'usable') {
+        noteFire(`phase8_authority_effects_${verdict}`);
+        this.retireDecisionEffects(result, 'decision_finalized');
+        return Promise.reject(new Error(`Horse plan commit refused: Phase 8 authority ${verdict}`));
+      }
+    }
+    // P10.3: the same effect law for a selected PLO4 candidate.
+    const phase10 = result.decision.plo4Policy;
+    if (phase10?.applied) {
+      const verdict = liveHorsePhase10Authority.check(phase10.authority);
+      if (verdict !== 'usable') {
+        noteFire(`phase10_authority_effects_${verdict}`);
+        this.retireDecisionEffects(result, 'decision_finalized');
+        return Promise.reject(
+          new Error(`Horse plan commit refused: Phase 10 authority ${verdict}`)
+        );
+      }
+    }
+    // P11.3: the same effect law for a selected PLO5/PLO6/PLO8 candidate,
+    // checked at that pack's own gate.
+    const phase11 = result.decision.omahaVariantPolicy;
+    if (phase11?.applied) {
+      const verdict = isOmahaPolicyVariant(phase11.variant)
+        ? liveHorsePhase11Authorities[phase11.variant].check(phase11.authority)
+        : 'mismatched';
+      if (verdict !== 'usable') {
+        noteFire(`phase11_authority_effects_${verdict}`);
+        this.retireDecisionEffects(result, 'decision_finalized');
+        return Promise.reject(
+          new Error(`Horse plan commit refused: Phase 11 authority ${verdict}`)
+        );
+      }
+    }
+    // P12.3: the same effect law for a selected Short Deck, Pineapple, FLH or
+    // FLO8 candidate, checked at that pack's own gate.
+    const phase12 = result.decision.remainingVariantPolicy;
+    if (phase12?.applied) {
+      const verdict = isRemainingPolicyVariant(phase12.variant)
+        ? liveHorsePhase12Authorities[phase12.variant].check(phase12.authority)
+        : 'mismatched';
+      if (verdict !== 'usable') {
+        noteFire(`phase12_authority_effects_${verdict}`);
+        this.retireDecisionEffects(result, 'decision_finalized');
+        return Promise.reject(
+          new Error(`Horse plan commit refused: Phase 12 authority ${verdict}`)
+        );
+      }
+    }
+    // P13.3: the same effect law for a selected joint candidate, checked at
+    // its own variant's gate.
+    const phase13 = result.decision.jointPolicy;
+    if (phase13?.applied) {
+      const verdict = isJointVariant(phase13.variant)
+        ? liveHorsePhase13Authorities[phase13.variant].check(phase13.authority)
+        : 'mismatched';
+      if (verdict !== 'usable') {
+        noteFire(`phase13_authority_effects_${verdict}`);
+        this.retireDecisionEffects(result, 'decision_finalized');
+        return Promise.reject(
+          new Error(`Horse plan commit refused: Phase 13 authority ${verdict}`)
+        );
+      }
+    }
     const request: CommitDecisionEffectsRequest = {
       generation: result.generation,
       fence: result.fence,
@@ -1204,6 +1304,76 @@ export class LiveHorseDecisionWorkerClient {
         this.fail(new Error('horse decision worker returned invalid fallback provenance'));
         return;
       }
+      // P10 audit F8: a shadow-only PLO4 receipt (shadow mode, not applied,
+      // not selected) never owned the action, so a strict input-binding
+      // rejection drops it instead of taking the worker down. The ownership
+      // record reconciled from that receipt goes with it; the decision keeps
+      // its actual action and every other check below still applies. Any other
+      // PLO4 receipt that fails the binding still fails closed below.
+      const plo4Shadow = message.decision.plo4Policy;
+      if (
+        plo4Shadow &&
+        typeof plo4Shadow === 'object' &&
+        plo4Shadow.mode === 'shadow' &&
+        plo4Shadow.applied === false &&
+        plo4Shadow.selection !== 'selected' &&
+        !plo4LiveReceiptBindingIsValid(plo4Shadow)
+      ) {
+        delete message.decision.plo4Policy;
+        if (message.decision.policyOwnership?.owner === 'phase10')
+          delete message.decision.policyOwnership;
+        noteFire('phase10_shadow_receipt_binding_dropped');
+      }
+      // P11.1, the same rule: a shadow-only PLO5/PLO6/PLO8 receipt (shadow,
+      // not applied) whose input binding fails the strict validator never
+      // owned the action, so it is dropped with its ownership record instead of
+      // taking the worker down. An applied one still fails closed below.
+      const phase11Shadow = message.decision.omahaVariantPolicy;
+      if (
+        phase11Shadow &&
+        typeof phase11Shadow === 'object' &&
+        phase11Shadow.mode === 'shadow' &&
+        phase11Shadow.applied === false &&
+        !omahaVariantReceiptBindingIsValid(phase11Shadow)
+      ) {
+        delete message.decision.omahaVariantPolicy;
+        if (message.decision.policyOwnership?.owner === 'phase11')
+          delete message.decision.policyOwnership;
+        noteFire('phase11_shadow_receipt_binding_dropped');
+      }
+      // P12.1, the same rule for Short Deck, Pineapple, FLH and FLO8: a
+      // shadow-only receipt (shadow, not applied) whose binding (inputs, or the
+      // P12-B net-action economics) fails the strict validator never owned the
+      // action, so it is dropped with its ownership record instead of taking
+      // the worker down. An applied one still fails closed below.
+      const phase12Shadow = message.decision.remainingVariantPolicy;
+      if (
+        phase12Shadow &&
+        typeof phase12Shadow === 'object' &&
+        phase12Shadow.mode === 'shadow' &&
+        phase12Shadow.applied === false &&
+        !remainingVariantReceiptBindingIsValid(phase12Shadow)
+      ) {
+        delete message.decision.remainingVariantPolicy;
+        if (message.decision.policyOwnership?.owner === 'phase12')
+          delete message.decision.policyOwnership;
+        noteFire('phase12_shadow_receipt_binding_dropped');
+      }
+      // P13.1, the same rule for the joint owner: a shadow-only Phase 13
+      // receipt (shadow, not applied) whose binding fails the strict validator
+      // never owned the action, so it is dropped instead of taking the worker
+      // down. An applied one still fails closed below.
+      const phase13Shadow = message.decision.jointPolicy;
+      if (
+        phase13Shadow &&
+        typeof phase13Shadow === 'object' &&
+        phase13Shadow.mode === 'shadow' &&
+        phase13Shadow.applied === false &&
+        !jointReceiptBindingIsValid(phase13Shadow)
+      ) {
+        delete message.decision.jointPolicy;
+        noteFire('phase13_shadow_receipt_binding_dropped');
+      }
       if (!horseDecisionReceiptIsValid(message.decision, active.request.gameState.gameVariant)) {
         this.fail(new Error('horse decision worker returned invalid policy receipt'));
         return;
@@ -1218,6 +1388,75 @@ export class LiveHorseDecisionWorkerClient {
         );
         return;
       }
+      // The Phase 7 receipt's sampler and opponents are bound to this request
+      // the same way, before the execution witness commits to its evidence.
+      const phase7Mismatch = horsePhase7EvidenceMismatch(message.decision, active.request);
+      if (phase7Mismatch !== null) {
+        this.fail(
+          new Error(`horse decision worker returned invalid policy receipt: ${phase7Mismatch}`)
+        );
+        return;
+      }
+      // FIFO order makes worker receipts monotonic. Observe before the
+      // witness so a withdrawal reported here already binds this decision.
+      if (message.phase8Authority) {
+        this.phase8WorkerEpoch = message.phase8Authority.epoch;
+        liveHorsePhase8Authority.observeWorker(message.phase8Authority);
+      }
+      const phase8Ledger = message.decision.tournamentPostflop;
+      if (phase8Ledger?.authority)
+        phase8Ledger.authority = liveHorsePhase8Authority.stamp(phase8Ledger.authority);
+      // P10.3: mirror and stamp the Phase 10 receipt by the same law.
+      if (message.phase10Authority) {
+        this.phase10WorkerEpoch = message.phase10Authority.epoch;
+        liveHorsePhase10Authority.observeWorker(message.phase10Authority);
+      }
+      const plo4Receipt = message.decision.plo4Policy;
+      if (plo4Receipt?.authority)
+        plo4Receipt.authority = liveHorsePhase10Authority.stamp(plo4Receipt.authority);
+      // P11.3: mirror every pack's receipt at its own gate, then stamp the
+      // decision's receipt at the gate of the pack that decided it.
+      if (message.phase11Authority) {
+        for (const variant of HORSE_PHASE11_VARIANTS) {
+          const receipt = message.phase11Authority[variant];
+          if (!receipt) continue;
+          this.phase11WorkerEpoch = receipt.epoch;
+          liveHorsePhase11Authorities[variant].observeWorker(receipt);
+        }
+      }
+      const omahaReceipt = message.decision.omahaVariantPolicy;
+      if (omahaReceipt?.authority && isOmahaPolicyVariant(omahaReceipt.variant))
+        omahaReceipt.authority = liveHorsePhase11Authorities[omahaReceipt.variant].stamp(
+          omahaReceipt.authority
+        );
+      // P12.3: the same mirror and stamp, per Phase 12 pack.
+      if (message.phase12Authority) {
+        for (const variant of HORSE_PHASE12_VARIANTS) {
+          const receipt = message.phase12Authority[variant];
+          if (!receipt) continue;
+          this.phase12WorkerEpoch = receipt.epoch;
+          liveHorsePhase12Authorities[variant].observeWorker(receipt);
+        }
+      }
+      const remainingReceipt = message.decision.remainingVariantPolicy;
+      if (remainingReceipt?.authority && isRemainingPolicyVariant(remainingReceipt.variant))
+        remainingReceipt.authority = liveHorsePhase12Authorities[remainingReceipt.variant].stamp(
+          remainingReceipt.authority
+        );
+      // P13.3: the same mirror and stamp, per joint variant.
+      if (message.phase13Authority) {
+        for (const variant of HORSE_PHASE13_VARIANTS) {
+          const receipt = message.phase13Authority[variant];
+          if (!receipt) continue;
+          this.phase13WorkerEpoch = receipt.epoch;
+          liveHorsePhase13Authorities[variant].observeWorker(receipt);
+        }
+      }
+      const jointReceipt = message.decision.jointPolicy;
+      if (jointReceipt?.authority && isJointVariant(jointReceipt.variant))
+        jointReceipt.authority = liveHorsePhase13Authorities[jointReceipt.variant].stamp(
+          jointReceipt.authority
+        );
       const witness = createHorseExecutionWitness(active.request, message.decision, {
         requestId: message.requestId,
         lane: message.type === 'FAST_RESULT' ? 'fast' : 'deep',
@@ -1299,6 +1538,15 @@ export class LiveHorseDecisionWorkerClient {
 
   private fail(error: Error): void {
     if (this.phase === 'failed' || this.phase === 'stopped') return;
+    // Work returned by a dead worker is restarted authority from here on.
+    liveHorsePhase8Authority.forgetWorker(this.phase8WorkerEpoch);
+    liveHorsePhase10Authority.forgetWorker(this.phase10WorkerEpoch);
+    for (const variant of HORSE_PHASE11_VARIANTS)
+      liveHorsePhase11Authorities[variant].forgetWorker(this.phase11WorkerEpoch);
+    for (const variant of HORSE_PHASE12_VARIANTS)
+      liveHorsePhase12Authorities[variant].forgetWorker(this.phase12WorkerEpoch);
+    for (const variant of HORSE_PHASE13_VARIANTS)
+      liveHorsePhase13Authorities[variant].forgetWorker(this.phase13WorkerEpoch);
     this.lastError = errorMessage(error);
     this.phase = 'failed';
     clearTimeout(this.readyTimer);
@@ -1444,6 +1692,14 @@ export class LiveHorseDecisionWorkerClient {
   }
 
   private terminateWorker(): Promise<void> {
+    liveHorsePhase8Authority.forgetWorker(this.phase8WorkerEpoch);
+    liveHorsePhase10Authority.forgetWorker(this.phase10WorkerEpoch);
+    for (const variant of HORSE_PHASE11_VARIANTS)
+      liveHorsePhase11Authorities[variant].forgetWorker(this.phase11WorkerEpoch);
+    for (const variant of HORSE_PHASE12_VARIANTS)
+      liveHorsePhase12Authorities[variant].forgetWorker(this.phase12WorkerEpoch);
+    for (const variant of HORSE_PHASE13_VARIANTS)
+      liveHorsePhase13Authorities[variant].forgetWorker(this.phase13WorkerEpoch);
     if (!this.terminationPromise) {
       this.terminationPromise = this.worker.terminate().then(() => undefined);
     }

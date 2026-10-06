@@ -152,6 +152,12 @@ export function issueCarriesWorkflowAlarm(issue, workflowName, since) {
 export const RED_STATE = {
   /** Declared self-alarming AND currently carrying its own open issue. */
   SELF_ALARMING: 'self-alarming',
+  /**
+   * This detector's OWN workflow, red on `main` with no failing job in its
+   * latest verdict other than the job that runs this detector. See
+   * `onlyFailingJobIs` for why that is a fixed point rather than a finding.
+   */
+  SELF_REFERENTIAL: 'self-referential',
   /** Past the threshold, and the durable main-health issue already names it. */
   TRACKED: 'tracked',
   /** Past the threshold with nothing naming it at all. */
@@ -184,6 +190,63 @@ export const RED_STATE = {
 export const SELF_ALARMING_WORKFLOWS = new Map([]);
 
 /**
+ * The display name of the job in `production-integrity-audit.yml` that runs
+ * `check-main-is-green.mjs`.
+ *
+ * Declared here rather than guessed, and pinned against the workflow file by
+ * `tests/a-detector-does-not-mute-itself.law.test.ts`, because `GITHUB_JOB`
+ * carries the job's YAML KEY (`main_is_green`) and the Actions jobs API reports
+ * its NAME. Those are two different strings and only one of them appears in the
+ * evidence this detector reads.
+ */
+export const MAIN_HEALTH_JOB_NAME = 'Nothing is silently red on main';
+
+/**
+ * ── A DETECTOR'S OWN VERDICT IS NOT EVIDENCE ABOUT THE ESTATE (2026-10-03) ──
+ *
+ * `check-main-is-green.mjs` reads every active workflow's latest verdict on
+ * `main` - including the workflow it is running inside. So `Production
+ * Integrity Audit` appears in its own report, and the detector exits non-zero
+ * because of it, which makes the workflow red, which puts it in the next run's
+ * report. GREEN WAS UNREACHABLE BY ARITHMETIC: with the entire estate green and
+ * every other job in this workflow green, the previous run's failure still put
+ * this workflow in `red`, past any threshold, and alarmed.
+ *
+ * Measured 2026-10-03 on run 37098827354: `Production Integrity Audit - 112
+ * consecutive failed verdict(s) over at least 21.5 days, no green run in the
+ * window`, reported by a job inside that same workflow.
+ *
+ * That is not the 2026-09-30 bug and must not be fixed the way that one was
+ * tempting to fix. It is CLAUDE.md 10.86 rule 4 - the same trap one level up.
+ * The exemption written on 2026-09-30 (`SELF_ALARMING_WORKFLOWS`) can never
+ * reach this case by its own rule: an entry must name the label of the issue
+ * THAT workflow files, never `MAIN_HEALTH_READER_LABEL`, and the main-health
+ * issue is this workflow's only write path. So the registry is correct and
+ * closed, and the fixed point needed a different answer.
+ *
+ * ── THE ANSWER IS NOT "SKIP MY OWN WORKFLOW" ────────────────────────────────
+ * This workflow has eleven jobs and nine of them read production. If the whole
+ * workflow were exempt, a red `Live chip and diamond supply still conserves`
+ * would reach nobody, which is CLAUDE.md 10.83 wearing a fresh coat.
+ *
+ * So the circular part is removed and nothing else: this detector's own
+ * workflow stops alarming only when EVERY failing job in its latest verdict is
+ * the job that runs this detector. Any other failing job is a real finding and
+ * alarms exactly as before. One run later the episode has ended on its own and
+ * the all-green sentence closes the durable issue.
+ *
+ * Returns false for an empty or unreadable job list: "I could not tell" must
+ * not read as "nothing else failed" (10.86 rule 2), and false is the loud
+ * direction here.
+ */
+export function onlyFailingJobIs(jobs, jobName) {
+  if (!Array.isArray(jobs) || jobs.length === 0) return false;
+  const failing = jobs.filter((job) => BAD_CONCLUSIONS.has(job?.conclusion));
+  if (failing.length === 0) return false;
+  return failing.every((job) => job?.name === jobName);
+}
+
+/**
  * How a red workflow should be reported, and whether it alarms.
  *
  * `tracked` says the durable main-health issue already names it; it changes
@@ -193,11 +256,24 @@ export const SELF_ALARMING_WORKFLOWS = new Map([]);
  */
 export function classifyRedState(
   red,
-  { tracked = false, selfAlarmed = false, thresholdHours, registry = SELF_ALARMING_WORKFLOWS } = {}
+  {
+    tracked = false,
+    selfAlarmed = false,
+    selfReferential = false,
+    thresholdHours,
+    registry = SELF_ALARMING_WORKFLOWS,
+  } = {}
 ) {
   const declared = registry.get(red?.name) || null;
   if (declared && selfAlarmed) {
     return { state: RED_STATE.SELF_ALARMING, alarms: false, declared };
+  }
+  // The caller sets this only for the workflow it is running inside, and only
+  // when `onlyFailingJobIs` proved every failing job in the latest verdict was
+  // the one running this detector. It is a structural fact about the run, never
+  // an inference from an issue, a label or a marker this detector wrote.
+  if (selfReferential) {
+    return { state: RED_STATE.SELF_REFERENTIAL, alarms: false, declared: null };
   }
   if (!(red?.hours >= thresholdHours)) {
     return { state: RED_STATE.FRESH, alarms: false, declared: null };
@@ -246,6 +322,9 @@ export function classifyWorkflow(name, list, now = Date.now()) {
     hours: (now - new Date(firstBad.created_at).getTime()) / 3_600_000,
     since: firstBad.created_at,
     url: latest.html_url,
+    // The run whose jobs decide whether a red workflow carries a finding other
+    // than this detector's own verdict. See `onlyFailingJobIs`.
+    latestRunId: latest.id,
     lastGreen: lastGreen ? lastGreen.created_at : null,
     seen: list.length,
     verdicts: verdicts.length,

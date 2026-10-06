@@ -35,7 +35,13 @@
 import { useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
-import { CHIP_STATS, statsScopeArgs, type StatsScope } from '../services/statsScope';
+import {
+  CHIP_STATS,
+  statsRpcName,
+  statsScopeArgs,
+  type StatsClubId,
+  type StatsScope,
+} from '../services/statsScope';
 
 export const STATS_PULSE_INTERVAL_MS = 8_000;
 /** A return after this long away refetches even if the pulse did not move. */
@@ -49,6 +55,8 @@ export interface StatsPulseOptions {
   staleAfterMs?: number;
   /** The asset the page reads; the pulse watches that asset's newest hand. */
   scope?: StatsScope;
+  /** Null watches the existing All Clubs view. */
+  clubId?: StatsClubId;
 }
 
 /** Reads the `pulse` string out of the RPC payload; null when unusable. */
@@ -65,6 +73,7 @@ export function useStatsPulse({
   intervalMs = STATS_PULSE_INTERVAL_MS,
   staleAfterMs = STATS_PULSE_STALE_AFTER_MS,
   scope = CHIP_STATS,
+  clubId = null,
 }: StatsPulseOptions): void {
   const onChangeRef = useRef(onChange);
   useEffect(() => {
@@ -83,11 +92,12 @@ export function useStatsPulse({
       if (cancelled || inFlight || document.visibilityState !== 'visible') return;
       inFlight = true;
       try {
-        const { data, error } = await supabase.rpc('ca_player_stats_pulse', {
+        const rpcName = statsRpcName('ca_player_stats_pulse', clubId);
+        const { data, error } = await supabase.rpc(rpcName, {
           /* The pulse is a change detector over the same unscoped facts
              table, so it carries the same scope its page reads with.
              See src/services/statsScope.ts. */
-          ...statsScopeArgs(scope),
+          ...statsScopeArgs(scope, clubId),
           p_user: userId,
         });
         if (cancelled) return;
@@ -134,5 +144,5 @@ export function useStatsPulse({
       clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [userId, enabled, intervalMs, staleAfterMs, scope]);
+  }, [userId, enabled, intervalMs, staleAfterMs, scope, clubId]);
 }

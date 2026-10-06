@@ -6,12 +6,24 @@ const css = readFileSync(
   resolve(__dirname, '../../src/components/club/RakeSnapshotPanel.module.css'),
   'utf8'
 );
+const pageCss = readFileSync(
+  resolve(__dirname, '../../src/pages/club/ClubDataPage.module.css'),
+  'utf8'
+);
 
-function rule(selector: string): string {
+function ruleFrom(source: string, selector: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = css.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`));
+  const match = source.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`));
   expect(match, `${selector} rule is missing`).not.toBeNull();
   return match?.[1] ?? '';
+}
+
+function rule(selector: string): string {
+  return ruleFrom(css, selector);
+}
+
+function pageRule(selector: string): string {
+  return ruleFrom(pageCss, selector);
 }
 
 describe('Club Data touch targets', () => {
@@ -60,5 +72,16 @@ describe('Club Data touch targets', () => {
     expect(rule('.toolSearch input')).toMatch(/min-height:\s*44px/);
     expect(rule('.toolSearch input')).toMatch(/font-size:\s*16px/);
     expect(rule('.toolSort select')).toMatch(/min-height:\s*44px/);
+    expect(rule('.toolSort select')).toMatch(/font-size:\s*max\(16px,\s*3\.2cqw\)/);
+  });
+
+  it('wraps completed exports and narrow reporting windows inside their consoles', () => {
+    expect(rule('.exportStatus')).toMatch(/overflow-wrap:\s*anywhere/);
+    expect(rule('.exportStatus')).toMatch(/white-space:\s*normal/);
+    expect(pageRule('.rangeBar')).toMatch(/flex-wrap:\s*wrap/);
+    expect(pageRule('.rangeBar')).toMatch(/justify-content:\s*center/);
+    expect(pageRule('.rangeChip')).toMatch(/order:\s*-1/);
+    expect(pageRule('.rangeChip')).toMatch(/flex:\s*1 0 100%/);
+    expect(pageRule('.rangeChip')).toMatch(/justify-content:\s*center/);
   });
 });

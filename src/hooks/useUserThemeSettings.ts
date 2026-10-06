@@ -62,11 +62,17 @@
  * the defaults exactly once, then never again.
  */
 
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, useLayoutEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { getLocalStorage, setLocalStorage } from '../lib/storage';
 import { recordCustomizationOperation } from '../services/CustomizationOperationsTelemetry';
+import {
+  DEFAULT_FACE_DECK_ID,
+  applyFaceDeckToDocument,
+  normalizeFaceDeckId,
+  type FaceDeckId,
+} from '../lib/faceDeck';
 
 export interface UserThemeSelection {
   theme_id: string;
@@ -74,6 +80,8 @@ export interface UserThemeSelection {
   button_id: string;
   background_id: string;
   cards_id: string;
+  /** Client appearance name; persisted as user_theme_settings.face_deck_id. */
+  faceDeckId: FaceDeckId;
 }
 
 export const THEME_FIELDS = [
@@ -82,6 +90,7 @@ export const THEME_FIELDS = [
   'button_id',
   'background_id',
   'cards_id',
+  'faceDeckId',
 ] as const;
 
 const DEFAULT_THEME: UserThemeSelection = {
@@ -93,6 +102,7 @@ const DEFAULT_THEME: UserThemeSelection = {
   button_id: 'classic-white',
   background_id: 'midnight',
   cards_id: 'classic_red',
+  faceDeckId: DEFAULT_FACE_DECK_ID,
 };
 
 /** The only values `user_theme_settings.game_type` may be keyed on. */
@@ -172,6 +182,8 @@ export function resolveThemeBucket(
 
 type ThemeRow = Partial<UserThemeSelection> & {
   game_type?: string | null;
+  /** Database spelling; live client events use faceDeckId. */
+  face_deck_id?: string | null;
   /** Row timestamp — lets a NEWER 'Apply To: ALL' save beat an older
    *  per-variant row (Dan 2026-08-28, see pickThemeRow). */
   updated_at?: string | null;
@@ -185,6 +197,7 @@ function toSelection(row: ThemeRow): UserThemeSelection {
     button_id: row.button_id || DEFAULT_THEME.button_id,
     background_id: row.background_id || DEFAULT_THEME.background_id,
     cards_id: row.cards_id || DEFAULT_THEME.cards_id,
+    faceDeckId: normalizeFaceDeckId(row.faceDeckId ?? row.face_deck_id),
   };
 }
 
@@ -246,7 +259,9 @@ export function pickThemeRow(rows: ThemeRow[], gameType: CanonicalGameType): The
 const themeRowsQuery = (userId: string) =>
   supabase
     .from('user_theme_settings')
-    .select('game_type, theme_id, table_id, button_id, background_id, cards_id, updated_at')
+    .select(
+      'game_type, theme_id, table_id, button_id, background_id, cards_id, face_deck_id, updated_at'
+    )
     .eq('user_id', userId);
 
 type ThemeRowsResult = Awaited<ReturnType<typeof themeRowsQuery>>;
@@ -344,7 +359,10 @@ function startThemeRealtime(userId: string, entry: ThemeRealtimeEntry): void {
           THEME_FIELDS.flatMap((field) =>
             typeof raw[field] === 'string' && raw[field] ? [[field, raw[field]]] : []
           )
-        );
+        ) as Partial<UserThemeSelection>;
+        if (typeof raw.face_deck_id === 'string' && raw.face_deck_id) {
+          value.faceDeckId = normalizeFaceDeckId(raw.face_deck_id);
+        }
         masterBus.emit('UI_THEME_CHANGED', {
           key: canonicalGameType(raw.game_type),
           value,
@@ -540,12 +558,19 @@ export function useUserThemeSettings(
   isTournament?: boolean,
   tournamentType?: string
 ) {
+  /**
+   * null while a tournament's format is unresolved: the bucket is not yet
+   * knowable, and guessing is what the load effect refuses to do.
+   */
+  const gameType = useMemo<CanonicalGameType | null>(
+    () => resolveThemeBucket(gameVariant, isTournament, tournamentType),
+    [gameVariant, isTournament, tournamentType]
+  );
   const [theme, setTheme] = useState<UserThemeSelection>(() => {
     // FIRST PAINT (2026-08-28): resolve synchronously from the cache so the
     // opening frame already wears the saved theme instead of flashing the
     // defaults for the length of a network round trip.
-    const bucket = resolveThemeBucket(gameVariant, isTournament, tournamentType);
-    return resolveCachedTheme(userId, bucket) ?? { ...DEFAULT_THEME };
+    return resolveCachedTheme(userId, gameType) ?? { ...DEFAULT_THEME };
   });
   const [loading, setLoading] = useState(true);
   /**
@@ -556,15 +581,29 @@ export function useUserThemeSettings(
   const [error, setError] = useState<string | null>(null);
   const pendingMutationsRef = useRef(new Map<CanonicalGameType, Set<string>>());
   const realtime = useUserThemeRealtime(userId);
+  const themeScope = `${userId || 'guest'}:${gameType || 'unresolved'}`;
+  const themeScopeRef = useRef(themeScope);
 
-  /**
-   * null while a tournament's format is unresolved: the bucket is not yet
-   * knowable, and guessing is what the load effect refuses to do.
-   */
-  const gameType = useMemo<CanonicalGameType | null>(
-    () => resolveThemeBucket(gameVariant, isTournament, tournamentType),
-    [gameVariant, isTournament, tournamentType]
-  );
+  // A persistent table shell can survive logout/login and game-bucket changes.
+  // Never let the previous scope's art reach a browser paint while the next
+  // account has no cache (or its authoritative read is slow/fails). A layout
+  // effect performs the scope handoff before paint; the database load below
+  // remains the source of truth and can replace this scoped first-frame value.
+  useLayoutEffect(() => {
+    if (themeScopeRef.current === themeScope) return;
+    themeScopeRef.current = themeScope;
+    pendingMutationsRef.current.clear();
+    setError(null);
+    setLoading(Boolean(userId));
+    const scopedTheme = resolveCachedTheme(userId, gameType) ?? { ...DEFAULT_THEME };
+    setTheme((current) => (sameSelection(current, scopedTheme) ? current : scopedTheme));
+  }, [gameType, themeScope, userId]);
+
+  // Paint cached and hydrated finishes before the next browser frame. Direct
+  // taps also update this synchronously in applyTableAppearance.
+  useLayoutEffect(() => {
+    applyFaceDeckToDocument(theme.faceDeckId);
+  }, [theme.faceDeckId]);
 
   useEffect(() => {
     if (!userId) {
@@ -719,11 +758,13 @@ export function useUserThemeSettings(
         if (!mutationId && pending?.size) return;
       }
 
-      // Only the five theme fields, never whatever else rode along on the bus.
+      // Only the six theme fields, never whatever else rode along on the bus.
       const clean: Partial<UserThemeSelection> = {};
       for (const field of THEME_FIELDS) {
         const value = (selection as Record<string, unknown>)[field];
-        if (typeof value === 'string' && value) clean[field] = value;
+        if (typeof value === 'string' && value) {
+          clean[field] = (field === 'faceDeckId' ? normalizeFaceDeckId(value) : value) as never;
+        }
       }
       if (!Object.keys(clean).length) return;
 

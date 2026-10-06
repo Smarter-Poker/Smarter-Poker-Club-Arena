@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+import { footerOverlapScroll } from '../e2e/support/viewportGeometry';
 import { readDailyChallengesUnit } from '../helpers/dailyChallengesSources';
 
 import { readDailyChallengesStylesheet } from '../helpers/dailyChallengesSources';
@@ -90,6 +91,19 @@ describe('Daily Missions production certification', () => {
     expect(spec.indexOf('routedRealtimeServers.splice(0)')).toBeLessThan(
       spec.indexOf('name: /^Claim (?:All|Next) / })')
     );
+    const realtimeClose = spec.indexOf('await server.close({ code: 4000');
+    const realtimeDegraded = spec.indexOf(
+      "const realtimeDegraded = expect(page.getByText('Reconnecting'))"
+    );
+    const degradedObserved = spec.indexOf('await realtimeDegraded;');
+    const liveRecovery = spec.indexOf("const liveRecovery = expect(page.getByText('Live Now'))");
+    const claimRecovery = spec.indexOf('name: /^Claim (?:All|Next) / })');
+    expect(realtimeDegraded).toBeLessThan(realtimeClose);
+    expect(degradedObserved).toBeGreaterThan(realtimeClose);
+    expect(degradedObserved).toBeLessThan(liveRecovery);
+    expect(liveRecovery).toBeGreaterThan(spec.indexOf('routedRealtimeServers.splice(0)'));
+    expect(spec.indexOf('await Promise.all([', liveRecovery)).toBeGreaterThan(liveRecovery);
+    expect(liveRecovery).toBeLessThan(claimRecovery);
     expect(spec).not.toMatch(/revision cursor watchdog/);
     // dashboard_loaded is intentionally sampled at 20%; certification proves
     // the actual receipt and only requires unsampled mutation operations.
@@ -102,6 +116,13 @@ describe('Daily Missions production certification', () => {
     expect(spec).toContain('descendantOffenders: Array.from');
     expect(spec).toContain('if (nodeBounds.width === 0 && nodeBounds.height === 0) return false;');
     expect(spec).toContain('descendantOffenders: []');
+    const disconnectedAlertRecovery = spec.slice(
+      spec.indexOf("test.step('reset alert reaches notifications"),
+      spec.indexOf("test.step('an injected dashboard outage")
+    );
+    expect(disconnectedAlertRecovery).toContain("navigateWithinArena('notifications')");
+    expect(disconnectedAlertRecovery).toContain("navigateWithinArena('challenges')");
+    expect(disconnectedAlertRecovery).not.toContain('page.reload(');
   });
 
   it('certifies authentic seven-day settlement, legacy multiplier history, and two-tab calm', () => {
@@ -109,6 +130,29 @@ describe('Daily Missions production certification', () => {
     expect(spec).toContain("is_active: 'eq.true'");
     expect(spec).toContain('installHistoricalBoostedMilestone');
     expect(spec).toContain('HISTORICAL_MILESTONE_ACTUAL_DIAMONDS');
+    const historicalFixture = spec.slice(
+      spec.indexOf('async function installHistoricalBoostedMilestone('),
+      spec.indexOf(
+        '\nasync function authenticatedClaim(',
+        spec.indexOf('async function installHistoricalBoostedMilestone(')
+      )
+    );
+    expect(historicalFixture).toContain("'add_diamonds_to_balance'");
+    expect(historicalFixture).toContain('p_amount: HISTORICAL_MILESTONE_ACTUAL_DIAMONDS');
+    expect(historicalFixture).toContain(
+      'daily_mission_milestones:${account.id}:${historicalRunId}:777'
+    );
+    expect(historicalFixture).toContain('new_balance: boostedBalance');
+    expect(historicalFixture).toContain('amount: HISTORICAL_MILESTONE_ACTUAL_DIAMONDS');
+    expect(historicalFixture).toContain("p_type: 'daily_mission_milestone'");
+    expect(historicalFixture).not.toContain(
+      "insertServiceRows(environment, 'diamond_transactions'"
+    );
+    expect(source('scripts/ci/test-daily-missions-hand-trigger-postgres.py')).toContain(
+      'legacy_multiplier_journal_total'
+    );
+    expect(historicalFixture).not.toContain("'fn_ca_mint'");
+    expect(historicalFixture).not.toContain('registered_by_op_id');
     expect(spec).toContain('for (const [index, assignedDate]');
     expect(spec).toContain('milestoneDiamonds: 0');
     expect(spec).toContain('exact_value: true');
@@ -147,7 +191,25 @@ describe('Daily Missions production certification', () => {
     expect(helper).toContain("{ table: 'notifications', column: 'actor_id' as const }");
     expect(helper).toContain("{ table: 'profiles', column: 'id' as const }");
     expect(helper).toContain("{ table: 'users', column: 'id' as const }");
-    expect(spec).toContain('hand history: exact fixture row remains');
+    // Production never receives a synthetic hand, so there is no hand fixture
+    // to clean up: the settled-hand trigger is certified on native PostgreSQL
+    // (scripts/ci/test-daily-missions-hand-trigger-postgres.py, board #5070).
+    expect(spec).not.toMatch(/['"`]hand_history['"`]/);
+    // Production still certifies the half the trigger hands off to: the exact
+    // outbox row the trigger writes, booked by the live pg_cron drainer. The
+    // spec must never book the event itself (the service enqueue RPC records
+    // it inline and deletes the outbox row, which skips the drainer).
+    expect(spec).toMatch(
+      /insertServiceRows<[\s\S]*?>\(environment, 'daily_challenge_event_outbox', \{\s*user_id: account!\.id,\s*event_key: eventKey,\s*amounts,\s*magnitudes,\s*threshold_values: thresholdValues,\s*occurred_at: occurredAt,\s*\}\)/
+    );
+    expect(spec).toContain('const eventKey = `certification:outbox:${randomUUID()}`;');
+    expect(spec).toContain(
+      'const thresholdValues = { big_pots: [499, 500], strong_hands: [6, 7] };'
+    );
+    expect(spec).toContain("'the pg_cron outbox drainer must book the queued event'");
+    expect(spec).toContain('timeout: DAILY_MISSIONS_OUTBOX_DRAIN_TIMEOUT');
+    expect(spec).not.toContain('enqueue_daily_challenge_event');
+    expect(spec).not.toMatch(/fn_drain_daily_challenge_event_outbox_user['"`]/);
     expect(helper).toContain('reserved fixture residue remains after cleanup');
     // Certification owns and removes the exact UUID it creates. Listing the
     // entire Auth tenant first makes an unrelated damaged account capable of
@@ -204,8 +266,17 @@ describe('Daily Missions production certification', () => {
 
   it('keeps every mission control above the fixed Club Arena footer', () => {
     const css = readDailyChallengesStylesheet();
+    const pageObject = source('tests/e2e/support/DailyMissionsPage.ts');
     expect(css).toContain('padding: 24px 18px calc(var(--bottom-nav-clearance, 74px) + 24px)');
     expect(css).toContain('padding: 0 0 max(84px, calc(var(--bottom-nav-clearance, 74px) + 12px))');
+    expect(pageObject).toContain('const footerOverlap =');
+    expect(pageObject).toContain("window.scrollBy({ top: pixels, behavior: 'auto' })");
+    expect(pageObject).toContain('{ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT }');
+  });
+
+  it('repairs footer overlap after a late responsive reflow', () => {
+    expect(footerOverlapScroll({ y: 496, height: 44 }, { y: 520, height: 48 })).toBe(28);
+    expect(footerOverlapScroll({ y: 468, height: 44 }, { y: 520, height: 48 })).toBe(0);
   });
 
   it('keeps modal dialogs above inert toasts and contains backdrop scrolling', () => {

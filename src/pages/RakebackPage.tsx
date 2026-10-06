@@ -6,6 +6,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
+import { requestPushNudge } from '../lib/pushNudgePolicy';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { useToast } from '../components/common/Toast';
@@ -72,6 +73,16 @@ export default function RakebackPage() {
     [ownsData, readyPeriod]
   );
   const totalEarned = periods.reduce((sum, p) => sum + (Number(p.rakeback_earned) || 0), 0);
+  // A paid period is a rakeback receipt the player is looking at: the moment
+  // a notification for the next one is obviously useful. The prompt host
+  // decides whether an ask is allowed, and never nudges the owner for
+  // receipts (his accounting copies route to Production Alerts).
+  const hasRakebackReceipt = periods.some(
+    (p) => p.status === 'paid' && (Number(p.rakeback_earned) || 0) > 0
+  );
+  useEffect(() => {
+    if (hasRakebackReceipt) requestPushNudge('rakeback_receipt');
+  }, [hasRakebackReceipt]);
   const currentRate = periods[0]?.rakeback_rate;
 
   useEffect(() => {

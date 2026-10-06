@@ -69,6 +69,7 @@ import { STORAGE_KEYS } from '../lib/storage';
 import { SpadeConsole } from '../components/console/SpadeConsole';
 import styles from './HomePage.module.css';
 import { titleCase } from '../utils/titleCase';
+import { leaveClubWarning } from '../utils/leaveClubWarning';
 import { reportError } from '../utils/errorReporter';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 
@@ -230,6 +231,42 @@ function HomePageInner() {
   const [leaveConfirm, setLeaveConfirm] = useState<{ visible: boolean; club: UserClub } | null>(
     null
   );
+  /* What the member holds in the club they are about to leave: `undefined`
+     while it is being read (the Leave plate waits), `null` when it could not
+     be read, otherwise the balance. Leaving sends it all to the club treasury,
+     so the question has to say so (launch audit 2026-10-05). */
+  const [leaveChips, setLeaveChips] = useState<number | null | undefined>(undefined);
+  const leaveClubId = leaveConfirm?.visible ? leaveConfirm.club?.id : undefined;
+  useEffect(() => {
+    setLeaveChips(undefined);
+    if (!leaveClubId) return;
+    let cancelled = false;
+    void (async () => {
+      let chips: number | null = null;
+      try {
+        const { data: auth } = await getAuthUser();
+        const userId = auth.user?.id;
+        if (userId) {
+          const { data, error } = await supabase
+            .from('club_members')
+            .select('chip_balance')
+            .eq('club_id', leaveClubId)
+            .eq('user_id', userId)
+            .maybeSingle();
+          if (!error && data) {
+            const n = Number(data.chip_balance ?? 0);
+            chips = Number.isFinite(n) ? n : null;
+          }
+        }
+      } catch {
+        chips = null;
+      }
+      if (!cancelled) setLeaveChips(chips);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [leaveClubId]);
 
   // Club quick links (Cashier/Marketplace tiles) — target club selection
   const [quickLinkClubId, setQuickLinkClubId] = useState<string | null>(() => readLastClubId());
@@ -565,36 +602,33 @@ function HomePageInner() {
     { debounce: 500 }
   );
 
-  // AUTH_STATE_CHANGED: kept as immediate (auth state must propagate instantly)
-  useMasterBusSubscription(
-    'AUTH_STATE_CHANGED',
-    (payload: any) => {
-      if (payload.isAuthenticated) {
-        if (directoryOwnerRef.current !== payload.userId) {
-          directoryOwnerRef.current = payload.userId || null;
-          setUserClubs([]);
-          setOwnedUnionWallets([]);
-        }
-        fetchUserData(false);
-      } else {
-        // Invalidate any request that started before sign-out. There is no
-        // replacement fetch in this branch to advance the generation for us.
-        directoryRequestGenerationRef.current += 1;
-        directoryOwnerRef.current = null;
-        setDirectoryPending(false);
+  // AUTH_STATE_CHANGED: immediate. Delaying this even briefly leaves the old
+  // account's wallet names available to an already-open Cashier directory.
+  useMasterBusSubscription('AUTH_STATE_CHANGED', (payload: any) => {
+    if (payload.isAuthenticated) {
+      if (directoryOwnerRef.current !== payload.userId) {
+        directoryOwnerRef.current = payload.userId || null;
         setUserClubs([]);
         setOwnedUnionWallets([]);
-        // Clear SWR cache to prevent stale club data leaking across logins
-        try {
-          localStorage.removeItem(STORAGE_KEYS.CLUBS_CACHE);
-          localStorage.removeItem(STORAGE_KEYS.CLUBS_CACHE_TS);
-        } catch {
-          /* */
-        }
       }
-    },
-    { debounce: 300 }
-  );
+      fetchUserData(false);
+    } else {
+      // Invalidate any request that started before sign-out. There is no
+      // replacement fetch in this branch to advance the generation for us.
+      directoryRequestGenerationRef.current += 1;
+      directoryOwnerRef.current = null;
+      setDirectoryPending(false);
+      setUserClubs([]);
+      setOwnedUnionWallets([]);
+      // Clear SWR cache to prevent stale club data leaking across logins
+      try {
+        localStorage.removeItem(STORAGE_KEYS.CLUBS_CACHE);
+        localStorage.removeItem(STORAGE_KEYS.CLUBS_CACHE_TS);
+      } catch {
+        /* */
+      }
+    }
+  });
 
   // Welcome toast for new users — auto-dismiss, once per device
   // Guard: only fires AFTER first fetch completes (prevents false-fire on cache miss)
@@ -1488,6 +1522,13 @@ function HomePageInner() {
                 onSelect={tile.alt === 'Cashier' ? openClubCashier : openClubMarketplace}
                 onEmpty={tile.alt === 'Cashier' ? cashierEmpty : marketplaceEmpty}
                 preloadPath={tile.alt === 'Cashier' ? '/cashier/trade' : '/marketplace'}
+                directoryPending={tile.alt === 'Cashier' ? directoryPending : false}
+                directoryError={tile.alt === 'Cashier' ? loadFailed : false}
+                onDirectoryRetry={
+                  tile.alt === 'Cashier'
+                    ? () => void fetchUserData(false, () => isMountedRef.current)
+                    : undefined
+                }
               />
             ) : (
               <button
@@ -1575,6 +1616,7 @@ function HomePageInner() {
                 primary: {
                   label: 'Yes, Leave Club',
                   ink: 'red',
+                  disabled: leaveChips === undefined,
                   onClick: () => handleLeaveClub(leaveConfirm.club),
                 },
               }}
@@ -1584,7 +1626,8 @@ function HomePageInner() {
                 <strong className="sc-ink--silver">
                   {titleCase(leaveConfirm.club?.name) || 'This Club'}
                 </strong>
-                ? This Action Cannot Be Undone.
+                ?{' '}
+                {leaveChips === undefined ? 'Checking Your Chips...' : leaveClubWarning(leaveChips)}
               </p>
             </SpadeConsole>
           </div>

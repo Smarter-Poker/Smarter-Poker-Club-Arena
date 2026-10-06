@@ -20,10 +20,13 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { SpadeConsole } from '../console/SpadeConsole';
 import haptic from '../../services/HapticService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import { preloadRoute } from '../../utils/ChunkPreloader';
+import { compactChips } from '../../utils/format';
+import { titleCase } from '../../utils/titleCase';
 import type { LobbyTile } from '../../config/lobbyTiles.config';
 import {
   fetchClubChipBalances,
@@ -35,6 +38,7 @@ import {
 import styles from '../../pages/HomePage.module.css';
 
 const LONG_PRESS_MS = 500;
+const LONG_PRESS_MOVE_PX = 10;
 
 interface ClubQuickLinkTileProps<T extends QuickLinkClub> {
   tile: LobbyTile;
@@ -50,6 +54,16 @@ interface ClubQuickLinkTileProps<T extends QuickLinkClub> {
   onEmpty: () => void;
   /** Optional ChunkPreloader route to warm on hover/press (e.g. '/cashier'). */
   preloadPath?: string;
+  /**
+   * True while the authoritative wallet directory is still being assembled.
+   * A cached target remains safe for the normal tap, but the chooser must not
+   * advertise that partial cache as the complete all-wallet directory.
+   */
+  directoryPending?: boolean;
+  /** The authoritative directory read failed and can be retried. */
+  directoryError?: boolean;
+  /** Retry the authoritative directory read from inside the chooser. */
+  onDirectoryRetry?: () => void;
 }
 
 export default function ClubQuickLinkTile<T extends QuickLinkClub>({
@@ -60,6 +74,9 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
   onSelect,
   onEmpty,
   preloadPath,
+  directoryPending = false,
+  directoryError = false,
+  onDirectoryRetry,
 }: ClubQuickLinkTileProps<T>) {
   const { user } = useAuthUser();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -75,15 +92,18 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
+  const directoryStatusRef = useRef<HTMLDivElement | null>(null);
+  const directoryRetryRef = useRef<HTMLButtonElement | null>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressFired = useRef(false);
+  const longPressOrigin = useRef<{ pointerId: number; x: number; y: number } | null>(null);
   const preloaded = useRef(false);
 
   // The gesture is a wallet directory, not merely a multi-club switcher. Keep
   // it available for one eligible wallet too so every permitted role can use
   // the exact right-click / hold interaction the Cashier tile advertises.
-  const hasSwitch = clubs.length > 0;
+  const hasSwitch = clubs.length > 0 || directoryPending || directoryError;
   const hasClubWallet = clubs.some((club) => !isUnionEntity(club));
 
   // Warm the destination chunk the first time the user shows intent
@@ -96,7 +116,7 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
   // Per-club chip balances — lazy-loaded when the popover opens, and re-read
   // when a chip movement invalidates the memo while the popover is open
   useEffect(() => {
-    if (!menuOpen) return;
+    if (!menuOpen || directoryPending || directoryError) return;
     if (!user?.id) {
       setBalances(null);
       setBalanceOwnerId(null);
@@ -135,7 +155,7 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
     return () => {
       live = false;
     };
-  }, [menuOpen, user?.id, balanceNonce, hasClubWallet]);
+  }, [menuOpen, user?.id, balanceNonce, hasClubWallet, directoryPending, directoryError]);
 
   // Any chip movement invalidates the 30s memo so the next open is accurate
   useMasterBusSubscriptions([...CHIP_BALANCE_EVENTS], () => {
@@ -148,6 +168,7 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
       clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
     }
+    longPressOrigin.current = null;
   }, []);
 
   // Never leave a pending long-press timer behind on unmount
@@ -177,6 +198,23 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
     [clearLongPress]
   );
 
+  // Authentication may change without unmounting the lobby. Close the portal
+  // synchronously with the identity observed by the auth hook so no wallet name
+  // from the previous account remains painted while Home replaces its directory.
+  const menuOwnerRef = useRef(user?.id ?? null);
+  useLayoutEffect(() => {
+    const nextOwner = user?.id ?? null;
+    if (menuOwnerRef.current === nextOwner) return;
+    menuOwnerRef.current = nextOwner;
+    setMenuOpen(false);
+    setBalances(null);
+    setBalanceOwnerId(null);
+    setBalancesLoading(false);
+    setBalancesError(false);
+    longPressFired.current = false;
+    clearLongPress();
+  }, [user?.id, clearLongPress]);
+
   // The lobby scroller transforms and clips descendants. Keep the directory
   // in the document portal; only its desktop anchor follows the tile.
   useLayoutEffect(() => {
@@ -186,7 +224,13 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
 
     const placeMenu = () => {
       const rect = trigger.getBoundingClientRect();
-      menu.style.setProperty('--quick-link-anchor-x', `${rect.left + rect.width / 2}px`);
+      const menuHalfWidth = menu.getBoundingClientRect().width / 2;
+      const unclampedCenter = rect.left + rect.width / 2;
+      const safeCenter = Math.min(
+        window.innerWidth - menuHalfWidth - 8,
+        Math.max(menuHalfWidth + 8, unclampedCenter)
+      );
+      menu.style.setProperty('--quick-link-anchor-x', `${safeCenter}px`);
       menu.style.setProperty(
         '--quick-link-anchor-bottom',
         `${window.innerHeight - rect.top + 8}px`
@@ -203,8 +247,11 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
 
   // Focus follows the active item while the menu is open
   useEffect(() => {
-    if (menuOpen) itemRefs.current[activeIndex]?.focus();
-  }, [menuOpen, activeIndex]);
+    if (!menuOpen) return;
+    if (directoryError) directoryRetryRef.current?.focus();
+    else if (directoryPending || clubs.length === 0) directoryStatusRef.current?.focus();
+    else itemRefs.current[activeIndex]?.focus();
+  }, [menuOpen, activeIndex, clubs.length, directoryPending, directoryError]);
 
   // The Retry control sits before the ARIA menu. Tab intentionally dismisses
   // the popover, so without managed focus a keyboard user could never reach it.
@@ -216,16 +263,36 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
     if (menuOpen && !balancesLoading && balancesError) retryRef.current?.focus();
   }, [menuOpen, balancesLoading, balancesError]);
 
-  const handlePointerDown = useCallback(() => {
-    if (!hasSwitch) return;
-    longPressFired.current = false;
-    clearLongPress();
-    longPressTimer.current = setTimeout(() => {
-      longPressFired.current = true;
-      haptic.medium();
-      openMenu();
-    }, LONG_PRESS_MS);
-  }, [hasSwitch, clearLongPress, openMenu]);
+  const handlePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      if (!hasSwitch) return;
+      longPressFired.current = false;
+      clearLongPress();
+      longPressOrigin.current = {
+        pointerId: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+      };
+      longPressTimer.current = setTimeout(() => {
+        longPressFired.current = true;
+        longPressOrigin.current = null;
+        haptic.medium();
+        openMenu();
+      }, LONG_PRESS_MS);
+    },
+    [hasSwitch, clearLongPress, openMenu]
+  );
+
+  const handlePointerMove = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      const origin = longPressOrigin.current;
+      if (!origin || origin.pointerId !== event.pointerId) return;
+      if (Math.hypot(event.clientX - origin.x, event.clientY - origin.y) > LONG_PRESS_MOVE_PX) {
+        clearLongPress();
+      }
+    },
+    [clearLongPress]
+  );
 
   const handleTileClick = useCallback(() => {
     if (longPressFired.current) {
@@ -239,6 +306,7 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
 
   const handleMenuKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      if (clubs.length === 0 && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
       switch (e.key) {
         case 'ArrowDown':
           e.preventDefault();
@@ -271,7 +339,8 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
     [clubs.length, closeMenu]
   );
 
-  const clubName = targetClub?.name || undefined;
+  const clubName = targetClub?.name ? titleCase(targetClub.name) : undefined;
+  const directoryReady = !directoryPending && !directoryError;
   const visibleBalances = balanceOwnerId === user?.id ? balances : null;
   // Drop refs for rows that no longer exist (club left / list shrank)
   itemRefs.current.length = clubs.length;
@@ -284,10 +353,11 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
         onClick={handleTileClick}
         onPointerEnter={handlePreload}
         onFocus={handlePreload}
-        onPointerDown={() => {
+        onPointerDown={(e) => {
           handlePreload();
-          handlePointerDown();
+          handlePointerDown(e);
         }}
+        onPointerMove={handlePointerMove}
         onPointerUp={clearLongPress}
         onPointerLeave={clearLongPress}
         onPointerCancel={clearLongPress}
@@ -306,7 +376,7 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
             openMenu();
           }
         }}
-        aria-haspopup={hasSwitch ? 'menu' : undefined}
+        aria-haspopup={hasSwitch ? (directoryReady ? 'menu' : 'dialog') : undefined}
         aria-expanded={hasSwitch ? menuOpen : undefined}
         aria-keyshortcuts={hasSwitch ? 'ArrowDown Shift+F10' : undefined}
         aria-label={
@@ -333,83 +403,114 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
         createPortal(
           <>
             <div className={styles.cashierSwitchOverlay} onClick={() => closeMenu(true)} />
-            <div ref={menuRef} className={styles.cashierSwitchMenu} onKeyDown={handleMenuKeyDown}>
-              <div className={styles.cashierSwitchTitle}>{menuTitle}</div>
-              {balancesLoading && (
-                <div className={styles.cashierSwitchStatus} role="status" aria-live="polite">
-                  Reading Wallet Balances...
-                </div>
-              )}
-              {!balancesLoading && balancesError && (
-                <div className={styles.cashierSwitchStatus} role="alert">
-                  Wallet Balances Unavailable.
-                  <button
-                    ref={retryRef}
-                    type="button"
-                    onClick={retryBalances}
-                    onKeyDown={(event) => {
-                      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-                      event.preventDefault();
-                      event.stopPropagation();
-                      const index =
-                        event.key === 'ArrowUp' || event.key === 'End' ? clubs.length - 1 : 0;
-                      setActiveIndex(index);
-                      itemRefs.current[index]?.focus();
-                    }}
+            <div
+              ref={menuRef}
+              className={styles.cashierSwitchMenu}
+              role={directoryReady ? undefined : 'dialog'}
+              aria-label={directoryReady ? undefined : `${menuTitle} Status`}
+              onKeyDown={handleMenuKeyDown}
+            >
+              <SpadeConsole
+                family="shark"
+                title={menuTitle}
+                onClose={() => closeMenu(true)}
+                className={styles.cashierSwitchConsole}
+              >
+                {directoryPending && (
+                  <div
+                    ref={directoryStatusRef}
+                    className={styles.cashierSwitchStatus}
+                    role="status"
+                    aria-live="polite"
+                    tabIndex={-1}
                   >
-                    Retry
-                  </button>
-                </div>
-              )}
-              <div className={styles.cashierSwitchItems} role="menu" aria-label={menuTitle}>
-                {clubs.map((club, idx) => (
-                  <button
-                    key={club.id}
-                    ref={(el) => {
-                      itemRefs.current[idx] = el;
-                    }}
-                    role="menuitem"
-                    tabIndex={idx === activeIndex ? 0 : -1}
-                    className={`${styles.cashierSwitchItem} ${
-                      club.id === targetClub?.id ? styles.cashierSwitchItemActive : ''
-                    }`}
-                    title={club.name || undefined}
-                    onClick={() => {
-                      closeMenu(false);
-                      onSelect(club);
-                    }}
-                  >
-                    {club.logo_url ? (
-                      <img
-                        src={club.logo_url}
-                        alt=""
-                        className={styles.cashierSwitchLogo}
-                        loading="lazy"
-                      />
-                    ) : (
-                      <span className={styles.cashierSwitchLogoFallback} aria-hidden="true">
-                        {(club.name || '?').charAt(0).toUpperCase()}
-                      </span>
-                    )}
-                    <span className={styles.cashierSwitchItemText}>
-                      <span className={styles.cashierSwitchItemName}>
-                        {club.name || 'Unnamed Club'}
-                      </span>
-                      {isUnionEntity(club) && (
-                        <span className={styles.cashierSwitchItemBalance}>Union Wallet</span>
-                      )}
-                      {!isUnionEntity(club) && visibleBalances?.has(club.id) && (
-                        <span className={styles.cashierSwitchItemBalance}>
-                          {(visibleBalances.get(club.id) as number).toLocaleString()} Chips
+                    Refreshing Wallet Directory...
+                  </div>
+                )}
+                {!directoryPending && directoryError && (
+                  <div className={styles.cashierSwitchStatus} role="alert">
+                    Wallet Directory Unavailable.
+                    <button ref={directoryRetryRef} type="button" onClick={onDirectoryRetry}>
+                      Retry
+                    </button>
+                  </div>
+                )}
+                {!directoryPending && !directoryError && balancesLoading && (
+                  <div className={styles.cashierSwitchStatus} role="status" aria-live="polite">
+                    Reading Wallet Balances...
+                  </div>
+                )}
+                {!directoryPending && !directoryError && !balancesLoading && balancesError && (
+                  <div className={styles.cashierSwitchStatus} role="alert">
+                    Wallet Balances Unavailable.
+                    <button
+                      ref={retryRef}
+                      type="button"
+                      onClick={retryBalances}
+                      onKeyDown={(event) => {
+                        if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const index =
+                          event.key === 'ArrowUp' || event.key === 'End' ? clubs.length - 1 : 0;
+                        setActiveIndex(index);
+                        itemRefs.current[index]?.focus();
+                      }}
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
+                {!directoryPending && !directoryError && (
+                  <div className={styles.cashierSwitchItems} role="menu" aria-label={menuTitle}>
+                    {clubs.map((club, idx) => (
+                      <button
+                        key={club.id}
+                        ref={(el) => {
+                          itemRefs.current[idx] = el;
+                        }}
+                        role="menuitem"
+                        tabIndex={idx === activeIndex ? 0 : -1}
+                        className={`${styles.cashierSwitchItem} ${
+                          club.id === targetClub?.id ? styles.cashierSwitchItemActive : ''
+                        }`}
+                        title={club.name ? titleCase(club.name) : undefined}
+                        onClick={() => {
+                          closeMenu(false);
+                          onSelect(club);
+                        }}
+                      >
+                        {club.logo_url && (
+                          <img
+                            src={club.logo_url}
+                            alt=""
+                            className={styles.cashierSwitchLogo}
+                            loading="lazy"
+                          />
+                        )}
+                        <span className={styles.cashierSwitchItemText}>
+                          <span className={styles.cashierSwitchItemName}>
+                            {titleCase(club.name || 'Unnamed Club')}
+                          </span>
+                          {isUnionEntity(club) && (
+                            <span className={styles.cashierSwitchItemBalance}>Union Wallet</span>
+                          )}
+                          {!isUnionEntity(club) && visibleBalances?.has(club.id) && (
+                            <span className={styles.cashierSwitchItemBalance}>
+                              {compactChips(visibleBalances.get(club.id))} Chips
+                            </span>
+                          )}
+                          {!isUnionEntity(club) && !balancesLoading && balancesError && (
+                            <span className={styles.cashierSwitchItemBalance}>
+                              Balance Unavailable
+                            </span>
+                          )}
                         </span>
-                      )}
-                      {!isUnionEntity(club) && !balancesLoading && balancesError && (
-                        <span className={styles.cashierSwitchItemBalance}>Balance Unavailable</span>
-                      )}
-                    </span>
-                  </button>
-                ))}
-              </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </SpadeConsole>
             </div>
           </>,
           document.body

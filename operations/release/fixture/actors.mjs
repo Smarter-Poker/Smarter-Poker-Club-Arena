@@ -113,6 +113,10 @@ function stateShape(state, tableId, actorIds) {
         state.action_context.length <= 200,
       'CONTEXT'
     );
+    protocol(
+      Number.isSafeInteger(state.turn_start_time_ms) && state.turn_start_time_ms > 0,
+      'TURN_CLOCK'
+    );
     const player = state.players.find((player) => player.user_id === state.current_player);
     protocol(
       validMoney(state.current_bet) &&
@@ -266,13 +270,16 @@ export async function startFixtureActors({
     }
   }
 
+  const turnKey = (state) => `${state.hand_number}:${state.turn_start_time_ms}`;
+
   function schedule(actor) {
     if (closed || financial?.finished || !enabled || actor.inflight || actor.timer || !actor.state)
       return;
     const state = actor.state;
     if (!bettingStages.has(state.stage) || state.current_player !== actor.user.id) return;
     const context = state.action_context;
-    if (actor.decisions.has(context)) return;
+    const turn = turnKey(state);
+    if (actor.decisions.has(context) || actor.turns.has(turn)) return;
     // The HTTP ingress has a 250ms limiter per user/table. Pacing is before
     // the one attempt, and the decision is re-read after the delay.
     actor.timer = setTimeout(
@@ -280,25 +287,27 @@ export async function startFixtureActors({
         actor.timer = null;
         if (closed) return;
         if (
+          turnKey(actor.state) !== turn ||
           actor.state.action_context !== context ||
           actor.state.current_player !== actor.user.id
         ) {
           schedule(actor);
           return;
         }
-        void act(actor, context).catch((error) => fail(error.message));
+        void act(actor, context, turn).catch((error) => fail(error.message));
       },
       Math.max(350, actor.lastActionAt + 350 - Date.now())
     );
   }
 
-  async function act(actor, context) {
-    if (closed || actor.inflight || actor.decisions.has(context)) return;
+  async function act(actor, context, turn) {
+    if (closed || actor.inflight || actor.decisions.has(context) || actor.turns.has(turn)) return;
     actor.inflight = true;
     if (financial) {
       await financial.beforeAction(actor.user, actor.state);
       protocol(
         !closed &&
+          turnKey(actor.state) === turn &&
           actor.state.action_context === context &&
           actor.state.current_player === actor.user.id,
         'FINANCIAL_CONTEXT_CHANGED'
@@ -316,6 +325,9 @@ export async function startFixtureActors({
           : 'fold';
     const idempotencyKey = randomUUID();
     actor.decisions.add(context);
+    // A post-action publication changes context before the next turn is armed.
+    // Keep the answered clock spent until authoritative state names a new turn.
+    actor.turns.add(turn);
     protocol(actor.decisions.size <= 1024, 'DECISION_LIMIT');
     actor.inflight = true;
     actor.lastActionAt = Date.now();
@@ -398,8 +410,16 @@ export async function startFixtureActors({
         actor.state = stateShape(patched(actor.state, message.patch), tableId, actorIds);
         actor.seq = message.seq;
         break;
-      case 'EVENT':
       case 'USER_EVENT':
+        // TableStateHub private envelopes use kind, not the public event type.
+        // They cannot drive authoritative decisions or the financial proof route.
+        protocol(
+          record(message.payload) &&
+            ['hole_cards', 'pre_action', 'add_on_adjusted'].includes(message.payload.kind),
+          'USER_EVENT'
+        );
+        return;
+      case 'EVENT':
         // Cards, clocks and animation events cannot replace authoritative state.
         protocol(record(message.payload) && typeof message.payload.type === 'string', 'EVENT');
         if (financial) void financial.event(message.payload).catch((error) => fail(error.message));
@@ -435,6 +455,7 @@ export async function startFixtureActors({
         state: null,
         seq: null,
         decisions: new Set(),
+        turns: new Set(),
         inflight: false,
         timer: null,
         controller: null,

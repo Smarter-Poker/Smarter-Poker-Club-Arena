@@ -694,9 +694,9 @@
    INFO BOX — Dark rounded rectangle with name + stack
    ═══════════════════════════════════════════════════════════════════════════════
 
-   When the player is active, a neon yellow border glows around this box.
-   The border DISAPPEARS progressively as the timer counts down,
-   using a conic-gradient mask driven by --timer-progress custom property.
+   When the player is active, a neon blue border glows around this box.
+   The border DISAPPEARS progressively as the timer counts down, at a constant
+   rate along the border (see NEON BLUE TIMER BORDER below).
 */
 
 .seat__info {
@@ -902,15 +902,19 @@
     TSX contract.)
    ═══════════════════════════════════════════════════════════════════════════════
 
-   When .seat--active, the info box gets a neon blue glowing border.
-   The border uses a conic-gradient that shrinks based on --timer-progress,
-   creating the "disappearing clock" effect.
+   When .seat--active, the info box gets a neon blue glowing border that
+   empties clockwise from 12 o'clock, at a CONSTANT rate along the border,
+   and is gone at the engine's deadline.
 
    How it works:
-   - ::before is an absolutely positioned element slightly larger than .seat__info
-   - It has a conic-gradient from yellow to transparent
-   - The gradient angle is tied to --timer-progress (100% = full border, 0% = gone)
-   - A nested ::after masks the inside to reveal only the border ring
+   - `.seat__timer-ring` is a real, absolutely positioned element 3px larger
+     than .seat__info on every side (it was `.seat__info::before` until
+     2026-10-04; it had to become an element to be a size container)
+   - `.seat__timer-ring-arc` inside it paints a conic-gradient, transparent up
+     to the sweep edge and neon blue after it
+   - the sweep edge comes from --sp-timer-spent (0 = full border, 1 = gone),
+     converted from "fraction of the BORDER" to a conic angle
+   - `.seat__info::after` masks the inside so only the border ring shows
 */
 
 /* Dan 2026-08-15: "the countdown clock should go right to left."
@@ -943,12 +947,22 @@
   inherits: true;
   initial-value: #00e5ff;
 }
+/* How much of the turn is spent, 0 to 1. The same clock as --timer-progress,
+   as a plain number so CSS can multiply a length by it (a percentage cannot
+   be). Both are driven by the one keyframe below, so they cannot disagree. */
+@property --sp-timer-spent {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
 @keyframes spTimerRingShrink {
   from {
     --timer-progress: 100%;
+    --sp-timer-spent: 0;
   }
   to {
     --timer-progress: 0%;
+    --sp-timer-spent: 1;
   }
 }
 /* Dan 2026-08-15: "the countdown clock should be 15 seconds long on the yellow
@@ -976,50 +990,165 @@
   }
 }
 
-/* Dan 2026-08-21 (item 8): "it needs to slow down at the end."
-   The shrink was strictly linear, so the last second looked exactly like the
-   first and there was no sense of the clock running out. This easing spends
-   75% of the arc in the first two-thirds of the clock and the remaining 25%
-   over the final third, so the ring visibly decelerates into the deadline —
-   while still reaching empty at that deadline exactly, which a plain ease-out
-   over the whole turn would not do as convincingly.
+/* ═══ THE DRAIN IS CONSTANT. NO EASING. (owner ruling 2026-10-04) ═══════════
 
-   Declared as its own property (not inside the `animation` shorthand) so that
-   a browser without CSS `linear()` easing simply drops this line and keeps the
-   correct linear countdown from the shorthand below. */
+   "THE NEON BLUE DISAPPEARING COUNT DOWN CLOCK IS NOT ACCURATE... YOU NEED TO
+    SLOW IT DOWN SO IT TAKES 15 SECONDS TO DISAPPEAR, IT CURRENTLY GOES AWAY
+    WAY TO FAST."
+
+   From 2026-08-21 to 2026-10-04 the shrink carried
+   `animation-timing-function: linear(0, 0.75 66.6%, 1)`: 75% of the arc spent
+   in the first two-thirds of the clock so the ring "slowed down at the end".
+   A clock that decelerates into its deadline has to spend its arc EARLY to do
+   it. With ten of fifteen seconds gone a quarter of the ring was left, not a
+   third, and that quarter was then blinked down to 20% opacity. It read as a
+   clock that had run out with five seconds still on it.
+
+   (That was the smaller half of the bug. The larger half was in SeatSlot.tsx:
+   the animation-delay was rewritten on every render, which re-timed the
+   running animation to twice real speed. See "THE RING RAN AT DOUBLE SPEED"
+   there. The two together: one quarter of the border left at 5 real seconds,
+   nothing at 7.5.)
+
+   The timing function is `linear` and must stay `linear`. Do not add a
+   `linear(...)` curve, a cubic-bezier or a steps() here: the length of lit
+   border IS the time left, in proportion. Half the border at 7.5s of 15, a
+   third at 10s, none at the deadline. tests/seatslot-countdown-duration.test.tsx
+   reads this rule and fails on anything else. */
 .seat--active .seat__info {
   /* Dan 2026-08-25: keep the plate's own frame visible underneath the ring.
    * It used to go transparent, which is what made the depleted portion of the
    * ring read as a coloured halo instead of an emptying arc on a solid box. */
   border-color: var(--seat-border, rgba(255, 255, 255, 0.08));
-  /* Shrink + color-shift share the same duration/delay so they stay in sync */
-  /* The shrink runs for the whole turn; the colour animation runs only for the
-     yellow window (--sp-timer-yellow-duration, capped at the turn length), so
-     red appears exactly when the yellow 15s is spent and not a moment sooner. */
+  /* The shrink runs for the whole turn; the colour animation runs for the
+     base-colour window (--sp-timer-yellow-duration, capped at the turn
+     length). Both share the delay SeatSlot froze at first paint. */
   animation:
     spTimerRingShrink var(--sp-timer-duration, 15s) linear var(--sp-timer-delay, 0s) forwards,
     spTimerColorShift var(--sp-timer-yellow-duration, 15s) linear var(--sp-timer-delay, 0s) forwards;
-  animation-timing-function: linear(0, 0.75 66.6%, 1), linear;
 }
 
-/* Outer glow container */
-.seat--active .seat__info::before {
-  content: '';
+/* ═══ A CLOCK THAT IS LINEAR ALONG THE BORDER (2026-10-04) ═══════════════════
+
+   A conic-gradient sweeps equal ANGLES in equal times. The plate is a wide,
+   short rectangle (about 100 x 50 on a desktop seat, 72 x 45 on a phone), and
+   on a rectangle equal angles are not equal lengths of border: seen from the
+   centre, the middle of the long top edge is close and the corners are far.
+   Measured for those proportions, a sweep that is linear in angle moves along
+   the border 3.6 to 5.2 times faster at the corners than at 12 o'clock, and
+   the lit length runs up to 4.3 points of the border ahead of or behind the
+   time actually left. The ring crawled along the top, whipped round each
+   corner, and was never showing quite the right amount.
+
+   So the sweep is driven the other way round. --sp-timer-spent is the fraction
+   of the BORDER that has gone out, the perimeter is walked clockwise from 12
+   o'clock, and each of its five straight runs (half the top, the right side,
+   the bottom, the left side, the other half of the top) is converted to the
+   conic angle it subtends with atan2(). Each term clamps to its own run, so
+   the terms simply add: a finished run contributes its whole angle, a run not
+   yet reached contributes none.
+
+       d  = spent x perimeter                     (a length)
+       hw = half the ring's width,  hh = half its height
+
+       top, right half   atan2(clamp(0, d,              hw),   hh)
+       right side        atan2(clamp(0, d - hw,          H) - hh, hw) + atan2(hh, hw)
+       bottom            atan2(clamp(0, d - hw - H,      W) - hw, hh) + atan2(hw, hh)
+       left side         atan2(clamp(0, d - hw - H - W,  H) - hh, hw) + atan2(hh, hw)
+       top, left half    atan2(clamp(0, d - hw - 2H - W, hw) - hw, hh) + atan2(hw, hh)
+
+   The five add up to exactly 360deg at spent = 1, whatever the box measures.
+
+   The width and height come from container query units, which is why the ring
+   is a real element with `container-type: size` and not the pseudo-element it
+   used to be. Nothing is measured in JavaScript and nothing needs to be
+   re-measured when a name or a breakpoint changes the plate: the browser
+   resolves 100cqw / 100cqh against the live box on every frame.
+
+   The corners are modelled as square. The ring's 10px radius shortens the true
+   border by about 1.4% per corner, symmetrically, which is below what the eye
+   can time.
+
+   A browser without container units or CSS trigonometry keeps the rule above
+   the @supports block: the same ring, linear in angle. It still starts on
+   time, still ends at the deadline, and still has no easing.
+
+   THE GATE TESTS THE THING IT GUARDS (2026-10-04). It used to ask two
+   unrelated questions, `width: 1cqw` and `rotate: atan2(1px, 1px)`. What is
+   actually used is an atan2() of CONTAINER-UNIT lengths, clamped and summed,
+   as a conic-gradient colour stop, and it reaches the gradient through
+   var(--sp-ring-edge). A declaration containing var() cannot fall back: if
+   the engine accepts the custom property and then rejects the stop, the
+   background is invalid at computed-value time and there is NO ring at all.
+   So the gate now asks for exactly that construct, in a real `background`
+   declaration with no var() in it, where a rejection is a parse error the
+   @supports can see - and the browser stays on the angle-linear ring.
+
+   WITHOUT @property (iOS 16.0 to 16.3). Both rings are driven by registered
+   custom properties animated in spTimerRingShrink; @property arrived in
+   Safari 16.4 and @supports cannot test for an at-rule. An engine without it
+   cannot interpolate --timer-progress / --sp-timer-spent, so the arc does
+   not drain smoothly there: it holds full and, where the engine animates
+   unregistered properties at all, flips to empty at the midpoint of the
+   turn. The last-five-seconds pulse (standard properties) still runs. There
+   is no clean CSS-only substitute for a conic sweep on a standard animatable
+   property, so this is stated rather than papered over. */
+.seat--active .seat__timer-ring {
   position: absolute;
   inset: -3px;
   border-radius: 10px;
+  z-index: -2;
+  pointer-events: none;
+  container-type: size;
+  /* The final-five-seconds pulse (Dan 2026-08-21, item 8). Its own animation
+     so it can repeat. --sp-timer-flash-delay is when it starts, measured from
+     the same origin as the shrink (negative = first painted mid-window, so
+     the player joins a pulse already running). --sp-timer-flash-count is how
+     many 0.5s pulses are left, so it stops AT zero rather than strobing on
+     into the next player's turn. With neither variable set it never runs:
+     the 999s default puts the start beyond any turn length. */
+  animation: spTimerFlash 0.5s ease-in-out var(--sp-timer-flash-delay, 999s)
+    var(--sp-timer-flash-count, 0) both;
+}
+
+.seat--active .seat__timer-ring-arc {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  /* Where the dark part ends and the neon begins. Fallback: linear in angle. */
+  --sp-ring-edge: calc(100% - var(--timer-progress, 100%));
   background: conic-gradient(
     from 0deg,
     transparent 0%,
-    transparent calc(100% - var(--timer-progress, 100%)),
-    var(--timer-color, #00e5ff) calc(100% - var(--timer-progress, 100%)),
+    transparent var(--sp-ring-edge),
+    var(--timer-color, #00e5ff) var(--sp-ring-edge),
     var(--timer-color, #00e5ff) 100%
   );
-  z-index: -2;
-  /* Neon glow — color matches ring; drop-shadow tracks --timer-color implicitly */
-  filter: drop-shadow(0 0 6px rgba(0, 229, 255, 0.55)) drop-shadow(0 0 10px rgba(0, 149, 255, 0.25));
-  transition: filter 0.3s ease;
+  /* Neon glow, same as it has been since the ring went blue. */
+  filter: drop-shadow(0 0 6px rgba(0, 229, 255, 0.5)) drop-shadow(0 0 10px rgba(0, 229, 255, 0.2));
   will-change: background;
+}
+
+@supports (container-type: size) and
+  (
+    background: conic-gradient(
+        red calc(atan2(clamp(0px, 1cqw, 50cqw), 50cqh) + atan2(50cqh, 50cqw)),
+        blue 0
+      )
+  ) {
+  .seat--active .seat__timer-ring-arc {
+    --sp-ring-d: calc(var(--sp-timer-spent, 0) * (200cqw + 200cqh));
+    --sp-ring-edge: calc(
+      atan2(clamp(0px, var(--sp-ring-d), 50cqw), 50cqh) +
+        atan2(clamp(0px, var(--sp-ring-d) - 50cqw, 100cqh) - 50cqh, 50cqw) + atan2(50cqh, 50cqw) +
+        atan2(clamp(0px, var(--sp-ring-d) - 50cqw - 100cqh, 100cqw) - 50cqw, 50cqh) +
+        atan2(50cqw, 50cqh) +
+        atan2(clamp(0px, var(--sp-ring-d) - 150cqw - 100cqh, 100cqh) - 50cqh, 50cqw) +
+        atan2(50cqh, 50cqw) +
+        atan2(clamp(0px, var(--sp-ring-d) - 150cqw - 200cqh, 50cqw) - 50cqw, 50cqh) +
+        atan2(50cqw, 50cqh)
+    );
+  }
 }
 
 /* Inner cutout — masks the inside to only show the border ring */
@@ -1032,37 +1161,47 @@
   z-index: -1;
 }
 
-/* Smooth glow on active timer — steady for the bulk of the turn, then the
-   final-five-seconds blink (Dan 2026-08-21, item 8).
+/* ═══ THE LAST FIVE SECONDS PULSE, THEY DO NOT VANISH (2026-10-04) ═══════════
 
-   The blink is its own animation rather than extra keyframes on the shrink so
-   it can repeat. --sp-timer-flash-delay is when it starts, measured from the
-   same origin as the shrink (negative = we painted mid-window, e.g. after a
-   reconnect, so the player joins a blink already running). --sp-timer-flash-count
-   is how many 0.5s blinks are left, so it stops AT zero rather than strobing on
-   into the next player's turn. Seats with neither variable set never blink: the
-   999s default puts the start beyond any turn length. */
-.seat--active .seat__info::before {
-  filter: drop-shadow(0 0 6px rgba(0, 229, 255, 0.5)) drop-shadow(0 0 10px rgba(0, 229, 255, 0.2));
-  transition: filter 0.3s ease;
-  animation: spTimerFlash 0.5s ease-in-out var(--sp-timer-flash-delay, 999s)
-    var(--sp-timer-flash-count, 0) both;
-}
+   Dan 2026-08-21 asked for the ring to "FLASH when there are 5 seconds left",
+   and that request stands. What it was given was a blink of the whole ring
+   down to 20% opacity, twice a second, for the entire final third of the
+   clock. By then only a short arc is left, and a short arc at 20% opacity on
+   a dark plate is not a flashing clock, it is a clock that has gone. That is
+   half of what the owner reported on 2026-10-04 as "IT CURRENTLY GOES AWAY
+   WAY TO FAST".
 
+   So the pulse now goes UP from the steady ring instead of down from it: at
+   rest the arc is exactly as lit as it is for the rest of the turn, and on
+   each beat it flares (a tight bright halo). The arc is never dimmed at all,
+   so at every instant of the last five seconds the remaining arc is plainly
+   there and plainly the right length.
+
+   REST IS THE 0% / 100% FRAME, THE FLARE IS THE 50% FRAME (2026-10-04, same
+   day). The first cut of this had them the other way round: the flare at
+   0%/100% and a 65% trough at 50%. The animation waits out most of the turn
+   on a positive delay with `both` fill, and backwards fill holds the 0%
+   frame for that whole wait - so the ring sat FLARED, under a filter layer,
+   from the first second of every turn, the "pulse" at the end was a dip, and
+   a reduced-motion player (animation: none) saw a dimmer ring than everyone
+   else. The resting frame therefore declares nothing but full opacity - no
+   filter, so none is applied while it waits - which is exactly the ring a
+   reduced-motion player gets, and what it settles back to at the deadline. */
 @keyframes spTimerFlash {
   0%,
   100% {
     opacity: 1;
   }
   50% {
-    opacity: 0.2;
+    opacity: 1;
+    filter: drop-shadow(0 0 5px rgba(0, 229, 255, 0.95)) brightness(1.25);
   }
 }
 
 /* Someone who has asked for less motion still needs to know their clock is
-   nearly out — hold the ring solid instead of blinking it. */
+   nearly out — hold the ring solid instead of pulsing it. */
 @media (prefers-reduced-motion: reduce) {
-  .seat--active .seat__info::before {
+  .seat--active .seat__timer-ring {
     animation: none;
   }
 }
@@ -1074,22 +1213,23 @@
  * NOT repaint the ring orange/red or put a red border on the avatar. That is
  * exactly the "red outline behind the blue" Dan reported. Both states now hold
  * the same neon blue as the rest of the turn; the shrinking arc and the
- * final-seconds blink carry the urgency on their own.
+ * final-seconds pulse carry the urgency on their own.
  *
  * These rules are declared (rather than deleted) so that if some other
  * stylesheet ever reintroduces a red urgent ring, this one still wins on
- * specificity + !important and the regression cannot reach the felt. */
-.seat--timer-urgent .seat__info::before,
-.seat--timer-critical .seat__info::before {
+ * specificity + !important and the regression cannot reach the felt. The
+ * sweep edge is the SAME variable the base rule uses, so urgency cannot change
+ * how fast the ring drains either. */
+.seat--timer-urgent .seat__timer-ring-arc,
+.seat--timer-critical .seat__timer-ring-arc {
   background: conic-gradient(
     from 0deg,
     transparent 0%,
-    transparent calc(100% - var(--timer-progress, 100%)),
-    var(--timer-color, #00e5ff) calc(100% - var(--timer-progress, 100%)),
+    transparent var(--sp-ring-edge),
+    var(--timer-color, #00e5ff) var(--sp-ring-edge),
     var(--timer-color, #00e5ff) 100%
   ) !important;
   filter: drop-shadow(0 0 6px rgba(0, 229, 255, 0.5)) drop-shadow(0 0 10px rgba(0, 229, 255, 0.2)) !important;
-  transition: filter 0.3s ease !important;
 }
 
 .seat--timer-urgent .seat__avatar,

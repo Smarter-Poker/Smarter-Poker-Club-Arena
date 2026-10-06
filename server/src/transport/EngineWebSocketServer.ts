@@ -30,6 +30,7 @@
  */
 
 import { WebSocketServer, WebSocket, type RawData } from 'ws';
+import { parseUpgradeTarget } from './upgradeTarget.js';
 import type { IncomingMessage } from 'http';
 import type { Server as HttpServer } from 'http';
 import { randomUUID } from 'crypto';
@@ -83,6 +84,14 @@ const TERMINATE_GRACE_MS = 250;
 const INBOUND_RATE_LIMIT = 30; // messages per second per connection
 const INBOUND_RATE_WINDOW_MS = 1_000;
 const MAX_INBOUND_MESSAGE_BYTES = 4 * 1024;
+/* The library's own ceiling, enforced while a message is still being received.
+   The MAX_INBOUND_MESSAGE_BYTES check runs on the `message` event, which
+   never fires for a frame that is still arriving or for an unfinished run of
+   fragments, so by itself it bounds nothing: `ws` defaults to 100 MiB per
+   message. This closes the socket (1009) long before that, and sits above
+   MAX_INBOUND_MESSAGE_BYTES so an oversized but complete message is still
+   answered by that check. */
+const MAX_FRAME_PAYLOAD_BYTES = 64 * 1024;
 
 // Close codes (must be in the 4000–4999 application-defined range per RFC 6455)
 export const CLOSE_AUTH_FAILED = 4401;
@@ -242,6 +251,16 @@ export interface EngineWebSocketServerOptions {
    */
   onConnect?: (tableId: string, userId: string) => void;
   onDisconnect?: (tableId: string, userId: string) => void;
+  /**
+   * PROOF OF LIFE FROM THE SOCKET (2026-10-05). A PONG or a RESYNC on an
+   * admitted table socket is the same evidence an HTTP /heartbeat is: the
+   * page is running and answering. Before this only onConnect fed presence,
+   * so a player whose HTTP beats were being lost (a proxy, a flaky request
+   * path) while their socket answered every PING was concluded gone after
+   * thirty seconds of HTTP silence. Presence only, never strikes (a beat
+   * is proof of a socket, not of a player; DisconnectEngine.heartbeat).
+   */
+  onAlive?: (tableId: string, userId: string) => void;
 }
 
 interface ConnectionState {
@@ -420,6 +439,7 @@ export class EngineWebSocketServer {
   ) => Promise<TableConnectionAccess>;
   private readonly onResync?: (tableId: string, userId: string) => void;
   private readonly onConnect?: (tableId: string, userId: string) => void;
+  private readonly onAlive?: (tableId: string, userId: string) => void;
   private readonly onDisconnect?: (tableId: string, userId: string) => void;
   private accessStarts = new Map<symbol, number>();
   private accessCompleted = 0;
@@ -455,8 +475,9 @@ export class EngineWebSocketServer {
     };
     this.onResync = opts.onResync;
     this.onConnect = opts.onConnect;
+    this.onAlive = opts.onAlive;
     this.onDisconnect = opts.onDisconnect;
-    this.wss = new WebSocketServer({ noServer: true });
+    this.wss = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME_PAYLOAD_BYTES });
   }
 
   /**
@@ -466,8 +487,15 @@ export class EngineWebSocketServer {
    */
   attach(httpServer: HttpServer): void {
     httpServer.on('upgrade', (req, socket, head) => {
-      // Parse URL relative to a dummy host — `req.url` is path+query only.
-      const url = new URL(req.url || '/', 'http://localhost');
+      // A target that cannot be parsed is refused here, for both WebSocket
+      // servers: this listener is attached first, and an exception thrown in
+      // an upgrade listener restarts the whole engine (see upgradeTarget.ts).
+      const url = parseUpgradeTarget(req.url);
+      if (!url) {
+        socket.write('HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n');
+        socket.destroy();
+        return;
+      }
 
       /* ═══ PROTOCOL GATE (Phase 4, 2026-09-05) ═══════════════════════════
          Before auth and before any table work, because it is cheaper than
@@ -698,6 +726,34 @@ export class EngineWebSocketServer {
     return this.connections.size;
   }
 
+  /**
+   * Close every socket carrying `tableId` (Lightning Phase 6 remediation,
+   * 2026-10-01): a Lightning room whose pool session has ended. A
+   * single-table socket is closed 4404 (CLOSE_TABLE_NOT_FOUND), the code the
+   * client already treats as "this table is gone, stop reconnecting"; a mux
+   * socket keeps its other tables and is unsubscribed from this one with the
+   * TABLE_NOT_FOUND error a refused SUBSCRIBE gets. Presence is told for
+   * each, as for any close. Answers how many sockets it touched.
+   */
+  closeRoom(tableId: string, reason = 'Your Lightning Session Has Ended'): number {
+    let touched = 0;
+    for (const conn of [...this.connections.values()]) {
+      if (conn.isMux) {
+        if (!conn.subs?.has(tableId)) continue;
+        const sub = conn.subs.get(tableId);
+        conn.subs.delete(tableId);
+        if (sub && typeof sub !== 'symbol') this.hub.unsubscribe(tableId, sub);
+        this.sendMuxError(conn, tableId, 'TABLE_NOT_FOUND', reason);
+        this.notifyDisconnectIfLast(tableId, conn.userId);
+        touched++;
+      } else if (conn.tableId === tableId) {
+        this.retireConnection(conn, CLOSE_TABLE_NOT_FOUND, reason);
+        touched++;
+      }
+    }
+    return touched;
+  }
+
   /** Counts and monotonic durations only; no identities or table contents. */
   connectionAccessStats(): {
     completed: number;
@@ -902,6 +958,15 @@ export class EngineWebSocketServer {
   }
 
   /** A private-state replay failure must not abort transport recovery or presence. */
+  private notifyAlive(tableId: string, userId: string): void {
+    if (!tableId || !userId) return;
+    try {
+      this.onAlive?.(tableId, userId);
+    } catch (error) {
+      reportError(error, 'EngineWS.proof_of_life');
+    }
+  }
+
   private resyncPlayer(tableId: string, userId: string): void {
     try {
       this.onResync?.(tableId, userId);
@@ -1166,6 +1231,11 @@ export class EngineWebSocketServer {
       case 'PONG':
         conn.lastPongAt = Date.now();
         conn.heartbeatGraceAt = 0;
+        if (conn.subs && this.connectionCanWrite(conn)) {
+          for (const [subTableId, sub] of conn.subs) {
+            if (typeof sub !== 'symbol') this.notifyAlive(subTableId, conn.userId);
+          }
+        }
         return;
       case 'SUBSCRIBE':
         if (!tableId) return;
@@ -1183,7 +1253,10 @@ export class EngineWebSocketServer {
         const sub = conn.subs.get(tableId);
         if (sub && typeof sub !== 'symbol') {
           this.hub.resync(tableId, sub);
-          if (this.connectionCanWrite(conn)) this.resyncPlayer(tableId, conn.userId);
+          if (this.connectionCanWrite(conn)) {
+            this.notifyAlive(tableId, conn.userId);
+            this.resyncPlayer(tableId, conn.userId);
+          }
         }
         return;
       }
@@ -1242,13 +1315,17 @@ export class EngineWebSocketServer {
       case 'PONG':
         conn.lastPongAt = Date.now();
         conn.heartbeatGraceAt = 0;
+        this.notifyAlive(conn.tableId, conn.userId);
         return;
       case 'RESYNC': {
         const sub = (conn.ws as unknown as { __sub: HubSubscriber }).__sub;
         this.hub.resync(conn.tableId, sub);
         // FIX 2 (2026-07-24): re-deliver hole cards alongside the public
         // snapshot — the RESYNC snapshot only carries scrubbed public state.
-        if (this.connectionCanWrite(conn)) this.resyncPlayer(conn.tableId, conn.userId);
+        if (this.connectionCanWrite(conn)) {
+          this.notifyAlive(conn.tableId, conn.userId);
+          this.resyncPlayer(conn.tableId, conn.userId);
+        }
         return;
       }
       default:

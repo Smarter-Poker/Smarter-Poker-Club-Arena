@@ -105,7 +105,7 @@ describe('a failure is reclassified only from evidence, and only three ways', ()
   const ended = board({ currentPlayers: 1, tableStatus: 'waiting' });
 
   it('proves a natural completion: running at selection, finished now, silence began at a hand boundary', () => {
-    for (const lastGameplayEventType of ['hand_complete', 'pot_win', 'pot_distributed', null]) {
+    for (const lastGameplayEventType of ['hand_complete', 'pot_win', 'pot_distributed']) {
       const outcome = classifyCaseFailure({
         engineRestartFrames: 0,
         atSelection: running,
@@ -166,6 +166,77 @@ describe('a failure is reclassified only from evidence, and only three ways', ()
         }).kind
       ).toBe('table-engine-restarted');
     }
+  });
+});
+
+describe('normal terminal teardown is not an engine rebuild', () => {
+  const start = board({ seatedUserIds: ['one', 'two'] });
+  const completed = board({
+    tournamentStatus: 'COMPLETED',
+    tableStatus: 'closed',
+    currentPlayers: 0,
+    seatedUserIds: [],
+    seatStacks: [],
+    endedAt: '2026-10-06T00:22:52.153994Z',
+  });
+  const broken = board({
+    seatedUserIds: [],
+    tableStatus: 'closed',
+    seatStacks: [],
+    relocatedUserIds: ['one'],
+    eliminatedUserIds: ['two'],
+  });
+  const input = {
+    engineRestartFrames: 1,
+    atSelection: start,
+    terminalTeardownOnly: true,
+    lastGameplayEventType: 'pot_distributed',
+  };
+  it('reproduces the completed SNG with its normal teardown frame', () => {
+    expect(classifyCaseFailure({ ...input, atFailure: completed }).kind).toBe('natural-completion');
+  });
+  it('accepts an MTT closure only when every selected player is accounted for', () => {
+    expect(classifyCaseFailure({ ...input, atFailure: broken }).kind).toBe('natural-completion');
+  });
+  it.each([
+    ['missing participant', { ...broken, eliminatedUserIds: [] }],
+    ['no relocation', { ...broken, relocatedUserIds: [], eliminatedUserIds: ['one', 'two'] }],
+    ['wrong table', { ...completed, tableId: 'different' }],
+    ['wrong tournament', { ...completed, tournamentId: 'different' }],
+    ['unreadable source roster', { ...completed, seatedUserIds: undefined }],
+    ['occupied row with invalid stack', { ...completed, seatedUserIds: ['one'] }],
+    ['closed source still occupied', { ...completed, seatStacks: [50] }],
+    ['no durable terminal timestamp', { ...completed, endedAt: null }],
+    ['live table gap', board()],
+    ['unreadable', null],
+  ])('preserves failure: %s', (_name, atFailure) => {
+    expect(classifyCaseFailure({ ...input, atFailure }).kind).toBe('table-engine-restarted');
+  });
+  it.each([null, 'turn_change', 'hand_started'])(
+    'requires an actual boundary, not %s',
+    (lastGameplayEventType) => {
+      expect(
+        classifyCaseFailure({ ...input, lastGameplayEventType, atFailure: completed }).kind
+      ).toBe('table-engine-restarted');
+    }
+  );
+  it('does not excuse an earlier rebuild just because the tournament later ended', () => {
+    expect(
+      classifyCaseFailure({ ...input, terminalTeardownOnly: false, atFailure: completed }).kind
+    ).toBe('table-engine-restarted');
+  });
+  it('does not qualify a board never seen running', () => {
+    expect(classifyCaseFailure({ ...input, atSelection: null, atFailure: completed }).kind).toBe(
+      'table-engine-restarted'
+    );
+    expect(
+      classifyCaseFailure({
+        ...input,
+        engineRestartFrames: 0,
+        lastGameplayEventType: null,
+        atFailure: completed,
+      }).kind
+    ).toBe('unproven');
   });
 });
 
@@ -309,8 +380,9 @@ describe('the certificate spec wires these classifiers without a retry-to-green'
     expect(tournament).toContain('preOutageTransports[0]!,\n      progressStartedAt');
   });
 
-  it('reads the finished-board rows only for the format that can end while watched', () => {
-    expect(tournament).toContain("gameFormat === 'sng' ? await createHudClockReader() : undefined");
+  it('reads durable board facts for every tournament format and accounts for closed boards', () => {
+    expect(tournament).toContain('const boardReader = await createHudClockReader();');
+    expect(tournament).toContain('boardReader.accountClosedBoard(selected.boardFacts, atFailure)');
   });
 
   it('re-selects only on a proven natural completion, inside the one case deadline', () => {

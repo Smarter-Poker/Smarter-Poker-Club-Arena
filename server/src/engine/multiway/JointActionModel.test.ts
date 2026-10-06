@@ -6,6 +6,8 @@ import {
   evaluateJointActions,
   jointPlayersBehind,
   jointCallProbability,
+  JOINT_ACTION_PACK,
+  JOINT_ACTION_PACK_ROUND1,
 } from './JointActionModel.js';
 
 function fixture(
@@ -48,6 +50,33 @@ function fixture(
   return { hero, state, evidence, baseline: { action: 'check' as const, thinkTime: 0 } };
 }
 describe('joint action-specific rollout', () => {
+  it('versions the bounded response tree and keeps the one-response comparison identity', () => {
+    expect(JOINT_ACTION_PACK).toMatchObject({
+      version: 'joint-action-response-round2-v1',
+      calibratedConfidence: null,
+      futureRaises: 'one_bounded_raise_then_calls',
+      continuation: 'turn_to_river_one_round',
+      raiseStreets: ['turn', 'river'],
+      limits: { raisesPerTree: 1, maxRaiseBranchOpponents: 1, maxTerminalBranchesPerCandidate: 32 },
+    });
+    expect(JOINT_ACTION_PACK_ROUND1).toEqual({
+      version: 'joint-action-response-round1-v2',
+      source: 'explicit_one_response_then_showdown_heuristic',
+      calibratedConfidence: null,
+      responseBranches: 'opponent_specific_fold_call_short_all_in',
+      futureRaises: 'not_modeled',
+      maxSamples: 32,
+    });
+    const { hero, state, evidence, baseline } = fixture('nlh', 'river', 1);
+    expect(evaluateJointActions(hero, state, baseline, evidence, () => true)!.version).toBe(
+      JOINT_ACTION_PACK.version
+    );
+    const old = evaluateJointActions(hero, state, baseline, evidence, () => true, {
+      responseModel: 'round1',
+    })!;
+    expect(old.version).toBe(JOINT_ACTION_PACK_ROUND1.version);
+    expect(old.candidates.every((c) => c.responseTree === null)).toBe(true);
+  });
   it('keeps a short-stack response price unchanged when only inaccessible side pots grow', () => {
     const { hero, state } = fixture('nlh', 'river', 1);
     const run = (deepContribution: number) => {
@@ -221,6 +250,8 @@ describe('joint action-specific rollout', () => {
     expect(jointPlayersBehind(hero, state)).toEqual(['p1', 'p2']);
     state.stage = 'preflop';
     state.dealerSeat = 4;
+    // P13.1: the blinds move with the button (HandController posts 7 and 1).
+    state.blindSeats = { smallBlind: 7, bigBlind: 1 };
     state.straddleActive = true;
     // Seat7 is SB, hero1 is BB, seat2 straddles; only seat2 remains after hero.
     expect(jointPlayersBehind(hero, state)).toEqual(['p1']);

@@ -1,13 +1,27 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  TOURNAMENT HUD — Compact in-game heads-up display (felt overlay)
+ *  TOURNAMENT HUD — the tournament info dock UNDER the action bar
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * A small, self-contained tournament status bar meant to sit on the poker table
- * (TablePage) so a seated player always sees the current level, blinds, ante, the
- * live countdown to the next level, players remaining and average stack WITHOUT
- * leaving the felt. The full-screen projector clock (TournamentClock) is for
- * lobby/detail pages; this is the terse in-hand version.
+ * The seated player's tournament status: level, blinds, ante, the live
+ * countdown to the next level, their rank, players remaining and average stack.
+ *
+ * WHERE IT LIVES (Dan 2026-10-04, binding): "THE TOURNAMENT INFO BOX MUST NEVER
+ * BE DISPLAYED OVER THE TOP LIKE IT CURRENTLY IS. IT SHOULD BE A COLLAPSABLE
+ * BOX, UNDER THE 'ACTION BAR' ON THE BOTTOM OF THE PAGE (UNDER FOLD CHECK BET).
+ * IN THE UPPER RIGHT HAND CORNER WHERE '36 LEFT' IS SHOULD BE THE LOBBY BUTTON
+ * THAT OPENS UP TO THE TOURNAMENT LOBBY PAGE."
+ *
+ * Until that day this was a bar in the felt's upper-right corner, drawn over
+ * the top seats (on a phone it sat on the top two players and the pot clock).
+ * It is now a dock pinned to the foot of the page, beneath Fold / Check / Bet,
+ * and tapping it collapses it to one line or opens it again. The lobby button
+ * is a separate control in the corner the bar used to occupy (TablePage,
+ * `.tournament-lobby-corner-btn`). Do not put this box back on the felt.
+ *
+ * The geometry is in TournamentHUD.css: the felt reserves the OPEN dock's
+ * height on every tournament table whether the dock is open or collapsed, so
+ * collapsing it moves the action bar and never resizes the table.
  *
  * DESIGN GOALS
  *   • Drop-in: self-fetches by tournamentId. TablePage passes the id and
@@ -19,8 +33,6 @@
  *     break_ends_at, or the add-on break at the end of the persisted add-on
  *     window) shows its own countdown, because the engine suspends the level
  *     clock for it.
- *   • Standalone styling: all styles are inline, so there is NO extra CSS file to
- *     import and nothing to wire into a build.
  *
  * ═══════════════════════════════════════════════════════════════════════════════
  *  IT LISTENS, AND CATCHES UP WHEN IT MAY HAVE MISSED SOMETHING (2026-09-22)
@@ -71,6 +83,7 @@ import { masterBus } from '../../core/MasterBus';
 import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
 import { serverNow } from '../../utils/serverClock';
+import './TournamentHUD.css';
 import {
   tournamentEntryWindow,
   tournamentEntryWindowOpen,
@@ -91,12 +104,13 @@ interface TournamentHUDProps {
    */
   hidden?: boolean;
   /**
-   * Dan 2026-08-30: "IF YOU CLICK THE LEVEL TAB BUTTON IT WILL OPEN TO THE
-   * TOURNAMENT LOBBY INSTANTLY." When provided, the whole bar is a button
-   * that opens the in-game tournament lobby popup. The stats icon that used
-   * to sit beside the bar is gone - the bar itself is the entry point.
+   * Dan 2026-10-04: the dock is collapsible. `collapsed` shows one line
+   * (level, blinds, countdown); open shows every figure. The page owns the
+   * flag so the bars above the dock can stand on the right line.
    */
-  onOpen?: () => void;
+  collapsed?: boolean;
+  /** Tapping the dock asks the page to flip `collapsed`. */
+  onToggleCollapsed?: () => void;
 }
 
 /**
@@ -701,7 +715,8 @@ export function TournamentHUD({
   averageStack,
   spinPrizePool,
   hidden = false,
-  onOpen,
+  collapsed = false,
+  onToggleCollapsed,
 }: TournamentHUDProps) {
   const { user } = useAuthUser();
   const userId = user?.id;
@@ -818,7 +833,27 @@ export function TournamentHUD({
     return () => clearInterval(clock);
   }, [scopeKey, readsField, hidden, live, running]);
 
-  if (hidden || !row) return null;
+  if (hidden) return null;
+  /* The row has not been read yet (or the read is failing and being retried).
+     The page has already reserved the dock's band and stood the action bar on
+     it, so returning nothing here left the bar floating over an empty strip.
+     The dock's own frame holds the band until the figures arrive. */
+  if (!row) {
+    return (
+      <div
+        /* Not `tournament-hud-bar`: that name means "the figures are
+           on screen" to everything that looks for it. */
+        className="tournament-dock tournament-dock--loading"
+        data-collapsed={collapsed ? 'true' : 'false'}
+        role="group"
+        aria-label="Tournament Info"
+      >
+        <div className="tournament-dock__line">
+          <span className="tournament-dock__status">Tournament Info</span>
+        </div>
+      </div>
+    );
+  }
 
   const nowMs = serverNow();
   const levelState = tournamentService.getCurrentLevelState(row, nowMs);
@@ -863,212 +898,146 @@ export function TournamentHUD({
     .filter(Boolean)
     .join(' · ');
 
+  const levelText = isBreak ? 'Break' : `Level ${levelState.levelIndex + 1}`;
+  const blindsText =
+    ladderBreak || !cur ? '-' : `${fmtChips(cur.smallBlind)} / ${fmtChips(cur.bigBlind)}`;
+  /* One line. Collapsed, it IS the dock: the three figures a player glances
+     at. Open, it carries whatever window is running (late registration, hand
+     for hand, the add-on period) above the full row. */
+  /* Collapsed it has one short line to spend on a 375px phone, so it carries
+     the three figures and, of the windows, only hand-for-hand - the one that
+     changes how the player must act. The longer notices (late registration,
+     the add-on period) are on the open dock. Nothing here may be cut off. */
+  const statusLine = collapsed
+    ? [
+        levelText,
+        blindsText.replace(/ \/ /g, '/'),
+        clockText,
+        handForHand === true ? 'Hand For Hand' : null,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : windowBanner || 'Tournament Info';
+  const toggle = onToggleCollapsed;
+
   return (
     <div
-      /* Named so the HUD layer can scale THIS BAR on small screens without
-         scaling its neighbour. The column used to carry the transform, which
-         also shrank the 44px stats icon beside it to ~33px — a transformed hit
-         area follows the transform — putting the one control Dan asked to be
-         reachable on the table screen under the minimum touch target. */
-      className="tournament-hud-bar"
-      style={{
-        display: 'inline-flex',
-        flexWrap: 'wrap',
-        alignItems: 'stretch',
-        gap: 0,
-        borderRadius: 10,
-        overflow: 'hidden',
-        fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif',
-        background: 'linear-gradient(180deg,#1b2a33 0%,#12212a 100%)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        boxShadow: '0 2px 10px rgba(0,0,0,0.35)',
-        color: '#e8f0f4',
-        userSelect: 'none',
-        lineHeight: 1.1,
-        cursor: onOpen ? 'pointer' : 'default',
-      }}
+      /* `tournament-hud-bar` is the name every reader of this element already
+         uses; `tournament-dock` is where it now lives. */
+      className="tournament-hud-bar tournament-dock"
+      data-collapsed={collapsed ? 'true' : 'false'}
       /* NOT `role="status"`. That is an aria-live=polite region, and this
          element re-renders every second for the countdown — so a screen reader
          re-announced level, blinds, ante, countdown, players and average stack
-         once a second for the entire tournament (2026-08-26 audit). `group`
-         with a label keeps it navigable and reachable without narrating it
-         continuously; the countdown itself is hidden from the accessibility
-         tree below, since a value that changes every second is noise there. */
-      role={onOpen ? 'button' : 'group'}
-      tabIndex={onOpen ? 0 : undefined}
-      aria-label={onOpen ? 'Tournament Clock - Open Tournament Lobby' : 'Tournament Clock'}
-      onClick={onOpen}
-      onKeyDown={
-        onOpen
-          ? (e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onOpen();
-              }
-            }
-          : undefined
-      }
+         once a second for the entire tournament (2026-08-26 audit). The
+         countdown itself is hidden from the accessibility tree below, since a
+         value that changes every second is noise there. */
+      /* A GROUP, not a button (2026-10-05). Everything inside a `role="button"`
+         is presentational to a screen reader, so level, blinds, rank, Left and
+         Avg were never read. The toggle is the real <button> line below; a tap
+         anywhere on the dock still toggles, since that click reaches here. */
+      role="group"
+      aria-label="Tournament Info"
+      onClick={toggle}
     >
-      {/* Hand-for-hand / late registration / add-on strip - full width, above the segments */}
-      {windowBanner && (
-        <div
-          style={{
-            flexBasis: '100%',
-            textAlign: 'center',
-            padding: '3px 8px',
-            fontSize: 10,
-            fontWeight: 800,
-            letterSpacing: 0.8,
-            textTransform: 'uppercase',
-            color: '#ffd54f',
-            background: 'rgba(255,183,77,0.14)',
-            borderBottom: '1px solid rgba(255,183,77,0.25)',
-          }}
+      {toggle ? (
+        <button
+          type="button"
+          className="tournament-dock__line tournament-dock__line--toggle"
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? 'Show Tournament Info' : 'Hide Tournament Info'}
+          /* No onClick of its own: the click (Enter and Space included)
+             bubbles to the dock, so it toggles exactly once. */
         >
-          {windowBanner}
+          <span className="tournament-dock__status" aria-hidden="true">
+            {statusLine}
+          </span>
+          <span className="tournament-dock__chevron" aria-hidden="true">
+            {collapsed ? '\u25B4' : '\u25BE'}
+          </span>
+        </button>
+      ) : (
+        <div className="tournament-dock__line">
+          <span className="tournament-dock__status" aria-hidden={collapsed ? 'true' : undefined}>
+            {statusLine}
+          </span>
         </div>
       )}
 
-      {/* Level / break badge */}
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-          alignItems: 'center',
-          padding: '6px 12px',
-          background: isBreak ? 'rgba(255,183,77,0.16)' : 'rgba(79,195,247,0.12)',
-          minWidth: 56,
-        }}
-      >
-        <span style={{ fontSize: 9, letterSpacing: 0.6, opacity: 0.7, textTransform: 'uppercase' }}>
-          {isBreak ? 'Break' : 'Level'}
-        </span>
-        <span style={{ fontSize: 18, fontWeight: 700 }}>
-          {isBreak ? '◇' : levelState.levelIndex + 1}
-        </span>
-      </div>
+      {!collapsed && (
+        <div className="tournament-dock__row">
+          {/* Level / break badge */}
+          <div className={`tournament-dock__seg${isBreak ? ' tournament-dock__seg--break' : ''}`}>
+            <span className="tournament-dock__label">{isBreak ? 'Break' : 'Level'}</span>
+            <span className="tournament-dock__value">
+              {isBreak ? '\u25C7' : levelState.levelIndex + 1}
+            </span>
+          </div>
 
-      {/* Blinds + ante. A real break resumes on these, so they stay; a break
-          row in the ladder has none. */}
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-          padding: '6px 14px',
-          borderLeft: '1px solid rgba(255,255,255,0.07)',
-        }}
-      >
-        <span style={{ fontSize: 9, letterSpacing: 0.6, opacity: 0.7, textTransform: 'uppercase' }}>
-          Blinds
-        </span>
-        <span style={{ fontSize: 15, fontWeight: 700 }}>
-          {ladderBreak || !cur ? '-' : `${fmtChips(cur.smallBlind)} / ${fmtChips(cur.bigBlind)}`}
-        </span>
-        {!ladderBreak && (cur?.ante ?? 0) > 0 && (
-          <span style={{ fontSize: 10, opacity: 0.7 }}>Ante {fmtChips(cur!.ante)}</span>
-        )}
-      </div>
+          {/* Blinds + ante. A real break resumes on these, so they stay; a break
+              row in the ladder has none. */}
+          <div className="tournament-dock__seg tournament-dock__seg--wide">
+            <span className="tournament-dock__label">
+              Blinds
+              {!ladderBreak && (cur?.ante ?? 0) > 0 && (
+                <span className="tournament-dock__sublabel"> Ante {fmtChips(cur!.ante)}</span>
+              )}
+            </span>
+            <span className="tournament-dock__value">{blindsText}</span>
+          </div>
 
-      {/* Countdown to the next level, or to the end of the break */}
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-          alignItems: 'center',
-          padding: '6px 14px',
-          borderLeft: '1px solid rgba(255,255,255,0.07)',
-          minWidth: 66,
-        }}
-      >
-        <span style={{ fontSize: 9, letterSpacing: 0.6, opacity: 0.7, textTransform: 'uppercase' }}>
-          {paused ? 'Resumes' : 'Next'}
-        </span>
-        <span
-          style={{
-            fontSize: paused && pauseSeconds === null ? 13 : 18,
-            fontWeight: 700,
-            fontVariantNumeric: 'tabular-nums',
-            color: clockColor,
-          }}
-          /* Changes every second; announcing it is noise. The level and blinds
-             beside it carry the information that actually matters. */
-          aria-hidden="true"
-        >
-          {clockText}
-        </span>
-        {!paused && next && !next.isBreak && (
-          <span style={{ fontSize: 9, opacity: 0.6 }}>
-            {fmtChips(next.smallBlind)}/{fmtChips(next.bigBlind)}
-          </span>
-        )}
-        {!paused && next?.isBreak && <span style={{ fontSize: 9, opacity: 0.6 }}>Break Next</span>}
-      </div>
+          {/* Countdown to the next level, or to the end of the break */}
+          <div className="tournament-dock__seg tournament-dock__seg--wide">
+            <span className="tournament-dock__label">
+              {paused ? 'Resumes' : 'Next'}
+              {!paused && next && !next.isBreak && (
+                <span className="tournament-dock__sublabel">
+                  {' '}
+                  {fmtChips(next.smallBlind)}/{fmtChips(next.bigBlind)}
+                </span>
+              )}
+              {!paused && next?.isBreak && (
+                <span className="tournament-dock__sublabel"> Break Next</span>
+              )}
+            </span>
+            <span
+              className="tournament-dock__value tournament-dock__value--clock"
+              style={{ color: clockColor }}
+              /* Changes every second; announcing it is noise. The level and
+                 blinds beside it carry the information that actually matters. */
+              aria-hidden="true"
+            >
+              {clockText}
+            </span>
+          </div>
 
-      {/* Hero's live rank (Dan 2026-08-30: after the countdown, before Left) */}
-      {shownRank !== null && (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            alignItems: 'center',
-            padding: '6px 12px',
-            borderLeft: '1px solid rgba(255,255,255,0.07)',
-          }}
-        >
-          <span
-            style={{ fontSize: 9, letterSpacing: 0.6, opacity: 0.7, textTransform: 'uppercase' }}
-          >
-            Rank
-          </span>
-          <span style={{ fontSize: 15, fontWeight: 700 }}>{shownRank}</span>
-        </div>
-      )}
+          {/* Hero's live rank (Dan 2026-08-30: after the countdown, before Left) */}
+          {shownRank !== null && (
+            <div className="tournament-dock__seg">
+              <span className="tournament-dock__label">Rank</span>
+              <span className="tournament-dock__value">{shownRank}</span>
+            </div>
+          )}
 
-      {/* Players remaining */}
-      {shownPlayers !== undefined && (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            alignItems: 'center',
-            padding: '6px 12px',
-            borderLeft: '1px solid rgba(255,255,255,0.07)',
-          }}
-        >
-          <span
-            style={{ fontSize: 9, letterSpacing: 0.6, opacity: 0.7, textTransform: 'uppercase' }}
-          >
-            Left
-          </span>
-          <span style={{ fontSize: 15, fontWeight: 700 }}>{shownPlayers}</span>
-        </div>
-      )}
+          {/* Players remaining */}
+          {shownPlayers !== undefined && (
+            <div className="tournament-dock__seg">
+              <span className="tournament-dock__label">Left</span>
+              <span className="tournament-dock__value">{shownPlayers}</span>
+            </div>
+          )}
 
-      {/* Spin prize pool, or average stack for longer tournament formats. */}
-      {(spinPrizePool !== undefined || shownAvg !== undefined) && (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            alignItems: 'center',
-            padding: '6px 12px',
-            borderLeft: '1px solid rgba(255,255,255,0.07)',
-          }}
-        >
-          <span
-            style={{ fontSize: 9, letterSpacing: 0.6, opacity: 0.7, textTransform: 'uppercase' }}
-          >
-            {spinPrizePool !== undefined ? 'Prize' : 'Avg'}
-          </span>
-          <span style={{ fontSize: 15, fontWeight: 700 }}>
-            {fmtChips(spinPrizePool ?? shownAvg ?? 0)}
-          </span>
+          {/* Spin prize pool, or average stack for longer tournament formats. */}
+          {(spinPrizePool !== undefined || shownAvg !== undefined) && (
+            <div className="tournament-dock__seg">
+              <span className="tournament-dock__label">
+                {spinPrizePool !== undefined ? 'Prize' : 'Avg'}
+              </span>
+              <span className="tournament-dock__value">
+                {fmtChips(spinPrizePool ?? shownAvg ?? 0)}
+              </span>
+            </div>
+          )}
         </div>
       )}
     </div>

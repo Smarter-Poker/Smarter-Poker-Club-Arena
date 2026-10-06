@@ -194,6 +194,50 @@ export function horseTournamentJointSamplerProvenanceIsValid(
   );
 }
 
+function horseObservationStatus(
+  observations: HorseTournamentUtilityObservations | undefined
+): 'captured' | 'disabled' | 'unavailable' {
+  return observations ? (observations.mindEnabled ? 'captured' : 'disabled') : 'unavailable';
+}
+
+/** HorseMind.readStats' actual selection for one opponent from a captured read
+ * view: the scoped row once it reaches SCOPE_MIN_HANDS, else the pooled row.
+ * Not the table/format of the current request pretending to be a historical
+ * observation. Shared by the Phase 7 utility and Phase 10 range attributions. */
+export function horseObservationSelection(
+  observations: HorseTournamentUtilityObservations | undefined,
+  userId: string
+): {
+  source: Source;
+  scope: ReadScope | null;
+  selected: OpponentStats | undefined;
+  pooled: OpponentStats | undefined;
+} {
+  const status = horseObservationStatus(observations);
+  const scope = observations?.scope ?? null;
+  const pooled = status === 'captured' ? observations!.reads.stats.get(userId) : undefined;
+  const scoped =
+    status === 'captured' && scope
+      ? observations!.reads.scoped.get(`${scope}|${userId}`)
+      : undefined;
+  const scopedSelected = scoped !== undefined && scoped.hands >= SCOPE_MIN_HANDS;
+  const selected = scopedSelected ? scoped : pooled;
+  const source: Source =
+    status === 'disabled'
+      ? 'disabled'
+      : selected
+        ? scopedSelected
+          ? 'family_size'
+          : 'pooled'
+        : 'unavailable';
+  return { source, scope: source === 'family_size' ? scope : null, selected, pooled };
+}
+
+/** The canonical bounded private commitment used by the evidence receipts. */
+export function horseCanonicalMaterialSha256(material: unknown): string {
+  return utilityMaterialSha256(material);
+}
+
 /** Explicit inputs, including the actual joint samples, are hashed privately.
  * Wall-clock callbacks, accounting of work performed, previous receipts and
  * think time cannot relabel the sampled economic model. Object key order is
@@ -298,32 +342,11 @@ export function buildHorseTournamentUtilityEvidence(
       input.showdownSamples.some((sample) => sample.boards.length !== sampler.boardCount))
   )
     return fail();
-  const status = observations
-    ? observations.mindEnabled
-      ? 'captured'
-      : 'disabled'
-    : 'unavailable';
+  const status = horseObservationStatus(observations);
   const scope = observations?.scope ?? null;
   const opponents = Object.freeze(
     input.opponents.map((opponent) => {
-      const pooled =
-        status === 'captured' ? observations!.reads.stats.get(opponent.userId) : undefined;
-      const scoped =
-        status === 'captured' && scope
-          ? observations!.reads.scoped.get(`${scope}|${opponent.userId}`)
-          : undefined;
-      // This is HorseMind.readStats' actual selection, not the table/format
-      // from the current request pretending to be a historical observation.
-      const scopedSelected = scoped !== undefined && scoped.hands >= SCOPE_MIN_HANDS;
-      const selected = scopedSelected ? scoped : pooled;
-      const source: Source =
-        status === 'disabled'
-          ? 'disabled'
-          : selected
-            ? scopedSelected
-              ? 'family_size'
-              : 'pooled'
-            : 'unavailable';
+      const { pooled, selected, source } = horseObservationSelection(observations, opponent.userId);
       const copy = <K extends keyof OpponentStats>(row: OpponentStats, keys: readonly K[]) =>
         Object.freeze(Object.fromEntries(keys.map((key) => [key, row[key]]))) as Readonly<
           Pick<OpponentStats, K>

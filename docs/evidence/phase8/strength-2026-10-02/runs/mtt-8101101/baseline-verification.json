@@ -1,0 +1,17 @@
+{
+  "version": "horse-tournament-postflop-round1-v4",
+  "complete": true,
+  "scope": "software_baseline_not_strength_promotion",
+  "sourceUnchanged": true,
+  "runs": [
+    {
+      "objective": "mtt",
+      "seed": 8101101,
+      "verified": true,
+      "eligible": 4563,
+      "fired": 155,
+      "budgetExhaustions": 4377,
+      "p99": 4.888077000156045
+    }
+  ]
+}

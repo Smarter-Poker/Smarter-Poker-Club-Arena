@@ -63,17 +63,19 @@ const countsByFile = (): Map<string, number> => {
 
 /** Frozen 2026-08-30 (Community Command Center). 262 occurrences. Only ever shrink. */
 const BASELINE = new Map<string, number>([
-  ['src/services/HorseOrchestrator.ts', 8],
   // 13 -> 12: phase 3 of 7 removed distributeFromTreasury, distributeChips and
   // transferToAgent, and rewired transferToPlayer onto fn_agent_wallet_send.
   // 12 -> 11 on 2026-09-03: phase 3 removed clawbackDistribution and
   // getRecentDistributions, a dead parallel implementation of agent undo whose
   // reads went nowhere anyway.
-  ['src/services/AgentService.ts', 7],
+  ['src/services/AgentService.ts', 2],
   // 10 -> 8: union route/account authorization now reports both canonical
   // operator lookup failures instead of discarding them during a stale load.
   ['src/pages/UnionDashboardPage.tsx', 7],
-  ['src/services/UnionService.ts', 11],
+  // 11 -> 9: Table Management's owner/admin authority read now binds both
+  // the union-owner and appointed-admin query errors instead of converting an
+  // unreadable answer into a confident access denial.
+  ['src/services/UnionService.ts', 9],
   ['src/pages/AdminDashboardPage.tsx', 6],
   ['src/services/ClubsService.ts', 5],
   ['src/services/PromotionService.ts', 2],
@@ -101,7 +103,7 @@ const BASELINE = new Map<string, number>([
   // 3 -> 1 on 2026-09-20: submitDispute and withdrawDispute stopped doing raw
   // table writes and now call fn_dispute_submit / fn_dispute_withdraw, which
   // report a reason instead of an ignored error.
-  ['src/services/DisputeService.ts', 1],
+  ['src/services/DisputeService.ts', 0],
   // 1 -> 0 on 2026-10-01: the balance read goes through the owner door
   // (ruling 25) and reports its error.
   ['src/services/DiamondService.ts', 0],
@@ -152,7 +154,6 @@ const BASELINE = new Map<string, number>([
   // 2 -> 0 in chip-std cash (2026-09-02, C2): both discarded reads lived in
   // seatHorse, the browser-side seat creator that minted a stack; it is gone
   // with its reads, and the server fleet is the one seat creator for horses.
-  ['src/services/HydraService.ts', 0],
   ['src/services/FinancialExportService.ts', 0],
   // BonusService.ts was deleted 2026-09-07 with the chip daily-bonus ladder.
   /* 0 since 2026-09-05: the last unbound read here was the player_stats
@@ -160,7 +161,9 @@ const BASELINE = new Map<string, number>([
      reports. See the note in that function - it was also asking a per-club
      table for a single row. */
   ['src/services/AchievementTriggerService.ts', 0],
-  ['src/pages/UnionGamesPage.tsx', 2],
+  // 2 -> 0 on 2026-10-04: union discovery now binds both membership reads and
+  // exits its loading state with a visible fail-closed authority error.
+  ['src/pages/UnionGamesPage.tsx', 0],
   ['src/pages/MultiTablePage.tsx', 1],
   ['src/pages/FlashPoolPage.tsx', 0],
   ['src/pages/CreditAdminPanel.tsx', 0],
@@ -189,12 +192,16 @@ const BASELINE = new Map<string, number>([
   // PostgREST failures so retryable deadlocks cannot disappear into `void`.
   ['src/services/DailyChallengeService.ts', 0],
   ['src/services/BlockService.ts', 1],
-  ['src/services/AvatarService.ts', 1],
+  // 1 -> 0 on 2026-10-05. VIP access now binds and reports its PostgREST
+  // failure instead of treating an unreadable account as a non-VIP account.
+  ['src/services/AvatarService.ts', 0],
   ['src/services/AdService.ts', 1],
   ['src/services/AchievementService.ts', 1],
   ['src/pages/admin/AnalyticsDashboard.tsx', 0],
   ['src/pages/XMTTPage.tsx', 0],
-  ['src/pages/UnionStatementsPage.tsx', 1],
+  // 1 -> 0 on 2026-10-03. Statement issuing now refuses and reports a session
+  // read failure instead of treating it as an ordinary signed-out response.
+  ['src/pages/UnionStatementsPage.tsx', 0],
   ['src/pages/TournamentPage.tsx', 1],
   ['src/pages/TableConfigPage.tsx', 1],
   ['src/pages/SettingsPage.tsx', 1],
@@ -248,6 +255,16 @@ const AUDITED_ZERO = [
 
 describe('discarded-error-read ratchet', () => {
   const current = countsByFile();
+
+  it('the Club Data promise reader keeps its resolved Supabase error bound', () => {
+    const clubData = readFileSync(join(SRC_ROOT, 'pages', 'club', 'ClubDataPage.tsx'), 'utf8');
+    const dataOnlyThen = /\.then\(\s*\(\{\s*data(?:\s*:\s*[A-Za-z_$][\w$]*)?\s*\}\)/g;
+
+    expect(
+      clubData.match(dataOnlyThen) ?? [],
+      'ClubDataPage may not turn a resolved Supabase failure into an empty club name'
+    ).toEqual([]);
+  });
 
   it('the audited surfaces stay at zero', () => {
     for (const file of AUDITED_ZERO) {

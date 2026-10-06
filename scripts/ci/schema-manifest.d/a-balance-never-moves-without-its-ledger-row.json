@@ -1,0 +1,16 @@
+{
+  "_owner": "agent/cw-drift/fix/a-balance-never-moves-without-its-ledger-row. PROMISED, not yet observed: migration 20261001160611_a_balance_never_moves_without_its_ledger_row is applied through apply-merged-migration.yml after the protected merge, never from a branch (CLAUDE.md section 2; a probe never carries DDL). The ledger invariant: tally functions, the commit-time check, the mode and findings tables, and the catalog view of chip-balance writers.",
+  "tables": [
+    "ca_ledger_invariant_mode",
+    "ca_ledger_invariant_findings",
+    "v_ca_chip_balance_writers"
+  ],
+  "functions": [
+    "fn_ca_ledger_tally_add",
+    "fn_ca_ledger_tally_key",
+    "fn_ca_felt_counts_table",
+    "fn_ca_tally_balance_move",
+    "fn_ca_tally_ledger_leg",
+    "fn_ca_balance_has_its_ledger_row"
+  ]
+}

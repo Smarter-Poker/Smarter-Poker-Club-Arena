@@ -8,6 +8,7 @@ export function StatRow({
   highlight,
   color = '#00d4ff',
   scope,
+  evidence,
 }: {
   label: string;
   value: string;
@@ -33,6 +34,8 @@ export function StatRow({
    * that no loaded sheet defines (see tests/unit/classNamesResolve.test.ts).
    */
   scope?: string;
+  /** Visible denominator and confidence evidence for a derived conclusion. */
+  evidence?: string;
 }) {
   return (
     <div className={`stat-row ${highlight ? 'highlight' : ''}`}>
@@ -40,6 +43,7 @@ export function StatRow({
         <span className="row-dot" style={{ backgroundColor: color }} />
         {label}
         {scope ? <span className="hero-stat-sub">{scope}</span> : null}
+        {evidence ? <span className="hero-stat-sub stat-evidence">{evidence}</span> : null}
       </span>
       <span className="row-value" style={{ color }}>
         {value}

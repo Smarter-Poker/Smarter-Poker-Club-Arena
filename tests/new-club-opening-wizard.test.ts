@@ -65,7 +65,7 @@ describe('new club opening wizard', () => {
     expect(wizard).toContain('pill={`Step ${step + 1} Of ${STEPS.length}`}');
   });
 
-  it('asks every required financial question and uses safe launch defaults', () => {
+  it('asks every unanswered financial question and safely reuses welcome-package funding', () => {
     for (const copy of [
       'Choose Your Cash-Game Rake',
       'Do You Want A Bad Beat Jackpot?',
@@ -75,7 +75,16 @@ describe('new club opening wizard', () => {
     ]) {
       expect(wizard).toContain(copy);
     }
-    expect(wizard).toContain('useState(false);\n  const [spinMaxStake');
+    expect(wizard).toContain('const packageSpinsFunded = packageEconomics?.spinsEnabled === true;');
+    expect(wizard).toContain(
+      'const [spinsEnabled, setSpinsEnabled] = useState(packageSpinsFunded);'
+    );
+    expect(wizard).toContain('disabled={packageSpinsFunded}');
+    expect(wizard).toContain('(spinsEnabled && !packageSpinsFunded ? spinSeed : 0)');
+    expect(wizard).toContain(
+      'const [promoAnswer, setPromoAnswer] = useState<OpeningAnswer>(null);'
+    );
+    expect(wizard).toContain('const [leaderboardRewardsEnabled, setLeaderboardRewardsEnabled] =');
     expect(wizard).toContain('Math.max(100, requiredSeedForStake(spinMaxStake))');
     expect(wizard).toContain('BBJ Seed Must Be At Least 100 Chips');
     expect(wizard).toContain('Recommended For New Clubs');

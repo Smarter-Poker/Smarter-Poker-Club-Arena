@@ -77,6 +77,7 @@ import { useSpinsWallet } from '../../hooks/useSpinsWallet';
 import { useArenaHasChipWallet } from '../arena/arenaAccess';
 import './DynamicWallet.css';
 import { reportError } from '../../utils/errorReporter';
+import { compactChips } from '../../utils/format';
 import { ClubBBJShell, ClubWalletShell, type ClubWalletArtworkKind } from './ClubWalletArtwork';
 
 // All bus events that should trigger a wallet refresh
@@ -374,15 +375,12 @@ function formatBalance(num: number): string {
   // Math.abs() was applied here, so an agent wallet of -25,000 rendered
   // identically to +25,000 — the sign of a debt was invisible on a money
   // surface. Negatives are now shown as negatives.
-  /* NaN and Infinity are NOT zero. Printing them as "0.00" is the one thing
+  /* NaN and Infinity are NOT zero. Printing them as "0" is the one thing
      this file argues against everywhere else - a wrong number on a money
      surface is worse than none - so they render as unknown, the same mark
      every unreadable figure already uses. */
   if (!Number.isFinite(num)) return '-';
-  return num.toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+  return compactChips(num);
 }
 
 /* Dan 2026-08-24: "DIAMONDS ARE ALWAYS WHOLE NUMBERS SO YOU CAN DELETE THE

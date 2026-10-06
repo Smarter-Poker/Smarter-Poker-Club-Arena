@@ -94,12 +94,18 @@ describe('HandController - all-in blind edge cases (AUDIT FIX)', () => {
   it('does not hand the turn to a short all-in SB (would be auto-folded)', () => {
     // HU: seat1 (button/SB) has only 3 -> posts 3 all-in. seat2 (BB) has 1000.
     const players = mkPlayers([3, 1000]);
-    const { hc, currentSeat, seat } = harness(mkConfig(), players, 1);
+    const { hc, currentSeat, seat, events } = harness(mkConfig(), players, 1);
     hc.start();
 
     expect(seat(1).is_all_in).toBe(true);
-    // The only player who can act is seat2 — never the all-in seat1.
-    expect(currentSeat()).toBe(2);
+    // Never the all-in seat1. And since 2026-10-06 not seat2 either: its big
+    // blind already covers the 3 that seat1 put in, so there is nothing for
+    // it to decide and the hand goes straight to the runout (this used to pin
+    // `currentSeat() === 2`, a turn on which a slow seat2 was auto-folded out
+    // of a pot it had covered).
+    expect(currentSeat()).not.toBe(1);
+    expect(currentSeat()).toBe(-1);
+    expect(events.some((e) => e.type === 'ALL_IN_RUNOUT')).toBe(true);
   });
 
   it('runs the board out when everyone is all-in from the blinds (no hang)', () => {

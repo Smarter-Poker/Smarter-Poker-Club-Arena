@@ -23,10 +23,21 @@
  * below the threshold this shows "Style Forming" and a hands-to-go count.
  */
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { playerStyleFromStats, STYLE_MIN_HANDS } from './playerStyleFromStats';
 import { staggerContainer, fadeUp } from './statsMotion';
+import StatsEvidenceLink from './StatsEvidenceLink';
+import { buildStatsHandEvidencePath } from '../../lib/statsEvidenceNavigation';
+import {
+  StatsEvidenceService,
+  type StatsEvidenceCursor,
+  type StatsEvidenceHand,
+  type StatsEvidenceQuery,
+} from '../../services/StatsEvidenceService';
+import { CHIP_STATS, type StatsClubId, type StatsScope } from '../../services/statsScope';
+import { compactChips } from '../../utils/format';
+import { enumToTitleCase, titleCase } from '../../utils/titleCase';
 import './TrophyRoom.css';
 
 /** Structural shapes — deliberately not imported from the page's private types. */
@@ -65,6 +76,29 @@ interface Props {
    * judged against.
    */
   lifetimeHands?: number;
+  userId?: string;
+  scope?: StatsScope;
+  clubId?: StatsClubId;
+}
+
+/** Only predicates the evidence RPC can reproduce truthfully receive a door. */
+function evidenceQueryFor(milestoneId: string): StatsEvidenceQuery | null {
+  switch (milestoneId) {
+    case 'first_hand':
+    case 'hundred':
+    case 'grinder':
+    case 'ironman':
+      return {};
+    case 'showdown_vet':
+      return { showdown: true, outcome: 'won' };
+    case 'in_the_black':
+    case 'crusher':
+      return { tournament: false };
+    case 'mtt_reg':
+      return { tournament: true };
+    default:
+      return null;
+  }
 }
 
 type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
@@ -158,8 +192,8 @@ function buildMilestones(o: OverallLike, t: TournLike | null, lifetimeHands: num
     unlocked: o.total_profit > 0,
     detail:
       o.total_profit > 0
-        ? `Up ${Math.round(o.total_profit).toLocaleString()}`
-        : `Down ${Math.round(Math.abs(o.total_profit)).toLocaleString()}`,
+        ? `Up ${compactChips(o.total_profit)}`
+        : `Down ${compactChips(Math.abs(o.total_profit))}`,
   });
 
   /**
@@ -207,7 +241,7 @@ function buildMilestones(o: OverallLike, t: TournLike | null, lifetimeHands: num
     progress: aggroQualified ? clamp01(o.aggression_factor / 2) : clamp01(hands / 1000),
     unlocked: aggroQualified && o.aggression_factor >= 2,
     detail: aggroQualified
-      ? `AF ${o.aggression_factor.toFixed(2)}`
+      ? `AF ${o.aggression_factor.toFixed(1)}`
       : `${hands.toLocaleString()} / 1,000 qualifying hands`,
   });
 
@@ -246,8 +280,24 @@ function buildMilestones(o: OverallLike, t: TournLike | null, lifetimeHands: num
   return out;
 }
 
-export default function TrophyRoom({ overall, tournaments, lifetimeHands = 0 }: Props) {
+export default function TrophyRoom({
+  overall,
+  tournaments,
+  lifetimeHands = 0,
+  userId,
+  scope = CHIP_STATS,
+  clubId = null,
+}: Props) {
   const reduceMotion = useReducedMotion();
+  const [evidenceFor, setEvidenceFor] = useState<string | null>(null);
+  const [evidenceHands, setEvidenceHands] = useState<StatsEvidenceHand[]>([]);
+  const [evidenceCursor, setEvidenceCursor] = useState<StatsEvidenceCursor | null>(null);
+  const [evidenceHasMore, setEvidenceHasMore] = useState(false);
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
+  const [evidenceError, setEvidenceError] = useState(false);
+  const evidenceScopeKey = `${userId ?? 'none'}:${scope}:${clubId ?? 'all'}:${evidenceFor ?? 'closed'}`;
+  const evidenceScopeKeyRef = useRef(evidenceScopeKey);
+  evidenceScopeKeyRef.current = evidenceScopeKey;
 
   // Shared with the share card on PlayerStatsPage, so the two surfaces can
   // never disagree about a player's style. Returns null below STYLE_MIN_HANDS.
@@ -263,6 +313,47 @@ export default function TrophyRoom({ overall, tournaments, lifetimeHands = 0 }: 
     .filter((m) => !m.unlocked)
     .sort((a, b) => b.progress - a.progress)
     .slice(0, 3);
+
+  useEffect(() => {
+    if (!evidenceFor || !userId) return;
+    const query = evidenceQueryFor(evidenceFor);
+    if (!query) return;
+    let cancelled = false;
+    setEvidenceHands([]);
+    setEvidenceCursor(null);
+    setEvidenceHasMore(false);
+    setEvidenceError(false);
+    setEvidenceLoading(true);
+    void StatsEvidenceService.list(userId, scope, clubId, query).then((page) => {
+      if (cancelled) return;
+      setEvidenceHands(page.hands);
+      setEvidenceCursor(page.next_cursor);
+      setEvidenceHasMore(page.has_more);
+      setEvidenceError(Boolean(page.error));
+      setEvidenceLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [evidenceFor, userId, scope, clubId]);
+
+  const loadMoreEvidence = async () => {
+    if (!evidenceFor || !userId || !evidenceCursor || evidenceLoading) return;
+    const query = evidenceQueryFor(evidenceFor);
+    if (!query) return;
+    const requestScopeKey = evidenceScopeKey;
+    setEvidenceLoading(true);
+    const page = await StatsEvidenceService.list(userId, scope, clubId, query, evidenceCursor);
+    if (evidenceScopeKeyRef.current !== requestScopeKey) return;
+    setEvidenceHands((current) => {
+      const seen = new Set(current.map((hand) => hand.hand_id));
+      return [...current, ...page.hands.filter((hand) => !seen.has(hand.hand_id))];
+    });
+    setEvidenceCursor(page.next_cursor);
+    setEvidenceHasMore(page.has_more);
+    setEvidenceError(Boolean(page.error));
+    setEvidenceLoading(false);
+  };
 
   if (!overall || (overall.total_hands === 0 && lifetimeHands === 0)) {
     return (
@@ -320,7 +411,7 @@ export default function TrophyRoom({ overall, tournaments, lifetimeHands = 0 }: 
                   <span className="trophy-next-name" style={{ color: RARITY_COLORS[m.rarity] }}>
                     {m.name}
                   </span>
-                  <span className="trophy-next-detail">{m.detail}</span>
+                  <span className="trophy-next-detail">{titleCase(m.detail)}</span>
                 </div>
                 <div className="trophy-progress">
                   <span
@@ -381,7 +472,62 @@ export default function TrophyRoom({ overall, tournaments, lifetimeHands = 0 }: 
               </span>
               <span className="trophy-name">{m.name}</span>
               <span className="trophy-desc">{m.description}</span>
-              <span className="trophy-detail">{m.detail}</span>
+              <span className="trophy-detail">{titleCase(m.detail)}</span>
+              {evidenceQueryFor(m.id) && userId ? (
+                <button
+                  type="button"
+                  className="stats-evidence-action"
+                  aria-expanded={evidenceFor === m.id}
+                  onClick={() => setEvidenceFor((current) => (current === m.id ? null : m.id))}
+                >
+                  {evidenceFor === m.id ? 'Close Evidence' : 'Review Evidence'}
+                </button>
+              ) : (
+                <span className="stats-evidence-unavailable">
+                  Individual Trophy Evidence Unavailable
+                </span>
+              )}
+              {evidenceFor === m.id && (
+                <div className="trophy-evidence" role="region" aria-label={`${m.name} Evidence`}>
+                  {evidenceLoading && evidenceHands.length === 0 && (
+                    <span>Loading Evidence...</span>
+                  )}
+                  {evidenceError && evidenceHands.length === 0 && (
+                    <span role="alert">Evidence Could Not Be Loaded.</span>
+                  )}
+                  {!evidenceLoading && !evidenceError && evidenceHands.length === 0 && (
+                    <span>No Matching Hand Evidence Yet.</span>
+                  )}
+                  {evidenceHands.map((hand) => (
+                    <StatsEvidenceLink
+                      key={hand.hand_id}
+                      className="trophy-evidence-row"
+                      to={buildStatsHandEvidencePath(hand.hand_id, clubId)}
+                    >
+                      <span>{new Date(hand.played_at).toLocaleDateString()}</span>
+                      <span>
+                        {hand.hand_class
+                          ? titleCase(hand.hand_class)
+                          : enumToTitleCase(hand.game_variant)}
+                      </span>
+                      <span>
+                        {hand.net >= 0 ? '+' : ''}
+                        {compactChips(hand.net)}
+                      </span>
+                    </StatsEvidenceLink>
+                  ))}
+                  {evidenceHasMore && evidenceCursor && (
+                    <button
+                      type="button"
+                      className="stats-evidence-action"
+                      disabled={evidenceLoading}
+                      onClick={() => void loadMoreEvidence()}
+                    >
+                      {evidenceLoading ? 'Loading More...' : 'Load More Evidence'}
+                    </button>
+                  )}
+                </div>
+              )}
               {!m.unlocked && (
                 <div className="trophy-progress">
                   <span

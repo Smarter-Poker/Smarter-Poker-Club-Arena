@@ -90,29 +90,39 @@ const spec = (file: string, statuses: (string | null)[]) => ({
 describe.each([
   { lane: 'client', workflow: WORKFLOW },
   { lane: 'live-table', workflow: TABLE_WORKFLOW },
-])('$lane release-window status under Actions bash -e', ({ workflow }) => {
-  it.each([0, 3, 1])('handles classifier exit %i without losing its verdict', (status) => {
-    const proof = step(workflow, 'Classify the release window this certificate covers');
-    const body = proof.split('\n        run: |\n')[1];
-    expect(body).toBeDefined();
-    const script = body.replace(/^ {10}/gm, '');
-    const dir = mkdtempSync(join(tmpdir(), 'e2e-release-window-'));
-    const summary = join(dir, 'summary.md');
-    writeFileSync(summary, '');
-    try {
-      // Execute the maintained shell block, including its pipeline, with the
-      // runner's errexit setting. Only external I/O is controlled here; the
-      // provenance parser's lineage decisions have their own direct tests.
-      const result = spawnSync(
-        'bash',
-        [
-          '--noprofile',
-          '--norc',
-          '-e',
-          '-o',
-          'pipefail',
-          '-c',
-          `curl() { printf '%s' '{"ca_sha":"${'a'.repeat(40)}"}'; }
+])('$lane release-window status under Actions bash -e', ({ workflow, lane }) => {
+  it.each([
+    { status: 0, complete: 'true' },
+    { status: 0, complete: 'false' },
+    { status: 0, complete: '' },
+    { status: 3, complete: 'true' },
+    { status: 1, complete: 'true' },
+  ])(
+    'handles classifier $status and coverage $complete without losing its verdict',
+    ({ status, complete }) => {
+      const proof = step(workflow, 'Classify the release window this certificate covers');
+      const body = proof.split('\n        run: |\n')[1];
+      expect(body).toBeDefined();
+      const script = body.replace(/^ {10}/gm, '');
+      const dir = mkdtempSync(join(tmpdir(), 'e2e-release-window-'));
+      const summary = join(dir, 'summary.md');
+      const output = join(dir, 'output.txt');
+      writeFileSync(summary, '');
+      writeFileSync(output, '');
+      try {
+        // Execute the maintained shell block, including its pipeline, with the
+        // runner's errexit setting. Only external I/O is controlled here; the
+        // provenance parser's lineage decisions have their own direct tests.
+        const result = spawnSync(
+          'bash',
+          [
+            '--noprofile',
+            '--norc',
+            '-e',
+            '-o',
+            'pipefail',
+            '-c',
+            `curl() { printf '%s' '{"ca_sha":"${'a'.repeat(40)}"}'; }
 node() {
   cat >/dev/null
   [ "$1" = scripts/ci/production-e2e-provenance.mjs ] || return 99
@@ -121,40 +131,53 @@ node() {
   return "$CLASSIFIER_STATUS"
 }
 ${script}`,
-        ],
-        {
-          cwd: ROOT,
-          encoding: 'utf8',
-          timeout: 5_000,
-          env: {
-            ...process.env,
-            EXPECTED_LIVE_SHA: 'a'.repeat(40),
-            GITHUB_STEP_SUMMARY: summary,
-            CLASSIFIER_STATUS: String(status),
-            CLASSIFIER_OUTPUT: status === 3 ? `superseded ${'b'.repeat(40)}` : 'certified',
-          },
+          ],
+          {
+            cwd: ROOT,
+            encoding: 'utf8',
+            timeout: 5_000,
+            env: {
+              ...process.env,
+              EXPECTED_LIVE_SHA: 'a'.repeat(40),
+              GITHUB_STEP_SUMMARY: summary,
+              GITHUB_OUTPUT: output,
+              RUNTIME_RESUMED: 'true',
+              LIVE_COVERAGE_COMPLETE: complete,
+              CLASSIFIER_STATUS: String(status),
+              CLASSIFIER_OUTPUT: status === 3 ? `superseded ${'b'.repeat(40)}` : 'certified',
+            },
+          }
+        );
+        expect(result.error).toBeUndefined();
+        expect(result.status).toBe(status === 1 ? 1 : 0);
+        const report = readFileSync(summary, 'utf8');
+        const outputs = readFileSync(output, 'utf8');
+        if (status === 0) {
+          expect(report).toContain('Production stayed on');
+          if (lane === 'live-table' && complete !== 'true') {
+            expect(report).toContain('NON-VERDICT');
+            expect(outputs).not.toContain('certified=true');
+          } else {
+            expect(report).not.toContain('NON-VERDICT');
+            expect(outputs).toContain('certified=true');
+          }
+        } else if (status === 3) {
+          expect(result.stdout).toContain('::warning::UNKNOWN: production advanced');
+          expect(report).toContain(`superseded ${'b'.repeat(40)}`);
+          expect(report).toContain('NON-VERDICT');
+          expect(report).not.toContain('Production stayed on');
+          expect(outputs).not.toContain('certified=true');
+        } else {
+          expect(result.stdout).toContain('::error::production left');
+          expect(report).not.toContain('Production stayed on');
+          expect(report).not.toContain('NON-VERDICT');
+          expect(outputs).not.toContain('certified=true');
         }
-      );
-      expect(result.error).toBeUndefined();
-      expect(result.status).toBe(status === 1 ? 1 : 0);
-      const report = readFileSync(summary, 'utf8');
-      if (status === 0) {
-        expect(report).toContain('Production stayed on');
-        expect(report).not.toContain('NON-VERDICT');
-      } else if (status === 3) {
-        expect(result.stdout).toContain('::warning::UNKNOWN: production advanced');
-        expect(report).toContain(`superseded ${'b'.repeat(40)}`);
-        expect(report).toContain('NON-VERDICT');
-        expect(report).not.toContain('Production stayed on');
-      } else {
-        expect(result.stdout).toContain('::error::production left');
-        expect(report).not.toContain('Production stayed on');
-        expect(report).not.toContain('NON-VERDICT');
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
       }
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
     }
-  });
+  );
 });
 
 describe('the checker refuses a run that verified nothing', () => {
@@ -436,5 +459,119 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
     expect(WORKFLOW, 'the ancestor check needs history the shallow clone lacks').toContain(
       'fetch-depth: 0'
     );
+  });
+});
+
+describe('all required live-table subjects must pass before certification', () => {
+  const titles = [
+    ...['MTT', 'SPIN', 'SNG'].map(
+      (format) => `an already-running ${format} table stays realtime and recovers one owner`
+    ),
+    'an already-running table stays live and recovers one owner after a network loss',
+  ];
+  function report() {
+    return {
+      errors: [],
+      suites: [
+        {
+          suites: [
+            {
+              specs: titles.map((title) => ({
+                title,
+                file: 'production-live-table-realtime.spec.ts',
+                ok: true,
+                tests: [
+                  {
+                    projectName: 'webkit-live-table-realtime',
+                    expectedStatus: 'passed',
+                    status: 'expected',
+                    results: [{ status: 'passed' }],
+                  },
+                ],
+              })),
+            },
+          ],
+        },
+      ],
+    };
+  }
+  function inspect(value: unknown) {
+    const dir = mkdtempSync(join(tmpdir(), 'live-coverage-'));
+    try {
+      const input = join(dir, 'report.json');
+      const output = join(dir, 'output.txt');
+      if (value !== undefined)
+        writeFileSync(input, typeof value === 'string' ? value : JSON.stringify(value));
+      const result = spawnSync(
+        process.execPath,
+        [join(ROOT, 'scripts/ci/live-table-certificate-coverage.mjs'), input],
+        {
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            GITHUB_OUTPUT: output,
+            GITHUB_STEP_SUMMARY: join(dir, 'summary.md'),
+          },
+        }
+      );
+      expect(result.status).toBe(0);
+      const complete = readFileSync(output, 'utf8').trim() === 'complete=true';
+      expect(result.stdout).toContain(complete ? 'All four required' : 'NON-VERDICT');
+      return complete;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+  it('accepts all four named successful WebKit cases', () => {
+    expect(inspect(report())).toBe(true);
+  });
+  it.each(['skipped', 'failed', 'timedOut', 'interrupted'])(
+    'refuses a required %s case beside three passes',
+    (status) => {
+      const value = report();
+      value.suites[0].suites[0].specs[0].tests[0].results[0].status = status;
+      expect(inspect(value)).toBe(false);
+    }
+  );
+  it.each(['missing', 'duplicate', 'wrong project', 'expected failure', 'flaky', 'renamed'])(
+    'refuses %s coverage',
+    (reason) => {
+      const value = report();
+      const specs = value.suites[0].suites[0].specs;
+      if (reason === 'missing') specs.shift();
+      if (reason === 'duplicate') specs.push(structuredClone(specs[0]));
+      if (reason === 'wrong project') specs[0].tests[0].projectName = 'chromium';
+      if (reason === 'expected failure') specs[0].tests[0].expectedStatus = 'failed';
+      if (reason === 'flaky') specs[0].tests[0].results.unshift({ status: 'failed' });
+      if (reason === 'renamed') specs[0].title = 'unrelated fourth test';
+      expect(inspect(value)).toBe(false);
+    }
+  );
+  it.each([undefined, '{', {}, { errors: [], suites: [] }])(
+    'refuses absent or unreadable report %#',
+    (value) => {
+      expect(inspect(value)).toBe(false);
+    }
+  );
+  it('does not accept a report-level error or explicit not-run reason', () => {
+    expect(inspect({ ...report(), errors: [{ message: 'runner failed' }] })).toBe(false);
+    expect(inspect({ ...report(), notRunReason: 'not invoked' })).toBe(false);
+  });
+  it('wires complete coverage into certification and retains partial evidence', () => {
+    const gate = step(TABLE_WORKFLOW, 'Did all required live-table cases pass?');
+    expect(gate).toContain('id: live_coverage');
+    expect(gate).toContain('if: always()');
+    expect(gate).toContain(
+      'node scripts/ci/live-table-certificate-coverage.mjs e2e-report/live-table-realtime.json'
+    );
+    const release = step(TABLE_WORKFLOW, 'Classify the release window this certificate covers');
+    expect(release).toContain(
+      'LIVE_COVERAGE_COMPLETE: ${{ steps.live_coverage.outputs.complete }}'
+    );
+    expect(
+      step(TABLE_WORKFLOW, 'Upload the report when something is wrong on production')
+    ).toContain("steps.live_coverage.outputs.complete != 'true'");
+    expect(LIVE_TABLE).toContain("const TOURNAMENT_FORMATS = ['mtt', 'spin', 'sng'] as const");
+    expect(LIVE_TABLE).toContain(titles[3]);
   });
 });

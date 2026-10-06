@@ -26,12 +26,14 @@ import {
 
 const CERTIFICATION_ENABLED = process.env.CUSTOMIZATION_COMMERCE_CERTIFICATION === '1';
 const RESPONSE_TIMEOUT = 60_000;
+const EXPECTED_PREMIUM_STOREFRONT_SKUS = 67;
 
 type Appearance = {
   table: string;
   background: string;
   button: string;
   cards: string;
+  faceDeck: string;
 };
 
 const FINAL_APPEARANCE: Appearance = {
@@ -39,6 +41,7 @@ const FINAL_APPEARANCE: Appearance = {
   background: 'place_las_vegas',
   button: 'amethyst-chip',
   cards: 'gold',
+  faceDeck: 'neon-circuit',
 };
 
 function preview(studio: Locator) {
@@ -51,6 +54,7 @@ async function readAppearance(studio: Locator): Promise<Appearance> {
     background: target.getAttribute('data-background-theme') || '',
     button: target.getAttribute('data-button-theme') || '',
     cards: target.getAttribute('data-card-back') || '',
+    faceDeck: target.getAttribute('data-face-deck') || '',
   }));
 }
 
@@ -82,6 +86,62 @@ async function expectPreviewAvatarsLoaded(studio: Locator) {
     .toBe(true);
 }
 
+async function deployedStorefrontFeatures(studio: Locator): Promise<string[]> {
+  const features: string[] = [];
+  const collectVisibleSurface = async (
+    label: string,
+    expectedCount: number,
+    expectedPrefix: string
+  ) => {
+    const visible = (await studio
+      .locator('.theme-modal__grid [data-storefront-feature]')
+      .evaluateAll((nodes) =>
+        nodes.map((node) => node.getAttribute('data-storefront-feature')).filter(Boolean)
+      )) as string[];
+    expect(visible, `${label} did not expose every premium storefront SKU.`).toHaveLength(
+      expectedCount
+    );
+    expect(
+      visible.every((feature) => feature.startsWith(expectedPrefix)),
+      `${label} exposed a storefront SKU in the wrong category.`
+    ).toBe(true);
+    expect(new Set(visible).size, `${label} exposed the same storefront SKU more than once.`).toBe(
+      visible.length
+    );
+    features.push(...visible);
+  };
+
+  for (const surface of [
+    { tab: 'Looks', count: 7, prefix: 'studio:theme_id:' },
+    { tab: 'Tables', count: 10, prefix: 'studio:table_id:' },
+    { tab: 'Buttons', count: 7, prefix: 'studio:button_id:' },
+    { tab: 'Cards', count: 9, prefix: 'card_back_' },
+    { tab: 'Decks', count: 7, prefix: 'studio:face_deck_id:' },
+  ] as const) {
+    await activateCategory(studio, surface.tab);
+    await collectVisibleSurface(surface.tab, surface.count, surface.prefix);
+  }
+
+  await activateCategory(studio, 'Scenes');
+  for (const group of [
+    { name: 'Places & Rooms', count: 17 },
+    { name: 'Skins', count: 10 },
+  ] as const) {
+    // The visible label includes a choice count, so an exact accessible-name
+    // lookup for just "Places & Rooms" / "Skins" can never match production.
+    const button = studio.getByRole('button', { name: new RegExp(`^${group.name}\\b`) });
+    await button.click();
+    await expect(button).toHaveAttribute('aria-pressed', 'true');
+    await collectVisibleSurface(`Scenes / ${group.name}`, group.count, 'studio:background_id:');
+  }
+
+  expect(
+    new Set(features).size,
+    'The deployed Table Studio exposed a duplicate premium storefront SKU.'
+  ).toBe(features.length);
+  return features.sort();
+}
+
 async function expectPersistedAppearance(
   environment: CustomizationCertificationEnvironment,
   userId: string,
@@ -96,11 +156,12 @@ async function expectPersistedAppearance(
           background_id: string;
           button_id: string;
           cards_id: string;
+          face_deck_id: string;
         }>(
           environment,
           'user_theme_settings',
           new URLSearchParams({
-            select: 'game_type,table_id,background_id,button_id,cards_id',
+            select: 'game_type,table_id,background_id,button_id,cards_id,face_deck_id',
             user_id: `eq.${userId}`,
             game_type: 'eq.ALL',
           })
@@ -112,6 +173,7 @@ async function expectPersistedAppearance(
               background: row.background_id,
               button: row.button_id,
               cards: row.cards_id,
+              faceDeck: row.face_deck_id,
             }
           : null;
       },
@@ -232,7 +294,7 @@ async function applyAsset(studio: Locator, category: string, assetName: string) 
     .waitForResponse(
       (response) =>
         response.request().method() === 'POST' &&
-        response.url().includes('/rest/v1/user_theme_settings'),
+        response.url().includes('/rest/v1/rpc/fn_patch_table_appearance'),
       { timeout: RESPONSE_TIMEOUT }
     );
   await asset.click();
@@ -244,7 +306,7 @@ async function applyAsset(studio: Locator, category: string, assetName: string) 
 }
 
 async function expectNoLockedAssets(studio: Locator) {
-  for (const category of ['Looks', 'Tables', 'Buttons', 'Cards']) {
+  for (const category of ['Looks', 'Tables', 'Buttons', 'Cards', 'Decks']) {
     await activateCategory(studio, category);
     await expect
       .poll(
@@ -316,7 +378,13 @@ test.describe('production Table Studio commerce certification', () => {
       `[customization-certification] removed ${staleAccountsRemoved} stale reserved account(s)`
     );
     const skus = await listTableStudioStorefrontSkus(environment);
+    // Retain the broad catalogue floor used by the source-law guard, then pin
+    // the exact independently counted deployed surface below.
     expect(skus.length).toBeGreaterThanOrEqual(60);
+    // This count is intentionally exact and independent of the database query.
+    // If either the deployed UI or feature_pricing silently drops a premium
+    // design, comparing the two alone could agree on the same incomplete set.
+    expect(skus).toHaveLength(EXPECTED_PREMIUM_STOREFRONT_SKUS);
     const totalCost = skus.reduce((sum, sku) => sum + sku.diamond_cost, 0);
     const firstFeature = 'studio:table_id:neon_city';
     expect(skus.some((sku) => sku.feature === firstFeature)).toBe(true);
@@ -355,6 +423,9 @@ test.describe('production Table Studio commerce certification', () => {
 
       const firstPage = await signInTemporaryAccount(firstDevice, baseURL, buyer);
       const firstStudio = await openStudio(firstPage);
+      expect(await deployedStorefrontFeatures(firstStudio)).toEqual(
+        skus.map((sku) => sku.feature).sort()
+      );
       const secondPage = await signInTemporaryAccount(secondDevice, baseURL, buyer);
       const secondStudio = await openStudio(secondPage);
 
@@ -395,6 +466,7 @@ test.describe('production Table Studio commerce certification', () => {
         background: 'midnight',
         button: 'classic-white',
         cards: 'classic_red',
+        faceDeck: 'house-classic',
       };
       await expectPersistedAppearance(environment, buyer.id, firstPurchaseAppearance);
       await expectAppearance(firstStudio, firstPurchaseAppearance);
@@ -477,7 +549,7 @@ test.describe('production Table Studio commerce certification', () => {
         );
       }
 
-      // The second device stayed open while 59 more purchases committed. Its
+      // The second device stayed open while every remaining purchase committed. Its
       // owner-filtered Realtime subscription must remove every lock without a reload.
       await expectNoLockedAssets(secondStudio);
 
@@ -487,11 +559,13 @@ test.describe('production Table Studio commerce certification', () => {
         background: 'galaxy',
         button: 'blue-crystal',
         cards: 'classic_blue',
+        faceDeck: 'neon-circuit',
       });
       await applyAsset(firstStudio, 'Tables', 'Neon City');
       await applyAsset(firstStudio, 'Scenes', 'Las Vegas');
       await applyAsset(firstStudio, 'Buttons', 'Amethyst Chip');
       await applyAsset(firstStudio, 'Cards', 'Premium Gold');
+      await applyAsset(firstStudio, 'Decks', 'Neon Circuit');
       await expectPersistedAppearance(environment, buyer.id, FINAL_APPEARANCE);
       await expectAppearance(firstStudio, FINAL_APPEARANCE);
       await expectAppearance(secondStudio, FINAL_APPEARANCE);

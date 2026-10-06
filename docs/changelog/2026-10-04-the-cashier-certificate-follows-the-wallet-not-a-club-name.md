@@ -1,0 +1,5 @@
+# The Cashier Certificate Follows The Wallet, Not A Club Name
+
+The authenticated production Cashier certificate was failing after its isolated staff account no longer held the historical Club JAQK membership. The wallet directory itself was healthy: it still exposed an owned union, multiple club wallets, desktop right-click, keyboard access, mobile hold and alternate-wallet navigation. Exact wallet names are now asserted only when `E2E_CASHIER_WALLETS` explicitly supplies that fixture contract; the maintained production run always preserves the structural and navigation proof and records every observed label in its artifact.
+
+The same run exposed a real presentation defect in Advanced Cashier. `DynamicWallet` kept exact numeric balances internally but printed every forward-facing chip figure with two decimal places, bypassing the Cashier's `#ClubArenaConsole` no-decimal rule. Its display formatter now uses the shared `compactChips` contract while retaining the existing unknown-value refusal. A Cashier visual-authority regression test pins that nested wallet surface to the same formatter as Trade, Statements and the routed Cashier consoles.

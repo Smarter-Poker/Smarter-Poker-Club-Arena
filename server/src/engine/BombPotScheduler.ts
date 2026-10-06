@@ -97,8 +97,14 @@ export interface BombPotDecision {
   triggerReason?: BombPotTriggerMode | 'manual_next_hand';
 }
 
+/** Tournament tables already reported for a bomb switch this process refused. */
+const tournamentBombRefusalReported = new Set<string>();
+
 /** Normalize raw table-row values into scheduler settings with spec defaults. */
 export function bombPotSettingsFromTable(t: {
+  id?: string | null;
+  tournament_id?: string | null;
+  game_type?: string | null;
   bomb_pot_enabled?: boolean;
   bomb_pot_frequency?: number;
   bomb_pot_trigger_mode?: string | null;
@@ -148,8 +154,31 @@ export function bombPotSettingsFromTable(t: {
     triggerMode === 'once_per_orbit' ||
     (triggerMode === 'timed' && intervalSeconds > 0) ||
     (triggerMode === 'every_n_hands' && frequency > 0);
+  /**
+   * A TOURNAMENT TABLE NEVER DEALS A BOMB POT (2026-10-02, Horse Brain P9.2).
+   *
+   * No tournament path writes `bomb_pot_enabled` and the Diamond tournament
+   * boundary refuses it, but fn_update_table_bomb_settings does not look at
+   * the row's kind and this read is the one every hand passes through. A
+   * tournament hand therefore reads the switch as off, the same test the
+   * engine's isTournamentTable() applies, and says so once per table.
+   */
+  const tournament = !!t.tournament_id || t.game_type === 'tournament';
+  if (tournament && t.bomb_pot_enabled === true) {
+    const table = String(t.id ?? 'unknown');
+    if (!tournamentBombRefusalReported.has(table)) {
+      tournamentBombRefusalReported.add(table);
+      reportError(
+        new Error(
+          `tournament table ${table} has bomb_pot_enabled set; a tournament never deals a bomb pot, so this table deals with bomb pots OFF`
+        ),
+        'BombPotScheduler.tournament_bomb_refused',
+        { tableId: table, tournamentId: t.tournament_id ?? null }
+      );
+    }
+  }
   return {
-    enabled: (t.bomb_pot_enabled ?? false) && modeViable,
+    enabled: !tournament && (t.bomb_pot_enabled ?? false) && modeViable,
     triggerMode,
     frequency,
     intervalSeconds,

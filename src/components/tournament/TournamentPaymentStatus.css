@@ -1,85 +1,114 @@
+/* Tournament payments print on one approved shark console. This sheet adds
+   only console-glass rows, engraved rules and lit words. */
 .tournament-payments {
-  margin: 16px 0;
-  padding: 14px;
-  border: 1px solid #334155;
-  border-radius: 10px;
-  background: #0f172a;
-  color: #cbd5e1;
-  text-align: left;
+  --sc-max: 680px;
+  margin: 16px auto;
 }
-.tournament-payments__header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+
+.tournament-payments .sc__body {
+  font-family: Inter, system-ui, sans-serif;
 }
-.tournament-payments h3 {
+
+.tournament-payments__note,
+.tournament-payments__message {
   margin: 0;
-  font-size: 15px;
-  color: #f8fafc;
 }
-.tournament-payments button {
-  min-height: 44px;
-  padding: 8px 12px;
-  border: 1px solid #475569;
-  border-radius: 6px;
-  background: #1e293b;
-  color: #f8fafc;
-  cursor: pointer;
-}
-.tournament-payments button:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-.tournament-payments button:focus-visible {
-  outline: 2px solid #6fdcff;
-  outline-offset: 2px;
-}
+
 .tournament-payments__note {
-  font-size: 12px;
-  line-height: 1.6;
-  color: #94a3b8;
+  padding-bottom: 2.4cqw;
+  font-size: clamp(0.7rem, 3cqw, 0.9rem);
+  line-height: 1.55;
+  text-align: center;
 }
+
+.tournament-payments__message {
+  padding: 5cqw 0;
+}
+
 .tournament-payments__list {
-  list-style: none;
   margin: 0;
   padding: 0;
+  list-style: none;
 }
+
 .tournament-payments__row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 6px 12px;
-  padding: 12px 0;
-  border-top: 1px solid #334155;
+  gap: 1.3cqw 3cqw;
+  padding: 3cqw 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
+
 .tournament-payments__identity {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  gap: 4px;
+  gap: 0.7cqw;
 }
+
 .tournament-payments__identity strong {
-  font-size: 13px;
   overflow-wrap: anywhere;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: clamp(0.78rem, 3.6cqw, 1rem);
+  font-weight: 800;
+  text-shadow:
+    0 1px 0 #fff,
+    0 2px 1px #050607;
 }
-.tournament-payments__identity span {
-  font-size: 12px;
-  color: #94a3b8;
-}
+
+.tournament-payments__identity span,
 .tournament-payments__state {
-  font-size: 12px;
-  color: #6fdcff;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: clamp(0.64rem, 2.8cqw, 0.8rem);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
-.tournament-payments__state[data-state='owed'],
-.tournament-payments__state[data-state='partially_paid'] {
-  color: #fbbf24;
+
+.tournament-payments__state {
+  text-align: right;
+  white-space: nowrap;
 }
+
 .tournament-payments__amounts {
   grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 20px;
-  font-size: 13px;
+  justify-content: space-between;
+  gap: 1cqw 4cqw;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: clamp(0.72rem, 3.2cqw, 0.9rem);
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+.tournament-payments__word {
+  appearance: none;
+  display: block;
+  min-height: 44px;
+  margin: 2cqw auto 0;
+  padding: 1cqw 2cqw;
+  border: 0;
+  background: transparent;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: clamp(0.72rem, 3.2cqw, 0.92rem);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.tournament-payments__word:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.tournament-payments__word:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: 2px;
+}
+
+.tournament-payments__word:disabled {
+  color: #9aa5b3;
+  cursor: default;
 }

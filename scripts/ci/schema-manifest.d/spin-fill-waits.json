@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/cowork-spinfill/fix/spin-backlog. Declared by migration 20261003120909_spin_fill_waits_by_who_is_waiting (read-only Spin fill-wait split for SpinMetrics); applied after merge through apply-merged-migration.yml.",
+  "functions": ["fn_spin_fill_waits"]
+}

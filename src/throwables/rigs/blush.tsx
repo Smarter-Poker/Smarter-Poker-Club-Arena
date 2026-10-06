@@ -3,7 +3,6 @@ import { RIG_VIEWBOX, type RigProps, type ThrowableRig } from '../rig';
 import type { ThrowableSpec } from '../spec';
 import { preloadThrowableCues } from '../cues';
 import './blush.css';
-// Dedicated recorded cues still pending: giggle_soft.
 export const spec: ThrowableSpec = {
   id: 'blush',
   name: 'Blush',
@@ -23,7 +22,7 @@ export const spec: ThrowableSpec = {
     { at: 3000, marker: 'sway' },
     { at: 4000, marker: 'cut' },
   ],
-  audio: [{ at: 1500, sample: 'pop_soft', gain: 0.35 }],
+  audio: [{ at: 1500, sample: 'laugh_short', gain: 0.55 }],
 };
 preloadThrowableCues(spec.audio.map((cue) => cue.sample));
 const RECTS: [number, number, number, number][] = [

@@ -14,6 +14,7 @@
  */
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { compactChips } from '../../utils/format';
 import './SessionHistory.css';
 
 interface SessionRecord {
@@ -134,12 +135,17 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ initialSessions, rangeL
   return (
     <div className="session-history">
       <div className="session-header">
-        <h3>Session History</h3>
+        <h3>Hand-Derived Sessions</h3>
         <p className="session-subtitle">
           {sessions.length > 0
-            ? `${sessions.length.toLocaleString()} Sessions${windowText}`
-            : `No Sessions${windowText}`}
+            ? `${sessions.length.toLocaleString()} Hand Groups${windowText}`
+            : `No Hand Groups${windowText}`}
         </p>
+      </div>
+
+      <div className="stats-notice" role="status">
+        Coverage: Cash Hands Separated By Forty-Five Minutes Form A Hand Group. These Are Not
+        Cashier Sessions And Do Not Supply Actual Buy-Ins, Rebuys, Or Cash-Outs.
       </div>
 
       {sessions.length > 0 && (
@@ -148,7 +154,7 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ initialSessions, rangeL
             <span className="stat-label">Total P/L</span>
             <span className="stat-value" style={{ color: tone(totalProfit) }}>
               {sign(totalProfit)}
-              {totalProfit.toLocaleString()}
+              {compactChips(totalProfit)}
             </span>
           </div>
           <div className="summary-stat">
@@ -159,7 +165,7 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ initialSessions, rangeL
             <span className="stat-label">Chips/Hr</span>
             <span className="stat-value" style={{ color: tone(avgHourly) }}>
               {sign(avgHourly)}
-              {avgHourly.toFixed(2)}
+              {compactChips(avgHourly)}
             </span>
           </div>
           {streak.count >= 2 && (
@@ -230,13 +236,13 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ initialSessions, rangeL
                 <div className="session-result">
                   <div className="result-pl">
                     <span className="pl-sign">{sign(session.profitLoss)}</span>
-                    <span className="pl-value">{session.profitLoss.toLocaleString()}</span>
+                    <span className="pl-value">{compactChips(session.profitLoss)}</span>
                   </div>
                   <div className="result-hourly">
                     <span className="hourly-label">Chips/Hr</span>
                     <span className="hourly-value" style={{ color: tone(session.hourlyRate) }}>
                       {sign(session.hourlyRate)}
-                      {session.hourlyRate.toFixed(1)}
+                      {compactChips(session.hourlyRate)}
                     </span>
                   </div>
                 </div>
@@ -255,22 +261,25 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ initialSessions, rangeL
                 >
                   <div className="details-grid">
                     <div className="detail-item">
-                      <span className="detail-label">Buy-In</span>
-                      <span className="detail-value">{session.buyIn.toLocaleString()}</span>
+                      <span className="detail-label">Chips Invested In Hands</span>
+                      <span className="detail-value">{compactChips(session.buyIn)}</span>
                     </div>
                     <div className="detail-item">
-                      <span className="detail-label">Cash-Out</span>
-                      <span className="detail-value">{session.cashOut.toLocaleString()}</span>
+                      <span className="detail-label">Returned From Hands</span>
+                      <span className="detail-value">{compactChips(session.cashOut)}</span>
                     </div>
                     <div className="detail-item">
                       <span className="detail-label">P/L Per Hand</span>
                       <span className="detail-value">
                         {session.handsPlayed > 0
-                          ? (session.profitLoss / session.handsPlayed).toFixed(2)
+                          ? compactChips(session.profitLoss / session.handsPlayed)
                           : '0'}
                       </span>
                     </div>
                   </div>
+                  <p className="stats-evidence-unavailable">
+                    Hand Evidence Unavailable For This Aggregated Session
+                  </p>
                 </div>
               )}
             </div>
@@ -280,11 +289,11 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ initialSessions, rangeL
 
       {sessions.length === 0 && (
         <div className="session-empty">
-          <span className="session-empty-label">Session Ledger Empty</span>
+          <span className="session-empty-label">No Hand-Derived Sessions</span>
           <p>
             {rangeLabel && rangeLabel !== 'All'
-              ? `No Cash Sessions In The Last ${rangeLabel}.`
-              : 'No Cash Sessions Recorded Yet. Play Some Hands To Start Tracking.'}
+              ? `No Cash Hand Groups In The Last ${rangeLabel}.`
+              : 'No Cash Hand Groups Were Recorded Yet.'}
           </p>
         </div>
       )}

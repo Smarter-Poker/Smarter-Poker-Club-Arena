@@ -263,7 +263,8 @@ The ones that change something visible:
   staff row, no home group. So `daniel@smarter.poker` no longer counts as having
   Commander access (probed). "Host A Home Game" now sends it to the Commander
   sign-up page instead of home-game creation. This is not a Diamond or platform
-  staff power, and it is reported to Dan below.
+  staff power. **Restored on 2026-10-01 through Commander's platform-staff
+  rule**: see the follow-up below.
 
 **They use the owner as a value (25).** For the arena, the value is now the
 system account.
@@ -376,10 +377,9 @@ chip books the arena does not keep.
 
 ## What stays open
 
-- **For Dan, not blocking:** `daniel@smarter.poker` loses Commander access,
-  which came only from owning the arena (above). If that account should still
-  open Club Commander, it needs its own way in: a venue staff row or a
-  subscription.
+- **Resolved on 2026-10-01:** `daniel@smarter.poker` lost Commander access,
+  which came only from owning the arena. Platform staff now open Commander
+  through Commander's own staff rule (the follow-up below).
 - **Hardening the system account itself:** it has no password, no provider
   identity and no session, and it has never signed in. The one way into any
   password-less account is an email link to its address, `system@smarter.poker`,
@@ -387,7 +387,87 @@ chip books the arena does not keep.
   never written `auth.users.banned_until` from SQL and this decision does not
   need it.
 
+## Follow-up (2026-10-01): platform staff open Commander
+
+**Verdict: done.** `daniel@smarter.poker` opens Club Commander again, as
+platform staff. An ordinary player is still refused, and every other account
+answers exactly as before. Recorded as an amendment to Ruling 22.
+
+**How Commander decides access.** There are three places:
+
+- **The World Hub** asks `get_commander_access_details` as the server, for the
+  token's user, in `pages/api/check-access.js`. That decides the Club Commander
+  orb in the carousel and where "Host A Home Game" goes.
+- **Profile summaries** (`get_unified_user_profile`,
+  `get_user_cross_product_summary`) ask `has_commander_access`.
+- **The Commander app's own staff check** (`smarter-poker-commander`,
+  `pages/api/check-access.js`) reads active venue staff rows and live
+  subscriptions only. It never admitted this account, before or after
+  Ruling 22, so nothing was lost there and nothing there changes.
+
+The two database doors knew four ways in: owning a club, a subscription, an
+owner or manager venue row, or owning a home group. Commander already has a
+staff rule, and it is the platform's: `fn_is_platform_admin()`, which admits
+admin, superadmin and god. It gates Commander's activity log, leads,
+onboarding leads, rate limits, system log, tournament points and templates, and
+player reputation.
+
+**The change.** Migration
+`20261001125101_platform_staff_open_commander`, file md5
+`7555d48fd6b518ef8b517b893c4ea49a`, makes both doors admit platform staff by
+that rule:
+
+- **Read for the user asked about.** The World Hub asks as the server, where
+  `auth.uid()` is empty and `fn_is_platform_admin()` itself would always say
+  no.
+- **One role list.** The list is `fn_is_platform_admin()`'s own, and the
+  migration refuses to apply if that function's list has moved.
+- **It says why.** `get_commander_access_details` now answers
+  `isPlatformStaff`.
+
+Callers still ask only about themselves. There is no made-up venue row, no
+invented subscription, and no club owner given back. The arena is still the
+system account's, and the migration asserts it. Both edits are asserted
+substitutions against pinned md5s:
+
+- `has_commander_access`: `a6f1fc22c2733abeafacdde54fa9b863`
+- `get_commander_access_details`: `addade098de326d6207cfab11964a9d4`
+
+Of the three platform staff accounts, the two admins already had Commander
+through their own venues, so only `daniel@smarter.poker` changes.
+
+**Proof.** The fixture is
+`docs/evidence/diamond-phase-11/platform-staff-open-commander-rehearsal.sql`
+(md5 `1043ac97e6e57bce8fcf84c7207e7bd0`), rolled back in production. It runs
+21 read-only probes, as the real PostgREST roles:
+
+- **Before:** `REHEARSAL OK [mode baseline]: 21 probes, every one as expected, in 1174 ms`
+- **With the migration:** `REHEARSAL OK [mode fixed]: 21 probes, every one as expected, in 670 ms`
+- **After apply:** `REHEARSAL OK [mode fixed]: 21 probes, every one as expected, in 592 ms`
+- **Apply:** `apply.sh` printed `APPLIED AND RECORDED 20261001125101`, and
+  both `@live-proof` expressions are true.
+
+| Probe                                                               | As         | Before                                | After                                 |
+| ------------------------------------------------------------------- | ---------- | ------------------------------------- | ------------------------------------- |
+| Commander access for `daniel@smarter.poker`, as the World Hub asks  | server     | `false`                               | `true`                                |
+| ... the answer says why                                             | server     | (no key)                              | `isPlatformStaff: true`               |
+| ... as a club owner                                                 | server     | `false`                               | `false`                               |
+| ... venues and subscriptions                                        | server     | `[] []`                               | `[] []`                               |
+| ... asked for itself (both doors)                                   | itself     | `false`                               | `true`                                |
+| an ordinary player, as the World Hub asks (both doors)              | server     | `false`                               | `false`                               |
+| an ordinary player, asked for itself (both doors)                   | the player | `false`                               | `false`                               |
+| the player asking about `daniel@smarter.poker` (both doors)         | the player | `false`                               | `false`                               |
+| no account at all                                                   | anon       | permission denied                     | permission denied                     |
+| every account: the four ways in, or platform staff                  | server     | 0 mismatches of 1,484 (6 with access) | 0 mismatches of 1,484 (7 with access) |
+| every account: the World Hub's answer equals `has_commander_access` | server     | 0 of 1,484                            | 0 of 1,484                            |
+| platform staff accounts without Commander                           | server     | 1 of 3                                | 0 of 3                                |
+| the arena's owner                                                   | catalog    | the system account                    | the system account                    |
+
+Law: `tests/platform-staff-open-commander.law.test.ts`, 6 passed.
+
 ## Shipped
 
 Branch `agent/claude-fix/the-arena-belongs-to-the-system`, migration
-`20260930235500`, applied and recorded.
+`20260930235500`, applied and recorded: PR #5674. The follow-up is on branch
+`agent/claude-fix/platform-staff-open-commander`, migration `20261001125101`,
+applied and recorded.

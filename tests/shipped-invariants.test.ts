@@ -96,7 +96,7 @@ const MUST_CONTAIN: Array<[file: string, needle: string, why: string]> = [
   ],
   [
     'src/pages/UnionStatementsPage.tsx',
-    'ca_union_record_presettlement',
+    'fn_union_record_presettlement',
     'a payment received mid-period can be recorded',
   ],
 

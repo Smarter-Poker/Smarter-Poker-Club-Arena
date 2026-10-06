@@ -51,10 +51,29 @@
   /* 2026-09-23: --sp-brand-top is the wordmark's TOP edge now, not its centre,
      so the pill's bottom sits half a point above it rather than six. */
   top: calc(var(--sp-brand-top, 56%) - 0.5%);
-  left: 50%;
-  /* -100% on Y puts the line's BOTTOM edge on that 52% line, so it grows
-     upward off the wordmark instead of down through it. */
-  transform: translate(-50%, -100%);
+  /* ─── IT WAS CUT OFF, AND THIS IS WHY (Dan 2026-10-04) ────────────────────
+     "THE 'RECONNECTING YOUR SEAT' NEEDS TO BE FULLY DISPLAYED AND NOT CUT OFF
+      WHEN YOU ARE ACTUALLY HAVING CONNECTION ISSUES."
+
+     The same bug DisconnectToast.css had, on the line a player sees when the
+     socket itself is down. `left: 50%` + `translate(-50%)` lets an absolutely
+     positioned box be no wider than the space from that edge to its
+     container's far side - HALF the felt - so `max-width: 92%` was never
+     reachable, and with `white-space: nowrap` + `text-overflow: ellipsis`
+     "Connection Lost. Trying To Get You Back" lost its end on a 375px phone.
+
+     Both edges are pinned and the box centres itself with auto margins, so
+     its shrink-to-fit width really is up to 92% of the felt; the copy may
+     wrap, so a longer sentence takes a second line. Nothing here may
+     ellipsize. */
+  left: 4%;
+  right: 4%;
+  margin-inline: auto;
+  width: fit-content;
+  /* -100% on Y puts the line's BOTTOM edge on the anchor line, so it grows
+     upward off the wordmark instead of down through it. No X term: the box is
+     centred by its margins. */
+  transform: translateY(-100%);
   /* Above the pot (30) and the chip-flight layer (25). Still inside
      .table-surface, so every modal and celebration overlay covers it. */
   z-index: 70;
@@ -81,9 +100,8 @@
   letter-spacing: 0.04em;
   line-height: 1.3;
   text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
   /* It prints over the felt, not over black glass, so the copy carries its own
      ground: a tight black bevel plus a wide soft one. That is what replaces
      the slab the pill used to sit on. */
@@ -117,21 +135,21 @@
 
 .table-conn-banner__label {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* The Y term must carry the -100% base offset, or the line would jump down
-   onto the wordmark for the length of the animation and settle back up. */
+   onto the wordmark for the length of the animation and settle back up.
+   There is no X term (2026-10-04): the banner is centred by auto margins, and
+   a -50% here would throw it half its width sideways while it fades in. */
 @keyframes table-conn-banner-in {
   from {
     opacity: 0;
-    transform: translate(-50%, calc(-100% - 6px));
+    transform: translateY(calc(-100% - 6px));
   }
 
   to {
     opacity: 1;
-    transform: translate(-50%, -100%);
+    transform: translateY(-100%);
   }
 }
 

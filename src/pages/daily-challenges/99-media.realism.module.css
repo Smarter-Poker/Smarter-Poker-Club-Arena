@@ -333,6 +333,18 @@
     overflow-wrap: anywhere;
   }
 
+  .rerollButton {
+    flex-wrap: wrap;
+  }
+
+  .rerollButton .buttonPrice {
+    min-width: 0;
+    max-width: 100%;
+    flex-wrap: wrap;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
   .unclaimedBar {
     grid-template-columns: minmax(0, 1fr);
     gap: 8px;

@@ -29,6 +29,10 @@ export type TournamentBoardFacts = {
   bigBlind: number | null;
   /** Chip stacks of the players still seated (left_at is null), when readable. */
   seatStacks: number[];
+  seatedUserIds?: string[];
+  /** All selected players accounted for by authoritative same-tournament rows. */
+  relocatedUserIds?: string[];
+  eliminatedUserIds?: string[];
 };
 
 export type BoardEnding = 'running' | 'natural-completion' | 'not-a-completion' | 'unknown';
@@ -102,9 +106,9 @@ export type CaseFailureOutcome =
 /**
  * Why a case failed, from evidence only.
  *
- * - `table-engine-restarted` outranks everything: the engine told the browser
- *   it rebuilt the table (`engine_restarting`). That is a defect to name, not
- *   an ending to route around, even when the board later finishes.
+ * - A closed, empty board with a durable result or complete relocation proof
+ *   can explain the generic teardown frame. Otherwise engine_restarting
+ *   remains a named failure, including an active or merely waiting table.
  * - `natural-completion` needs the board seen RUNNING at selection, ended by
  *   the time of failure, AND the last thing the browser saw must be a hand
  *   boundary (silence that begins mid-hand is a stall, not a finish).
@@ -112,17 +116,59 @@ export type CaseFailureOutcome =
  */
 export function classifyCaseFailure(input: {
   engineRestartFrames: number;
+  /** The only teardown frame follows the last live hand-boundary event. */
+  terminalTeardownOnly?: boolean;
   atSelection: TournamentBoardFacts | null | undefined;
   atFailure: TournamentBoardFacts | null | undefined;
   lastGameplayEventType: string | null;
 }): CaseFailureOutcome {
+  const start = input.atSelection;
+  const end = input.atFailure;
+  const witnessedBoundary =
+    input.lastGameplayEventType !== null &&
+    HAND_BOUNDARY_EVENT_TYPES.has(input.lastGameplayEventType);
+  const sameBoard =
+    start &&
+    end &&
+    start.tableId === end.tableId &&
+    start.tournamentId !== null &&
+    start.tournamentId === end.tournamentId;
+  const closedEmpty =
+    end?.tableStatus === 'closed' && end.seatStacks.length === 0 && end.seatedUserIds?.length === 0;
+  const selectedPlayers = start?.seatedUserIds ?? [];
+  const accounted = new Set([...(end?.relocatedUserIds ?? []), ...(end?.eliminatedUserIds ?? [])]);
+  const verifiedBreak =
+    end?.tournamentStatus === 'RUNNING' &&
+    selectedPlayers.length >= 2 &&
+    new Set(selectedPlayers).size === selectedPlayers.length &&
+    (end.relocatedUserIds?.length ?? 0) > 0 &&
+    selectedPlayers.every((id) => accounted.has(id));
+  // dropTable also announces engine_restarting for normal terminal/break
+  // unregister. Only an independently proven closed outcome supersedes it.
+  if (
+    sameBoard &&
+    classifyBoardEnding(start) === 'running' &&
+    witnessedBoundary &&
+    (input.engineRestartFrames === 0 || input.terminalTeardownOnly === true) &&
+    closedEmpty &&
+    ((COMPLETED_STATUSES.has(end.tournamentStatus?.toUpperCase() ?? '') &&
+      Number.isFinite(Date.parse(end.endedAt ?? ''))) ||
+      verifiedBreak)
+  ) {
+    return {
+      kind: 'natural-completion',
+      reason: verifiedBreak
+        ? `closed table ${end.tableId}: every selected player is durably relocated or eliminated`
+        : `tournament ${end.tournamentId} completed at ${end.endedAt} after the witnessed hand boundary`,
+    };
+  }
   if (input.engineRestartFrames > 0) {
     return {
       kind: 'table-engine-restarted',
       reason: `the engine told the browser it rebuilt the table (${input.engineRestartFrames} engine_restarting frame(s))`,
     };
   }
-  if (classifyBoardEnding(input.atSelection) !== 'running') {
+  if (!sameBoard || classifyBoardEnding(input.atSelection) !== 'running') {
     return {
       kind: 'unproven',
       reason: 'the board was not proven running at selection, so a later ending proves nothing',
@@ -132,10 +178,7 @@ export function classifyCaseFailure(input: {
   if (ending !== 'natural-completion') {
     return { kind: 'unproven', reason: `the database does not show a finished board (${ending})` };
   }
-  if (
-    input.lastGameplayEventType !== null &&
-    !HAND_BOUNDARY_EVENT_TYPES.has(input.lastGameplayEventType)
-  ) {
+  if (!witnessedBoundary) {
     return {
       kind: 'unproven',
       reason: `the board finished, but the last live event was ${input.lastGameplayEventType}, not a hand boundary`,

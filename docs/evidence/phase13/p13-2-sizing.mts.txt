@@ -1,0 +1,85 @@
+/**
+ * P13.2 shard sizing (Horse Brain Phase 13). Reads the design pilot through
+ * the contract's own profiles and calls the contract's own planning
+ * functions (jointPlannedHalfWidths, jointHostedEstimate) on candidate
+ * counts. Run from server/:  npx tsx p13-2-sizing.mts
+ *
+ * Rule, per variant:
+ *  1. pairsPerShard = rotationBlock x k, k the largest whole number keeping
+ *     the slowest profile's shard at or under 60 hosted minutes (hosted = pilot
+ *     time / 1.5).
+ *  2. Start every profile at the fewest shards per seed giving it at least
+ *     10,000 pairs at every dealer-relative offset (one shard at least). Repeatedly take the widest
+ *     planned gating cell; if it is at or under 0.85 x the margin, stop. Add
+ *     one shard per seed to the member profile whose addition narrows that cell
+ *     most per added runner minute, unless that would exceed 256 jobs or 3
+ *     hours of wall time at max-parallel 20 (longest-processing-time list
+ *     schedule); stop when no member can be added.
+ */
+process.env.EQUITY_GOVERNOR = 'off';
+process.env.SUPABASE_URL = 'https://supabase.invalid';
+process.env.SUPABASE_SERVICE_ROLE_KEY = 'phase13-sizing-offline-placeholder';
+const root = process.cwd();
+const C = await import(root + '/src/benchmark/JointStrengthContract.ts');
+const { maxSeatsForVariant } = await import(root + '/src/config/tableSeating.ts');
+const budget = C.JOINT_STRENGTH_CONTRACT.matrixRules.hostedBudget;
+const out: Record<string, unknown> = {};
+for (const variant of C.JOINT_STRENGTH_VARIANTS) {
+  const pack = C.jointStrengthPack(variant);
+  const block = pack.matrix.rotationBlock;
+  const target = pack.regressionMargin.plannedHalfWidthMaxBbPer100;
+  const base = pack.matrix.profiles.map((p) => ({ ...p }));
+  const slowest = Math.max(...base.map((p) => p.pilotMsPerPair));
+  const k = Math.floor((budget.maxMinutesPerShard * 60_000 * budget.speedupOverPilot) / (slowest * block));
+  const pps = block * k;
+  // Every profile starts with at least 10,000 pairs at each dealer-relative
+  // offset, so every position cell meets the interval floor.
+  const floor = C.JOINT_STRENGTH_CONTRACT.interval.minimumPairsPerProfileInCell;
+  const shards = base.map((p) => Math.max(1, Math.ceil((floor * p.seats) / (3 * pps))));
+  const profilesWith = (s: number[]) => base.map((p, i) => ({ ...p, shards: s[i] }));
+  const widest = (s: number[]) => {
+    const plan = C.jointPlannedHalfWidths(profilesWith(s), pps) as Record<string, { halfWidthBbPer100: number }>;
+    return Object.entries(plan).sort((a, b) => b[1].halfWidthBbPer100 - a[1].halfWidthBbPer100)[0];
+  };
+  const fits = (s: number[]) => {
+    const e = C.jointHostedEstimate(profilesWith(s), pps);
+    return e.jobs <= C.JOINT_MATRIX_JOB_CEILING && e.wallHoursAtMaxParallel <= budget.targetWallHours;
+  };
+  for (;;) {
+    const [cell, plan] = widest(shards);
+    if (plan.halfWidthBbPer100 <= target) break;
+    const members = base
+      .map((p, i) => i)
+      .filter((i) => {
+        const p = base[i];
+        if (cell === `profile:${p.id}`) return true;
+        if (cell.startsWith('position:')) return true;
+        if (cell === `depth:${p.depthBand}`) return true;
+        if (cell === `boards:${p.boards}`) return true;
+        return false;
+      });
+    let best = -1, bestGain = 0;
+    for (const i of members) {
+      const trial = shards.slice();
+      trial[i]++;
+      if (!fits(trial)) continue;
+      const after = (C.jointPlannedHalfWidths(profilesWith(trial), pps) as Record<string, { halfWidthBbPer100: number }>)[cell].halfWidthBbPer100;
+      const gain = (plan.halfWidthBbPer100 - after) / (base[i].pilotMsPerPair * pps * 3);
+      if (gain > bestGain) { bestGain = gain; best = i; }
+    }
+    if (best < 0) break;
+    shards[best]++;
+  }
+  const finalProfiles = profilesWith(shards);
+  const plan = C.jointPlannedHalfWidths(finalProfiles, pps) as Record<string, { halfWidthBbPer100: number }>;
+  const est = C.jointHostedEstimate(finalProfiles, pps);
+  out[variant] = {
+    rotationBlock: block, blocksPerShard: k, pairsPerShard: pps, shards, target,
+    widest: widest(shards), estimate: est,
+    plan,
+    ceiling: maxSeatsForVariant(variant),
+  };
+  console.log(variant, 'k', k, 'pps', pps, 'shards', JSON.stringify(shards), 'widest', JSON.stringify(widest(shards)), JSON.stringify(est));
+}
+console.log('JSON=' + JSON.stringify(out));
+process.exit(0);

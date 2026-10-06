@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/claude-sia/fix/schema-integrity-audit",
+  "_comment": "Migration 20260920070402_three_watchers_whose_defects_were_fixed_stop_running.sql DROPPED public.increment_club_table_count(uuid) and public.decrement_club_table_count(uuid) on 2026-09-20 - they wrote clubs.table_count by blind +1 / GREATEST(0, x-1) instead of recomputing, and were the one surviving way the count could drift. Production has had neither since, in any schema. The base snapshot still lists both, so the phantom-reference gate has blessed two dead names for thirteen days; these tombstones stop that immediately. Found by the first run of scripts/ci/check-schema-contract.mjs, which is the first thing in this repository ever to judge the BASE file for its own phantoms - prune-schema-fragments.mjs only ever judged fragments.",
+  "removedFunctions": ["decrement_club_table_count", "increment_club_table_count"]
+}

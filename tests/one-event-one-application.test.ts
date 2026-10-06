@@ -180,9 +180,16 @@ describe('a frame is read against the state that belongs to it', () => {
   });
 
   it('TURN_CHANGE carries the same fence the snapshot uses', () => {
+    // 2026-10-04: the handler's inline copy of the fence became one rule in
+    // src/lib/heroActedFence.ts, asked by the snapshot merge and by this
+    // handler alike (the inline copy refused the engine handing the same
+    // seat the next street). The pin moved with the mechanism: the handler
+    // still consults the fence, for the hero's own seat, before it writes
+    // the actor. tests/unit/heroActedFence.test.ts pins the rule itself.
     const arm = sliceBlockAfter(PAGE, "case 'TURN_CHANGE': {");
-    expect(arm).toMatch(/const f = heroActedFenceRef\.current;/);
-    expect(arm).toMatch(/newSeat === prev\.heroSeat/);
+    expect(arm).toMatch(/judgeTurnChangeAgainstFence\(\s*heroActedFenceRef\.current,/);
+    expect(arm).toMatch(/heroSeat: prev\.heroSeat,/);
+    expect(arm).toMatch(/if \(!verdict\.accept\) return prev;/);
   });
 
   it('the snapshot effect does not depend on a field it writes', () => {

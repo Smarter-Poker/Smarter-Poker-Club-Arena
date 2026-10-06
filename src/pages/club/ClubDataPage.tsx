@@ -54,13 +54,13 @@ import {
 import {
   auditClubDataSnapshot,
   formatClubDataAge,
+  isVerifiedClubDataSnapshot,
   preserveExpandedClubDataRows,
 } from '../../lib/clubDataIntegrity';
 import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import type { BusEventType } from '../../core/MasterBus';
 import { useVirtualScroll } from '../../hooks/useVirtualScroll';
-import { EmptyState, LoadingState, PermissionState } from '../../components/common/EmptyState';
 import RakeSnapshotPanel from '../../components/club/RakeSnapshotPanel';
 import type { RakeScope } from '../../services/ClubRakeSnapshotService';
 import { SpadeConsole, type ConsoleInk } from '../../components/console/SpadeConsole';
@@ -120,6 +120,7 @@ interface SnapshotSummary {
 interface Snapshot {
   range: { start: string; end: string; days: number };
   previous_range: { start: string; end: string; days: number };
+  filters: { game: GameFilter; stakes: StakesFilter; search: string | null };
   summary: SnapshotSummary;
   // the same summary for the window immediately before this one, same filters
   previous: SnapshotSummary;
@@ -165,6 +166,18 @@ interface PageCursor {
 }
 
 interface GamePage {
+  contract: 'ca_club_game_page.v2';
+  contract_version: 2;
+  club_id: string;
+  requested_start: string;
+  requested_end: string;
+  requested_game: GameFilter;
+  requested_stakes: StakesFilter;
+  requested_search: string | null;
+  requested_sort: GameSort;
+  requested_cursor: PageCursor | null;
+  requested_limit: number;
+  sort: GameSort;
   rows: SnapshotRow[];
   next_cursor: PageCursor | null;
   has_more: boolean;
@@ -173,6 +186,16 @@ interface GamePage {
 }
 
 interface PlayerPage {
+  contract: 'ca_club_player_page.v2';
+  contract_version: 2;
+  club_id: string;
+  requested_start: string;
+  requested_end: string;
+  requested_sort: PlayerSort;
+  requested_search: string | null;
+  requested_cursor: PageCursor | null;
+  requested_limit: number;
+  sort: PlayerSort;
   rows: PlayerRow[];
   next_cursor: PageCursor | null;
   has_more: boolean;
@@ -389,12 +412,383 @@ function toISODate(d: Date): string {
 }
 
 function money(n: number | null | undefined): string {
-  const v = Number(n || 0);
-  return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return compactChips(Number(n || 0));
 }
 
 function compactInt(n: number | null | undefined): string {
   return Number(n || 0).toLocaleString('en-US');
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function isStringOrNull(value: unknown): value is string | null {
+  return value === null || typeof value === 'string';
+}
+
+function isExactCent(value: unknown): value is number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return false;
+  const cents = value * 100;
+  return Number.isSafeInteger(Math.round(cents)) && Math.abs(cents - Math.round(cents)) <= 1e-6;
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isSnapshotExportRow(value: unknown): value is SnapshotRow {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.kind === 'string' &&
+    value.kind.length > 0 &&
+    typeof value.id === 'string' &&
+    value.id.length > 0 &&
+    typeof value.name === 'string' &&
+    value.name.length > 0 &&
+    typeof value.variant === 'string' &&
+    value.variant.length > 0 &&
+    typeof value.game_class === 'string' &&
+    value.game_class.length > 0 &&
+    typeof value.stakes_tier === 'string' &&
+    value.stakes_tier.length > 0 &&
+    isStringOrNull(value.blinds) &&
+    (value.rake_percent === null ||
+      (typeof value.rake_percent === 'number' && Number.isFinite(value.rake_percent))) &&
+    isStringOrNull(value.started_at) &&
+    (value.started_at === null || Number.isFinite(Date.parse(value.started_at))) &&
+    isStringOrNull(value.status) &&
+    isStringOrNull(value.creator_id) &&
+    isStringOrNull(value.creator_name) &&
+    isStringOrNull(value.creator_avatar) &&
+    isExactCent(value.fee) &&
+    isExactCent(value.winnings) &&
+    isNonNegativeInteger(value.hands) &&
+    isNonNegativeInteger(value.players)
+  );
+}
+
+function isPlayerExportRow(value: unknown): value is PlayerRow {
+  if (!isRecord(value)) return false;
+  if (
+    typeof value.user_id !== 'string' ||
+    value.user_id.length === 0 ||
+    typeof value.username !== 'string' ||
+    value.username.length === 0 ||
+    !isStringOrNull(value.avatar_url) ||
+    !isExactCent(value.net) ||
+    !isExactCent(value.cash_net) ||
+    !isExactCent(value.tournament_net) ||
+    !isExactCent(value.rake) ||
+    !isNonNegativeInteger(value.hands)
+  ) {
+    return false;
+  }
+  return (
+    Math.round(value.net * 100) ===
+    Math.round(value.cash_net * 100) + Math.round(value.tournament_net * 100)
+  );
+}
+
+function isInvoiceRow(value: unknown): value is InvoiceRow {
+  if (!isRecord(value)) return false;
+  if (
+    typeof value.invoice_id !== 'string' ||
+    value.invoice_id.length === 0 ||
+    typeof value.status !== 'string' ||
+    value.status.length === 0 ||
+    typeof value.overdue !== 'boolean' ||
+    !isExactCent(value.paid_total) ||
+    value.paid_total < 0 ||
+    !isExactCent(value.outstanding) ||
+    value.outstanding < 0 ||
+    typeof value.issued_at !== 'string' ||
+    !Number.isFinite(Date.parse(value.issued_at)) ||
+    !isStringOrNull(value.due_at) ||
+    (value.due_at !== null && !Number.isFinite(Date.parse(value.due_at))) ||
+    !isExactCent(value.amount) ||
+    !isStringOrNull(value.direction) ||
+    !isStringOrNull(value.period_start) ||
+    (value.period_start !== null && !Number.isFinite(Date.parse(value.period_start))) ||
+    !isStringOrNull(value.period_end) ||
+    (value.period_end !== null && !Number.isFinite(Date.parse(value.period_end))) ||
+    !(value.breakdown === null || isRecord(value.breakdown)) ||
+    typeof value.message_sent !== 'boolean'
+  ) {
+    return false;
+  }
+  const amountCents = Math.abs(Math.round(value.amount * 100));
+  const paidCents = Math.round(value.paid_total * 100);
+  return Math.round(value.outstanding * 100) === Math.max(amountCents - paidCents, 0);
+}
+
+function isValidDate(value: unknown): value is string {
+  return typeof value === 'string' && Number.isFinite(Date.parse(value));
+}
+
+function isValidRange(value: unknown): value is Snapshot['range'] {
+  if (!isRecord(value)) return false;
+  if (
+    typeof value.start !== 'string' ||
+    typeof value.end !== 'string' ||
+    !isNonNegativeInteger(value.days) ||
+    value.days < 1 ||
+    value.days > 93
+  ) {
+    return false;
+  }
+  const start = Date.parse(`${value.start}T00:00:00Z`);
+  const end = Date.parse(`${value.end}T00:00:00Z`);
+  return (
+    Number.isFinite(start) &&
+    Number.isFinite(end) &&
+    Math.round((end - start) / 86_400_000) + 1 === value.days
+  );
+}
+
+function isSnapshotSummary(value: unknown): value is SnapshotSummary {
+  if (!isRecord(value)) return false;
+  return (
+    isNonNegativeInteger(value.games) &&
+    isNonNegativeInteger(value.hands) &&
+    isExactCent(value.total_winnings) &&
+    isExactCent(value.mtt_winnings) &&
+    isExactCent(value.cash_winnings) &&
+    isExactCent(value.fee) &&
+    (value.cash_fee === undefined || isExactCent(value.cash_fee)) &&
+    (value.mtt_fee === undefined || isExactCent(value.mtt_fee))
+  );
+}
+
+function isImmediatelyPrecedingRange(
+  current: Snapshot['range'],
+  previous: Snapshot['previous_range']
+): boolean {
+  const currentStart = Date.parse(`${current.start}T00:00:00Z`);
+  const previousEnd = Date.parse(`${previous.end}T00:00:00Z`);
+  return current.days === previous.days && previousEnd + 86_400_000 === currentStart;
+}
+
+function isExactAbsoluteDelta(actual: unknown, current: number, previous: number): boolean {
+  return (
+    isExactCent(actual) &&
+    Math.round(actual * 100) === Math.round(current * 100) - Math.round(previous * 100)
+  );
+}
+
+function isExactPercentageDelta(actual: unknown, current: number, previous: number): boolean {
+  if (previous === 0) return actual === null;
+  if (typeof actual !== 'number' || !Number.isFinite(actual)) return false;
+  const expected = Math.round(((current - previous) / Math.abs(previous)) * 1_000) / 10;
+  return Math.abs(actual - expected) <= 1e-9;
+}
+
+function isPageCursor(value: unknown): value is PageCursor | null {
+  if (value === null) return true;
+  if (!isRecord(value) || Object.keys(value).length === 0) return false;
+  return Object.values(value).every(
+    (part) =>
+      (typeof part === 'string' && part.length > 0) ||
+      (typeof part === 'number' && Number.isFinite(part))
+  );
+}
+
+interface ExpectedRange {
+  start: string;
+  end: string;
+}
+
+interface ExpectedSnapshotRequest extends ExpectedRange {
+  game: GameFilter;
+  stakes: StakesFilter;
+  search: string | null;
+}
+
+interface ExpectedGamePageRequest extends ExpectedSnapshotRequest {
+  clubId: string;
+  sort: GameSort;
+  cursor: PageCursor | null;
+  limit: number;
+}
+
+interface ExpectedPlayerPageRequest extends ExpectedRange {
+  clubId: string;
+  sort: PlayerSort;
+  search: string | null;
+  cursor: PageCursor | null;
+  limit: number;
+}
+
+function isExactPageCursor(value: unknown, expected: PageCursor | null): boolean {
+  if (!isPageCursor(value)) return false;
+  if (value === null || expected === null) return value === expected;
+  const actualKeys = Object.keys(value).sort();
+  const expectedKeys = Object.keys(expected).sort();
+  return (
+    actualKeys.length === expectedKeys.length &&
+    actualKeys.every((key, index) => key === expectedKeys[index] && value[key] === expected[key])
+  );
+}
+
+function isExactRequestedRange(
+  value: unknown,
+  expected: ExpectedRange
+): value is Snapshot['range'] {
+  return isValidRange(value) && value.start === expected.start && value.end === expected.end;
+}
+
+function isVerifiedSnapshot(value: unknown, expected: ExpectedSnapshotRequest): value is Snapshot {
+  if (!isVerifiedClubDataSnapshot(value) || !isRecord(value)) return false;
+  const rows = value.rows;
+  const delta = value.delta;
+  const filters = value.filters;
+  if (
+    !isExactRequestedRange(value.range, expected) ||
+    !isValidRange(value.previous_range) ||
+    !isRecord(filters) ||
+    filters.game !== expected.game ||
+    filters.stakes !== expected.stakes ||
+    filters.search !== expected.search ||
+    !isSnapshotSummary(value.summary) ||
+    !isSnapshotSummary(value.previous) ||
+    !isRecord(delta)
+  ) {
+    return false;
+  }
+  return (
+    isImmediatelyPrecedingRange(value.range, value.previous_range) &&
+    isExactPercentageDelta(delta.fee_pct, value.summary.fee, value.previous.fee) &&
+    isExactPercentageDelta(delta.games_pct, value.summary.games, value.previous.games) &&
+    isExactAbsoluteDelta(
+      delta.winnings_abs,
+      value.summary.total_winnings,
+      value.previous.total_winnings
+    ) &&
+    isExactAbsoluteDelta(delta.fee_abs, value.summary.fee, value.previous.fee) &&
+    Array.isArray(rows) &&
+    rows.every(isSnapshotExportRow) &&
+    isNonNegativeInteger(value.row_count) &&
+    isStringOrNull(value.union_id) &&
+    isStringOrNull(value.data_updated_at) &&
+    (value.data_updated_at === null || isValidDate(value.data_updated_at)) &&
+    isValidDate(value.generated_at)
+  );
+}
+
+// Exported for the request-receipt regression harness as well as this page.
+// eslint-disable-next-line react-refresh/only-export-components
+export function isVerifiedGamePage(
+  value: unknown,
+  expected: ExpectedGamePageRequest
+): value is GamePage {
+  if (!isRecord(value) || !Array.isArray(value.rows)) return false;
+  const identities = value.rows.map((row) => {
+    if (!isSnapshotExportRow(row)) return '';
+    return `${row.kind}:${row.id}`;
+  });
+  return (
+    identities.every(Boolean) &&
+    new Set(identities).size === identities.length &&
+    value.contract === 'ca_club_game_page.v2' &&
+    value.contract_version === 2 &&
+    value.club_id === expected.clubId &&
+    value.requested_start === expected.start &&
+    value.requested_end === expected.end &&
+    value.requested_game === expected.game &&
+    value.requested_stakes === expected.stakes &&
+    value.requested_search === expected.search &&
+    value.requested_sort === expected.sort &&
+    isExactPageCursor(value.requested_cursor, expected.cursor) &&
+    value.requested_limit === expected.limit &&
+    value.sort === expected.sort &&
+    isPageCursor(value.next_cursor) &&
+    typeof value.has_more === 'boolean' &&
+    (!value.has_more || value.next_cursor !== null) &&
+    (value.filtered_count === undefined ||
+      value.filtered_count === null ||
+      (isNonNegativeInteger(value.filtered_count) && value.filtered_count >= value.rows.length)) &&
+    isValidDate(value.generated_at)
+  );
+}
+
+function isVerifiedPlayerBreakdown(
+  value: unknown,
+  expected: ExpectedRange
+): value is PlayerBreakdown {
+  if (!isRecord(value) || !isRecord(value.totals) || !Array.isArray(value.players)) return false;
+  const totals = value.totals;
+  const playerIds = value.players.map((row) => (isPlayerExportRow(row) ? row.user_id : ''));
+  return (
+    isExactRequestedRange(value.range, expected) &&
+    isStringOrNull(value.rake_complete_through) &&
+    (value.rake_complete_through === null || isValidDate(value.rake_complete_through)) &&
+    isNonNegativeInteger(totals.players) &&
+    isExactCent(totals.net) &&
+    isExactCent(totals.rake) &&
+    isNonNegativeInteger(totals.hands) &&
+    isNonNegativeInteger(value.player_count) &&
+    totals.players === value.player_count &&
+    value.player_count >= value.players.length &&
+    playerIds.every(Boolean) &&
+    new Set(playerIds).size === playerIds.length &&
+    isValidDate(value.generated_at)
+  );
+}
+
+// Exported for the request-receipt regression harness as well as this page.
+// eslint-disable-next-line react-refresh/only-export-components
+export function isVerifiedPlayerPage(
+  value: unknown,
+  expected: ExpectedPlayerPageRequest
+): value is PlayerPage {
+  if (!isRecord(value) || !Array.isArray(value.rows)) return false;
+  const playerIds = value.rows.map((row) => (isPlayerExportRow(row) ? row.user_id : ''));
+  return (
+    playerIds.every(Boolean) &&
+    new Set(playerIds).size === playerIds.length &&
+    value.contract === 'ca_club_player_page.v2' &&
+    value.contract_version === 2 &&
+    value.club_id === expected.clubId &&
+    value.requested_start === expected.start &&
+    value.requested_end === expected.end &&
+    value.requested_sort === expected.sort &&
+    value.requested_search === expected.search &&
+    isExactPageCursor(value.requested_cursor, expected.cursor) &&
+    value.requested_limit === expected.limit &&
+    value.sort === expected.sort &&
+    isPageCursor(value.next_cursor) &&
+    typeof value.has_more === 'boolean' &&
+    (!value.has_more || value.next_cursor !== null) &&
+    isNonNegativeInteger(value.filtered_count) &&
+    value.filtered_count >= value.rows.length &&
+    isValidDate(value.generated_at)
+  );
+}
+
+function isVerifiedCachedGameLedger(
+  value: unknown,
+  expected: ExpectedSnapshotRequest
+): value is CachedGameLedger {
+  return (
+    isRecord(value) &&
+    isVerifiedSnapshot(value.snapshot, expected) &&
+    isPageCursor(value.cursor) &&
+    typeof value.hasMore === 'boolean' &&
+    (!value.hasMore || value.cursor !== null)
+  );
+}
+
+function isVerifiedCachedPlayerLedger(
+  value: unknown,
+  expected: ExpectedRange
+): value is CachedPlayerLedger {
+  return (
+    isRecord(value) &&
+    isVerifiedPlayerBreakdown(value.players, expected) &&
+    isPageCursor(value.cursor) &&
+    typeof value.hasMore === 'boolean' &&
+    (!value.hasMore || value.cursor !== null)
+  );
 }
 
 function rowsToCsv(rows: SnapshotRow[]): string {
@@ -462,7 +856,7 @@ export default function ClubDataPage() {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
-  const [gameCursor, setGameCursor] = useState<PageCursor | null>(null);
+  const [, setGameCursor] = useState<PageCursor | null>(null);
   const [gamesHasMore, setGamesHasMore] = useState(false);
   const [gamesLoadingMore, setGamesLoadingMore] = useState(false);
   const [gamesPageError, setGamesPageError] = useState<string | null>(null);
@@ -489,7 +883,7 @@ export default function ClubDataPage() {
   const [playersLoading, setPlayersLoading] = useState(false);
   const [playersError, setPlayersError] = useState<string | null>(null);
   const [playerSort, setPlayerSort] = useState<PlayerSort>('winners');
-  const [playerCursor, setPlayerCursor] = useState<PageCursor | null>(null);
+  const [, setPlayerCursor] = useState<PageCursor | null>(null);
   const [playersHasMore, setPlayersHasMore] = useState(false);
   const [playersLoadingMore, setPlayersLoadingMore] = useState(false);
   const [playersPageError, setPlayersPageError] = useState<string | null>(null);
@@ -569,6 +963,8 @@ export default function ClubDataPage() {
   const playerCursorRef = useRef<PageCursor | null>(null);
   const playersMoreRef = useRef(false);
   const exportControllerRef = useRef<AbortController | null>(null);
+  const exportGenerationRef = useRef(0);
+  const exportViewKeyRef = useRef('');
   const restoredGameKeyRef = useRef<string | null>(null);
   const restoredGameCacheHitRef = useRef(false);
   const restoredPlayerKeyRef = useRef<string | null>(null);
@@ -584,7 +980,9 @@ export default function ClubDataPage() {
     cancelledRef.current = false;
     return () => {
       cancelledRef.current = true;
+      exportGenerationRef.current += 1;
       exportControllerRef.current?.abort();
+      exportControllerRef.current = null;
       if (eventRefreshTimerRef.current) clearTimeout(eventRefreshTimerRef.current);
       eventRefreshDeadlineRef.current = null;
     };
@@ -608,6 +1006,21 @@ export default function ClubDataPage() {
     return toISODate(d);
   }, [endDate, preset]);
 
+  const expectedGameSnapshot = useMemo<ExpectedSnapshotRequest>(
+    () => ({
+      start: startDate,
+      end: endDate,
+      game,
+      stakes,
+      search: search || null,
+    }),
+    [startDate, endDate, game, stakes, search]
+  );
+  const expectedPlayerRange = useMemo<ExpectedRange>(
+    () => ({ start: startDate, end: endDate }),
+    [startDate, endDate]
+  );
+
   const isToday = endDate >= toISODate(new Date());
 
   const gameCacheKey = useMemo(
@@ -630,10 +1043,38 @@ export default function ClubDataPage() {
   const gameScopeKey = [userId, clubUuid, gameCacheKey].join(':');
   const playerScopeKey = [userId, clubUuid, playerCacheKey].join(':');
   const invoiceCacheKey = 'kind=invoices';
+  const exportViewKey = [
+    userId,
+    clubParam,
+    clubUuid,
+    tab,
+    startDate,
+    endDate,
+    tab === 'players' ? playerSort : game,
+    tab === 'players' ? '' : stakes,
+    tab === 'players' ? '' : search,
+    tab === 'players' ? '' : gameSort,
+  ].join(':');
 
-  // Invalidate every club-scoped value before the browser paints a new route.
-  // A normal effect runs after paint; that left one frame where changing from
-  // one club slug to another showed the first club's money under the new URL.
+  // A complete financial export belongs to the exact painted question. Abort
+  // before paint when the viewer, route, tab, range, filter or sort changes.
+  useLayoutEffect(() => {
+    if (exportViewKeyRef.current === exportViewKey) return;
+    exportViewKeyRef.current = exportViewKey;
+    const active = exportControllerRef.current;
+    if (!active) return;
+    exportControllerRef.current = null;
+    exportGenerationRef.current += 1;
+    active.abort();
+    setExporting(false);
+    setExportProgress(null);
+    setExportNote(null);
+  }, [exportViewKey]);
+
+  // Invalidate every account-and-club-scoped value before the browser paints a
+  // new route or signed-in account. A normal effect runs after paint; that left
+  // one frame where changing the route or account showed the outgoing viewer's
+  // money under the incoming identity.
   useLayoutEffect(() => {
     loadVersion.current += 1;
     // A load still in flight for the OUTGOING club must not be able to put the
@@ -678,6 +1119,7 @@ export default function ClubDataPage() {
     setLastVerifiedAt(null);
     setLastRequestMs(null);
     setRealtimeFeeds(INITIAL_REALTIME_FEEDS);
+    setRakeScopes(['club']);
     restoredGameKeyRef.current = null;
     restoredGameCacheHitRef.current = false;
     restoredPlayerKeyRef.current = null;
@@ -690,7 +1132,7 @@ export default function ClubDataPage() {
     setLoading(Boolean(clubParam));
     setPlayersLoading(false);
     setInvoicesLoading(false);
-  }, [clubParam]);
+  }, [clubParam, userId]);
 
   // Resolve a club code or slug only after auth restoration. A protected club
   // lookup that races the session can return "not found" for a valid club and
@@ -739,8 +1181,14 @@ export default function ClubDataPage() {
       supabase.from('clubs').select('name').eq('id', clubUuid).maybeSingle(),
       'Club name request timed out'
     ).then(
-      ({ data }) => {
-        if (!stale()) setClubName(data?.name || '');
+      ({ data, error: clubNameError }) => {
+        if (stale()) return;
+        if (clubNameError) {
+          reportError(clubNameError, 'ClubDataPage.club_name');
+          setClubName('');
+          return;
+        }
+        setClubName(data?.name || '');
       },
       (err: unknown) => {
         if (!stale()) reportError(err, 'ClubDataPage.club_name');
@@ -857,12 +1305,23 @@ export default function ClubDataPage() {
           if (isAuthzError(rpcError)) setSnapshot(null);
           return false;
         } else if (
-          !auditClubDataSnapshot(data).renderable ||
-          (gameSort !== 'recent' && (!page || !Array.isArray(page.rows)))
+          !isVerifiedSnapshot(data, expectedGameSnapshot) ||
+          (gameSort !== 'recent' &&
+            !isVerifiedGamePage(page, {
+              ...expectedGameSnapshot,
+              clubId: clubUuid,
+              sort: gameSort,
+              cursor: null,
+              limit: GAME_PAGE_SIZE * 2,
+            }))
         ) {
-          // A null or shapeless payload used to be stored as success, leaving a
-          // page with no data, no skeleton and no message.
-          reportError(new Error('snapshot payload was empty'), 'ClubDataPage.snapshot_shape');
+          // A transport-level success is not a financial success. Only a fully
+          // reconciled payload may replace the last verified rows, become
+          // "Live", or enter the short-lived cache.
+          reportError(
+            new Error('snapshot payload did not pass verified integrity'),
+            'ClubDataPage.snapshot_shape'
+          );
           const outcome = clubDataReadFailure({
             preserveOnError,
             holdingVerifiedData: snapshotRef.current !== null,
@@ -889,6 +1348,21 @@ export default function ClubDataPage() {
             rows,
             row_count: Number(page?.filtered_count ?? snapshot.row_count),
           };
+          if (!isVerifiedSnapshot(nextSnapshot, expectedGameSnapshot)) {
+            reportError(
+              new Error('composed snapshot did not pass verified integrity'),
+              'ClubDataPage.snapshot_shape'
+            );
+            const outcome = clubDataReadFailure({
+              preserveOnError,
+              holdingVerifiedData: snapshotRef.current !== null,
+              message: CLUB_GAMES_UNAVAILABLE_COPY,
+            });
+            setError(outcome.error);
+            if (outcome.degraded) setLedgerSource('degraded');
+            if (outcome.clearData) setSnapshot(null);
+            return false;
+          }
           const keptExpandedRows = rows.length > refreshedRows.length;
           const prefetchedRows =
             gameSort !== 'recent' && !keepExpandedMetricRows
@@ -919,11 +1393,13 @@ export default function ClubDataPage() {
           const cachedSnapshot = prefetchedRows.length
             ? { ...nextSnapshot, rows: [...rows, ...prefetchedRows] }
             : nextSnapshot;
-          writeClubDataCache<CachedGameLedger>(userId, clubUuid, gameCacheKey, {
-            snapshot: cachedSnapshot,
-            cursor: prefetchedRows.length ? page!.next_cursor || null : nextCursor,
-            hasMore: prefetchedRows.length ? Boolean(page!.has_more) : nextHasMore,
-          });
+          if (isVerifiedSnapshot(cachedSnapshot, expectedGameSnapshot)) {
+            writeClubDataCache<CachedGameLedger>(userId, clubUuid, gameCacheKey, {
+              snapshot: cachedSnapshot,
+              cursor: prefetchedRows.length ? page!.next_cursor || null : nextCursor,
+              hasMore: prefetchedRows.length ? Boolean(page!.has_more) : nextHasMore,
+            });
+          }
 
           // Recent first paint is intentionally lighter than the ranked sorts.
           // Warm its continuation only after the authoritative 100-row snapshot
@@ -949,7 +1425,16 @@ export default function ClubDataPage() {
             )
               .then(({ data: prefetchedData, error: prefetchError }) => {
                 const prefetchPage = prefetchedData as GamePage | null;
-                if (prefetchError || !prefetchPage || !Array.isArray(prefetchPage.rows))
+                if (
+                  prefetchError ||
+                  !isVerifiedGamePage(prefetchPage, {
+                    ...expectedGameSnapshot,
+                    clubId: clubUuid,
+                    sort: 'recent',
+                    cursor: nextCursor,
+                    limit: GAME_PAGE_SIZE,
+                  })
+                )
                   return null;
                 return {
                   key: prefetchKey,
@@ -964,9 +1449,14 @@ export default function ClubDataPage() {
               if (stale() || prefetchedGameRequestRef.current?.promise !== prefetchPromise) return;
               prefetchedGameRequestRef.current = null;
               if (!prefetchedPage) return;
+              const prefetchedSnapshot = {
+                ...nextSnapshot,
+                rows: [...rows, ...prefetchedPage.rows],
+              };
+              if (!isVerifiedSnapshot(prefetchedSnapshot, expectedGameSnapshot)) return;
               prefetchedGamePageRef.current = prefetchedPage;
               writeClubDataCache<CachedGameLedger>(userId, clubUuid, prefetchKey, {
-                snapshot: { ...nextSnapshot, rows: [...rows, ...prefetchedPage.rows] },
+                snapshot: prefetchedSnapshot,
                 cursor: prefetchedPage.nextCursor,
                 hasMore: prefetchedPage.hasMore,
               });
@@ -1015,6 +1505,7 @@ export default function ClubDataPage() {
       stakes,
       search,
       gameSort,
+      expectedGameSnapshot,
       isHydrating,
       userId,
       gameCacheKey,
@@ -1043,7 +1534,7 @@ export default function ClubDataPage() {
     gameCursorRef.current = null;
     restoredGameCacheHitRef.current = false;
     const cached = readClubDataCache<CachedGameLedger>(userId, clubUuid, gameCacheKey);
-    if (!cached?.snapshot || !auditClubDataSnapshot(cached.snapshot).renderable) {
+    if (!isVerifiedCachedGameLedger(cached, expectedGameSnapshot)) {
       if (cached) removeClubDataCaches(userId, clubUuid);
       setLoading(true);
       return;
@@ -1059,7 +1550,7 @@ export default function ClubDataPage() {
     setLedgerSource('cached');
     const generatedAt = Date.parse(cached.snapshot.generated_at);
     setLastVerifiedAt(Number.isFinite(generatedAt) ? generatedAt : Date.now());
-  }, [clubUuid, gameCacheKey, gameScopeKey, isHydrating, userId]);
+  }, [clubUuid, expectedGameSnapshot, gameCacheKey, gameScopeKey, isHydrating, userId]);
 
   useEffect(() => {
     if (!snapshot) return;
@@ -1159,12 +1650,21 @@ export default function ClubDataPage() {
           if (isAuthzError(rpcError)) setPlayers(null);
           return false;
         } else if (
-          !data ||
-          !Array.isArray((data as PlayerBreakdown).players) ||
-          !page ||
-          !Array.isArray(page.rows)
+          !isVerifiedPlayerBreakdown(data, expectedPlayerRange) ||
+          !isVerifiedPlayerPage(page, {
+            ...expectedPlayerRange,
+            clubId: clubUuid,
+            sort: playerSort,
+            search: null,
+            cursor: null,
+            limit: PLAYER_PAGE_SIZE,
+          }) ||
+          page.filtered_count !== data.player_count
         ) {
-          reportError(new Error('player payload was empty'), 'ClubDataPage.players_shape');
+          reportError(
+            new Error('player payload did not pass verified integrity'),
+            'ClubDataPage.players_shape'
+          );
           const outcome = clubDataReadFailure({
             preserveOnError,
             holdingVerifiedData: playersRef.current !== null,
@@ -1183,6 +1683,20 @@ export default function ClubDataPage() {
           const playerCount = Number(page.filtered_count ?? breakdown.player_count);
           const keptExpandedRows = rows.length > page.rows.length;
           const nextPlayers = { ...breakdown, players: rows, player_count: playerCount };
+          if (!isVerifiedPlayerBreakdown(nextPlayers, expectedPlayerRange)) {
+            reportError(
+              new Error('composed player payload did not pass verified integrity'),
+              'ClubDataPage.players_shape'
+            );
+            const outcome = clubDataReadFailure({
+              preserveOnError,
+              holdingVerifiedData: playersRef.current !== null,
+              message: CLUB_PLAYERS_UNAVAILABLE_COPY,
+            });
+            setPlayersError(outcome.error);
+            if (outcome.clearData) setPlayers(null);
+            return false;
+          }
           const nextCursor = keptExpandedRows ? playerCursorRef.current : page.next_cursor || null;
           const nextHasMore = playerCount > rows.length;
           setPlayersError(null);
@@ -1220,7 +1734,17 @@ export default function ClubDataPage() {
         }
       }
     },
-    [clubUuid, startDate, endDate, playerSort, isHydrating, userId, playerCacheKey, playerScopeKey]
+    [
+      clubUuid,
+      startDate,
+      endDate,
+      playerSort,
+      expectedPlayerRange,
+      isHydrating,
+      userId,
+      playerCacheKey,
+      playerScopeKey,
+    ]
   );
 
   useLayoutEffect(() => {
@@ -1240,7 +1764,7 @@ export default function ClubDataPage() {
       setPlayersLoadingMore(false);
       setPlayersPageError(null);
       const cached = readClubDataCache<CachedPlayerLedger>(userId, clubUuid, playerCacheKey);
-      if (cached?.players && Array.isArray(cached.players.players)) {
+      if (isVerifiedCachedPlayerLedger(cached, expectedPlayerRange)) {
         setPlayers(cached.players);
         playersRef.current = cached.players;
         setPlayerCursor(cached.cursor);
@@ -1260,7 +1784,16 @@ export default function ClubDataPage() {
       }
     }
     void loadPlayers(preserveExistingRows);
-  }, [tab, loadPlayers, clubUuid, isHydrating, userId, playerCacheKey, playerScopeKey]);
+  }, [
+    tab,
+    loadPlayers,
+    clubUuid,
+    expectedPlayerRange,
+    isHydrating,
+    userId,
+    playerCacheKey,
+    playerScopeKey,
+  ]);
 
   const loadMoreGames = useCallback(async () => {
     if (
@@ -1305,6 +1838,14 @@ export default function ClubDataPage() {
         ],
       };
       prefetchedGamePageRef.current = null;
+      if (!isVerifiedSnapshot(nextSnapshot, expectedGameSnapshot)) {
+        reportError(
+          new Error('prefetched game page did not pass verified integrity'),
+          'ClubDataPage.games_page_shape'
+        );
+        setGamesPageError('Could Not Load More Games.');
+        return;
+      }
       setSnapshot(nextSnapshot);
       snapshotRef.current = nextSnapshot;
       setGameCursor(prefetched.nextCursor);
@@ -1345,7 +1886,16 @@ export default function ClubDataPage() {
       );
       if (stale()) return;
       const page = data as GamePage | null;
-      if (pageError || !page || !Array.isArray(page.rows)) {
+      if (
+        pageError ||
+        !isVerifiedGamePage(page, {
+          ...expectedGameSnapshot,
+          clubId: clubUuid,
+          sort: gameSort,
+          cursor,
+          limit: GAME_PAGE_SIZE,
+        })
+      ) {
         if (pageError && !isAuthzError(pageError))
           reportError(pageError, 'ClubDataPage.games_page_rpc');
         setGamesPageError(
@@ -1370,6 +1920,14 @@ export default function ClubDataPage() {
             ...page.rows.filter((row) => !known.has(`${row.kind}:${row.id}`)),
           ],
         };
+        if (!isVerifiedSnapshot(nextSnapshot, expectedGameSnapshot)) {
+          reportError(
+            new Error('composed game page did not pass verified integrity'),
+            'ClubDataPage.games_page_shape'
+          );
+          setGamesPageError('Could Not Load More Games.');
+          return;
+        }
         setSnapshot(nextSnapshot);
         snapshotRef.current = nextSnapshot;
       }
@@ -1388,7 +1946,6 @@ export default function ClubDataPage() {
     }
   }, [
     clubUuid,
-    gameCursor,
     gamesHasMore,
     isHydrating,
     userId,
@@ -1398,6 +1955,7 @@ export default function ClubDataPage() {
     stakes,
     search,
     gameSort,
+    expectedGameSnapshot,
     gameCacheKey,
     gameScopeKey,
     loading,
@@ -1443,7 +2001,17 @@ export default function ClubDataPage() {
       );
       if (stale()) return;
       const page = data as PlayerPage | null;
-      if (pageError || !page || !Array.isArray(page.rows)) {
+      if (
+        pageError ||
+        !isVerifiedPlayerPage(page, {
+          ...expectedPlayerRange,
+          clubId: clubUuid,
+          sort: playerSort,
+          search: null,
+          cursor,
+          limit: PLAYER_PAGE_SIZE,
+        })
+      ) {
         if (pageError && !isAuthzError(pageError))
           reportError(pageError, 'ClubDataPage.players_page_rpc');
         setPlayersPageError(
@@ -1465,6 +2033,14 @@ export default function ClubDataPage() {
           ...current,
           players: [...current.players, ...page.rows.filter((row) => !known.has(row.user_id))],
         };
+        if (!isVerifiedPlayerBreakdown(nextPlayers, expectedPlayerRange)) {
+          reportError(
+            new Error('composed player page did not pass verified integrity'),
+            'ClubDataPage.players_page_shape'
+          );
+          setPlayersPageError('Could Not Load More Players.');
+          return;
+        }
         setPlayers(nextPlayers);
         playersRef.current = nextPlayers;
       }
@@ -1483,7 +2059,6 @@ export default function ClubDataPage() {
     }
   }, [
     clubUuid,
-    playerCursor,
     playersHasMore,
     playersLoading,
     isHydrating,
@@ -1491,6 +2066,7 @@ export default function ClubDataPage() {
     startDate,
     endDate,
     playerSort,
+    expectedPlayerRange,
     playerScopeKey,
   ]);
 
@@ -1680,8 +2256,16 @@ export default function ClubDataPage() {
         if (isAuthzError(invErr)) removeClubDataCaches(userId, clubUuid);
         return false;
       } else {
+        if (!Array.isArray(data) || !data.every(isInvoiceRow)) {
+          reportError(
+            new Error('Union statement response was invalid'),
+            'ClubDataPage.invoices_shape'
+          );
+          setInvoicesError('Could Not Refresh Your Union Statement.');
+          return false;
+        }
         setInvoicesError(null);
-        const rows = (data as InvoiceRow[]) || [];
+        const rows = data as InvoiceRow[];
         setInvoices(rows);
         writeClubDataCache<InvoiceRow[]>(userId, clubUuid, invoiceCacheKey, rows);
         return true;
@@ -1900,10 +2484,18 @@ export default function ClubDataPage() {
   const exportCsv = useCallback(async () => {
     if (!clubUuid || exporting) return;
     const controller = new AbortController();
+    const generation = ++exportGenerationRef.current;
+    const viewKey = exportViewKey;
     exportControllerRef.current = controller;
     setExporting(true);
     setExportNote(null);
     setExportProgress({ stage: 'preparing', loaded: 0, total: null });
+    const ownsExport = () =>
+      !cancelledRef.current &&
+      exportControllerRef.current === controller &&
+      exportGenerationRef.current === generation &&
+      exportViewKeyRef.current === viewKey &&
+      !controller.signal.aborted;
     try {
       const requestId = uuid();
       if (tab === 'players') {
@@ -1918,10 +2510,20 @@ export default function ClubDataPage() {
           },
           requestId,
           signal: controller.signal,
+          validateRow: isPlayerExportRow,
           rowKey: (row) => row.user_id,
-          onProgress: setExportProgress,
+          onProgress: (progress) => {
+            if (ownsExport()) setExportProgress(progress);
+          },
         });
-        if (!downloadCsv(`club_players_${startDate}_${endDate}.csv`, playersToCsv(rows))) {
+        if (!ownsExport()) return;
+        const downloaded = await downloadCsv(
+          `club_players_${startDate}_${endDate}.csv`,
+          playersToCsv(rows),
+          ownsExport
+        );
+        if (!ownsExport()) return;
+        if (!downloaded) {
           setExportNote('This Browser Could Not Start The Download.');
         } else {
           setExportNote(`Exported All ${compactInt(rows.length)} Players.`);
@@ -1943,15 +2545,32 @@ export default function ClubDataPage() {
         },
         requestId,
         signal: controller.signal,
+        validateRow: isSnapshotExportRow,
         rowKey: (row) => `${row.kind}:${row.id}`,
-        onProgress: setExportProgress,
+        onProgress: (progress) => {
+          if (ownsExport()) setExportProgress(progress);
+        },
       });
-      if (!downloadCsv(`club_data_${startDate}_${endDate}.csv`, rowsToCsv(rows))) {
+      if (!ownsExport()) return;
+      const downloaded = await downloadCsv(
+        `club_data_${startDate}_${endDate}.csv`,
+        rowsToCsv(rows),
+        ownsExport
+      );
+      if (!ownsExport()) return;
+      if (!downloaded) {
         setExportNote('This Browser Could Not Start The Download.');
       } else {
         setExportNote(`Exported All ${compactInt(rows.length)} Games.`);
       }
     } catch (e) {
+      if (
+        exportControllerRef.current !== controller ||
+        exportGenerationRef.current !== generation ||
+        exportViewKeyRef.current !== viewKey
+      ) {
+        return;
+      }
       if (isClubDataExportAbort(e)) {
         setExportNote('Export Cancelled. No Partial File Was Downloaded.');
       } else {
@@ -1961,16 +2580,45 @@ export default function ClubDataPage() {
         );
       }
     } finally {
-      if (!cancelledRef.current) {
+      if (
+        !cancelledRef.current &&
+        exportControllerRef.current === controller &&
+        exportGenerationRef.current === generation &&
+        exportViewKeyRef.current === viewKey
+      ) {
         setExporting(false);
         setExportProgress(null);
       }
-      if (exportControllerRef.current === controller) exportControllerRef.current = null;
+      if (
+        exportControllerRef.current === controller &&
+        exportGenerationRef.current === generation
+      ) {
+        exportControllerRef.current = null;
+      }
     }
-  }, [clubUuid, exporting, tab, startDate, endDate, playerSort, game, stakes, search, gameSort]);
+  }, [
+    clubUuid,
+    exporting,
+    tab,
+    startDate,
+    endDate,
+    playerSort,
+    game,
+    stakes,
+    search,
+    gameSort,
+    exportViewKey,
+  ]);
 
   const cancelExport = useCallback(() => {
-    exportControllerRef.current?.abort();
+    const active = exportControllerRef.current;
+    if (!active) return;
+    exportControllerRef.current = null;
+    exportGenerationRef.current += 1;
+    active.abort();
+    setExporting(false);
+    setExportProgress(null);
+    setExportNote('Export Cancelled. No Partial File Was Downloaded.');
   }, []);
 
   /**
@@ -2063,18 +2711,44 @@ export default function ClubDataPage() {
   if (isHydrating && !user) {
     return (
       <div className={styles.page}>
-        <LoadingState message="Opening Club Data" />
+        <SpadeConsole
+          eyebrow="Club Intelligence"
+          title="Opening Club Data"
+          pill="Checking"
+          pillInk="blue"
+          crest="flat"
+          family="spade"
+          foot="foot"
+          className={styles.console}
+          aria-busy="true"
+        >
+          <p className={`sc-copy ${styles.note}`} role="status">
+            Restoring Your Verified Club Access.
+          </p>
+        </SpadeConsole>
       </div>
     );
   }
   if (!user) {
     return (
       <div className={styles.page}>
-        <PermissionState
+        <SpadeConsole
+          eyebrow="Permission Gate"
           title="Sign In To View Club Data"
-          description="Financial And Player Analytics Are Restricted To Authenticated Club Operators."
-          onBack={() => navigate('/')}
-        />
+          pill="Restricted"
+          pillInk="red"
+          crest="flat"
+          family="shark"
+          foot="plates"
+          className={styles.console}
+          plates={{
+            primary: { label: 'Go Back', onClick: () => navigate('/') },
+          }}
+        >
+          <p className={`sc-copy ${styles.note}`}>
+            Financial And Player Analytics Are Restricted To Authenticated Club Operators.
+          </p>
+        </SpadeConsole>
       </div>
     );
   }
@@ -2084,15 +2758,24 @@ export default function ClubDataPage() {
        out, and it can resolve a club of its own even when the route gave none. */
     return (
       <div className={styles.page}>
-        <EmptyState
-          icon="CLUB"
+        <SpadeConsole
           eyebrow="Club Context Required"
-          tone="permission"
           title="Choose A Club To View Its Data"
-          description="Revenue, Rake, Player Results, And Union Invoices Belong To A Specific Club. Open Club Data From That Club's Operations Menu."
-          action={{ label: 'Return To Arena', onClick: () => navigate('/') }}
-          secondaryAction={{ label: 'Find Clubs', onClick: () => navigate('/search') }}
-        />
+          pill="Choose Club"
+          pillInk="gold"
+          crest="spade"
+          family="spade"
+          className={styles.console}
+          plates={{
+            secondary: { label: 'Find Clubs', onClick: () => navigate('/search') },
+            primary: { label: 'Return To Arena', onClick: () => navigate('/') },
+          }}
+        >
+          <p className={`sc-copy ${styles.note}`}>
+            Revenue, Rake, Player Results, And Union Invoices Belong To A Specific Club. Open Club
+            Data From That Club's Operations Menu.
+          </p>
+        </SpadeConsole>
       </div>
     );
   }
@@ -2179,6 +2862,7 @@ export default function ClubDataPage() {
         pill={statusWord}
         pillInk={statusInk}
         crest="spade"
+        family="spade"
         className={styles.console}
         aria-labelledby="club-data-title"
         plates={{
@@ -2269,6 +2953,7 @@ export default function ClubDataPage() {
         pill={!snapshot ? 'Checking' : integrityNeedsAttention ? 'Recovery Active' : 'Verified'}
         pillInk={!snapshot ? 'muted' : integrityNeedsAttention ? 'red' : 'green'}
         crest="flat"
+        family="spade"
         foot="foot"
         className={`${styles.console} ${integrityNeedsAttention ? styles.integrityAttention : ''}`}
         aria-labelledby="club-data-integrity-title"
@@ -2320,9 +3005,30 @@ export default function ClubDataPage() {
         eyebrow="Performance Ledger"
         title="Club Pulse"
         titleId="club-data-pulse-title"
-        pill={loading ? 'Syncing' : 'Live'}
-        pillInk={loading ? 'blue' : 'green'}
-        crest="club"
+        pill={
+          loading
+            ? 'Syncing'
+            : !snapshot
+              ? 'Unavailable'
+              : ledgerSource === 'cached'
+                ? 'Cached'
+                : ledgerSource === 'degraded'
+                  ? 'Delayed'
+                  : 'Live'
+        }
+        pillInk={
+          loading
+            ? 'blue'
+            : !snapshot
+              ? 'red'
+              : ledgerSource === 'cached'
+                ? 'gold'
+                : ledgerSource === 'degraded'
+                  ? 'red'
+                  : 'green'
+        }
+        crest="spade"
+        family="spade"
         foot="foot"
         className={styles.console}
         aria-labelledby="club-data-pulse-title"
@@ -2336,7 +3042,7 @@ export default function ClubDataPage() {
               onClick={() => shiftRange(-1)}
               aria-label="Previous Period"
             >
-              &#8592;
+              Prev
             </button>
             <span className={`sc-ink--silver ${styles.rangeChip}`}>
               <span>{startDate}</span>
@@ -2351,7 +3057,7 @@ export default function ClubDataPage() {
               disabled={isToday}
               aria-label="Next Period"
             >
-              &#8594;
+              Next
             </button>
           </div>
 
@@ -2375,7 +3081,7 @@ export default function ClubDataPage() {
         </section>
 
         {/* ZEROS ARE A LIE ON THIS PAGE (Dan 2026-08-25).
-          money(undefined) is "0.00", so any failed RPC - an authz refusal, a
+          money(undefined) is "0", so any failed RPC - an authz refusal, a
           timeout, a shapeless payload - painted "Games 0, Total Winnings 0.00,
           Fee 0.00" in confident green with the real message buried in the list
           below. On the screen that answers "what do I owe the union", a zero
@@ -2448,7 +3154,8 @@ export default function ClubDataPage() {
           titleId="club-data-statement-title"
           pill={invoicePill}
           pillInk={invoicePillInk}
-          crest="diamond"
+          crest="flat"
+          family="spade"
           foot="foot"
           className={styles.console}
           aria-labelledby="club-data-statement-title"
@@ -2581,7 +3288,7 @@ export default function ClubDataPage() {
                     <div className={styles.dataRow} key={String(label)}>
                       <span className={`sc-copy ${styles.lineLabel}`}>{String(label)}</span>
                       {/* money(Number('n/a')) is NaN, and NaN is falsy, so a corrupt
-                          line item printed as a real 0.00. Show that it is missing. */}
+                          line item printed as a real zero. Show that it is missing. */}
                       <span className={`sc-ink--silver ${styles.dataValue}`}>
                         {Number.isFinite(Number(value)) ? money(Number(value)) : NO_VALUE}
                       </span>
@@ -2659,6 +3366,7 @@ export default function ClubDataPage() {
         pill={ledgerPill}
         pillInk="blue"
         crest="flat"
+        family="spade"
         foot="foot"
         className={styles.console}
         aria-labelledby="club-data-ledger-title"
@@ -2816,7 +3524,11 @@ export default function ClubDataPage() {
               )}
 
               {!error && gameVirtual.paddingTop > 0 && (
-                <div aria-hidden="true" style={{ height: gameVirtual.paddingTop }} />
+                <div
+                  className={styles.virtualSpacer}
+                  aria-hidden="true"
+                  style={{ height: gameVirtual.paddingTop }}
+                />
               )}
 
               {!error &&
@@ -2841,10 +3553,9 @@ export default function ClubDataPage() {
                         month: '2-digit',
                       })
                     : '';
-                  const idLabel = titleCase(
-                    row.creator_name ||
-                      (row.creator_id ? row.creator_id.slice(0, 8) : row.id.slice(0, 8))
-                  );
+                  const creatorLabel = row.creator_name
+                    ? titleCase(row.creator_name)
+                    : 'Creator Name Unavailable';
                   const gameName = titleCase(row.name);
 
                   return (
@@ -2887,8 +3598,8 @@ export default function ClubDataPage() {
                             {(row.name || '?').slice(0, 1).toUpperCase()}
                           </span>
                         )}
-                        <span className={`sc-ink--muted ${styles.rowId}`} title={idLabel}>
-                          {idLabel}
+                        <span className={`sc-ink--muted ${styles.rowId}`} title={creatorLabel}>
+                          {creatorLabel}
                         </span>
                       </div>
 
@@ -2934,7 +3645,11 @@ export default function ClubDataPage() {
                 })}
 
               {!error && gameVirtual.paddingBottom > 0 && (
-                <div aria-hidden="true" style={{ height: gameVirtual.paddingBottom }} />
+                <div
+                  className={styles.virtualSpacer}
+                  aria-hidden="true"
+                  style={{ height: gameVirtual.paddingBottom }}
+                />
               )}
             </div>
 
@@ -2970,7 +3685,7 @@ export default function ClubDataPage() {
             {snapshot && (
               <p className={`sc-copy ${styles.note}`}>
                 {clubLabel ? `${clubLabel} - ` : ''}
-                Showing {compactInt(snapshot.rows.length)} Of {compactInt(snapshot.row_count)} Games
+                Loaded {compactInt(snapshot.rows.length)} Of {compactInt(snapshot.row_count)} Games
                 {snapshot.data_updated_at
                   ? ` - Cash Data Updated ${utcTime(snapshot.data_updated_at)}`
                   : ''}
@@ -3057,7 +3772,11 @@ export default function ClubDataPage() {
               )}
 
               {!playersError && playerVirtual.paddingTop > 0 && (
-                <div aria-hidden="true" style={{ height: playerVirtual.paddingTop }} />
+                <div
+                  className={styles.virtualSpacer}
+                  aria-hidden="true"
+                  style={{ height: playerVirtual.paddingTop }}
+                />
               )}
 
               {!playersError &&
@@ -3122,7 +3841,11 @@ export default function ClubDataPage() {
                 })}
 
               {!playersError && playerVirtual.paddingBottom > 0 && (
-                <div aria-hidden="true" style={{ height: playerVirtual.paddingBottom }} />
+                <div
+                  className={styles.virtualSpacer}
+                  aria-hidden="true"
+                  style={{ height: playerVirtual.paddingBottom }}
+                />
               )}
             </div>
 
@@ -3171,7 +3894,7 @@ export default function ClubDataPage() {
                     : '';
                 })()}
                 {players.player_count > sortedPlayers.length
-                  ? ` Showing ${compactInt(sortedPlayers.length)} Of ${compactInt(players.player_count)} Players, Ordered By ${PLAYER_SORTS.find((option) => option.id === playerSort)?.label || 'Server Rank'}.`
+                  ? ` Loaded ${compactInt(sortedPlayers.length)} Of ${compactInt(players.player_count)} Players, Ordered By ${PLAYER_SORTS.find((option) => option.id === playerSort)?.label || 'Server Rank'}.`
                   : ''}
               </p>
             )}

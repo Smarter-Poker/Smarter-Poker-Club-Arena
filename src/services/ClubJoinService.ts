@@ -168,6 +168,15 @@ export async function joinClubByIdentifier(options: {
       clubName: result.club.name,
       action: 'member_joined',
     });
+    // A meaningful moment for notifications: seat offers, tournament starts
+    // and club messages now concern this player. The prompt host decides
+    // whether an ask is allowed (cool-down, already on, blocked).
+    // Loaded lazily: this service is in the entry chunk, the policy is not.
+    void import('../lib/pushNudgePolicy')
+      .then((m) => m.requestPushNudge('club_joined'))
+      .catch(() => {
+        /* a nudge is optional; joining the club already succeeded */
+      });
   }
   return result;
 }

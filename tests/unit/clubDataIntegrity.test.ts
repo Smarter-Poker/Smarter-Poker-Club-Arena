@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   auditClubDataSnapshot,
   formatClubDataAge,
+  isVerifiedClubDataSnapshot,
   preserveExpandedClubDataRows,
 } from '../../src/lib/clubDataIntegrity';
 
@@ -56,6 +57,44 @@ describe('Club Data snapshot integrity', () => {
         'Cash and tournament fees do not reconcile to total fees.',
       ])
     );
+  });
+
+  it('accepts a real zero-row financial result as verified', () => {
+    const zero = {
+      ...snapshot,
+      summary: {
+        ...snapshot.summary,
+        games: 0,
+        total_winnings: 0,
+        cash_winnings: 0,
+        mtt_winnings: 0,
+        fee: 0,
+        cash_fee: 0,
+        mtt_fee: 0,
+        hands: 0,
+      },
+      rows: [],
+      row_count: 0,
+    };
+
+    expect(auditClubDataSnapshot(zero)).toMatchObject({
+      level: 'verified',
+      renderable: true,
+    });
+    expect(isVerifiedClubDataSnapshot(zero)).toBe(true);
+  });
+
+  it('does not promote a renderable but contradictory response to verified success', () => {
+    const malformed = {
+      ...snapshot,
+      summary: { ...snapshot.summary, fee: 99 },
+    };
+
+    expect(auditClubDataSnapshot(malformed)).toMatchObject({
+      level: 'attention',
+      renderable: true,
+    });
+    expect(isVerifiedClubDataSnapshot(malformed)).toBe(false);
   });
 
   it('formats verification age without implying false precision', () => {

@@ -3,9 +3,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 
+const TEST_END_DATE = new Date().toISOString().slice(0, 10);
+const testRangeStart = new Date(`${TEST_END_DATE}T00:00:00Z`);
+testRangeStart.setUTCDate(testRangeStart.getUTCDate() - 13);
+const TEST_START_DATE = testRangeStart.toISOString().slice(0, 10);
+const testPreviousEnd = new Date(testRangeStart);
+testPreviousEnd.setUTCDate(testPreviousEnd.getUTCDate() - 1);
+const testPreviousStart = new Date(testPreviousEnd);
+testPreviousStart.setUTCDate(testPreviousStart.getUTCDate() - 13);
+
 const snapshot = {
-  range: { start: '2026-08-17', end: '2026-08-30', days: 14 },
-  previous_range: { start: '2026-08-03', end: '2026-08-16', days: 14 },
+  range: { start: TEST_START_DATE, end: TEST_END_DATE, days: 14 },
+  previous_range: {
+    start: testPreviousStart.toISOString().slice(0, 10),
+    end: testPreviousEnd.toISOString().slice(0, 10),
+    days: 14,
+  },
+  filters: { game: 'ALL', stakes: 'ALL', search: null },
   summary: {
     games: 1,
     total_winnings: 2450,
@@ -24,7 +38,7 @@ const snapshot = {
     fee: 300,
     hands: 800,
   },
-  delta: { fee_pct: 7.2, games_pct: 20, winnings_abs: 450, fee_abs: 21.5 },
+  delta: { fee_pct: 7.2, games_pct: -90, winnings_abs: 450, fee_abs: 21.5 },
   rows: [
     {
       kind: 'CASH',
@@ -52,6 +66,33 @@ const snapshot = {
   generated_at: '2026-08-30T12:05:02Z',
 };
 
+const zeroSnapshot = {
+  ...snapshot,
+  summary: {
+    games: 0,
+    total_winnings: 0,
+    mtt_winnings: 0,
+    cash_winnings: 0,
+    fee: 0,
+    cash_fee: 0,
+    mtt_fee: 0,
+    hands: 0,
+  },
+  previous: {
+    games: 0,
+    total_winnings: 0,
+    mtt_winnings: 0,
+    cash_winnings: 0,
+    fee: 0,
+    cash_fee: 0,
+    mtt_fee: 0,
+    hands: 0,
+  },
+  delta: { fee_pct: null, games_pct: null, winnings_abs: 0, fee_abs: 0 },
+  rows: [],
+  row_count: 0,
+};
+
 const playerBreakdown = {
   range: snapshot.range,
   rake_complete_through: '2026-08-29',
@@ -74,6 +115,7 @@ const playerBreakdown = {
 };
 
 const gamePage = {
+  sort: 'recent',
   rows: snapshot.rows,
   next_cursor: null,
   has_more: false,
@@ -82,6 +124,7 @@ const gamePage = {
 };
 
 const playerPage = {
+  sort: 'winners',
   rows: playerBreakdown.players,
   next_cursor: null,
   has_more: false,
@@ -89,9 +132,74 @@ const playerPage = {
   generated_at: playerBreakdown.generated_at,
 };
 
+function gamePageFor(args: Record<string, unknown> = {}, overrides: Record<string, unknown> = {}) {
+  return {
+    ...gamePage,
+    sort: args.p_sort ?? 'recent',
+    contract: 'ca_club_game_page.v2',
+    contract_version: 2,
+    club_id: args.p_club_id ?? CLUB_ID,
+    requested_start: args.p_start ?? TEST_START_DATE,
+    requested_end: args.p_end ?? TEST_END_DATE,
+    requested_game: args.p_game ?? 'ALL',
+    requested_stakes: args.p_stakes ?? 'ALL',
+    requested_search: args.p_search ?? null,
+    requested_sort: args.p_sort ?? 'recent',
+    requested_cursor: args.p_cursor ?? null,
+    requested_limit: args.p_limit ?? 100,
+    ...overrides,
+  };
+}
+
+function playerPageFor(
+  args: Record<string, unknown> = {},
+  overrides: Record<string, unknown> = {}
+) {
+  return {
+    ...playerPage,
+    sort: args.p_sort ?? 'winners',
+    contract: 'ca_club_player_page.v2',
+    contract_version: 2,
+    club_id: args.p_club_id ?? CLUB_ID,
+    requested_start: args.p_start ?? TEST_START_DATE,
+    requested_end: args.p_end ?? TEST_END_DATE,
+    requested_sort: args.p_sort ?? 'winners',
+    requested_search: args.p_search ?? null,
+    requested_cursor: args.p_cursor ?? null,
+    requested_limit: args.p_limit ?? 100,
+    ...overrides,
+  };
+}
+
+function snapshotWithRows(rows: typeof snapshot.rows, rowCount: number) {
+  return {
+    ...snapshot,
+    summary: { ...snapshot.summary, games: rowCount },
+    delta: {
+      ...snapshot.delta,
+      games_pct:
+        Math.round(((rowCount - snapshot.previous.games) / snapshot.previous.games) * 1000) / 10,
+    },
+    rows,
+    row_count: rowCount,
+  };
+}
+
+function playerBreakdownWithRows(rows: typeof playerBreakdown.players, playerCount: number) {
+  return {
+    ...playerBreakdown,
+    totals: { ...playerBreakdown.totals, players: playerCount },
+    players: rows,
+    player_count: playerCount,
+  };
+}
+
 const latestInvoice = {
   invoice_id: 'invoice-1',
   status: 'awaiting_payment',
+  overdue: false,
+  paid_total: 0,
+  outstanding: 350,
   issued_at: '2026-08-30T09:00:00Z',
   due_at: '2026-09-02T09:00:00Z',
   amount: 350,
@@ -190,11 +298,15 @@ beforeEach(() => {
   realtimeState.channels = [];
   realtimeState.busHandler = null;
   realtimeState.busEvents = [];
-  rpcMock.mockImplementation(async (fn: string) => {
+  rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
     if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
-    if (fn === 'ca_club_game_page') return { data: gamePage, error: null };
+    if (fn === 'ca_club_game_page') {
+      return { data: gamePageFor(args), error: null };
+    }
     if (fn === 'ca_club_player_breakdown') return { data: playerBreakdown, error: null };
-    if (fn === 'ca_club_player_page') return { data: playerPage, error: null };
+    if (fn === 'ca_club_player_page') {
+      return { data: playerPageFor(args), error: null };
+    }
     if (fn === 'ca_club_union_invoices') return { data: [], error: null };
     return { data: null, error: null };
   });
@@ -207,6 +319,31 @@ beforeEach(() => {
 });
 
 describe('ClubDataPage', () => {
+  it('uses a neutral creator label when the verified row has no resolved name', async () => {
+    const unnamedCreator = {
+      ...snapshot.rows[0],
+      creator_id: '11111111-1111-4111-8111-111111111111',
+      creator_name: null,
+    };
+    rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
+      if (fn === 'ca_club_data_snapshot') {
+        return { data: snapshotWithRows([unnamedCreator], 1), error: null };
+      }
+      if (fn === 'ca_club_game_page') {
+        return { data: gamePageFor(args, { rows: [unnamedCreator] }), error: null };
+      }
+      if (fn === 'ca_club_player_breakdown') return { data: playerBreakdown, error: null };
+      if (fn === 'ca_club_player_page') return { data: playerPageFor(args), error: null };
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      return { data: null, error: null };
+    });
+
+    render(<ClubDataPage />);
+
+    expect(await screen.findByText('Creator Name Unavailable')).toBeVisible();
+    expect(screen.queryByText(/11111111/i)).toBeNull();
+  });
+
   it('paints a recent verified snapshot immediately while the live RPC revalidates', async () => {
     const endDate = new Date().toISOString().slice(0, 10);
     const start = new Date(`${endDate}T00:00:00Z`);
@@ -243,6 +380,189 @@ describe('ClubDataPage', () => {
       screen.getByText('Showing A Recent Verified Snapshot While Live Numbers Refresh.')
     ).toBeInTheDocument();
     expect(rpcMock).toHaveBeenCalledWith('ca_club_data_snapshot', expect.any(Object));
+  });
+
+  it('rejects a cached game ledger that claims another page without a cursor', async () => {
+    const endDate = new Date().toISOString().slice(0, 10);
+    const start = new Date(`${endDate}T00:00:00Z`);
+    start.setUTCDate(start.getUTCDate() - 13);
+    const queryKey = clubDataQueryKey({
+      kind: 'games',
+      startDate: start.toISOString().slice(0, 10),
+      endDate,
+      game: 'ALL',
+      stakes: 'ALL',
+      search: '',
+      gameSort: 'recent',
+    });
+    writeClubDataCache('owner-1', CLUB_ID, queryKey, {
+      snapshot: {
+        ...snapshot,
+        rows: [{ ...snapshot.rows[0], id: 'invalid-cache-game', name: 'Invalid Cached Game' }],
+      },
+      cursor: null,
+      hasMore: true,
+    });
+    let resolveSnapshot!: (value: { data: typeof snapshot; error: null }) => void;
+    rpcMock.mockImplementation((fn: string) => {
+      if (fn === 'ca_club_data_snapshot') {
+        return new Promise((resolve) => {
+          resolveSnapshot = resolve;
+        });
+      }
+      if (fn === 'ca_club_union_invoices') return Promise.resolve({ data: [], error: null });
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    render(<ClubDataPage />);
+
+    await waitFor(() => expect(resolveSnapshot).toBeTypeOf('function'));
+    expect(screen.queryByText('Invalid Cached Game')).not.toBeInTheDocument();
+    expect(screen.queryByText('Recent Verified Snapshot')).not.toBeInTheDocument();
+    await act(async () => resolveSnapshot({ data: snapshot, error: null }));
+    expect(await screen.findByText('Shark Table One')).toBeVisible();
+  });
+
+  it('rejects a cached game ledger whose verified window does not match its query key', async () => {
+    const queryKey = clubDataQueryKey({
+      kind: 'games',
+      startDate: TEST_START_DATE,
+      endDate: TEST_END_DATE,
+      game: 'ALL',
+      stakes: 'ALL',
+      search: '',
+      gameSort: 'recent',
+    });
+    writeClubDataCache('owner-1', CLUB_ID, queryKey, {
+      snapshot: {
+        ...snapshot,
+        range: { ...snapshot.previous_range },
+        previous_range: (() => {
+          const end = new Date(`${snapshot.previous_range.start}T00:00:00Z`);
+          end.setUTCDate(end.getUTCDate() - 1);
+          const start = new Date(end);
+          start.setUTCDate(start.getUTCDate() - 13);
+          return {
+            start: start.toISOString().slice(0, 10),
+            end: end.toISOString().slice(0, 10),
+            days: 14,
+          };
+        })(),
+        rows: [{ ...snapshot.rows[0], name: 'Wrong Window Cached Game' }],
+      },
+      cursor: null,
+      hasMore: false,
+    });
+    rpcMock.mockImplementation((fn: string) => {
+      if (fn === 'ca_club_data_snapshot') return new Promise(() => undefined);
+      if (fn === 'ca_club_union_invoices') return Promise.resolve({ data: [], error: null });
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    render(<ClubDataPage />);
+
+    await waitFor(() =>
+      expect(rpcMock).toHaveBeenCalledWith('ca_club_data_snapshot', expect.any(Object))
+    );
+    expect(screen.queryByText('Wrong Window Cached Game')).not.toBeInTheDocument();
+    expect(screen.queryByText('Recent Verified Snapshot')).not.toBeInTheDocument();
+  });
+
+  it('rejects a cached player ledger that claims another page without a cursor', async () => {
+    const endDate = new Date().toISOString().slice(0, 10);
+    const start = new Date(`${endDate}T00:00:00Z`);
+    start.setUTCDate(start.getUTCDate() - 13);
+    const queryKey = clubDataQueryKey({
+      kind: 'players',
+      startDate: start.toISOString().slice(0, 10),
+      endDate,
+      playerSort: 'winners',
+    });
+    writeClubDataCache('owner-1', CLUB_ID, queryKey, {
+      players: {
+        ...playerBreakdown,
+        players: [{ ...playerBreakdown.players[0], username: 'Invalid Cached Player' }],
+      },
+      cursor: null,
+      hasMore: true,
+    });
+    let resolveBreakdown!: (value: { data: typeof playerBreakdown; error: null }) => void;
+    let resolvePage!: (value: { data: typeof playerPage; error: null }) => void;
+    rpcMock.mockImplementation((fn: string) => {
+      if (fn === 'ca_club_data_snapshot') return Promise.resolve({ data: snapshot, error: null });
+      if (fn === 'ca_club_game_page') return Promise.resolve({ data: gamePage, error: null });
+      if (fn === 'ca_club_player_breakdown') {
+        return new Promise((resolve) => {
+          resolveBreakdown = resolve;
+        });
+      }
+      if (fn === 'ca_club_player_page') {
+        return new Promise((resolve) => {
+          resolvePage = resolve;
+        });
+      }
+      if (fn === 'ca_club_union_invoices') return Promise.resolve({ data: [], error: null });
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    render(<ClubDataPage />);
+    await screen.findByText('Shark Table One');
+    fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
+
+    expect(await screen.findByText('Loading Players')).toBeVisible();
+    expect(screen.queryByText('Invalid Cached Player')).not.toBeInTheDocument();
+    await act(async () => {
+      resolveBreakdown({ data: playerBreakdown, error: null });
+      resolvePage({ data: playerPageFor(), error: null });
+    });
+    expect(await screen.findByText('Table Regular')).toBeVisible();
+  });
+
+  it('rejects a cached player ledger whose totals belong to another reporting window', async () => {
+    const queryKey = clubDataQueryKey({
+      kind: 'players',
+      startDate: TEST_START_DATE,
+      endDate: TEST_END_DATE,
+      playerSort: 'winners',
+    });
+    writeClubDataCache('owner-1', CLUB_ID, queryKey, {
+      players: {
+        ...playerBreakdown,
+        range: { ...snapshot.previous_range },
+        players: [{ ...playerBreakdown.players[0], username: 'Wrong Window Cached Player' }],
+      },
+      cursor: null,
+      hasMore: false,
+    });
+    let resolveBreakdown!: (value: { data: typeof playerBreakdown; error: null }) => void;
+    let resolvePage!: (value: { data: typeof playerPage; error: null }) => void;
+    rpcMock.mockImplementation((fn: string) => {
+      if (fn === 'ca_club_data_snapshot') return Promise.resolve({ data: snapshot, error: null });
+      if (fn === 'ca_club_player_breakdown') {
+        return new Promise((resolve) => {
+          resolveBreakdown = resolve;
+        });
+      }
+      if (fn === 'ca_club_player_page') {
+        return new Promise((resolve) => {
+          resolvePage = resolve;
+        });
+      }
+      if (fn === 'ca_club_union_invoices') return Promise.resolve({ data: [], error: null });
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    render(<ClubDataPage />);
+    await screen.findByText('Shark Table One');
+    fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
+
+    await waitFor(() => expect(resolveBreakdown).toBeTypeOf('function'));
+    expect(screen.queryByText('Wrong Window Cached Player')).not.toBeInTheDocument();
+    await act(async () => {
+      resolveBreakdown({ data: playerBreakdown, error: null });
+      resolvePage({ data: playerPageFor(), error: null });
+    });
+    expect(await screen.findByText('Table Regular')).toBeVisible();
   });
 
   it('wires scoped realtime tables and coalesces a mutation into an authoritative refresh', async () => {
@@ -288,7 +608,7 @@ describe('ClubDataPage', () => {
     render(<ClubDataPage />);
 
     expect(screen.getByRole('heading', { name: /Read The Room/i })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText('2,450.00')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('2.4K')).toBeInTheDocument());
     expect(screen.getByText('Shark Table One')).toBeInTheDocument();
     expect(screen.getByRole('list', { name: 'Games' })).toHaveAttribute('tabindex', '0');
     expect(screen.getByRole('heading', { name: 'Data Integrity' })).toBeInTheDocument();
@@ -300,6 +620,35 @@ describe('ClubDataPage', () => {
       expect.objectContaining({ p_limit: 100 })
     );
     expect(rpcMock.mock.calls.some(([fn]) => fn === 'ca_club_game_page')).toBe(false);
+  });
+
+  it('reports a resolved club-name query error while keeping the ledger usable', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    fromMock.mockImplementation(() => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: async () => ({
+            data: null,
+            error: { message: 'club name unavailable', code: 'PGRST500' },
+          }),
+        }),
+      }),
+    }));
+
+    try {
+      render(<ClubDataPage />);
+
+      expect(await screen.findByText('Shark Table One')).toBeInTheDocument();
+      expect(screen.getByText('Club Intelligence')).toBeInTheDocument();
+      await waitFor(() =>
+        expect(errorSpy).toHaveBeenCalledWith(
+          '[ClubDataPage.club_name]',
+          expect.objectContaining({ message: '[ClubDataPage.club_name] club name unavailable' })
+        )
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it('exports the exact prepared game snapshot instead of only the visible page', async () => {
@@ -366,6 +715,7 @@ describe('ClubDataPage', () => {
       await screen.findAllByText('Exported All 2 Games.', undefined, { timeout: 10_000 })
     ).toHaveLength(2);
     expect(downloadMock.mock.calls[0][1].split('\n')).toHaveLength(3);
+    expect(downloadMock.mock.calls[0][2]).toEqual(expect.any(Function));
     expect(rpcMock).toHaveBeenCalledWith(
       'ca_club_game_export_start',
       expect.objectContaining({ p_sort: 'recent', p_request_id: expect.any(String) })
@@ -374,6 +724,155 @@ describe('ClubDataPage', () => {
       p_export_id: 'export-1',
     });
   }, 20_000);
+
+  it('refuses a completed file handoff after the club route changes', async () => {
+    let finishHandoff: ((value: boolean) => void) | null = null;
+    const handoff = new Promise<boolean>((resolve) => {
+      finishHandoff = resolve;
+    });
+    downloadMock.mockReturnValue(handoff as unknown as boolean);
+    rpcMock.mockImplementation(async (fn: string) => {
+      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      if (fn === 'ca_club_game_export_start') {
+        return { data: { export_id: 'export-guard', total_rows: 1, status: 'ready' }, error: null };
+      }
+      if (fn === 'ca_club_data_export_page') {
+        return {
+          data: { rows: snapshot.rows, total_rows: 1, next_offset: 1, has_more: false },
+          error: null,
+        };
+      }
+      if (fn === 'ca_club_data_export_cancel') return { data: true, error: null };
+      return { data: null, error: null };
+    });
+
+    const view = render(<ClubDataPage />);
+    const exportButton = await screen.findByRole('button', { name: 'Export As CSV' });
+    await waitFor(() => expect(exportButton).toBeEnabled());
+    fireEvent.click(exportButton);
+    await waitFor(() => expect(downloadMock).toHaveBeenCalledOnce());
+    const guard = downloadMock.mock.calls[0]?.[2] as (() => boolean) | undefined;
+    expect(guard?.()).toBe(true);
+
+    routeState.clubId = 'b52545cc-9e1d-411b-901e-f9c4e76bfee5';
+    view.rerender(<ClubDataPage />);
+    expect(guard?.()).toBe(false);
+    finishHandoff?.(true);
+
+    await waitFor(() => expect(screen.queryByText('Exported All 1 Games.')).toBeNull());
+  });
+
+  it('refuses malformed money in a prepared game export instead of downloading a partial file', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    rpcMock.mockImplementation(async (fn: string) => {
+      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      if (fn === 'ca_club_game_export_start') {
+        return {
+          data: { export_id: 'bad-game-export', total_rows: 1, status: 'ready' },
+          error: null,
+        };
+      }
+      if (fn === 'ca_club_data_export_page') {
+        return {
+          data: {
+            rows: [{ ...snapshot.rows[0], fee: 42.501 }],
+            total_rows: 1,
+            next_offset: 1,
+            has_more: false,
+          },
+          error: null,
+        };
+      }
+      if (fn === 'ca_club_data_export_cancel') return { data: true, error: null };
+      return { data: null, error: null };
+    });
+
+    try {
+      render(<ClubDataPage />);
+      const exportButton = await screen.findByRole('button', { name: 'Export As CSV' });
+      await waitFor(() => expect(exportButton).toBeEnabled());
+      fireEvent.click(exportButton);
+
+      expect(
+        await screen.findAllByText(
+          'The Complete Export Could Not Be Prepared. No Partial File Was Downloaded. Try Again.'
+        )
+      ).toHaveLength(2);
+      expect(downloadMock).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('refuses an unreconciled prepared player export instead of downloading it', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
+      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_player_breakdown') return { data: playerBreakdown, error: null };
+      if (fn === 'ca_club_player_page') return { data: playerPageFor(args), error: null };
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      if (fn === 'ca_club_player_export_start') {
+        return {
+          data: { export_id: 'bad-player-export', total_rows: 1, status: 'ready' },
+          error: null,
+        };
+      }
+      if (fn === 'ca_club_data_export_page') {
+        return {
+          data: {
+            rows: [{ ...playerBreakdown.players[0], net: 120.01 }],
+            total_rows: 1,
+            next_offset: 1,
+            has_more: false,
+          },
+          error: null,
+        };
+      }
+      if (fn === 'ca_club_data_export_cancel') return { data: true, error: null };
+      return { data: null, error: null };
+    });
+
+    try {
+      render(<ClubDataPage />);
+      fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
+      await screen.findByText('Table Regular');
+      const exportButton = screen.getByRole('button', { name: 'Export As CSV' });
+      await waitFor(() => expect(exportButton).toBeEnabled());
+      fireEvent.click(exportButton);
+
+      expect(
+        await screen.findAllByText(
+          'The Complete Export Could Not Be Prepared. No Partial File Was Downloaded. Try Again.'
+        )
+      ).toHaveLength(2);
+      expect(downloadMock).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('fails closed when the union statement service returns malformed rows', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    rpcMock.mockImplementation(async (fn: string) => {
+      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_union_invoices') return { data: [null], error: null };
+      return { data: null, error: null };
+    });
+
+    try {
+      render(<ClubDataPage />);
+
+      expect(
+        await screen.findByText('Could Not Refresh Your Union Statement.')
+      ).toBeInTheDocument();
+      expect(screen.getByText('Shark Table One')).toBeInTheDocument();
+      expect(screen.queryByText(/You Owe/i)).not.toBeInTheDocument();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
 
   /**
    * THIS TEST USED TO ASSERT THE OPPOSITE, and the reason it changed matters
@@ -424,24 +923,23 @@ describe('ClubDataPage', () => {
       username: `Winner ${i}`,
     }));
 
-    rpcMock.mockImplementation((fn: string) => {
+    rpcMock.mockImplementation((fn: string, args?: Record<string, unknown>) => {
       if (fn === 'ca_club_data_snapshot') return Promise.resolve({ data: snapshot, error: null });
       if (fn === 'ca_club_union_invoices') return Promise.resolve({ data: [], error: null });
       if (fn === 'ca_club_player_breakdown') {
         return Promise.resolve({
-          data: { ...playerBreakdown, players: manyRows, player_count: 200 },
+          data: playerBreakdownWithRows(manyRows, 200),
           error: null,
         });
       }
       if (fn === 'ca_club_player_page') {
         return Promise.resolve({
-          data: {
-            ...playerPage,
+          data: playerPageFor(args, {
             rows: manyRows,
             has_more: true,
             filtered_count: 200,
             next_cursor: { v: 1 },
-          },
+          }),
           error: null,
         });
       }
@@ -470,7 +968,7 @@ describe('ClubDataPage', () => {
   });
 
   it('shows nothing at all when the flag was masked before it arrived', async () => {
-    rpcMock.mockImplementation((fn: string) => {
+    rpcMock.mockImplementation((fn: string, args?: Record<string, unknown>) => {
       if (fn === 'ca_club_data_snapshot') return Promise.resolve({ data: snapshot, error: null });
       if (fn === 'ca_club_union_invoices') return Promise.resolve({ data: [], error: null });
       if (fn === 'ca_club_player_breakdown') {
@@ -487,10 +985,9 @@ describe('ClubDataPage', () => {
       // and the test failed on the row rather than on the badge.
       if (fn === 'ca_club_player_page') {
         return Promise.resolve({
-          data: {
-            ...playerPage,
+          data: playerPageFor(args, {
             rows: playerPage.rows.map((p) => ({ ...p, is_horse: false })),
-          },
+          }),
           error: null,
         });
       }
@@ -530,7 +1027,7 @@ describe('ClubDataPage', () => {
     let resolveSecondSnapshot!: (result: { data: typeof snapshot; error: null }) => void;
     rpcMock.mockImplementation((fn: string, args?: { p_club_id?: string }) => {
       if (fn === 'ca_club_data_snapshot' && args?.p_club_id === secondClubId) {
-        return new Promise((resolve) => {
+        return new Promise<{ data: typeof snapshot; error: null }>((resolve) => {
           resolveSecondSnapshot = resolve;
         });
       }
@@ -551,7 +1048,7 @@ describe('ClubDataPage', () => {
     rerender(<ClubDataPage />);
 
     expect(screen.queryByText('Shark Table One')).not.toBeInTheDocument();
-    expect(screen.queryByText('2,450.00')).not.toBeInTheDocument();
+    expect(screen.queryByText('2.4K')).not.toBeInTheDocument();
 
     await waitFor(() =>
       expect(rpcMock).toHaveBeenCalledWith(
@@ -560,6 +1057,47 @@ describe('ClubDataPage', () => {
       )
     );
     resolveSecondSnapshot({ data: snapshot, error: null });
+    await screen.findByText('Shark Table One');
+  });
+
+  it('clears the previous account ledger before the same club can load for a new account', async () => {
+    let resolveNextSnapshot!: (result: { data: typeof snapshot; error: null }) => void;
+    let resolveNextInvoices!: (result: { data: (typeof latestInvoice)[]; error: null }) => void;
+    rpcMock.mockImplementation((fn: string) => {
+      const nextAccount = authState.current.user?.id === 'owner-2';
+      if (fn === 'ca_club_data_snapshot' && nextAccount) {
+        return new Promise<{ data: typeof snapshot; error: null }>((resolve) => {
+          resolveNextSnapshot = resolve;
+        });
+      }
+      if (fn === 'ca_club_union_invoices' && nextAccount) {
+        return new Promise<{ data: (typeof latestInvoice)[]; error: null }>((resolve) => {
+          resolveNextInvoices = resolve;
+        });
+      }
+      if (fn === 'ca_club_data_snapshot') return Promise.resolve({ data: snapshot, error: null });
+      if (fn === 'ca_club_game_page') return Promise.resolve({ data: gamePage, error: null });
+      if (fn === 'ca_club_union_invoices') {
+        return Promise.resolve({ data: [latestInvoice], error: null });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    const view = render(<ClubDataPage />);
+    await screen.findByText('Shark Table One');
+    await screen.findByText('-350');
+
+    authState.current = { user: { id: 'owner-2' }, isHydrating: false };
+    view.rerender(<ClubDataPage />);
+
+    expect(screen.queryByText('Shark Table One')).toBeNull();
+    expect(screen.queryByText('-350')).toBeNull();
+    expect(screen.queryByText('2.4K')).toBeNull();
+    await waitFor(() => expect(resolveNextSnapshot).toBeTypeOf('function'));
+    await waitFor(() => expect(resolveNextInvoices).toBeTypeOf('function'));
+
+    resolveNextSnapshot({ data: snapshot, error: null });
+    resolveNextInvoices({ data: [], error: null });
     await screen.findByText('Shark Table One');
   });
 
@@ -667,6 +1205,46 @@ describe('ClubDataPage', () => {
     }
   }, 15_000);
 
+  it('keeps the last verified snapshot and cache when a successful refresh is contradictory', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let returnMalformed = false;
+    const malformed = {
+      ...snapshot,
+      summary: { ...snapshot.summary, fee: 999 },
+      rows: [{ ...snapshot.rows[0], id: 'malformed-game', name: 'Malformed Table' }],
+    };
+    rpcMock.mockImplementation(async (fn: string) => {
+      if (fn === 'ca_club_data_snapshot') {
+        return { data: returnMalformed ? malformed : snapshot, error: null };
+      }
+      if (fn === 'ca_club_game_page') return { data: gamePage, error: null };
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      return { data: null, error: null };
+    });
+
+    try {
+      render(<ClubDataPage />);
+      await screen.findByText('Shark Table One');
+      returnMalformed = true;
+
+      const refresh = screen.getByRole('button', { name: 'Refresh Club Ledger' });
+      await waitFor(() => expect(refresh).toBeEnabled());
+      fireEvent.click(refresh);
+
+      await screen.findByText(/Live Refresh Is Delayed\. Showing The Last Verified Snapshot/i);
+      expect(screen.getByText('Shark Table One')).toBeInTheDocument();
+      expect(screen.queryByText('Malformed Table')).not.toBeInTheDocument();
+      expect(screen.getAllByText('Delayed').length).toBeGreaterThan(0);
+
+      const gameCacheKey = Object.keys(sessionStorage).find((key) => key.includes('kind=games'));
+      expect(gameCacheKey).toBeTruthy();
+      const cached = JSON.parse(sessionStorage.getItem(gameCacheKey!) || '{}');
+      expect(cached.data.snapshot.rows[0].name).toBe('Shark Table One');
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it('keeps verified player rows visible when a background refresh is transiently refused', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     try {
@@ -719,7 +1297,7 @@ describe('ClubDataPage', () => {
 
     try {
       render(<ClubDataPage />);
-      await screen.findByText(/350\.00/);
+      await screen.findByText(/-350/);
       const refresh = screen.getByRole('button', { name: 'Refresh Club Ledger' });
       await waitFor(() => expect(refresh).toBeEnabled());
 
@@ -727,7 +1305,7 @@ describe('ClubDataPage', () => {
 
       await screen.findByText(/Could Not Refresh Your Union Statement/i);
       expect(screen.getByText(/Showing The Last Verified Statement/i)).toBeInTheDocument();
-      expect(screen.getByText(/350\.00/)).toBeInTheDocument();
+      expect(screen.getByText(/-350/)).toBeInTheDocument();
       expect(screen.getByText('Refresh Finished With Some Data Unavailable.')).toBeInTheDocument();
     } finally {
       errorSpy.mockRestore();
@@ -795,7 +1373,7 @@ describe('ClubDataPage', () => {
       if (fn === 'ca_club_data_snapshot') {
         return mode === 'fail'
           ? { data: null, error: { code: '22P02', message: 'invalid input syntax' } }
-          : { data: { ...snapshot, rows: [], row_count: 0 }, error: null };
+          : { data: zeroSnapshot, error: null };
       }
       if (fn === 'ca_club_union_invoices') return { data: [], error: null };
       return { data: null, error: null };
@@ -827,6 +1405,175 @@ describe('ClubDataPage', () => {
       fireEvent.click(within(gamesAlert()!).getByRole('button', { name: 'Try Again' }));
       expect(await screen.findByText('No Games In This Period.')).toBeInTheDocument();
       expect(gamesAlert()).toBeUndefined();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('treats a contradictory success response as unavailable instead of live or cached', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const malformed = {
+      ...snapshot,
+      summary: { ...snapshot.summary, total_winnings: null },
+    };
+    rpcMock.mockImplementation(async (fn: string) => {
+      if (fn === 'ca_club_data_snapshot') return { data: malformed, error: null };
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      return { data: null, error: null };
+    });
+
+    try {
+      render(<ClubDataPage />);
+
+      expect(await screen.findByText('Ledger Unavailable')).toBeInTheDocument();
+      expect(screen.queryByText('Shark Table One')).not.toBeInTheDocument();
+      expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0);
+      expect(Object.keys(sessionStorage).filter((key) => key.includes('kind=games'))).toHaveLength(
+        0
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it.each([
+    [
+      'another reporting window',
+      {
+        ...snapshot,
+        range: { start: snapshot.previous_range.start, end: snapshot.previous_range.end, days: 14 },
+        previous_range: (() => {
+          const end = new Date(`${snapshot.previous_range.start}T00:00:00Z`);
+          end.setUTCDate(end.getUTCDate() - 1);
+          const start = new Date(end);
+          start.setUTCDate(start.getUTCDate() - 13);
+          return {
+            start: start.toISOString().slice(0, 10),
+            end: end.toISOString().slice(0, 10),
+            days: 14,
+          };
+        })(),
+      },
+    ],
+    ['another filter scope', { ...snapshot, filters: { ...snapshot.filters, game: 'OMAHA' } }],
+  ])('refuses a well-formed success receipt for %s', async (_name, wrongScope) => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    rpcMock.mockImplementation(async (fn: string) => {
+      if (fn === 'ca_club_data_snapshot') return { data: wrongScope, error: null };
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      return { data: null, error: null };
+    });
+
+    try {
+      render(<ClubDataPage />);
+
+      expect(await screen.findByText('Ledger Unavailable')).toBeInTheDocument();
+      expect(screen.queryByText('Shark Table One')).not.toBeInTheDocument();
+      expect(Object.keys(sessionStorage).filter((key) => key.includes('kind=games'))).toHaveLength(
+        0
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it.each([
+    [
+      'an overlapping comparison window',
+      {
+        ...snapshot,
+        previous_range: { start: '2026-08-04', end: '2026-08-17', days: 14 },
+      },
+    ],
+    [
+      'a fabricated comparison delta',
+      {
+        ...snapshot,
+        delta: { ...snapshot.delta, fee_pct: 7.3 },
+      },
+    ],
+  ])('refuses %s instead of certifying it live', async (_name, malformed) => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    rpcMock.mockImplementation(async (fn: string) => {
+      if (fn === 'ca_club_data_snapshot') return { data: malformed, error: null };
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      return { data: null, error: null };
+    });
+
+    try {
+      render(<ClubDataPage />);
+
+      expect(await screen.findByText('Ledger Unavailable')).toBeInTheDocument();
+      expect(screen.queryByText('Shark Table One')).not.toBeInTheDocument();
+      expect(Object.keys(sessionStorage).filter((key) => key.includes('kind=games'))).toHaveLength(
+        0
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('refuses malformed player money instead of caching a false player ledger', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    rpcMock.mockImplementation(async (fn: string) => {
+      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_player_breakdown') {
+        return {
+          data: {
+            ...playerBreakdown,
+            totals: { ...playerBreakdown.totals, net: null },
+          },
+          error: null,
+        };
+      }
+      if (fn === 'ca_club_player_page') return { data: playerPage, error: null };
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      return { data: null, error: null };
+    });
+
+    try {
+      render(<ClubDataPage />);
+      await screen.findByText('Shark Table One');
+      fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
+
+      expect(await screen.findByText('Could Not Load Player Data.')).toBeInTheDocument();
+      expect(screen.queryByText('Table Regular')).not.toBeInTheDocument();
+      expect(
+        Object.keys(sessionStorage).filter((key) => key.includes('kind=players'))
+      ).toHaveLength(0);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('refuses a well-formed player total for a different reporting window', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const wrongWindow = {
+      ...playerBreakdown,
+      range: {
+        start: snapshot.previous_range.start,
+        end: snapshot.previous_range.end,
+        days: 14,
+      },
+    };
+    rpcMock.mockImplementation(async (fn: string) => {
+      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_player_breakdown') return { data: wrongWindow, error: null };
+      if (fn === 'ca_club_player_page') return { data: playerPage, error: null };
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      return { data: null, error: null };
+    });
+
+    try {
+      render(<ClubDataPage />);
+      await screen.findByText('Shark Table One');
+      fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
+
+      expect(await screen.findByText('Could Not Load Player Data.')).toBeInTheDocument();
+      expect(screen.queryByText('Table Regular')).not.toBeInTheDocument();
+      expect(
+        Object.keys(sessionStorage).filter((key) => key.includes('kind=players'))
+      ).toHaveLength(0);
     } finally {
       errorSpy.mockRestore();
     }
@@ -876,6 +1623,7 @@ describe('ClubDataPage', () => {
       user_id: 'loser-1',
       username: 'Cached Loser',
       net: -120,
+      cash_net: -120,
     };
     const freshLoser = { ...loser, username: 'Verified Loser' };
     const nextLoser = {
@@ -884,6 +1632,7 @@ describe('ClubDataPage', () => {
       username: 'Next Loser',
       is_horse: false,
       net: -100,
+      cash_net: -100,
     };
     const winnerRows = Array.from({ length: 100 }, (_, i) =>
       i === 0
@@ -908,27 +1657,37 @@ describe('ClubDataPage', () => {
           endDate,
           playerSort: sort,
         }),
-        { players: { ...playerBreakdown, players: rows, player_count: 101 }, cursor, hasMore: true }
+        { players: playerBreakdownWithRows(rows, 101), cursor, hasMore: true }
       );
     }
     type Reply = { data: Record<string, unknown>; error: null };
     let resolveWinners: ((result: Reply) => void) | undefined;
     let resolveLosers: ((result: Reply) => void) | undefined;
+    let winnersArgs: Record<string, unknown> = {};
+    let losersArgs: Record<string, unknown> = {};
     rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
       if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
       if (fn === 'ca_club_game_page') return { data: gamePage, error: null };
       if (fn === 'ca_club_union_invoices') return { data: [], error: null };
       if (fn === 'ca_club_player_breakdown')
-        return { data: { ...playerBreakdown, player_count: 101 }, error: null };
+        return { data: playerBreakdownWithRows(playerBreakdown.players, 101), error: null };
       if (fn === 'ca_club_player_page' && args?.p_cursor) {
-        return { data: { ...playerPage, rows: [nextLoser], filtered_count: 101 }, error: null };
+        return {
+          data: playerPageFor(args, {
+            rows: [nextLoser],
+            filtered_count: 101,
+          }),
+          error: null,
+        };
       }
       if (fn === 'ca_club_player_page' && args?.p_sort === 'losers') {
+        losersArgs = args;
         return new Promise<Reply>((resolve) => {
           resolveLosers = resolve;
         });
       }
       if (fn === 'ca_club_player_page') {
+        winnersArgs = args ?? {};
         return new Promise<Reply>((resolve) => {
           resolveWinners = resolve;
         });
@@ -947,13 +1706,12 @@ describe('ClubDataPage', () => {
 
       await act(async () => {
         resolveWinners?.({
-          data: {
-            ...playerPage,
+          data: playerPageFor(winnersArgs, {
             rows: [{ ...winnerRows[0], username: 'Retired Winner' }, ...winnerRows.slice(1)],
             next_cursor: winnerCursor,
             has_more: true,
             filtered_count: 101,
-          },
+          }),
           error: null,
         });
       });
@@ -962,13 +1720,12 @@ describe('ClubDataPage', () => {
 
       await act(async () => {
         resolveLosers?.({
-          data: {
-            ...playerPage,
+          data: playerPageFor(losersArgs, {
             rows: [freshLoser, ...loserRows.slice(1)],
             next_cursor: loserCursor,
             has_more: true,
             filtered_count: 101,
-          },
+          }),
           error: null,
         });
       });
@@ -993,8 +1750,8 @@ describe('ClubDataPage', () => {
       ).toBe(false);
     } finally {
       await act(async () => {
-        resolveWinners?.({ data: playerPage, error: null });
-        resolveLosers?.({ data: playerPage, error: null });
+        resolveWinners?.({ data: playerPageFor(winnersArgs), error: null });
+        resolveLosers?.({ data: playerPageFor(losersArgs), error: null });
       });
     }
   });
@@ -1005,6 +1762,7 @@ describe('ClubDataPage', () => {
       user_id: 'loser-1',
       username: 'Current Loser',
       net: -120,
+      cash_net: -120,
     };
     const nextLoser = {
       ...loser,
@@ -1012,6 +1770,7 @@ describe('ClubDataPage', () => {
       username: 'Next Loser',
       is_horse: false,
       net: -100,
+      cash_net: -100,
     };
     const winnerRows = Array.from({ length: 100 }, (_, i) =>
       i === 0
@@ -1024,29 +1783,35 @@ describe('ClubDataPage', () => {
     type Reply = { data: Record<string, unknown>; error: null };
     let resolveOldPage: ((result: Reply) => void) | undefined;
     let resolveCurrentPage: ((result: Reply) => void) | undefined;
+    let oldPageArgs: Record<string, unknown> = {};
+    let currentPageArgs: Record<string, unknown> = {};
     rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
       if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
       if (fn === 'ca_club_game_page') return { data: gamePage, error: null };
       if (fn === 'ca_club_union_invoices') return { data: [], error: null };
       if (fn === 'ca_club_player_breakdown')
-        return { data: { ...playerBreakdown, player_count: 101 }, error: null };
+        return { data: playerBreakdownWithRows(playerBreakdown.players, 101), error: null };
       if (fn === 'ca_club_player_page' && args?.p_cursor) {
         return new Promise<Reply>((resolve) => {
-          if (args.p_sort === 'losers') resolveCurrentPage = resolve;
-          else resolveOldPage = resolve;
+          if (args.p_sort === 'losers') {
+            currentPageArgs = args;
+            resolveCurrentPage = resolve;
+          } else {
+            oldPageArgs = args;
+            resolveOldPage = resolve;
+          }
         });
       }
       if (fn === 'ca_club_player_page') {
         const rows = args?.p_sort === 'losers' ? loserRows : winnerRows;
         const row = rows[99];
         return {
-          data: {
-            ...playerPage,
+          data: playerPageFor(args, {
             rows,
             next_cursor: { value: row.net, id: row.user_id },
             has_more: true,
             filtered_count: 101,
-          },
+          }),
           error: null,
         };
       }
@@ -1067,12 +1832,11 @@ describe('ClubDataPage', () => {
       await waitFor(() => expect(resolveCurrentPage).toBeTypeOf('function'));
       await act(async () => {
         resolveOldPage?.({
-          data: {
-            ...playerPage,
+          data: playerPageFor(oldPageArgs, {
             rows: [
               { ...playerBreakdown.players[0], user_id: 'retired-page', username: 'Retired Page' },
             ],
-          },
+          }),
           error: null,
         });
       });
@@ -1089,7 +1853,7 @@ describe('ClubDataPage', () => {
       expect(screen.queryByText('Retired Page')).not.toBeInTheDocument();
       await act(async () => {
         resolveCurrentPage?.({
-          data: { ...playerPage, rows: [nextLoser], filtered_count: 101 },
+          data: playerPageFor(currentPageArgs, { rows: [nextLoser], filtered_count: 101 }),
           error: null,
         });
       });
@@ -1100,8 +1864,8 @@ describe('ClubDataPage', () => {
       );
     } finally {
       await act(async () => {
-        resolveOldPage?.({ data: playerPage, error: null });
-        resolveCurrentPage?.({ data: playerPage, error: null });
+        resolveOldPage?.({ data: playerPageFor(oldPageArgs), error: null });
+        resolveCurrentPage?.({ data: playerPageFor(currentPageArgs), error: null });
       });
     }
   });
@@ -1128,25 +1892,24 @@ describe('ClubDataPage', () => {
       name: 'Shark Table Two',
       started_at: '2026-08-30T11:00:00Z',
     };
-    rpcMock.mockImplementation(async (fn: string) => {
+    rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
       if (fn === 'ca_club_data_snapshot') {
-        return { data: { ...snapshot, row_count: 2 }, error: null };
+        return { data: snapshotWithRows(snapshot.rows, 2), error: null };
       }
       if (fn === 'ca_club_game_page') {
         return {
-          data: {
-            ...gamePage,
-            rows: [snapshot.rows[0], secondRow],
+          data: gamePageFor(args, {
+            rows: [secondRow],
             next_cursor: null,
             has_more: false,
             filtered_count: 2,
-          },
+          }),
           error: null,
         };
       }
       if (fn === 'ca_club_union_invoices') return { data: [], error: null };
       if (fn === 'ca_club_player_breakdown') return { data: playerBreakdown, error: null };
-      if (fn === 'ca_club_player_page') return { data: playerPage, error: null };
+      if (fn === 'ca_club_player_page') return { data: playerPageFor(args), error: null };
       return { data: null, error: null };
     });
 
@@ -1170,15 +1933,17 @@ describe('ClubDataPage', () => {
       started_at: new Date(Date.UTC(2026, 7, 30, 12, 0, 0) - index * 1_000).toISOString(),
     }));
     let resolvePrefetch!: (result: { data: Record<string, unknown>; error: null }) => void;
+    let prefetchArgs: Record<string, unknown> = {};
     rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
       if (fn === 'ca_club_data_snapshot') {
         expect(args?.p_limit).toBe(100);
         return {
-          data: { ...snapshot, rows: recentRows.slice(0, 100), row_count: 250 },
+          data: snapshotWithRows(recentRows.slice(0, 100), 250),
           error: null,
         };
       }
       if (fn === 'ca_club_game_page') {
+        prefetchArgs = args ?? {};
         expect(args).toEqual(
           expect.objectContaining({
             p_sort: 'recent',
@@ -1206,13 +1971,12 @@ describe('ClubDataPage', () => {
     fireEvent.click(loadMore);
     await screen.findByRole('button', { name: 'Loading More Games' });
     resolvePrefetch({
-      data: {
-        ...gamePage,
+      data: gamePageFor(prefetchArgs, {
         rows: recentRows.slice(100),
         next_cursor: { value: 1, time: 1, kind: 'CASH', id: 'recent-game-200' },
         has_more: true,
         filtered_count: 250,
-      },
+      }),
       error: null,
     });
 
@@ -1233,19 +1997,18 @@ describe('ClubDataPage', () => {
     rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
       if (fn === 'ca_club_data_snapshot') {
         return {
-          data: { ...snapshot, rows: recentRows.slice(0, 100), row_count: 250 },
+          data: snapshotWithRows(recentRows.slice(0, 100), 250),
           error: null,
         };
       }
       if (fn === 'ca_club_game_page' && args?.p_sort === 'recent') {
         return {
-          data: {
-            ...gamePage,
+          data: gamePageFor(args, {
             rows: recentRows.slice(100),
             next_cursor: { value: 1, time: 1, kind: 'CASH', id: 'heartbeat-game-200' },
             has_more: true,
             filtered_count: 250,
-          },
+          }),
           error: null,
         };
       }
@@ -1307,6 +2070,7 @@ describe('ClubDataPage', () => {
     type Reply = { data: Record<string, unknown>; error: null };
     let resolveRecent: ((result: Reply) => void) | undefined;
     let resolveFee: ((result: Reply) => void) | undefined;
+    let feeArgs: Record<string, unknown> = {};
     rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
       if (fn === 'ca_club_data_snapshot' && args?.p_limit === 100) {
         return new Promise<Reply>((resolve) => {
@@ -1315,6 +2079,7 @@ describe('ClubDataPage', () => {
       }
       if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
       if (fn === 'ca_club_game_page') {
+        feeArgs = args ?? {};
         return new Promise<Reply>((resolve) => {
           resolveFee = resolve;
         });
@@ -1339,7 +2104,9 @@ describe('ClubDataPage', () => {
       expect(screen.queryByText('Retired Recent Game')).not.toBeInTheDocument();
       await act(async () => {
         resolveFee?.({
-          data: { ...gamePage, rows: [{ ...cachedFee, name: 'Verified Fee Game' }] },
+          data: gamePageFor(feeArgs, {
+            rows: [{ ...cachedFee, name: 'Verified Fee Game' }],
+          }),
           error: null,
         });
       });
@@ -1347,7 +2114,7 @@ describe('ClubDataPage', () => {
     } finally {
       await act(async () => {
         resolveRecent?.({ data: snapshot, error: null });
-        resolveFee?.({ data: gamePage, error: null });
+        resolveFee?.({ data: gamePageFor(feeArgs), error: null });
       });
     }
   });
@@ -1369,31 +2136,34 @@ describe('ClubDataPage', () => {
     type Reply = { data: Record<string, unknown>; error: null };
     let resolveRecent: ((result: Reply) => void) | undefined;
     let resolveFeePage: ((result: Reply) => void) | undefined;
+    let recentArgs: Record<string, unknown> = {};
+    let feePageArgs: Record<string, unknown> = {};
     rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
       if (fn === 'ca_club_data_snapshot')
         return {
-          data: { ...snapshot, rows: recentRows.slice(0, 100), row_count: 250 },
+          data: snapshotWithRows(recentRows.slice(0, 100), 250),
           error: null,
         };
       if (fn === 'ca_club_game_page' && args?.p_sort === 'recent') {
+        recentArgs = args;
         return new Promise<Reply>((resolve) => {
           resolveRecent = resolve;
         });
       }
       if (fn === 'ca_club_game_page' && args?.p_cursor) {
+        feePageArgs = args;
         return new Promise<Reply>((resolve) => {
           resolveFeePage = resolve;
         });
       }
       if (fn === 'ca_club_game_page')
         return {
-          data: {
-            ...gamePage,
+          data: gamePageFor(args, {
             rows: feeRows.slice(0, 200),
             next_cursor: feeCursor,
             has_more: true,
             filtered_count: 250,
-          },
+          }),
           error: null,
         };
       if (fn === 'ca_club_union_invoices') return { data: [], error: null };
@@ -1414,7 +2184,11 @@ describe('ClubDataPage', () => {
       await waitFor(() => expect(resolveFeePage).toBeTypeOf('function'));
       await act(async () => {
         resolveRecent?.({
-          data: { ...gamePage, rows: recentRows.slice(100), has_more: true, filtered_count: 250 },
+          data: gamePageFor(recentArgs, {
+            rows: recentRows.slice(100),
+            has_more: true,
+            filtered_count: 250,
+          }),
           error: null,
         });
       });
@@ -1429,7 +2203,10 @@ describe('ClubDataPage', () => {
       expect(screen.queryByText('Recent Owner 0')).not.toBeInTheDocument();
       await act(async () => {
         resolveFeePage?.({
-          data: { ...gamePage, rows: feeRows.slice(200), filtered_count: 250 },
+          data: gamePageFor(feePageArgs, {
+            rows: feeRows.slice(200),
+            filtered_count: 250,
+          }),
           error: null,
         });
       });
@@ -1441,8 +2218,8 @@ describe('ClubDataPage', () => {
       expect(screen.getByText('Fee Owner 0')).toBeInTheDocument();
     } finally {
       await act(async () => {
-        resolveRecent?.({ data: gamePage, error: null });
-        resolveFeePage?.({ data: gamePage, error: null });
+        resolveRecent?.({ data: gamePageFor(recentArgs), error: null });
+        resolveFeePage?.({ data: gamePageFor(feePageArgs), error: null });
       });
     }
   });
@@ -1462,19 +2239,23 @@ describe('ClubDataPage', () => {
     }));
     let resolveRecent!: (result: { data: Record<string, unknown>; error: null }) => void;
     let resolveRanked!: (result: { data: Record<string, unknown>; error: null }) => void;
+    let recentArgs: Record<string, unknown> = {};
+    let rankedArgs: Record<string, unknown> = {};
     rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
       if (fn === 'ca_club_data_snapshot') {
         return {
-          data: { ...snapshot, rows: recentRows.slice(0, 100), row_count: 250 },
+          data: snapshotWithRows(recentRows.slice(0, 100), 250),
           error: null,
         };
       }
       if (fn === 'ca_club_game_page' && args?.p_sort === 'recent') {
+        recentArgs = args;
         return new Promise((resolve) => {
           resolveRecent = resolve;
         });
       }
       if (fn === 'ca_club_game_page' && args?.p_sort === 'fee') {
+        rankedArgs = args;
         return new Promise((resolve) => {
           resolveRanked = resolve;
         });
@@ -1498,23 +2279,21 @@ describe('ClubDataPage', () => {
 
     act(() => {
       resolveRanked({
-        data: {
-          ...gamePage,
+        data: gamePageFor(rankedArgs, {
           rows: rankedRows,
           next_cursor: { value: 9_801, time: 1, kind: 'CASH', id: 'ranked-race-200' },
           has_more: true,
           filtered_count: 250,
-        },
+        }),
         error: null,
       });
       resolveRecent({
-        data: {
-          ...gamePage,
+        data: gamePageFor(recentArgs, {
           rows: recentRows.slice(100),
           next_cursor: { value: 1, time: 1, kind: 'CASH', id: 'recent-race-200' },
           has_more: true,
           filtered_count: 250,
-        },
+        }),
         error: null,
       });
     });
@@ -1533,37 +2312,41 @@ describe('ClubDataPage', () => {
       user_id: `player-race-${index + 1}`,
       username: `Player Race ${index + 1}`,
       net: 1_000 - index,
+      cash_net: 1_000 - index,
     }));
     let resolveOldPage!: (result: { data: Record<string, unknown>; error: null }) => void;
     let resolveLosers!: (result: { data: Record<string, unknown>; error: null }) => void;
+    let oldPageArgs: Record<string, unknown> = {};
+    let losersArgs: Record<string, unknown> = {};
     rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
       if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
       if (fn === 'ca_club_game_page') return { data: gamePage, error: null };
       if (fn === 'ca_club_player_breakdown') {
         return {
-          data: { ...playerBreakdown, players: [], player_count: 250 },
+          data: playerBreakdownWithRows([], 250),
           error: null,
         };
       }
       if (fn === 'ca_club_player_page' && args?.p_cursor) {
+        oldPageArgs = args;
         return new Promise((resolve) => {
           resolveOldPage = resolve;
         });
       }
       if (fn === 'ca_club_player_page' && args?.p_sort === 'losers') {
+        losersArgs = args;
         return new Promise((resolve) => {
           resolveLosers = resolve;
         });
       }
       if (fn === 'ca_club_player_page') {
         return {
-          data: {
-            ...playerPage,
+          data: playerPageFor(args, {
             rows: playerRows.slice(0, 100),
             next_cursor: { value: 901, id: 'player-race-100' },
             has_more: true,
             filtered_count: 250,
-          },
+          }),
           error: null,
         };
       }
@@ -1585,23 +2368,21 @@ describe('ClubDataPage', () => {
     await waitFor(() => expect(resolveLosers).toBeTypeOf('function'));
     act(() => {
       resolveLosers({
-        data: {
-          ...playerPage,
+        data: playerPageFor(losersArgs, {
           rows: playerRows.slice(0, 100).reverse(),
           next_cursor: { value: 901, id: 'player-race-1' },
           has_more: true,
           filtered_count: 250,
-        },
+        }),
         error: null,
       });
       resolveOldPage({
-        data: {
-          ...playerPage,
+        data: playerPageFor(oldPageArgs, {
           rows: playerRows.slice(100),
           next_cursor: { value: 801, id: 'player-race-200' },
           has_more: true,
           filtered_count: 250,
-        },
+        }),
         error: null,
       });
     });
@@ -1623,18 +2404,18 @@ describe('ClubDataPage', () => {
     const rankedCursor = { value: 9_801, time: 1_777_463_801, kind: 'CASH', id: 'ranked-game-200' };
     rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
       if (fn === 'ca_club_data_snapshot') {
-        return { data: { ...snapshot, row_count: 250 }, error: null };
+        return { data: snapshotWithRows(snapshot.rows, 250), error: null };
       }
       if (fn === 'ca_club_game_page') {
         expect(args?.p_limit).toBe(200);
         return {
-          data: {
+          data: gamePageFor(args, {
             rows: rankedRows,
             next_cursor: rankedCursor,
             has_more: true,
             filtered_count: 250,
             generated_at: snapshot.generated_at,
-          },
+          }),
           error: null,
         };
       }

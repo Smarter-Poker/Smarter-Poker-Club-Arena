@@ -124,6 +124,66 @@ describe('CreditService', () => {
     );
   });
 
+  describe('invoice receipts', () => {
+    const invoice = (overrides: Record<string, unknown> = {}) => ({
+      id: 'invoice',
+      agent_id: 'agent',
+      period_start: '2026-09-21T00:00:00.000Z',
+      period_end: '2026-09-27T00:00:00.000Z',
+      debt_owed: '1599.99',
+      amount_paid: '300.00',
+      amount_remaining: '1299.99',
+      status: 'partial',
+      due_date: '2026-10-01T00:00:00.000Z',
+      created_at: '2026-09-28T00:00:00.000Z',
+      paid_at: null,
+      ...overrides,
+    });
+
+    it('normalizes the validated database receipt into finite chip amounts', () => {
+      expect(CreditService.mapInvoice(invoice(), 'Agent')).toMatchObject({
+        debtOwed: 1599.99,
+        amountPaid: 300,
+        amountRemaining: 1299.99,
+        status: 'partial',
+        paidAt: undefined,
+      });
+    });
+
+    it.each([
+      { status: 'unknown' },
+      { amount_paid: undefined },
+      { amount_remaining: undefined },
+      { amount_remaining: 'NaN' },
+      { amount_paid: -1 },
+      { debt_owed: 1.001 },
+      { debt_owed: 1600 },
+      { status: 'paid', amount_paid: 300, amount_remaining: 0 },
+      { status: 'partial', amount_paid: 0, amount_remaining: 1599.99 },
+      { status: 'pending', amount_paid: 300, amount_remaining: 1299.99 },
+      { status: 'overdue', amount_paid: 1599.99, amount_remaining: 0 },
+      { due_date: 'not-a-date' },
+      { id: '' },
+    ])('refuses a malformed invoice receipt %#', (override) => {
+      expect(() => CreditService.mapInvoice(invoice(override), 'Agent')).toThrow(/Invoice/);
+    });
+
+    it('accepts a cancelled invoice only when its remaining balance is zero', () => {
+      expect(
+        CreditService.mapInvoice(
+          invoice({ status: 'void', amount_paid: '0.00', amount_remaining: '0.00' }),
+          'Agent'
+        )
+      ).toMatchObject({ status: 'void', debtOwed: 1599.99, amountPaid: 0, amountRemaining: 0 });
+      expect(() =>
+        CreditService.mapInvoice(
+          invoice({ status: 'void', amount_paid: '0.00', amount_remaining: '1599.99' }),
+          'Agent'
+        )
+      ).toThrow(/Invoice/);
+    });
+  });
+
   // ─────────────────────────────────────────────────────────────────────────
   // CREDIT STATUS CALCULATION
   // ─────────────────────────────────────────────────────────────────────────

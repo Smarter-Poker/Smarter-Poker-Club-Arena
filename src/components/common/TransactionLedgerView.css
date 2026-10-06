@@ -1,0 +1,130 @@
+/* Transaction rows print directly on the surrounding painted console glass. */
+.tlv {
+  min-width: 0;
+  padding: 3cqw 8cqw 5cqw;
+  color: #e4e7ec;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.tlv-count {
+  margin-bottom: 1.5cqw;
+  text-align: right;
+}
+
+.tlv-list {
+  max-height: min(96cqw, 32rem);
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.tlv-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2cqw;
+  padding: 2.8cqw 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.tlv-row:last-child {
+  border-bottom: 1px solid #000;
+}
+
+.tlv-detail {
+  min-width: 0;
+}
+
+.tlv-category {
+  margin-bottom: 0.6cqw;
+}
+
+.tlv-path,
+.tlv-description {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.tlv-path {
+  font-size: clamp(0.72rem, 3.2cqw, 0.92rem);
+}
+
+.tlv-description {
+  margin-top: 0.5cqw;
+  font-size: clamp(0.66rem, 2.8cqw, 0.8rem);
+}
+
+.tlv-amount {
+  min-width: 18cqw;
+  text-align: right;
+}
+
+.tlv-value {
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: clamp(0.86rem, 4cqw, 1.12rem);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.tlv-time {
+  display: block;
+  margin-top: 0.6cqw;
+  font-size: clamp(0.58rem, 2.3cqw, 0.7rem);
+  overflow-wrap: anywhere;
+}
+
+.tlv-state {
+  min-height: 22cqw;
+  padding: 7cqw 8cqw;
+}
+
+.tlv-word {
+  display: block;
+  min-height: 44px;
+  margin: 3cqw auto 0;
+  padding: 0 4cqw;
+  border: 0;
+  background: transparent;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: clamp(0.76rem, 3.5cqw, 1rem);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.tlv-word:active {
+  transform: translateY(1px);
+}
+
+.tlv-word:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: 2px;
+}
+
+@media (min-width: 640px) {
+  .tlv {
+    padding-inline: 5rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .tlv-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.5cqw;
+  }
+
+  .tlv-amount {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 3cqw;
+    min-width: 0;
+    text-align: left;
+  }
+
+  .tlv-time {
+    margin-top: 0;
+    text-align: right;
+  }
+}

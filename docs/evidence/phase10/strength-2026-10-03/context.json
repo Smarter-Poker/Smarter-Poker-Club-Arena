@@ -1,0 +1,1037 @@
+{
+  "schema": "horse-phase10-strength-context-v1",
+  "workflowRun": {
+    "id": 37131597196,
+    "url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37131597196",
+    "workflow": ".github/workflows/horse-phase10-strength-league.yml",
+    "event": "workflow_dispatch",
+    "ref": "main",
+    "sourceSha": "ac4ecfb1231ab96fd34849d1e02b9929e9ccf492",
+    "createdAt": "2026-10-03T14:59:05Z",
+    "lastJobCompletedAt": "2026-10-03T16:10:42Z",
+    "runAttempts": 1,
+    "conclusion": "success"
+  },
+  "jobListSource": "GET repos/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37131597196/jobs?filter=all, read 2026-10-03 after the run completed",
+  "jobCounts": {
+    "total": 112,
+    "plan": 1,
+    "league": 111,
+    "success": 112
+  },
+  "attemptsWithoutArtifact": [],
+  "artifacts": {
+    "count": 111,
+    "source": "gh run download 37131597196, every artifact p102-<shard>-a1"
+  },
+  "jobs": [
+    {
+      "id": 111227752883,
+      "name": "League p10c-6max-100bb-10201109-s0",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:13:25Z",
+      "completedAt": "2026-10-03T15:26:27Z",
+      "runner": "GitHub Actions 1000227276"
+    },
+    {
+      "id": 111227752930,
+      "name": "League p10c-6max-100bb-10201109-s1",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:14:57Z",
+      "completedAt": "2026-10-03T15:28:22Z",
+      "runner": "GitHub Actions 1000227285"
+    },
+    {
+      "id": 111227752946,
+      "name": "League p10c-6max-100bb-10201109-s2",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:15:05Z",
+      "completedAt": "2026-10-03T15:26:00Z",
+      "runner": "GitHub Actions 1000227286"
+    },
+    {
+      "id": 111227753017,
+      "name": "League p10c-6max-100bb-10201109-s3",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:15:58Z",
+      "completedAt": "2026-10-03T15:24:31Z",
+      "runner": "GitHub Actions 1000227297"
+    },
+    {
+      "id": 111227753078,
+      "name": "League p10c-6max-100bb-10201109-s4",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:17:34Z",
+      "completedAt": "2026-10-03T15:30:57Z",
+      "runner": "GitHub Actions 1000227303"
+    },
+    {
+      "id": 111227753213,
+      "name": "League p10c-6max-100bb-10201109-s5",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:17:53Z",
+      "completedAt": "2026-10-03T15:30:38Z",
+      "runner": "GitHub Actions 1000227305"
+    },
+    {
+      "id": 111227753222,
+      "name": "League p10c-6max-100bb-10201109-s6",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:18:22Z",
+      "completedAt": "2026-10-03T15:32:00Z",
+      "runner": "GitHub Actions 1000227306"
+    },
+    {
+      "id": 111227753364,
+      "name": "League p10c-6max-100bb-10201109-s7",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:18:14Z",
+      "completedAt": "2026-10-03T15:31:38Z",
+      "runner": "GitHub Actions 1000227307"
+    },
+    {
+      "id": 111227753580,
+      "name": "League p10c-6max-100bb-10202231-s0",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:18:37Z",
+      "completedAt": "2026-10-03T15:32:47Z",
+      "runner": "GitHub Actions 1000227308"
+    },
+    {
+      "id": 111227753761,
+      "name": "League p10c-6max-100bb-10202231-s1",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:19:10Z",
+      "completedAt": "2026-10-03T15:27:58Z",
+      "runner": "GitHub Actions 1000227309"
+    },
+    {
+      "id": 111227753913,
+      "name": "League p10c-6max-100bb-10202231-s2",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:19:46Z",
+      "completedAt": "2026-10-03T15:33:02Z",
+      "runner": "GitHub Actions 1000227318"
+    },
+    {
+      "id": 111227753936,
+      "name": "League p10c-6max-100bb-10202231-s3",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:21:45Z",
+      "completedAt": "2026-10-03T15:35:24Z",
+      "runner": "GitHub Actions 1000227341"
+    },
+    {
+      "id": 111227753982,
+      "name": "League p10c-6max-100bb-10202231-s4",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:21:47Z",
+      "completedAt": "2026-10-03T15:35:00Z",
+      "runner": "GitHub Actions 1000227342"
+    },
+    {
+      "id": 111227753966,
+      "name": "League p10c-6max-100bb-10202231-s5",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:21:49Z",
+      "completedAt": "2026-10-03T15:32:42Z",
+      "runner": "GitHub Actions 1000227343"
+    },
+    {
+      "id": 111227753951,
+      "name": "League p10c-6max-100bb-10202231-s6",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:22:15Z",
+      "completedAt": "2026-10-03T15:35:18Z",
+      "runner": "GitHub Actions 1000227344"
+    },
+    {
+      "id": 111227754191,
+      "name": "League p10c-6max-100bb-10202231-s7",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:23:37Z",
+      "completedAt": "2026-10-03T15:37:28Z",
+      "runner": "GitHub Actions 1000227346"
+    },
+    {
+      "id": 111227754374,
+      "name": "League p10c-6max-100bb-10203347-s0",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:24:01Z",
+      "completedAt": "2026-10-03T15:32:05Z",
+      "runner": "GitHub Actions 1000227350"
+    },
+    {
+      "id": 111227754342,
+      "name": "League p10c-6max-100bb-10203347-s1",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:24:02Z",
+      "completedAt": "2026-10-03T15:38:19Z",
+      "runner": "GitHub Actions 1000227351"
+    },
+    {
+      "id": 111227754464,
+      "name": "League p10c-6max-100bb-10203347-s2",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:24:29Z",
+      "completedAt": "2026-10-03T15:38:07Z",
+      "runner": "GitHub Actions 1000227352"
+    },
+    {
+      "id": 111227754500,
+      "name": "League p10c-6max-100bb-10203347-s3",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:24:33Z",
+      "completedAt": "2026-10-03T15:37:32Z",
+      "runner": "GitHub Actions 1000227353"
+    },
+    {
+      "id": 111227754749,
+      "name": "League p10c-6max-100bb-10203347-s4",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:25:48Z",
+      "completedAt": "2026-10-03T15:38:57Z",
+      "runner": "GitHub Actions 1000227356"
+    },
+    {
+      "id": 111227754815,
+      "name": "League p10c-6max-100bb-10203347-s5",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:26:02Z",
+      "completedAt": "2026-10-03T15:39:20Z",
+      "runner": "GitHub Actions 1000227357"
+    },
+    {
+      "id": 111227754811,
+      "name": "League p10c-6max-100bb-10203347-s6",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:26:28Z",
+      "completedAt": "2026-10-03T15:35:21Z",
+      "runner": "GitHub Actions 1000227358"
+    },
+    {
+      "id": 111227754839,
+      "name": "League p10c-6max-100bb-10203347-s7",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:28:01Z",
+      "completedAt": "2026-10-03T15:42:13Z",
+      "runner": "GitHub Actions 1000227361"
+    },
+    {
+      "id": 111227754889,
+      "name": "League p10c-6max-200bb-10201109-s0",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:28:26Z",
+      "completedAt": "2026-10-03T15:43:21Z",
+      "runner": "GitHub Actions 1000227374"
+    },
+    {
+      "id": 111227755052,
+      "name": "League p10c-6max-200bb-10201109-s1",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:31:11Z",
+      "completedAt": "2026-10-03T15:42:57Z",
+      "runner": "GitHub Actions 1000227402"
+    },
+    {
+      "id": 111227755773,
+      "name": "League p10c-6max-200bb-10201109-s10",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:35:20Z",
+      "completedAt": "2026-10-03T15:49:39Z",
+      "runner": "GitHub Actions 1000227411"
+    },
+    {
+      "id": 111227755891,
+      "name": "League p10c-6max-200bb-10201109-s11",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:35:23Z",
+      "completedAt": "2026-10-03T15:49:59Z",
+      "runner": "GitHub Actions 1000227412"
+    },
+    {
+      "id": 111227755889,
+      "name": "League p10c-6max-200bb-10201109-s12",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:35:26Z",
+      "completedAt": "2026-10-03T15:50:18Z",
+      "runner": "GitHub Actions 1000227413"
+    },
+    {
+      "id": 111227755982,
+      "name": "League p10c-6max-200bb-10201109-s13",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:37:29Z",
+      "completedAt": "2026-10-03T15:51:42Z",
+      "runner": "GitHub Actions 1000227416"
+    },
+    {
+      "id": 111227756056,
+      "name": "League p10c-6max-200bb-10201109-s14",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:37:34Z",
+      "completedAt": "2026-10-03T15:53:39Z",
+      "runner": "GitHub Actions 1000227417"
+    },
+    {
+      "id": 111227755030,
+      "name": "League p10c-6max-200bb-10201109-s2",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:31:39Z",
+      "completedAt": "2026-10-03T15:46:07Z",
+      "runner": "GitHub Actions 1000227403"
+    },
+    {
+      "id": 111227755093,
+      "name": "League p10c-6max-200bb-10201109-s3",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:32:01Z",
+      "completedAt": "2026-10-03T15:41:16Z",
+      "runner": "GitHub Actions 1000227404"
+    },
+    {
+      "id": 111227755210,
+      "name": "League p10c-6max-200bb-10201109-s4",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:32:04Z",
+      "completedAt": "2026-10-03T15:46:48Z",
+      "runner": "GitHub Actions 1000227405"
+    },
+    {
+      "id": 111227755325,
+      "name": "League p10c-6max-200bb-10201109-s5",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:32:07Z",
+      "completedAt": "2026-10-03T15:41:14Z",
+      "runner": "GitHub Actions 1000227406"
+    },
+    {
+      "id": 111227755574,
+      "name": "League p10c-6max-200bb-10201109-s6",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:32:44Z",
+      "completedAt": "2026-10-03T15:47:28Z",
+      "runner": "GitHub Actions 1000227407"
+    },
+    {
+      "id": 111227755642,
+      "name": "League p10c-6max-200bb-10201109-s7",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:32:49Z",
+      "completedAt": "2026-10-03T15:48:19Z",
+      "runner": "GitHub Actions 1000227408"
+    },
+    {
+      "id": 111227755727,
+      "name": "League p10c-6max-200bb-10201109-s8",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:33:03Z",
+      "completedAt": "2026-10-03T15:47:20Z",
+      "runner": "GitHub Actions 1000227409"
+    },
+    {
+      "id": 111227755842,
+      "name": "League p10c-6max-200bb-10201109-s9",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:35:02Z",
+      "completedAt": "2026-10-03T15:44:06Z",
+      "runner": "GitHub Actions 1000227410"
+    },
+    {
+      "id": 111227756169,
+      "name": "League p10c-6max-200bb-10202231-s0",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:38:09Z",
+      "completedAt": "2026-10-03T15:47:12Z",
+      "runner": "GitHub Actions 1000227418"
+    },
+    {
+      "id": 111227756281,
+      "name": "League p10c-6max-200bb-10202231-s1",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:38:21Z",
+      "completedAt": "2026-10-03T15:52:43Z",
+      "runner": "GitHub Actions 1000227419"
+    },
+    {
+      "id": 111227756983,
+      "name": "League p10c-6max-200bb-10202231-s10",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:46:09Z",
+      "completedAt": "2026-10-03T15:55:25Z",
+      "runner": "GitHub Actions 1000227456"
+    },
+    {
+      "id": 111227757083,
+      "name": "League p10c-6max-200bb-10202231-s11",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:46:49Z",
+      "completedAt": "2026-10-03T15:55:50Z",
+      "runner": "GitHub Actions 1000227458"
+    },
+    {
+      "id": 111227757246,
+      "name": "League p10c-6max-200bb-10202231-s12",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:47:13Z",
+      "completedAt": "2026-10-03T16:01:48Z",
+      "runner": "GitHub Actions 1000227459"
+    },
+    {
+      "id": 111227757593,
+      "name": "League p10c-6max-200bb-10202231-s13",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:47:22Z",
+      "completedAt": "2026-10-03T16:01:31Z",
+      "runner": "GitHub Actions 1000227460"
+    },
+    {
+      "id": 111227757617,
+      "name": "League p10c-6max-200bb-10202231-s14",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:47:30Z",
+      "completedAt": "2026-10-03T16:02:22Z",
+      "runner": "GitHub Actions 1000227461"
+    },
+    {
+      "id": 111227756437,
+      "name": "League p10c-6max-200bb-10202231-s2",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:38:59Z",
+      "completedAt": "2026-10-03T15:53:52Z",
+      "runner": "GitHub Actions 1000227420"
+    },
+    {
+      "id": 111227756623,
+      "name": "League p10c-6max-200bb-10202231-s3",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:39:22Z",
+      "completedAt": "2026-10-03T15:53:57Z",
+      "runner": "GitHub Actions 1000227424"
+    },
+    {
+      "id": 111227756667,
+      "name": "League p10c-6max-200bb-10202231-s4",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:41:18Z",
+      "completedAt": "2026-10-03T15:55:31Z",
+      "runner": "GitHub Actions 1000227438"
+    },
+    {
+      "id": 111227756735,
+      "name": "League p10c-6max-200bb-10202231-s5",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:41:18Z",
+      "completedAt": "2026-10-03T15:50:45Z",
+      "runner": "GitHub Actions 1000227439"
+    },
+    {
+      "id": 111227756853,
+      "name": "League p10c-6max-200bb-10202231-s6",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:42:15Z",
+      "completedAt": "2026-10-03T15:56:21Z",
+      "runner": "GitHub Actions 1000227441"
+    },
+    {
+      "id": 111227756864,
+      "name": "League p10c-6max-200bb-10202231-s7",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:42:59Z",
+      "completedAt": "2026-10-03T15:52:05Z",
+      "runner": "GitHub Actions 1000227442"
+    },
+    {
+      "id": 111227756931,
+      "name": "League p10c-6max-200bb-10202231-s8",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:43:23Z",
+      "completedAt": "2026-10-03T15:58:55Z",
+      "runner": "GitHub Actions 1000227444"
+    },
+    {
+      "id": 111227756953,
+      "name": "League p10c-6max-200bb-10202231-s9",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:44:08Z",
+      "completedAt": "2026-10-03T15:58:09Z",
+      "runner": "GitHub Actions 1000227454"
+    },
+    {
+      "id": 111227757739,
+      "name": "League p10c-6max-200bb-10203347-s0",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:48:21Z",
+      "completedAt": "2026-10-03T16:02:43Z",
+      "runner": "GitHub Actions 1000227471"
+    },
+    {
+      "id": 111227757693,
+      "name": "League p10c-6max-200bb-10203347-s1",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:49:41Z",
+      "completedAt": "2026-10-03T16:04:23Z",
+      "runner": "GitHub Actions 1000227472"
+    },
+    {
+      "id": 111227758502,
+      "name": "League p10c-6max-200bb-10203347-s10",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:53:59Z",
+      "completedAt": "2026-10-03T16:08:30Z",
+      "runner": "GitHub Actions 1000227492"
+    },
+    {
+      "id": 111227758539,
+      "name": "League p10c-6max-200bb-10203347-s11",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:55:27Z",
+      "completedAt": "2026-10-03T16:06:57Z",
+      "runner": "GitHub Actions 1000227513"
+    },
+    {
+      "id": 111227758617,
+      "name": "League p10c-6max-200bb-10203347-s12",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:55:33Z",
+      "completedAt": "2026-10-03T16:09:56Z",
+      "runner": "GitHub Actions 1000227514"
+    },
+    {
+      "id": 111227758693,
+      "name": "League p10c-6max-200bb-10203347-s13",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:55:52Z",
+      "completedAt": "2026-10-03T16:10:42Z",
+      "runner": "GitHub Actions 1000227515"
+    },
+    {
+      "id": 111227758639,
+      "name": "League p10c-6max-200bb-10203347-s14",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:56:24Z",
+      "completedAt": "2026-10-03T16:10:34Z",
+      "runner": "GitHub Actions 1000227516"
+    },
+    {
+      "id": 111227757802,
+      "name": "League p10c-6max-200bb-10203347-s2",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:50:01Z",
+      "completedAt": "2026-10-03T16:01:09Z",
+      "runner": "GitHub Actions 1000227474"
+    },
+    {
+      "id": 111227757907,
+      "name": "League p10c-6max-200bb-10203347-s3",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:50:21Z",
+      "completedAt": "2026-10-03T16:04:56Z",
+      "runner": "GitHub Actions 1000227475"
+    },
+    {
+      "id": 111227757896,
+      "name": "League p10c-6max-200bb-10203347-s4",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:50:47Z",
+      "completedAt": "2026-10-03T16:02:16Z",
+      "runner": "GitHub Actions 1000227477"
+    },
+    {
+      "id": 111227757988,
+      "name": "League p10c-6max-200bb-10203347-s5",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:51:44Z",
+      "completedAt": "2026-10-03T16:00:41Z",
+      "runner": "GitHub Actions 1000227487"
+    },
+    {
+      "id": 111227758003,
+      "name": "League p10c-6max-200bb-10203347-s6",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:52:07Z",
+      "completedAt": "2026-10-03T16:05:18Z",
+      "runner": "GitHub Actions 1000227488"
+    },
+    {
+      "id": 111227758036,
+      "name": "League p10c-6max-200bb-10203347-s7",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:52:45Z",
+      "completedAt": "2026-10-03T16:04:24Z",
+      "runner": "GitHub Actions 1000227489"
+    },
+    {
+      "id": 111227758363,
+      "name": "League p10c-6max-200bb-10203347-s8",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:53:41Z",
+      "completedAt": "2026-10-03T16:07:56Z",
+      "runner": "GitHub Actions 1000227490"
+    },
+    {
+      "id": 111227758480,
+      "name": "League p10c-6max-200bb-10203347-s9",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:53:55Z",
+      "completedAt": "2026-10-03T16:08:51Z",
+      "runner": "GitHub Actions 1000227491"
+    },
+    {
+      "id": 111227751000,
+      "name": "League p10c-6max-2dealt-100bb-10201109-s0",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:01:57Z",
+      "completedAt": "2026-10-03T15:04:57Z",
+      "runner": "GitHub Actions 1000227172"
+    },
+    {
+      "id": 111227750968,
+      "name": "League p10c-6max-2dealt-100bb-10201109-s1",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:00:59Z",
+      "completedAt": "2026-10-03T15:03:56Z",
+      "runner": "GitHub Actions 1000227168"
+    },
+    {
+      "id": 111227750972,
+      "name": "League p10c-6max-2dealt-100bb-10202231-s0",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:02:40Z",
+      "completedAt": "2026-10-03T15:05:29Z",
+      "runner": "GitHub Actions 1000227184"
+    },
+    {
+      "id": 111227750934,
+      "name": "League p10c-6max-2dealt-100bb-10202231-s1",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T14:59:47Z",
+      "completedAt": "2026-10-03T15:02:42Z",
+      "runner": "GitHub Actions 1000227161"
+    },
+    {
+      "id": 111227750989,
+      "name": "League p10c-6max-2dealt-100bb-10203347-s0",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:02:41Z",
+      "completedAt": "2026-10-03T15:05:41Z",
+      "runner": "GitHub Actions 1000227186"
+    },
+    {
+      "id": 111227750949,
+      "name": "League p10c-6max-2dealt-100bb-10203347-s1",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T14:59:46Z",
+      "completedAt": "2026-10-03T15:02:37Z",
+      "runner": "GitHub Actions 1000227164"
+    },
+    {
+      "id": 111227751895,
+      "name": "League p10c-6max-40bb-10201109-s0",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:09:14Z",
+      "completedAt": "2026-10-03T15:21:44Z",
+      "runner": "GitHub Actions 1000227237"
+    },
+    {
+      "id": 111227751889,
+      "name": "League p10c-6max-40bb-10201109-s1",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:09:32Z",
+      "completedAt": "2026-10-03T15:19:08Z",
+      "runner": "GitHub Actions 1000227238"
+    },
+    {
+      "id": 111227752069,
+      "name": "League p10c-6max-40bb-10201109-s2",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:09:44Z",
+      "completedAt": "2026-10-03T15:21:28Z",
+      "runner": "GitHub Actions 1000227239"
+    },
+    {
+      "id": 111227752050,
+      "name": "League p10c-6max-40bb-10201109-s3",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:10:31Z",
+      "completedAt": "2026-10-03T15:20:48Z",
+      "runner": "GitHub Actions 1000227243"
+    },
+    {
+      "id": 111227752006,
+      "name": "League p10c-6max-40bb-10202231-s0",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:11:07Z",
+      "completedAt": "2026-10-03T15:18:35Z",
+      "runner": "GitHub Actions 1000227253"
+    },
+    {
+      "id": 111227752030,
+      "name": "League p10c-6max-40bb-10202231-s1",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:11:58Z",
+      "completedAt": "2026-10-03T15:19:33Z",
+      "runner": "GitHub Actions 1000227268"
+    },
+    {
+      "id": 111227752021,
+      "name": "League p10c-6max-40bb-10202231-s2",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:12:08Z",
+      "completedAt": "2026-10-03T15:23:59Z",
+      "runner": "GitHub Actions 1000227270"
+    },
+    {
+      "id": 111227752108,
+      "name": "League p10c-6max-40bb-10202231-s3",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:12:05Z",
+      "completedAt": "2026-10-03T15:24:27Z",
+      "runner": "GitHub Actions 1000227271"
+    },
+    {
+      "id": 111227752129,
+      "name": "League p10c-6max-40bb-10203347-s0",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:12:09Z",
+      "completedAt": "2026-10-03T15:24:00Z",
+      "runner": "GitHub Actions 1000227272"
+    },
+    {
+      "id": 111227752537,
+      "name": "League p10c-6max-40bb-10203347-s1",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:12:29Z",
+      "completedAt": "2026-10-03T15:21:43Z",
+      "runner": "GitHub Actions 1000227273"
+    },
+    {
+      "id": 111227752784,
+      "name": "League p10c-6max-40bb-10203347-s2",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:12:40Z",
+      "completedAt": "2026-10-03T15:23:02Z",
+      "runner": "GitHub Actions 1000227274"
+    },
+    {
+      "id": 111227752744,
+      "name": "League p10c-6max-40bb-10203347-s3",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:13:23Z",
+      "completedAt": "2026-10-03T15:25:47Z",
+      "runner": "GitHub Actions 1000227275"
+    },
+    {
+      "id": 111227750984,
+      "name": "League p10c-6max-4dealt-100bb-10201109-s0",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:00:34Z",
+      "completedAt": "2026-10-03T15:06:37Z",
+      "runner": "GitHub Actions 1000227167"
+    },
+    {
+      "id": 111227750940,
+      "name": "League p10c-6max-4dealt-100bb-10201109-s1",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T14:59:46Z",
+      "completedAt": "2026-10-03T15:08:40Z",
+      "runner": "GitHub Actions 1000227162"
+    },
+    {
+      "id": 111227750958,
+      "name": "League p10c-6max-4dealt-100bb-10201109-s2",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T14:59:46Z",
+      "completedAt": "2026-10-03T15:08:47Z",
+      "runner": "GitHub Actions 1000227163"
+    },
+    {
+      "id": 111227750983,
+      "name": "League p10c-6max-4dealt-100bb-10201109-s3",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:02:05Z",
+      "completedAt": "2026-10-03T15:09:30Z",
+      "runner": "GitHub Actions 1000227173"
+    },
+    {
+      "id": 111227750944,
+      "name": "League p10c-6max-4dealt-100bb-10201109-s4",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T14:59:48Z",
+      "completedAt": "2026-10-03T15:09:11Z",
+      "runner": "GitHub Actions 1000227165"
+    },
+    {
+      "id": 111227751027,
+      "name": "League p10c-6max-4dealt-100bb-10201109-s5",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:02:31Z",
+      "completedAt": "2026-10-03T15:10:43Z",
+      "runner": "GitHub Actions 1000227180"
+    },
+    {
+      "id": 111227750977,
+      "name": "League p10c-6max-4dealt-100bb-10201109-s6",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:02:20Z",
+      "completedAt": "2026-10-03T15:09:42Z",
+      "runner": "GitHub Actions 1000227178"
+    },
+    {
+      "id": 111227750967,
+      "name": "League p10c-6max-4dealt-100bb-10201109-s7",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:02:34Z",
+      "completedAt": "2026-10-03T15:11:50Z",
+      "runner": "GitHub Actions 1000227182"
+    },
+    {
+      "id": 111227750987,
+      "name": "League p10c-6max-4dealt-100bb-10202231-s0",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:02:50Z",
+      "completedAt": "2026-10-03T15:12:07Z",
+      "runner": "GitHub Actions 1000227190"
+    },
+    {
+      "id": 111227751022,
+      "name": "League p10c-6max-4dealt-100bb-10202231-s1",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:02:41Z",
+      "completedAt": "2026-10-03T15:12:02Z",
+      "runner": "GitHub Actions 1000227185"
+    },
+    {
+      "id": 111227750991,
+      "name": "League p10c-6max-4dealt-100bb-10202231-s2",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:00:28Z",
+      "completedAt": "2026-10-03T15:10:29Z",
+      "runner": "GitHub Actions 1000227166"
+    },
+    {
+      "id": 111227751020,
+      "name": "League p10c-6max-4dealt-100bb-10202231-s3",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:02:28Z",
+      "completedAt": "2026-10-03T15:08:39Z",
+      "runner": "GitHub Actions 1000227179"
+    },
+    {
+      "id": 111227751003,
+      "name": "League p10c-6max-4dealt-100bb-10202231-s4",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:02:44Z",
+      "completedAt": "2026-10-03T15:11:31Z",
+      "runner": "GitHub Actions 1000227187"
+    },
+    {
+      "id": 111227751034,
+      "name": "League p10c-6max-4dealt-100bb-10202231-s5",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:02:51Z",
+      "completedAt": "2026-10-03T15:12:27Z",
+      "runner": "GitHub Actions 1000227191"
+    },
+    {
+      "id": 111227751043,
+      "name": "League p10c-6max-4dealt-100bb-10202231-s6",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:02:55Z",
+      "completedAt": "2026-10-03T15:11:54Z",
+      "runner": "GitHub Actions 1000227192"
+    },
+    {
+      "id": 111227751064,
+      "name": "League p10c-6max-4dealt-100bb-10202231-s7",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:02:58Z",
+      "completedAt": "2026-10-03T15:11:57Z",
+      "runner": "GitHub Actions 1000227193"
+    },
+    {
+      "id": 111227751061,
+      "name": "League p10c-6max-4dealt-100bb-10203347-s0",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:04:05Z",
+      "completedAt": "2026-10-03T15:13:21Z",
+      "runner": "GitHub Actions 1000227209"
+    },
+    {
+      "id": 111227751089,
+      "name": "League p10c-6max-4dealt-100bb-10203347-s1",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:05:31Z",
+      "completedAt": "2026-10-03T15:14:52Z",
+      "runner": "GitHub Actions 1000227216"
+    },
+    {
+      "id": 111227751078,
+      "name": "League p10c-6max-4dealt-100bb-10203347-s2",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:06:35Z",
+      "completedAt": "2026-10-03T15:15:49Z",
+      "runner": "GitHub Actions 1000227221"
+    },
+    {
+      "id": 111227751060,
+      "name": "League p10c-6max-4dealt-100bb-10203347-s3",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:06:38Z",
+      "completedAt": "2026-10-03T15:15:45Z",
+      "runner": "GitHub Actions 1000227222"
+    },
+    {
+      "id": 111227751109,
+      "name": "League p10c-6max-4dealt-100bb-10203347-s4",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:08:33Z",
+      "completedAt": "2026-10-03T15:18:13Z",
+      "runner": "GitHub Actions 1000227227"
+    },
+    {
+      "id": 111227751079,
+      "name": "League p10c-6max-4dealt-100bb-10203347-s5",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:09:02Z",
+      "completedAt": "2026-10-03T15:14:55Z",
+      "runner": "GitHub Actions 1000227233"
+    },
+    {
+      "id": 111227751101,
+      "name": "League p10c-6max-4dealt-100bb-10203347-s6",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:09:08Z",
+      "completedAt": "2026-10-03T15:18:09Z",
+      "runner": "GitHub Actions 1000227235"
+    },
+    {
+      "id": 111227751180,
+      "name": "League p10c-6max-4dealt-100bb-10203347-s7",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T15:09:12Z",
+      "completedAt": "2026-10-03T15:16:16Z",
+      "runner": "GitHub Actions 1000227236"
+    },
+    {
+      "id": 111227641117,
+      "name": "Plan the locked matrix",
+      "runAttempt": 1,
+      "conclusion": "success",
+      "startedAt": "2026-10-03T14:59:08Z",
+      "completedAt": "2026-10-03T14:59:44Z",
+      "runner": "GitHub Actions 1000227144"
+    }
+  ]
+}

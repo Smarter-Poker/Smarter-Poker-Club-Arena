@@ -59,7 +59,7 @@ const ALLOWLIST = new Set([
   //   via the Supabase MCP. Read: src/services/UnionOpsService.ts:260.
   'union_settlement_rounds',
   // Cross-orb tables (tracked in ~/Documents/Smarter-Poker-World-Hub/supabase/migrations)
-  'diamond_ledger', // Diamond Arena orb
+  'diamond_ledger', // shared Diamond wallet ledger (World Hub); not a Diamond Arena object
   'user_avatars', // Identity DNA Engine
   'training_user_achievements', // Training orb
   'club_shop_items', // Marketplace orb

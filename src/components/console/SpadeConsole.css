@@ -88,7 +88,7 @@
 }
 
 .sc--crest-vip .sc__head {
-  background-image: url('/assets/club-buttons/console/spade-console-v1/top-vip.png');
+  background-image: url('/assets/club-buttons/console/spade-console-v1/top-vip-v2.png');
 }
 
 /* Between the rails: inside x 85-915 of the master, with a little air.
@@ -430,7 +430,10 @@
   font: inherit;
   cursor: pointer;
   touch-action: manipulation;
-  overflow: hidden;
+  /* The painted face keeps its measured box so its label stays centred on the
+     art. The transparent ::after target below reaches 44px beyond that box,
+     so this element must not clip it. The well still clips fitted text. */
+  overflow: visible;
 }
 
 /* A plate that navigates is an anchor over the same art (see PlateLink).

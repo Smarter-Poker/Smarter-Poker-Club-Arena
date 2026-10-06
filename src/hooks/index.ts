@@ -94,7 +94,7 @@ export function useClubRole(clubId: string): {
  */
 export function useClubMembers(clubId: string) {
   const [members, setMembers] = useState<ClubMembership[]>([]);
-  const [counts, setCounts] = useState({ total: 0, active: 0, pending: 0, online: 0 });
+  const [counts, setCounts] = useState({ total: 0, active: 0, pending: 0 });
   const [isLoading, setIsLoading] = useState(true);
 
   const refresh = useCallback(async () => {
@@ -226,7 +226,6 @@ export function useWallet() {
     loadBalances,
     loadDiamonds,
     lockForBuyIn,
-    internalTransfer,
     mintChips,
   } = useWalletStore();
 
@@ -253,7 +252,6 @@ export function useWallet() {
     lockForBuyIn,
     // AUDIT M17: unlockFromTable is gone. Table cash-out is engine-owned via
     // (removed 2026-09-04: no partial cash-out at a cash table); see WalletService.
-    internalTransfer,
     mintChips,
     // force: this is the EXPLICIT "give me fresh numbers" entry point. A caller
     // reaching for refresh() is stating that what is on screen may be wrong, so

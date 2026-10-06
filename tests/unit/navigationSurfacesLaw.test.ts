@@ -170,7 +170,12 @@ function everyDestination(): Array<{ surface: string; label: string; path: strin
     '/unions/u1',
     '/unions/u1/games',
   ]) {
-    const section = getArenaSectionNavigation(probe);
+    const section = getArenaSectionNavigation(probe, {
+      canCreateUnion: true,
+      canOperateUnionNetwork: true,
+      canOverseeCurrentUnion: true,
+      canManageCurrentUnionGames: true,
+    });
     if (!section) continue;
     for (const item of section.items) {
       out.push({ surface: `rail:${section.id}`, label: item.label, path: item.path });

@@ -1,0 +1,437 @@
+name: Club Arena Menu And Pages Correction Certification
+run-name: Club Arena Corrections ${{ github.event.client_payload.required_sha }}
+
+# One bounded, operator-started correction certificate. Retained evidence from
+# production run 37381227013, artifact 11379125260, already proves the hamburger
+# and retained page families. This lane reruns only its three unresolved
+# failures plus Leaderboard, whose contract changed afterward in
+# b6ae474fb086bdc7768dfb69efa10cf7dfa71bb7. Its unique repository_dispatch
+# event evaluates only this trusted default-branch workflow; no pushed branch,
+# UI-selected ref, timer, or publication can start it.
+on:
+  repository_dispatch:
+    types: [certify-club-arena-menu-pages]
+
+permissions:
+  contents: read
+
+concurrency:
+  # The fixture identities are unique, but two focused certifications would
+  # only duplicate load and evidence. Queue them without sharing or blocking
+  # the ordinary post-deploy production lock.
+  group: club-arena-menu-pages-production-certification
+  cancel-in-progress: false
+
+jobs:
+  trusted-ref:
+    name: Refuse Any Ref Except Protected Main
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require refs/heads/main
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != 'refs/heads/main' ]; then
+            echo "::error::This credentialed production certificate runs only from refs/heads/main."
+            exit 1
+          fi
+
+  certify:
+    name: Focused Hamburger And Pages Corrections
+    needs: trusted-ref
+    if: github.ref == 'refs/heads/main'
+    environment: Production
+    runs-on: ubuntu-latest
+    # Each browser file must retain its measured allowance plus a 60-minute
+    # cleanup reserve before it starts. The larger job ceiling leaves room for
+    # freeze-aware guarded cleanup, closing provenance and evidence upload.
+    timeout-minutes: 180
+    outputs:
+      client_sha: ${{ steps.live.outputs.sha }}
+      certified: ${{ steps.final_verdict.outputs.certified }}
+    steps:
+      - name: Start the cleanup-reserve clock
+        shell: bash
+        run: echo "CERTIFICATE_JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Checkout trusted protected-main certification source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+
+      - name: Setup Node 20
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Validate the requested protected-main revision
+        env:
+          REQUIRED_SHA: ${{ github.event.client_payload.required_sha }}
+          MENU_CORRECTION_FLOOR_SHA: f06da04591561e62493a96984de759995817ffe5
+          CLEANUP_FLOOR_SHA: 646d37fb6bc2d232fd61c01b0bb389708092a2a9
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$REQUIRED_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo '::error::required_sha must be one full lowercase Git SHA.'; exit 1; }
+          HEAD_SHA=$(git rev-parse HEAD)
+          [ "$REQUIRED_SHA" = "$HEAD_SHA" ] \
+            || { echo "::error::required_sha must equal checked-out protected-main HEAD $HEAD_SHA."; exit 1; }
+          git cat-file -e "$REQUIRED_SHA^{commit}" 2>/dev/null \
+            || { echo "::error::required_sha does not resolve to a repository commit."; exit 1; }
+          git merge-base --is-ancestor "$MENU_CORRECTION_FLOOR_SHA" "$REQUIRED_SHA" \
+            || { echo "::error::required_sha predates the menu correction floor."; exit 1; }
+          git merge-base --is-ancestor "$CLEANUP_FLOOR_SHA" "$REQUIRED_SHA" \
+            || { echo "::error::required_sha predates the guarded cleanup floor."; exit 1; }
+
+      # A correction certificate cannot float onto a later publish: both public
+      # endpoints must serve the exact operator-selected protected-main SHA.
+      - name: Select the exact live protected-main revision
+        id: live
+        env:
+          REQUIRED_SHA: ${{ github.event.client_payload.required_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 6); do
+            ORIGIN_BODY=''
+            PUBLIC_BODY=''
+            ORIGIN_SHA=''
+            PUBLIC_SHA=''
+            ORIGIN_BODY=$(curl -fsS --max-time 10 -H 'Cache-Control: no-cache' \
+              "https://ca-static.smarter.poker/build-info.json?focused=$RANDOM") || true
+            PUBLIC_BODY=$(curl -fsS --max-time 10 -H 'Cache-Control: no-cache' \
+              "https://smarter.poker/hub/club-arena/build-info.json?focused=$RANDOM") || true
+            ORIGIN_SHA=$(printf '%s' "$ORIGIN_BODY" \
+              | node scripts/ci/production-e2e-provenance.mjs build-info 2>/dev/null) || true
+            PUBLIC_SHA=$(printf '%s' "$PUBLIC_BODY" \
+              | node scripts/ci/production-e2e-provenance.mjs build-info 2>/dev/null) || true
+
+            if [ "$ORIGIN_SHA" = "$REQUIRED_SHA" ] && [ "$PUBLIC_SHA" = "$REQUIRED_SHA" ]; then
+              echo "sha=$REQUIRED_SHA" >> "$GITHUB_OUTPUT"
+              echo 'ready=true' >> "$GITHUB_OUTPUT"
+              {
+                echo '### Focused Club Arena correction certificate'
+                echo "Both public endpoints serve exact protected-main revision \`$REQUIRED_SHA\`."
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            else
+              echo "Attempt $attempt: exact revision is not live at both endpoints (required=$REQUIRED_SHA, origin=${ORIGIN_SHA:-invalid}, public=${PUBLIC_SHA:-invalid})."
+            fi
+            sleep 10
+          done
+          echo "::error::Both public endpoints did not converge on exact required SHA $REQUIRED_SHA."
+          exit 1
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install Chromium
+        run: npx playwright install chromium --with-deps
+
+      - name: Provision an isolated production E2E account
+        id: account
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/production-e2e-account.mjs create
+
+      - name: Prepare isolated Player Command staff access
+        id: staff
+        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+        run: node scripts/ci/production-e2e-account.mjs prepare-staff
+
+      - name: Prepare isolated standalone template access
+        id: template
+        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+        run: node scripts/ci/production-e2e-account.mjs prepare-template-staff
+
+      - name: Run the exact four-spec correction certificate
+        id: browsers
+        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
+        env:
+          BASE_URL: https://smarter.poker/hub/club-arena/
+          ARENA_BASE_URL: https://smarter.poker/hub/club-arena
+          GAMEPLAY_CUSTOMIZATION_CERTIFICATION: '1'
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+          E2E_REQUIRE_AUTH: '1'
+        shell: bash
+        run: |
+          set +e
+          mkdir -p e2e-report
+          budget_refused=0
+
+          require_suite_budget() {
+            local spec="$1"
+            local suite_budget_seconds="$2"
+            local job_deadline=$((CERTIFICATE_JOB_STARTED_AT + 10800))
+            local cleanup_reserve_seconds=3600
+            local remaining_seconds=$((job_deadline - $(date +%s)))
+            local required_seconds=$((suite_budget_seconds + cleanup_reserve_seconds))
+            if [ "$remaining_seconds" -lt "$required_seconds" ]; then
+              echo "::error::Refusing to start $spec with ${remaining_seconds}s left; its ${suite_budget_seconds}s case/global-setup allowance plus ${cleanup_reserve_seconds}s guarded-cleanup reserve requires ${required_seconds}s."
+              return 125
+            fi
+            echo "Starting $spec with ${remaining_seconds}s left and ${cleanup_reserve_seconds}s reserved for guarded cleanup."
+          }
+
+          run_suite() {
+            local report="$1"
+            local output="$2"
+            local spec="$3"
+            local suite_budget_seconds="$4"
+            local budget_rc
+            if [ "$budget_refused" -ne 0 ]; then
+              echo "::error::Refusing $spec because an earlier suite exhausted the cleanup-safe admission window."
+              return 125
+            fi
+            require_suite_budget "$spec" "$suite_budget_seconds" || {
+              budget_rc=$?
+              budget_refused=1
+              return "$budget_rc"
+            }
+            PLAYWRIGHT_JSON_OUTPUT_NAME="e2e-report/$report.json" \
+              npx playwright test "$spec" \
+                --project=chromium --reporter=line,json --workers=1 --retries=0 \
+                --output="test-results/$output"
+          }
+
+          run_suite customization-realtime customization-realtime \
+            tests/e2e/production-customization-realtime.spec.ts 1800
+          customization_realtime_rc=$?
+          run_suite gameplay-customization-runtime gameplay-customization-runtime \
+            tests/e2e/gameplay-customization-runtime.spec.ts 1800
+          gameplay_customization_runtime_rc=$?
+          run_suite table-management table-management \
+            tests/e2e/production-table-management.spec.ts 1200
+          table_management_rc=$?
+          run_suite leaderboard-console leaderboard-console \
+            tests/e2e/routes/leaderboard-console.spec.ts 600
+          leaderboard_console_rc=$?
+
+          rc=0
+          for suite_rc in \
+            "$table_management_rc" \
+            "$customization_realtime_rc" \
+            "$gameplay_customization_runtime_rc" \
+            "$leaderboard_console_rc"; do
+            [ "$suite_rc" -eq 0 ] || rc="$suite_rc"
+          done
+          echo "table-management=$table_management_rc customization-realtime=$customization_realtime_rc gameplay-customization=$gameplay_customization_runtime_rc leaderboard=$leaderboard_console_rc"
+          exit "$rc"
+
+      - name: Name every failed test as an annotation
+        id: annotations
+        if: always() && steps.live.outputs.ready == 'true'
+        run: >-
+          node scripts/ci/annotate-e2e-failures.mjs
+          e2e-report/table-management.json
+          e2e-report/customization-realtime.json
+          e2e-report/gameplay-customization-runtime.json
+          e2e-report/leaderboard-console.json
+
+      - name: Did every requested spec file actually verify production?
+        id: honesty
+        if: always() && steps.live.outputs.ready == 'true'
+        run: >-
+          node scripts/ci/assert-e2e-actually-ran.mjs
+          e2e-report/table-management.json
+          e2e-report/customization-realtime.json
+          e2e-report/gameplay-customization-runtime.json
+          e2e-report/leaderboard-console.json
+
+      - name: Require exact correction case counts
+        id: counts
+        if: always() && steps.live.outputs.ready == 'true'
+        shell: bash
+        run: |
+          mkdir -p e2e-report
+          node --input-type=module - \
+            e2e-report/table-management.json:production-table-management.spec.ts:10 \
+            e2e-report/customization-realtime.json:production-customization-realtime.spec.ts:1 \
+            e2e-report/gameplay-customization-runtime.json:gameplay-customization-runtime.spec.ts:1 \
+            e2e-report/leaderboard-console.json:routes/leaderboard-console.spec.ts:2 <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          import { collectTests } from './scripts/ci/playwright-flaky-summary.mjs';
+
+          let invalid = false;
+          const evidence = [];
+          for (const contract of process.argv.slice(2)) {
+            const [path, expectedFile, expectedRaw] = contract.split(':');
+            const expected = Number(expectedRaw);
+            const totals = { executed: 0, skipped: 0, failed: 0, flaky: 0, files: [] };
+            try {
+              const report = JSON.parse(readFileSync(path, 'utf8'));
+              const tests = collectTests(report);
+              totals.files = [...new Set(tests.map((test) => test.file))].sort();
+              totals.executed = tests.filter((test) => test.status !== 'skipped').length;
+              totals.skipped = tests.filter((test) => test.status === 'skipped').length;
+              totals.flaky = tests.filter((test) => test.status === 'flaky').length;
+              totals.failed = tests.filter(
+                (test) => !['expected', 'skipped', 'flaky'].includes(test.status)
+              ).length;
+              if ((report.errors ?? []).length) totals.failed += report.errors.length;
+              totals.firstAttempt = tests.every(
+                (test) => test.status === 'expected' && test.attempts === 1
+              );
+            } catch (error) {
+              totals.error = error instanceof Error ? error.message : String(error);
+            }
+            const exact =
+              !totals.error &&
+              totals.files.length === 1 &&
+              totals.files[0] === expectedFile &&
+              totals.executed === expected &&
+              totals.skipped === 0 &&
+              totals.failed === 0 &&
+              totals.flaky === 0 &&
+              totals.firstAttempt === true;
+            evidence.push({ path, expectedFile, expected, ...totals, exact });
+            if (!exact) {
+              invalid = true;
+              console.error(
+                `::error::${path} expected ${expected}/0/0/0 executed/skipped/failed/flaky; ` +
+                  `received ${totals.executed}/${totals.skipped}/${totals.failed}/${totals.flaky}.`
+              );
+            }
+          }
+          writeFileSync(
+            'e2e-report/exact-counts.json',
+            `${JSON.stringify({ evidence }, null, 2)}\n`
+          );
+          if (invalid) process.exit(1);
+          NODE
+
+      - name: Hard-delete the isolated production E2E account
+        id: cleanup
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/production-e2e-account.mjs cleanup
+
+      - name: Remove fixture credentials from later action environments
+        id: scrub
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo 'SP_EMAIL='
+            echo 'SP_PASS='
+            echo 'E2E_TEST_ACCOUNT_FILE='
+          } >> "$GITHUB_ENV"
+          unset SP_EMAIL SP_PASS E2E_TEST_ACCOUNT_FILE
+
+      - name: Require the exact release at both closing endpoints
+        id: release_window
+        if: always() && steps.live.outputs.ready == 'true'
+        env:
+          REQUIRED_SHA: ${{ github.event.client_payload.required_sha }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          echo 'release_held=false' >> "$GITHUB_OUTPUT"
+          if ! [[ "$REQUIRED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo '::error::The recorded live SHA is malformed.'
+            exit 1
+          fi
+          ORIGIN_BODY=$(curl -fsS --max-time 20 -H 'Cache-Control: no-cache' \
+            "https://ca-static.smarter.poker/build-info.json?final=$RANDOM") || ORIGIN_BODY=''
+          PUBLIC_BODY=$(curl -fsS --max-time 20 -H 'Cache-Control: no-cache' \
+            "https://smarter.poker/hub/club-arena/build-info.json?final=$RANDOM") || PUBLIC_BODY=''
+          if [ -z "$ORIGIN_BODY" ] || [ -z "$PUBLIC_BODY" ]; then
+            echo '::warning::UNKNOWN: both closing production build documents could not be read.'
+            echo 'NON-VERDICT: one or both closing release documents were unreadable.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          ORIGIN_SHA=$(printf '%s' "$ORIGIN_BODY" \
+            | node scripts/ci/production-e2e-provenance.mjs build-info 2>/dev/null) || ORIGIN_SHA=''
+          PUBLIC_SHA=$(printf '%s' "$PUBLIC_BODY" \
+            | node scripts/ci/production-e2e-provenance.mjs build-info 2>/dev/null) || PUBLIC_SHA=''
+          if [ -z "$ORIGIN_SHA" ] || [ -z "$PUBLIC_SHA" ]; then
+            echo '::warning::UNKNOWN: one or both closing production build documents were invalid.'
+            echo 'NON-VERDICT: one or both closing release documents were invalid.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$ORIGIN_SHA" != "$PUBLIC_SHA" ]; then
+            echo "::error::Closing production endpoints diverged (origin=$ORIGIN_SHA, public=$PUBLIC_SHA)."
+            echo 'NON-VERDICT: the closing production endpoints did not agree.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          if [ "$ORIGIN_SHA" != "$REQUIRED_SHA" ]; then
+            echo "::warning::NON-VERDICT: production changed from $REQUIRED_SHA to $ORIGIN_SHA during certification."
+            echo "NON-VERDICT: production changed from \`$REQUIRED_SHA\` to \`$ORIGIN_SHA\` during certification." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo 'release_held=true' >> "$GITHUB_OUTPUT"
+          echo "Both production endpoints stayed on exact revision \`$REQUIRED_SHA\` for the complete focused certificate." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload compact certification evidence
+        id: compact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: club-arena-menu-pages-json-${{ github.run_id }}-${{ github.run_attempt }}
+          path: e2e-report/
+          if-no-files-found: warn
+          retention-days: 3
+
+      - name: Upload failure diagnostics when produced
+        if: always() && (failure() || cancelled())
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: club-arena-menu-pages-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: warn
+          retention-days: 3
+
+      - name: Require a complete focused production verdict
+        id: final_verdict
+        if: always() && steps.live.outputs.ready == 'true'
+        env:
+          ACCOUNT: ${{ steps.account.outcome }}
+          STAFF: ${{ steps.staff.outcome }}
+          TEMPLATE: ${{ steps.template.outcome }}
+          BROWSERS: ${{ steps.browsers.outcome }}
+          ANNOTATIONS: ${{ steps.annotations.outcome }}
+          HONESTY: ${{ steps.honesty.outcome }}
+          COUNTS: ${{ steps.counts.outcome }}
+          CLEANUP: ${{ steps.cleanup.outcome }}
+          SCRUB: ${{ steps.scrub.outcome }}
+          RELEASE_HELD: ${{ steps.release_window.outputs.release_held }}
+          COMPACT: ${{ steps.compact.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'certified=false' >> "$GITHUB_OUTPUT"
+          for outcome in \
+            "$ACCOUNT" "$STAFF" "$TEMPLATE" "$BROWSERS" "$ANNOTATIONS" \
+            "$HONESTY" "$COUNTS" "$CLEANUP" "$SCRUB" "$COMPACT"; do
+            if [ "$outcome" != 'success' ]; then
+              echo "::error::NON-VERDICT: a required focused-certificate step ended as $outcome."
+              exit 1
+            fi
+          done
+          if [ "$RELEASE_HELD" != 'true' ]; then
+            echo '::error::NON-VERDICT: the focused production certificate did not close on one converged live release.'
+            exit 1
+          fi
+          echo 'certified=true' >> "$GITHUB_OUTPUT"

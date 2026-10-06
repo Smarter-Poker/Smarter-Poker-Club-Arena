@@ -128,3 +128,60 @@ describe('the migration is in the repo, not only in the database', () => {
     expect(mig).not.toMatch(/^\s*SELECT 1;\s*$/m);
   });
 });
+
+describe('the publish-readiness refusal is a guarantee refusal too', () => {
+  /**
+   * 2026-10-02 03:00-03:33Z: Midway Union's Sunday Funday High Roller PKO was
+   * refused 30 times by trg_tournaments_publish_readiness ("Tournament cannot
+   * be published because its guarantee is short by N chips"), which also
+   * counts guaranteed satellite seats. Every refusal site matched only the
+   * affordability trigger's "cannot guarantee", so no owner was ever told.
+   */
+  it('one shared matcher recognises both guard signatures', async () => {
+    const { isGuaranteeBankRefusal } = await import('../domain/guaranteeBankRefusal.js');
+    expect(
+      isGuaranteeBankRefusal(
+        'Tournament cannot be published because its guarantee is short by 373.47 chips'
+      )
+    ).toBe(true);
+    expect(
+      isGuaranteeBankRefusal(
+        'Club Midway cannot guarantee 3500 chips: union bank holds 1, floor 0, already promised 2 on live events - short by 1.'
+      )
+    ).toBe(true);
+    expect(isGuaranteeBankRefusal('duplicate key value violates unique constraint')).toBe(false);
+    expect(isGuaranteeBankRefusal(undefined)).toBe(false);
+  });
+
+  it('no refusal site keys on the bare "cannot guarantee" regex any more', () => {
+    const recurring = readFileSync(
+      new URL('./TournamentRecurringService.ts', import.meta.url).pathname,
+      'utf8'
+    );
+    for (const src of [svc, recurring]) {
+      expect(src).not.toMatch(/\/cannot guarantee\/i\.test/);
+      expect(src).toContain('isGuaranteeBankRefusal(');
+    }
+  });
+});
+
+describe('the pop-up counts the promises the publish guard counts', () => {
+  it('fn_notify_guarantee_bank_short sums guaranteed satellite seats, scoped by the event union', () => {
+    const mig = readFileSync(
+      new URL(
+        '../../../supabase/migrations/20261002034240_a_guarantee_bank_pop_up_counts_the_satellite_seats_the_publi.sql',
+        import.meta.url
+      ).pathname,
+      'utf8'
+    );
+    const body = mig.slice(
+      mig.indexOf('CREATE OR REPLACE FUNCTION public.fn_notify_guarantee_bank_short')
+    );
+    expect(body).toContain('* t.satellite_seats');
+    expect(body).toContain('t.union_id = v_union');
+    expect(mig).toContain('guarantee_bank_notify_preimage_mismatch');
+    expect(mig).toContain(
+      'GRANT EXECUTE ON FUNCTION public.fn_notify_guarantee_bank_short(uuid) TO service_role'
+    );
+  });
+});

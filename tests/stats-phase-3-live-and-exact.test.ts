@@ -38,6 +38,7 @@ const MIG2 = read(
   'supabase/migrations/20260904224726_stats_phase_3_ev_coverage_counts_runouts_only.sql'
 );
 const PAGE = read('src/pages/PlayerStatsPage.tsx');
+const ANALYSIS = read('src/pages/stats/AnalysisTab.tsx');
 const HOOK = read('src/hooks/useStatsPulse.ts');
 const LOCAL_TIME = read('src/lib/localTime.ts');
 const MONITOR = read('server/src/observability/StatsHealthMonitor.ts');
@@ -190,7 +191,7 @@ describe('phase 3 page: live from any tab, by asking', () => {
     /* The call gained `scope: statsScope` on 2026-09-29: the pulse watches the
        asset the page reads (Diamonds when opened from the Diamond Arena). */
     expect(PAGE).toMatch(
-      /useStatsPulse\(\{\s+userId: targetUserId,\s+enabled: Boolean\(targetUserId && isOwnProfile\),\s+onChange: scheduleRefresh,\s+scope: statsScope,\s+\}\);/
+      /useStatsPulse\(\{\s+userId: targetUserId,\s+enabled: Boolean\(targetUserId && isOwnProfile\),\s+onChange: scheduleRefresh,\s+scope: statsScope,\s+clubId: selectedClubId,\s+\}\);/
     );
     expect(PAGE).not.toMatch(/postgres_changes/);
     expect(PAGE).not.toMatch(/stats-live-/);
@@ -208,12 +209,11 @@ describe('phase 3 page: live from any tab, by asking', () => {
        is a change detector over the same facts table its page reads, so it
        carries the same asset scope. What this pins is unchanged - the hook
        asks for the pulse, by user. */
-    expect(HOOK).toMatch(
-      /supabase\.rpc\(\s*'ca_player_stats_pulse',[\s\S]*?p_user: userId,?\s*\}\)/
-    );
+    expect(HOOK).toContain("statsRpcName('ca_player_stats_pulse', clubId)");
+    expect(HOOK).toMatch(/supabase\.rpc\(rpcName,[\s\S]*?p_user: userId,?\s*\}\)/);
     /* ...and on 2026-09-29 the scope became the caller's (chips unless the
        page is reading Diamonds), so the hook sends the asset it was handed. */
-    expect(HOOK).toContain('statsScopeArgs(scope)');
+    expect(HOOK).toContain('statsScopeArgs(scope, clubId)');
     expect(HOOK).toContain('scope = CHIP_STATS,');
     expect(HOOK).toMatch(/document\.visibilityState !== 'visible'\) return;/);
     expect(HOOK).toMatch(/if \(last === null\) \{\s+last = pulse;/);
@@ -227,14 +227,17 @@ describe('phase 3 page: live from any tab, by asking', () => {
 
 describe("phase 3 page: the player's zone, end to end", () => {
   it('sends p_tz on both overview calls', () => {
-    const calls = PAGE.match(/\.rpc\('ca_player_stats_overview_v2', \{[\s\S]*?\}\)/g) ?? [];
+    const calls =
+      PAGE.match(
+        /\.rpc\(statsRpcName\('ca_player_stats_overview_v2', selectedClubId\), \{[\s\S]*?\}\)/g
+      ) ?? [];
     expect(calls).toHaveLength(2);
-    for (const c of calls) expect(c).toMatch(/p_tz: resolvedTimeZone\(\)/);
+    for (const c of calls) expect(c).toMatch(/p_tz: statsTimezone/);
   });
 
   it('reads the daily labels as local days, never as UTC midnight', () => {
-    expect(PAGE).toMatch(/localDateFromYmd\(d\.date\)\.toLocaleDateString/);
-    expect(PAGE).not.toMatch(/new Date\(d\.date\)/);
+    expect(ANALYSIS).toMatch(/localDateFromYmd\(day\.date\)\.toLocaleDateString/);
+    expect(ANALYSIS).not.toMatch(/new Date\(day\.date\)/);
     expect(LOCAL_TIME).toMatch(/Intl\.DateTimeFormat\(\)\.resolvedOptions\(\)\.timeZone/);
     expect(LOCAL_TIME).toMatch(
       /return new Date\(Number\(m\[1\]\), Number\(m\[2\]\) - 1, Number\(m\[3\]\)\);/

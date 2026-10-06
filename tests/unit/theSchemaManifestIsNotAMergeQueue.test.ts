@@ -86,12 +86,65 @@ describe('the CI gates read the overlay, not the raw base file', () => {
 
 describe('the schema audit is read-only, and a lying fragment is found', () => {
   const wf = read('.github/workflows/schema-manifest-refresh.yml');
+  /**
+   * The same file with every full-line comment removed. A pin that a command is
+   * GONE must not be satisfied - or broken - by prose explaining why it went,
+   * and the header below deliberately still names what it replaced. The anchor
+   * job's law does the same thing to its own step for the same reason.
+   */
+  const wfCode = wf
+    .split('\n')
+    .filter((line) => !/^\s*#/.test(line))
+    .join('\n');
 
-  it('regenerates only in the disposable checkout and refuses unreviewed drift', () => {
+  it('regenerates only in the disposable checkout and never writes source', () => {
     expect(wf).toContain('node scripts/ci/prune-schema-fragments.mjs');
+    expect(wfCode).not.toMatch(/git\s+(?:add|commit|push)\b|gh\s+pr\s+create/);
+  });
+
+  /**
+   * THE DRIFT REFUSAL WAS A CHECK WITH ONE OUTCOME (replaced 2026-10-03).
+   *
+   * `git diff --quiet -- scripts/ci/` after the regeneration failed on ANY
+   * difference between the committed manifests and live production, and told
+   * the reader to regenerate the base in a reviewed change. The pin above used
+   * to require that command. It cannot pass in this repository: the base is
+   * read-only to agents for the reason this whole file exists, so the only act
+   * that satisfies a byte-diff is the one the fragment system forbids.
+   *
+   * Measured: the `refresh` job RAN sixteen times between 2026-09-13 and
+   * 2026-10-02 and FAILED all sixteen, while prune in the last of them reported
+   * `445 absorbed, 10 trimmed, 10 still landing, 0 stale`.
+   */
+  it('refuses a phantom rather than any difference at all', () => {
+    expect(wfCode).not.toContain('git diff --quiet -- scripts/ci/');
+    // And the header still says what it replaced, so the next reader knows why.
     expect(wf).toContain('git diff --quiet -- scripts/ci/');
-    expect(wf).toContain('this audit cannot mutate source');
-    expect(wf).not.toMatch(/git\s+(?:add|commit|push)\b|gh\s+pr\s+create/);
+    expect(wf).toContain('node scripts/ci/check-schema-contract.mjs');
+    // And only when the regeneration actually happened: without that condition
+    // the "live" files on disk are the committed ones out of the checkout, and
+    // the comparison would be the contract against itself.
+    expect(wf).toContain("steps.regenerate.outcome == 'success'");
+  });
+
+  it('the contract check tells its three outcomes apart', () => {
+    const src = read('scripts/ci/check-schema-contract.mjs');
+    // Production ahead of the contract is the steady state here, not a failure.
+    expect(src).toMatch(/BEHIND/);
+    // The contract blessing what production lacks is the phantom the gates
+    // would approve and runtime would refuse.
+    expect(src).toMatch(/PHANTOM/);
+    expect(src).toMatch(/phantomCount > 0[\s\S]{0,1200}process\.exit\(1\)/);
+    // An unreadable or implausible answer is never one of the other two
+    // (CLAUDE.md 10.86 rules 1 and 2).
+    expect(src).toContain('COULD NOT TELL');
+    expect(src).toContain('process.exit(2)');
+    expect(src).toContain('MIN_LIVE_TABLES');
+    // The committed side comes out of HEAD, so prune's deletions in the same
+    // job cannot move the verdict and neither step can mask the other.
+    expect(src).toContain("'show', `HEAD:${path}`");
+    // It writes nothing: the audit stays read-only.
+    expect(src).not.toMatch(/writeFileSync|rmSync/);
   });
 
   it('a fragment production cannot corroborate eventually goes red', () => {

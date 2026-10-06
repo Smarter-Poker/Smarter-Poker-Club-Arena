@@ -121,7 +121,11 @@ afterEach(() => {
 });
 describe('the private own-account carrier', () => {
   it('mounts one private owner topic and populates the existing consumers from narrow authority', async () => {
-    localStorage.setItem('club-arena-user-settings', JSON.stringify({ soundVolume: 42 }));
+    localStorage.setItem('ca_user_settings:player-a', JSON.stringify({ soundVolume: 42 }));
+    localStorage.setItem(
+      'ca_user_settings:player-b',
+      JSON.stringify({ theme: 'light', soundVolume: 99 })
+    );
     await mount();
     expect(model.options).toMatchObject({
       channelName: 'profile-account:player-a',
@@ -132,11 +136,15 @@ describe('the private own-account carrier', () => {
     expect(model.select.mock.calls[0][0]).toContain('profile_theme:settings->theme');
     expect(model.state.user?.alias).toBe('Fresh');
     expect(model.theme.receiveTheme).toHaveBeenCalledWith('auto', 'player-a');
-    expect(JSON.parse(localStorage.getItem('club-arena-user-settings')!)).toEqual({
+    expect(JSON.parse(localStorage.getItem('ca_user_settings:player-a')!)).toEqual({
       soundVolume: 42,
       theme: 'auto',
       achievementNotifications: false,
       settlementAlerts: true,
+    });
+    expect(JSON.parse(localStorage.getItem('ca_user_settings:player-b')!)).toEqual({
+      theme: 'light',
+      soundVolume: 99,
     });
     expect(model.emit).toHaveBeenCalledWith('DIAMOND_BALANCE_CHANGED', {
       userId: 'player-a',
@@ -268,14 +276,14 @@ describe('the private own-account carrier', () => {
   });
   it('applies canonical defaults when remote profile preferences are removed', async () => {
     localStorage.setItem(
-      'club-arena-user-settings',
+      'ca_user_settings:player-a',
       JSON.stringify({ theme: 'light', settlementAlerts: false })
     );
     model.read.mockResolvedValue(
       row({ profile_theme: null, achievement_notifications: null, settlement_alerts: null })
     );
     await mount();
-    expect(JSON.parse(localStorage.getItem('club-arena-user-settings')!)).toMatchObject({
+    expect(JSON.parse(localStorage.getItem('ca_user_settings:player-a')!)).toMatchObject({
       theme: 'dark',
       achievementNotifications: true,
       settlementAlerts: true,
@@ -299,7 +307,7 @@ describe('the private own-account carrier', () => {
     expect(model.stateListeners.size).toBe(0);
   });
   it('rejects invalid balances and recovers a malformed local cache', async () => {
-    localStorage.setItem('club-arena-user-settings', '{');
+    localStorage.setItem('ca_user_settings:player-a', '{');
     model.read.mockResolvedValue(row({ diamonds: -5 }));
     await mount();
     expect(model.emit.mock.calls.some((call) => call[0] === 'DIAMOND_BALANCE_CHANGED')).toBe(false);

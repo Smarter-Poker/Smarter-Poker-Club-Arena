@@ -30,9 +30,9 @@ export interface OverallStats {
   biggest_hand_loss: number;
   bb_per_100: number;
   hours_played: number;
-  // Analysis window. The RPC scores the player's most recent `hand_cap` hands;
-  // `hands_capped` is true when that limit actually bit, so the UI can say so
-  // instead of presenting a truncated total as a lifetime figure.
+  // Compatibility fields retained by the RPC. Headline totals are unbounded;
+  // the separate contract.coverage analysis cap applies only to analysis
+  // collections such as positions, variants, stakes and sessions.
   hand_cap: number;
   hands_capped: boolean;
   first_hand_at?: string;
@@ -62,9 +62,12 @@ export interface PositionRow {
   vpip_count: number;
   pfr_count: number;
   three_bet_count: number;
+  /** Opportunities to re-raise; zero means this payload cannot support an opportunity rate. */
+  three_bet_opps: number;
   hands_won: number;
   total_profit: number;
-  bb100: number;
+  /** Null means the scoped contract did not measure a rate for this row. */
+  bb100: number | null;
 }
 
 export interface VariantRow {
@@ -96,7 +99,7 @@ export interface HandRow {
   is_winner: boolean;
   players: number;
   board: string[] | null;
-  hole_cards: unknown;
+  hole_cards: string[] | null;
 }
 
 export type HandMode = 'biggest_won' | 'biggest_lost' | 'recent';
@@ -141,6 +144,8 @@ export interface RecentTournament {
   tournament_id: string | null;
   name: string;
   start_time: string | null;
+  /** Final event timestamp when supplied by the scoped Stats contract. */
+  ended_at?: string | null;
   variant: string | null;
   is_mystery_bounty: boolean;
   finish_rank: number | null;
@@ -177,8 +182,9 @@ export interface HandEvidenceFilter {
   bigBlind?: number;
 }
 
-// Analysis ranges. `null` = no time bound (the most recent hand_cap hands,
-// whenever they were played) - the previous, only behaviour.
+// Calendar ranges for the unbounded headline totals. `null` = no time bound.
+// Analysis collections may still use contract.coverage.analysis_hand_cap and
+// disclose that independently of the headline.
 export const RANGES: { key: string; days: number | null; label: string }[] = [
   { key: '7d', days: 7, label: '7 Days' },
   { key: '30d', days: 30, label: '30 Days' },

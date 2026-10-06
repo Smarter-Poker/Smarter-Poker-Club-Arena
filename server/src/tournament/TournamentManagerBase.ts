@@ -1,3 +1,4 @@
+import { noteTerminalFinishClub } from './terminalSettlementRpc.js';
 import { F06HandPermit } from '../services/F06HandPermit.js';
 import { channelHub } from '../hub/ChannelHub.js';
 import {
@@ -107,8 +108,11 @@ import {
 import { buildInventoryAtUnit, poolCentsFromNumeric } from './mysteryBountyPool.js';
 import { shuffleChests } from './mysteryBountyDraw.js';
 import {
+  mysteryBountyThresholdReached,
   mysteryPoolCents,
+  mysteryBountyFieldTooSmall,
   shouldActivateMysteryBounty,
+  totalEntriesFromRows,
   type MysteryBountyActivationMode,
   type MysteryBountyStage,
 } from './mysteryBountyActivation.js';
@@ -124,6 +128,7 @@ import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import {
   tournamentFinishRefusalAlertsSuppressedTotal,
   classifyFinishRefusal,
+  finishRefusalIsTransient,
   finishRefusalRetryDelayMs,
   type FinishRefusalReason,
 } from '../observability/engineInstruments.js';
@@ -164,6 +169,7 @@ import {
   type StageRpcOutcome,
 } from './multiDayStages.js';
 import { horseAddsOnImmediately } from '../services/FreeBuy.js';
+import { refreshTournamentBrainContextAfterClockCommit } from '../services/TournamentBrainContext.js';
 import { tournamentLeaseMonotonicNow } from '../services/tournamentLease.js';
 import { registerTournamentManagerFenceHandler } from '../services/supabase/tournamentManagerFence.js';
 import { bindTournamentDataAuthorityMethods } from '../services/supabase/dataActorContext.js';
@@ -180,6 +186,10 @@ import {
   countAbandonedGenerationOutcome,
 } from './abandonedGenerationDoor.js';
 import { levelResumeRemainingMs } from './levelClockOutage.js';
+import {
+  everyOtherTableIsAtAHandBoundary,
+  unprovedHandNeedsSuccessorGeneration,
+} from './unprovedHandSuccessor.js';
 
 /**
  * What one ask of the abandoned-generation door came to.
@@ -405,6 +415,22 @@ export abstract class TournamentManagerBase {
   /** The exact dead generation each booked retry names (null: a missing table to re-admit). */
   private readonly tableEngineRecoveryExpected = new Map<string, ServerTableEngine | null>();
   private readonly tableEngineRecoveryAttempts = new Map<string, number>();
+  /**
+   * A TABLE THE MANAGER CANNOT ADMIT IS A STALLED TABLE (2026-10-03).
+   *
+   * When each table whose engine this manager is still trying to bring back
+   * first failed. Set by the first recovery a table needs, cleared only when
+   * an engine for it reports ready (or the manager retires).
+   *
+   * /health counted stalls only from registered table engines. A table whose
+   * F06 admission is refused gets an engine for about one second every 15 s
+   * - created, refused, stopped, "Dealt 0 hands" - so between retries it has
+   * no engine at all and is in no stall list, gauge or verdict. Heads-up SNG
+   * b290375a sat RUNNING with two real players and 0 hands for 6.5 hours
+   * (refused F06_ABANDONED_CARDS_WITHOUT_SNAPSHOT at every ask) while /health
+   * reported stalledTableCount 0. GameServer reads this to count it.
+   */
+  private readonly tableAdmissionFailingSince = new Map<string, number>();
   /** Scheduler runs are separate because a finish can initiate stop from inside one. */
   private readonly eliminationSchedulerJobs = new Set<Promise<void>>();
   private readonly managerLifecycleDiagnostics = new LifecycleDiagnostics();
@@ -657,6 +683,30 @@ export abstract class TournamentManagerBase {
   private lastFinishRefusalReason: FinishRefusalReason | null = null;
 
   /**
+   * A TRANSIENT REFUSAL IS NEWS ONLY WHEN IT STOPS BEING TRANSIENT (2026-10-01).
+   *
+   * `TRANSIENT_FINISH_REFUSALS` (deadlock, timeout) are, by this file's own
+   * definition, the database saying "not now": the same call succeeds on the
+   * next pass. A critical money alert on the FIRST one therefore measures
+   * finish-lane contention, not an unpaid finish. Measured 2026-09-26 to
+   * 2026-10-01: 342 of 342 settled tournaments with an open
+   * `Tournament.atomic_finish_refused` alert (333 timeout, 7 deadlock, 2 other)
+   * are COMPLETED with an immutable terminal receipt; the lane refused each
+   * one once (55P03 on the single platform finish lane, 8 s lock_timeout) and
+   * the next admission paid it in full. 23 open drift incidents and 347 open
+   * criticals were this, and not one named money that was owed.
+   *
+   * A transient refusal is alerted when this tournament has reported the
+   * SAME transient reason this many times running - the lane is then wedged,
+   * not busy - and the streak is written into the alert. A rule refusal
+   * (fee reconciliation, prize set, attribution) is alerted on the first
+   * report exactly as before: asking again cannot clear it, so the first one
+   * is the news. Every refusal of every kind is still counted on
+   * `poker_tournament_finish_refusals_total{reason}`.
+   */
+  static readonly TRANSIENT_FINISH_REFUSAL_ALERT_STREAK = 3;
+
+  /**
    * Record a proven refusal and answer whether this is news: a reason this
    * tournament has not already reported. An unproven (unknown-outcome) failure
    * is always news, because it is never repeated on a clock.
@@ -666,11 +716,22 @@ export abstract class TournamentManagerBase {
     const reason = classifyFinishRefusal(error instanceof Error ? error.message : String(error));
     if (reason === this.lastFinishRefusalReason) {
       this.finishRefusalStreak += 1;
-      return false;
+    } else {
+      this.lastFinishRefusalReason = reason;
+      this.finishRefusalStreak = 1;
     }
-    this.lastFinishRefusalReason = reason;
-    this.finishRefusalStreak = 1;
-    return true;
+    if (finishRefusalIsTransient(reason)) {
+      // News exactly once: on the pass the streak reaches the threshold.
+      return (
+        this.finishRefusalStreak === TournamentManagerBase.TRANSIENT_FINISH_REFUSAL_ALERT_STREAK
+      );
+    }
+    return this.finishRefusalStreak === 1;
+  }
+
+  /** How many times running this tournament has reported its current refusal reason. */
+  protected get currentFinishRefusalStreak(): number {
+    return this.finishRefusalStreak;
   }
 
   /** The delay releaseFinishGuard hands the scheduler for the next pass. */
@@ -722,7 +783,9 @@ export abstract class TournamentManagerBase {
         severity,
         source,
         message,
-        reasonForKey ? { ...context, refusal_reason: reasonForKey } : context,
+        reasonForKey
+          ? { ...context, refusal_reason: reasonForKey, refusal_streak: this.finishRefusalStreak }
+          : context,
         `${String(subject)}:${reasonForKey ?? 'unknown'}`,
         String(subject)
       );
@@ -1426,7 +1489,10 @@ export abstract class TournamentManagerBase {
     if (timer) this.clearLifecycleTimeout(timer);
     this.tableEngineRecoveryTimers.delete(tableId);
     this.tableEngineRecoveryExpected.delete(tableId);
-    if (resetAttempts) this.tableEngineRecoveryAttempts.delete(tableId);
+    if (resetAttempts) {
+      this.tableEngineRecoveryAttempts.delete(tableId);
+      this.tableAdmissionFailingSince.delete(tableId);
+    }
   }
 
   private clearManagedTableEngineRecoveries(): void {
@@ -1436,6 +1502,30 @@ export abstract class TournamentManagerBase {
     this.tableEngineRecoveryTimers.clear();
     this.tableEngineRecoveryExpected.clear();
     this.tableEngineRecoveryAttempts.clear();
+    this.tableAdmissionFailingSince.clear();
+  }
+
+  /**
+   * A recovery that ends without leaving a retry scheduled is not a table
+   * failing admission any more: it was admitted, replaced by a generation that
+   * owns its own recovery, or removed (broken, closed). Only a pending retry
+   * keeps the first-failure stamp.
+   */
+  private forgetAdmissionFailureUnlessRetrying(tableId: string): void {
+    if (!this.tableEngineRecoveryTimers.has(tableId))
+      this.tableAdmissionFailingSince.delete(tableId);
+  }
+
+  /**
+   * Tables this manager has been failing to bring back into play, and for how
+   * long. Identification only: GameServer publishes it as a stall, and nothing
+   * is restarted, retried or rebuilt because of it.
+   */
+  getTablesFailingAdmission(now = Date.now()): Array<{ tableId: string; msFailing: number }> {
+    return [...this.tableAdmissionFailingSince].map(([tableId, since]) => ({
+      tableId,
+      msFailing: Math.max(0, now - since),
+    }));
   }
 
   /** Only the recorded new format can complete with an unranked qualifier cohort. */
@@ -1467,6 +1557,10 @@ export abstract class TournamentManagerBase {
     for (const [tableId, engine] of this.tableEngines) {
       this.holdSatelliteQualifierEngine(tableId, engine);
     }
+    // A parked field cannot deal, and only this manager's sweep can release
+    // it. Serve that sweep from the consolidation lane, not behind the whole
+    // platform (aDecidedOrHeldFieldIsNotWaitingBehindOneThatCanDeal).
+    this.declareConsolidationOutstanding(true);
   }
 
   /** A positive authoritative continuation releases only this exact generation. */
@@ -1591,6 +1685,9 @@ export abstract class TournamentManagerBase {
       this.clearManagedTableEngineRecovery(tableId);
       return;
     }
+    if (!this.tableAdmissionFailingSince.has(tableId)) {
+      this.tableAdmissionFailingSince.set(tableId, Date.now());
+    }
     if (this.tableEngineRecoveryTimers.has(tableId)) return;
 
     // A table whose dealer generation is being replaced is still a member of
@@ -1610,6 +1707,7 @@ export abstract class TournamentManagerBase {
       this.tableEngineRecoveryExpected.delete(tableId);
       if (!this.lifecycleIsCurrent(lifecycle)) {
         this.tableEngineRecoveryAttempts.delete(tableId);
+        this.forgetAdmissionFailureUnlessRetrying(tableId);
         return;
       }
 
@@ -1617,6 +1715,7 @@ export abstract class TournamentManagerBase {
         if (expected) {
           if (this.tableEngines.get(tableId) !== expected) {
             this.tableEngineRecoveryAttempts.delete(tableId);
+            this.forgetAdmissionFailureUnlessRetrying(tableId);
             return;
           }
           await this.recoverManagedTableEngine(
@@ -1631,6 +1730,7 @@ export abstract class TournamentManagerBase {
 
         if (this.tableEngines.has(tableId)) {
           this.tableEngineRecoveryAttempts.delete(tableId);
+          this.forgetAdmissionFailureUnlessRetrying(tableId);
           return;
         }
         await this.admitMissingManagedTableEngine(tableId, lifecycle, `${reason}:retry`);
@@ -1641,9 +1741,19 @@ export abstract class TournamentManagerBase {
           reason,
           attempt,
         });
-        if (!this.lifecycleIsCurrent(lifecycle)) return;
+        // A retry that ends here schedules no other: whoever replaced or
+        // removed this generation owns the table now, so it no longer names
+        // a failing admission (2026-10-03, 73834884: broken while its retry
+        // failed, then reported "admission failing" on /health for hours).
+        if (!this.lifecycleIsCurrent(lifecycle)) {
+          this.forgetAdmissionFailureUnlessRetrying(tableId);
+          return;
+        }
         const incumbent = this.tableEngines.get(tableId);
-        if (expected && incumbent !== expected) return;
+        if (expected && incumbent !== expected) {
+          this.forgetAdmissionFailureUnlessRetrying(tableId);
+          return;
+        }
         this.scheduleManagedTableEngineRecovery(tableId, incumbent ?? null, lifecycle, reason);
       }
     }, delayMs);
@@ -1766,6 +1876,39 @@ export abstract class TournamentManagerBase {
     _engine: ServerTableEngine
   ): Promise<void> {}
 
+  /**
+   * A stopped original still holding an `attempted` permit of THIS lease
+   * generation cannot be resolved by this generation (unprovedHandSuccessor.ts).
+   * Let every other table finish the hand in front of its players, then hand
+   * the event to a successor generation, whose admission replays the retained
+   * hand or voids the unretained one through the platform's own doors.
+   *
+   * Returns true only when the hand-off was requested. While another table
+   * still has cards in the air the ordinary causal retry asks again.
+   */
+  private handUnprovedOriginalToSuccessorGeneration(engine: ServerTableEngine): boolean {
+    if (
+      !unprovedHandNeedsSuccessorGeneration({
+        permit: engine.getF06RetainedPermit?.(),
+        managerLeaseGeneration: this.tournamentLeaseGeneration,
+        engineReleasedProcessOwnership: engine.hasReleasedProcessOwnership(),
+      })
+    )
+      return false;
+    for (const other of this.tableEngines.values()) {
+      // No table of this generation deals another hand: the event is leaving it.
+      if (other !== engine && other.isRunning())
+        other.pauseAfterHand(undefined, { untilResumed: true });
+    }
+    if (!everyOtherTableIsAtAHandBoundary(this.tableEngines.values(), engine)) return false;
+    console.info(
+      `[Tournament:${this.tournamentId.slice(0, 8)}] A stopped table holds a hand this lease generation cannot resolve - handing the event to a successor generation`
+    );
+    // Not awaited: the manager's stop drains this very recovery job.
+    this.gameServer.handTournamentToSuccessorGeneration(this.tournamentId, this);
+    return true;
+  }
+
   private async performManagedTableEngineRecovery(
     tableId: string,
     engine: ServerTableEngine,
@@ -1796,6 +1939,8 @@ export abstract class TournamentManagerBase {
     await this.recoverStoppedOriginalAdmission(tableId, engine);
     if (!this.lifecycleIsCurrent(lifecycle) || this.tableEngines.get(tableId) !== engine) return;
     if (!(await this.resolveTournamentSeatMoveQuarantine(tableId, engine))) {
+      if (!this.lifecycleIsCurrent(lifecycle) || this.tableEngines.get(tableId) !== engine) return;
+      if (this.handUnprovedOriginalToSuccessorGeneration(engine)) return;
       this.requestEliminationSweep('seat_move_outcome_pending');
       this.scheduleManagedTableEngineRecovery(tableId, engine, lifecycle, reason);
       return;
@@ -2307,8 +2452,10 @@ export abstract class TournamentManagerBase {
     if (!this.lifecycleIsCurrent(lifecycle)) return;
     if (this.eliminationSchedulerUnregister) this.unregisterEliminationScheduler();
     // A fresh scheduler entry starts in the general lanes; the next balance
-    // stage declares consolidation again if the field still needs it.
+    // stage declares consolidation again if the field still needs it, and the
+    // next deciding hand or decided recovery declares the field decided again.
     this.consolidationDeclared = false;
+    this.fieldDecidedDeclared = false;
     this.eliminationSchedulerUnregister = tournamentEliminationScheduler.register({
       tournamentId: this.tournamentId,
       diagnostics: Object.freeze({
@@ -2344,6 +2491,9 @@ export abstract class TournamentManagerBase {
       },
       isActive: () => this.lifecycleIsCurrent(lifecycle),
     });
+    // An adopted cohort satellite holds its qualifier boundary before this
+    // registration exists; the fresh entry starts in the general lanes.
+    if (this.satelliteQualifierBoundaryPending) this.declareConsolidationOutstanding(true);
   }
 
   /** Remove only this manager's scheduler entry; safe from lifecycle catches. */
@@ -2400,6 +2550,9 @@ export abstract class TournamentManagerBase {
   /** Wake this manager without exposing the process scheduler to GameServer. */
   requestEliminationSweep(reason?: string, durableWakeId?: number): boolean {
     if (reason === 'deal_vote') this.forceFinalTableDealCheck = true;
+    // A decided field is served from the decided lane (requestDecidedEliminationSweep),
+    // never the one-slot consolidation lane: 208 decided Spins marked consolidating
+    // starved every real consolidation on 2026-10-01 (aDecidedFieldDoesNotHoldTheConsolidationLane).
     const accepted = tournamentEliminationScheduler.wake(this.tournamentId);
     if (accepted && Number.isSafeInteger(durableWakeId) && Number(durableWakeId) > 0) {
       this.pendingManagerWakes.set(Number(durableWakeId), String(reason ?? ''));
@@ -2468,6 +2621,57 @@ export abstract class TournamentManagerBase {
     if (this.consolidationDeclared) this.requestEliminationSweep('spread_field_cannot_deal');
   }
 
+  /** What this manager last told the scheduler about its field being decided. */
+  private fieldDecidedDeclared = false;
+
+  /**
+   * A DECIDED GAME IS NOT WAITING BEHIND LIVE ONES (2026-10-01).
+   *
+   * One table and at most one stack left with chips: nothing can be dealt
+   * again and the only work left is to record the busts and pay the winner.
+   * Every sweep this manager is owed from now on comes from the scheduler's
+   * decided lane (DECIDED_LANE_LEAVES_LIVE_SLOTS). Admission order only: the
+   * sweep is still the authority on every bust and on the finish.
+   */
+  protected declareFieldDecided(): void {
+    if (this.fieldDecidedDeclared) return;
+    if (tournamentEliminationScheduler.setDecided(this.tournamentId)) {
+      this.fieldDecidedDeclared = true;
+    }
+  }
+
+  /** The deciding hand's own final stacks, read without a database call. */
+  protected declareFieldDecidedIfOneStackRemains(
+    finalStacks: readonly { user_id: string; stack: number }[]
+  ): void {
+    // A scheduling hint: nothing here may ever stop the wake that follows it.
+    try {
+      if (this.fieldDecidedDeclared || this.tableEngines?.size !== 1) return;
+      const [engine] = this.tableEngines.values();
+      // The stacks must describe the whole table, not a partial bust list.
+      if (finalStacks.length < engine.getOccupiedSeatNumbers().length) return;
+      const live = finalStacks.filter((player) => Number(player.stack) > 0).length;
+      if (live <= 1) this.declareFieldDecided();
+    } catch {
+      /* unknown shape: the ordinary wake still runs */
+    }
+  }
+
+  /**
+   * Whether this manager has declared its field decided. The elimination
+   * sweep reads it to carry a decided field from its last bust straight into
+   * its finish in one admission (aDecidedGameIsPaidInTheAdmissionThatRecordsItsLastBust).
+   */
+  protected fieldIsDecided(): boolean {
+    return this.fieldDecidedDeclared === true;
+  }
+
+  /** A recovery that has read the field as decided wakes it through the decided lane. */
+  requestDecidedEliminationSweep(reason: string): boolean {
+    this.declareFieldDecided();
+    return this.requestEliminationSweep(reason);
+  }
+
   /**
    * A field with a break or seat move outstanding is served from the
    * scheduler's consolidation lane until a balance stage finishes clean.
@@ -2531,6 +2735,8 @@ export abstract class TournamentManagerBase {
           // release the boundary. Other hands may finish; none may start.
           this.holdSatelliteQualifierBoundary();
         }
+        if (this.mysteryActivationMayOpenOnBust(finalStacks)) this.holdMysteryActivationBoundary();
+        this.declareFieldDecidedIfOneStackRemains(finalStacks);
         this.bustAwaitsItsStage();
         this.requestEliminationSweep();
       }
@@ -2539,6 +2745,9 @@ export abstract class TournamentManagerBase {
       // A dealer parked on a hold this manager armed and no longer owns is
       // released here, by the authority that armed it. See the method.
       this.releaseManagedTablePauseIfUnowned(engine);
+      // A parked table is the edge a held mystery activation waits for.
+      if (this.mysteryActivationBoundaryPending)
+        this.requestEliminationSweep('mystery_activation_boundary');
       if (this.satelliteQualifierBoundaryPending) {
         this.requestEliminationSweep('satellite_qualifier_boundary');
       } else this.advanceHandForHandBarrier();
@@ -2925,7 +3134,7 @@ export abstract class TournamentManagerBase {
      * why a break runs a little over five minutes end to end.
      */
     try {
-      await supabase
+      const persisted = await supabase
         .from('tournaments')
         .update({
           on_break: true,
@@ -2933,6 +3142,14 @@ export abstract class TournamentManagerBase {
           break_ends_at: null,
         })
         .eq('id', this.tournamentId);
+      // Supabase returns a failed write rather than throwing it; report it
+      // through the same channel as a thrown one. Only a write that returned
+      // without an error proves the row now says the level clock is paused,
+      // and the Horse tournament context must not keep reporting a running
+      // clock for the rest of its refresh interval.
+      if (persisted.error)
+        reportError(persisted.error, 'TournamentManagerBase.pauseForBreak_persist');
+      else refreshTournamentBrainContextAfterClockCommit(this.tournamentId);
     } catch (err) {
       reportError(err, 'TournamentManagerBase.pauseForBreak_persist');
     }
@@ -3255,6 +3472,9 @@ export abstract class TournamentManagerBase {
         throw new Error('Tournament break release did not acknowledge its exact level clock');
       }
       this.breakReleaseRefusals = 0;
+      // The row now says the level runs again from a new anchor. The Horse
+      // tournament context must not keep reporting the paused clock.
+      refreshTournamentBrainContextAfterClockCommit(this.tournamentId);
       return;
     }
     // A stopped event, an outstanding blind publication, an add-on pause or
@@ -3850,6 +4070,139 @@ export abstract class TournamentManagerBase {
   protected mysteryBountyStage: MysteryBountyStage = 'pending';
   /** Guard against two sweeps overlapping across an await. */
   private mysteryBountySeeding = false;
+  /**
+   * Every entry this event took - one per registration plus one per rebuy or
+   * re-entry, which both increment `tournament_players.rebuys` on the one row
+   * a player holds. Read once, after entry closes, because it cannot change
+   * after that. `null` until read. See readMysteryTotalEntries.
+   */
+  protected mysteryTotalEntries: number | null = null;
+
+  /**
+   * THE MYSTERY PHASE OPENS AT A HAND BOUNDARY THE ENGINE HOLDS (2026-10-01).
+   *
+   * Activation may only flip between hands, and the elimination sweep that
+   * decides it runs AFTER the busting hand, asynchronously. Nothing held the
+   * next deal for it: hand-for-hand parks only multi-table events and its
+   * barrier resumes the instant the last table parks. So whenever the bubble
+   * burst at a final table, the next hand was already dealt by the time the
+   * sweep asked, the predicate answered `hand_in_progress`, nothing re-asked,
+   * and the chests never opened. Production 2026-09-11..30: 13 at-the-money
+   * mystery events with at least two paid places (6882feb8, 1d29ce9e,
+   * ad2379b2, 3e7119e3, 57aed9fc ...) paid every in-the-money knockout the
+   * flat bounty and never drew a single envelope.
+   *
+   * A bust that can cross the threshold now parks every table before its next
+   * deal until the sweep has answered. A `hand_in_progress` answer keeps the
+   * hold, and each table parking re-drives the sweep; any other answer
+   * releases it. The engine pause carries its own safety budget and the
+   * manager clears its flag on the same budget, so the hold can only ever
+   * cost seconds, never wedge a table.
+   */
+  static readonly MYSTERY_ACTIVATION_HOLD_MS = 20_000;
+  protected mysteryActivationBoundaryPending = false;
+  /** Players still playing at the last verified sweep count; null = unknown. */
+  protected mysteryPlayersRemainingHint: number | null = null;
+  private mysteryActivationBoundaryTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly mysteryActivationBoundaryEngines = new Set<ServerTableEngine>();
+
+  /** Could the busts in this hand open the mystery phase? Pure on cached state. */
+  protected mysteryActivationMayOpenOnBust(
+    finalStacks: ReadonlyArray<{ stack: unknown }>
+  ): boolean {
+    const t = this.tournamentCache;
+    if (!t?.is_mystery_bounty || this.mysteryBountyStage !== 'pending') return false;
+    if (this.isCohortSatellite()) return false;
+    const busted = finalStacks.filter((player) => Number(player.stack) <= 0).length;
+    const hint = this.mysteryPlayersRemainingHint;
+    // Unknown is not "far away": hold, and let the verified count decide.
+    if (hint == null) return true;
+    const after = hint - busted;
+    // The bust that leaves one player ends the event; there is nothing to open.
+    if (after <= 1) return false;
+    const mode = (t.mystery_bounty_activation || 'at_the_money') as MysteryBountyActivationMode;
+    /* TOTAL ENTRIES, NOT `current_players` (2026-10-05). `current_players`
+       drains to the players still in, so "the last 20% of the field" was
+       measured against the survivors and could never be reached. The real
+       entry count is read once entry closes (readMysteryTotalEntries); before
+       that the phase cannot open at all, and an unread count after the close
+       holds the boundary rather than guessing. */
+    const totalEntries = this.mysteryTotalEntries;
+    /* EVERY MODE NEEDS THE COUNT NOW (2026-10-05): a mystery bounty of 10 or
+       fewer entries never opens chests (Dan, mysteryBountyFieldTooSmall), and
+       its 50/30/20 ladder would otherwise read as "at the money" at three
+       players left. Unread after the close holds and lets the sweep read it. */
+    if (totalEntries == null) return this.prizePoolFinalized;
+    if (mysteryBountyFieldTooSmall(totalEntries)) return false;
+    return mysteryBountyThresholdReached(
+      mode,
+      t.mystery_bounty_activation_value,
+      after,
+      totalEntries,
+      countPaidPlaces(t.payout_structure)
+    );
+  }
+
+  /** Park every table before its next deal until the activation sweep answers. */
+  protected holdMysteryActivationBoundary(): void {
+    if (!this.running) return;
+    // A break, a stage end or an owning add-on break already parks every
+    // table before its next deal; their release is theirs, not ours.
+    if (this.onBreak || this.stageEndPause || (this.addOnBreakActive && this.addOnBreakOwnsPause))
+      return;
+    this.mysteryActivationBoundaryPending = true;
+    if (!this.handForHandActive) {
+      // Hand-for-hand already parks each table after its hand, and the flag
+      // above stops its barrier from resuming them before the sweep answers.
+      for (const engine of this.tableEngines.values()) {
+        engine.pauseAfterHand(TournamentManagerBase.MYSTERY_ACTIVATION_HOLD_MS, {
+          beforeNextHand: true,
+        });
+        this.mysteryActivationBoundaryEngines.add(engine);
+      }
+    }
+    if (this.mysteryActivationBoundaryTimer) {
+      this.clearLifecycleTimeout(this.mysteryActivationBoundaryTimer);
+    }
+    this.mysteryActivationBoundaryTimer = this.setLifecycleTimeout(() => {
+      this.mysteryActivationBoundaryTimer = null;
+      this.releaseMysteryActivationBoundary();
+    }, TournamentManagerBase.MYSTERY_ACTIVATION_HOLD_MS);
+  }
+
+  /** Give back exactly the hold armed above, deferring to any other owner. */
+  protected releaseMysteryActivationBoundary(): void {
+    if (!this.mysteryActivationBoundaryPending) return;
+    this.mysteryActivationBoundaryPending = false;
+    if (this.mysteryActivationBoundaryTimer) {
+      this.clearLifecycleTimeout(this.mysteryActivationBoundaryTimer);
+      this.mysteryActivationBoundaryTimer = null;
+    }
+    const engines = [...this.mysteryActivationBoundaryEngines];
+    this.mysteryActivationBoundaryEngines.clear();
+    if (!this.running) return;
+    if (this.handForHandActive) {
+      this.advanceHandForHandBarrier();
+      return;
+    }
+    if (
+      this.onBreak ||
+      this.stageEndPause ||
+      (this.addOnBreakActive && this.addOnBreakOwnsPause) ||
+      this.satelliteQualifierBoundaryPending
+    )
+      return;
+    for (const engine of engines) {
+      if (![...this.tableEngines.values()].includes(engine)) continue;
+      try {
+        engine.resumeDealing();
+      } catch (err) {
+        reportError(err, 'Tournament.mystery_activation_boundary_release_failed', {
+          tournamentId: this.tournamentId,
+        });
+      }
+    }
+  }
 
   /** True only when NO table in this event has a hand in progress. */
   protected allTablesBetweenHands(): boolean {
@@ -3880,7 +4233,7 @@ export abstract class TournamentManagerBase {
    * chests of its own precisely so a second ladder cannot come into existence
    * — three of them already had, and none agreed.
    */
-  protected async maybeActivateMysteryBounty(playersRemaining: number): Promise<void> {
+  protected async maybeActivateMysteryBounty(playersRemaining: number): Promise<boolean | void> {
     if (this.mysteryBountyStage !== 'pending') return;
     const t = this.tournamentCache;
     if (!t?.is_mystery_bounty) return;
@@ -3969,19 +4322,45 @@ export abstract class TournamentManagerBase {
     const paidPlaces =
       countPaidPlaces(t?.payout_structure) || countPaidPlaces(fresh.payout_structure);
 
+    const entryClosed = Boolean(fresh.prize_pool_finalized) || this.prizePoolFinalized;
+    const activationMode = (fresh.mystery_bounty_activation ||
+      'at_the_money') as MysteryBountyActivationMode;
+    /* THE FIELD IS THE ENTRIES, NOT THE SURVIVORS (2026-10-05). This passed
+       `fresh.current_players`, which the engine drains to the players still
+       in. "Open at the last N% of the field" then compared the survivors with
+       N% of the survivors, which is never true for N < 100, so a
+       percent_field event never opened a chest. The count is read from the
+       entry rows once entry has closed (it cannot move after that); an
+       unreadable count waits for the next sweep rather than guessing. */
+    /* AND IT IS READ FOR EVERY MODE (2026-10-05). Dan: "MYSTERY BOUNTY OF 10
+       OR FEWER DON'T GET CHESTS". Whether the event has chests at all is a
+       question of its entries, whichever threshold the club chose, so the
+       predicate is given the real count in every mode; `0` before the close
+       is never consulted (entry_still_open answers first). */
+    let totalEntries = 0;
+    if (entryClosed) {
+      if (this.mysteryTotalEntries == null) {
+        this.mysteryTotalEntries = await this.readMysteryTotalEntries();
+      }
+      if (this.mysteryTotalEntries == null) return;
+      totalEntries = this.mysteryTotalEntries;
+    }
+
     const decision = shouldActivateMysteryBounty({
       isMysteryBounty: true,
       stage: 'pending',
-      entryClosed: Boolean(fresh.prize_pool_finalized) || this.prizePoolFinalized,
+      entryClosed,
       allTablesBetweenHands: this.allTablesBetweenHands(),
       playersRemaining,
-      totalEntries: Number(fresh.current_players) || playersRemaining,
+      totalEntries,
       paidPlaces,
-      mode: (fresh.mystery_bounty_activation || 'at_the_money') as MysteryBountyActivationMode,
+      mode: activationMode,
       modeValue: fresh.mystery_bounty_activation_value,
       mysteryPoolCents: poolCents,
     });
-    if (!decision.activate) return;
+    // True only for the one transient refusal: the caller keeps the
+    // activation boundary armed so the tables park and the sweep re-asks.
+    if (!decision.activate) return decision.reason === 'hand_in_progress';
 
     /* A BUST BELONGS TO THE PHASE ITS HAND WAS PLAYED IN (2026-09-11,
        20260911094503). A head earned before this moment but not yet
@@ -4005,6 +4384,21 @@ export abstract class TournamentManagerBase {
       );
       return;
     }
+    /* A BUST ALREADY PLAYED IS NOT A CHEST STILL OWED (2026-10-05). The
+       heads above are paid flat from the regular half, so the players they
+       belong to will never be knocked out for a chest. Counting them among
+       the players remaining built one chest per such bust that no knockout
+       could ever draw, and the terminal settle handed every one of them to
+       the champion (b5102d84). The chests are drawn for the players who can
+       still be knocked out, and the seed is told the same figure, because it
+       derives its chest count from it (players - 1). */
+    const unrecordedKnockouts = await this.readUnrecordedKnockoutCount();
+    if (unrecordedKnockouts == null) return;
+    const chestPlayers = playersRemaining - unrecordedKnockouts;
+    // Nobody left who can be knocked out for a chest: nothing to open.
+    if (chestPlayers <= 1) return;
+    const drawCount = chestPlayers - 1;
+
     if (unrecordedCents > 0) {
       try {
         poolCents = mysteryPoolCents(
@@ -4033,7 +4427,7 @@ export abstract class TournamentManagerBase {
           ? DEFAULT_TOP_BOUNTY_PERCENT
           : Number(fresh.mystery_bounty_top_percent);
       const chests = shuffleChests(
-        buildInventoryAtUnit(poolCents, decision.drawCount, profile, topPercent, unitCents)
+        buildInventoryAtUnit(poolCents, drawCount, profile, topPercent, unitCents)
       ).map((c) => ({ tier: c.tier, amount_cents: c.amountCents, seq: c.seq }));
 
       const { data: seeded, error: seedErr } = await supabase.rpc('fn_mystery_bounty_seed', {
@@ -4042,8 +4436,9 @@ export abstract class TournamentManagerBase {
            count from it (players - 1) and also records it as
            mystery_bounty_activated_players, which is the figure the audit
            trail prints as "Mystery Stage Activated: 150 Players Remaining".
-           Sending drawCount here would log 149 for a 150-player field. */
-        p_players_remaining: playersRemaining,
+           Sending drawCount here would log 149 for a 150-player field.
+           Net of the busts already played (above), which have left. */
+        p_players_remaining: chestPlayers,
         p_chests: chests,
       });
 
@@ -4075,17 +4470,99 @@ export abstract class TournamentManagerBase {
       this.mysteryBountyStage = 'active';
       await this.broadcast('mystery_bounty_activated', {
         poolCents: Number(res.pool_cents) || poolCents,
-        chests: decision.drawCount,
+        chests: drawCount,
         profile,
       });
       console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] MYSTERY BOUNTY OPEN - ${decision.drawCount} chests, ${poolCents}c, profile ${profile}`
+        `[Tournament:${this.tournamentId.slice(0, 8)}] MYSTERY BOUNTY OPEN - ${drawCount} chests, ${poolCents}c, profile ${profile}`
       );
     } catch (err) {
       reportError(err, 'Tournament.mystery_bounty_activation_threw');
     } finally {
       this.mysteryBountySeeding = false;
     }
+  }
+
+  /**
+   * How many entries this event took: one per entry row plus every rebuy and
+   * re-entry, which the purchase door counts on that row's `rebuys`. Read in
+   * pages so a field larger than PostgREST's row cap is counted whole, and
+   * checked against the exact row count so a short read is refused rather
+   * than taken as a smaller field. `null` means it could not be read.
+   */
+  protected async readMysteryTotalEntries(): Promise<number | null> {
+    const PAGE = 1000;
+    const rows: Array<{ rebuys: unknown }> = [];
+    let expected: number | null = null;
+    for (let from = 0; ; from += PAGE) {
+      const { data, error, count } = await supabase
+        .from('tournament_players')
+        .select('id, rebuys', { count: 'exact' })
+        .eq('tournament_id', this.tournamentId)
+        .order('id', { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error || !data || count == null) {
+        reportError(
+          error ?? new Error('tournament entry rows unreadable'),
+          'Tournament.mystery_total_entries_unreadable'
+        );
+        return null;
+      }
+      expected = count;
+      rows.push(...(data as Array<{ rebuys: unknown }>));
+      if (data.length < PAGE || rows.length >= count) break;
+    }
+    if (expected == null || rows.length !== expected) {
+      reportError(
+        new Error(`tournament entry rows read ${rows.length} of ${String(expected)}`),
+        'Tournament.mystery_total_entries_unreadable'
+      );
+      return null;
+    }
+    return totalEntriesFromRows(rows);
+  }
+
+  /**
+   * How many players have busted in a hand already committed (knockout
+   * candidate 'pending') but are still recorded as playing - the same players
+   * whose heads fn_mystery_bounty_unrecorded_head_cents reserves from the
+   * regular half. `null` means it could not be read.
+   */
+  protected async readUnrecordedKnockoutCount(): Promise<number | null> {
+    const { data: pending, error: pendingErr } = await supabase
+      .from('tournament_knockout_candidates')
+      .select('eliminated_user_id')
+      .eq('tournament_id', this.tournamentId)
+      .eq('state', 'pending');
+    if (pendingErr || !pending) {
+      reportError(
+        pendingErr ?? new Error('pending knockout candidates unreadable'),
+        'Tournament.mystery_unrecorded_knockouts_unreadable'
+      );
+      return null;
+    }
+    const userIds = [
+      ...new Set(
+        (pending as Array<{ eliminated_user_id: unknown }>)
+          .map((r) => (r.eliminated_user_id == null ? '' : String(r.eliminated_user_id)))
+          .filter((id) => id.length > 0)
+      ),
+    ];
+    if (userIds.length === 0) return 0;
+    const { count, error } = await supabase
+      .from('tournament_players')
+      .select('*', { count: 'exact', head: true })
+      .eq('tournament_id', this.tournamentId)
+      .eq('status', 'playing')
+      .in('user_id', userIds);
+    if (error || count == null) {
+      reportError(
+        error ?? new Error('unrecorded knockout count unreadable'),
+        'Tournament.mystery_unrecorded_knockouts_unreadable'
+      );
+      return null;
+    }
+    return count;
   }
 
   /**
@@ -4156,7 +4633,8 @@ export abstract class TournamentManagerBase {
       !this.handForHandActive ||
       !this.running ||
       this.isOnBreak() ||
-      this.satelliteQualifierBoundaryPending
+      this.satelliteQualifierBoundaryPending ||
+      this.mysteryActivationBoundaryPending
     )
       return;
     const expectedIds = [...this.handForHandTableIds];
@@ -4935,6 +5413,7 @@ export abstract class TournamentManagerBase {
       }
 
       this.tournamentCache = tournament;
+      noteTerminalFinishClub(this.tournamentId, tournament.club_id);
       await this.readTournamentClub(tournament.club_id);
       this.assertLifecycleCurrent(lifecycle);
 
@@ -5298,11 +5777,35 @@ export abstract class TournamentManagerBase {
        * its transaction time into the new receipt; an incomplete replay then
        * adopts that stored value instead of reconstructing it locally.
        */
+      /* A SEAT-FIRST GAME STARTS WHEN IT STARTS (2026-10-02). Its
+         start_time is the close of the human window, not an advertised
+         start: a board that waited half an hour for its field was stamped
+         started_at at that close and read as "RUNNING 30 minutes without a
+         hand" though it dealt within seconds of launch. A window still open
+         keeps its pre-seat hold; one already closed lets the database stamp
+         the launch transaction's own instant. */
+      /* A FULL SPIN OR HEADS-UP DEALS NOW, NOT AT THE WINDOW CLOSE
+         (2026-10-02, later). A Spin or Heads-Up launches only when its last
+         seat is paid, and fn_take_seat_and_buy_in tells that player
+         starts_now. Holding the deal to the close of the human window then
+         holds nothing for anyone: measured on production, a human took the
+         third seat of Spin f92b0b22 at 18:40:43Z, the reveal ended at
+         18:41:09Z, and the first hand waited for the window close at
+         18:43:40Z - 170 s of a full table with no cards, which the table
+         watchdog then reported as "stalled 166s with no current seat". Only
+         the seat-first satellite keeps the old rule; its start is advertised. */
+      const startsWhenFull =
+        isPersistedSeatFirst(tournament) &&
+        readPersistedTournamentFormatContract(tournament) !== 'seat-first-satellite-v1';
       const scheduledStartMs = Date.parse(String(tournament.start_time ?? ''));
       const existingStartMs = Date.parse(String(tournament.started_at ?? ''));
+      const scheduledStartIsAdvertised =
+        Number.isFinite(scheduledStartMs) &&
+        !startsWhenFull &&
+        (!isPersistedSeatFirst(tournament) || scheduledStartMs > Date.now());
       const requestedStartedAtIso = Number.isFinite(existingStartMs)
         ? new Date(existingStartMs).toISOString()
-        : Number.isFinite(scheduledStartMs)
+        : scheduledStartIsAdvertised
           ? new Date(scheduledStartMs).toISOString()
           : null;
       const requestedLaunchId = nodeCrypto.randomUUID();
@@ -6357,6 +6860,7 @@ export abstract class TournamentManagerBase {
       }
 
       this.tournamentCache = tournament;
+      noteTerminalFinishClub(this.tournamentId, tournament.club_id);
       // Restore the durable hold before admitting replacement dealers. Even
       // an expired countdown remains paused until its release is acknowledged.
       this.onBreak = tournament.on_break === true;
@@ -7311,6 +7815,7 @@ export abstract class TournamentManagerBase {
     }
     if (!Array.isArray(tournament.blind_structure)) tournament.blind_structure = [];
     this.tournamentCache = tournament;
+    noteTerminalFinishClub(this.tournamentId, tournament.club_id);
     this.prizePoolFinalized = tournament.prize_pool_finalized || false;
     this.tournamentEntryWindowClosed = this.prizePoolFinalized;
 
@@ -8847,6 +9352,8 @@ export abstract class TournamentManagerBase {
   } | null = null;
   private blindTransitionInFlight = false;
   private blindClockNeedsThawResync = false;
+  /** The structure the armed level wake will hand to advanceBlindLevel. */
+  private blindWakeStructure: any[] | null = null;
   private blindClockTerminalCommitted = false;
 
   /** Stop level work once a verified terminal receipt exists, even while
@@ -8863,6 +9370,7 @@ export abstract class TournamentManagerBase {
   private scheduleBlindLevelWake(blindStructure: any[], delayMs: number): void {
     if (this.blindClockTerminalCommitted) return;
     if (this.blindTimer) this.clearLifecycleTimeout(this.blindTimer);
+    this.blindWakeStructure = blindStructure;
     this.blindTimer = this.setLifecycleTimeout(() => {
       this.blindTimer = null;
       return this.advanceBlindLevel(blindStructure).catch((err: unknown) => {
@@ -8933,12 +9441,18 @@ export abstract class TournamentManagerBase {
     // Persist the level clock (wall-clock start of THIS level's remaining
     // window) so a restart resumes the level mid-flight. Detached from the
     // caller, but still drained by this exact lifecycle before replacement.
+    // Fenced like the break release and the publication RPC: the anchor
+    // belongs to the level this process armed, on a RUNNING event, and can
+    // never land on a level the row has since moved past.
+    const armedLevel = this.currentLevel;
     void this.trackLifecycleJob(
       Promise.resolve(
         supabase
           .from('tournaments')
           .update({ level_started_at: new Date(this.blindTimerStartedAt).toISOString() })
           .eq('id', this.tournamentId)
+          .eq('status', 'RUNNING')
+          .eq('current_level', armedLevel)
       )
         .then(({ error }: { error: { message?: string } | null }) => {
           if (error && !/column|schema/i.test(error.message || '')) {
@@ -8946,6 +9460,9 @@ export abstract class TournamentManagerBase {
               `[Tournament:${this.tournamentId.slice(0, 8)}] level_started_at persist failed: ${error.message}`
             );
           }
+          // The level clock is durable now. A context read that started before
+          // this write saw no anchor and reported `level_timing_missing`.
+          if (!error) refreshTournamentBrainContextAfterClockCommit(this.tournamentId);
         })
         .catch((err: unknown) => {
           console.warn(
@@ -9119,6 +9636,10 @@ export abstract class TournamentManagerBase {
           const remaining = Math.min(duration, duration - (Date.now() - anchor));
           this.blindTimerStartedAt = anchor;
           if (this.tournamentCache) this.tournamentCache.level_started_at = clock.level_started_at;
+          // The thaw moved the durable anchor this process now runs on. The
+          // Horse tournament context must not keep the pre-thaw anchor, whose
+          // elapsed time still counts the frozen minutes.
+          refreshTournamentBrainContextAfterClockCommit(this.tournamentId);
           if (remaining > 1000) {
             deferredWakeMs = remaining;
             return;
@@ -9358,6 +9879,10 @@ export abstract class TournamentManagerBase {
       }
       this.pendingBlindTransition = null;
       committed = { level, startedAt: levelStartedAt };
+      // The new level is committed on the tournament and every table. The
+      // Horse tournament context reads it now instead of up to one refresh
+      // interval later, when new hands would already be dealt at these stakes.
+      refreshTournamentBrainContextAfterClockCommit(this.tournamentId);
       // Announce only after every table and the tournament accepted this level.
       for (const tableId of this.tableEngines.keys()) {
         // Phase X5 (2026-04-28): emit level_up discrete event so clients
@@ -9577,6 +10102,11 @@ export abstract class TournamentManagerBase {
       return;
     }
 
+    // The durable window says this break has not started yet. A break that is
+    // already active here was begun from a deadline the window has since left
+    // behind; see withdrawAddOnBreakBegunBeforeItsStart.
+    if (this.addOnBreakActive) this.withdrawAddOnBreakBegunBeforeItsStart();
+
     this.addOnBreakStartTimer = this.setLifecycleTimeout(() => {
       this.addOnBreakStartTimer = null;
       return this.beginAddOnBreak(endMs).catch((error) =>
@@ -9682,6 +10212,125 @@ export abstract class TournamentManagerBase {
       this.startBlindTimer(blindStructure, remaining > 0 ? remaining : undefined);
     }
     this.advanceHandForHandBarrier();
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  A BREAK BEGUN INSIDE THE FREEZE HAS NOT BEGUN (2026-10-04)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * The add-on break is the last `addon_break_minutes` of the durable add-on
+   * window, and its start is a wall-clock timer. The platform clock stops for
+   * the maintenance freeze and fn_thaw_platform then moves
+   * `addon_period_ends_at` forward by the frozen duration, so a break whose
+   * pre-thaw start fell INSIDE the freeze starts, after the thaw, that same
+   * duration later. The timer does not know that. It fired inside the freeze,
+   * beginAddOnBreak adopted the pause, and the thaw re-read re-armed the START
+   * timer for the shifted deadline but left the adopted break active. Nothing
+   * lifted it until the shifted END, so the one-minute break held every table
+   * from the thaw to the shifted end with no break announced.
+   *
+   * Measured 2026-10-04, $100 Freeroll e51546f6: the window opened 11:02:11
+   * and runs 58 minutes (57 of entry plus the one-minute break), so its break
+   * start fell at 11:59:11, inside the 11:55 freeze; the thawed row ends
+   * 12:05:55. Last hand 11:54:07, next hand 12:06:12, on all 44 tables; every
+   * other event resumed at 12:01. Same shape on 03ba4530, a7d24468, bfcbea31
+   * (2026-10-04), afe0949c, da75d640 (2026-10-03) and 33a093ca (2026-10-02):
+   * each dealt zero hands in the five minutes before its add-on break. The
+   * hourly $100 Freeroll starts on the hour, so its break start lands in the
+   * freeze whenever the window opened within about three minutes of the
+   * start.
+   *
+   * The durable window is the only authority for this phase. When it says the
+   * break starts in the future, an active break is given back exactly as
+   * finishAddOnBreak gives one back, and the caller arms the start timer for
+   * the real deadline. This runs from the thaw re-read while the maintenance
+   * break still holds every dealer, so `resumeDealing` only lowers this
+   * manager's own pause and the tables resume with the rest of the platform.
+   * A break that began before the freeze is never withdrawn: its shifted start
+   * is in the past and scheduleAddOnBreak re-enters beginAddOnBreak instead.
+   */
+  private withdrawAddOnBreakBegunBeforeItsStart(): void {
+    if (!this.addOnBreakActive) return;
+    const heldUntilMs = this.addOnBreakEndsAtMs;
+    const ownsLevelClock = this.addOnBreakOwnsLevelClock;
+    this.addOnBreakActive = false;
+    this.addOnBreakEndsAtMs = 0;
+    this.addOnBreakOwnsLevelClock = false;
+    this.addOnBreakOwnsPause = false;
+    if (!this.running) return;
+
+    const releasePause = !this.onBreak && !this.handForHandActive && !this.stageEndPause;
+    for (const engine of this.tableEngines.values()) {
+      try {
+        // The absolute hold was placed for the deadline that no longer exists.
+        engine.releaseDealingHold(heldUntilMs);
+        if (releasePause) engine.resumeDealing();
+      } catch (error) {
+        reportError(error, 'TournamentManagerBase.addon_break_withdraw_resume');
+      }
+    }
+
+    if (ownsLevelClock && !this.onBreak && !this.stageEndPause) {
+      const blindStructure = this.tournamentCache?.blind_structure || [];
+      const measured = this.savedBlindTimerRemaining;
+      this.savedBlindTimerRemaining = 0;
+      this.rearmLevelClockFromThawedAnchor(blindStructure, measured);
+    }
+    this.advanceHandForHandBarrier();
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  A WITHDRAWN BREAK GIVES THE LEVEL CLOCK BACK FROM THE THAWED ROW (2026-10-05)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * The add-on break that was withdrawn above suspended the level clock when it
+   * began, INSIDE the freeze. suspendLevelClock measured the remaining time
+   * against the pre-freeze anchor, so every minute from the freeze start to the
+   * break start was counted as played. Re-arming from that measurement through
+   * startBlindTimer burned those minutes, and startBlindTimer also persisted
+   * the burned anchor with an unfenced, detached write. The thaw re-read in
+   * GameServer runs resyncLevelClockAfterMaintenanceThaw straight after this:
+   * when its read beat the detached write, memory followed the correctly
+   * thawed anchor and the row was then overwritten with the burned one, so the
+   * next restart resumed the level up to the whole freeze short.
+   *
+   * The add-on break never moved the durable anchor (suspendLevelClock is
+   * memory only) and fn_thaw_platform has already shifted it by the frozen
+   * duration, so the row IS the correct clock. Nothing is written here. The
+   * measured remainder only arms a provisional local wake, and the thaw-resync
+   * flag makes the clock follow the durable anchor: the thaw re-read re-arms
+   * from it at once, and if that read does not land, the wake itself rereads
+   * the anchor before it may publish a level (advanceBlindLevel).
+   */
+  private rearmLevelClockFromThawedAnchor(
+    blindStructure: any[],
+    measuredRemainingMs: number
+  ): void {
+    if (this.blindClockTerminalCommitted || blindStructure.length === 0) return;
+    // A publication retry and a booked future start keep their own clocks and
+    // never persist an anchor from startBlindTimer.
+    if (
+      this.pendingBlindTransition ||
+      Date.parse(String(this.tournamentCache?.started_at ?? '')) > Date.now()
+    ) {
+      this.startBlindTimer(
+        blindStructure,
+        measuredRemainingMs > 0 ? measuredRemainingMs : undefined
+      );
+      return;
+    }
+    const current = this.resolveBlindLevel(blindStructure, this.currentLevel) || blindStructure[0];
+    const durationMs = this.levelDurationMs(current);
+    if (!Number.isFinite(durationMs) || durationMs <= 0) return;
+    const armMs =
+      measuredRemainingMs > 0
+        ? Math.min(Math.max(1000, measuredRemainingMs), durationMs)
+        : durationMs;
+    this.blindTimerStartedAt = Date.now() - (durationMs - armMs);
+    this.blindClockNeedsThawResync = true;
+    this.scheduleBlindLevelWake(blindStructure, armMs);
   }
 
   /**
@@ -10397,6 +11046,102 @@ export abstract class TournamentManagerBase {
   public async resyncAddOnPeriodAfterMaintenanceThaw(): Promise<void> {
     if (!this.running || !this.addOnPeriodTriggered) return;
     await this.drivePersistedAddOnDeadline(true);
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  A LEVEL THAT SPANS THE FREEZE ENDS WHERE THE THAW SAYS (2026-10-02)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * fn_thaw_platform moves `level_started_at` forward by the frozen duration
+   * for every RUNNING event that is not on the synchronized break: Spins,
+   * Sit-n-Gos, Heads-Up and every event that opts out of the :55 break. The
+   * live level wake of such an event is a setTimeout armed from the pre-freeze
+   * anchor, and nothing paused it across the freeze.
+   *
+   * A level that came due INSIDE the freeze was already handled: the wake is
+   * held and `blindClockNeedsThawResync` makes it read the shifted anchor.
+   * A level that did NOT come due inside the freeze was not. Its wake kept the
+   * pre-freeze deadline and fired once the platform was back, the full length
+   * of the freeze early, and advanceBlindLevel published the next level then.
+   * With a 7-minute freeze (:53 to :00), a level with 9 minutes left at :53
+   * went up at :02 against a durable clock that said :09. The publication
+   * RPC does not check due time, so nothing downstream caught it.
+   *
+   * The thaw hook in GameServer calls this after fn_thaw_platform has
+   * committed and before any table resumes. It reads the durable row and
+   * re-arms the wake from the shifted anchor. The flag is raised before the
+   * read, so a wake that fires before the read lands rereads the anchor
+   * itself instead of publishing from pre-freeze time. Any read that does not
+   * match this clock leaves that flag set; the wake then rereads the row and
+   * holds the level on any mismatch, exactly as it does after a held level.
+   *
+   * The Horse tournament context caches this row for up to 20 s. The thaw has
+   * just committed new clock facts to it (the level anchor, an add-on
+   * deadline), so the context is told to reread now rather than describe the
+   * pre-thaw clock until its TTL runs out.
+   */
+  public async resyncLevelClockAfterMaintenanceThaw(): Promise<void> {
+    if (!this.running) return;
+    refreshTournamentBrainContextAfterClockCommit(this.tournamentId);
+    // A break suspended this clock and resumeFromBreak re-arms it; the thaw
+    // did not shift that row. A transition in flight or a pending
+    // publication already rereads the durable clock on its next wake.
+    const armed = this.blindTimer;
+    if (
+      !armed ||
+      this.onBreak ||
+      this.blindClockTerminalCommitted ||
+      this.blindTransitionInFlight ||
+      this.pendingBlindTransition
+    )
+      return;
+    const lifecycle = this.lifecycleEpoch.current();
+    const level = this.currentLevel;
+    this.blindClockNeedsThawResync = true;
+    const { data: clock, error } = await supabase
+      .from('tournaments')
+      .select('id,status,current_level,on_break,level_started_at')
+      .eq('id', this.tournamentId)
+      .maybeSingle();
+    if (
+      !this.lifecycleIsCurrent(lifecycle) ||
+      this.blindClockTerminalCommitted ||
+      this.onBreak ||
+      this.blindTimer !== armed ||
+      this.blindTransitionInFlight ||
+      this.pendingBlindTransition ||
+      this.currentLevel !== level
+    )
+      return;
+    const anchor =
+      typeof clock?.level_started_at === 'string' ? Date.parse(clock.level_started_at) : NaN;
+    if (
+      error ||
+      clock?.id !== this.tournamentId ||
+      clock.status !== 'RUNNING' ||
+      clock.on_break === true ||
+      clock.current_level !== level ||
+      !Number.isFinite(anchor)
+    )
+      return;
+    // Re-arm with the structure the armed wake would have used, never one
+    // read from elsewhere. Without it, without the row this manager runs on
+    // (levelDurationMs reads its acceleration), or without a real duration,
+    // nothing here is changed: the flag stays set and the armed wake rereads
+    // the anchor itself. setTimeout(NaN) would fire at once.
+    const blindStructure = this.blindWakeStructure;
+    if (!this.tournamentCache || !Array.isArray(blindStructure) || blindStructure.length === 0)
+      return;
+    const current = this.resolveBlindLevel(blindStructure, level) || blindStructure[0];
+    const duration = this.levelDurationMs(current);
+    if (!Number.isFinite(duration) || duration <= 0) return;
+    const remaining = Math.min(duration, duration - (Date.now() - anchor));
+    if (!Number.isFinite(remaining)) return;
+    this.blindClockNeedsThawResync = false;
+    this.blindTimerStartedAt = anchor;
+    this.tournamentCache.level_started_at = clock.level_started_at;
+    this.scheduleBlindLevelWake(blindStructure, Math.max(1000, remaining));
   }
 
   /**

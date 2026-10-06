@@ -586,9 +586,9 @@ export function fleetQuartile(
  * shape as the floor bug directly below: a blended number judged against an
  * unblended band.
  *
- * Heads-up frequencies are owned by the brain's heads-up overlay (V16 v16Hu,
- * which widens ranges by seat count at decision time) and are not tuned
- * here. hu_cash rows stay on the panel and in the real-nets loop further
+ * Heads-up frequencies are owned by the brain's heads-up preflop logic
+ * (HorsePreflop headsUp / trueHu, which widens ranges by seat count at
+ * decision time) and are not tuned here. hu_cash rows stay on the panel and in the real-nets loop further
  * down, where money is money whatever the seat count.
  */
 export const TUNER_STUDY_FORMAT = 'cash';

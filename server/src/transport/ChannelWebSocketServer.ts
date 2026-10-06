@@ -38,6 +38,7 @@
  */
 
 import { WebSocketServer, WebSocket, type RawData } from 'ws';
+import { parseUpgradeTarget } from './upgradeTarget.js';
 import type { IncomingMessage } from 'http';
 import type { Server as HttpServer } from 'http';
 import { supabase } from '../services/supabase.js';
@@ -90,6 +91,10 @@ const TERMINATE_GRACE_MS = 250;
 const INBOUND_RATE_LIMIT = 30; // messages per second per connection
 const INBOUND_RATE_WINDOW_MS = 1_000;
 const MAX_INBOUND_MESSAGE_BYTES = 8 * 1024;
+/* Enforced by the library while a message is still arriving; the
+   MAX_INBOUND_MESSAGE_BYTES check only runs once a whole message has been
+   received (`ws` defaults to 100 MiB). */
+const MAX_FRAME_PAYLOAD_BYTES = 64 * 1024;
 const HAND_REPLAY_DELAY_MS = 200;
 // Preserve concurrent hand-ID subscriptions without letting one connection or
 // a reconnect storm create an unbounded number of reads and replay timers.
@@ -168,7 +173,7 @@ export class ChannelWebSocketServer {
   private activeHandReplays = new Set<PendingHandReplay>();
 
   constructor(private readonly tournamentHandForHand?: (tournamentId: string) => boolean | null) {
-    this.wss = new WebSocketServer({ noServer: true });
+    this.wss = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME_PAYLOAD_BYTES });
   }
 
   /**
@@ -177,7 +182,10 @@ export class ChannelWebSocketServer {
    */
   attach(httpServer: HttpServer): void {
     httpServer.on('upgrade', (req, socket, head) => {
-      const url = new URL(req.url || '/', 'http://localhost');
+      // An unparseable target is not ours; EngineWebSocketServer's listener
+      // has already refused it with a 400 (see upgradeTarget.ts).
+      const url = parseUpgradeTarget(req.url);
+      if (!url) return;
 
       // Only handle our path — leave /ws/table/:tableId to EngineWebSocketServer
       if (url.pathname !== '/ws/channel') return;

@@ -42,22 +42,16 @@
  * separated by the engraved rule the master cuts between its own rows.
  *
  * WHAT DID NOT CHANGE, AND MUST NOT: the single `ca_club_financials` call and
- * its window, the strict club resolve, the `isAuthzError` -> `setDenied`
- * permission gate and its `<PermissionState>`, the eight masterBus
- * subscriptions and their debounce windows, the `loadingRef` in-flight guard,
- * the stagger timers on Recent Rake, the CSV export's columns and arithmetic,
- * and every wallet the header opens (club bank, promo, agent, player). This
- * page reads a club's books and opens its cashiers; not one of those paths
- * was touched.
+ * its window, the strict club resolve, the `isAuthzError` permission gate, the
+ * six masterBus subscriptions and their debounce windows, the scope-aware
+ * in-flight guard, the stagger timers on Recent Rake, the CSV export's columns
+ * and arithmetic, and every wallet the header opens (club bank, promo, agent,
+ * player). This page reads a club's books and opens its cashiers; not one of
+ * those paths was touched.
  *
- * THE FIGURES ARE STILL EXACT, DELIBERATELY. `compactChips` is the rule for
- * chip figures outside the felt, and it is used here for the COUNTS. It is
- * not used for the money, and the reason is arithmetic: it floors below
- * 1,000, so `compactChips(0.5)` is "0". Rake on this platform is routinely
- * under one chip a hand - "0 Raked From A 42 Pot" is not a rounding, it is a
- * false statement about money on the one screen whose job is the ledger. The
- * `chips()` formatter below is untouched from the version this page shipped
- * with.
+ * Forward-facing chip figures use the shared Club Arena compact contract:
+ * whole chips below 1,000 and K/M/B above it, always rounded down. The CSV
+ * remains the exact accounting record and never reuses this display formatter.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -71,8 +65,6 @@ import { useToast } from '../components/common/Toast';
 import { ClubFinancialDashboard } from '../components/dashboard/ClubFinancialDashboard';
 import FinancialChart from '../components/charts/FinancialChart';
 import RakeReports from '../components/admin/RakeReports';
-import PageSkeleton from '../components/common/PageSkeleton';
-import { ErrorState, PermissionState } from '../components/common/EmptyState';
 import TransactionLedgerView from '../components/common/TransactionLedgerView';
 import ChipStatement from '../components/wallet/ChipStatement';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -90,82 +82,29 @@ import { formatDateShort as formatDate, compactChips } from '../utils/format';
 import { downloadCsv, toCsv } from '../utils/downloadCsv';
 import { reportError } from '../utils/errorReporter';
 import { formatPopupText } from '../utils/popupStyle';
-
-interface FinancialTotals {
-  raked_hands: number;
-  gross_rake: number;
-  bbj_drop: number;
-  net_rake: number;
-  pot_volume: number;
-  tournament_fees: number;
-  rakeback_paid: number;
-  rakeback_rows: number;
-  agent_commissions: number;
-  union_fee: number;
-  union_statements: number;
-  union_squareup: number;
-  net_revenue: number;
-}
-
-interface FinancialDay {
-  d: string;
-  raked_hands: number;
-  gross_rake: number;
-  bbj_drop: number;
-  pot_volume: number;
-  tournament_fees: number;
-  rakeback_paid: number;
-  agent_commissions: number;
-  union_fee: number;
-}
-
-interface FinancialTable {
-  table_id: string;
-  name: string;
-  status: string;
-  stakes: string | null;
-  variant: string | null;
-  raked_hands: number;
-  rake: number;
-  players: number;
-  table_net: number;
-}
-
-interface RecentRake {
-  id: string;
-  hand_id: string | null;
-  global_hand_id: number | null;
-  table_name: string;
-  kind: string;
-  rake_amount: number;
-  bbj_contribution: number;
-  pot_size: number;
-  num_players: number | null;
-  created_at: string;
-}
-
-interface FinancialsPayload {
-  range: {
-    start: string;
-    end: string;
-    days: number;
-    first_day: string;
-    series_from: string;
-  };
-  union_id: string | null;
-  totals: FinancialTotals;
-  daily: FinancialDay[];
-  by_table: FinancialTable[];
-  recent: RecentRake[];
-  data_updated_at: string | null;
-  club_table_daily_updated_at: string | null;
-  generated_at: string;
-}
+import { titleCase } from '../utils/titleCase';
+import { parseClubFinancialsPayload, type FinancialsPayload } from '../utils/clubFinancialsPayload';
 
 type Period = 'week' | 'month' | 'all';
 
+interface FinancialSnapshot {
+  scope: string;
+  resolvedClubId: string;
+  requestedStart: string;
+  requestedEnd: string;
+  data: FinancialsPayload;
+}
+
+interface FinancialRequestState {
+  scope: string;
+  loading: boolean;
+  loadError: string | null;
+  denied: boolean;
+  notFound: boolean;
+}
+
 /** The window the operator asked for, as UTC dates the server understands. */
-function windowFor(period: Period): { start: string | null; end: string | null } {
+function windowFor(period: Period): { start: string; end: string } {
   const today = new Date();
   const end = today.toISOString().slice(0, 10);
   if (period === 'all') return { start: '2020-01-01', end };
@@ -174,12 +113,11 @@ function windowFor(period: Period): { start: string | null; end: string | null }
   return { start: from.toISOString().slice(0, 10), end };
 }
 
-const chips = (n: number | null | undefined) =>
-  Number(n ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const chips = (n: number | null | undefined) => compactChips(n ?? 0);
 /* Counts are whole and can never be a fraction of a chip, so they take the
    platform's compact form: 124,549 raked hands reads "124.5K", rounded down,
    never overstated. */
-const count = (n: number | null | undefined) => compactChips(Math.trunc(Number(n ?? 0)));
+const count = (n: number | null | undefined) => compactChips(Math.trunc(n ?? 0));
 
 /** "Sep 3", from a UTC date string, without letting the local zone shift it. */
 function dayLabel(iso: string): string {
@@ -197,12 +135,16 @@ export default function ClubFinancialsPage() {
   const { clubId } = useParams();
   const { user } = useAuthUser();
 
-  const [data, setData] = useState<FinancialsPayload | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [denied, setDenied] = useState(false);
-  const [notFound, setNotFound] = useState(false);
   const [period, setPeriod] = useState<Period>('week');
+  const scopeKey = `${user?.id ?? 'signed-out'}:${clubId ?? ''}:${period}`;
+  const [snapshot, setSnapshot] = useState<FinancialSnapshot | null>(null);
+  const [requestState, setRequestState] = useState<FinancialRequestState>({
+    scope: scopeKey,
+    loading: true,
+    loadError: null,
+    denied: false,
+    notFound: false,
+  });
   const [userRole, setUserRole] = useState<ClubRole | null>(null);
   const [resolvedClubId, setResolvedClubId] = useState<string | null>(
     isUUID(clubId || '') ? (clubId as string) : null
@@ -219,18 +161,47 @@ export default function ClubFinancialsPage() {
   const toast = useToast();
 
   const isMounted = useIsMounted();
-  const loadingRef = useRef(false);
   const loadRef = useRef<() => void>(() => {});
+  const requestVersionRef = useRef(0);
+  const inFlightRef = useRef<{ scope: string; requestId: number } | null>(null);
+  const activeScopeRef = useRef(scopeKey);
+  activeScopeRef.current = scopeKey;
+  const roleScopeKey = `${user?.id ?? 'signed-out'}:${clubId ?? ''}`;
+  const activeRoleScopeRef = useRef(roleScopeKey);
+  activeRoleScopeRef.current = roleScopeKey;
+
+  const data = snapshot?.scope === scopeKey ? snapshot.data : null;
+  const embeddedWeekSnapshot = useMemo(
+    () =>
+      period === 'week' && snapshot?.scope === scopeKey
+        ? {
+            resolvedClubId: snapshot.resolvedClubId,
+            requestedStart: snapshot.requestedStart,
+            requestedEnd: snapshot.requestedEnd,
+            financials: snapshot.data,
+          }
+        : undefined,
+    [period, scopeKey, snapshot]
+  );
+  const stateForScope: FinancialRequestState =
+    requestState.scope === scopeKey
+      ? requestState
+      : {
+          scope: scopeKey,
+          loading: true,
+          loadError: null,
+          denied: false,
+          notFound: false,
+        };
+  const { loading, loadError, denied, notFound } = stateForScope;
 
   // ── Reset per-club state when navigating between clubs ──
   useEffect(() => {
     setUserRole(null);
-    setData(null);
-    setDenied(false);
-    setNotFound(false);
-    setLoadError(null);
+    setSnapshot(null);
     setVisibleTransactions(new Set());
-    loadingRef.current = false;
+    setActiveCashier(null);
+    setShowPlayerWallet(false);
     setResolvedClubId(isUUID(clubId || '') ? (clubId as string) : null);
   }, [clubId]);
 
@@ -241,11 +212,14 @@ export default function ClubFinancialsPage() {
   useEffect(() => {
     if (!clubId || !user?.id) return;
     let cancelled = false;
+    const requestRoleScope = roleScopeKey;
+    const isCurrentRole = () =>
+      !cancelled && isMounted.current && activeRoleScopeRef.current === requestRoleScope;
     (async () => {
       try {
         const { resolveClubUUIDStrict } = await import('../utils/strictClubIdResolver');
         const resolved = await resolveClubUUIDStrict(clubId);
-        if (cancelled || !isMounted.current) return;
+        if (!isCurrentRole()) return;
         setResolvedClubId(resolved);
         const [membership, club] = await Promise.all([
           supabase
@@ -256,7 +230,7 @@ export default function ClubFinancialsPage() {
             .maybeSingle(),
           supabase.from('clubs').select('owner_id').eq('id', resolved).maybeSingle(),
         ]);
-        if (cancelled || !isMounted.current) return;
+        if (!isCurrentRole()) return;
         if (club.data?.owner_id === user.id) {
           setUserRole('owner');
         } else if (membership.data?.role) {
@@ -265,11 +239,16 @@ export default function ClubFinancialsPage() {
           setUserRole('player');
         }
       } catch (e) {
-        if (cancelled || !isMounted.current) return;
+        if (!isCurrentRole()) return;
         const name = (e as { name?: string } | null)?.name;
         if (name === 'ClubNotFoundError') {
-          setNotFound(true);
-          setLoading(false);
+          const currentScope = activeScopeRef.current;
+          setRequestState((current) => ({
+            ...current,
+            scope: currentScope,
+            notFound: true,
+            loading: false,
+          }));
           return;
         }
         reportError(e, 'ClubFinancialsPage.role');
@@ -280,18 +259,30 @@ export default function ClubFinancialsPage() {
     return () => {
       cancelled = true;
     };
-  }, [clubId, user?.id, isMounted]);
+  }, [clubId, user?.id, isMounted, roleScopeKey]);
 
   const load = useCallback(async () => {
     if (!clubId) return;
-    if (loadingRef.current) return;
-    loadingRef.current = true;
-    setLoading(true);
-    setLoadError(null);
+    const requestScope = scopeKey;
+    if (inFlightRef.current?.scope === requestScope) return;
+    const requestId = ++requestVersionRef.current;
+    inFlightRef.current = { scope: requestScope, requestId };
+    const isCurrent = () =>
+      isMounted.current &&
+      activeScopeRef.current === requestScope &&
+      requestVersionRef.current === requestId;
+
+    setRequestState({
+      scope: requestScope,
+      loading: true,
+      loadError: null,
+      denied: false,
+      notFound: false,
+    });
     try {
       const { resolveClubUUIDStrict } = await import('../utils/strictClubIdResolver');
       const resolved = await resolveClubUUIDStrict(clubId);
-      if (!isMounted.current) return;
+      if (!isCurrent()) return;
       setResolvedClubId(resolved);
       const { start, end } = windowFor(period);
       const { data: payload, error } = await supabase.rpc('ca_club_financials', {
@@ -299,30 +290,51 @@ export default function ClubFinancialsPage() {
         p_start: start,
         p_end: end,
       });
-      if (!isMounted.current) return;
+      if (!isCurrent()) return;
       if (error) {
         if (isAuthzError(error)) {
-          setDenied(true);
-          setData(null);
+          setSnapshot(null);
+          setRequestState((current) =>
+            current.scope === requestScope ? { ...current, denied: true } : current
+          );
           return;
         }
         throw error;
       }
-      setDenied(false);
-      setData(payload as FinancialsPayload);
+      setSnapshot({
+        scope: requestScope,
+        resolvedClubId: resolved,
+        requestedStart: start,
+        requestedEnd: end,
+        data: parseClubFinancialsPayload(payload, { clubId: resolved, start, end }),
+      });
     } catch (error) {
-      if (!isMounted.current) return;
+      if (!isCurrent()) return;
       if ((error as { name?: string } | null)?.name === 'ClubNotFoundError') {
-        setNotFound(true);
+        setSnapshot(null);
+        setRequestState((current) =>
+          current.scope === requestScope ? { ...current, notFound: true } : current
+        );
         return;
       }
       reportError(error, 'ClubFinancialsPage.load');
-      setLoadError('The Club Financials Could Not Be Loaded. No Figures Have Been Estimated.');
+      setRequestState((current) =>
+        current.scope === requestScope
+          ? {
+              ...current,
+              loadError: 'The Club Financials Could Not Be Loaded. No Figures Have Been Estimated.',
+            }
+          : current
+      );
     } finally {
-      loadingRef.current = false;
-      if (isMounted.current) setLoading(false);
+      if (inFlightRef.current?.requestId === requestId) inFlightRef.current = null;
+      if (isCurrent()) {
+        setRequestState((current) =>
+          current.scope === requestScope ? { ...current, loading: false } : current
+        );
+      }
     }
-  }, [clubId, period, isMounted]);
+  }, [clubId, isMounted, period, scopeKey]);
 
   useEffect(() => {
     void load();
@@ -366,9 +378,9 @@ export default function ClubFinancialsPage() {
     () =>
       (data?.daily || []).map((d) => ({
         name: dayLabel(d.d),
-        rake: Number(d.gross_rake) || 0,
-        rakeback: Number(d.rakeback_paid) || 0,
-        commissions: Number(d.agent_commissions) || 0,
+        rake: d.gross_rake,
+        rakeback: d.rakeback_paid,
+        commissions: d.agent_commissions,
       })),
     [data]
   );
@@ -380,18 +392,18 @@ export default function ClubFinancialsPage() {
       d.raked_hands,
       d.gross_rake,
       d.bbj_drop,
-      Number(d.gross_rake) - Number(d.bbj_drop),
+      d.gross_rake - d.bbj_drop,
       d.pot_volume,
       d.tournament_fees,
       d.rakeback_paid,
       d.agent_commissions,
       d.union_fee,
-      Number(d.gross_rake) -
-        Number(d.bbj_drop) +
-        Number(d.tournament_fees) -
-        Number(d.rakeback_paid) -
-        Number(d.agent_commissions) -
-        Number(d.union_fee),
+      d.gross_rake -
+        d.bbj_drop +
+        d.tournament_fees -
+        d.rakeback_paid -
+        d.agent_commissions -
+        d.union_fee,
     ]);
     const ok = downloadCsv(
       `club-financials-${data.range.start}-to-${data.range.end}.csv`,
@@ -418,10 +430,24 @@ export default function ClubFinancialsPage() {
   if (notFound) {
     return (
       <StandardContentLayout className="financials-page">
-        <ErrorState
-          message="That Club Could Not Be Found."
-          onRetry={() => navigate('/clubs', { replace: true })}
-        />
+        <SpadeConsole
+          className="cf-console"
+          family="spade"
+          eyebrow="Club Arena"
+          title="Club Not Found"
+          pill="Missing"
+          pillInk="muted"
+          foot="foot"
+        >
+          <p className="sc-copy sc-copy--center">That Club Could Not Be Found.</p>
+          <button
+            type="button"
+            className="cf-word sc-ink--blue"
+            onClick={() => navigate('/clubs', { replace: true })}
+          >
+            Back To Clubs
+          </button>
+        </SpadeConsole>
       </StandardContentLayout>
     );
   }
@@ -429,11 +455,26 @@ export default function ClubFinancialsPage() {
   if (denied) {
     return (
       <StandardContentLayout className="financials-page">
-        <PermissionState
+        <SpadeConsole
+          className="cf-console"
+          family="spade"
+          eyebrow="Club Arena"
           title="Financials Are Restricted"
-          description="Club Financials Are Available To Club Owners, Admins And Super Agents."
-          onBack={() => navigate(`/clubs/${clubId}`)}
-        />
+          pill="Staff"
+          pillInk="red"
+          foot="foot"
+        >
+          <p className="sc-copy sc-copy--center">
+            Club Financials Are Available To Club Owners, Admins And Super Agents.
+          </p>
+          <button
+            type="button"
+            className="cf-word sc-ink--blue"
+            onClick={() => navigate(`/clubs/${clubId}`)}
+          >
+            Back To Club
+          </button>
+        </SpadeConsole>
       </StandardContentLayout>
     );
   }
@@ -443,6 +484,7 @@ export default function ClubFinancialsPage() {
       <StandardContentLayout className="financials-page">
         <SpadeConsole
           className="cf-console"
+          family="spade"
           aria-busy
           eyebrow="Club Arena"
           title="Financials"
@@ -450,7 +492,9 @@ export default function ClubFinancialsPage() {
           pillInk="muted"
           foot="foot"
         >
-          <PageSkeleton variant="financial" />
+          <p className="sc-copy sc-copy--center" role="status">
+            Reading The Club Ledger...
+          </p>
         </SpadeConsole>
       </StandardContentLayout>
     );
@@ -459,7 +503,22 @@ export default function ClubFinancialsPage() {
   if (loadError && !data) {
     return (
       <StandardContentLayout className="financials-page">
-        <ErrorState message={loadError} onRetry={() => void load()} />
+        <SpadeConsole
+          className="cf-console"
+          family="spade"
+          eyebrow="Club Arena"
+          title="Financials Unavailable"
+          pill="Retry"
+          pillInk="red"
+          foot="foot"
+        >
+          <p className="sc-copy sc-copy--center sc-ink--red" role="alert">
+            {loadError}
+          </p>
+          <button type="button" className="cf-word sc-ink--blue" onClick={() => void load()}>
+            Retry Financials
+          </button>
+        </SpadeConsole>
       </StandardContentLayout>
     );
   }
@@ -547,6 +606,7 @@ export default function ClubFinancialsPage() {
       {/* ── The window: three lit words and the export ───────────────── */}
       <SpadeConsole
         className="cf-console"
+        family="spade"
         aria-busy={loading || undefined}
         eyebrow="Club Arena"
         title="Financials"
@@ -579,17 +639,15 @@ export default function ClubFinancialsPage() {
           </p>
         )}
 
+        <button type="button" className="cf-word sc-ink--blue" onClick={exportCsv} disabled={!data}>
+          Export CSV
+        </button>
+
         {loadError && data && (
           <p className="sc-copy sc-copy--center sc-ink--red" role="alert">
             {loadError}
           </p>
         )}
-
-        {/* ONE ACTION, SO NO PLATES: the foot paints both plates or neither,
-            and a lone export would leave the other painted and empty. */}
-        <button type="button" className="cf-word sc-ink--blue" onClick={exportCsv} disabled={!data}>
-          Export CSV
-        </button>
       </SpadeConsole>
 
       {/* Revenue Chart. ca_club_financials caps the daily series at the
@@ -599,6 +657,7 @@ export default function ClubFinancialsPage() {
           the numbers. */}
       <SpadeConsole
         className="cf-console"
+        family="spade"
         eyebrow="Club Arena"
         title="Revenue Trend"
         subtitle={
@@ -615,6 +674,7 @@ export default function ClubFinancialsPage() {
       {totals && (
         <SpadeConsole
           className="cf-console"
+          family="spade"
           eyebrow={rangeNote || 'Club Arena'}
           title="Summary"
           pill={totals.net_revenue >= 0 ? 'Up' : 'Down'}
@@ -649,6 +709,7 @@ export default function ClubFinancialsPage() {
       {data && data.by_table.length > 0 && (
         <SpadeConsole
           className="cf-console"
+          family="spade"
           eyebrow="Club Arena"
           title="Top Tables By Rake"
           pill={count(data.by_table.length)}
@@ -658,10 +719,10 @@ export default function ClubFinancialsPage() {
           <ol className="cf-list">
             {data.by_table.map((t) => (
               <li key={t.table_id} className="cf-row">
-                <span className="cf-row__name sc-ink--silver">{t.name}</span>
+                <span className="cf-row__name sc-ink--silver">{titleCase(t.name)}</span>
                 <span className="cf-row__meta sc-ink--muted">
-                  {[t.variant, t.stakes].filter(Boolean).join(' ')} - {count(t.raked_hands)} Raked
-                  Hands
+                  {titleCase([t.variant, t.stakes].filter(Boolean).join(' '))} -{' '}
+                  {count(t.raked_hands)} Raked Hands
                 </span>
                 <span className="cf-row__amount sc-ink--green">{chips(t.rake)}</span>
               </li>
@@ -670,30 +731,31 @@ export default function ClubFinancialsPage() {
         </SpadeConsole>
       )}
 
-      {/* Club Financial Dashboard - Chip Minting & Commission (club staff).
-          This was owner-only, which left a co-owner - "everything an owner can
-          do except appoint another co owner" - without the one screen that
-          mints chips. fn_actor_can_manage_club_treasury admits all three. */}
-      {clubId && isClubStaff(userRole) && (
-        /* ClubFinancialDashboard and RakeReports below are separate
-           components with their own markup and their own stylesheets. They
-           are not part of this rebuild, so they are given room rather than a
-           frame: a card drawn here would be a frame on their frame. */
+      {/* Club Financial Dashboard (club staff). Money-changing work stays in
+          the maintained Club Bank Cashier and Agent Management surfaces. */}
+      {clubId && (isClubStaff(userRole) || userRole === 'super_agent') && (
+        /* ClubFinancialDashboard owns its approved painted consoles. This
+           embed supplies layout room only, so no frame sits on its frames. */
         <section className="cf-embed">
-          <ClubFinancialDashboard clubId={clubId} />
+          <ClubFinancialDashboard
+            clubId={clubId}
+            canManageAgents={isClubStaff(userRole)}
+            initialSnapshot={embeddedWeekSnapshot}
+          />
         </section>
       )}
 
       {/* Rake Analytics Reports */}
       {clubId && (
         <section className="cf-embed">
-          <RakeReports clubId={clubId} />
+          <RakeReports clubId={clubId} initialSnapshot={embeddedWeekSnapshot} />
         </section>
       )}
 
       {/* ── Recent raked hands ───────────────────────────────────────── */}
       <SpadeConsole
         className="cf-console"
+        family="spade"
         eyebrow="Club Arena"
         title="Recent Rake"
         pill={recent.length === 0 ? 'Empty' : count(recent.length)}
@@ -749,6 +811,7 @@ export default function ClubFinancialsPage() {
       {resolvedClubId && (
         <SpadeConsole
           className="cf-console"
+          family="spade"
           eyebrow="Club Arena"
           title="Club Chip Audit Trail"
           foot="foot"

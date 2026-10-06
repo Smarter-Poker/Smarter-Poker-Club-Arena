@@ -1,5 +1,15 @@
 /**
- * FirstRunPushPrompt — the one-time "turn on notifications" sheet for Club Arena.
+ * FirstRunPushPrompt — Club Arena's notification opt-in host.
+ *
+ * 2026-09-27: no longer only a one-time sheet. It hosts every opt-in ask: the
+ * first visit, plus the meaningful moments features announce with
+ * requestPushNudge() (joining a club, a rakeback receipt). WHETHER an ask may
+ * appear is decided by src/lib/pushNudgePolicy.ts, shared in behaviour and in
+ * localStorage with the World Hub: Not Now starts a cool-down instead of
+ * closing the door, at most one ask a day, never when this device is already
+ * on, turned off by the player, or blocked, and never for the owner's
+ * receipts (they route to Production Alerts). A moment's ask is a card that
+ * does not block the page; the first-visit ask keeps its sheet.
  *
  * WHY CLUB ARENA NEEDS ITS OWN
  * ────────────────────────────────────────────────────────────────────────
@@ -30,14 +40,10 @@
  * marking it done forever would mean the real permission prompt never runs
  * either.
  *
- * ONE ASK AT A TIME (2026-09-29, src/lib/promptLane.ts). The twenty-second
- * timer used to start at sign-in whatever else was on screen, so on the
- * first device run this sheet rose while the terms were still up, sat under
- * the age gate, stacked with the analytics question once the gate closed,
- * and stayed on the sign-in form after an under-18 refusal signed the
- * account out. Now it is LAST in the soft-ask order, its delay counts only
- * while the lane is clear, it shows only while it holds the turn, and a
- * sign-out or a different account starts it over.
+ * ONE ASK AT A TIME (2026-09-29, src/lib/promptLane.ts). This sheet is LAST in
+ * the soft-ask order: its delay counts only while the lane is clear, it shows
+ * only while it holds the turn, and a sign-out or a different account starts
+ * it over.
  *
  * Copy is Title Case with no em dashes, per CLAUDE.md section 5.7.
  */
@@ -48,60 +54,51 @@ import {
   hasLocalSubscription,
   isIos,
   isIosStandalonePwa,
+  isOptedOut,
   isWebPushSupported,
   notificationPermission,
 } from '../../lib/pushClient';
+import {
+  decideNudge,
+  NUDGE_EVENT,
+  readNudgeState,
+  recordDismissed,
+  recordShown,
+  takePendingNudge,
+  writeLedger,
+  isNudgeMoment,
+  type NudgeMoment,
+} from '../../lib/pushNudgePolicy';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { usePromptTurn } from '../../lib/promptLane';
 import './FirstRunPushPrompt.css';
 
 /**
- * ONE re-offer, on purpose. Read this before changing the suffix again.
+ * The legacy one-time key. Still WRITTEN when the player answers, because the
+ * World Hub's older bundle and the E2E harnesses read it as "already asked".
+ * It is no longer a permanent door: pushNudgePolicy reads it as one earlier
+ * Not Now and applies the cool-down.
  *
- * This prompt asks once per account per browser and then closes that door for
- * good. Between 2026-08-19 and 2026-08-29 the door was being closed against a
- * question nobody could answer yes to: the ROOT service worker this app enrols
- * against could not install at all, because one entry in its precache manifest
- * 404'd (World Hub PR #929). Every player who saw this sheet in that window and
- * tapped Not Now — or tapped Enable, hit the error, and gave up — had
- * `sp_firstrun_notif_<uid>` written anyway, permanently.
- *
- * Measured the day the worker was fixed: 1 subscribed user out of 1,023
- * profiles, against 2,437 seat offers in seven days skipped for
- * `no_subscription`. Shipping the fix without this line would have fixed push
- * for an audience that could never be asked again.
- *
- * `_v2` gives everybody exactly one more ask. It is NOT a re-prompt lever to
- * reach for whenever enrolment looks low — bumping it again re-asks 1,000
- * people who already said no, which is nagging, and the honest reading of a
- * second no is that they meant the first one. Bump it only if the enrolment
- * path is broken again in a way that made their answer meaningless, and say
- * here what broke.
+ * ONE re-offer, on purpose (2026-08-29): the root worker could not install
+ * from 2026-08-19 to 2026-08-29 (World Hub PR #929), so every ask in that
+ * window was spent on a question nobody could answer yes to. `_v2` gave
+ * everybody exactly one more ask. Do not bump it as a re-prompt lever.
  *
  * The suffix stays in step with the World Hub's own key
- * (src/components/FirstRunNotificationPrompt.jsx). Same origin, same device,
- * same single subscription behind both apps: if one app re-offers and the other
- * does not, a player gets asked twice about the same thing.
+ * (src/components/notifications/FirstRunNotificationPrompt.jsx).
  */
 const KEY_PREFIX = 'sp_firstrun_notif_v2_';
 const IOS_KEY_PREFIX = 'sp_firstrun_ios_install_';
-const IOS_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000; // a week is long enough not to nag
 const SHOW_DELAY_MS = 20_000; // let the player land before asking for anything
+// A moment the player just created is asked about promptly, but not in the
+// same frame as the thing they came to do.
+const MOMENT_DELAY_MS = 2_500;
 
 /**
- * Where the ask is DEFERRED, never spent.
- *
- * This prompt asks once per account per browser and then closes that door for
- * good, so the twenty-second timer landing on the wrong screen does not cost a
- * prompt, it costs the only prompt. `/table/:tableId` is the felt: a modal over
- * a live hand is dismissed reflexively, by a person with a decision to make and
- * a clock running, and `sp_firstrun_notif_<uid>` would then record that reflex
- * as a considered no.
- *
- * Deliberately a DEFERRAL and not a suppression. The timer is not armed on
- * these routes and is armed fresh when the player leaves for somewhere the
- * question can actually be read. Somebody who only ever plays still gets asked,
- * in the lobby, on the way out.
+ * Where the ask is DEFERRED, never spent. `/table/:tableId` is the felt: a
+ * sheet over a live hand is dismissed reflexively by a person with a clock
+ * running. The timer is not armed on these routes and is armed fresh when the
+ * player leaves for somewhere the question can actually be read.
  *
  * Paths are basename-relative: BrowserRouter carries basename="/hub/club-arena"
  * (src/main.tsx), so useLocation() reports "/table/abc", not the full URL.
@@ -118,15 +115,42 @@ function isSuppressedRoute(pathname: string): boolean {
   return SUPPRESSED_ROUTES.some((r) => pathname === r || pathname.startsWith(`${r}/`));
 }
 
+function isAutomatedBrowser(): boolean {
+  // An automation-driven browser is not a person and is never asked: it cannot
+  // consent, and a sheet over an unattended journey blocks the run.
+  try {
+    return typeof navigator !== 'undefined' && navigator.webdriver === true;
+  } catch {
+    return false;
+  }
+}
+
+const COPY: Record<NudgeMoment, { title: string; body: string }> = {
+  first_run: {
+    title: 'Never Miss A Seat',
+    body: 'Turn On Notifications And We Will Alert You The Moment Your Seat Opens, A Tournament You Registered For Starts, Or Someone Messages You. You Can Change This Any Time In Settings.',
+  },
+  club_joined: {
+    title: 'Stay In Touch With Your Club',
+    body: 'Turn On Notifications And We Will Tell You When A Seat Opens, A Tournament You Registered For Starts, Or Your Club Messages You.',
+  },
+  rakeback_receipt: {
+    title: 'Get Your Rakeback Receipts On This Device',
+    body: 'Turn On Notifications And We Will Tell You When A Rakeback Receipt Is Posted To Your Account. You Can Change This Any Time In Settings.',
+  },
+  invoice_workspace: {
+    title: 'Get Invoice Updates On This Device',
+    body: 'Turn On Notifications And We Will Tell You When A New Invoice Or Club Statement Arrives. You Can Change This Any Time In Settings.',
+  },
+};
+
 type PromptState = null | 'ask' | 'install' | 'blocked' | 'success';
 
 /** What we have decided to ask, held until the route allows asking it. */
-type PendingAsk = null | 'ask' | 'install' | 'blocked';
+type PendingAsk = null | { moment: NudgeMoment; variant: 'ask' | 'install' };
 
 export default function FirstRunPushPrompt() {
-  // Reads the session itself rather than taking a prop, so App.tsx can mount it
-  // beside the other hosts without threading auth through the root. Nothing
-  // renders until somebody is signed in: the subscribe endpoint is
+  // Nothing renders until somebody is signed in: the subscribe endpoint is
   // authenticated, so prompting a signed-out visitor could only ever fail.
   const { user } = useAuthUser();
   const userId = user?.id ?? null;
@@ -134,16 +158,19 @@ export default function FirstRunPushPrompt() {
   const suppressed = isSuppressedRoute(pathname);
 
   const [state, setState] = useState<PromptState>(null);
+  const [moment, setMoment] = useState<NudgeMoment>('first_run');
   const [pending, setPending] = useState<PendingAsk>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const turn = usePromptTurn('push', Boolean(userId) && state !== null);
   const laneClear = turn.clear;
   const mounted = useRef(true);
-  /** The eligibility check is one-shot: it reads storage and the subscription. */
-  const decided = useRef(false);
-  /** Once answered, nothing re-arms, whatever the player navigates to next. */
-  const answered = useRef(false);
+  const userIdRef = useRef(userId);
+  useEffect(() => {
+    userIdRef.current = userId;
+  }, [userId]);
+  /** The first-visit check is one-shot per account. */
+  const decidedFor = useRef<string | null>(null);
 
   useEffect(() => {
     mounted.current = true;
@@ -161,118 +188,137 @@ export default function FirstRunPushPrompt() {
     }
   }, [userId]);
 
+  /**
+   * Decide WHETHER to ask. Everything about the rules is in pushNudgePolicy;
+   * this only reads the device honestly.
+   */
+  const consider = useCallback(
+    async (requested: NudgeMoment) => {
+      if (!userId || typeof window === 'undefined' || isAutomatedBrowser()) return;
+      const permission = notificationPermission();
+      const device = {
+        supported: isWebPushSupported(),
+        iosNeedsInstall: false,
+        permission,
+        subscribed: false,
+        optedOut: isOptedOut(),
+      };
+      if (!device.supported) device.iosNeedsInstall = isIos() && !isIosStandalonePwa();
+      else if (permission === 'granted') device.subscribed = await hasLocalSubscription();
+      if (!mounted.current) return;
+
+      const stored = readNudgeState(window.localStorage, userId);
+      const decision = decideNudge({
+        userId,
+        moment: requested,
+        now: Date.now(),
+        device,
+        ...stored,
+      });
+      if (!decision.show) {
+        // A denied browser permission cannot be repaired from inside the app,
+        // and a device that is already on has nothing to ask about: record the
+        // first-visit ask as settled so older bundles agree. The Notifications
+        // page keeps the non-blocking recovery path (PushEnableBanner).
+        if (
+          requested === 'first_run' &&
+          (decision.reason === 'blocked' || decision.reason === 'already_on')
+        ) {
+          markDone();
+        }
+        return;
+      }
+      // A moment the player just created outranks a first-visit ask still
+      // waiting for its delay; two moments keep the first.
+      setPending((current) =>
+        current && (current.moment !== 'first_run' || requested === 'first_run')
+          ? current
+          : { moment: requested, variant: decision.variant }
+      );
+    },
+    [userId, markDone]
+  );
+
   /* A different account, or none, starts over: nothing decided for the last
-     one carries across a sign-out. Declared before the decision below so a
-     new account is reset first and then decided. */
+     one carries across a sign-out. */
   useEffect(() => {
-    decided.current = false;
-    answered.current = false;
     setPending(null);
     setState(null);
     setError(null);
   }, [userId]);
 
-  /* ── Decide WHAT to ask. Runs once, and never on the route. ──────────── */
+  /* ── The first-visit ask. Decided once per account, never on the route. ── */
   useEffect(() => {
-    if (!userId || typeof window === 'undefined') return;
-    if (decided.current || answered.current) return;
-    decided.current = true;
+    if (!userId || decidedFor.current === userId) return;
+    decidedFor.current = userId;
+    void consider('first_run');
+  }, [userId, consider]);
 
-    let alreadyAsked = false;
-    try {
-      alreadyAsked = Boolean(localStorage.getItem(`${KEY_PREFIX}${userId}`));
-    } catch {
-      /* private mode */
-    }
-    if (alreadyAsked) return;
-
-    if (!isWebPushSupported()) {
-      if (isIos() && !isIosStandalonePwa()) {
-        let lastAsked = 0;
-        try {
-          lastAsked = Number(localStorage.getItem(`${IOS_KEY_PREFIX}${userId}`) || 0);
-        } catch {
-          /* private mode */
-        }
-        if (Date.now() - lastAsked < IOS_COOLDOWN_MS) return;
-        setPending('install');
-      }
-      // Any other browser without push support genuinely cannot do this.
-      return;
-    }
-
-    void (async () => {
-      const perm = notificationPermission();
-      // A denied browser permission cannot be repaired from inside the app.
-      // Raising a modal here only blocks the lobby with instructions the
-      // player cannot act on in context, and it used to interrupt every
-      // authenticated production E2E journey after twenty seconds. The
-      // Notifications page keeps the persistent, non-blocking recovery path
-      // through PushEnableBanner, so record this one-time ask as settled and
-      // let the player keep playing.
-      if (perm === 'denied') {
-        markDone();
-        answered.current = true;
-        return;
-      }
-      if (perm === 'granted' && (await hasLocalSubscription())) {
-        markDone(); // nothing to ask for
-        return;
-      }
-      if (mounted.current) setPending('ask');
-    })();
-  }, [userId, markDone]);
+  /* ── Meaningful moments announced by features (requestPushNudge). ─────── */
+  useEffect(() => {
+    if (!userId || typeof window === 'undefined') return undefined;
+    const onNudge = (e: Event) => {
+      const m = (e as CustomEvent<{ moment?: string }>).detail?.moment;
+      if (!isNudgeMoment(m)) return;
+      takePendingNudge(); // consumed here
+      void consider(m);
+    };
+    window.addEventListener(NUDGE_EVENT, onNudge);
+    const early = takePendingNudge();
+    if (early) void consider(early);
+    return () => window.removeEventListener(NUDGE_EVENT, onNudge);
+  }, [userId, consider]);
 
   /* ── Decide WHEN to ask. Re-arms on every route change. ──────────────── */
   useEffect(() => {
     // `suppressed` is a dependency, so leaving the felt re-runs this and starts
-    // a fresh delay. Nothing is consumed while the player is on a bad screen:
-    // the timer is simply never armed there.
-    // `laneClear` joins it for the same reason: nothing is spent while a gate
-    // or another sheet is up, and the delay starts over once they are gone.
+    // a fresh delay. Nothing is consumed while the player is on a bad screen.
+    // `laneClear` joins it: nothing is spent while a gate or another sheet is
+    // up, and the delay starts over once they are gone.
     if (!pending || state || suppressed || !laneClear) return undefined;
+    const delay = pending.moment === 'first_run' ? SHOW_DELAY_MS : MOMENT_DELAY_MS;
     const t = setTimeout(() => {
-      if (mounted.current) setState(pending);
-    }, SHOW_DELAY_MS);
+      const uid = userIdRef.current;
+      if (!mounted.current || !uid) return;
+      writeLedger(
+        window.localStorage,
+        uid,
+        recordShown(readNudgeState(window.localStorage, uid).ledger, Date.now())
+      );
+      setMoment(pending.moment);
+      setError(null);
+      setState(pending.variant);
+    }, delay);
     return () => clearTimeout(t);
   }, [pending, state, suppressed, laneClear]);
+
+  const close = () => {
+    setPending(null);
+    setState(null);
+  };
 
   const handleEnable = async () => {
     if (busy) return;
     setBusy(true);
     setError(null);
+    // DELIBERATE: nothing is awaited before enablePush(). iOS only honours
+    // the permission dialog while the originating tap gesture is alive.
     const result = await enablePush();
     if (!mounted.current) return;
     setBusy(false);
 
     /**
-     * ONLY AN ANSWER SPENDS THE ASK.
-     *
-     * markDone() used to run here unconditionally, which meant a player who
-     * tapped Enable and hit a TECHNICAL failure — the service worker still
-     * installing, a dropped VAPID fetch, a flaky minute of signal — had their
-     * one and only prompt recorded as spent. They wanted notifications. They
-     * said so. The platform wrote down "asked, done" and never offered again.
-     *
-     * That is exactly how the 2026-08-19..29 outage turned a fixable bug into a
-     * permanent loss of audience, and the outage is over but the mechanism is
-     * not: any transient failure still burns the prompt.
-     *
-     * Success and a DENIED permission are both real answers and are recorded.
-     * Anything else leaves the door open for the next session. `answered` is
-     * still set either way, so nothing re-raises the sheet at the player while
-     * they are standing here reading the error.
+     * ONLY AN ANSWER SPENDS THE ASK. Success and a DENIED permission are real
+     * answers and are recorded; a technical failure (worker still installing,
+     * a dropped VAPID fetch, a flaky minute of signal) leaves the door open.
      */
     const wasAnswered = result.ok || notificationPermission() === 'denied';
     if (wasAnswered) markDone();
-    // Clearing `pending` is what stops the re-arm effect from raising it again
-    // after the success card fades or the player navigates.
-    answered.current = true;
     setPending(null);
     if (result.ok) {
       setState('success');
       setTimeout(() => {
-        if (mounted.current) setState(null);
+        if (mounted.current) close();
       }, 2600);
     } else if (notificationPermission() === 'denied') {
       setState('blocked');
@@ -282,34 +328,47 @@ export default function FirstRunPushPrompt() {
   };
 
   const handleDismiss = () => {
-    // The install nudge is deferrable, not answerable. Record it against its
-    // own cooldown key so the real permission prompt still runs once the
-    // player installs and opens the app.
-    if (state === 'install') {
-      if (userId) {
+    if (userId) {
+      const stored = readNudgeState(window.localStorage, userId);
+      if (state === 'install') {
+        // The install nudge is deferrable, not answerable: its own cool-down
+        // key, so the real permission prompt still runs once installed.
         try {
           localStorage.setItem(`${IOS_KEY_PREFIX}${userId}`, String(Date.now()));
         } catch {
           /* private mode */
         }
+        writeLedger(
+          window.localStorage,
+          userId,
+          recordDismissed(stored.ledger, Date.now(), stored.legacyAskedAt)
+        );
+      } else if (state === 'ask') {
+        // Not Now: a cool-down, not a permanent no.
+        writeLedger(
+          window.localStorage,
+          userId,
+          recordDismissed(stored.ledger, Date.now(), stored.legacyAskedAt)
+        );
+        markDone();
       }
-    } else {
-      markDone();
     }
-    answered.current = true;
-    setPending(null);
-    setState(null);
+    close();
   };
 
   if (!state || !userId || !turn.onScreen) return null;
 
+  const copy = COPY[moment] ?? COPY.first_run;
+  const modal = moment === 'first_run' || state === 'blocked';
+
   return (
     <div
-      className="ca-push-prompt"
+      className={modal ? 'ca-push-prompt' : 'ca-push-prompt ca-push-prompt--card'}
       role="dialog"
-      aria-modal="true"
+      aria-modal={modal ? 'true' : 'false'}
       aria-label="Enable Notifications"
-      onClick={handleDismiss}
+      data-push-nudge={moment}
+      onClick={modal ? handleDismiss : undefined}
     >
       <div className="ca-push-prompt__sheet" onClick={(e) => e.stopPropagation()}>
         {state === 'success' ? (
@@ -349,12 +408,8 @@ export default function FirstRunPushPrompt() {
           </>
         ) : (
           <>
-            <h3 className="ca-push-prompt__title">Never Miss A Seat</h3>
-            <p className="ca-push-prompt__body">
-              Turn On Notifications And We Will Alert You The Moment Your Seat Opens, A Tournament
-              You Registered For Starts, Or Someone Messages You. You Can Change This Any Time In
-              Settings.
-            </p>
+            <h3 className="ca-push-prompt__title">{copy.title}</h3>
+            <p className="ca-push-prompt__body">{copy.body}</p>
             {error && <p className="ca-push-prompt__error">{error}</p>}
             <div className="ca-push-prompt__actions">
               <button

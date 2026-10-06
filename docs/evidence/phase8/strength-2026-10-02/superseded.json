@@ -1,0 +1,22 @@
+{
+  "schema": "horse-phase8-strength-superseded-v1",
+  "path": "docs/horse-brain-phase8-2-strength-evidence-2026-10-01.md#historical-only-the-216a383f-hetzner-matrix",
+  "sourceSha": "216a383f389429ca070ff94d19ce5c32a48de4ba",
+  "status": "historical only",
+  "reason": "Ran with several league runs sharing each host's cores (7 on 8 vCPU, 4 on 4 vCPU), which starved the 4 ms continuation work budget, and before the exact x86 continuation speed-up (#5825) and the tournament context fix (#5827). 11 of 18 runs completed 1,024 pairs (all not promotable, no illegal, conservation or truncation failure); the other 7 were stopped to free the hosts. Raw results are kept in the agent evidence archive.",
+  "earlier": [
+    {
+      "schema": "horse-phase8-strength-superseded-v1",
+      "path": "docs/evidence/phase8/strength-2026-10-01-88217ac6-superseded/",
+      "sourceSha": "88217ac61335385b6127dbb04b8bcac3bea4a380",
+      "status": "historical only",
+      "reason": "The league harness paid a full bounty to every winner of a split knockout pot (attributeKnockout gives each splitter weight 1), so one knockout was paid more than once: mystery runs stopped at the champion residual conservation check and PKO returns were overstated on both sides.",
+      "defectFix": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5786",
+      "earlierAttempt": {
+        "path": "docs/evidence/phase8/strength-2026-10-01/",
+        "status": "historical only",
+        "reason": "All 18 runs refused before play on the Mac (rejected solver credential, no qualified Linux launcher)."
+      }
+    }
+  ]
+}

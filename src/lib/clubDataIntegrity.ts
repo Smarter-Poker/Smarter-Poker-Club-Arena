@@ -137,6 +137,17 @@ export function auditClubDataSnapshot(value: unknown): ClubDataIntegrityResult {
   };
 }
 
+/**
+ * Only a fully reconciled snapshot is authoritative enough to render as live
+ * or persist for a later stale-while-revalidate restore. `renderable` only
+ * means the envelope can be inspected; an attention result must never become
+ * a financial success state.
+ */
+export function isVerifiedClubDataSnapshot(value: unknown): boolean {
+  const integrity = auditClubDataSnapshot(value);
+  return integrity.renderable && integrity.level === 'verified';
+}
+
 export function formatClubDataAge(ageMs: number): string {
   const seconds = Math.max(0, Math.floor(ageMs / 1000));
   if (seconds < 5) return 'Now';

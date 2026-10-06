@@ -1,12 +1,13 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  AGENT PORTAL PAGE — Agent Financial Command Center (routable wrapper)
+ *  AGENT PORTAL PAGE — Agent Financial Command Center
  * ═══════════════════════════════════════════════════════════════════════════════
- *  Wraps AgentFinancialPortal component with a routable page, replaces prompt()
- *  with a proper transfer modal, and adds bus listeners for real-time updates.
+ *  Owns the routed agent wallet, commission ledger, invoice and transaction
+ *  experience. Transfers use a scoped dialog and live updates arrive by bus.
  */
 
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -15,14 +16,17 @@ import { useToast } from '../components/common/Toast';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { CreditService } from '../services/CreditService';
 import { WalletService } from '../services/WalletService';
-import PageSkeleton from '../components/common/PageSkeleton';
-
 import { useIsMounted } from '../hooks/useIsMounted';
 import TransactionLedgerView from '../components/common/TransactionLedgerView';
 import AgentInvoicesPanel from '../components/agent/AgentInvoicesPanel';
 import { reportError } from '../utils/errorReporter';
 import { useUserStore } from '../stores/useUserStore';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { SpadeConsole } from '../components/console/SpadeConsole';
+import { compactChips } from '../utils/format';
+import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { titleCase } from '../utils/titleCase';
+import styles from './AgentPortalPage.module.css';
 
 interface AgentWallet {
   agentBal: number;
@@ -30,11 +34,48 @@ interface AgentWallet {
   promoBal: number;
   creditLimit: number;
   debt: number;
+  isPrepaid: boolean;
 }
 
 interface CommissionDay {
   name: string;
   commissions: number;
+}
+
+const EMPTY_WALLET: AgentWallet = {
+  agentBal: 0,
+  playerBal: 0,
+  promoBal: 0,
+  creditLimit: 0,
+  debt: 0,
+  isPrepaid: false,
+};
+
+function finiteMoney(value: unknown, label: string): number {
+  if (value === null || value === undefined || value === '')
+    throw new Error(`${label} Could Not Be Verified`);
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) throw new Error(`${label} Could Not Be Verified`);
+  return amount;
+}
+
+function commissionRow(value: unknown): { amount: number; createdAt: Date } {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Commission Entry Could Not Be Verified');
+  }
+  const row = value as Record<string, unknown>;
+  const amount = finiteMoney(row.amount, 'Commission Amount');
+  if (Math.abs(amount * 100 - Math.round(amount * 100)) > 1e-7) {
+    throw new Error('Commission Amount Could Not Be Verified');
+  }
+  if (typeof row.created_at !== 'string') {
+    throw new Error('Commission Date Could Not Be Verified');
+  }
+  const createdAt = new Date(row.created_at);
+  if (!Number.isFinite(createdAt.getTime())) {
+    throw new Error('Commission Date Could Not Be Verified');
+  }
+  return { amount, createdAt };
 }
 
 export default function AgentPortalPage() {
@@ -48,17 +89,13 @@ export default function AgentPortalPage() {
   walletScope.current = renderScope;
   const walletRequest = useRef(0);
   const commissionRequest = useRef(0);
+  const transferRequest = useRef(0);
   const walletIdentity = useRef<{ scope: string; clubId: string } | null>(null);
   const [loadedWalletScope, setLoadedWalletScope] = useState<string | null>(null);
 
-  const [wallet, setWallet] = useState<AgentWallet>({
-    agentBal: 0,
-    playerBal: 0,
-    promoBal: 0,
-    creditLimit: 0,
-    debt: 0,
-  });
+  const [wallet, setWallet] = useState<AgentWallet>(EMPTY_WALLET);
   const [commissionData, setCommissionData] = useState<CommissionDay[]>([]);
+  const [commissionError, setCommissionError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [transferAmount, setTransferAmount] = useState('');
@@ -69,14 +106,26 @@ export default function AgentPortalPage() {
   const [agentPkId, setAgentPkId] = useState<string | null>(null); // agents.id PK (different from auth.uid)
   const isMounted = useIsMounted();
   const walletReady = loadedWalletScope === renderScope && !!agentClubId;
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const cancelRef = useRef<HTMLButtonElement | null>(null);
+  const returnFocusRef = useRef<Element | null>(null);
 
   useVisibilityRefresh(() => loadData());
 
   useEffect(() => {
+    walletRequest.current += 1;
+    commissionRequest.current += 1;
+    transferRequest.current += 1;
     setTransferModalOpen(false);
     setTransferAmount('');
+    setWallet(EMPTY_WALLET);
+    setWalletError(null);
     setCommissionData([]);
+    setCommissionError(null);
+    setLoadedWalletScope(null);
+    setAgentClubId(null);
     setAgentPkId(null);
+    walletIdentity.current = null;
     loadData();
     // Stagger animations — clean up timers on unmount
     const timers = [0, 1, 2, 3, 4].map((i) =>
@@ -85,7 +134,52 @@ export default function AgentPortalPage() {
       }, i * 80)
     );
     return () => timers.forEach(clearTimeout);
+    // This effect intentionally restarts only when the signed-in wallet scope changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, currentClubId]);
+
+  useEffect(() => {
+    if (!transferModalOpen) return undefined;
+    returnFocusRef.current = document.activeElement;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !transferInFlight.current) {
+        setTransferModalOpen(false);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const root = dialogRef.current;
+      if (!root) return;
+      const focusable = Array.from(
+        root.querySelectorAll<HTMLElement>(
+          'button:not([disabled]):not([tabindex="-1"]), input:not([disabled]):not([tabindex="-1"]), [href]:not([tabindex="-1"]), [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((element) => element.offsetParent !== null || element === document.activeElement);
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !root.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !root.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    document.body.style.overflow = 'hidden';
+    const timer = window.setTimeout(() => cancelRef.current?.focus(), 0);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = '';
+      const back = returnFocusRef.current as HTMLElement | null;
+      if (back && typeof back.focus === 'function' && document.contains(back)) back.focus();
+    };
+  }, [transferModalOpen]);
 
   // Bus listeners
   useEffect(() => {
@@ -93,12 +187,14 @@ export default function AgentPortalPage() {
     return () => {
       unsub1();
     };
+    // The bus listener is rebound to the exact signed-in club scope.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, currentClubId]);
 
   // RT subscription: auto-refresh when agent wallet changes in Supabase
   useEffect(() => {
     if (!user?.id || !agentPkId) return;
-    const channel = masterBus
+    masterBus
       .getOrCreateChannel(`agent-portal-${user.id}-${agentPkId}`)
       .on(
         'postgres_changes',
@@ -138,6 +234,8 @@ export default function AgentPortalPage() {
     return () => {
       masterBus.removeRegisteredChannel(`agent-portal-${user.id}-${agentPkId}`);
     };
+    // Realtime identity is the signed-in user, selected club, and resolved agent record.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, currentClubId, agentPkId]);
 
   const loadingRef = useRef<string | null>(null);
@@ -166,16 +264,19 @@ export default function AgentPortalPage() {
       isMounted.current && scope === walletScope.current && request === walletRequest.current;
     setAgentClubId(null);
     setLoadedWalletScope(null);
+    setWallet(EMPTY_WALLET);
+    setWalletError(null);
+    walletIdentity.current = null;
     try {
-      const resolvedClub = currentClubId ? await resolveClubUUID(currentClubId) : null;
-      if (currentClubId && !resolvedClub)
-        throw new Error('Choose A Valid Club Before Using Your Wallet');
-      let query = supabase
+      if (!currentClubId) throw new Error('Choose A Club Before Using Your Wallet');
+      const resolvedClub = await resolveClubUUID(currentClubId);
+      if (!resolvedClub) throw new Error('Choose A Valid Club Before Using Your Wallet');
+      const query = supabase
         .from('agents')
         .select('id, club_id, agent_wallet_balance, promo_wallet_balance, credit_limit')
         // user.id is auth.users.id, NOT agents.id (PK) — query by user_id
-        .eq('user_id', user.id);
-      if (resolvedClub) query = query.eq('club_id', resolvedClub);
+        .eq('user_id', user.id)
+        .eq('club_id', resolvedClub);
       const { data, error } = await query.maybeSingle();
 
       if (error || !data) throw new Error('Open Your Club Before Using The Agent Wallet');
@@ -187,14 +288,21 @@ export default function AgentPortalPage() {
         .maybeSingle();
       if (memberError || !member) throw memberError || new Error('Player Wallet Not Found');
 
-      let debt = 0;
-      try {
-        // Use the resolved agents.id PK — CreditService uses .eq('id', agentId) internally
-        const calculatedDebt = await CreditService.calculateDebt(data.id);
-        debt = calculatedDebt.debtOwed;
-      } catch (err) {
-        console.warn('[AgentPortal] Debt calculation skipped:', err);
+      // Use the resolved agents.id PK — CreditService uses .eq('id', agentId) internally.
+      // Debt is part of the reading. If it cannot be read, zero would be a
+      // false all-clear, so the entire wallet remains unavailable.
+      const calculatedDebt = await CreditService.calculateDebt(data.id);
+      if (typeof calculatedDebt.isPrepaid !== 'boolean') {
+        throw new Error('Credit Type Could Not Be Verified');
       }
+      const nextWallet = {
+        agentBal: finiteMoney(data.agent_wallet_balance, 'Business Wallet'),
+        playerBal: finiteMoney(member.chip_balance, 'Play Wallet'),
+        promoBal: finiteMoney(data.promo_wallet_balance, 'Promo Wallet'),
+        creditLimit: finiteMoney(calculatedDebt.creditLimit, 'Credit Limit'),
+        debt: finiteMoney(calculatedDebt.debtOwed, 'Debt'),
+        isPrepaid: calculatedDebt.isPrepaid,
+      };
 
       if (!isCurrent()) return null;
       setWalletError(null);
@@ -202,19 +310,20 @@ export default function AgentPortalPage() {
       setLoadedWalletScope(scope);
       setAgentPkId(data.id); // Triggers RT subscription re-creation with correct filter
       if (data.club_id) setAgentClubId(data.club_id);
-      setWallet({
-        agentBal: data.agent_wallet_balance || 0,
-        playerBal: Number(member.chip_balance) || 0,
-        promoBal: data.promo_wallet_balance || 0,
-        creditLimit: data.credit_limit || 0,
-        debt,
-      });
+      setWallet(nextWallet);
       return data.id;
     } catch (err) {
       if (isCurrent()) {
-        setWalletError((err as Error).message);
+        setWallet(EMPTY_WALLET);
+        setWalletError(
+          safeErrorMessage(err, 'The Agent Wallet Could Not Be Verified. Nothing Has Been Changed.')
+        );
         setAgentClubId(null);
+        setAgentPkId(null);
+        setLoadedWalletScope(scope);
         walletIdentity.current = null;
+        setCommissionData([]);
+        setCommissionError(null);
       }
       reportError(err, 'AgentPortalPage.loadWallet_error');
       return null;
@@ -238,494 +347,334 @@ export default function AgentPortalPage() {
     const isCurrent = () =>
       isMounted.current && scope === walletScope.current && request === commissionRequest.current;
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const windowEnd = new Date();
+    const windowStart = new Date(windowEnd.getTime() - 7 * 86400000);
     try {
       const { data, error } = await supabase
         .from('agent_commissions')
         .select('amount, created_at')
         .eq('user_id', user.id)
         .eq('club_id', identity.clubId)
-        .gte('created_at', new Date(Date.now() - 7 * 86400000).toISOString())
+        .gte('created_at', windowStart.toISOString())
+        .lte('created_at', windowEnd.toISOString())
         .order('created_at', { ascending: true })
         .limit(5000);
       if (!isCurrent()) return;
       if (error) throw error;
+      if (!Array.isArray(data)) throw new Error('Commission History Was Not Returned');
 
-      if (data && data.length > 0) {
+      if (data.length > 0) {
         const grouped: Record<string, number> = {};
-        data.forEach((d: any) => {
-          const day = new Date(d.created_at).toLocaleDateString('en-US', { weekday: 'short' });
-          grouped[day] = (grouped[day] || 0) + (Number(d.amount) || 0);
+        data.forEach((entry) => {
+          const { amount, createdAt } = commissionRow(entry);
+          if (createdAt < windowStart || createdAt > windowEnd) {
+            throw new Error('Commission Date Was Outside The Requested Window');
+          }
+          const day = createdAt.toLocaleDateString('en-US', { weekday: 'short' });
+          grouped[day] = (grouped[day] || 0) + amount;
         });
-        if (isMounted.current)
-          setCommissionData(days.map((d) => ({ name: d, commissions: grouped[d] || 0 })));
+        setCommissionData(days.map((day) => ({ name: day, commissions: grouped[day] || 0 })));
       } else {
-        if (isMounted.current) setCommissionData(days.map((d) => ({ name: d, commissions: 0 })));
+        setCommissionData(days.map((day) => ({ name: day, commissions: 0 })));
       }
+      setCommissionError(null);
     } catch (err) {
       reportError(err, 'AgentPortalPage.Commission_history_error');
+      if (isCurrent()) {
+        setCommissionData([]);
+        setCommissionError(
+          safeErrorMessage(
+            err,
+            'Commission History Could Not Be Read. No Zero Total Is Being Shown.'
+          )
+        );
+      }
     }
   };
 
   const handleTransfer = async () => {
     const scope = renderScope;
-    const isCurrent = () => isMounted.current && scope === walletScope.current;
+    const viewerId = user?.id;
+    const clubId = agentClubId;
     const amount = parseFloat(transferAmount);
+    if (transferInFlight.current) return;
     if (
       !Number.isFinite(amount) ||
       amount <= 0 ||
-      !user?.id ||
+      !viewerId ||
+      !clubId ||
       !walletReady ||
-      !isCurrent() ||
-      transferInFlight.current
+      scope !== walletScope.current ||
+      walletIdentity.current?.scope !== scope ||
+      walletIdentity.current.clubId !== clubId
     ) {
       if (isMounted.current) toast.error('Enter a valid amount');
       return;
     }
+    const request = ++transferRequest.current;
+    const isCurrent = () =>
+      isMounted.current &&
+      request === transferRequest.current &&
+      scope === walletScope.current &&
+      viewerId === user?.id &&
+      walletIdentity.current?.scope === scope &&
+      walletIdentity.current.clubId === clubId;
     // A committed request may already have reduced this display. The RPC must
     // decide insufficiency after replay lookup, so the same intent can recover.
     transferInFlight.current = true;
     setIsTransferring(true);
     try {
-      const success = await WalletService.agentSelfTransfer(agentClubId!, amount);
+      const success = await WalletService.agentSelfTransfer(clubId, amount);
       if (!isCurrent()) return;
       if (success) {
         if (isMounted.current)
-          toast.success(`Transferred ${amount.toLocaleString()} chips to Play Wallet`);
+          toast.success(`Transferred ${compactChips(amount)} Chips To Play Wallet`);
         setTransferModalOpen(false);
         setTransferAmount('');
         await loadWallet();
-        masterBus.emit('BALANCE_UPDATED', { source: 'agent_transfer', userId: user.id });
+        masterBus.emit('BALANCE_UPDATED', { source: 'agent_transfer', userId: viewerId });
       } else {
         if (isMounted.current) toast.error('Transfer failed');
       }
     } catch (err) {
-      if (isCurrent()) toast.error('Transfer failed: ' + (err as Error).message);
+      reportError(err, 'AgentPortalPage.transfer_failed');
+      if (isCurrent()) toast.error('Transfer Failed: ' + safeErrorMessage(err, 'Try Again'));
     } finally {
       transferInFlight.current = false;
       if (isMounted.current) setIsTransferring(false);
     }
   };
 
-  const maxCommission = Math.max(...commissionData.map((d) => d.commissions), 1);
-
-  const sectionStyle = (idx: number): React.CSSProperties => ({
-    opacity: visibleSections.has(idx) ? 1 : 0,
-    transform: visibleSections.has(idx) ? 'translateY(0)' : 'translateY(10px)',
-    transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-  });
-
   if (loading) {
     return (
-      <div style={{ padding: '16px', maxWidth: '800px', margin: '0 auto' }}>
-        <PageSkeleton variant="stats" />
-      </div>
+      <main className={styles.page}>
+        <h1 className={styles.srOnly}>Agent Command Center</h1>
+        <SpadeConsole
+          family="riveted"
+          crest="spade"
+          eyebrow="Club Arena Data"
+          title="Agent Command Center"
+          pill="Reading"
+          pillInk="gold"
+          plates={{
+            secondary: { label: 'Back', onClick: () => navigate(-1) },
+            primary: { label: 'Reading', disabled: true },
+          }}
+        >
+          <p className="sc-copy sc-copy--center" role="status">
+            Reading The Selected Club Wallets And Commissions
+          </p>
+        </SpadeConsole>
+      </main>
     );
   }
 
   return (
-    <div style={{ padding: '16px', maxWidth: '800px', margin: '0 auto', paddingBottom: '100px' }}>
-      {walletError && (
-        <div role="alert">
-          {walletError}
-          <button onClick={() => navigate('/clubs')}>Open Clubs</button>
-        </div>
-      )}
-      {/* Header */}
-      <div style={{ marginBottom: '24px', ...sectionStyle(0) }}>
-        <button
-          onClick={() => navigate(-1)}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: '#3b82f6',
-            cursor: 'pointer',
-            fontSize: '0.85rem',
-            padding: 0,
-            marginBottom: '6px',
-          }}
-        >
-          ← Back
-        </button>
-        <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>Agent Command Center</h1>
-        <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>
-          Triple Wallet Management, Credit Lines, And Commission Trends
-        </p>
-      </div>
-
-      {/* Triple Wallet Grid */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-          gap: '10px',
-          marginBottom: '16px',
-          ...sectionStyle(1),
+    <main className={styles.page}>
+      <h1 className={styles.srOnly}>Agent Command Center</h1>
+      <SpadeConsole
+        family="riveted"
+        crest="spade"
+        eyebrow="Club Arena Data"
+        title="Agent Command Center"
+        subtitle="Wallets, Credit And Commission Control"
+        pill={walletError ? 'Unavailable' : walletReady ? 'Scoped' : 'Closed'}
+        pillInk={walletError ? 'red' : walletReady ? 'blue' : 'gold'}
+        className={styles.section}
+        plates={{
+          secondary: { label: 'Back', onClick: () => navigate(-1) },
+          primary: walletError
+            ? { label: 'Open Clubs', onClick: () => navigate('/clubs') }
+            : {
+                label: 'Transfer To Play',
+                onClick: () => setTransferModalOpen(true),
+                disabled: !walletReady || isTransferring,
+              },
         }}
       >
-        {/* Business Wallet */}
-        <div
-          style={{
-            padding: '14px',
-            background: 'rgba(59,130,246,0.08)',
-            borderRadius: '12px',
-            borderTop: '3px solid #3b82f6',
-          }}
-        >
-          <div
-            style={{
-              fontSize: '0.65rem',
-              color: '#93c5fd',
-              textTransform: 'uppercase',
-              fontWeight: 700,
-              letterSpacing: '0.5px',
-              marginBottom: '6px',
-            }}
-          >
-            Business Wallet
-          </div>
-          <div style={{ fontSize: '1.4rem', fontWeight: 800, fontFamily: 'monospace' }}>
-            {wallet.agentBal.toLocaleString()}
-          </div>
-          <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
-            Commissions & Settlements
-          </div>
-        </div>
-        {/* Play Wallet */}
-        <div
-          style={{
-            padding: '14px',
-            background: 'rgba(16,185,129,0.08)',
-            borderRadius: '12px',
-            borderTop: '3px solid #10b981',
-          }}
-        >
-          <div
-            style={{
-              fontSize: '0.65rem',
-              color: '#6ee7b7',
-              textTransform: 'uppercase',
-              fontWeight: 700,
-              letterSpacing: '0.5px',
-              marginBottom: '6px',
-            }}
-          >
-            Play Wallet
-          </div>
-          <div style={{ fontSize: '1.4rem', fontWeight: 800, fontFamily: 'monospace' }}>
-            {wallet.playerBal.toLocaleString()}
-          </div>
-          <button
-            onClick={() => setTransferModalOpen(true)}
-            disabled={!walletReady || isTransferring}
-            style={{
-              marginTop: '6px',
-              width: '100%',
-              padding: '6px',
-              minHeight: '44px',
-              touchAction: 'manipulation',
-              fontSize: '0.7rem',
-              fontWeight: 700,
-              background: 'rgba(16,185,129,0.12)',
-              border: '1px solid rgba(16,185,129,0.3)',
-              borderRadius: '6px',
-              color: '#10b981',
-              cursor: 'pointer',
-            }}
-          >
-            LOAD FROM BIZ →
-          </button>
-        </div>
-        {/* Promo Wallet */}
-        <div
-          style={{
-            padding: '14px',
-            background: 'rgba(236,72,153,0.08)',
-            borderRadius: '12px',
-            borderTop: '3px solid #ec4899',
-          }}
-        >
-          <div
-            style={{
-              fontSize: '0.65rem',
-              color: '#f9a8d4',
-              textTransform: 'uppercase',
-              fontWeight: 700,
-              letterSpacing: '0.5px',
-              marginBottom: '6px',
-            }}
-          >
-            Promo Wallet
-          </div>
-          <div style={{ fontSize: '1.4rem', fontWeight: 800, fontFamily: 'monospace' }}>
-            {wallet.promoBal.toLocaleString()}
-          </div>
-          <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
-            Non-Cashable Giveaways
-          </div>
-        </div>
-      </div>
-
-      {/* Credit Line Status */}
-      <div
-        style={{
-          padding: '16px',
-          background: 'rgba(255,255,255,0.03)',
-          borderRadius: '12px',
-          border: '1px solid rgba(255,255,255,0.06)',
-          marginBottom: '16px',
-          ...sectionStyle(2),
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '10px',
-          }}
-        >
-          <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>Credit Line</span>
-          <span
-            style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: 'rgba(255,255,255,0.5)' }}
-          >
-            Limit: {wallet.creditLimit.toLocaleString()}
-          </span>
-        </div>
-        <div
-          style={{
-            width: '100%',
-            height: '8px',
-            background: 'rgba(255,255,255,0.06)',
-            borderRadius: '4px',
-            overflow: 'hidden',
-            marginBottom: '8px',
-          }}
-        >
-          <div
-            style={{
-              height: '100%',
-              background:
-                wallet.creditLimit > 0
-                  ? `linear-gradient(90deg, #10b981, ${wallet.agentBal / wallet.creditLimit < 0.3 ? '#ef4444' : '#f59e0b'})`
-                  : '#333',
-              width: `${wallet.creditLimit > 0 ? Math.max(5, Math.min(((wallet.creditLimit - wallet.agentBal) / wallet.creditLimit) * 100, 100)) : 0}%`,
-              borderRadius: '4px',
-              transition: 'width 0.5s ease',
-            }}
-          />
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
-          <span style={{ color: '#ef4444' }}>
-            Used: {(wallet.creditLimit - wallet.agentBal).toLocaleString()}
-          </span>
-          <span style={{ color: '#10b981' }}>Available: {wallet.agentBal.toLocaleString()}</span>
-        </div>
-        {wallet.debt > 0 && (
-          <div
-            style={{
-              marginTop: '10px',
-              padding: '10px 12px',
-              background: 'rgba(239,68,68,0.08)',
-              border: '1px solid rgba(239,68,68,0.3)',
-              borderRadius: '8px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            }}
-          >
-            <div>
-              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#ef4444' }}>
-                ⚠ INVOICE DUE
-              </div>
-              <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.6)' }}>
-                Settle {wallet.debt.toLocaleString()} Chips
-              </div>
-            </div>
-            <button
-              onClick={() => walletReady && navigate(`/clubs/${agentClubId}/settlement`)}
-              disabled={!walletReady}
-              style={{
-                padding: '6px 14px',
-                minHeight: '44px',
-                touchAction: 'manipulation',
-                background: 'rgba(239,68,68,0.15)',
-                border: '1px solid rgba(239,68,68,0.4)',
-                borderRadius: '8px',
-                color: '#ef4444',
-                fontWeight: 700,
-                fontSize: '0.75rem',
-                cursor: walletReady ? 'pointer' : 'not-allowed',
-                opacity: walletReady ? 1 : 0.5,
-              }}
+        {walletError ? (
+          <p className="sc-copy sc-copy--center sc-ink--red" role="alert">
+            {titleCase(walletError)}
+          </p>
+        ) : (
+          <>
+            <section
+              className={styles.walletRows}
+              aria-label="Agent Wallets"
+              data-visible={visibleSections.has(1)}
             >
-              SETTLE NOW
+              <div className={styles.moneyRow}>
+                <span>
+                  <strong>Business Wallet</strong>
+                  <small>Commissions And Settlements</small>
+                </span>
+                <b className="sc-ink--silver">{compactChips(wallet.agentBal)}</b>
+              </div>
+              <div className={styles.moneyRow}>
+                <span>
+                  <strong>Play Wallet</strong>
+                  <small>Selected Club Balance</small>
+                </span>
+                <b className="sc-ink--blue">{compactChips(wallet.playerBal)}</b>
+              </div>
+              <div className={styles.moneyRow}>
+                <span>
+                  <strong>Promo Wallet</strong>
+                  <small>Non-Cashable Giveaways</small>
+                </span>
+                <b className="sc-ink--gold">{compactChips(wallet.promoBal)}</b>
+              </div>
+            </section>
+
+            <section
+              className={styles.creditRows}
+              aria-label="Credit Line"
+              data-visible={visibleSections.has(2)}
+            >
+              <h2 className={styles.glassHeading}>Credit Line</h2>
+              <div className={styles.moneyRow}>
+                <span>Limit</span>
+                <b className="sc-ink--silver">
+                  {wallet.isPrepaid ? 'Prepaid' : compactChips(wallet.creditLimit)}
+                </b>
+              </div>
+              <div className={styles.moneyRow}>
+                <span>Used</span>
+                <b className="sc-ink--red">{compactChips(wallet.isPrepaid ? 0 : wallet.debt)}</b>
+              </div>
+              <div className={styles.moneyRow}>
+                <span>Available</span>
+                <b className="sc-ink--green">
+                  {wallet.isPrepaid
+                    ? 'Not Applicable'
+                    : compactChips(Math.max(0, wallet.creditLimit - wallet.debt))}
+                </b>
+              </div>
+              {!wallet.isPrepaid && wallet.debt > 0 && (
+                <div className={styles.debtRow} role="status">
+                  <span>
+                    <strong className="sc-ink--red">Drawn Credit</strong>
+                    <small>
+                      {compactChips(wallet.debt)} Chips Currently Used. Payable Invoices Appear
+                      Below.
+                    </small>
+                  </span>
+                </div>
+              )}
+            </section>
+          </>
+        )}
+      </SpadeConsole>
+
+      <section className={styles.childSection} aria-label="Agent Invoices">
+        <AgentInvoicesPanel agentId={agentPkId} />
+      </section>
+
+      <SpadeConsole
+        family="spade"
+        crest="flat"
+        eyebrow="Seven Day Window"
+        title="Commission Ledger"
+        pill={commissionError ? 'Error' : 'Live'}
+        pillInk={commissionError ? 'red' : 'blue'}
+        foot="foot"
+        className={styles.section}
+      >
+        {!walletReady ? (
+          <p className="sc-copy sc-copy--center" role="status">
+            Commission History Is Unavailable Until The Wallet Scope Is Verified
+          </p>
+        ) : commissionError ? (
+          <div className={styles.statusBlock} role="alert">
+            <p className="sc-copy sc-copy--center">{titleCase(commissionError)}</p>
+            <button type="button" className={styles.litAction} onClick={loadCommissionHistory}>
+              Retry Commission Reading
             </button>
           </div>
-        )}
-      </div>
-
-      {/* Credit Invoices — view + pay weekly invoices */}
-      <AgentInvoicesPanel agentId={agentPkId} />
-
-      {/* Commission Trends (inline mini-chart) */}
-      <div
-        style={{
-          padding: '16px',
-          background: 'rgba(255,255,255,0.03)',
-          borderRadius: '12px',
-          border: '1px solid rgba(255,255,255,0.06)',
-          ...sectionStyle(3),
-        }}
-      >
-        <div style={{ fontSize: '0.9rem', fontWeight: 700, marginBottom: '12px' }}>
-          Commission Trends (7 Days)
-        </div>
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: '6px', height: '80px' }}>
-          {commissionData.map((d) => (
-            <div
-              key={d.name}
-              style={{
-                flex: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: '4px',
-              }}
-            >
-              <div
-                style={{
-                  width: '100%',
-                  height: `${Math.max(4, (d.commissions / maxCommission) * 60)}px`,
-                  background:
-                    d.commissions > 0
-                      ? 'linear-gradient(180deg, #8b5cf6, #6d28d9)'
-                      : 'rgba(255,255,255,0.06)',
-                  borderRadius: '3px 3px 0 0',
-                  transition: 'height 0.5s ease',
-                }}
-              />
-              <span style={{ fontSize: '0.55rem', color: 'rgba(255,255,255,0.4)' }}>{d.name}</span>
-            </div>
-          ))}
-        </div>
-        <div
-          style={{
-            textAlign: 'right',
-            fontSize: '0.65rem',
-            color: 'rgba(255,255,255,0.3)',
-            marginTop: '6px',
-          }}
-        >
-          Total: {commissionData.reduce((s, d) => s + d.commissions, 0).toLocaleString()} Chips
-        </div>
-      </div>
-
-      {/* Transfer Modal */}
-      {transferModalOpen && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.7)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 9999,
-          }}
-          onClick={() => setTransferModalOpen(false)}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: 'var(--bg-primary, #111)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: '16px',
-              padding: '24px',
-              maxWidth: '380px',
-              width: '92%',
-            }}
-          >
-            <h3 style={{ margin: '0 0 16px', fontSize: '1.05rem' }}>Transfer To Play Wallet</h3>
-            <p style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', margin: '0 0 12px' }}>
-              Available:{' '}
-              <span style={{ color: '#3b82f6', fontWeight: 700 }}>
-                {wallet.agentBal.toLocaleString()}
-              </span>{' '}
+        ) : (
+          <div className={styles.commissionRows} data-visible={visibleSections.has(3)}>
+            {commissionData.map((day) => (
+              <div className={styles.moneyRow} key={day.name}>
+                <span>{day.name}</span>
+                <b className="sc-ink--silver">{compactChips(day.commissions)} Chips</b>
+              </div>
+            ))}
+            <div className={styles.totalRow}>
+              Total: {compactChips(commissionData.reduce((sum, day) => sum + day.commissions, 0))}{' '}
               Chips
-            </p>
-            <input
-              type="number"
-              placeholder="Amount"
-              value={transferAmount}
-              onChange={(e) => setTransferAmount(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '10px',
-                background: 'rgba(0,0,0,0.3)',
-                border: '1px solid rgba(255,255,255,0.08)',
-                borderRadius: '8px',
-                color: '#fff',
-                fontSize: '0.9rem',
-                boxSizing: 'border-box',
-                marginBottom: '12px',
-              }}
-            />
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button
-                onClick={() => setTransferModalOpen(false)}
-                style={{
-                  flex: 1,
-                  padding: '10px',
-                  background: 'rgba(255,255,255,0.06)',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                  borderRadius: '8px',
-                  color: '#aaa',
-                  fontWeight: 700,
-                  fontSize: '0.85rem',
-                  cursor: 'pointer',
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleTransfer}
-                disabled={isTransferring || !transferAmount || !walletReady}
-                style={{
-                  flex: 1,
-                  padding: '10px',
-                  background: 'rgba(16,185,129,0.15)',
-                  border: '1px solid rgba(16,185,129,0.3)',
-                  borderRadius: '8px',
-                  color: '#10b981',
-                  fontWeight: 700,
-                  fontSize: '0.85rem',
-                  cursor: isTransferring ? 'wait' : 'pointer',
-                  opacity: isTransferring || !transferAmount ? 0.5 : 1,
-                }}
-              >
-                {isTransferring ? 'Transferring...' : 'Transfer'}
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </SpadeConsole>
 
-      {/* TRANSACTION HISTORY */}
-      <div style={{ padding: '16px', maxWidth: '600px', margin: '0 auto' }}>
-        <div
-          style={{
-            background: 'rgba(255,255,255,0.03)',
-            borderRadius: '12px',
-            padding: '16px',
-            border: '1px solid rgba(255,255,255,0.08)',
-          }}
-        >
-          <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: 700, color: '#e0e0e0' }}>
-            My Transactions
-          </h3>
-          <TransactionLedgerView userId={user?.id} limit={15} />
-        </div>
-      </div>
-    </div>
+      <section className={styles.childSection} aria-label="My Transactions">
+        <TransactionLedgerView userId={user?.id} clubId={agentClubId || undefined} limit={15} />
+      </section>
+
+      {transferModalOpen &&
+        createPortal(
+          <div
+            className={styles.modalBackdrop}
+            role="presentation"
+            onClick={() => {
+              if (!transferInFlight.current) setTransferModalOpen(false);
+            }}
+          >
+            <div
+              ref={dialogRef}
+              className={styles.modalDialog}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="agent-transfer-title"
+              aria-describedby="agent-transfer-description"
+              aria-busy={isTransferring || undefined}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <SpadeConsole
+                family="spade"
+                crest="flat"
+                as="div"
+                onClose={isTransferring ? undefined : () => setTransferModalOpen(false)}
+                eyebrow="Selected Club"
+                title="Transfer To Play Wallet"
+                titleId="agent-transfer-title"
+                pill={isTransferring ? 'Working' : 'Ready'}
+                pillInk={isTransferring ? 'gold' : 'blue'}
+                plates={{
+                  secondary: {
+                    label: 'Cancel',
+                    buttonRef: cancelRef,
+                    onClick: () => setTransferModalOpen(false),
+                    disabled: isTransferring,
+                  },
+                  primary: {
+                    label: isTransferring ? 'Transferring' : 'Transfer',
+                    onClick: handleTransfer,
+                    disabled: isTransferring || !transferAmount || !walletReady,
+                  },
+                }}
+              >
+                <p id="agent-transfer-description" className="sc-copy sc-copy--center">
+                  Available: {compactChips(wallet.agentBal)} Chips
+                </p>
+                <label className={styles.amountLabel} htmlFor="agent-transfer-amount">
+                  Amount
+                </label>
+                <input
+                  id="agent-transfer-amount"
+                  className={styles.amountInput}
+                  type="number"
+                  min="1"
+                  step="1"
+                  placeholder="Amount"
+                  value={transferAmount}
+                  onChange={(event) => setTransferAmount(event.target.value)}
+                />
+              </SpadeConsole>
+            </div>
+          </div>,
+          document.body
+        )}
+    </main>
   );
 }

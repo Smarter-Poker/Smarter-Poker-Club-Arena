@@ -77,7 +77,6 @@
     system-ui,
     sans-serif;
   letter-spacing: 0.12em;
-  text-transform: uppercase;
   white-space: nowrap;
   cursor: pointer;
 }
@@ -98,6 +97,20 @@
 .exportBtn:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+.exportStatus {
+  min-height: 1.15em;
+  margin: 0;
+  padding: 0 1.2cqw;
+  font-size: clamp(0.75rem, 2.6cqw, 0.95rem);
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  line-height: 1.25;
+  text-align: right;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .periods {
@@ -320,7 +333,6 @@
     system-ui,
     sans-serif;
   letter-spacing: 0.12em;
-  text-transform: uppercase;
   cursor: pointer;
 }
 
@@ -342,13 +354,11 @@
   border: 0;
   background: transparent;
   color: #45adff;
-  font:
-    800 3.2cqw/1 'Roboto Condensed',
-    Inter,
-    system-ui,
-    sans-serif;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: max(16px, 3.2cqw);
+  font-weight: 800;
+  line-height: 1;
   letter-spacing: 0.1em;
-  text-transform: uppercase;
   color-scheme: dark;
 }
 
@@ -401,7 +411,6 @@
     system-ui,
     sans-serif;
   letter-spacing: 0.1em;
-  text-transform: uppercase;
   cursor: pointer;
 }
 
@@ -682,7 +691,6 @@
     system-ui,
     sans-serif;
   letter-spacing: 0.12em;
-  text-transform: uppercase;
   white-space: nowrap;
   cursor: pointer;
 }

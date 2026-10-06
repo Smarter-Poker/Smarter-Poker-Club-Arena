@@ -1,88 +1,113 @@
-/* UNION STATEMENTS — mobile-first (375px), scales up. */
+/* Union Statements prints live data on approved #ClubArenaConsole masters.
+   This sheet places dynamic copy on the glass. It does not draw a chassis,
+   card, pill, plate, icon frame, gradient, or hover state. */
 
 .page {
-  min-height: 100vh;
-  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
-  background: linear-gradient(180deg, #0d1226 0%, #0a0d1c 100%);
-  color: #fff;
   width: 100%;
   max-width: 100vw;
-  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
-     one axis computes the other to `auto`, which makes this a scroll container,
-     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
-     viewport. The bar leaves the bottom of the screen and rides up the page. */
+  min-height: 100vh;
+  min-height: 100dvh;
   overflow-x: hidden;
   overflow-x: clip;
-  padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
+  padding: 12px 0 max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
+  color: #e4e7ec;
+  background: #000;
 }
 
-.header {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  display: flex;
+.stateFrame,
+.consoleBand,
+.accountingStatus {
+  width: min(100%, 1000px);
+  margin: 0 auto 18px;
+  padding: 0 8px;
+}
+
+.stateFrame {
+  display: grid;
+  min-height: min(100dvh, 680px);
   align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.875rem 1rem;
-  background: #131a33;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
 }
 
-.headerBtn {
-  background: none;
-  border: none;
-  color: #f0b429;
-  font-size: 1.25rem;
-  line-height: 1;
-  padding: 0.25rem 0.5rem;
+.stateBody,
+.actionNote {
+  margin: 0;
+  color: #e4e7ec;
+  text-align: center;
+  text-wrap: balance;
+}
+
+.cancelAction,
+.chip,
+.clubMain,
+.linkBtn,
+.linkBtnMuted,
+.payBtn {
+  min-height: 44px;
+  border: 0;
+  color: #45adff;
+  background: transparent;
+  font: inherit;
+  font-weight: 800;
+  letter-spacing: 0.04em;
   cursor: pointer;
-  border-radius: 6px;
-  min-width: 40px;
-  min-height: 40px;
 }
 
-.headerBtn:disabled {
-  opacity: 0.35;
-  cursor: default;
+.cancelAction {
+  align-self: center;
+  padding: 0 5cqw;
+  color: #e4e7ec;
 }
-.headerBtn:focus-visible {
-  outline: 2px solid #f0b429;
+
+.cancelAction:disabled,
+.chip:disabled,
+.linkBtn:disabled,
+.linkBtnMuted:disabled,
+.payBtn:disabled {
+  color: #9aa5b3;
+  cursor: default;
+  opacity: 0.55;
+}
+
+.cancelAction:focus-visible,
+.chip:focus-visible,
+.clubMain:focus-visible,
+.linkBtn:focus-visible,
+.linkBtnMuted:focus-visible,
+.payBtn:focus-visible,
+.payInput:focus-visible {
+  outline: 2px solid #45adff;
   outline-offset: 2px;
 }
 
-.title {
-  font-size: 1rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  margin: 0;
-  text-transform: uppercase;
+.periodBar {
+  display: grid;
+  gap: 1.2cqw;
+  min-width: 0;
+  text-align: center;
 }
 
-.periodBar {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.875rem 1rem 0.25rem;
+.periodLabel,
+.unionName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .periodLabel {
-  font-size: 0.875rem;
-  font-weight: 700;
-  color: #fff;
+  font-size: 3.6cqw;
 }
 
 .unionName {
-  font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.45);
+  font-size: 4.2cqw;
+  font-weight: 800;
 }
 
 .periodChips {
   display: flex;
-  gap: 0.375rem;
-  padding: 0.5rem 1rem 0;
+  gap: 2cqw;
   overflow-x: auto;
+  padding: 1cqw 0 2cqw;
   scrollbar-width: none;
 }
 
@@ -92,171 +117,108 @@
 
 .chip {
   flex: 0 0 auto;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.62);
-  font-size: 0.6875rem;
-  font-weight: 600;
-  padding: 0.375rem 0.625rem;
-  border-radius: 999px;
-  cursor: pointer;
+  padding: 0 2.5cqw;
+  color: #9aa5b3;
+  font-size: 3.2cqw;
   white-space: nowrap;
-  min-height: 44px;
 }
 
 .chip.active {
-  background: rgba(240, 180, 41, 0.14);
-  border-color: rgba(240, 180, 41, 0.55);
-  color: #f0b429;
-}
-
-.chip:focus-visible {
-  outline: 2px solid #f0b429;
-  outline-offset: 2px;
+  color: #f4f7fb;
+  box-shadow: inset 0 -1px 0 #45adff;
 }
 
 .summary {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 0.5rem;
-  padding: 0.75rem 1rem 0;
+  margin: 0;
+  padding: 0;
 }
 
-@media (min-width: 640px) {
-  .summary {
-    grid-template-columns: repeat(4, 1fr);
-  }
-}
-
-.tile {
-  background: rgba(255, 255, 255, 0.035);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 10px;
-  padding: 0.625rem 0.75rem;
+.tile,
+.breakdownLine {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 3cqw;
   min-width: 0;
+  padding: 2.4cqw 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.tileLabel,
+.amountLabel {
+  min-width: 0;
+  color: #45adff;
+  font-size: 3.2cqw;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .tileValue {
-  font-size: 1rem;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  min-width: 0;
+  margin: 0;
   overflow: hidden;
+  color: #e4e7ec;
+  font-size: 4.7cqw;
+  font-weight: 900;
   text-overflow: ellipsis;
-}
-
-.tileLabel {
-  margin-top: 0.125rem;
-  font-size: 0.625rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.42);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .pos {
-  color: #35d07f;
+  color: #c8ffd2;
+  text-shadow: 0 0 8px #35d95a;
 }
-.neg {
-  color: #ff5c6c;
+
+.neg,
+.error,
+.deliveredNo,
+.pillOverdue {
+  color: #ff5b6e;
+  text-shadow: 0 0 8px #f02849;
+}
+
+.warn,
+.pillMissing {
+  color: #ffd700;
 }
 
 .statusStrip {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
-  padding: 0.625rem 1rem 0;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.warn {
-  color: #f0b429;
-}
-
-.actions {
-  display: flex;
-  gap: 0.5rem;
-  padding: 0.875rem 1rem 0;
-}
-
-.primaryBtn,
-.dangerBtn,
-.ghostBtn {
-  flex: 1;
-  border-radius: 8px;
-  font-size: 0.8125rem;
+  justify-content: center;
+  gap: 2cqw 4cqw;
+  padding: 3cqw 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  color: #9aa5b3;
+  font-size: 3.1cqw;
   font-weight: 700;
-  padding: 0.75rem 0.75rem;
-  cursor: pointer;
-  min-height: 44px;
-}
-
-.primaryBtn {
-  background: rgba(240, 180, 41, 0.14);
-  border: 1px solid rgba(240, 180, 41, 0.5);
-  color: #f0b429;
-}
-
-.dangerBtn {
-  background: rgba(53, 208, 127, 0.14);
-  border: 1px solid rgba(53, 208, 127, 0.5);
-  color: #35d07f;
-}
-
-.ghostBtn {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.62);
-}
-
-.primaryBtn:disabled,
-.dangerBtn:disabled,
-.ghostBtn:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.primaryBtn:focus-visible,
-.dangerBtn:focus-visible,
-.ghostBtn:focus-visible {
-  outline: 2px solid #f0b429;
-  outline-offset: 2px;
-}
-
-.actionNote {
-  padding: 0.5rem 1rem 0;
-  font-size: 0.6875rem;
-  line-height: 1.45;
-  color: rgba(255, 255, 255, 0.36);
+  text-align: center;
 }
 
 .list {
-  margin-top: 0.875rem;
+  display: grid;
 }
 
 .clubRow {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  min-width: 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .clubMain {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
+  gap: 3cqw;
   width: 100%;
-  background: none;
-  border: none;
+  padding: 3cqw 0;
   color: inherit;
   text-align: left;
-  padding: 0.75rem 1rem;
-  cursor: pointer;
-  min-height: 56px;
-}
-
-.clubMain:focus-visible {
-  outline: 2px solid #f0b429;
-  outline-offset: -2px;
 }
 
 .clubText {
@@ -264,253 +226,150 @@
 }
 
 .clubName {
-  font-size: 0.875rem;
-  font-weight: 700;
-  white-space: nowrap;
   overflow: hidden;
+  color: #e4e7ec;
+  font-size: 4.1cqw;
+  font-weight: 900;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .clubMeta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.375rem;
-  margin-top: 0.25rem;
-  font-size: 0.625rem;
-  color: rgba(255, 255, 255, 0.4);
+  gap: 1.5cqw 2.5cqw;
+  margin-top: 1cqw;
+  color: #9aa5b3;
+  font-size: 2.8cqw;
 }
 
 .pill {
-  display: inline-block;
-  padding: 0.0625rem 0.375rem;
-  border-radius: 4px;
-  font-size: 0.5625rem;
-  font-weight: 800;
+  color: #9aa5b3;
+  font-size: 2.7cqw;
+  font-weight: 900;
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
 .pillOpen {
-  background: rgba(255, 255, 255, 0.09);
-  color: rgba(255, 255, 255, 0.66);
-}
-.pillPaid {
-  background: rgba(53, 208, 127, 0.16);
-  color: #35d07f;
-}
-.pillOverdue {
-  background: rgba(255, 92, 108, 0.16);
-  color: #ff5c6c;
-}
-.pillMissing {
-  background: rgba(240, 180, 41, 0.18);
-  color: #f0b429;
+  color: #e4e7ec;
 }
 
+.pillPaid,
 .deliveredYes {
-  color: rgba(53, 208, 127, 0.75);
-}
-.deliveredNo {
-  color: rgba(255, 92, 108, 0.8);
+  color: #c8ffd2;
 }
 
 .clubAmount {
-  flex: 0 0 auto;
+  min-width: 0;
   text-align: right;
 }
 
 .amountValue {
-  font-size: 0.9375rem;
-  font-weight: 800;
+  max-width: 32cqw;
+  overflow: hidden;
+  color: #e4e7ec;
+  font-size: 4.2cqw;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
 .amountLabel {
-  font-size: 0.5625rem;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.34);
+  margin-top: 0.8cqw;
+  font-size: 2.7cqw;
 }
 
 .breakdown {
-  padding: 0 1rem 0.875rem;
+  padding: 0 0 3cqw 4cqw;
 }
 
 .breakdownLine {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.3125rem 0;
-  font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.66);
+  color: #9aa5b3;
+  font-size: 3.2cqw;
   font-variant-numeric: tabular-nums;
-  border-bottom: 1px dashed rgba(255, 255, 255, 0.05);
-}
-
-.linkBtn {
-  margin-top: 0.5rem;
-  background: none;
-  border: none;
-  color: #f0b429;
-  font-size: 0.75rem;
-  font-weight: 700;
-  padding: 0.375rem 0;
-  cursor: pointer;
-  min-height: 44px;
-}
-
-.linkBtn:focus-visible {
-  outline: 2px solid #f0b429;
-  outline-offset: 2px;
 }
 
 .state {
-  padding: 1.5rem 1rem;
+  padding: 5cqw 1cqw;
+  color: #9aa5b3;
+  font-size: 3.5cqw;
   text-align: center;
-  font-size: 0.8125rem;
-  color: rgba(255, 255, 255, 0.45);
 }
 
-.error {
-  color: #ff5c6c;
-}
-
-.skeletonRow {
-  height: 56px;
-  margin: 0 1rem 0.5rem;
-  border-radius: 10px;
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.04) 0%,
-    rgba(255, 255, 255, 0.08) 50%,
-    rgba(255, 255, 255, 0.04) 100%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.3s ease-in-out infinite;
-}
-
-@keyframes shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
-}
-
-.footNote {
-  padding: 0.875rem 1rem;
-  font-size: 0.6875rem;
-  line-height: 1.5;
-  color: rgba(255, 255, 255, 0.34);
+.state p {
+  margin: 0 0 2cqw;
 }
 
 .rowActions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 1rem;
+  gap: 1cqw 4cqw;
+  padding-top: 2cqw;
+}
+
+.linkBtn,
+.linkBtnMuted,
+.payBtn {
+  padding: 0;
+  font-size: 3.1cqw;
 }
 
 .linkBtnMuted {
-  margin-top: 0.5rem;
-  background: none;
-  border: none;
-  color: rgba(255, 255, 255, 0.38);
-  font-size: 0.75rem;
-  font-weight: 700;
-  padding: 0.375rem 0;
-  cursor: pointer;
-  min-height: 44px;
+  color: #9aa5b3;
 }
 
-.linkBtnMuted:focus-visible {
-  outline: 2px solid #f0b429;
-  outline-offset: 2px;
-}
-.linkBtn:disabled,
-.linkBtnMuted:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-/* Recording a payment received during a period, so the next statement asks
-   for less. */
 .payRow {
-  display: flex;
-  gap: 0.5rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  margin: 0.5rem 0 0.25rem;
+  gap: 3cqw;
+  padding-top: 2cqw;
 }
 
 .payInput {
-  flex: 1;
+  width: 100%;
   min-width: 0;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  color: #fff;
-  font-size: 0.875rem;
-  font-variant-numeric: tabular-nums;
-  padding: 0 0.75rem;
   min-height: 44px;
+  border: 0;
+  border-bottom: 1px solid #000;
+  color: #f4f7fb;
+  background: transparent;
+  box-shadow: inset 0 -1px 0 rgb(255 255 255 / 8%);
+  font: inherit;
+  font-size: 3.6cqw;
+  font-variant-numeric: tabular-nums;
 }
 
-.payInput:focus-visible {
-  outline: 2px solid #f0b429;
-  outline-offset: 2px;
+.payInput::placeholder {
+  color: #9aa5b3;
 }
 
 .payBtn {
-  flex: 0 0 auto;
-  background: rgba(53, 208, 127, 0.14);
-  border: 1px solid rgba(53, 208, 127, 0.5);
-  color: #35d07f;
-  font-size: 0.8125rem;
-  font-weight: 700;
-  border-radius: 8px;
-  padding: 0 1rem;
-  min-height: 44px;
-  cursor: pointer;
+  color: #c8ffd2;
 }
 
-.payBtn:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-.payBtn:focus-visible {
-  outline: 2px solid #f0b429;
-  outline-offset: 2px;
-}
-
-/* Phase 6: cold-ledger styling; statement math and issue actions are unchanged. */
-.page {
-  background:
-    radial-gradient(circle at 82% 5%, rgba(58, 168, 255, 0.08), transparent 28rem),
-    linear-gradient(180deg, #05080c, #020407);
+.footNote {
+  padding-top: 3cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  color: #9aa5b3;
+  font-size: 3cqw;
+  line-height: 1.5;
+  text-align: center;
 }
 
-.periodBar,
-.tile,
-.clubRow,
-.historyRow,
-.insuranceCard,
-.state {
-  border-color: #26333d;
-  border-radius: 4px;
-  background: linear-gradient(112deg, #101820, #080d12 72%, #05080c);
-}
+@media (min-width: 700px) {
+  .page {
+    padding-top: 20px;
+  }
 
-.chip,
-.headerBtn,
-.page button {
-  min-height: 44px;
-  border-radius: 3px;
-}
-
-.chip.active,
-.headerBtn:focus-visible {
-  border-color: #3aa8ff;
-  color: #ddf3ff;
+  .stateFrame,
+  .consoleBand,
+  .accountingStatus {
+    padding-inline: 16px;
+  }
 }

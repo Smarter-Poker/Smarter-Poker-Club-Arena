@@ -227,6 +227,7 @@ import {
   chicagoWallClockToUtcMs,
   freeBuySlotsDue,
   freeBuyTournamentRow,
+  FREE_BUY_BOARD_NAMES,
   freeBuyBreakEvenEntrants,
   lateRegLevelsForMinutes,
   ladderMinutesThrough,
@@ -234,12 +235,25 @@ import {
   FREE_BUY_HOSTS,
   auditFreeBuyRow,
   auditFreeBuyBoard,
+  FREE_BUY_HELD_HOSTS,
+  FREE_BUY_KNOWN_HOSTS,
   type DueFreeBuy,
+  type FreeBuyHost,
 } from './FreeBuy.js';
 import { BLIND_STRUCTURES } from './TournamentRecurringService.js';
 import { DSS_CLUB_ID, MIDWAY_UNION_ID } from './StableHand.js';
 
 const HOUR = 60 * 60 * 1000;
+
+/**
+ * Deep Stack Society: held out of FREE_BUY_HOSTS by the 2026-10-04 operator
+ * hold, but still a real host of its already-published rows. Read from the
+ * exported list rather than re-typed, so a drifted copy cannot pass these.
+ */
+const DSS_HOST: FreeBuyHost = FREE_BUY_HELD_HOSTS.find((h) => h.clubId === DSS_CLUB_ID)!;
+
+/** Index 0 is the live union host, index 1 the standalone one. */
+const ROW_HOSTS: FreeBuyHost[] = [...FREE_BUY_HOSTS, DSS_HOST];
 
 describe('a Chicago hour is a Chicago hour in July and in January', () => {
   /**
@@ -385,9 +399,30 @@ describe('the late-reg level count is derived from the ladder, not guessed', () 
   });
 });
 
-describe('the two hosts', () => {
-  it('are exactly Midway Union and Deep Stack Society', () => {
-    expect(FREE_BUY_HOSTS.map((h) => h.hostId)).toEqual([MIDWAY_UNION_ID, DSS_CLUB_ID]);
+describe('the hosts', () => {
+  it('is Midway Union alone while Deep Stack Society is held', () => {
+    // OPERATOR HOLD 2026-10-04: Deep Stack Society is commented out of
+    // FREE_BUY_HOSTS so checkAndCreateFreeBuys stops publishing its board.
+    // This asserts the hold rather than the old two-host shape; lifting the
+    // hold means asserting [MIDWAY_UNION_ID, DSS_CLUB_ID] here again.
+    expect(FREE_BUY_HOSTS.map((h) => h.hostId)).toEqual([MIDWAY_UNION_ID]);
+  });
+
+  it('does not publish a Deep Stack Society board while held', () => {
+    expect(FREE_BUY_HOSTS.some((h) => h.clubId === DSS_CLUB_ID)).toBe(false);
+  });
+
+  it('still KNOWS Deep Stack Society, so its published rows stay legitimate', () => {
+    // The hold changes who a board is published for, not whose rows are real.
+    expect(FREE_BUY_HELD_HOSTS.map((h) => h.clubId)).toEqual([DSS_CLUB_ID]);
+    expect(FREE_BUY_KNOWN_HOSTS.map((h) => h.clubId)).toEqual([MIDWAY_UNION_ID, DSS_CLUB_ID]);
+  });
+
+  it('a held host keeps its standalone shape - the overlay bank depends on it', () => {
+    // fn_ca_fund_overlay_on_lock reads union_id and nothing else, so a held
+    // entry with the wrong shape would misroute the overlay on restore.
+    expect(DSS_HOST.unionId).toBeNull();
+    expect(DSS_HOST.clubId).toBe(DSS_CLUB_ID);
   });
 
   it('MIDWAY UNION STAMPS union_id - the overlay bank depends on it', () => {
@@ -399,10 +434,11 @@ describe('the two hosts', () => {
     expect(union.clubId).toBe(MIDWAY_UNION_ID);
   });
 
-  it('Deep Stack Society is standalone and has no union', () => {
-    const dss = FREE_BUY_HOSTS.find((h) => h.hostId === DSS_CLUB_ID)!;
-    expect(dss.unionId).toBeNull();
-    expect(dss.clubId).toBe(DSS_CLUB_ID);
+  it('a standalone club host carries no union', () => {
+    // Held out of FREE_BUY_HOSTS, but freeBuyTournamentRow's standalone branch
+    // is still live for every other club, so its shape stays under test.
+    expect(DSS_HOST.unionId).toBeNull();
+    expect(DSS_HOST.clubId).toBe(DSS_CLUB_ID);
   });
 });
 
@@ -413,7 +449,7 @@ describe('the row a Free Buy is created as', () => {
   };
   const rowFor = (hostIdx: number, hour: number) =>
     freeBuyTournamentRow({
-      host: FREE_BUY_HOSTS[hostIdx],
+      host: ROW_HOSTS[hostIdx],
       due: dueFor('2026-07-15', hour),
       blindStructure: BLIND_STRUCTURES.FREE_BUY as unknown[],
       payoutStructure: [{ place: 1, percentage: 100 }],
@@ -423,6 +459,19 @@ describe('the row a Free Buy is created as', () => {
 
   it('the default paid depth is explicitly retained', () => {
     expect(rowFor(0, 8).payout_percent).toBe(10);
+  });
+
+  it('is published under a board name, which is how the watch finds its rows', () => {
+    /* 2026-10-05. Every freeroll carries free_buy, so the hourly watch and
+       freebuy:verify select the board by FREE_BUY_BOARD_NAMES. A row published
+       under any other name would be a board event the watch never reads. */
+    for (const slot of FREE_BUY_SLOTS) {
+      const name = String(rowFor(0, slot.chicagoHour).name);
+      expect(FREE_BUY_BOARD_NAMES).toContain(name);
+    }
+    expect(new Set(FREE_BUY_BOARD_NAMES).size).toBe(FREE_BUY_SLOTS.length);
+    // A correct non-board freeroll is not one of them.
+    expect(FREE_BUY_BOARD_NAMES).not.toContain('$100 Freeroll • 6:00 AM');
   });
 
   it('the first entry is free on both halves - the CHECK constraint refuses anything else', () => {
@@ -691,9 +740,35 @@ describe('auditFreeBuyBoard', () => {
     expect(p.some((x) => x.includes('Prime Time'))).toBe(false);
   });
 
+  it('DOES NOT call a HELD host\'s published row a wrong board', () => {
+    /* THE REGRESSION THIS EXISTS FOR (2026-10-05). Taking Deep Stack Society
+       out of FREE_BUY_HOSTS for the operator hold left its 32 already-published
+       rows resolving against a list that no longer contained them, so every one
+       reported `club <id> is not a Free Buy host` and auditFreeBuyBoardOnce
+       raised a warning financial_alerts row claiming the board was wrong. A
+       deliberate hold is not a misconfigured event. */
+    const held = row(20, DSS_HOST);
+    const p = auditFreeBuyBoard([held], now).problems;
+    expect(p.some((x) => x.includes('is not a Free Buy host'))).toBe(false);
+  });
+
+  it('still catches a row under a club that is no host at all', () => {
+    // The check the test above must not have weakened.
+    const stranger = row(20, {
+      hostId: '00000000-0000-0000-0000-0000000000ff',
+      clubId: '00000000-0000-0000-0000-0000000000ff',
+      unionId: null,
+      label: 'Not A Host',
+    });
+    const p = auditFreeBuyBoard([stranger], now).problems;
+    expect(p.some((x) => x.includes('is not a Free Buy host'))).toBe(true);
+  });
+
   it('notices a slot that came and went with nothing published', () => {
     const rows = [row(0), row(8)]; // Deep Stack published nothing
-    const p = auditFreeBuyBoard(rows, now).problems;
+    // Passed explicitly: the audit only expects a board from a host it is
+    // given, and the hold removed Deep Stack from the default list.
+    const p = auditFreeBuyBoard(rows, now, ROW_HOSTS).problems;
     expect(p.some((x) => x.includes('Deep Stack Society published no'))).toBe(true);
   });
 

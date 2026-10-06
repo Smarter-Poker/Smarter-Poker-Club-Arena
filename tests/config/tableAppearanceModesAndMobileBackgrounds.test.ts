@@ -32,7 +32,9 @@ describe('table appearance modes and portrait-safe backgrounds', () => {
     const assets = read('src/assets/tableAssets.ts');
     expect(assets).toContain('final_table: skinFinalTable');
     expect(page).toContain('setTableState((prev) => ({ ...prev, isFinalTable: true }))');
-    expect(page).toContain("/\\bfinal table\\b/i.test(table.name || '')");
+    expect(page).not.toContain("/\\bfinal table\\b/i.test(table.name || '')");
+    expect(page).toContain("getTournamentFormatKind(tournData) === 'mtt'");
+    expect(page).toContain("table: 'tournament_final_table_events'");
     expect(page).toContain("? 'final_table'");
   });
 });

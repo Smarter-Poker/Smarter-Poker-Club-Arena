@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/launch-final-table-cleanup-20261005; forward versions 20261005230204 and 20261005230230. Pending exact installation/readback.",
+  "tables": ["final_table_cleanup_progress", "final_table_cleanup_receipts"],
+  "functions": ["fn_assert_final_table_cleanup_cutover", "fn_advance_final_table_cleanup"]
+}

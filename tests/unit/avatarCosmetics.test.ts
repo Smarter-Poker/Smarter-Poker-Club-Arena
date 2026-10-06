@@ -14,6 +14,8 @@
  *   - ownership failing OPEN and handing VIP art to everyone.
  */
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
   ALL_COSMETICS,
@@ -29,7 +31,7 @@ import { normalizeUnlockToken } from '../../src/services/AvatarService';
 
 describe('avatar cosmetics catalog', () => {
   it('matches the World Hub class names exactly', () => {
-    /* These six strings are the contract between two apps. The Hub writes them
+    /* These strings are the contract between two apps. The Hub writes them
        into equipped_frame / equipped_aura from AvatarContext.setAvatarCosmetics
        and renders them as `className={"cosmetic-frame " + frame}`. If this
        assertion is ever updated, AvatarGallery.jsx in Smarter-Poker-World-Hub
@@ -46,6 +48,9 @@ describe('avatar cosmetics catalog', () => {
       'frame-diamond',
       'frame-cyber',
       'frame-hellfire',
+      'frame-obsidian',
+      'frame-emerald',
+      'frame-royal',
     ]);
     expect(AVATAR_AURAS.map((a) => a.id)).toEqual([
       'aura-mist',
@@ -53,21 +58,41 @@ describe('avatar cosmetics catalog', () => {
       'aura-moss',
       'aura-fire',
       'aura-glitch',
+      'aura-frost',
+      'aura-neon',
+      'aura-royal',
+      'aura-ember',
+      'aura-aurora',
     ]);
   });
 
+  it('ships ten actual designs per kind, in addition to the explicit None tiles', () => {
+    expect(AVATAR_FRAMES).toHaveLength(10);
+    expect(AVATAR_AURAS).toHaveLength(10);
+    expect(AVATAR_FRAMES.filter((cosmetic) => cosmetic.tier === 'free')).toHaveLength(3);
+    expect(AVATAR_AURAS.filter((cosmetic) => cosmetic.tier === 'free')).toHaveLength(3);
+  });
+
   it('matches the database guard catalog exactly', () => {
-    /* The other half of the same contract. `sp_cosmetic_is_owned` in
-       20260825120000_avatar_cosmetics_ownership_guard.sql holds this list, and
-       a cosmetic the picker offers but the trigger refuses is a purchase that
-       fails at the last step with a Postgres error. */
+    /* The other half of the same contract. The ownership guard plus the
+       Phase 1 catalog-expansion migration hold this list, and a cosmetic the
+       picker offers but the trigger refuses is a purchase that fails at the
+       last step with a Postgres error. */
     const guardCatalog = [
       'frame_gold',
       'frame_diamond',
       'frame_cyber',
       'frame_hellfire',
+      'frame_obsidian',
+      'frame_emerald',
+      'frame_royal',
       'aura_fire',
       'aura_glitch',
+      'aura_frost',
+      'aura_neon',
+      'aura_royal',
+      'aura_ember',
+      'aura_aurora',
       // The free tier, added to the guard in the same breath as the catalog
       // (migration free_avatar_cosmetics_tier). This assertion is what caught
       // the omission: without it the picker would have offered six free tiles
@@ -80,6 +105,18 @@ describe('avatar cosmetics catalog', () => {
       'aura_moss',
     ];
     expect(ALL_COSMETICS.map((c) => c.unlockToken).sort()).toEqual([...guardCatalog].sort());
+  });
+
+  it('defines a real CSS renderer for every selectable design', () => {
+    const css = readFileSync(
+      resolve(process.cwd(), 'src/components/avatars/AvatarCosmetics.css'),
+      'utf8'
+    );
+    for (const cosmetic of ALL_COSMETICS) {
+      expect(css, `missing CSS for ${cosmetic.id}`).toContain(
+        `.sp-cosmetic--${cosmetic.kind}.${cosmetic.id}`
+      );
+    }
   });
 
   it('derives every unlock token from its id', () => {

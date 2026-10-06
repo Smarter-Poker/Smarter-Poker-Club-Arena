@@ -167,8 +167,29 @@ does four things:
 Evidence:
 [the arena belongs to the system](./evidence/diamond-phase-11/the-arena-belongs-to-the-system.md),
 which also lists every function, policy, trigger, job and client path that
-reads the arena's owner. One side effect is Dan's to weigh: `daniel@smarter.poker`
-no longer has Commander access, which it had only by owning the arena.
+reads the arena's owner. It had one side effect: `daniel@smarter.poker` had
+Club Commander access only because it owned the arena, so it lost it. The
+amendment below restores it the sanctioned way.
+
+**Amendment (2026-10-01): platform staff open Commander.** Commander already
+has a staff rule, and it is the platform's: `fn_is_platform_admin()`, which
+admits admin, superadmin and god. It already gates Commander's activity log,
+leads, rate limits, tournament points and player reputation. The two Commander
+access doors the World Hub reads, `get_commander_access_details` (its
+check-access route: the Commander orb, and "Host A Home Game") and
+`has_commander_access` (profile summaries), now admit platform staff by that
+same rule. The rule is read for the user asked about, because the World Hub
+asks as the server. The answer says why (`isPlatformStaff`). No venue row is
+made up, no subscription is invented, and no club, the arena least of all, gets
+an owner back. An ordinary player is still refused, and cannot borrow a staff
+account's answer by asking about it. Of the three platform staff accounts, the
+two admins already had Commander through their own venues, so only
+`daniel@smarter.poker` changes. Migration
+`20261001125101_platform_staff_open_commander`, rehearsed before and after in
+production (rolled back) and applied. The Commander app's own staff check
+(`smarter-poker-commander`, `pages/api/check-access.js`) reads venue staff rows
+and subscriptions only, and never admitted this account. Nothing there was
+lost, so nothing there changes.
 
 ### Ruling 23: the multi-table walk plays only where nothing is real
 
@@ -260,5 +281,9 @@ Dan, verbatim: "these are all for you to decide not me ... FIX AND FINISH ALL OF
 **How it is read now.** The owner reads their own row through `get_my_full_profile()`; platform staff through `get_full_profiles_for_staff(uuid[])`; who is online now through `fn_profile_presence(uuid[])`, a boolean by the five-minute heartbeat rule that never returns the heartbeat. Writes are unchanged: a player still edits their own private fields.
 
 **Built.** Migration `20260930234000_a_profiles_private_fields_have_an_owner_and_a_staff_door` (the doors, and eleven database readers moved off the private fields), applied 2026-10-01 00:05 UTC; the Club Arena's reads moved in the same change (#5679); the World Hub's moved in Smarter-Poker-World-Hub#2056; the column revoke `20260930234500_a_profile_shows_strangers_only_what_the_table_needs`, applied 2026-10-01 11:26 UTC once both apps were live and their old reads had stopped, which also stops the live-stream list naming a broadcaster by legal name. Server functions that run as their owner behind home-game and agent screens, and some World Hub server routes, can still name a person by legal name; the revoke cannot reach them, and the evidence lists them as follow-ups under this ruling. Evidence: [profile privacy, 2026-10-01](evidence/profile-privacy-2026-10-01.md).
+
+**Follow-ups closed 2026-10-06.** The server routes and definer functions named above are closed. World Hub: Smarter-Poker-World-Hub#2148 moves every `pages/api` and `src/lib/server` route off a stranger's private fields (friends search and suggestions, the social feed's author names, leaderboards, reviews, comments, notification titles, live-stream titles, reel cards, an anonymous health endpoint that returned a real balance) and adds `a-server-route-hands-a-stranger-no-private-field.law`; its migration `20261006001817_strangers_names_never_fall_back_to_a_legal_name` stops fifteen home-game and messenger definers falling back to `full_name` (329 of 1,946 profiles had a legal name and no display name). Club Arena: `20261006005823_downline_agents_never_see_a_legal_name` (installed as 20261006010336) does the same for `ca_club_my_downline`, `calculate_agent_settlement`, `calculate_agent_spread` and `fn_club_bank_ledger`.
+
+**One exception, decided the same day:** a club's own staff, and a member's upline agent, keep that member's last-login date (`ca_club_member_detail`, `ca_club_members_export`, behind their staff/downline gates). It is the club's credit-risk view of its own members, not a stranger's read, and it shows a date, never a location.
 
 Migration `20260930234000`'s comments and the two new doors' database comments call this ruling 22: it was written under that number the same night rulings 22 to 24 above landed, and the applied file is a record that does not change. The database comments are corrected by the revoke migration. It is ruling 25.

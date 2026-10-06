@@ -12,6 +12,7 @@ import {
   SatelliteSettlementOutcomeUnknownError,
   SatelliteSettlementRefusedError,
 } from './satelliteSettlementRpc.js';
+import { isLaneContention, isRolledBackStatementError } from './settlementRefusal.js';
 
 function record(value: unknown): Record<string, unknown> {
   if (typeof value === 'string') {
@@ -91,14 +92,39 @@ export async function readSatelliteQualifierState(
   throw new Error('Satellite qualifier state is unreadable');
 }
 
-/** Submit once, then resolve an uncertain response behind the same DB lane. */
+interface SatelliteQualifierRequestOptions {
+  /** Serialized outcome reads, at most; the resolver writes nothing. */
+  resolverAttempts?: number;
+  wait?: (delayMs: number) => Promise<void>;
+}
+
+const defaultWait = (delayMs: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, delayMs));
+
+function describe(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object' && 'message' in error)
+    return String((error as { message?: unknown }).message ?? error);
+  return String(error);
+}
+
+/**
+ * Submit once. A Postgres error is the database saying this call rolled back
+ * (isRolledBackStatementError), so it is a refusal the next sweep retries,
+ * never an unknown outcome. Only a lost response asks the resolver, and the
+ * resolver's own lane contention is asked again rather than reported as
+ * unknown: it is a read, and the read is what makes the outcome knowable.
+ */
 export async function requestSatelliteQualifierReceipt(
   tournamentId: string,
-  qualifierIds: readonly string[]
+  qualifierIds: readonly string[],
+  options: SatelliteQualifierRequestOptions = {}
 ): Promise<VerifiedSatelliteQualifierReceipt> {
   if (!uuidShape(tournamentId) || !canonicalIds(qualifierIds) || qualifierIds.length === 0) {
     throw new SatelliteSettlementRefusedError('Satellite qualifier request identity is invalid');
   }
+  const resolverAttempts = Math.max(1, Math.min(5, Math.trunc(options.resolverAttempts ?? 3)));
+  const wait = options.wait ?? defaultWait;
   const request = { p_tournament_id: tournamentId, p_observed_qualifier_ids: [...qualifierIds] };
   let failure = 'Satellite qualifier settlement did not return a valid receipt';
   try {
@@ -106,13 +132,53 @@ export async function requestSatelliteQualifierReceipt(
     if (!error) {
       const receipt = verifySatelliteQualifierReceipt(data, tournamentId, qualifierIds);
       if (receipt) return receipt;
-    } else failure = String(error.message ?? error);
+    } else {
+      failure = describe(error);
+      if (isRolledBackStatementError(error)) {
+        const code = (error as { code: string }).code;
+        throw new SatelliteSettlementRefusedError(`${failure} (${code})`);
+      }
+    }
   } catch (error) {
-    failure = error instanceof Error ? error.message : String(error);
+    if (error instanceof SatelliteSettlementRefusedError) throw error;
+    failure = describe(error);
   }
+  const settleFailure = failure;
+  for (let attempt = 1; attempt <= resolverAttempts; attempt++) {
+    const outcome = await readSerializedOutcome(request, tournamentId, qualifierIds, settleFailure);
+    if (outcome.kind === 'committed') return outcome.receipt;
+    if (outcome.kind === 'not_committed') throw new SatelliteSettlementRefusedError(settleFailure);
+    failure = `${outcome.failure} (resolver attempt ${attempt}/${resolverAttempts})`;
+    if (!outcome.retry || attempt === resolverAttempts) break;
+    await wait(500 * 2 ** (attempt - 1));
+  }
+  throw new SatelliteSettlementOutcomeUnknownError(failure);
+}
+
+type SerializedOutcome =
+  | { kind: 'committed'; receipt: VerifiedSatelliteQualifierReceipt }
+  | { kind: 'not_committed' }
+  | { kind: 'unreadable'; failure: string; retry: boolean };
+
+async function readSerializedOutcome(
+  request: { p_tournament_id: string; p_observed_qualifier_ids: string[] },
+  tournamentId: string,
+  qualifierIds: readonly string[],
+  failure: string
+): Promise<SerializedOutcome> {
   try {
     const { data, error } = await supabase.rpc('fn_resolve_satellite_qualifier_outcome', request);
-    if (error) throw error;
+    if (error) {
+      // Contention (55P03 lock_timeout behind the exclusive finish lane, a
+      // serialization or deadlock victim, a statement timeout) read nothing;
+      // a transport failure (code '') may simply be asked again.
+      const code = (error as { code?: unknown }).code;
+      return {
+        kind: 'unreadable',
+        failure: `${failure}; serialized outcome unavailable: ${describe(error)}`,
+        retry: isLaneContention(error) || code === '' || code === undefined,
+      };
+    }
     const outcome = record(data);
     if (
       outcome.ok === true &&
@@ -129,19 +195,27 @@ export async function requestSatelliteQualifierReceipt(
           tournamentId,
           qualifierIds
         );
-        if (receipt) return receipt;
+        if (receipt) return { kind: 'committed', receipt };
       } else if (
         outcome.satellite_committed === false &&
         outcome.definitively_not_committed === true &&
         (outcome.status === 'RUNNING' || outcome.status === 'COMPLETING') &&
         outcome.receipt === null
       ) {
-        throw new SatelliteSettlementRefusedError(failure);
+        return { kind: 'not_committed' };
       }
     }
+    // A well-formed answer that proves neither outcome is not asked again.
+    return {
+      kind: 'unreadable',
+      failure: `${failure}; serialized outcome shape was invalid`,
+      retry: false,
+    };
   } catch (error) {
-    if (error instanceof SatelliteSettlementRefusedError) throw error;
-    failure += `; serialized outcome unavailable: ${error instanceof Error ? error.message : String(error)}`;
+    return {
+      kind: 'unreadable',
+      failure: `${failure}; serialized outcome unavailable: ${describe(error)}`,
+      retry: true,
+    };
   }
-  throw new SatelliteSettlementOutcomeUnknownError(failure);
 }

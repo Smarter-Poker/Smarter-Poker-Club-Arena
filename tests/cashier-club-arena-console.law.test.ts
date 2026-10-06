@@ -213,7 +213,7 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
     }
   });
 
-  it('prints painted head zones through compactChips, never a raw locale figure', () => {
+  it('prints every Cashier chip figure through compactChips, never decimal locale formatting', () => {
     for (const { tsx } of CASHIER_SURFACES) {
       for (const tag of consoleTags(read(tsx))) {
         for (const zone of ['eyebrow', 'subtitle', 'pill']) {
@@ -222,5 +222,55 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
         }
       }
     }
+    expect(read('src/pages/CashierTradePage.tsx')).toContain('const fmt = compactChips;');
+    expect(read('src/pages/CashierPage.tsx')).toContain('const chipFigure = compactChips;');
+    expect(read('src/pages/CashierStatementsPage.tsx')).toContain(
+      'return compactChips(Number(value));'
+    );
+    expect(read('src/pages/CashierPage.tsx')).toContain(
+      "subtitle={titleCase(clubName || 'Club Wallet')}"
+    );
+
+    const wallet = read('src/components/wallet/DynamicWallet.tsx');
+    expect(wallet).toContain("import { compactChips } from '../../utils/format';");
+    expect(wallet).toContain('return compactChips(num);');
+    expect(wallet).not.toContain('minimumFractionDigits: 2');
+  });
+
+  it('keeps copied statement receipts exact and drops clipboard completion after unmount', () => {
+    const statements = read('src/pages/CashierStatementsPage.tsx');
+    expect(statements).toContain('exactChips(entry.amount)');
+    expect(statements).toContain('exactChips(entry.balance_after)');
+    expect(statements).toContain('mountedRef.current = true;');
+    expect(statements).toContain('if (mountedRef.current) setCopiedId(ok ? id : null);');
+  });
+
+  it('renders the Cashier card wallet directory on an approved painted console', () => {
+    const tile = read('src/components/home/ClubQuickLinkTile.tsx');
+    const homeCss = read('src/pages/HomePage.module.css');
+    const directoryCss = homeCss.slice(
+      homeCss.indexOf('.cashierSwitchOverlay'),
+      homeCss.indexOf('/* Dan 2026-08-24', homeCss.indexOf('.cashierSwitchOverlay'))
+    );
+
+    expect(tile).toMatch(
+      /import \{[^}]*\bSpadeConsole\b[^}]*\} from '[^']*\/console\/SpadeConsole'/
+    );
+    expect(tile).toContain('<SpadeConsole');
+    expect(tile).toContain('family="shark"');
+    expect(tile).toContain('className={styles.cashierSwitchConsole}');
+    expect(tile).toContain('compactChips(visibleBalances.get(club.id))');
+    expect(tile).not.toContain('cashierSwitchLogoFallback');
+
+    expect(directoryCss).toContain('.cashierSwitchConsole');
+    expect(directoryCss).not.toMatch(/border-radius:\s*[1-9]/);
+    expect(directoryCss).not.toMatch(/(linear|radial|conic)-gradient\(/);
+    expect(directoryCss).not.toMatch(/^\s*[^*\n]*:hover\b[^\n]*\{/m);
+  });
+
+  it('prints the in-Cashier club switcher balance through compactChips', () => {
+    const switcher = read('src/components/club/CashierClubSwitcher.tsx');
+    expect(switcher).toContain('compactChips(visibleBalances.get(club.id))');
+    expect(switcher).not.toContain('maximumFractionDigits');
   });
 });

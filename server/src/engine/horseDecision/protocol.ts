@@ -374,7 +374,49 @@ export interface FastHorseDecisionResult extends HorseDecisionFence {
   governorScale: number;
   /** Applied only after this exact intended action is accepted at the table. */
   effects: HorseMindDecisionEffect[];
+  /** The worker's Phase 8 authority after this decision. Optional only for
+   * injected test workers; absent is never usable authority. */
+  phase8Authority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
+  /** P10.3: the worker's Phase 10 (PLO4) authority after this decision; the
+   * same receipt shape and laws as Phase 8. Absent is never usable authority. */
+  phase10Authority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
+  /** P11.3: the worker's authority receipt for each Phase 11 pack after this
+   * decision (one holder per pack, the Phase 8 shape and laws). Absent is
+   * never usable authority. */
+  phase11Authority?: HorsePhase11AuthorityReceipts;
+  /** P12.3: the worker's authority receipt for each Phase 12 pack after this
+   * decision (one holder per pack, the Phase 8 shape and laws). Absent is
+   * never usable authority. */
+  phase12Authority?: HorsePhase12AuthorityReceipts;
+  /** P13.3: the worker's authority receipt for each joint variant after this
+   * decision (one holder per variant, the Phase 8 shape and laws). Absent is
+   * never usable authority. */
+  phase13Authority?: HorsePhase13AuthorityReceipts;
 }
+
+/** P13.3: one worker authority receipt per Phase 13 joint variant. */
+export type HorsePhase13AuthorityReceipts = Readonly<
+  Record<
+    import('../multiway/JointInputBinding.js').JointVariant,
+    import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt
+  >
+>;
+
+/** P12.3: one worker authority receipt per Phase 12 pack. */
+export type HorsePhase12AuthorityReceipts = Readonly<
+  Record<
+    import('../remainingVariants/RemainingVariantPolicyPack.js').RemainingPolicyVariant,
+    import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt
+  >
+>;
+
+/** P11.3: one worker authority receipt per Phase 11 pack. */
+export type HorsePhase11AuthorityReceipts = Readonly<
+  Record<
+    import('../omaha/OmahaVariantPolicyPack.js').OmahaPolicyVariant,
+    import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt
+  >
+>;
 
 export interface DeepHorseDecisionResult extends HorseDecisionFence {
   type: 'DEEP_RESULT';
@@ -383,6 +425,11 @@ export interface DeepHorseDecisionResult extends HorseDecisionFence {
   decision: HorseDecision;
   computeMs: number;
   governorScale: number;
+  phase8Authority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
+  phase10Authority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
+  phase11Authority?: HorsePhase11AuthorityReceipts;
+  phase12Authority?: HorsePhase12AuthorityReceipts;
+  phase13Authority?: HorsePhase13AuthorityReceipts;
 }
 
 export interface HorseDecisionWorkerAck extends HorseDecisionFence {

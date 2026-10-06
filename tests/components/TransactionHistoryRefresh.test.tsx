@@ -1,0 +1,172 @@
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import TransactionHistoryPage from '../../src/pages/TransactionHistoryPage';
+
+const backend = vi.hoisted(() => ({
+  ranges: [] as number[][],
+  refresh: () => {},
+  rows: [] as unknown[],
+  hold: false,
+  pending: [] as Array<() => void>,
+}));
+vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
+vi.mock('../../src/hooks/useAuthUser', () => ({ useAuthUser: () => ({ user: { id: 'viewer' } }) }));
+vi.mock('../../src/hooks/useVisibilityRefresh', () => ({
+  useVisibilityRefresh: (fn: () => void) => {
+    backend.refresh = fn;
+  },
+}));
+vi.mock('../../src/components/common/Toast', () => ({ useToast: () => ({ error: vi.fn() }) }));
+vi.mock('../../src/components/rewards/RewardsSurfaceHeader', () => ({ default: () => null }));
+vi.mock('../../src/core/MasterBus', () => ({
+  masterBus: {
+    getOrCreateChannel: () => ({
+      on() {
+        return this;
+      },
+      subscribe() {
+        return this;
+      },
+    }),
+    removeRegisteredChannel: vi.fn(),
+    subscribeDebounced: () => () => {},
+  },
+}));
+vi.mock('../../src/lib/supabase', () => ({
+  supabase: {
+    from: (table: string) => {
+      let start = 0;
+      let end = 24;
+      const query = {
+        select() {
+          return query;
+        },
+        or() {
+          return query;
+        },
+        order() {
+          return query;
+        },
+        eq() {
+          return query;
+        },
+        in() {
+          return query;
+        },
+        gte() {
+          return query;
+        },
+        lte() {
+          return query;
+        },
+        range(a: number, b: number) {
+          start = a;
+          end = b;
+          backend.ranges.push([a, b]);
+          return query;
+        },
+        then(resolve: (value: unknown) => unknown) {
+          const result = { data: backend.rows.slice(start, end + 1), error: null };
+          if (backend.hold && table === 'chip_transactions') {
+            return new Promise((done) => backend.pending.push(() => done(result))).then(resolve);
+          }
+          return Promise.resolve(result).then(resolve);
+        },
+      };
+      return query;
+    },
+  },
+}));
+beforeEach(() => {
+  sessionStorage.clear();
+  backend.ranges = [];
+  backend.hold = false;
+  backend.pending = [];
+  backend.rows = [
+    {
+      id: 'latest',
+      transaction_type: 'deposit',
+      amount: 7,
+      notes: 'Latest Deposit',
+      created_at: '2026-10-05T12:00:00Z',
+    },
+  ];
+});
+afterEach(cleanup);
+it('retains the latest transactions when visibility requests a fresh first page', async () => {
+  render(<TransactionHistoryPage />);
+  await screen.findByText('Latest Deposit');
+  backend.rows.unshift({
+    id: 'new',
+    transaction_type: 'deposit',
+    amount: 8,
+    notes: 'New Deposit',
+    created_at: '2026-10-05T13:00:00Z',
+  });
+  await act(async () => backend.refresh());
+  await waitFor(() => expect(backend.ranges).toHaveLength(2));
+  expect(backend.ranges).toEqual([
+    [0, 24],
+    [0, 24],
+  ]);
+  expect(await screen.findByText('New Deposit')).toBeInTheDocument();
+  expect(screen.getByText('Latest Deposit')).toBeInTheDocument();
+});
+
+it('renders a buy-in as outflow and a cashout as inflow from stored endpoints', async () => {
+  backend.rows = [
+    {
+      id: 'debit',
+      transaction_type: 'tournament_buyin',
+      amount: '10.00',
+      from_user_id: 'viewer',
+      to_user_id: null,
+      notes: 'Tournament Buy-In',
+      created_at: '2026-10-05T12:00:00Z',
+    },
+    {
+      id: 'credit',
+      transaction_type: 'cashout',
+      amount: '4.00',
+      from_user_id: null,
+      to_user_id: 'viewer',
+      notes: 'Cashout',
+      created_at: '2026-10-05T12:01:00Z',
+    },
+  ];
+  render(<TransactionHistoryPage />);
+  const debit = (await screen.findByText('Tournament Buy-In')).closest('.transaction-row');
+  expect(debit?.querySelector('.tx-amount')?.textContent).toBe('-♠10');
+  expect(debit?.querySelector('.tx-amount')).toHaveClass('negative');
+  expect(
+    screen.getByText('Cashout').closest('.transaction-row')?.querySelector('.tx-amount')
+      ?.textContent
+  ).toBe('+♠4');
+  expect(document.querySelector('.summary-value.negative')?.textContent).toBe('-10');
+});
+
+it('a filter change replaces a pending refresh and ignores its late result', async () => {
+  render(<TransactionHistoryPage />);
+  await screen.findByText('Latest Deposit');
+  backend.hold = true;
+  act(() => {
+    void backend.refresh();
+  });
+  await waitFor(() => expect(backend.pending).toHaveLength(1));
+  backend.rows = [
+    {
+      id: 'filtered',
+      transaction_type: 'transfer_in',
+      amount: 5,
+      notes: 'Filtered Transfer',
+      created_at: '2026-10-05T13:00:00Z',
+    },
+  ];
+  fireEvent.click(screen.getByRole('button', { name: 'Transfers', exact: true }));
+  await waitFor(() => expect(backend.pending).toHaveLength(2));
+  await act(async () => backend.pending[1]());
+  expect(await screen.findByText('Filtered Transfer')).toBeInTheDocument();
+  await act(async () => backend.pending[0]());
+  expect(screen.getByText('Filtered Transfer')).toBeInTheDocument();
+  expect(screen.queryByText('Latest Deposit')).not.toBeInTheDocument();
+});

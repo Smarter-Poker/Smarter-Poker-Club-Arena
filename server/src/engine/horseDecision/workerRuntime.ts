@@ -8,6 +8,7 @@ import {
   type HorsePlanIssueDisposition,
   type HorsePlanRefusal,
 } from '../HorsePlanHandIdentity.js';
+import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import {
   startHorseDecisionJournal,
@@ -69,6 +70,51 @@ import {
   TOURNAMENT_CONTEXT_STATUSES,
 } from '../HorseTournamentPreflop.js';
 import { noteDecisionMs, noteFire } from '../BrainTelemetry.js';
+import type { HorseDecision } from '../../types.js';
+import {
+  admitHorsePhase8ReleaseAuthority,
+  HorseQualifiedAuthorityHolder,
+  type HorseAuthorityAdmission,
+  type HorseAuthorityReceipt,
+} from '../HorseQualifiedAuthority.js';
+import { liveHorsePhase8Safety } from '../HorsePhase8Safety.js';
+import type { Phase8Mode } from '../HorseTournamentPostflop.js';
+import {
+  admitHorsePhase10ReleaseAuthority,
+  horsePhase10AdmittedMode,
+} from '../HorsePhase10Authority.js';
+import { PLO4_POLICY_PACK } from '../plo4/Plo4PolicyPack.js';
+import type { Plo4LiveMode } from '../plo4/Plo4LivePolicy.js';
+import {
+  admitHorsePhase11ReleaseAuthority,
+  horsePhase11AdmittedMode,
+  HORSE_PHASE11_VARIANTS,
+} from '../HorsePhase11Authority.js';
+import {
+  isOmahaPolicyVariant,
+  OMAHA_VARIANT_PACKS,
+  type OmahaPolicyVariant,
+} from '../omaha/OmahaVariantPolicyPack.js';
+import type { OmahaVariantMode } from '../omaha/OmahaVariantLivePolicy.js';
+import {
+  admitHorsePhase12ReleaseAuthority,
+  horsePhase12AdmittedMode,
+  HORSE_PHASE12_VARIANTS,
+} from '../HorsePhase12Authority.js';
+import {
+  isRemainingPolicyVariant,
+  REMAINING_VARIANT_PACKS,
+  type RemainingPolicyVariant,
+} from '../remainingVariants/RemainingVariantPolicyPack.js';
+import type { RemainingVariantMode } from '../remainingVariants/RemainingVariantLivePolicy.js';
+import {
+  admitHorsePhase13ReleaseAuthority,
+  horsePhase13AdmittedMode,
+  horsePhase13ContinuationVersion,
+  HORSE_PHASE13_VARIANTS,
+} from '../HorsePhase13Authority.js';
+import { isJointVariant, type JointVariant } from '../multiway/JointInputBinding.js';
+import type { JointPolicyMode } from '../multiway/JointLivePolicy.js';
 import { gtoChartCount, gtoChartStoreIdentity } from '../GtoCharts.js';
 import { gtoPostflopCount, gtoPostflopStoreIdentity } from '../GtoPostflop.js';
 import { gtoPostflopV31Count, gtoPostflopV31Dataset } from '../GtoPostflopV31.js';
@@ -148,6 +194,34 @@ export interface HorseDecisionWorkerDependencies {
   noteDecision(scope: string, ms: number): void;
   noteFeature(feature: string): void;
   now(): number;
+  /**
+   * Admit the committed protected-release Phase 8 selection. Absent in an
+   * injected test runtime means no selection: every decision stays shadow.
+   */
+  admitPhase8Authority?(): HorseAuthorityAdmission;
+  /** The worker's live Phase 8 safety sentinel; a reason withdraws authority. */
+  phase8SafetyDisabledReason?(): string | null;
+  /**
+   * P10.3: admit the committed protected-release Phase 10 (PLO4) selection.
+   * Absent in an injected test runtime means no selection: PLO4 stays shadow.
+   */
+  admitPhase10Authority?(): HorseAuthorityAdmission;
+  /**
+   * P11.3: admit one Phase 11 pack's committed protected-release selection.
+   * Absent in an injected test runtime means no selection: every pack stays shadow.
+   */
+  admitPhase11Authority?(variant: OmahaPolicyVariant): HorseAuthorityAdmission;
+  /**
+   * P12.3: admit one Phase 12 pack's committed protected-release selection.
+   * Absent in an injected test runtime means no selection: every pack stays shadow.
+   */
+  admitPhase12Authority?(variant: RemainingPolicyVariant): HorseAuthorityAdmission;
+  /**
+   * P13.3: admit one joint variant's committed protected-release selection.
+   * Absent in an injected test runtime means no selection: the joint owner
+   * stays shadow for every variant.
+   */
+  admitPhase13Authority?(variant: JointVariant): HorseAuthorityAdmission;
 }
 
 let ownedServicesStarted = false;
@@ -250,6 +324,12 @@ export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependen
   journalLifecycle: journalHorseRequestLifecycle,
   startServices: startOwnedServices,
   stopServices: stopOwnedServices,
+  admitPhase8Authority: () => admitHorsePhase8ReleaseAuthority(),
+  phase8SafetyDisabledReason: () => liveHorsePhase8Safety.disabledReason,
+  admitPhase10Authority: () => admitHorsePhase10ReleaseAuthority(),
+  admitPhase11Authority: (variant) => admitHorsePhase11ReleaseAuthority(variant),
+  admitPhase12Authority: (variant) => admitHorsePhase12ReleaseAuthority(variant),
+  admitPhase13Authority: (variant) => admitHorsePhase13ReleaseAuthority(variant),
   decide: HorseLogic.decide.bind(HorseLogic),
   decideDiscard: HorseLogic.decideDiscard.bind(HorseLogic),
   captureDecisionEffects: (fn) => HorseMind.captureDecisionEffects(fn),
@@ -410,6 +490,68 @@ export class HorseDecisionWorkerRuntime {
   private started = false;
   private stopped = false;
   private readyPromise: Promise<HorseDecisionWorkerReadiness> | null = null;
+  /** Worker-owned Phase 8 authority. Admitted once from the committed release
+   * selection; never from a request. A new worker is a new epoch. */
+  private readonly phase8Authority = new HorseQualifiedAuthorityHolder();
+  private phase8AuthorityAdmitted = false;
+  /** P10.3: worker-owned Phase 10 authority, the same holder class and laws,
+   * bound to the running PLO4 pack version. Never obtained from a request. */
+  private readonly phase10Authority = new HorseQualifiedAuthorityHolder(
+    undefined,
+    PLO4_POLICY_PACK.version
+  );
+  private phase10AuthorityAdmitted = false;
+  /** P11.3: worker-owned Phase 11 authority, one holder per pack (the same
+   * holder class and laws), each bound to its own pack version and sharing
+   * this worker's epoch. Never obtained from a request. */
+  private readonly phase11Epoch = randomUUID();
+  private readonly phase11Authority: Readonly<
+    Record<OmahaPolicyVariant, HorseQualifiedAuthorityHolder>
+  > = Object.freeze({
+    plo5: new HorseQualifiedAuthorityHolder(this.phase11Epoch, OMAHA_VARIANT_PACKS.plo5.version),
+    plo6: new HorseQualifiedAuthorityHolder(this.phase11Epoch, OMAHA_VARIANT_PACKS.plo6.version),
+    plo8: new HorseQualifiedAuthorityHolder(this.phase11Epoch, OMAHA_VARIANT_PACKS.plo8.version),
+  });
+  private phase11AuthorityAdmitted = false;
+  /** P12.3: worker-owned Phase 12 authority, one holder per pack (the same
+   * holder class and laws), each bound to its own pack version and sharing
+   * this worker's epoch. Never obtained from a request. */
+  private readonly phase12Epoch = randomUUID();
+  private readonly phase12Authority: Readonly<
+    Record<RemainingPolicyVariant, HorseQualifiedAuthorityHolder>
+  > = Object.freeze({
+    short_deck: new HorseQualifiedAuthorityHolder(
+      this.phase12Epoch,
+      REMAINING_VARIANT_PACKS.short_deck.version
+    ),
+    pineapple: new HorseQualifiedAuthorityHolder(
+      this.phase12Epoch,
+      REMAINING_VARIANT_PACKS.pineapple.version
+    ),
+    flh: new HorseQualifiedAuthorityHolder(this.phase12Epoch, REMAINING_VARIANT_PACKS.flh.version),
+    flo8: new HorseQualifiedAuthorityHolder(
+      this.phase12Epoch,
+      REMAINING_VARIANT_PACKS.flo8.version
+    ),
+  });
+  private phase12AuthorityAdmitted = false;
+  /** P13.3: worker-owned Phase 13 authority, one holder per joint variant
+   * (the same holder class and laws), each bound to the joint domain and its
+   * own variant, sharing this worker's epoch. Never obtained from a request. */
+  private readonly phase13Epoch = randomUUID();
+  private readonly phase13Authority: Readonly<Record<JointVariant, HorseQualifiedAuthorityHolder>> =
+    Object.freeze(
+      Object.fromEntries(
+        HORSE_PHASE13_VARIANTS.map((variant) => [
+          variant,
+          new HorseQualifiedAuthorityHolder(
+            this.phase13Epoch,
+            horsePhase13ContinuationVersion(variant)
+          ),
+        ])
+      ) as Record<JointVariant, HorseQualifiedAuthorityHolder>
+    );
+  private phase13AuthorityAdmitted = false;
   constructor(
     private readonly send: (message: HorseDecisionWorkerResponse) => void,
     private readonly deps: HorseDecisionWorkerDependencies = defaultHorseDecisionWorkerDependencies,
@@ -420,6 +562,11 @@ export class HorseDecisionWorkerRuntime {
   start(): Promise<HorseDecisionWorkerReadiness> {
     if (this.readyPromise) return this.readyPromise;
     this.started = true;
+    this.admitPhase8Authority();
+    this.admitPhase10Authority();
+    this.admitPhase11Authority();
+    this.admitPhase12Authority();
+    this.admitPhase13Authority();
     this.readyPromise = this.deps.startServices();
     void this.readyPromise
       .then((readiness) => this.send({ type: 'READY', ...readiness }))
@@ -816,6 +963,25 @@ export class HorseDecisionWorkerRuntime {
     const publicHero = gs.players.find((seat) => seat.seat === gs.heroSeat);
     if (gs.dealtSeatIds !== undefined)
       validateDealtSeatCensus(gs.players, request.player.seat, gs.dealtSeatIds);
+    // The posted blind seats (HorseGameStateV2.blindSeats). Absent on snapshots
+    // that predate the field and null on a hand that posted none; otherwise
+    // public seats, the small blind null only when it is dead.
+    if (gs.blindSeats !== undefined && gs.blindSeats !== null) {
+      const raw: unknown = gs.blindSeats;
+      const blinds: Record<string, unknown> =
+        raw && typeof raw === 'object' && !Array.isArray(raw) ? { ...raw } : {};
+      const known = (seat: unknown) => Number.isSafeInteger(seat) && seats.has(seat as number);
+      if (
+        Object.keys(blinds).length !== 2 ||
+        !Object.hasOwn(blinds, 'smallBlind') ||
+        !known(blinds.bigBlind) ||
+        !(
+          blinds.smallBlind === null ||
+          (known(blinds.smallBlind) && blinds.smallBlind !== blinds.bigBlind)
+        )
+      )
+        throw new Error('horse state blind seats must be public seats');
+    }
     if (
       (gs.chipUnit !== undefined || gs.asset !== undefined) &&
       (!['chips', 'diamonds'].includes(gs.asset ?? '') ||
@@ -1384,6 +1550,312 @@ export class HorseDecisionWorkerRuntime {
     }
   }
 
+  private admitPhase8Authority(): void {
+    if (this.phase8AuthorityAdmitted) return;
+    this.phase8AuthorityAdmitted = true;
+    let admission: HorseAuthorityAdmission;
+    try {
+      admission = this.deps.admitPhase8Authority?.() ?? {
+        status: 'refused',
+        reason: 'unselected',
+        transient: false,
+      };
+    } catch {
+      admission = { status: 'refused', reason: 'unreadable_evidence', transient: true };
+    }
+    this.phase8Authority.apply(admission);
+    noteFire(`phase8_authority_worker_${this.phase8Authority.currentState()}`);
+  }
+
+  /** A tripped safety sentinel is an explicit local withdrawal. */
+  private observePhase8Safety(): void {
+    let reason: string | null = null;
+    try {
+      reason = this.deps.phase8SafetyDisabledReason?.() ?? null;
+    } catch {
+      reason = 'safety_unreadable';
+    }
+    if (reason && this.phase8Authority.currentState() === 'usable') {
+      this.phase8Authority.withdraw(`safety_${reason}`);
+      noteFire('phase8_authority_worker_withdrawn');
+    }
+  }
+
+  /**
+   * Worker-owned admission: candidate mode comes from this worker's usable
+   * authority at the moment the request RUNS, never from the caller. A request
+   * queued before a withdrawal therefore runs in shadow. The caller may only
+   * turn Phase 8 off.
+   */
+  private phase8Admission(request: FastHorseDecisionRequest | DeepHorseDecisionRequest): {
+    mode: Phase8Mode;
+    receipt: HorseAuthorityReceipt;
+  } {
+    this.admitPhase8Authority();
+    this.observePhase8Safety();
+    const receipt = this.phase8Authority.receipt();
+    if (request.opts?.phase8Postflop === 'off') return { mode: 'off', receipt };
+    return {
+      mode: this.phase8Authority.verdict(receipt, Date.now()) === 'usable' ? 'candidate' : 'shadow',
+      receipt,
+    };
+  }
+
+  private admitPhase10Authority(): void {
+    if (this.phase10AuthorityAdmitted) return;
+    this.phase10AuthorityAdmitted = true;
+    let admission: HorseAuthorityAdmission;
+    try {
+      admission = this.deps.admitPhase10Authority?.() ?? {
+        status: 'refused',
+        reason: 'unselected',
+        transient: false,
+      };
+    } catch {
+      admission = { status: 'refused', reason: 'unreadable_evidence', transient: true };
+    }
+    this.phase10Authority.apply(admission);
+    noteFire(`phase10_authority_worker_${this.phase10Authority.currentState()}`);
+  }
+
+  /**
+   * P10.3 worker-owned PLO4 admission, the Phase 8 law: candidate mode comes
+   * from this worker's usable Phase 10 authority when the request RUNS, never
+   * from the caller, and only for a cash decision; a tournament decision stays
+   * shadow so Phase 7 keeps its objective. The caller may only turn it off.
+   */
+  private phase10Admission(request: FastHorseDecisionRequest | DeepHorseDecisionRequest): {
+    mode: Plo4LiveMode;
+    receipt: HorseAuthorityReceipt;
+  } {
+    this.admitPhase10Authority();
+    const receipt = this.phase10Authority.receipt();
+    return {
+      mode: horsePhase10AdmittedMode({
+        callerMode: request.opts?.phase10Plo4,
+        gameMode: request.gameState.gameMode,
+        verdict: this.phase10Authority.verdict(receipt, Date.now()),
+      }),
+      receipt,
+    };
+  }
+
+  /** Bind the Phase 10 admission receipt to the returned PLO4 receipt. */
+  private bindPhase10Authority(decision: HorseDecision, receipt: HorseAuthorityReceipt): void {
+    if (decision.plo4Policy) decision.plo4Policy.authority = receipt;
+  }
+
+  private admitPhase11Authority(): void {
+    if (this.phase11AuthorityAdmitted) return;
+    this.phase11AuthorityAdmitted = true;
+    for (const variant of HORSE_PHASE11_VARIANTS) {
+      let admission: HorseAuthorityAdmission;
+      try {
+        admission = this.deps.admitPhase11Authority?.(variant) ?? {
+          status: 'refused',
+          reason: 'unselected',
+          transient: false,
+        };
+      } catch {
+        admission = { status: 'refused', reason: 'unreadable_evidence', transient: true };
+      }
+      const holder = this.phase11Authority[variant];
+      holder.apply(admission);
+      noteFire(`phase11_authority_worker_${variant}_${holder.currentState()}`);
+    }
+  }
+
+  /**
+   * P11.3 worker-owned PLO5/PLO6/PLO8 admission, the Phase 8 law: candidate
+   * mode comes from this worker's usable authority for the decision's own
+   * pack when the request RUNS, never from the caller, and only for a cash
+   * decision; a tournament decision stays shadow so Phase 7 keeps its
+   * objective. The caller may only turn the packs off. A decision of any
+   * other variant carries no Phase 11 receipt and binds none.
+   */
+  private phase11Admission(request: FastHorseDecisionRequest | DeepHorseDecisionRequest): {
+    mode: OmahaVariantMode;
+    receipt: HorseAuthorityReceipt | null;
+  } {
+    this.admitPhase11Authority();
+    const variant = request.gameState.gameVariant;
+    const holder = isOmahaPolicyVariant(variant) ? this.phase11Authority[variant] : null;
+    const receipt = holder ? holder.receipt() : null;
+    return {
+      mode: horsePhase11AdmittedMode({
+        callerMode: request.opts?.phase11Omaha,
+        gameMode: request.gameState.gameMode,
+        variant,
+        packVariant: isOmahaPolicyVariant(variant) ? variant : null,
+        verdict: holder && receipt ? holder.verdict(receipt, Date.now()) : 'missing_receipt',
+      }),
+      receipt,
+    };
+  }
+
+  /** Bind the Phase 11 admission receipt to the returned pack receipt. */
+  private bindPhase11Authority(
+    decision: HorseDecision,
+    receipt: HorseAuthorityReceipt | null
+  ): void {
+    if (decision.omahaVariantPolicy && receipt) decision.omahaVariantPolicy.authority = receipt;
+  }
+
+  /** Every pack's current receipt, for the main scheduler's gates. */
+  private phase11AuthorityReceipts(): Readonly<Record<OmahaPolicyVariant, HorseAuthorityReceipt>> {
+    return Object.freeze({
+      plo5: this.phase11Authority.plo5.receipt(),
+      plo6: this.phase11Authority.plo6.receipt(),
+      plo8: this.phase11Authority.plo8.receipt(),
+    });
+  }
+
+  private admitPhase12Authority(): void {
+    if (this.phase12AuthorityAdmitted) return;
+    this.phase12AuthorityAdmitted = true;
+    for (const variant of HORSE_PHASE12_VARIANTS) {
+      let admission: HorseAuthorityAdmission;
+      try {
+        admission = this.deps.admitPhase12Authority?.(variant) ?? {
+          status: 'refused',
+          reason: 'unselected',
+          transient: false,
+        };
+      } catch {
+        admission = { status: 'refused', reason: 'unreadable_evidence', transient: true };
+      }
+      const holder = this.phase12Authority[variant];
+      holder.apply(admission);
+      noteFire(`phase12_authority_worker_${variant}_${holder.currentState()}`);
+    }
+  }
+
+  /**
+   * P12.3 worker-owned Short Deck/Pineapple/FLH/FLO8 admission, the Phase 8
+   * law as P11.3 applies it: candidate mode comes from this worker's usable
+   * authority for the decision's own pack when the request RUNS, never from
+   * the caller, and only for a cash decision; a tournament decision stays
+   * shadow so Phase 7 keeps its objective. The caller may only turn the packs
+   * off. A decision of any other variant carries no Phase 12 receipt and binds
+   * none.
+   */
+  private phase12Admission(request: FastHorseDecisionRequest | DeepHorseDecisionRequest): {
+    mode: RemainingVariantMode;
+    receipt: HorseAuthorityReceipt | null;
+  } {
+    this.admitPhase12Authority();
+    const variant = request.gameState.gameVariant;
+    const holder = isRemainingPolicyVariant(variant) ? this.phase12Authority[variant] : null;
+    const receipt = holder ? holder.receipt() : null;
+    return {
+      mode: horsePhase12AdmittedMode({
+        callerMode: request.opts?.phase12Remaining,
+        gameMode: request.gameState.gameMode,
+        variant,
+        packVariant: isRemainingPolicyVariant(variant) ? variant : null,
+        verdict: holder && receipt ? holder.verdict(receipt, Date.now()) : 'missing_receipt',
+      }),
+      receipt,
+    };
+  }
+
+  /** Bind the Phase 12 admission receipt to the returned pack receipt. */
+  private bindPhase12Authority(
+    decision: HorseDecision,
+    receipt: HorseAuthorityReceipt | null
+  ): void {
+    if (decision.remainingVariantPolicy && receipt)
+      decision.remainingVariantPolicy.authority = receipt;
+  }
+
+  /** Every Phase 12 pack's current receipt, for the main scheduler's gates. */
+  private phase12AuthorityReceipts(): Readonly<
+    Record<RemainingPolicyVariant, HorseAuthorityReceipt>
+  > {
+    return Object.freeze({
+      short_deck: this.phase12Authority.short_deck.receipt(),
+      pineapple: this.phase12Authority.pineapple.receipt(),
+      flh: this.phase12Authority.flh.receipt(),
+      flo8: this.phase12Authority.flo8.receipt(),
+    });
+  }
+
+  private admitPhase13Authority(): void {
+    if (this.phase13AuthorityAdmitted) return;
+    this.phase13AuthorityAdmitted = true;
+    for (const variant of HORSE_PHASE13_VARIANTS) {
+      let admission: HorseAuthorityAdmission;
+      try {
+        admission = this.deps.admitPhase13Authority?.(variant) ?? {
+          status: 'refused',
+          reason: 'unselected',
+          transient: false,
+        };
+      } catch {
+        admission = { status: 'refused', reason: 'unreadable_evidence', transient: true };
+      }
+      const holder = this.phase13Authority[variant];
+      holder.apply(admission);
+      noteFire(`phase13_authority_worker_${variant}_${holder.currentState()}`);
+    }
+  }
+
+  /**
+   * P13.3 worker-owned joint admission, the Phase 8 law as Phases 11 and 12
+   * apply it: candidate mode comes from this worker's usable Phase 13
+   * authority for the decision's own variant when the request RUNS, never from
+   * the caller, and only for a cash decision; unselected or any other verdict
+   * is shadow, and a tournament decision stays shadow so Phase 7 keeps its
+   * objective. A Diamond decision stays shadow as well: no Phase 13 qualified
+   * domain covers it (audit 2026-10-06). The caller may only turn the joint
+   * owner off.
+   */
+  private phase13Admission(request: FastHorseDecisionRequest | DeepHorseDecisionRequest): {
+    mode: JointPolicyMode;
+    receipt: HorseAuthorityReceipt | null;
+  } {
+    this.admitPhase13Authority();
+    const variant = request.gameState.gameVariant;
+    const holder = isJointVariant(variant) ? this.phase13Authority[variant] : null;
+    const receipt = holder ? holder.receipt() : null;
+    return {
+      mode: horsePhase13AdmittedMode({
+        callerMode: request.opts?.phase13Joint,
+        gameMode: request.gameState.gameMode,
+        variant,
+        asset: request.gameState.asset,
+        packVariant: isJointVariant(variant) ? variant : null,
+        verdict: holder && receipt ? holder.verdict(receipt, Date.now()) : 'missing_receipt',
+      }),
+      receipt,
+    };
+  }
+
+  /** Bind the Phase 13 admission receipt to the returned joint receipt. */
+  private bindPhase13Authority(
+    decision: HorseDecision,
+    receipt: HorseAuthorityReceipt | null
+  ): void {
+    if (decision.jointPolicy && receipt) decision.jointPolicy.authority = receipt;
+  }
+
+  /** Every joint variant's current receipt, for the main scheduler's gates. */
+  private phase13AuthorityReceipts(): Readonly<Record<JointVariant, HorseAuthorityReceipt>> {
+    return Object.freeze(
+      Object.fromEntries(
+        HORSE_PHASE13_VARIANTS.map((variant) => [variant, this.phase13Authority[variant].receipt()])
+      ) as Record<JointVariant, HorseAuthorityReceipt>
+    );
+  }
+
+  /** Bind the admission receipt to the returned Phase 8 ledger. */
+  private bindPhase8Authority(decision: HorseDecision, receipt: HorseAuthorityReceipt): void {
+    if (decision.tournamentPostflop) decision.tournamentPostflop.authority = receipt;
+    // A decision that tripped the sentinel withdraws authority now; its own
+    // receipt generation is then stale at the main scheduler's recheck.
+    this.observePhase8Safety();
+  }
+
   /** One decision at one governor scale; that scale is the one journaled beside it. */
   private atGovernorScale<T>(fn: () => T): { value: T; scale: number } {
     if (this.deps.atGovernorScale) return this.deps.atGovernorScale(fn);
@@ -1401,6 +1873,11 @@ export class HorseDecisionWorkerRuntime {
     );
     this.deps.restoreRng(rngBefore);
     const startedAt = this.deps.now();
+    const phase8 = this.phase8Admission(request);
+    const phase10 = this.phase10Admission(request);
+    const phase11 = this.phase11Admission(request);
+    const phase12 = this.phase12Admission(request);
+    const phase13 = this.phase13Admission(request);
     let captured: CapturedHorseMindDecision<ReturnType<typeof HorseLogic.decide>>;
     let rngAfter: number;
     let governorScale: number;
@@ -1412,6 +1889,11 @@ export class HorseDecisionWorkerRuntime {
         this.deps.captureDecisionEffects(() =>
           this.deps.decide(player, gameState, request.style, request.mods, {
             ...request.opts,
+            phase8Postflop: phase8.mode,
+            phase10Plo4: phase10.mode,
+            phase11Omaha: phase11.mode,
+            phase12Remaining: phase12.mode,
+            phase13Joint: phase13.mode,
             decisionTimeMs: request.decisionTimeMs,
             telemetry: true,
             observeMind: true,
@@ -1426,6 +1908,11 @@ export class HorseDecisionWorkerRuntime {
     } finally {
       this.deps.restoreRng(canonicalRng);
     }
+    this.bindPhase8Authority(captured.value, phase8.receipt);
+    this.bindPhase10Authority(captured.value, phase10.receipt);
+    this.bindPhase11Authority(captured.value, phase11.receipt);
+    this.bindPhase12Authority(captured.value, phase12.receipt);
+    this.bindPhase13Authority(captured.value, phase13.receipt);
     if (!horseDecisionEffectsAreValid(captured.effects)) {
       throw new Error('Horse decision captured invalid plan effects');
     }
@@ -1464,6 +1951,13 @@ export class HorseDecisionWorkerRuntime {
           ...captured.value.tournamentUtility,
           readFrameSha256: readFrame?.sha256 ?? null,
         },
+      };
+    }
+    // P10.1: the PLO4 input binding names the same original read frame.
+    if (captured.value.plo4Policy?.inputs) {
+      captured.value = {
+        ...captured.value,
+        plo4Policy: { ...captured.value.plo4Policy, readFrameSha256: readFrame?.sha256 ?? null },
       };
     }
     const at = startedAt;
@@ -1516,6 +2010,11 @@ export class HorseDecisionWorkerRuntime {
         rngAfter,
         computeMs,
         governorScale,
+        phase8Authority: this.phase8Authority.receipt(),
+        phase10Authority: this.phase10Authority.receipt(),
+        phase11Authority: this.phase11AuthorityReceipts(),
+        phase12Authority: this.phase12AuthorityReceipts(),
+        phase13Authority: this.phase13AuthorityReceipts(),
         // Retain intent only when the reference wager survived every later
         // policy owner. The client separately binds its hand, horse and street.
         effects,
@@ -1579,6 +2078,13 @@ export class HorseDecisionWorkerRuntime {
       });
       return 'refused';
     }
+    // Deep work admits authority afresh when it runs: a withdrawal while it
+    // waited behind think time turns it back to shadow.
+    const phase8 = this.phase8Admission(request);
+    const phase10 = this.phase10Admission(request);
+    const phase11 = this.phase11Admission(request);
+    const phase12 = this.phase12Admission(request);
+    const phase13 = this.phase13Admission(request);
     // The latest worker stream is canonical. The second look borrows the fast
     // decision's starting point, then restores the canonical stream even if
     // a future HorseLogic version throws outside its own safety net.
@@ -1597,6 +2103,11 @@ export class HorseDecisionWorkerRuntime {
             this.deps.captureDecisionEffects(() =>
               this.deps.decide(player, gameState, request.style, request.mods, {
                 ...request.opts,
+                phase8Postflop: phase8.mode,
+                phase10Plo4: phase10.mode,
+                phase11Omaha: phase11.mode,
+                phase12Remaining: phase12.mode,
+                phase13Joint: phase13.mode,
                 decisionTimeMs: request.decisionTimeMs,
                 telemetry: false,
                 deepEquity: request.deepEquity,
@@ -1612,6 +2123,11 @@ export class HorseDecisionWorkerRuntime {
     } finally {
       this.deps.restoreRng(canonicalRng);
     }
+    this.bindPhase8Authority(decision, phase8.receipt);
+    this.bindPhase10Authority(decision, phase10.receipt);
+    this.bindPhase11Authority(decision, phase11.receipt);
+    this.bindPhase12Authority(decision, phase12.receipt);
+    this.bindPhase13Authority(decision, phase13.receipt);
     const computeMs = Math.max(0, this.deps.now() - startedAt);
     this.deps.noteDecision(`deep:${request.gameState.gameVariant || 'nlh'}`, computeMs);
     this.deps.noteFeature('v44_second_look');
@@ -1622,6 +2138,12 @@ export class HorseDecisionWorkerRuntime {
           ...decision.tournamentUtility,
           readFrameSha256: retained.frame.sha256,
         },
+      };
+    }
+    if (decision.plo4Policy?.inputs) {
+      decision = {
+        ...decision,
+        plo4Policy: { ...decision.plo4Policy, readFrameSha256: retained.frame.sha256 },
       };
     }
     try {
@@ -1651,6 +2173,11 @@ export class HorseDecisionWorkerRuntime {
       decision,
       computeMs,
       governorScale,
+      phase8Authority: this.phase8Authority.receipt(),
+      phase10Authority: this.phase10Authority.receipt(),
+      phase11Authority: this.phase11AuthorityReceipts(),
+      phase12Authority: this.phase12AuthorityReceipts(),
+      phase13Authority: this.phase13AuthorityReceipts(),
     });
     return decision.policyFallback === 'brain_exception' ? 'exception' : 'success';
   }

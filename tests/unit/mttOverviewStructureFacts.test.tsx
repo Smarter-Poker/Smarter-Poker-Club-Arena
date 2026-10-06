@@ -154,7 +154,9 @@ describe('live tournament tabs share the committed blind amounts', () => {
       /* 52,500 prints as 52.5K: chipsCompact is compactChips (src/utils/format.ts),
          the one compact formatter, which never rounds a figure UP to a number
          the player does not have (#ClubArenaConsole, 2026-09-04). */
-      expect(hero.querySelector('.dov-blind__value')?.textContent).toBe(known ? '52.5K / 105K' : '-');
+      expect(hero.querySelector('.dov-blind__value')?.textContent).toBe(
+        known ? '52.5K / 105K' : '-'
+      );
       if (known) expect(within(hero as HTMLElement).getByText('Ante 105K')).toBeInTheDocument();
       else
         expect(
@@ -362,7 +364,9 @@ describe('live tournament tabs share the committed blind amounts', () => {
       );
       expect(screen.getByText('Level 370 Ends In')).toBeInTheDocument();
       expect(rendered.container.querySelector('.dov-hero__time')?.textContent).toBe('7:00');
-      expect(rendered.container.querySelector('.dov-blind__value')?.textContent).toBe('52.5K / 105K');
+      expect(rendered.container.querySelector('.dov-blind__value')?.textContent).toBe(
+        '52.5K / 105K'
+      );
     }
   );
 
@@ -387,7 +391,12 @@ describe('live tournament tabs share the committed blind amounts', () => {
     );
     expect(screen.queryByText('Waiting For Resume')).toBeNull();
     expect(screen.queryByText('Level 370 Clock Paused')).toBeNull();
-    expect(blindClock().textContent).toContain('-');
+    /* 2026-10-04: a finished event prints what happened (Entries, Prize Pool,
+       Places Paid) and no live tile, so there is no Blinds Up tile left to
+       read "-" from. The guarantee is stronger than it was: a held clock
+       cannot be carried into results that have no clock at all. */
+    expect(screen.queryByText('Blinds Up')).toBeNull();
+    expect(screen.queryByText('Paused')).toBeNull();
   });
 
   it('announces the global last hand without freezing a tournament that has not paused', async () => {

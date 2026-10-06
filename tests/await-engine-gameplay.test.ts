@@ -2,8 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   awaitEngineGameplay,
+  BREAK_START_MINUTE,
+  CERTIFICATE_LEAD_MS,
   gameplayHasResumed,
   GAMEPLAY_WAIT_MS,
+  LAST_HAND_LEAD_MINUTES,
+  msUntilNextAnnouncement,
 } from '../scripts/ci/await-engine-gameplay.mjs';
 import { HUD_RESERVE_MS, MTT_HUD_LEVEL_CAP_MS } from './e2e/support/tournamentHudWitness';
 
@@ -13,13 +17,15 @@ const health = (maintenance: object, releaseSha = SHA) =>
 const idle = { active: false, phase: 'idle', resumeWaves: null };
 const frozen = { active: true, phase: 'counting_down' };
 const reply = (raw: string) => new Response(raw, { status: 200 });
+const resumed = { verdict: 'resumed', sha: SHA };
+const NEWER = 'b'.repeat(40);
 
 describe('the existing certification waits only for its engine maintenance boundary', () => {
   it('admits a resumed exact engine immediately without sleeping', async () => {
     const pause = vi.fn();
     expect(
       await awaitEngineGameplay(SHA, { fetchImpl: async () => reply(health(idle)), pause })
-    ).toBe(SHA);
+    ).toEqual(resumed);
     expect(pause).not.toHaveBeenCalled();
   });
 
@@ -45,22 +51,89 @@ describe('the existing certification waits only for its engine maintenance bound
       },
       report,
     });
-    expect(result).toBe(SHA);
+    expect(result).toEqual(resumed);
     expect(fetchImpl).toHaveBeenCalledTimes(4);
     expect(elapsed).toBe(15_000);
     expect(report).toHaveBeenCalledTimes(1);
   });
 
-  it('refuses a changed engine while waiting instead of certifying a replacement', async () => {
+  it('refuses a changed engine that is not a later protected-main release', async () => {
     let calls = 0;
+    const isForwardRelease = vi.fn(() => false);
     await expect(
       awaitEngineGameplay(SHA, {
-        fetchImpl: async () => reply(health(frozen, ++calls === 1 ? SHA : 'b'.repeat(40))),
+        fetchImpl: async () => reply(health(frozen, ++calls === 1 ? SHA : NEWER)),
         pause: async () => {},
         report: () => {},
+        isForwardRelease,
       })
     ).rejects.toThrow('has not reached required');
     expect(calls).toBe(2);
+    expect(isForwardRelease).toHaveBeenCalledWith(SHA, NEWER);
+  });
+
+  it('stands down, never certifying the replacement, when the break cut over a later release', async () => {
+    let calls = 0;
+    expect(
+      await awaitEngineGameplay(SHA, {
+        fetchImpl: async () =>
+          reply(health(++calls === 1 ? frozen : idle, calls === 1 ? SHA : NEWER)),
+        pause: async () => {},
+        report: () => {},
+        isForwardRelease: () => true,
+      })
+    ).toEqual({ verdict: 'superseded', sha: NEWER });
+  });
+
+  it('waits out the restart inside the break: gateway 5xx, refused sockets and warming liveness', async () => {
+    // Runs 37094718899 and 37097809882 died on the first 502 at :55.
+    let elapsed = 0;
+    const report = vi.fn();
+    const fetchImpl = vi.fn(async () => {
+      if (elapsed < 60_000) return reply(health({ active: true, phase: 'counting_down' }));
+      if (elapsed < 120_000) return new Response('', { status: 502 });
+      if (elapsed < 150_000) throw new TypeError('fetch failed');
+      if (elapsed < 170_000) return new Response('', { status: 503 });
+      if (elapsed < 190_000)
+        return reply(
+          JSON.stringify({
+            releaseSha: SHA,
+            running: true,
+            liveness: 'warming',
+            maintenance: frozen,
+          })
+        );
+      if (elapsed < 240_000) return reply(health({ active: true, phase: 'finalizing' }));
+      return reply(health(idle));
+    });
+    expect(
+      await awaitEngineGameplay(SHA, {
+        fetchImpl,
+        now: () => elapsed,
+        pause: async (ms: number) => {
+          elapsed += ms;
+        },
+        report,
+      })
+    ).toEqual(resumed);
+    expect(elapsed).toBe(240_000);
+    // One line per distinct reason, not one per poll.
+    expect(report.mock.calls.length).toBeLessThanOrEqual(6);
+  });
+
+  it('still fails inside the fixed budget when the engine never comes back', async () => {
+    let elapsed = 0;
+    await expect(
+      awaitEngineGameplay(SHA, {
+        fetchImpl: async () => new Response('', { status: 502 }),
+        now: () => elapsed,
+        pause: async (ms: number) => {
+          elapsed += ms;
+        },
+        report: () => {},
+      })
+    ).rejects.toThrow(/twelve-minute.*HTTP 502/);
+    expect(elapsed).toBe(GAMEPLAY_WAIT_MS);
   });
 
   it('fails after a fixed budget if maintenance never ends', async () => {
@@ -102,7 +175,7 @@ describe('the existing certification waits only for its engine maintenance bound
         },
         report: () => {},
       })
-    ).toBe(SHA);
+    ).toEqual(resumed);
     expect(elapsed).toBe(555_000);
   });
 
@@ -146,7 +219,7 @@ describe('the existing certification waits only for its engine maintenance bound
         },
         report: () => {},
       })
-    ).toBe(SHA);
+    ).toEqual(resumed);
     expect(elapsed).toBe(665_000);
     expect(elapsed).toBeGreaterThan(600_000);
     expect(GAMEPLAY_WAIT_MS - elapsed).toBeGreaterThan(15_000 + 5_000);
@@ -204,17 +277,63 @@ describe('the existing certification waits only for its engine maintenance bound
     expect(() => gameplayHasResumed(health(maintenance as object), SHA)).toThrow();
   });
 
-  it('does not retry transport, HTTP or malformed health failures', async () => {
+  it('does not retry an answer it cannot read or a non-gateway HTTP refusal', async () => {
     for (const fetcher of [
-      async () => {
-        throw Error('network unavailable');
-      },
-      async () => new Response('', { status: 503 }),
+      async () => new Response('', { status: 500 }),
+      async () => new Response('', { status: 404 }),
       async () => reply('{'),
+      async () => reply(JSON.stringify({ running: true, liveness: 'ok', maintenance: idle })),
     ]) {
       const fetchImpl = vi.fn(fetcher);
       await expect(awaitEngineGameplay(SHA, { fetchImpl })).rejects.toThrow();
       expect(fetchImpl).toHaveBeenCalledTimes(1);
     }
+  });
+});
+
+describe('the live-table certificate does not start into the next scheduled break', () => {
+  const at = (iso: string) => Date.parse(iso);
+
+  it('measures the time to the next :53 announcement', () => {
+    expect(msUntilNextAnnouncement(at('2026-10-04T22:47:00Z'))).toBe(6 * 60_000);
+    expect(msUntilNextAnnouncement(at('2026-10-04T22:53:00Z'))).toBe(60 * 60_000);
+    expect(msUntilNextAnnouncement(at('2026-10-04T23:01:00Z'))).toBe(52 * 60_000);
+  });
+
+  it('reads the announcement minute from the engine that schedules it', () => {
+    const engine = readFileSync('server/src/maintenance/MaintenanceBreak.ts', 'utf8');
+    expect(engine).toContain(`static readonly BREAK_START_MINUTE = ${BREAK_START_MINUTE};`);
+    expect(engine).toContain(
+      `static readonly LAST_HAND_LEAD_MS = ${LAST_HAND_LEAD_MINUTES} * 60 * 1000;`
+    );
+  });
+
+  it('waits out the break when the certificate would straddle the announcement', async () => {
+    const pause = vi.fn();
+    const report = vi.fn();
+    expect(
+      await awaitEngineGameplay(SHA, {
+        fetchImpl: async () => reply(health(idle)),
+        pause,
+        report,
+        wallClock: () => at('2026-10-04T22:47:00Z'),
+      })
+    ).toEqual(resumed);
+    expect(pause).toHaveBeenCalledTimes(1);
+    expect(pause).toHaveBeenCalledWith(6 * 60_000 + 30_000);
+    expect(report.mock.calls[0][0]).toMatch(/starts after that break/);
+  });
+
+  it('starts at once with enough of the hour left', async () => {
+    const pause = vi.fn();
+    expect(
+      await awaitEngineGameplay(SHA, {
+        fetchImpl: async () => reply(health(idle)),
+        pause,
+        wallClock: () => at('2026-10-04T23:01:00Z'),
+      })
+    ).toEqual(resumed);
+    expect(pause).not.toHaveBeenCalled();
+    expect(CERTIFICATE_LEAD_MS).toBe(15 * 60_000);
   });
 });

@@ -639,7 +639,7 @@ describe('topUpWithHorses - the wiring, pinned in the source', () => {
       body.indexOf(".from('table_seats')"),
       body.indexOf('liveCount = liveSeatRows.length')
     );
-    expect(read).toMatch(/\.select\('user_id, seat_number'\)/);
+    expect(read).toMatch(/\.select\('user_id, seat_number, joined_at'\)/);
     expect(read).toMatch(/\.eq\('table_id', primaryTableId\)/);
     expect(read).toMatch(/\.is\('left_at', null\)/);
   });

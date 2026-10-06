@@ -93,9 +93,51 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26cqw;
-  height: 26cqw;
-  margin: 2cqw auto 0;
+  width: 27cqw;
+  height: 27cqw;
+  margin: 5cqw auto 1cqw;
+  /* THE REVEAL (2026-10-05): the medal lands, then the place, then what it
+     paid, which counts up (TournamentRankingCard's useCountUp, same clock).
+     Reduced motion collapses all of it to the final frame globally
+     (src/styles/reducedMotion.css); nothing here carries meaning in motion. */
+  animation: trc2MedalLand 0.55s cubic-bezier(0.2, 1.35, 0.4, 1) 0.18s both;
+}
+
+/* The starburst, cast in the finish's own light (2026-10-05). Beams are the
+   medal's glow token at full strength fading to nothing, so the podium burns
+   bright and cool and a 47th place gets a faint steel wash. A slow turn, so
+   the card is alive while it is read; reduced motion holds it still. */
+.trc2__medal-rays {
+  position: absolute;
+  inset: -15cqw;
+  border-radius: 50%;
+  background: repeating-conic-gradient(
+    from 0deg,
+    var(--trc2-medal-glow) 0deg 4deg,
+    transparent 4deg 15deg
+  );
+  -webkit-mask-image: radial-gradient(
+    circle closest-side,
+    #000 40%,
+    rgba(0, 0, 0, 0.45) 70%,
+    transparent 100%
+  );
+  mask-image: radial-gradient(
+    circle closest-side,
+    #000 40%,
+    rgba(0, 0, 0, 0.45) 70%,
+    transparent 100%
+  );
+  pointer-events: none;
+  animation:
+    trc2RaysIn 0.7s ease-out 0.35s both,
+    trc2Rays 48s linear 0.35s infinite;
+}
+
+/* Off the podium the burst is a wash, not a celebration: the same light at
+   under half strength, so 47th never reads like a trophy finish. */
+.trc2__medal--steel .trc2__medal-rays {
+  opacity: 0.45;
 }
 
 .trc2__medal-ring {
@@ -112,7 +154,22 @@
   box-shadow:
     inset 0 4px 12px rgba(255, 255, 255, 0.45),
     inset 0 -6px 14px rgba(0, 0, 0, 0.35),
+    0 0 0 0.5cqw rgba(0, 0, 0, 0.55),
     0 8px 22px rgba(0, 0, 0, 0.45);
+}
+
+/* The struck inner rim of a real medal: a cut line just inside the edge, dark
+   below a lit lip, so the face reads as metal pressed in a die rather than a
+   flat disc. Same technique as the engraved rules on the glass. */
+.trc2__medal-ring::before {
+  content: '';
+  position: absolute;
+  inset: 1.6cqw;
+  border-radius: 50%;
+  box-shadow:
+    inset 0 0.25cqw 0 rgba(0, 0, 0, 0.28),
+    0 0.25cqw 0 rgba(255, 255, 255, 0.55);
+  pointer-events: none;
 }
 
 /* PODIUM TROPHY (Dan 2026-08-23). currentColor is the medal ink, so the cup
@@ -175,23 +232,91 @@
 }
 
 /* ── Place band ──
-   The one solid field on the glass, because it IS the result: the metal of the
-   finish, spelled out in words. It carries no corner and no rim. */
+   The result, set as the result (2026-10-05). It was a solid slab of colour
+   with "1ST" centred in it - the generic part of the card. Now: the finish
+   named in lit blue between two engraved rules, then the place itself in the
+   master's engraved silver at the biggest size on the sheet, the numeral full
+   height and its suffix raised and smaller. The band colour is still the
+   finish's metal, and still the only field on the glass that carries it - as
+   the light the numeral stands in, fading out before it reaches the rails,
+   with a lit hairline beneath. */
 .trc2__placeband {
-  margin-top: 2.4cqw;
-  padding: 2.4cqw 3cqw;
+  position: relative;
+  animation: trc2Lift 0.45s cubic-bezier(0.17, 0.84, 0.44, 1) 0.5s both;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6cqw;
+  margin-top: 1cqw;
+  padding: 1.6cqw 3cqw 2.6cqw;
   text-align: center;
-  font-size: 5cqw;
+  background: radial-gradient(
+    ellipse 52% 72% at 50% 62%,
+    color-mix(in srgb, var(--trc2-band, #233355) 62%, transparent) 0%,
+    transparent 100%
+  );
+}
+
+.trc2__placeband::after {
+  content: '';
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--trc2-band, #233355), transparent);
+  box-shadow: 0 0 1.4cqw var(--trc2-band, #233355);
+}
+
+.trc2__place-title {
+  display: flex;
+  align-items: center;
+  gap: 2.4cqw;
+  font-size: 3cqw;
   font-weight: 800;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  /* The letter-spacing trails the last letter; this puts it back in the middle. */
+  margin-right: -0.32em;
+}
+
+.trc2__place-title::before,
+.trc2__place-title::after {
+  content: '';
+  width: 10cqw;
+  height: 1px;
+  background: #000;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.trc2__place-ordinal {
+  display: inline-flex;
+  align-items: flex-start;
+  line-height: 0.92;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.trc2__place-num {
+  display: inline-block;
+  animation: trc2Strike 0.5s cubic-bezier(0.2, 1.3, 0.4, 1) 0.55s both;
+  font-size: 17cqw;
+  letter-spacing: -0.02em;
+}
+
+.trc2__place-suffix {
+  margin: 1.4cqw 0 0 0.6cqw;
+  font-size: 6.4cqw;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #fff;
-  text-shadow: 0 0.25cqw 0.4cqw rgba(0, 0, 0, 0.7);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(0, 0, 0, 0.18)),
-    /* The default was #7a3a1f - the brown band Dan photographed on a 4th
-       place. Out-of-the-money now reads as deep house blue. */
-    var(--trc2-band, #233355);
+}
+
+.trc2__place-word {
+  font-size: 9cqw;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .trc2__placeband.trc2__medal--gold {
@@ -210,11 +335,20 @@
   --trc2-band: #33435a;
 }
 
-/* ── Player row: a line on the glass, under an engraved rule ── */
+/* ── Player row: who this was, centred under what it paid ── */
+.trc2__player,
+.trc2__payout-split,
+.trc2__winning-hand,
+.trc2__extras,
+.trc2__session {
+  animation: trc2Lift 0.4s ease-out 0.95s both;
+}
+
 .trc2__player {
   display: flex;
   align-items: center;
-  gap: 3cqw;
+  justify-content: center;
+  gap: 2.6cqw;
   padding-top: 2.6cqw;
   border-top: 1px solid #000;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
@@ -225,8 +359,8 @@
    frame that appears invisible rather than a ring around the face. */
 .trc2__avatar {
   flex: 0 0 auto;
-  width: 11cqw;
-  height: 11cqw;
+  width: 10cqw;
+  height: 10cqw;
   border-radius: 50%;
   object-fit: cover;
   background: #05080d;
@@ -235,7 +369,7 @@
 
 .trc2__identity {
   display: flex;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   flex-direction: column;
   min-width: 0;
 }
@@ -254,18 +388,20 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ── What it paid: centred, directly under the place ── */
 .trc2__reward {
+  animation: trc2Lift 0.4s ease-out 0.75s both;
   display: flex;
-  flex: 0 0 auto;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 0.4cqw;
+  align-items: center;
+  gap: 0.6cqw;
+  margin-top: 1.2cqw;
 }
 
 .trc2__reward-label {
   font-size: 2.6cqw;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
   /* Was #ffb800 - "gold for money" was the last yellow on the card. Cyan is
      the house accent and already marks live values everywhere else. */
@@ -273,8 +409,28 @@
   text-shadow: 0 0 0.9cqw rgba(0, 212, 255, 0.5);
 }
 
+/* The running count prints over the held final figure, which keeps the
+   width so the line never shifts when the count lands. */
+.trc2__reward-final.is-counting {
+  visibility: hidden;
+}
+
+.trc2__reward-count::after {
+  content: attr(data-count);
+}
+
+.trc2__reward-count {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .trc2__reward-value {
-  font-size: 4.4cqw;
+  position: relative;
+  font-size: 8.4cqw;
+  line-height: 1;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
@@ -345,6 +501,12 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
+/* An engraved vertical rule between the pair, the same cut as the rows. */
+.trc2__session-stat + .trc2__session-stat {
+  border-left: 1px solid #000;
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.08);
+}
+
 .trc2__session-stat {
   display: flex;
   flex: 1 1 0;
@@ -362,7 +524,7 @@
 }
 
 .trc2__session-value {
-  font-size: 3.8cqw;
+  font-size: 4.4cqw;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
@@ -397,66 +559,50 @@
   filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.4));
 }
 
-/* ── The way out ──
-   Dan 2026-08-30: "USER MUST CLICK THE 'X' TO CLOSE IT." The backdrop is
-   scenery; this control and Escape are the only ways out. It was a round steel
-   button with a glyph in it; it is a lit word now, which says what it does. */
-.trc2__exit {
-  display: flex;
-  justify-content: center;
-  padding-top: 2.6cqw;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-
-.trc2__close {
-  appearance: none;
-  min-height: 44px;
-  margin: 0;
-  padding: 0 3cqw;
-  border: 0;
-  background: transparent;
-  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
-  font-size: 3.1cqw;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: #9fb6da;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-.trc2__close:active {
-  filter: brightness(1.25);
-}
-
-.trc2__close:focus-visible {
-  outline: 2px solid #00d4ff;
-  outline-offset: 2px;
-}
-
-/* metallic-popups.css bevels every button inside a dialog with `!important`
-   from a `:where()` at specificity 0, and paints steel hardware on anything
-   labelled Close. A lit word paints nothing: the longhands are restated at
-   0,2,1. */
-[role='dialog'] .trc2__close.trc2__close {
-  min-width: 0;
-  min-height: 44px;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  color: #9fb6da !important;
-  box-shadow: none !important;
-  transform: none !important;
-}
-
 @keyframes trc2Fade {
   from {
     opacity: 0;
   }
   to {
     opacity: 1;
+  }
+}
+@keyframes trc2MedalLand {
+  from {
+    opacity: 0;
+    transform: scale(0.45);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes trc2RaysIn {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes trc2Lift {
+  from {
+    opacity: 0;
+    transform: translateY(2.4cqw);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes trc2Strike {
+  from {
+    transform: scale(1.35);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+@keyframes trc2Rays {
+  to {
+    transform: rotate(360deg);
   }
 }
 @keyframes trc2Rise {
@@ -471,7 +617,8 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .trc2__backdrop,
-  .trc2__card {
+  .trc2__card,
+  .trc2__medal-rays {
     animation: none;
   }
 }

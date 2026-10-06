@@ -75,7 +75,7 @@ import { reportError } from '../utils/errorReporter';
 import { formatPopupText } from '../utils/popupStyle';
 import { SpadeConsole } from '../components/console/SpadeConsole';
 import { compactChips } from '../utils/format';
-import { enumToTitleCase } from '../utils/titleCase';
+import { enumToTitleCase, titleCase } from '../utils/titleCase';
 
 type CashierAction = 'send' | 'distribute' | 'buyin' | 'cashout' | 'mint' | 'history';
 
@@ -158,14 +158,8 @@ function newOpId(): string {
   });
 }
 
-/**
- * An exact ledger figure printed on the console glass. A whole balance prints
- * whole ("12,500", never "12,500.00"); a fractional one keeps its cents, because
- * a money desk never misstates a ledger. The painted head zones do not use
- * this: they print compactChips().
- */
-const chipFigure = (n: number): string =>
-  n.toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 0 });
+/** #ClubArenaConsole chip reading for every forward-facing non-felt figure. */
+const chipFigure = compactChips;
 
 const CATEGORY_LABELS: Record<string, string> = {
   buyin: 'Buy-In',
@@ -2070,7 +2064,7 @@ function CashierContent() {
       <SpadeConsole
         eyebrow="Club Arena Cashier"
         title="Cashier"
-        subtitle={clubName || 'Club Wallet'}
+        subtitle={titleCase(clubName || 'Club Wallet')}
         pill={realtimeStatus === 'connected' ? 'Live' : 'Syncing'}
         pillInk={realtimeStatus === 'connected' ? 'green' : 'gold'}
         foot="foot"
@@ -2139,13 +2133,6 @@ function CashierContent() {
                 className={`${styles.quickLink} sc-ink--gold`}
               >
                 Disputes
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate('/financial-alerts')}
-                className={`${styles.quickLink} sc-ink--red`}
-              >
-                Alerts
               </button>
               <button
                 type="button"
@@ -2218,6 +2205,7 @@ function CashierContent() {
                       className={styles.select}
                       value={selectedRecipient}
                       onChange={(e) => setSelectedRecipient(e.target.value)}
+                      aria-label="Send To Recipient"
                     >
                       <option value="">Select Recipient</option>
                       {filteredRecipients.map((r) => {
@@ -2395,6 +2383,7 @@ function CashierContent() {
                       className={styles.select}
                       value={selectedRecipient}
                       onChange={(e) => setSelectedRecipient(e.target.value)}
+                      aria-label="Distribute To Player"
                     >
                       <option value="">Select Player...</option>
                       {filteredRecipients.map((r) => (

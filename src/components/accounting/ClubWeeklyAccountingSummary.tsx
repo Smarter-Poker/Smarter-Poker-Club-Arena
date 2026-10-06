@@ -3,10 +3,13 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { useCashoutScope } from '../../hooks/useCashoutScope';
 import {
   readClubWeeklyStatements,
-  formatWeeklyChips,
+  formatWeeklyChipsForDisplay,
   CLUB_WEEKLY_STATEMENT_LIMIT,
   type ClubWeeklyStatement,
 } from '../../services/ClubWeeklyAccountingReader';
+import { FinancialExportService } from '../../services/FinancialExportService';
+import { reportError } from '../../utils/errorReporter';
+import styles from './ClubWeeklyAccountingSummary.module.css';
 
 interface Observation {
   scope: () => boolean;
@@ -15,16 +18,27 @@ interface Observation {
   rows: ClubWeeklyStatement[];
 }
 
+function retire(counter: { current: number }) {
+  counter.current += 1;
+}
+
 /** Every club surface reads the same issued weekly summaries. */
 export function ClubWeeklyAccountingSummary({ clubId }: { clubId: string }) {
   const { user, isHydrating } = useAuthUser();
   const scope = useCashoutScope(user?.id, JSON.stringify(['weekly-statements', clubId]));
   const sequence = useRef(0);
+  const exportSequence = useRef(0);
   const [observation, setObservation] = useState<Observation | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportNotice, setExportNotice] = useState<{
+    tone: 'ready' | 'unavailable';
+    message: string;
+  } | null>(null);
   const refresh = useCallback(async () => {
     const read = ++sequence.current;
     const current = () => scope() && sequence.current === read;
     if (!user?.id || isHydrating || !clubId || !current()) return;
+    setExportNotice(null);
     setObservation({ scope, read, phase: 'loading', rows: [] });
     try {
       const result = await readClubWeeklyStatements({
@@ -34,17 +48,54 @@ export function ClubWeeklyAccountingSummary({ clubId }: { clubId: string }) {
         isCurrent: current,
       });
       if (current()) setObservation({ scope, read, phase: 'ready', rows: result.rows });
-    } catch {
-      if (current()) setObservation({ scope, read, phase: 'unavailable', rows: [] });
+    } catch (error) {
+      if (current()) {
+        reportError(error, 'ClubWeeklyAccountingSummary.read');
+        setObservation({ scope, read, phase: 'unavailable', rows: [] });
+      }
     }
   }, [clubId, user?.id, isHydrating, scope]);
 
   useEffect(() => {
     void refresh();
     return () => {
-      ++sequence.current;
+      retire(sequence);
+      retire(exportSequence);
     };
   }, [refresh]);
+
+  const exportSummaries = useCallback(async () => {
+    const read = ++exportSequence.current;
+    const current = () => scope() && exportSequence.current === read;
+    if (!user?.id || isHydrating || !clubId || !current()) return;
+    setExporting(true);
+    setExportNotice(null);
+    try {
+      const result = await FinancialExportService.exportCSV({
+        type: 'settlement_club',
+        clubId,
+        userId: user.id,
+        expectedActorId: user.id,
+        limit: CLUB_WEEKLY_STATEMENT_LIMIT,
+        isCurrent: current,
+      });
+      if (!current()) return;
+      setExportNotice(
+        result.success
+          ? { tone: 'ready', message: 'Weekly Summary Export Prepared.' }
+          : { tone: 'unavailable', message: 'Weekly Summary Export Is Unavailable.' }
+      );
+    } catch (error) {
+      if (!current()) return;
+      reportError(error, 'ClubWeeklyAccountingSummary.export');
+      setExportNotice({
+        tone: 'unavailable',
+        message: 'Weekly Summary Export Is Unavailable.',
+      });
+    } finally {
+      if (current()) setExporting(false);
+    }
+  }, [clubId, user?.id, isHydrating, scope]);
 
   const current =
     scope() && observation?.scope === scope && observation.read === sequence.current
@@ -54,25 +105,57 @@ export function ClubWeeklyAccountingSummary({ clubId }: { clubId: string }) {
   const loading = available && (!current || current.phase === 'loading');
   const unavailable = !available || current?.phase === 'unavailable';
   return (
-    <section aria-label="Club Weekly Accounting" aria-busy={loading}>
-      <div className="admin-card" style={{ marginBottom: 16 }}>
-        <h3 className="admin-card-title">Club Weekly Accounting</h3>
-        <p>Weekly Totals For Rake Received, Rakeback Paid And Rake Retained.</p>
-        <p className="admin-text-secondary">
+    <section className={styles.summary} aria-label="Club Weekly Accounting" aria-busy={loading}>
+      <div className={styles.header}>
+        <h3 className={styles.title}>Club Weekly Accounting</h3>
+        <p className={styles.copy}>
+          Weekly Totals For Rake Received, Rakeback Paid And Rake Retained.
+        </p>
+        <p className={styles.meta}>
           Latest Up To {CLUB_WEEKLY_STATEMENT_LIMIT} Issued Weekly Summaries.
         </p>
-        <button
-          type="button"
-          className="admin-btn admin-btn-primary"
-          disabled={!available || loading}
-          onClick={() => void refresh()}
-        >
-          Refresh Weekly Summaries
-        </button>
+        <div className={styles.actions}>
+          <button
+            type="button"
+            className={styles.word}
+            disabled={!available || loading}
+            onClick={() => void refresh()}
+          >
+            Refresh Weekly Summaries
+          </button>
+          <button
+            type="button"
+            className={styles.word}
+            disabled={
+              !available ||
+              loading ||
+              exporting ||
+              current?.phase !== 'ready' ||
+              current.rows.length === 0
+            }
+            onClick={() => void exportSummaries()}
+          >
+            {exporting ? 'Preparing Weekly Export...' : 'Export Weekly Summaries'}
+          </button>
+        </div>
       </div>
-      {loading && <p role="status">Loading Weekly Summaries…</p>}
+      {exportNotice && (
+        <p
+          className={`${styles.exportNotice} ${
+            exportNotice.tone === 'unavailable' ? 'sc-ink--red' : 'sc-ink--blue'
+          }`}
+          role={exportNotice.tone === 'unavailable' ? 'alert' : 'status'}
+        >
+          {exportNotice.message}
+        </p>
+      )}
+      {loading && (
+        <p className={`${styles.state} sc-ink--muted`} role="status">
+          Loading Weekly Summaries...
+        </p>
+      )}
       {unavailable && (
-        <p role="alert">
+        <p className={`${styles.state} sc-ink--red`} role="alert">
           Weekly Summaries Are Unavailable. Refresh When This Account And Club Are Ready.
         </p>
       )}
@@ -80,10 +163,12 @@ export function ClubWeeklyAccountingSummary({ clubId }: { clubId: string }) {
         !unavailable &&
         current?.phase === 'ready' &&
         (current.rows.length === 0 ? (
-          <p>No Issued Weekly Summaries Were Found For This Club.</p>
+          <p className={`${styles.state} sc-ink--muted`}>
+            No Issued Weekly Summaries Were Found For This Club.
+          </p>
         ) : (
-          <div className="admin-table-scroll">
-            <table className="admin-data-table">
+          <div className={styles.tableScroll}>
+            <table className={styles.table}>
               <thead>
                 <tr>
                   <th>Week Starting</th>
@@ -103,9 +188,9 @@ export function ClubWeeklyAccountingSummary({ clubId }: { clubId: string }) {
                         year: 'numeric',
                       })}
                     </td>
-                    <td>{formatWeeklyChips(row.rakeFunding)} Chips</td>
-                    <td>{formatWeeklyChips(row.paidByClub)} Chips</td>
-                    <td>{formatWeeklyChips(row.retainedByClub)} Chips</td>
+                    <td>{formatWeeklyChipsForDisplay(row.rakeFunding)}</td>
+                    <td>{formatWeeklyChipsForDisplay(row.paidByClub)}</td>
+                    <td>{formatWeeklyChipsForDisplay(row.retainedByClub)}</td>
                   </tr>
                 ))}
               </tbody>

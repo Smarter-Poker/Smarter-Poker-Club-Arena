@@ -135,9 +135,7 @@ describe('ClubQuickLinkTile', () => {
     // Right-click is the pointer path to the quick-switch popover
     fireEvent.contextMenu(screen.getByRole('button', { name: /Hold To Choose A Wallet/ }));
     expect(screen.getByRole('menu')).toBeInTheDocument();
-    expect(
-      await screen.findByText(new RegExp(`${(1234).toLocaleString()} Chips`, 'i'))
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/1\.2K Chips/i)).toBeInTheDocument();
     await user.click(screen.getByRole('menuitem', { name: /Bravo Club/ }));
     expect(onSelect).toHaveBeenCalledWith(B);
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
@@ -154,7 +152,9 @@ describe('ClubQuickLinkTile', () => {
       .mockImplementation(() => rect);
 
     fireEvent.contextMenu(trigger);
-    const directory = screen.getByRole('menu').parentElement as HTMLDivElement;
+    const directory = screen
+      .getByRole('menu')
+      .closest('[class*="cashierSwitchMenu"]') as HTMLDivElement;
     const overlay = document.querySelector('[class*="cashierSwitchOverlay"]');
     expect(container).not.toContainElement(directory);
     expect(directory.parentElement).toBe(document.body);
@@ -163,6 +163,7 @@ describe('ClubQuickLinkTile', () => {
     expect(directory.style.getPropertyValue('--quick-link-anchor-bottom')).toBe(
       `${window.innerHeight - 600 + 8}px`
     );
+    vi.spyOn(directory, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 360, 326));
 
     rect = new DOMRect(200, 500, 60, 90);
     fireEvent.scroll(container);
@@ -171,7 +172,7 @@ describe('ClubQuickLinkTile', () => {
     );
     rect = new DOMRect(100, 500, 60, 90);
     fireEvent.resize(window);
-    expect(directory.style.getPropertyValue('--quick-link-anchor-x')).toBe('130px');
+    expect(directory.style.getPropertyValue('--quick-link-anchor-x')).toBe('188px');
 
     await act(async () => {});
     unmount();
@@ -252,27 +253,78 @@ describe('ClubQuickLinkTile', () => {
     expect(inMock).toHaveBeenCalledOnce();
   });
 
-  it("never paints a previous account's balances while the next account read is pending", async () => {
+  it('closes an open wallet directory immediately when the auth identity changes', async () => {
     const nextRead = deferred<{ data: null; error: Error }>();
     inMock
       .mockResolvedValueOnce({ data: [{ club_id: A.id, chip_balance: 1234 }], error: null })
       .mockReturnValueOnce(nextRead.promise);
     const rendered = renderTile({ clubs: [A], targetClub: A });
     fireEvent.contextMenu(screen.getByRole('button', { name: /Hold To Choose A Wallet/ }));
-    expect(await screen.findByRole('menuitem', { name: /1,234 Chips/i })).toBeInTheDocument();
+    expect(await screen.findByRole('menuitem', { name: /1\.2K Chips/i })).toBeInTheDocument();
 
     authState.userId = 'next-user-456';
     rendered.rerender(<ClubQuickLinkTile {...(rendered.props as never)} />);
 
-    expect(screen.queryByText(/1,234 Chips/i)).not.toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent(/Reading Wallet Balances/i);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Alpha Club/i)).not.toBeInTheDocument();
 
     await act(async () => {
       nextRead.resolve({ data: null, error: new Error('next account read failed') });
       await nextRead.promise;
     });
-    expect(await screen.findByRole('alert')).toHaveTextContent(/Wallet Balances Unavailable/i);
-    expect(screen.queryByText(/1,234 Chips/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(screen.queryByText(/1\.2K Chips/i)).not.toBeInTheDocument();
+  });
+
+  it('shows a refreshing state instead of cached rows while the directory is pending', async () => {
+    const rendered = renderTile({ clubs: [A], targetClub: A, directoryPending: true });
+    const trigger = screen.getByRole('button', { name: /Hold To Choose A Wallet/ });
+    expect(trigger).toHaveAttribute('aria-haspopup', 'dialog');
+    fireEvent.contextMenu(trigger);
+
+    expect(screen.getByRole('dialog', { name: /Open Cashier For Status/i })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(/Refreshing Wallet Directory/i);
+    expect(screen.queryByRole('menuitem')).not.toBeInTheDocument();
+    expect(inMock).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(screen.getByRole('status'), { key: 'Escape' });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    fireEvent.contextMenu(screen.getByRole('button', { name: /Hold To Choose A Wallet/ }));
+
+    rendered.rerender(
+      <ClubQuickLinkTile
+        {...(rendered.props as never)}
+        directoryPending={false}
+        clubs={[A, UNION]}
+      />
+    );
+    expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /Alpha Club/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('menuitem', { name: /Midway Union Union Wallet/i })
+    ).toBeInTheDocument();
+    await act(async () => {});
+  });
+
+  it('exposes a retryable dialog rather than advertising a missing menu when the directory fails', async () => {
+    const user = userEvent.setup();
+    const onDirectoryRetry = vi.fn();
+    renderTile({
+      clubs: [A],
+      targetClub: A,
+      directoryError: true,
+      onDirectoryRetry,
+    });
+    const trigger = screen.getByRole('button', { name: /Hold To Choose A Wallet/ });
+    expect(trigger).toHaveAttribute('aria-haspopup', 'dialog');
+    fireEvent.contextMenu(trigger);
+
+    expect(screen.getByRole('dialog', { name: /Open Cashier For Status/i })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(/Wallet Directory Unavailable/i);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(onDirectoryRetry).toHaveBeenCalledOnce();
   });
 
   it('closes the popover on Escape and returns focus to the tile trigger', async () => {
@@ -332,6 +384,15 @@ describe('ClubQuickLinkTile', () => {
     await act(async () => {});
   });
 
+  it('focuses the current wallet when keyboard opening a reordered directory', async () => {
+    renderTile({ targetClub: B });
+    const trigger = screen.getByRole('button', { name: /Cashier For Bravo Club/ });
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    expect(screen.getByRole('menuitem', { name: /Bravo Club/ })).toHaveFocus();
+    expect(screen.getByRole('menuitem', { name: /Alpha Club/ })).not.toHaveFocus();
+    await act(async () => {});
+  });
+
   it('returns focus to the trigger when the outside overlay dismisses the directory', async () => {
     renderTile();
     const trigger = screen.getByRole('button', { name: /Hold To Choose A Wallet/ });
@@ -353,6 +414,18 @@ describe('ClubQuickLinkTile', () => {
       vi.advanceTimersByTime(200);
     });
     fireEvent.pointerCancel(tileBtn);
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  it('does not open the popover when a hold turns into a scroll gesture', () => {
+    vi.useFakeTimers();
+    renderTile();
+    const tileBtn = screen.getByRole('button', { name: /Cashier For Alpha Club/ });
+    fireEvent.pointerDown(tileBtn, { pointerId: 7, clientX: 20, clientY: 20 });
+    fireEvent.pointerMove(tileBtn, { pointerId: 7, clientX: 20, clientY: 44 });
     act(() => {
       vi.advanceTimersByTime(600);
     });

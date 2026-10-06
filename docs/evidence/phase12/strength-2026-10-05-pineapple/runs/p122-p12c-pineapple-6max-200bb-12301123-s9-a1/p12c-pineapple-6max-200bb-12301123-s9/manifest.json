@@ -1,0 +1,29 @@
+{
+  "schema": "horse-phase12-strength-manifest-v1",
+  "mode": "contract",
+  "variant": "pineapple",
+  "head": "27174382f2ad44aedb775474af05a69175640354",
+  "dirty": false,
+  "trackedDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "sourceSha256": "107e429b0434098f9b8e8efc8157b7d08f3a4b002ee1493984d53c44f034506a",
+  "sourceFiles": 1777,
+  "serverLockSha256": "ca23ba067ed2c588ef30304d6db05485a9bf8d9c8395d1016e863883ccf64952",
+  "contractVersion": "remaining-variant-strength-contract-v1",
+  "contractDigest": "d85d7569c31a1cd583a2397c2f598e448859ff66b417ba8e549ba00bcc6e19f1",
+  "packVersion": "crazy-pineapple-round1-v2",
+  "profileId": "p12c-pineapple-6max-200bb",
+  "seed": 12301123,
+  "shard": 9,
+  "pairs": 15552,
+  "runtimeStores": {
+    "charts": 0,
+    "postflop": 0,
+    "postflopV31": 0,
+    "postflopV31Dataset": null
+  },
+  "node": "v22.23.3",
+  "platform": "linux-x64",
+  "equityGovernor": "off",
+  "activation": "never",
+  "createdAt": "2026-10-05T19:11:41.878Z"
+}

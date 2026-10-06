@@ -172,6 +172,91 @@ describe('Phase13 actual HorseLogic integration', () => {
       }
     }
   );
+  it.each(['nlh', 'plo4', 'plo8', 'flh', 'flo8', 'short_deck'] as GameVariant[])(
+    '%s turn and river shadow receipts carry the bounded raise tree without changing play',
+    (variant) => {
+      for (const street of ['turn', 'river'] as const)
+        for (const boards of [1, 2]) {
+          const s = jointPolicyFixture(variant, boards, 'cash', street);
+          seedFastRandom(130999);
+          const off = HorseLogic.decide(
+            s.hero,
+            s.state,
+            'balanced',
+            {},
+            { ...opts, phase13Joint: 'off' }
+          );
+          const rng = saveFastRandom();
+          seedFastRandom(130999);
+          const shadow = HorseLogic.decide(
+            s.hero,
+            s.state,
+            'balanced',
+            {},
+            { ...opts, phase13Joint: 'shadow', phase13EvidenceMode: true }
+          );
+          expect(action(shadow)).toEqual(action(off));
+          expect(saveFastRandom()).toBe(rng);
+          const model = shadow.jointPolicy?.actionModel;
+          expect(model?.version, JSON.stringify(shadow.jointPolicy?.reason)).toBe(
+            'joint-action-response-round2-v1'
+          );
+          expect(model?.responseModel).toBe('bounded_raise_tree');
+          for (const c of model!.candidates) {
+            expect(c.responseTree).not.toBeNull();
+            expect(c.responseTree!.terminalBranches).toBeGreaterThanOrEqual(c.samples);
+            expect(c.responseTree!.terminalBranches).toBeLessThanOrEqual(32);
+            expect(c.maxConservationError).toBeLessThan(1e-6);
+            expect(c.responseTree!.riverRoundProbability === null).toBe(street === 'river');
+          }
+        }
+    }
+  );
+  it.each(['nlh', 'plo4'] as GameVariant[])(
+    '%s river: aggressive public lines reach the raise branch through actual HorseLogic',
+    (variant) => {
+      const s = jointPolicyFixture(variant, 1, 'cash', 'river');
+      s.state.actionHistory = ['flop', 'turn'].flatMap((stage, i) =>
+        s.state.players.slice(1, 3).map((p, k) => ({
+          seat: p.seat,
+          userId: p.user_id,
+          action: 'raise' as const,
+          amount: 4,
+          timestamp: i * 2 + k,
+          stage: stage as 'flop' | 'turn',
+          isFullRaise: true,
+        }))
+      );
+      seedFastRandom(130999);
+      const off = HorseLogic.decide(
+        s.hero,
+        s.state,
+        'balanced',
+        {},
+        { ...opts, phase13Joint: 'off' }
+      );
+      const rng = saveFastRandom();
+      seedFastRandom(130999);
+      const shadow = HorseLogic.decide(
+        s.hero,
+        s.state,
+        'balanced',
+        {},
+        { ...opts, phase13Joint: 'shadow', phase13EvidenceMode: true }
+      );
+      expect(action(shadow)).toEqual(action(off));
+      expect(saveFastRandom()).toBe(rng);
+      const model = shadow.jointPolicy!.actionModel!;
+      const raised = model.candidates.filter((c) => c.responseTree!.raiseBranches > 0);
+      expect(raised.length, JSON.stringify(shadow.jointPolicy?.reason)).toBeGreaterThan(0);
+      for (const c of raised) {
+        expect(c.responseTree!.raiseProbability).toBeGreaterThan(0);
+        expect(
+          c.responseTree!.heroCallsRaiseProbability + c.responseTree!.heroFoldsToRaiseProbability
+        ).toBeCloseTo(c.responseTree!.raiseProbability, 12);
+      }
+    }
+  );
   it('keeps tournament candidates unavailable when context is incomplete', () => {
     const s = jointPolicyFixture('nlh', 2, 'tournament');
     s.state.tournament!.contextStatus = 'incomplete';

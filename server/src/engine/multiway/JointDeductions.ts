@@ -1,6 +1,6 @@
 import type { HandConfig, RakeConfig } from '../../types.js';
 import { calculateRake } from '../PokerEngine.js';
-import { scaleWinnerCentsForRake } from '../HandController.js';
+import { scaleMultiBoardWinnerUnits, scaleWinnerCentsForRake } from '../WinnerUnitScaling.js';
 import type { settleJointScores } from './JointPotDistribution.js';
 
 /** Exact final payout scaling uses the controller's existing cent allocator.
@@ -76,10 +76,20 @@ export function applyJointDeductions(input: {
   const net = { ...input.settlement.totals };
   const target = Math.max(0, Math.round((gross - rake - bbjFee) * 100) / 100);
   if (rake + bbjFee > 0) {
-    const cents = scaleWinnerCentsForRake(
-      ids.map((id) => net[id]),
-      target
-    );
+    // Multi-board hands scale by largest remainder with the odd-chip seat
+    // order breaking ties, exactly as the controller does (F2, 2026-10-03).
+    const cents =
+      input.settlement.boardTotals.length >= 2
+        ? scaleMultiBoardWinnerUnits(
+            ids.map((id) => net[id]),
+            target,
+            100,
+            ids.map((id) => input.settlement.oddChipRank[id] ?? Number.MAX_SAFE_INTEGER)
+          )
+        : scaleWinnerCentsForRake(
+            ids.map((id) => net[id]),
+            target
+          );
     ids.forEach((id, i) => {
       net[id] = cents[i] / 100;
     });

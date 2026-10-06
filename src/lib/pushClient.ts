@@ -33,11 +33,20 @@
  * hub) and the /hub/club-arena one would own two endpoints, both active, and
  * every notification would arrive twice.
  *
- * So Club Arena enrols on the SAME root-scope registration the hub uses.
- * /sw.js importScripts the hub's push worker (sp-push-v3), which already has
- * push, notificationclick, pushsubscriptionchange and the /api/push/receipt
- * ping, hardened in production. One device, one subscription, one banner,
- * whichever app the player turned it on in.
+ * So Club Arena enrols on the SAME registration the hub uses.
+ *
+ * CORRECTED 2026-09-27: THAT REGISTRATION IS /push/sw.js, NOT /sw.js. The
+ * World Hub moved its enrolment to the dedicated push worker at scope /push/
+ * on 2026-08-25 (the root worker's precache could not install). This file was
+ * never moved with it, so for a month the two apps enrolled the SAME browser
+ * on TWO registrations, with two different endpoints, under ONE shared
+ * deviceId. Every enrolment and every hourly sync in either app therefore
+ * retired the other app's row as `superseded_same_device`: 25 of the 58
+ * retired rows in production carry that reason, and the device flip-flopped
+ * between two endpoints while each app's settings read the other's state.
+ * Club Arena now registers /push/sw.js at scope /push/, exactly as the hub
+ * does, and hands over any legacy root subscription it made (see
+ * retireLegacyRootSubscription). One device, one subscription, one banner.
  *
  * We are same-origin with the hub (smarter.poker serves both), so /sw.js,
  * /api/push/* and the `smarter-poker-auth` session are all reachable from
@@ -339,17 +348,29 @@ function waitForActiveWorker(
 }
 
 /**
- * Get the ROOT-scope registration that owns push for this origin.
+ * The ONE registration that owns push for this origin, shared with the hub.
  *
- * Deliberately '/sw.js' and not Club Arena's own sw-bus.js — see the header
- * of this file. If the player has ever opened the hub, register() returns the
- * existing registration rather than making a second one.
+ * '/push/sw.js' at scope '/push/': the World Hub's dedicated push worker (no
+ * precache, no fetch handler, installs in milliseconds). Never Club Arena's
+ * own sw-bus.js (no push handler) and never the root '/sw.js' (a different
+ * registration, therefore a different endpoint, from the one the hub enrols;
+ * see the header of this file). If the hub already registered it, register()
+ * returns that same registration rather than making a second one.
  */
+export const PUSH_WORKER_URL = '/push/sw.js';
+export const PUSH_WORKER_SCOPE = '/push/';
+const LEGACY_ROOT_SCOPE = '/';
+
 async function getPushRegistration(): Promise<ServiceWorkerRegistration> {
   let reg: ServiceWorkerRegistration | null = null;
   try {
     reg = await withTimeout(
-      navigator.serviceWorker.register('/sw.js'),
+      navigator.serviceWorker.register(PUSH_WORKER_URL, {
+        scope: PUSH_WORKER_SCOPE,
+        // Never let an HTTP-cached copy of the worker decide whether an
+        // update is seen; the hub registers it the same way.
+        updateViaCache: 'none',
+      }),
       T.register,
       'Service worker registration'
     );
@@ -359,7 +380,7 @@ async function getPushRegistration(): Promise<ServiceWorkerRegistration> {
 
   if (!reg) {
     try {
-      reg = (await navigator.serviceWorker.getRegistration('/')) || null;
+      reg = (await navigator.serviceWorker.getRegistration(PUSH_WORKER_SCOPE)) || null;
     } catch {
       /* ignore */
     }
@@ -387,6 +408,50 @@ async function getPushRegistration(): Promise<ServiceWorkerRegistration> {
   throw new Error('The Notification Service Worker Did Not Start. Reload And Try Again.');
 }
 
+/**
+ * A subscription this app made on the ROOT registration before 2026-09-27.
+ * Only a registration whose scope IS the root counts: getRegistration('/')
+ * can never return the /push/ one, and a Club Arena page is controlled by
+ * sw-bus.js, which never held a subscription.
+ */
+async function legacyRootSubscription(): Promise<PushSubscription | null> {
+  try {
+    const root = await withTimeout(
+      navigator.serviceWorker.getRegistration(LEGACY_ROOT_SCOPE),
+      T.getSubscription,
+      'Legacy registration lookup'
+    );
+    if (!root || !root.pushManager) return null;
+    if (typeof root.scope !== 'string') return null;
+    if (new URL(root.scope, window.location.href).pathname !== LEGACY_ROOT_SCOPE) return null;
+    return (
+      (await withTimeout(
+        root.pushManager.getSubscription(),
+        T.getSubscription,
+        'Reading the legacy subscription'
+      )) || null
+    );
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Hand the device over from a legacy root subscription to the shared one.
+ * Unsubscribed only AFTER the server has accepted the replacement (which also
+ * retires the old row through replacesEndpoint), so a failure here can never
+ * leave the player with nothing. Best-effort by design.
+ */
+async function retireLegacyRootSubscription(legacy: PushSubscription | null, keep: string) {
+  if (!legacy || !legacy.endpoint || legacy.endpoint === keep) return;
+  try {
+    await legacy.unsubscribe();
+  } catch {
+    /* the server already retired its row; a lingering browser-side
+       subscription is sent nothing */
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
    PERSISTENCE
    ═══════════════════════════════════════════════════════════════════════ */
@@ -404,7 +469,8 @@ async function fetchVapidKey(): Promise<string> {
 
 async function persistSubscription(
   subscription: PushSubscription,
-  replacedEndpoint: string | null
+  replacedEndpoint: string | null,
+  repairOnly = false
 ): Promise<true> {
   const json = subscription.toJSON();
   const res = await withTimeout(
@@ -426,12 +492,20 @@ async function persistSubscription(
         // is the only thing that works when the endpoint has rotated and
         // `replacesEndpoint` above is therefore unknown. See deviceId().
         deviceId: deviceId() || undefined,
+        // The silent sync may only refresh what THIS account already enrolled
+        // on this device; the server refuses anything else with 409.
+        repairOnly: repairOnly ? true : undefined,
       }),
     }),
     T.save,
     'Saving your subscription'
   );
   if (res.status === 401) throw new Error('You Need To Be Signed In To Enable Notifications.');
+  if (res.status === 409 && repairOnly) {
+    throw Object.assign(new Error('This Device Is Not Enrolled For This Account.'), {
+      code: 'repair_not_enrolled',
+    });
+  }
   if (res.status === 409) {
     throw new Error('This Device Is Registered To Another Account. Sign Out There First.');
   }
@@ -492,6 +566,18 @@ export interface PushResult {
   ok: boolean;
   error?: string;
   permission?: PushPermission;
+  /** 'repair_not_enrolled' when a repairOnly sync found nothing to repair. */
+  code?: string;
+}
+
+export interface EnablePushOptions {
+  /**
+   * For the silent PushSubscriptionSync ONLY. Refreshes an enrollment this
+   * account already holds on this device and never creates one: browser
+   * permission belongs to the origin, not to whoever is signed in. Never
+   * raises the permission dialog. Every tap-driven caller passes nothing.
+   */
+  repairOnly?: boolean;
 }
 
 /**
@@ -501,10 +587,11 @@ export interface PushResult {
  * permission prompt while the originating tap gesture is alive, so callers
  * may not await anything before this.
  */
-export async function enablePush(): Promise<PushResult> {
+export async function enablePush(options: EnablePushOptions = {}): Promise<PushResult> {
+  const repairOnly = options?.repairOnly === true;
   if (IS_NATIVE_BUILD && isNativePlatform()) {
     const { enableNativePush } = await import('./native/push');
-    const result = await enableNativePush();
+    const result = await enableNativePush({ repairOnly });
     if (result.permission) nativePermission = result.permission;
     if (result.ok) clearOptOut();
     return result;
@@ -522,6 +609,7 @@ export async function enablePush(): Promise<PushResult> {
 
   // ── STEP 1: permission FIRST, while the tap gesture is still alive ──────
   let permission: NotificationPermission = Notification.permission;
+  if (repairOnly && permission !== 'granted') return { ok: false, permission, code: 'not_granted' };
   if (permission === 'default') {
     try {
       permission = await withTimeout(
@@ -560,6 +648,10 @@ export async function enablePush(): Promise<PushResult> {
     );
 
     let replacedEndpoint: string | null = null;
+    // A subscription this app made on the root registration before the move to
+    // the shared /push/ worker. Its endpoint is handed to the server as the
+    // one being replaced, and it is unsubscribed once the new one is saved.
+    const legacy = await legacyRootSubscription();
 
     if (subscription && !applicationServerKeyMatches(subscription, vapidKey)) {
       // Subscribed under a different VAPID key — every send would 403.
@@ -604,14 +696,21 @@ export async function enablePush(): Promise<PushResult> {
 
     // ── STEP 4: persist ──────────────────────────────────────────────────
     // Never report the endpoint we just created as the one it replaced.
+    const replaced = replacedEndpoint || legacy?.endpoint || null;
     await persistSubscription(
       subscription,
-      replacedEndpoint && replacedEndpoint !== subscription.endpoint ? replacedEndpoint : null
+      replaced && replaced !== subscription.endpoint ? replaced : null,
+      repairOnly
     );
+    await retireLegacyRootSubscription(legacy, subscription.endpoint);
     clearOptOut();
     return { ok: true, permission: 'granted' };
   } catch (e) {
-    return { ok: false, error: (e as Error)?.message || 'Could not enable notifications.' };
+    return {
+      ok: false,
+      error: (e as Error)?.message || 'Could not enable notifications.',
+      code: (e as { code?: string })?.code,
+    };
   }
 }
 
@@ -627,19 +726,23 @@ export async function disablePush(): Promise<PushResult> {
   if (!isWebPushSupported()) return { ok: true };
   try {
     const registration = await withTimeout(
-      navigator.serviceWorker.getRegistration('/'),
+      navigator.serviceWorker.getRegistration(PUSH_WORKER_SCOPE),
       T.ready,
       'Service worker lookup'
     );
-    const subscription = registration
+    const current = registration
       ? await withTimeout(
           registration.pushManager.getSubscription(),
           T.getSubscription,
           'Reading the existing subscription'
         )
       : null;
+    // Off means off on every registration this device ever enrolled on,
+    // including a legacy root one from before 2026-09-27.
+    const legacy = await legacyRootSubscription();
 
-    if (subscription) {
+    for (const subscription of [current, legacy?.endpoint === current?.endpoint ? null : legacy]) {
+      if (!subscription) continue;
       // Timeout the DELETE: it is awaited before the local unsubscribe, so a
       // stalled request used to block "off" entirely.
       await withTimeout(
@@ -727,7 +830,8 @@ export async function sendTestPush(): Promise<TestPushResult> {
 /**
  * Is this specific device currently subscribed?
  *
- * Reads the ROOT registration, which is the one that owns push. Asking
+ * Reads the shared /push/ registration, which is the one that owns push (a
+ * legacy root subscription is handed over on the next enable or sync). Asking
  * Notification.permission instead — as Club Arena's settings page did until
  * 2026-08-27 — answers a different question and answers it wrong: permission
  * is granted the moment the OS dialog is accepted, whether or not a
@@ -741,7 +845,7 @@ export async function hasLocalSubscription(): Promise<boolean> {
   if (!isWebPushSupported()) return false;
   try {
     const registration = await withTimeout(
-      navigator.serviceWorker.getRegistration('/'),
+      navigator.serviceWorker.getRegistration(PUSH_WORKER_SCOPE),
       T.ready,
       'Service worker lookup'
     );

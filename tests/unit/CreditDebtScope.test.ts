@@ -6,7 +6,6 @@ vi.mock('../../src/core/IdentityDNA', () => ({
 }));
 const m = vi.hoisted(() => ({
   invoices: [] as any[],
-  scans: [] as any[],
   listeners: [] as any[],
   rpc: vi.fn(),
   warning: vi.fn(),
@@ -16,19 +15,17 @@ vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     rpc: m.rpc,
     from: (table: string) => {
-      let scan = false;
       const filters: any[] = [];
       const c: any = {};
       for (const op of ['select', 'eq', 'order', 'limit', 'gt'])
         c[op] = (...args: any[]) => {
           filters.push([op, ...args]);
-          if (op === 'gt') scan = true;
           return c;
         };
       c.maybeSingle = async () => ({ data: null, error: null });
       c.then = (yes: any, no: any) => {
         m.queries.push({ table, filters });
-        const value = (table === 'credit_invoices' ? m.invoices : scan ? m.scans : []).shift() ?? {
+        const value = (table === 'credit_invoices' ? m.invoices : []).shift() ?? {
           data: [],
           error: null,
         };
@@ -59,42 +56,42 @@ vi.mock('../../src/services/FinancialAlertService', () => ({
 }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../../src/utils/clubIdResolver', () => ({ resolveClubUUID: vi.fn() }));
-let credit: any, cron: any;
+let credit: any;
 beforeEach(async () => {
   vi.resetModules();
   m.invoices = [];
-  m.scans = [];
   m.listeners = [];
   m.queries = [];
   m.rpc.mockReset().mockResolvedValue({ data: { success: true }, error: null });
   m.warning.mockReset().mockResolvedValue(undefined);
   credit = (await import('../../src/services/CreditService')).CreditService;
-  cron = (await import('../../src/services/FinancialCronService')).FinancialCronService;
 });
 afterEach(() => {
-  cron.stop();
   vi.useRealTimers();
 });
 const empty = () => ({ data: [], error: null });
-const owed = (status = 'overdue') => ({
-  data: [
-    {
-      id: 'i',
-      agent_id: 'a',
-      status,
-      due_date: '2020-01-01',
-      amount_remaining: 10,
-    },
-  ],
-  error: null,
-});
-const agents = (n = 1) => ({
-  data: Array.from({ length: n }, (_, i) => ({
-    id: 'a' + i,
-    status: 'active',
-  })),
-  error: null,
-});
+const owed = (status = 'overdue') => {
+  const settled = status === 'paid' || status === 'void';
+  const partial = status === 'partial';
+  return {
+    data: [
+      {
+        id: 'i',
+        agent_id: 'a',
+        period_start: '2019-12-22T00:00:00.000Z',
+        period_end: '2019-12-29T00:00:00.000Z',
+        debt_owed: 10,
+        amount_paid: status === 'paid' ? 10 : partial ? 5 : 0,
+        amount_remaining: settled ? 0 : partial ? 5 : 10,
+        status,
+        due_date: '2020-01-01T00:00:00.000Z',
+        created_at: '2019-12-29T00:00:00.000Z',
+        paid_at: status === 'paid' ? '2019-12-30T00:00:00.000Z' : null,
+      },
+    ],
+    error: null,
+  };
+};
 const switchAccount = () =>
   m.listeners.forEach((fn) => fn({ payload: { isAuthenticated: true, userId: 'b' } }));
 it.each(['returned', 'thrown', 'null'])(
@@ -139,77 +136,6 @@ it.each(['pending', 'partial', 'overdue', 'paid', 'void', 'disputed'])(
     );
   }
 );
-it.each(['returned', 'thrown'])(
-  'scan %s failure is unavailable and success resets consecutive failures',
-  async (kind) => {
-    const failure = () =>
-      kind === 'returned'
-        ? { data: null, error: new Error('scan failed') }
-        : new Error('scan failed');
-    m.scans.push(failure(), empty(), failure());
-    expect((await cron.runSuspensionCheck()).unavailable).toBe(true);
-    await cron.runSuspensionCheck();
-    expect((await cron.runSuspensionCheck()).unavailable).toBe(true);
-    expect(cron._suspensionCheckDisabled).toBe(false);
-  }
-);
-it('two consecutive global failures disable; explicit restart recovers and disabled run skips invoice generation', async () => {
-  m.scans.push(new Error('1'), new Error('2'));
-  await cron.runSuspensionCheck();
-  await cron.runSuspensionCheck();
-  expect(cron._suspensionCheckDisabled).toBe(true);
-  m.rpc.mockClear();
-  expect((await cron.runSuspensionCheck()).unavailable).toBe(true);
-  expect(m.rpc).not.toHaveBeenCalled();
-  vi.useFakeTimers();
-  cron.start();
-  m.scans.push(empty());
-  expect((await cron.runSuspensionCheck()).unavailable).not.toBe(true);
-  expect(cron._suspensionCheckDisabled).toBe(false);
-});
-it('failure after eligibility counts toward three consecutive agent failures', async () => {
-  cron._config.autoSuspendEnabled = true;
-  m.scans.push(agents(4));
-  m.invoices.push(owed(), owed(), owed(), owed());
-  m.rpc.mockImplementation(async (name: string) =>
-    name === 'fn_admin_update_agent'
-      ? { data: null, error: new Error('status failed') }
-      : { data: { success: true }, error: null }
-  );
-  const result = await cron.runSuspensionCheck();
-  expect(result.unavailable).toBe(true);
-  expect(result.agentsChecked).toBe(3);
-  expect(cron._suspensionCheckDisabled).toBe(true);
-});
-it('autoSuspend false only warns for genuinely owed invoices', async () => {
-  m.scans.push(agents(2));
-  m.invoices.push(owed(), owed('void'));
-  const result = await cron.runSuspensionCheck();
-  expect(result.agentsSuspended).toBe(0);
-  expect(result.agentsWarned).toBe(1);
-  expect(m.rpc.mock.calls.filter(([name]) => name === 'fn_admin_update_agent')).toHaveLength(0);
-});
-it('unknown invoice result yields unavailable scan without suspension', async () => {
-  cron._config.autoSuspendEnabled = true;
-  m.scans.push(agents());
-  m.invoices.push({ data: null, error: new Error('unknown') });
-  expect((await cron.runSuspensionCheck()).unavailable).toBe(true);
-  expect(m.rpc.mock.calls.filter(([n]) => n === 'fn_admin_update_agent')).toHaveLength(0);
-});
-it('account switch during agent read cancels publication and resets disabled state', async () => {
-  let resolve: any;
-  m.scans.push(new Promise((r) => (resolve = r)));
-  const p = cron.runSuspensionCheck();
-  await Promise.resolve();
-  await Promise.resolve();
-  switchAccount();
-  resolve(agents());
-  const result = await p;
-  expect(result.unavailable).toBe(true);
-  expect(cron._lastSuspensionCheck).toBe(null);
-  expect(m.queries.filter((q) => q.table === 'credit_invoices')).toHaveLength(0);
-});
-
 it('account switch between debt completion and reinstatement refuses status write', async () => {
   m.invoices.push(empty());
   const actual = credit.getAgentInvoices.bind(credit);

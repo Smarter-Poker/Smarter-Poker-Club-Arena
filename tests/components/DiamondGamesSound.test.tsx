@@ -40,6 +40,18 @@ const frames = vi.hoisted(() => ({
   dispose: vi.fn(),
 }));
 vi.mock('../../src/services/SoundService', () => ({ soundService: sounds, PLINKO_PEG_GAP_MS: 30 }));
+const telemetry = vi.hoisted(() => ({ failed: vi.fn(), ended: vi.fn() }));
+vi.mock('../../src/components/games/sceneTelemetry', async (original) => {
+  const actual = await original<typeof import('../../src/components/games/sceneTelemetry')>();
+  return {
+    ...actual,
+    reportSceneFailure: telemetry.failed,
+    createSceneTelemetry: (...args: Parameters<typeof actual.createSceneTelemetry>) => {
+      const real = actual.createSceneTelemetry(...args);
+      return { ...real, end: () => telemetry.ended(args[0]) };
+    },
+  };
+});
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../../src/utils/animationSpeed', async (original) => ({
   ...(await original<typeof import('../../src/utils/animationSpeed')>()),
@@ -500,5 +512,121 @@ describe('Diamond Mines: a chime per gem that climbs, a blast, a sting', () => {
     expect(sounds.playMinesGem).not.toHaveBeenCalled();
     expect(sounds.playMinesExplosion).not.toHaveBeenCalled();
     expect(sounds.playBonusBooked).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * THE SCENES DRAW AT THE DISPLAY'S RATE WHILE THEY MOVE (2026-10-01), not at
+ * the old 30 ms cap, and park once settled and untouched (framePacer.ts).
+ */
+describe('Crash and Plinko draw every display frame while they move, and park when idle', () => {
+  it('Crash draws a 120 Hz flight on every frame, then parks between rounds', () => {
+    const view = render(
+      <CrashCurve
+        phase="idle"
+        growthK={0.12}
+        capCents={2500}
+        startedAtLocalMs={100}
+        finalCents={null}
+        cashoutCents={null}
+        crashCents={null}
+        autoCashoutCents={null}
+      />
+    );
+    frame(50);
+    view.rerender(
+      <CrashCurve
+        phase="open"
+        growthK={0.12}
+        capCents={2500}
+        startedAtLocalMs={100}
+        finalCents={null}
+        cashoutCents={null}
+        crashCents={null}
+        autoCashoutCents={null}
+      />
+    );
+    frames.render.mockClear();
+    let ticks = 0;
+    for (let t = 200; t <= 1200; t += 8.33, ticks++) frame(t);
+    // The old 30 ms cap drew about a third of these.
+    expect(frames.render.mock.calls.length).toBeGreaterThanOrEqual(ticks - 2);
+    view.rerender(
+      <CrashCurve
+        phase="idle"
+        growthK={0.12}
+        capCents={2500}
+        startedAtLocalMs={100}
+        finalCents={null}
+        cashoutCents={null}
+        crashCents={null}
+        autoCashoutCents={null}
+      />
+    );
+    for (let t = 1210; t <= 25_000; t += 33) frame(t);
+    frames.render.mockClear();
+    for (let t = 25_010; t <= 26_000; t += 8) frame(t);
+    expect(frames.render).not.toHaveBeenCalled();
+  });
+
+  it('Plinko draws a falling diamond on every frame', () => {
+    render(
+      <PlinkoBoard
+        multipliersCents={Array.from({ length: 17 }, () => 100)}
+        path={Array(16).fill(1)}
+        dropKey={1}
+        batchPathBits={null}
+        restingSlot={null}
+      />
+    );
+    frame(100);
+    frames.render.mockClear();
+    let ticks = 0;
+    for (let t = 108; t <= 900; t += 8, ticks++) frame(t);
+    expect(frames.render.mock.calls.length).toBeGreaterThanOrEqual(ticks - 2);
+  });
+});
+
+describe('the scenes report how they drew, and when they could not', () => {
+  it('Plinko reports a renderer it could not start', () => {
+    noWebGL.on = true;
+    render(
+      <PlinkoBoard
+        multipliersCents={Array.from({ length: 17 }, () => 100)}
+        path={null}
+        dropKey={1}
+        batchPathBits={null}
+        restingSlot={null}
+      />
+    );
+    expect(telemetry.failed).toHaveBeenCalledWith('plinko', 'renderer');
+  });
+
+  it('Crash and Plinko close their visit summary on unmount', () => {
+    const crash = render(
+      <CrashCurve
+        phase="idle"
+        growthK={0.12}
+        capCents={2500}
+        startedAtLocalMs={100}
+        finalCents={null}
+        cashoutCents={null}
+        crashCents={null}
+        autoCashoutCents={null}
+      />
+    );
+    crash.unmount();
+    expect(telemetry.ended).toHaveBeenCalledWith('crash');
+    const plinko = render(
+      <PlinkoBoard
+        multipliersCents={Array.from({ length: 17 }, () => 100)}
+        path={null}
+        dropKey={1}
+        batchPathBits={null}
+        restingSlot={null}
+      />
+    );
+    plinko.unmount();
+    expect(telemetry.ended).toHaveBeenCalledWith('plinko');
   });
 });

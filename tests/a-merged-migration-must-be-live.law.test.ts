@@ -61,6 +61,7 @@ import {
   declaredObjects,
   declaredProofs,
   errorSqlState,
+  matchedByName,
   proofIsRunnable,
 } from '../scripts/ci/check-migrations-are-live.mjs';
 import { classifyMigration } from '../scripts/ci/recording-only.mjs';
@@ -109,6 +110,36 @@ describe('a merged migration must be live', () => {
     // Two verdicts, and only one of them is an accusation.
     expect(SRC).toContain('MERGED BUT NOT LIVE');
     expect(SRC).toContain('unverifiable');
+  });
+
+  it('a name recorded as the whole file stem matches by name, never by a freeze-sensitive proof', () => {
+    // Measured 2026-10-03: these three were installed under their full file
+    // stems, fell through to step 3, and their proofs read false during every
+    // maintenance freeze, turning the check red on main.
+    const recorded = new Set([
+      '20260927035803_certification_cleanup_removes_archived_public_user_residue',
+      'plain_slug_name',
+    ]);
+    const prefixes = new Set([...recorded].map((n) => n.slice(0, 55)));
+    expect(
+      matchedByName('20260927035803_certification_cleanup_removes_archived_public_user_residue.sql', recorded, prefixes)
+    ).toBe(true);
+    expect(matchedByName('20990101000000_plain_slug_name.sql', recorded, prefixes)).toBe(true);
+    // A stem stored truncated still matches on its 55-character prefix.
+    const long = '20260927042756_certification_cleanup_removes_five_prearchive_public_user_residue';
+    const truncated = new Set([long.slice(0, 55)]);
+    expect(matchedByName(`${long}.sql`, truncated, truncated)).toBe(true);
+    // The same slug under ANOTHER version's stem is not this file.
+    expect(
+      matchedByName('20260927999999_certification_cleanup_removes_archived_public_user_residue_v2.sql', recorded, prefixes)
+    ).toBe(false);
+    for (const f of [
+      '20260927035803_certification_cleanup_removes_archived_public_user_residue.sql',
+      '20260927042756_certification_cleanup_removes_five_prearchive_public_user_residue.sql',
+      '20260927045612_archive_and_retire_prearchive_certification_identity.sql',
+    ]) {
+      expect(migrations()).toContain(f);
+    }
   });
 
   it('never passes silently when it cannot ask', () => {
@@ -160,10 +191,14 @@ describe('a merged migration must be live', () => {
   it('step 3 is what catches a migration that creates nothing', () => {
     // The anon revoke creates nothing at all: it changes grants. Nothing in
     // any catalogue is named by the file, which is exactly the class that sat
-    // merged and unapplied - and the class the proof convention is for.
+    // merged and unapplied - and the class the proof convention is for. Its
+    // historical file now carries the same production-readable proof required
+    // of every newer no-object migration.
     const sql = fs.readFileSync(path.join(MIGRATIONS, CREATED_NOTHING), 'utf8');
     expect(declaredObjects(sql)).toEqual([]);
-    expect(declaredProofs(sql)).toEqual([]);
+    expect(declaredProofs(sql)).toHaveLength(1);
+    expect(declaredProofs(sql)[0]).toContain("has_function_privilege('anon'");
+    expect(proofIsRunnable(declaredProofs(sql)[0])).toBe(true);
   });
 
   it('a declared proof is read whole, and several may be declared', () => {

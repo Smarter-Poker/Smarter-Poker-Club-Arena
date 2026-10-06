@@ -2283,15 +2283,6 @@
   z-index: 10;
 }
 
-/* Dan 2026-08-28 (equity smart placement): a seat carrying an all-in equity
-   badge rises above the neighbouring wrappers so the badge cannot be sealed
-   under a DOM-later neighbour's avatar (every wrapper is a stacking context
-   — the badge's own z-index: 50 only counts INSIDE its wrapper). 28, so a
-   seat actually tabling its cards (--showing, z 30) still wins. */
-.seat-wrapper--equity:not(.seat-wrapper--showing) {
-  z-index: 28;
-}
-
 /* HERO LIFT — the HOOK survives; the values are retired (Dan 2026-08-25 r2).
 
    Hero is the only seat at y:100 (see SEAT_LAYOUTS in lib/tableSeatGeometry.ts),
@@ -3073,69 +3064,53 @@
   transition: background-color 0.4s ease;
   animation: equityPop calc(0.45s * var(--animation-speed, 1)) cubic-bezier(0.2, 0.8, 0.3, 1.4);
 }
-/* Dan 2026-08-28 (smart placement): "PERCENTAGES SHOULD ALWAYS BE ABOVE THE
-   AVATAR WHEN POSSIBLE, NOT BELOW, AND NOT TO THE RIGHT." Every seat now
-   defaults to `--above`: the badge rides the strip above the seat box, past
-   the action badge's -26..-3px slot so ALL IN and the percentage can both
-   show. The side docks below remain for the TOP-CAP seats only — the BBJ
-   banner owns the space above those — and TablePage.tsx picks WHICH side at
-   render time, swinging away from a neighbouring all-in badge. */
-.equity-overlay--above {
-  bottom: calc(100% + 28px);
-  top: auto;
-  left: 50%;
-  transform: translateX(-50%);
+/* ─── THE BADGES LIVE IN ONE LAYER ABOVE EVERY SEAT (Dan 2026-10-04) ────────
+   "THE '50%' TO WIN SHOULD NEVER BE 'IN THE BACKGROUND' OR HAVE ANYTHING OVER
+    IT, THEY SHOULD ALWAYS APPEAR AS LAYER 1 ... BUT CAN NEVER COVER A PLAYERS
+    DISPLAYED CARDS."
+
+   A badge used to be a child of its seat's wrapper, where its z-index counted
+   only against that seat's own contents; a neighbouring seat in the same
+   runout painted over it (components/table/EquityBadgeLayer.tsx has the whole
+   account). The layer is a sibling of the seats: 65 puts it over a seat
+   tabling its cards (30), the pot (20) and every banner on the felt (<= 60),
+   and under the sheets and modals, which are not the felt.
+
+   WHERE each badge goes is no longer a class. The `--above` / `--inboard-left`
+   / `--inboard-right` rules that stood here placed a badge relative to its
+   wrapper and could not see a card; lib/equityBadgePlacement.ts places it from
+   measured boxes and refuses any spot that touches a displayed card. */
+.equity-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 65;
+  pointer-events: none;
 }
 
-@media (max-width: 640px) {
-  .equity-overlay--above {
-    /* Phone action badges are shorter; hug the seat a little closer so the
-       badge stays inside the felt on the shallow top rows. */
-    bottom: calc(100% + 22px);
-  }
+.equity-layer__slot {
+  position: absolute;
 }
 
-.equity-overlay--inboard-right {
-  bottom: auto;
-  top: 50%;
-  left: calc(100% + 6px);
-  transform: translateY(-50%);
-  font-size: 18px;
+/* Inside a slot the badge is placed by the slot, so it sheds the base rule's
+   own offsets - and its pop must not carry the translateX(-50%) the base
+   keyframes bake in, or it would jump half its width sideways as it lands. */
+.equity-layer .equity-overlay {
+  position: static;
+  transform: none;
+  animation-name: equityPopLayer;
 }
 
-.equity-overlay--inboard-left {
-  bottom: auto;
-  top: 50%;
-  left: auto;
-  right: calc(100% + 6px);
-  transform: translateY(-50%);
-  font-size: 18px;
-}
-
-.equity-overlay--inboard-right .equity-overlay__track,
-.equity-overlay--inboard-left .equity-overlay__track {
-  width: 64px;
-}
-
-/* The pop keyframes bake in the below-seat translateX(-50%); the side-docked
-   badges need their own translateY variant or the animation would yank them
-   back under the seat for its first half-second. */
-.equity-overlay--inboard-right,
-.equity-overlay--inboard-left {
-  animation-name: equityPopSide;
-}
-
-@keyframes equityPopSide {
+@keyframes equityPopLayer {
   0% {
-    transform: translateY(-50%) scale(0.6);
+    transform: scale(0.6);
     opacity: 0;
   }
   60% {
-    transform: translateY(-50%) scale(1.18);
+    transform: scale(1.18);
     opacity: 1;
   }
   100% {
-    transform: translateY(-50%) scale(1);
+    transform: scale(1);
     opacity: 1;
   }
 }

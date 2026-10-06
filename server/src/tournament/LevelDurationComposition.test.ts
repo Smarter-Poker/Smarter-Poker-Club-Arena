@@ -55,6 +55,9 @@ function manager(
       'tableStateHub',
       'reportError',
       'isMaintenanceFrozen',
+      // advanceBlindLevel asks the Horse tournament context to read the level
+      // it has just committed (2026-10-02).
+      'refreshTournamentBrainContextAfterClockCommit',
       runtime
     )(
       acceleratedLevelMs,
@@ -68,7 +71,8 @@ function manager(
       dependencies.supabase,
       dependencies.tableStateHub,
       dependencies.reportError,
-      () => false
+      () => false,
+      vi.fn()
     ),
     tournamentCache: {
       accelerated_mtt: accelerated,

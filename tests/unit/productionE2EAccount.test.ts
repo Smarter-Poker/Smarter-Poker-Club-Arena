@@ -11,6 +11,8 @@ import {
   prepareProductionE2EStaffMembership,
   prepareProductionE2ETemplateMembership,
   DEFAULT_E2E_TEMPLATE_CLUB_ID,
+  STALE_ACCOUNT_AGE_MS,
+  retireCertificationClubWithRetry,
   retireProductionCreateClubFixtures,
 } from '../../scripts/ci/production-e2e-account.mjs';
 
@@ -23,6 +25,27 @@ const CLEANUP_MIGRATION = readFileSync(
   ),
   'utf8'
 );
+const POST_DEPLOY_WORKFLOW = readFileSync(
+  resolve(process.cwd(), '.github/workflows/post-deploy-e2e.yml'),
+  'utf8'
+);
+const CLUB_CREATE_WORKFLOW = readFileSync(
+  resolve(process.cwd(), '.github/workflows/club-create-certification.yml'),
+  'utf8'
+);
+
+function workflowJobTimeoutMinutes(source: string, job: string) {
+  const marker = `\n  ${job}:\n`;
+  const start = source.indexOf(marker);
+  expect(start).toBeGreaterThanOrEqual(0);
+  const bodyStart = start + marker.length;
+  const remaining = source.slice(bodyStart);
+  const nextJob = remaining.search(/\n {2}[a-z0-9-]+:\n/);
+  const body = nextJob === -1 ? remaining : remaining.slice(0, nextJob);
+  const timeout = body.match(/^ {4}timeout-minutes: (\d+)$/m);
+  expect(timeout).not.toBeNull();
+  return Number(timeout?.[1]);
+}
 
 function environment(directory: string) {
   return {
@@ -187,6 +210,74 @@ describe('post-deploy production account', () => {
     ).rejects.toThrow('invalid stale');
     expect(young).toHaveBeenCalledTimes(1);
   });
+
+  it.each([
+    { ageMinutes: 44, setupFails: false },
+    { ageMinutes: 80, setupFails: false },
+    { ageMinutes: 1440, setupFails: false },
+    { ageMinutes: 44, setupFails: true },
+  ])(
+    'preserves another run at age $ageMinutes minutes (setupFails=$setupFails)',
+    async ({ ageMinutes, setupFails }) => {
+      const directory = mkdtempSync(join(tmpdir(), 'production-e2e-overlap-'));
+      const env = environment(directory);
+      writeFileSync(env.GITHUB_ENV, '');
+      const otherId = '00000000-0000-4000-8000-000000000088';
+      const retired: string[] = [];
+      const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith('/rpc/fn_ca_stale_certification_accounts')) {
+          return Response.json([
+            {
+              id: otherId,
+              email: 'ca-customization-cert-postdeploy-other-run@example.invalid',
+              created_at: new Date(Date.now() - ageMinutes * 60_000).toISOString(),
+            },
+          ]);
+        }
+        if (url.includes('/rest/v1/clubs?')) return Response.json([]);
+        if (url.endsWith('/rpc/cleanup_reserved_certification_account')) {
+          retired.push(JSON.parse(String(init?.body)).p_user_id);
+          return Response.json({ success: true });
+        }
+        if (url.endsWith('/auth/v1/admin/users') && init?.method === 'POST') {
+          return Response.json({ id: USER_ID });
+        }
+        if (url.includes('/auth/v1/admin/users/')) return new Response(null, { status: 404 });
+        if (url.includes('/rest/v1/profiles?select=id,arena_avatar_url')) {
+          return Response.json([{ id: USER_ID, arena_avatar_url: AVATAR }]);
+        }
+        if (url.includes('/rest/v1/profiles?select=id')) {
+          return Response.json(setupFails ? [] : [{ id: USER_ID }]);
+        }
+        if (url.includes('/rest/v1/profiles?id=eq.') && init?.method === 'PATCH') {
+          return new Response(null, { status: 204 });
+        }
+        throw new Error('Unexpected fixture request: ' + url);
+      });
+      vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      const creation = createProductionE2EAccount({
+        environment: env,
+        fetchImpl: fetchMock,
+        wait: async () => undefined,
+      });
+      if (setupFails) {
+        await expect(creation).rejects.toThrow('never received a profile row');
+      } else {
+        await expect(creation).resolves.toMatchObject({ id: USER_ID });
+        await cleanupProductionE2EAccount({ environment: env, fetchImpl: fetchMock });
+      }
+      // A reserved, zero-custody identity may still belong to a running or
+      // overdue lane. Only the identity created by this invocation is ours.
+      expect(retired).toEqual([USER_ID]);
+      expect(
+        fetchMock.mock.calls.some(([url]) =>
+          String(url).includes('fn_ca_stale_certification_accounts')
+        )
+      ).toBe(false);
+    }
+  );
 
   it('creates one normalized reserved identity, exports it, then proves hard deletion', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-'));
@@ -442,7 +533,7 @@ describe('post-deploy production account', () => {
           clubReads === 1 ? [{ id: clubId, name: 'Crest Cert 123456789', owner_id: USER_ID }] : []
         );
       }
-      if (url.includes('/rest/v1/rpc/fn_ca_retire_certification_club')) {
+      if (url.includes('/rest/v1/rpc/fn_ca_retire_welcome_certification_club')) {
         return Response.json({ success: true, chips_retired: 100000 });
       }
       return new Response('unexpected request', { status: 500 });
@@ -453,7 +544,7 @@ describe('post-deploy production account', () => {
       retireProductionCreateClubFixtures({ environment: env, fetchImpl: fetchMock })
     ).resolves.toBe(1);
     const retirement = fetchMock.mock.calls.find(([input]) =>
-      String(input).includes('/rest/v1/rpc/fn_ca_retire_certification_club')
+      String(input).includes('/rest/v1/rpc/fn_ca_retire_welcome_certification_club')
     );
     expect(JSON.parse(String(retirement?.[1]?.body))).toEqual({
       p_club_id: clubId,
@@ -525,7 +616,16 @@ describe('post-deploy production account', () => {
     const query = decodeURIComponent(String(fetchMock.mock.calls[0]?.[0]));
     expect(query).toContain('/rpc/fn_ca_stale_certification_accounts');
     const request = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(JSON.parse(String(request[1]?.body))).toEqual({ p_before: '2026-09-04T23:20:00.000Z' });
+    expect(JSON.parse(String(request[1]?.body))).toEqual({ p_before: '2026-09-04T22:30:00.000Z' });
+  });
+
+  it('cannot classify an account stale while any fixture-owning job may still run', () => {
+    const longestOwningJobMinutes = Math.max(
+      workflowJobTimeoutMinutes(POST_DEPLOY_WORKFLOW, 'production-e2e'),
+      workflowJobTimeoutMinutes(POST_DEPLOY_WORKFLOW, 'live-table-e2e'),
+      workflowJobTimeoutMinutes(CLUB_CREATE_WORKFLOW, 'certify')
+    );
+    expect(STALE_ACCOUNT_AGE_MS).toBeGreaterThanOrEqual((longestOwningJobMinutes + 10) * 60_000);
   });
 
   it('waits out the maintenance freeze instead of abandoning the fixture', async () => {
@@ -625,6 +725,352 @@ describe('post-deploy production account', () => {
   });
 });
 
+describe('certification-club retirement transport contract', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const configuration = {
+    supabaseUrl: 'https://certification.supabase.invalid',
+    serviceRoleKey: 'sb_secret_certification',
+  };
+  const clubId = '11111111-1111-4111-8111-111111111111';
+  const reason = 'ui-cert-cleanup';
+
+  it('uses one direct transaction with separate local settings before the retirement SELECT', async () => {
+    const result = { success: true, chips_retired: 100000 };
+    const query = vi.fn(async (sql: string) =>
+      sql.startsWith('SELECT') ? { rows: [{ result }] } : { rows: [] }
+    );
+    const client = {
+      connect: vi.fn().mockResolvedValue(undefined),
+      query,
+      end: vi.fn().mockResolvedValue(undefined),
+    };
+    const databaseClientFactory = vi.fn().mockResolvedValue(client);
+    const fetchMock = vi.fn();
+
+    await expect(
+      retireCertificationClubWithRetry({
+        configuration,
+        clubId,
+        reason,
+        environment: { DATABASE_URL: 'postgresql://certification.invalid/club_arena' },
+        databaseClientFactory,
+        fetchImpl: fetchMock,
+      })
+    ).resolves.toEqual(result);
+
+    expect(databaseClientFactory).toHaveBeenCalledTimes(1);
+    expect(databaseClientFactory).toHaveBeenCalledWith(
+      'postgresql://certification.invalid/club_arena'
+    );
+    expect(client.connect).toHaveBeenCalledTimes(1);
+    expect(query.mock.calls).toEqual([
+      ['BEGIN'],
+      ["SET LOCAL statement_timeout = '120s'"],
+      ["SET LOCAL lock_timeout = '15s'"],
+      ["SET LOCAL request.jwt.claim.role = 'service_role'"],
+      ["SET LOCAL app.club_retirement_maintenance = 'on'"],
+      [
+        'SELECT public.fn_ca_retire_welcome_certification_club($1::uuid,$2::text) AS result',
+        [clubId, reason],
+      ],
+      ['COMMIT'],
+    ]);
+    expect(client.end).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rolls back and closes the direct client when the retirement SELECT fails', async () => {
+    const failure = Object.assign(new Error('retirement guard refused'), { code: '55000' });
+    const query = vi.fn(async (sql: string) => {
+      if (sql.startsWith('SELECT')) throw failure;
+      return { rows: [] };
+    });
+    const client = {
+      connect: vi.fn().mockResolvedValue(undefined),
+      query,
+      end: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await expect(
+      retireCertificationClubWithRetry({
+        configuration,
+        clubId,
+        reason,
+        environment: { DATABASE_URL: 'postgresql://certification.invalid/club_arena' },
+        databaseClientFactory: vi.fn().mockResolvedValue(client),
+        fetchImpl: vi.fn(),
+      })
+    ).rejects.toBe(failure);
+
+    expect(query.mock.calls).toEqual([
+      ['BEGIN'],
+      ["SET LOCAL statement_timeout = '120s'"],
+      ["SET LOCAL lock_timeout = '15s'"],
+      ["SET LOCAL request.jwt.claim.role = 'service_role'"],
+      ["SET LOCAL app.club_retirement_maintenance = 'on'"],
+      [
+        'SELECT public.fn_ca_retire_welcome_certification_club($1::uuid,$2::text) AS result',
+        [clubId, reason],
+      ],
+      ['ROLLBACK'],
+    ]);
+    expect(client.end).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes an empty leased opening table through the owner door, then retries the cleanup door once', async () => {
+    const result = { success: true, chips_retired: 100000 };
+    const tableId = '22222222-2222-4222-8222-222222222222';
+    const ownerId = '33333333-3333-4333-8333-333333333333';
+    const activity = Object.assign(new Error('WELCOME_CERTIFICATION_FIXTURE_HAS_ACTIVITY'), {
+      code: '55000',
+    });
+    let doorCalls = 0;
+    let leaseReads = 0;
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes('fn_ca_retire_welcome_certification_club')) {
+        doorCalls += 1;
+        if (doorCalls === 1) throw activity;
+        return { rows: [{ result }] };
+      }
+      if (sql.includes('FROM public.engine_table_leases')) {
+        leaseReads += 1;
+        return { rows: leaseReads === 1 ? [{ table_id: tableId, status: 'waiting' }] : [] };
+      }
+      if (sql.includes('SELECT owner_id::text')) return { rows: [{ owner_id: ownerId }] };
+      if (sql.includes('fn_close_managed_game')) return { rows: [{ result: { ok: true } }] };
+      return { rows: [] };
+    });
+    const client = {
+      connect: vi.fn().mockResolvedValue(undefined),
+      query,
+      end: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await expect(
+      retireCertificationClubWithRetry({
+        configuration,
+        clubId,
+        reason,
+        environment: { DATABASE_URL: 'postgresql://certification.invalid/club_arena' },
+        databaseClientFactory: vi.fn().mockResolvedValue(client),
+        fetchImpl: vi.fn(),
+        wait: vi.fn().mockResolvedValue(undefined),
+      })
+    ).resolves.toEqual(result);
+
+    const statements = query.mock.calls.map(([sql]) => String(sql));
+    const firstDoor = statements.findIndex((sql) =>
+      sql.includes('fn_ca_retire_welcome_certification_club')
+    );
+    const rollback = statements.indexOf('ROLLBACK', firstDoor);
+    const close = statements.findIndex((sql) => sql.includes('fn_close_managed_game'));
+    const claims = statements.findIndex((sql) => sql.includes("set_config('request.jwt.claims'"));
+    const secondDoor = statements.findIndex(
+      (sql, index) => index > close && sql.includes('fn_ca_retire_welcome_certification_club')
+    );
+    expect(firstDoor).toBeGreaterThan(-1);
+    expect(rollback).toBeGreaterThan(firstDoor);
+    expect(claims).toBeGreaterThan(rollback);
+    expect(close).toBeGreaterThan(claims);
+    expect(secondDoor).toBeGreaterThan(close);
+    expect(
+      query.mock.calls.find(([sql]) => String(sql).includes('fn_close_managed_game'))?.[1]
+    ).toEqual([tableId]);
+    expect(
+      query.mock.calls.find(([sql]) => String(sql).includes("set_config('request.jwt.claims'"))?.[1]
+    ).toEqual([JSON.stringify({ sub: ownerId, role: 'authenticated' }), ownerId]);
+    expect(doorCalls).toBe(2);
+    expect(client.end).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the PostgREST retirement path when DATABASE_URL is absent', async () => {
+    const result = { success: true, already_gone: true };
+    const fetchMock = vi.fn().mockResolvedValue(Response.json(result));
+    const databaseClientFactory = vi.fn();
+
+    await expect(
+      retireCertificationClubWithRetry({
+        configuration,
+        clubId,
+        reason,
+        environment: {},
+        databaseClientFactory,
+        fetchImpl: fetchMock,
+      })
+    ).resolves.toEqual(result);
+
+    expect(databaseClientFactory).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://certification.supabase.invalid/rest/v1/rpc/fn_ca_retire_welcome_certification_club',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ p_club_id: clubId, p_reason: reason }),
+      })
+    );
+  });
+
+  it('retries only after proving the package schedule has a fresh unmaterialized claim', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-03T06:00:00.000Z'));
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const result = { success: true, chips_retired: 100000 };
+    const refusal = Object.assign(new Error('WELCOME_CERTIFICATION_TOURNAMENT_LINEAGE_REFUSED'), {
+      code: '55000',
+    });
+    const client = (failure?: Error) => ({
+      connect: vi.fn().mockResolvedValue(undefined),
+      query: vi.fn(async (sql: string) => {
+        if (sql.includes('fn_ca_retire_welcome_certification_club')) {
+          if (failure) throw failure;
+          return { rows: [{ result }] };
+        }
+        return { rows: [] };
+      }),
+      end: vi.fn().mockResolvedValue(undefined),
+    });
+    const firstClient = client(refusal);
+    const secondClient = client();
+    const databaseClientFactory = vi
+      .fn()
+      .mockResolvedValueOnce(firstClient)
+      .mockResolvedValueOnce(secondClient);
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/club_welcome_package_items?')) {
+        expect(init?.method).toBeUndefined();
+        expect(init?.body).toBeUndefined();
+        return Response.json([{ entity_id: 'schedule-1' }]);
+      }
+      if (url.includes('/tournament_schedule_spawns?')) {
+        expect(init?.method).toBeUndefined();
+        expect(init?.body).toBeUndefined();
+        return Response.json([{ id: 1, created_at: '2026-10-03T05:59:00.000Z' }]);
+      }
+      return new Response('unexpected request', { status: 500 });
+    });
+    const wait = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      retireCertificationClubWithRetry({
+        configuration,
+        clubId,
+        reason,
+        environment: { DATABASE_URL: 'postgresql://certification.invalid/club_arena' },
+        databaseClientFactory,
+        fetchImpl: fetchMock,
+        wait,
+      })
+    ).resolves.toEqual(result);
+
+    expect(databaseClientFactory).toHaveBeenCalledTimes(2);
+    expect(firstClient.end).toHaveBeenCalledTimes(1);
+    expect(secondClient.end).toHaveBeenCalledTimes(1);
+    expect(wait.mock.calls).toEqual([[2_000]]);
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).includes(
+          'retired_at=is.null&entity_kind=eq.tournament_schedule&select=entity_id'
+        )
+      )
+    ).toBe(true);
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).includes(
+          'schedule_id=in.(schedule-1)&tournament_id=is.null&select=id,created_at'
+        )
+      )
+    ).toBe(true);
+  });
+
+  it.each([
+    ['55000', 'SOME_OTHER_55000'],
+    ['23514', 'WELCOME_CERTIFICATION_TOURNAMENT_LINEAGE_REFUSED'],
+  ])(
+    'does not retry a retirement refusal unless both code and message match (%s)',
+    async (code, message) => {
+      const failure = Object.assign(new Error(message), { code });
+      const query = vi.fn(async (sql: string) => {
+        if (sql.startsWith('SELECT')) throw failure;
+        return { rows: [] };
+      });
+      const client = {
+        connect: vi.fn().mockResolvedValue(undefined),
+        query,
+        end: vi.fn().mockResolvedValue(undefined),
+      };
+      const databaseClientFactory = vi.fn().mockResolvedValue(client);
+      const fetchMock = vi.fn();
+      const wait = vi.fn();
+
+      await expect(
+        retireCertificationClubWithRetry({
+          configuration,
+          clubId,
+          reason,
+          environment: { DATABASE_URL: 'postgresql://certification.invalid/club_arena' },
+          databaseClientFactory,
+          fetchImpl: fetchMock,
+          wait,
+        })
+      ).rejects.toBe(failure);
+
+      expect(databaseClientFactory).toHaveBeenCalledTimes(1);
+      expect(wait).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    }
+  );
+
+  it('diagnoses a direct PostgreSQL lineage refusal without retrying when no fresh claim exists', async () => {
+    const failure = Object.assign(new Error('WELCOME_CERTIFICATION_TOURNAMENT_LINEAGE_REFUSED'), {
+      code: '55000',
+    });
+    const query = vi.fn(async (sql: string) => {
+      if (sql.startsWith('SELECT')) throw failure;
+      return { rows: [] };
+    });
+    const client = {
+      connect: vi.fn().mockResolvedValue(undefined),
+      query,
+      end: vi.fn().mockResolvedValue(undefined),
+    };
+    const databaseClientFactory = vi.fn().mockResolvedValue(client);
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (
+        url.includes('/club_welcome_package_items?') &&
+        url.includes('entity_kind=eq.tournament_schedule')
+      ) {
+        return Response.json([{ entity_id: 'schedule-1' }]);
+      }
+      if (url.includes('/tournament_schedule_spawns?') && url.includes('tournament_id=is.null')) {
+        return Response.json([]);
+      }
+      return Response.json([]);
+    });
+    const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const wait = vi.fn();
+
+    await expect(
+      retireCertificationClubWithRetry({
+        configuration,
+        clubId,
+        reason,
+        environment: { DATABASE_URL: 'postgresql://certification.invalid/club_arena' },
+        databaseClientFactory,
+        fetchImpl: fetchMock,
+        wait,
+      })
+    ).rejects.toBe(failure);
+
+    expect(databaseClientFactory).toHaveBeenCalledTimes(1);
+    expect(wait).not.toHaveBeenCalled();
+    expect(diagnostic).toHaveBeenCalledWith(
+      expect.stringContaining('reserved fixture graph diagnostic')
+    );
+  });
+});
+
 describe('a certification fixture that leaked must not wedge the next certificate (2026-09-28)', () => {
   afterEach(() => vi.restoreAllMocks());
 
@@ -665,7 +1111,7 @@ describe('a certification fixture that leaked must not wedge the next certificat
         calls.push('clubs-read');
         return Response.json([...owned.values()].map((club) => ({ ...club, owner_id: USER_ID })));
       }
-      if (url.includes('/rpc/fn_ca_retire_certification_club')) {
+      if (url.includes('/rpc/fn_ca_retire_welcome_certification_club')) {
         calls.push('retire');
         const body = JSON.parse(String(init?.body));
         retireBodies.push(body);
@@ -813,6 +1259,93 @@ describe('a certification fixture that leaked must not wedge the next certificat
     await expect(run.run()).rejects.toThrow(/55000/);
     expect(model.retireCallCount()).toBe(1);
     expect(run.wait).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'WELCOME_CERTIFICATION_HAS_NONPACKAGE_GAMES',
+    'WELCOME_CERTIFICATION_TOURNAMENT_LINEAGE_REFUSED',
+  ])('prints only the reserved fixture graph when %s refuses cleanup', async (message) => {
+    const clubId = '11111111-1111-4111-8111-111111111111';
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-graph-diagnostic-'));
+    const env = environment(directory);
+    writeFileSync(
+      join(directory, 'club-arena-production-e2e-account.json'),
+      JSON.stringify({ id: USER_ID, email: STALE_EMAIL })
+    );
+    const errorBody = {
+      code: '55000',
+      message,
+    };
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes('/rest/v1/clubs?')) {
+        return Response.json([
+          { id: clubId, name: 'Crest Cert 1790000000000-abc', owner_id: USER_ID },
+        ]);
+      }
+      if (url.includes('/rpc/fn_ca_retire_welcome_certification_club')) {
+        return Response.json(errorBody, { status: 500 });
+      }
+      if (url.includes('/club_welcome_package_items?')) {
+        return Response.json([
+          { slot_key: 'nlh6', entity_kind: 'cash_game', entity_id: 'cash-1' },
+          {
+            slot_key: 'daily',
+            entity_kind: 'tournament_schedule',
+            entity_id: 'schedule-1',
+          },
+        ]);
+      }
+      if (url.includes('/cash_games?')) return Response.json([{ id: 'cash-1' }]);
+      if (url.includes('/tournament_schedules?')) return Response.json([{ id: 'schedule-1' }]);
+      if (url.includes('/tables?club_id=')) {
+        return Response.json([{ id: 'table-1', role: 'unexpected' }]);
+      }
+      if (url.includes('/tables?cluster_id=')) {
+        return Response.json([{ id: 'table-foreign', club_id: 'foreign-club' }]);
+      }
+      if (url.includes('/tournaments?club_id=')) {
+        return Response.json([{ id: 'tournament-club', schedule_id: null }]);
+      }
+      if (url.includes('/tournaments?schedule_id=')) {
+        return Response.json([{ id: 'tournament-schedule', schedule_id: 'schedule-1' }]);
+      }
+      if (url.includes('/tournament_schedule_spawns?')) {
+        return Response.json([
+          { id: 1, schedule_id: 'schedule-1', tournament_id: 'tournament-foreign' },
+        ]);
+      }
+      if (url.includes('/tournaments?id=')) {
+        return Response.json([
+          {
+            id: 'tournament-foreign',
+            club_id: 'foreign-club',
+            schedule_id: 'foreign-schedule',
+          },
+        ]);
+      }
+      return new Response('unexpected request', { status: 500 });
+    });
+    const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await expect(
+      retireProductionCreateClubFixtures({ environment: env, fetchImpl: fetchMock })
+    ).rejects.toThrow(new RegExp(message));
+
+    expect(diagnostic).toHaveBeenCalledWith(
+      expect.stringContaining('reserved fixture graph diagnostic')
+    );
+    expect(diagnostic).toHaveBeenCalledWith(expect.stringContaining('"role":"unexpected"'));
+    expect(diagnostic).toHaveBeenCalledWith(expect.stringContaining('"id":"table-foreign"'));
+    expect(diagnostic).toHaveBeenCalledWith(expect.stringContaining('"id":"tournament-club"'));
+    expect(diagnostic).toHaveBeenCalledWith(
+      expect.stringContaining('"id":"tournament-foreign","club_id":"foreign-club"')
+    );
+    expect(
+      fetchMock.mock.calls.filter(([input]) =>
+        String(input).includes('/rpc/fn_ca_retire_welcome_certification_club')
+      )
+    ).toHaveLength(1);
   });
 
   it('treats a replayed retirement as success (the door answers already_gone)', async () => {

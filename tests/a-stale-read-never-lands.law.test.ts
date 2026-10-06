@@ -79,7 +79,11 @@ describe('LAW: a stale read never lands', () => {
   it('AgentManagementPage drops an agents read whose ticket is no longer current', () => {
     const page = read('src/pages/AgentManagementPage.tsx');
     expect(page).toContain('const agentsLoadTicket = useRef(0);');
-    expect(page).toMatch(/const claimAgentsLoad = \(\) => \+\+agentsLoadTicket\.current;/);
+    // Keep the ticket claimant stable for the effects that depend on it while
+    // still advancing the one monotonic generation every time it is claimed.
+    expect(page).toMatch(
+      /const claimAgentsLoad = useCallback\(\(\) => \+\+agentsLoadTicket\.current, \[\]\);/
+    );
     // Every setAgents after an await is fenced on the ticket.
     const fenced = (page.match(/if \(agentsLoadIsCurrent\(ticket\)\) setAgents\(data\)/g) || [])
       .length;

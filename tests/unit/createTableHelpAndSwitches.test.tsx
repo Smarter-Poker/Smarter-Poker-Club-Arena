@@ -84,8 +84,10 @@ describe('Create-Table Switch And Bomb-Schedule Markup', () => {
   // Where the bomb cadence copy lives now (see the pin below).
   const vocab = fs.readFileSync(path.join(process.cwd(), 'src', 'config', 'cashGames.ts'), 'utf8');
 
-  it('Uses An Isolated Conventional Switch With A Visible On Or Off Status', () => {
-    expect(controls).toContain('className="table-config-switch"');
+  it('Uses The Approved Engraved Tick Well With A Visible On Or Off Status', () => {
+    expect(controls).toContain('table-config-switch sc-check');
+    expect(controls).toContain('table-config-switch__input sc-check__box');
+    expect(controls).toContain("value ? ' sc-check--on' : ''");
     expect(controls).toContain('role="switch"');
     expect(controls).toContain("{value ? 'On' : 'Off'}");
     expect(controls).not.toContain('className="toggle-switch"');
@@ -96,9 +98,11 @@ describe('Create-Table Switch And Bomb-Schedule Markup', () => {
       /import \{ Toggle, Slider, NumberField \} from '\.\.\/components\/table-config\/controls'/
     );
     expect(flow).toMatch(/import \{ Slider, Toggle \} from '\.\.\/table-config\/controls'/);
-    expect(css).toContain('.table-config-switch__track');
-    expect(css).toContain('width: 52px');
-    expect(css).toContain('height: 28px');
+    expect(controls).not.toContain('table-config-switch__track');
+    expect(controls).not.toContain('table-config-switch__thumb');
+    expect(css).toContain('.table-config-switch__input.sc-check__box');
+    expect(css).not.toContain('.table-config-switch__track');
+    expect(css).not.toContain('.table-config-switch__thumb');
   });
 
   /* THE PIN MOVED WITH ITS MECHANISM (2026-09-09, must-move audit lane I).

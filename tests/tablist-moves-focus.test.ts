@@ -24,7 +24,7 @@ const STATS = read('src/pages/PlayerStatsPage.tsx');
 const MARKET = read('src/pages/MarketplacePage.tsx');
 
 describe.each([
-  ['PlayerStatsPage', STATS, 'stats-tab-', 'setCategory(next)'],
+  ['PlayerStatsPage', STATS, 'stats-tab-', 'changeCategory(next)'],
   ['MarketplacePage', MARKET, 'market-tab-', 'switchTab(next)'],
 ])('%s tablist', (_name, src, idPrefix, selector) => {
   it('still uses a roving tabindex', () => {

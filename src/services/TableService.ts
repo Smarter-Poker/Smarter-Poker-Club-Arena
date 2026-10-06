@@ -292,7 +292,9 @@ class TableService {
   async leaveTable(
     tableId: string,
     seatNumber: number,
-    userId: string
+    userId: string,
+    /** LIGHTNING PHASE 6: the anchor seat a Lightning room leaves through. */
+    target?: { seatNumber: number; occupancyId: string }
   ): Promise<{
     success: boolean;
     chipsReturned: number;
@@ -304,7 +306,9 @@ class TableService {
     // A stale UI seat number must never retarget an interrupted cashout.
     void seatNumber;
     const { leaveSeatWithIntent } = await import('./SeatLeaveIntent');
-    const result = await leaveSeatWithIntent(tableId, userId);
+    const result = target
+      ? await leaveSeatWithIntent(tableId, userId, target)
+      : await leaveSeatWithIntent(tableId, userId);
     if (!result.success) return result;
     if (!result.deferred) {
       masterBus.emit('BALANCE_UPDATED', { source: 'table_leave_cashout', userId });
@@ -534,10 +538,11 @@ class TableService {
        request with 42501/403, and supabase-js RESOLVES on that with
        { data: null }. The felt then rebuilt every seat as "Player" with the
        monogram avatar until the engine snapshot arrived: exactly the "generic
-       block letters" Dan reported. horse_id off table_seats is the flag the
-       felt actually needs (it drives styling), and the engine snapshot - built
-       server-side with service_role, which CAN read is_horse - remains the
-       authority for the resolved name. */
+       block letters" Dan reported. The engine snapshot - built server-side with
+       service_role - remains the authority for the resolved name.
+       No horse_id either (2026-10-05): it marks a seat as a horse, a browser
+       role may not read it (horse identity is not readable by a player), and
+       nothing on the felt used it. */
     const { data, error } = await supabase
       .from('table_seats')
       .select(
@@ -546,7 +551,6 @@ class TableService {
                 seat_number,
                 stack,
                 joined_at,
-                horse_id,
                 profiles(
                     ${PLAYER_NAME_COLUMNS},
                     avatar_url:arena_avatar_url

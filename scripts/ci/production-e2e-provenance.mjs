@@ -195,7 +195,10 @@ export function classifyReleaseWindow(raw, expected, evidence) {
 
 function gitSucceeds(args) {
   try {
-    execFileSync('git', args, { stdio: 'ignore' });
+    execFileSync('git', args, {
+      stdio: 'ignore',
+      env: { ...process.env, GIT_NO_LAZY_FETCH: '1' },
+    });
     return true;
   } catch {
     return false;

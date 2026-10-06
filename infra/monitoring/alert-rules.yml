@@ -615,6 +615,27 @@ groups:
           description: 'fn_replication_slot_metrics has not returned successfully in over 10 minutes. The lag numbers on the dashboard are last-known-good, not current.'
           runbook: 'docs/runbooks/engine-and-realtime-diagnostics.md'
 
+      # The same reading, read as the database itself. On 2026-10-03 the
+      # database VM stopped answering at 20:18:30 UTC (TCP to :5432 timed out,
+      # WAL flat) and stayed down for 44 minutes; nothing named the database
+      # until ReplicationMetricsBlind's 20-minute warning. The collector reads
+      # the database every few seconds (stale is ~7 s when healthy), so three
+      # minutes without one successful read means the database is not
+      # answering the engine.
+      # docs/changelog/2026-10-03-the-database-keeps-memory-headroom.md
+      - alert: DatabaseNotAnswering
+        expr: |
+          poker_pg_replication_metrics_stale_seconds > 180
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 2m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: 'The database has not answered the engine for {{ $value }}s'
+          description: 'No successful database read for over three minutes outside the break. Check GET /v1/projects/kuklfnapbkmacvwxktbh/health?services=db - a hung database VM did not recover by itself on 2026-10-03 and needed POST /v1/projects/kuklfnapbkmacvwxktbh/restart.'
+          runbook: 'docs/changelog/2026-10-03-the-database-keeps-memory-headroom.md'
+
       # Zero slots is not a quiet database - this database has two logical
       # slots. Zero means the collector cannot see pg_replication_slots.
       - alert: ReplicationSlotsDisappeared
@@ -1338,11 +1359,12 @@ groups:
           severity: critical
           component: tournament-scheduler
         annotations:
-          summary: 'All four elimination slots are occupied while causal work waits beyond two minutes'
+          summary: 'Elimination slots are occupied while causal work waits beyond two minutes'
           description: |
-            The process-wide scheduler has used all four physical slots while
-            at least one tournament's event or deadline has waited beyond the
-            queue SLO. Do not release a slot whose promise is still live: that
+            The process-wide scheduler has at least four physical slots in use
+            (twelve general, four decided, one consolidation since 2026-10-03)
+            while at least one tournament's event or deadline has waited beyond
+            the queue SLO. Do not release a slot whose promise is still live: that
             recreates unbounded database concurrency behind a smaller gauge.
             Inspect failed/timed-out dispatches, PostgREST latency and engine
             event-loop delay using the runbook.
@@ -1363,10 +1385,10 @@ groups:
           severity: critical
           component: tournament-scheduler
         annotations:
-          summary: 'All four elimination promises have remained unresolved beyond their warning budget'
+          summary: 'At least four elimination promises have remained unresolved beyond their warning budget'
           description: |
-            Every physical scheduler slot is held by a promise that has
-            exceeded the sweep warning budget. This alert remains effective
+            At least four physical scheduler slots are held by promises that
+            have exceeded the sweep warning budget. This alert remains effective
             even when no logical work is queued. Do not release an unresolved
             promise or restart solely from this signal; inspect PostgREST,
             error outcomes, event-loop delay and the shared liveness verdict.
@@ -2221,16 +2243,22 @@ groups:
           severity: critical
           component: monitoring
         annotations:
-          summary: 'The SMS pager has failed {{ $value | printf "%.0f" }} delivery attempt(s) in fifteen minutes'
+          summary: 'The operational inbox webhook has failed {{ $value | printf "%.0f" }} delivery attempt(s) in fifteen minutes'
           description: |
-            Alertmanager could not deliver to the pager webhook. A `serverError`
-            is the World Hub route answering 502, which it does when Twilio
-            refuses or when its three TWILIO_* values are missing from the
-            hub-vanguard environment; a `clientError` is a 4xx, usually the
-            bearer secret. Until this clears, every `page: sms` alert on this
-            platform is reaching nobody by text. This alert is routed to email
-            on purpose - it is about the pager, so it must not travel through
-            it.
+            Alertmanager could not deliver to World Hub's
+            /api/internal/alertmanager-page, which since 2026-09-13 records
+            every alert in public.operational_alert_events and sends no SMS
+            (docs/runbooks/operational-alert-intake.md). A `serverError` is
+            almost always a 503 "Operational inbox unavailable": that table
+            lives in PokerIQ-Production, so the inbox is down whenever the
+            database is. Every serverError on 2026-10-03 (16:45, 19:20,
+            20:30-21:15) was a database outage. Check DatabaseNotAnswering
+            and GET /v1/projects/kuklfnapbkmacvwxktbh/health?services=db
+            first. While the database is down the critical emails are the
+            only channel that reaches a person, and they do not depend on
+            the database. A `clientError` is a 4xx, usually the bearer
+            secret (/opt/smarter-poker-monitoring/cron_secret against World
+            Hub CRON_SECRET). This alert goes to email for the same reason.
           runbook: 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/main/docs/changelog/2026-09-11-the-pager-is-watched.md'
 
       - alert: CriticalEmailDeliveryFailing
@@ -2316,19 +2344,24 @@ groups:
             an allocation cause nor imminent OOM; retain the separate critical alert.
           runbook: 'docs/runbooks/engine-memory.md'
 
-      # Retain the historical 1.6 GiB warning, not a process cap or an exact
-      # present-day build fit: other resident memory and workloads vary.
+      # RE-MEASURED 2026-10-02. The 1.6 GiB line came from the 3.8 GiB host of
+      # September 13/14. The engine now runs horse decision workers on a 16 GiB
+      # host, and over the 48 h to 2026-10-02 18:00Z its hourly RSS maximum
+      # ranged 1.73-2.94 GiB with the main V8 heap flat at 0.47-0.93 GiB - no
+      # growth across restarts, yet the old line fired continuously. 4 GiB sits
+      # well above that steady band, so a firing means growth again.
       - alert: EngineProcessMemoryHigh
         expr: |
-          poker_engine_process_rss_bytes > 1717986918
+          poker_engine_process_rss_bytes > 4294967296
         for: 15m
         labels:
           severity: warning
           component: engine
         annotations:
-          summary: 'Engine process RSS {{ $value | humanize1024 }}B - above the retained 1.6 GiB process-memory warning'
+          summary: 'Engine process RSS {{ $value | humanize1024 }}B - above the 4 GiB process-memory warning'
           description: |
-            Engine process RSS has exceeded 1.6 GiB for fifteen minutes.
+            Engine process RSS has exceeded 4 GiB for fifteen minutes - above
+            the 1.7-2.9 GiB steady band measured on 2026-10-02.
             Compare whole-process RSS, main-isolate V8 usage, worker activity,
             external memory and threads. poker_engine_native_main_arena_bytes
             is current [heap] virtual extent, not RSS or allocation ownership.
@@ -2336,3 +2369,47 @@ groups:
             TLS attribution or a runtime memory limit. Use the existing
             on-host build gate to establish build headroom at the actual attempt.
           runbook: 'docs/runbooks/engine-memory.md'
+
+  # ── Client errors (2026-10-03) ────────────────────────────────────────────
+  # Players' browsers report errors to the first-party sink
+  # (public.fn_report_client_errors -> client_error_events; Sentry is retired
+  # and stays retired). server/scripts/collect-monitoring-health.sh reads
+  # public.fn_client_error_health() every minute into these gauges.
+  #
+  # THE THRESHOLD, derived conservatively because there is no baseline yet:
+  # the sink is new, and on 2026-10-03 no human player was seated (1,069 seats,
+  # all horses; horses have no browser, so they report nothing). So the rule
+  # does not guess a normal error RATE. It asks a question that is abnormal at
+  # any scale: have TEN DIFFERENT players hit the SAME error code within ten
+  # minutes, and stayed that way for ten more?
+  #   * distinct players, not events: one broken tab looping on an error is
+  #     capped at 60 rows a minute by the database and 30 by the client, and
+  #     still counts as one player here, so it can never trip this alone;
+  #   * one code, not all codes: unrelated background noise spread across many
+  #     codes does not add up to a spike;
+  #   * automated sessions (navigator.webdriver: the post-deploy suites) are
+  #     excluded at the source;
+  #   * the hourly maintenance break is excluded, because refusals while the
+  #     engine is being replaced are expected and already watched.
+  # Re-derive it from client_error_rates_10m once launch traffic gives the
+  # sink a week of baseline; until then a firing means a real, shared fault.
+  - name: client-errors
+    interval: 60s
+    rules:
+      - alert: ClientErrorSpike
+        expr: |
+          poker_client_error_top_code_users_10m >= 10
+          unless on() max_over_time(poker_maintenance_break_active[20m]) == 1
+        for: 10m
+        labels:
+          severity: warning
+          component: client
+        annotations:
+          summary: '{{ $value }} players hit the same client error code in the last 10 minutes'
+          description: |
+            At least ten distinct players' browsers reported the same error code
+            within ten minutes, sustained for ten minutes. Find the code with
+            SELECT * FROM public.client_error_rates_10m ORDER BY bucket_start DESC, users DESC LIMIT 20;
+            then read examples with SELECT received_at, code, source, route, message, context
+            FROM public.client_error_events WHERE code = '<code>' ORDER BY received_at DESC LIMIT 20;
+          runbook: 'docs/runbooks/client-errors.md'

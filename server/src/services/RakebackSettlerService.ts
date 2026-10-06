@@ -142,6 +142,58 @@ export const FETCH_LIMIT = 1000;
 export const MAX_DRAIN_BATCHES = 3;
 
 /**
+ * THE SETTLER CLEARS EACH HOST CLUB'S CASH IN ITS OWN LANE (2026-10-02).
+ *
+ * After #5864 cut a cash batch to 5 items so that a tournament finish never
+ * waits long behind it for a club commission key, the settler ran one 5-item
+ * call at a time. Read on production 21:40-21:50 UTC: one item costs about
+ * 0.4 s, almost all of it reading cold index pages (the settler's backend was
+ * in IO DataFileRead in 121 of 169 active samples, waiting on a key in 16), so
+ * the settler accrued 105-110 sources a minute against 129-150 arriving, and
+ * its cursor fell further behind every evening. fn_settler_lag_check calls a
+ * lag over 6 hours unhealthy and fn_union_treasury_selftest then raises a
+ * critical; a cursor still inside the closed week holds the weekly close.
+ *
+ * A longer batch would give back exactly what #5864 bought, so the batch stays
+ * as it is. What changes is that the host clubs' batches stop queueing behind
+ * one another. Cash rake on production comes from two host clubs, one per
+ * union, and in the two hours read no record of one host attributed rake to a
+ * club the other host's records touch: their commission keys are disjoint, so
+ * a lane never waits for another lane. Where two hosts of one union do share a
+ * key, the second batch waits for it as a finish already does, and the rare
+ * deadlock is the refusal the source authority already records and retries
+ * (40P01, 2,831 retried cleanly in the three days to 2026-10-02).
+ *
+ * Unchanged: the page, the batch size, item order within a club, every receipt
+ * check, and the cursor, which is still saved only after every lane of the
+ * page has finished.
+ */
+export const MAX_CASH_LANES = 4;
+
+/**
+ * Split a page's cash rows into at most `maxLanes` lanes by host club. Rows of
+ * one club stay together and in page order; clubs are dealt to lanes in the
+ * order they first appear, so the split is deterministic for a given page.
+ */
+export function cashSourceLanes<T extends { club_id?: string | null }>(
+  rows: T[],
+  maxLanes: number = MAX_CASH_LANES
+): T[][] {
+  const byClub = new Map<string, T[]>();
+  for (const row of rows) {
+    const key = row.club_id ?? '';
+    const group = byClub.get(key);
+    if (group) group.push(row);
+    else byClub.set(key, [row]);
+  }
+  const width = Math.max(1, Math.min(Math.floor(maxLanes) || 1, byClub.size));
+  const lanes: T[][] = Array.from({ length: width }, () => []);
+  let n = 0;
+  for (const group of byClub.values()) lanes[n++ % width].push(...group);
+  return lanes.filter((lane) => lane.length > 0);
+}
+
+/**
  * AUDIT M6 — the settler's resume position in rake_records.
  *
  * `createdAt` is kept as the RAW PostgREST string, never round-tripped through
@@ -1824,20 +1876,30 @@ export class RakebackSettlerService {
     const sources = [...retriedSources];
     const cashRows = sourceRows.filter((row) => !isTournamentRakeRow(row));
     try {
-      for (let offset = 0; offset < cashRows.length; offset += CREDIT_BATCH_SIZE) {
-        const chunk = cashRows.slice(offset, offset + CREDIT_BATCH_SIZE);
-        const ids = chunk.map((row) => {
-          if (!row.id) throw new Error('Cash source has no durable record identity');
-          return row.id;
-        });
-        const { data, error } = await supabase.rpc('fn_credit_agent_commissions_batch', {
-          p_items: ids.map((id) => ({ source_type: 'cash_rake_record', source_id: id })),
-        });
-        if (error) throw new Error('Cash source batch failed', { cause: error });
-        const receipts = readCashSourceBatch(data, ids);
-        await confirmCashSourceRefusals(receipts);
-        sources.push(...receipts);
-      }
+      // ONE LANE PER HOST CLUB, RUN SIDE BY SIDE (2026-10-02). Each lane keeps
+      // the same small batches in the same order; only lanes of different host
+      // clubs overlap. See cashSourceLanes() for why that cannot add a wait.
+      const runLane = async (lane: RakeRecordRow[]): Promise<void> => {
+        for (let offset = 0; offset < lane.length; offset += CREDIT_BATCH_SIZE) {
+          const chunk = lane.slice(offset, offset + CREDIT_BATCH_SIZE);
+          const ids = chunk.map((row) => {
+            if (!row.id) throw new Error('Cash source has no durable record identity');
+            return row.id;
+          });
+          const { data, error } = await supabase.rpc('fn_credit_agent_commissions_batch', {
+            p_items: ids.map((id) => ({ source_type: 'cash_rake_record', source_id: id })),
+          });
+          if (error) throw new Error('Cash source batch failed', { cause: error });
+          const receipts = readCashSourceBatch(data, ids);
+          await confirmCashSourceRefusals(receipts);
+          sources.push(...receipts);
+        }
+      };
+      // allSettled, then rethrow: the page is not acknowledged until every
+      // lane has stopped, so no lane is still writing when the cycle halts.
+      const outcomes = await Promise.allSettled(cashSourceLanes(cashRows).map(runLane));
+      const failed = outcomes.find((o): o is PromiseRejectedResult => o.status === 'rejected');
+      if (failed) throw failed.reason;
     } catch (error) {
       reportError(error, 'RakebackSettler.attribution_failures_hold_cursor');
       return 'halted';

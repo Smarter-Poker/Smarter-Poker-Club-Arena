@@ -1,11 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { classifyChangedPaths } from '../../scripts/ci/classify-ci-changes.mjs';
 
 const root = resolve(__dirname, '../..');
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8');
 
 describe('Create Club production certification contract', () => {
+  it.each([
+    'scripts/ci/check-club-create-capacity.mjs',
+    'tests/unit/clubCreateCapacity.test.ts',
+    '.github/workflows/club-create-certification.yml',
+  ])('routes capacity contract edits through the test suite for %s', (path) => {
+    expect(classifyChangedPaths([path]).tests).toBe(true);
+  });
+
   it('uses the exact disposable prefix accepted by the retirement RPC and lifecycle guard', () => {
     const spec = read('tests/e2e/production-create-club.spec.ts');
     const cleanup = read('scripts/ci/production-e2e-account.mjs');
@@ -49,6 +58,16 @@ describe('Create Club production certification contract', () => {
     expect(workflow).toContain("workflows: ['Publish Club Arena']");
     expect(workflow).toContain("github.event.workflow_run.conclusion == 'success'");
     expect(workflow).not.toMatch(/^\s{2}push:/m);
+    expect(workflow).toContain('actions: read');
+    expect(workflow).toContain('Resolve The Exact Revision Published By This Run');
+    expect(workflow).toContain('actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100');
+    expect(workflow).toContain(
+      'publisher-artifact "$SOURCE_RUN_ID" "$SOURCE_TRIGGER_SHA" "$REPOSITORY_ID"'
+    );
+    expect(workflow).toContain('steps.published.outputs.sha');
+    expect(workflow).not.toContain(
+      "ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha"
+    );
     expect(workflow).toContain('expected="$(git rev-parse HEAD)"');
     expect(workflow).toContain('https://ca-static.smarter.poker/build-info.json');
     expect(workflow).toContain('https://smarter.poker/hub/club-arena/build-info.json');
@@ -56,8 +75,39 @@ describe('Create Club production certification contract', () => {
     expect(workflow).toContain('"$origin_sha" == "$expected"');
     expect(workflow).toContain('"$public_sha" == "$expected"');
     expect(workflow).toContain('cancel-in-progress: false');
-    expect(workflow).toContain('timeout-minutes: 30');
+    expect(workflow).toContain('timeout-minutes: 60');
     expect(workflow).toContain('--workers=1 --retries=0');
+  });
+
+  it('proves all opening grants fit before creating any fixture', () => {
+    const workflow = read('.github/workflows/club-create-certification.yml');
+    const capacity = workflow.indexOf('Verify Opening Grant Capacity Before Creating Fixtures');
+    const directCreate = workflow.indexOf('Certify Authenticated Club Creation And Cleanup');
+    const browserAccount = workflow.indexOf('Provision A Brand-New Player');
+
+    expect(capacity).toBeGreaterThan(-1);
+    expect(capacity).toBeLessThan(directCreate);
+    expect(capacity).toBeLessThan(browserAccount);
+    expect(workflow).toContain("CLUB_CREATE_CERT_REQUIRED_GRANTS: '3'");
+    expect(workflow).toContain('node scripts/ci/check-club-create-capacity.mjs');
+  });
+
+  it('supplies the direct database credential to every step that can retire a fixture club', () => {
+    const workflow = read('.github/workflows/club-create-certification.yml');
+    const step = (name: string) => {
+      const start = workflow.indexOf(`      - name: ${name}`);
+      expect(start, `workflow step ${name} must exist`).toBeGreaterThan(-1);
+      const next = workflow.indexOf('\n      - name:', start + 1);
+      return workflow.slice(start, next === -1 ? workflow.length : next);
+    };
+
+    for (const name of [
+      'Certify Authenticated Club Creation And Cleanup',
+      'Provision A Brand-New Player',
+      'Retire The Created Club',
+    ]) {
+      expect(step(name)).toContain('DATABASE_URL: ${{ secrets.DATABASE_URL }}');
+    }
   });
 
   it('hard-deletes the direct RPC fixture through the guarded reserved-account door', () => {
@@ -70,8 +120,18 @@ describe('Create Club production certification contract', () => {
     expect(script).toContain('cleanupProductionE2EAccount({');
     expect(script).toContain('record: { id: userId, email }');
     expect(script).not.toContain('Fixture User Delete Skipped');
-    expect(script).toContain('await cleanupLegacyDirectCertificates()');
-    expect(script).toContain('It Still Owns A Club.');
+    expect(script).toContain('await cleanupResidualDirectCertificates()');
+    expect(script).toContain('retireCertificationClubWithRetry({');
+    expect(script).toContain('environment: process.env');
+    expect(script).toContain('cert-residue-recovery');
+    expect(script).toContain('Still Owns A Club After Recovery.');
+    expect(script).toContain(
+      "Retired ${retired?.chips_retired ?? 'Unknown'} Chips Instead Of 100000"
+    );
+    expect(script).not.toContain("admin.rpc('fn_ca_retire_welcome_certification_club'");
+    expect(account).toContain("SET LOCAL statement_timeout = '120s'");
+    expect(account).toContain("SET LOCAL request.jwt.claim.role = 'service_role'");
+    expect(account).toContain("SET LOCAL app.club_retirement_maintenance = 'on'");
     expect(account).toContain("const LEGACY_DIRECT_PREFIX = 'club-create-cert-'");
     expect(migration).toContain("md5(v_old) <> '5097fd85191359890d70eb84c4ce507c'");
     expect(migration).toContain("LIKE 'club-create-cert-%@smarter-poker.invalid'");
@@ -154,8 +214,213 @@ describe('Create Club production certification contract', () => {
     expect(spec).toContain('createdClub?.id');
     expect(spec).toContain('escapeRegExp(createdClubRef)');
     expect(spec).not.toContain('/\\/clubs\\/[0-9a-f-]{36}');
-    expect(spec).toContain('getByLabel(/^100K Club Bank Chips$/)');
-    expect(spec).not.toContain('getByText(/100K/).first()');
+    expect(spec).toContain('getByLabel(/^99\\.7K Club Bank Chips$/)');
+    expect(spec).not.toContain('getByText(/99\\.7K/).first()');
+  });
+
+  it('dismisses the Diamond Spins interruption before opening setup', () => {
+    const spec = read('tests/e2e/production-create-club.spec.ts');
+    const diamondSpins = spec.indexOf(
+      "const diamondSpins = page.getByRole('dialog', { name: /Diamond Spins/i })"
+    );
+    const visible = spec.indexOf('if (await diamondSpins.isVisible())', diamondSpins);
+    const dismiss = spec.indexOf(
+      "diamondSpins.getByRole('button', { name: 'Not Now', exact: true }).click()",
+      visible
+    );
+    const hidden = spec.indexOf('await expect(diamondSpins).toBeHidden()', dismiss);
+    const start = spec.indexOf(
+      "getByRole('button', { name: 'Start Setup', exact: true }).click()",
+      hidden
+    );
+    const wizard = spec.indexOf("const wizard = page.getByRole('dialog'", start);
+    const assertion = spec.indexOf('await expect(wizard).toBeVisible()', start);
+
+    expect(diamondSpins).toBeGreaterThan(-1);
+    expect(visible).toBeGreaterThan(diamondSpins);
+    expect(dismiss).toBeGreaterThan(visible);
+    expect(hidden).toBeGreaterThan(dismiss);
+    expect(start).toBeGreaterThan(hidden);
+    expect(wizard).toBeGreaterThan(start);
+    expect(assertion).toBeGreaterThan(wizard);
+  });
+
+  it('targets the tag-line textbox by its stable accessible-name prefix', () => {
+    const spec = read('tests/e2e/production-create-club.spec.ts');
+
+    expect(spec).toContain("getByRole('textbox', { name: /^Club Tag Line\\b/i })");
+    expect(spec).not.toContain("getByLabel('Club Tag Line', { exact: true })");
+  });
+
+  it('proves the package-funded BBJ decision by its stable accessible-name prefix', () => {
+    const spec = read('tests/e2e/production-create-club.spec.ts');
+
+    expect(spec).toContain("getByRole('button', { name: /^Not Now\\b/i })");
+    expect(spec).not.toContain("wizard.getByRole('button', { name: 'Not Now', exact: true })");
+  });
+
+  it('retires the created club through the published owner controls before cleanup', () => {
+    const workflow = read('.github/workflows/club-create-certification.yml');
+    const spec = read('tests/e2e/production-create-club.spec.ts');
+
+    expect(spec).toContain('`./clubs/${createdClubRef}/settings`');
+    expect(spec).toContain("getByRole('dialog', { name: 'Retire Club', exact: true })");
+    expect(spec).toContain("getByLabel('Type The Club Name To Confirm:', { exact: true })");
+    expect(spec).toContain('expect(confirmRetirement).toBeEnabled');
+    // The UI stops at the enabled confirmation: a committed owner retirement
+    // writes immutable cancellation receipts, so the fixture could never be
+    // erased. The commit path is proved by the rollback probe instead.
+    expect(spec).not.toContain('fn_retire_settled_club');
+    expect(spec).not.toContain('confirmRetirement.click()');
+    expect(workflow).toContain('test-results/create-club-retire-ready-mobile.png');
+    expect(workflow.indexOf('Create A Club Through The Published User Interface')).toBeLessThan(
+      workflow.indexOf('Retire The Created Club')
+    );
+  });
+
+  it('certifies the first-club package, lifetime-second refusal and visible package rows', () => {
+    const script = read('scripts/ci/certify-club-create.mjs');
+    const spec = read('tests/e2e/production-create-club.spec.ts');
+
+    expect(script).toContain("'fn_get_club_welcome_package'");
+    expect(script).toContain('const retryRead = (label, operation) =>');
+    expect(script).toContain('welcome package read for certification club');
+    expect(script).toContain('welcome package refusal read for certification club');
+    expect(script.match(/retryRead\(/g)?.length).toBeGreaterThanOrEqual(15);
+    expect(script).toContain('certifyWelcomeResetInsideRollback({');
+    expect(script).toContain(
+      'SELECT public.fn_remove_first_club_welcome_games($1::uuid,$2::uuid) AS result'
+    );
+    expect(script).toContain('SET LOCAL ROLE authenticated');
+    expect(script).toContain("set_config('request.jwt.claims',$1::text,true)");
+    expect(script).toContain("set_config('request.jwt.claim.sub',$2::text,true)");
+    expect(script).toContain('SELECT public.fn_ca_lock_settlement_lane_global()');
+    expect(script).not.toContain('SELECT pg_advisory_xact_lock(530090,1)');
+    expect(script).toContain('SELECT 1 FROM public.clubs WHERE id=$1::uuid FOR UPDATE');
+    expect(script).toContain('ORDER BY slot_key FOR UPDATE');
+    expect(script).toContain('SELECT 1 FROM public.tournament_schedules');
+    expect(script).toContain('SELECT 1 FROM public.tournament_schedule_spawns');
+    expect(script).toContain(') ORDER BY id FOR UPDATE');
+    expect(script).toContain('SELECT 1 FROM public.tournaments t');
+    expect(script).toContain(') ORDER BY t.id FOR UPDATE');
+    expect(script).toContain("await client.query('ROLLBACK')");
+    expect(script).not.toContain("await client.query('COMMIT')");
+    expect(script).toContain(
+      'label: `rollback-only welcome reset certification for club ${club.id}`'
+    );
+    expect(script).toContain('welcomeCash.length !== 9');
+    expect(script).toContain('welcomeSchedules.length !== 1');
+    expect(script).toContain("welcome?.status !== 'provisioned'");
+    expect(script).toContain('Number(welcomeEconomics.bbj_seed) !== 100');
+    expect(script).toContain('Number(welcomeEconomics.spin_seed) !== 200');
+    expect(script).toContain("secondWelcome?.status !== 'not_eligible'");
+    expect(script).toContain(".from('club_welcome_package_funding')");
+    expect(spec).toContain("name: 'Opening Welcome Package'");
+    expect(spec).toContain("getByText('9 Preloaded', { exact: true })");
+    expect(spec).toContain("getByText('Owner Acceptance Required', { exact: true })");
+    expect(spec).toContain("getByText('Daily $25 Freezeout · 7 PM UTC', { exact: true })");
+  });
+
+  it('fails closed around independent reset preimages and exact residue cleanup', () => {
+    const script = read('scripts/ci/certify-club-create.mjs');
+
+    const globalLane = script.indexOf('SELECT public.fn_ca_lock_settlement_lane_global()');
+    const serviceRole = script.indexOf('SET LOCAL ROLE service_role', globalLane);
+    const clubLock = script.indexOf('SELECT 1 FROM public.clubs WHERE id=$1::uuid FOR UPDATE');
+    const packageItemLocks = script.indexOf('ORDER BY slot_key FOR UPDATE');
+    const scheduleLocks = script.indexOf(
+      'SELECT 1 FROM public.tournament_schedules',
+      packageItemLocks
+    );
+    const scheduleLockOrder = script.indexOf(') ORDER BY id FOR UPDATE', scheduleLocks);
+    const spawnLocks = script.indexOf(
+      'SELECT 1 FROM public.tournament_schedule_spawns',
+      scheduleLockOrder
+    );
+    const spawnLockOrder = script.indexOf(') ORDER BY id FOR UPDATE', spawnLocks);
+    const tournamentLocks = script.indexOf('SELECT 1 FROM public.tournaments t', spawnLockOrder);
+    const tournamentLockOrder = script.indexOf(') ORDER BY t.id FOR UPDATE', tournamentLocks);
+    const preimage = script.indexOf('AS cash_game_ids');
+    const authenticatedRole = script.indexOf('SET LOCAL ROLE authenticated');
+    const mutation = script.indexOf('public.fn_remove_first_club_welcome_games');
+    const rollback = script.indexOf("await client.query('ROLLBACK')");
+
+    expect(globalLane).toBeGreaterThan(-1);
+    expect(globalLane).toBeLessThan(serviceRole);
+    expect(serviceRole).toBeLessThan(clubLock);
+    expect(script).not.toContain('SELECT pg_advisory_xact_lock(530090,1)');
+    expect(clubLock).toBeLessThan(packageItemLocks);
+    expect(packageItemLocks).toBeLessThan(scheduleLocks);
+    expect(scheduleLocks).toBeLessThan(scheduleLockOrder);
+    expect(scheduleLockOrder).toBeLessThan(spawnLocks);
+    expect(spawnLocks).toBeLessThan(spawnLockOrder);
+    expect(spawnLockOrder).toBeLessThan(tournamentLocks);
+    expect(tournamentLocks).toBeLessThan(tournamentLockOrder);
+    expect(tournamentLockOrder).toBeLessThan(preimage);
+    expect(preimage).toBeLessThan(authenticatedRole);
+    expect(authenticatedRole).toBeLessThan(mutation);
+    expect(mutation).toBeLessThan(rollback);
+    // Deferred constraint triggers (tournaments_cancel_must_refund) are fired
+    // inside the probe, so a reset that could not COMMIT fails here instead.
+    const deferredChecks = script.indexOf("await client.query('SET CONSTRAINTS ALL IMMEDIATE')");
+    expect(mutation).toBeLessThan(deferredChecks);
+    expect(deferredChecks).toBeLessThan(rollback);
+
+    const retry = script.indexOf('await retryTransient(', script.indexOf('const resetOperationId'));
+    const rollbackOnlyReset = script.indexOf('certifyWelcomeResetInsideRollback({', retry);
+    expect(retry).toBeGreaterThan(-1);
+    expect(retry).toBeLessThan(rollbackOnlyReset);
+    expect(script).not.toContain("await client.query('COMMIT')");
+
+    expect(script).toContain(
+      'Welcome Reset Preimage Did Not Match The Independently Observed Package Graph.'
+    );
+    expect(script).toContain(
+      'Welcome Reset Receipt Did Not Name The Complete Independent Package Graph.'
+    );
+    expect(script).toContain(".select('id,name,is_union,union_id')");
+    expect(script).toContain('Certification Owner Has Unexpected Club State:');
+    expect(script).toContain('data?.already_gone || Number(data?.chips_retired) !== 100000');
+    expect(script).toContain('Fixture Cleanup Failed For ${clubId}: ${error.message}');
+    expect(script).toContain('Still Owns Club Logo Assets.');
+    expect(script).toContain('Still Exists After Cleanup.');
+  });
+
+  it('compares the reset receipt against both snapshots instead of demanding a still platform', () => {
+    const script = read('scripts/ci/certify-club-create.mjs');
+
+    // The preimage and the reset are separate statements in a READ COMMITTED
+    // transaction, so a welcome schedule's background spawn can commit between
+    // them. Set equality asserted that nothing committed during the probe and
+    // went red at random; the receipt must instead name EVERY observed entity
+    // and nothing outside the club.
+    expect(script).toContain('const namesEveryId = (receipt, observed) =>');
+    expect(script).toContain('!namesEveryId(removed?.cash_game_ids, expected?.cash_game_ids)');
+    expect(script).toContain('!namesEveryId(removed?.table_ids, expected?.table_ids)');
+    expect(script).toContain('!namesEveryId(removed?.schedule_ids, expected?.schedule_ids)');
+    expect(script).toContain('!namesEveryId(removed?.tournament_ids, expected?.tournament_ids)');
+    expect(script).not.toMatch(/sameIds\(\s*resetResult\?\.removed/);
+    expect(script).toContain(
+      'Welcome Reset Receipt Named An Entity Outside The Certification Club.'
+    );
+    expect(script).toContain('!namesEveryId(readback?.club_cash_game_ids, removed?.cash_game_ids)');
+    expect(script).toContain('!namesEveryId(readback?.club_table_ids, removed?.table_ids)');
+
+    // Every entity the receipt names is read back in the zero state, which is
+    // what keeps the subset comparison from going slack.
+    expect(script).toContain('removed?.cash_game_ids ?? []');
+    expect(script).toContain('removed?.table_ids ?? []');
+    expect(script).toContain('resetCashRead?.length !== resetRemoved?.cash_game_ids?.length');
+    expect(script).toContain('resetTableRead?.length !== resetRemoved?.table_ids?.length');
+    expect(script).toContain('resetScheduleRead?.length !== resetRemoved?.schedule_ids?.length');
+    expect(script).toContain(
+      'resetTournamentRead?.length !== resetRemoved?.tournament_ids?.length'
+    );
+
+    // managed_game_schedules is keyed on schedule_id. Selecting "id" raised
+    // 42703 and killed the whole certification at the readback.
+    expect(script).toContain('SELECT schedule_id,status FROM public.managed_game_schedules');
+    expect(script).not.toMatch(/SELECT id,status FROM public\.managed_game_schedules/);
   });
 
   it('bakes replayed cards from the authoritative server club and reports a failed URL write', () => {

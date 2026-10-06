@@ -45,7 +45,16 @@ import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
 import { styledAlias, usernameFromAlias } from './horseAliasStyles.js';
 
-const SHARK_CLUB_ID = 'a41434bb-0000-0000-0000-000000000001';
+/**
+ * The auth mailbox a new horse is registered under. It receives nothing:
+ * there is no MX for this host, and the account is created with no password,
+ * so the identity exists (profiles.id references auth.users.id) without a
+ * usable login. Never shown to a player: profiles.email is not granted.
+ */
+export const HORSE_AUTH_EMAIL_DOMAIN = 'horses.smarter.poker';
+
+/** One page of the boot sweep. The fleet passed 1,000 profiles on 2026-10-06. */
+export const SWEEP_PAGE_SIZE = 500;
 
 /**
  * Where a horse lives AND the clock it lives on, as one fact.
@@ -223,7 +232,7 @@ export function brainFor(horseId: string, existing: unknown): Record<string, unk
   };
 }
 
-interface HorseRow {
+export interface HorseRow {
   id: string;
   display_name: string | null;
   username: string | null;
@@ -233,6 +242,28 @@ interface HorseRow {
   is_vip: boolean | null;
   vip_tier: string | null;
   horse_profile: unknown;
+  /** profiles.status: 'deleted' is a closed account (fn_close_account / retirement). */
+  status?: string | null;
+  /** profiles.horse_status: 'disabled' is a benched horse. */
+  horse_status?: string | null;
+}
+
+/**
+ * WHO THE COMPLETENESS SWEEP MAY TOUCH (2026-10-06).
+ *
+ * The sweep refills a missing name and alias and re-activates a muted
+ * content_authors row. Run over a CLOSED account (status 'deleted') it would
+ * put a name, an alias and a voice back on an identity that was deliberately
+ * taken off every public surface - the retirement of the 62 horses whose
+ * hand-made ids (00000000-.../face0000-...) told players what they were
+ * depends on exactly that not happening. A BENCHED horse (horse_status
+ * 'disabled') is out of play on purpose too, so it is not re-socialised either;
+ * when it is released it is completed on the next boot like any other.
+ */
+export function isSweepEligible(row: Pick<HorseRow, 'status' | 'horse_status'>): boolean {
+  if ((row.status ?? '').trim().toLowerCase() === 'deleted') return false;
+  if ((row.horse_status ?? '').trim().toLowerCase() === 'disabled') return false;
+  return true;
 }
 
 /**
@@ -248,6 +279,7 @@ export async function ensureHorseComplete(
 ): Promise<string[]> {
   const fixed: string[] = [];
   if (!shouldContinue()) return fixed;
+  if (!isSweepEligible(row)) return fixed;
   const ident = identityFor(row.id, row.display_name);
 
   // ── profile: alias, name, lifetime VIP, brain dials ──────────────────────
@@ -283,7 +315,8 @@ export async function ensureHorseComplete(
       .from('profiles')
       .update(patch)
       .eq('id', row.id)
-      .eq('is_horse', true);
+      .eq('is_horse', true)
+      .or('status.is.null,status.neq.deleted');
     if (!shouldContinue()) return fixed;
     if (error) throw new Error(`profile update: ${error.message}`);
   }
@@ -344,112 +377,143 @@ export async function ensureHorseComplete(
 }
 
 /**
- * Bring the whole fleet up to standard. Runs at boot, bounded, and never
- * throws into the caller — an incomplete horse is a defect worth fixing but
- * never a reason the engine fails to start.
+ * Bring the whole fleet up to standard. Runs at boot and never throws into
+ * the caller - an incomplete horse is a defect worth fixing but never a
+ * reason the engine fails to start.
+ *
+ * PAGED, NOT CAPPED (2026-10-06). This read one page of 1,000 rows with no
+ * order, so once the fleet passed 1,000 profiles (1,062 on 2026-10-06) an
+ * arbitrary tail was never looked at. It now walks every horse in id order,
+ * one page at a time, and skips any row isSweepEligible refuses.
  */
 export async function sweepIncompleteHorses(
-  limit = 1000,
+  pageSize = SWEEP_PAGE_SIZE,
   shouldContinue: () => boolean = () => true
 ): Promise<{
   checked: number;
   repaired: number;
+  skipped: number;
   fixes: Record<string, number>;
 }> {
   const fixes: Record<string, number> = {};
   let checked = 0;
   let repaired = 0;
+  let skipped = 0;
+  const size = Number.isInteger(pageSize) && pageSize > 0 ? pageSize : SWEEP_PAGE_SIZE;
   try {
-    if (!shouldContinue()) return { checked, repaired, fixes };
-    const { data, error } = await supabase
-      .from('profiles')
-      .select(
-        'id, display_name, username, alias, player_number, avatar_url:arena_avatar_url, is_vip, vip_tier, horse_profile'
-      )
-      .eq('is_horse', true)
-      .limit(limit);
-    if (!shouldContinue()) return { checked, repaired, fixes };
-    if (error) throw new Error(error.message);
-    for (const row of (data ?? []) as HorseRow[]) {
+    let after: string | null = null;
+    for (;;) {
       if (!shouldContinue()) break;
-      checked++;
-      try {
-        const done = await ensureHorseComplete(row, shouldContinue);
+      let query = supabase
+        .from('profiles')
+        .select(
+          'id, display_name, username, alias, player_number, avatar_url:arena_avatar_url, is_vip, vip_tier, horse_profile, status, horse_status'
+        )
+        .eq('is_horse', true)
+        .order('id', { ascending: true })
+        .limit(size);
+      if (after !== null) query = query.gt('id', after);
+      const { data, error } = await query;
+      if (!shouldContinue()) break;
+      if (error) throw new Error(error.message);
+      const page = (data ?? []) as HorseRow[];
+      for (const row of page) {
         if (!shouldContinue()) break;
-        if (done.length > 0) {
-          repaired++;
-          for (const f of done) fixes[f] = (fixes[f] ?? 0) + 1;
+        if (!isSweepEligible(row)) {
+          skipped++;
+          continue;
         }
-      } catch (err) {
-        reportError(err, 'HorseOnboarding.ensureHorseComplete');
+        checked++;
+        try {
+          const done = await ensureHorseComplete(row, shouldContinue);
+          if (!shouldContinue()) break;
+          if (done.length > 0) {
+            repaired++;
+            for (const f of done) fixes[f] = (fixes[f] ?? 0) + 1;
+          }
+        } catch (err) {
+          reportError(err, 'HorseOnboarding.ensureHorseComplete');
+        }
       }
+      if (page.length < size) break;
+      const last = page[page.length - 1].id;
+      // id order is strict, so the cursor must move; if it ever did not, a
+      // second read of the same page would loop for ever
+      if (after !== null && last <= after) throw new Error('sweep cursor did not advance');
+      after = last;
     }
     if (repaired > 0) {
       console.log(
-        `[HorseOnboarding] completed ${repaired}/${checked} horses: ` +
+        `[HorseOnboarding] completed ${repaired}/${checked} horses (${skipped} closed or benched skipped): ` +
           Object.entries(fixes)
             .map(([k, v]) => `${k}=${v}`)
             .join(' ')
       );
     } else {
-      console.log(`[HorseOnboarding] all ${checked} horses complete`);
+      console.log(
+        `[HorseOnboarding] all ${checked} horses complete (${skipped} closed or benched skipped)`
+      );
     }
   } catch (err) {
     reportError(err, 'HorseOnboarding.sweep');
   }
-  return { checked, repaired, fixes };
+  return { checked, repaired, skipped, fixes };
 }
 
-/** Club membership + bankroll, so a new horse can actually sit down. */
-async function ensureClubMembership(horseId: string, clubId: string): Promise<void> {
-  const { data } = await supabase
-    .from('club_members')
-    .select('user_id, chip_balance')
-    .eq('club_id', clubId)
-    .eq('user_id', horseId)
-    .maybeSingle();
-  if (data) return;
-  const { error } = await supabase.from('club_members').insert({
-    club_id: clubId,
-    user_id: horseId,
-    role: 'member',
-    status: 'approved',
-    chip_balance: 50000,
-    is_active: true,
-    is_prepaid: true,
-    trust_score: 50,
-    tier: 'bronze',
-    /* THIS LINE IS THE ROOT CAUSE OF THE 2026-08-27 FLAG DRIFT.
-       It was absent, so the column took its `false` default and every horse
-       onboarded through this path was recorded as a human being. By the time
-       it was found, 985 of 1,487 horses -- 66% of the fleet, holding 74.5
-       million chips -- were flagged is_bot = false, and anything segmenting
-       on that column counted them as players. It produced a wrong seated
-       count in the cost analysis that led to finding it.
-       `profiles.is_horse` stays authoritative; this is the per-membership
-       copy and it has to agree. A trigger now enforces that
-       (20260827_the_bot_flag_cannot_drift_again), so this line is
-       belt-and-braces -- but the insert should state the truth itself
-       rather than rely on a trigger to correct it. */
-    is_bot: true,
-  });
-  if (error && !/duplicate|unique/i.test(error.message)) {
-    throw new Error(`club_members insert: ${error.message}`);
-  }
+/** Escape a value for an exact, case-insensitive ilike match. */
+function exactILike(value: string): string {
+  return value.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 
 /**
  * Create a brand new horse, complete on the first try. This is the path a
  * future roster expansion should call instead of writing a seventh seed
  * script with its own idea of what a horse is.
+ *
+ * THE IDENTITY COMES FIRST (2026-10-06). This inserted a profiles row
+ * directly, but profiles.id references auth.users(id) (profiles_id_fkey), so
+ * the insert could never succeed: a horse is an account like every other
+ * account. It now asks the auth service for the account through the admin
+ * API with a fresh random v4 id, no password and an address that receives
+ * nothing, so it has the same auth.users row every person has and no usable
+ * login. on_auth_user_created then gives it the profile, wallet and signup
+ * grant every signup gets, and this function makes that profile the horse.
+ *
+ * It also no longer inserts a club membership holding 50,000 chips. That step
+ * named a club that does not exist and wrote a balance with no ledger row;
+ * club_members refuses both (trg_club_members_require_explicit_join,
+ * zz_ca_balance_has_its_ledger_row), so it failed every time. Putting a horse
+ * on a house board is a separate, ledgered step.
  */
-export async function createHorse(opts: { clubId?: string; realName?: string } = {}): Promise<{
+export async function createHorse(opts: { realName?: string } = {}): Promise<{
   id: string;
   identity: HorseIdentity;
 } | null> {
+  let createdId: string | null = null;
   try {
     const id = crypto.randomUUID();
     const ident = identityFor(id, opts.realName);
+
+    // Refuse before an account exists rather than unwind one afterwards: a
+    // horse may not carry a person's name (fn_reject_horse_name_on_human) and
+    // a username is unique.
+    const { data: nameClash, error: nameErr } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('is_horse', false)
+      .ilike('display_name', exactILike(ident.realName))
+      .limit(1);
+    if (nameErr) throw new Error(`name check: ${nameErr.message}`);
+    if ((nameClash ?? []).length > 0)
+      throw new Error(`a person already answers to ${ident.realName}`);
+    const { data: userClash, error: userErr } = await supabase
+      .from('profiles')
+      .select('id')
+      .ilike('username', exactILike(ident.username))
+      .limit(1);
+    if (userErr) throw new Error(`username check: ${userErr.message}`);
+    if ((userClash ?? []).length > 0) throw new Error(`username ${ident.username} is taken`);
+
     // Player numbers live above the human range and are unique-checked.
     let playerNumber = 100000 + (hash(id) % 900000);
     for (let attempt = 0; attempt < 5; attempt++) {
@@ -462,23 +526,37 @@ export async function createHorse(opts: { clubId?: string; realName?: string } =
       playerNumber = 100000 + ((hash(`${id}:${attempt}`) >>> 3) % 900000);
     }
 
-    const { error } = await supabase.from('profiles').insert({
+    const { data: created, error: authError } = await supabase.auth.admin.createUser({
       id,
-      username: ident.username,
-      display_name: ident.realName,
-      alias: ident.alias,
-      email: `horse.${ident.username}@hydra.smarter.poker`,
-      player_number: playerNumber,
-      is_horse: true,
-      horse_status: 'available',
-      horse_profile: brainFor(id, null),
-      is_vip: true,
-      vip_tier: 'lifetime',
-      vip_expires_at: '2099-12-31T23:59:59+00:00',
+      email: `horse.${ident.username}@${HORSE_AUTH_EMAIL_DOMAIN}`,
+      email_confirm: true,
+      user_metadata: { full_name: ident.realName, poker_alias: ident.username },
     });
-    if (error) throw new Error(`profiles insert: ${error.message}`);
+    if (authError) throw new Error(`auth user: ${authError.message}`);
+    if (created?.user?.id !== id)
+      throw new Error('auth user: the account returned is not the one requested');
+    createdId = id;
 
-    await ensureClubMembership(id, opts.clubId ?? SHARK_CLUB_ID);
+    const { data: updated, error } = await supabase
+      .from('profiles')
+      .update({
+        username: ident.username,
+        display_name: ident.realName,
+        alias: ident.alias,
+        player_number: playerNumber,
+        is_horse: true,
+        horse_status: 'available',
+        horse_profile: brainFor(id, null),
+        is_vip: true,
+        vip_tier: 'lifetime',
+        vip_expires_at: '2099-12-31T23:59:59+00:00',
+      })
+      .eq('id', id)
+      .select('id');
+    if (error) throw new Error(`profile: ${error.message}`);
+    if ((updated ?? []).length !== 1)
+      throw new Error('profile: the signup trigger did not create the profile row');
+
     await ensureHorseComplete({
       id,
       display_name: ident.realName,
@@ -489,10 +567,27 @@ export async function createHorse(opts: { clubId?: string; realName?: string } =
       is_vip: true,
       vip_tier: 'lifetime',
       horse_profile: brainFor(id, null),
+      status: 'active',
+      horse_status: 'available',
     });
     console.log(`[HorseOnboarding] created ${ident.realName} "${ident.alias}" #${playerNumber}`);
     return { id, identity: ident };
   } catch (err) {
+    // An account that never became a horse would be a nameless person with a
+    // signup grant. Take it back out; if that fails, say so with the id.
+    if (createdId) {
+      const { error: undoErr } = await supabase.auth.admin
+        .deleteUser(createdId)
+        .catch((e: unknown) => ({
+          error: e instanceof Error ? e : new Error(String(e)),
+        }));
+      if (undoErr) {
+        reportError(
+          new Error(`createHorse left account ${createdId} behind: ${undoErr.message}`),
+          'HorseOnboarding.createHorse.undo'
+        );
+      }
+    }
     reportError(err, 'HorseOnboarding.createHorse');
     return null;
   }

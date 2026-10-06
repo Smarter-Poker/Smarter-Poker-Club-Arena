@@ -188,7 +188,13 @@ describe('the table says when it is not connected', () => {
     expect(rule).toMatch(/top:\s*calc\(var\(--sp-brand-top,\s*56%\)\s*-\s*0\.5%\)/);
     expect(rule).not.toMatch(/top:\s*52%/);
     // Bottom-anchored, so it grows UP off the wordmark rather than over it.
-    expect(BANNER_CSS).toMatch(/transform:\s*translate\(-50%,\s*-100%\)/);
+    /* 2026-10-04: this pinned `translate(-50%, -100%)`. The -50% went with
+       `left: 50%`, which capped the line at HALF the felt and ellipsized it on
+       a phone. Dan: "THE 'RECONNECTING YOUR SEAT' NEEDS TO BE FULLY DISPLAYED
+       AND NOT CUT OFF WHEN YOU ARE ACTUALLY HAVING CONNECTION ISSUES." Both
+       edges are pinned now and the box centres with auto margins, so only the
+       Y term is left (tests/unit/seatAndEquityFollowups.test.tsx, block 6). */
+    expect(rule).toMatch(/transform:\s*translateY\(-100%\)/);
     // And it is rendered inside the felt surface, above .table-brand - not as
     // a sibling pinned to the top of the table container.
     const surface = TABLE_PAGE.indexOf('className="table-surface"');

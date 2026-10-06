@@ -369,24 +369,8 @@ async function installHistoricalBoostedMilestone(
   // which is what the live path did: 10 more Diamonds on the first prior claim. The fixture now
   // records its payment the way a paid milestone is recorded.
   const historicalReference = `daily_mission_milestones:${account.id}:${historicalRunId}:777`;
-  // 2026-09-07 (Diamond Accounting Standard DR2, DR6): the 15 historical diamonds reach the balance
-  // through the Mint, which registers and journals the movement, never through a direct write to
-  // profiles.diamonds. A direct write moved the balance with no register row and filed DR6 on every
-  // run of this spec. The multiplier is a profile attribute, not money, and is still set directly.
-  const minted = await callServiceRpc<{ ok?: boolean; replayed?: boolean; reason?: string }>(
-    environment,
-    'fn_ca_mint',
-    {
-      p_asset: 'diamonds',
-      p_destination: 'player',
-      p_target_id: account.id,
-      p_amount: HISTORICAL_MILESTONE_ACTUAL_DIAMONDS,
-      p_reason: 'Daily Missions certification: historical boosted milestone fixture',
-      p_op_id: `daily-missions-historical-fixture:${historicalRunId}`,
-      p_class: 'earned',
-    }
-  );
-  expect(minted.ok === true || minted.replayed === true, String(minted.reason || '')).toBe(true);
+  // One supported credit owns both balance and journal. Legacy boosted metadata
+  // is certified on private PostgreSQL; production never fabricates a journal row.
   const profile = await updateServiceRows<{
     diamonds: number;
     diamond_balance: number;
@@ -398,9 +382,40 @@ async function installHistoricalBoostedMilestone(
     { diamond_multiplier: 1.5 }
   );
   expect(profile).toHaveLength(1);
-  expect(numeric(profile[0].diamonds)).toBe(boostedBalance);
-  expect(numeric(profile[0].diamond_balance)).toBe(boostedBalance);
   expect(numeric(profile[0].diamond_multiplier)).toBe(1.5);
+
+  const historicalFunding = await callServiceRpc<JsonObject>(
+    environment,
+    'add_diamonds_to_balance',
+    {
+      p_user_id: account.id,
+      p_amount: HISTORICAL_MILESTONE_ACTUAL_DIAMONDS,
+      p_type: 'daily_mission_milestone',
+      p_description: 'Daily Missions Certification Prior Milestone',
+      p_reference_id: historicalReference,
+    }
+  );
+  expect(historicalFunding).toMatchObject({
+    success: true,
+    old_balance: currentBalance,
+    new_balance: boostedBalance,
+    amount: HISTORICAL_MILESTONE_ACTUAL_DIAMONDS,
+    multiplier: 1,
+  });
+
+  const fundedProfile = await readServiceRows<{
+    diamonds: number;
+    diamond_balance: number;
+    diamond_multiplier: number;
+  }>(
+    environment,
+    'profiles',
+    query('diamonds,diamond_balance,diamond_multiplier', { id: `eq.${account.id}` })
+  );
+  expect(fundedProfile).toHaveLength(1);
+  expect(numeric(fundedProfile[0].diamonds)).toBe(boostedBalance);
+  expect(numeric(fundedProfile[0].diamond_balance)).toBe(boostedBalance);
+  expect(numeric(fundedProfile[0].diamond_multiplier)).toBe(1.5);
 
   await insertServiceRows(environment, 'daily_challenge_milestone_claims', {
     user_id: account.id,
@@ -408,31 +423,6 @@ async function installHistoricalBoostedMilestone(
     streak_started_on: streakStartedOn,
     milestone_days: 777,
     reward_diamonds: HISTORICAL_MILESTONE_RAW_DIAMONDS,
-  });
-  // The register follows the journal (trg_ca_diamond_register_follows_journal): a journal row
-  // whose source is not 'the_mint' is registered as a second issuance. The 15 above were issued
-  // and registered by fn_ca_mint under the op id in metadata, so this row, which exists only so
-  // the dashboard sees a historical multiplier-shaped milestone, names the Mint as its source and
-  // registers nothing. One movement, one register row, one balance change.
-  await insertServiceRows(environment, 'diamond_transactions', {
-    user_id: account.id,
-    amount: HISTORICAL_MILESTONE_ACTUAL_DIAMONDS,
-    transaction_type: 'daily_mission_milestone',
-    type: 'daily_mission_milestone',
-    source: 'the_mint',
-    description: 'Historical Daily Missions Streak Circuit [1.5x Boost]',
-    balance_after: boostedBalance,
-    reference_id: historicalReference,
-    metadata: {
-      reference_id: historicalReference,
-      raw_amount: HISTORICAL_MILESTONE_RAW_DIAMONDS,
-      multiplier: 1.5,
-      exact_value: false,
-      certification: 'historical_multiplier_compatibility',
-      registered_by_op_id: `daily-missions-historical-fixture:${historicalRunId}`,
-    },
-    counterparty: 'promo_budget:daily_mission_milestone',
-    issuance_class: 'earned',
   });
 }
 
@@ -510,7 +500,7 @@ test.describe('Daily Missions Database Settlement Certification', () => {
       );
 
       // Old milestone rows could be multiplier-boosted before this release.
-      // Preserve one honest historical fixture: the immutable claim says 10,
+      // Preserve the historical receipt discrepancy: the immutable claim says 10,
       // while the append-only wallet journal proves that 15 actually moved.
       await installHistoricalBoostedMilestone(
         environment,
@@ -713,9 +703,9 @@ test.describe('Daily Missions Database Settlement Certification', () => {
         HISTORICAL_MILESTONE_ACTUAL_DIAMONDS
       );
       expect(historicalMilestoneTransaction?.metadata).toMatchObject({
-        raw_amount: HISTORICAL_MILESTONE_RAW_DIAMONDS,
-        multiplier: 1.5,
-        exact_value: false,
+        raw_amount: HISTORICAL_MILESTONE_ACTUAL_DIAMONDS,
+        multiplier: 1,
+        exact_value: true,
       });
 
       const mutationReference = `daily-missions-response-loss:${requestId}`;

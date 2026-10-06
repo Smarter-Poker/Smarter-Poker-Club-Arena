@@ -3,7 +3,8 @@
  *  FINANCIAL ADMIN HUB — Single-Pane-of-Glass Financial Operations
  * ═══════════════════════════════════════════════════════════════════════════════
  *  Central admin page consolidating all financial management tools.
- *  Quick links to: Alerts, Health, Disputes, Rate Audit, Settlements, Financials.
+ *  Quick links to: Drift Incidents, Health, Disputes, Rate Audit,
+ *  Settlement History, Settlement Center, and verified club financial exports.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -12,155 +13,227 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import PageSkeleton from '../components/common/PageSkeleton';
 import { useToast } from '../components/common/Toast';
-import { ResponsiveContainer, AreaChart, Area, XAxis, Tooltip } from 'recharts';
+import { ResponsiveContainer, AreaChart, Area, XAxis } from 'recharts';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 import UnionOpsPanel from '../components/union/UnionOpsPanel';
-import { unionService } from '../services/UnionService';
-import FinancialAdminScopeState from '../components/common/FinancialAdminScopeState';
+import { UnionOpsService } from '../services/UnionOpsService';
 import { clubScoped, useFinancialAdminScope } from '../hooks/useFinancialAdminScope';
+import { SpadeConsole } from '../components/console/SpadeConsole';
+import { compactChips } from '../utils/format';
+import { titleCase } from '../utils/titleCase';
 import './AdminDashboardPage.css';
+import styles from './FinancialAdminHub.module.css';
 
 interface HubStats {
-  totalAlerts: number;
-  openIncidents: number;
+  openIncidents: number | null;
   openDisputes: number;
   rateChanges: number;
-  healthChecks: number;
-  lastCheckPassed: boolean | null;
+}
+
+interface HubReading {
+  stats: HubStats;
+  incidentStatus: 'ready' | 'not_authorized' | 'unavailable';
+  revenue: { day: string; amount: number }[];
+  revenueTotal: number;
+  windowStart: string;
+  windowEnd: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+const REVENUE_CONTRACT = 'ca_financial_admin_revenue_series_v1';
+const REVENUE_BASIS = 'cash_rake_plus_tournament_fees';
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const STRICT_NUMERIC = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/;
+const CREDIT_ADMIN_ROLES = new Set(['owner', 'co_owner', 'admin']);
+
+function parseLedgerNumber(value: unknown): number {
+  if (typeof value !== 'number' && typeof value !== 'string') {
+    throw new Error('Revenue Amount Could Not Be Verified');
+  }
+  if (typeof value === 'string' && !STRICT_NUMERIC.test(value)) {
+    throw new Error('Revenue Amount Could Not Be Verified');
+  }
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(parsed)) throw new Error('Revenue Amount Could Not Be Verified');
+  return parsed;
+}
+
+function formatUtcDate(value: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(`${value}T00:00:00Z`));
+}
+
+function parseRevenueSeries(
+  value: unknown,
+  expectedClubId: string | null,
+  platformWide: boolean
+): Pick<HubReading, 'revenue' | 'revenueTotal' | 'windowStart' | 'windowEnd'> {
+  if (!isRecord(value)) throw new Error('Revenue Series Was Not Returned');
+  const expectedScope = platformWide ? 'platform' : 'club';
+  if (
+    value.contract !== REVENUE_CONTRACT ||
+    value.basis !== REVENUE_BASIS ||
+    value.includes_live_day !== false ||
+    value.scope !== expectedScope ||
+    value.club_id !== expectedClubId ||
+    value.range_days !== 7 ||
+    typeof value.range_start !== 'string' ||
+    typeof value.range_end !== 'string' ||
+    !Array.isArray(value.daily) ||
+    value.daily.length !== 7 ||
+    typeof value.generated_at !== 'string' ||
+    (value.data_updated_at !== null && typeof value.data_updated_at !== 'string')
+  ) {
+    throw new Error('Revenue Series Contract Could Not Be Verified');
+  }
+
+  const startMs = Date.parse(`${value.range_start}T00:00:00Z`);
+  const endMs = Date.parse(`${value.range_end}T00:00:00Z`);
+  const generatedMs = Date.parse(value.generated_at);
+  const updatedMs = value.data_updated_at === null ? null : Date.parse(value.data_updated_at);
+  if (
+    !Number.isFinite(startMs) ||
+    !Number.isFinite(endMs) ||
+    !Number.isFinite(generatedMs) ||
+    (updatedMs !== null && !Number.isFinite(updatedMs)) ||
+    endMs !== startMs + 6 * 86400000
+  ) {
+    throw new Error('Revenue Series Window Could Not Be Verified');
+  }
+
+  let unroundedTotal = 0;
+  const revenue = value.daily.map((row, index) => {
+    if (!isRecord(row) || typeof row.d !== 'string')
+      throw new Error('Revenue Day Could Not Be Verified');
+    const expectedDate = new Date(startMs + index * 86400000).toISOString().slice(0, 10);
+    const cashRake = parseLedgerNumber(row.cash_rake);
+    const tournamentFees = parseLedgerNumber(row.tournament_fees);
+    const amount = parseLedgerNumber(row.revenue);
+    if (row.d !== expectedDate || Math.abs(cashRake + tournamentFees - amount) > 0.000001)
+      throw new Error('Revenue Day Could Not Be Verified');
+    unroundedTotal += amount;
+    const date = new Date(`${row.d}T00:00:00Z`);
+    return { day: `${DAY_LABELS[date.getUTCDay()]} ${date.getUTCDate()}`, amount };
+  });
+
+  const revenueTotal = parseLedgerNumber(value.period_total);
+  if (Math.abs(Math.round(unroundedTotal * 100) / 100 - revenueTotal) > 0.000001) {
+    throw new Error('Revenue Period Total Could Not Be Verified');
+  }
+
+  return {
+    revenue,
+    revenueTotal,
+    windowStart: value.range_start,
+    windowEnd: value.range_end,
+  };
 }
 
 /* staffOnly: shown to platform staff only (scope.isPlatformStaff); the route
    behind it is closed by PlatformStaffGuard and every door checks again. */
 const NAV_ITEMS: Array<{
-  icon: string;
   label: string;
   description: string;
-  path: string;
-  color: string;
-  bg: string;
-  border: string;
+  path?: string;
+  clubPath?: string;
+  platformLabel?: string;
+  platformDescription?: string;
+  tone: 'blue' | 'red' | 'gold' | 'silver';
   staffOnly?: boolean;
+  preserveClubScope?: boolean;
+  requiresClubScope?: boolean;
+  requiresCreditClubRole?: boolean;
+  requiresDriftAccess?: boolean;
 }> = [
   {
-    icon: '♦',
     label: 'Diamond Staff Desk',
     description: 'Diamond Games, Incidents, Books And Adjustments',
     path: '/diamond-staff-desk',
-    color: '#38bdf8',
-    bg: 'rgba(56,189,248,0.1)',
-    border: 'rgba(56,189,248,0.3)',
+    tone: 'blue',
     staffOnly: true,
   },
   {
-    icon: '◆',
-    label: 'Financial Alerts',
-    description: 'Critical Warnings And System Notifications',
-    path: '/financial-alerts',
-    color: '#ef4444',
-    bg: 'rgba(239,68,68,0.1)',
-    border: 'rgba(239,68,68,0.3)',
-  },
-  {
-    icon: '◈',
     label: 'Drift Incidents',
     description: 'Ledger Drift Detection And 20-Minute Reconciliation Queue',
     path: '/financial-incidents',
-    color: '#f43f5e',
-    bg: 'rgba(244,63,94,0.1)',
-    border: 'rgba(244,63,94,0.3)',
+    tone: 'red',
+    requiresDriftAccess: true,
   },
   {
-    icon: '◇',
     label: 'System Health',
-    description: 'Ledger Reconciliation & Cron Status',
+    description: 'Server-Owned Financial Integrity Controls',
     path: '/financial-health',
-    color: '#10b981',
-    bg: 'rgba(16,185,129,0.1)',
-    border: 'rgba(16,185,129,0.3)',
+    tone: 'blue',
+    staffOnly: true,
   },
   {
-    icon: '⚠',
-    label: 'Disputes',
-    description: 'Open Disputes Needing Resolution',
+    label: 'Club Disputes',
+    description: 'Open Club Disputes Needing Resolution',
+    // The unscoped route is the signed-in person's own casework. It is not a
+    // platform-wide admin queue, so the platform presentation names that
+    // narrower contract while a selected club opens the guarded club queue.
     path: '/disputes',
-    color: '#f59e0b',
-    bg: 'rgba(245,158,11,0.1)',
-    border: 'rgba(245,158,11,0.3)',
+    clubPath: 'disputes',
+    platformLabel: 'My Disputes',
+    platformDescription: 'Your Submitted Disputes And Resolution Status',
+    tone: 'gold',
   },
   {
-    icon: '▦',
     label: 'Rate Audit Trail',
     description: 'Commission & Rake Rate Change History',
     path: '/rate-audit',
-    color: '#8b5cf6',
-    bg: 'rgba(139,92,246,0.1)',
-    border: 'rgba(139,92,246,0.3)',
+    tone: 'silver',
+    preserveClubScope: true,
   },
   {
-    icon: '▦',
     label: 'Agent Portal',
-    description: 'Triple Wallet, Credit Lines, Commissions',
+    description: 'Your Wallets, Credit Line, Commissions And Invoices',
     path: '/agent-portal',
-    color: '#0ea5e9',
-    bg: 'rgba(14,165,233,0.1)',
-    border: 'rgba(14,165,233,0.3)',
+    tone: 'blue',
+    // AgentPortalPage resolves the signed-in person's record in the selected
+    // club. A platform-wide scope has no honest agent wallet to open.
+    requiresClubScope: true,
   },
   {
-    icon: '▦',
-    label: 'Rakeback Dashboard',
-    description: 'Player Rakeback Tiers & Pending Payouts',
-    path: '/rakeback',
-    color: '#d946ef',
-    bg: 'rgba(217,70,239,0.1)',
-    border: 'rgba(217,70,239,0.3)',
-  },
-  {
-    icon: '▣',
     label: 'Credit Admin',
     description: 'Set & Adjust Agent Credit Limits',
     path: '/credit-admin',
-    color: '#f97316',
-    bg: 'rgba(249,115,22,0.1)',
-    border: 'rgba(249,115,22,0.3)',
+    tone: 'gold',
+    preserveClubScope: true,
+    requiresCreditClubRole: true,
   },
   {
-    icon: '▤',
     label: 'Settlement History',
     description: 'Weekly Settlement Cycles & Revenue Trends',
     path: '/settlement-history',
-    color: '#14b8a6',
-    bg: 'rgba(20,184,166,0.1)',
-    border: 'rgba(20,184,166,0.3)',
+    tone: 'blue',
+    preserveClubScope: true,
+    requiresClubScope: true,
   },
   {
-    icon: '⚖',
     label: 'Settlement Center',
-    description: 'Canary Checks, Payout Execution & Monitoring',
+    description: 'Weekly Accounting & Verified Transaction Records',
     path: '/settlement-dashboard',
-    color: '#6366f1',
-    bg: 'rgba(99,102,241,0.1)',
-    border: 'rgba(99,102,241,0.3)',
+    tone: 'silver',
+    preserveClubScope: true,
   },
   {
-    icon: '▦',
-    label: 'Settlements',
-    description: 'Club & Agent Settlement Management',
-    path: '/wallet',
-    color: '#3b82f6',
-    bg: 'rgba(59,130,246,0.1)',
-    border: 'rgba(59,130,246,0.3)',
-  },
-  {
-    icon: '↓',
     label: 'CSV Exports',
-    description: 'Financial Reports & Data Exports',
-    path: '/wallet',
-    color: '#06b6d4',
-    bg: 'rgba(6,182,212,0.1)',
-    border: 'rgba(6,182,212,0.3)',
+    description: 'Export Exact Club Financial Records',
+    // Club Financials owns the verified, club-authorized exact CSV. There is
+    // no honest platform-wide equivalent, so this door is absent until the
+    // financial scope has named one club.
+    clubPath: 'financials',
+    tone: 'silver',
   },
 ];
 
@@ -170,20 +243,13 @@ export default function FinancialAdminHub() {
   const toast = useToast();
   const isMounted = useIsMounted();
 
-  const [stats, setStats] = useState<HubStats>({
-    totalAlerts: 0,
-    openIncidents: 0,
-    openDisputes: 0,
-    rateChanges: 0,
-    healthChecks: 0,
-    lastCheckPassed: null,
-  });
+  const [reading, setReading] = useState<HubReading | null>(null);
+  const [loadedStatsScope, setLoadedStatsScope] = useState<string | null>(null);
+  const [statsError, setStatsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [visibleCards, setVisibleCards] = useState<Set<number>>(new Set());
   const [visibleNavs, setVisibleNavs] = useState<Set<number>>(new Set());
-  const [revenueData, setRevenueData] = useState<{ day: string; amount: number }[]>([]);
-
-  const loadingRef = useRef(false);
+  const statsRequest = useRef(0);
   /* WHOSE MONEY (2026-09-10). rake_records was read with a 7-day filter and
      no club, so the revenue chart summed every club's rake RLS let the viewer
      see into one operator's dashboard; disputes and the two rate-audit counts
@@ -193,213 +259,216 @@ export default function FinancialAdminHub() {
   const scopeStatus = scope.status;
   const scopeClubId = scope.clubId;
   const scopePlatformWide = scope.platformWide;
+  const statsScope = `${user?.id || ''}:${scopeStatus}:${scopeClubId || ''}:${scopePlatformWide}`;
+  const statsScopeRef = useRef(statsScope);
+  statsScopeRef.current = statsScope;
+  const ownsStats = loadedStatsScope === statsScope;
+  const stats = ownsStats ? (reading?.stats ?? null) : null;
+  const revenueData = ownsStats ? (reading?.revenue ?? []) : [];
 
   /* WHICH UNION (2026-09-24). The union operations panel below was rendered
      with no union and fell back to one hardcoded union (Midway), so this hub
-     previewed, settled and swept that union's books whatever the staff member
-     meant. The union is now chosen here, from the unions this viewer can
-     read, and until one is chosen no panel exists to run anything. */
+     reviewed and swept that union's books whatever the staff member
+     meant. The union is now chosen here only from the exact overseer-authorized
+     server list, and until one is chosen no panel exists to read or run
+     anything. Discoverability or platform staff status is not authority. */
   const [unionOptions, setUnionOptions] = useState<Array<{ id: string; name: string }>>([]);
   const [unionOptionsStatus, setUnionOptionsStatus] = useState<'loading' | 'ready' | 'error'>(
     'loading'
   );
   const [selectedUnionId, setSelectedUnionId] = useState('');
   const selectedUnion = unionOptions.find((u) => u.id === selectedUnionId) ?? null;
+  const unionRequest = useRef(0);
 
   const loadUnionOptions = useCallback(async () => {
+    const viewerId = user?.id;
+    const requestScope = statsScope;
+    const request = ++unionRequest.current;
+    const isCurrent = () =>
+      isMounted.current &&
+      request === unionRequest.current &&
+      statsScopeRef.current === requestScope;
+    if (!viewerId || scopeStatus !== 'ready' || scope.userId !== viewerId) return;
     setUnionOptionsStatus('loading');
+    setUnionOptions([]);
+    setSelectedUnionId('');
     try {
-      const unions = await unionService.getUnions();
-      if (!isMounted.current) return;
-      setUnionOptions(
-        unions.map((u) => ({ id: u.id, name: u.name })).sort((a, b) => a.name.localeCompare(b.name))
-      );
+      const unions = await UnionOpsService.getOverseerUnionOptions();
+      if (!isCurrent()) return;
+      setUnionOptions(unions);
       setUnionOptionsStatus('ready');
     } catch (e) {
       reportError(e, 'FinancialAdminHub.loadUnionOptions');
-      if (isMounted.current) setUnionOptionsStatus('error');
+      if (isCurrent()) setUnionOptionsStatus('error');
     }
-  }, [isMounted]);
+  }, [isMounted, scope.userId, scopeStatus, statsScope, user?.id]);
+
+  useEffect(() => {
+    unionRequest.current += 1;
+    setUnionOptions([]);
+    setSelectedUnionId('');
+    setUnionOptionsStatus(scopeStatus === 'ready' ? 'loading' : 'error');
+  }, [statsScope, scopeStatus]);
 
   useEffect(() => {
     if (scopeStatus === 'ready') void loadUnionOptions();
   }, [scopeStatus, loadUnionOptions]);
 
-  // ── loadStats: parallelized queries (~4x faster than sequential) ──
+  // Every result belongs to one signed-in viewer, one club scope and one
+  // captured seven-day window. A failed financial source fails the reading;
+  // the separately authorized drift queue is isolated and becomes explicitly
+  // unavailable rather than erasing otherwise verified club figures.
   const loadStats = useCallback(async () => {
-    if (scopeStatus !== 'ready') return;
-    if (loadingRef.current) return;
-    loadingRef.current = true;
+    const viewerId = user?.id;
+    if (!viewerId || scopeStatus !== 'ready' || scope.userId !== viewerId) return;
+    const requestScope = statsScope;
+    const request = ++statsRequest.current;
+    const isCurrent = () =>
+      isMounted.current &&
+      request === statsRequest.current &&
+      statsScopeRef.current === requestScope;
     setLoading(true);
+    setStatsError(null);
+    setReading(null);
+    setLoadedStatsScope(null);
     const scopeKey = { status: scopeStatus, clubId: scopeClubId, platformWide: scopePlatformWide };
     try {
-      // All KPI counts + data in parallel
-      const [
-        disputeResult,
-        commResult,
-        rakeResult,
-        healthCountResult,
-        alertResult,
-        incidentResult,
-        lastCheckResult,
-        rakeDataResult,
-      ] = await Promise.all([
-        (async () => {
-          try {
-            const r = await clubScoped(
-              supabase
-                .from('disputes')
-                .select('*', { count: 'exact', head: true })
-                .in('status', ['open', 'under_review', 'escalated']),
-              scopeKey
-            );
-            if (r.error) throw r.error;
-            return r.count || 0;
-          } catch (e) {
-            reportError(e, 'FinancialAdminHub.async');
-            return 0;
-          }
-        })(),
-        (async () => {
-          try {
-            const r = await clubScoped(
-              supabase.from('commission_rate_audit').select('*', { count: 'exact', head: true }),
-              scopeKey
-            );
-            if (r.error) throw r.error;
-            return r.count || 0;
-          } catch (e) {
-            reportError(e, 'FinancialAdminHub.async');
-            return 0;
-          }
-        })(),
-        (async () => {
-          try {
-            const r = await clubScoped(
-              supabase.from('rake_rate_audit').select('*', { count: 'exact', head: true }),
-              scopeKey
-            );
-            if (r.error) throw r.error;
-            return r.count || 0;
-          } catch (e) {
-            reportError(e, 'FinancialAdminHub.async');
-            return 0;
-          }
-        })(),
-        (async () => {
-          try {
-            const r = await supabase
-              .from('financial_health_checks')
-              .select('*', { count: 'exact', head: true });
-            return r.count || 0;
-          } catch (e) {
-            reportError(e, 'FinancialAdminHub.async');
-            return 0;
-          }
-        })(),
-        (async () => {
-          try {
-            const r = await supabase
-              .from('financial_alerts')
+      const [disputeResult, commResult, rakeResult, rakeDataResult, incidentAccessResult] =
+        await Promise.all([
+          clubScoped(
+            supabase
+              .from('disputes')
               .select('*', { count: 'exact', head: true })
-              .eq('resolved', false);
-            return r.count || 0;
-          } catch (e) {
-            reportError(e, 'FinancialAdminHub.async');
-            return 0;
-          }
-        })(),
-        (async () => {
-          try {
-            // BIND THE ERROR. A discarded error here reads as "0 open
-            // incidents" - an all-clear on the one tile whose whole job is to
-            // say drift was detected. Fail loud, not quiet.
-            const { data, error } = await supabase.rpc('fn_ca_incident_dashboard', {
-              p_status: null,
-              p_limit: 500,
-            });
-            if (error) {
-              reportError(error, 'FinancialAdminHub.incidentDashboard');
-              return 0;
-            }
-            return ((data as any[]) || []).filter((i: any) => i?.status !== 'resolved').length;
-          } catch (e) {
-            reportError(e, 'FinancialAdminHub.incidentDashboard');
-            return 0;
-          }
-        })(),
-        (async () => {
-          try {
-            const r = await supabase
-              .from('financial_health_checks')
-              .select('passed')
-              .order('created_at', { ascending: false })
-              .limit(1)
-              .maybeSingle();
-            return r.data;
-          } catch (e) {
-            reportError(e, 'FinancialAdminHub.async');
-            return null;
-          }
-        })(),
-        (async () => {
-          try {
-            const r = await clubScoped(
-              supabase
-                .from('rake_records')
-                .select('rake_amount, created_at')
-                .gte('created_at', new Date(Date.now() - 7 * 86400000).toISOString()),
-              scopeKey
-            )
-              .order('created_at', { ascending: true })
-              .limit(5000);
-            if (r.error) throw r.error;
-            return r.data;
-          } catch (e) {
-            reportError(e, 'FinancialAdminHub.async');
-            return null;
-          }
-        })(),
-      ]);
-
-      if (!isMounted.current) return;
-
-      setStats({
-        totalAlerts: alertResult as number,
-        openIncidents: incidentResult as number,
-        openDisputes: disputeResult as number,
-        rateChanges: (commResult as number) + (rakeResult as number),
-        healthChecks: healthCountResult as number,
-        lastCheckPassed: (lastCheckResult as any)?.passed ?? null,
-      });
-
-      // Process revenue sparkline
-      if (rakeDataResult && (rakeDataResult as any[]).length > 0) {
-        const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        const grouped: Record<string, number> = {};
-        (rakeDataResult as any[]).forEach((r: any) => {
-          const d = new Date(r.created_at);
-          const label = `${dayLabels[d.getDay()]} ${d.getDate()}`;
-          grouped[label] = (grouped[label] || 0) + (r.rake_amount || 0);
-        });
-        const days: { day: string; amount: number }[] = [];
-        for (let i = 6; i >= 0; i--) {
-          const d = new Date(Date.now() - i * 86400000);
-          const label = `${dayLabels[d.getDay()]} ${d.getDate()}`;
-          days.push({ day: label, amount: grouped[label] || 0 });
-        }
-        if (isMounted.current) setRevenueData(days);
-      } else {
-        if (isMounted.current) setRevenueData([]);
+              .in('status', ['open', 'under_review', 'escalated']),
+            /* error bound by disputeResult below */
+            scopeKey
+          ),
+          clubScoped(
+            supabase.from('commission_rate_audit').select('*', { count: 'exact', head: true }),
+            /* error bound by commResult below */
+            scopeKey
+          ),
+          clubScoped(
+            supabase.from('rake_rate_audit').select('*', { count: 'exact', head: true }),
+            /* error bound by rakeResult below */
+            scopeKey
+          ),
+          supabase.rpc('ca_financial_admin_revenue_series', {
+            p_club_id: scopePlatformWide ? null : scopeClubId,
+            p_days: 7,
+          }),
+          supabase.rpc('fn_ca_can_view_drift_console'),
+        ]);
+      const named = [
+        ['Disputes', disputeResult],
+        ['Commission Rates', commResult],
+        ['Rake Rates', rakeResult],
+        ['Revenue', rakeDataResult],
+      ] as const;
+      for (const [name, result] of named) {
+        if (result.error) throw new Error(`${name} Could Not Be Read`);
       }
+      for (const [name, result] of [
+        ['Disputes', disputeResult],
+        ['Commission Rates', commResult],
+        ['Rake Rates', rakeResult],
+      ] as const) {
+        if (
+          typeof result.count !== 'number' ||
+          !Number.isInteger(result.count) ||
+          result.count < 0
+        ) {
+          throw new Error(`${name} Count Was Not Returned`);
+        }
+      }
+      const revenueReading = parseRevenueSeries(
+        rakeDataResult.data,
+        scopePlatformWide ? null : scopeClubId,
+        scopePlatformWide
+      );
+
+      let incidentStatus: HubReading['incidentStatus'] = 'unavailable';
+      let openIncidents: number | null = null;
+      if (incidentAccessResult.error) {
+        reportError(incidentAccessResult.error, 'FinancialAdminHub.Incident_access_failed');
+      } else if (incidentAccessResult.data === false) {
+        incidentStatus = 'not_authorized';
+      } else if (incidentAccessResult.data === true) {
+        const incidentResult = await supabase.rpc('fn_ca_incident_dashboard', {
+          p_status: null,
+          p_limit: 500,
+        });
+        if (incidentResult.error) {
+          reportError(incidentResult.error, 'FinancialAdminHub.Incident_read_failed');
+        } else if (!Array.isArray(incidentResult.data)) {
+          reportError(
+            new Error('Drift Incidents Were Not Returned'),
+            'FinancialAdminHub.Incident_read_failed'
+          );
+        } else if (
+          incidentResult.data.some(
+            (incident) =>
+              !isRecord(incident) ||
+              typeof incident.status !== 'string' ||
+              (incident.club_id != null && typeof incident.club_id !== 'string')
+          )
+        ) {
+          reportError(
+            new Error('Drift Incidents Could Not Be Verified'),
+            'FinancialAdminHub.Incident_read_failed'
+          );
+        } else {
+          const verifiedIncidents = incidentResult.data as Array<{
+            status: string;
+            club_id: string | null;
+          }>;
+          openIncidents = verifiedIncidents.filter(
+            (incident) =>
+              incident.status !== 'resolved' &&
+              (scopePlatformWide || incident.club_id === scopeClubId)
+          ).length;
+          incidentStatus = 'ready';
+        }
+      } else {
+        reportError(
+          new Error('Drift Incident Access Could Not Be Verified'),
+          'FinancialAdminHub.Incident_access_failed'
+        );
+      }
+      if (!isCurrent()) return;
+
+      setReading({
+        stats: {
+          openIncidents,
+          openDisputes: disputeResult.count!,
+          rateChanges: commResult.count! + rakeResult.count!,
+        },
+        incidentStatus,
+        ...revenueReading,
+      });
+      setLoadedStatsScope(requestScope);
+      setStatsError(null);
     } catch (err) {
       reportError(err, 'FinancialAdminHub.Stats_load_failed');
-      if (isMounted.current) toast.error('Failed to load financial stats');
+      if (isCurrent()) {
+        setStatsError('Financial Status Could Not Be Verified. No All Clear Is Being Shown.');
+        setReading(null);
+        setLoadedStatsScope(requestScope);
+        toast.error('Failed to load financial stats');
+      }
     } finally {
-      loadingRef.current = false;
-      if (isMounted.current) setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, [toast, scopeStatus, scopeClubId, scopePlatformWide]);
+  }, [
+    isMounted,
+    scope.userId,
+    scopeStatus,
+    scopeClubId,
+    scopePlatformWide,
+    statsScope,
+    toast,
+    user?.id,
+  ]);
 
   useVisibilityRefresh(loadStats);
 
@@ -439,7 +508,7 @@ export default function FinancialAdminHub() {
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
     setVisibleCards(new Set());
-    [0, 1, 2, 3, 4].forEach((i) => {
+    [0, 1, 2].forEach((i) => {
       timers.push(setTimeout(() => setVisibleCards((prev) => new Set(prev).add(i)), i * 80));
     });
     setVisibleNavs(new Set());
@@ -449,401 +518,262 @@ export default function FinancialAdminHub() {
     return () => timers.forEach(clearTimeout);
   }, []);
 
-  const kpiCards = [
-    {
-      label: 'Drift Incidents',
-      value: stats.openIncidents,
-      icon: '◈',
-      color: stats.openIncidents > 0 ? '#f43f5e' : '#10b981',
-      glow: stats.openIncidents > 0 ? 'rgba(244,63,94,0.2)' : 'rgba(16,185,129,0.2)',
-    },
-    {
-      label: 'Open Disputes',
-      value: stats.openDisputes,
-      icon: '⚠',
-      color: stats.openDisputes > 0 ? '#f59e0b' : '#10b981',
-      glow: stats.openDisputes > 0 ? 'rgba(245,158,11,0.2)' : 'rgba(16,185,129,0.2)',
-    },
-    {
-      label: 'Rate Changes',
-      value: stats.rateChanges,
-      icon: '▦',
-      color: '#8b5cf6',
-      glow: 'rgba(139,92,246,0.2)',
-    },
-    {
-      label: 'Health Checks',
-      value: stats.healthChecks,
-      icon: stats.lastCheckPassed === false ? '✕' : stats.lastCheckPassed === true ? '✓' : '○',
-      color: stats.lastCheckPassed === false ? '#ef4444' : '#10b981',
-      glow: stats.lastCheckPassed === false ? 'rgba(239,68,68,0.2)' : 'rgba(16,185,129,0.2)',
-    },
-    {
-      label: 'Active Alerts',
-      value: stats.totalAlerts,
-      icon: '◆',
-      color: stats.totalAlerts > 0 ? '#ef4444' : '#10b981',
-      glow: stats.totalAlerts > 0 ? 'rgba(239,68,68,0.2)' : 'rgba(16,185,129,0.2)',
-    },
-  ];
+  const kpiRows = stats
+    ? [
+        ...(reading?.incidentStatus === 'ready' && stats.openIncidents !== null
+          ? [
+              {
+                label: 'Loaded Drift Incidents',
+                value: stats.openIncidents,
+                alert: stats.openIncidents > 0,
+              },
+            ]
+          : []),
+        { label: 'Open Disputes', value: stats.openDisputes, alert: stats.openDisputes > 0 },
+        { label: 'Rate Changes', value: stats.rateChanges, alert: false },
+      ]
+    : [];
 
-  if (scope.status !== 'ready') {
-    return (
-      <div style={{ padding: '16px', maxWidth: '900px', margin: '0 auto' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '24px' }}>
-          Financial Admin Hub
-        </h1>
-        <FinancialAdminScopeState scope={scope} />
-      </div>
-    );
-  }
+  const systemStatus = statsError
+    ? 'System Status Unverified'
+    : !stats
+      ? 'Reading Financial Status'
+      : reading?.incidentStatus === 'unavailable'
+        ? 'Incident Status Unavailable'
+        : (stats.openIncidents ?? 0) > 0 || stats.openDisputes > 0
+          ? 'Attention Required'
+          : 'Scope Reading Complete';
 
-  if (loading && stats.healthChecks === 0 && stats.totalAlerts === 0) {
+  if (scope.status !== 'ready' || scope.userId !== user?.id) {
     return (
-      <div style={{ padding: '16px', maxWidth: '900px', margin: '0 auto' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '24px' }}>
-          Financial Admin Hub
-        </h1>
-        <PageSkeleton variant="financial" />
+      <div className={styles.page}>
+        <SpadeConsole
+          family="spade"
+          crest="flat"
+          eyebrow="Club Arena Data"
+          title="Financial Admin Hub"
+          pill="Access"
+          pillInk="gold"
+          plates={{
+            secondary: { label: 'Back', onClick: () => navigate(-1) },
+            primary: {
+              label: scope.status === 'loading' ? 'Checking' : 'Retry Access',
+              onClick: scope.reload,
+              disabled: scope.status === 'loading',
+            },
+          }}
+        >
+          <p className="sc-copy sc-copy--center" role="status">
+            {scope.message || 'Verifying Your Financial Access'}
+          </p>
+        </SpadeConsole>
       </div>
     );
   }
 
   return (
-    <div style={{ padding: '16px', maxWidth: '900px', margin: '0 auto', paddingBottom: '100px' }}>
-      {/* Header */}
-      <div style={{ marginBottom: '24px' }}>
-        <button
-          onClick={() => navigate(-1)}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: '#3b82f6',
-            cursor: 'pointer',
-            fontSize: '0.85rem',
-            padding: 0,
-            marginBottom: '6px',
-          }}
-        >
-          ← Back
-        </button>
-        <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>Financial Admin Hub</h1>
-        <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>
-          Central Command For All Financial Operations
-        </p>
-      </div>
-
-      {/* KPI Cards */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-          gap: '10px',
-          marginBottom: '24px',
+    <main className={styles.page}>
+      <h1 className={styles.srOnly}>Financial Admin Hub</h1>
+      <SpadeConsole
+        family="spade"
+        crest="flat"
+        eyebrow="Club Arena Data"
+        title="Financial Admin Hub"
+        subtitle="Central Command For Financial Operations"
+        pill={statsError ? 'Unverified' : loading ? 'Reading' : 'Live'}
+        pillInk={statsError ? 'red' : loading ? 'gold' : 'blue'}
+        plates={{
+          secondary: { label: 'Back', onClick: () => navigate(-1) },
+          primary: {
+            label: loading ? 'Reading' : 'Refresh',
+            onClick: loadStats,
+            disabled: loading,
+          },
         }}
       >
-        {kpiCards.map((card, idx) => (
-          <div
-            key={card.label}
-            style={{
-              padding: '14px',
-              background: 'rgba(255,255,255,0.03)',
-              borderRadius: '12px',
-              border: '1px solid rgba(255,255,255,0.06)',
-              boxShadow: `0 0 20px ${card.glow}`,
-              opacity: visibleCards.has(idx) ? 1 : 0,
-              transform: visibleCards.has(idx) ? 'translateY(0)' : 'translateY(10px)',
-              transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <span style={{ fontSize: '1.1rem' }}>{card.icon}</span>
-              <span
-                style={{
-                  fontSize: '0.7rem',
-                  color: 'rgba(255,255,255,0.5)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px',
-                  fontWeight: 600,
-                }}
-              >
-                {card.label}
-              </span>
-            </div>
-            <div
-              style={{
-                fontSize: '1.6rem',
-                fontWeight: 800,
-                color: card.color,
-                fontFamily: 'monospace',
-              }}
-            >
-              {card.value}
-            </div>
+        {statsError ? (
+          <div className={styles.statusBlock} role="alert">
+            <p className="sc-copy sc-copy--center">{statsError}</p>
+            <button type="button" className={styles.litAction} onClick={loadStats}>
+              Retry Financial Reading
+            </button>
           </div>
-        ))}
-      </div>
-
-      {/* Revenue Sparkline */}
-      {revenueData.length > 0 &&
-        (() => {
-          const totalRevenue = revenueData.reduce((s, d) => s + d.amount, 0);
-          return (
-            <div
-              style={{
-                padding: '16px',
-                background: 'rgba(255,255,255,0.03)',
-                borderRadius: '12px',
-                border: '1px solid rgba(255,255,255,0.06)',
-                marginBottom: '20px',
-              }}
-            >
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: '10px',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>7-Day Revenue</span>
-                  {loading && (
-                    <span
-                      style={{
-                        fontSize: '0.7rem',
-                        color: '#10b981',
-                        animation: 'animationsPulse 1.5s infinite',
-                      }}
-                    >
-                      Syncing...
-                    </span>
-                  )}
-                </div>
-                <span
-                  style={{
-                    fontSize: '0.75rem',
-                    color: '#10b981',
-                    fontWeight: 700,
-                    fontFamily: 'monospace',
-                  }}
-                >
-                  {totalRevenue.toLocaleString()} Chip{totalRevenue === 1 ? '' : 's'}
-                </span>
-              </div>
-              <div style={{ height: 180, marginTop: '20px' }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={revenueData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.8} />
-                        <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <XAxis
-                      dataKey="day"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }}
-                      dy={10}
-                    />
-                    <Tooltip
-                      content={({ active, payload, label }) => {
-                        if (active && payload && payload.length) {
-                          return (
-                            <div
-                              style={{
-                                background: 'rgba(13, 21, 32, 0.95)',
-                                border: '1px solid rgba(16, 185, 129, 0.3)',
-                                padding: '8px 12px',
-                                borderRadius: '8px',
-                                boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-                                color: '#fff',
-                              }}
-                            >
-                              <div
-                                style={{
-                                  fontSize: '0.7rem',
-                                  color: 'rgba(255,255,255,0.6)',
-                                  marginBottom: '4px',
-                                }}
-                              >
-                                {label}
-                              </div>
-                              <div
-                                style={{
-                                  fontSize: '1rem',
-                                  fontWeight: 800,
-                                  color: '#10b981',
-                                  fontFamily: 'monospace',
-                                }}
-                              >
-                                {Number(payload[0].value).toLocaleString()} Chips
-                              </div>
-                            </div>
-                          );
-                        }
-                        return null;
-                      }}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="amount"
-                      stroke="#10b981"
-                      strokeWidth={3}
-                      fillOpacity={1}
-                      fill="url(#colorRevenue)"
-                      isAnimationActive={true}
-                      animationDuration={1500}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          );
-        })()}
-
-      {/* Navigation Grid */}
-      <h2
-        style={{
-          fontSize: '0.8rem',
-          color: 'rgba(255,255,255,0.4)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.5px',
-          marginBottom: '12px',
-          fontWeight: 600,
-        }}
-      >
-        Financial Tools
-      </h2>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {NAV_ITEMS.map((item, idx) =>
-          item.staffOnly && !scope.isPlatformStaff ? null : (
-            <Link
-              key={item.label}
-              to={item.path}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '14px',
-                padding: '14px 16px',
-                background: item.bg,
-                borderRadius: '12px',
-                border: `1px solid ${item.border}`,
-                textDecoration: 'none',
-                color: 'inherit',
-                opacity: visibleNavs.has(idx) ? 1 : 0,
-                transform: visibleNavs.has(idx) ? 'translateX(0)' : 'translateX(-12px)',
-                transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-              }}
-            >
-              <span style={{ fontSize: '1.4rem', flexShrink: 0 }}>{item.icon}</span>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '0.9rem', fontWeight: 700, color: item.color }}>
-                  {item.label}
-                </div>
+        ) : loading || !stats ? (
+          <p className="sc-copy sc-copy--center" role="status">
+            Reading The Authorized Financial Scope
+          </p>
+        ) : (
+          <>
+            <section className={styles.metrics} aria-label="Financial Status">
+              {kpiRows.map((row, idx) => (
                 <div
-                  style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.45)', marginTop: '2px' }}
+                  className={styles.metricRow}
+                  data-visible={visibleCards.has(idx)}
+                  key={row.label}
                 >
-                  {item.description}
+                  <span className="sc-label sc-ink--blue">{row.label}</span>
+                  <strong className={row.alert ? 'sc-ink--red' : 'sc-ink--silver'}>
+                    {compactChips(row.value)}
+                  </strong>
                 </div>
-              </div>
-              <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '1rem' }}>→</span>
-            </Link>
-          )
-        )}
-      </div>
+              ))}
+            </section>
 
-      {/* Footer Status */}
-      {/* Union integrity: law self-test + hourly sweep */}
-      <div
-        style={{
-          marginTop: '24px',
-          background: 'rgba(255,255,255,0.02)',
-          borderRadius: '12px',
-          padding: '16px',
-          border: '1px solid rgba(255,255,255,0.06)',
-        }}
+            {revenueData.length > 0 && (
+              <section className={styles.revenue} aria-label="Seven Complete Days Revenue">
+                <div className={styles.sectionHeading}>
+                  <span className="sc-label sc-ink--blue">Seven Complete Days Revenue</span>
+                  <strong className="sc-ink--silver">
+                    {compactChips(reading?.revenueTotal ?? 0)} Chips
+                  </strong>
+                </div>
+                <div className={styles.chart} aria-label="Seven Complete Days Revenue Chart">
+                  <ResponsiveContainer
+                    width="100%"
+                    height="100%"
+                    initialDimension={{ width: 280, height: 132 }}
+                  >
+                    <AreaChart data={revenueData} margin={{ top: 8, right: 0, left: 0, bottom: 0 }}>
+                      <XAxis
+                        dataKey="day"
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fill: '#9aa5b3', fontSize: 10 }}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="amount"
+                        stroke="#45adff"
+                        strokeWidth={3}
+                        fill="#1877f2"
+                        fillOpacity={0.22}
+                        isAnimationActive
+                        animationDuration={1500}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </section>
+            )}
+
+            <section aria-labelledby="financial-tools-heading">
+              <h2 id="financial-tools-heading" className={styles.glassHeading}>
+                Financial Tools
+              </h2>
+              <nav className={styles.toolRows} aria-label="Financial Tools">
+                {NAV_ITEMS.map((item, idx) =>
+                  (item.staffOnly && !scope.isPlatformStaff) ||
+                  (item.requiresCreditClubRole &&
+                    (!scopeClubId || !CREDIT_ADMIN_ROLES.has(scope.clubRole || ''))) ||
+                  (item.requiresDriftAccess && reading?.incidentStatus !== 'ready') ||
+                  (item.requiresClubScope && !scopeClubId) ||
+                  (item.clubPath && !scopeClubId && !item.path) ? null : (
+                    <Link
+                      key={item.label}
+                      to={
+                        item.clubPath && scopeClubId
+                          ? `/clubs/${encodeURIComponent(scopeClubId)}/${item.clubPath}`
+                          : item.preserveClubScope && scopeClubId
+                            ? `${item.path}?club=${encodeURIComponent(scopeClubId)}`
+                            : item.path!
+                      }
+                      className={`${styles.toolRow} ${styles[`tone${titleCase(item.tone)}`]}`}
+                      data-visible={visibleNavs.has(idx)}
+                    >
+                      <span className={styles.toolCopy}>
+                        <strong>
+                          {!scopeClubId && item.platformLabel ? item.platformLabel : item.label}
+                        </strong>
+                        <small>
+                          {!scopeClubId && item.platformDescription
+                            ? item.platformDescription
+                            : item.description}
+                        </small>
+                      </span>
+                      <span className={styles.openWord}>Open</span>
+                    </Link>
+                  )
+                )}
+              </nav>
+            </section>
+
+            <div className={styles.statusRows}>
+              <div className={styles.statusRow}>
+                <span>Financial Engine</span>
+                <strong>Version Three</strong>
+              </div>
+              <div className={styles.statusRow}>
+                <span>System Status</span>
+                <strong
+                  className={
+                    systemStatus === 'Attention Required'
+                      ? 'sc-ink--gold'
+                      : systemStatus === 'Incident Status Unavailable'
+                        ? 'sc-ink--red'
+                        : 'sc-ink--blue'
+                  }
+                >
+                  {systemStatus}
+                </strong>
+              </div>
+              {reading && (
+                <div className={styles.statusRow}>
+                  <span>Reading Window</span>
+                  <strong className="sc-ink--muted">
+                    Through {formatUtcDate(reading.windowEnd)} UTC
+                  </strong>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </SpadeConsole>
+
+      <SpadeConsole
+        family="spade"
+        crest="spade"
+        eyebrow="Authorized Union"
+        title="Union Operations"
+        pill={selectedUnion ? 'Selected' : 'Choose'}
+        pillInk={unionOptionsStatus === 'error' ? 'red' : 'blue'}
+        foot="foot"
       >
-        <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: 700, color: '#e0e0e0' }}>
-          Union Integrity & Law
-        </h3>
-        <label
-          className="admin-label"
-          htmlFor="financial-admin-union"
-          style={{ marginBottom: '6px', color: 'rgba(255,255,255,0.6)' }}
-        >
+        <label className={styles.selectLabel} htmlFor="financial-admin-union">
           Union
         </label>
         <select
           id="financial-admin-union"
-          className="admin-input"
+          className={styles.select}
           value={selectedUnion ? selectedUnion.id : ''}
           disabled={unionOptionsStatus !== 'ready'}
-          onChange={(e) => setSelectedUnionId(e.target.value)}
-          style={{ marginBottom: '12px' }}
+          onChange={(event) => setSelectedUnionId(event.target.value)}
         >
           <option value="">
-            {unionOptionsStatus === 'loading' ? 'Loading Unions' : 'Choose A Union'}
+            {unionOptionsStatus === 'loading' ? 'Loading Unions' : 'Choose An Authorized Union'}
           </option>
-          {unionOptions.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.name}
+          {unionOptions.map((union) => (
+            <option key={union.id} value={union.id}>
+              {titleCase(union.name)}
             </option>
           ))}
         </select>
         {unionOptionsStatus === 'error' ? (
-          <div className="admin-empty-state">
-            <span>Unions Could Not Be Loaded</span>
-            <button
-              type="button"
-              className="admin-btn admin-btn-ghost"
-              onClick={() => void loadUnionOptions()}
-            >
-              Retry
+          <div className={styles.statusBlock} role="alert">
+            <p className="sc-copy sc-copy--center">Unions Could Not Be Loaded</p>
+            <button type="button" className={styles.litAction} onClick={loadUnionOptions}>
+              Retry Union List
             </button>
           </div>
         ) : unionOptionsStatus === 'ready' && unionOptions.length === 0 ? (
-          <div className="admin-empty-state">
-            <span>No Unions Available</span>
-          </div>
-        ) : selectedUnion ? (
-          // Keyed by union so a preview opened for one union can never be
-          // confirmed after the selector has moved to another.
-          <UnionOpsPanel key={selectedUnion.id} unionId={selectedUnion.id} canRun />
+          <p className="sc-copy sc-copy--center">No Authorized Unions Available</p>
+        ) : !selectedUnion ? (
+          <p className="sc-copy sc-copy--center">
+            Choose An Authorized Union To See Its Operations
+          </p>
         ) : (
-          <div className="admin-empty-state">
-            <span>Choose A Union To See Its Operations</span>
-          </div>
+          <UnionOpsPanel key={selectedUnion.id} unionId={selectedUnion.id} canRun />
         )}
-      </div>
-
-      <div
-        style={{
-          marginTop: '24px',
-          padding: '12px 16px',
-          background: 'rgba(255,255,255,0.02)',
-          borderRadius: '10px',
-          border: '1px solid rgba(255,255,255,0.05)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '6px',
-          fontSize: '0.7rem',
-          color: 'rgba(255,255,255,0.35)',
-        }}
-      >
-        <span>Financial Engine V3.0 • All Services Operational</span>
-        <span>
-          System Health:{' '}
-          {stats.lastCheckPassed === true
-            ? 'Passing'
-            : stats.lastCheckPassed === false
-              ? 'Failing'
-              : 'Unknown'}
-        </span>
-      </div>
-    </div>
+      </SpadeConsole>
+    </main>
   );
 }

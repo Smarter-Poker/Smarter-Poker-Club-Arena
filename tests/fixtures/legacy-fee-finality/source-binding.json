@@ -1,11 +1,11 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "9eb6dc05fdcbb6845c372de58aca46bed41ab76310c05934be5706b106b2d5a6",
+    "scripts/ci/classify-ci-changes.mjs": "e42ea8ef8b84afcb3c97bfbd5750b7c2310523abe96e9dece1e4575ada84fa65",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/dev/test-full-weekly-accounting-activation.sh": "ac6aac2f3f64fa357e899e5c4f84045924973b5b267c5ff7533542cc8a060d27",
+    "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
-    "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
+    "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
     "tests/fixtures/legacy-fee-finality/README.md": "14a2c2c5c54825bcff66334f51620f8ca0de5733c80de81e6bef4da57be37bb8",
     "tests/fixtures/legacy-fee-finality/after.sql": "0ab6450fb4d8829211681f91df45025c2cc6b50d0764168fdc31c499524c4c55",
@@ -40,7 +40,7 @@
     "tests/fixtures/legacy-fee-finality/positive-restore-terms.sql": "25763351166caea11a2dfdeab18d2d9b4d52cad593ed019427fd0241860e7198",
     "tests/fixtures/legacy-fee-finality/resolution.sql": "50a6897d52a060b2aa87b7f6493c7fb8e8c33a3fcee354d1d1a70dd2954a3695",
     "tests/fixtures/legacy-fee-finality/setup.sql": "ee83d419415ded41cecb3f6877ebc4fe9b12cb7a3e1e63b5d5d98c28c4c60599",
-    "tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs": "616bab391d2893dbffc8d65237155009b7a83530a299910aee8b4dda5c700871"
+    "tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs": "9556746822f0045ecadc35704929f53810676fe0ab07e49146b14495667870c8"
   },
   "expected_assertion_executions": 128,
   "assertion_breakdown": {
@@ -76,6 +76,7 @@
     "qualification": "Native run20 passed128 assertions and13 actual receipts on identical product SQL, qualifier, raw data and decoder. Integration retains upstream F06 CI selection; classifier suite rerun. Generated capture bootstrap differs only by removing one trailing blank line."
   },
   "restamp_audit": [
+    { "on": "2026-10-06", "file": "scripts/ci/classify-ci-changes.mjs", "from": "2fc728ea5555ced40641d89f8c85b8f094a09f9f14d5decaa405ffbc5e11ea2a", "to": "e42ea8ef8b84afcb3c97bfbd5750b7c2310523abe96e9dece1e4575ada84fa65", "why": "Explicitly reviewed current-main integration adds EV fixture coverage while retaining weekly6031 routing and both audit histories. No financial input or assertion changes; hash agreement is not execution evidence." },
     {
       "file": "scripts/dev/test-full-weekly-accounting-activation.sh",
       "from": "f94ca2ae32d92fc4e5d981e8089d42d91f15a448c56483f7d3669d57942d4200",
@@ -404,6 +405,52 @@
         "scripts/ci/classify-ci-changes.mjs"
       ],
       "why": "Route the Diamond concurrency runner's capture, manifest, tables and seed (tests/sql/diamond-concurrency-*) to the Diamond SQL acceptance lane of the required accounting job, beside the diamond-tournament-* files that lane already names: one alternation added to diamondSqlAcceptance. No route, native phase, fixture or assertion is removed or weakened."
+    },
+    {
+      "on": "2026-09-27",
+      "why": "First archived completion adds its existing native qualification route and exact controls, with near-match refusal. Preserve every prior financial assertion and captured source. Nested bindings carry only these reviewed routing additions.",
+      "files": [
+        {
+          "file": "scripts/ci/classify-ci-changes.mjs",
+          "from": "e00e863c398365ba0b2374d4dc0c3fc46af84b2bd7d7e7ac18a8768113948c55",
+          "to": "10d1ef82e00605d76859603c6491618e372f1ddc35d858db2cce3a243ab59cd6"
+        }
+      ]
+    },
+    {
+      "file": "server/src/tournament/completionSettlementReceipt.ts",
+      "from": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
+      "to": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
+      "on": "2026-10-02",
+      "why": "Restamped 2026-10-02 by migration 20261002034540 (PR #5779). The compiled list of 13 legacy fee custody events is removed: verifyTournamentCompletionReceipt takes the custody origin the database holds (fn_ca_legacy_fee_custody_origin, over the obligation row fn_ca_legacy_fee_custody_cohort reads) as a fifth argument, and parseLegacyFeeCustodyOrigin parses it for exactly one event. Every custody and resolution comparison is unchanged; only the source of the expected amount, fingerprint, source count and recognized count moved from the engine to the database. The list had called 26 committed September 8 receipts outcome unknown."
+    },
+    {
+      "file": "tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs",
+      "from": "616bab391d2893dbffc8d65237155009b7a83530a299910aee8b4dda5c700871",
+      "to": "9556746822f0045ecadc35704929f53810676fe0ab07e49146b14495667870c8",
+      "on": "2026-10-02",
+      "why": "Restamped 2026-10-02 by migration 20261002034540 (PR #5779). The decoder now requires the database custody origin; the harness passes PostgreSQL's own custody answer from the same native receipt (fn_ca_tournament_fee_custody_receipt raises unless it equals fn_ca_legacy_fee_custody_cohort). Receipt sources, modes, expected counts and states are unchanged."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "97c86e7e47f3364b699b4ea373c6510777636b5ee9445963aecb8be6c6f3fd0c",
+      "to": "a8ffd7b1738cb04128ad7d940ae92659686bd85b98bbac73a15e42676601814d",
+      "on": "2026-10-04",
+      "why": "Restamped for the additive managed-game one-door PostgreSQL route. No existing accounting selector, fixture, financial source or assertion changed."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "a8ffd7b1738cb04128ad7d940ae92659686bd85b98bbac73a15e42676601814d",
+      "to": "cfb6601d8942e9edbcfdd9af9de5768f42223d3fcb86ababf47c5f63c2b12a86",
+      "on": "2026-10-05",
+      "why": "Restamped for the additive Phase 1 customization PostgreSQL route. The exact diff adds one isolated classifier family for the two migrations, native runner, loaded fixtures, schema promise, durable marker and service-role sealer; no existing accounting selector, fixture, financial source or assertion changed."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "732f731aa929df1e7b43aa58a5ef7d06c2e6c24ad3be2dc3d64abe2765e3fe7b",
+      "to": "f8e5748574fb9f78481403913cf5cc6e0a06dd00d3722d25d78fd45762c1bc99",
+      "on": "2026-10-06",
+      "why": "PR6241 adds authenticated EV lifecycle qualification to the existing native gate and routes its real engine and captured fixture inputs. Reviewed additive classifier/test diff; no prior financial assertion, captured authority, checker or qualification status is changed. This fingerprint refresh is not execution or product certification."
     }
   ],
   "union_doors_candidate_20260925": "Restamped for 20260925145748. scripts/dev/test-full-weekly-accounting-activation.sh now applies that migration in the existing pnl-evidence hooks chain, immediately after 20260921023420 and before hooks-regression.sql, and hooks-regression.sql gains assertions for what it changes: the square-up refuses a recorded ECO that does not equal round(-eco_rate*eco_base,2) (the old comparison had become the record against itself and could never fire), keeping both existing refusals; and the closed union send door credits the one owner it resolves from clubs.owner_id instead of every role=owner row, carries the house authorization check, an idempotency key and one club-declaring chip_ledger leg, and records its audit row against wallet='chip_balance' rather than the 'main' that union_wallet_transactions_wallet_check has never permitted. No fixture body owned by these bindings changed and no role gains a key. Diff read before restamping.",
@@ -520,26 +567,6 @@
       }
     }
   },
-  "satellite_combined_main_integration_20260927": {
-    "base": "b4e5fbb8be9c8e9cbaa53a296edb24b89625f7f4",
-    "reason": "Integrate settlement attribution and both satellite index native qualifications; preserve every parent historical value.",
-    "updated_active_pins": [
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "before_sha256": "175b6f76cc7444bd2965f6277e47e815a0993bb76e37c1a17538043f5750cae7",
-        "after_sha256": "62ca243aa1e7c6392cf034d26dcce5061e463b90344728cde7eb8e0482095141"
-      }
-    ]
-  },
-  "settlement_conservation_index_20260927": {
-    "reason": "Enforce complete unchanged settlement conservation native query, financial boundaries, authority and finite online/recovery qualification in required accounting shard; bind actual workflow/classifier and updated nested manifests without changing historical entries.",
-    "changes": {
-      "scripts/ci/classify-ci-changes.mjs": {
-        "previous": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b",
-        "current": "95dabc7e631360eef4e6b8bce3fd047e169738d0ff347fe7e7c0c2f6cb3eb096"
-      }
-    }
-  },
   "chipStoreCoverageQualification20260927": {
     "reason": "Add required native qualification for exact one-pass coverage aggregation. Preserve every existing source/assertion and routing rule; these bindings retain actual reviewed CI/classifier bytes and nested binding history.",
     "updates": {
@@ -572,5 +599,109 @@
     "previousQualifiedHead": "474ef7e117dd2c8b6b053a0c937fad0401ea42e6",
     "protectedMain": "87206e76fc375d17a1feb4049cbd3d34481c7ec8",
     "scope": "Preserve both source maps and integration histories; rebind only actual integrated CI/classifier and dependent binding bytes. Coverage SQL/native/fixture assertions unchanged."
+  },
+  "productionAlertsCompletionIntegration20261001": {
+    "scope": "Preserve both merge parents and completion qualification; rebind actual merged source bytes. No native or production qualification implied.",
+    "ownParent": "65c059cb994c526a232b16e8a72e731910709211",
+    "protectedMain": "ec06319fe7197ea260173671dd590fcf26ca21eb",
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "c15c245be6c0d840f84634ef3711b49472d246230ad3c4ed8e67bac1f49df92d",
+        "current": "65bfd2f4c5006afe483b172478cd5a6d4942bc3c8325b6df45681c37b8b85192"
+      }
+    ]
+  },
+  "productionAlertsArchivedReaderRouting20261001": {
+    "reason": "Include postabort and bank-observer regression files in native archived Spin classification; explicitly guard five current capture/provider inputs and retain all prior assertions. Exact routing metadata restamp only.",
+    "changes": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "from": "65bfd2f4c5006afe483b172478cd5a6d4942bc3c8325b6df45681c37b8b85192",
+        "to": "0893f2e69113c32c71444429bc89829afbe09e4c1e2e1caf167ccf7d9cee9f02"
+      }
+    ]
+  },
+  "productionAlertsContractIndexRecovery20261001": {
+    "reason": "Route the exact interrupted contract-index recovery source and native guard proof through existing CI; preserve every financial source and historical audit record.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "0893f2e69113c32c71444429bc89829afbe09e4c1e2e1caf167ccf7d9cee9f02",
+        "current": "c89b4a8ee214872257977991b819ce71f12aae407768e1d8bcb02f8074338056"
+      }
+    ]
+  },
+  "productionAlertsFixtureIsolation20261001": {
+    "reason": "Disable unsolicited maintenance in disposable native clusters, assert and retain actual settings, capture bounded post-failure diagnostics, and preserve original failure. Prior lock holder remains unknown; production NOWAIT and explicit concurrency unchanged.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/dev/test-full-weekly-accounting-activation.sh",
+        "previous": "ac6aac2f3f64fa357e899e5c4f84045924973b5b267c5ff7533542cc8a060d27",
+        "current": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e"
+      }
+    ]
+  },
+  "diamondCrossFormatConservationRoute20261004": {
+    "reason": "Restamped 2026-10-04 with the Diamond Phase 9 cross-format conservation runner. The only change to this classifier is one alternation widened so tests/sql/diamond-cross-format-*.manifest.json reaches the accounting job that executes the runner reading it, plus the comment saying why its two .sql fixtures are named poker-diamond-* instead. No existing route, lane, financial source or assertion in this file was altered, and the two Diamond lanes it already declares are byte-identical. Diff read before restamping.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "c89b4a8ee214872257977991b819ce71f12aae407768e1d8bcb02f8074338056",
+        "current": "465f5cd3637d223094050dd40ef02e06b5fa2ac3306a8218114c1696df672bc8"
+      }
+    ]
+  },
+  "clubCreateCapacityRoutingIntegration20261004": {
+    "reason": "Integrate protected main's additive Diamond cross-format route with the additive read-only Club Create capacity route. Both selectors and both histories are retained; no financial source, fixture, assertion, or existing route changed.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "465f5cd3637d223094050dd40ef02e06b5fa2ac3306a8218114c1696df672bc8",
+        "current": "fb28e190fff1c72cbb4dab7444653c27aaebac219f5bba4c512e7af3e82f878d"
+      }
+    ]
+  },
+  "clubDataNativeRoutingRebinding20261004": {
+    "reason": "Route the Data/Stats native PostgreSQL wrapper, its fixtures and its wiring test into the existing required server and test verdicts. The classifier change is additive: no accounting route, financial fixture, captured definition or historical assertion is removed or weakened.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "fb28e190fff1c72cbb4dab7444653c27aaebac219f5bba4c512e7af3e82f878d",
+        "current": "191e1240fc6d408df160a33d2a67142032450aa2828b1b9ff1431b9860f1f626"
+      }
+    ],
+    "verification": "The exact classifier diff and positive routing cases were reviewed; tests/data-console-postgres-contracts-wired.test.ts passed and all nine native Data/Stats PostgreSQL contracts passed."
+  },
+  "unionOpsFinancialAdminNativeRouting20261004": {
+    "reason": "Add the Union Operations Financial Admin fixture directory to the existing Data Console PostgreSQL route so any bound bootstrap, assertion or source-binding change selects the native accounting job. The classifier diff widens one additive fixture alternation only; no existing accounting route, financial fixture, captured definition or historical assertion is removed or weakened.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "191e1240fc6d408df160a33d2a67142032450aa2828b1b9ff1431b9860f1f626",
+        "current": "97c86e7e47f3364b699b4ea373c6510777636b5ee9445963aecb8be6c6f3fd0c"
+      }
+    ],
+    "verification": "The exact classifier diff was reviewed. The focused routing test passes and the source-bound Union Operations PostgreSQL 17 fixture passed its exact semantic, authorization and bounded-scale assertions."
+  },
+  "finalTableBoundedCleanupRouting20261005": {
+    "changed": "scripts/ci/classify-ci-changes.mjs",
+    "reason": "Route the manual final-table page runner, its tests, forward migrations and schema fragment into the existing required accounting and source-test lanes. Existing financial selection and runtime sources are unchanged. Reviewed diff and native customization proof; this restamp does not certify weekly settlement or expand historical claims.",
+    "sha256": "732f731aa929df1e7b43aa58a5ef7d06c2e6c24ad3be2dc3d64abe2765e3fe7b"
+  },
+  "weeklyRecomputeQualification20261006": {
+    "reason": "Add exact split-recompute native qualification to the existing accounting shard and select its fixture-only changes. Default weekly fixture behavior and all financial SQL remain unchanged; current protected-main integration is preserved.",
+    "bindings": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": "732f731aa929df1e7b43aa58a5ef7d06c2e6c24ad3be2dc3d64abe2765e3fe7b",
+        "after": "2fc728ea5555ced40641d89f8c85b8f094a09f9f14d5decaa405ffbc5e11ea2a"
+      }
+    }
   }
 }

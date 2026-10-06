@@ -11,7 +11,12 @@
 
 import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
-import { writeHandFacts } from './handFacts.js';
+import {
+  releaseHandFactsCapture,
+  writeHandFacts,
+  type DurableStatsFactPayload,
+  type HandFactsInput,
+} from './handFacts.js';
 import { recordHorseHandReviews } from '../HorseHandReview.js';
 import { readScopeOf } from '../../engine/HorseMind.js';
 import { getLiveHorseDecisionWorker } from '../../engine/horseDecision/index.js';
@@ -39,6 +44,36 @@ export const RETAINED_HAND_STANDING_REFUSALS: ReadonlySet<string> = new Set([
   'HAND_SUBMISSION_TABLE_MISSING',
 ]);
 
+/**
+ * THE LEDGER INVARIANT REFUSED THE HAND (2026-10-02).
+ *
+ * fn_ca_balance_has_its_ledger_row judges every chip movement at COMMIT and,
+ * when a balance and its chip_ledger legs disagree, refuses the whole
+ * transaction: SQLSTATE 23514, `REFUSED: balance_moved_without_its_ledger_row`
+ * or `REFUSED: balance_moved_against_settlement_suspense`. The rollback leaves
+ * every seat at its pre-hand stack, and the refusing session has already
+ * recorded the refusal and raised a critical incident on its own connection
+ * (migration 20261002135708). The answer is a property of the request and the
+ * door, not of the network: the same request is refused the same way every
+ * time. Replaying it thirteen times over forty seconds, then rebuilding the
+ * table every five seconds into the same answer, hid it behind delay; it is a
+ * deterministic refusal and a standing one.
+ */
+export const LEDGER_INVARIANT_REFUSED = 'LEDGER_INVARIANT_REFUSED';
+
+/** Self-contained (no module constant): the runtime probes evaluate it alone. */
+export function isLedgerInvariantRefusal(
+  error: { code?: unknown; message?: unknown } | null | undefined
+): boolean {
+  if (!error) return false;
+  return (
+    String(error.code ?? '') === '23514' &&
+    /^REFUSED: balance_moved_(?:without_its_ledger_row|against_settlement_suspense)\b/.test(
+      String(error.message ?? '').trim()
+    )
+  );
+}
+
 /** The door's standing refusal, named, for the one table it was asked about. */
 export class RetainedHandSubmissionRefusedError extends Error {
   constructor(
@@ -64,6 +99,10 @@ export async function resumeRetainedHandSubmission(
   });
   if (error) {
     const code = String(error.message ?? '').trim();
+    // The retained hand replays into the same ledger refusal on every start:
+    // hold the table (its seats are at their pre-hand stacks), never rebuild it.
+    if (isLedgerInvariantRefusal(error))
+      throw new RetainedHandSubmissionRefusedError(tableId, LEDGER_INVARIANT_REFUSED);
     if (RETAINED_HAND_STANDING_REFUSALS.has(code))
       throw new RetainedHandSubmissionRefusedError(tableId, code);
     throw new Error(`retained_hand_submission_readback_failed: ${error.message}`);
@@ -104,6 +143,15 @@ export interface AtomicHandCommitInput {
     seat_joined_at?: string;
     occupancy_id?: string;
     funding_manifest_id?: string;
+    /* THE DIAMOND CASH HAND'S RAKE FACTS (2026-10-05). Present on every
+       element of a Diamond cash roster and on none of a chip roster: the
+       Diamond settler recomputes the rake from the owner's published
+       economics and refuses by name without them, while the chip path builds
+       its canonical roster from a fixed key list that never reads them. See
+       engine/diamondCashRakeFacts.ts. */
+    contributed?: number;
+    dealt_in?: boolean;
+    hand_saw_flop?: boolean;
   }>;
   rake: number;
   bbj: number;
@@ -145,6 +193,11 @@ export interface AtomicHandCommitInput {
     contributions: Record<string, number>;
     returned_uncalled: Record<string, number>;
     insurance: Array<Record<string, unknown>>;
+    /**
+     * Private per-seat facts. Stored only in the service-owned atomic receipt,
+     * never in participant-readable hand_history.
+     */
+    stats_facts?: DurableStatsFactPayload;
   };
   /**
    * Local distributed-lease fence, invoked immediately before every retry of
@@ -153,6 +206,93 @@ export interface AtomicHandCommitInput {
    * UNKNOWN local retry and a stale continuation running after DB takeover.
    */
   assertLeaseAuthority?: () => void;
+  /**
+   * Cash only. When assertLeaseAuthority refuses because this generation's
+   * local proof lapsed before its finished hand was retained, the writer
+   * still retains the exact original request under the original generation
+   * and only then refuses. See retainLapsedOriginalForSuccessor.
+   */
+  retainWhenLeaseLapses?: boolean;
+}
+
+/**
+ * A FINISHED HAND OUTLIVES ITS DEALER'S PROOF (2026-10-04).
+ *
+ * 2026-10-03 23:43:08-23:43:44 UTC the database host stalled for about 36 s
+ * (the onset of the memory exhaustion that stopped it at 23:44:27). No lease
+ * heartbeat could be answered, so every cash generation's 20 s proof lapsed
+ * and every hand that had finished but was not yet retained was refused here
+ * with `lease_proof_expired`: 85 hands on 85 tables, of which the 30 retained
+ * before the stall were settled by their successor and the other 55 were
+ * disposed. Those 55 had been dealt, played and shown to the table under a
+ * valid lease; only their persistence was still in flight.
+ *
+ * The original cannot commit once its proof lapses, and that stays true. But
+ * retention moves no money: it stores the exact request so the successor's
+ * door (fn_ca_resume_hand_submission) can settle it under its own lease, after
+ * proving the original never settled it and that every before-stack, chair
+ * and hand number is still exactly as the request names them. So a lapsed
+ * cash generation retains first and refuses second. The database decides:
+ * migration 20261004201926 admits a cash retention while the lease row still
+ * names this exact instance and generation, stale or not; a row that was
+ * taken, released or re-claimed refuses it, and the hand is then disposed
+ * exactly as before. The generation is still terminated either way.
+ */
+export const LAPSED_RETENTION_RETAINED = 'original retained for the successor';
+
+function isLeaseProofLapse(error: unknown): boolean {
+  return /atomic hand commit refused \(lease_proof_expired\)/.test(
+    error instanceof Error ? error.message : String(error)
+  );
+}
+
+async function retainLapsedOriginalForSuccessor(
+  payload: { p_hand_row: Record<string, unknown> } & Record<string, unknown>,
+  lapse: unknown
+): Promise<Error> {
+  const lapseMessage = lapse instanceof Error ? lapse.message : String(lapse);
+  let outcome = 'retention unknown: no response';
+  for (let attempt = 0; attempt <= HAND_COMMIT_RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      const retained = await supabase.rpc('fn_ca_retain_hand_submission', {
+        p_request: payload,
+      });
+      if (!retained.error) {
+        const receipt = retained.data as Record<string, unknown> | null;
+        outcome =
+          receipt?.retained === true &&
+          receipt.submission_id === payload.p_hand_row.id &&
+          typeof receipt.request_hash === 'string' &&
+          /^[0-9a-f]{64}$/.test(receipt.request_hash)
+            ? LAPSED_RETENTION_RETAINED
+            : 'retention refused: invalid_submission_receipt';
+        break;
+      }
+      const code = String(retained.error.code ?? '');
+      if (code === '22023' || code === '55000') {
+        outcome = `retention refused: ${String(retained.error.message ?? code)}`;
+        break;
+      }
+      outcome = `retention unknown: ${String(retained.error.message ?? code)}`;
+    } catch (err) {
+      outcome = `retention unknown: ${err instanceof Error ? err.message : String(err)}`;
+    }
+    const delayMs = HAND_COMMIT_RETRY_DELAYS_MS[attempt];
+    if (delayMs !== undefined) await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+  }
+  return new Error(`${lapseMessage}; ${outcome}`);
+}
+
+/** Exact deal stacks carried by the accepted atomic envelope. Never infer them
+ * from final stacks: insurance, BBJ and other side flows break that arithmetic. */
+export function dealtStacksFromAtomicCommit(
+  atomicCommit: Pick<AtomicHandCommitInput, 'stacks'>
+): Map<string, number> {
+  return new Map(
+    atomicCommit.stacks
+      .filter((row) => row.user_id && Number.isFinite(row.stack_before))
+      .map((row) => [row.user_id, row.stack_before] as const)
+  );
 }
 
 export interface TournamentStackProof {
@@ -461,6 +601,8 @@ export async function logHandHistory(params: {
   clubId?: string | null;
   /** userId -> totalInvested (includes blinds/antes). */
   contributions?: Map<string, number>;
+  /** Stacks frozen at deal time; source for exact effective-stack buckets. */
+  dealtStacksAtDeal?: Map<string, number>;
   /** Every seat dealt in: userId -> { seat, cards }. Includes folded players. */
   holeCardsAll?: Map<string, { seat: number; cards: unknown }>;
   /** Seat roster with horse flags. Only humans get fact rows. */
@@ -624,6 +766,43 @@ export async function logHandHistory(params: {
     ...(params.roster ? { has_human: params.roster.some((p) => !p.isHorse) } : {}),
   };
 
+  const factsInput: HandFactsInput | null =
+    params.handId && params.contributions && params.holeCardsAll && params.roster
+      ? {
+          handId: params.handId,
+          tableId: params.tableId,
+          clubId: params.clubId ?? null,
+          tournamentId: params.tournamentId ?? null,
+          handNumber: params.handNumber,
+          gameVariant: params.gameVariant,
+          bigBlind: params.bigBlind,
+          playedAt: endedAtIso,
+          buttonSeat: params.buttonSeat ?? null,
+          rakeAmount: params.rakeAmount,
+          boardLength: params.communityCards?.length ?? 0,
+          holeCardsAll: params.holeCardsAll!,
+          contributions: params.contributions!,
+          dealtStacksAtDeal:
+            params.dealtStacksAtDeal ?? dealtStacksFromAtomicCommit(params.atomicCommit),
+          winners: params.winners,
+          actions: params.actions,
+          roster: params.roster!,
+          nitGame: params.nitGame,
+          isBombPot: Boolean(params.bombPot),
+        }
+      : null;
+
+  // Protocol-2 commits carry the complete private fact rows in their immutable
+  // receipt. The projector persists them before deleting the durable outbox
+  // claim. Folded holdings never enter `row`/hand_history.
+  if (factsInput && params.atomicCommit.acceptedPostCommitFacts) {
+    const statsFacts = await writeHandFacts({ ...factsInput, collectOnly: true });
+    if (!statsFacts) {
+      throw new Error('atomic hand commit refused (stats_facts_unavailable)');
+    }
+    params.atomicCommit.acceptedPostCommitFacts.stats_facts = statsFacts;
+  }
+
   const bombUnits = (params.bombAwardUnits ?? []).map((u) => ({
     table_id: params.tableId,
     hand_number: params.handNumber,
@@ -636,6 +815,9 @@ export async function logHandHistory(params: {
   }));
   const inserted = await insertHandHistoryRow(row, bombUnits, params.atomicCommit);
   const handId = inserted.id;
+  if (params.atomicCommit.acceptedPostCommitFacts?.stats_facts) {
+    releaseHandFactsCapture(params.tableId, params.handNumber);
+  }
 
   // Observe only after the authoritative transaction accepts the hand above.
   // ROOT-CAUSE CAPACITY FIX (2026-09-08): HorseMind now lives beside
@@ -674,34 +856,12 @@ export async function logHandHistory(params: {
     /* observation must never endanger settlement */
   }
 
-  // STATS FACT LAYER 2026-08-21. Durable per-human-per-hand row for the stats
-  // page: exact net, own hole cards on every hand (not just showdowns),
-  // all-in EV, and head-to-head chip flow. Deliberately NOT awaited — this is
-  // a stats write inside a money-critical settlement step, and writeHandFacts
-  // never throws, so the hand must not wait on it or be endangered by it.
-  if (handId && params.contributions && params.holeCardsAll && params.roster) {
-    void writeHandFacts({
-      handId,
-      tableId: params.tableId,
-      clubId: params.clubId ?? null,
-      tournamentId: params.tournamentId ?? null,
-      handNumber: params.handNumber,
-      gameVariant: params.gameVariant,
-      bigBlind: params.bigBlind,
-      playedAt: endedAtIso,
-      buttonSeat: params.buttonSeat ?? null,
-      rakeAmount: params.rakeAmount,
-      boardLength: params.communityCards?.length ?? 0,
-      holeCardsAll: params.holeCardsAll,
-      contributions: params.contributions,
-      winners: params.winners,
-      actions: params.actions,
-      roster: params.roster,
-      // The rule and its evidence must cover the same seats. See writeHandFacts.
-      nitGame: params.nitGame,
-      // Bomb pots count as VPIP for everyone dealt in (Dan 2026-09-05).
-      isBombPot: Boolean(params.bombPot),
-    });
+  // Rolling protocol-1 engines do not carry the immutable private facts. Keep
+  // their legacy non-blocking writer until the protocol is fully retired.
+  if (handId && factsInput) {
+    if (!params.atomicCommit.acceptedPostCommitFacts?.stats_facts) {
+      void writeHandFacts({ ...factsInput, handId });
+    }
     // (V16 deep-read observation moved ABOVE the handId gate — V28 audit.)
 
     // HORSE HAND REVIEW 2026-08-26 (Dan): every horse that won or lost 20bb+
@@ -725,11 +885,11 @@ export async function logHandHistory(params: {
         params.communityCards3,
         ...(params.ritBoards ?? []),
       ].filter((b): b is string[] => Array.isArray(b) && b.length > 0),
-      holeCardsAll: params.holeCardsAll,
-      contributions: params.contributions,
+      holeCardsAll: factsInput.holeCardsAll,
+      contributions: factsInput.contributions,
       winners: params.winners,
       actions: params.actions,
-      roster: params.roster,
+      roster: factsInput.roster,
       // 2026-09-05: the rake is part of the result (horse_daily_nets.rake_bb),
       // and the button places the blinds for horse_daily_play.
       rakeAmount: params.rakeAmount,
@@ -841,7 +1001,20 @@ async function insertHandHistoryRow(
   // Lost responses remain unknown; no alternate writer or per-seat fallback.
   for (let attempt = 0; attempt <= HAND_COMMIT_RETRY_DELAYS_MS.length; attempt++) {
     try {
-      atomicCommit.assertLeaseAuthority?.();
+      try {
+        atomicCommit.assertLeaseAuthority?.();
+      } catch (lapse) {
+        // Retain first, refuse second (see retainLapsedOriginalForSuccessor).
+        if (
+          atomicCommit.retainWhenLeaseLapses === true &&
+          hasPostCommitObligations &&
+          !submission &&
+          isLeaseProofLapse(lapse)
+        ) {
+          throw await retainLapsedOriginalForSuccessor(payload, lapse);
+        }
+        throw lapse;
+      }
       if (hasPostCommitObligations && !submission) {
         // A process-local clone cannot survive a terminal engine refusal. First
         // retain the exact original request under its current lease. An unknown
@@ -876,6 +1049,13 @@ async function insertHandHistoryRow(
       const { data, error } = submission
         ? await supabase.rpc('fn_ca_commit_hand_submission', submission)
         : await supabase.rpc('fn_ca_commit_hand_settlement', payload);
+      if (isLedgerInvariantRefusal(error)) {
+        // Deterministic: the database refused this exact transaction at
+        // COMMIT and recorded the refusal outside its rollback. The identical
+        // replay is refused identically, so it is a semantic refusal, not a
+        // lost response.
+        throw new Error(`atomic hand commit refused (ledger_invariant): ${String(error!.message)}`);
+      }
       const result = (data ?? {}) as AtomicCommitResult;
       if (!error && result.success === true && result.atomic_hand_commit === true) {
         if (

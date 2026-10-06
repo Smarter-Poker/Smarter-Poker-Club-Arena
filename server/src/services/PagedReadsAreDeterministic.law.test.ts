@@ -81,6 +81,9 @@ const UNIQUE_KEY: Record<string, string[]> = {
   // entrant read, which filters to ONE tournament and so must fall back to
   // the primary key - re-entry formats put a player on the list twice.
   tournament_players: ['user_id', 'tournament_id'],
+  // The horse registration-load read pages the open EVENTS (2026-10-02) and
+  // carries each event's registrations whole inside its row.
+  tournaments: ['id'],
   // Already correct before this sweep: created_at is not unique, and the id
   // tiebreaker is what makes the page boundaries stable.
   hand_history: ['created_at', 'id'],

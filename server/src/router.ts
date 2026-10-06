@@ -25,6 +25,8 @@ import { handleAdminKickOccupancy } from './handlers/admin.js';
 import type { IncomingMessage, ServerResponse } from 'http';
 import type { GameServer } from './GameServer.js';
 import { sendJSON, CORS_HEADERS } from './http/respond.js';
+import { arrivedThroughThePublicProxy } from './http/publicStranger.js';
+import { reportError } from './services/errorReporter.js';
 import { handleHealth, handleWsMetrics, handleMetrics } from './handlers/health.js';
 import { handleStableHand } from './handlers/stableHand.js';
 import { handleAction } from './handlers/action.js';
@@ -87,6 +89,9 @@ type AnyGameServer = Parameters<typeof handleAction>[2]['gameServer'] &
   Parameters<typeof handleMetrics>[1]['gameServer'] & {
     getTournamentLifecycleDiagnostic?: GameServer['getTournamentLifecycleDiagnostic'];
     requestMaintenanceRecoveryWindow?: GameServer['requestMaintenanceRecoveryWindow'];
+    /** Lightning Phase 6: a pool_session_id resolves to its seat proxy. */
+    getActionEngine?: GameServer['getActionEngine'];
+    getPreActionEngine?: GameServer['getPreActionEngine'];
   };
 
 export interface RouterDeps {
@@ -353,7 +358,7 @@ export function createRouter(
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   const { gameServer, tableStateHub, engineWs, channelHub } = deps;
 
-  return async (req, res) => {
+  const route = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const method = req.method || 'GET';
     // PATH ONLY (2026-09-03). Every route below is matched on the whole
     // request target, so `/health?cb=1788402501855` fell through to the 404
@@ -489,17 +494,41 @@ export function createRouter(
       );
     // Operation Stable Hand Section 15. Read-only: it plans and reports, and
     // deliberately never executes what it plans.
-    if (url === '/stable-hand') return handleStableHand(res);
+    /* It names the fleet's size, its plan and house wallet ids, and runs
+       database reads per request. A stranger from the internet gets neither
+       (launch audit 2026-10-05); the box itself and anything holding the
+       internal key still do. */
+    if (url === '/stable-hand') {
+      if (arrivedThroughThePublicProxy(req) && !verifyInternalKey(req)) {
+        return sendJSON(res, 401, { error: 'Unauthorized' });
+      }
+      return handleStableHand(res);
+    }
     if (url === '/ws-metrics' && method === 'GET')
       // 2026-08-24: channelHub added — the wallet/tournament/club/lobby
       // transport had zero metrics visibility before this.
       return handleWsMetrics(res, { tableStateHub, engineWs, channelHub });
-    if (url === '/metrics' && method === 'GET') return handleMetrics(res, { gameServer });
+    if (url === '/metrics' && method === 'GET')
+      return handleMetrics(
+        res,
+        { gameServer },
+        // A stranger is not told how the seats divide between humans and horses.
+        { withoutSeatMix: arrivedThroughThePublicProxy(req) && !verifyInternalKey(req) }
+      );
 
     // ─────────────────────────────────────────────────────────────────────────
     // State-mutating routes — handlers/*.ts (Phase U3.2 + U3.3).
     // ─────────────────────────────────────────────────────────────────────────
-    if (method === 'POST' && url === '/action') return handleAction(req, res, { gameServer });
+    if (method === 'POST' && url === '/action')
+      return handleAction(req, res, {
+        // A Lightning pool_session_id resolves to its seat proxy (Phase 6).
+        gameServer: {
+          getTableEngine: (tableId) =>
+            gameServer.getActionEngine
+              ? gameServer.getActionEngine(tableId)
+              : gameServer.getTableEngine(tableId),
+        },
+      });
     if (method === 'POST' && url === '/timebank') return handleTimebank(req, res, { gameServer });
     /**
      * ROUTED 2026-08-28. `handleRejectRebuy` was imported at the top of this
@@ -529,7 +558,18 @@ export function createRouter(
     // Dan 2026-08-23: pagehide/app-freeze beacon. Marks the player AWAY (blind
     // cap armed) without removing them — see handlers/away.ts.
     if (method === 'POST' && url === '/away') return handleAway(req, res, { gameServer });
-    if (method === 'POST' && url === '/preaction') return handlePreaction(req, res, { gameServer });
+    if (method === 'POST' && url === '/preaction')
+      return handlePreaction(req, res, {
+        // A Lightning pool_session_id resolves to its seat proxy (Phase 6).
+        gameServer: {
+          getTableEngine: (tableId) =>
+            gameServer.getPreActionEngine
+              ? gameServer.getPreActionEngine(tableId)
+              : (gameServer as Parameters<typeof handlePreaction>[2]['gameServer']).getTableEngine(
+                  tableId
+                ),
+        },
+      });
     if (method === 'POST' && url === '/addchips') return handleAddchips(req, res, { gameServer });
     if (method === 'POST' && url === '/leave-occupancy')
       return handleLeaveOccupancy(req, res, { gameServer });
@@ -642,5 +682,29 @@ export function createRouter(
     // 404 — Not Found
     // ─────────────────────────────────────────────────────────────────────────
     sendJSON(res, 404, { error: 'Not Found' });
+  };
+
+  /* ONE REQUEST CANNOT RESTART THE ENGINE (launch audit 2026-10-05).
+     This listener is handed straight to `http.createServer`, which does not
+     await it, so a handler that throws becomes an unhandledRejection - and
+     `index.ts` treats that as fatal: the engine drains and restarts, voiding
+     every hand in flight. Several handlers have no try/catch of their own
+     and one parses the request target with `new URL()`. A request that
+     fails is answered 500 and reported; it is never the process's problem. */
+  return async (req, res) => {
+    try {
+      await route(req, res);
+    } catch (err) {
+      reportError(err, 'Router.Unhandled_request_error');
+      if (res.headersSent) {
+        res.destroy();
+        return;
+      }
+      try {
+        sendJSON(res, 500, { error: 'Internal Server Error' });
+      } catch {
+        res.destroy();
+      }
+    }
   };
 }

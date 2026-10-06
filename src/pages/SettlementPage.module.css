@@ -1,716 +1,86 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  SETTLEMENT PAGE — Styles
- *
- *  #SMARTERCASINOREALISM - the material layer. The tokens are defined once on
- *  :root in src/styles/club-engine.css, which main.tsx loads; this sheet only
- *  consumes them. The page settles a union period: the metric tiles, the win
- *  and loss summary, the wire table between clubs, the agent payout table and
- *  the period history. Its colours are money, so they keep their meaning - a
- *  negative stays red, a pending wire stays amber, and every status chip whose
- *  background is an alpha of its own text colour is left as the matched pair it
- *  is. What moves onto the shared vocabulary is the material: the surfaces, the
- *  neutral text, and the greens that read as money in the black.
- * ═══════════════════════════════════════════════════════════════════════════════
- */
-
 .page {
-  min-height: 100vh;
-  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
-  padding: 2rem;
-  background: linear-gradient(180deg, var(--bg-darker) 0%, var(--bg-dark) 100%);
+  min-height: 100dvh;
   width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
-  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
-     one axis computes the other to `auto`, which makes this a scroll container,
-     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
-     viewport. The bar leaves the bottom of the screen and rides up the page. */
-  overflow-x: hidden;
+  padding: 1rem 0.5rem max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
+  background: #000;
   overflow-x: clip;
-  /* Dan 2026-08-25: was max(70px, env(safe-area-inset-bottom)). The bar is
-     74px PLUS the home-indicator inset (additive), and max() picks one or
-     the other - so this reserved 70px on every phone and hid the last row
-     of content under the footer, by 4px on a flat screen and ~38px on a
-     notched one. --bottom-nav-clearance is the token the bar itself is
-     pinned to. */
-  padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
 }
 
-/* Header */
-.header {
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-  margin-bottom: 2rem;
+.console {
+  margin-inline: auto;
+}
+
+.ledgerConsole {
+  margin: 1rem auto 0;
 }
 
 .backButton {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  font-size: 0.9rem;
-  cursor: pointer;
-  touch-action: manipulation;
   min-height: 44px;
-  transition: color 0.2s;
-}
-
-.headerContent {
-  flex: 1;
-}
-
-.header h1 {
   margin: 0;
-  font-size: 1.5rem;
-  color: var(--realism-chrome-hot);
-}
-
-.subtitle {
-  margin: 0.25rem 0 0;
-  font-size: 0.85rem;
-  color: var(--text-muted);
-}
-
-.statusBadge {
-  padding: 0.5rem 1rem;
-  border-radius: 0.75rem;
-  font-size: 0.9rem;
-  font-weight: 600;
-}
-
-.statusBadge.open {
-  background: rgba(16, 185, 129, 0.2);
-  color: #10b981;
-}
-
-.statusBadge.processing {
-  background: rgba(245, 158, 11, 0.2);
-  color: #f59e0b;
-}
-
-.statusBadge.settled {
-  background: rgba(99, 102, 241, 0.2);
-  color: #818cf8;
-}
-
-/* Metrics Grid */
-.metricsGrid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 1rem;
-  margin-bottom: 2rem;
-}
-
-/* A tile sits IN its frame, not on the page: lit top edge, cavity beneath it,
-   and the drop that separates it from the black. */
-.metricCard {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 1.25rem;
-  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
-  border-radius: var(--realism-radius);
-  border: 1px solid var(--realism-gunmetal);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
-  transition: transform 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-.metricIcon {
-  font-size: 1.75rem;
-}
-
-.metricValue {
-  display: block;
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: var(--realism-chrome-hot);
-}
-
-.metricLabel {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-}
-
-/* Settlement Summary */
-.settlementSummary {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 1.5rem;
-  padding: 1.5rem;
-  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
-  border-radius: var(--realism-radius);
-  border: 1px solid var(--realism-gunmetal);
-  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
-  margin-bottom: 2rem;
-}
-
-.summaryBox {
-  text-align: center;
-}
-
-.summaryLabel {
-  display: block;
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  margin-bottom: 0.5rem;
-}
-
-.summaryValue {
-  font-size: 1.5rem;
-  font-weight: 700;
-}
-
-.summaryValue.positive {
-  color: var(--realism-green);
-}
-
-.summaryValue.negative {
-  color: #ef4444;
-}
-
-.summaryDivider {
-  font-size: 1.5rem;
-  color: var(--text-muted);
-}
-
-/* Tab Navigation */
-.tabNav {
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 2rem;
-  border-bottom: 1px solid var(--realism-gunmetal);
-  padding-bottom: 0.5rem;
-}
-
-.tabButton {
-  padding: 0.75rem 1.25rem;
+  padding: 0;
+  border: 0;
   background: transparent;
-  border: none;
-  border-radius: 0.5rem;
-  color: var(--text-muted);
-  font-size: 0.9rem;
-  font-weight: 500;
+  color: #45adff;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: clamp(0.72rem, 3.3cqw, 0.94rem);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-shadow: 0 0 0.7cqw rgb(69 173 255 / 65%);
   cursor: pointer;
-  touch-action: manipulation;
-  min-height: 44px;
-  white-space: nowrap;
-  flex-shrink: 0;
-  transition: all 0.2s;
 }
 
-.tabButton.active {
-  background: rgba(var(--accent-rgb), 0.15);
-  color: var(--accent);
+.backButton:active {
+  transform: translateY(1px);
 }
 
-/* There is no hover in Club Arena (tests/no-hover-effects.law.test.ts), so the
-   press is the confirmation the control took the tap, and :focus-visible is how
-   a keyboard finds it. */
-.backButton:focus-visible,
-.tabButton:focus-visible,
-.executeButton:focus-visible,
-.periodCard:focus-visible {
-  outline: 2px solid var(--realism-cyan);
+.backButton:focus-visible {
+  outline: 2px solid #45adff;
   outline-offset: 2px;
 }
 
-/* Content */
-.content {
-  min-height: 400px;
-}
-
-/* Overview Section */
-.overviewSection {
-  display: grid;
-  gap: 1.5rem;
-}
-
-.formulaCard {
-  background: rgba(139, 92, 246, 0.1);
-  border: 1px solid rgba(139, 92, 246, 0.3);
-  border-radius: var(--realism-radius);
-  padding: 1.5rem;
-}
-
-.formulaCard h3 {
-  margin: 0 0 1rem;
-  color: var(--realism-chrome-hot);
-}
-
-/* The inverse of a panel: a slot cut into the card, holding the rake formula. */
-.formula {
-  background: rgba(0, 0, 0, 0.3);
-  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.65);
-  padding: 1rem;
-  border-radius: 0.5rem;
-  margin-bottom: 1rem;
-}
-
-.formula code {
-  color: var(--accent);
-  font-size: 0.95rem;
-}
-
-.formulaNote {
+.state {
+  min-height: 24cqw;
   margin: 0;
-  font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.7);
-  line-height: 1.6;
+  padding: 6cqw 0;
+  text-align: center;
 }
 
-.timelineCard {
-  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
-  border-radius: var(--realism-radius);
-  border: 1px solid var(--realism-gunmetal);
-  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
-  padding: 1.5rem;
+.scopeChooser {
+  padding: 4cqw 0;
+  color: #d7dee7;
+  text-align: center;
 }
 
-.timelineCard h3 {
-  margin: 0 0 1.5rem;
-  color: var(--realism-chrome-hot);
+.scopeChooser p {
+  margin: 0;
+  font-size: clamp(0.72rem, 3.2cqw, 0.92rem);
+  line-height: 1.5;
 }
 
-.timeline {
+.scopeActions {
   display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-  position: relative;
-  padding-left: 2rem;
-}
-
-.timeline::before {
-  content: '';
-  position: absolute;
-  left: 7px;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: var(--realism-gunmetal);
-}
-
-.timelineItem {
-  display: flex;
-  gap: 1rem;
-  position: relative;
-}
-
-.timelineDot {
-  position: absolute;
-  left: -2rem;
-  width: 16px;
-  height: 16px;
-  display: flex;
-  align-items: center;
+  flex-wrap: wrap;
   justify-content: center;
-  font-size: 0.7rem;
-  color: var(--text-muted);
+  gap: 2cqw;
+  margin-top: 3cqw;
 }
 
-.timelineItem.completed .timelineDot {
-  color: var(--realism-green);
-}
-
-.timelineItem.active .timelineDot {
-  color: var(--accent);
-}
-
-.timelineItem strong {
-  display: block;
-  color: var(--realism-chrome-hot);
-  margin-bottom: 0.25rem;
-}
-
-.timelineItem p {
-  margin: 0;
-  font-size: 0.85rem;
-  color: var(--text-muted);
-}
-
-.actionBar {
-  text-align: center;
-  padding: 2rem;
-  background: rgba(16, 185, 129, 0.1);
-  border: 1px solid rgba(16, 185, 129, 0.3);
-  border-radius: var(--realism-radius);
-}
-
-.executeButton {
-  padding: 1rem 2.5rem;
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  border: none;
-  border-radius: 0.75rem;
-  color: #fff;
-  box-shadow:
-    var(--realism-bevel),
-    0 1px 2px rgba(0, 0, 0, 0.55);
-  font-size: 1.1rem;
-  font-weight: 600;
+.scopeActions button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 3cqw;
+  border: 0;
+  background: transparent;
+  color: #45adff;
+  font: inherit;
+  font-size: clamp(0.72rem, 3.2cqw, 0.92rem);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   cursor: pointer;
-  transition:
-    transform 0.2s,
-    box-shadow 0.2s;
-}
-.executeButton:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-.executeButton:active:not(:disabled) {
-  transform: translateY(1px);
-  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
 }
 
-.actionNote {
-  margin: 1rem 0 0;
-  font-size: 0.85rem;
-  color: var(--text-muted);
-}
-
-/* Wire Table */
-.wiresSection {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-.wireTable {
-  min-width: 560px; /* keep columns readable; the section scrolls, not the page */
-}
-
-.wireTable {
-  width: 100%;
-  border-collapse: collapse;
-  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
-  border-radius: var(--realism-radius);
-  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
-  overflow: hidden;
-}
-
-.wireTable th,
-.wireTable td {
-  padding: 1rem;
-  text-align: left;
-}
-
-.wireTable th {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-muted);
-  font-size: 0.75rem;
-  text-transform: uppercase;
-}
-
-.wireTable td {
-  color: var(--realism-chrome);
-  border-top: 1px solid var(--realism-gunmetal);
-}
-
-.clubCell {
-  font-weight: 600;
-  color: var(--realism-chrome-hot) !important;
-}
-
-.positive {
-  color: var(--realism-green) !important;
-}
-
-.negative {
-  color: #ef4444 !important;
-}
-
-.muted {
-  color: var(--text-muted) !important;
-}
-
-.wireAmount {
-  font-weight: 600;
-}
-
-.wireDirection {
-  display: block;
-  font-size: 0.7rem;
-  font-weight: 400;
-  color: var(--text-muted);
-  margin-top: 0.25rem;
-}
-
-.badge {
-  padding: 0.25rem 0.6rem;
-  border-radius: 0.5rem;
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-}
-
-.badge.pending {
-  background: rgba(245, 158, 11, 0.2);
-  color: #f59e0b;
-}
-
-.badge.approved {
-  background: rgba(59, 130, 246, 0.2);
-  color: #3b82f6;
-}
-
-.badge.paid,
-.badge.processed {
-  background: rgba(16, 185, 129, 0.2);
-  color: #10b981;
-}
-
-/* Agent Payouts */
-.payoutsSection {
-  padding: 0;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-.payoutTable {
-  min-width: 560px; /* keep columns readable; the section scrolls, not the page */
-}
-
-.payoutSummary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1rem 1.5rem;
-  background: rgba(16, 185, 129, 0.1);
-  border: 1px solid rgba(16, 185, 129, 0.3);
-  border-radius: var(--realism-radius);
-  margin-bottom: 1.5rem;
-}
-
-.payoutSummary span {
-  color: var(--text-muted);
-}
-
-.payoutSummary strong {
-  font-size: 1.25rem;
-}
-
-.payoutTable {
-  width: 100%;
-  border-collapse: collapse;
-  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
-  border-radius: var(--realism-radius);
-  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
-  overflow: hidden;
-}
-
-.payoutTable th,
-.payoutTable td {
-  padding: 1rem;
-  text-align: left;
-}
-
-.payoutTable th {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-muted);
-  font-size: 0.75rem;
-  text-transform: uppercase;
-}
-
-.payoutTable td {
-  color: var(--realism-chrome);
-  border-top: 1px solid var(--realism-gunmetal);
-}
-
-.agentCell {
-  font-weight: 600;
-  color: var(--realism-chrome-hot) !important;
-}
-
-.netAmount {
-  font-weight: 600;
-}
-
-.payoutNote {
-  margin-top: 1.5rem;
-  padding: 1rem;
-  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
-  border: 1px solid var(--realism-gunmetal);
-  border-radius: var(--realism-radius);
-  box-shadow: var(--realism-bevel), var(--realism-cavity);
-}
-
-.payoutNote p {
-  margin: 0;
-  font-size: 0.85rem;
-  color: var(--text-muted);
-}
-
-/* History Section */
-.historySection {
-  padding: 0;
-}
-
-.periodList {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 1rem;
-}
-
-.periodCard {
-  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
-  border: 1px solid var(--realism-gunmetal);
-  border-radius: var(--realism-radius);
-  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
-  padding: 1.25rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.periodCard:active {
-  transform: translateY(1px);
-  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
-}
-
-.periodCard.selected {
-  border-color: var(--accent);
-  background: rgba(var(--accent-rgb), 0.1);
-}
-
-.periodHeader {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.5rem;
-}
-
-.periodNumber {
-  font-weight: 600;
-  color: var(--realism-chrome-hot);
-}
-
-.periodDates {
-  margin: 0 0 0.5rem;
-  font-size: 0.85rem;
-  color: var(--text-muted);
-}
-
-.periodStats {
-  display: flex;
-  gap: 0.5rem;
-  font-size: 0.8rem;
-  color: var(--text-muted);
-}
-
-/* Responsive */
-@media (max-width: 900px) {
-  .metricsGrid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .settlementSummary {
-    flex-wrap: wrap;
-  }
-}
-
-@media (max-width: 768px) {
-  .page {
-    padding: 12px;
-    padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
-  }
-
-  .header h1 {
-    font-size: 1.15rem;
-  }
-
-  .settlementSummary {
-    padding: 1rem;
-    gap: 1rem;
-  }
-
-  .wireTable th,
-  .wireTable td,
-  .payoutTable th,
-  .payoutTable td {
-    padding: 0.6rem;
-  }
-}
-
-@media (max-width: 600px) {
-  .header {
-    flex-wrap: wrap;
-  }
-
-  .metricsGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .tabNav {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-
-  .tabNav::-webkit-scrollbar {
-    display: none;
-  }
-}
-/* ═══════ PREMIUM ANIMATIONS ═══════ */
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-.hidden {
-  opacity: 0;
-  transform: translateY(8px);
-}
-.fadeInUp {
-  animation: fadeInUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-}
-
-/* Referenced by the page since it was written, never defined, so it shipped
-   as className={undefined}: "No settlement periods found" rendered as bare
-   unstyled text against the page background. Matches .metricCard's surface so
-   it reads as a deliberate notice rather than a rendering failure. */
-.error {
-  max-width: 32rem;
-  margin: 3rem auto;
-  padding: 1.5rem;
-  text-align: center;
-  font-size: 0.95rem;
-  color: var(--text-muted);
-  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
-  border: 1px solid var(--realism-gunmetal);
-  border-radius: var(--realism-radius);
-  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-}
-
-/* Motion collapses under the OS setting, meaning never does (CLAUDE.md 10.6).
-   Listed selector by selector rather than through a descendant wildcard, so
-   this block can only reach what this sheet owns and never an animation another
-   stylesheet is responsible for. fadeInUp still runs and still fills forwards,
-   so the content it reveals is on screen; it simply arrives without the travel.
-   Every border, bevel and colour above survives untouched. */
-@media (prefers-reduced-motion: reduce) {
-  .backButton,
-  .metricCard,
-  .tabButton,
-  .executeButton,
-  .periodCard {
-    transition: none;
-  }
-
-  .executeButton:active:not(:disabled),
-  .periodCard:active {
-    transform: none;
-  }
-
-  .fadeInUp {
-    animation-duration: 0.01ms;
-    animation-iteration-count: 1;
-  }
+.scopeActions button:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: 2px;
 }

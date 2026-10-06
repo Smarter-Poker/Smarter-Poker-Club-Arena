@@ -11,6 +11,7 @@
 import { lazy } from 'react';
 import PanelBoundary from '../../components/stats/PanelBoundary';
 import type { FullStats } from './types';
+import type { StatsClubId, StatsScope } from '../../services/statsScope';
 
 const TrophyRoom = lazy(() => import('../../components/stats/TrophyRoom'));
 
@@ -19,6 +20,9 @@ export interface TrophiesTabProps {
   allTimeStats: FullStats | null;
   allTimeError: boolean;
   setAllTimeReload: (fn: (n: number) => number) => void;
+  userId?: string;
+  scope: StatsScope;
+  clubId?: StatsClubId;
 }
 
 export default function TrophiesTab({
@@ -26,6 +30,9 @@ export default function TrophiesTab({
   allTimeStats,
   allTimeError,
   setAllTimeReload,
+  userId,
+  scope,
+  clubId = null,
 }: TrophiesTabProps) {
   return (
     <div>
@@ -38,6 +45,9 @@ export default function TrophiesTab({
             overall={allTimeStats.overall}
             tournaments={allTimeStats.tournaments}
             lifetimeHands={allTimeStats.lifetime.hands}
+            userId={userId}
+            scope={scope}
+            clubId={clubId}
           />
         ) : allTimeError ? (
           <div className="hand-empty" role="alert">

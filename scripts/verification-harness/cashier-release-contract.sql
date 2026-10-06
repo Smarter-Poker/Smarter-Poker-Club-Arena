@@ -15,6 +15,11 @@ DECLARE
   v_request_source text;
   v_telemetry_source text;
   v_telemetry_oid oid;
+  v_private_contract jsonb;
+  v_actual_owner text;
+  v_security_definer boolean;
+  v_search_path_pinned boolean;
+  v_columns text[];
 BEGIN
   SELECT string_agg(required.version, ', ' ORDER BY required.version)
   INTO v_missing
@@ -25,7 +30,9 @@ BEGIN
       ('20260831235991'),
       ('20260831235992'),
       ('20260906093024'),
-      ('20260923150831')
+      ('20260923150831'),
+      ('20261004124327'),
+      ('20261006022835')
   ) AS required(version)
   WHERE NOT EXISTS (
     SELECT 1
@@ -35,19 +42,35 @@ BEGIN
   IF v_missing IS NOT NULL THEN
     RAISE EXCEPTION 'cashier migration versions missing: %', v_missing;
   END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM supabase_migrations.schema_migrations
+     WHERE version = '20261004124327'
+       AND name = 'cashier_authority_and_retry_keys_are_exact'
+  ) THEN
+    RAISE EXCEPTION 'cashier authority migration history name drift';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM supabase_migrations.schema_migrations
+     WHERE version = '20261006022835'
+       AND name = 'a_chip_request_tells_its_approver'
+  ) THEN
+    RAISE EXCEPTION 'cashier request-notification migration history name drift';
+  END IF;
 
   v_contract := jsonb_build_array(
     jsonb_build_object(
       'signature', 'public.fn_agent_wallet_claim_back(uuid,uuid,numeric,text,uuid)',
-      'hash', '31d05a227849bda2a1195594c57b90eb'
+      'hash', '85976e86092390fb1950b8ed31c36c0d'
     ),
     jsonb_build_object(
       'signature', 'public.fn_agent_wallet_send(uuid,uuid,numeric,text,text,uuid)',
-      -- Protected weekly accounting activation adds the existing agreement
-      -- mutex before delegate/row locks. Authentication, retry-key validation
-      -- and the money delegate are unchanged. Exact source:
-      -- supabase/accounting/credit-reduction-v1/lock-order-successor.sql.
-      'hash', 'f94e896a5864cbde9e5aa4fb2f20bcc4'
+      -- The launch hardening wrapper claims the global exact-intent lock before
+      -- entering the retained agreement, hierarchy and money-row lock order.
+      'hash', 'c6c14eb18feb9a645a7aa2ffad3cf6f1'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_request_chips(uuid,numeric,text,uuid)',
+      'hash', '1ec88991eae29ca25812490c742ae906'
     ),
     jsonb_build_object(
       'signature', 'public.fn_cashier_batch_transfer(uuid,text,jsonb,uuid)',
@@ -81,6 +104,51 @@ BEGIN
       'signature', 'public.fn_issue_tournament_ticket(uuid,uuid,numeric,text,text)',
       'hash', 'a8a8a18f4ee84e0b2e147ebdc380e5d1'
     ),
+    -- Active Cashier authority and globally exact retry keys.
+    jsonb_build_object(
+      'signature', 'public.fn_club_bank_role(uuid,uuid)',
+      'hash', '36d48c9e935b77e4410075a482194dab'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_club_is_in_downline(uuid,uuid,uuid)',
+      'hash', '038be1f54953d43ce7dc02be6fc3015c'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_club_cashier_members(uuid)',
+      'hash', '052a7ade475196368af0e465417f23eb'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_club_trade_ledger(uuid,integer,integer)',
+      -- Pin the full pg_get_functiondef fingerprint. The first launch repair
+      -- accidentally copied md5(prosrc) from the native source-binding row;
+      -- the post-deploy canary intentionally compares the third field, the
+      -- complete callable definition including result shape and posture.
+      'hash', 'ea5a5a57ec31f396958246def887e5e6'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_club_bank_send(uuid,uuid,numeric,text,text,uuid)',
+      'hash', 'd858bb9dbc4c2657c940c99f0c03b015'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_club_bank_claim_back(uuid,uuid,numeric,text,text,uuid)',
+      'hash', 'a5849400f773e9ea87713e028bf9da1f'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_club_bank_reverse(uuid,text,uuid)',
+      'hash', '57316a8063bd10da0c74dc3cbba4a5c4'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_admin_remove_player_chips(uuid,uuid,numeric,text,uuid)',
+      'hash', 'cbbd3827fc223013334d6e3aea86262b'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_promo_wallet_send(uuid,uuid,numeric,text,text,uuid)',
+      'hash', '3ca226aa6fa735dd123c68ceaa98dda3'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_club_promo_wallet_send(uuid,uuid,numeric,text,text,uuid)',
+      'hash', 'b616cd82da2a682fcdf8b8b366872eda'
+    ),
     -- Phase 5 cross-wallet statement doors, recorded version 20260923150831
     -- (file 20260923131325_cashier_statements_read_every_wallet_in_one_keyset).
     -- The private row query fn_cashier_statement_rows (md5
@@ -88,7 +156,7 @@ BEGIN
     -- browser EXECUTE, which that owner-only helper must never have.
     jsonb_build_object(
       'signature', 'public.fn_cashier_statement_scope(uuid)',
-      'hash', '5c3180605b76db07957f261b39914f8d'
+      'hash', 'c8137ef74e0e7ccfb05b94697b3fb122'
     ),
     jsonb_build_object(
       'signature', 'public.fn_cashier_statement_page(uuid,timestamptz,timestamptz,jsonb,jsonb,integer)',
@@ -143,6 +211,169 @@ BEGIN
       RAISE EXCEPTION 'cashier function ACL drift: %', v_item ->> 'signature';
     END IF;
   END LOOP;
+
+  -- Private helpers are source-pinned separately because they must not satisfy
+  -- the browser EXECUTE contract above. Only the two pure read helpers remain
+  -- callable by service_role; every mutating/actor primitive is owner-only.
+  v_private_contract := jsonb_build_array(
+    jsonb_build_object('signature', 'public.fn_cashier_member_is_active(uuid,uuid)',
+      'hash', 'b8fa4b50580e379dadc17afca61cdfe8', 'service_execute', true),
+    jsonb_build_object('signature', 'public.fn_club_active_cashier_edges(uuid)',
+      'hash', '7811cf9a95d7bc76037158c1285d4069', 'service_execute', true),
+    jsonb_build_object('signature', 'public.fn_cashier_assert_active_actor(uuid)',
+      'hash', 'fa89e518a9b123a7f3108a664f3a18dc', 'service_execute', false),
+    jsonb_build_object('signature', 'public.fn_cashier_agent_status_mutex()',
+      'hash', '5dee0639a212697d55abd89d9222ca9c', 'service_execute', false),
+    jsonb_build_object('signature', 'public.fn_cashier_balance_actor_guard()',
+      'hash', 'c40945eaa2dc22f9c12cf41a41583982', 'service_execute', false),
+    jsonb_build_object('signature', 'public.fn_cashier_operation_mutex_guard()',
+      'hash', '57750a582bad567907f62a2460cfc8c1', 'service_execute', false),
+    jsonb_build_object('signature', 'public.fn_cashier_operation_intent_guard()',
+      'hash', '40132499b244772fe6820efb3217fccd', 'service_execute', false),
+    jsonb_build_object('signature', 'public.fn_cashier_exact_intent_begin(text,uuid,uuid,jsonb)',
+      'hash', '3ec6fc367b3dae5c4bf3978d0175ef22', 'service_execute', false),
+    jsonb_build_object('signature', 'public.fn_cashier_exact_intent_finish(uuid,jsonb)',
+      'hash', 'cc05789c598b9b889a04f726b9b1e2ea', 'service_execute', false),
+    jsonb_build_object('signature', 'public.fn_cashier_statement_downline(uuid,uuid)',
+      'hash', 'bf72f0b13f26bf93b6a12aae579aa7d3', 'service_execute', false)
+  );
+  FOR v_item IN SELECT value FROM jsonb_array_elements(v_private_contract)
+  LOOP
+    v_oid := to_regprocedure(v_item ->> 'signature');
+    IF v_oid IS NULL THEN
+      RAISE EXCEPTION 'private cashier function missing: %', v_item ->> 'signature';
+    END IF;
+    SELECT md5(prosrc) INTO v_actual_hash FROM pg_proc WHERE oid = v_oid;
+    IF v_actual_hash <> v_item ->> 'hash' THEN
+      RAISE EXCEPTION 'private cashier function drift: % expected %, got %',
+        v_item ->> 'signature', v_item ->> 'hash', v_actual_hash;
+    END IF;
+    IF has_function_privilege('anon', v_oid, 'EXECUTE')
+       OR has_function_privilege('authenticated', v_oid, 'EXECUTE')
+       OR has_function_privilege('service_role', v_oid, 'EXECUTE')
+          <> (v_item ->> 'service_execute')::boolean THEN
+      RAISE EXCEPTION 'private cashier function ACL drift: %', v_item ->> 'signature';
+    END IF;
+  END LOOP;
+
+  -- Renaming keeps the audited production bodies intact. Certify each private
+  -- core by exact source, owner, definer/search-path posture and denied caller
+  -- ACLs so a same-name replacement cannot hide behind the public wrapper.
+  v_private_contract := jsonb_build_array(
+    jsonb_build_object('signature', 'public.fn_club_bank_send_core_20261004(uuid,uuid,numeric,text,text,uuid)',
+      'hash', 'fd7ee70c034f97894cedc51e1b413182'),
+    jsonb_build_object('signature', 'public.fn_club_bank_claim_core_20261004(uuid,uuid,numeric,text,text,uuid)',
+      'hash', 'e9e3e8b0fef662612d4cedb68fee6c6c'),
+    jsonb_build_object('signature', 'public.fn_club_bank_reverse_core_20261004(uuid,text,uuid)',
+      'hash', '371e4f56185eb90bbf43b6967d61ea55'),
+    jsonb_build_object('signature', 'public.fn_admin_remove_chips_core_20261004(uuid,uuid,numeric,text,uuid)',
+      'hash', 'ac293c1623da0db62d74f5e888c1011a'),
+    jsonb_build_object('signature', 'public.fn_promo_wallet_send_core_20261004(uuid,uuid,numeric,text,text,uuid)',
+      'hash', 'b101fc1f3280218d04d7addd155ed4ea'),
+    jsonb_build_object('signature', 'public.fn_club_promo_send_core_20261004(uuid,uuid,numeric,text,text,uuid)',
+      'hash', 'fe490fcc75f305338160eca2a7a88b25'),
+    jsonb_build_object('signature', 'public.fn_agent_wallet_send_core_20261004(uuid,uuid,numeric,text,text,uuid)',
+      'hash', '7a357ba95a8ca4eb13f00f798233d8d4'),
+    jsonb_build_object('signature', 'public.fn_agent_wallet_claim_back_core_20261004(uuid,uuid,numeric,text,uuid)',
+      'hash', 'cf7af5fd327c68c935a58e864537cc7a'),
+    jsonb_build_object('signature', 'public.fn_request_chips_core_20261004(uuid,numeric,text,uuid)',
+      -- 20261006022835 injects the approver notification into the retained
+      -- private core. Pin that installed post-image, not its pre-notification
+      -- body from 20260906093024.
+      'hash', '1dce6c06306523ba83060f1546611648')
+  );
+  FOR v_item IN SELECT value FROM jsonb_array_elements(v_private_contract)
+  LOOP
+    v_oid := to_regprocedure(v_item ->> 'signature');
+    IF v_oid IS NULL THEN
+      RAISE EXCEPTION 'private cashier core missing: %', v_item ->> 'signature';
+    END IF;
+    SELECT md5(prosrc), pg_get_userbyid(proowner), prosecdef,
+           coalesce(proconfig @> ARRAY['search_path=public, pg_temp'], false)
+      INTO v_actual_hash, v_actual_owner, v_security_definer, v_search_path_pinned
+      FROM pg_proc WHERE oid = v_oid;
+    IF v_actual_hash IS DISTINCT FROM v_item ->> 'hash'
+       OR v_actual_owner IS DISTINCT FROM 'postgres'
+       OR v_security_definer IS DISTINCT FROM true
+       OR v_search_path_pinned IS DISTINCT FROM true
+       OR has_function_privilege('anon', v_oid, 'EXECUTE')
+       OR has_function_privilege('authenticated', v_oid, 'EXECUTE')
+       OR has_function_privilege('service_role', v_oid, 'EXECUTE') THEN
+      RAISE EXCEPTION
+        'private cashier core contract drift: % hash=% owner=% definer=% pinned=%',
+        v_item ->> 'signature', v_actual_hash, v_actual_owner,
+        v_security_definer, v_search_path_pinned;
+    END IF;
+  END LOOP;
+
+  IF to_regclass('public.cashier_rpc_operation_intents') IS NULL
+     OR NOT (SELECT relrowsecurity FROM pg_class
+              WHERE oid = 'public.cashier_rpc_operation_intents'::regclass)
+     OR has_table_privilege('anon', 'public.cashier_rpc_operation_intents', 'SELECT')
+     OR has_table_privilege('authenticated', 'public.cashier_rpc_operation_intents', 'SELECT')
+     OR has_table_privilege('authenticated', 'public.cashier_rpc_operation_intents', 'INSERT')
+     OR has_table_privilege('authenticated', 'public.cashier_rpc_operation_intents', 'UPDATE')
+     OR has_table_privilege('authenticated', 'public.cashier_rpc_operation_intents', 'DELETE')
+     OR NOT has_table_privilege('service_role', 'public.cashier_rpc_operation_intents', 'SELECT')
+     OR NOT has_table_privilege('service_role', 'public.cashier_rpc_operation_intents', 'INSERT')
+     OR NOT has_table_privilege('service_role', 'public.cashier_rpc_operation_intents', 'UPDATE')
+     OR NOT has_table_privilege('service_role', 'public.cashier_rpc_operation_intents', 'DELETE') THEN
+    RAISE EXCEPTION 'cashier exact-intent table RLS/ACL drift';
+  END IF;
+  SELECT array_agg(attname::text ORDER BY attnum) INTO v_columns
+    FROM pg_attribute
+   WHERE attrelid = 'public.cashier_rpc_operation_intents'::regclass
+     AND attnum > 0 AND NOT attisdropped;
+  IF v_columns IS DISTINCT FROM ARRAY[
+    'operation_id','actor_user_id','action','club_id','operation_intent',
+    'intent_fingerprint','receipt','created_at','completed_at'
+  ]::text[] THEN
+    RAISE EXCEPTION 'cashier exact-intent table columns drift: %', v_columns;
+  END IF;
+
+  IF (SELECT count(*) FROM pg_trigger t
+      JOIN pg_class c ON c.oid = t.tgrelid
+      JOIN pg_proc p ON p.oid = t.tgfoid
+      WHERE NOT t.tgisinternal AND t.tgenabled <> 'D'
+        AND p.proname = 'fn_cashier_balance_actor_guard'
+        AND (c.relname, t.tgname) IN (
+          ('clubs', 'cashier_club_balance_actor_guard'),
+          ('club_members', 'cashier_member_balance_actor_guard'),
+          ('agents', 'cashier_agent_balance_actor_guard')
+        )) <> 3 THEN
+    RAISE EXCEPTION 'cashier active-actor balance trigger drift';
+  END IF;
+
+  IF (SELECT count(*) FROM pg_trigger t
+      JOIN pg_class c ON c.oid = t.tgrelid
+      JOIN pg_proc p ON p.oid = t.tgfoid
+      WHERE NOT t.tgisinternal AND t.tgenabled <> 'D'
+        AND (
+          (p.proname = 'fn_cashier_operation_mutex_guard' AND
+            (c.relname, t.tgname) IN (
+              ('clubs', 'cashier_club_operation_mutex'),
+              ('club_members', 'cashier_member_operation_mutex'),
+              ('agents', 'cashier_agent_operation_mutex')
+            ))
+          OR (p.proname = 'fn_cashier_agent_status_mutex' AND
+            (c.relname, t.tgname) IN (
+              ('agents', 'cashier_agent_status_mutex_update'),
+              ('agents', 'cashier_agent_status_mutex_delete')
+            ))
+          OR (p.proname = 'fn_cashier_operation_intent_guard'
+              AND c.relname = 'chip_transactions'
+              AND t.tgname = 'cashier_operation_intent_guard')
+        )) <> 6 THEN
+    RAISE EXCEPTION 'cashier authority/retry serialization trigger drift';
+  END IF;
+
+  IF (SELECT count(*) FROM public.ca_declared_money_triggers d
+      WHERE (d.table_name, d.trigger_name) IN (
+        ('club_members', 'cashier_member_balance_actor_guard'),
+        ('club_members', 'cashier_member_operation_mutex')
+      )) <> 2 THEN
+    RAISE EXCEPTION 'cashier club_members money-trigger declarations missing';
+  END IF;
 
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies

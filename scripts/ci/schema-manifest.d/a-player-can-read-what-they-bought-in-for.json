@@ -1,0 +1,6 @@
+{
+  "_owner": "launch/session-result-counts-what-was-bought-in. Migration 20261006062341_a_player_can_read_what_they_bought_in_for declares the caller-bound session baseline read; installed through apply-merged-migration after merge.",
+  "tables": [],
+  "functions": ["fn_my_cash_session_baseline"],
+  "columns": {}
+}

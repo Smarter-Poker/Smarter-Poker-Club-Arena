@@ -398,6 +398,12 @@ it('an attempted hand keeps its original despite the restart event', async () =>
   (f.permit as any).phase = 'attempted';
   f.manager.scheduleManagedTableEngineRecovery = vi.fn();
   const replace = vi.spyOn(f.server, 'replaceTableEngine');
+  // 2026-10-06: the original is still never replaced by its own generation,
+  // which cannot resolve the hand; the event is handed to a successor
+  // generation instead of asking the same refusal again for ever
+  // (anUnprovedHandIsHandedToASuccessorGeneration.law.test.ts).
+  const handOff = vi.fn();
+  (f.server as any).handTournamentToSuccessorGeneration = handOff;
   await f.manager.recoverManagedTableEngine(
     source,
     f.engine,
@@ -409,6 +415,8 @@ it('an attempted hand keeps its original despite the restart event', async () =>
   expect(f.engine.getF06RetainedPermit()?.phase).toBe('attempted');
   expect(replace).not.toHaveBeenCalled();
   expect(f.manager.tableEngines.get(source)).toBe(f.engine);
+  expect(handOff).toHaveBeenCalledTimes(1);
+  expect(f.manager.scheduleManagedTableEngineRecovery).not.toHaveBeenCalled();
 });
 
 it('actual scheduled Manager path retires the original unknown BEGIN under one reservation', async () => {

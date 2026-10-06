@@ -33,6 +33,7 @@ const ACTIVE_STATS_VIEWS = [
   'src/components/stats/PositionWinRates.tsx',
   'src/components/stats/SessionHistory.tsx',
   'src/components/stats/StatsCharts.tsx',
+  'src/components/stats/StatsPositionPiePlot.tsx',
   'src/components/stats/StatsShareCard.tsx',
   'src/components/stats/TrophyRoom.tsx',
 ];

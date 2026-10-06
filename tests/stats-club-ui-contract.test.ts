@@ -9,6 +9,7 @@ const read = (file: string) => fs.readFileSync(path.join(root, file), 'utf8');
 describe('Player Stats authorized club UI contract', () => {
   const page = read('src/pages/PlayerStatsPage.tsx');
   const model = read('src/pages/stats/playerStatsPageModel.tsx');
+  const analysis = read('src/pages/stats/AnalysisTab.tsx');
   const clubScopeConsole = read('src/pages/stats/ClubScopeConsole.tsx');
 
   it('uses a separate URL key and restores club, range, tab, and sort from URL changes', () => {
@@ -65,7 +66,8 @@ describe('Player Stats authorized club UI contract', () => {
     expect(page).toContain('StatsFactsService, statsScope, windowDays, selectedClubId');
     expect(page).toContain('clubId={selectedClubId}');
     expect(page).toContain("params.set('statsClub', selectedClubId)");
-    expect(page).toContain("selectedClubId ?? 'all_clubs'");
+    expect(page).toContain('exportContext={{');
+    expect(analysis).toContain("clubId ?? 'all_clubs'");
   });
 
   it('carries the selected club into the server-filtered Hand History receiver', () => {

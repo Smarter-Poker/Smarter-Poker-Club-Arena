@@ -422,14 +422,8 @@ describe('Notable Hands names its window (defect 6)', () => {
           rangeLabel="7 Days"
           printing={false}
           advancedInitialData={{} as never}
-          dailySeries={[]}
-          positionPie={[]}
-          profitChartSummary=""
-          dailyChartSummary=""
-          positionChartSummary=""
           sessionRows={[]}
-          exportSessionsCSV={() => {}}
-          exportOverviewCSV={() => {}}
+          exportContext={{} as never}
           handMode="biggest_won"
           setHandMode={() => {}}
           hands={[]}

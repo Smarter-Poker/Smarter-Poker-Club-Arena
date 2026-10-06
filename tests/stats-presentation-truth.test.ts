@@ -219,6 +219,7 @@ describe('Stats presentation truth', () => {
       'src/components/stats/BankrollTracker.tsx',
       'src/components/stats/SessionHistory.tsx',
       'src/components/stats/StatsCharts.tsx',
+      'src/components/stats/StatsPositionPiePlot.tsx',
       'src/components/stats/TrophyRoom.tsx',
       'src/components/stats/StatsShareCard.tsx',
       'src/components/stats/NemesisPanel.tsx',

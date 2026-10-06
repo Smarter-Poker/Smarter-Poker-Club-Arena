@@ -213,7 +213,8 @@ vi.mock('../../src/components/common/Toast', () => ({
 
 import PlayerStatsPage from '../../src/pages/PlayerStatsPage';
 import { clearStatsRangeMemo } from '../../src/lib/statsCache';
-import { isFullStatsPayload, normalizeHands } from '../../src/pages/stats/playerStatsPageModel';
+import { isFullStatsPayload } from '../../src/pages/stats/playerStatsPageModel';
+import { normalizeHands } from '../../src/pages/stats/notableHandsContract';
 
 beforeEach(() => {
   localStorage.clear();

@@ -11,7 +11,6 @@ import {
   num,
   str,
   type FullStats,
-  type HandRow,
   type OverallStats,
   type LifetimeStats,
   type TournamentSummary,
@@ -581,104 +580,6 @@ export const EMPTY_FULL: FullStats = {
   },
   recent_tournaments: [],
 };
-
-export interface NotableHandsRequest {
-  targetUserId: string;
-  clubId: string | null;
-  asset: 'chips' | 'diamonds';
-  visibility: 'owner';
-}
-
-const POSTGRES_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-const exactMoney = (value: unknown, nonnegative = false): value is number => {
-  if (!finiteNumber(value) || (nonnegative && value < 0)) return false;
-  const cents = value * 100;
-  return Number.isSafeInteger(Math.round(cents)) && Math.abs(cents - Math.round(cents)) <= 1e-6;
-};
-
-const cardArrayOrNull = (value: unknown): value is string[] | null =>
-  value === null ||
-  (Array.isArray(value) &&
-    value.every((card) => typeof card === 'string' && card.trim().length > 0));
-
-/**
- * Parse the owner-only notable-hands v2 envelope without inventing evidence.
- *
- * The former normalizer accepted a bare array, non-objects and missing fields,
- * then manufactured ids, timestamps, variants and zero-valued money. Analysis
- * subsequently rendered those defaults as real hands and linked the invented id
- * to Hand History. A successful transport is now usable only when its v2 scope
- * exactly matches the request and every row satisfies the RPC's JSON contract.
- */
-export function normalizeHands(data: unknown, request: NotableHandsRequest): HandRow[] | null {
-  const payload = record(data);
-  const scope = record(payload?.scope);
-  const rows = payload?.hands;
-  if (
-    !payload ||
-    payload.contract_version !== 2 ||
-    !scope ||
-    scope.target_user_id !== request.targetUserId ||
-    scope.club_id !== request.clubId ||
-    scope.asset !== request.asset ||
-    scope.visibility !== request.visibility ||
-    !validDateTime(payload.generated_at) ||
-    !Array.isArray(rows) ||
-    rows.length > 100
-  ) {
-    return null;
-  }
-
-  const normalized: HandRow[] = [];
-  const ids = new Set<string>();
-  for (const value of rows) {
-    const hand = record(value);
-    if (
-      !hand ||
-      typeof hand.id !== 'string' ||
-      !POSTGRES_UUID.test(hand.id) ||
-      ids.has(hand.id) ||
-      !validDateTime(hand.played_at) ||
-      typeof hand.variant !== 'string' ||
-      hand.variant.trim().length === 0 ||
-      !exactMoney(hand.big_blind, true) ||
-      hand.big_blind <= 0 ||
-      typeof hand.is_tournament !== 'boolean' ||
-      !(
-        hand.position === null ||
-        (typeof hand.position === 'string' && hand.position.trim().length > 0)
-      ) ||
-      !exactMoney(hand.pot_size, true) ||
-      !exactMoney(hand.won, true) ||
-      !exactMoney(hand.profit) ||
-      typeof hand.is_winner !== 'boolean' ||
-      !nonnegativeInteger(hand.players) ||
-      hand.players < 1 ||
-      !cardArrayOrNull(hand.board) ||
-      !cardArrayOrNull(hand.hole_cards)
-    ) {
-      return null;
-    }
-    ids.add(hand.id);
-    normalized.push({
-      id: hand.id,
-      played_at: hand.played_at as string,
-      variant: hand.variant,
-      big_blind: hand.big_blind,
-      is_tournament: hand.is_tournament,
-      position: hand.position as string | null,
-      pot_size: hand.pot_size,
-      won: hand.won,
-      profit: hand.profit,
-      is_winner: hand.is_winner,
-      players: hand.players,
-      board: hand.board as string[] | null,
-      hole_cards: hand.hole_cards as string[] | null,
-    });
-  }
-  return normalized;
-}
 
 export function normalizeFull(data: any): FullStats {
   const o = data?.overall ?? {};

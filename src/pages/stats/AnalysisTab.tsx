@@ -8,15 +8,19 @@
  * conditions that gate the tab (`showTab`, `hasData`, `isOwnProfile`) stay in
  * the page, where `printing` can override them for the dossier.
  */
-import { Suspense, lazy, type ReactNode } from 'react';
+import { Suspense, lazy, useMemo, type ReactNode } from 'react';
 import PanelBoundary from '../../components/stats/PanelBoundary';
 import LeakPanel from '../../components/stats/LeakPanel';
 import type { AdvancedStatsInput } from '../../components/stats/AdvancedStatsSummary';
 import { formatCard, handDate } from './format';
 import StatsEvidenceLink from '../../components/stats/StatsEvidenceLink';
 import { buildStatsHandEvidencePath } from '../../lib/statsEvidenceNavigation';
+import { localDateFromYmd } from '../../lib/localTime';
 import { compactChips } from '../../utils/format';
+import { reportError } from '../../utils/errorReporter';
 import { enumToTitleCase } from '../../utils/titleCase';
+import type { StatsContractMetadata } from '../../services/statsContract';
+import type { StatsScope } from '../../services/statsScope';
 import {
   RANGES,
   type FullStats,
@@ -25,19 +29,13 @@ import {
   type HandRow,
   type OverallStats,
   type SessionRow,
+  type TournamentSummary,
 } from './types';
 
 const StatsCharts = lazy(() => import('../../components/stats/StatsCharts'));
 const BankrollTracker = lazy(() => import('../../components/stats/BankrollTracker'));
 const SessionHistory = lazy(() => import('../../components/stats/SessionHistory'));
 const AdvancedStatsSummary = lazy(() => import('../../components/stats/AdvancedStatsSummary'));
-
-export interface DailySeriesPoint {
-  date: string;
-  profit: number;
-  hands: number;
-  cumulative: number;
-}
 
 export interface AnalysisTabProps {
   overall: OverallStats;
@@ -48,16 +46,17 @@ export interface AnalysisTabProps {
   rangeLabel: string;
   printing: boolean;
   advancedInitialData: AdvancedStatsInput;
-  dailySeries: DailySeriesPoint[];
-  positionPie: { name: string; value: number }[];
-  profitChartSummary: string;
-  dailyChartSummary: string;
-  positionChartSummary: string;
   sessionRows: SessionRow[];
   sessionsAvailable: boolean;
   sessionsReason: string | null;
-  exportSessionsCSV: () => void;
-  exportOverviewCSV: () => void;
+  exportContext: {
+    clubName: string;
+    timezone: string;
+    asset: StatsScope;
+    contract: StatsContractMetadata;
+    tournaments: TournamentSummary;
+    privacyPresentationMode: boolean;
+  };
   handMode: HandMode;
   setHandMode: (mode: HandMode) => void;
   hands: HandRow[] | null;
@@ -78,16 +77,10 @@ export default function AnalysisTab({
   rangeLabel,
   printing,
   advancedInitialData,
-  dailySeries,
-  positionPie,
-  profitChartSummary,
-  dailyChartSummary,
-  positionChartSummary,
   sessionRows,
   sessionsAvailable,
   sessionsReason,
-  exportSessionsCSV,
-  exportOverviewCSV,
+  exportContext,
   handMode,
   setHandMode,
   hands,
@@ -98,6 +91,138 @@ export default function AnalysisTab({
   clubId = null,
   exactSessionPanel,
 }: AnalysisTabProps) {
+  const dailySeries = useMemo(() => {
+    let cumulative = 0;
+    return (full?.daily ?? []).map((day) => {
+      cumulative += day.profit || 0;
+      return {
+        // The server cuts this local calendar day in the player's timezone.
+        date: localDateFromYmd(day.date).toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+        }),
+        profit: day.profit || 0,
+        hands: day.hands || 0,
+        cumulative: Math.round(cumulative * 100) / 100,
+      };
+    });
+  }, [full?.daily]);
+  const positionPie = useMemo(
+    () =>
+      (full?.positions ?? [])
+        .filter((position) => position.hands_won > 0)
+        .map((position) => ({ name: position.position, value: position.hands_won })),
+    [full?.positions]
+  );
+
+  /** Text alternatives stay with the Analysis-only charts they describe. */
+  const profitChartSummary = useMemo(() => {
+    if (dailySeries.length === 0) return 'No cash results in this range.';
+    const last = dailySeries[dailySeries.length - 1];
+    const best = dailySeries.reduce((a, b) => (b.profit > a.profit ? b : a));
+    const worst = dailySeries.reduce((a, b) => (b.profit < a.profit ? b : a));
+    return `Cumulative cash profit across ${dailySeries.length.toLocaleString()} days, ${dailySeries[0].date} to ${last.date}, ending at ${compactChips(last.cumulative)}. Best day ${best.date} at ${compactChips(best.profit)}. Worst day ${worst.date} at ${compactChips(worst.profit)}.`;
+  }, [dailySeries]);
+  const dailyChartSummary = useMemo(() => {
+    if (dailySeries.length === 0) return 'No daily results in this range.';
+    const up = dailySeries.filter((day) => day.profit > 0).length;
+    return `Daily cash result for ${dailySeries.length.toLocaleString()} days. ${up.toLocaleString()} winning days, ${(dailySeries.length - up).toLocaleString()} losing or break-even.`;
+  }, [dailySeries]);
+  const positionChartSummary = useMemo(() => {
+    if (positionPie.length === 0) return 'No positional data in this range.';
+    return `Hands won by position: ${positionPie
+      .map((position) => `${position.name} ${position.value.toLocaleString()}`)
+      .join(', ')}.`;
+  }, [positionPie]);
+
+  const exportMetadata = () => ({
+    clubId,
+    clubName: exportContext.clubName,
+    range: rangeLabel === 'All' ? 'All Time' : `Last ${rangeLabel}`,
+    timezone: exportContext.timezone,
+    asset: exportContext.asset,
+    unit: exportContext.asset,
+    coverage: JSON.stringify({
+      analysis_hand_cap: exportContext.contract.coverage.analysis_hand_cap,
+      analysis_hands_capped: exportContext.contract.coverage.analysis_hands_capped,
+      lifetime_index_complete: exportContext.contract.coverage.lifetime_index_complete,
+      rollup_covered_through: exportContext.contract.coverage.rollup_covered_through,
+      club_breakdown_starts_at: exportContext.contract.quality.club_breakdown_starts_at,
+    }),
+    source: exportContext.contract.quality.cash_money_source,
+    schemaVersion: exportContext.contract.contract_version,
+    generatedAt: exportContext.contract.generated_at,
+    privacyPresentationMode: exportContext.privacyPresentationMode,
+  });
+  const exportSessionsCSV = async () => {
+    try {
+      const { exportStatsSessions } = await import('./statsCsvExport');
+      exportStatsSessions(
+        sessionRows.map((session) => ({
+          date: new Date(session.date).toLocaleString(),
+          ended: session.ended ? new Date(session.ended).toLocaleString() : '',
+          duration_minutes: session.duration_minutes,
+          hands: session.hands_played,
+          buy_in: session.buy_in,
+          cash_out: session.cash_out,
+          profit: session.profit_loss,
+        })),
+        exportMetadata(),
+        `player_session_history_${clubId ?? 'all_clubs'}_${rangeKey}.csv`
+      );
+    } catch (error) {
+      reportError(error, 'PlayerStatsPage.exportSessionsCSV');
+    }
+  };
+  const exportOverviewCSV = async () => {
+    try {
+      const { exportStatsOverview } = await import('./statsCsvExport');
+      const rateFields = new Set([
+        'vpip',
+        'pfr',
+        'three_bet_percent',
+        'fold_to_three_bet',
+        'cbet_flop',
+        'wtsd',
+        'itm_percent',
+        'roi',
+      ]);
+      const availability = exportContext.contract.quality.metric_availability;
+      const tournaments = exportContext.tournaments;
+      exportStatsOverview(
+        {
+          ...overall,
+          three_bet_percent:
+            clubId && !availability.three_bet_percent ? 'Unavailable' : overall.three_bet_percent,
+          fold_to_three_bet:
+            clubId && !availability.fold_to_three_bet ? 'Unavailable' : overall.fold_to_three_bet,
+          cbet_flop: clubId && !availability.cbet_flop ? 'Unavailable' : overall.cbet_flop,
+          aggression_factor:
+            clubId && !availability.aggression_factor ? 'Unavailable' : overall.aggression_factor,
+          wtsd: clubId && !availability.wtsd ? 'Unavailable' : overall.wtsd,
+          hours_played: clubId && !availability.hours_played ? 'Unavailable' : overall.hours_played,
+          tournament_entries: tournaments.entries,
+          tournament_cashes: tournaments.cashes,
+          tournament_wins: tournaments.wins,
+          tournament_best_finish: tournaments.best_finish ?? '',
+          tournament_total_buyins: tournaments.total_buyins,
+          tournament_total_winnings: tournaments.total_winnings,
+          tournament_total_prizes: tournaments.total_prizes,
+          tournament_total_bounty_winnings: tournaments.total_bounty_winnings,
+          tournament_total_bounties: tournaments.total_bounties,
+          tournament_net_profit: tournaments.net_profit,
+          itm_percent: tournaments.itm_percent,
+          roi: tournaments.roi,
+        },
+        rateFields,
+        exportMetadata(),
+        `player_stats_overview_${clubId ?? 'all_clubs'}_${rangeKey}.csv`
+      );
+    } catch (error) {
+      reportError(error, 'PlayerStatsPage.exportOverviewCSV');
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       {exactSessionPanel}

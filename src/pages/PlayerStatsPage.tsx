@@ -40,7 +40,6 @@ import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { retryFetch } from '../utils/retryFetch';
-import { compactChips } from '../utils/format';
 import { useIsMounted } from '../hooks/useIsMounted';
 /**
  * ONE LAZY CHUNK PER TAB (Stats Page Programme phase 2, 2026-09-04).
@@ -67,7 +66,7 @@ import { ratioOrUnmeasured } from './stats/format';
 import { RANGES, num, str, type FullStats, type HandMode, type HandRow } from './stats/types';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useStatsPulse } from '../hooks/useStatsPulse';
-import { resolvedTimeZone, localDateFromYmd } from '../lib/localTime';
+import { resolvedTimeZone } from '../lib/localTime';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
 import './PlayerStatsPage.css';
 import { reportError } from '../utils/errorReporter';
@@ -85,11 +84,6 @@ import {
   normalizeStatsContractMetadata,
   statsContractMatchesRequest,
 } from '../services/statsContract';
-import {
-  exportStatsOverview,
-  exportStatsSessions,
-  type StatsExportMetadata,
-} from './stats/statsCsvExport';
 import { buildStatsIntelligenceBrief } from '../components/stats/statsIntelligenceBrief';
 import { capture } from '../lib/analytics';
 import {
@@ -108,7 +102,6 @@ import {
   getCachedFull,
   isFullStatsPayload,
   normalizeFull,
-  normalizeHands,
   normalizeDashboardLayout,
   setCachedFull,
   validClubSort,
@@ -311,6 +304,7 @@ export default function PlayerStatsPage() {
       import('./stats/TournamentsTab'),
       import('./stats/AnalysisTab'),
       import('../components/stats/StatsCharts'),
+      import('../components/stats/StatsPositionPiePlot'),
       import('../components/stats/EVLuckChart'),
       import('../components/stats/BankrollTracker'),
       import('../components/stats/PositionWinRates'),
@@ -940,52 +934,55 @@ export default function PlayerStatsPage() {
     let alive = true;
     setHandsLoading(true);
     setHandsError(false);
-    supabase
-      .rpc(statsRpcName('ca_player_hands_v2', selectedClubId), {
-        ...statsScopeArgs(statsScope, selectedClubId),
-        p_user: targetUserId,
-        p_mode: handMode,
-        p_limit: 10,
-      })
-      .then(
-        ({ data, error }: any) => {
-          if (!alive || !isMounted.current) return;
-          if (error) {
-            // An empty list and a failed read are different statements. This
-            // used to render both as "No Hands In This Range Yet." - the same
-            // lie about a player's history that this page was rebuilt to stop
-            // telling, reintroduced one section further down.
-            reportError(error, 'PlayerStatsPage.rpc_ca_player_hands_v2');
+    Promise.all([
+      supabase
+        .rpc(statsRpcName('ca_player_hands_v2', selectedClubId), {
+          ...statsScopeArgs(statsScope, selectedClubId),
+          p_user: targetUserId,
+          p_mode: handMode,
+          p_limit: 10,
+        })
+        .then((result: any) => result),
+      import('./stats/notableHandsContract'),
+    ]).then(
+      ([{ data, error }, { normalizeHands }]) => {
+        if (!alive || !isMounted.current) return;
+        if (error) {
+          // An empty list and a failed read are different statements. This
+          // used to render both as "No Hands In This Range Yet." - the same
+          // lie about a player's history that this page was rebuilt to stop
+          // telling, reintroduced one section further down.
+          reportError(error, 'PlayerStatsPage.rpc_ca_player_hands_v2');
+          setHandsError(true);
+          setHands([]);
+        } else {
+          const verifiedHands = normalizeHands(data, {
+            targetUserId,
+            clubId: selectedClubId,
+            asset: statsScope,
+            visibility: 'owner',
+          });
+          if (verifiedHands === null) {
+            reportError(
+              new Error('notable hands payload did not match its v2 request contract'),
+              'PlayerStatsPage.rpc_ca_player_hands_v2_shape'
+            );
             setHandsError(true);
             setHands([]);
           } else {
-            const verifiedHands = normalizeHands(data, {
-              targetUserId,
-              clubId: selectedClubId,
-              asset: statsScope,
-              visibility: 'owner',
-            });
-            if (verifiedHands === null) {
-              reportError(
-                new Error('notable hands payload did not match its v2 request contract'),
-                'PlayerStatsPage.rpc_ca_player_hands_v2_shape'
-              );
-              setHandsError(true);
-              setHands([]);
-            } else {
-              setHands(verifiedHands);
-            }
+            setHands(verifiedHands);
           }
-          setHandsLoading(false);
-        },
-        (err: unknown) => {
-          if (!alive || !isMounted.current) return;
-          reportError(err, 'PlayerStatsPage.rpc_ca_player_hands_v2');
-          setHandsError(true);
-          setHands([]);
-          setHandsLoading(false);
         }
-      );
+        setHandsLoading(false);
+      },
+      (err: unknown) => {
+        if (!alive || !isMounted.current) return;
+        reportError(err, 'PlayerStatsPage.rpc_ca_player_hands_v2');
+        setHandsError(true);
+        setHands([]);
+        setHandsLoading(false);
+      }
+    );
     return () => {
       alive = false;
     };
@@ -1340,51 +1337,6 @@ export default function PlayerStatsPage() {
       ),
     [overall]
   );
-  // Chart series with cumulative line
-  const dailySeries = useMemo(() => {
-    let cumulative = 0;
-    return (full?.daily || []).map((d) => {
-      cumulative += d.profit || 0;
-      return {
-        // 'YYYY-MM-DD' is a LOCAL day the server cut in the player's zone;
-        // new Date('YYYY-MM-DD') would read it as UTC midnight and label a
-        // Chicago player's Sep 3 as Sep 2.
-        date: localDateFromYmd(d.date).toLocaleDateString('en-US', {
-          month: 'short',
-          day: 'numeric',
-        }),
-        profit: d.profit || 0,
-        hands: d.hands || 0,
-        cumulative: Math.round(cumulative * 100) / 100,
-      };
-    });
-  }, [full]);
-  const positionPie = useMemo(
-    () =>
-      (full?.positions || [])
-        .filter((p) => p.hands_won > 0)
-        .map((p) => ({ name: p.position, value: p.hands_won })),
-    [full]
-  );
-  /** Text alternatives for the three charts, from the same memos they plot. */
-  const profitChartSummary = useMemo(() => {
-    if (dailySeries.length === 0) return 'No cash results in this range.';
-    const last = dailySeries[dailySeries.length - 1];
-    const best = dailySeries.reduce((a, b) => (b.profit > a.profit ? b : a));
-    const worst = dailySeries.reduce((a, b) => (b.profit < a.profit ? b : a));
-    return `Cumulative cash profit across ${dailySeries.length.toLocaleString()} days, ${dailySeries[0].date} to ${last.date}, ending at ${compactChips(last.cumulative)}. Best day ${best.date} at ${compactChips(best.profit)}. Worst day ${worst.date} at ${compactChips(worst.profit)}.`;
-  }, [dailySeries]);
-  const dailyChartSummary = useMemo(() => {
-    if (dailySeries.length === 0) return 'No daily results in this range.';
-    const up = dailySeries.filter((d) => d.profit > 0).length;
-    return `Daily cash result for ${dailySeries.length.toLocaleString()} days. ${up.toLocaleString()} winning days, ${(dailySeries.length - up).toLocaleString()} losing or break-even.`;
-  }, [dailySeries]);
-  const positionChartSummary = useMemo(() => {
-    if (positionPie.length === 0) return 'No positional data in this range.';
-    return `Hands won by position: ${positionPie
-      .map((p) => `${p.name} ${p.value.toLocaleString()}`)
-      .join(', ')}.`;
-  }, [positionPie]);
   const intelligenceBrief = useMemo(
     () =>
       buildStatsIntelligenceBrief({
@@ -1452,116 +1404,6 @@ export default function PlayerStatsPage() {
         />
       </Suspense>
     ) : null;
-  const exportMetadata = (): StatsExportMetadata => ({
-    clubId: selectedClubId,
-    clubName: clubLabel,
-    range: rangeLabel === 'All' ? 'All Time' : `Last ${rangeLabel}`,
-    timezone: statsTimezone,
-    asset: statsScope,
-    unit: statsScope,
-    coverage: JSON.stringify({
-      analysis_hand_cap: statsContract.coverage.analysis_hand_cap,
-      analysis_hands_capped: statsContract.coverage.analysis_hands_capped,
-      lifetime_index_complete: statsContract.coverage.lifetime_index_complete,
-      rollup_covered_through: statsContract.coverage.rollup_covered_through,
-      club_breakdown_starts_at: statsContract.quality.club_breakdown_starts_at,
-    }),
-    source: statsContract.quality.cash_money_source,
-    schemaVersion: statsContract.contract_version,
-    generatedAt: statsContract.generated_at,
-    privacyPresentationMode,
-  });
-  const exportSessionsCSV = () => {
-    try {
-      // buy_in, cash_out and ended are on every SessionRow and were dropped.
-      // They are the figures anyone reconciling a bankroll in a spreadsheet
-      // actually needs - profit alone cannot tell you what you sat down with.
-      // Appended, not inserted, so an existing import template still works.
-      // The range is recorded too: a file exported under "7 Days" was
-      // indistinguishable from a lifetime export once it left the browser.
-      exportStatsSessions(
-        sessionRows.map((s) => ({
-          date: new Date(s.date).toLocaleString(),
-          ended: s.ended ? new Date(s.ended).toLocaleString() : '',
-          duration_minutes: s.duration_minutes,
-          hands: s.hands_played,
-          buy_in: s.buy_in,
-          cash_out: s.cash_out,
-          profit: s.profit_loss,
-        })),
-        exportMetadata(),
-        `player_session_history_${selectedClubId ?? 'all_clubs'}_${rangeKey}.csv`
-      );
-    } catch (e) {
-      reportError(e, 'PlayerStatsPage.exportSessionsCSV');
-    }
-  };
-  const exportOverviewCSV = () => {
-    try {
-      // The RPC returns rates as fractions. Export them the way the page shows
-      // them (percentages, with a unit column) so CSV and screen agree.
-      const RATE_FIELDS = new Set([
-        'vpip',
-        'pfr',
-        'three_bet_percent',
-        'fold_to_three_bet',
-        'cbet_flop',
-        'wtsd',
-        'itm_percent',
-        'roi',
-      ]);
-      const source: Record<string, unknown> = {
-        ...overall,
-        three_bet_percent:
-          selectedClubId && !statsContract.quality.metric_availability.three_bet_percent
-            ? 'Unavailable'
-            : overall.three_bet_percent,
-        fold_to_three_bet:
-          selectedClubId && !statsContract.quality.metric_availability.fold_to_three_bet
-            ? 'Unavailable'
-            : overall.fold_to_three_bet,
-        cbet_flop:
-          selectedClubId && !statsContract.quality.metric_availability.cbet_flop
-            ? 'Unavailable'
-            : overall.cbet_flop,
-        aggression_factor:
-          selectedClubId && !statsContract.quality.metric_availability.aggression_factor
-            ? 'Unavailable'
-            : overall.aggression_factor,
-        wtsd:
-          selectedClubId && !statsContract.quality.metric_availability.wtsd
-            ? 'Unavailable'
-            : overall.wtsd,
-        hours_played:
-          selectedClubId && !statsContract.quality.metric_availability.hours_played
-            ? 'Unavailable'
-            : overall.hours_played,
-        tournament_entries: tourn.entries,
-        tournament_cashes: tourn.cashes,
-        tournament_wins: tourn.wins,
-        tournament_best_finish: tourn.best_finish ?? '',
-        tournament_total_buyins: tourn.total_buyins,
-        tournament_total_winnings: tourn.total_winnings,
-        /* Section 37: the export carries the halves as well as the sum, so a
-           spreadsheet can separate placement money from bounty money without
-           re-deriving one from the other. */
-        tournament_total_prizes: tourn.total_prizes,
-        tournament_total_bounty_winnings: tourn.total_bounty_winnings,
-        tournament_total_bounties: tourn.total_bounties,
-        tournament_net_profit: tourn.net_profit,
-        itm_percent: tourn.itm_percent,
-        roi: tourn.roi,
-      };
-      exportStatsOverview(
-        source,
-        RATE_FIELDS,
-        exportMetadata(),
-        `player_stats_overview_${selectedClubId ?? 'all_clubs'}_${rangeKey}.csv`
-      );
-    } catch (e) {
-      reportError(e, 'PlayerStatsPage.exportOverviewCSV');
-    }
-  };
   if (!isOwnProfile) {
     return (
       <SharedClubStatsView
@@ -1935,16 +1777,17 @@ export default function PlayerStatsPage() {
                     rangeLabel={rangeLabel}
                     printing={printing}
                     advancedInitialData={advancedInitialData}
-                    dailySeries={dailySeries}
-                    positionPie={positionPie}
-                    profitChartSummary={profitChartSummary}
-                    dailyChartSummary={dailyChartSummary}
-                    positionChartSummary={positionChartSummary}
                     sessionRows={sessionRows}
                     sessionsAvailable={statsContract.quality.section_availability.sessions}
                     sessionsReason={statsContract.quality.section_availability.sessions_reason}
-                    exportSessionsCSV={exportSessionsCSV}
-                    exportOverviewCSV={exportOverviewCSV}
+                    exportContext={{
+                      clubName: clubLabel,
+                      timezone: statsTimezone,
+                      asset: statsScope,
+                      contract: statsContract,
+                      tournaments: tourn,
+                      privacyPresentationMode,
+                    }}
                     handMode={handMode}
                     setHandMode={setHandMode}
                     hands={hands}

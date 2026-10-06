@@ -38,6 +38,7 @@ const MIG2 = read(
   'supabase/migrations/20260904224726_stats_phase_3_ev_coverage_counts_runouts_only.sql'
 );
 const PAGE = read('src/pages/PlayerStatsPage.tsx');
+const ANALYSIS = read('src/pages/stats/AnalysisTab.tsx');
 const HOOK = read('src/hooks/useStatsPulse.ts');
 const LOCAL_TIME = read('src/lib/localTime.ts');
 const MONITOR = read('server/src/observability/StatsHealthMonitor.ts');
@@ -235,8 +236,8 @@ describe("phase 3 page: the player's zone, end to end", () => {
   });
 
   it('reads the daily labels as local days, never as UTC midnight', () => {
-    expect(PAGE).toMatch(/localDateFromYmd\(d\.date\)\.toLocaleDateString/);
-    expect(PAGE).not.toMatch(/new Date\(d\.date\)/);
+    expect(ANALYSIS).toMatch(/localDateFromYmd\(day\.date\)\.toLocaleDateString/);
+    expect(ANALYSIS).not.toMatch(/new Date\(day\.date\)/);
     expect(LOCAL_TIME).toMatch(/Intl\.DateTimeFormat\(\)\.resolvedOptions\(\)\.timeZone/);
     expect(LOCAL_TIME).toMatch(
       /return new Date\(Number\(m\[1\]\), Number\(m\[2\]\) - 1, Number\(m\[3\]\)\);/

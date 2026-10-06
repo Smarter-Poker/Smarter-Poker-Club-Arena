@@ -63,16 +63,17 @@ describe('owner notable-hands evidence contract', () => {
   });
 
   it('binds the client parser to exact request scope and refuses invented evidence defaults', () => {
-    const model = read('src/pages/stats/playerStatsPageModel.tsx');
+    const parser = read('src/pages/stats/notableHandsContract.ts');
     const caller = read('src/pages/PlayerStatsPage.tsx');
 
-    expect(model).toContain('payload.contract_version !== 2');
-    expect(model).toContain('scope.target_user_id !== request.targetUserId');
-    expect(model).toContain('scope.club_id !== request.clubId');
-    expect(model).toContain('scope.asset !== request.asset');
-    expect(model).toContain('scope.visibility !== request.visibility');
-    expect(model).not.toContain('id: str(h?.id, `hand-${i}`)');
-    expect(model).not.toContain("variant: str(h?.variant, 'Unknown')");
+    expect(parser).toContain('payload.contract_version !== 2');
+    expect(parser).toContain('scope.target_user_id !== request.targetUserId');
+    expect(parser).toContain('scope.club_id !== request.clubId');
+    expect(parser).toContain('scope.asset !== request.asset');
+    expect(parser).toContain('scope.visibility !== request.visibility');
+    expect(parser).not.toContain('id: str(h?.id, `hand-${i}`)');
+    expect(parser).not.toContain("variant: str(h?.variant, 'Unknown')");
+    expect(caller).toContain("import('./stats/notableHandsContract')");
     expect(caller).toContain('PlayerStatsPage.rpc_ca_player_hands_v2_shape');
     expect(caller).toContain('setHandsError(true)');
   });

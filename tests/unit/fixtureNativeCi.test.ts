@@ -1719,7 +1719,8 @@ describe('restored provider accounting qualification', () => {
         server: true,
         tests: true,
         phase4: false,
-        fixture: false,
+        // Real engine source is now consumed by the EV native actor.
+        fixture: path.startsWith('server/'),
       });
     }
     expect(classifyChangedPaths([]).server).toBe(false);
@@ -2062,5 +2063,32 @@ describe('weekly accounting fixture background isolation', () => {
     expect(runner).toMatch(
       /except \(OSError,subprocess\.TimeoutExpired\) as diagnostic_error:[\s\S]*raise AssertionError\(label\+': '\+r\.stderr\[-6000:\]\)/
     );
+  });
+});
+
+describe('authenticated EV lifecycle remains in the maintained native gate', () => {
+  it.each([
+    'tests/fixtures/ev-cashout-lifecycle/actor.mjs',
+    'tests/fixtures/ev-cashout-lifecycle/bootstrap.py',
+    'tests/fixtures/full-weekly-accounting/functions.json',
+    'tests/fixtures/cash-participant-funding/captured-hand-preimages.json',
+    'tests/fixtures/union-weekly-basis/captured-cash-dependencies.json',
+    'server/src/handlers/insurance.ts',
+    'server/src/engine/ServerTableEngineSettlement.ts',
+    'server/src/http/auth.ts',
+    'server/package-lock.json',
+  ])('qualifies its actual shared input %s', (path) => {
+    expect(classifyChangedPaths([path]).fixture).toBe(true);
+  });
+  it('keeps the existing smoke before EV execution and compiles real engine source', () => {
+    const driver = readFileSync(join(root, 'operations/release/ci/fixture-smoke.py'), 'utf8');
+    expect(driver.indexOf("PREFIX + 'smoke-image.sh'")).toBeLessThan(
+      driver.indexOf("'tests/fixtures/ev-cashout-lifecycle/run-native.py'")
+    );
+    expect(
+      native.jobs['native-smoke'].steps.some((step: { run?: string }) =>
+        step.run?.includes('npm run build --prefix server')
+      )
+    ).toBe(true);
   });
 });

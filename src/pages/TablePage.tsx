@@ -1156,6 +1156,10 @@ interface TablePageProps {
      *  ('' / undefined = no raise legal). One string on purpose — the
      *  container's shallow !== bail-out (P1-2) must keep working. */
     raiseBounds?: string;
+    /** The bet the hero is facing this street, as a raise-TO level (hero's turn only). */
+    currentBet?: number;
+    /** Raise-TO that puts the hero's whole stack in (hero's turn only). */
+    allInTo?: number;
     /** Hero's current stack, for the aggregated session view. */
     heroStack?: number;
     /**
@@ -6361,6 +6365,14 @@ function LiveTablePage({
     () => tableState.players[tableState.heroSeat - 1]?.stack,
     [tableState.players, tableState.heroSeat]
   );
+  /* Raise-TO that puts the whole stack in: chips behind plus chips already in
+     front this street. The tile band's All In sends this (it used to send the
+     stack behind alone, which is not a raise-to). */
+  const heroTabAllInTo = useMemo(() => {
+    const stack = tableState.players[tableState.heroSeat - 1]?.stack || 0;
+    const inFront = tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0;
+    return stack > 0 ? Math.round((stack + inFront) * 100) / 100 : undefined;
+  }, [tableState.players, tableState.lastBetAmounts, tableState.heroSeat]);
   const heroTabToCall = useMemo(
     () =>
       Math.max(
@@ -6690,6 +6702,8 @@ function LiveTablePage({
       handResult: heroTabResult,
       toCall: isHeroTurn ? heroTabToCall : undefined,
       raiseBounds: isHeroTurn ? heroTabRaiseBounds : undefined,
+      currentBet: isHeroTurn ? tableState.currentBet || 0 : undefined,
+      allInTo: isHeroTurn ? heroTabAllInTo : undefined,
       heroStack: heroTabStack,
       sittingOut: heroTabSittingOut,
       sitOutDeadlineMs: heroTabSitOutDeadlineMs,
@@ -6720,6 +6734,8 @@ function LiveTablePage({
     tableState.actionContext,
     heroTabToCall,
     heroTabRaiseBounds,
+    heroTabAllInTo,
+    tableState.currentBet,
     heroTabStack,
     heroTabSittingOut,
     heroTabGameCode,

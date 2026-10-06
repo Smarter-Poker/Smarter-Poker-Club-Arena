@@ -4166,73 +4166,62 @@ export class TournamentManager extends TournamentManagerEliminations {
       sourcePlans.set(move.fromTableId, { move, sourceMode });
     }
 
-    // Arm every source together. A slow current hand costs this scheduler one
-    // short probe, not one serial minute per table; its owner stays armed and
-    // the next causal sweep claims the physical park.
-    const boundaryResults = await Promise.all(
-      [...sourcePlans.entries()].map(
-        async ([sourceTableId, plan]) =>
-          [
-            sourceTableId,
-            await this.claimTournamentMoveBoundary(plan.move, plan.sourceMode),
-          ] as const
-      )
-    );
-    const boundaries = new Map(boundaryResults);
     const retainedUnknownSources = new Set<string>();
     const refusedSources = new Set<string>();
 
-    try {
-      for (const move of batch) {
-        if (!this.eliminationMutationAllowed()) break;
-        if (refusedSources.has(move.fromTableId)) continue;
-        const boundary = boundaries.get(move.fromTableId);
-        if (!boundary) continue;
-        const requestId = randomUUID();
-        const input: TournamentSeatMoveInput = {
-          requestId,
-          tournamentId: this.tournamentId,
-          userId: move.playerId,
-          sourceTableId: move.fromTableId,
-          destinationTableId: move.toTableId,
-          destinationSeatNumber: move.toSeat,
-          sourceMode: boundary.sourceMode,
-        };
-        try {
-          const receipt = await this.requestTournamentSeatMoveAtBoundary(input, boundary);
-          moved++;
-          // The destination may be waiting below its deal minimum on a
-          // backed-off roster read; it looks now rather than in a minute.
-          this.tableEngines.get(move.toTableId)?.wakeWaitingForPlayers();
-          console.log(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Atomic move ${receipt.requestId.slice(0, 8)} certified for ${move.playerId.slice(0, 8)}: table ${move.fromTableId.slice(0, 8)} seat ${receipt.sourceSeatNumber} to table ${move.toTableId.slice(0, 8)} seat ${receipt.destinationSeatNumber}`
-          );
-        } catch (moveErr) {
-          if (moveErr instanceof TournamentSeatMoveOutcomeUnknownError) {
-            this.pendingTournamentSeatMoveOutcomes.set(requestId, {
-              move,
-              input,
-            });
-            retainedUnknownSources.add(move.fromTableId);
-          } else {
-            refusedSources.add(move.fromTableId);
-          }
-          reportError(moveErr, 'Tournament.atomic_move_refused_or_unknown', {
-            tournamentId: this.tournamentId,
+    // A receipt lookup can legitimately occupy the complete uncertainty
+    // envelope. Claim only the source whose moves are being resolved so one
+    // ambiguous operation never parks unrelated tables behind it.
+    for (const [sourceTableId, plan] of sourcePlans) {
+      if (!this.eliminationMutationAllowed()) break;
+      const boundary = await this.claimTournamentMoveBoundary(plan.move, plan.sourceMode);
+      if (!boundary) continue;
+      try {
+        for (const move of batch) {
+          if (move.fromTableId !== sourceTableId) continue;
+          if (!this.eliminationMutationAllowed() || refusedSources.has(sourceTableId)) break;
+          const requestId = randomUUID();
+          const input: TournamentSeatMoveInput = {
             requestId,
-            playerId: move.playerId,
+            tournamentId: this.tournamentId,
+            userId: move.playerId,
             sourceTableId: move.fromTableId,
             destinationTableId: move.toTableId,
-            destinationSeat: move.toSeat,
-          });
-          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
-          // An unknown source shape invalidates every remaining destination
-          // chosen from the same snapshot. Resolve that UUID before planning.
-          if (moveErr instanceof TournamentSeatMoveOutcomeUnknownError) break;
+            destinationSeatNumber: move.toSeat,
+            sourceMode: boundary.sourceMode,
+          };
+          try {
+            const receipt = await this.requestTournamentSeatMoveAtBoundary(input, boundary);
+            moved++;
+            // The destination may be waiting below its deal minimum on a
+            // backed-off roster read; it looks now rather than in a minute.
+            this.tableEngines.get(move.toTableId)?.wakeWaitingForPlayers();
+            console.log(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Atomic move ${receipt.requestId.slice(0, 8)} certified for ${move.playerId.slice(0, 8)}: table ${move.fromTableId.slice(0, 8)} seat ${receipt.sourceSeatNumber} to table ${move.toTableId.slice(0, 8)} seat ${receipt.destinationSeatNumber}`
+            );
+          } catch (moveErr) {
+            if (moveErr instanceof TournamentSeatMoveOutcomeUnknownError) {
+              this.pendingTournamentSeatMoveOutcomes.set(requestId, {
+                move,
+                input,
+              });
+              retainedUnknownSources.add(sourceTableId);
+            } else {
+              refusedSources.add(sourceTableId);
+            }
+            reportError(moveErr, 'Tournament.atomic_move_refused_or_unknown', {
+              tournamentId: this.tournamentId,
+              requestId,
+              playerId: move.playerId,
+              sourceTableId: move.fromTableId,
+              destinationTableId: move.toTableId,
+              destinationSeat: move.toSeat,
+            });
+            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+            break;
+          }
         }
-      }
-    } finally {
-      for (const [sourceTableId, boundary] of boundaries) {
+      } finally {
         if (
           boundary?.engine &&
           !retainedUnknownSources.has(sourceTableId) &&
@@ -4241,6 +4230,10 @@ export class TournamentManager extends TournamentManagerEliminations {
           boundary.engine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
         }
       }
+      // An unknown source shape invalidates every remaining destination chosen
+      // from the same snapshot. Resolve that exact UUID before another source
+      // is ever claimed.
+      if (retainedUnknownSources.has(sourceTableId)) break;
     }
     return moved;
   }

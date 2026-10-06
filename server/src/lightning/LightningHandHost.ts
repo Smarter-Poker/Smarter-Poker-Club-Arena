@@ -1457,6 +1457,16 @@ export class LightningHandHost {
     if (a === 'call' && toCall === 0) a = 'check';
     if (a === 'raise' && st.currentBet === 0) a = 'bet';
     if (a === 'bet' && st.currentBet > 0) a = 'raise';
+    // A wager of the whole stack is an all-in, as it is at every other table
+    // door: the controller sizes it from the seat, not from the request.
+    if (
+      (a === 'raise' || a === 'bet') &&
+      typeof amount === 'number' &&
+      amount >= player.bet + player.stack - 0.005
+    ) {
+      a = 'all_in';
+      amount = undefined;
+    }
     if (a === 'call') amount = toCall;
     if (a === 'fold' && foldType) this.foldTypes.set(userId, foldType);
     this.actionLock = true;

@@ -168,8 +168,8 @@
     "tests/fixtures/browser-period-observer/captured-preimages.sql": "c024e56561a56867839c5e952e735e6118625e19ee40ad14292afd46aed22502",
     "tests/fixtures/browser-period-observer/regression.sql": "3550c76e15615707f52d4b6fc8c183b5b8cd3ad9105a6282e72c25b900152284",
     "tests/unit/SettlementCronService.test.ts": "b436754cec532a518975b8f03ff5020dc90048d30c044ca04aa25029a1109a9f",
-    "tests/unit/ServiceBootstrap.test.ts": "74881cd7adc292cafbd325c98bee91ad53192ecdb4e07cc66aab3d11b58f4c21",
-    "tests/unit/FinancialCronService.test.ts": "d896cbd87786cb83569ee48e7d1adde3f017ceba3a3e1f4fe573ed7cfefddb4d",
+    "tests/unit/ServiceBootstrap.test.ts": "533800128e0f184de1437e25d2966af1b08a3926ac9398d28938b017fec6ad02",
+    "tests/unit/FinancialCronService.test.ts": "97ff4db95d5bfaa5d281f04259066ce9e3df7ca884743317750af4d22d100610",
     "tests/components/ClubWeeklyAccountingSummary.test.tsx": "c3b8dd010b46ce1f14180ab05c4b36f7ac14c3f35c73f2fff7563f2b135ab634",
     "tests/unit/AccountingObservationService.test.ts": "6e571f657f66a05bd37b9aa35b867e12b54c99c75754e017034ec3bafed17ce9",
     "tests/unit/SettlementService.test.ts": "92390199785906650508d16eea99372e24a6451dd8cd9d108679381ed1ca936d",
@@ -182,7 +182,7 @@
     "tests/components/cashier-cashout-generations.test.tsx": "c3d521a79889e716b7dd181ca94c595fca8bf22054240fee59cc61a6936b6afb",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "51094ea1ec27a4e1e4c43f1e6fc919c84f41fd1f3a29326bb3508bd708566eb9",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "12aca8db85e2fc33320718e2d3fb4c631bef7688e55bf6ccd97841ad72fff9ef",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "817a6f62c911adb5dae5a70934a6a1c3f89af7819016a06e0904f3b944ffac4d",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
@@ -313,7 +313,7 @@
     "tests/fixtures/union-pnl-inventory/README.md": "1ec2588a68d7fa3123ca63a033c2ac6b02e3b0d4efb43aff01091ba36d56d826",
     "tests/fixtures/union-pnl-inventory/bootstrap.sql": "7bbbc23553513e88b53c066f6afe47170d5a2f85f2b215ac72fd2df603cd8a08",
     "supabase/migrations/20260917231832_union_accounting_schedule_adoption.sql": "ad8d6c8ff386f7701a7ae394059099bb847574ac88cc06d29401f35b2e62a876",
-    "tests/fixtures/union-weekly-basis/source-binding.json": "2d2838a525722b871e96311b275993afa8f96d806758b30dbd7b5e5eb598052b",
+    "tests/fixtures/union-weekly-basis/source-binding.json": "a9388141873efdbee3863f0cbf183f05561af8e814439b5226175ab17396f846",
     "tests/fixtures/union-weekly-basis/installed-precondition.sql": "e72a8066b405a3abe1f573a1b2925986da0bb086f5b0b6cbed7492b777636297",
     "tests/fixtures/union-weekly-basis/captured-close-dependencies.json": "e696d389d3b69ff1b101d56d0b94beb6878faa2ea6113b31cbf6b1d7ec59a3a9",
     "tests/fixtures/union-weekly-basis/tournament-regression.sql": "d3b981a7be49916f2b672c174acfac2f5e3a5e136984cf9e801fe5120dce7a6d",
@@ -334,7 +334,7 @@
     "tests/fixtures/union-weekly-basis/captured-document-dependencies.json": "b5f5a9e7e0a2a7c710295bcd6b0a1b5aca7ddf9c27a6268167eba1a8e35fa23b",
     "tests/fixtures/union-weekly-basis/negative-regression.sql": "b1621071f538fc63c3a479b3dc0d51fde9b85c4d68f93f857699b866df0ce4c7",
     "tests/fixtures/union-weekly-basis/bootstrap.sql": "c0a5fdfbaf5ca0aa7751dc862bbb62d6bf52e819758eb9df45b0e8e13b07a1d1",
-    "scripts/dev/test-union-weekly-basis.py": "0c7c959a54275a9595f8817aac84514415d9bfc829114376bf1f9f9e5da726ad",
+    "scripts/dev/test-union-weekly-basis.py": "3f151d0775837331fce21b2bbcba10da5f358ca192a9db00cb886cec1edfe2e3",
     "scripts/ci/schema-manifest.d/union-weekly-original-basis.json": "fa2f2f378db56fa7b586c6ddecaf43d58cac0b34817e8497b13ebb5159f33798",
     "supabase/migrations/20260917234315_union_weekly_pnl_uses_original_qualified_basis.sql": "09d254067d87cd0216fd5333c9c6e75c9e64c8077b5ce68b1d553e8bcdab7ee7",
     "docs/changelog/union-original-weekly-basis-2026-09-18.md": "48a214e9d4b353ded7e8089e1619e3ee78077f5dbde6df1be372a6d738efdfcf",
@@ -420,10 +420,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "732f731aa929df1e7b43aa58a5ef7d06c2e6c24ad3be2dc3d64abe2765e3fe7b",
+    "scripts/ci/classify-ci-changes.mjs": "e42ea8ef8b84afcb3c97bfbd5750b7c2310523abe96e9dece1e4575ada84fa65",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "ee0adf6a76392a1e3e5a7eedf9f4ea3098eed9f7bce9d0372c02be4f2ff7ec74",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "606333e586607087f8f21e7ee05922b6be392033c47df6a5c87e215a77a70202",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -437,12 +437,12 @@
     "tests/fixtures/sep8-spin-custody/README.md": "be6f3eb4eb716056e9ecc8863d326c78de3d176662b77e95c2951aa42453ff73",
     "tests/fixtures/sep8-spin-custody/late-fault.sql": "43653b983d870248707525058134de21821aa8f4f1c55df3d42f0a1e02d8b7b7",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
-    "tests/unit/fixtureNativeCi.test.ts": "d6e9aca796e2719eb8c6b5ee284eb06f70b2004d6c3720abd1b79718cd9883b3",
+    "tests/unit/fixtureNativeCi.test.ts": "0ed8b0f3eedcd503d45f07a52cb720a436cd6f9f410db9eb656d984b23d3fb9f",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "3ff9c25bfc14eb2349a65f27939e3063cfc2cf3470a68fdf1e94d2c85a57999f",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "0ff491199bd893a004e2b3abc2202e26de8bff71170e8f42918b7afaabef4568",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -482,7 +482,7 @@
     "tests/fixtures/earlybird-fee-custody/after.sql": "5c86539a1f6e4904d61c4f3c2ee79b98fbc29b976adbc89fc38f8a4be8c97e0b",
     "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62",
     "supabase/migrations/20260919025445_early_bird_original_fee_custody_after_player_finality.sql": "3b3fa10d81077d09fc997bb0549ee7dd73b12726406f92da17105d002d021ab8",
-    "tests/fixtures/earlybird-fee-custody/source-binding.json": "847c6fa4bb558a94884548564a52edf27ba39029aa3f9524dfe66804666ca51b",
+    "tests/fixtures/earlybird-fee-custody/source-binding.json": "a68c9cfe9612d52cb1d00f18924a5e757c045b419f3f868087008f6b340aab5e",
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536",
@@ -1718,6 +1718,13 @@
   },
   "restamp_audit": [
     {
+      "on": "2026-10-06",
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "2fc728ea5555ced40641d89f8c85b8f094a09f9f14d5decaa405ffbc5e11ea2a",
+      "to": "e42ea8ef8b84afcb3c97bfbd5750b7c2310523abe96e9dece1e4575ada84fa65",
+      "why": "Explicitly reviewed current-main integration adds EV fixture coverage while retaining weekly6031 routing and both audit histories. Only this classifier and the two independently reviewed legacy/sep8 nested binding hashes change. No financial input or assertion changes; hash agreement is not execution evidence."
+    },
+    {
       "file": "tests/fixtures/earlybird-fee-custody/source-binding.json",
       "from": "13c27ad79ba8b7f9b1b923a111bb173f03a2fdc5882ff5308adca230c56777a3",
       "to": "1af93ae7995459bd760e1d183f4bae9bc7f6698cb9e6fd4b3197ab24bcaf295d",
@@ -2676,6 +2683,41 @@
       "to": "cc161efbcbd11dd8e9a55991259b707b2cf64ce40e92abb14c7f3e1f69bf5aab",
       "on": "2026-10-05",
       "why": "HorseOrchestrator's dead browser-side horse seating methods (ensureHorsesAt4Tables, enforceMinimumPlayers, smartSeatSelection, dynamicPersonaRotation) are removed, so its discarded-read allowance tightens from 8 to 2; no baseline is widened and no financial source, fixture or assertion changed."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "732f731aa929df1e7b43aa58a5ef7d06c2e6c24ad3be2dc3d64abe2765e3fe7b",
+      "to": "f8e5748574fb9f78481403913cf5cc6e0a06dd00d3722d25d78fd45762c1bc99",
+      "on": "2026-10-06",
+      "why": "PR6241 adds authenticated EV lifecycle qualification to the existing native gate and routes its real engine and captured fixture inputs. Reviewed additive classifier/test diff; no prior financial assertion, captured authority, checker or qualification status is changed. This fingerprint refresh is not execution or product certification."
+    },
+    {
+      "file": "tests/unit/fixtureNativeCi.test.ts",
+      "from": "d6e9aca796e2719eb8c6b5ee284eb06f70b2004d6c3720abd1b79718cd9883b3",
+      "to": "0ed8b0f3eedcd503d45f07a52cb720a436cd6f9f410db9eb656d984b23d3fb9f",
+      "on": "2026-10-06",
+      "why": "PR6241 adds authenticated EV lifecycle qualification to the existing native gate and routes its real engine and captured fixture inputs. Reviewed additive classifier/test diff; no prior financial assertion, captured authority, checker or qualification status is changed. This fingerprint refresh is not execution or product certification."
+    },
+    {
+      "file": "tests/fixtures/earlybird-fee-custody/source-binding.json",
+      "from": "847c6fa4bb558a94884548564a52edf27ba39029aa3f9524dfe66804666ca51b",
+      "to": "a68c9cfe9612d52cb1d00f18924a5e757c045b419f3f868087008f6b340aab5e",
+      "on": "2026-10-06",
+      "why": "PR6241 nested binding cascade: this file only refreshes the reviewed additive EV native qualification classifier/test fingerprints and records their audit. Financial authorities, assertions, and qualification statuses remain unchanged."
+    },
+    {
+      "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
+      "from": "ee0adf6a76392a1e3e5a7eedf9f4ea3098eed9f7bce9d0372c02be4f2ff7ec74",
+      "to": "4269cd5798a2acd7c140e73a2dd0be6503629a421447afc9af258ccfaa5b613a",
+      "on": "2026-10-06",
+      "why": "PR6241 nested binding cascade: this file only refreshes the reviewed additive EV native qualification classifier/test fingerprints and records their audit. Financial authorities, assertions, and qualification statuses remain unchanged."
+    },
+    {
+      "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+      "from": "3ff9c25bfc14eb2349a65f27939e3063cfc2cf3470a68fdf1e94d2c85a57999f",
+      "to": "5722690e69e1a8398867ee4be470c33281fe57fbfe0b93e4ad839e3b1cde4e95",
+      "on": "2026-10-06",
+      "why": "PR6241 nested binding cascade: this file only refreshes the reviewed additive EV native qualification classifier/test fingerprints and records their audit. Financial authorities, assertions, and qualification statuses remain unchanged."
     }
   ],
   "tournament_rake_club_successor_20260921": {
@@ -3609,5 +3651,51 @@
     "reason": "Route the manual final-table page runner, its tests, forward migrations and schema fragment into the existing required accounting and source-test lanes. Existing financial selection and runtime sources are unchanged. Reviewed diff and native customization proof; this restamp does not certify weekly settlement or expand historical claims.",
     "sha256": "732f731aa929df1e7b43aa58a5ef7d06c2e6c24ad3be2dc3d64abe2765e3fe7b",
     "nested_bindings": "Refresh the two reviewed nested classifier-only binding documents in the parent binding; runtime and historical fixture data unchanged."
+  },
+  "browserFinancialScheduleAndHorseManagementRetired20261005": {
+    "reason": "Retires the browser financial schedule and the browser horse-management services. FinancialCronService no longer has start/stop or any timer and ServiceBootstrap no longer starts it: it ran a credit-suspension scan of agents in every tab, signed out included (anon has no SELECT on agents, the 2026-10-05 22:02-23:02 UTC permission-denied errors). The suspension check stays as the admin's on-demand Run Now and refuses without a signed-in identity. HydraService and HorseOrchestrator are deleted (dead browser code that read profiles.is_horse/horse_status/horse_profile), which removes their two discarded-read ratchet entries; no allowance is widened. No accounting SQL image, financial fixture or historical assertion changes.",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/FinancialCronService.test.ts",
+        "previous_sha256": "d896cbd87786cb83569ee48e7d1adde3f017ceba3a3e1f4fe573ed7cfefddb4d",
+        "sha256": "97ff4db95d5bfaa5d281f04259066ce9e3df7ca884743317750af4d22d100610"
+      },
+      {
+        "path": "tests/unit/ServiceBootstrap.test.ts",
+        "previous_sha256": "74881cd7adc292cafbd325c98bee91ad53192ecdb4e07cc66aab3d11b58f4c21",
+        "sha256": "533800128e0f184de1437e25d2966af1b08a3926ac9398d28938b017fec6ad02"
+      },
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "12aca8db85e2fc33320718e2d3fb4c631bef7688e55bf6ccd97841ad72fff9ef",
+        "sha256": "817a6f62c911adb5dae5a70934a6a1c3f89af7819016a06e0904f3b944ffac4d"
+      }
+    ],
+    "verification": "Each diff was read. FinancialCronService.test.ts replaces the start/stop and interval-default tests with pins that nothing is scheduled, boot never imports the service, and a signed-out caller reads nothing; ServiceBootstrap.test.ts drops the FinancialCronService mock and pins that boot starts no financial schedule; discardedErrorReadRatchet.test.ts removes the baseline entries of the two deleted files. The focused tests and the complete source-binding verifier pass on the candidate."
+  },
+  "weeklyRecomputeQualification20261006": {
+    "reason": "Add exact split-recompute native qualification to the existing accounting shard and select its fixture-only changes. Default weekly fixture behavior and all financial SQL remain unchanged; current protected-main integration is preserved.",
+    "bindings": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": "732f731aa929df1e7b43aa58a5ef7d06c2e6c24ad3be2dc3d64abe2765e3fe7b",
+        "after": "2fc728ea5555ced40641d89f8c85b8f094a09f9f14d5decaa405ffbc5e11ea2a"
+      },
+      "scripts/dev/test-union-weekly-basis.py": {
+        "before": "0c7c959a54275a9595f8817aac84514415d9bfc829114376bf1f9f9e5da726ad",
+        "after": "3f151d0775837331fce21b2bbcba10da5f358ca192a9db00cb886cec1edfe2e3"
+      },
+      "tests/fixtures/union-weekly-basis/source-binding.json": {
+        "before": "2d2838a525722b871e96311b275993afa8f96d806758b30dbd7b5e5eb598052b",
+        "after": "a9388141873efdbee3863f0cbf183f05561af8e814439b5226175ab17396f846"
+      },
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "before": "ee0adf6a76392a1e3e5a7eedf9f4ea3098eed9f7bce9d0372c02be4f2ff7ec74",
+        "after": "e553a5583970557ededf752824bc86aec171dcb41448ca490ede3fa507b70127"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "before": "3ff9c25bfc14eb2349a65f27939e3063cfc2cf3470a68fdf1e94d2c85a57999f",
+        "after": "90ba1d5909704dc6d59ed48ac10e845c058789cc09cd81175d66e36b2bc795c9"
+      }
+    }
   }
 }

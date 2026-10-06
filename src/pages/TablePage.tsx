@@ -122,7 +122,6 @@ function sameStamps(a: Map<string, number>, b: Map<string, number>): boolean {
 import { setShownCards } from '../services/ShowCardsService';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { TableRouteBoundary } from '../components/table/TableRouteBoundary';
-import { withClubContext } from '../utils/clubScopedPath';
 import { hubMarketplaceDestination } from '../utils/hubMarketplace';
 import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cachedIdentity';
 import { formatGameTitle } from '../utils/formatGameTitle';
@@ -252,7 +251,6 @@ import { playerStatusService } from '../services/PlayerStatusService';
 import { avatarService } from '../services/AvatarService';
 import { waitlistService } from '../services/WaitlistService';
 import { roomService, type RoomMessage } from '../services/RoomService';
-import { HydraService } from '../services/HydraService';
 import TableChat from '../components/table/TableChat';
 import { ChatBubble, bubbleForSeat, useSeatChatBubbles } from '../components/table/ChatBubble';
 import { useSeatAddOnBubbles } from '../components/table/AddOnBubble';
@@ -281,6 +279,7 @@ import TimeBankStoreModal from '../components/table/TimeBankStoreModal';
 import { sessionStatsService } from '../services/SessionStatsService';
 import { parseTableArenaIdentity, seatCanAddFunds } from '../../server/src/domain/ArenaContext';
 import { arenaAssetUnitCents, arenaAssetUnitCentsIfRead } from '../lib/arenaUnitCents';
+import { topUpCashierPath } from '../utils/topUpCashierPath';
 import { bootExplanation, seatCopy } from '../components/table/seatExitCopy';
 import { readTableFundingBalance } from '../services/TableFundingService';
 import { soundService, haptic } from '../services/SoundService';
@@ -7309,10 +7308,6 @@ function LiveTablePage({
   /** The hand whose deal swish has already played, so a re-push of the same
    *  hole cards (reconnect, mux join, recovery poll) does not replay it. */
   const heroDealSoundHandRef = useRef(0);
-  /* One horse-yield failure report per table per mount. The yield runs every
-     15s on every seated client; without this a broken RPC would file four
-     reports a minute per player. See the catch block in the yield interval. */
-  const horseYieldReportedRef = useRef(false);
   // CA-21 BUG FIX: bbjTimerRef tracks the 3s BBJ celebration delay timer.
   const bbjTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // CA-22 BUG FIX: handCompleteTimerRef tracks the 3s HAND_COMPLETE table-reset timer.
@@ -15764,8 +15759,10 @@ function LiveTablePage({
      table_seats read at mount, the pre-start roster sync, and the engine
      snapshot. Nothing was replacing this block, so nothing replaces it.
 
-     HydraService keeps its read-only helpers (getActiveHorses, and the
-     waitlist yield below); its seat WRITERS refuse outright — see seedTable. */
+     HydraService itself is gone (2026-10-05): its remaining "read-only
+     helpers" asked profiles for is_horse, which no browser role may read, so
+     they never found a horse - and the question alone named horses in the
+     bundle. */
 
   // REALTIME PROFILES — a seated player's avatar or cosmetics changed
   // ═══════════════════════════════════════════════════════════════════════════
@@ -15844,79 +15841,14 @@ function LiveTablePage({
 
   const seatedProfileSync = useSeatedProfileSync(tableId, seatedUserIds, handleSeatedProfileChange);
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // WAITLIST → HORSE YIELD — When a real player is waiting & table full, remove a horse
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Seated-only gate for the waitlist yield below. A spectator has no seat to
-  // give up and no stake in table liquidity; only players actually sitting at
-  // the table should be running this.
-  const heroIsSeatedForWaitlist = tableState.heroSeat > 0;
-  useEffect(() => {
-    if (!tableId || !tableState.blinds || tableState.blinds === '?/?') return;
-    if (tableState.isTournament) return; // No horse cap in tournaments
-    if (!heroIsSeatedForWaitlist) return;
-
-    // Poll the waitlist — if real players are waiting, yield a horse seat.
-    //
-    // PERF 2026-08-24. Two problems, one fixed here and one recorded.
-    //
-    // FIXED: this ran for EVERY client with the table open, including
-    // spectators and railbirds, who have no business performing table
-    // maintenance. A popular table can carry far more watchers than seats, and
-    // every one of them was issuing a waitlist read every 10 seconds plus a
-    // liquidity check. Restricted to SEATED players below.
-    //
-    // NOT FIXED, deliberately: the remaining seated players still duplicate
-    // this work N ways, and the yield is a MUTATION, so N clients race to
-    // perform the same one. The correct home for it is the engine - CLAUDE.md
-    // already records horse fleet management as server-authoritative, and
-    // HorseFleetManager seeds tables and populates `table_waitlist`. What it
-    // does NOT do is give a seat back when a human queues behind a full table
-    // of horses; HydraService.checkWaitlistAndYield is the only implementation
-    // of that anywhere, which is why it is left running rather than deleted as
-    // the old client-side AutoRebuyService was. Moving it server-side needs an
-    // engine change, not a client one.
-    //
-    // Interval also raised 10s -> 15s and jittered, so seated clients at the
-    // same table stop hitting the database in lockstep.
-    const JITTER_MS = Math.floor(Math.random() * 4000);
-    horseYieldReportedRef.current = false;
-    const interval = setInterval(async () => {
-      try {
-        // null = read failed ("could not find out") — yield nothing on a guess.
-        const entries = (await waitlistService.getTableWaitlist(tableId)) ?? [];
-        if (entries && entries.length > 0) {
-          const yielded = await HydraService.checkWaitlistAndYield(tableId, entries.length);
-          if (yielded) {
-            console.debug('[Horses] Yielded horse seat for waiting real player');
-          }
-        }
-      } catch (err) {
-        /* ── THIS IS NOT "NON-CRITICAL" (2026-08-26) ────────────────────────
-           The comment here said "Non-critical — silently ignore", and it was
-           wrong in the way that costs the most: the ONLY implementation of
-           "give a horse's seat back when a human is queued behind a full
-           table" is the call above. When it throws, a real player sits on the
-           waitlist forever while horses play in front of them, every 15
-           seconds, on every seated client, with nothing written anywhere.
-           Nobody would ever learn this was happening.
-
-           It stays non-fatal — a failed yield must never take the felt down,
-           and the next tick retries anyway — but it is now REPORTED, and
-           reported once per table per mount so a persistently broken RPC does
-           not bury error reporting under four-per-minute duplicates. */
-        if (!horseYieldReportedRef.current) {
-          horseYieldReportedRef.current = true;
-          reportError(err, 'TablePage.horse_yield_failed', {
-            tableId,
-            note: 'a waitlisted player may be unable to get a seat from the horses',
-          });
-        }
-      }
-    }, 15000 + JITTER_MS);
-
-    return () => clearInterval(interval);
-  }, [tableId, tableState.blinds, tableState.isTournament, heroIsSeatedForWaitlist]);
+  /* WAITLIST HORSE YIELD - REMOVED (2026-10-05). Every seated client polled
+     the waitlist every 15s and asked HydraService to stand a horse up for a
+     queued player. It could not: HydraService found horses by reading
+     profiles.is_horse, which no browser role may read, so it always saw none,
+     and the yield it would have made refused anyway (the browser does not
+     move a horse's chips). The engine owns this: HorseFleetManager counts the
+     humans waiting at each table (humansWaitingByTable) and releases a horse
+     seat for them. A browser does not ask which seats are horses. */
 
   // ═══════════════════════════════════════════════════════════════════════════
   //HandController removed — server is authoritative
@@ -22978,7 +22910,18 @@ function LiveTablePage({
       showBuyInModal ||
       showHandHistory ||
       showPlayerNotes ||
-      showWaitList,
+      showWaitList ||
+      /* A DIALOG THAT MOVES MONEY OR A SEAT OWNS THE KEYBOARD (launch audit
+         2026-10-05). These six were missing, so with the cashier, the leave
+         confirmation or a rebuy prompt open, F still folded the live hand and
+         Space still called it: a player typing an amount, or reaching for the
+         dialog's own button, acted at the table behind it. */
+      showCashier ||
+      showDiamondWallet ||
+      showLeaveConfirm ||
+      bustRebuyOpen ||
+      showRebuyModal ||
+      postOrWaitOpen,
     /* Every action key runs the SAME function the on-screen button runs.
        2026-08-28: these pointed at `handleFold` / `handleCall`, a parallel pair
        that skipped the VPIP/PFR counting inside handleActionPanelAction — so a
@@ -26994,7 +26937,9 @@ function LiveTablePage({
                            the denomination the derived sizings snap to are one
                            Diamond; a chip table keeps the cent and the small
                            blind it has always had. */
-                        unit={tableState.arenaAsset === 'diamonds' ? 1 : 0.01}
+                        unit={
+                          tableState.arenaAsset === 'diamonds' || tableState.isTournament ? 1 : 0.01
+                        }
                         /* Multiplier presets are multiples of the bet being
                            faced, not of the blind — without this they all
                            clamped to minRaise and 2X/3X/4X/5X produced the
@@ -27591,7 +27536,16 @@ function LiveTablePage({
         onTopUpAccount={() =>
           tableState.arenaAsset === 'diamonds'
             ? setShowDiamondWallet(true)
-            : navigate(withClubContext('/cashier', lobbyClubIdRef.current))
+            : /* TO THE CLUB'S CASHIER, WHERE CHIPS CAN BE ASKED FOR (launch audit
+                 2026-10-05). This went to `/cashier?club=...`, the classic
+                 cashier, which opens a plain player on its Buy-In tab and can
+                 only answer "No table selected for buy-in": a dead end for the
+                 one player this button exists for, the one without enough
+                 chips. The club's Trade cashier is the front door (Dan
+                 2026-08-21) and is where a chip request is made. With no club
+                 resolved yet, `/cashier` finds the player's club and redirects
+                 there itself. */
+              navigate(topUpCashierPath(lobbyClubIdRef.current))
         }
         // Insurance
         showInsurance={showInsurance}
@@ -27834,13 +27788,6 @@ function LiveTablePage({
               leftSeatPendingRef.current = false;
               seatAcquiredAtRef.current = Date.now();
               bootNoticeShownRef.current = false;
-              void Promise.resolve()
-                .then(() =>
-                  tableState.arenaAsset === 'chips'
-                    ? HydraService.onRealPlayerJoined(tableId, userId)
-                    : undefined
-                )
-                .catch((error) => reportError(error, 'TablePage.buyin_hydra_notification_failed'));
               masterBus.emit('TABLE_SEATED', {
                 tableId,
                 seat: paid.p_seat_number,

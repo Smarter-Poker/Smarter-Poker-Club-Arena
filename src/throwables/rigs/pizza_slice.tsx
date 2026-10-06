@@ -23,8 +23,10 @@ export const spec: ThrowableSpec = {
     { at: 3500, marker: 'pepperoni-stays' },
     { at: 4000, marker: 'cut' },
   ],
-  // Bespoke cheese/peel recordings remain pending; use the existing wet impact cue.
-  audio: [{ at: 333, sample: 'splat_wet_small' }],
+  audio: [
+    { at: 333, sample: 'splat_wet_small' },
+    { at: 1800, sample: 'squirt_loop', gain: 0.18, loopUntil: 2900 },
+  ],
 };
 preloadThrowableCues(spec.audio.map((c) => c.sample));
 function Projectile(_props: RigProps) {

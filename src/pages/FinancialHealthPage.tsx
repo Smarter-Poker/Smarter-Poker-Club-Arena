@@ -3,7 +3,7 @@
  *  FINANCIAL HEALTH PAGE - Admin Financial System Monitoring (#ClubArenaConsole)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * One flow, one console. The cron's status, the last ledger reconciliation and
+ * One flow, one console. How the checks run, the last ledger reconciliation and
  * the last credit suspension check print as rows on the black glass between
  * engraved rules, each section with its own lit "Run Now"; the two quick
  * actions (Financial Alerts, Disputes) ride the painted plates. Every timer,
@@ -13,7 +13,7 @@
  * Shows:
  * - Ledger reconciliation status
  * - Credit suspension check results
- * - Financial cron job health
+ * - How each check runs (nothing here is scheduled in the browser)
  * - Quick links to Financial Alerts + Disputes
  */
 
@@ -31,7 +31,6 @@ import { reportError } from '../utils/errorReporter';
 import { compactChips } from '../utils/format';
 
 interface CronStatus {
-  isRunning: boolean;
   lastReconciliation: {
     isBalanced: boolean;
     difference: number;
@@ -46,8 +45,6 @@ interface CronStatus {
     disabled?: boolean;
   } | null;
   config: {
-    reconciliationIntervalMs: number;
-    suspensionCheckIntervalMs: number;
     autoSuspendEnabled: boolean;
   };
 }
@@ -110,11 +107,6 @@ export default function FinancialHealthPage() {
     setRefreshing(false);
   };
 
-  const formatInterval = (ms: number): string => {
-    const hours = ms / (60 * 60 * 1000);
-    return hours >= 24 ? `${hours / 24}d` : `${hours}h`;
-  };
-
   if (initialLoad && !status) {
     return (
       <div className="financial-health-page">
@@ -134,8 +126,6 @@ export default function FinancialHealthPage() {
     );
   }
 
-  const running = Boolean(status?.isRunning);
-
   return (
     <div className="financial-health-page">
       <SpadeConsole
@@ -144,8 +134,8 @@ export default function FinancialHealthPage() {
         eyebrow="Financial Admin"
         title="Financial Health"
         titleId="financial-health-title"
-        pill={running ? 'Running' : 'Stopped'}
-        pillInk={running ? 'green' : 'red'}
+        pill="On Demand"
+        pillInk="silver"
         plates={{
           secondary: { label: 'Alerts', onClick: () => navigate('/financial-alerts') },
           primary: { label: 'Disputes', ink: 'white', onClick: () => navigate('/disputes') },
@@ -166,23 +156,16 @@ export default function FinancialHealthPage() {
               Refresh
             </button>
           </div>
+          {/* Nothing here runs on a timer (2026-10-05). A browser schedule ran
+              under whoever had a tab open, signed out included; reconciliation
+              is server-side and the suspension check runs when an admin asks. */}
           <div className="fhp__row">
-            <span className="fhp__row-label sc-ink--blue">Financial Cron</span>
-            <span className={`fhp__row-value ${running ? 'sc-ink--green' : 'sc-ink--red'}`}>
-              {running ? 'Running' : 'Stopped'}
-            </span>
-          </div>
-          <div className="fhp__row">
-            <span className="fhp__row-label sc-ink--blue">Reconciliation Interval</span>
-            <span className="fhp__row-value sc-ink--silver">
-              {status ? formatInterval(status.config.reconciliationIntervalMs) : '-'}
-            </span>
+            <span className="fhp__row-label sc-ink--blue">Reconciliation</span>
+            <span className="fhp__row-value sc-ink--silver">Server Side</span>
           </div>
           <div className="fhp__row">
             <span className="fhp__row-label sc-ink--blue">Suspension Check</span>
-            <span className="fhp__row-value sc-ink--silver">
-              Every {status ? formatInterval(status.config.suspensionCheckIntervalMs) : '-'}
-            </span>
+            <span className="fhp__row-value sc-ink--silver">On Demand</span>
           </div>
           <div className="fhp__row">
             <span className="fhp__row-label sc-ink--blue">Auto-Suspend</span>
@@ -273,7 +256,7 @@ export default function FinancialHealthPage() {
                 <p className="sc-copy fhp__alert sc-ink--gold" role="alert">
                   Suspension Check Unavailable Or Incomplete. Counts Below Are Partial.{' '}
                   {status.lastSuspensionCheck.disabled
-                    ? 'Automatic Checks Are Paused After Repeated Failures. Reload The App To Retry.'
+                    ? 'Checks Are Paused After Repeated Failures. Reload The App To Retry.'
                     : 'Run Again To Retry.'}
                 </p>
               )}

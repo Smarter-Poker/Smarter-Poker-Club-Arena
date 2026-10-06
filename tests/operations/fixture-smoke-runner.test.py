@@ -205,6 +205,10 @@ class RunnerTests(unittest.TestCase):
                     if fault != 'missing-role-proof':
                         result += json.dumps(ROLE_ALIGNMENT) + '\n'
                     return result if fault == 'missing-preimage-proof' else result + json.dumps(proof) + '\n'
+                if args[:2] == ['python3', 'tests/fixtures/ev-cashout-lifecycle/run-native.py']:
+                    if fault == 'ev-lifecycle': raise RuntimeError('PRIVATE EV LOG MUST NOT LEAK')
+                    (root / 'evidence/ev-cashout-lifecycle.json').write_text(json.dumps(dict(status='passed', product_certificate=False, container_absent=True)))
+                    return ''
                 if args[:3] == ['docker', 'container', 'ls']:
                     owned = args[-1].removeprefix('name=^/').removesuffix('$')
                     return 'container-id' if owned in present else ''
@@ -230,6 +234,12 @@ class RunnerTests(unittest.TestCase):
         code, receipt, _ = self.exercise()
         self.assertEqual(code, 0)
         self.assertFalse(receipt['product_certificate'])
+        self.assertTrue(all(receipt['cleanup'].values()))
+
+    def test_ev_failure_remains_failed_and_native_cleanup_still_runs(self):
+        code, receipt, calls = self.exercise('ev-lifecycle')
+        self.assertEqual(code, 1)
+        self.assertEqual(receipt['stage'], 'authenticated-ev-cashout')
         self.assertTrue(all(receipt['cleanup'].values()))
 
     def test_role_installer_native_receipt_is_mandatory(self):

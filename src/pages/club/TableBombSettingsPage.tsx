@@ -262,7 +262,9 @@ export default function TableBombSettingsPage() {
             ? 'The Number Of Hands Between Bomb Pots Must Be At Least 1'
             : res?.reason === 'interval_must_be_at_least_60s'
               ? 'The Timer Must Be At Least One Minute'
-              : 'Could Not Save These Settings'
+              : res?.reason === 'set_by_the_game_template'
+                ? 'Bomb Pots At This Table Are Set By The Game Template'
+                : 'Could Not Save These Settings'
       );
       return;
     }

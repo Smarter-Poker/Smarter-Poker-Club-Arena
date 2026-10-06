@@ -3,14 +3,16 @@
  *  UNIT TESTS — FinancialCronService
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Tests automated financial health checks:
- * - start/stop lifecycle
- * - Config defaults (24h reconciliation, 6h suspension)
+ * Tests the on-demand financial health checks:
+ * - nothing is scheduled in a browser (no start/stop, no timers)
+ * - a signed-out caller never reads agents
  * - getStatus reporting
- * - logRateChange audit trail
+ * - reconciliation is server-side
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 // Isolate the canonical identity boundary; these tests do not bootstrap authentication.
 vi.mock('../../src/core/IdentityDNA', () => ({
@@ -80,13 +82,6 @@ import { supabase } from '../../src/lib/supabase';
 describe('FinancialCronService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.useFakeTimers();
-    FinancialCronService.stop(); // Ensure clean state
-  });
-
-  afterEach(() => {
-    FinancialCronService.stop();
-    vi.useRealTimers();
   });
 
   it('refuses the retired weekly payout without reading clubs or moving money', async () => {
@@ -97,92 +92,54 @@ describe('FinancialCronService', () => {
     expect(supabase.rpc).not.toHaveBeenCalled();
   });
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // START / STOP
-  // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────
+  // NO BROWSER SCHEDULE (2026-10-05)
+  // ─────────────────────────────────────────────────────────────────
 
-  describe('start/stop lifecycle', () => {
-    it('should set isRunning to true on start', () => {
-      FinancialCronService.start();
-      expect(FinancialCronService._isRunning).toBe(true);
+  describe('no financial schedule runs in a browser', () => {
+    /* ServiceBootstrap started this in every tab: a suspension scan of
+       `agents` 30s after load and every six hours, under whoever had the tab
+       open - signed out included, which is where the four "permission denied
+       for table agents" errors of 2026-10-05 came from. */
+    const strip = (src: string) =>
+      src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    const cronSrc = strip(
+      readFileSync(resolve(__dirname, '../../src/services/FinancialCronService.ts'), 'utf8')
+    );
+    const bootSrc = strip(
+      readFileSync(resolve(__dirname, '../../src/services/ServiceBootstrap.ts'), 'utf8')
+    );
+
+    it('has no start, no stop and no timer of any kind', () => {
+      const service = FinancialCronService as Record<string, unknown>;
+      expect(service.start).toBeUndefined();
+      expect(service.stop).toBeUndefined();
+      expect(cronSrc).not.toMatch(/\bsetInterval\(|\bsetTimeout\(/);
     });
 
-    it('should set isRunning to false on stop', () => {
-      FinancialCronService.start();
-      FinancialCronService.stop();
-      expect(FinancialCronService._isRunning).toBe(false);
+    it('boot never imports or starts it', () => {
+      expect(bootSrc).not.toContain('FinancialCronService');
     });
 
-    it('should clear all timers on stop', () => {
-      FinancialCronService.start();
-      FinancialCronService.stop();
-      expect(FinancialCronService._reconciliationTimer).toBeNull();
-      expect(FinancialCronService._suspensionTimer).toBeNull();
-      expect(FinancialCronService._startupTimer).toBeNull();
-    });
-
-    it('should stop previous run when started again', () => {
-      FinancialCronService.start();
-      const firstTimer = FinancialCronService._suspensionTimer;
-      FinancialCronService.start(); // Restart
-      expect(FinancialCronService._suspensionTimer).not.toBe(firstTimer);
-    });
-
-    it('does not schedule a reconciliation timer at all (AUDIT M4)', () => {
-      // The browser cannot reconcile a chip supply it can only see one row of.
-      // Scheduling it here is what produced 1,039 false failures over 5 months.
-      FinancialCronService.start();
-      expect(FinancialCronService._reconciliationTimer).toBeNull();
-    });
-  });
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // CONFIG DEFAULTS
-  // ─────────────────────────────────────────────────────────────────────────
-
-  describe('config defaults', () => {
-    it('should default reconciliation to 24 hours', () => {
-      FinancialCronService.start();
-      expect(FinancialCronService._config.reconciliationIntervalMs).toBe(24 * 60 * 60 * 1000);
-    });
-
-    it('should default suspension check to 6 hours', () => {
-      FinancialCronService.start();
-      expect(FinancialCronService._config.suspensionCheckIntervalMs).toBe(6 * 60 * 60 * 1000);
-    });
-
-    it('should default autoSuspend to false', () => {
-      FinancialCronService.start();
-      expect(FinancialCronService._config.autoSuspendEnabled).toBe(false);
-    });
-
-    it('should accept custom config', () => {
-      FinancialCronService.start({
-        reconciliationIntervalMs: 1000,
-        suspensionCheckIntervalMs: 2000,
-        autoSuspendEnabled: true,
-      });
-      expect(FinancialCronService._config.reconciliationIntervalMs).toBe(1000);
-      expect(FinancialCronService._config.suspensionCheckIntervalMs).toBe(2000);
-      expect(FinancialCronService._config.autoSuspendEnabled).toBe(true);
+    it('a signed-out caller is refused before any read of agents', async () => {
+      // IdentityDNA is mocked signed out (authenticated: false) for this file.
+      mockFrom.mockClear();
+      const result = await FinancialCronService.runSuspensionCheck();
+      expect(result.unavailable).toBe(true);
+      expect(result.agentsChecked).toBe(0);
+      expect(mockFrom).not.toHaveBeenCalled();
     });
   });
 
-  // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────
   // GET STATUS
-  // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────
 
   describe('getStatus', () => {
-    it('should report running state', () => {
-      FinancialCronService.start();
-      const status = FinancialCronService.getStatus();
-      expect(status.isRunning).toBe(true);
-      expect(status.config.reconciliationIntervalMs).toBe(24 * 60 * 60 * 1000);
-    });
-
-    it('should report stopped state', () => {
-      const status = FinancialCronService.getStatus();
-      expect(status.isRunning).toBe(false);
+    it('reports log-only and no schedule', () => {
+      const status = FinancialCronService.getStatus() as Record<string, unknown>;
+      expect(status.isRunning).toBeUndefined();
+      expect(FinancialCronService.getStatus().config).toEqual({ autoSuspendEnabled: false });
     });
   });
 
@@ -228,14 +185,6 @@ describe('FinancialCronService', () => {
       expect(
         (FinancialCronService as Record<string, unknown>).escalateStaleDisputes
       ).toBeUndefined();
-    });
-
-    it('booting the service never reaches the disputes table', async () => {
-      mockFrom.mockClear();
-      FinancialCronService.start({ autoSuspendEnabled: false });
-      FinancialCronService.stop();
-      const touched = mockFrom.mock.calls.map((c: unknown[]) => c[0]);
-      expect(touched).not.toContain('disputes');
     });
   });
 });

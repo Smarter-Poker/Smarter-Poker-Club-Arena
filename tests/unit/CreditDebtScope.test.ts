@@ -72,7 +72,6 @@ beforeEach(async () => {
   cron = (await import('../../src/services/FinancialCronService')).FinancialCronService;
 });
 afterEach(() => {
-  cron.stop();
   vi.useRealTimers();
 });
 const empty = () => ({ data: [], error: null });
@@ -163,7 +162,7 @@ it.each(['returned', 'thrown'])(
     expect(cron._suspensionCheckDisabled).toBe(false);
   }
 );
-it('two consecutive global failures disable; explicit restart recovers and disabled run skips invoice generation', async () => {
+it('two consecutive global failures disable; a new signed-in scope recovers and disabled run skips invoice generation', async () => {
   m.scans.push(new Error('1'), new Error('2'));
   await cron.runSuspensionCheck();
   await cron.runSuspensionCheck();
@@ -171,8 +170,8 @@ it('two consecutive global failures disable; explicit restart recovers and disab
   m.rpc.mockClear();
   expect((await cron.runSuspensionCheck()).unavailable).toBe(true);
   expect(m.rpc).not.toHaveBeenCalled();
-  vi.useFakeTimers();
-  cron.start();
+  // Nothing restarts a schedule any more (there is none); a new account does.
+  switchAccount();
   m.scans.push(empty());
   expect((await cron.runSuspensionCheck()).unavailable).not.toBe(true);
   expect(cron._suspensionCheckDisabled).toBe(false);

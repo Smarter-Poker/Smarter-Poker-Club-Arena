@@ -14,6 +14,13 @@ const releaseContract = readFileSync(
   resolve(import.meta.dirname, '../scripts/verification-harness/cashier-release-contract.sql'),
   'utf8'
 );
+const requestNotificationMigration = readFileSync(
+  resolve(
+    import.meta.dirname,
+    '../supabase/migrations/20261006022835_a_chip_request_tells_its_approver.sql'
+  ),
+  'utf8'
+);
 const manifest = JSON.parse(
   readFileSync(
     resolve(
@@ -129,7 +136,7 @@ describe('cashier authority and exact intent', () => {
         'fn_request_chips_core_20261004',
         'fn_request_chips',
         '20260906093024_cashier_rpc_idempotency_and_telemetry_boundary.sql',
-        '7e5233ef53474fdf4f79ec8a64d6c064',
+        '1dce6c06306523ba83060f1546611648',
       ],
     ] as const;
     for (const [name, sourceName, sourceFile, hash] of exactCorePins) {
@@ -150,9 +157,22 @@ describe('cashier authority and exact intent', () => {
       const bodyStart = delimiterMatch!.index! + delimiterMatch![0].length;
       const bodyEnd = definition.indexOf(delimiter, bodyStart);
       expect(bodyEnd).toBeGreaterThan(bodyStart);
-      expect(createHash('md5').update(definition.slice(bodyStart, bodyEnd)).digest('hex')).toBe(
-        hash
-      );
+      let installedBody = definition.slice(bodyStart, bodyEnd);
+      if (name === 'fn_request_chips_core_20261004') {
+        const blockDelimiter = '$block$';
+        const blockStart = requestNotificationMigration.indexOf(blockDelimiter);
+        const blockBodyStart = blockStart + blockDelimiter.length;
+        const blockEnd = requestNotificationMigration.indexOf(blockDelimiter, blockBodyStart);
+        const anchor = '  RETURNING id INTO v_id;\n';
+        expect(blockStart).toBeGreaterThanOrEqual(0);
+        expect(blockEnd).toBeGreaterThan(blockBodyStart);
+        expect(installedBody.split(anchor)).toHaveLength(2);
+        installedBody = installedBody.replace(
+          anchor,
+          anchor + requestNotificationMigration.slice(blockBodyStart, blockEnd)
+        );
+      }
+      expect(createHash('md5').update(installedBody).digest('hex')).toBe(hash);
     }
     const retainedProductionPins = [
       [

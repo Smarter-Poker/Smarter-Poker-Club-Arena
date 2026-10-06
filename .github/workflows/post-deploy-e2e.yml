@@ -239,12 +239,15 @@ jobs:
     concurrency:
       group: post-deploy-e2e-production
       cancel-in-progress: false
-    # Cashier plus six isolated stateful groups and the 138-test responsive
-    # sweep take 20-24 minutes when production is under normal publish load.
-    # The old 20-minute ceiling cancelled the honesty/report steps just as the
-    # sweep completed, discarding a real verdict. This remains bounded while
-    # leaving enough room for first-attempt, zero-retry certification.
-    timeout-minutes: 50
+    # Cashier, the isolated stateful groups, and the responsive route sweep
+    # normally finish well below this ceiling. Runs 37397055463 and
+    # 37407226104 proved first that 50 minutes and then that 65 minutes could
+    # cancel the job after the nine-surface Table Management audit received
+    # its truthful sequential route budget. The latter ran for 67 minutes.
+    # Keep enough bounded headroom for that audit plus the honesty, cleanup,
+    # release-window, and report steps. A timeout before those steps produces
+    # neither a verdict nor fixture-cleanup proof.
+    timeout-minutes: 80
     outputs:
       client_sha: ${{ steps.live.outputs.sha }}
       certified: ${{ steps.release_window.outputs.certified }}

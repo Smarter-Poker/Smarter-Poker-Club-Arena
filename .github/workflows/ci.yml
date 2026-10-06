@@ -1559,6 +1559,26 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-union-weekly-accounting.sh
+      - name: Weekly recompute commits bounded parts and preserves real payouts
+        id: weekly_recompute_split
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          ACCOUNTING_FIXTURE_PARENT: ${{ runner.temp }}/weekly-recompute
+        run: |
+          mkdir -p "$ACCOUNTING_FIXTURE_PARENT"
+          python3 -B scripts/dev/test-union-weekly-basis.py --split-recompute-only
+      - name: Retain exact weekly recompute qualification
+        if: always() && matrix.shard == 1 && steps.weekly_recompute_split.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-recompute-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/weekly-recompute/uw.*/*.json
+            ${{ runner.temp }}/weekly-recompute/uw.*/*.log
+            ${{ runner.temp }}/weekly-recompute/uw.*/*.sql
+          if-no-files-found: error
+          retention-days: 3
       - name: A must_be_zero ledger account is checked by its balance, not an hour of flow
         if: matrix.shard == 1
         env:

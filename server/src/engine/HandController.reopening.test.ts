@@ -330,3 +330,44 @@ describe('fixed-limit reopening tracks street size and individual action', () =>
     });
   }
 });
+
+describe('A RAISE IS ABOVE THE BET (launch audit 2026-10-05)', () => {
+  // Before the fix, a 5-chip stack's "raise 5" against a bet of 20 was
+  // accepted as a short all-in: the level fell from 20 to 5, and the earlier
+  // bettors' "call" took 15 each back out of the pot.
+  function setup() {
+    const h = harness(mkConfig(), mkPlayers([200, 200, 200, 5]), 1);
+    h.hc.start();
+    expect(h.cur()).toBe(4);
+    expect(h.actSeat(4, 'fold')).toBe(true);
+    expect(h.actSeat(1, 'raise', 20)).toBe(true);
+    return h;
+  }
+
+  it('refuses a raise to less than the bet, and the level does not move', () => {
+    // Preflop order is 4, 1, 2, 3: the short stack sits in the SB.
+    const g = harness(mkConfig(), mkPlayers([200, 5, 200, 200]), 1);
+    g.hc.start();
+    expect(g.actSeat(4, 'raise', 20)).toBe(true);
+    expect(g.actSeat(1, 'call')).toBe(true);
+    expect(g.cur()).toBe(2);
+    const potBefore = g.st().pot;
+    expect(g.actSeat(2, 'raise', 5)).toBe(false);
+    expect(g.actSeat(2, 'raise', 20)).toBe(false);
+    expect(g.st().currentBet).toBe(20);
+    expect(g.st().pot).toBe(potBefore);
+    // The same chips arrive legally as an all-in, and the level still holds.
+    expect(g.actSeat(2, 'all_in')).toBe(true);
+    expect(g.st().currentBet).toBe(20);
+  });
+
+  it('refuses a call from a seat that already has the level in', () => {
+    const h = setup();
+    expect(h.actSeat(2, 'call')).toBe(true);
+    expect(h.actSeat(3, 'call')).toBe(true);
+    // Postflop, first to act faces no bet: a call is "Nothing to call".
+    const seat = h.cur();
+    expect(h.actSeat(seat, 'call')).toBe(false);
+    expect(h.actSeat(seat, 'check')).toBe(true);
+  });
+});

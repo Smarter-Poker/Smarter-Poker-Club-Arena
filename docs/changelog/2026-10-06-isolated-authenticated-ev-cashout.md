@@ -74,3 +74,9 @@ Outer cleanup attempts every owned resource independently, retains fixed cleanup
 error codes, and fails the receipt even if the actor had already passed. Local
 actual-controller/pricing checks passed 2/2 with clean exit; composition checks
 passed 5/5. Authenticated native acceptance remains pending hosted execution.
+
+Hosted 44ee stopped before container creation: the pool intentionally unrefs its
+workers, so the isolated Node pricing test had no live process handle while
+awaiting readiness. That test now owns a bounded rejection deadline, disposed
+after pool shutdown, while retaining real pricing assertions. The native actor
+already owns its HTTP listener. No financial execution is claimed from this run.

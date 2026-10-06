@@ -92,22 +92,39 @@ test('real structured insurance worker prices the actor board and shuts down', a
     rank: t[0],
     suit: { s: 'spades', h: 'hearts', d: 'diamonds', c: 'clubs' }[t[1]],
   });
+  // Production keeps HTTP listening; this finite test owns a deadline instead.
+  // The real pool deliberately unrefs its workers and internal timers.
+  let deadline;
   try {
-    const status = await startEquityWorkerPool();
-    assert.equal(status.acceptingWork, true);
-    const result = await getEquityPool().estimateInsurance(
-      [
-        ['As', 'Ah'],
-        ['7c', '8c'],
-      ].map((xs) => xs.map(card)),
-      ['Ac', 'Kc', '2d', '9h'].map(card),
-      'nlh',
-      false
-    );
-    assert.equal(result.length, 2);
-    assert.equal(result[0].exact, true);
-    assert.ok(result[0].equity > 50 && result[0].strictLossPct > 0);
+    await Promise.race([
+      (async () => {
+        const status = await startEquityWorkerPool();
+        assert.equal(status.acceptingWork, true);
+        const result = await getEquityPool().estimateInsurance(
+          [
+            ['As', 'Ah'],
+            ['7c', '8c'],
+          ].map((xs) => xs.map(card)),
+          ['Ac', 'Kc', '2d', '9h'].map(card),
+          'nlh',
+          false
+        );
+        assert.equal(result.length, 2);
+        assert.equal(result[0].exact, true);
+        assert.ok(result[0].equity > 50 && result[0].strictLossPct > 0);
+      })(),
+      new Promise((_, reject) => {
+        deadline = setTimeout(
+          () => reject(new Error('Real insurance worker did not finish')),
+          10000
+        );
+      }),
+    ]);
   } finally {
-    await stopEquityWorkerPool();
+    try {
+      await stopEquityWorkerPool();
+    } finally {
+      clearTimeout(deadline);
+    }
   }
 });

@@ -21,9 +21,12 @@ describe('disaster recovery is documented and wired', () => {
     expect(t).toMatch(/engine box is gone/i);
     expect(t).toMatch(/database corruption/i);
     expect(t).toMatch(/the mac is gone/i);
-    // The one control an agent cannot verify must be flagged for a human.
+    // Configuration is verifiable through the provider; a restore needs isolation.
     expect(t).toMatch(/PITR/);
-    expect(t).toMatch(/human action|Dan/);
+    expect(t).toContain('GET /v1/projects/{ref}/database/backups');
+    expect(t).toContain('Disabling these after startup is not isolation.');
+    expect(t).toContain('Not a restore drill.');
+    expect(t).not.toMatch(/agent cannot (?:check|toggle)|human action/i);
   });
 
   it('the engine-secret backup is explicit, pinned and never reads local env authority', () => {

@@ -78,7 +78,6 @@ beforeEach(async () => {
   cron = (await import('../../src/services/FinancialCronService')).FinancialCronService;
 });
 afterEach(() => {
-  cron.stop();
   vi.useRealTimers();
 });
 const empty = () => ({ data: [], error: null });

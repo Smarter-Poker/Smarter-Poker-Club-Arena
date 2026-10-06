@@ -1,17 +1,30 @@
 import { getIdentityDNAStatus } from '../core/IdentityDNA';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  FINANCIAL CRON SERVICE — Automated Financial Health Checks
+ *  FINANCIAL HEALTH CHECKS - on demand, from an admin's own console
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Runs on configurable intervals to enforce financial integrity:
- * - Ledger reconciliation REMOVED (AUDIT M4) - it is server-side and
- *   snapshot-based now; see fn_snapshot_chip_supply
- * - P2-12: Credit invoice auto-suspension for overdue agents
- * - P2-17: Commission rate change audit trail logging
+ * NOTHING HERE IS SCHEDULED, AND NOTHING HERE MAY BE (2026-10-05).
  *
- * Start via: FinancialCronService.start() in app initialization.
- * Stop via:  FinancialCronService.stop()
+ * This file used to be a browser "cron": ServiceBootstrap started it in every
+ * tab, and 30 seconds after load and every six hours after that it scanned
+ * `agents` for overdue credit. A financial schedule does not belong in a
+ * browser. It ran under whoever happened to have a tab open - including signed
+ * out visitors, which is where the four "permission denied for table agents"
+ * errors of 2026-10-05 22:02-23:02 UTC came from (anon holds no SELECT on
+ * agents) - and under RLS a signed-in tab sees only the agents its own cashier
+ * scope reaches, so even a "successful" scan was one club's slice reported as
+ * the whole book. It also never did anything: autoSuspendEnabled was false, so
+ * the most it could produce was a warning.
+ *
+ * What remains is the admin's "Run Now" on FinancialHealthPage: a deliberate,
+ * signed-in, scope-limited read of the agents that admin may see. It refuses
+ * without a signed-in identity rather than reading as anon.
+ *
+ * - Ledger reconciliation is server-side and snapshot-based (AUDIT M4,
+ *   fn_snapshot_chip_supply); runReconciliation below only says so.
+ * - P2-12: credit invoice suspension check, on demand, log-only by default.
+ * - P2-17: commission rate change audit trail logging.
  */
 
 import { supabase } from '../lib/supabase';
@@ -25,11 +38,7 @@ import { reportError } from '../utils/errorReporter';
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export interface FinancialCronConfig {
-  /** Reconciliation check interval in ms (default: 24 hours) */
-  reconciliationIntervalMs?: number;
-  /** Credit suspension check interval in ms (default: 6 hours) */
-  suspensionCheckIntervalMs?: number;
-  /** Enable automated suspension (default: false — log-only) */
+  /** Suspend on a check rather than only warning (default: false, log-only) */
   autoSuspendEnabled?: boolean;
 }
 
@@ -61,99 +70,21 @@ export interface SuspensionCheckResult {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const FinancialCronService = {
-  _reconciliationTimer: null as ReturnType<typeof setInterval> | null,
-  _suspensionTimer: null as ReturnType<typeof setInterval> | null,
-  _rakebackSettlementTimer: null as ReturnType<typeof setInterval> | null,
-  _startupTimer: null as ReturnType<typeof setTimeout> | null,
-  _isRunning: false,
   _scopeGeneration: 0,
   _lastReconciliation: null as ReconciliationResult | null,
   _lastSuspensionCheck: null as SuspensionCheckResult | null,
-  /** FIX-216: Circuit breaker — disable suspension checks after persistent failures */
+  /** FIX-216: Circuit breaker - stop scanning after persistent failures */
   _suspensionCheckFailed: 0,
   _suspensionCheckDisabled: false,
   _config: {
-    reconciliationIntervalMs: 24 * 60 * 60 * 1000, // 24 hours
-    suspensionCheckIntervalMs: 6 * 60 * 60 * 1000, // 6 hours
     autoSuspendEnabled: false,
   } as Required<FinancialCronConfig>,
-
-  /**
-   * Start all financial cron jobs
-   */
-  start(config: FinancialCronConfig = {}): void {
-    if (this._isRunning) this.stop();
-    this._scopeGeneration++;
-    this._suspensionCheckFailed = 0;
-    this._suspensionCheckDisabled = false;
-    this._lastSuspensionCheck = null;
-
-    this._config = {
-      reconciliationIntervalMs: config.reconciliationIntervalMs ?? 24 * 60 * 60 * 1000,
-      suspensionCheckIntervalMs: config.suspensionCheckIntervalMs ?? 6 * 60 * 60 * 1000,
-      autoSuspendEnabled: config.autoSuspendEnabled ?? false,
-    };
-
-    console.debug(
-      '[FinancialCron] Started - reconciliation every',
-      this._config.reconciliationIntervalMs / 3600000,
-      'h, suspension check every',
-      this._config.suspensionCheckIntervalMs / 3600000,
-      'h'
-    );
-
-    // Delay first run by 30s — avoids noisy failures during app startup
-    // when database connections may not be fully established
-    // AUDIT M4: reconciliation is NO LONGER scheduled here. It ran in every
-    // browser session, and under RLS a browser sees exactly one wallet - its
-    // own - so `minted - wallets - locked` evaluated to
-    // `0 - (that user's balance) - 0`. The "discrepancy" it reported was simply
-    // the caller's own balance, negated, and it wrote that to
-    // financial_health_checks: 1,049 rows between 2026-03-13 and 2026-08-05,
-    // 1,039 of them failing, with 199 distinct values. A check that fails 99% of
-    // the time is worse than no check, because it teaches everyone to ignore the
-    // channel M3 built.
-    //
-    // Chip-supply reconciliation is now server-side and snapshot-based
-    // (fn_snapshot_chip_supply, service_role only). See the migration for why it
-    // measures deltas between snapshots rather than asserting balance against a
-    // genesis figure that does not exist.
-    this._startupTimer = setTimeout(() => {
-      this.runSuspensionCheck();
-    }, 30_000);
-    this._suspensionTimer = setInterval(
-      () => this.runSuspensionCheck(),
-      this._config.suspensionCheckIntervalMs
-    );
-    // Weekly accounting has no browser timer or callable browser payer.
-    // Suspension and dispute diagnostics above retain their existing behavior.
-
-    this._isRunning = true;
-  },
-
-  /**
-   * Stop all cron jobs
-   */
-  stop(): void {
-    this._scopeGeneration++;
-    if (this._startupTimer) clearTimeout(this._startupTimer);
-    if (this._reconciliationTimer) clearInterval(this._reconciliationTimer);
-    if (this._suspensionTimer) clearInterval(this._suspensionTimer);
-    if (this._rakebackSettlementTimer) clearInterval(this._rakebackSettlementTimer);
-    this._startupTimer = null;
-    this._reconciliationTimer = null;
-    this._suspensionTimer = null;
-    this._rakebackSettlementTimer = null;
-    this._isRunning = false;
-    console.debug('[FinancialCron] Stopped');
-  },
 
   /**
    * Get status for admin dashboard
    */
   getStatus() {
     return {
-      isRunning: this._isRunning,
       lastReconciliation: this._lastReconciliation,
       lastSuspensionCheck: this._lastSuspensionCheck,
       config: this._config,
@@ -192,9 +123,9 @@ export const FinancialCronService = {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Check all agents with credit lines for overdue invoices.
-   * If autoSuspendEnabled, automatically suspend agents with overdue debt.
-   * Otherwise, just log warnings for ops review.
+   * Check the agents with credit lines that this signed-in admin may see for
+   * overdue invoices. Run only from the admin's own "Run Now"; never on a timer.
+   * If autoSuspendEnabled, suspend agents with overdue debt; otherwise warn.
    */
   async runSuspensionCheck(): Promise<SuspensionCheckResult> {
     const generation = this._scopeGeneration;
@@ -406,6 +337,9 @@ function cronIdentityReady(): boolean {
   const snapshot = getIdentityDNAStatus();
   // Do not start debt reads/scans while canonical auth initialization is incomplete.
   if (!snapshot?.loaded) return false;
+  // A signed-out caller has no business reading agents, and anon holds no
+  // SELECT on the table: the read would only ever be "permission denied".
+  if (!snapshot.authenticated || !snapshot.userId) return false;
   if (cronIdentity === undefined) cronIdentity = snapshot.authenticated ? snapshot.userId : null;
   return true;
 }

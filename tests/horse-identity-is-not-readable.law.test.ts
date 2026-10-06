@@ -28,8 +28,9 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
+import { blankNonCode } from './helpers/sourceWindow';
 
 const MIGRATIONS = join(__dirname, '..', 'supabase', 'migrations');
 const files = readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql'));
@@ -458,5 +459,85 @@ describe('LAW: a reel does not say who made it, and the post modes are closed', 
         );
       });
     expect(offenders).toEqual([]);
+  });
+});
+
+describe('LAW: no browser query names a horse column', () => {
+  /* The grants above make the database refuse. This is the other half: the
+     bundle must not ASK. A query naming is_horse is refused (42501) and fails
+     closed - an empty list, a feature that silently does nothing - and the
+     question itself, shipped to every player's browser, says which columns
+     mark a horse. Found 2026-10-05: HydraService (imported by TablePage, run
+     on every buy-in) and HorseOrchestrator (imported by UnionDetailPage) were
+     still selecting and filtering on profiles.is_horse, horse_status and
+     horse_profile. Both were dead browser-side horse management - the engine
+     owns horses - and were deleted rather than fenced. */
+  const SRC = join(__dirname, '..', 'src');
+  const MARKS = /\b(is_horse|horse_status|horse_profile|horse_id|is_bot)\b/;
+  /* horse_bug_reports is the one exception, and it is not the identity mark:
+     its horse_id is a free-text reporter label defaulting to 'system', and the
+     only thing a browser files there is its own console capture, labelled
+     'console'. The table is admin-read only
+     (a-horse-report-is-not-a-public-record). */
+  const EXEMPT_TABLES = new Set(['horse_bug_reports']);
+
+  function browserFiles(dir: string, out: string[] = []): string[] {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) browserFiles(full, out);
+      else if (/\.(ts|tsx)$/.test(entry.name) && !/\.test\.(ts|tsx)$/.test(entry.name)) {
+        out.push(full);
+      }
+    }
+    return out;
+  }
+
+  /** Every `.from('<table>')` query chain in src, as [file, table, chain]. */
+  function queries(): Array<[string, string, string]> {
+    const out: Array<[string, string, string]> = [];
+    for (const file of browserFiles(SRC)) {
+      const src = readFileSync(file, 'utf8');
+      const cleaned = blankNonCode(src);
+      const anchor = /\.from\(\s*(['"`])([a-z_][a-z0-9_]*)\1\s*\)/g;
+      let m: RegExpExecArray | null;
+      while ((m = anchor.exec(src))) {
+        // An anchor inside a comment or a string is prose, not a query.
+        if (cleaned.slice(m.index, m.index + 6) !== '.from(') continue;
+        let depth = 0;
+        let end = cleaned.length;
+        for (let i = m.index; i < cleaned.length; i++) {
+          const c = cleaned[i];
+          if (c === '{' || c === '(' || c === '[') depth++;
+          else if (c === '}' || c === ')' || c === ']') depth--;
+          else if (c === ';' && depth <= 0) {
+            end = i + 1;
+            break;
+          }
+        }
+        // Comments out, strings kept: the column names live in strings.
+        const chain = src
+          .slice(m.index, end)
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/^\s*\/\/.*$/gm, '');
+        out.push([relative(join(__dirname, '..'), file), m[2], chain]);
+      }
+    }
+    return out;
+  }
+
+  it('no src query selects, filters or writes is_horse, horse_status, horse_profile, horse_id or is_bot', () => {
+    const all = queries();
+    // The walk saw the reads it guards; an empty walk would pass on nothing.
+    expect(all.length).toBeGreaterThan(200);
+    const offenders = all
+      .filter(([, table, chain]) => !EXEMPT_TABLES.has(table) && MARKS.test(chain))
+      .map(([file, table, chain]) => `${file}: from('${table}') names ${chain.match(MARKS)![1]}`);
+    expect(offenders, 'a browser query names a horse-identity column').toEqual([]);
+  });
+
+  it('the browser horse-management services stay deleted', () => {
+    for (const gone of ['src/services/HydraService.ts', 'src/services/HorseOrchestrator.ts']) {
+      expect(existsSync(join(__dirname, '..', gone)), `${gone} is back`).toBe(false);
+    }
   });
 });

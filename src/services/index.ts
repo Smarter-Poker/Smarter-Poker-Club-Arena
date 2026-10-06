@@ -71,16 +71,9 @@ export type {
   LeaderboardMetric,
 } from './LeaderboardService';
 
-// Horse Liquidity (Hydra)
-export { HydraService } from './HydraService';
-export type {
-  HorsePlayer,
-  HydraConfig,
-  HorseProfile,
-  TableLiquidityStatus,
-  HorseDecision,
-  HandContext,
-} from './HydraService';
+/* HydraService and HorseOrchestrator are gone (2026-10-05): browser-side horse
+   management that read profiles.is_horse / horse_status / horse_profile, which
+   no browser role may read. The engine owns horses. */
 
 // Arena & Training
 export * from './ArenaTrainingController';

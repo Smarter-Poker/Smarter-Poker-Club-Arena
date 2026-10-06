@@ -30,7 +30,6 @@ import { useToast } from '../components/common/Toast';
 import ConfirmModal from '../components/common/ConfirmModal';
 import CreateTournamentModal from '../components/club/CreateTournamentModal';
 import GameCreationActions from '../components/club/GameCreationActions';
-import { ensureMidwayUnionSetup } from '../services/HorseOrchestrator';
 import { getUnionLevel, getClubLevel } from '../utils/clubLevels';
 import { reportError } from '../utils/errorReporter';
 import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
@@ -288,16 +287,11 @@ export default function UnionDetailPage() {
         setLoadError(null);
       }
       try {
-        let unionData = await unionService.getUnion(unionId);
-
-        // Self-healing: if Midway Union is missing, auto-create it
-        if (!unionData && unionId === 'fade0000-0000-0000-0000-000000000001') {
-          console.warn('[UnionDetailPage] Midway Union missing - auto-creating...');
-          const ok = await ensureMidwayUnionSetup();
-          if (ok) {
-            unionData = await unionService.getUnion(unionId);
-          }
-        }
+        /* No browser "self-heal" of the Midway Union (2026-10-05). It went
+           through HorseOrchestrator, which inserted unions / union_clubs rows
+           from whoever opened this page; the union exists, and a missing union
+           is a data fault to fix where the data lives, not on page load. */
+        const unionData = await unionService.getUnion(unionId);
 
         const clubsData = await unionService.getUnionClubs(unionId);
         const tablesData = await tableService.getUnionTables(unionId);

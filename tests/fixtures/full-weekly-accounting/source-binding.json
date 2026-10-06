@@ -168,8 +168,8 @@
     "tests/fixtures/browser-period-observer/captured-preimages.sql": "c024e56561a56867839c5e952e735e6118625e19ee40ad14292afd46aed22502",
     "tests/fixtures/browser-period-observer/regression.sql": "3550c76e15615707f52d4b6fc8c183b5b8cd3ad9105a6282e72c25b900152284",
     "tests/unit/SettlementCronService.test.ts": "b436754cec532a518975b8f03ff5020dc90048d30c044ca04aa25029a1109a9f",
-    "tests/unit/ServiceBootstrap.test.ts": "74881cd7adc292cafbd325c98bee91ad53192ecdb4e07cc66aab3d11b58f4c21",
-    "tests/unit/FinancialCronService.test.ts": "d896cbd87786cb83569ee48e7d1adde3f017ceba3a3e1f4fe573ed7cfefddb4d",
+    "tests/unit/ServiceBootstrap.test.ts": "533800128e0f184de1437e25d2966af1b08a3926ac9398d28938b017fec6ad02",
+    "tests/unit/FinancialCronService.test.ts": "97ff4db95d5bfaa5d281f04259066ce9e3df7ca884743317750af4d22d100610",
     "tests/components/ClubWeeklyAccountingSummary.test.tsx": "c3b8dd010b46ce1f14180ab05c4b36f7ac14c3f35c73f2fff7563f2b135ab634",
     "tests/unit/AccountingObservationService.test.ts": "6e571f657f66a05bd37b9aa35b867e12b54c99c75754e017034ec3bafed17ce9",
     "tests/unit/SettlementService.test.ts": "92390199785906650508d16eea99372e24a6451dd8cd9d108679381ed1ca936d",
@@ -182,7 +182,7 @@
     "tests/components/cashier-cashout-generations.test.tsx": "c3d521a79889e716b7dd181ca94c595fca8bf22054240fee59cc61a6936b6afb",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "51094ea1ec27a4e1e4c43f1e6fc919c84f41fd1f3a29326bb3508bd708566eb9",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "12aca8db85e2fc33320718e2d3fb4c631bef7688e55bf6ccd97841ad72fff9ef",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "817a6f62c911adb5dae5a70934a6a1c3f89af7819016a06e0904f3b944ffac4d",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
@@ -3644,5 +3644,26 @@
     "reason": "Route the manual final-table page runner, its tests, forward migrations and schema fragment into the existing required accounting and source-test lanes. Existing financial selection and runtime sources are unchanged. Reviewed diff and native customization proof; this restamp does not certify weekly settlement or expand historical claims.",
     "sha256": "732f731aa929df1e7b43aa58a5ef7d06c2e6c24ad3be2dc3d64abe2765e3fe7b",
     "nested_bindings": "Refresh the two reviewed nested classifier-only binding documents in the parent binding; runtime and historical fixture data unchanged."
+  },
+  "browserFinancialScheduleAndHorseManagementRetired20261005": {
+    "reason": "Retires the browser financial schedule and the browser horse-management services. FinancialCronService no longer has start/stop or any timer and ServiceBootstrap no longer starts it: it ran a credit-suspension scan of agents in every tab, signed out included (anon has no SELECT on agents, the 2026-10-05 22:02-23:02 UTC permission-denied errors). The suspension check stays as the admin's on-demand Run Now and refuses without a signed-in identity. HydraService and HorseOrchestrator are deleted (dead browser code that read profiles.is_horse/horse_status/horse_profile), which removes their two discarded-read ratchet entries; no allowance is widened. No accounting SQL image, financial fixture or historical assertion changes.",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/FinancialCronService.test.ts",
+        "previous_sha256": "d896cbd87786cb83569ee48e7d1adde3f017ceba3a3e1f4fe573ed7cfefddb4d",
+        "sha256": "97ff4db95d5bfaa5d281f04259066ce9e3df7ca884743317750af4d22d100610"
+      },
+      {
+        "path": "tests/unit/ServiceBootstrap.test.ts",
+        "previous_sha256": "74881cd7adc292cafbd325c98bee91ad53192ecdb4e07cc66aab3d11b58f4c21",
+        "sha256": "533800128e0f184de1437e25d2966af1b08a3926ac9398d28938b017fec6ad02"
+      },
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "12aca8db85e2fc33320718e2d3fb4c631bef7688e55bf6ccd97841ad72fff9ef",
+        "sha256": "817a6f62c911adb5dae5a70934a6a1c3f89af7819016a06e0904f3b944ffac4d"
+      }
+    ],
+    "verification": "Each diff was read. FinancialCronService.test.ts replaces the start/stop and interval-default tests with pins that nothing is scheduled, boot never imports the service, and a signed-out caller reads nothing; ServiceBootstrap.test.ts drops the FinancialCronService mock and pins that boot starts no financial schedule; discardedErrorReadRatchet.test.ts removes the baseline entries of the two deleted files. The focused tests and the complete source-binding verifier pass on the candidate."
   }
 }

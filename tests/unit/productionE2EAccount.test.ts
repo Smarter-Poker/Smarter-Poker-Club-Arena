@@ -189,6 +189,74 @@ describe('post-deploy production account', () => {
     expect(young).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    { ageMinutes: 44, setupFails: false },
+    { ageMinutes: 80, setupFails: false },
+    { ageMinutes: 1440, setupFails: false },
+    { ageMinutes: 44, setupFails: true },
+  ])(
+    'preserves another run at age $ageMinutes minutes (setupFails=$setupFails)',
+    async ({ ageMinutes, setupFails }) => {
+      const directory = mkdtempSync(join(tmpdir(), 'production-e2e-overlap-'));
+      const env = environment(directory);
+      writeFileSync(env.GITHUB_ENV, '');
+      const otherId = '00000000-0000-4000-8000-000000000088';
+      const retired: string[] = [];
+      const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith('/rpc/fn_ca_stale_certification_accounts')) {
+          return Response.json([
+            {
+              id: otherId,
+              email: 'ca-customization-cert-postdeploy-other-run@example.invalid',
+              created_at: new Date(Date.now() - ageMinutes * 60_000).toISOString(),
+            },
+          ]);
+        }
+        if (url.includes('/rest/v1/clubs?')) return Response.json([]);
+        if (url.endsWith('/rpc/cleanup_reserved_certification_account')) {
+          retired.push(JSON.parse(String(init?.body)).p_user_id);
+          return Response.json({ success: true });
+        }
+        if (url.endsWith('/auth/v1/admin/users') && init?.method === 'POST') {
+          return Response.json({ id: USER_ID });
+        }
+        if (url.includes('/auth/v1/admin/users/')) return new Response(null, { status: 404 });
+        if (url.includes('/rest/v1/profiles?select=id,arena_avatar_url')) {
+          return Response.json([{ id: USER_ID, arena_avatar_url: AVATAR }]);
+        }
+        if (url.includes('/rest/v1/profiles?select=id')) {
+          return Response.json(setupFails ? [] : [{ id: USER_ID }]);
+        }
+        if (url.includes('/rest/v1/profiles?id=eq.') && init?.method === 'PATCH') {
+          return new Response(null, { status: 204 });
+        }
+        throw new Error('Unexpected fixture request: ' + url);
+      });
+      vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      const creation = createProductionE2EAccount({
+        environment: env,
+        fetchImpl: fetchMock,
+        wait: async () => undefined,
+      });
+      if (setupFails) {
+        await expect(creation).rejects.toThrow('never received a profile row');
+      } else {
+        await expect(creation).resolves.toMatchObject({ id: USER_ID });
+        await cleanupProductionE2EAccount({ environment: env, fetchImpl: fetchMock });
+      }
+      // A reserved, zero-custody identity may still belong to a running or
+      // overdue lane. Only the identity created by this invocation is ours.
+      expect(retired).toEqual([USER_ID]);
+      expect(
+        fetchMock.mock.calls.some(([url]) =>
+          String(url).includes('fn_ca_stale_certification_accounts')
+        )
+      ).toBe(false);
+    }
+  );
+
   it('creates one normalized reserved identity, exports it, then proves hard deletion', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-'));
     const env = environment(directory);

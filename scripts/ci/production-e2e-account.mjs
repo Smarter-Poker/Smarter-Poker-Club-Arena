@@ -19,14 +19,7 @@ const PROFILE_ATTEMPTS = 24;
 const STALE_ACCOUNT_AGE_MS = 40 * 60_000;
 const STALE_ACCOUNT_LIMIT = 20;
 const FRESH_SCHEDULE_CLAIM_RETRY_DELAYS_MS = Object.freeze([
-  2_000,
-  4_000,
-  8_000,
-  16_000,
-  30_000,
-  60_000,
-  120_000,
-  90_000,
+  2_000, 4_000, 8_000, 16_000, 30_000, 60_000, 120_000, 90_000,
 ]);
 // The exact names the guarded certification-retirement coordinator accepts.
 // re-checks them, but this side refuses first so an unrecognized club is never
@@ -651,8 +644,7 @@ export async function retireCertificationClubWithRetry({
       await client.end();
     }
   };
-  const retirementFailureMessage = (error) =>
-    String(error?.body?.message || error?.message || '');
+  const retirementFailureMessage = (error) => String(error?.body?.message || error?.message || '');
   const hasFreshUnmaterializedScheduleClaim = async () => {
     const items = await serviceRequest(
       configuration,
@@ -947,7 +939,11 @@ export async function createProductionE2EAccount({
 } = {}) {
   const configuration = requireEnvironment(environment);
   if (!environment.GITHUB_ENV) throw new Error('GITHUB_ENV is required to share the account.');
-  await cleanupStaleProductionE2EAccounts({ environment, fetchImpl });
+  // The browser and live-table lanes run concurrently. Age and zero custody
+  // do not establish that another lane has finished (or stopped after timeout).
+  // Creation owns only its new identity; setup-failure and workflow always()
+  // cleanup retire that exact record. Recover interrupted runs explicitly after
+  // verifying their terminal ownership, never by sweeping during another create.
   const suffix = `${Date.now()}-${randomUUID()}`;
   const email = `${ACCOUNT_PREFIX}${suffix}${ACCOUNT_SUFFIX}`;
   const password = `Ca!${randomUUID()}aA7`;

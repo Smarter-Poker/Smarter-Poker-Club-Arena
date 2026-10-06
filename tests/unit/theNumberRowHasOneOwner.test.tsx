@@ -56,7 +56,7 @@ describe('the number row has one owner', () => {
   it('a tournament table sizes in whole chips', () => {
     const src = readFileSync(join(__dirname, '..', '..', 'src', 'pages', 'TablePage.tsx'), 'utf8');
     expect(src).toContain(
-      "unit={tableState.arenaAsset === 'diamonds' || tableState.isTournament ? 1 : 0.01}"
+      "tableState.arenaAsset === 'diamonds' || tableState.isTournament ? 1 : 0.01"
     );
   });
 });

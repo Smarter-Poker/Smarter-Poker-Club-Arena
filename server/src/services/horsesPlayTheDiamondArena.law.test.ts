@@ -189,7 +189,9 @@ describe('a horse that busts at a Diamond table is released like a person', () =
       DEALING.indexOf('protected async recoverBustedSeatedHorses(')
     );
     expect(fn).toContain("const diamondCash = this.tableInfo?.arena?.asset === 'diamonds';");
-    expect(fn).toContain('(!p.is_horse || diamondCash)');
+    // the behaviour itself is proven by aBustedHorseAtADiamondTableIsReleased.test.ts;
+    // this pins only that the filter consults the Diamond flag
+    expect(fn).toMatch(/\|\| diamondCash\)/);
   });
 });
 

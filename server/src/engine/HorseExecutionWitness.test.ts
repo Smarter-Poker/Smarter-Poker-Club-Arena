@@ -15,6 +15,7 @@ import { HorseMind } from './HorseMind.js';
 import { encodeHorseDecisionReads } from './HorseDecisionReadFrame.js';
 import { saveFastRandom, restoreFastRandom, seedFastRandom } from './HorseEval.js';
 import { jointPolicyFixture } from './multiway/JointRangeFixture.test-support.js';
+import { jointInputBindingSha256 } from './multiway/JointLivePolicy.js';
 import { omahaVariantSpot } from '../benchmark/OmahaVariantPolicyEvidence.js';
 import { remainingVariantSpot } from '../benchmark/RemainingVariantPolicyEvidence.js';
 import { createHash } from 'node:crypto';
@@ -54,6 +55,62 @@ beforeEach(() => {
 });
 
 describe('private execution witness', () => {
+  it('owns a compact immutable commitment to the Phase 13 input binding (P13.1)', () => {
+    const { hero, state } = jointPolicyFixture('plo6', 2, 'cash', 'turn');
+    seedFastRandom(7301301);
+    const decision = HorseLogic.decide(
+      hero,
+      state,
+      'balanced',
+      {},
+      {
+        telemetry: false,
+        mind: false,
+        decisionTimeMs: 0,
+        phase11Omaha: 'off',
+        phase13Joint: 'shadow',
+        phase13EvidenceMode: true,
+      }
+    );
+    const inputs = decision.jointPolicy!.inputs!;
+    const witness = createHorseExecutionWitness(
+      { ...input, player: hero, gameState: state },
+      decision,
+      { requestId: 1, lane: 'fast', computeMs: 1, governorScale: 1 }
+    );
+    const expected = {
+      version: 'horse-phase13-input-binding-v1',
+      variant: 'plo6',
+      inputSha256: jointInputBindingSha256(inputs),
+      rangeStatus: 'consumed',
+    };
+    expect(witness.phase13Inputs).toEqual(expected);
+    expect(Object.isFrozen(witness.phase13Inputs)).toBe(true);
+    // The witness carries the commitment, never the binding or a card.
+    expect(JSON.stringify(witness)).not.toMatch(/"rank"|"suit"|actionOrder/);
+    settleHorseExecutionWitness(witness, {
+      applied: true,
+      acceptedActions: [
+        {
+          record: { seat: hero.seat, action: decision.action, amount: 0, stage: 'turn' },
+          intended: true,
+        },
+      ],
+    });
+    expect(witness.phase13Inputs).toEqual(expected);
+    // A refused proposal commits to null; a retained receipt to nothing.
+    const refused = make({
+      action: 'check',
+      thinkTime: 1,
+      jointPolicy: { ...decision.jointPolicy!, eligible: false, inputs: null },
+    });
+    expect(refused.phase13Inputs).toBeNull();
+    const { inputs: _drop, ...retainedReceipt } = decision.jointPolicy!;
+    const retained = make({ action: 'check', thinkTime: 1, jointPolicy: retainedReceipt });
+    expect(retained).not.toHaveProperty('phase13Inputs');
+    expect(make()).not.toHaveProperty('phase13Inputs');
+  });
+
   it('owns a compact immutable commitment to actual utility evidence and its original read frame', () => {
     const { hero, state } = jointPolicyFixture('nlh', 1, 'tournament', 'preflop');
     state.legalActions = ['check'];
@@ -501,6 +558,83 @@ describe('private execution witness', () => {
         make({ ...decision, remainingVariantPolicy: legacy as typeof receipt })
       ).not.toHaveProperty('phase12Authority');
       expect(make({ action: 'check', thinkTime: 1 })).not.toHaveProperty('phase12Authority');
+    }
+  );
+
+  it.each([
+    ['nlh', 2, 'flop'],
+    ['plo4', 1, 'turn'],
+    ['flo8', 1, 'river'],
+    ['short_deck', 2, 'flop'],
+  ] as const)(
+    'P13.3 binds the %s joint selection (%i boards, %s): proposal, shadow baseline and the accepted action',
+    (variant, boards, street) => {
+      const spot = jointPolicyFixture(variant, boards, 'cash', street);
+      const rng = saveFastRandom();
+      let decision: HorseDecision;
+      try {
+        seedFastRandom(10_301_204);
+        decision = HorseLogic.decide(
+          spot.hero,
+          spot.state,
+          'balanced',
+          {},
+          { telemetry: false, mind: false, decisionTimeMs: 0, phase13EvidenceMode: true }
+        );
+      } finally {
+        restoreFastRandom(rng);
+      }
+      const receipt = decision.jointPolicy!;
+      expect(receipt).toMatchObject({ mode: 'shadow', changed: true, selection: 'shadow_change' });
+      const snapshot = { ...input, player: spot.hero, gameState: spot.state };
+      const witness = createHorseExecutionWitness(snapshot, decision, {
+        requestId: 1,
+        lane: 'fast',
+        computeMs: 1,
+        governorScale: 1,
+      });
+      const expected = {
+        continuationVersion: receipt.version,
+        mode: 'shadow',
+        selection: 'shadow_change',
+        authority: null,
+        verdict: null,
+        candidate: { action: receipt.proposalAction, amount: receipt.proposalAmount },
+        reference: { action: receipt.baselineAction, amount: receipt.baselineAmount },
+      };
+      expect(witness.phase13Authority).toEqual(expected);
+      for (const key of ['phase10Authority', 'phase11Authority', 'phase12Authority'])
+        if (Object.hasOwn(witness, key))
+          expect((witness as unknown as Record<string, { mode: string }>)[key].mode).toBe('shadow');
+      expect(Object.isFrozen(witness.phase13Authority!.candidate)).toBe(true);
+      expect(Object.isFrozen(witness.phase13Authority!.reference)).toBe(true);
+      receipt.proposalAction = 'all_in';
+      receipt.baselineAction = 'fold';
+      expect(witness.phase13Authority).toEqual(expected);
+      settleHorseExecutionWitness(witness, {
+        applied: true,
+        acceptedActions: [
+          {
+            record: {
+              seat: spot.hero.seat,
+              action: decision.action,
+              amount: decision.amount ?? 0,
+              stage: street,
+            },
+            intended: true,
+          },
+        ],
+      });
+      expect(witness.acceptedActions[0].record.action).toBe(decision.action);
+      expect(witness.phase13Authority!.selection).toBe('shadow_change');
+      // A receipt retained before P13.3 (no selection), and a decision the
+      // joint owner never saw, claim no Phase 13 binding.
+      const legacy = { ...receipt } as Partial<typeof receipt>;
+      delete legacy.selection;
+      expect(make({ ...decision, jointPolicy: legacy as typeof receipt })).not.toHaveProperty(
+        'phase13Authority'
+      );
+      expect(make({ action: 'check', thinkTime: 1 })).not.toHaveProperty('phase13Authority');
     }
   );
 

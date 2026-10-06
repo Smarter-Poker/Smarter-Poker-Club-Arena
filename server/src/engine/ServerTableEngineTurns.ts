@@ -58,12 +58,14 @@ import {
   recordHorsePhase10Verdict,
   recordHorsePhase11Verdict,
   recordHorsePhase12Verdict,
+  recordHorsePhase13Verdict,
   retireHorseExecutionWitness,
   settleHorseExecutionWitness,
   withdrawHorsePhase8Selection,
   withdrawHorsePhase10Selection,
   withdrawHorsePhase11Selection,
   withdrawHorsePhase12Selection,
+  withdrawHorsePhase13Selection,
   type HorseExecutionRetirement,
   type HorseAcceptedAction,
 } from './HorseExecutionWitness.js';
@@ -73,6 +75,8 @@ import { liveHorsePhase11Authorities } from './HorsePhase11Authority.js';
 import { isOmahaPolicyVariant } from './omaha/OmahaVariantPolicyPack.js';
 import { liveHorsePhase12Authorities } from './HorsePhase12Authority.js';
 import { isRemainingPolicyVariant } from './remainingVariants/RemainingVariantPolicyPack.js';
+import { liveHorsePhase13Authorities } from './HorsePhase13Authority.js';
+import { isJointVariant } from './multiway/JointInputBinding.js';
 import {
   buildHorseDecisionKey,
   getLiveHorseDecisionWorker,
@@ -3909,6 +3913,48 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               noteFire('phase12_selection_withdrawn_before_acceptance');
             }
           }
+          // P13.3: a shadow joint receipt records the action leaving the
+          // joint node as its final action. An earlier-phase withdrawal above
+          // re-selected that phase's baseline, so the joint receipt follows it
+          // (otherwise its execution would read as coerced against an action
+          // the table never intended).
+          if (jointLedger && !jointLedger.applied) {
+            jointLedger.finalAction = decision.action;
+            jointLedger.finalAmount = decision.amount ?? null;
+          }
+          // P13.3: the same acceptance law for a selected joint candidate, at
+          // its own variant's gate. Only usable Phase 13 authority for that
+          // variant NOW lets it act; otherwise the joint shadow baseline (the
+          // decision the variant owners produced) is executed. The joint
+          // candidate is never applied on top of an applied earlier-phase
+          // candidate, so that baseline is never itself a withdrawn selection.
+          if (jointLedger?.applied) {
+            const verdict = isJointVariant(jointLedger.variant)
+              ? liveHorsePhase13Authorities[jointLedger.variant].check(jointLedger.authority)
+              : 'mismatched';
+            jointLedger.authorityVerdict = verdict;
+            noteFire(`phase13_authority_verdict_${verdict}`);
+            if (verdict === 'usable') {
+              recordHorsePhase13Verdict(decision.executionWitness, verdict);
+            } else {
+              withdrawHorsePhase13Selection(decision.executionWitness, decisionSnapshot, verdict);
+              jointLedger.applied = false;
+              jointLedger.selection = 'withdrawn_before_acceptance';
+              jointLedger.finalAction = jointLedger.baselineAction;
+              jointLedger.finalAmount = jointLedger.baselineAmount;
+              for (const prior of [plo4Ledger, omahaLedger, remainingLedger])
+                if (prior) {
+                  prior.finalAction = jointLedger.baselineAction;
+                  prior.finalAmount = jointLedger.baselineAmount;
+                }
+              decision = {
+                ...decision,
+                action: jointLedger.baselineAction,
+                amount: jointLedger.baselineAmount ?? undefined,
+              };
+              noteFire('phase13_selection_withdrawn_before_acceptance');
+            }
+          }
 
           let action = decision.action as string;
           let amount = decision.amount;
@@ -4307,6 +4353,24 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                     : 'coerced';
               noteFire(`phase13_execution_${jointLedger.executionStatus}`);
               noteFire(`phase13_${jointLedger.variant}_execution_${jointLedger.executionStatus}`);
+              if (jointLedger.selection === 'selected') {
+                if (jointLedger.executionStatus === 'intended') {
+                  jointLedger.selection = 'controller_accepted';
+                  noteFire('phase13_selection_controller_accepted');
+                } else if (
+                  (jointLedger.executionStatus === 'fallback' ||
+                    jointLedger.executionStatus === 'coerced') &&
+                  isJointVariant(jointLedger.variant)
+                ) {
+                  // The controller refused or rewrote an authorised candidate:
+                  // an illegal-action disable of that variant's joint authority,
+                  // local to this process (Phase 8 law).
+                  liveHorsePhase13Authorities[jointLedger.variant].withdraw(
+                    `controller_${jointLedger.executionStatus}_candidate`
+                  );
+                  noteFire('phase13_authority_controller_withdrawn');
+                }
+              }
             }
             if (postflopLedger) {
               postflopLedger.executedAction = executedAction;

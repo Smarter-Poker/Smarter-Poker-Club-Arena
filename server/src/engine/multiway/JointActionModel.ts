@@ -1,15 +1,33 @@
 import type { HorseDecision, SeatPlayer } from '../../types.js';
 import type { HorseGameStateV2 } from '../HorseLogic.js';
-import { buildTournamentActionCandidates } from '../HorseTournamentUtility.js';
 import { horseVariantRulesFor } from '../VariantRules.js';
-import { validateDealtSeatCensus } from './DealtSeatCensus.js';
-import type { JointRangeSamples, JointOpponentRange } from './JointRangeSampler.js';
-import { jointStateKey } from './JointRangeSampler.js';
+import type { JointRangeSamples } from './JointRangeSampler.js';
 import { prepareJointPots, settleJointScores } from './JointPotDistribution.js';
 import { applyJointDeductions } from './JointDeductions.js';
 import { calculateContestablePot } from '../PokerEngine.js';
+import {
+  jointCallProbability,
+  jointResponseDraw as responseDraw,
+  prepareJointActionInput,
+  type JointActionCandidate,
+} from './JointActionShared.js';
+import {
+  evaluateJointResponseTree,
+  JOINT_RESPONSE_LIMITS,
+  JOINT_RESPONSE_RULES,
+  type JointResponseCount,
+} from './JointResponseTree.js';
 
-export const JOINT_ACTION_PACK = Object.freeze({
+export type { JointActionCandidate } from './JointActionShared.js';
+export {
+  jointPlayersBehind,
+  jointCallProbability,
+  jointResponseDraw,
+} from './JointActionShared.js';
+export { jointRaiseShare, jointRiverStrength } from './JointResponseTree.js';
+
+/** The retained comparison identity: one response, then showdown. */
+export const JOINT_ACTION_PACK_ROUND1 = Object.freeze({
   version: 'joint-action-response-round1-v2',
   source: 'explicit_one_response_then_showdown_heuristic',
   calibratedConfidence: null,
@@ -17,142 +35,132 @@ export const JOINT_ACTION_PACK = Object.freeze({
   futureRaises: 'not_modeled',
   maxSamples: 32,
 });
-const clamp = (n: number, low = 0, high = 1) => Math.max(low, Math.min(high, n));
 
-/** Actual dealt-seat ring, including sparse seats and a dead button. Folded
- * seats consume position/card occupancy but do not owe another action. */
-export function jointPlayersBehind(hero: SeatPlayer, state: HorseGameStateV2): string[] {
-  const ids = validateDealtSeatCensus(state.players, hero.seat, state.dealtSeatIds);
-  const dealer = state.dealerSeat;
-  if (!Number.isInteger(dealer) || dealer! < 1 || dealer! > 10)
-    throw new Error('joint_action_missing_button');
-  const clockwise = [...ids.filter((s) => s > dealer!), ...ids.filter((s) => s <= dealer!)];
-  let first = 0;
-  if (state.stage === 'preflop' && !state.bombPot) {
-    first =
-      ids.length === 2 ? clockwise.indexOf(dealer!) : (state.straddleActive ? 3 : 2) % ids.length;
-    if (first < 0) throw new Error('joint_action_heads_up_button_not_dealt');
-  }
-  const order = [...clockwise.slice(first), ...clockwise.slice(0, first)];
-  const index = order.indexOf(hero.seat);
-  const later = new Set(order.slice(index + 1));
-  const remaining = [...order.slice(index + 1), ...order.slice(0, index)];
-  return remaining.flatMap((seat) => {
-    const p = state.players.find((p) => p.seat === seat)!;
-    // A raise reopens responses around the ring, including a player who
-    // checked or called earlier. Their public unpaid wager remains owed.
-    return !p.is_folded &&
-      !p.is_sitting_out &&
-      !p.is_all_in &&
-      (later.has(seat) || p.bet < state.currentBet)
-      ? [p.user_id]
-      : [];
-  });
+/** Phase 13 P13-A: one bounded legal raise, hero's answer and a turn to river
+ * continuation, on the turn and river. Preflop and flop decisions keep the
+ * one-response model (declared below); a full-game solution is not implied. */
+export const JOINT_ACTION_PACK = Object.freeze({
+  version: 'joint-action-response-round2-v1',
+  source: 'bounded_one_raise_response_tree_heuristic',
+  calibratedConfidence: null,
+  responseBranches: 'opponent_specific_fold_call_short_all_in_one_bounded_raise_hero_answer',
+  futureRaises: 'one_bounded_raise_then_calls',
+  continuation: 'turn_to_river_one_round',
+  raiseStreets: JOINT_RESPONSE_LIMITS.raiseStreets,
+  earlierStreets: 'one_response_then_showdown',
+  raiseSize: 'pot_sized_under_structure_cap_fixed_increment_or_stack_via_action_builder',
+  raiseProbability: 'present_board_strength_price_public_line_uncalibrated',
+  heroRaiseAnswer: 'raise_weighted_heads_up_equity_over_joint_samples_vs_pot_odds',
+  riverRound: 'first_live_player_at_strength_threshold_bets_pot_sized_others_answer_once',
+  branchWeighting: 'exact_raise_branch_weights_deterministic_fold_call_draws',
+  limits: JOINT_RESPONSE_LIMITS,
+  rules: JOINT_RESPONSE_RULES,
+  maxSamples: 32,
+});
+
+export type JointResponseModel = 'round1' | 'round2';
+type RoundOneCount = Pick<
+  JointResponseCount,
+  'responded' | 'called' | 'folded' | 'allIn' | 'meanCallProbability'
+>;
+type TreeRow = NonNullable<ReturnType<typeof evaluateJointResponseTree>>['candidates'][number];
+export type JointActionRow = Omit<TreeRow, 'responseCounts' | 'responseTree'> & {
+  responseCounts: Record<string, RoundOneCount | JointResponseCount>;
+  responseTree: TreeRow['responseTree'] | null;
+};
+export interface JointActionResult {
+  version: string;
+  responseModel: 'one_response_then_showdown' | 'bounded_raise_tree';
+  playersBehind: string[];
+  coveringPlayers: string[];
+  candidates: JointActionRow[];
 }
 
-/** Present-board strengths and the public line alone set response odds. No
- * showdown ranks/runout information enters this opponent decision. */
-export function jointCallProbability(input: {
-  strengths: number[];
-  range: JointOpponentRange;
-  price: number;
-  pot: number;
-  activeOpponents: number;
-  coversHero: boolean;
-}) {
-  if (!input.strengths.length || input.strengths.some((s) => !Number.isFinite(s) || s < 0 || s > 1))
-    throw new Error('joint_action_invalid_strength');
-  if (input.price <= 0) return 1;
-  const mean = input.strengths.reduce((a, b) => a + b, 0) / input.strengths.length;
-  // A strong single board can justify continuing, but never masquerades as
-  // a scoop. The settlement distribution separately carries its actual risk.
-  const signal = mean * 0.75 + Math.max(...input.strengths) * 0.25;
-  const potPrice = input.price / Math.max(input.price, input.pot + input.price);
-  return clamp(
-    0.12 +
-      signal * 0.88 +
-      Math.min(0.12, input.range.raises * 0.04) -
-      potPrice * 0.62 -
-      Math.max(0, input.activeOpponents - 1) * 0.025 +
-      Number(input.coversHero) * 0.035,
-    0.02,
-    0.98
-  );
-}
-
-function responseDraw(index: number, id: string) {
-  let value = (index + 1) ^ 0x7f4a7c15;
-  for (const c of id) value = Math.imul(value ^ c.charCodeAt(0), 16777619);
-  value ^= value >>> 16;
-  value = Math.imul(value, 0x85ebca6b);
-  value ^= value >>> 13;
-  return (value >>> 0) / 0x100000000;
-}
-
+/**
+ * Joint action ranking. The default is the round-2 response pack; pass
+ * `{ responseModel: 'round1' }` for the retained comparison identity.
+ * Returns null when the work deadline interrupts any branch: a partially
+ * ranked action set is never returned. A candidate needing more terminal
+ * branches than the declared limit throws joint_response_branch_unavailable.
+ */
 export function evaluateJointActions(
   hero: SeatPlayer,
   state: HorseGameStateV2,
   baseline: HorseDecision,
   evidence: JointRangeSamples,
-  withinBudget: () => boolean
-) {
-  if (evidence.stateKey !== jointStateKey(hero, state))
-    throw new Error('joint_action_stale_evidence');
-  if (
-    state.stateSchemaVersion !== 1 ||
-    !state.legalActions ||
-    !state.rakeConfig ||
-    state.bbjConfig === undefined ||
-    ![0.01, 1].includes(state.chipUnit ?? 0) ||
-    !['chips', 'diamonds'].includes(state.asset ?? '') ||
-    !['cash', 'tournament'].includes(state.gameMode ?? '') ||
-    evidence.samples.length < 4 ||
-    evidence.samples.length > JOINT_ACTION_PACK.maxSamples ||
-    hero.is_folded ||
-    hero.is_all_in ||
-    hero.is_sitting_out ||
-    !state.players.some(
-      (p) =>
-        p.user_id === hero.user_id &&
-        p.seat === hero.seat &&
-        p.stack === hero.stack &&
-        p.bet === hero.bet &&
-        p.totalInvested === hero.totalInvested
-    )
-  )
-    throw new Error('joint_action_canonical_state_unavailable');
-  const dealt = validateDealtSeatCensus(state.players, hero.seat, state.dealtSeatIds);
-  const behind = new Set(jointPlayersBehind(hero, state));
-  const expectedOpponents = evidence.ranges.filter((p) => p.live).map((p) => p.userId);
-  if (
-    JSON.stringify(evidence.opponentIds) !== JSON.stringify(expectedOpponents) ||
-    evidence.opponentIds.some(
-      (id) => !state.players.some((p) => p.user_id === id && !p.is_folded)
-    ) ||
-    state.players.some(
-      (p) =>
-        !p.is_folded &&
-        dealt.includes(p.seat) &&
-        p.user_id !== hero.user_id &&
-        !evidence.opponentIds.includes(p.user_id)
-    )
-  )
-    throw new Error('joint_action_incomplete_contenders');
-  const candidates = buildTournamentActionCandidates({
+  withinBudget: () => boolean,
+  options: {
+    responseModel?: JointResponseModel;
+    /** P13.1: the caller's legal form, applied to the candidates of either
+     * model before any is priced. */
+    candidateForm?: (candidates: JointActionCandidate[]) => JointActionCandidate[];
+  } = {}
+): JointActionResult | null {
+  const model = options.responseModel ?? 'round2';
+  if (model !== 'round1' && model !== 'round2') throw new Error('joint_action_unknown_model');
+  if (model === 'round2' && JOINT_RESPONSE_LIMITS.raiseStreets.includes(state.stage as 'turn')) {
+    const tree = evaluateJointResponseTree(
+      hero,
+      state,
+      baseline,
+      evidence,
+      withinBudget,
+      JOINT_ACTION_PACK,
+      options.candidateForm
+    );
+    if (!tree) return null;
+    return {
+      version: JOINT_ACTION_PACK.version,
+      responseModel: 'bounded_raise_tree',
+      playersBehind: tree.playersBehind,
+      coveringPlayers: coveringPlayers(hero, state),
+      candidates: tree.candidates,
+    };
+  }
+  const result = evaluateRoundOne(
     hero,
-    toCall: Math.min(hero.stack, Math.max(0, state.currentBet - hero.bet)),
-    legalActions: state.legalActions,
-    minRaiseTo: state.minRaiseTo ?? null,
-    maxRaiseTo: state.maxRaiseTo ?? null,
-    pot: state.pot,
-    currentBet: state.currentBet,
-    bettingStructure: state.bettingStructure!,
+    state,
     baseline,
-    settlement: { chipUnit: state.chipUnit! },
-  });
-  if (!candidates.length || candidates.length > 12)
-    throw new Error('joint_action_no_legal_candidates');
-  const rows = [];
+    evidence,
+    withinBudget,
+    options.candidateForm
+  );
+  if (!result) return null;
+  return {
+    ...result,
+    version: model === 'round1' ? JOINT_ACTION_PACK_ROUND1.version : JOINT_ACTION_PACK.version,
+  };
+}
+
+function coveringPlayers(hero: SeatPlayer, state: HorseGameStateV2) {
+  return state.players
+    .filter(
+      (p) =>
+        p.user_id !== hero.user_id &&
+        !p.is_folded &&
+        p.stack + p.totalInvested >= hero.stack + hero.totalInvested
+    )
+    .map((p) => p.user_id);
+}
+
+/** Round 1, unchanged: one response, then showdown. */
+function evaluateRoundOne(
+  hero: SeatPlayer,
+  state: HorseGameStateV2,
+  baseline: HorseDecision,
+  evidence: JointRangeSamples,
+  withinBudget: () => boolean,
+  candidateForm?: (candidates: JointActionCandidate[]) => JointActionCandidate[]
+): Omit<JointActionResult, 'version'> | null {
+  const { dealt, behind, candidates } = prepareJointActionInput(
+    hero,
+    state,
+    baseline,
+    evidence,
+    JOINT_ACTION_PACK_ROUND1.maxSamples,
+    candidateForm
+  );
+  const rows: JointActionRow[] = [];
   for (const candidate of candidates) {
     const returns: number[] = [],
       vectors: number[][] = [];
@@ -249,8 +257,8 @@ export function evaluateJointActions(
       });
       const fees = applyJointDeductions({
         settlement: settled,
-        rakeConfig: state.rakeConfig,
-        bbjConfig: state.bbjConfig,
+        rakeConfig: state.rakeConfig!,
+        bbjConfig: state.bbjConfig!,
         asset: state.asset!,
         gameMode: state.gameMode as 'cash' | 'tournament',
         bigBlind: state.bigBlind,
@@ -303,21 +311,15 @@ export function evaluateJointActions(
           { ...v, meanCallProbability: v.responded ? v.meanCallProbability / v.responded : null },
         ])
       ),
+      responseTree: null,
       samples: n,
-      rollout: JOINT_ACTION_PACK.source,
+      rollout: JOINT_ACTION_PACK_ROUND1.source,
     });
   }
   return {
-    version: JOINT_ACTION_PACK.version,
+    responseModel: 'one_response_then_showdown',
     playersBehind: [...behind],
-    coveringPlayers: state.players
-      .filter(
-        (p) =>
-          p.user_id !== hero.user_id &&
-          !p.is_folded &&
-          p.stack + p.totalInvested >= hero.stack + hero.totalInvested
-      )
-      .map((p) => p.user_id),
+    coveringPlayers: coveringPlayers(hero, state),
     candidates: rows,
   };
 }

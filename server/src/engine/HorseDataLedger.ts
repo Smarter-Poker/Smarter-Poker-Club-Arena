@@ -581,7 +581,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   flag(
     'phase13Joint',
-    'joint multiway and bomb policy; live shadow with offline-only candidate selection',
+    "joint multiway and bomb policy; shadow by default; live candidate only from the worker's own P13.3 authority for the decision's variant (cash), never from a caller",
     'Phase13'
   ),
   flag(
@@ -2158,6 +2158,44 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase13',
     'phase13_seen',
     0.99
+  ),
+  receipt(
+    'phase13_range_*',
+    'evaluateJointLivePolicy -> HorseLogic (P13.1 input binding)',
+    'range status of every bound multiway or bomb-pot proposal (consumed, unavailable); counts only, never calibration or solver evidence',
+    'Phase13',
+    'phase13_eligible',
+    0.99
+  ),
+  receipt(
+    'phase13_response_*',
+    'evaluateJointActions -> evaluateJointLivePolicy -> HorseLogic (P13-A, P13.1)',
+    'response model that priced each fired proposal (one_response_then_showdown, bounded_raise_tree) and every named response-tree refusal (joint_response_branch_unavailable, joint_response_street_unavailable, joint_response_street_not_modeled, joint_response_illegal_simulated_action, joint_response_branch_mass); counts only, never calibration',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_selection_refused_*',
+    'HorseLogic (P13.1)',
+    'an applied Phase 13 candidate refused before it could act: illegal_candidate (the legalizer would rewrite it) or earlier_phase_applied (a Phase 10/11/12 candidate already owned the action)',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_selection_*',
+    'HorseLogic -> ServerTableEngineTurns (P13.3)',
+    "none, shadow change (never applied), authority-backed cash selection of the decision's variant, controller acceptance or withdrawal before acceptance; never a tournament objective selection, never on top of an applied Phase 10/11/12 candidate (the named refusals are phase13_selection_refused_*)",
+    'Phase13'
+  ),
+  receipt(
+    'phase13_authority_*',
+    'HorsePhase13Authority (HorseQualifiedAuthority, one gate per joint variant) -> workerRuntime / client / ServerTableEngineTurns (P13.3)',
+    'protected-release joint authority admission per variant, local withdrawal and acceptance-time verdicts',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_shadow_receipt_binding_dropped',
+    'horseDecision/client (P13.1, the P10 audit F8 rule)',
+    'a shadow-only Phase 13 receipt whose P13.1 binding failed the strict validator was dropped; the decision kept its actual action and the worker stayed up (an applied receipt still fails closed)',
+    'Phase13'
   ),
   receipt(
     'phase8_seen',

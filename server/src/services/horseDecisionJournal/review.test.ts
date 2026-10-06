@@ -13,7 +13,11 @@ import {
   recordHorsePhase11Verdict,
   withdrawHorsePhase12Selection,
   recordHorsePhase12Verdict,
+  withdrawHorsePhase13Selection,
+  recordHorsePhase13Verdict,
 } from '../../engine/HorseExecutionWitness.js';
+import { qualifiedPhase13TestAdmission } from '../../engine/HorsePhase13Authority.test-support.js';
+import { horsePhase13ContinuationVersion } from '../../engine/HorsePhase13Authority.js';
 import { qualifiedPhase10TestAdmission } from '../../engine/HorsePhase10Authority.test-support.js';
 import { qualifiedPhase11TestAdmission } from '../../engine/HorsePhase11Authority.test-support.js';
 import { OMAHA_VARIANT_PACKS } from '../../engine/omaha/OmahaVariantPolicyPack.js';
@@ -62,7 +66,8 @@ function fixture(
   phase7 = false,
   phase10 = false,
   phase11 = false,
-  phase12 = false
+  phase12 = false,
+  phase13 = false
 ) {
   const raw = jointPolicyFixture(variant, 1, phase7 ? 'tournament' : 'cash', 'preflop');
   const { hero, state } = JSON.parse(JSON.stringify(raw), (k, v) =>
@@ -70,7 +75,7 @@ function fixture(
       ? `20000000-0000-4000-8000-00000000000${Number(v.slice(1)) + 1}`
       : v
   );
-  state.toCall = phase7 || phase10 || phase11 || phase12 ? 0 : 1;
+  state.toCall = phase7 || phase10 || phase11 || phase12 || phase13 ? 0 : 1;
   // The fixture's button is seat 4: the walk posts the blinds from seats 1 and 2.
   if (phase10 || phase11 || phase12) state.blindSeats = { smallBlind: 1, bigBlind: 2 };
   if (phase7) {
@@ -193,6 +198,32 @@ function fixture(
     if (!decision.remainingVariantPolicy?.inputs)
       throw Error('Phase 12 fixture did not bind its inputs');
   }
+  if (phase13) {
+    const rng = saveFastRandom();
+    try {
+      seedFastRandom(7301301);
+      decision = HorseLogic.decide(
+        hero,
+        state,
+        'balanced',
+        {},
+        {
+          telemetry: false,
+          mind: false,
+          decisionTimeMs: 1000,
+          phase8Postflop: 'off',
+          phase10Plo4: 'off',
+          phase11Omaha: 'off',
+          phase12Remaining: 'off',
+          phase13Joint: 'shadow',
+          phase13EvidenceMode: true,
+        }
+      );
+    } finally {
+      restoreFastRandom(rng);
+    }
+    if (!decision.jointPolicy?.inputs) throw Error('Phase 13 fixture did not bind its inputs');
+  }
   const d = {
     snapshot,
     readFrame: encodeHorseDecisionReads(
@@ -221,7 +252,7 @@ function fixture(
     seat: hero.seat,
     userId: hero.user_id,
     action: decision.action,
-    amount: phase7 || phase10 || phase11 || phase12 ? (decision.amount ?? 0) : 1,
+    amount: phase7 || phase10 || phase11 || phase12 || phase13 ? (decision.amount ?? 0) : 1,
     timestamp: 1001,
     stage: 'preflop' as const,
   };
@@ -443,6 +474,60 @@ describe('private retained-hand journal consumer', () => {
       });
     }
   );
+
+  it.each(['nlh', 'plo4', 'flo8', 'short_deck'] as const)(
+    'reconciles the %s Phase 13 input binding to its accepted execution (P13.1)',
+    (variant) => {
+      const f = fixture(variant, [], false, false, false, false, true);
+      expect(f.w.phase13Inputs).toMatchObject({
+        version: 'horse-phase13-input-binding-v1',
+        variant,
+        rangeStatus: 'consumed',
+      });
+      // The journal's decision record still reads `pending`: the worker
+      // journals it before the table acts. The join to the accepted action is
+      // this commitment, recomputed from the persisted decision record.
+      const persisted = JSON.parse(f.rows()[0]!.body) as typeof f.d;
+      expect(persisted.decision.jointPolicy?.executionStatus).toBe('pending');
+      const recovered = createHorseExecutionWitness(persisted.snapshot, persisted.decision, {
+        requestId: 1,
+        lane: 'fast',
+        computeMs: 1,
+        governorScale: 1,
+      });
+      expect(recovered.phase13Inputs).toEqual(f.w.phase13Inputs);
+      const accepted = JSON.parse(f.rows()[1]!.body) as typeof f.w;
+      expect(accepted.acceptedActions).toHaveLength(1);
+      expect(accepted.acceptedActions[0]!.record.action).toBe(
+        persisted.decision.jointPolicy?.finalAction
+      );
+      expect(reconcileHorseJournalHand(f.rows(), handKey)).toMatchObject({
+        status: 'reconciled',
+        matchedActions: 1,
+        gaps: [],
+        activationAllowed: false,
+      });
+    }
+  );
+
+  it('rejects a changed Phase 13 input commitment even when the accepted action still matches', () => {
+    const f = fixture('plo5', [], false, false, false, false, true);
+    f.w = { ...f.w, phase13Inputs: { ...f.w.phase13Inputs!, inputSha256: 'f'.repeat(64) } };
+    const report = reconcileHorseJournalHand(f.rows(), handKey);
+    expect(report.status).toBe('incomplete');
+    expect(report.matchedActions).toBe(0);
+    expect(report.gaps).toContain('input_mismatch');
+  });
+
+  it('rejects a Phase 13 witness that drops the commitment of a bound proposal', () => {
+    const f = fixture('nlh', [], false, false, false, false, true);
+    f.w = Object.fromEntries(
+      Object.entries(f.w).filter(([key]) => key !== 'phase13Inputs')
+    ) as typeof f.w;
+    const report = reconcileHorseJournalHand(f.rows(), handKey);
+    expect(report.status).toBe('incomplete');
+    expect(report.gaps).toContain('input_mismatch');
+  });
 
   it('rejects a changed Phase 12 input commitment even when the accepted action still matches', () => {
     const f = fixture('flo8', [], false, false, false, true);
@@ -1632,6 +1717,208 @@ describe('private retained-hand journal consumer', () => {
         acceptedActions: relabelled.f.w.acceptedActions,
       });
       relabelled.w.phase12Authority!.selection = 'selected';
+      relabelled.f.w = relabelled.w;
+      expect(reconcileHorseJournalHand(relabelled.f.rows(), handKey).status).toBe('incomplete');
+    });
+  });
+
+  describe('P13.3 joint multiway selection reconciliation', () => {
+    type JointCaseVariant = 'nlh' | 'plo4' | 'flo8' | 'short_deck';
+    function selectedCase(variant: JointCaseVariant = 'nlh', selected = true) {
+      const f = fixture(variant, [], false, false, false, false, true);
+      // The real joint receipt the policy recorded on this snapshot (its
+      // binding, packs and response fields), relabelled as the worker would
+      // return a selection of a changed proposal.
+      const real = (f.d.decision as HorseDecision).jointPolicy!;
+      const s = f.d.snapshot;
+      const continuation = horsePhase13ContinuationVersion(variant);
+      const worker = new HorseQualifiedAuthorityHolder('review-p13-worker', continuation);
+      worker.apply(qualifiedPhase13TestAdmission(variant));
+      const gate = new HorsePhase8AuthorityGate(
+        () => qualifiedPhase13TestAdmission(variant),
+        'review-p13-main',
+        continuation
+      );
+      gate.refresh();
+      const journaled = selected ? worker.receipt() : null;
+      const receipt = (authority: unknown) => ({
+        ...structuredClone(real),
+        mode: selected ? 'candidate' : 'shadow',
+        fired: true,
+        changed: true,
+        applied: selected,
+        selection: selected ? 'selected' : 'shadow_change',
+        selectionRefusal: null,
+        authority,
+        authorityVerdict: null,
+        baselineAction: 'call',
+        baselineAmount: null,
+        proposalAction: 'raise',
+        proposalAmount: 4,
+        finalAction: selected ? 'raise' : 'call',
+        finalAmount: selected ? 4 : null,
+        utilityOwner: 'cash',
+        executionStatus: 'pending',
+      });
+      const act = selected ? { action: 'raise' as const, amount: 4 } : { action: 'call' as const };
+      // The worker journals its unstamped receipt; the client stamps it.
+      f.d.decision = {
+        ...act,
+        thinkTime: 50,
+        jointPolicy: receipt(journaled),
+      } as unknown as HorseDecision;
+      const delivered = {
+        ...f.d.decision,
+        jointPolicy: receipt(journaled ? gate.stamp(worker.receipt()) : null),
+      } as unknown as HorseDecision;
+      const w = createHorseExecutionWitness(s, delivered, {
+        requestId: 1,
+        lane: 'fast',
+        computeMs: 1,
+        governorScale: 1,
+      });
+      return { f, s, w };
+    }
+    const accept = (f: ReturnType<typeof fixture>, action: 'raise' | 'call', amount: number) => {
+      const last = f.a.actions.at(-1) as Record<string, unknown>;
+      f.a.actions[f.a.actions.length - 1] = { ...last, action, amount } as never;
+      return [
+        {
+          record: { ...f.w.acceptedActions[0]!.record, action, amount },
+          intended: true,
+        },
+      ];
+    };
+
+    it.each(['nlh', 'plo4', 'flo8', 'short_deck'] as const)(
+      'reconciles an accepted %s joint selection: the reviewer recomputes the selected and baseline actions',
+      (variant) => {
+        const { f, w } = selectedCase(variant);
+        recordHorsePhase13Verdict(w, 'usable');
+        settleHorseExecutionWitness(w, { applied: true, acceptedActions: accept(f, 'raise', 4) });
+        f.w = w;
+        expect(w.executionStatus).toBe('intended');
+        expect(w.phase13Authority).toMatchObject({
+          selection: 'controller_accepted',
+          verdict: 'usable',
+          candidate: { action: 'raise', amount: 4 },
+          reference: { action: 'call', amount: null },
+        });
+        expect(w).not.toHaveProperty('phase12Authority');
+        expect(reconcileHorseJournalHand(f.rows(), handKey)).toMatchObject({
+          status: 'reconciled',
+          matchedActions: 1,
+          gaps: [],
+          activationAllowed: false,
+        });
+      }
+    );
+
+    it.each([
+      [
+        'a changed shadow baseline',
+        (w: any): void => {
+          w.phase13Authority.reference = { action: 'fold', amount: null };
+        },
+      ],
+      [
+        'a changed selected proposal',
+        (w: any): void => {
+          w.phase13Authority.candidate = { action: 'raise', amount: 6 };
+        },
+      ],
+      [
+        'acceptance without a usable verdict',
+        (w: any): void => {
+          w.phase13Authority.verdict = 'withdrawn';
+        },
+      ],
+      [
+        'a forged worker authority',
+        (w: any): void => {
+          w.phase13Authority.authority = { ...w.phase13Authority.authority, generation: 9 };
+        },
+      ],
+      [
+        'another receipt version',
+        (w: any): void => {
+          w.phase13Authority.continuationVersion = 'joint-multiway-round1-v3';
+        },
+      ],
+      [
+        'a dropped binding',
+        (w: any): void => {
+          delete w.phase13Authority;
+        },
+      ],
+      [
+        'the binding moved to the Phase 12 slot',
+        (w: any): void => {
+          w.phase12Authority = w.phase13Authority;
+          delete w.phase13Authority;
+        },
+      ],
+      [
+        'the binding moved to the Phase 10 slot',
+        (w: any): void => {
+          w.phase10Authority = w.phase13Authority;
+          delete w.phase13Authority;
+        },
+      ],
+    ] as const)('rejects %s even when the accepted action matches', (_name, tamper) => {
+      const { f, w } = selectedCase();
+      recordHorsePhase13Verdict(w, 'usable');
+      settleHorseExecutionWitness(w, { applied: true, acceptedActions: accept(f, 'raise', 4) });
+      tamper(w);
+      f.w = w;
+      const report = reconcileHorseJournalHand(f.rows(), handKey);
+      expect(report.status).toBe('incomplete');
+      expect(report.matchedActions).toBe(0);
+    });
+
+    it.each([
+      'honest',
+      'tampered_reference',
+      'claims_acceptance',
+      'unusable_verdict_missing',
+    ] as const)('reconciles a joint selection withdrawn before acceptance (%s)', (mode) => {
+      const { f, s, w } = selectedCase();
+      withdrawHorsePhase13Selection(w, s, 'withdrawn');
+      if (mode === 'tampered_reference')
+        (w as { selected: unknown }).selected = { action: 'raise', amount: 4 };
+      settleHorseExecutionWitness(w, { applied: true, acceptedActions: f.w.acceptedActions });
+      if (mode === 'claims_acceptance') w.phase13Authority!.selection = 'controller_accepted';
+      if (mode === 'unusable_verdict_missing') w.phase13Authority!.verdict = null;
+      f.w = w;
+      expect(w.selected).toEqual(
+        mode === 'tampered_reference'
+          ? { action: 'raise', amount: 4 }
+          : { action: 'call', amount: null }
+      );
+      expect(reconcileHorseJournalHand(f.rows(), handKey).status).toBe(
+        mode === 'honest' ? 'reconciled' : 'incomplete'
+      );
+    });
+
+    it('reconciles a joint shadow change and rejects one relabelled as selected', () => {
+      const honest = selectedCase('plo4', false);
+      settleHorseExecutionWitness(honest.w, {
+        applied: true,
+        acceptedActions: honest.f.w.acceptedActions,
+      });
+      honest.f.w = honest.w;
+      expect(honest.w.phase13Authority).toMatchObject({
+        mode: 'shadow',
+        selection: 'shadow_change',
+        authority: null,
+      });
+      expect(reconcileHorseJournalHand(honest.f.rows(), handKey).status).toBe('reconciled');
+      const relabelled = selectedCase('plo4', false);
+      settleHorseExecutionWitness(relabelled.w, {
+        applied: true,
+        acceptedActions: relabelled.f.w.acceptedActions,
+      });
+      relabelled.w.phase13Authority!.selection = 'selected';
       relabelled.f.w = relabelled.w;
       expect(reconcileHorseJournalHand(relabelled.f.rows(), handKey).status).toBe('incomplete');
     });

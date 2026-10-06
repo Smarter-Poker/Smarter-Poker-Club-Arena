@@ -89,6 +89,26 @@ import {
   REMAINING_VARIANT_PACKS,
   type RemainingPolicyVariant,
 } from '../remainingVariants/RemainingVariantPolicyPack.js';
+import {
+  admitHorsePhase13QualifiedAuthority,
+  admitHorsePhase13ReleaseAuthority,
+  horsePhase13ContinuationVersion,
+  HORSE_PHASE13_VARIANTS,
+} from '../HorsePhase13Authority.js';
+import {
+  P13_TEST_CONTRACT_DIGEST,
+  P13_TEST_NOW,
+  p13CompletionBytes,
+  p13CompletionObject,
+  p13QualificationBytes,
+  p13Reader,
+  p13Selection,
+  p13Street,
+  qualifiedPhase13TestAdmission,
+} from '../HorsePhase13Authority.test-support.js';
+import type { JointVariant } from '../multiway/JointInputBinding.js';
+import { JOINT_LIVE_DOMAIN } from '../multiway/JointLivePolicy.js';
+import { forEachJointControllerSpot } from '../multiway/JointControllerSpots.test-support.js';
 
 const snapshot: LiveHorseDecisionSnapshot = {
   generation: 4,
@@ -4278,5 +4298,527 @@ describe('P12.3 worker-owned Short Deck/Pineapple/FLH/FLO8 authority (the Phase 
     expect(deep?.type === 'DEEP_RESULT' && deep.phase12Authority?.flh.state).toBe('unselected');
     // Phase 11 holders are untouched by a Phase 12 selection.
     expect(deep?.type === 'DEEP_RESULT' && deep.phase11Authority?.plo8.state).toBe('unselected');
+  });
+});
+
+describe('P13.3 worker-owned joint multiway authority (the Phase 8 path, reused per variant)', () => {
+  type Street = 'flop' | 'turn' | 'river';
+  /** A canonical joint cash request through the live worker. */
+  const jointCash = (
+    requestId: number,
+    variant: JointVariant,
+    boards: number,
+    street: Street
+  ): FastHorseDecisionRequest => {
+    const s = jointPolicyFixture(variant, boards, 'cash', street);
+    return rekey({
+      ...fastRequest(requestId),
+      player: s.hero,
+      gameState: s.state,
+      style: 'balanced',
+      mods: {},
+      opts: { mind: false },
+    });
+  };
+  /** The same joint spot at a tournament table with a complete Phase 6 context. */
+  const jointTournament = (
+    requestId: number,
+    variant: JointVariant,
+    street: Street
+  ): FastHorseDecisionRequest => {
+    const s = jointPolicyFixture(variant, 1, 'tournament', street);
+    const tournament = {
+      ...phase6TournamentRequest(requestId).gameState.tournament!,
+      ...s.state.tournament!,
+      gameVariant: variant,
+      playersAtTable: s.state.players.length,
+      seatsPerTable: s.state.players.length,
+      nextAnte: 0,
+    };
+    tournament.m = buildTournamentMState({
+      stackChips: s.hero.stack,
+      smallBlind: tournament.currentSmallBlind!,
+      bigBlind: tournament.currentBigBlind!,
+      ante: tournament.currentAnte!,
+      anteType: tournament.anteType!,
+      playersAtTable: tournament.playersAtTable!,
+      nextSmallBlind: tournament.nextSmallBlind ?? null,
+      nextBigBlind: tournament.nextBigBlind ?? null,
+      nextAnte: tournament.nextAnte ?? null,
+      minutesToNextLevel: tournament.nextBlindInMin ?? null,
+      opponentStacks: s.state.players
+        .filter((p) => p.user_id !== s.hero.user_id && !p.is_sitting_out)
+        .map((p) => ({ userId: p.user_id, stackChips: p.stack })),
+    });
+    return rekey({
+      ...fastRequest(requestId),
+      player: s.hero,
+      gameState: { ...s.state, format: 'mtt', tournament },
+      style: 'balanced',
+      mods: {},
+      opts: { mind: false },
+    });
+  };
+  /** One real worker decision, the Phase 12 harness: HorseLogic's RNG seeded
+   * identically for every run and the policy clock fixed, so two runs differ
+   * only by what the worker admitted. */
+  async function decideThrough(
+    request: FastHorseDecisionRequest,
+    admission?: (variant: JointVariant) => HorseAuthorityAdmission,
+    jointOff = false,
+    seed = 10_301_204,
+    phase12?: (variant: RemainingPolicyVariant) => HorseAuthorityAdmission
+  ) {
+    const h = harness(true);
+    h.deps.admitPhase13Authority = admission;
+    h.deps.admitPhase12Authority = phase12;
+    const decide = h.deps.decide;
+    h.deps.decide = (player, gameState, style, mods, opts) => {
+      const rng = saveFastRandom();
+      seedFastRandom(seed);
+      try {
+        return decide(
+          player,
+          gameState,
+          style,
+          mods,
+          jointOff ? { ...opts, phase13Joint: 'off' } : opts
+        );
+      } finally {
+        restoreFastRandom(rng);
+      }
+    };
+    // Wiring, not latency: the 4 ms budget is tested by JointLivePolicy.
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+    try {
+      h.runtime.receive(request);
+      await h.runtime.drain();
+    } finally {
+      clock.mockRestore();
+    }
+    const result = h.messages.find((m) => m.type === 'FAST_RESULT');
+    if (result?.type !== 'FAST_RESULT') throw new Error(JSON.stringify(h.messages));
+    return { h, result, decision: result.decision };
+  }
+  const act = (d: { action: string; amount?: number | null }) => ({
+    action: d.action,
+    amount: d.amount ?? null,
+  });
+  const only =
+    (variant: JointVariant, approval = 1) =>
+    (requested: JointVariant): HorseAuthorityAdmission =>
+      requested === variant
+        ? qualifiedPhase13TestAdmission(variant, approval)
+        : { status: 'refused', reason: 'unselected', transient: false };
+
+  // Actions pinned from the unmodified base 3cd956fa (P13.1 + P13-A), where
+  // the joint owner is shadow: the actions live tables execute today. Read
+  // through this same harness and seed on that base before any P13.3 change
+  // (docs/evidence/phase13/p13-3-pin-base.log; harness
+  // docs/evidence/phase13/p13-3-pin-base.test.ts.txt).
+  const LIVE_STATES = [
+    ['nlh', 'cash', 2, 'flop', 10_301_204, { action: 'check', amount: null }, ['bet', 30]],
+    ['nlh', 'cash', 1, 'turn', 100_101, { action: 'check', amount: null }, ['bet', 6]],
+    ['nlh', 'tournament', 1, 'river', 10_301_204, { action: 'check', amount: null }, ['bet', 2]],
+    ['plo4', 'cash', 2, 'flop', 10_301_204, { action: 'check', amount: null }, ['bet', 20]],
+    ['plo4', 'cash', 1, 'turn', 100_101, { action: 'check', amount: null }, ['bet', 2]],
+    ['plo4', 'tournament', 1, 'river', 10_301_204, { action: 'check', amount: null }, ['bet', 2]],
+    ['plo5', 'cash', 2, 'flop', 10_301_204, { action: 'check', amount: null }, ['bet', 15]],
+    ['plo5', 'tournament', 1, 'river', 10_301_204, { action: 'check', amount: null }, ['bet', 7]],
+    ['plo6', 'cash', 2, 'flop', 10_301_204, { action: 'check', amount: null }, ['bet', 10]],
+    ['plo6', 'tournament', 1, 'river', 10_301_204, { action: 'check', amount: null }, ['bet', 2]],
+    ['plo8', 'cash', 2, 'flop', 10_301_204, { action: 'check', amount: null }, ['bet', 20]],
+    ['plo8', 'tournament', 1, 'river', 10_301_204, { action: 'check', amount: null }, ['bet', 15]],
+    ['flo8', 'cash', 2, 'flop', 10_301_204, { action: 'check', amount: null }, ['bet', 2]],
+    ['flo8', 'cash', 1, 'turn', 100_101, { action: 'check', amount: null }, ['bet', 4]],
+    ['flo8', 'tournament', 1, 'river', 10_301_204, { action: 'check', amount: null }, ['bet', 4]],
+    ['flh', 'cash', 2, 'flop', 10_301_204, { action: 'check', amount: null }, ['bet', 2]],
+    ['flh', 'tournament', 1, 'river', 10_301_204, { action: 'check', amount: null }, ['bet', 4]],
+    ['pineapple', 'cash', 2, 'flop', 10_301_204, { action: 'check', amount: null }, ['bet', 20]],
+    ['pineapple', 'cash', 1, 'turn', 100_101, { action: 'bet', amount: 12 }, ['bet', 6]],
+    ['short_deck', 'cash', 2, 'flop', 10_301_204, { action: 'check', amount: null }, ['bet', 30]],
+    [
+      'short_deck',
+      'tournament',
+      1,
+      'river',
+      10_301_204,
+      { action: 'check', amount: null },
+      ['bet', 2],
+    ],
+  ] as const;
+  const request = (
+    format: 'cash' | 'tournament',
+    variant: JointVariant,
+    boards: number,
+    street: Street,
+    requestId = 731
+  ) =>
+    format === 'cash'
+      ? jointCash(requestId, variant, boards, street)
+      : jointTournament(requestId, variant, street);
+  /** A cash spot per variant where the joint proposal differs from the baseline. */
+  const changedCash = (requestId: number, variant: JointVariant) =>
+    jointCash(requestId, variant, 2, 'flop');
+
+  it.each(LIVE_STATES)(
+    'live behaviour is unchanged today: %s %s with %i boards on the %s (seed %i) executes the same action as before P13.3',
+    async (variant, format, boards, street, seed, baseAction, proposal) => {
+      const r = request(format, variant, boards, street);
+      const live = await decideThrough(r, (v) => admitHorsePhase13ReleaseAuthority(v), false, seed);
+      const reference = await decideThrough(r, undefined, true, seed);
+      expect(live.h.decisionOpts[0].phase13Joint).toBe('shadow');
+      expect(act(live.decision)).toEqual(baseAction);
+      expect(act(reference.decision)).toEqual(baseAction);
+      expect(reference.decision.jointPolicy).toBeUndefined();
+      const receipt = live.decision.jointPolicy!;
+      expect(receipt).toMatchObject({
+        variant,
+        version: JOINT_LIVE_DOMAIN.version,
+        mode: 'shadow',
+        eligible: true,
+        fired: true,
+        changed: true,
+        applied: false,
+        selection: 'shadow_change',
+        selectionRefusal: null,
+        authorityVerdict: null,
+        authority: {
+          state: 'unselected',
+          reason: 'unselected',
+          authorityKey: null,
+          continuationVersion: horsePhase13ContinuationVersion(variant),
+        },
+      });
+      expect([receipt.proposalAction, receipt.proposalAmount]).toEqual(proposal);
+      expect(receipt.finalAction).toBe(live.decision.action);
+      for (const v of HORSE_PHASE13_VARIANTS)
+        expect(live.result.phase13Authority?.[v]).toMatchObject({
+          state: 'unselected',
+          continuationVersion: horsePhase13ContinuationVersion(v),
+        });
+      expect(horseDecisionReceiptIsValid(structuredClone(live.decision), variant)).toBe(true);
+    }
+  );
+
+  const refused = (overrides: {
+    qualification?: Record<string, unknown>;
+    completion?: Record<string, unknown> | null;
+  }) => {
+    const q = p13QualificationBytes('plo4', overrides.qualification);
+    const c =
+      overrides.completion === null ? null : p13CompletionBytes('plo4', overrides.completion);
+    return () =>
+      admitHorsePhase13QualifiedAuthority(
+        'plo4',
+        p13Selection('plo4', q, c),
+        p13Reader('plo4', q, c),
+        P13_TEST_NOW,
+        P13_TEST_CONTRACT_DIGEST
+      );
+  };
+  it.each([
+    ['qualified:false', refused({ qualification: { qualified: false } }), 'not_qualified'],
+    ['wrong-source', refused({ qualification: { sourceSha: 'c'.repeat(40) } }), 'source_mismatch'],
+    ['no-completion', refused({ completion: null }), 'completion_evidence_missing'],
+    [
+      'other-policy completion',
+      refused({ completion: { policyDigest: 'd'.repeat(64) } }),
+      'completion_release_mismatch',
+    ],
+    [
+      'response-refusing river',
+      refused({
+        completion: {
+          streets: {
+            ...p13CompletionObject('plo4').streets,
+            river: p13Street(200, 0, 0, 0, 0, 20),
+          },
+        },
+      }),
+      'completion_below_floor',
+    ],
+  ] as const)(
+    'a %s PLO4 admission keeps the joint owner in shadow and the baseline action',
+    async (_name, admission, reason) => {
+      const r = changedCash(733, 'plo4');
+      const result = await decideThrough(r, (v) =>
+        v === 'plo4' ? admission() : { status: 'refused', reason: 'unselected', transient: false }
+      );
+      const reference = await decideThrough(r, undefined, true);
+      expect(result.h.decisionOpts[0].phase13Joint).toBe('shadow');
+      expect(act(result.decision)).toEqual(act(reference.decision));
+      expect(result.decision.jointPolicy).toMatchObject({
+        mode: 'shadow',
+        changed: true,
+        applied: false,
+        selection: 'shadow_change',
+        authority: { state: 'refused', reason },
+      });
+    }
+  );
+
+  it.each(HORSE_PHASE13_VARIANTS)(
+    'a valid %s qualification and completion record (test fixture only) select the cash proposal and record selected and baseline actions',
+    async (variant) => {
+      const r = changedCash(734, variant);
+      const selected = await decideThrough(r, only(variant));
+      const reference = await decideThrough(r, undefined, true);
+      expect(selected.h.decisionOpts[0].phase13Joint).toBe('candidate');
+      const receipt = selected.decision.jointPolicy!;
+      expect(receipt).toMatchObject({
+        variant,
+        mode: 'candidate',
+        fired: true,
+        changed: true,
+        applied: true,
+        selection: 'selected',
+        selectionRefusal: null,
+        utilityOwner: 'cash',
+        authority: {
+          state: 'usable',
+          generation: 1,
+          approvalGeneration: 1,
+          mainGeneration: null,
+          continuationVersion: horsePhase13ContinuationVersion(variant),
+        },
+      });
+      expect(act(selected.decision)).toEqual({
+        action: receipt.proposalAction,
+        amount: receipt.proposalAmount,
+      });
+      expect({ action: receipt.baselineAction, amount: receipt.baselineAmount }).toEqual(
+        act(reference.decision)
+      );
+      expect(act(selected.decision)).not.toEqual(act(reference.decision));
+      expect(selected.result.phase13Authority?.[variant]).toEqual(receipt.authority);
+      expect(horseDecisionReceiptIsValid(structuredClone(selected.decision), variant)).toBe(true);
+      // The worker boundary refuses the same selection without usable
+      // authority, with another variant's or a Phase 12 pack's authority,
+      // labelled as a tournament objective decision, claiming acceptance, at
+      // another receipt version, without its binding, or on top of an applied
+      // earlier-phase candidate.
+      const other: JointVariant = variant === 'nlh' ? 'plo4' : 'nlh';
+      for (const [name, forge] of [
+        ['refused authority', (r: any) => (r.authority = { ...r.authority, state: 'refused' })],
+        ['no authority', (r: any) => (r.authority = null)],
+        [
+          'another variant',
+          (r: any) =>
+            (r.authority = {
+              ...r.authority,
+              continuationVersion: horsePhase13ContinuationVersion(other),
+            }),
+        ],
+        [
+          'a Phase 12 pack',
+          (r: any) =>
+            (r.authority = {
+              ...r.authority,
+              continuationVersion: REMAINING_VARIANT_PACKS.flh.version,
+            }),
+        ],
+        ['a tournament owner', (r: any) => (r.utilityOwner = 'phase7_evaluated')],
+        ['controller acceptance', (r: any) => (r.selection = 'controller_accepted')],
+        ['a verdict', (r: any) => (r.authorityVerdict = 'usable')],
+        ['an unnamed refusal', (r: any) => (r.selectionRefusal = 'retained')],
+        ['another proposal', (r: any) => (r.proposalAction = 'all_in')],
+        ['no selection', (r: any) => delete r.selection],
+        ['another receipt version', (r: any) => (r.version = 'joint-multiway-round1-v3')],
+      ] as const) {
+        const forged = structuredClone(selected.decision) as any;
+        forge(forged.jointPolicy);
+        expect(horseDecisionReceiptIsValid(forged, variant), name).toBe(false);
+      }
+      const onTop = structuredClone(selected.decision) as any;
+      onTop.remainingVariantPolicy = { applied: true };
+      expect(horseDecisionReceiptIsValid(onTop, variant)).toBe(false);
+    }
+  );
+
+  it('an NLH selection never selects another variant', async () => {
+    for (const variant of HORSE_PHASE13_VARIANTS.filter((v) => v !== 'nlh')) {
+      const other = await decideThrough(changedCash(735, variant), only('nlh'));
+      expect(other.h.decisionOpts[0].phase13Joint, variant).toBe('shadow');
+      expect(other.result.phase13Authority?.nlh.state).toBe('usable');
+      expect(other.decision.jointPolicy).toMatchObject({
+        mode: 'shadow',
+        applied: false,
+        selection: 'shadow_change',
+        authority: {
+          state: 'unselected',
+          continuationVersion: horsePhase13ContinuationVersion(variant),
+        },
+      });
+      // Its receipt cannot borrow the usable NLH authority at the boundary.
+      const forged = structuredClone(other.decision) as any;
+      Object.assign(forged.jointPolicy, {
+        mode: 'candidate',
+        applied: true,
+        selection: 'selected',
+        authority: other.result.phase13Authority!.nlh,
+        finalAction: forged.jointPolicy.proposalAction,
+        finalAmount: forged.jointPolicy.proposalAmount,
+      });
+      forged.action = forged.jointPolicy.proposalAction;
+      forged.amount = forged.jointPolicy.proposalAmount ?? undefined;
+      expect(horseDecisionReceiptIsValid(forged, variant)).toBe(false);
+    }
+    // A Phase 13 selection leaves every Phase 12 holder unselected.
+    const flh = await decideThrough(changedCash(736, 'flh'), only('flh'));
+    for (const pack of ['short_deck', 'pineapple', 'flh', 'flo8'] as const)
+      expect(flh.result.phase12Authority?.[pack].state).toBe('unselected');
+  });
+
+  it.each(['nlh', 'plo8', 'flo8', 'short_deck'] as const)(
+    'a %s tournament decision keeps Phase 7 ownership even when the joint variant would be selected',
+    async (variant) => {
+      const r = jointTournament(737, variant, 'river');
+      const withAuthority = await decideThrough(r, only(variant));
+      const withoutAuthority = await decideThrough(r);
+      expect(withAuthority.result.phase13Authority?.[variant].state).toBe('usable');
+      expect(withAuthority.h.decisionOpts[0].phase13Joint).toBe('shadow');
+      const receipt = withAuthority.decision.jointPolicy!;
+      expect(receipt).toMatchObject({ mode: 'shadow', applied: false, changed: true });
+      expect(receipt.selection).toBe('shadow_change');
+      expect(receipt.utilityOwner).toBe('phase7_evaluated');
+      expect(act(withAuthority.decision)).toEqual(act(withoutAuthority.decision));
+      expect(withAuthority.decision.tournamentUtility ?? null).toEqual(
+        withoutAuthority.decision.tournamentUtility ?? null
+      );
+      const forged = structuredClone(withAuthority.decision) as any;
+      Object.assign(forged.jointPolicy, {
+        mode: 'candidate',
+        applied: true,
+        selection: 'selected',
+        finalAction: forged.jointPolicy.proposalAction,
+        finalAmount: forged.jointPolicy.proposalAmount,
+      });
+      forged.action = forged.jointPolicy.proposalAction;
+      forged.amount = forged.jointPolicy.proposalAmount ?? undefined;
+      expect(horseDecisionReceiptIsValid(forged, variant)).toBe(false);
+    }
+  );
+
+  it('a usable Phase 13 candidate is never applied on top of an applied Phase 12 candidate (earlier_phase_applied)', async () => {
+    // Natural Short Deck controller spots through the live worker with usable
+    // Phase 12 and Phase 13 Short Deck authority both admitted.
+    const found: Array<{ decision: any }> = [];
+    let requestId = 900;
+    const spots: Array<{ hero: any; state: any }> = [];
+    forEachJointControllerSpot('short_deck', 'cash', 30, 0x13e1 + 10, (spot) => {
+      if (spots.length < 120)
+        spots.push({
+          hero: spot.hero,
+          // The worker's canonical snapshot also requires the cap fields the
+          // live builder always sets.
+          state: {
+            ...spot.state,
+            wagersCapped: spot.state.wagersCapped ?? false,
+            commitmentCapRemaining: spot.state.commitmentCapRemaining ?? null,
+            fixedBetSize: spot.state.fixedBetSize ?? null,
+          },
+        });
+    });
+    const p12Only = (v: RemainingPolicyVariant): HorseAuthorityAdmission =>
+      v === 'short_deck'
+        ? qualifiedPhase12TestAdmission('short_deck')
+        : { status: 'refused', reason: 'unselected', transient: false };
+    for (const spot of spots) {
+      if (found.length >= 1) break;
+      const r = rekey({
+        ...fastRequest(requestId++),
+        player: spot.hero,
+        gameState: spot.state,
+        style: 'balanced',
+        mods: {},
+        opts: { mind: false },
+      });
+      let both;
+      try {
+        both = await decideThrough(r, only('short_deck'), false, 0x13e2, p12Only);
+      } catch {
+        continue;
+      }
+      const p12 = both.decision.remainingVariantPolicy;
+      const joint = both.decision.jointPolicy;
+      if (p12?.selection !== 'selected' || joint?.selectionRefusal !== 'earlier_phase_applied')
+        continue;
+      expect(both.h.decisionOpts[0]).toMatchObject({
+        phase12Remaining: 'candidate',
+        phase13Joint: 'candidate',
+      });
+      expect(joint).toMatchObject({
+        mode: 'candidate',
+        changed: true,
+        applied: false,
+        selection: 'shadow_change',
+        authority: { state: 'usable' },
+      });
+      // The applied Phase 12 candidate keeps the action.
+      expect(act(both.decision)).toEqual({
+        action: p12.proposalAction,
+        amount: p12.proposalAmount,
+      });
+      expect(horseDecisionReceiptIsValid(structuredClone(both.decision), 'short_deck')).toBe(true);
+      // Relabelling the joint receipt as applied on top of it is refused.
+      const forged = structuredClone(both.decision) as any;
+      Object.assign(forged.jointPolicy, {
+        applied: true,
+        selection: 'selected',
+        selectionRefusal: null,
+        finalAction: forged.jointPolicy.proposalAction,
+        finalAmount: forged.jointPolicy.proposalAmount,
+      });
+      forged.action = forged.jointPolicy.proposalAction;
+      forged.amount = forged.jointPolicy.proposalAmount ?? undefined;
+      expect(horseDecisionReceiptIsValid(forged, 'short_deck')).toBe(false);
+      found.push(both);
+    }
+    expect(found).toHaveLength(1);
+  }, 120_000);
+
+  it.each([{ phase13Joint: 'candidate' }, { phase13EvidenceMode: true }])(
+    'a caller still cannot supply Phase 13 candidate control when authority is usable: %j',
+    async (opts) => {
+      const h = harness(true);
+      h.deps.admitPhase13Authority = only('plo4');
+      h.runtime.receive({
+        ...changedCash(738, 'plo4'),
+        opts,
+      } as unknown as FastHorseDecisionRequest);
+      await h.runtime.drain();
+      expect(h.decisionOpts).toEqual([]);
+      expect(h.messages.at(-1)).toMatchObject({
+        type: 'ERROR',
+        message: 'offline candidate controls are forbidden in live decision requests',
+      });
+    }
+  );
+
+  it('the caller may turn the joint owner off; deep think-time work admits afresh', async () => {
+    const h = harness();
+    h.deps.admitPhase13Authority = only('flo8');
+    const off = changedCash(1, 'flo8');
+    h.runtime.receive(rekey({ ...off, opts: { phase13Joint: 'off' } }));
+    const r = changedCash(2, 'flo8');
+    h.runtime.receive(r);
+    await h.runtime.drain();
+    const fast = h.messages.filter((m) => m.type === 'FAST_RESULT').at(-1);
+    if (fast?.type !== 'FAST_RESULT') throw Error('expected FAST_RESULT');
+    h.runtime.receive({
+      ...r,
+      type: 'DECIDE_DEEP',
+      requestId: 3,
+      rngBefore: fast.rngBefore,
+      deepEquity: 2,
+    });
+    await h.runtime.drain();
+    expect(h.decisionOpts.map((o) => o.phase13Joint)).toEqual(['off', 'candidate', 'candidate']);
+    const deep = h.messages.find((m) => m.type === 'DEEP_RESULT');
+    expect(deep?.type === 'DEEP_RESULT' && deep.phase13Authority?.flo8.state).toBe('usable');
+    expect(deep?.type === 'DEEP_RESULT' && deep.phase13Authority?.flh.state).toBe('unselected');
+    // Phase 12 holders are untouched by a Phase 13 selection.
+    expect(deep?.type === 'DEEP_RESULT' && deep.phase12Authority?.flo8.state).toBe('unselected');
   });
 });

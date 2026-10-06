@@ -3209,10 +3209,25 @@ export class HorseLogic {
               decision,
               opts.phase13Joint ?? 'shadow',
               opts.phase13EvidenceMode && !tele ? () => 0 : undefined,
-              phase7JointAcquisition
+              phase7JointAcquisition,
+              // P13.1: every candidate is priced, ranked and recorded in the
+              // exact form this legalizer executes.
+              (d) => this.legalize(d, player, gs, vi)
             );
       if (jointPolicy) {
         let proposal = this.legalize(jointPolicy.proposal, player, gs, vi);
+        // P13.1, the P10.3 law: a candidate the legalizer would rewrite is
+        // illegal as proposed and never reaches the table; and a Phase 13
+        // candidate is never applied on top of an applied Phase 10/11/12 one.
+        const legalAsProposed =
+          proposal.action === jointPolicy.proposal.action &&
+          (proposal.amount ?? null) === (jointPolicy.proposal.amount ?? null);
+        const earlierApplied = [
+          beforePhase13.plo4Policy,
+          beforePhase13.omahaVariantPolicy,
+          beforePhase13.remainingVariantPolicy,
+        ].some((prior) => prior?.applied === true);
+        let selectionRefusal: 'illegal_candidate' | 'earlier_phase_applied' | null = null;
         if (isTournamentMode(gs)) {
           const tournament = trustedTournamentContext(gs);
           const joint = jointPolicy.jointEvidence;
@@ -3258,12 +3273,16 @@ export class HorseLogic {
                   proposal = selected;
                   jointPolicy.receipt.shadowUtility = evaluated.result.ledger;
                   jointPolicy.receipt.utilityOwner = 'phase7_evaluated';
-                  if (jointPolicy.receipt.mode === 'candidate')
-                    decision = {
-                      ...beforePhase13,
-                      ...selected,
-                      tournamentUtility: evaluated.result.ledger,
-                    };
+                  if (jointPolicy.receipt.mode === 'candidate') {
+                    if (earlierApplied && !this.sameJointAction(selected, beforePhase13))
+                      selectionRefusal = 'earlier_phase_applied';
+                    else
+                      decision = {
+                        ...beforePhase13,
+                        ...selected,
+                        tournamentUtility: evaluated.result.ledger,
+                      };
+                  }
                 } else {
                   jointPolicy.receipt.utilityOwner = 'phase7_unavailable';
                   jointPolicy.receipt.utilityUnavailableReason = 'legalizer_mismatch';
@@ -3283,11 +3302,16 @@ export class HorseLogic {
             jointPolicy.receipt.utilityUnavailableReason = 'context_or_joint_samples_unavailable';
           }
           if (jointPolicy.receipt.utilityOwner !== 'phase7_evaluated') proposal = beforePhase13;
-        } else if (jointPolicy.receipt.mode === 'candidate' && jointPolicy.receipt.fired)
-          decision = { ...beforePhase13, ...proposal };
+        } else if (jointPolicy.receipt.mode === 'candidate' && jointPolicy.receipt.fired) {
+          if (this.sameJointAction(proposal, beforePhase13)) decision = beforePhase13;
+          else if (earlierApplied) selectionRefusal = 'earlier_phase_applied';
+          else if (!legalAsProposed) selectionRefusal = 'illegal_candidate';
+          else decision = { ...beforePhase13, ...proposal };
+        }
         if (beforePhase13.action === 'fold' && beforePhase13.continuationGuard) {
           proposal = beforePhase13;
           decision = beforePhase13;
+          selectionRefusal = null;
           jointPolicy.receipt.reason = 'protected_' + beforePhase13.continuationGuard;
         }
         const sameAction = (a: HorseDecision, b: HorseDecision) =>
@@ -3297,6 +3321,14 @@ export class HorseLogic {
         receipt.proposalAmount = proposal.amount ?? null;
         receipt.changed = !sameAction(proposal, beforePhase13);
         receipt.applied = !sameAction(decision, beforePhase13);
+        receipt.selectionRefusal = receipt.applied ? null : selectionRefusal;
+        // P13.3: `selected` only when the applied candidate is the action
+        // leaving this node, the Phase 10/11/12 vocabulary.
+        receipt.selection = receipt.applied
+          ? 'selected'
+          : receipt.changed
+            ? 'shadow_change'
+            : 'none';
         receipt.finalAction = decision.action;
         receipt.finalAmount = decision.amount ?? null;
         for (const prior of [
@@ -3333,6 +3365,13 @@ export class HorseLogic {
           if (receipt.changed) noteFire('phase13_shadow_changed');
           noteFire(receipt.applied ? 'phase13_applied' : 'phase13_baseline_retained');
           noteFire(`phase13_utility_${receipt.utilityOwner}`);
+          if (receipt.inputs) noteFire(`phase13_range_${receipt.inputs.ranges.status}`);
+          if (receipt.responseModel) noteFire(`phase13_response_model_${receipt.responseModel}`);
+          if (receipt.reason.startsWith('joint_response_'))
+            noteFire(`phase13_response_refused_${receipt.reason}`);
+          if (receipt.selectionRefusal)
+            noteFire(`phase13_selection_refused_${receipt.selectionRefusal}`);
+          noteFire(`phase13_selection_${receipt.selection}`);
         }
       }
       return { decision };
@@ -7524,6 +7563,14 @@ export class HorseLogic {
    * amounts (Bible V8 §2.6). Falls back down the ladder raise -> call -> check
    * when a desired action has no legal sizing.
    */
+  /** P13.1: the joint node's action identity (amount only for a wager). */
+  private static sameJointAction(a: HorseDecision, b: HorseDecision): boolean {
+    return (
+      a.action === b.action &&
+      (!['bet', 'raise'].includes(a.action) || (a.amount ?? null) === (b.amount ?? null))
+    );
+  }
+
   private static legalize(
     d: HorseDecision,
     player: SeatPlayer,

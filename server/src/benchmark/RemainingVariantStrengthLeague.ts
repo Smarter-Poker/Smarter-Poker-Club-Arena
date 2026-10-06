@@ -30,6 +30,7 @@ import {
 } from './Plo4PolicyLeague.js';
 import { isPlo4HoldoutSeed, Plo4PowerAccumulator } from './Plo4StrengthContract.js';
 import { isOmahaVariantHoldoutSeed } from './OmahaVariantStrengthContract.js';
+import { isJointHoldoutSeed } from './JointStrengthContract.js';
 import {
   REMAINING_VARIANT_STRENGTH_BB,
   REMAINING_VARIANT_STRENGTH_CONTRACT,
@@ -115,6 +116,7 @@ export async function runRemainingVariantStrengthShard(
     request.mode === 'development' &&
     (isRemainingVariantHoldoutSeed(request.seed) ||
       isOmahaVariantHoldoutSeed(request.seed) ||
+      isJointHoldoutSeed(request.seed) ||
       isPlo4HoldoutSeed(request.seed))
   )
     throw new Error('A development shard never runs a held-out seed');

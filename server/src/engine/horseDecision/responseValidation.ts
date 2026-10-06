@@ -1,6 +1,7 @@
 import { plo4LiveReceiptBindingIsValid } from '../plo4/Plo4LivePolicy.js';
 import { omahaVariantReceiptBindingIsValid } from '../omaha/OmahaVariantLivePolicy.js';
 import { remainingVariantReceiptBindingIsValid } from '../remainingVariants/RemainingVariantLivePolicy.js';
+import { jointReceiptBindingIsValid } from '../multiway/JointLivePolicy.js';
 import { horsePhase6AttributionIsValid } from '../HorsePhase6Attribution.js';
 import { horseTournamentUtilityEvidenceIsValid } from '../HorseTournamentUtilityEvidence.js';
 import type { HorseDecision, HorseTournamentUtilityLedger, SeatPlayer } from '../../types.js';
@@ -18,6 +19,9 @@ import {
   isRemainingPolicyVariant,
   REMAINING_VARIANT_PACKS,
 } from '../remainingVariants/RemainingVariantPolicyPack.js';
+import { isJointVariant } from '../multiway/JointInputBinding.js';
+import { JOINT_LIVE_DOMAIN } from '../multiway/JointLivePolicy.js';
+import { horsePhase13ContinuationVersion } from '../HorsePhase13Authority.js';
 
 const ACTIONS = ['fold', 'check', 'call', 'bet', 'raise', 'all_in'] as const;
 type RecordValue = Record<string, unknown>;
@@ -498,10 +502,61 @@ export function horsePhase12SelectionIsValid(value: unknown, decision: RecordVal
   );
 }
 
+/**
+ * P13.3: a joint receipt's selection as the worker returns it, by the same
+ * law: a changed action only as an authority-backed cash selection under
+ * usable worker Phase 13 authority for the receipt's own variant (an NLH
+ * authority never backs a PLO4 receipt, and no Phase 10, 11 or 12 authority
+ * backs any), at the running joint domain version, with the final action equal
+ * to the proposal; acceptance-time fields unset; the two named selection
+ * refusals only on an unapplied receipt; and never an applied joint candidate
+ * on top of an applied Phase 10/11/12 candidate (`earlier_phase_applied`). A
+ * P13.1 receipt (a selection refusal, no selection) claims no authority and
+ * may not carry an applied candidate either.
+ */
+export function horsePhase13SelectionIsValid(value: unknown, decision: RecordValue): boolean {
+  if (value === undefined) return true;
+  if (!record(value)) return false;
+  if (!Object.hasOwn(value, 'selection'))
+    return (
+      value.applied !== true &&
+      !Object.hasOwn(value, 'authority') &&
+      !Object.hasOwn(value, 'authorityVerdict')
+    );
+  if (
+    !packSelectionIsValid(
+      value,
+      decision,
+      (variant) => (isJointVariant(variant) ? JOINT_LIVE_DOMAIN.version : null),
+      {
+        authorityVersionOf: (variant) =>
+          isJointVariant(variant) ? horsePhase13ContinuationVersion(variant) : null,
+        refusals: ['illegal_candidate', 'earlier_phase_applied'],
+      }
+    )
+  )
+    return false;
+  return (
+    value.applied !== true ||
+    // A named refusal means the candidate did not act (the P13.1 binding check
+    // refuses the same pair; this validator holds it on its own as well).
+    ((value.selectionRefusal === undefined || value.selectionRefusal === null) &&
+      ![decision.plo4Policy, decision.omahaVariantPolicy, decision.remainingVariantPolicy].some(
+        (prior) => record(prior) && prior.applied === true
+      ))
+  );
+}
+
 function packSelectionIsValid(
   value: unknown,
   decision: RecordValue,
-  packVersionOf: (variant: unknown) => string | null
+  packVersionOf: (variant: unknown) => string | null,
+  options: {
+    /** The authority continuation the receipt's holder runs (default: the pack version). */
+    authorityVersionOf?: (variant: unknown) => string | null;
+    /** The named selection refusals an unapplied receipt may carry. */
+    refusals?: readonly string[];
+  } = {}
 ): boolean {
   if (value === undefined) return true;
   if (!record(value)) return false;
@@ -514,6 +569,8 @@ function packSelectionIsValid(
       !Object.hasOwn(value, 'selectionRefusal')
     );
   const packVersion = packVersionOf(value.variant);
+  const authorityVersion = (options.authorityVersionOf ?? packVersionOf)(value.variant);
+  const refusals = options.refusals ?? ['illegal_candidate'];
   const authority = value.authority;
   if (
     // Audit 2026-10-05: every receipt that carries a selection is newer than
@@ -529,11 +586,11 @@ function packSelectionIsValid(
     (value.authorityVerdict !== undefined && value.authorityVerdict !== null) ||
     (value.selectionRefusal !== undefined &&
       value.selectionRefusal !== null &&
-      value.selectionRefusal !== 'illegal_candidate') ||
+      !refusals.includes(value.selectionRefusal as string)) ||
     (authority !== undefined &&
       authority !== null &&
       (!horseAuthorityReceiptIsWellFormed(authority) ||
-        authority.continuationVersion !== packVersion))
+        authority.continuationVersion !== authorityVersion))
   )
     return false;
   if (value.mode === 'candidate' && (!record(authority) || authority.state !== 'usable'))
@@ -609,6 +666,12 @@ export function horseDecisionReceiptIsValid(
   )
     return false;
   if (!horsePhase12SelectionIsValid(value.remainingVariantPolicy, value)) return false;
+  // P13.1: a Phase 13 receipt's input binding, pack versions and selection
+  // refusal are re-checked at the boundary.
+  if (value.jointPolicy !== undefined && !jointReceiptBindingIsValid(value.jointPolicy))
+    return false;
+  // P13.3: and its selection, by the Phase 10/11/12 law.
+  if (!horsePhase13SelectionIsValid(value.jointPolicy, value)) return false;
   if (
     value.tournamentPreflopAttribution !== undefined &&
     !horsePhase6AttributionIsValid(value.tournamentPreflopAttribution)

@@ -1,0 +1,116 @@
+/**
+ * P13.2 design pilot (Horse Brain Phase 13). Development seed 13101101 only,
+ * shard 0, development mode; for every profile of the named variants it
+ * records the paired-difference standard deviation and kurtosis (from the
+ * exact power sums, never a mean), the time per pair, the joint-eligible hero
+ * decisions per pair and every counter. Run from server/:
+ *   npx tsx p13-2-pilot.mts <outDir> <pairsFloor> <variant>...
+ */
+process.env.EQUITY_GOVERNOR = 'off';
+process.env.SUPABASE_URL = 'https://supabase.invalid';
+process.env.SUPABASE_SERVICE_ROLE_KEY = 'phase13-pilot-offline-placeholder';
+import { createHash } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+const root = process.cwd();
+const { runJointStrengthShard } = await import(root + '/src/benchmark/JointStrengthLeague.ts');
+const C = await import(root + '/src/benchmark/JointStrengthContract.ts');
+const { channelHub } = await import(root + '/src/hub/ChannelHub.ts');
+const [outDir, floorArg, ...variants] = process.argv.slice(2);
+const floor = Number(floorArg);
+const files = [
+  'src/benchmark/JointStrengthLeague.ts',
+  'src/benchmark/JointStrengthChecks.ts',
+  'src/benchmark/Plo4PolicyLeague.ts',
+  'src/engine/HorseLogic.ts',
+  'src/engine/multiway/JointLivePolicy.ts',
+  'src/engine/multiway/JointActionModel.ts',
+  'src/engine/multiway/JointResponseTree.ts',
+  'src/engine/multiway/JointRangeSampler.ts',
+  'src/engine/multiway/JointSampleAcquisition.ts',
+];
+const sha = (f: string) => createHash('sha256').update(readFileSync(root + '/' + f)).digest('hex');
+for (const variant of variants) {
+  const pack = C.jointStrengthPack(variant as never);
+  const rows: Record<string, unknown>[] = [];
+  for (const p of pack.matrix.profiles) {
+    const pairs = Math.ceil(floor / p.seats) * p.seats;
+    const r = await runJointStrengthShard(variant as never, {
+      profileId: p.id,
+      seed: 13101101,
+      shard: 0,
+      mode: 'development',
+      pairs,
+    });
+    let n = 0n, s1 = 0n, s2 = 0n, s3 = 0n, s4 = 0n;
+    for (const v of Object.values(r.strata) as { n: number; s1: string; s2: string; s3: string; s4: string }[]) {
+      n += BigInt(v.n); s1 += BigInt(v.s1); s2 += BigInt(v.s2); s3 += BigInt(v.s3); s4 += BigInt(v.s4);
+    }
+    const N = Number(n);
+    // Central moments from exact sums (cents); the mean itself is never written.
+    const m1 = Number(s1) / N;
+    const m2 = Number(s2) / N - m1 * m1;
+    const m4 = Number(s4) / N - 4 * m1 * (Number(s3) / N) + 6 * m1 * m1 * (Number(s2) / N) - 3 * m1 ** 4;
+    const sdBB = Math.sqrt((m2 * N) / (N - 1)) / (C.JOINT_STRENGTH_BB * 100);
+    rows.push({
+      profileId: p.id,
+      seats: p.seats,
+      pairs: r.pairs,
+      complete: r.complete,
+      positionCoverageComplete: r.positionCoverageComplete,
+      sdBB: Math.round(sdBB * 100) / 100,
+      kurtosis: m2 > 0 ? Math.round((m4 / (m2 * m2)) * 10) / 10 : null,
+      msPerPair: Math.round((r.durationMs / r.pairs) * 10) / 10,
+      eligiblePerPair: Math.round((r.eligible / r.pairs) * 100) / 100,
+      changedPairs: r.changedPairs,
+      decisions: r.decisions,
+      eligible: r.eligible,
+      fired: r.fired,
+      changed: r.changed,
+      eligibleByBoards: r.eligibleByBoards,
+      illegalCandidates: r.illegalCandidates,
+      earlierPhaseRefusals: r.earlierPhaseRefusals,
+      workBudgetRefusals: r.workBudgetRefusals,
+      responseBranchUnavailable: r.responseBranchUnavailable,
+      insufficientSamples: r.insufficientSamples,
+      discards: r.discards,
+      illegalActions: r.illegalActions,
+      conservationErrors: r.conservationErrors,
+      cardErrors: r.cardErrors,
+      truncatedHands: r.truncatedHands,
+      settlementMismatches: r.settlementMismatches,
+      deductionMismatches: r.deductionMismatches,
+      pairedReplayMismatches: r.pairedReplayMismatches,
+      showdownsChecked: r.showdownsChecked,
+      multiBoardShowdownsChecked: r.multiBoardShowdownsChecked,
+      foldWinsChecked: r.foldWinsChecked,
+      lowHalvesChecked: r.lowHalvesChecked,
+      durationMs: r.durationMs,
+    });
+    console.log(JSON.stringify(rows.at(-1)));
+  }
+  writeFileSync(
+    `${outDir}/pilot-${variant}.json`,
+    JSON.stringify(
+      {
+        schema: 'horse-phase13-strength-pilot-v1',
+        variant,
+        seed: 13101101,
+        shard: 0,
+        mode: 'development',
+        pairsFloor: floor,
+        never: 'no held-out seed was used and no mean difference was computed or written',
+        head: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+        dirty: execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim().length > 0,
+        provisionalContractDigest: C.jointStrengthContractDigest(),
+        sourceSha256: Object.fromEntries(files.map((f) => [f, sha(f)])),
+        host: { node: process.version, platform: `${process.platform}-${process.arch}` },
+        profiles: rows,
+      },
+      null,
+      2
+    ) + '\n'
+  );
+}
+channelHub.close();
+process.exit(0);

@@ -138,10 +138,10 @@ const same = (a: unknown, b: unknown) => horseJournalJson(a) === horseJournalJso
 /**
  * The executed witness may differ from one rebuilt from the decision record in
  * exactly one owned way: the main scheduler's acceptance-time Phase 8 verdict
- * (and, by the same law, the P10.3 Phase 10, P11.3 Phase 11 and P12.3
- * Phase 12 verdicts: `phase10Authority`, `phase11Authority` and
- * `phase12Authority` have the same shape, with the pack version, proposal and
- * shadow baseline).
+ * (and, by the same law, the P10.3 Phase 10, P11.3 Phase 11, P12.3 Phase 12
+ * and P13.3 Phase 13 verdicts: `phase10Authority`, `phase11Authority`,
+ * `phase12Authority` and `phase13Authority` have the same shape, with the
+ * pack or joint receipt version, proposal and shadow baseline).
  * The worker-bound authority (less the main stamp), continuation version,
  * candidate and reference must match; a selected candidate may only end
  * selected, controller-accepted or withdrawn before acceptance.
@@ -171,8 +171,8 @@ function phase8BindingMatches(
  * witness itself records: controller acceptance only after a usable verdict
  * and an intended execution, a withdrawal only with an unusable verdict, and a
  * selection still open only when it never reached a usable, intended action.
- * P11.3 applies the same law to the PLO5/PLO6/PLO8 binding, and P12.3 to the
- * Short Deck/Pineapple/FLH/FLO8 binding.
+ * P11.3 applies the same law to the PLO5/PLO6/PLO8 binding, P12.3 to the
+ * Short Deck/Pineapple/FLH/FLO8 binding, and P13.3 to the joint binding.
  */
 function qualifiedOutcomeIsCoherent(
   w: HorseExecutionWitness,
@@ -600,6 +600,7 @@ export function reconcileHorseJournalHand(
         const phase10Withdrawn = w.phase10Authority?.selection === 'withdrawn_before_acceptance';
         const phase11Withdrawn = w.phase11Authority?.selection === 'withdrawn_before_acceptance';
         const phase12Withdrawn = w.phase12Authority?.selection === 'withdrawn_before_acceptance';
+        const phase13Withdrawn = w.phase13Authority?.selection === 'withdrawn_before_acceptance';
         const expectedSelected = phase8Withdrawn
           ? expectedWitness.phase8Authority?.reference
           : phase10Withdrawn
@@ -608,9 +609,15 @@ export function reconcileHorseJournalHand(
               ? expectedWitness.phase11Authority?.reference
               : phase12Withdrawn
                 ? expectedWitness.phase12Authority?.reference
-                : expectedWitness.selected;
+                : phase13Withdrawn
+                  ? expectedWitness.phase13Authority?.reference
+                  : expectedWitness.selected;
         const expectedAmount =
-          (phase8Withdrawn || phase10Withdrawn || phase11Withdrawn || phase12Withdrawn) &&
+          (phase8Withdrawn ||
+            phase10Withdrawn ||
+            phase11Withdrawn ||
+            phase12Withdrawn ||
+            phase13Withdrawn) &&
           expectedSelected
             ? expectedHorseExecutionAmount(s, {
                 action: expectedSelected.action,
@@ -630,6 +637,8 @@ export function reconcileHorseJournalHand(
           !qualifiedOutcomeIsCoherent(w, w.phase11Authority) ||
           !phase8BindingMatches(w.phase12Authority, expectedWitness.phase12Authority) ||
           !qualifiedOutcomeIsCoherent(w, w.phase12Authority) ||
+          !phase8BindingMatches(w.phase13Authority, expectedWitness.phase13Authority) ||
+          !qualifiedOutcomeIsCoherent(w, w.phase13Authority) ||
           !same(w.policyOwnership, expectedWitness.policyOwnership) ||
           !same(w.policyGraph, expectedWitness.policyGraph) ||
           !same(w.phase6Attribution ?? null, expectedWitness.phase6Attribution ?? null) ||
@@ -637,6 +646,7 @@ export function reconcileHorseJournalHand(
           !same(w.phase10Inputs ?? null, expectedWitness.phase10Inputs ?? null) ||
           !same(w.phase11Inputs ?? null, expectedWitness.phase11Inputs ?? null) ||
           !same(w.phase12Inputs ?? null, expectedWitness.phase12Inputs ?? null) ||
+          !same(w.phase13Inputs ?? null, expectedWitness.phase13Inputs ?? null) ||
           w.policyFallback !== expectedWitness.policyFallback ||
           w.expectedExecutionAmount !== expectedAmount ||
           w.computeMs !== d.computeMs ||

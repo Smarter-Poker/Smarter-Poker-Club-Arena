@@ -4,6 +4,9 @@ import { HorsePolicyGraph, HORSE_POLICY_ORDER } from '../HorsePolicyGraph.js';
 import { HorseLogic } from '../HorseLogic.js';
 import { seedFastRandom } from '../HorseEval.js';
 import { jointPolicyFixture } from '../multiway/JointRangeFixture.test-support.js';
+import { HorseQualifiedAuthorityHolder } from '../HorseQualifiedAuthority.js';
+import { horsePhase13ContinuationVersion } from '../HorsePhase13Authority.js';
+import { qualifiedPhase13TestAdmission } from '../HorsePhase13Authority.test-support.js';
 import type { HorseTournamentJointSamplerProvenance } from '../HorseTournamentUtilityEvidence.js';
 import {
   horseDecisionReceiptIsValid,
@@ -431,5 +434,114 @@ describe('Phase 7 evidence is bound to the request at admission', () => {
     )!;
     opponent.user_id = 'another-table-player';
     expect(horsePhase7EvidenceMismatch(single.decision, foreign)).toBe('phase7_foreign_opponent');
+  });
+});
+
+describe('P13.1 the joint receipt binding at the worker boundary', () => {
+  const decide = (mode: 'shadow' | 'candidate') => {
+    const s = jointPolicyFixture('plo4', 2, 'cash', 'turn');
+    seedFastRandom(130999);
+    return structuredClone(
+      HorseLogic.decide(
+        s.hero,
+        s.state,
+        'balanced',
+        {},
+        {
+          telemetry: false,
+          mind: false,
+          decisionTimeMs: 0,
+          phase10Plo4: 'off',
+          phase13Joint: mode,
+          phase13EvidenceMode: true,
+        }
+      )
+    );
+  };
+
+  it('accepts a real bound receipt and a retained one, and refuses a forged one', () => {
+    const valid = decide('shadow');
+    expect(valid.jointPolicy?.inputs).toBeTruthy();
+    expect(horseDecisionReceiptIsValid(structuredClone(valid), 'plo4')).toBe(true);
+    const retained = structuredClone(valid) as HorseDecision & {
+      jointPolicy: Record<string, unknown>;
+    };
+    // P13.3: a receipt retained from before P13.1 carries none of the later
+    // fields either (selection, authority and verdict are P13.3's).
+    for (const key of [
+      'inputs',
+      'rangePackVersion',
+      'actionPackVersion',
+      'uniformEscapes',
+      'selectionRefusal',
+      'selection',
+      'authority',
+      'authorityVerdict',
+    ])
+      delete retained.jointPolicy[key];
+    expect(horseDecisionReceiptIsValid(retained, 'plo4')).toBe(true);
+    const forged = structuredClone(valid);
+    (forged.jointPolicy!.inputs!.positions as { firstToActSeat: number }).firstToActSeat = 3;
+    expect(horseDecisionReceiptIsValid(forged, 'plo4')).toBe(false);
+    const unbound = structuredClone(valid);
+    unbound.jointPolicy!.inputs = null;
+    expect(horseDecisionReceiptIsValid(unbound, 'plo4')).toBe(false);
+  });
+
+  it('refuses an unnamed selection refusal and a refusal on an applied candidate', () => {
+    const applied = decide('candidate');
+    expect(applied.jointPolicy).toMatchObject({
+      applied: true,
+      selectionRefusal: null,
+      selection: 'selected',
+    });
+    // P13.3 (replaces the P13.1 pin that accepted this offline receipt): an
+    // applied joint receipt passes the boundary only under usable worker
+    // authority for its own variant.
+    expect(horseDecisionReceiptIsValid(structuredClone(applied), 'plo4')).toBe(false);
+    const holder = new HorseQualifiedAuthorityHolder(
+      'p133-rv',
+      horsePhase13ContinuationVersion('plo4')
+    );
+    holder.apply(qualifiedPhase13TestAdmission('plo4'));
+    applied.jointPolicy!.authority = holder.receipt();
+    expect(horseDecisionReceiptIsValid(structuredClone(applied), 'plo4')).toBe(true);
+    const refusedButApplied = structuredClone(applied);
+    refusedButApplied.jointPolicy!.selectionRefusal = 'illegal_candidate';
+    expect(horseDecisionReceiptIsValid(refusedButApplied, 'plo4')).toBe(false);
+    const unnamed = structuredClone(decide('shadow'));
+    (unnamed.jointPolicy as { selectionRefusal: unknown }).selectionRefusal = 'busy';
+    expect(horseDecisionReceiptIsValid(unnamed, 'plo4')).toBe(false);
+  });
+});
+
+describe('P13.1 over P13-A: a round-2 response tree receipt at the boundary', () => {
+  it('admits the tree, its response counts and summary, and refuses a forged summary', () => {
+    const s = jointPolicyFixture('flo8', 2, 'cash', 'turn');
+    seedFastRandom(130999);
+    const d = structuredClone(
+      HorseLogic.decide(
+        s.hero,
+        s.state,
+        'balanced',
+        {},
+        {
+          telemetry: false,
+          mind: false,
+          decisionTimeMs: 0,
+          phase13Joint: 'shadow',
+          phase13EvidenceMode: true,
+        }
+      )
+    );
+    expect(d.jointPolicy?.responseModel).toBe('bounded_raise_tree');
+    const counts = Object.values(d.jointPolicy!.actionModel!.candidates[0].responseCounts)[0];
+    expect(counts).toHaveProperty('raiseProbability');
+    expect(counts).toHaveProperty('facedRaise');
+    expect(d.jointPolicy?.responseTree?.riverRoundProbability).not.toBeNull();
+    expect(horseDecisionReceiptIsValid(structuredClone(d), 'flo8')).toBe(true);
+    const forged = structuredClone(d);
+    forged.jointPolicy!.responseTree!.raiseBranches = 99;
+    expect(horseDecisionReceiptIsValid(forged, 'flo8')).toBe(false);
   });
 });

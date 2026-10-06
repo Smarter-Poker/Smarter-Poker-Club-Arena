@@ -113,6 +113,20 @@
       "body_md5": "a442d2e2880b262cf4c7eb8cdb18c6ea",
       "owner": "postgres",
       "acl": "{postgres=X/postgres}"
+    },
+    {
+      "signature": "fn_cash_stay_remaining_ms(integer,boolean,timestamp with time zone)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_cash_stay_remaining_ms(p_remaining integer, p_running boolean, p_last_tick timestamp with time zone)\n RETURNS integer\n LANGUAGE sql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT CASE\n    WHEN COALESCE(p_running, false)\n      THEN LEAST(2147483647::bigint, GREATEST(0::bigint,\n             COALESCE(p_remaining, 0)::bigint\n             - FLOOR(EXTRACT(EPOCH FROM (clock_timestamp() - COALESCE(p_last_tick, clock_timestamp()))) * 1000)::bigint\n           ))::integer\n    ELSE GREATEST(0, COALESCE(p_remaining, 0))\n  END;\n$function$\n",
+      "body_md5": "987a40c0e45ea71017dece54272fd1ed",
+      "owner": "postgres",
+      "acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "promo_apply_playthrough(uuid,uuid,numeric)",
+      "definition": "CREATE OR REPLACE FUNCTION public.promo_apply_playthrough(p_club_id uuid, p_user_id uuid, p_wagered numeric)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_promo    numeric;\n  v_required numeric;\n  v_wagered  numeric;\n  v_released numeric := 0;\n  v_caller   text := COALESCE(auth.role(), '');\nBEGIN\n  /* ZERO-DRIFT (2026-08-31): the wager figure is engine truth. Only the\n     engine (service_role) or trusted admin context may apply playthrough -\n     an authenticated user could previously release ANY member's locked promo\n     by claiming an arbitrary wager. Fail closed. */\n  IF NOT (v_caller = 'service_role'\n          OR (v_caller = '' AND current_user IN ('postgres', 'supabase_admin'))) THEN\n    RETURN jsonb_build_object('applied', false, 'reason', 'engine_only');\n  END IF;\n\n  IF p_wagered IS NULL OR p_wagered <= 0 THEN\n    RETURN jsonb_build_object('applied', false, 'reason', 'no_wager');\n  END IF;\n\n  BEGIN\n    INSERT INTO player_stats (id, user_id, club_id, total_losses, updated_at)\n    VALUES (gen_random_uuid(), p_user_id, p_club_id, p_wagered, now())\n    ON CONFLICT (user_id, club_id) DO UPDATE\n       SET total_losses = player_stats.total_losses + EXCLUDED.total_losses,\n           updated_at   = now();\n  EXCEPTION WHEN OTHERS THEN\n    NULL;\n  END;\n\n  SELECT COALESCE(promo_balance, 0), COALESCE(promo_playthrough_required, 0), COALESCE(promo_wagered, 0)\n    INTO v_promo, v_required, v_wagered\n    FROM club_members\n   WHERE club_id = p_club_id AND user_id = p_user_id\n   FOR UPDATE;\n\n  IF v_promo IS NULL OR v_promo <= 0 OR v_required <= 0 THEN\n    RETURN jsonb_build_object('applied', false, 'reason', 'no_outstanding_promo');\n  END IF;\n\n  v_wagered := v_wagered + p_wagered;\n\n  IF v_wagered >= v_required THEN\n    /* Exact release - the old v_promo::integer truncated fractions into\n       nothing while promo_balance was zeroed in full. */\n    v_released := round(v_promo, 2);\n\n    /* ONE MOVEMENT, ONE LEG (2026-10-01). Both club_members journal triggers\n       stand down for this write, so the leg is written here: the promo float\n       becomes cashable chips in the same wallet. Before today this block set\n       the stand-down and wrote no leg, so the release moved chip_balance with\n       nothing in the journal - the shape zz_ca_balance_has_its_ledger_row\n       refuses at commit. */\n    PERFORM set_config('app.ledger_category', 'promo_release', true);\n    PERFORM set_config('app.ledger_autoskip_club_members', '1', true);\n    INSERT INTO public.chip_ledger\n      (performed_by, from_type, from_entity_id, to_type, to_entity_id,\n       amount, category, club_id, description, idempotency_key)\n    VALUES\n      (COALESCE(auth.uid(), '2d1cd6c3-5700-4af9-a271-d4863fdab20d'::uuid),\n       'promo_wallet', p_user_id, 'player_wallet', p_user_id,\n       v_released, 'promo_release', p_club_id,\n       'Promo bonus released to cashable balance after playthrough met',\n       'promo_release:' || p_club_id::text || ':' || p_user_id::text || ':' || to_char(clock_timestamp(), 'YYYYMMDDHH24MISSUS'));\n    UPDATE club_members\n       SET chip_balance               = COALESCE(chip_balance, 0) + v_released,\n           promo_balance              = 0,\n           promo_playthrough_required = 0,\n           promo_wagered              = 0,\n           updated_at                 = NOW()\n     WHERE club_id = p_club_id AND user_id = p_user_id;\n    PERFORM set_config('app.ledger_autoskip_club_members', '0', true);\n\n    INSERT INTO chip_transactions (id, club_id, to_user_id, amount, transaction_type, notes, created_at)\n    VALUES (gen_random_uuid(), p_club_id, p_user_id, v_released, 'promo_released',\n            'Promo bonus released to cashable balance after playthrough met', NOW());\n  ELSE\n    UPDATE club_members\n       SET promo_wagered = v_wagered, updated_at = NOW()\n     WHERE club_id = p_club_id AND user_id = p_user_id;\n  END IF;\n\n  RETURN jsonb_build_object('applied', true, 'released', v_released,\n                            'wagered', v_wagered, 'required', v_required);\nEND;\n$function$\n",
+      "body_md5": "6275e9fc1938465e205812d22c9968ea",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
     }
   ],
   "relations": [
@@ -1022,6 +1036,92 @@
         }
       ],
       "unique_indexes": []
+    },
+    {
+      "name": "cash_rejoin_constraints",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true
+        },
+        {
+          "name": "player_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "variant",
+          "type": "text",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "sb",
+          "type": "numeric(14,2)",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "bb",
+          "type": "numeric(14,2)",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "required_stack",
+          "type": "numeric(14,2)",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "left_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "source_table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "barred_until",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false
+        }
+      ],
+      "constraints": [
+        {
+          "name": "cash_rejoin_constraints_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "cash_rejoin_constraints_required_stack_check",
+          "type": "c",
+          "definition": "CHECK ((required_stack > (0)::numeric))"
+        }
+      ],
+      "unique_indexes": [
+        "CREATE UNIQUE INDEX cash_rejoin_constraints_pkey ON public.cash_rejoin_constraints USING btree (id)"
+      ]
     }
   ]
 }

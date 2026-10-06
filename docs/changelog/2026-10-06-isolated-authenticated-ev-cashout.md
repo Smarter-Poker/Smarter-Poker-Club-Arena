@@ -26,3 +26,15 @@ Run37407406267 retained only PGRST002/PGRST003 (schema cache/pool acquisition) w
 Readiness now targets authenticated `/profiles?select=id&limit=0`, exercising real bounded REST access instead of repeatedly generating full-catalog OpenAPI at `/`. The one-second request budget and thirty-second readiness deadline remain unchanged. Repeated abandoned OpenAPI work is a source-supported pool-pressure hypothesis, not yet a proven runtime cause; the activity snapshot remains available on failure.
 
 Run37408413571 passed authenticated bounded REST readiness and reached funding, where the captured cash-table parent CHECK refused the fixture's missing cluster. Fixture setup now creates the ordinary `cash_games` parent and links `tables.cluster_id`, following the maintained cash-participant fixture; no constraint or production club-ID exception is bypassed. Engine table metadata identifies the fresh ordinary chips club correctly as non-platform. EV acceptance is still pending.
+
+The d7f native attempt reached real seat funding and failed with SQLSTATE42P01.
+The dependency review found `fn_cash_rejoin_floor` reads `cash_rejoin_constraints`,
+which the reused catalog omitted. The exact current relation constraints and
+session-clock function are now captured without data. Funding returns void, so
+its driver now verifies the actual seat, original funding receipt and 150-chip
+wallet debit independently (1000 to 850). Safe allowlisted object diagnostics
+also apply to SQL failures. Cash-only heads-up inputs do not exercise tournament,
+Diamond or BBJ contribution branches; their missing unrelated dependencies
+are not asserted qualified. No cash-out pass is claimed until hosted execution.
+
+The real settlement envelope always emits promo playthrough for cash contributions. Its current owning function is also captured, including authorization and no-outstanding-promo behavior; no stub or empty-envelope override is used.

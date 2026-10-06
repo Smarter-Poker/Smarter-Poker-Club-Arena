@@ -259,11 +259,26 @@ try {
         [club, u.id]
       );
       stage = `fund-seat-${river}`;
-      const result = await db.query(
+      await db.query(
         'SELECT public.atomic_table_buyin_before_maintenance_announcement_gate($1,$2,$3,150,false,$4,$5) AS result',
         [u.id, table, i + 1, club, randomUUID()]
       );
-      assert.equal(result.rows[0].result.success, true, 'original funding owner refused');
+      const funded = await db.query(
+        `SELECT s.stack, cm.chip_balance, f.amount, f.balance_before, f.balance_after
+         FROM public.table_seats s
+         JOIN public.club_members cm ON cm.user_id=s.user_id AND cm.club_id=s.club_id
+         JOIN public.cash_participant_funding_receipts f ON f.seat_id=s.id
+           AND f.occupancy_id=s.occupancy_id AND f.user_id=s.user_id
+           AND f.table_id=s.table_id AND f.funding_club_id=s.club_id
+         WHERE s.table_id=$1 AND s.user_id=$2 AND s.left_at IS NULL`,
+        [table, u.id]
+      );
+      assert.equal(funded.rows.length, 1, 'one original funded seat receipt required');
+      assert.deepEqual(
+        Object.values(funded.rows[0]).map(Number),
+        [150, 850, 150, 1000, 850],
+        'original wallet debit and seat funding must agree'
+      );
     }
     stage = `authenticated-lifecycle-${river}`;
     outcomes.push(
@@ -292,6 +307,15 @@ try {
     })
   );
 } catch (error) {
+  const failureAuthorities = JSON.parse(await readFile('/ev/captured-authorities.json', 'utf8'));
+  const failureObjects = failureAuthorities.relations
+    .map((r) => r.name)
+    .concat(failureAuthorities.functions.map((f) => f.signature.split('(')[0]))
+    .flatMap((name) => [name, name.startsWith('public.') ? name.slice(7) : `public.${name}`]);
+  const databaseError = schemaCacheDiagnostics(
+    JSON.stringify({ code: error.code, message: error.message }),
+    failureObjects
+  );
   let providerDiagnostics, databaseActivity;
   if (stage === 'postgrest') {
     const authorities = JSON.parse(await readFile('/ev/captured-authorities.json', 'utf8'));
@@ -337,6 +361,7 @@ try {
       readiness_error_code: stage === 'postgrest' ? readinessCode : undefined,
       provider_diagnostics: providerDiagnostics,
       database_activity: databaseActivity,
+      database_error: databaseError,
       error_code: /^[A-Z0-9_]{3,50}$/.test(error.code || '')
         ? error.code
         : 'ASSERTION_OR_RUNTIME_FAILURE',

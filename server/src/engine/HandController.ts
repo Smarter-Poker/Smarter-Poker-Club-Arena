@@ -2243,9 +2243,36 @@ export class HandController {
    * `state.communityCards` does not hold — which today means exactly one
    * thing: markFlopSeen() above, the RIT path. It is not a second copy of
    * `sawFlop`; it is the evidence that makes an empty board legitimate, and
-   * priceDeductions is its only reader.
+   * the board-corroboration rule below is its only reader.
    */
   private boardDealtOutsideState = false;
+
+  /**
+   * THE EVIDENCE A FLOP LEAVES. Three community cards in this controller's own
+   * state, or the RIT path's markFlopSeen(). Extracted so that
+   * `priceDeductions` and `handSawFlopForMoney` read ONE definition rather
+   * than two copies of the same expression — every time the flag and the board
+   * have disagreed, the flag has been the wrong one, and a second copy of this
+   * rule is how a third disagreement would get in.
+   */
+  private boardCorroboratesAFlop(): boolean {
+    return this.state.communityCards.length >= 3 || this.boardDealtOutsideState;
+  }
+
+  /**
+   * DID THIS HAND SEE A FLOP, FOR MONEY. Exactly the question
+   * `priceDeductions` answers before it charges a rake or a jackpot drop: the
+   * flag AND a board that corroborates it. Nothing here forecasts — a hand
+   * that has not been dealt has no money fact.
+   *
+   * Read by the Diamond cash settlement payload as `hand_saw_flop`, which the
+   * owner's `cash_rake_no_flop_no_drop` answer turns into a rake of zero. It
+   * is the same number priceDeductions prices with, from the same expression,
+   * so the engine cannot tell the database one thing and itself another.
+   */
+  public handSawFlopForMoney(): boolean {
+    return this.state.sawFlop && this.boardCorroboratesAFlop();
+  }
 
   public creditRunoutWinnings(distribution: Map<string, number>): void {
     this.applyStackDeltas(distribution);
@@ -4107,7 +4134,7 @@ export class HandController {
        `forecast` is the insurance dialog pricing a runout that has not been
        dealt yet (computeRakeAndBBJ(true)). It moves no chips and must keep
        quoting what the completed hand will pay, so it is exempt. */
-    const boardDealt = this.state.communityCards.length >= 3 || this.boardDealtOutsideState;
+    const boardDealt = this.boardCorroboratesAFlop();
     let flopCounts = flopSeen;
     if (flopSeen && !boardDealt && !opts.forecast) {
       flopCounts = false;

@@ -19,6 +19,7 @@ import {
   horsePhase13AdmittedMode,
   horsePhase13CompletionBoardCounts,
   horsePhase13CompletionCounts,
+  horsePhase13CompletionExclusions,
   horsePhase13CompletionLowerBound,
   horsePhase13CompletionMeetsFloor,
   horsePhase13CompletionRecordMeetsFloor,
@@ -571,6 +572,48 @@ describe('P13.3 admission refuses by name unless the variant qualifies and compl
       'completion_evidence_mismatch',
     ],
     [
+      'a definition-v1 record (no analysis-failure count, Diamond decisions counted in NLH)',
+      () => withCompletion({ definition: 'horse-phase13-completion-definition-v1' }),
+      'completion_evidence_mismatch',
+    ],
+    [
+      'a street without the analysis-failure count (the definition-v1 shape)',
+      () =>
+        withCompletion({
+          streets: {
+            ...p13CompletionObject(V).streets,
+            river: {
+              eligible: 200,
+              completed: 200,
+              workBudget: 0,
+              samplerBudgetExhausted: 0,
+              sampleUnavailable: 0,
+              governorReduced: 0,
+              responseBranchUnavailable: 0,
+            },
+          },
+        }),
+      'completion_evidence_mismatch',
+    ],
+    [
+      'a record without its named exclusions',
+      () => {
+        const { excluded: _excluded, ...rest } = p13CompletionObject(V) as Record<string, unknown>;
+        return withCompletionBytes(json(rest));
+      },
+      'completion_evidence_mismatch',
+    ],
+    [
+      'a Diamond exclusion that is not a count',
+      () => withCompletion({ excluded: { diamond: -1 } }),
+      'completion_evidence_mismatch',
+    ],
+    [
+      'an exclusion of an unnamed kind',
+      () => withCompletion({ excluded: { diamond: 0, other: 0 } }),
+      'completion_evidence_mismatch',
+    ],
+    [
       'a street without the response-branch count (the Phase 12 shape)',
       () =>
         withCompletion({
@@ -707,6 +750,17 @@ describe('P13.3 admission refuses by name unless the variant qualifies and compl
       () =>
         withCompletion({
           streets: { ...p13CompletionObject(V).streets, river: p13Street(200, 0, 0, 0, 0, 15) },
+        }),
+      'completion_below_floor',
+    ],
+    [
+      'a turn whose analysis failed on 15 of 200 decisions',
+      () =>
+        withCompletion({
+          streets: {
+            ...p13CompletionObject(V).streets,
+            turn: p13Street(200, 0, 0, 0, 0, 0, 15),
+          },
         }),
       'completion_below_floor',
     ],
@@ -1045,8 +1099,36 @@ describe('P13.3 one variant never admits another', () => {
         horsePhase13AdmittedMode({
           gameMode,
           variant,
+          asset: undefined,
           packVariant: packVariant as JointVariant | null,
           verdict,
+          callerMode,
+        })
+      ).toBe(expected);
+    }
+  );
+
+  // Audit 2026-10-06: the P13.2 contract excludes Diamond NLH from the
+  // qualified domain, so no Phase 13 authority covers a Diamond decision.
+  it.each([
+    ['diamonds', undefined, 'shadow'],
+    ['diamonds', 'shadow', 'shadow'],
+    ['diamonds', 'candidate', 'shadow'],
+    ['diamonds', 'off', 'off'],
+    ['chips', undefined, 'candidate'],
+    [undefined, undefined, 'candidate'],
+    [null, undefined, 'candidate'],
+    ['gold', undefined, 'shadow'],
+  ] as const)(
+    'a cash NLH decision in %s with usable NLH authority and caller %s runs in %s mode',
+    (asset, callerMode, expected) => {
+      expect(
+        horsePhase13AdmittedMode({
+          gameMode: 'cash',
+          variant: 'nlh',
+          asset,
+          packVariant: 'nlh',
+          verdict: 'usable',
           callerMode,
         })
       ).toBe(expected);
@@ -1064,16 +1146,68 @@ describe('P13.3 natural completion share: what a record counts', () => {
     street: 'river',
     boardCount: 1,
     reason: 'joint_cash_action_distribution',
+    fired: true,
     dealtPlayers: 4,
     requestedSamples: 16,
     completedSamples: 16,
     sampleBudgetExhausted: false,
-    inputs: { ranges: { status: 'consumed' } },
+    inputs: {
+      ranges: { status: 'consumed' },
+      objective: { kind: 'cash_net_chips', asset: 'chips' },
+    },
     ...overrides,
   });
+  const diamondInputs = {
+    ranges: { status: 'consumed' },
+    objective: { kind: 'cash_net_chips', asset: 'diamonds' },
+  };
 
   it.each([
     ['a complete full-sample eligible cash decision', receipt(), 'completed'],
+    // Audit 2026-10-06: Diamond NLH is outside the P13.2 qualified domain.
+    [
+      'a Diamond decision (outside the qualified domain)',
+      receipt({ inputs: diamondInputs }),
+      'excluded_diamond',
+    ],
+    [
+      'a Diamond decision that also fell back on the work budget',
+      receipt({ inputs: diamondInputs, reason: 'work_budget', fired: false }),
+      'excluded_diamond',
+    ],
+    ['an ineligible Diamond decision', receipt({ inputs: null, eligible: false }), 'not_counted'],
+    // Audit 2026-10-06: an eligible full-sample receipt that did not fire is
+    // not the measured policy. Analysis failures and model defects are their
+    // own named count, never completed and never a response-branch refusal.
+    ...(
+      [
+        'joint_action_conservation',
+        'joint_analysis_unavailable',
+        'joint_pots_conservation',
+        'joint_scores_no_winner',
+        'joint_action_no_legal_candidates',
+        'proposal_outside_legal_menu',
+        'joint_response_branch_mass',
+        'joint_response_illegal_simulated_action',
+      ] as const
+    ).map(
+      (reason) =>
+        [
+          `an analysis failure or model defect (${reason})`,
+          receipt({ reason, fired: false }),
+          'analysis_unavailable',
+        ] as const
+    ),
+    [
+      'an eligible full-sample receipt that never fired, whatever its reason',
+      receipt({ fired: false }),
+      'analysis_unavailable',
+    ],
+    [
+      'an eligible full-sample receipt that does not say it fired',
+      receipt({ fired: undefined }),
+      'analysis_unavailable',
+    ],
     [
       'a protected fold kept by the continuation guard (the measured policy)',
       receipt({ reason: 'protected_fold_guard' }),
@@ -1107,12 +1241,17 @@ describe('P13.3 natural completion share: what a record counts', () => {
     ],
     [
       'a response tree over its branch limit',
-      receipt({ reason: 'joint_response_branch_unavailable' }),
+      receipt({ reason: 'joint_response_branch_unavailable', fired: false }),
       'response_branch_unavailable',
     ],
     [
       'a response street the model does not cover',
-      receipt({ reason: 'joint_response_street_not_modeled' }),
+      receipt({ reason: 'joint_response_street_not_modeled', fired: false }),
+      'response_branch_unavailable',
+    ],
+    [
+      'a response street the pack does not price',
+      receipt({ reason: 'joint_response_street_unavailable', fired: false }),
       'response_branch_unavailable',
     ],
     [
@@ -1242,7 +1381,15 @@ describe('P13.3 natural completion share: what a record counts', () => {
         expect(horsePhase13CompletionOutcome(variant, response)).toBe(
           'response_branch_unavailable'
         );
-        seen.push(ok, slow, none, cut, reduced, response);
+        // An analysis failure on a complete population, and a response-model
+        // defect (forged reasons on a real receipt, as the wrapper's catch
+        // records them): neither is the measured policy, and neither is a
+        // response-branch refusal.
+        const failed = { ...ok, reason: 'joint_action_conservation', fired: false };
+        expect(horsePhase13CompletionOutcome(variant, failed)).toBe('analysis_unavailable');
+        const defect = { ...ok, reason: 'joint_response_branch_mass', fired: false };
+        expect(horsePhase13CompletionOutcome(variant, defect)).toBe('analysis_unavailable');
+        seen.push(ok, slow, none, cut, reduced, response, failed);
       }
       // A multi-board hand is counted on its betting streets; it has no
       // eligible preflop decision.
@@ -1268,16 +1415,17 @@ describe('P13.3 natural completion share: what a record counts', () => {
       seen.push(tournament);
       const counts = horsePhase13CompletionCounts(variant, seen);
       const row = (completed: number) => ({
-        eligible: completed + 5,
+        eligible: completed + 6,
         completed,
         workBudget: 1,
         samplerBudgetExhausted: 1,
         sampleUnavailable: 1,
         governorReduced: 1,
         responseBranchUnavailable: 1,
+        analysisUnavailable: 1,
       });
       expect(counts.preflop).toEqual(row(1));
-      expect(counts.flop).toEqual({ ...row(1), eligible: 7, workBudget: 2 });
+      expect(counts.flop).toEqual({ ...row(1), eligible: 8, workBudget: 2 });
       expect(counts.turn).toEqual(row(2));
       expect(counts.river).toEqual(row(2));
       // The same decisions by board count: every ordinary decision on one board,
@@ -1285,12 +1433,13 @@ describe('P13.3 natural completion share: what a record counts', () => {
       const boards = horsePhase13CompletionBoardCounts(variant, seen);
       expect(boards['1']).toEqual({
         ...row(4),
-        eligible: 24,
+        eligible: 28,
         workBudget: 4,
         samplerBudgetExhausted: 4,
         sampleUnavailable: 4,
         governorReduced: 4,
         responseBranchUnavailable: 4,
+        analysisUnavailable: 4,
       });
       expect(boards['2']).toEqual({
         ...row(1),
@@ -1300,6 +1449,7 @@ describe('P13.3 natural completion share: what a record counts', () => {
         sampleUnavailable: 0,
         governorReduced: 0,
         responseBranchUnavailable: 0,
+        analysisUnavailable: 0,
       });
       expect(boards['3']).toEqual({
         ...row(1),
@@ -1309,6 +1459,7 @@ describe('P13.3 natural completion share: what a record counts', () => {
         sampleUnavailable: 0,
         governorReduced: 0,
         responseBranchUnavailable: 0,
+        analysisUnavailable: 0,
       });
       for (const key of HORSE_PHASE13_COMPLETION_STREET_KEYS)
         expect(
@@ -1323,6 +1474,35 @@ describe('P13.3 natural completion share: what a record counts', () => {
       expect(horsePhase13CompletionCounts(other, seen).river.eligible).toBe(0);
     }
   );
+
+  it('a real Diamond NLH receipt is excluded by name and never counted, even when it completes', () => {
+    const diamond = (street: 'flop' | 'turn' | 'river') => {
+      const { hero, state, baseline } = jointPolicyFixture('nlh', 2, 'cash', street);
+      Object.assign(state, { asset: 'diamonds', chipUnit: 1 });
+      state.rakeConfig!.percent = 0;
+      state.rakeConfig!.cap = 0;
+      const r = evaluateJointLivePolicy(hero, state, baseline, 'shadow', () => 0);
+      return JSON.parse(JSON.stringify(r.receipt)) as Record<string, any>;
+    };
+    const receipts = (['flop', 'turn', 'river'] as const).map(diamond);
+    for (const r of receipts) {
+      // The live policy prices it completely: before the audit this counted
+      // as `completed` toward the NLH record.
+      expect(r, r.reason).toMatchObject({ eligible: true, fired: true, utilityOwner: 'cash' });
+      expect(r.inputs.objective.asset).toBe('diamonds');
+      expect(horsePhase13CompletionOutcome('nlh', r)).toBe('excluded_diamond');
+    }
+    const chips = live('nlh', 'river', () => 0, 2);
+    expect(horsePhase13CompletionOutcome('nlh', chips)).toBe('completed');
+    const all = [...receipts, chips];
+    for (const cells of [
+      horsePhase13CompletionCounts('nlh', all),
+      horsePhase13CompletionBoardCounts('nlh', all),
+    ])
+      expect(Object.values(cells).reduce((n, cell) => n + cell.eligible, 0)).toBe(1);
+    expect(horsePhase13CompletionExclusions('nlh', all)).toEqual({ diamond: 3 });
+    expect(horsePhase13CompletionExclusions('plo4', all)).toEqual({ diamond: 0 });
+  });
 
   it('the floor is judged on the Wilson lower bound at the contract z', () => {
     const z = JOINT_STRENGTH_Z99;
@@ -1372,7 +1552,9 @@ describe('P13.3 natural completion share: what a record counts', () => {
     expect(HORSE_PHASE13_EVIDENCE_DIRECTORY).toBe('docs/evidence/phase13/');
     expect(HORSE_PHASE13_QUALIFICATION_SCHEMA).toBe('horse-phase13-qualification-v1');
     expect(HORSE_PHASE13_COMPLETION_SCHEMA).toBe('horse-phase13-completion-v1');
-    expect(HORSE_PHASE13_COMPLETION_DEFINITION).toBe('horse-phase13-completion-definition-v1');
+    // v2 (audit 2026-10-06): Diamond decisions excluded by name, analysis
+    // failures and model defects counted apart from completed.
+    expect(HORSE_PHASE13_COMPLETION_DEFINITION).toBe('horse-phase13-completion-definition-v2');
     expect(HORSE_PHASE13_PACK_VERSION).toBe(JOINT_LIVE_DOMAIN.version);
     expect(json(p13QualificationObject('nlh').admissionAlsoRequires).toString()).toBe(
       json(horsePhase13ContractAdmissionRequires()).toString()

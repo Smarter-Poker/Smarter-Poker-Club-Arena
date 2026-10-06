@@ -1806,7 +1806,9 @@ export class HorseDecisionWorkerRuntime {
    * authority for the decision's own variant when the request RUNS, never from
    * the caller, and only for a cash decision; unselected or any other verdict
    * is shadow, and a tournament decision stays shadow so Phase 7 keeps its
-   * objective. The caller may only turn the joint owner off.
+   * objective. A Diamond decision stays shadow as well: no Phase 13 qualified
+   * domain covers it (audit 2026-10-06). The caller may only turn the joint
+   * owner off.
    */
   private phase13Admission(request: FastHorseDecisionRequest | DeepHorseDecisionRequest): {
     mode: JointPolicyMode;
@@ -1821,6 +1823,7 @@ export class HorseDecisionWorkerRuntime {
         callerMode: request.opts?.phase13Joint,
         gameMode: request.gameState.gameMode,
         variant,
+        asset: request.gameState.asset,
         packVariant: isJointVariant(variant) ? variant : null,
         verdict: holder && receipt ? holder.verdict(receipt, Date.now()) : 'missing_receipt',
       }),

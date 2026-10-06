@@ -142,18 +142,25 @@ export const HORSE_PHASE13_COMPLETION_SCHEMA = 'horse-phase13-completion-v1';
 /**
  * What a completion record counts. Bump when the counting below changes.
  *
- * Population: natural cash betting decisions of one variant on one engine
- * release, read from the journaled joint receipts (`decision.jointPolicy`) of
- * the receipt version `HORSE_PHASE13_PACK_VERSION`. Shadow and candidate
- * receipts run the same policy code, so a shadow release whose policy digest
- * equals the running one measures the share the candidate would see. Single
- * board, multi-board and bomb hands are all counted (the joint owner decides
- * all three); a bomb or multi-board hand has no preflop decision
- * (`bomb_hand_has_no_preflop_decision`, never eligible), so its decisions
- * count on the flop, turn and river only. Not counted: tournament decisions
- * (they never admit candidate mode), Pineapple discards (not a betting
- * street), any other variant, any receipt of another version, and a receipt
- * whose `boardCount` is not 1, 2 or 3.
+ * Population: natural chip cash betting decisions of one variant on one
+ * engine release, read from the journaled joint receipts
+ * (`decision.jointPolicy`) of the receipt version `HORSE_PHASE13_PACK_VERSION`.
+ * Shadow and candidate receipts run the same policy code, so a shadow release
+ * whose policy digest equals the running one measures the share the candidate
+ * would see. Single board, multi-board and bomb hands are all counted (the
+ * joint owner decides all three); a bomb or multi-board hand has no preflop
+ * decision (`bomb_hand_has_no_preflop_decision`, never eligible), so its
+ * decisions count on the flop, turn and river only. Not counted: tournament
+ * decisions (they never admit candidate mode), Pineapple discards (not a
+ * betting street), any other variant, any receipt of another version, and a
+ * receipt whose `boardCount` is not 1, 2 or 3.
+ *
+ * Excluded by name (v2): an eligible Diamond decision (the receipt's bound
+ * objective asset is `diamonds`; only NLH reaches it). The P13.2 contract
+ * excludes Diamond NLH whole-unit cash from the qualified domain and admission
+ * never runs a Diamond decision as candidate (`horsePhase13AdmittedMode`), so
+ * it is not part of the share the floor bounds. It is counted in the record's
+ * `excluded.diamond`, never in a street or board-count cell.
  *
  * Every counted decision is tallied twice, once under its street and once
  * under its board count (`boardCount`: 1 pools ordinary hands and one-board
@@ -165,26 +172,42 @@ export const HORSE_PHASE13_COMPLETION_SCHEMA = 'horse-phase13-completion-v1';
  * Eligible: the receipt is `eligible` (the acquisition's canonical checks
  * passed and the controller order was read). Completed: an eligible decision
  * whose proposal is the policy the P13.2 matrix measured, which ran on a fixed
- * clock with the equity governor off and every sample complete. Five live
- * outcomes are not that policy and are counted separately, so `eligible =
- * completed + workBudget + samplerBudgetExhausted + responseBranchUnavailable
- * + sampleUnavailable + governorReduced`, each decision under the first that
- * applies:
+ * clock with the equity governor off, every sample complete, and a proposal
+ * that fired. Six live outcomes are not that policy and are counted
+ * separately, so `eligible = completed + workBudget + samplerBudgetExhausted +
+ * responseBranchUnavailable + sampleUnavailable + governorReduced +
+ * analysisUnavailable`, each decision under the first that applies:
  *  - `workBudget`: the policy passed `JOINT_LIVE_DOMAIN.liveBudgetMs` and fell
  *    back to the baseline (reason `work_budget`);
  *  - `samplerBudgetExhausted`: the sampler's own deadline
  *    (`samplingDeadlineMs`) cut the population short (`sampleBudgetExhausted`);
- *  - `responseBranchUnavailable`: the response model refused by name
- *    (`joint_response_*`, for example a candidate needing more terminal
- *    branches than the pack allows);
+ *  - `responseBranchUnavailable`: the response model's named limit refusals
+ *    only (`joint_response_branch_unavailable`, a candidate needing more
+ *    terminal branches than the pack allows, and
+ *    `joint_response_street_unavailable` / `joint_response_street_not_modeled`,
+ *    a street the pack does not price);
  *  - `sampleUnavailable`: no complete consumed population (insufficient or
  *    unavailable samples, a refused acquisition, or fewer completed samples
  *    than requested);
  *  - `governorReduced`: a complete population whose request was below the
  *    table's full count (`jointFullSamples(dealtPlayers)`: 16 up to four dealt
- *    players, 8 above) because the equity governor scaled it down under load.
+ *    players, 8 above) because the equity governor scaled it down under load;
+ *  - `analysisUnavailable` (v2): a complete full-count population whose
+ *    proposal did not fire (`fired !== true`): an analysis failure
+ *    (`joint_action_conservation`, `joint_analysis_unavailable`,
+ *    `joint_pots_conservation`, `joint_scores_no_winner`,
+ *    `joint_action_no_legal_candidates`, `proposal_outside_legal_menu` and
+ *    every other caught `joint_*` failure) or a response-model defect
+ *    (`joint_response_branch_mass`, `joint_response_illegal_simulated_action`).
+ *    The live wrapper executes the baseline for all of them; v1 counted them
+ *    as completed (or, for the model defects, as `responseBranchUnavailable`).
+ *
+ * v1 to v2 (audit 2026-10-06): Diamond decisions are excluded by name instead
+ * of counted in the NLH cells, `analysisUnavailable` is a seventh cell field
+ * and `fired` is read, and the record carries `excluded`. A v1 record is
+ * refused (`completion_evidence_mismatch`).
  */
-export const HORSE_PHASE13_COMPLETION_DEFINITION = 'horse-phase13-completion-definition-v1';
+export const HORSE_PHASE13_COMPLETION_DEFINITION = 'horse-phase13-completion-definition-v2';
 
 /**
  * THE COMPLETION FLOOR, per street and per board count: 0.95 on the 99% lower confidence bound of
@@ -248,6 +271,13 @@ export interface HorsePhase13StreetCompletion {
   readonly sampleUnavailable: number;
   readonly governorReduced: number;
   readonly responseBranchUnavailable: number;
+  readonly analysisUnavailable: number;
+}
+
+/** Eligible decisions left out of every cell, by name (v2). */
+export interface HorsePhase13CompletionExcluded {
+  /** Diamond decisions: outside the P13.2 qualified domain. */
+  readonly diamond: number;
 }
 
 /** A committed `horse-phase13-completion-v1` record (exact keys). */
@@ -275,18 +305,36 @@ export interface HorsePhase13CompletionRecord {
   readonly boardCounts: Readonly<
     Record<HorsePhase13CompletionBoardCount, HorsePhase13StreetCompletion>
   >;
+  /** Eligible decisions excluded from both tallies, by name. */
+  readonly excluded: HorsePhase13CompletionExcluded;
 }
 
 export type HorsePhase13CompletionOutcome =
   | 'not_counted'
+  | 'excluded_diamond'
   | 'completed'
   | 'work_budget'
   | 'sampler_budget_exhausted'
   | 'response_branch_unavailable'
   | 'sample_unavailable'
-  | 'governor_reduced';
+  | 'governor_reduced'
+  | 'analysis_unavailable';
 
 const SAMPLE_REFUSALS = new Set(['insufficient_joint_samples', 'joint_samples_unavailable']);
+/** The response model's named limit refusals: the pack's own work limits,
+ * not a defect. Every other non-firing reason is `analysis_unavailable`. */
+const RESPONSE_LIMIT_REFUSALS = new Set([
+  'joint_response_branch_unavailable',
+  'joint_response_street_unavailable',
+  'joint_response_street_not_modeled',
+]);
+
+/** The objective asset an eligible receipt's input binding recorded, if any. */
+function boundAsset(receipt: Record<string, unknown>): unknown {
+  const inputs = receipt.inputs;
+  const objective = objectOf(inputs) ? inputs.objective : undefined;
+  return objectOf(objective) ? objective.asset : undefined;
+}
 
 /**
  * How one journaled joint receipt counts toward a variant's completion record
@@ -310,10 +358,11 @@ export function horsePhase13CompletionOutcome(
     )
   )
     return 'not_counted';
+  // Outside the qualified domain whatever happened to it.
+  if (boundAsset(receipt) === 'diamonds') return 'excluded_diamond';
   if (receipt.reason === 'work_budget') return 'work_budget';
   if (receipt.sampleBudgetExhausted === true) return 'sampler_budget_exhausted';
-  if (typeof receipt.reason === 'string' && receipt.reason.startsWith('joint_response_'))
-    return 'response_branch_unavailable';
+  if (RESPONSE_LIMIT_REFUSALS.has(receipt.reason as string)) return 'response_branch_unavailable';
   const inputs = receipt.inputs;
   const ranges = objectOf(inputs) ? inputs.ranges : undefined;
   if (
@@ -328,17 +377,24 @@ export function horsePhase13CompletionOutcome(
     return 'sample_unavailable';
   if ((receipt.requestedSamples as number) < jointFullSamples(receipt.dealtPlayers as number))
     return 'governor_reduced';
+  // A complete population whose proposal did not fire executed the baseline:
+  // an analysis failure or a response-model defect, never the measured policy.
+  if (receipt.fired !== true) return 'analysis_unavailable';
   return 'completed';
 }
 
 type StreetField = Exclude<keyof HorsePhase13StreetCompletion, 'eligible'>;
-const OUTCOME_FIELD: Record<Exclude<HorsePhase13CompletionOutcome, 'not_counted'>, StreetField> = {
+const OUTCOME_FIELD: Record<
+  Exclude<HorsePhase13CompletionOutcome, 'not_counted' | 'excluded_diamond'>,
+  StreetField
+> = {
   completed: 'completed',
   work_budget: 'workBudget',
   sampler_budget_exhausted: 'samplerBudgetExhausted',
   response_branch_unavailable: 'responseBranchUnavailable',
   sample_unavailable: 'sampleUnavailable',
   governor_reduced: 'governorReduced',
+  analysis_unavailable: 'analysisUnavailable',
 };
 
 function tally<K extends string>(
@@ -359,12 +415,13 @@ function tally<K extends string>(
         sampleUnavailable: 0,
         governorReduced: 0,
         responseBranchUnavailable: 0,
+        analysisUnavailable: 0,
       },
     ])
   ) as Record<K, Mutable>;
   for (const receipt of receipts) {
     const outcome = horsePhase13CompletionOutcome(variant, receipt);
-    if (outcome === 'not_counted') continue;
+    if (outcome === 'not_counted' || outcome === 'excluded_diamond') continue;
     const cell = counts[cellOf(receipt as Record<string, unknown>)];
     cell.eligible += 1;
     cell[OUTCOME_FIELD[outcome]] += 1;
@@ -398,7 +455,19 @@ export function horsePhase13CompletionBoardCounts(
   );
 }
 
-/** The Wilson score lower bound of `completed / eligible` at the contract z. */
+/** The eligible decisions over the same receipts that no cell counts, by name. */
+export function horsePhase13CompletionExclusions(
+  variant: JointVariant,
+  receipts: Iterable<unknown>
+): HorsePhase13CompletionExcluded {
+  let diamond = 0;
+  for (const receipt of receipts)
+    if (horsePhase13CompletionOutcome(variant, receipt) === 'excluded_diamond') diamond += 1;
+  return { diamond };
+}
+
+/** The Wilson score lower bound of `completed / eligible` at the contract z
+ * (only `completed` is the measured policy; every other field is not). */
 export function horsePhase13CompletionLowerBound(completed: number, eligible: number): number {
   if (!(eligible > 0)) return 0;
   const n = eligible;
@@ -571,6 +640,7 @@ const COMPLETION_KEYS = [
   'window',
   'streets',
   'boardCounts',
+  'excluded',
 ] as const;
 export const HORSE_PHASE13_COMPLETION_STREET_KEYS = Object.freeze([
   'eligible',
@@ -580,7 +650,10 @@ export const HORSE_PHASE13_COMPLETION_STREET_KEYS = Object.freeze([
   'sampleUnavailable',
   'governorReduced',
   'responseBranchUnavailable',
+  'analysisUnavailable',
 ] as const);
+/** The named exclusions a record carries (v2). */
+export const HORSE_PHASE13_COMPLETION_EXCLUDED_KEYS = Object.freeze(['diamond'] as const);
 
 /** Schema, shape and internal consistency of a completion record. */
 function completionIsWellFormed(value: unknown): value is HorsePhase13CompletionRecord {
@@ -600,7 +673,11 @@ function completionIsWellFormed(value: unknown): value is HorsePhase13Completion
     typeof value.window.releaseUnchanged !== 'boolean' ||
     typeof value.window.source !== 'string' ||
     !exactKeys(value.streets, HORSE_PHASE13_COMPLETION_STREETS) ||
-    !exactKeys(value.boardCounts, HORSE_PHASE13_COMPLETION_BOARD_COUNTS)
+    !exactKeys(value.boardCounts, HORSE_PHASE13_COMPLETION_BOARD_COUNTS) ||
+    !exactKeys(value.excluded, HORSE_PHASE13_COMPLETION_EXCLUDED_KEYS) ||
+    !HORSE_PHASE13_COMPLETION_EXCLUDED_KEYS.every((key) =>
+      count((value.excluded as Record<string, unknown>)[key])
+    )
   )
     return false;
   const cellIsWellFormed = (s: unknown): s is Record<string, number> =>
@@ -611,7 +688,8 @@ function completionIsWellFormed(value: unknown): value is HorsePhase13Completion
       (s.samplerBudgetExhausted as number) +
       (s.sampleUnavailable as number) +
       (s.governorReduced as number) +
-      (s.responseBranchUnavailable as number) ===
+      (s.responseBranchUnavailable as number) +
+      (s.analysisUnavailable as number) ===
       s.eligible;
   const byStreet = value.streets;
   const byBoards = value.boardCounts;
@@ -868,17 +946,25 @@ export function selectedHorsePhase13Authority(
  * withdrawn or any other verdict is shadow; a tournament decision stays shadow
  * whatever the authority says, so the Phase 7 owner keeps every tournament
  * objective decision.
+ *
+ * Chip cash only (audit 2026-10-06): the P13.2 contract excludes Diamond NLH
+ * whole-unit cash from every qualified domain, so a decision whose asset is
+ * anything but chips (absent means chips, as the input binding reads it) stays
+ * shadow under any authority, and the completion record never counts it.
  */
 export function horsePhase13AdmittedMode(input: {
   callerMode: JointPolicyMode | undefined;
   gameMode: unknown;
   variant: unknown;
+  /** The decision's `gameState.asset`; undefined or null is chips. */
+  asset: unknown;
   packVariant: JointVariant | null;
   verdict: HorseAuthorityVerdict;
 }): JointPolicyMode {
   if (input.callerMode === 'off') return 'off';
   if (
     input.gameMode !== 'cash' ||
+    (input.asset ?? 'chips') !== 'chips' ||
     !isJointVariant(input.variant) ||
     input.packVariant !== input.variant
   )

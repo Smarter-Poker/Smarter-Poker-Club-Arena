@@ -536,6 +536,13 @@ export function horsePhase13SelectionIsValid(value: unknown, decision: RecordVal
     )
   )
     return false;
+  // Chip cash only (audit 2026-10-06): no Phase 13 qualified domain covers a
+  // Diamond decision, so the worker never runs one as candidate, and an
+  // applied candidate must carry its bound chip objective.
+  const inputs = value.inputs;
+  const objective = record(inputs) && record(inputs.objective) ? inputs.objective : null;
+  if (value.mode === 'candidate' && objective !== null && objective.asset !== 'chips') return false;
+  if (value.applied === true && objective?.asset !== 'chips') return false;
   return (
     value.applied !== true ||
     // A named refusal means the candidate did not act (the P13.1 binding check

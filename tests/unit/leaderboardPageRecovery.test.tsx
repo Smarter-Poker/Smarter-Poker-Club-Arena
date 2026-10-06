@@ -1,7 +1,7 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import {
   LEADERBOARD_CACHE_PREFIX,
   leaderboardCacheKey,
@@ -74,11 +74,17 @@ import LeaderboardPage from '../../src/pages/LeaderboardPage';
 function renderPage(path = '/leaderboard') {
   return render(
     <MemoryRouter initialEntries={[path]}>
+      <CurrentSearch />
       <Routes>
         <Route path="/leaderboard" element={<LeaderboardPage />} />
       </Routes>
     </MemoryRouter>
   );
+}
+
+function CurrentSearch() {
+  const location = useLocation();
+  return <output data-testid="current-search">{location.search}</output>;
 }
 
 const memberships = [
@@ -110,6 +116,7 @@ function boardRow(username: string, value: number) {
 describe('Leaderboard Page Recovery States', () => {
   beforeEach(() => {
     sessionStorage.clear();
+    h.user.id = 'leaderboard-player';
     h.getMemberships.mockReset().mockResolvedValue(memberships);
     h.getClubLeaderboard.mockReset().mockResolvedValue([boardRow('Live Player', 100)]);
     h.getUserRank.mockReset().mockResolvedValue({ rank: 6, total: 20, value: 100 });
@@ -265,6 +272,200 @@ describe('Leaderboard Page Recovery States', () => {
     });
     expect(await screen.findByText('Live Player')).toBeInTheDocument();
     dateNow.mockRestore();
+  });
+
+  it('Shows The Empty State After A Successful Read With No Rankings', async () => {
+    h.getClubLeaderboard.mockResolvedValueOnce([]);
+    renderPage();
+
+    expect(await screen.findByText('No Rankings Yet For This Period.')).toBeInTheDocument();
+    expect(screen.queryByRole('status', { name: 'Loading Rankings...' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Rankings Could Not Be Loaded.')).not.toBeInTheDocument();
+  });
+
+  it('Reports A Ranking Read Failure And Recovers After Retry', async () => {
+    h.getClubLeaderboard.mockRejectedValue(new Error('Read Unavailable'));
+    renderPage();
+
+    expect(
+      await screen.findByText('Rankings Could Not Be Loaded.', {}, { timeout: 5000 })
+    ).toBeInTheDocument();
+    h.getClubLeaderboard.mockReset().mockResolvedValue([boardRow('Recovered Player', 120)]);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Rankings' }));
+
+    expect(await screen.findByText('Recovered Player')).toBeInTheDocument();
+    expect(screen.queryByText('Rankings Could Not Be Loaded.')).not.toBeInTheDocument();
+  });
+
+  it('Resets The Period Offset When A Different Period Is Selected', async () => {
+    renderPage();
+    expect(await screen.findByText('Live Player')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous Period' }));
+    await waitFor(() =>
+      expect(h.getClubLeaderboard).toHaveBeenLastCalledWith(
+        'club-one',
+        'profit',
+        'weekly',
+        50,
+        0,
+        -1,
+        true
+      )
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    await waitFor(() =>
+      expect(h.getClubLeaderboard).toHaveBeenLastCalledWith(
+        'club-one',
+        'profit',
+        'daily',
+        50,
+        0,
+        0,
+        true
+      )
+    );
+  });
+
+  it('Discards An Older Period Response After The Selected Period Changes', async () => {
+    renderPage();
+    expect(await screen.findByText('Live Player')).toBeInTheDocument();
+
+    let resolveOldPeriod!: (rows: ReturnType<typeof boardRow>[]) => void;
+    h.getClubLeaderboard.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveOldPeriod = resolve;
+      })
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Previous Period' }));
+    await waitFor(() =>
+      expect(h.getClubLeaderboard).toHaveBeenLastCalledWith(
+        'club-one',
+        'profit',
+        'weekly',
+        50,
+        0,
+        -1,
+        true
+      )
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    await waitFor(() =>
+      expect(h.getClubLeaderboard).toHaveBeenLastCalledWith(
+        'club-one',
+        'profit',
+        'daily',
+        50,
+        0,
+        0,
+        true
+      )
+    );
+    expect(await screen.findByText('Live Player')).toBeInTheDocument();
+
+    await act(async () => {
+      resolveOldPeriod([boardRow('Stale Weekly Player', 40)]);
+    });
+
+    expect(screen.queryByText('Stale Weekly Player')).not.toBeInTheDocument();
+    expect(screen.getByText('Live Player')).toBeInTheDocument();
+  });
+
+  it('Does Not Cache A Ranking Response That Resolves After Unmount', async () => {
+    let resolveBoard!: (rows: ReturnType<typeof boardRow>[]) => void;
+    h.getClubLeaderboard.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveBoard = resolve;
+      })
+    );
+    const page = renderPage();
+
+    await waitFor(() => expect(h.getClubLeaderboard).toHaveBeenCalledTimes(1));
+    page.unmount();
+
+    await act(async () => {
+      resolveBoard([boardRow('Unmounted Player', 80)]);
+    });
+
+    expect(sessionStorage.getItem(LEADERBOARD_CACHE_PREFIX + cacheKey)).toBeNull();
+  });
+
+  it('Uses The New Account Cache And Rejects The Previous Account Read', async () => {
+    const otherAccountKey = leaderboardCacheKey(
+      { kind: 'club', clubId: 'club-one', userId: 'leaderboard-player-two' },
+      'profit',
+      'weekly',
+      0
+    );
+    setCachedLeaderboardEntries(cacheKey, [boardRow('First Account Cache', 100)]);
+    setCachedLeaderboardEntries(otherAccountKey, [boardRow('Second Account Cache', 200)]);
+
+    let resolveFirstAccount!: (rows: ReturnType<typeof boardRow>[]) => void;
+    h.getClubLeaderboard.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFirstAccount = resolve;
+      })
+    );
+    const firstAccountPage = renderPage();
+    expect(await screen.findByText('First Account Cache')).toBeInTheDocument();
+    await waitFor(() => expect(h.getClubLeaderboard).toHaveBeenCalledTimes(1));
+
+    h.user.id = 'leaderboard-player-two';
+    firstAccountPage.unmount();
+    let resolveSecondAccount!: (rows: ReturnType<typeof boardRow>[]) => void;
+    h.getClubLeaderboard.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSecondAccount = resolve;
+      })
+    );
+    renderPage();
+
+    expect(await screen.findByText('Second Account Cache')).toBeInTheDocument();
+    expect(screen.queryByText('First Account Cache')).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveFirstAccount([boardRow('Stale First Account Player', 10)]);
+    });
+
+    expect(screen.queryByText('Stale First Account Player')).not.toBeInTheDocument();
+    expect(screen.getByText('Second Account Cache')).toBeInTheDocument();
+
+    await act(async () => {
+      resolveSecondAccount([boardRow('Second Account Live Player', 220)]);
+    });
+
+    expect(await screen.findByText('Second Account Live Player')).toBeInTheDocument();
+    expect(screen.queryByText('Second Account Cache')).not.toBeInTheDocument();
+  });
+
+  it('Clears An Unavailable Club Deep Link Instead Of Loading That Club', async () => {
+    renderPage('/leaderboard?club=not-a-member-club');
+
+    expect(await screen.findByText('The Club')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('current-search')).toHaveTextContent(''));
+    expect(h.toastError).toHaveBeenCalledWith(
+      'That Club Leaderboard Is Not Available To You. Showing Your Clubs Instead.'
+    );
+    expect(h.getClubLeaderboard).toHaveBeenCalledWith(
+      'club-one',
+      'profit',
+      'weekly',
+      50,
+      0,
+      0,
+      true
+    );
+    expect(h.getClubLeaderboard).not.toHaveBeenCalledWith(
+      'not-a-member-club',
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.anything()
+    );
   });
 
   it('Keeps Prize Setup Hidden For A Member Even When They Follow An Owner Deep Link', async () => {

@@ -260,12 +260,14 @@ export async function exerciseEvCashout({
     engine.currentHandHoleCards = new Map(
       players.map((p, i) => [p.user_id, { seat: i + 1, cards: holes[i] }])
     );
+    let passiveActions = 0;
     while (controller.getState().stage !== 'turn') {
+      assert.ok(++passiveActions <= 8, 'passive heads-up streets must reach turn');
       const state = controller.getState();
       const p = state.players.find((x) => x.seat === state.currentPlayerSeat);
       assert.ok(p);
       assert.equal(
-        controller.performAction(p.seat, state.current_bet > p.bet ? 'call' : 'check'),
+        controller.performAction(p.seat, state.currentBet > p.bet ? 'call' : 'check'),
         true
       );
     }
@@ -445,7 +447,8 @@ export async function exerciseEvCashout({
       product_certificate: false,
     };
   } finally {
-    await new Promise((resolve) => http.close(resolve));
     engine.stop();
+    http.closeIdleConnections();
+    await new Promise((resolve) => http.close(resolve));
   }
 }

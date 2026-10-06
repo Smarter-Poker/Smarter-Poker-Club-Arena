@@ -44,19 +44,28 @@ def execute(repo, image, output):
             shutil.copyfile(repo/'server/package.json',source/'server/package.json')
             args=['docker','run','--name',name,'--network','none','--read-only','--user','1000:1000','--cap-drop','ALL','--security-opt','no-new-privileges','--pids-limit','512','--memory','4g','--cpus','2','--tmpfs','/tmp:rw,nosuid,nodev,mode=1777','--tmpfs','/run:rw,nosuid,nodev,uid=1000,gid=1000,mode=0700','--tmpfs','/var/lib/postgresql:rw,nosuid,nodev,uid=1000,gid=1000,mode=0700','--mount',f'type=bind,src={source},dst=/ev,readonly','--entrypoint','node',image,'/ev/native.mjs']
             created=True
-            result=subprocess.run(args,cwd=repo,env=env,capture_output=True,text=True,timeout=180)
+            try:
+                result=subprocess.run(args,cwd=repo,env=env,capture_output=True,text=True,timeout=180)
+            except subprocess.TimeoutExpired as error:
+                receipt['runner_error']='CONTAINER_TIMEOUT'
+                decode=lambda value:value.decode('utf-8',errors='replace') if isinstance(value,bytes) else value or ''
+                result=subprocess.CompletedProcess(args,124,decode(error.stdout),decode(error.stderr))
             records=[]
             for line in (result.stdout+'\n'+result.stderr).splitlines():
                 try:record=json.loads(line)
                 except ValueError:continue
-                if isinstance(record,dict) and record.get('scope')==receipt['scope']:records.append(record)
+                if isinstance(record,dict) and record.get('scope')==receipt['scope']:
+                    if record.get('kind')=='stage' and re.fullmatch(r'[a-zA-Z0-9_.-]{1,100}',str(record.get('stage',''))):
+                        receipt['last_stage']=record['stage']
+                    elif record.get('status') in ('passed','failed'):records.append(record)
             # The driver emits only schema-owned stage names and safe numeric/UUID outcomes.
             assert len(records)==1
             receipt['observation']=records[0]
             assert result.returncode==0 and records[0]['status']=='passed'
             receipt['status']='passed'
-    except Exception:
+    except Exception as error:
         receipt['status']='failed'
+        receipt.setdefault('runner_error',type(error).__name__ if type(error).__name__ in ('AssertionError','CalledProcessError','TimeoutExpired','OSError') else 'RUNNER_FAILURE')
     finally:
         try:
             if created:run(['docker','container','rm','--force',name])

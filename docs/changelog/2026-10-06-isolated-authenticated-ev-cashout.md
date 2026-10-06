@@ -38,3 +38,11 @@ Diamond or BBJ contribution branches; their missing unrelated dependencies
 are not asserted qualified. No cash-out pass is claimed until hosted execution.
 
 The real settlement envelope always emits promo playthrough for cash contributions. Its current owning function is also captured, including authorization and no-outstanding-promo behavior; no stub or empty-envelope override is used.
+
+The 22528 hosted attempt produced no terminal actor record; container absence was
+verified. The wrapper now retains safe partial stage/terminal records on its
+unchanged 180-second timeout and still fails that execution. Source inspection
+also found the actor read `current_bet` instead of HandController's `currentBet`;
+the driver now uses the real contract and bounds passive street progression.
+Owned engine stop precedes HTTP close. These corrections do not establish the
+previous timeout's exact cause or constitute a successful lifecycle proof.

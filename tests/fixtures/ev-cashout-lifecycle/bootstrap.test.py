@@ -33,6 +33,16 @@ class Composition(unittest.TestCase):
         self.assertIn('JOIN public.cash_participant_funding_receipts', native)
         self.assertIn('[150, 850, 150, 1000, 850]', native)
         self.assertNotIn('result.rows[0].result.success', native)
+    def test_actor_uses_current_controller_contract_and_finite_progress(self):
+        actor=(HERE/'actor.mjs').read_text()
+        self.assertIn('state.currentBet > p.bet',actor)
+        self.assertNotIn('state.current_bet',actor)
+        self.assertIn('++passiveActions <= 8',actor)
+        self.assertLess(actor.rindex('engine.stop()'),actor.rindex('http.close(resolve)'))
+        runner=(HERE/'run-native.py').read_text()
+        self.assertIn('except subprocess.TimeoutExpired as error:',runner)
+        self.assertIn("receipt['last_stage']=record['stage']",runner)
+        self.assertIn("assert result.returncode==0",runner)
     def test_foreign_keys_follow_all_current_relation_keys(self):
         sql=dict(b.chunks())['current-relation-constraints']
         self.assertLess(sql.rfind('PRIMARY KEY'),sql.find('FOREIGN KEY'))

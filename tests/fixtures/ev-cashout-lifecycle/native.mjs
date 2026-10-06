@@ -29,6 +29,13 @@ const database = 'club_arena_qualification',
   connections = [];
 let stage = 'initialize',
   gateway;
+function setStage(value) {
+  assert.match(value, /^[a-zA-Z0-9_.-]{1,100}$/);
+  stage = value;
+  console.log(
+    JSON.stringify({ scope: 'authenticated-ev-cashout-native-lifecycle', kind: 'stage', stage })
+  );
+}
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 async function ready(check) {
   const end = Date.now() + 30000;
@@ -138,7 +145,7 @@ try {
     GOTRUE_DISABLE_SIGNUP: 'false',
     GOTRUE_LOG_LEVEL: 'error',
   };
-  stage = 'genuine-auth-migrations';
+  setStage('genuine-auth-migrations');
   await command('/usr/local/bin/auth', ['migrate'], {
     env: { ...process.env, ...authEnv },
     maxBuffer: 8 * 1024 * 1024,
@@ -149,12 +156,12 @@ try {
   assertFixtureAuthMigrations(
     (await db.query('SELECT version FROM auth.schema_migrations')).rows.map((r) => r.version)
   );
-  stage = 'application-schema';
+  setStage('application-schema');
   for (const [name, sql] of JSON.parse(await readFile('/ev/chunks.json', 'utf8'))) {
-    stage = `schema-${name}`;
+    setStage(`schema-${name}`);
     await db.query(sql);
   }
-  stage = 'critical-authority-readback';
+  setStage('critical-authority-readback');
   for (const authority of JSON.parse(await readFile('/ev/captured-authorities.json', 'utf8'))
     .functions) {
     const signature = authority.signature.startsWith('smarter_private.')
@@ -173,7 +180,7 @@ try {
     );
   }
   await db.query("SELECT set_config('request.jwt.claim.role','service_role',false)");
-  stage = 'genuine-auth-signin';
+  setStage('genuine-auth-signin');
   await start('auth', '/usr/local/bin/auth', ['serve'], authEnv);
   await ready(() => healthy('http://127.0.0.1:9999/health'));
   const api = fixtureAuth({ serviceKey: secrets.serviceKey, jwtSecret: secrets.jwtSecret });
@@ -184,7 +191,7 @@ try {
       u.id,
       `ev-${u.id}`,
     ]);
-  stage = 'postgrest';
+  setStage('postgrest');
   await start('postgrest', '/usr/local/bin/postgrest', [], {
     PGRST_DB_URI: `postgres://authenticator:${password}@127.0.0.1:5432/${database}`,
     PGRST_DB_SCHEMAS: 'public',
@@ -230,7 +237,7 @@ try {
   process.env.SUPABASE_SERVICE_ROLE_KEY = secrets.serviceKey;
   const outcomes = [];
   for (const river of ['3c', '3d']) {
-    stage = `fund-club-${river}`;
+    setStage(`fund-club-${river}`);
     const club = randomUUID(),
       table = randomUUID(),
       game = randomUUID();
@@ -238,27 +245,27 @@ try {
       "INSERT INTO public.clubs(id,name,chip_treasury) VALUES($1,'Isolated EV acceptance',10000)",
       [club]
     );
-    stage = `fund-game-${river}`;
+    setStage(`fund-game-${river}`);
     await db.query(
       "INSERT INTO public.cash_games(id,club_id,name,template_name,variant,sb,bb,handedness,ruleset_snapshot) VALUES($1,$2,'Isolated EV acceptance','classic','nlh',1,2,2,'{}')",
       [game, club]
     );
-    stage = `fund-table-${river}`;
+    setStage(`fund-table-${river}`);
     await db.query(
       "INSERT INTO public.tables(id,name,club_id,cluster_id,game_type,game_variant,small_blind,big_blind,min_buy_in,max_buy_in,max_players,status,insurance_enabled,is_private) VALUES($1,'Isolated EV acceptance',$2,$3,'cash','nlh',1,2,1,1000,2,'waiting',true,true)",
       [table, club, game]
     );
-    stage = `fund-bank-${river}`;
+    setStage(`fund-bank-${river}`);
     await db.query('INSERT INTO public.club_wallets(club_id,insurance_balance) VALUES($1,10000)', [
       club,
     ]);
     for (const [i, u] of users.entries()) {
-      stage = `fund-member-${river}`;
+      setStage(`fund-member-${river}`);
       await db.query(
         "INSERT INTO public.club_members(club_id,user_id,chip_balance,role,status) VALUES($1,$2,1000,'player','active')",
         [club, u.id]
       );
-      stage = `fund-seat-${river}`;
+      setStage(`fund-seat-${river}`);
       await db.query(
         'SELECT public.atomic_table_buyin_before_maintenance_announcement_gate($1,$2,$3,150,false,$4,$5) AS result',
         [u.id, table, i + 1, club, randomUUID()]
@@ -280,7 +287,7 @@ try {
         'original wallet debit and seat funding must agree'
       );
     }
-    stage = `authenticated-lifecycle-${river}`;
+    setStage(`authenticated-lifecycle-${river}`);
     outcomes.push(
       await exerciseEvCashout({
         db,
@@ -293,7 +300,7 @@ try {
             value,
             /^ev-(prepare|offer|authentication|acceptance|duplicate-refusal|commit|conservation|replay)$/
           );
-          stage = value;
+          setStage(value);
         },
       })
     );

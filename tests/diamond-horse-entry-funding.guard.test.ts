@@ -92,6 +92,13 @@ describe('the Diamond horse registers from its own balance', () => {
     // pays from its own profiles.diamonds, like anybody else.
     expect(sql).toContain("position('fn_horse_fund_from_treasury' in v_core) <> 0");
     expect(sql).toContain('ruling 16');
+
+    // That assertion reads the IDENTIFIER, so the function bodies this
+    // migration installs must not even NAME the chip treasury funder. A
+    // mention in a comment trips it: the first apply of this file was refused
+    // that way (2026-10-06 00:07 UTC) and rolled back with nothing committed.
+    // Both remaining occurrences are the assertion's own two reads.
+    expect(sql.split('fn_horse_fund_from_treasury').length - 1).toBe(2);
   });
 
   it('is an md5-pinned asserted in-place substitution in one transaction', () => {

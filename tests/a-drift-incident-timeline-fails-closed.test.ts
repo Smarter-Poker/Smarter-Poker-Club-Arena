@@ -29,16 +29,18 @@ describe('drift incident timeline law', () => {
     expect(sql).not.toContain('WHERE resolved_at < detected_at;');
   });
 
-  it('pins the alert mirror preimage and declares its guarded postimage', () => {
+  it('pins the alert mirror preimage without baselining an unlisted trigger', () => {
     expect(sql).toContain("md5(p.prosrc)='40ab72a641e2ea070426866e36f626be'");
     expect(sql).toContain("md5(pg_get_functiondef(p.oid))='dbe622139f98faf98bca7bc30db0155c'");
     expect(sql).toContain("md5(p.prosrc)='0e11283b0fb32102007958c70d631773'");
     expect(sql).toContain("md5(pg_get_functiondef(p.oid))='e4a7c3e2099706adf19c4bd3885c6dbb'");
     expect(sql).toContain("md5(p.prosrc)='cbb93e769afe3ff462fb68e6d8f23e4a'");
     expect(sql).toContain("md5(pg_get_functiondef(p.oid))='86e3c04a77d99595901a1810b291ca3f'");
-    expect(sql).toContain("'fn_ca_alert_resolution_reaches_the_incident',");
-    expect(sql).toContain(
-      "'migration 20261006012010_a_resolved_incident_never_predates_its_detection'"
+    expect(sql).toContain('ANY (public.fn_ca_guard_watchlist())');
+    expect(sql).toContain("RAISE EXCEPTION 'DRIFT_INCIDENT_ALERT_MIRROR_REGISTRY_CHANGED'");
+    expect(sql).toContain("WHERE d.proname='fn_ca_alert_resolution_reaches_the_incident'");
+    expect(sql).not.toContain(
+      "fn_ca_declare_guard_redefinition(\n  'fn_ca_alert_resolution_reaches_the_incident'"
     );
   });
 

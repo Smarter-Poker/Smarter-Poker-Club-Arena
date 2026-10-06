@@ -217,19 +217,24 @@ test.describe('Club Data production experience', () => {
     await highestFee.click();
     await expect(highestFee).toHaveAttribute('aria-pressed', 'true');
     await expect(gamesList.getByRole('listitem').first()).toBeVisible({ timeout: 60_000 });
+    // The preceding rows remain visible while the ranked ledger is being
+    // replaced. Visibility alone therefore does not mean the new sort is
+    // ready, and clicking its disabled continuation can consume this test's
+    // entire timeout without identifying the failed read.
+    await expect(gamesList).toHaveAttribute('aria-busy', 'false', { timeout: 60_000 });
 
     const loadMoreGames = page.getByRole('button', { name: /Load More Games/i });
-    if (await loadMoreGames.isVisible()) {
-      const before = (await loadMoreGames.textContent()) || '';
-      await loadMoreGames.click();
-      await expect
-        .poll(
-          async () =>
-            (await loadMoreGames.count()) === 0 || (await loadMoreGames.textContent()) !== before,
-          { timeout: 60_000 }
-        )
-        .toBe(true);
-    }
+    await expect(loadMoreGames).toBeVisible({ timeout: 60_000 });
+    await expect(loadMoreGames).toBeEnabled({ timeout: 60_000 });
+    const before = (await loadMoreGames.textContent()) || '';
+    await loadMoreGames.click();
+    await expect
+      .poll(
+        async () =>
+          (await loadMoreGames.count()) === 0 || (await loadMoreGames.textContent()) !== before,
+        { timeout: 60_000 }
+      )
+      .toBe(true);
 
     // Keep a bounded, identity-free receipt if player pagination stalls. The
     // failure screenshot alone cannot distinguish a refused/slow request from

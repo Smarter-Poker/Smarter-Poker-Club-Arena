@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { createServer } from 'node:http';
 
 const dirs: string[] = [];
 function fixture() {
@@ -62,6 +63,62 @@ describe('partial throwable cue builds', () => {
       ).toContain('"second"');
     }
   );
+  it('downloads a single-file OpenGameArt asset only while its page still proves CC0', async () => {
+    const f = fixture();
+    const payload = Buffer.from('licensed fixture audio');
+    const server = createServer((req, res) => {
+      if (req.url === '/laugh.ogg') {
+        res.writeHead(200, { 'content-type': 'audio/ogg' });
+        res.end(payload);
+        return;
+      }
+      const file = `http://127.0.0.1:${(server.address() as any).port}/laugh.ogg`;
+      res.writeHead(200, { 'content-type': 'text/html' });
+      res.end(
+        `<a href="https://creativecommons.org/publicdomain/zero/1.0/">CC0</a><a href="${file}">laugh.ogg</a>`
+      );
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const base = `http://127.0.0.1:${(server.address() as any).port}`;
+      const manifestPath = join(f.root, 'scripts/audio/throwable-cues.manifest.json');
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+      manifest.sources.tinyLaugh = {
+        kind: 'opengameart',
+        title: 'Tiny Laugh',
+        author: 'Fixture Author',
+        license: 'CC0-1.0',
+        url: `${base}/page`,
+        download: `${base}/laugh.ogg`,
+        dir: 'tiny-laugh',
+      };
+      writeFileSync(manifestPath, JSON.stringify(manifest));
+
+      const result = await new Promise<{ code: number | null; stderr: string }>((resolve) => {
+        const child = spawn(
+          process.execPath,
+          [
+            join(f.root, 'scripts/audio/build-throwable-cues.mjs'),
+            '--fetch',
+            '--only=reserved',
+            '--sources',
+            join(f.root, 'sources'),
+          ],
+          { cwd: f.root }
+        );
+        let stderr = '';
+        child.stderr.setEncoding('utf8').on('data', (chunk: string) => (stderr += chunk));
+        child.on('close', (code) => resolve({ code, stderr }));
+      });
+      expect(result.code, result.stderr).toBe(0);
+      expect(readFileSync(join(f.root, 'sources/tiny-laugh/laugh.ogg'))).toEqual(payload);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve()))
+      );
+    }
+  });
+
   it.each(['--only=unknown', '--only='])(
     'rejects invalid selection before overwriting credits: %s',
     (arg) => {

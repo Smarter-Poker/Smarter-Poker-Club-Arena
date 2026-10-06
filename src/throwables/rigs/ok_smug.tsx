@@ -3,7 +3,7 @@ import { RIG_VIEWBOX, type RigProps, type ThrowableRig } from '../rig';
 import type { ThrowableSpec } from '../spec';
 import { preloadThrowableCues } from '../cues';
 import './ok_smug.css';
-// Dedicated recorded cues still pending: click_tongue.
+
 export const spec: ThrowableSpec = {
   id: 'ok_smug',
   name: 'Smug OK',

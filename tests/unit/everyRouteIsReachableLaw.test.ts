@@ -49,6 +49,7 @@ import {
 import { getArenaSectionNavigation } from '../../src/config/arenaSectionNavigation';
 import { getClubOperationItems } from '../../src/config/clubOperationsNavigation';
 import { getClubIntegrityNavigation } from '../../src/config/clubIntegrityNavigation';
+import { topUpCashierPath } from '../../src/utils/topUpCashierPath';
 
 const ROOT = resolve(__dirname, '../../');
 const APP = readFileSync(join(ROOT, 'src/App.tsx'), 'utf8');
@@ -197,6 +198,12 @@ function reachableTargets(): Set<string> {
   }
   for (const i of getClubOperationItems('C', CAPS)) targets.add(i.path);
   for (const i of getClubIntegrityNavigation('C', CAPS)) targets.add(i.path);
+  /* "Top Up" in the buy-in dialog navigates to whatever this builder returns:
+     the club's Trade cashier when the club is known, `/cashier` (which finds
+     the player's club itself) when it is not. Called, like the registries
+     above, because the destination is composed and no scan can read it. */
+  targets.add(topUpCashierPath('C'));
+  targets.add(topUpCashierPath(null));
 
   for (const f of walk(join(ROOT, 'src')).filter((f) => !f.endsWith('App.tsx'))) {
     const s = readFileSync(f, 'utf8');

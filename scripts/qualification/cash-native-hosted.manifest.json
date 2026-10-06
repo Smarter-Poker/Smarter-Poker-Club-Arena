@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
+  "evIntegration20261006": "Reviewed current-main integration: preserve weekly6031 routing plus additive EV fixture coverage. Only integrated classifier fingerprint changes; every financial input, assertion and qualification status remains intact. This is not execution evidence.",
   "status": "SOURCE_ONLY_UNRUN",
   "scope": "Cash positive checker evidence and immediate job259 failed-row intake; real pg_cron SPI fixture, not production financial reconciliation",
   "sourceDonor": "14898e64111c71ee3f4afbffa412ecce4c641002",
@@ -9,16 +10,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 186350,
-      "sha256": "42749b0a19c2a1526f3572e9a445a33f6b91e5cafe77d26a536cd28e6371c7c1"
+      "bytes": 187319,
+      "sha256": "72832049eaebb04b646352004f25412f4390684586d930b12584edc1a18c0f14"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 32348,
-      "sha256": "f8e5748574fb9f78481403913cf5cc6e0a06dd00d3722d25d78fd45762c1bc99"
+      "bytes": 32500,
+      "sha256": "e42ea8ef8b84afcb3c97bfbd5750b7c2310523abe96e9dece1e4575ada84fa65"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -1649,5 +1650,30 @@
         }
       }
     ]
+  },
+  "weeklyRecomputeQualification20261006": {
+    "reason": "Add exact split-recompute native qualification to the existing accounting shard and select its fixture-only changes. Default weekly fixture behavior and all financial SQL remain unchanged; current protected-main integration is preserved.",
+    "bindings": {
+      ".github/workflows/ci.yml": {
+        "before": {
+          "bytes": 186350,
+          "sha256": "42749b0a19c2a1526f3572e9a445a33f6b91e5cafe77d26a536cd28e6371c7c1"
+        },
+        "after": {
+          "bytes": 187319,
+          "sha256": "72832049eaebb04b646352004f25412f4390684586d930b12584edc1a18c0f14"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": {
+          "bytes": 31909,
+          "sha256": "732f731aa929df1e7b43aa58a5ef7d06c2e6c24ad3be2dc3d64abe2765e3fe7b"
+        },
+        "after": {
+          "bytes": 32061,
+          "sha256": "2fc728ea5555ced40641d89f8c85b8f094a09f9f14d5decaa405ffbc5e11ea2a"
+        }
+      }
+    }
   }
 }

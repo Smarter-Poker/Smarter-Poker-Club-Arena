@@ -3,7 +3,6 @@ import { RIG_VIEWBOX, type RigProps, type ThrowableRig } from '../rig';
 import type { ThrowableSpec } from '../spec';
 import { preloadThrowableCues } from '../cues';
 import './facepalm.css';
-// Dedicated recorded cues still pending: sigh.
 export const spec: ThrowableSpec = {
   id: 'facepalm',
   name: 'Facepalm',
@@ -23,7 +22,10 @@ export const spec: ThrowableSpec = {
     { at: 2800, marker: 'head-shake' },
     { at: 4000, marker: 'cut' },
   ],
-  audio: [{ at: 900, sample: 'card_slap', gain: 0.3 }],
+  audio: [
+    { at: 900, sample: 'card_slap', gain: 0.3 },
+    { at: 1400, sample: 'sigh_soft' },
+  ],
 };
 preloadThrowableCues(spec.audio.map((cue) => cue.sample));
 const RECTS: [number, number, number, number][] = [

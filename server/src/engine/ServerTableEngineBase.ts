@@ -861,6 +861,32 @@ export abstract class ServerTableEngineBase {
   }
 
   /**
+   * AN IDLE TABLE FINDS THE CHIPS IT OWES (launch audit 2026-10-05).
+   *
+   * A browser rebuy is only a `table_pending_addons` row; the wallet is
+   * already debited. The engine reads that ledger only when the sweep flag is
+   * up, and nothing raised it for a row written from outside this process
+   * unless the seat was BROKE (the rebuy pause and the stand-up sweep ask
+   * about broke seats only). A row for a seat with chips was therefore found
+   * at the next hand commit, and a table that is not dealing has none:
+   * production row 8ba60255 sat 36 minutes with the wallet debited and
+   * nothing on the felt, until the hourly restart's first pass.
+   *
+   * The wait loop is where a table that is not dealing lives, so that is
+   * where the question is asked: one indexed read per pass for the seated
+   * roster, skipped when a sweep is already requested. A hit raises the flag
+   * (inside the helper) and `processPendingAddOns`, called right after,
+   * delivers or refunds in this same pass. An unreadable ledger changes
+   * nothing; the next pass asks again.
+   */
+  protected async findLedgerChipsOwedWhileWaiting(): Promise<void> {
+    if (this.pendingAddOnSweepNeeded) return;
+    const seated = (this.seatedPlayers ?? []).map((p) => p.user_id);
+    if (seated.length === 0) return;
+    await this.usersWithPendingLedgerChips(seated);
+  }
+
+  /**
    * Which of `userIds` have money in flight on the durable ledger for this
    * table - an unresolved `table_pending_addons` row of ANY kind (a mid-hand
    * add-on or a bust rebuy). A hit also requests a sweep so the chips are on
@@ -3810,6 +3836,8 @@ export abstract class ServerTableEngineBase {
            few funded seats. The sweep flag starts true once per engine and is
            raised again by every in-process add-on / observed bust rebuy. */
         if (!this.isTournamentTable()) {
+          await this.findLedgerChipsOwedWhileWaiting();
+          if (!this.lifecycleCanMutate()) return;
           await this.processPendingAddOns(this.seatedPlayers);
           if (!this.lifecycleCanMutate()) return;
         }
@@ -3829,6 +3857,9 @@ export abstract class ServerTableEngineBase {
         // hold restored only if and when the table filled again. Guarded to
         // once per process, so the two call sites cannot double-restore.
         this.restoreEntryHoldsFromSeats();
+        // Presence is judged here too, before the eviction that reads it.
+        await this.judgePresenceWhileWaiting();
+        if (!this.lifecycleCanMutate()) return;
         // THE CASE DAN REPORTED. This loop is where a table below the minimum
         // to deal waits — possibly forever — and the sit-out rule used to live
         // only in the dealing loop, which is never reached from here. So the
@@ -5590,6 +5621,49 @@ export abstract class ServerTableEngineBase {
       }
     } finally {
       releaseSeatBoundary();
+    }
+  }
+
+  /**
+   * A WAITING TABLE STILL ASKS WHO IS THERE (launch audit 2026-10-05).
+   *
+   * Presence was judged only by the heartbeat tick, and the tick is armed
+   * after the start-up wait loop breaks, which a cash table below its deal
+   * minimum never does. Every engine starts in that loop, including after
+   * each hourly restart, where presence comes back from the park snapshot as
+   * CONNECTED and was never asked again. Production 2026-10-04, table
+   * 58b2c844: a human whose last action was 19:53 held the seat and the stack
+   * for about 1h45m with nobody behind it, then was dealt in and blinded
+   * when others arrived. The five-minute rule ran within seven minutes once
+   * the dealing loop started.
+   *
+   * This is the presence half of the tick, run from the wait loop's own
+   * pass: every seated player is known to the presence FSM (a fresh entry
+   * starts connected with a full timeout ahead of it), horses get the same
+   * synthetic beat the tick gives them BEFORE staleness is judged, and the
+   * stay clocks are told. `evictExpiredSitOuts` right after it then finds an
+   * absent seat by the same rule the dealing loop uses. The table watchdog
+   * stays out: a short table is idle by design.
+   *
+   * Cash only, like the eviction it feeds. Called after adoptMovedPresence
+   * and the sit-out restore, which must see the FSM before anything
+   * registers into it.
+   */
+  protected async judgePresenceWhileWaiting(): Promise<void> {
+    if (this.isTournamentTable() || this.heartbeatActive) return;
+    if (isMaintenanceFrozen()) return;
+    try {
+      for (const p of this.seatedPlayers ?? []) {
+        this.disconnectEngine.registerPlayer(this.tableId, p.user_id);
+        if (p.is_horse) this.disconnectEngine.heartbeat(this.tableId, p.user_id);
+      }
+      this.disconnectEngine.checkStaleHeartbeats(this.tableId);
+      await this.chipContinuity.sweepPresence(this.seatedPlayers ?? [], (uid) =>
+        this.isContinuityActive(uid)
+      );
+      await this.releaseLeavesHeldByClock();
+    } catch (err) {
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.wait_loop_presence_threw');
     }
   }
 

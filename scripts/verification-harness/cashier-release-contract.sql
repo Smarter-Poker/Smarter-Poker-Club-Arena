@@ -31,7 +31,8 @@ BEGIN
       ('20260831235992'),
       ('20260906093024'),
       ('20260923150831'),
-      ('20261004124327')
+      ('20261004124327'),
+      ('20261006022835')
   ) AS required(version)
   WHERE NOT EXISTS (
     SELECT 1
@@ -47,6 +48,13 @@ BEGIN
        AND name = 'cashier_authority_and_retry_keys_are_exact'
   ) THEN
     RAISE EXCEPTION 'cashier authority migration history name drift';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM supabase_migrations.schema_migrations
+     WHERE version = '20261006022835'
+       AND name = 'a_chip_request_tells_its_approver'
+  ) THEN
+    RAISE EXCEPTION 'cashier request-notification migration history name drift';
   END IF;
 
   v_contract := jsonb_build_array(
@@ -269,7 +277,10 @@ BEGIN
     jsonb_build_object('signature', 'public.fn_agent_wallet_claim_back_core_20261004(uuid,uuid,numeric,text,uuid)',
       'hash', 'cf7af5fd327c68c935a58e864537cc7a'),
     jsonb_build_object('signature', 'public.fn_request_chips_core_20261004(uuid,numeric,text,uuid)',
-      'hash', '7e5233ef53474fdf4f79ec8a64d6c064')
+      -- 20261006022835 injects the approver notification into the retained
+      -- private core. Pin that installed post-image, not its pre-notification
+      -- body from 20260906093024.
+      'hash', '1dce6c06306523ba83060f1546611648')
   );
   FOR v_item IN SELECT value FROM jsonb_array_elements(v_private_contract)
   LOOP

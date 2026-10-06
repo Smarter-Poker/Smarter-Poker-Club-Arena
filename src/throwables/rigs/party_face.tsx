@@ -23,8 +23,10 @@ export const spec: ThrowableSpec = {
     { at: 2000, marker: 'streamer-hold' },
     { at: 4000, marker: 'cut' },
   ],
-  // Only the supplied pop is scheduled. Dedicated horn and crowd recordings remain pending.
-  audio: [{ at: 500, sample: 'pop_soft', gain: 0.35 }],
+  audio: [
+    { at: 500, sample: 'fanfare_short', gain: 0.4 },
+    { at: 1167, sample: 'cheer_ooh', gain: 0.75 },
+  ],
 };
 preloadThrowableCues(spec.audio.map((c) => c.sample));
 function Tile({

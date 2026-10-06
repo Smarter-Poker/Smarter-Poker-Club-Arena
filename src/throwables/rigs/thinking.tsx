@@ -24,8 +24,10 @@ export const spec: ThrowableSpec = {
     { at: 3000, marker: 'hmm-hold' },
     { at: 4000, marker: 'cut' },
   ],
-  // The packaged pop is real. A dedicated recorded hmm remains pending.
-  audio: [{ at: 433, sample: 'pop_soft', gain: 0.4 }],
+  audio: [
+    { at: 433, sample: 'pop_soft', gain: 0.4 },
+    { at: 2400, sample: 'cheer_ooh', gain: 0.45 },
+  ],
 };
 preloadThrowableCues(spec.audio.map((cue) => cue.sample));
 function Face({ tile }: { tile: number }) {

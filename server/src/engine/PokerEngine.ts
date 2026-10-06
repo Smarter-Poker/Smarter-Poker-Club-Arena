@@ -806,7 +806,10 @@ export function validateAction(
       if (toCall > 0) return { valid: false, error: 'Cannot check when there is a bet to call' };
       return { valid: true };
     case 'call':
-      if (toCall === 0) return { valid: false, error: 'Nothing to call' };
+      // `<= 0`, not `=== 0`: a negative toCall means this seat already has
+      // more in than the level, and a "call" there pays the caller back out
+      // of the pot (launch audit 2026-10-05).
+      if (toCall <= 0) return { valid: false, error: 'Nothing to call' };
       return { valid: true };
     case 'bet':
       if (currentBet > 0)
@@ -837,6 +840,15 @@ export function validateAction(
       const playerBet = currentBet - toCall;
       const maxRaiseTo = playerBet + playerStack;
       const raiseAmount = amount - currentBet;
+      // A RAISE IS ABOVE THE BET (launch audit 2026-10-05). The short-stack
+      // escape below accepts anything that is the seat's whole stack, and that
+      // included a "raise" TO LESS than the bet already made: 28 against 100
+      // was valid, the level became 28, and every earlier bettor was handed
+      // the difference back when they "called". A stack that cannot exceed
+      // the level is a call, and must arrive as `call` or `all_in`.
+      if (amount <= currentBet + CENT_EPS) {
+        return { valid: false, error: 'A raise must be more than the current bet' };
+      }
       // The `amount < maxRaiseTo` escape lets a short stack raise all-in for
       // less than a full increment. That is correct in no-limit and pot-limit;
       // in fixed limit an under-sized wager must arrive as `all_in`, never as

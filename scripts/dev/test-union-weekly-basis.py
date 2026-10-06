@@ -165,6 +165,11 @@ try:
  subprocess.run([str(pg/'pg_dump'),'-U','postgres','-h',str(socket),'-p',port,'-d','postgres','--schema-only','-f',str(base/'candidate-schema.sql')],check=True,capture_output=True)
  (base/'tested-source-binding.json').write_text(json.dumps(binding,indent=2)+'\n')
  print('PASS candidate-catalog-export',flush=True)
+ if '--split-recompute-only' in sys.argv:
+  spec=importlib.util.spec_from_file_location('split_recompute_qualification',root/'tests/fixtures/weekly-recompute-split/qualify.py')
+  module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+  module.run_qualification(root,pg,base,socket,port,run)
+  sys.exit(0)
  def qualify_moves():
   result=subprocess.run(['python3',str(root/'scripts/dev/qualify-cash-move-funding.py'),str(pg/'psql'),str(socket),port,str(base)],capture_output=True,text=True)
   (base/'cash-move-qualification.log').write_text(result.stdout+result.stderr)

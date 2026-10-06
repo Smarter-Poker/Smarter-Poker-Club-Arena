@@ -33,9 +33,7 @@
  * catalogue's "at" minus 367: the crack is at +33, the drips have run their
  * length by about +250, the cut is at +3133. The comments keep both numbers.
  *
- * Sound (plan 4A): `egg_crack` at 400 (a placeholder cue that falls back to
- * the legacy recipe until the library supplies a file) and `drip_tick` at 700
- * at gain 0.6 (a real file).
+ * Sound: the licensed `egg_crack` impact cue at 400, followed by `drip_tick` at 700.
  */
 
 import type { ThrowableSpec } from '../spec';

@@ -15,6 +15,8 @@ import { expect, test, type Page } from '@playwright/test';
 const SUBRESOURCE = /^Failed to load resource\b|net::ERR_|ERR_BLOCKED_BY_CLIENT/;
 const CLUB_ARENA_FILES = '/hub/club-arena/';
 const BOARD = '[data-arena-surface="leaderboard-console"]';
+const GLOBAL_WEEKLY_PROFIT_CACHE_KEY = 'lb_cache_v2_global_profit_weekly_0';
+const LEADERBOARD_CACHE_TTL_MS = 5 * 60 * 1000;
 
 interface Observed {
   consoleErrors: string[];
@@ -318,3 +320,151 @@ for (const width of [393, 1440]) {
     ).toEqual([]);
   });
 }
+
+test('Leaderboard Cache Paints Before Real Revalidation And Expires Safely', async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 900 });
+  await page.goto('leaderboard');
+  const board = page.locator(BOARD);
+  await expect(board).toBeVisible({ timeout: 30000 });
+  await expect(board.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'false', {
+    timeout: 30000,
+  });
+
+  // Use only this browser context's global weekly record. The reserved E2E
+  // browser context is disposable; no server-side data is written or changed.
+  const cacheKey = await page.evaluate((key) => {
+    sessionStorage.removeItem(key);
+    return key;
+  }, GLOBAL_WEEKLY_PROFIT_CACHE_KEY);
+  const isLeaderboardRefresh = (response: { url(): string }) =>
+    new URL(response.url()).pathname.endsWith('/rpc/fn_global_leaderboard_period');
+
+  const coldStartedAt = Date.now();
+  const coldResponse = page.waitForResponse(isLeaderboardRefresh, { timeout: 30000 });
+  await board.getByRole('button', { name: 'Global', exact: true }).click();
+  await expect(board.getByRole('button', { name: 'Global', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+  await coldResponse;
+  const coldRpcResponseMs = Date.now() - coldStartedAt;
+  await expect(board.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'false', {
+    timeout: 30000,
+  });
+  const coldFirstReadyMs = Date.now() - coldStartedAt;
+
+  const cached = await page.evaluate((key) => {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return null;
+    const record = JSON.parse(raw) as { version?: number; storedAt?: number; entries?: unknown[] };
+    return {
+      version: record.version,
+      storedAt: record.storedAt,
+      entryCount: Array.isArray(record.entries) ? record.entries.length : -1,
+    };
+  }, cacheKey);
+  expect(cached?.version, 'cold API data should populate the scoped session cache').toBe(2);
+  expect(
+    cached?.entryCount,
+    'the cache record should contain a valid ranked result'
+  ).toBeGreaterThan(0);
+
+  let releaseWarmRefresh!: () => void;
+  let notifyWarmRequest!: () => void;
+  const warmGate = new Promise<void>((resolve) => {
+    releaseWarmRefresh = resolve;
+  });
+  const warmRequestSeen = new Promise<void>((resolve) => {
+    notifyWarmRequest = resolve;
+  });
+  await page.route('**/rest/v1/rpc/fn_global_leaderboard_period**', async (route) => {
+    notifyWarmRequest();
+    await warmGate;
+    await route.continue();
+  });
+
+  const warmStartedAt = Date.now();
+  const warmResponse = page.waitForResponse(isLeaderboardRefresh, { timeout: 30000 });
+  let warmCachedPaintMs = 0;
+  try {
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await warmRequestSeen;
+    await expect(board.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'false');
+    warmCachedPaintMs = Date.now() - warmStartedAt;
+    const sameCacheStillPresent = await page.evaluate(
+      (key) => sessionStorage.getItem(key) !== null,
+      cacheKey
+    );
+    expect(sameCacheStillPresent, 'the warm reload should reuse its own cached record').toBe(true);
+  } finally {
+    releaseWarmRefresh();
+    await page.unroute('**/rest/v1/rpc/fn_global_leaderboard_period**');
+  }
+  await warmResponse;
+  const warmRpcResponseMs = Date.now() - warmStartedAt;
+  await expect(board.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'false', {
+    timeout: 30000,
+  });
+
+  await page.evaluate(
+    ({ key, ttlMs }) => {
+      const raw = sessionStorage.getItem(key);
+      if (!raw) throw new Error('Expected the warm leaderboard cache record');
+      const record = JSON.parse(raw) as { storedAt: number };
+      record.storedAt = Date.now() - ttlMs - 1;
+      sessionStorage.setItem(key, JSON.stringify(record));
+    },
+    { key: cacheKey, ttlMs: LEADERBOARD_CACHE_TTL_MS }
+  );
+
+  let releaseExpiredRefresh!: () => void;
+  let notifyExpiredRequest!: () => void;
+  const expiredGate = new Promise<void>((resolve) => {
+    releaseExpiredRefresh = resolve;
+  });
+  const expiredRequestSeen = new Promise<void>((resolve) => {
+    notifyExpiredRequest = resolve;
+  });
+  await page.route('**/rest/v1/rpc/fn_global_leaderboard_period**', async (route) => {
+    notifyExpiredRequest();
+    await expiredGate;
+    await route.continue();
+  });
+
+  const expiredStartedAt = Date.now();
+  const expiredResponse = page.waitForResponse(isLeaderboardRefresh, { timeout: 30000 });
+  try {
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expiredRequestSeen;
+    await expect(board.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'true');
+    const expiredKeyWasRemoved = await page.evaluate(
+      (key) => sessionStorage.getItem(key) === null,
+      cacheKey
+    );
+    expect(expiredKeyWasRemoved, 'an expired record must be evicted before revalidation').toBe(
+      true
+    );
+  } finally {
+    releaseExpiredRefresh();
+    await page.unroute('**/rest/v1/rpc/fn_global_leaderboard_period**');
+  }
+  await expiredResponse;
+  await expect(board.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'false', {
+    timeout: 30000,
+  });
+  const expiredFirstReadyMs = Date.now() - expiredStartedAt;
+
+  console.log(
+    'LEADERBOARD_CACHE_PERF ' +
+      JSON.stringify({
+        width: 393,
+        coldFirstReadyMs,
+        coldRpcResponseMs,
+        warmCachedPaintMs,
+        warmRpcResponseMs,
+        expiredFirstReadyMs,
+        rpcHeldUntilCachedPaint: true,
+        expiredRecordEvictedBeforeRefresh: true,
+      })
+  );
+});

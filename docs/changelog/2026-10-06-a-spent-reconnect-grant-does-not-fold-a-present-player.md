@@ -15,7 +15,9 @@ one hand is all it takes.
 ## The fix, at the cause
 
 In `rearmTurnTimerIfCurrent` an expired grant that was made before the current
-turn's clock began is treated as what it is, spent, and cleared
+turn began (before the last action recorded in the hand, not before
+`playerTurnStartTime`, which every same-turn re-arm stamps afresh) is treated
+as what it is, spent, and cleared
 (`DisconnectEngine.clearSpentReconnectGrant`); the ordinary same-turn re-arm
 then runs. The rule that an expired allowance cannot turn a heartbeat into a
 fresh clock is unchanged for a grant made on the turn itself, and stays pinned.

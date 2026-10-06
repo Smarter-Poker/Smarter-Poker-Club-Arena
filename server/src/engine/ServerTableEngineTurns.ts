@@ -2412,17 +2412,30 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
        `protection <= now` and folded a present player the moment the socket
        came back, with the action clock unspent.
 
-       An in-turn grant cannot be found expired here with the turn still
-       alive: the turn's own timer is that deadline and resolves the seat when
-       it passes. So an expired grant older than this turn's clock is spent
-       paperwork. It is cleared and the ordinary same-turn re-arm below runs.
+       An expired grant made before this turn began is spent paperwork. It is
+       cleared and the ordinary same-turn re-arm below runs. A grant made ON
+       this turn keeps the rule it has always had: once it has expired, a
+       heartbeat does not buy a fresh clock.
        The next drop on this turn is granted afresh and is bounded by that
        grant, so this cannot be cycled to hold a turn open. */
+    // "Before this turn" is measured against the last action recorded in the
+    // hand: a turn begins when the action before it lands. It is NOT measured
+    // against playerTurnStartTime, which every same-turn re-arm (this method
+    // included) stamps afresh. With no action yet in the hand there is no
+    // such instant, and the grant is judged as an in-turn one.
+    const lastAction = (
+      state as { actionHistory?: Array<{ timestamp?: number }> }
+    ).actionHistory?.at(-1);
+    const turnBeganAtMs =
+      typeof lastAction?.timestamp === 'number' && Number.isFinite(lastAction.timestamp)
+        ? lastAction.timestamp
+        : null;
     if (
       protection !== undefined &&
       protection <= Date.now() &&
+      turnBeganAtMs !== null &&
       typeof reconnectFsm?.reconnectGrantedAtMs === 'number' &&
-      reconnectFsm.reconnectGrantedAtMs < this.playerTurnStartTime
+      reconnectFsm.reconnectGrantedAtMs < turnBeganAtMs
     ) {
       this.disconnectEngine.clearSpentReconnectGrant(this.tableId, userId);
       protection = undefined;

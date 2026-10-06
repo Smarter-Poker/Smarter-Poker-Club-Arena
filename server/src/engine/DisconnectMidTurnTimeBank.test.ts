@@ -269,8 +269,13 @@ it('a spent grant from before this turn does not fold a player who is back', () 
   const state = engine.disconnectEngine.getState(TABLE, 'u1');
   state.reconnectGrantedAtMs = Date.now() - 60_000;
   state.reconnectDeadlineMs = Date.now() - 30_000;
-  // Their own turn began after that grant; they drop briefly and return.
-  engine.playerTurnStartTime = Date.now() - 5_000;
+  // Their own turn began after that grant, when the seat before them acted;
+  // they drop briefly and return.
+  const base = engine.handController.getState();
+  engine.handController.getState = () => ({
+    ...base,
+    actionHistory: [{ seat: 2, action: 'call', timestamp: Date.now() - 5_000 }],
+  });
   const resolve = vi.spyOn(engine, 'forceResolveSeat').mockReturnValue(true);
   engine.disconnectEngine.heartbeat(TABLE, 'u1');
   expect(resolve).not.toHaveBeenCalled();
@@ -280,5 +285,25 @@ it('a spent grant from before this turn does not fold a player who is back', () 
   expect(engine.disconnectEngine.getState(TABLE, 'u1').reconnectDeadlineMs).toBeGreaterThan(
     Date.now()
   );
+  engine.preciseTimer.dispose();
+});
+
+it('a grant made on this turn keeps its rule: expired, a heartbeat buys no fresh clock', () => {
+  const engine = harness();
+  engine.disconnectEngine.registerPlayer(TABLE, 'u1');
+  const base = engine.handController.getState();
+  engine.handController.getState = () => ({
+    ...base,
+    actionHistory: [{ seat: 2, action: 'call', timestamp: Date.now() - 60_000 }],
+  });
+  // The turn began a minute ago; the drop, and its grant, came after that.
+  engine.disconnectEngine.markDisconnected(TABLE, 'u1');
+  const state = engine.disconnectEngine.getState(TABLE, 'u1');
+  state.reconnectGrantedAtMs = Date.now() - 40_000;
+  state.reconnectDeadlineMs = Date.now() - 100;
+  const resolve = vi.spyOn(engine, 'forceResolveSeat').mockReturnValue(true);
+  vi.spyOn(engine, 'markProgress').mockImplementation(() => {});
+  engine.disconnectEngine.heartbeat(TABLE, 'u1');
+  expect(resolve).toHaveBeenCalledWith(SEAT, true);
   engine.preciseTimer.dispose();
 });

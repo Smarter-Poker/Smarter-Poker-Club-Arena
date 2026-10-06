@@ -253,3 +253,57 @@ it('an expired allowance cannot turn another heartbeat into a fresh action clock
   expect(start).not.toHaveBeenCalled();
   engine.preciseTimer.dispose();
 });
+
+/**
+ * A GRANT FROM BEFORE THIS TURN PROTECTED A DIFFERENT DECISION (launch audit
+ * 2026-10-05). A drop and return earlier in the hand, with no action owed,
+ * left an expired deadline standing; a second short drop on the player's own
+ * turn was refused a new grant, and the reconnect folded a present player
+ * with the action clock unspent.
+ */
+it('a spent grant from before this turn does not fold a player who is back', () => {
+  const engine = harness();
+  engine.disconnectEngine.registerPlayer(TABLE, 'u1');
+  // Earlier in the hand: dropped, came back, never had to act.
+  engine.disconnectEngine.markDisconnected(TABLE, 'u1');
+  const state = engine.disconnectEngine.getState(TABLE, 'u1');
+  state.reconnectGrantedAtMs = Date.now() - 60_000;
+  state.reconnectDeadlineMs = Date.now() - 30_000;
+  // Their own turn began after that grant, when the seat before them acted;
+  // they drop briefly and return.
+  const base = engine.handController.getState();
+  engine.handController.getState = () => ({
+    ...base,
+    actionHistory: [{ seat: 2, action: 'call', timestamp: Date.now() - 5_000 }],
+  });
+  const resolve = vi.spyOn(engine, 'forceResolveSeat').mockReturnValue(true);
+  engine.disconnectEngine.heartbeat(TABLE, 'u1');
+  expect(resolve).not.toHaveBeenCalled();
+  expect(engine.disconnectEngine.getState(TABLE, 'u1').reconnectDeadlineMs).toBeUndefined();
+  // The next drop on this turn is granted afresh, and is bounded by it.
+  engine.disconnectEngine.markDisconnected(TABLE, 'u1');
+  expect(engine.disconnectEngine.getState(TABLE, 'u1').reconnectDeadlineMs).toBeGreaterThan(
+    Date.now()
+  );
+  engine.preciseTimer.dispose();
+});
+
+it('a grant made on this turn keeps its rule: expired, a heartbeat buys no fresh clock', () => {
+  const engine = harness();
+  engine.disconnectEngine.registerPlayer(TABLE, 'u1');
+  const base = engine.handController.getState();
+  engine.handController.getState = () => ({
+    ...base,
+    actionHistory: [{ seat: 2, action: 'call', timestamp: Date.now() - 60_000 }],
+  });
+  // The turn began a minute ago; the drop, and its grant, came after that.
+  engine.disconnectEngine.markDisconnected(TABLE, 'u1');
+  const state = engine.disconnectEngine.getState(TABLE, 'u1');
+  state.reconnectGrantedAtMs = Date.now() - 40_000;
+  state.reconnectDeadlineMs = Date.now() - 100;
+  const resolve = vi.spyOn(engine, 'forceResolveSeat').mockReturnValue(true);
+  vi.spyOn(engine, 'markProgress').mockImplementation(() => {});
+  engine.disconnectEngine.heartbeat(TABLE, 'u1');
+  expect(resolve).toHaveBeenCalledWith(SEAT, true);
+  engine.preciseTimer.dispose();
+});

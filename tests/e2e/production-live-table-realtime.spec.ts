@@ -1489,7 +1489,8 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
         if (!(error instanceof AbsentCertifiableSubject)) throw error;
         /* Nothing was observed, so nothing is certified AND nothing is
            condemned. Recorded as a named non-verdict, never as a defect on the
-           live site and never silently as a pass. If every case in this file
+           live site and never silently as a pass. The required-coverage gate refuses
+           certification if ANY required case is absent. If every case in this file
            reaches here, `scripts/ci/assert-e2e-actually-ran.mjs` still fails
            the run: a file that verified nothing must not report success. */
         const description = await recordNonVerdict(testInfo, {

@@ -692,6 +692,19 @@ export class DisconnectEngine {
     }
   }
 
+  /**
+   * Drop a reconnect grant the table engine has judged spent: one made before
+   * the current turn's clock began and already expired. Only the grant; the
+   * strike count and the away-blind budget are untouched, because nothing
+   * here is proof of a voluntary action.
+   */
+  clearSpentReconnectGrant(tableId: string, playerId: string): void {
+    const state = this.playerStates.get(`${tableId}:${playerId}`);
+    if (!state) return;
+    state.reconnectDeadlineMs = undefined;
+    state.reconnectGrantedAtMs = undefined;
+  }
+
   /** A player acted voluntarily — clear their consecutive-timeout streak. */
   recordPlayerActed(tableId: string, playerId: string): void {
     const state = this.playerStates.get(`${tableId}:${playerId}`);

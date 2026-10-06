@@ -143,6 +143,15 @@ export interface AtomicHandCommitInput {
     seat_joined_at?: string;
     occupancy_id?: string;
     funding_manifest_id?: string;
+    /* THE DIAMOND CASH HAND'S RAKE FACTS (2026-10-05). Present on every
+       element of a Diamond cash roster and on none of a chip roster: the
+       Diamond settler recomputes the rake from the owner's published
+       economics and refuses by name without them, while the chip path builds
+       its canonical roster from a fixed key list that never reads them. See
+       engine/diamondCashRakeFacts.ts. */
+    contributed?: number;
+    dealt_in?: boolean;
+    hand_saw_flop?: boolean;
   }>;
   rake: number;
   bbj: number;

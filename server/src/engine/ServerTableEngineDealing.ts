@@ -2110,6 +2110,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // winners it belongs to and never independently of them.
       this.currentHandPots = [];
       this.currentHandContributions.clear(); // Weighted contributed rake (Dan 2026-08-29): reset per-hand eligible contributions
+      this.currentHandSawFlopForMoney = false; // ... and the hand's own money-facing flop fact
       this.currentHandReturnedUncalled.clear(); // ... and the returned-uncalled audit map
       this.currentHandInsuranceSettlements = []; // Bible V8 §4.19: Reset insurance settlements
       this.currentHandInsuranceNet = 0; // chip standard 2026-09-04: declared to the stack write

@@ -25,8 +25,10 @@ export const spec: ThrowableSpec = {
     { at: 3000, marker: 'laugh' },
     { at: 4300, marker: 'cut' },
   ],
-  // Rat squeaks, gulp and laugh recordings remain pending. This is the real card cue.
-  audio: [{ at: 2433, sample: 'card_slap', gain: 0.45 }],
+  audio: [
+    { at: 2433, sample: 'card_slap', gain: 0.45 },
+    { at: 3000, sample: 'cheer_ooh', gain: 0.65 },
+  ],
 };
 preloadThrowableCues(spec.audio.map((c) => c.sample));
 function Neutral() {

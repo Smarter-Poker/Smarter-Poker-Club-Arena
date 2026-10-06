@@ -2,10 +2,16 @@ import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import {
+  LEADERBOARD_CACHE_PREFIX,
+  leaderboardCacheKey,
+  setCachedLeaderboardEntries,
+} from '../../src/utils/leaderboardCache';
 
 const h = vi.hoisted(() => ({
   user: { id: 'leaderboard-player' },
   getMemberships: vi.fn(),
+  getClubLeaderboard: vi.fn(),
   getUserRank: vi.fn(),
   toastError: vi.fn(),
 }));
@@ -20,11 +26,7 @@ vi.mock('../../src/services/ClubsService', () => ({
 
 vi.mock('../../src/services/LeaderboardService', () => ({
   LeaderboardService: {
-    getClubLeaderboard: vi
-      .fn()
-      .mockResolvedValue([
-        { rank: 1, userId: 'leaderboard-player', username: 'Player One', value: 100, change: 0 },
-      ]),
+    getClubLeaderboard: h.getClubLeaderboard,
     getGlobalLeaderboard: vi.fn().mockResolvedValue([]),
     getClubTournamentStats: vi.fn().mockResolvedValue([]),
     getUserRank: h.getUserRank,
@@ -85,15 +87,36 @@ const memberships = [
   },
 ];
 
+const cacheKey = leaderboardCacheKey(
+  { kind: 'club', clubId: 'club-one', userId: 'leaderboard-player' },
+  'profit',
+  'weekly',
+  0
+);
+
+function boardRow(username: string, value: number) {
+  return {
+    rank: 1,
+    userId: 'leaderboard-player',
+    username,
+    value,
+    metric: 'profit' as const,
+    change: 0,
+  };
+}
+
 describe('Leaderboard Page Recovery States', () => {
   beforeEach(() => {
+    sessionStorage.clear();
     h.getMemberships.mockReset().mockResolvedValue(memberships);
+    h.getClubLeaderboard.mockReset().mockResolvedValue([boardRow('Live Player', 100)]);
     h.getUserRank.mockReset().mockResolvedValue({ rank: 6, total: 20, value: 100 });
     h.toastError.mockReset();
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it('shows A Retryable Membership Error Instead Of A False Empty Club State', async () => {
@@ -171,5 +194,73 @@ describe('Leaderboard Page Recovery States', () => {
 
     await waitFor(() => expect(screen.getByText('Of 20')).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'Retry Position' })).not.toBeInTheDocument();
+  });
+
+  it('Keeps A Cold Board Empty Until The Live Read Resolves Then Caches It', async () => {
+    let resolveBoard!: (rows: ReturnType<typeof boardRow>[]) => void;
+    h.getClubLeaderboard.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveBoard = resolve;
+      })
+    );
+    renderPage();
+
+    await waitFor(() => expect(h.getClubLeaderboard).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText('Live Player')).not.toBeInTheDocument();
+    expect(screen.queryByText('Cached Player')).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveBoard([boardRow('Live Player', 100)]);
+    });
+
+    expect(await screen.findByText('Live Player')).toBeInTheDocument();
+    expect(sessionStorage.getItem(LEADERBOARD_CACHE_PREFIX + cacheKey)).not.toBeNull();
+  });
+
+  it('Paints A Fresh Cached Board Before The Held Live Read Then Revalidates It', async () => {
+    const cached = boardRow('Cached Player', 75);
+    setCachedLeaderboardEntries(cacheKey, [cached]);
+    let resolveBoard!: (rows: ReturnType<typeof boardRow>[]) => void;
+    h.getClubLeaderboard.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveBoard = resolve;
+      })
+    );
+    renderPage();
+
+    expect(await screen.findByText('Cached Player')).toBeInTheDocument();
+    await waitFor(() => expect(h.getClubLeaderboard).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText('Live Player')).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveBoard([boardRow('Live Player', 100)]);
+    });
+
+    expect(await screen.findByText('Live Player')).toBeInTheDocument();
+    expect(screen.queryByText('Cached Player')).not.toBeInTheDocument();
+  });
+
+  it('Evicts An Expired Board And Never Paints Its Stale Rows', async () => {
+    const now = 1_790_000_000_000;
+    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(now);
+    setCachedLeaderboardEntries(cacheKey, [boardRow('Expired Player', 50)]);
+    dateNow.mockReturnValue(now + 5 * 60 * 1000 + 1);
+    let resolveBoard!: (rows: ReturnType<typeof boardRow>[]) => void;
+    h.getClubLeaderboard.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveBoard = resolve;
+      })
+    );
+    renderPage();
+
+    await waitFor(() => expect(h.getClubLeaderboard).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText('Expired Player')).not.toBeInTheDocument();
+    expect(sessionStorage.getItem(LEADERBOARD_CACHE_PREFIX + cacheKey)).toBeNull();
+
+    await act(async () => {
+      resolveBoard([boardRow('Live Player', 100)]);
+    });
+    expect(await screen.findByText('Live Player')).toBeInTheDocument();
+    dateNow.mockRestore();
   });
 });

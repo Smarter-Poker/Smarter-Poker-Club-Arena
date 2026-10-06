@@ -453,12 +453,23 @@ export function buildTournamentActionCandidates(
     }
   }
 
+  // The all-in button wagers only where the controller executes it as a
+  // wager. Pot-limit: only a shove the pot ceiling admits (HorseLogic caps the
+  // rest). Fixed limit: HandController.clampToStructure executes an all-in
+  // above the street ceiling as a bet or raise TO that ceiling, and as a call
+  // where no wager is legal, so the jam is built at its executed raise-to and
+  // every consumer that commits `investment` prices what the table does.
+  const ceilingTo = typeof maxTo === 'number' && Number.isFinite(maxTo) ? maxTo : null;
   const jamIsRaise =
     legal.has('all_in') &&
     hero.stack > toCall + EPS &&
-    (input.bettingStructure !== 'pot_limit' ||
-      (typeof maxTo === 'number' && hero.bet + hero.stack <= maxTo + EPS));
+    ((input.bettingStructure !== 'pot_limit' && input.bettingStructure !== 'fixed_limit') ||
+      (input.bettingStructure === 'pot_limit' &&
+        ceilingTo !== null &&
+        hero.bet + hero.stack <= ceilingTo + EPS) ||
+      (input.bettingStructure === 'fixed_limit' && ceilingTo !== null));
   if (jamIsRaise) {
+    const jamTo = executedAllInTo(hero, input.bettingStructure, ceilingTo);
     uniqueCandidate(
       candidates,
       {
@@ -466,12 +477,34 @@ export function buildTournamentActionCandidates(
         kind: 'jam',
         action: 'all_in',
         amount: null,
-        investment: Math.max(0, hero.stack),
+        investment: Math.max(0, Math.min(hero.stack, jamTo - hero.bet)),
       },
       seen
     );
   }
   return candidates;
+}
+
+/**
+ * The raise-to the controller executes for an all-in that wagers: the whole
+ * stack, except in fixed limit where clampToStructure stops it at the street
+ * ceiling (the menu's maxRaiseTo). A jam candidate's investment is this less
+ * the hero's standing bet, so its target is always `hero.bet + investment`.
+ */
+export function executedAllInTo(
+  hero: Pick<SeatPlayer, 'bet' | 'stack'>,
+  bettingStructure: string | undefined,
+  maxRaiseTo: number | null | undefined
+): number {
+  const allInTo = hero.bet + hero.stack;
+  if (
+    bettingStructure === 'fixed_limit' &&
+    typeof maxRaiseTo === 'number' &&
+    Number.isFinite(maxRaiseTo) &&
+    allInTo > maxRaiseTo + EPS
+  )
+    return maxRaiseTo;
+  return allInTo;
 }
 
 function strengthOf(evidence: TournamentUtilityOpponentEvidence | undefined): number {
@@ -801,7 +834,7 @@ function responseFoldProbability(
   if (opponent.is_all_in) return 0;
   const target =
     candidate.kind === 'jam'
-      ? input.hero.bet + input.hero.stack
+      ? input.hero.bet + candidate.investment
       : (candidate.amount ?? input.currentBet);
   const facing = Math.min(
     Math.max(0, target - Math.max(0, opponent.bet)),
@@ -976,7 +1009,7 @@ function settleSample(args: {
     discretionaryCallers++;
     const target =
       candidate.kind === 'jam'
-        ? input.hero.bet + input.hero.stack
+        ? input.hero.bet + candidate.investment
         : (candidate.amount ?? input.currentBet);
     commit(opponent, Math.max(0, target - Math.max(0, opponent.bet)));
   }

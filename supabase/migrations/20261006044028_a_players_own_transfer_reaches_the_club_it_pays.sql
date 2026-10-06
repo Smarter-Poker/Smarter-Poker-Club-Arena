@@ -58,8 +58,7 @@ AS $function$
  );
 $function$;
 
-REVOKE ALL ON FUNCTION public.fn_accounting_invoice_party_users(text, uuid) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.fn_accounting_invoice_party_users(text, uuid) FROM anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_accounting_invoice_party_users(text, uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_accounting_invoice_party_users(text, uuid) TO service_role;
 
 COMMENT ON FUNCTION public.fn_accounting_invoice_party_users(text, uuid) IS

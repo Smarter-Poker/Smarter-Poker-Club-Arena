@@ -56,10 +56,7 @@ describe("a player's own transfer reaches the club it pays", () => {
 
   it('no browser role may execute the resolver', () => {
     expect(sql).toContain(
-      'REVOKE ALL ON FUNCTION public.fn_accounting_invoice_party_users(text, uuid) FROM PUBLIC;'
-    );
-    expect(sql).toContain(
-      'REVOKE ALL ON FUNCTION public.fn_accounting_invoice_party_users(text, uuid) FROM anon, authenticated;'
+      'REVOKE ALL ON FUNCTION public.fn_accounting_invoice_party_users(text, uuid) FROM PUBLIC, anon, authenticated;'
     );
     expect(sql).not.toMatch(
       /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.fn_accounting_invoice_party_users[^;]*\b(anon|authenticated|PUBLIC)\b/i

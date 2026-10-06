@@ -15,7 +15,7 @@ INSERT INTO public.club_members(club_id,user_id,status) VALUES
 
 INSERT INTO public.tournaments(id,club_id,name,start_time,ended_at,status,variant,buy_in_amount,buy_in_fee)
 VALUES
- ('40000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','Finished Inside',now()-interval '10 days',now()-interval '1 hour','COMPLETED','nlh',10,1),
+ ('40000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','Finished Inside',now()-interval '10 days',now(),'COMPLETED','nlh',10,1),
  ('40000000-0000-0000-0000-000000000002','10000000-0000-0000-0000-000000000001','Still Running',now()-interval '1 hour',NULL,'RUNNING','nlh',10,1);
 INSERT INTO public.tournament_players(id,tournament_id,user_id,status,position,prize,rebuys,add_on)
 VALUES

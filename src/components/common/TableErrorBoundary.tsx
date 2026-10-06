@@ -48,6 +48,27 @@ export class TableErrorBoundary extends Component<Props, State> {
       console.error('[TableErrorBoundary] Error:', err);
       // Fail silently — crash reporting is best-effort
     }
+    // A crash at the live table left no record anyone could act on: the bus
+    // event above has one subscriber, an admin page that has to be open at
+    // the time (launch audit 2026-10-05). PageErrorBoundary already writes
+    // client_crash_log; the boundary around the table now does the same.
+    void this.report(error, info);
+  }
+
+  private async report(error: Error, info: ErrorInfo): Promise<void> {
+    // Through the server sink a browser is allowed to use; a direct insert
+    // into client_crash_log is refused for every browser role (see
+    // utils/reportClientCrash).
+    try {
+      const { reportClientCrash } = await import('../../utils/reportClientCrash');
+      await reportClientCrash({
+        section: `club-arena-table:${this.props.componentName || 'Table'}`,
+        error,
+        componentStack: info?.componentStack ?? null,
+      });
+    } catch {
+      /* reporting a crash must never itself throw */
+    }
   }
 
   render() {

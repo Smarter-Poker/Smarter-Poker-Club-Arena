@@ -1351,7 +1351,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
           rebuyCost={rebuyData.cost}
           rebuyFee={rebuyData.fee ?? 0}
           rebuyChips={rebuyData.chips}
-          walletBalance={accountBalance || 0}
+          walletBalance={accountBalance}
           onConfirm={onConfirmRebuy}
           onClose={onCloseRebuyModal}
           isProcessing={rebuyProcessing}

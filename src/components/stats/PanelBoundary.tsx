@@ -66,39 +66,18 @@ export class PanelBoundary extends React.Component<Props, State> {
   };
 
   private async report(error: Error, errorInfo: React.ErrorInfo): Promise<void> {
+    // Through the server sink a browser is allowed to use; a direct insert
+    // into client_crash_log is refused for every browser role (see
+    // utils/reportClientCrash).
     try {
-      const { supabase } = await import('../../lib/supabase');
-      const { readLocalSession } = await import('../../lib/authUtils');
-      // readLocalSession is the canonical auth read here: it is synchronous
-      // and uses the token already in localStorage, so attributing a crash
-      // never costs a network round trip at the exact moment something is
-      // already going wrong. The raw auth-fetch helper is banned by the
-      // pre-push guard for precisely this reason.
-      let userId: string | null = null;
-      try {
-        userId = readLocalSession()?.userId ?? null;
-      } catch {
-        /* an anonymous crash is still worth recording */
-      }
-      await supabase.from('client_crash_log').insert({
-        boundary: 'club-arena-panel',
-        section: this.props.name,
-        route: typeof window !== 'undefined' ? window.location.pathname : null,
-        url: typeof window !== 'undefined' ? window.location.href : null,
-        error_name: error?.name ?? 'Error',
-        message: String(error?.message ?? error ?? 'unknown'),
-        stack: error?.stack ? String(error.stack).slice(0, 8000) : null,
-        component_stack: errorInfo?.componentStack
-          ? String(errorInfo.componentStack).slice(0, 8000)
-          : null,
-        user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
-        user_id: userId,
-        embedded: typeof window !== 'undefined' ? window.self !== window.top : null,
-        build_sha:
-          (import.meta as { env?: Record<string, string | undefined> }).env?.VITE_BUILD_SHA ?? null,
+      const { reportClientCrash } = await import('../../utils/reportClientCrash');
+      await reportClientCrash({
+        section: `club-arena-panel:${this.props.name}`,
+        error,
+        componentStack: errorInfo?.componentStack ?? null,
       });
     } catch {
-      /* reporting a failure must never itself fail loudly */
+      /* reporting a crash must never itself throw */
     }
   }
 

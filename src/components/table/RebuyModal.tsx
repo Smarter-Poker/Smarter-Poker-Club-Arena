@@ -30,7 +30,14 @@ interface RebuyModalProps {
    */
   rebuyFee?: number;
   rebuyChips: number;
-  walletBalance: number;
+  /**
+   * The spendable balance, or null when it could not be read. Unknown is not
+   * zero (launch audit 2026-10-05): a failed read used to arrive here as 0,
+   * print "Insufficient", disable Rebuy, and the player was eliminated when
+   * the window closed with the chips to stay in. An unknown balance lets the
+   * attempt through; the server, which debits, decides.
+   */
+  walletBalance: number | null;
   onConfirm: () => void;
   onClose: () => void;
   isProcessing: boolean;
@@ -85,7 +92,8 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
   // 16-chip charge. Add first, then round only the whole advertised price.
   const totalCost = Math.round((Number(rebuyCost) + Number(rebuyFee)) * 100) / 100;
   // Gate on the TOTAL - this is the number the server debits.
-  const canAfford = walletBalance >= totalCost;
+  const balanceUnknown = walletBalance === null || !Number.isFinite(walletBalance);
+  const canAfford = balanceUnknown || (walletBalance as number) >= totalCost;
   const canConfirm = purchaseUnconfirmed || canAfford;
   const dismiss = () => {
     if (isProcessing || purchaseUnconfirmed) return;
@@ -173,7 +181,7 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
             />
             <BayValue
               zone={BUY_IN_ZONES.bays[3].value}
-              text={compactChips(walletBalance)}
+              text={balanceUnknown ? '--' : compactChips(walletBalance as number)}
               ink={canAfford ? 'silver' : 'red'}
             />
             <PlateButton

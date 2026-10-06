@@ -89,6 +89,8 @@
 --
 -- @live-proof: (NOT has_table_privilege('anon', 'public.commander_tournament_entries', 'SELECT') AND NOT has_table_privilege('anon', 'public.commander_waitlist', 'SELECT') AND (SELECT count(*) FROM pg_policies WHERE schemaname='public' AND tablename IN ('commander_tournament_entries','commander_waitlist') AND cmd='SELECT' AND qual='true') = 0)
 
+BEGIN;
+
 -- ─── PRE: the holes are still here, and nothing else depends on them ────────
 DO $pre$
 DECLARE v text; n int;
@@ -233,3 +235,5 @@ BEGIN
   END IF;
 END
 $post$;
+
+COMMIT;

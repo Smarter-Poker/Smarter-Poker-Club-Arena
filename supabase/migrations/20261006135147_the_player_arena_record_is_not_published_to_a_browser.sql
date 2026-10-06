@@ -94,6 +94,8 @@
 --
 -- @live-proof: (NOT has_table_privilege('anon', 'public.player_stats', 'SELECT') AND NOT has_column_privilege('anon', 'public.player_stats', 'total_winnings', 'SELECT') AND NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='player_stats' AND policyname='Player stats are public') AND EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='player_stats' AND policyname='player_stats_club_member_read' AND roles::text='{authenticated}'))
 
+BEGIN;
+
 -- ─── PRE: the hole is still here, and nothing routes around the new rule ────
 DO $pre$
 DECLARE v text; n_tot int;
@@ -298,3 +300,5 @@ BEGIN
   END IF;
 END
 $post$;
+
+COMMIT;

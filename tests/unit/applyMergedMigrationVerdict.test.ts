@@ -22,7 +22,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
 const workflow = readFileSync(
@@ -105,7 +104,7 @@ describe('the original retirement migration uses the actual transaction envelope
       .filter((line) => !line.startsWith('-- @live-proof:'))
       .join('\n');
     const directory = mkdtempSync(
-      resolve(process.env.RUNNER_TEMP || process.env.TMPDIR || tmpdir(), 'retirement-envelope-')
+      resolve(process.env.RUNNER_TEMP || process.cwd(), 'retirement-envelope-')
     );
     const applier = resolve('scripts/ci/apply-recorded-migration.mjs');
     const env = { ...process.env };

@@ -46,3 +46,9 @@ also found the actor read `current_bet` instead of HandController's `currentBet`
 the driver now uses the real contract and bounds passive street progression.
 Owned engine stop precedes HTTP close. These corrections do not establish the
 previous timeout's exact cause or constitute a successful lifecycle proof.
+
+A controlled local import identified ChannelHub's referenced 30-second lobby
+interval. Native teardown now calls its maintained close method. A retained
+actual compiled HandController sequence test covers exact cards, four passive
+actions and both all-ins, then closes that owned hub and requires clean process
+exit. It is a local driver prerequisite, not financial/authentication proof.

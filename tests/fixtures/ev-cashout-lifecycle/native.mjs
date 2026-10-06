@@ -28,7 +28,8 @@ const database = 'club_arena_qualification',
   children = [],
   connections = [];
 let stage = 'initialize',
-  gateway;
+  gateway,
+  engineLoaded = false;
 function setStage(value) {
   assert.match(value, /^[a-zA-Z0-9_.-]{1,100}$/);
   stage = value;
@@ -288,6 +289,7 @@ try {
       );
     }
     setStage(`authenticated-lifecycle-${river}`);
+    engineLoaded = true;
     outcomes.push(
       await exerciseEvCashout({
         db,
@@ -376,6 +378,10 @@ try {
   );
   process.exitCode = 1;
 } finally {
+  if (engineLoaded) {
+    const { channelHub } = await import('/ev/server/dist/hub/ChannelHub.js');
+    channelHub.close();
+  }
   if (gateway) await new Promise((r) => gateway.close(r));
   for (const db of connections.reverse()) await db.end().catch(() => {});
   for (const child of children.reverse()) child.kill('SIGTERM');

@@ -46,7 +46,7 @@ jobs:
           node --test tests/operations/fixture-auth-bootstrap.test.mjs tests/operations/fixture-service-role-boundary.test.mjs tests/operations/fixture-cron-provider.test.mjs tests/operations/fixture-safeupdate-provider.test.mjs
           node --test tests/operations/fixture-supervisor.test.mjs tests/operations/fixture-database-owner.test.mjs tests/operations/fixture-auth.test.mjs tests/operations/fixture-gateway.native.test.mjs tests/operations/fixture-realtime-launcher.test.mjs tests/operations/fixture-realtime-listener.test.mjs
           node --test tests/operations/fixture-native-diagnostics.test.mjs tests/operations/fixture-service-preimage.test.mjs tests/operations/fixture-role-alignment.test.mjs tests/operations/fixture-role-alignment-render.test.mjs
-          node --test tests/fixtures/ev-cashout-lifecycle/diagnostics.test.mjs
+          node --test tests/fixtures/ev-cashout-lifecycle/diagnostics.test.mjs tests/fixtures/ev-cashout-lifecycle/controller-sequence.test.mjs
           python3 tests/fixtures/ev-cashout-lifecycle/bootstrap.test.py
           python3 tests/operations/native-component-semantics.test.py
           python3 tests/operations/fixture-smoke-runner.test.py

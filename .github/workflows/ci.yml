@@ -1840,6 +1840,18 @@ jobs:
           path: artifacts/f06-shared-hand-lane/
           if-no-files-found: error
           retention-days: 7
+      - name: Retired original custody helper refuses erasure and preserves atomic rollback
+        id: retirement_original_helper
+        if: matrix.shard == 3
+        run: python3 scripts/ci/test-retirement-original-helper.py --pg-bin /usr/lib/postgresql/17/bin --evidence artifacts/retirement-original-helper --socket-root "$RUNNER_TEMP"
+      - name: Retain original retirement custody helper proof
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.retirement_original_helper.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: retirement-original-helper-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/retirement-original-helper/
+          if-no-files-found: error
+          retention-days: 7
       - name: Original hand retention, accepted receipts and successor ownership
         id: hand_submission
         if: matrix.shard == 3

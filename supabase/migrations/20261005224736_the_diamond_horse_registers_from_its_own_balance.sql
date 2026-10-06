@@ -164,7 +164,7 @@ BEGIN
     -- A Diamond entry is custody, not a club-wallet debit; the roster row is
     -- written after the charge and carries the id the custody row was named
     -- with. The horse's Diamonds are its own (profiles.diamonds, ruling 9) -
-    -- no house money reaches this path, and fn_horse_fund_from_treasury (a
+    -- no house money reaches this path, and the chip treasury funder (a
     -- chip account ruling 16 forbids in a Diamond format) is never called.
     IF v_split.charge <> trunc(v_split.charge) OR v_split.prize <> trunc(v_split.prize)
        OR v_split.rake <> trunc(v_split.rake) OR v_split.bounty <> trunc(v_split.bounty) THEN
@@ -391,7 +391,10 @@ BEGIN
   IF position('CASE WHEN v_unit=100 THEN' in v_core) = 0 THEN
     RAISE EXCEPTION 'the horse core does not route the funding asset by unit';
   END IF;
-  -- No house money, and no chip treasury, on this path.
+  -- No house money, and no chip treasury, on this path. This reads the
+  -- IDENTIFIER, so the body must not even NAME the chip treasury funder -
+  -- a mention in a comment trips it, which is how the first apply of this
+  -- file was refused (2026-10-06 00:07 UTC, rolled back, nothing committed).
   IF position('fn_horse_fund_from_treasury' in v_core) <> 0
      OR position('fn_horse_fund_from_treasury' in v_door) <> 0 THEN
     RAISE EXCEPTION 'a chip treasury call reached the Diamond horse entry path (ruling 16)';

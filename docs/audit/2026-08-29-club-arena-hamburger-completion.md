@@ -2,7 +2,7 @@
 
 Original audit date: 2026-08-29
 
-Current candidate audit: 2026-10-05
+Current candidate audit: 2026-10-06
 
 Scope: the hamburger drawer, every destination it advertises, the contextual section rails, all 27 Club Operations destinations, union workspaces, retained compatibility routes, responsive reachability, and the union weekly-accounting read path.
 
@@ -12,32 +12,21 @@ This document records the delivered information architecture and the final
 production-certificate correction identified by its complete authenticated
 browser sweep. It does not treat source or merge state as production success.
 
-| Delivery stage                                       | Current state                                                                                                                                                                                                                                          |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Source implementation                                | Main implementation and live-contract repair merged through PRs #6147 and #6155; customization-certificate correction merged through PR #6183                                                                                                          |
-| Focused local validation                             | Final certificate hardening: 19 of 19 unit contracts, client TypeScript, targeted lint, formatting, and all 12 affected production-browser journeys discovered                                                                                         |
-| Commit and pull request                              | PR #6147 merged as `1dae7a2fb0`, PR #6155 as `abb1948`, and PR #6183 as `e2ed8ac`; the last test-only certificate correction is being delivered from `agent/codex-menu-cert-final-20261005`                                                            |
-| Protected merge                                      | Product and IA implementation complete; final test-only certificate correction pending protected merge                                                                                                                                                 |
-| Database migration installation and catalog readback | `20261005111546` installed once by run `37314453207`; exact ledger, RLS policy, function security, owner, and grants read back successfully                                                                                                            |
-| Club Arena client publication                        | The implementation published successfully; both public endpoints serve a protected descendant whose hamburger, Leaderboard, and customization trees match the certified source                                                                         |
-| Post-deploy browser certification                    | Run `37381227013` executed 462 cases: 457 passed, two skipped, five failed. Hamburger passed 35 of 35 and Leaderboard passed both viewports. Two failures were certificate defects corrected here; three were transient release/realtime interruptions |
-| Public build identity and affected live behavior     | Product behavior is live; final completion remains pending until the corrected certificate itself merges, publishes through the protected route, executes against production, and proves fixture cleanup                                               |
+| Delivery stage                                       | Current state                                                                                                                                                                                                                                                                                                               |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Source implementation                                | Main implementation and live-contract repair merged through PRs #6147 and #6155; certificate corrections merged through PRs #6183, #6205, #6231, #6253, and #6259; the adjacent Cashier request-contract repair merged in PR #6247                                                                                          |
+| Focused local validation                             | New one-shot certificate: YAML and action validation, 7 of 7 source contracts, formatting, clean diff, and exactly 14 browser cases discovered across the four correction files; no browser was run locally                                                                                                                 |
+| Commit and pull request                              | Earlier delivery is merged through `3d37ed041c`; the focused trusted-default-branch workflow is being delivered from `agent/menu-final-focused-cert` and remains uncommitted/unpushed at this source checkpoint                                                                                                             |
+| Protected merge                                      | Product and IA implementation are complete; the focused production-certificate workflow still needs its own protected merge                                                                                                                                                                                                 |
+| Database migration installation and catalog readback | `20261005111546` installed once by run `37314453207`; exact ledger, RLS policy, function security, owner, and grants read back successfully                                                                                                                                                                                 |
+| Club Arena client publication                        | The implementation published successfully; both public endpoints serve a protected descendant whose hamburger, Leaderboard, and customization trees match the certified source                                                                                                                                              |
+| Post-deploy browser certification                    | Run `37381227013`, artifact `11379125260`, discovered 464 cases: 462 executed—457 passed and 5 failed—with 2 skipped and 0 flaky across 51 files. Three failures define the correction lane; Daily Mission and financial-flow failures are outside and not certified here. Leaderboard needs fresh proof after `b6ae474fb0` |
+| Public build identity and affected live behavior     | Product behavior is live; final completion remains pending until the corrected certificate itself merges, publishes through the protected route, executes against production, and proves fixture cleanup                                                                                                                    |
 
 Production success must not be inferred from this source audit. The remaining
 delivery is the final correction's protected merge, successful
 `publish-club-arena.yml`, both public `build-info.json` endpoints,
 authenticated post-deploy browser checks, and isolated-fixture cleanup.
-
-Exact-head run `37307605805` passed the Club Arena client, server, navigation,
-route, and migration checks but its accounting PostgreSQL shard 1 refused an
-archived-spin fixture whose bounded recognition capture expired at
-`2026-10-05T07:00:00Z`. A fresh read-only production capture proves the current
-October 5 to October 12 bounds, the two legitimate post-fee-capture routing
-scopes, and zero overlapping runs. The time-bound fixture and exact hash chain
-have been refreshed locally, and the focused validator plus 195-test wrapper
-pass; exact-head CI remains pending. This is required-check repair, not a
-settlement, migration installation, merge, publication, or production-success
-claim.
 
 ## Audit Basis
 
@@ -430,3 +419,75 @@ Browser discovery proves that the cases are registered, not that they passed aga
 - Protected-main base at follow-up start: `cef7530aea7b5ede5166f7b75d1bbda50c3c4cdc`
 - Demonstrated blockers: canonical slashless home rejected by the browser matcher; controlling-member Invite Players action targeted the membership-refused join page; club-scoped Messenger handoff was treated as a Club Arena document by the responsive audit
 - Follow-up boundary: one action target and two exact browser contracts; no engine, database, financial, or World Hub source change
+
+## Policy Receipt And Boundary For The Focused Production Certificate
+
+- Canonical policy read and final reread: `2026-10-06T05:58:21.981Z`
+- Policy version: `2.9`
+- Manifest SHA-256: `a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`
+- Owner policy: `b9478d0331314413d8e12c41210b63479cdcabc1f86ed3fdcb3251efa36e6349`
+- Operating law: `a8bc3c04dce3354ebdd51a89c0b7d715af3344edcc794d33f6b3ad64506961d5`
+- Hardening standard: `d5fc451ce5caf6d6b5e64597a13883e1246581678fe53c962339d0a66136993e`
+- Reference index: `adce89c3f838f2f373cd504a00329d53906404d1dd42a647f672af6c16f95555`
+- Portable policy comparison: exact match to the canonical policy bundle
+- Owned worktree: `/Volumes/SmarterWork/agent-work/menu-cert-final`
+- Branch: `agent/menu-final-focused-cert`
+- Protected-main base at implementation start: `3ae2684bd1b8c49a1e2c2182965653a38ffa84f0`
+- Delivery classification: trusted Club Arena client verification workflow and documentation only; no application, engine, database, financial, or publication behavior change
+- Operation owner: the unique `certify-club-arena-menu-pages` repository-dispatch run evaluated from the trusted default branch; it cannot publish or retry a release
+
+The retained broad source is production run `37381227013`, artifact
+`11379125260`. Its exact Playwright report contains 464 discovered cases: 462
+executed—457 passed and 5 failed—with 2 skipped and 0 flaky across 51 files. It proves hamburger 35 of 35, Club
+Operations 37 of 37, strict mobile fit 99 of 99 at all widths, Phase 7 doors 10
+of 10, basic/clubs/features/operations/social/admin 67 of 67, the then-current
+Leaderboard 2 of 2, Cashier 5 of 5, Statements 1 of 1, Club Members 3 of 3,
+commerce 1 of 1, and the other retained page families.
+
+The five failures in that artifact were customization realtime, a Daily
+Mission missed frame, gameplay customization's Open Studio journey, a
+financial-flow engine 502, and Table Management's timeout. Daily Missions and
+financial flow are outside this correction lane and are not certified by it. Correction floor
+`f06da04591561e62493a96984de759995817ffe5` and cleanup floor
+`646d37fb6bc2d232fd61c01b0bb389708092a2a9` target the remaining three.
+Leaderboard is also required because PR 6221 changed its page and contract
+after the retained run at
+`b6ae474fb086bdc7768dfb69efa10cf7dfa71bb7`, with no later full client
+certificate.
+
+The operator-dispatched one-shot lane therefore runs only Table Management,
+customization realtime, routed gameplay customization, and Leaderboard. It
+requires exact per-file counts of 10, 1, 1, and 2 executed with zero skipped,
+failed, or flaky cases, in addition to generic per-file honesty. The
+secret-bearing job is main-only and uses the named `Production`
+environment; checkout credentials are not persisted. Its unique repository
+event evaluates the trusted default-branch workflow, never an operator-selected
+branch copy. `required_sha` must equal the checked-out protected-main `HEAD`,
+contain both correction floors, and be served exactly by both public endpoints
+before fixtures are created.
+
+The lane keeps the authenticated account, staff and standalone setup,
+always-run guarded cleanup, annotations, and compact JSON evidence. Before each
+browser file starts, the workflow proves that file's measured case/global-setup
+allowance plus a 60-minute guarded-cleanup reserve remains beneath the
+180-minute job ceiling. It never externally kills a stateful Playwright process
+whose own `finally` block owns additional temporary accounts. Official actions
+are immutable-SHA pinned and fixture credentials are removed before artifact
+actions. Closing proof requires
+both endpoints still serve the exact SHA, and the only `certified=true` output
+also requires account setup, all four browser reports, annotations, generic
+honesty, exact counts, cleanup, credential scrubbing, and closing provenance to
+succeed. Endpoint divergence, an unreadable state, or a safe-forward
+supersession is a red non-verdict.
+Cashier, Statements, Lobby, Players, commerce, hamburger and Club Operations
+routes, supporting route families, mobile fit, Stats, Daily Missions,
+financial flows, generic gameplay/card/animation suites, live-table engine
+proof, SEO, and the Phase 1 seal are not rerun.
+
+Static validation on the uncommitted workflow candidate passed: canonical and
+portable policy comparison, YAML parse, `actionlint`, the focused workflow
+source contract (7 of 7), Prettier, `git diff --check`, and exact discovery of
+14 Chromium cases in four files. This is functional, structural, responsive,
+CSS and asset-contract evidence; it is not a pixel-diff baseline or a claim of
+new manual visual approval. No browser, production, publication, database,
+commit, or push action was performed in this implementation lane.

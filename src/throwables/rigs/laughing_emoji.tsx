@@ -21,10 +21,11 @@ export const spec: ThrowableSpec = {
     { at: 2867, marker: 'laugh-swell' },
     { at: 4200, marker: 'cut' },
   ],
-  // Recorded laugh swells are still pending; only the tear effects are shipped.
   audio: [
+    { at: 867, sample: 'laugh_short' },
     { at: 1667, sample: 'drip' },
     { at: 2467, sample: 'drip' },
+    { at: 2867, sample: 'laugh_swell' },
   ],
 };
 preloadThrowableCues(spec.audio.map((c) => c.sample));

@@ -249,3 +249,60 @@ after the compatible client and engine are proven live.
   passed. Protected merge, exact engine activation, a fresh two-lane
   authenticated production certificate, guarded forward database completion,
   finalizer readback, and post-install live proof remain required.
+
+## Certificate Deadlock Recovery — 2026-10-06
+
+- This recovery is owned in the existing Phase 1 SSD worktree on branch
+  `agent/codex-phase1-20261006/fix/certificate-deadlock`. Policy was reread
+  after resumption at `2026-10-06T14:22:10.111Z`: version 2.9, manifest
+  `a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`.
+  Canonical and portable copies match; the four file hashes remain the exact
+  values recorded immediately below. Repository, publication, deployment,
+  storage, migration, and checkpoint instructions were reread before the
+  remaining integration and release work.
+- Current owner policy was reread after this resumption at
+  `2026-10-06T14:00:41.079Z`: version 2.9, manifest
+  `a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`.
+  Canonical hashes are `b9478d0331314413d8e12c41210b63479cdcabc1f86ed3fdcb3251efa36e6349`
+  (owner), `a8bc3c04dce3354ebdd51a89c0b7d715af3344edcc794d33f6b3ad64506961d5`
+  (operating law), `d5fc451ce5caf6d6b5e64597a13883e1246581678fe53c962339d0a66136993e`
+  (hardening), and
+  `adce89c3f838f2f373cd504a00329d53906404d1dd42a647f672af6c16f95555`
+  (reference index). Canonical and portable copies match. Repository,
+  publishing, migration, deployment, storage, and Club Arena Console
+  references remain the active contract.
+- Production run `37459888614` supplies evidence, not a certificate. Realtime
+  and commerce passed. Routed gameplay waited for a second browser to receive
+  an uncommitted appearance write, held the request through teardown, and hit
+  its outer timeout. The corrected helper proves immediate paint while held,
+  always releases table/frame/aura requests, observes response rejection, then
+  requires durable cross-device reconciliation.
+- The same run's live-table lane passed SPIN, SNG, and cash but skipped MTT.
+  Its occupancy-ranked 32-table sample was monopolized by one temporarily
+  ineligible large field. The authenticated reader now joins tables to an
+  authoritative MTT contract, uses deadline-bounded table-ID keyset pages,
+  gives every eligible field one candidate before any backup, and advances
+  through bounded exact-health batches so a stale top row cannot hide a live
+  table. Rejected or still-running reads fail operationally instead of becoming
+  an absent-subject skip. The natural HUD predicate and all-four requirement
+  are unchanged; an independent review approved the repaired path.
+- The cutover seal now consumes exact first-attempt evidence from the three
+  affected customization journeys while the broader production job retains
+  unrelated route failures as red operational evidence. Exact release
+  identity, fixture deletion, all-four live-table coverage, equal client SHAs,
+  and exact engine identity remain mandatory.
+- Read-only database state at `2026-10-06T14:05:20.055917Z`: prerequisite
+  helper `20261005230204` is installed with exact 9,658-byte source and SHA-256
+  `f90e9c44f7461640f280d654659f11f2ab8ae2643d4ddc612413e9d515913681`;
+  progress is not started; 307,146 legacy rows remain; finalizer
+  `20261005230230` and the MTT-only constraint are absent. The false-stamped
+  `20261005111523` row remains untouched with NULL statements. Its source must
+  never be replayed, deleted, or repaired. No helper/finalizer write is
+  authorized until a fresh client/engine cutover seal matches live heartbeats.
+- Local affected proof is 156 of 156 tests across seven focused files, client
+  TypeScript, targeted ESLint, Prettier, workflow YAML parsing, exact
+  Playwright discovery (one routed customization and four live-table cases),
+  script syntax, and `git diff --check`. Protected merge, publication, fresh
+  authenticated production proof, durable seal, bounded helper completion,
+  exact finalizer installation/readback, and terminal live verification remain
+  required before Phase 1 may be called complete.

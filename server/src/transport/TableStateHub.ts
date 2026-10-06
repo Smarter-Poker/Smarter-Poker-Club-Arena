@@ -267,15 +267,20 @@ export class TableStateHub {
    * Messages go out to every OPEN subscriber; closed subscribers are evicted.
    */
   publish(tableId: string, state: GameStateSnapshot): number {
+    // Diff the same JSON shape clients actually receive. structuredClone
+    // retains undefined object keys which JSON omits, causing later DELTAs
+    // to replace/remove paths absent from the client's SNAPSHOT. Normalize
+    // once per publish, before touching room state, not once per subscriber.
+    const wireState = JSON.parse(JSON.stringify(state)) as GameStateSnapshot;
     const room = this.getOrCreateRoom(tableId);
     const prev = room.lastSeq;
     const next = prev + 1;
 
     let message: HubMessage;
     if (!room.lastSnapshot) {
-      message = { type: 'SNAPSHOT', tableId, seq: next, state };
+      message = { type: 'SNAPSHOT', tableId, seq: next, state: wireState };
     } else {
-      const patch = compare(room.lastSnapshot, state) as JsonPatchOperation[];
+      const patch = compare(room.lastSnapshot, wireState) as JsonPatchOperation[];
       // ROUND 25 FIX (Bible V8 §6 reconnect FSM): no-op publishes (empty patch)
       // MUST NOT advance seq, otherwise the next real DELTA carries
       // prev=lastSeq+N which the client sees as a gap — triggering a spurious
@@ -290,7 +295,7 @@ export class TableStateHub {
       message = { type: 'DELTA', tableId, seq: next, prev, patch };
     }
 
-    room.lastSnapshot = structuredClone(state);
+    room.lastSnapshot = wireState;
     room.lastSeq = next;
     room.lastPublishedAt = Date.now();
 

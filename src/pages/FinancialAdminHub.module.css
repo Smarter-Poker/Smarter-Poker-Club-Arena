@@ -245,11 +245,10 @@
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 8%),
     inset 0 -1px 0 rgb(255 255 255 / 5%);
-  font:
-    700 3.4cqw/1.25 'Roboto Condensed',
-    Inter,
-    system-ui,
-    sans-serif;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: max(16px, 3.4cqw);
+  font-weight: 700;
+  line-height: 1.25;
 }
 
 .select:disabled {

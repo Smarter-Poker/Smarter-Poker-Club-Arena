@@ -288,6 +288,16 @@ Dan, verbatim: "these are all for you to decide not me ... FIX AND FINISH ALL OF
 
 Migration `20260930234000`'s comments and the two new doors' database comments call this ruling 22: it was written under that number the same night rulings 22 to 24 above landed, and the applied file is a record that does not change. The database comments are corrected by the revoke migration. It is ruling 25.
 
+## The Diamond Arena's first schedule is four priced events, and a Diamond freeroll waits for the guarantee door (decided by Claude on Dan's delegation; migration 20261006090619; docs/changelog/2026-10-06-the-diamond-arena-has-a-tournament-schedule.md)
+
+Dan answered the pending production list on 2026-10-06 with "YES, GO AHEAD AND PROCEED", the Diamond tournament schedule among it. On 2026-09-30 he delegated the open product decisions: "these are all for you to decide not me". This settles the one question the schedule raised.
+
+**The ruling.** The arena's starter board is four priced daily events: Diamond Daily Turbo 300 at 14:00 UTC, Diamond Daily Deep Stack 500 at 20:00, Diamond Bounty Hunt 1000 at 01:00 and Diamond Progressive Bounty 2000 at 03:00. It carries no freeroll until the Diamond guarantee door opens. When it opens, the freeroll is a new schedule row with its guarantee.
+
+**Why.** `ca_diamond_economics.freeroll_allowed` (approved 2026-10-05) reads "The creation door admits a zero buy-in ONLY together with a guarantee, since a freeroll's prize IS its guarantee". `freeroll_rebuy_cost` and `freeroll_addon_cost` are `none_offered`: a Diamond freeroll is a freezeout. Today `fn_poker_diamond_create_tournament` refuses a buy-in below one Diamond (`diamond_tournament_requires_a_whole_positive_buy_in`) and refuses a guarantee. So a freeroll has no prize that can be funded. Scheduling one anyway would not be refused at the spawner. `freeBuyColumns` and `zz_freerolls_are_free_buy` would turn it into a free-buy event with unlimited rebuys and an add-on at one Diamond each: a price the recorded answers say does not exist, on a format the door refuses by name.
+
+**How a scheduled Diamond event is created.** The engine's `ScheduledTournamentService` writes it straight into `public.tournaments` as `service_role`, which `fn_poker_guard_arena_structure` admits. It does not go through `fn_poker_diamond_create_tournament`, which is a staff door. The schedule's rehearsal (`docs/evidence/diamond-arena-schedule/one-spawn-cycle-rehearsal.sql`) therefore proves it on the row. One whole spawn cycle, with the exact bytes the spawner writes, through every live trigger, was admitted. The real door, asked for the same events, admits each one at the same buy-in, fee, bounty, guarantee and unit. Routing the spawner through the door itself would need a non-staff entry into that door. That is a separate change.
+
 ## Diamond cash games are open (Dan, 2026-10-06; migrations 20261006154344 and 20261006154844; docs/changelog/2026-10-06-the-diamond-cash-felt-reopens.md)
 
 Dan opened Diamond cash games for his certified run, and on 2026-10-06

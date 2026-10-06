@@ -15,7 +15,7 @@ once only.
 
 ## The fix, at the cause
 
-The engine records when it took each player back (`satBackAtMs`). A sit-out
+The engine records when it took each player back (`returnedFromSitOutAtMs`). A sit-out
 row whose stamp is not later than that moment describes the sit-out that just
 ended, and is skipped, on every pass for as long as that row keeps arriving. A
 row stamped after the return is a new sit-out the database knows about and is

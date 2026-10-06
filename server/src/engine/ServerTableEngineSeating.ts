@@ -1119,7 +1119,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       // FIX 143: Bible V8 §7.12 — Can't fold mid-hand.
       // If a hand is in progress, defer the sit-out until after the hand completes.
       // The player continues playing the current hand normally.
-      this.satBackAtMs.delete(userId);
+      this.returnedFromSitOutAtMs.delete(userId);
       if (this.handController !== null) {
         this.pendingSitOut.add(userId);
       } else {
@@ -1130,7 +1130,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       this.pendingSitOut.delete(userId);
       // CHIP CONTINUITY: sitting back in withdraws a leave the clock was holding.
       this.leaveHeldByClock.delete(userId);
-      this.satBackAtMs.set(userId, Date.now());
+      this.returnedFromSitOutAtMs.set(userId, Date.now());
       this.disconnectEngine.sitBack(this.tableId, userId);
       // Bible V8 §4.2: Mark player as returning — must post dead blind on next hand (cash tables only)
       if (!this.isTournamentTable()) {

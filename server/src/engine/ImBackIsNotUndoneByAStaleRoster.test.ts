@@ -47,7 +47,7 @@ describe("I'm Back is not undone by a stale roster", () => {
     expect(engine.disconnectEngine.isSittingOut(TABLE, HUMAN)).toBe(true);
 
     // 05:00:00 - the player taps I'm Back.
-    engine.satBackAtMs.set(HUMAN, Date.now());
+    engine.returnedFromSitOutAtMs.set(HUMAN, Date.now());
     engine.disconnectEngine.sitBack(TABLE, HUMAN);
     expect(engine.disconnectEngine.isSittingOut(TABLE, HUMAN)).toBe(false);
 
@@ -63,18 +63,18 @@ describe("I'm Back is not undone by a stale roster", () => {
 
   it('a row with no stamp at all is also the old sit-out', () => {
     const engine = engineWith({ is_sitting_out: true, sit_out_at: null });
-    engine.satBackAtMs.set(HUMAN, Date.now());
+    engine.returnedFromSitOutAtMs.set(HUMAN, Date.now());
     engine.restoreSitOutsFromSeats();
     expect(engine.disconnectEngine.isSittingOut(TABLE, HUMAN)).toBe(false);
   });
 
   it('a sit-out the database stamped AFTER the return is restored', () => {
     const engine = engineWith({ is_sitting_out: true, sit_out_at: '2026-10-06T05:02:00Z' });
-    engine.satBackAtMs.set(HUMAN, Date.parse('2026-10-06T05:00:00Z'));
+    engine.returnedFromSitOutAtMs.set(HUMAN, Date.parse('2026-10-06T05:00:00Z'));
     vi.setSystemTime(Date.parse('2026-10-06T05:02:05Z'));
     engine.restoreSitOutsFromSeats();
     expect(engine.disconnectEngine.isSittingOut(TABLE, HUMAN)).toBe(true);
-    expect(engine.satBackAtMs.has(HUMAN)).toBe(false);
+    expect(engine.returnedFromSitOutAtMs.has(HUMAN)).toBe(false);
   });
 
   it('a player this engine never took back is restored exactly as before', () => {

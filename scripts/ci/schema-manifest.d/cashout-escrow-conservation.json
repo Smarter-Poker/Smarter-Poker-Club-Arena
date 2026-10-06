@@ -1,0 +1,6 @@
+{
+  "_owner": "fix/cashout-escrow-conservation-20261006. PROMISED, not production observed: isolated actual-schema qualification passed. Migration 20261006141326 is installed through the existing apply-merged-migration.yml route after protected merge; exact production readback remains required.",
+  "columns": {
+    "ca_supply_snapshots": ["cashout_escrow"]
+  }
+}

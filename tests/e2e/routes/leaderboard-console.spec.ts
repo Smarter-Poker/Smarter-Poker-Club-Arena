@@ -388,6 +388,7 @@ test('Leaderboard Cache Paints Before Real Revalidation And Expires Safely', asy
   let warmCachedPaintMs = 0;
   try {
     await page.reload({ waitUntil: 'domcontentloaded' });
+    await board.getByRole('button', { name: 'Global', exact: true }).click();
     await warmRequestSeen;
     await expect(board.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'false');
     warmCachedPaintMs = Date.now() - warmStartedAt;
@@ -435,6 +436,7 @@ test('Leaderboard Cache Paints Before Real Revalidation And Expires Safely', asy
   const expiredResponse = page.waitForResponse(isLeaderboardRefresh, { timeout: 30000 });
   try {
     await page.reload({ waitUntil: 'domcontentloaded' });
+    await board.getByRole('button', { name: 'Global', exact: true }).click();
     await expiredRequestSeen;
     await expect(board.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'true');
     const expiredKeyWasRemoved = await page.evaluate(

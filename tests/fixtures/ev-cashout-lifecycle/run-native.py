@@ -57,11 +57,14 @@ def execute(repo, image, output):
                 if isinstance(record,dict) and record.get('scope')==receipt['scope']:
                     if record.get('kind')=='stage' and re.fullmatch(r'[a-zA-Z0-9_.-]{1,100}',str(record.get('stage',''))):
                         receipt['last_stage']=record['stage']
+                    elif record.get('kind')=='cleanup':
+                        codes=record.get('error_codes')
+                        if isinstance(codes,list) and len(codes)<=32 and all(isinstance(code,str) and re.fullmatch(r'[A-Z_]{3,50}',code) for code in codes):receipt['cleanup_errors']=codes
                     elif record.get('status') in ('passed','failed'):records.append(record)
             # The driver emits only schema-owned stage names and safe numeric/UUID outcomes.
             assert len(records)==1
             receipt['observation']=records[0]
-            assert result.returncode==0 and records[0]['status']=='passed'
+            assert result.returncode==0 and records[0]['status']=='passed' and not receipt.get('cleanup_errors')
             receipt['status']='passed'
     except Exception as error:
         receipt['status']='failed'

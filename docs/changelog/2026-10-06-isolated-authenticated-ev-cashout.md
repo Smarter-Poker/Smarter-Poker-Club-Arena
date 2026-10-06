@@ -52,3 +52,25 @@ interval. Native teardown now calls its maintained close method. A retained
 actual compiled HandController sequence test covers exact cards, four passive
 actions and both all-ins, then closes that owned hub and requires clean process
 exit. It is a local driver prerequisite, not financial/authentication proof.
+
+The 777e receipt reached ev-offer, emitted failure, then exceeded the container
+limit; cleanup still confirmed container absence. The actor had not started the
+real pricing worker pool that GameServer normally starts before opening routes.
+Native preparation now invokes its existing ready API and teardown invokes its
+existing shutdown API. A real worker pricing check uses the exact actor board
+and requires clean exit. The owned gateway closes outstanding connections during
+teardown; no result is converted to success and the container limit is unchanged.
+
+Teardown also awaits the engine's actual owned-writer stop promise before
+closing transport and stops the process-owned deadline scheduler after both
+cases, matching its maintained lifecycle API. No active production process or
+shared Mac worker is touched.
+
+The actor owns cleanup immediately after engine construction, including setup
+assertions. HTTP closure runs even when the real engine stop rejects, and such
+cleanup errors remain failures alongside any actor error.
+
+Outer cleanup attempts every owned resource independently, retains fixed cleanup
+error codes, and fails the receipt even if the actor had already passed. Local
+actual-controller/pricing checks passed 2/2 with clean exit; composition checks
+passed 5/5. Authenticated native acceptance remains pending hosted execution.

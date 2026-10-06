@@ -29,7 +29,8 @@ const database = 'club_arena_qualification',
   connections = [];
 let stage = 'initialize',
   gateway,
-  engineLoaded = false;
+  engineLoaded = false,
+  stopEquityWorkers;
 function setStage(value) {
   assert.match(value, /^[a-zA-Z0-9_.-]{1,100}$/);
   stage = value;
@@ -236,6 +237,11 @@ try {
   await new Promise((r) => gateway.listen(54321, '127.0.0.1', r));
   process.env.SUPABASE_URL = 'http://127.0.0.1:54321';
   process.env.SUPABASE_SERVICE_ROLE_KEY = secrets.serviceKey;
+  setStage('equity-workers');
+  const equity = await import('/ev/server/dist/engine/equity/EquityWorkerPool.js');
+  stopEquityWorkers = equity.stopEquityWorkerPool;
+  const workerStatus = await equity.startEquityWorkerPool();
+  assert.equal(workerStatus.acceptingWork, true, 'real pricing worker must be ready');
   const outcomes = [];
   for (const river of ['3c', '3d']) {
     setStage(`fund-club-${river}`);
@@ -378,11 +384,43 @@ try {
   );
   process.exitCode = 1;
 } finally {
+  const cleanupErrors = [];
+  const closeOwned = async (code, close) => {
+    try {
+      await close();
+    } catch {
+      cleanupErrors.push(code);
+    }
+  };
   if (engineLoaded) {
-    const { channelHub } = await import('/ev/server/dist/hub/ChannelHub.js');
-    channelHub.close();
+    await closeOwned('CHANNEL_HUB_CLOSE_FAILED', async () => {
+      const { channelHub } = await import('/ev/server/dist/hub/ChannelHub.js');
+      channelHub.close();
+    });
+    await closeOwned('DEADLINE_SCHEDULER_STOP_FAILED', async () => {
+      const { deadlineScheduler } = await import('/ev/server/dist/engine/DeadlineScheduler.js');
+      deadlineScheduler.stop();
+    });
   }
-  if (gateway) await new Promise((r) => gateway.close(r));
-  for (const db of connections.reverse()) await db.end().catch(() => {});
-  for (const child of children.reverse()) child.kill('SIGTERM');
+  if (stopEquityWorkers) await closeOwned('EQUITY_WORKERS_STOP_FAILED', stopEquityWorkers);
+  if (gateway)
+    await closeOwned('GATEWAY_CLOSE_FAILED', async () => {
+      gateway.closeAllConnections();
+      await new Promise((resolve, reject) =>
+        gateway.close((error) => (error ? reject(error) : resolve()))
+      );
+    });
+  for (const db of connections.reverse()) await closeOwned('DATABASE_CLOSE_FAILED', () => db.end());
+  for (const child of children.reverse())
+    await closeOwned('CHILD_STOP_FAILED', () => child.kill('SIGTERM'));
+  if (cleanupErrors.length) {
+    console.error(
+      JSON.stringify({
+        scope: 'authenticated-ev-cashout-native-lifecycle',
+        kind: 'cleanup',
+        error_codes: cleanupErrors,
+      })
+    );
+    process.exitCode = 1;
+  }
 }

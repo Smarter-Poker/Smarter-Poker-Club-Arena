@@ -13,7 +13,7 @@ async function until(read, message, budget = 30000) {
     if (value) return value;
     await pause(20);
   }
-  throw new Error(message);
+  throw Object.assign(new Error(message), { code: 'ACTOR_WAIT_TIMEOUT' });
 }
 const card = (text) => ({
   rank: text[0],
@@ -117,140 +117,142 @@ export async function exerciseEvCashout({
     generation,
     proofDeadlineMonotonicMs: performance.now() + 60000,
   });
-  assert.equal(
-    engine.claimProcessOwnership(),
-    true,
-    'isolated dealer must acquire its actual process slot'
-  );
-  const events = [];
-  const hub = new TableStateHub();
-  const emit = hub.emitEvent.bind(hub);
-  hub.emitEvent = (table, event) => {
-    events.push(structuredClone(event));
-    return emit(table, event);
-  };
-  Object.assign(engine, {
-    running: true,
-    handCount: hand,
-    tableInfo: {
-      ...table,
-      game_variant: 'nlh',
-      small_blind: 1,
-      big_blind: 2,
-      max_players: 2,
-      insurance_enabled: true,
-      arena: { asset: 'chips', is_platform: false, union_id: null },
-    },
-    seatedPlayers: players,
-    currentHandStartedAt: new Date().toISOString(),
-    currentHandVariant: 'nlh',
-    currentHandDealerSeat: 1,
-    currentHandDealtStacks: new Map(players.map((p) => [p.user_id, p.stack])),
-    currentHandSeatGenerations: new Map(
-      roster.map((s) => [
-        s.user_id,
-        { ...s, funding_manifest_id: manifest.id, funding_stack_before: s.stack_before },
-      ])
-    ),
-    hub,
-  });
-  engine.insuranceEngine.configure(tableId, { enabled: true });
-  for (const player of players) {
-    engine.atomicStackService.initializeStack(tableId, player.user_id, player.stack);
-    engine.timeBankEngine.initializePlayer(tableId, player.user_id);
-  }
-  const rc = getFullRakeConfig(1, 2, 'nlh');
-  const holes = [
-    ['As', 'Ah'],
-    ['7c', '8c'],
-  ].map((xs) => xs.map(card));
-  const board = ['Ac', 'Kc', '2d', '9h', river].map(card);
-  const known = new Set([...holes.flat(), ...board].map((c) => `${c.rank}:${c.suit}`));
-  const remainder = [];
-  for (const suit of ['spades', 'hearts', 'diamonds', 'clubs'])
-    for (const rank of ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'])
-      if (!known.has(`${rank}:${suit}`)) remainder.push({ rank, suit });
-  const order = [...holes.flat(), ...board, ...remainder];
-  assert.equal(order.length, 52);
-  const shuffle = Deck.prototype.shuffle;
-  let controller;
+  let http;
+  let actorFailure;
   try {
-    Deck.prototype.shuffle = function () {
-      this.cards = structuredClone(order);
+    assert.equal(
+      engine.claimProcessOwnership(),
+      true,
+      'isolated dealer must acquire its actual process slot'
+    );
+    const events = [];
+    const hub = new TableStateHub();
+    const emit = hub.emitEvent.bind(hub);
+    hub.emitEvent = (table, event) => {
+      events.push(structuredClone(event));
+      return emit(table, event);
     };
-    controller = new HandController(
-      {
-        tableId,
-        handNumber: hand,
-        gameVariant: 'nlh',
-        smallBlind: 1,
-        bigBlind: 2,
-        asset: 'chips',
-        rakeConfig: {
-          percent: rc.rakePercent,
-          cap: rc.rakeCap,
-          noFlopNoDrop: true,
-          playerCountCaps: getPlayerCountCaps(rc.rakeCap, 2),
-        },
-        bbjConfig: {
-          enabled: rc.bbjEnabled,
-          feeBB: rc.bbjFeeBB,
-          minPotBB: rc.rules.minPotBB,
-          minPlayersDealt: rc.rules.minPlayersDealt,
-        },
+    Object.assign(engine, {
+      running: true,
+      handCount: hand,
+      tableInfo: {
+        ...table,
+        game_variant: 'nlh',
+        small_blind: 1,
+        big_blind: 2,
+        max_players: 2,
+        insurance_enabled: true,
+        arena: { asset: 'chips', is_platform: false, union_id: null },
       },
-      players.map((p, i) => ({
-        user_id: p.user_id,
-        seat: i + 1,
-        username: p.username,
-        stack: p.stack,
-        bet: 0,
-        totalInvested: 0,
-        cards: [],
-        is_folded: false,
-        is_all_in: false,
-        is_sitting_out: false,
-      })),
-      1
-    );
-  } finally {
-    Deck.prototype.shuffle = shuffle;
-  }
-  engine.handController = controller;
-  const pending = [];
-  let persistenceGeneration;
-  let eventFailure;
-  controller.onEvent((event) => {
-    if (event.type === 'CARDS_DEALT') return; // private-card transport is outside this EV HTTP qualification
-    if (event.type === 'TURN_CHANGE') return; // the finite actor supplies turns, never an autonomous dealer loop
-    const work = engine.handleHandEvent(event, players, persistenceGeneration);
-    pending.push(
-      Promise.resolve(work).catch((error) => {
-        eventFailure = error;
-      })
-    );
-  });
-  const http = createServer(
-    (req, res) =>
-      void handleInsurance(req, res, {
-        gameServer: { getTableEngine: (id) => (id === tableId ? engine : null) },
-      })
-  );
-  await new Promise((resolve) => http.listen(0, '127.0.0.1', resolve));
-  const endpoint = `http://127.0.0.1:${http.address().port}/insurance`;
-  const answer = async (user, body) => {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        ...(user ? { authorization: `Bearer ${user.session.access_token}` } : {}),
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(10000),
+      seatedPlayers: players,
+      currentHandStartedAt: new Date().toISOString(),
+      currentHandVariant: 'nlh',
+      currentHandDealerSeat: 1,
+      currentHandDealtStacks: new Map(players.map((p) => [p.user_id, p.stack])),
+      currentHandSeatGenerations: new Map(
+        roster.map((s) => [
+          s.user_id,
+          { ...s, funding_manifest_id: manifest.id, funding_stack_before: s.stack_before },
+        ])
+      ),
+      hub,
     });
-    return { status: response.status, body: await response.json() };
-  };
-  try {
+    engine.insuranceEngine.configure(tableId, { enabled: true });
+    for (const player of players) {
+      engine.atomicStackService.initializeStack(tableId, player.user_id, player.stack);
+      engine.timeBankEngine.initializePlayer(tableId, player.user_id);
+    }
+    const rc = getFullRakeConfig(1, 2, 'nlh');
+    const holes = [
+      ['As', 'Ah'],
+      ['7c', '8c'],
+    ].map((xs) => xs.map(card));
+    const board = ['Ac', 'Kc', '2d', '9h', river].map(card);
+    const known = new Set([...holes.flat(), ...board].map((c) => `${c.rank}:${c.suit}`));
+    const remainder = [];
+    for (const suit of ['spades', 'hearts', 'diamonds', 'clubs'])
+      for (const rank of ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'])
+        if (!known.has(`${rank}:${suit}`)) remainder.push({ rank, suit });
+    const order = [...holes.flat(), ...board, ...remainder];
+    assert.equal(order.length, 52);
+    const shuffle = Deck.prototype.shuffle;
+    let controller;
+    try {
+      Deck.prototype.shuffle = function () {
+        this.cards = structuredClone(order);
+      };
+      controller = new HandController(
+        {
+          tableId,
+          handNumber: hand,
+          gameVariant: 'nlh',
+          smallBlind: 1,
+          bigBlind: 2,
+          asset: 'chips',
+          rakeConfig: {
+            percent: rc.rakePercent,
+            cap: rc.rakeCap,
+            noFlopNoDrop: true,
+            playerCountCaps: getPlayerCountCaps(rc.rakeCap, 2),
+          },
+          bbjConfig: {
+            enabled: rc.bbjEnabled,
+            feeBB: rc.bbjFeeBB,
+            minPotBB: rc.rules.minPotBB,
+            minPlayersDealt: rc.rules.minPlayersDealt,
+          },
+        },
+        players.map((p, i) => ({
+          user_id: p.user_id,
+          seat: i + 1,
+          username: p.username,
+          stack: p.stack,
+          bet: 0,
+          totalInvested: 0,
+          cards: [],
+          is_folded: false,
+          is_all_in: false,
+          is_sitting_out: false,
+        })),
+        1
+      );
+    } finally {
+      Deck.prototype.shuffle = shuffle;
+    }
+    engine.handController = controller;
+    const pending = [];
+    let persistenceGeneration;
+    let eventFailure;
+    controller.onEvent((event) => {
+      if (event.type === 'CARDS_DEALT') return; // private-card transport is outside this EV HTTP qualification
+      if (event.type === 'TURN_CHANGE') return; // the finite actor supplies turns, never an autonomous dealer loop
+      const work = engine.handleHandEvent(event, players, persistenceGeneration);
+      pending.push(
+        Promise.resolve(work).catch((error) => {
+          eventFailure = error;
+        })
+      );
+    });
+    http = createServer(
+      (req, res) =>
+        void handleInsurance(req, res, {
+          gameServer: { getTableEngine: (id) => (id === tableId ? engine : null) },
+        })
+    );
+    await new Promise((resolve) => http.listen(0, '127.0.0.1', resolve));
+    const endpoint = `http://127.0.0.1:${http.address().port}/insurance`;
+    const answer = async (user, body) => {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...(user ? { authorization: `Bearer ${user.session.access_token}` } : {}),
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(10000),
+      });
+      return { status: response.status, body: await response.json() };
+    };
     persistenceGeneration = engine.beginTerminalBoundaryPersistence();
     controller.start();
     assert.deepEqual(
@@ -446,9 +448,29 @@ export async function exerciseEvCashout({
       outcome: river === '3c' ? 'loss' : 'win',
       product_certificate: false,
     };
+  } catch (error) {
+    actorFailure = error;
+    throw error;
   } finally {
-    engine.stop();
-    http.closeIdleConnections();
-    await new Promise((resolve) => http.close(resolve));
+    let cleanupFailure;
+    try {
+      await engine.stop();
+    } catch (error) {
+      cleanupFailure = error;
+    } finally {
+      if (http) {
+        http.closeAllConnections();
+        await new Promise((resolve) => http.close(resolve));
+      }
+    }
+    if (cleanupFailure) {
+      throw Object.assign(
+        new AggregateError(
+          [actorFailure, cleanupFailure].filter(Boolean),
+          'EV actor cleanup failed'
+        ),
+        { code: 'EV_ACTOR_CLEANUP_FAILED' }
+      );
+    }
   }
 }

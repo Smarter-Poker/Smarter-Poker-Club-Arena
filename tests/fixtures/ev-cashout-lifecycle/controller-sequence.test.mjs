@@ -84,3 +84,30 @@ test('actual EV deck and passive actions reach the all-in turn; owned hub closes
     channelHub.close();
   }
 });
+
+test('real structured insurance worker prices the actor board and shuts down', async () => {
+  const { startEquityWorkerPool, getEquityPool, stopEquityWorkerPool } =
+    await import('../../../server/dist/engine/equity/EquityWorkerPool.js');
+  const card = (t) => ({
+    rank: t[0],
+    suit: { s: 'spades', h: 'hearts', d: 'diamonds', c: 'clubs' }[t[1]],
+  });
+  try {
+    const status = await startEquityWorkerPool();
+    assert.equal(status.acceptingWork, true);
+    const result = await getEquityPool().estimateInsurance(
+      [
+        ['As', 'Ah'],
+        ['7c', '8c'],
+      ].map((xs) => xs.map(card)),
+      ['Ac', 'Kc', '2d', '9h'].map(card),
+      'nlh',
+      false
+    );
+    assert.equal(result.length, 2);
+    assert.equal(result[0].exact, true);
+    assert.ok(result[0].equity > 50 && result[0].strictLossPct > 0);
+  } finally {
+    await stopEquityWorkerPool();
+  }
+});

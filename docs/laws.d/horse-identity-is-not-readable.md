@@ -47,3 +47,10 @@ every policy on both tables, revokes them, their sequence and the five roster
 RPCs from every browser role, keeps the service role whole, and asserts the
 result. The law pins the migration and that no later migration re-opens any of
 them to `anon`, `authenticated` or `PUBLIC`.
+
+2026-10-06: the ninth and tenth doors. `social_reels.origin_type` was 'horse'
+on every Reel a horse published and readable by both browser roles; World Hub
+#2144 stopped every browser read and API response carrying it, and migration
+20261006004137 grants the browser roles every column but it. `horse_post_modes`
+had a SELECT policy of `true`; migration 20261006004222 closes it to every
+browser role. The law pins both and that no later migration re-opens them.

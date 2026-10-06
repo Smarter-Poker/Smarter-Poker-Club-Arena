@@ -418,3 +418,45 @@ describe('LAW: a horse keeps a heartbeat like a person', () => {
     expect(sql).toContain('a browser role can run the horse heartbeat');
   });
 });
+
+describe('LAW: a reel does not say who made it, and the post modes are closed', () => {
+  /* social_reels.origin_type was 'horse' on every horse Reel and readable by
+     both browser roles; World Hub #2144 stopped every browser read of it and
+     this grants the browser roles every column but it. horse_post_modes had a
+     SELECT policy of `true`; nothing a browser runs reads it. */
+  const REELS = '20261006004137_a_reel_does_not_say_who_made_it.sql';
+  const MODES = '20261006004222_the_horse_post_modes_are_not_readable_by_a_browser.sql';
+  const strip = (sql: string) => sql.replace(/^\s*--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+
+  it('both closing migrations exist and assert their effect', () => {
+    expect(files).toContain(REELS);
+    expect(files).toContain(MODES);
+    const reels = strip(read(REELS));
+    expect(reels).toContain('REVOKE SELECT ON TABLE public.social_reels FROM anon, authenticated;');
+    expect(reels).toContain("a.attname <> 'origin_type'");
+    expect(reels).toContain('anon still reads origin_type');
+    const modes = strip(read(MODES));
+    expect(modes).toContain(
+      'REVOKE ALL ON TABLE public.horse_post_modes FROM PUBLIC, anon, authenticated;'
+    );
+    expect(modes).toContain('a browser role still reaches horse_post_modes');
+  });
+
+  it('nothing after the close hands either back to a browser', () => {
+    const offenders = files
+      .filter((f) => f > REELS)
+      .filter((f) => {
+        const sql = strip(read(f));
+        return (
+          /GRANT\s+(SELECT|ALL)[^;(]*ON\s+(TABLE\s+)?public\.(social_reels|horse_post_modes)\b[^;]*TO[^;]*\b(anon|authenticated|PUBLIC)\b/i.test(
+            sql
+          ) ||
+          /GRANT\s+SELECT\s*\([^)]*\borigin_type\b[^)]*\)\s*ON\s+(TABLE\s+)?public\.social_reels/i.test(
+            sql
+          ) ||
+          /CREATE\s+POLICY[^;]*ON\s+(public\.)?horse_post_modes\b/i.test(sql)
+        );
+      });
+    expect(offenders).toEqual([]);
+  });
+});

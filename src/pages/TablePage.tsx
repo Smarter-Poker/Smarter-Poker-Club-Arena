@@ -6994,6 +6994,12 @@ function LiveTablePage({
       const result = await respondToRIT(tableId, { runs });
       if (!result.success) {
         reportError(result.error, 'TablePage.Chooser_decide_failed');
+        /* A REFUSED ANSWER SAYS SO (launch audit 2026-10-05). The panel moved
+           to "waiting on the others" before the request, and on a refusal it
+           stayed there: the chooser believed they had chosen while the engine
+           had recorded nothing. Give the choice back and say why. */
+        if (runs !== 1) setRitChooserHasDecided(false);
+        toast?.error('Your Run It Choice Was Not Received. Choose Again.');
       }
     }
   };
@@ -7007,6 +7013,11 @@ function LiveTablePage({
       const result = await respondToRIT(tableId, { response: 'accept' });
       if (!result.success) {
         reportError(result.error, 'TablePage.Accept_failed');
+        // The check beside the hero's name was drawn before the engine
+        // answered. It did not accept; take the check back and say so.
+        setRitHeroAccepted(false);
+        if (userId) setRitAcceptedIds((prev) => prev.filter((id) => id !== userId));
+        toast?.error('Your Answer Was Not Received. Accept Again.');
       }
     }
   };
@@ -27026,6 +27037,8 @@ function LiveTablePage({
                       const result = await serverShowHand(tableId);
                       if (!result.success) {
                         reportError(result.error, 'TablePage.Failed');
+                        // The tap used to appear to do nothing at all.
+                        toast?.error('Your Hand Could Not Be Shown');
                       }
                     }}
                   >

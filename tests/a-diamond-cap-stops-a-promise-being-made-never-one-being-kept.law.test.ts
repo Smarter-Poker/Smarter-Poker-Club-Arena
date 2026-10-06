@@ -38,13 +38,46 @@
  * Registry: docs/laws.d/a-diamond-cap-stops-a-promise-being-made-never-one-being-kept.md
  */
 import { describe, expect, it } from 'vitest';
-import { latestDeclaring } from './helpers/migrations';
+import { latestDeclaring, migrationFiles, readMigration } from './helpers/migrations';
 
 const GUARD = 'fn_ca_diamond_earmark_guard';
 const { name: GUARD_MIGRATION, sql: GUARD_SQL } = latestDeclaring(GUARD);
 
 const READER = 'fn_ca_diamond_economic';
 const { name: READER_MIGRATION, sql: READER_SQL } = latestDeclaring(READER);
+
+/** The migration that BUILT THE TABLE AND SEEDED THE TWENTY ANSWERS.
+ *
+ *  Until 2026-10-06 this was always the same file as the one declaring the
+ *  reader, so the two halves of this law were asserted against READER_SQL
+ *  together. They are no longer the same file, and the reason is itself part of
+ *  the law: 20261005151712 ran when its own header said it must never run and
+ *  replaced both readers WITHOUT their p_scope DEFAULT, which broke six live
+ *  money-path functions at runtime. A default cannot be added back by CREATE OR
+ *  REPLACE - PostgreSQL answers 42P13 - so the repair had to DROP and CREATE
+ *  the readers, and the latest migration declaring the reader is now that
+ *  repair.
+ *
+ *  A repair MUST NOT re-seed. ca_diamond_economics is append-only and a settled
+ *  answer is never written twice; the twenty answers are still exactly the rows
+ *  the A-lane wrote. So this law now resolves each fact where that fact lives.
+ *  Every assertion below is the one that was always made, against the same
+ *  content as before - only the file each one is made against is now FOUND by
+ *  what it contains instead of assumed to be the reader's. Nothing is relaxed:
+ *  the arena-switch check below gained a file rather than losing one.
+ *
+ *  The anchor is A1's seeded row. If a later migration ever re-seeds the twenty,
+ *  this follows it there. */
+function latestContaining(anchor: string): { name: string; sql: string } {
+  const hits = migrationFiles().filter((f) => readMigration(f).includes(anchor));
+  expect(hits.length, `no migration contains ${anchor}`).toBeGreaterThan(0);
+  const name = hits[hits.length - 1];
+  return { name, sql: readMigration(name) };
+}
+
+const { name: ANSWERS_MIGRATION, sql: ANSWERS_SQL } = latestContaining(
+  "('guarantee_overlay_account', 'all'"
+);
 
 /** A function body with its SQL line comments removed: prose explains, it
  *  does not execute, and "ruling 21" is not a priced-in default. */
@@ -167,7 +200,7 @@ describe('the house earmark ledger is append-only and holds no Diamond', () => {
   });
 });
 
-describe(`${READER} (in force: ${READER_MIGRATION})`, () => {
+describe(`${READER} (reader in force: ${READER_MIGRATION}; answers seeded by: ${ANSWERS_MIGRATION})`, () => {
   it('refuses an unset value by name under its own SQLSTATE, and never returns NULL', () => {
     for (const fn of ['fn_ca_diamond_economic', 'fn_ca_diamond_economic_text']) {
       const body = bodyOf(READER_SQL, fn);
@@ -200,13 +233,13 @@ describe(`${READER} (in force: ${READER_MIGRATION})`, () => {
   });
 
   it('the settings table is append-only, and a value cannot be stored in the wrong unit', () => {
-    expect(READER_SQL).toMatch(
+    expect(ANSWERS_SQL).toMatch(
       /CREATE TRIGGER trg_ca_diamond_economics_append_only\s+BEFORE UPDATE OR DELETE ON public\.ca_diamond_economics/
     );
-    expect(READER_SQL).toContain('ca_diamond_economics_units_match_name');
-    expect(READER_SQL).toContain('ca_diamond_economics_quote_not_empty');
-    expect(READER_SQL).toContain('ca_diamond_economics_basis_not_empty');
-    expect(READER_SQL).toMatch(
+    expect(ANSWERS_SQL).toContain('ca_diamond_economics_units_match_name');
+    expect(ANSWERS_SQL).toContain('ca_diamond_economics_quote_not_empty');
+    expect(ANSWERS_SQL).toContain('ca_diamond_economics_basis_not_empty');
+    expect(ANSWERS_SQL).toMatch(
       /REVOKE ALL ON TABLE public\.ca_diamond_economics FROM PUBLIC, anon, authenticated, service_role;/
     );
   });
@@ -235,22 +268,22 @@ describe(`${READER} (in force: ${READER_MIGRATION})`, () => {
       'horse_overlay_autofill',
       'horse_freeroll_autofill',
     ]) {
-      expect(READER_SQL, `${name} is not recorded`).toContain(`('${name}', 'all'`);
+      expect(ANSWERS_SQL, `${name} is not recorded`).toContain(`('${name}', 'all'`);
     }
     // The chain that keeps the three guarantee numbers honest, asserted by the
     // migration itself so a later row cannot quietly break it.
-    expect(READER_SQL).toContain('the guarantee chain is broken');
+    expect(ANSWERS_SQL).toContain('the guarantee chain is broken');
   });
 
   it('seeds no fee, rake or BBJ answer: a running fee is not changed by a settings migration', () => {
-    expect(READER_SQL).toContain('a B answer was seeded');
+    expect(ANSWERS_SQL).toContain('a B answer was seeded');
     // A seeded answer is a VALUES row beginning a line. The migration DOES
     // name cash_rake_percent once, in its own proof that an unset value
     // refuses by name, and that is the opposite of seeding it.
     for (const b of ['tournament_fee_percent', 'cash_rake_percent', 'bbj_enabled']) {
-      expect(READER_SQL, `${b} was seeded`).not.toMatch(new RegExp(`^\\('${b}',`, 'm'));
+      expect(ANSWERS_SQL, `${b} was seeded`).not.toMatch(new RegExp(`^\\('${b}',`, 'm'));
     }
-    expect(READER_SQL).toContain("fn_ca_diamond_economic('cash_rake_percent', 'bb:2')");
+    expect(ANSWERS_SQL).toContain("fn_ca_diamond_economic('cash_rake_percent', 'bb:2')");
   });
 
   it('answers A18, A19 and A20 the way CLAUDE.md 10.5 requires, not the way Phase 8 assumed', () => {
@@ -258,19 +291,22 @@ describe(`${READER} (in force: ${READER_MIGRATION})`, () => {
     // alternative - the house funding every horse seat while humans fund
     // their own - is the "equal outcome by a different mechanism" Dan
     // rejected outright on 2026-08-27.
-    expect(READER_SQL).toContain("('horse_entry_funding', 'all', NULL, 'own_balance'");
-    expect(READER_SQL).toContain("('horse_overlay_autofill', 'all', NULL, 'yes'");
-    expect(READER_SQL).toContain("('horse_freeroll_autofill', 'all', NULL, 'yes'");
+    expect(ANSWERS_SQL).toContain("('horse_entry_funding', 'all', NULL, 'own_balance'");
+    expect(ANSWERS_SQL).toContain("('horse_overlay_autofill', 'all', NULL, 'yes'");
+    expect(ANSWERS_SQL).toContain("('horse_freeroll_autofill', 'all', NULL, 'yes'");
     // And the only funding choice a horse row may ever carry is one of the two
     // the question offered, so no third mechanism can be invented later.
-    expect(READER_SQL).toMatch(
+    expect(ANSWERS_SQL).toMatch(
       /WHEN 'horse_entry_funding'\s+THEN value_text IN \('own_balance','funding_account'\)/
     );
   });
 
   it('opens neither arena switch', () => {
-    expect(READER_SQL).toContain('this migration must not open the Diamond cash door');
-    expect(READER_SQL).not.toMatch(/UPDATE public\.ca_arena_settings/);
-    expect(GUARD_SQL).not.toMatch(/UPDATE public\.ca_arena_settings/);
+    expect(ANSWERS_SQL).toContain('this migration must not open the Diamond cash door');
+    /* Every migration this law speaks for, not just the seeding one. The
+       repair that restored the readers is held to it too. */
+    for (const sql of [ANSWERS_SQL, READER_SQL, GUARD_SQL]) {
+      expect(sql).not.toMatch(/UPDATE public\.ca_arena_settings/);
+    }
   });
 });

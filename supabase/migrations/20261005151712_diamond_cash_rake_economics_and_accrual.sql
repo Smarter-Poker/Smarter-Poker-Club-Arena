@@ -2,7 +2,9 @@
 -- (diamond_cash_rake_reads_the_owner_settings)
 -- THIS FILE MUST NEVER RUN.
 --
--- It merged on 2026-10-05 and then REFUSED ITSELF ON APPLY, committing nothing:
+-- IT MERGED, IT REFUSED ITSELF ON APPLY, AND THEN IT RAN ANYWAY.
+--
+-- First, on the sanctioned route, it refused itself and committed nothing:
 --
 --   ERROR 42P13: cannot remove parameter defaults from existing function
 --   HINT: Use DROP FUNCTION fn_ca_diamond_economic(text,text) first.
@@ -11,17 +13,59 @@
 -- not exist when it was written (to_regclass was NULL at 15:00 UTC). The A-lane
 -- applied 20261005151918 at 17:25 UTC while this sat in CI and built the same
 -- table, with a reader whose p_scope carries a DEFAULT. CREATE OR REPLACE
--- cannot drop a parameter default, so the transaction rolled back - which is the
--- applier working, not failing.
+-- cannot drop a parameter default, so that transaction rolled back - which is
+-- the applier working, not failing.
 --
--- NOTHING HERE WAS APPLIED: no row, no table, no function and no grant of this
--- file ever reached production. The successor extends the A-lane's table instead
--- of building its own, records the same fourteen answers in that table's own
--- vocabulary, and carries the accrual, the settler, the sweep, the fence and the
--- kind map forward unchanged in substance.
+-- THEN IT RAN. Measured on production 2026-10-06, read-only: this version is
+-- recorded in supabase_migrations.schema_migrations as version 20261005151712,
+-- name diamond_cash_rake_economics_and_accrual, and the 55 rows it inserts are
+-- in ca_diamond_economics with recorded_at 2026-10-05 22:15:07 UTC. It
+-- committed between 21:55 and 22:40 UTC on 2026-10-05.
 --
--- Do not re-dispatch this version. It is kept, not deleted, so the record of
--- what was attempted and why it refused stays readable.
+-- BY WHAT ROUTE IS NOT KNOWN. It did not come through
+-- apply-merged-migration.yml - every run in that window was checked and none
+-- dispatched this file. No other route has been identified, and this header
+-- does not guess at one. What stood in this place before - "NOTHING HERE WAS
+-- APPLIED: no row, no table, no function and no grant of this file ever reached
+-- production" - was true when it was written and is false now. It is corrected
+-- here rather than quietly deleted, because a wrong belief held about a money
+-- path is part of what happened.
+--
+-- WHAT IT BROKE. Carrying the LOWER version number but running LAST, it
+-- overwrote the A-lane's contract for the shared settings table, and with it
+-- the narrow extension 20261005152000 had made to that contract:
+--
+--   * It replaced fn_ca_diamond_economic and fn_ca_diamond_economic_text
+--     WITHOUT the p_scope DEFAULT. Six live functions call a one-argument form,
+--     and PL/pgSQL resolves a call at execution time, so all six compiled clean
+--     and raised 42883 the moment they ran: fn_ca_diamond_earmark_guard - the
+--     trigger on ca_diamond_house_earmarks, so every guarantee earmark and
+--     every promotional entry failed while Diamond tournaments were open - and
+--     fn_poker_diamond_jackpot_allocate, _pay, _game_qualifies,
+--     _qualifying_hand and _withdraw.
+--   * It dropped seven of the A-lane's CHECK constraints, the closed name list
+--     among them, so no A-lane setting could be recorded at all.
+--   * Its zz_ca_diamond_economics_guard trigger and its own nine-name
+--     fn_ca_diamond_economic_names() replaced the A-lane vocabulary, and that
+--     guard is what refused the correct successor:
+--     "diamond_economics_units_disagree:cash_rake_enabled is switch, not
+--     boolean".
+--
+-- REPAIRED BY 20261006004756_the_diamond_settings_contract_is_restored, which
+-- put the two readers' defaults, the units map, the name inventory and the
+-- seven constraints back and took this file's guard off. The 55 rows this file
+-- wrote are left exactly where they are: the table is append-only and a settled
+-- record is never rewritten. They are inert, because the restored units map
+-- does not know their names. 20261005183028 was applied after that repair.
+--
+-- supabase_migrations.schema_migrations was NOT edited. This file's record of
+-- having run stands, because it did run.
+--
+-- Do not re-dispatch this version. scripts/ci/apply-recorded-migration.mjs now
+-- REFUSES any file carrying the SUPERSEDED BY marker on its first line, so the
+-- sanctioned route can no longer be the one that runs it. This file is kept,
+-- not deleted, so the record of what was attempted, what it refused with, and
+-- what it did anyway stays readable.
 
 -- ============================================================================
 -- DIAMOND CASH RAKE: THE SETTINGS, THE ACCRUAL, THE SWEEP AND THE RECOMPUTE

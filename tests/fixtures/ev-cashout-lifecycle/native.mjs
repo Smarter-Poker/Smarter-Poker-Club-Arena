@@ -230,25 +230,35 @@ try {
   process.env.SUPABASE_SERVICE_ROLE_KEY = secrets.serviceKey;
   const outcomes = [];
   for (const river of ['3c', '3d']) {
-    stage = `fund-${river}`;
+    stage = `fund-club-${river}`;
     const club = randomUUID(),
-      table = randomUUID();
+      table = randomUUID(),
+      game = randomUUID();
     await db.query(
       "INSERT INTO public.clubs(id,name,chip_treasury) VALUES($1,'Isolated EV acceptance',10000)",
       [club]
     );
+    stage = `fund-game-${river}`;
     await db.query(
-      "INSERT INTO public.tables(id,name,club_id,game_type,game_variant,small_blind,big_blind,min_buy_in,max_buy_in,max_players,status,insurance_enabled,is_private) VALUES($1,'Isolated EV acceptance',$2,'cash','nlh',1,2,1,1000,2,'waiting',true,true)",
-      [table, club]
+      "INSERT INTO public.cash_games(id,club_id,name,template_name,variant,sb,bb,handedness,ruleset_snapshot) VALUES($1,$2,'Isolated EV acceptance','classic','nlh',1,2,2,'{}')",
+      [game, club]
     );
+    stage = `fund-table-${river}`;
+    await db.query(
+      "INSERT INTO public.tables(id,name,club_id,cluster_id,game_type,game_variant,small_blind,big_blind,min_buy_in,max_buy_in,max_players,status,insurance_enabled,is_private) VALUES($1,'Isolated EV acceptance',$2,$3,'cash','nlh',1,2,1,1000,2,'waiting',true,true)",
+      [table, club, game]
+    );
+    stage = `fund-bank-${river}`;
     await db.query('INSERT INTO public.club_wallets(club_id,insurance_balance) VALUES($1,10000)', [
       club,
     ]);
     for (const [i, u] of users.entries()) {
+      stage = `fund-member-${river}`;
       await db.query(
         "INSERT INTO public.club_members(club_id,user_id,chip_balance,role,status) VALUES($1,$2,1000,'player','active')",
         [club, u.id]
       );
+      stage = `fund-seat-${river}`;
       const result = await db.query(
         'SELECT public.atomic_table_buyin_before_maintenance_announcement_gate($1,$2,$3,150,false,$4,$5) AS result',
         [u.id, table, i + 1, club, randomUUID()]

@@ -139,7 +139,7 @@ export async function exerciseEvCashout({
       big_blind: 2,
       max_players: 2,
       insurance_enabled: true,
-      arena: { asset: 'chips', is_platform: true, union_id: null },
+      arena: { asset: 'chips', is_platform: false, union_id: null },
     },
     seatedPlayers: players,
     currentHandStartedAt: new Date().toISOString(),

@@ -22,6 +22,8 @@ class Composition(unittest.TestCase):
         self.assertIn('insurance_balance=insurance_bank',chunks['money-and-seat-triggers'])
         self.assertIn('fn_club_members_ledger_writer()',chunks['money-and-seat-triggers'])
         self.assertNotIn("AS 'SELECT true'",'\n'.join(chunks.values()))
+        for name in ['zzzz_stamp_table_game_scope','zzzz_stamp_table_seat_admission','zzzzz_table_parent_keys_guard','zzzzz_table_scope_cascade']:
+            self.assertIn('CREATE TRIGGER '+name, chunks['money-and-seat-triggers'])
     def test_foreign_keys_follow_all_current_relation_keys(self):
         sql=dict(b.chunks())['current-relation-constraints']
         self.assertLess(sql.rfind('PRIMARY KEY'),sql.find('FOREIGN KEY'))

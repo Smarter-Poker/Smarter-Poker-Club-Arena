@@ -49,7 +49,7 @@ def chunks():
         sql+=row['definition']+';\nREVOKE ALL ON FUNCTION '+signature+' FROM PUBLIC,anon,authenticated,service_role;\n'
         if 'service_role=' in row['acl']:sql+='GRANT EXECUTE ON FUNCTION '+signature+' TO service_role;\n'
     yield 'current-critical-authorities',sql
-    trigger_names={'trg_club_members_audit_chip_movement','trg_ca_chip_ledger_enrich','trg_chip_ledger_performed_by','trg_stamp_seat_horse_id','trg_table_seats_stamp_club','zzz_stamp_seat_occupancy','zzzz_stamp_active_seat_game_scope','zzzzz_require_live_seat_parent','zzzzz_seat_parent_keys_match'}
+    trigger_names={'zzzz_stamp_table_game_scope','zzzz_stamp_table_seat_admission','zzzzz_table_parent_keys_guard','zzzzz_table_scope_cascade','trg_club_members_audit_chip_movement','trg_ca_chip_ledger_enrich','trg_chip_ledger_performed_by','trg_stamp_seat_horse_id','trg_table_seats_stamp_club','zzz_stamp_seat_occupancy','zzzz_stamp_active_seat_game_scope','zzzzz_require_live_seat_parent','zzzzz_seat_parent_keys_match'}
     triggers=json.loads((ROOT/'tests/fixtures/full-weekly-accounting/triggers-round-3.json').read_text())
     selected=[t for t in triggers if t['tgname'] in trigger_names or (t['tgname']=='trg_ca_autoledger' and t['table_name'].split('.')[-1]=='club_wallets')]
     assert trigger_names <= {t['tgname'] for t in selected}

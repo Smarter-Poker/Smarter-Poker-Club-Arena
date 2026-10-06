@@ -2400,7 +2400,46 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
     // Reconnecting the same decision consumes the remainder of its protection;
     // it must not mint another action clock on every heartbeat/close cycle.
-    const protection = this.disconnectEngine.getFsmState(this.tableId, userId)?.reconnectDeadlineMs;
+    const reconnectFsm = this.disconnectEngine.getFsmState(this.tableId, userId);
+    let protection = reconnectFsm?.reconnectDeadlineMs;
+    /* A GRANT FROM BEFORE THIS TURN PROTECTED A DIFFERENT DECISION (launch
+       audit 2026-10-05). The deadline is an absolute instant, granted once per
+       absence and cleared by a voluntary action or by a hand ending while the
+       player is back. A player who dropped and returned earlier in the SAME
+       hand without having to act (it was not their turn) carried that instant,
+       long expired, into their own turn. A second short drop on that turn was
+       refused a new grant because one was still set, and this path then read
+       `protection <= now` and folded a present player the moment the socket
+       came back, with the action clock unspent.
+
+       An expired grant made before this turn began is spent paperwork. It is
+       cleared and the ordinary same-turn re-arm below runs. A grant made ON
+       this turn keeps the rule it has always had: once it has expired, a
+       heartbeat does not buy a fresh clock.
+       The next drop on this turn is granted afresh and is bounded by that
+       grant, so this cannot be cycled to hold a turn open. */
+    // "Before this turn" is measured against the last action recorded in the
+    // hand: a turn begins when the action before it lands. It is NOT measured
+    // against playerTurnStartTime, which every same-turn re-arm (this method
+    // included) stamps afresh. With no action yet in the hand there is no
+    // such instant, and the grant is judged as an in-turn one.
+    const lastAction = (
+      state as { actionHistory?: Array<{ timestamp?: number }> }
+    ).actionHistory?.at(-1);
+    const turnBeganAtMs =
+      typeof lastAction?.timestamp === 'number' && Number.isFinite(lastAction.timestamp)
+        ? lastAction.timestamp
+        : null;
+    if (
+      protection !== undefined &&
+      protection <= Date.now() &&
+      turnBeganAtMs !== null &&
+      typeof reconnectFsm?.reconnectGrantedAtMs === 'number' &&
+      reconnectFsm.reconnectGrantedAtMs < turnBeganAtMs
+    ) {
+      this.disconnectEngine.clearSpentReconnectGrant(this.tableId, userId);
+      protection = undefined;
+    }
     if (protection !== undefined) {
       if (protection <= Date.now()) {
         if (

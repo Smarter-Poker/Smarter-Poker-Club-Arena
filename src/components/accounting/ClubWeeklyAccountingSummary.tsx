@@ -171,7 +171,16 @@ export function ClubWeeklyAccountingSummary({ clubId }: { clubId: string }) {
             No Issued Weekly Summaries Were Found For This Club.
           </p>
         ) : (
-          <div className={styles.tableScroll}>
+          /* The table is wider than a phone and scrolls sideways; a scrolling
+             region holds no control of its own, so it takes focus itself or a
+             keyboard user cannot reach the clipped columns (axe
+             scrollable-region-focusable, Post-Deploy E2E run 37575691538). */
+          <div
+            className={styles.tableScroll}
+            tabIndex={0}
+            role="region"
+            aria-label="Weekly Summaries Table"
+          >
             <table className={styles.table}>
               <thead>
                 <tr>

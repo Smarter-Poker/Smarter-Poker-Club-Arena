@@ -31,3 +31,9 @@ payouts, installation or publication. The separate view, constraint and trigger
 definition differences remain unresolved until the corrected owning run provides
 evidence. No production financial behavior, history, grants or schema is changed
 by this tooling repair.
+
+The normal pre-push check reproduced a connected local fixture-isolation defect:
+the non-Git provenance fixture discovered the enclosing SSD worktree because
+TMPDIR is task-owned inside it. Fixture-only Git discovery now stops at the
+scratch parent. Production provenance behavior and every unknown-value assertion
+remain unchanged; initialized fixture repositories retain their own Git identity.

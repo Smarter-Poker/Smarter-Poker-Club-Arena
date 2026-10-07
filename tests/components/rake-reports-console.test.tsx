@@ -232,6 +232,7 @@ vi.mock('../../src/components/console/SpadeConsole', () => ({
 }));
 
 import RakeReports, { parseHandBreakdownPayload } from '../../src/components/admin/RakeReports';
+import { parseClubFinancialsPayload } from '../../src/utils/clubFinancialsPayload';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -276,7 +277,8 @@ describe('Rake Reports console and truth boundary', () => {
           resolvedClubId: CLUB_ID,
           requestedStart: start,
           requestedEnd: end,
-          financials: snapshot,
+          // The parent's PARSED reading, as ClubFinancialsPage supplies it.
+          financials: parseClubFinancialsPayload(snapshot, { clubId: CLUB_ID, start, end }),
         }}
       />
     );

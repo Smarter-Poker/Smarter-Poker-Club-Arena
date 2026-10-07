@@ -1,6 +1,9 @@
 export interface SettlementHistoryCycle {
   id: string;
+  /** Identity only. A period id is a UUID and is never printed as copy. */
   periodId: string;
+  /** The rake-split's own week number (breakdown.period_number), when it has one. */
+  periodNumber: number | null;
   totalRake: number;
   unionTax: number;
   netSettlement: number;
@@ -167,10 +170,19 @@ export function parseSettlementHistory(
     const netSettlement = amountFromCents(gross - net);
     if (totalRake === null || unionTax === null || netSettlement === null) return null;
 
+    const suppliedNumber = row.breakdown.period_number;
+    const periodNumber =
+      typeof suppliedNumber === 'number' &&
+      Number.isSafeInteger(suppliedNumber) &&
+      suppliedNumber > 0
+        ? suppliedNumber
+        : null;
+
     seen.add(id);
     cycles.push({
       id,
       periodId,
+      periodNumber,
       totalRake,
       unionTax,
       netSettlement,

@@ -22,6 +22,10 @@ const fixtureEnv = {
   ...cleanEnv,
   GIT_CONFIG_GLOBAL: '/dev/null',
   GIT_CONFIG_NOSYSTEM: '1',
+  // SSD scratch can be inside the owning worktree. A deliberately non-Git
+  // fixture must not discover that enclosing repository; initialized fixture
+  // repositories still resolve their own .git before reaching this ceiling.
+  GIT_CEILING_DIRECTORIES: path.resolve(tmpdir()),
 };
 
 afterEach(() => {

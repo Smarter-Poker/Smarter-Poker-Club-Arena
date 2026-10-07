@@ -392,6 +392,9 @@ jobs:
         if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci --ignore-scripts
 
+      - name: Actual client runtime retention refuses incomplete and changed inputs
+        run: node --test tests/operations/client-runtime-retention.test.mjs
+
       - name: Record Start Time
         id: timer
         run: echo "start=$(date +%s)" >> $GITHUB_OUTPUT
@@ -1387,6 +1390,17 @@ jobs:
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
           sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17 postgresql-17-cron ${pg_ci_build_packages[@]+"${pg_ci_build_packages[@]}"}
+      - name: Isolated leaderboard restore retains custom extension-table triggers
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+          LEADERBOARD_NATIVE_PG17_TEST: '1'
+        run: >-
+          node --test
+          scripts/verification-harness/leaderboard-isolation-extension-trigger-bootstrap.test.mjs
+          scripts/verification-harness/leaderboard-isolation-definition-portability.test.mjs
+          scripts/verification-harness/leaderboard-isolation-acl-bootstrap.test.mjs
       - name: Data console native PostgreSQL contracts
         if: matrix.shard == 2
         env:
@@ -1453,6 +1467,12 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 tests/sql/run-horse-observation-window.py
+
+      - name: Horse hand review publishes its row, rollup and receipt atomically
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-horse-hand-review-atomic.py
 
       - name: Reserved certification identities retain immutable ledger actors
         if: matrix.shard == 4
@@ -1862,6 +1882,30 @@ jobs:
         with:
           name: retirement-original-helper-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/retirement-original-helper/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Never-dealt rebuy original funding and generation proof
+        id: never_dealt_rebuy
+        if: matrix.shard == 3
+        run: python3 scripts/ci/test-never-dealt-rebuy.py --pg-bin /usr/lib/postgresql/17/bin --evidence artifacts/never-dealt-rebuy --socket-root "$RUNNER_TEMP"
+      - name: Retain never-dealt rebuy native proof
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.never_dealt_rebuy.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: never-dealt-rebuy-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/never-dealt-rebuy/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Two omitted tournament originals preserve exact native custody
+        id: two_retired_tournament_originals
+        if: matrix.shard == 3
+        run: python3 scripts/ci/test-two-retired-tournament-originals.py --pg-bin /usr/lib/postgresql/17/bin --evidence artifacts/two-retired-tournament-originals --socket-root "$RUNNER_TEMP"
+      - name: Retain two omitted original native custody proof
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.two_retired_tournament_originals.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: two-retired-tournament-originals-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/two-retired-tournament-originals/
           if-no-files-found: error
           retention-days: 7
       - name: Original hand retention, accepted receipts and successor ownership
@@ -2295,7 +2339,9 @@ jobs:
           (github.event_name == 'schedule' || needs.changes.result != 'success' || needs.changes.outputs.phase4 == 'true')
         env:
           PG17_BIN: /usr/lib/postgresql/17/bin
-        run: bash scripts/ci/probes/horse-phase4-certified-solver/run-pg17.sh
+        run: |
+          node --test scripts/ci/test-v4-policy-metadata.mjs
+          bash scripts/ci/probes/horse-phase4-certified-solver/run-pg17.sh
 
   server_shards:
     # Independent engine tests run alongside isolated PostgreSQL qualification.

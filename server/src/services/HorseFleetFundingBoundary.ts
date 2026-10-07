@@ -83,6 +83,26 @@ export function isDiamondArenaCashTable(
   }
 }
 
+/** The arena wallets for this cycle: every horse of DIAMOND_ARENA_HORSE_CLUBS
+ *  (read from `club_members` by the caller) paired with its own Diamond roll,
+ *  floored to whole Diamonds. A horse needs NO chip membership anywhere else -
+ *  its club owning zero open chip tables is exactly why it plays the arena. An
+ *  unreadable balance is no wallet, never a zero one. */
+export function arenaWalletsFor(
+  rolls: ReadonlyArray<{ id: string; diamonds: number | string | null }>,
+  arenaHorseIds: ReadonlySet<string>
+): Array<[string, number]> {
+  const out: Array<[string, number]> = [];
+  for (const r of rolls) {
+    if (!arenaHorseIds.has(r.id)) continue;
+    if (r.diamonds === null || r.diamonds === '') continue;
+    const d = Number(r.diamonds);
+    if (!Number.isFinite(d)) continue;
+    out.push([r.id, Math.floor(d)]);
+  }
+  return out;
+}
+
 /** Any Diamond table row (the arena join says so). Used where only the row is
  *  in hand, to decide the unit a buy-in is counted in. */
 export function isDiamondTableRow(table: {

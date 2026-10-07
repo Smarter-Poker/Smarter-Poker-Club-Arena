@@ -341,7 +341,9 @@ function CreditRequestsForScope({
           {pendingApprovals.map((req) => (
             <div key={req.id} className="approval-card">
               <div className="approval-info">
-                <span className="requester">{titleCase(req.requesterName)}</span>
+                <span className="requester" data-player-name>
+                  {titleCase(req.requesterName)}
+                </span>
                 <span className="amount">
                   {creditAdminMoney(readCreditMoney(req.requestedAmount))}
                 </span>

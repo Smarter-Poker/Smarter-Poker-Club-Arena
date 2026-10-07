@@ -105,9 +105,13 @@ export function ClubWeeklyAccountingSummary({ clubId }: { clubId: string }) {
   const loading = available && (!current || current.phase === 'loading');
   const unavailable = !available || current?.phase === 'unavailable';
   return (
-    <section className={styles.summary} aria-label="Club Weekly Accounting" aria-busy={loading}>
+    /* Named for what it lists. Inside the Settlement Center it sits under the
+       workspace's own "Club Weekly Accounting" heading, and a second heading
+       with that exact name gave the page two of them (Post-Deploy E2E run
+       37569802965, financial-admin-deep.spec.ts Settlement Center). */
+    <section className={styles.summary} aria-label="Club Weekly Summaries" aria-busy={loading}>
       <div className={styles.header}>
-        <h3 className={styles.title}>Club Weekly Accounting</h3>
+        <h3 className={styles.title}>Club Weekly Summaries</h3>
         <p className={styles.copy}>
           Weekly Totals For Rake Received, Rakeback Paid And Rake Retained.
         </p>
@@ -167,7 +171,16 @@ export function ClubWeeklyAccountingSummary({ clubId }: { clubId: string }) {
             No Issued Weekly Summaries Were Found For This Club.
           </p>
         ) : (
-          <div className={styles.tableScroll}>
+          /* The table is wider than a phone and scrolls sideways; a scrolling
+             region holds no control of its own, so it takes focus itself or a
+             keyboard user cannot reach the clipped columns (axe
+             scrollable-region-focusable, Post-Deploy E2E run 37575691538). */
+          <div
+            className={styles.tableScroll}
+            tabIndex={0}
+            role="region"
+            aria-label="Weekly Summaries Table"
+          >
             <table className={styles.table}>
               <thead>
                 <tr>

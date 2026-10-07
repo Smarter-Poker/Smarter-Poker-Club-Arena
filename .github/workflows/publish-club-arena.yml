@@ -81,9 +81,11 @@ jobs:
       contents: read
       pull-requests: read
       checks: read
+      actions: read
     outputs:
       target_sha: ${{ steps.target.outputs.sha }}
       tests_proven: ${{ steps.proven.outputs.tests_proven }}
+      publish: ${{ steps.runtime.outputs.publish }}
     steps:
       # ═══════════════════════════════════════════════════════════════════════
       # NO COMMIT LEFT BEHIND — publish the TIP OF MAIN, not the commit that
@@ -137,6 +139,28 @@ jobs:
 
           echo "sha=$TARGET" >> "$GITHUB_OUTPUT"
           echo "Publishing target: ${TARGET:0:7}; current main: ${TIP:0:7}; trigger: ${GITHUB_SHA:0:7}"
+
+      - name: Checkout the exact protected runtime admission source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.target.outputs.sha }}
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+
+      - name: Prove unchanged client runtime
+        id: runtime
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/client-runtime-retention.mjs admit "${{ steps.target.outputs.sha }}"
+      - name: Preserve immutable runtime admission evidence
+        if: steps.runtime.outputs.publish == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: club-arena-runtime-admission
+          path: runtime-admission.json
+          if-no-files-found: error
+          retention-days: 7
 
       # ═════════════════════════════════════════════════════════════════════════
       # CLIENT TESTS GATE THE BUNDLE, BUT NO LONGER DELAY IT — split out 2026-08-26.
@@ -275,8 +299,47 @@ jobs:
       - name: Client tests must pass before the bundle ships (shard ${{ matrix.shard }}/4)
         run: npx vitest run tests/ --shard=${{ matrix.shard }}/4
 
+  # Retention qualifies the CURRENT source tests and preserves the already
+  # published immutable bytes. It never writes the origin or fabricates dist.
+  retain-runtime:
+    needs: [publish-needed, client-tests]
+    if: >-
+      always() &&
+      needs.publish-needed.result == 'success' &&
+      needs.publish-needed.outputs.publish == 'false' &&
+      (needs.client-tests.result == 'success' ||
+       (needs.client-tests.result == 'skipped' &&
+        needs.publish-needed.outputs.tests_proven == 'true'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout qualified current protected verification source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.publish-needed.outputs.target_sha }}
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+      - name: Download this run's immutable admission evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: club-arena-runtime-admission
+          path: .
+      - name: Verify both origins still serve the qualified immutable runtime
+        run: node scripts/ci/client-runtime-retention.mjs finalize retained-runtime.json
+      - name: Record qualified retained runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: club-arena-retained-runtime
+          path: retained-runtime.json
+          if-no-files-found: error
+          retention-days: 7
+
   build-and-store:
     needs: publish-needed
+    if: needs.publish-needed.outputs.publish != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -397,6 +460,9 @@ jobs:
           VITE_APP_VERSION: ${{ needs.publish-needed.outputs.target_sha }}
           VITE_ONESIGNAL_APP_ID: '2fde0e83-cd01-4f93-a9a0-9be6cfe36e8c'
         run: npm run build
+
+      - name: Record the actual client module and build input closure
+        run: node scripts/ci/client-runtime-inputs.mjs
 
       # Keep source private even if an older tool emits a map.
       - name: Source maps never ship to players
@@ -690,6 +756,7 @@ jobs:
     # unnecessary. A client-tests FAILURE still stops the publish.
     if: >-
       always() &&
+      needs.publish-needed.outputs.publish != 'false' &&
       needs.build-and-store.result == 'success' &&
       (needs.client-tests.result == 'success' ||
        (needs.client-tests.result == 'skipped' &&

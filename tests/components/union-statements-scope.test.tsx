@@ -306,23 +306,38 @@ describe('Union Statements request identity', () => {
   });
 
   it('does not deliver a completed old-route issue action into the new union', async () => {
+    const initialBoard = deferred<{ data: ReturnType<typeof statementBoard>; error: null }>();
     const issueResponse = deferred<{ ok: boolean; json: () => Promise<unknown> }>();
     testState.rpc.mockImplementation((name: string, args: { p_union_id?: string }) => {
       if (name === 'ca_union_insurance_pnl') return Promise.resolve(insurance());
+      if (args.p_union_id === 'union-a') return initialBoard.promise;
       return Promise.resolve({
-        data:
-          args.p_union_id === 'union-a'
-            ? statementBoard('union-a', 'alpha union', 'alpha club')
-            : statementBoard('union-b', 'beta union', 'beta club'),
+        data: statementBoard('union-b', 'beta union', 'beta club'),
         error: null,
       });
     });
     testState.fetch.mockReturnValue(issueResponse.promise);
 
     const view = render(<UnionStatementsPage />);
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'Issue Statements For The Closed Week' })
+    const pendingIssue = screen.getByRole('button', {
+      name: 'Issue Statements For The Closed Week',
+    });
+    expect(pendingIssue).toBeDisabled();
+    fireEvent.click(pendingIssue);
+    expect(screen.queryByRole('button', { name: 'Yes, Issue And Deliver' })).toBeNull();
+    expect(testState.fetch).not.toHaveBeenCalled();
+    await act(async () =>
+      initialBoard.resolve({
+        data: statementBoard('union-a', 'alpha union', 'alpha club'),
+        error: null,
+      })
     );
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Issue Statements For The Closed Week' })
+      ).toBeEnabled()
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Issue Statements For The Closed Week' }));
     fireEvent.click(screen.getByRole('button', { name: 'Yes, Issue And Deliver' }));
     await waitFor(() => expect(testState.fetch).toHaveBeenCalledTimes(1));
 
@@ -357,9 +372,12 @@ describe('Union Statements request identity', () => {
     testState.fetch.mockResolvedValue({ ok: true, json: async () => payload });
 
     render(<UnionStatementsPage />);
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'Issue Statements For The Closed Week' })
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Issue Statements For The Closed Week' })
+      ).toBeEnabled()
     );
+    fireEvent.click(screen.getByRole('button', { name: 'Issue Statements For The Closed Week' }));
     fireEvent.click(screen.getByRole('button', { name: 'Yes, Issue And Deliver' }));
 
     await waitFor(() =>
@@ -394,9 +412,12 @@ describe('Union Statements request identity', () => {
     });
 
     render(<UnionStatementsPage />);
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'Issue Statements For The Closed Week' })
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Issue Statements For The Closed Week' })
+      ).toBeEnabled()
     );
+    fireEvent.click(screen.getByRole('button', { name: 'Issue Statements For The Closed Week' }));
     fireEvent.click(screen.getByRole('button', { name: 'Yes, Issue And Deliver' }));
 
     await waitFor(() =>

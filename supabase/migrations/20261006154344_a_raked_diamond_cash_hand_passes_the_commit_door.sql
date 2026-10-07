@@ -65,10 +65,14 @@
 -- (the estate's pg_temp.ca_audit_subst). fn_ca_commit_hand_settlement is not
 -- on fn_ca_guard_watchlist(), so no redefinition is declared.
 --
--- PINNED LIVE md5(pg_get_functiondef(...)), read 2026-10-06 15:45 UTC:
+-- PINNED LIVE md5(pg_get_functiondef(...)), re-read 2026-10-07 after
+-- 20261006184554_a_retired_cash_hand_keeps_its_original_custody was applied.
+-- That migration edits this same door in its time-bank loop, nowhere near
+-- the two anchors below, so only the pins move: both anchors still occur
+-- exactly once, and the edit is the same edit.
 --   public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)
---     before e9d96bfefffef41bc22b6b6f2d5da452
---     after  0049b5054330bf0785ee79bfbd142fe1
+--     before 650b8ff04411a9974ae96ef245645705
+--     after  ad4eadeb4df8113db0ba2b598d219aaf
 --
 -- @live-proof: (SELECT position('OR (v_diamond' in pg_get_functiondef('public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)'::regprocedure)) > 0 AND position('IF (NOT v_diamond AND (' in pg_get_functiondef('public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)'::regprocedure)) > 0)
 
@@ -125,7 +129,7 @@ END $h$;
 -- The door, edited at its two anchors.
 SELECT pg_temp.ca_audit_subst(
   'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)',
-  'e9d96bfefffef41bc22b6b6f2d5da452', '0049b5054330bf0785ee79bfbd142fe1',
+  '650b8ff04411a9974ae96ef245645705', 'ad4eadeb4df8113db0ba2b598d219aaf',
   ARRAY[$o$  IF (COALESCE(p_rake, 0) > 0) IS DISTINCT FROM
        (jsonb_typeof(p_post_commit_obligations->'rake') = 'object')
      OR (
@@ -167,7 +171,7 @@ BEGIN
     RAISE EXCEPTION 'cash_games_enabled is not false; this migration opens nothing and expects it closed';
   END IF;
   IF md5(pg_get_functiondef('public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)'::regprocedure))
-     <> '0049b5054330bf0785ee79bfbd142fe1' THEN
+     <> 'ad4eadeb4df8113db0ba2b598d219aaf' THEN
     RAISE EXCEPTION 'the commit door does not read back as the derived post-image';
   END IF;
 END

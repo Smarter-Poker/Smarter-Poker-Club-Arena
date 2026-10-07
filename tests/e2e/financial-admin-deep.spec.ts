@@ -1,4 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
+import { financialConsoleEnumCopy } from './helpers/financial-console-copy';
 import { readFileSync } from 'node:fs';
 import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
 import {
@@ -167,7 +168,7 @@ async function expectPaintedConsole(root: Locator): Promise<void> {
 async function expectNoRawBackendCopy(root: Locator): Promise<void> {
   const copy = await root.evaluate((element) => (element as HTMLElement).innerText);
   expect(copy).not.toMatch(UUID_IN_COPY);
-  expect(copy).not.toMatch(RAW_ENUM_IN_COPY);
+  expect(await root.evaluate(financialConsoleEnumCopy)).not.toMatch(RAW_ENUM_IN_COPY);
 }
 
 async function expectTouchSafeControls(root: Locator): Promise<void> {
@@ -323,12 +324,18 @@ async function expectLinkedConsoleOutcome(page: Page, route: LinkedConsole): Pro
       break;
     case 'Settlement Center':
       await expect(
-        page.getByRole('heading', { name: 'Club Weekly Accounting', exact: true })
+        page
+          .getByRole('region', { name: 'Club Weekly Summaries', exact: true })
+          .getByRole('heading', { name: 'Club Weekly Summaries', exact: true, level: 3 })
       ).toBeVisible();
       await expect(page.getByLabel('Club Transaction Records')).toBeVisible();
       break;
     case 'CSV Exports':
-      await expect(page.getByRole('tablist', { name: 'Reporting Window' })).toBeVisible();
+      // Exact: CSV Exports also mounts RakeReports' "Rake Reporting Window"
+      // tablist, which a substring match resolves alongside this one.
+      await expect(
+        page.getByRole('tablist', { name: 'Reporting Window', exact: true })
+      ).toBeVisible();
       await expect(page.getByText('Financials Unavailable', { exact: true })).toHaveCount(0);
       break;
   }
@@ -454,13 +461,16 @@ test.describe('Financial Admin production console certificate', () => {
   test('fails closed on every directly linked platform-only console', async ({
     page,
   }, testInfo) => {
-    const arenaRoot = expectedUrl('', testInfo);
+    // A refused platform route lands on the router's root, which is its
+    // basename WITHOUT a trailing slash (src/lib/appBase.ts ROUTER_BASENAME,
+    // '/hub/club-arena'): <Navigate to="/"> resolves to the basename itself.
+    // The configured base URL's '/hub/club-arena/' is the same lobby, but it is
+    // not the URL the guard writes, so pinning it could never pass.
+    const arenaRoot = expectedUrl('', testInfo).pathname.replace(/\/$/, '');
     for (const route of ['diamond-staff-desk', 'financial-health'] as const) {
       await test.step(route, async () => {
         await page.goto(route, { waitUntil: 'domcontentloaded' });
-        await expect
-          .poll(() => new URL(page.url()).pathname, { timeout: 60_000 })
-          .toBe(arenaRoot.pathname);
+        await expect.poll(() => new URL(page.url()).pathname, { timeout: 60_000 }).toBe(arenaRoot);
         await page.evaluate(() => window.stop());
         await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/);
         await expect(

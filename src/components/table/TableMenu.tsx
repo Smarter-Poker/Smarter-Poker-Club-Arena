@@ -565,7 +565,11 @@ export function TableMenu({
                   </div>
                   {(handNumber != null || sessionDuration) && (
                     <div className="table-menu__header-meta">
-                      {handNumber != null && <span>Hand #{handNumber}</span>}
+                      {handNumber != null && (
+                        <span role="status" aria-label={`Hand #${handNumber}`} aria-live="off">
+                          {`Hand #${handNumber}`}
+                        </span>
+                      )}
                       {handNumber != null && sessionDuration && (
                         <span className="table-menu__meta-sep">·</span>
                       )}

@@ -197,3 +197,9 @@
   font-size: clamp(0.62rem, 2.7cqw, 0.78rem);
   line-height: 1.5;
 }
+
+/* The movements list scrolls and takes focus so a keyboard can reach every row. */
+.chip-statement__legs:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: 2px;
+}

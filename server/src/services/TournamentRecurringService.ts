@@ -25,6 +25,7 @@ import { supabase } from './supabase.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import { IN_LIST_CHUNK, selectInChunks } from './supabase/chunkedIn.js';
+import { diamondArenaEntrantClubIds, isDiamondArenaClubRow } from './diamondScheduledSpawn.js';
 import { reportError } from './errorReporter.js';
 import {
   emptySeatFirstPrecheckTally,
@@ -5382,6 +5383,19 @@ export class TournamentRecurringService {
         if (id) ids.add(id);
       }
       clubIds = [...ids];
+    } else {
+      /* THE DIAMOND ARENA DRAWS FROM THE CLUBS DAN SENT TO IT (2026-10-06:
+         the Deep Stack Society horses play the Diamond Arena). The arena holds
+         one member row and no horses, so its own membership alone would leave
+         every one of its events without a single horse - a membership rule
+         turned into an exclusion (CLAUDE.md 10.5). Its entrants are its own
+         members (the humans) plus the members of DIAMOND_ARENA_HORSE_CLUBS,
+         who pay with their own Diamonds, never with that club's chips. An
+         unreadable club row is "unknowable", the same null as an unreadable
+         membership page. Every other standalone club is exactly as before. */
+      const arena = await this.diamondArenaHost(hostClubId);
+      if (arena === null) return null;
+      if (arena) clubIds = diamondArenaEntrantClubIds(hostClubId);
     }
 
     const memberPage = await fetchAllRows<{ user_id: string }>(
@@ -6628,6 +6642,45 @@ export class TournamentRecurringService {
     }
   }
 
+  /**
+   * Is this host club the Diamond Arena? Answered by the shared arena
+   * contract on the club's own row (asset, is_platform, union), never by a
+   * hard-coded id. Null when the row could not be read; a club that does not
+   * exist is simply not the arena.
+   */
+  private async diamondArenaHost(clubId: string): Promise<boolean | null> {
+    const { data, error } = await supabase
+      .from('clubs')
+      .select('id, asset, is_platform, union_id')
+      .eq('id', clubId)
+      .maybeSingle();
+    if (error) return null;
+    return isDiamondArenaClubRow(data as Record<string, unknown> | null);
+  }
+
+  /**
+   * Each horse's settled Diamonds, floored to whole Diamonds, in the shape the
+   * bankroll gate reads a chip wallet in. Chunked like the chip read, because
+   * `ids` is the whole eligible fleet; an incomplete read is reported as such
+   * and the gate leaves the pool alone, exactly as it does for chips.
+   */
+  private async diamondRollsFor(
+    ids: string[]
+  ): Promise<{ rows: Array<{ user_id: string; chip_balance: number | null }>; complete: boolean }> {
+    const page = await selectInChunks<{ id: string; diamonds: number | string | null }>(
+      ids,
+      (batch) => supabase.from('profiles').select('id, diamonds').in('id', batch),
+      'TournamentRecurring.diamondBankrolls'
+    );
+    return {
+      complete: page.complete,
+      rows: page.rows.map((r) => {
+        const d = Number(r.diamonds);
+        return { user_id: r.id, chip_balance: Number.isFinite(d) ? Math.floor(d) : null };
+      }),
+    };
+  }
+
   private async registerHorses(
     tournamentId: string,
     count: number,
@@ -6927,9 +6980,27 @@ export class TournamentRecurringService {
              whole eligible fleet and one `.in()` past ~675 ids is an HTTP 400
              that used to read as "no rolls". Fail-open shape unchanged: an
              incomplete read or an unread horse leaves the pool as it was. */
-          const walletClubs = await this.walletClubsForScope(clubId, unionId);
-          const rollPage =
-            walletClubs === null || walletClubs.length === 0
+          /* A DIAMOND ARENA EVENT IS PAID FROM THE HORSE'S OWN DIAMONDS
+             (2026-10-06). The arena has no `club_members.chip_balance` for a
+             Deep Stack horse to be judged on, so this gate read nothing and
+             waved every horse through. The wallet the arena's door reserves
+             from is `profiles.diamonds`; it is read here, floored to whole
+             Diamonds, and judged by the very same rule and the same policy a
+             chip roll is. The database reserve is still the final authority.
+             Unknown (an unreadable club row) is the gate's usual fail-open. */
+          const diamondEvent = unionId
+            ? false
+            : await viaTopUpPass(
+                pass,
+                `arena-host:${clubId}`,
+                () => this.diamondArenaHost(clubId),
+                (v) => v !== null
+              );
+          const walletClubs =
+            diamondEvent === false ? await this.walletClubsForScope(clubId, unionId) : [];
+          const rollPage = diamondEvent
+            ? await this.diamondRollsFor(ids)
+            : diamondEvent === null || walletClubs === null || walletClubs.length === 0
               ? {
                   rows: [] as Array<{ user_id: string; chip_balance: number | null }>,
                   complete: false,

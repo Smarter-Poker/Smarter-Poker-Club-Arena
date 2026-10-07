@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "e42ea8ef8b84afcb3c97bfbd5750b7c2310523abe96e9dece1e4575ada84fa65",
+    "scripts/ci/classify-ci-changes.mjs": "9e32091e5a712856d7593b6650b54e60e9d49f52b44af7d1f87972b27ed79388",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
@@ -76,6 +76,13 @@
     "qualification": "Native run20 passed128 assertions and13 actual receipts on identical product SQL, qualifier, raw data and decoder. Integration retains upstream F06 CI selection; classifier suite rerun. Generated capture bootstrap differs only by removing one trailing blank line."
   },
   "restamp_audit": [
+    {
+      "on": "2026-10-07",
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "e42ea8ef8b84afcb3c97bfbd5750b7c2310523abe96e9dece1e4575ada84fa65",
+      "to": "9e32091e5a712856d7593b6650b54e60e9d49f52b44af7d1f87972b27ed79388",
+      "why": "Reviewed exact Phase 6 V4 classifier diff: add the three V4 migrations, metadata regression, evaluation configuration and evaluator to the existing certified-solver accounting selection. No selector is removed or narrowed, and no financial fixture, SQL image, assertion or threshold changes. Routing regression passed 49 tests; matching pins are not execution evidence."
+    },
     { "on": "2026-10-06", "file": "scripts/ci/classify-ci-changes.mjs", "from": "2fc728ea5555ced40641d89f8c85b8f094a09f9f14d5decaa405ffbc5e11ea2a", "to": "e42ea8ef8b84afcb3c97bfbd5750b7c2310523abe96e9dece1e4575ada84fa65", "why": "Explicitly reviewed current-main integration adds EV fixture coverage while retaining weekly6031 routing and both audit histories. No financial input or assertion changes; hash agreement is not execution evidence." },
     {
       "file": "scripts/dev/test-full-weekly-accounting-activation.sh",

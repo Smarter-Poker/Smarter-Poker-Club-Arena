@@ -31,6 +31,9 @@ import {
   gtoPostflopV31Count,
   gtoPostflopV31EvaluationCount,
   type GtoPostflopV31Row,
+  type GtoV31SourceSeal,
+  gtoV31FeatureContractVersion,
+  gtoV31PolicyContractValid,
 } from '../engine/GtoPostflopV31.js';
 import { createAdaptiveRefreshLoop } from './AdaptiveRefreshLoop.js';
 
@@ -53,8 +56,18 @@ function readV31CellPage(data: unknown, expectedDatasetId?: string): GtoPostflop
     if (expectedDatasetId !== undefined && row.dataset_id !== expectedDatasetId) {
       throw new Error('v31_evaluation_dataset_mismatch');
     }
+    if (row.feature_contract_version !== null && gtoV31FeatureContractVersion(row) === null)
+      throw new Error('v31_feature_contract_unknown');
+    if (row.policy_export_schema !== null && !gtoV31PolicyContractValid(row))
+      throw new Error('v31_policy_contract_unknown');
   }
-  return data as GtoPostflopV31Row[];
+  return data.map((row) => {
+    // Nullable SQL metadata is historical omission, not an explicit version.
+    const legacy = { ...row };
+    if (row.feature_contract_version === null) delete legacy.feature_contract_version;
+    if (row.policy_export_schema === null) delete legacy.policy_export_schema;
+    return legacy;
+  }) as GtoPostflopV31Row[];
 }
 
 async function loadGtoPostflopV31Attempt(): Promise<{ ok: boolean; count: number }> {
@@ -104,6 +117,8 @@ export async function loadGtoPostflopV31(): Promise<number> {
 export async function loadGtoPostflopV31Evaluation(datasetId: string): Promise<{
   checksum: string;
   cells: number;
+  feature_contract_version?: GtoV31SourceSeal['feature_contract_version'];
+  policy_export_schema?: GtoV31SourceSeal['policy_export_schema'];
 }> {
   if (typeof datasetId !== 'string' || !UUID.test(datasetId)) {
     throw new Error('invalid V31 evaluation dataset id');
@@ -131,7 +146,16 @@ export async function loadGtoPostflopV31Evaluation(datasetId: string): Promise<{
   console.log(
     `[GtoPostflopV31Loader] ${cells} sealed candidate cells loaded for ${checksum.slice(0, 12)}`
   );
-  return { checksum, cells };
+  return {
+    checksum,
+    cells,
+    ...(Object.prototype.hasOwnProperty.call(rows[0], 'policy_export_schema')
+      ? { policy_export_schema: rows[0].policy_export_schema }
+      : {}),
+    ...(Object.prototype.hasOwnProperty.call(rows[0], 'feature_contract_version')
+      ? { feature_contract_version: rows[0].feature_contract_version }
+      : {}),
+  };
 }
 
 export function startGtoPostflopV31Loader(): void {

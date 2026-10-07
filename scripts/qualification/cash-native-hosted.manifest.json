@@ -1,5 +1,19 @@
 {
   "schemaVersion": 1,
+  "leaderboardCurrentMainIntegration20261007": {
+    "reason": "Preserve both the native leaderboard extension-table restoration regression and current main's authenticated client runtime retention step. Only the actual combined workflow source fingerprint changes; all financial inputs, assertions, qualification status and historical audit entries remain unchanged.",
+    "previousCurrentMainWorkflowPin": {
+      "bytes": 190898,
+      "sha256": "b35b4da5a652263f1d9c9693ffedc029befb4500eb0839991fb7e243a79ada88"
+    }
+  },
+  "leaderboardNativeRestoreRegression20261007": {
+    "reason": "Add one isolated native PostgreSQL 17 custom extension-table trigger restore regression to accounting shard four, preserving current main's independently delivered atomic horse hand-review step. Existing cash commands, financial inputs, assertions and SOURCE_ONLY_UNRUN status are unchanged. This source fingerprint refresh does not establish current-schema or financial qualification.",
+    "previousWorkflowPin": {
+      "bytes": 190737,
+      "sha256": "e02dee68235372136d00791b020eaa637ef80a691763a8abe304df4873a252f1"
+    }
+  },
   "evIntegration20261006": "Reviewed current-main integration: preserve weekly6031 routing plus additive EV fixture coverage. Only integrated classifier fingerprint changes; every financial input, assertion and qualification status remains intact. This is not execution evidence.",
   "status": "SOURCE_ONLY_UNRUN",
   "scope": "Cash positive checker evidence and immediate job259 failed-row intake; real pg_cron SPI fixture, not production financial reconciliation",
@@ -10,16 +24,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 188873,
-      "sha256": "d71b8b3900aa260d98942f0c761e89b3e741307d43726a9ac214b5aa4095e933"
+      "bytes": 191463,
+      "sha256": "e0e545fb9a0426b0645e42ff1bfd1c6fd10fb1816215686627e4b69f4b0a1d09"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 32500,
-      "sha256": "e42ea8ef8b84afcb3c97bfbd5750b7c2310523abe96e9dece1e4575ada84fa65"
+      "bytes": 32804,
+      "sha256": "9e32091e5a712856d7593b6650b54e60e9d49f52b44af7d1f87972b27ed79388"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -1692,6 +1706,24 @@
     "previousWorkflowPin": {
       "bytes": 187319,
       "sha256": "72832049eaebb04b646352004f25412f4390684586d930b12584edc1a18c0f14"
+    }
+  },
+  "leaderboard_native_restore_portability_20261007": {
+    "reason": "Extends the existing accounting shard 4 native restore step with retained definition-portability and exact ACL bootstrap controls. Same PG17 prerequisites, explicit native environment and owned runner scratch; no new job. Existing cash financial inputs, assertions and qualification status unchanged; this binding is source identity only, not runtime qualification.",
+    "previousWorkflowPin": {
+      "bytes": 191263,
+      "sha256": "16071380ef8d3e4801b527c4f766e40d88d7443ff7d4b024432031ce4b694d64"
+    },
+    "currentWorkflowPin": {
+      "bytes": 191463,
+      "sha256": "e0e545fb9a0426b0645e42ff1bfd1c6fd10fb1816215686627e4b69f4b0a1d09"
+    }
+  },
+  "hand_review_atomic_publication_20261007": {
+    "reason": "Adds the P14.1 atomic horse hand-review qualification (scripts/ci/test-horse-hand-review-atomic.py) to existing accounting shard 4 beside the observation-window step. All existing cash financial SQL, capture and test assertions unchanged; this binding is source integrity only.",
+    "previousWorkflowPin": {
+      "bytes": 190502,
+      "sha256": "16805dc556f2fa14bc8884f0e880805c19d78c24f1f1481727d8b22153ff0e8f"
     }
   }
 }

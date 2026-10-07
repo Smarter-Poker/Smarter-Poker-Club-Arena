@@ -571,7 +571,7 @@ function CreditAdminPanelForScope() {
               {agents.map((agent) => (
                 <article key={agent.id} className={styles.agentRow}>
                   <div className={styles.agentIdentity}>
-                    <strong>{titleCase(agent.displayName)}</strong>
+                    <strong data-player-name>{titleCase(agent.displayName)}</strong>
                     <span className={styles.clubName}>{titleCase(agent.clubName)}</span>
                     <span className={styles.agentStatus}>{titleCase(agent.status)}</span>
                     <dl className={styles.agentMoney}>
@@ -682,7 +682,7 @@ function CreditAdminPanelForScope() {
               {auditLog.map((log) => (
                 <li key={log.id} className={styles.auditRow}>
                   <span>
-                    <strong>{titleCase(log.agentName)}</strong>
+                    <strong data-player-name>{titleCase(log.agentName)}</strong>
                     <small>
                       {titleCase(log.clubName)} /{' '}
                       {log.createdAt

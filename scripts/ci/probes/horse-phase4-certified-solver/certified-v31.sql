@@ -33,6 +33,7 @@ DECLARE
   failed boolean; kind text; family text; result_id bigint; eval_id uuid; status jsonb;
   target_eval uuid; target_source bigint; saved_metrics jsonb; tampered_metrics jsonb;
   saved_eval_checksum text;
+  saved_source_checksum text;
   eval_scenarios text[]; eval_roles text[]:=ARRAY['all_in','barrel','bet_raise','cbet',
     'check_raise','delayed_cbet','facing_bet','facing_raise','open','probe'];
   components jsonb; bad_components jsonb; scenario_hands integer; component_stderr numeric;
@@ -68,12 +69,20 @@ BEGIN
     bucket:=CASE WHEN role='all_in' THEN 'all_in' WHEN facing='none' THEN 'none'
       ELSE 'small' END;
     board:=CASE streets[i] WHEN 'flop' THEN 'AsKd7c' WHEN 'turn' THEN 'AsKd7c2h' ELSE 'AsKd7c2h3s' END;
+    -- Derive physical seats from the same actual Pio line used below. Pio 0
+    -- is OOP: BB heads-up, SB when three or more seats are at the table.
+    preflop_aggressor:=CASE WHEN role='open' THEN NULL WHEN role='probe' THEN 1
+      WHEN role IN ('cbet','delayed_cbet') THEN 0
+      WHEN i>10 OR (ARRAY['limped','srp','3bet','4bet_plus'])[((i-1)%4)+1]='limped' THEN NULL ELSE 0 END;
+    derived_line:=public.fn_gto_v31_node_line_proof(nodes[i],preflop_aggressor,1000,8000);
+    hero_solver_player:=(derived_line->>'current_actor_solver_player')::integer;
     cov:=jsonb_build_object('street',streets[i],'game_family',families[i],
       'objective',objectives[i],'utility_context',utilities[i],
       'table_size',CASE WHEN i<=9 THEN i+1 ELSE 10 END,
       'pot_type',CASE WHEN i>10 THEN 'limped'
         ELSE (ARRAY['limped','srp','3bet','4bet_plus'])[((i-1)%4)+1] END,
-      'hero_position','SB','opponent_position','BB','depth_bucket',80,
+      'hero_position',CASE WHEN (i=1)=(hero_solver_player=0) THEN 'BB' ELSE 'SB' END,
+      'opponent_position',CASE WHEN (i=1)=(hero_solver_player=0) THEN 'SB' ELSE 'BB' END,'depth_bucket',80,
       'texture_class',public.fn_gto_texture_class_any(board),'node_role',role,
       'facing_kind',facing,'facing_size_bucket',bucket);
     coverage:=coverage||jsonb_build_array(cov);
@@ -439,8 +448,29 @@ BEGIN
       DELETE FROM public.solved_spots_gold WHERE id=duplicate_id;
     END IF;
     PERFORM public.fn_gto_v31_ingest_source_artifact(dataset,'M2',holdout_art);
+    IF i=1 THEN
+      SELECT source_artifact_checksum INTO saved_source_checksum
+        FROM public.solved_spots_gold WHERE id=holdout_id;
+      -- Both stored copies agree, so only recomputation of the matching source
+      -- artifact can reject this counterfeit. The missing holdout must fail closed.
+      UPDATE public.solved_spots_gold SET source_artifact_checksum=repeat('9',64)
+        WHERE id=holdout_id;
+      UPDATE public.gto_v31_source_artifacts SET source_artifact_checksum=repeat('9',64)
+        WHERE dataset_id=dataset AND source_row_id=holdout_id;
+      failed:=false;
+      BEGIN
+        PERFORM public.fn_gto_v31_build_cell(dataset,coverage->(i-1));
+      EXCEPTION WHEN OTHERS THEN failed:=true; END;
+      IF NOT failed THEN RAISE EXCEPTION 'a matching counterfeit artifact was compacted'; END IF;
+      UPDATE public.solved_spots_gold SET source_artifact_checksum=saved_source_checksum
+        WHERE id=holdout_id;
+      UPDATE public.gto_v31_source_artifacts SET source_artifact_checksum=saved_source_checksum
+        WHERE dataset_id=dataset AND source_row_id=holdout_id;
+    END IF;
     PERFORM public.fn_gto_v31_build_cell(dataset,coverage->(i-1));
   END LOOP;
+  -- V31_PHYSICAL_PRIOR_FIXTURE_END: the isolated transition probe captures
+  -- admitted artifacts and already-built cells here, before seal/promotion.
 
   SELECT to_jsonb(c) INTO forged
     FROM public.gto_v31_runtime_cells c

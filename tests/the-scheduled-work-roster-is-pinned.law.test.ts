@@ -103,8 +103,17 @@ const ROSTER = join(ROOT, 'docs', 'attestation', 'cron-roster.tsv');
 /*
  * 125 -> 126 active on 2026-10-04: postgrest-pool-renew-10m, scheduled by
  * the_api_pool_is_renewed_before_it_outgrows_the_host (argument in its header).
+ *
+ * 126 -> 128 active on 2026-10-07, read live from fn_ca_cron_health('24 hours')
+ * (127 active) plus the one job 20261007034146 schedules:
+ * ca-diamond-cash-rake-sweep-hourly, design R4's periodic sweep of the Diamond
+ * cash rake to the house (ruling 26; argument in that migration's header).
+ * The reading also found horse-presence-heartbeat, scheduled by applied
+ * migration 20261005174041 without this file being moved, and
+ * ca-ratchet-watch-hourly moved from :35 to :29 by applied migration
+ * 20261004002936. The roster header names all three.
  */
-const ACTIVE_JOBS = 126;
+const ACTIVE_JOBS = 128;
 const RETAINED_INACTIVE = 2;
 const TOTAL_JOBS = ACTIVE_JOBS + RETAINED_INACTIVE;
 
@@ -130,8 +139,8 @@ describe('the scheduled-work roster is pinned', () => {
     expect(Number(headerValue('retained-inactive'))).toBe(RETAINED_INACTIVE);
   });
 
-  it('128 total is 126 active plus the two rows cron.job keeps inactive', () => {
-    expect(TOTAL_JOBS).toBe(128);
+  it('130 total is 128 active plus the two rows cron.job keeps inactive', () => {
+    expect(TOTAL_JOBS).toBe(130);
     // The two bust sweeps 20260910073355 restored disabled are both of them
     // again: union-weekly-rakeback-close was the third until 20261003101805
     // re-armed jobid 272, and it is now an ACTIVE row of the body instead.

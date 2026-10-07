@@ -7,6 +7,7 @@ import {
 } from './HorseSolverAgreementV31.js';
 import { runMatchup, type LeagueResult } from './HorseLeague.js';
 import type { GtoV31DecisionReceipt } from '../engine/HorseLogic.js';
+import { boardRelativeFeatureKeyV2 } from '../engine/GtoBoardRelativeFeaturesV2.js';
 
 const DATASET = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -140,6 +141,46 @@ const EMPTY_RESULT: LeagueResult = {
 };
 
 describe('certified V31 agreement receipts', () => {
+  it('binds V2 receipt identity while retaining the ordinary holding notation', () => {
+    const base = receipt();
+    const handKey = boardRelativeFeatureKeyV2(['As', 'Ks'], ['2s', '7h', '9d']);
+    const version = 'holdem-board-relative-v2' as const;
+    const versioned = receipt({
+      handKey,
+      decisionState: { ...base.decisionState, handKey },
+      sourceSeal: { ...base.sourceSeal, feature_contract_version: version },
+    });
+    const args = {
+      receipt: versioned,
+      dataset: { ...DATASET, feature_contract_version: version },
+      probeScenario: 'cash_ev',
+      probeOrdinal: 1,
+    };
+    const decision = gtoV31AgreementDecisionFromReceipt(args);
+    expect(decision.handKey).toBe(handKey);
+    expect(decision.decisionState.hand).toBe('AKs');
+    expect(decision.sourceSeal.feature_contract_version).toBe(version);
+    expect(decision.chosenProbability).toBe(0.8);
+    expect(decision.actionRegretBb).toBeCloseTo(0.2);
+    expect(() =>
+      gtoV31AgreementDecisionFromReceipt({
+        ...args,
+        dataset: { ...DATASET, feature_contract_version: 'rank-suit-count-v1' },
+      })
+    ).toThrow('contradictory');
+    expect(() => gtoV31AgreementDecisionFromReceipt({ ...args, dataset: DATASET })).toThrow(
+      'contradictory'
+    );
+    expect(() =>
+      gtoV31AgreementDecisionFromReceipt({
+        ...args,
+        receipt: {
+          ...versioned,
+          sourceSeal: { ...base.sourceSeal, feature_contract_version: 'rank-suit-count-v1' },
+        },
+      })
+    ).toThrow('contradictory');
+  });
   it('scores the exact sampled policy action and its per-action EV regret', () => {
     const decision = gtoV31AgreementDecisionFromReceipt({
       receipt: receipt(),

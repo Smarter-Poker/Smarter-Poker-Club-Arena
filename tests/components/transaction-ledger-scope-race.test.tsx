@@ -85,6 +85,10 @@ describe('TransactionLedgerView scope identity', () => {
       reads[1].resolve({ data: [entry('new', 'Current Player', PLAYER_B)], error: null });
     });
     expect(await screen.findByText('Current Player To Shark Club')).toBeTruthy();
+    const scroll = screen.getByRole('list');
+    expect(scroll.tabIndex).toBe(0);
+    scroll.focus();
+    expect(scroll).toHaveFocus();
 
     await act(async () => {
       reads[0].resolve({ data: [entry('old', 'Previous Player', PLAYER_A)], error: null });

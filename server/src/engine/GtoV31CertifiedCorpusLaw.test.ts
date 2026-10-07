@@ -29,6 +29,9 @@ const RAISE_LINE_PROOF = read(
 const RANK_HOLDOUT = read(
   'supabase/migrations/20260908201749_the_solver_holdout_must_change_board_ranks.sql'
 );
+const CONTEXT_COMPACTION = read(
+  'supabase/migrations/20261007014629_the_solver_compacts_only_its_matching_verified_source_nodes.sql'
+);
 const CANONICAL_IDENTITY = read(
   'supabase/migrations/20260908203000_certified_solver_identity_text_is_canonical.sql'
 );
@@ -77,6 +80,20 @@ const EVALUATOR = read('server/src/scripts/gtoV31Evaluate.ts');
 const AUDIT = read('server/src/engine/HorseDataLedger.ts');
 
 describe('the certified V31 release boundary', () => {
+  it('checksums only matching artifacts once and reuses the verified snapshot', () => {
+    expect(CONTEXT_COMPACTION).toContain('matching_nodes AS MATERIALIZED');
+    expect(CONTEXT_COMPACTION).toContain('matching_artifacts AS MATERIALIZED');
+    expect(CONTEXT_COMPACTION).toContain('verified_artifacts AS MATERIALIZED');
+    expect(CONTEXT_COMPACTION.match(/fn_gto_v31_source_artifact_checksum\(/g)).toHaveLength(1);
+    expect(CONTEXT_COMPACTION.indexOf('node_context,facing_size_bucket}')).toBeLessThan(
+      CONTEXT_COMPACTION.indexOf('fn_gto_v31_source_artifact_checksum(')
+    );
+    const functionBody = CONTEXT_COMPACTION.split('AS $fn$')[1].split('$fn$;')[0];
+    expect(functionBody.match(/jsonb_to_recordset\(v_source_nodes\)/g)).toHaveLength(3);
+    expect(CONTEXT_COMPACTION).toContain('rank-disjoint train and holdout sources');
+    expect(CONTEXT_COMPACTION).toContain('fn_gto_v31_cell_payload_valid(v_cell)');
+    expect(CONTEXT_COMPACTION).toContain('source_row_id uuid');
+  });
   it('lets PostgreSQL derive cells, checksums, heldout scores and verdicts', () => {
     expect(CORPUS).toContain('CREATE OR REPLACE FUNCTION public.fn_gto_v31_build_cell(');
     expect(CORPUS).toContain('CREATE OR REPLACE FUNCTION public.fn_gto_v31_heldout_metrics(');
@@ -254,7 +271,13 @@ describe('the certified V31 release boundary', () => {
       "IF NOT public.fn_gto_v31_hand_key_valid(v_hand.key,p_cell->>'street')"
     );
     expect(STREET_BOUND_KEY).toContain("public.fn_gto_v31_hand_key_valid('AKo:31','flop')");
-    expect(STORE).toContain('canonicalHandKey(handKey, row.street)');
+    expect(STORE).toContain(
+      'canonicalHandKey(handKey, row.street, gtoV31FeatureContractVersion(row) ?? undefined)'
+    );
+    expect(STORE).toMatch(
+      /if \(version === 'holdem-board-relative-v2'\)\s+return boardRelativeFeatureKeyV2Valid/
+    );
+    expect(STORE).toContain('gtoV31FeatureContractVersion(row) !== null');
     expect(CANONICAL_POLICY_JSON).toContain(
       'CREATE OR REPLACE FUNCTION public.fn_gto_v31_action_specs_valid(p_specs jsonb)'
     );

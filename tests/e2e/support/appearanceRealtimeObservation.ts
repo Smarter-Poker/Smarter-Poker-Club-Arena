@@ -5,6 +5,17 @@ type PhoenixPayload = {
   user_id?: unknown;
   event?: unknown;
   payload?: { user_id?: unknown };
+  response?: {
+    postgres_changes?: Array<{
+      id?: unknown;
+      event?: unknown;
+      schema?: unknown;
+      table?: unknown;
+      filter?: unknown;
+    }>;
+  };
+  ids?: unknown[];
+  data?: { schema?: unknown; table?: unknown; type?: unknown; record?: { user_id?: unknown } };
 };
 
 type PhoenixFrame = {
@@ -41,8 +52,14 @@ export type AppearanceRealtimeObservationState = {
  * Observe one owner's private appearance channel without letting a reply from
  * another request, an old document, or a closed socket satisfy readiness.
  */
-export function createAppearanceRealtimeObservation(userId: string) {
-  const topic = `realtime:profile-appearance:${userId}`;
+export function createAppearanceRealtimeObservation(
+  userId: string,
+  carrier: 'profile' | 'table-art' = 'profile'
+) {
+  const topic =
+    carrier === 'profile'
+      ? `realtime:profile-appearance:${userId}`
+      : `realtime:user-theme-settings:${userId}`;
   const state: AppearanceRealtimeObservationState = {
     subscribed: false,
     signalReceived: false,
@@ -53,7 +70,7 @@ export function createAppearanceRealtimeObservation(userId: string) {
   let nextSocketId = 0;
   const sockets = new Map<
     number,
-    { generation: number; pendingJoinRefs: Set<string>; joined: boolean }
+    { generation: number; pendingJoinRefs: Set<string>; joined: boolean; bindingIds: Set<unknown> }
   >();
 
   const refreshReadiness = () => {
@@ -75,6 +92,7 @@ export function createAppearanceRealtimeObservation(userId: string) {
       generation: state.generation,
       pendingJoinRefs: new Set<string>(),
       joined: false,
+      bindingIds: new Set<unknown>(),
     };
     sockets.set(id, socketState);
 
@@ -93,7 +111,21 @@ export function createAppearanceRealtimeObservation(userId: string) {
 
       if (frame.event === 'phx_reply' && frame.ref && socketState.pendingJoinRefs.has(frame.ref)) {
         socketState.pendingJoinRefs.delete(frame.ref);
-        socketState.joined = frame.payload.status === 'ok';
+        const bindings = frame.payload.response?.postgres_changes;
+        const binding = (Array.isArray(bindings) ? bindings : []).find(
+          (value) =>
+            value &&
+            typeof value === 'object' &&
+            value.event === '*' &&
+            value.schema === 'public' &&
+            value.table === 'user_theme_settings' &&
+            value.filter === `user_id=eq.${userId}`
+        );
+        socketState.joined =
+          frame.payload.status === 'ok' &&
+          (carrier === 'profile' || typeof binding?.id === 'number');
+        socketState.bindingIds.clear();
+        if (socketState.joined && binding) socketState.bindingIds.add(binding.id);
         if (!socketState.joined) state.channelErrors += 1;
         refreshReadiness();
         return;
@@ -105,6 +137,19 @@ export function createAppearanceRealtimeObservation(userId: string) {
         return;
       }
       if (
+        carrier === 'table-art' &&
+        socketState.joined &&
+        frame.event === 'postgres_changes' &&
+        Array.isArray(frame.payload.ids) &&
+        frame.payload.ids.some((id) => socketState.bindingIds.has(id)) &&
+        frame.payload.data?.schema === 'public' &&
+        frame.payload.data.table === 'user_theme_settings' &&
+        ['INSERT', 'UPDATE'].includes(String(frame.payload.data.type)) &&
+        frame.payload.data.record?.user_id === userId
+      )
+        state.signalReceived = true;
+      if (
+        carrier === 'profile' &&
         socketState.joined &&
         frame.event === 'broadcast' &&
         frame.payload.event === 'appearance_changed' &&
@@ -127,8 +172,12 @@ export function createAppearanceRealtimeObservation(userId: string) {
   return { state, resetForNavigation, openSocket };
 }
 
-export function observeAppearanceRealtime(page: Page, userId: string) {
-  const observation = createAppearanceRealtimeObservation(userId);
+export function observeAppearanceRealtime(
+  page: Page,
+  userId: string,
+  carrier: 'profile' | 'table-art' = 'profile'
+) {
+  const observation = createAppearanceRealtimeObservation(userId, carrier);
   // Reset when a real top-level document request begins, before that document
   // can open its socket. History API route changes keep the current transport.
   page.on('request', (request) => {

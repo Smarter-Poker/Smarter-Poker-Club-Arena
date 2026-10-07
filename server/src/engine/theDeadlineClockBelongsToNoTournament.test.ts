@@ -21,16 +21,24 @@ vi.mock('../services/supabase/client.js', async () => {
     await import('../services/supabase/dataActorContext.js');
   return {
     supabase: {
-      from: () => ({
-        upsert: (rows: Array<{ horse_user_id: string }>) => ({
-          select: async () => ({
-            data: rows.map((row) => ({ horse_user_id: row.horse_user_id })),
-            error: null,
-          }),
-        }),
-      }),
-      rpc: async (name: string) => {
+      // The flagged hand publishes through ONE atomic RPC (P14.1); answer it
+      // the way the function does, so the writer reaches the prune arming.
+      rpc: async (
+        name: string,
+        args?: { p_rows?: Array<{ hand_id: string; horse_user_id: string }> }
+      ) => {
         if (name === 'sp_prune_horse_hand_reviews') horseDb.pruneWentOutAs.push(authorityNow());
+        if (name === 'fn_hhr_record_atomic') {
+          const rows = args?.p_rows ?? [];
+          return {
+            data: {
+              version: 1,
+              hand_id: rows[0]?.hand_id ?? null,
+              rows: rows.map((row) => ({ horse_user_id: row.horse_user_id, status: 'applied' })),
+            },
+            error: null,
+          };
+        }
         return { data: null, error: null };
       },
     },

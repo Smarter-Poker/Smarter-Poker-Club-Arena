@@ -151,13 +151,45 @@ export function categoryLabel(category: string): string {
   );
 }
 
+/**
+ * chip_ledger.from_label / to_label usually name the STORAGE the chips moved
+ * through (`clubs.chip_treasury`, `bbj_pools.main_balance`), not a phrase for
+ * a person. Those paths are given their account name here; a path this map
+ * does not know is left off rather than printed, because a table and column
+ * name is never copy (financial-admin-deep.spec.ts, RAW_ENUM_IN_COPY). A
+ * label that is already words ("Tournament Entry Ticket") is shown as words.
+ */
+const COUNTERPARTY_ACCOUNT_LABEL: Record<string, string> = {
+  'clubs.chip_treasury': 'Club Treasury',
+  'clubs.promo_balance': 'Club Promo Wallet',
+  'union_wallets.chip_balance': 'Union Bank',
+  'union_wallets.rake_wallet': 'Union Rake Wallet',
+  'union_wallets.promo_wallet': 'Union Promo Wallet',
+  'bbj_pools.main_balance': 'Jackpot Main Pool',
+  'bbj_pools.backup_balance': 'Jackpot Backup Pool',
+  'bbj_pools.promo_balance': 'Jackpot Promo Pool',
+  'spin_bonus_pools.balance': 'Spin Pool',
+  'tournaments.prize_pool': 'Prize Pool',
+  'tournaments.prize_pool+total_rake': 'Prize Pool And Rake',
+};
+
+const STORAGE_PATH = /^[a-z][a-z0-9_]*\.[a-z0-9_+]+$/;
+
+export function counterpartyDetail(label: string | null): string | null {
+  const raw = (label || '').trim();
+  if (!raw) return null;
+  if (COUNTERPARTY_ACCOUNT_LABEL[raw]) return COUNTERPARTY_ACCOUNT_LABEL[raw];
+  if (STORAGE_PATH.test(raw) || raw.includes('_')) return null;
+  return titleCase(raw);
+}
+
 export function counterpartyLabel(leg: StatementLeg): string {
   const type = leg.counterparty_type || '';
   const base =
     COUNTERPARTY_LABEL[type] || type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-  return leg.counterparty_label
-    ? `${base} (${titleCase(leg.counterparty_label)})`
-    : base || 'Unknown';
+  const detail = counterpartyDetail(leg.counterparty_label);
+  if (!base) return detail || 'Unknown';
+  return detail && detail !== base ? `${base} (${detail})` : base;
 }
 
 /** The canonical response keeps exact chip cents. The forward-facing console
@@ -731,7 +763,7 @@ function ChipStatementRows({ scope, clubId, pageSize = 50, title, actorId, viewK
         {legs.length === 0 ? (
           <div className="chip-statement__empty">No Chip Movements Yet.</div>
         ) : (
-          <ol className="chip-statement__legs" aria-label="Chip Movements">
+          <ol className="chip-statement__legs" aria-label="Chip Movements" tabIndex={0}>
             {legs.map((leg) => (
               <li
                 key={`${leg.id}:${leg.direction}`}

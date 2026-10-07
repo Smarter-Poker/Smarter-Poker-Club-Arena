@@ -143,7 +143,9 @@ describe('the scheduler is wired to it', () => {
   });
 
   it('a guarantee refusal is recorded before the owners are notified, in both paths', () => {
-    expect(svc.match(/this\.guaranteeBackoff\.refused\(/g)).toHaveLength(2);
+    // Three refusal sites: the chip spawn, the restart clone and (2026-10-06)
+    // the Diamond Arena door, whose refusal waits on the same backoff.
+    expect(svc.match(/this\.guaranteeBackoff\.refused\(/g)).toHaveLength(3);
     expect(svc.match(/this\.guaranteeBackoff\.shouldAttempt\(/g)).toHaveLength(2);
     const refused = spawn.indexOf('this.guaranteeBackoff.refused(');
     expect(refused).toBeLessThan(spawn.indexOf("rpc('fn_notify_guarantee_bank_short'"));

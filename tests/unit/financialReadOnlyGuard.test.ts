@@ -1,4 +1,5 @@
 import type { Page, Request, Route } from '@playwright/test';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import {
   FINANCIAL_ADMIN_CONSOLE_READ_ONLY_RPC_PATHS,
@@ -115,6 +116,42 @@ describe('financial read-only request classification', () => {
         )
       ).toEqual({ action: 'allow', method: 'POST', path });
     }
+  });
+
+  it('admits the reads every linked club console mounts before its page renders', () => {
+    // Run 37539487040: blocking fn_poker_arena_context rendered "Could Not
+    // Verify Arena Access" in place of Club Disputes. Each entry is STABLE in
+    // pg_proc; fn_club_money_panel since migration 20261007000616.
+    const clubConsoleReads = [
+      '/rest/v1/rpc/fn_poker_arena_context',
+      '/rest/v1/rpc/ca_club_operations_overview',
+      '/rest/v1/rpc/fn_club_money_panel',
+      '/rest/v1/rpc/fn_bbj_pool_for_club',
+      '/rest/v1/rpc/fn_ca_chip_statement_page',
+      // the arena lobby a refused platform route lands on
+      '/rest/v1/rpc/fn_batch_club_realtime_active_counts',
+      '/rest/v1/rpc/fn_batch_club_realtime_member_counts',
+      '/rest/v1/rpc/fn_get_club_entry_flags',
+      '/rest/v1/rpc/get_club_players_playing',
+    ];
+    for (const path of clubConsoleReads) {
+      expect(
+        classifyFinancialReadOnlyRequest(
+          'POST',
+          `https://project.supabase.co${path}`,
+          FINANCIAL_ADMIN_CONSOLE_READ_ONLY_RPC_PATHS,
+          FINANCIAL_ADMIN_QUARANTINED_SHELL_POST_PATHS
+        )
+      ).toEqual({ action: 'allow', method: 'POST', path });
+    }
+  });
+
+  it('declares the club money panel STABLE before the certificate admits it', () => {
+    const migration = readFileSync(
+      'supabase/migrations/20261007000616_the_club_money_panel_is_a_read_and_says_so.sql',
+      'utf8'
+    );
+    expect(migration).toMatch(/ALTER FUNCTION public\.fn_club_money_panel\(uuid\) STABLE;/);
   });
 
   it.each(['POST', 'PUT', 'PATCH', 'DELETE'])('blocks unreviewed REST %s requests', (method) => {

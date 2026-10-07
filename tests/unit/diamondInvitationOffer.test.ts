@@ -24,7 +24,11 @@ vi.mock('@playwright/test', () => ({
   chromium: {},
 }));
 
-import { DIAMOND_DECLINE_CLICK_TIMEOUT_MS } from '../e2e/support/cashLobbyOverlays';
+import {
+  DIAMOND_DECLINE_CLICK_TIMEOUT_MS,
+  prepareCashLobbyActions,
+  registerDiamondInvitationDismissal,
+} from '../e2e/support/cashLobbyOverlays';
 import {
   DIAMOND_ENTRY_READ,
   DIAMOND_SPINS_SMALLEST_ENTRY,
@@ -127,6 +131,33 @@ describe('the Diamond Spins offer is settled before the lobby is measured', () =
     await settleDiamondSpinsOffer(declined.page, Promise.resolve(response(200, OFFER)));
     expect(declined.removeLocatorHandler).toHaveBeenCalledTimes(1);
     expect(declined.click).not.toHaveBeenCalled();
+  });
+
+  it('retains an original handler failure when retirement sees the invitation already hidden', async () => {
+    const intercepted = new Error('locator.click: another layer intercepts pointer events');
+    const click = vi.fn().mockRejectedValue(intercepted);
+    const notNow = { click, evaluate: vi.fn(async () => null) };
+    const prompt = { getByRole: vi.fn(() => notNow), isVisible: vi.fn(async () => false) };
+    let handler: () => Promise<void> = async () => undefined;
+    const ownedPage = {
+      getByRole: vi.fn(() => prompt),
+      addLocatorHandler: vi.fn(async (_locator: unknown, callback: () => Promise<void>) => {
+        handler = callback;
+      }),
+      removeLocatorHandler: vi.fn(async () => undefined),
+    } as unknown as Page;
+    const failures: unknown[] = [];
+    await registerDiamondInvitationDismissal(ownedPage, {
+      onFailure: (error) => failures.push(error),
+    });
+    await handler();
+    expect(failures).toHaveLength(1);
+    await expect(
+      prepareCashLobbyActions(ownedPage, { retainInvitationHandler: false })
+    ).rejects.toBe(failures[0]);
+    expect((failures[0] as Error).cause).toBe(intercepted);
+    expect(prompt.isVisible).not.toHaveBeenCalled();
+    expect(click).toHaveBeenCalledTimes(1);
   });
 
   it('is wired into the live lobby before any measurement', () => {

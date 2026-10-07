@@ -38,6 +38,7 @@ import {
   horseRebuyAmount,
   rebuyStopLossReached,
 } from '../services/HorseRebuyPolicy.js';
+import { buildArrivalInput, greetArrival } from '../services/HorseTableTalk.js';
 import type { SeatPlayer, GameVariant, HandConfig, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { readDiamondCashRakeSchedule } from '../services/supabase/diamondCashRakeSettings.js';
@@ -293,6 +294,19 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               starting_stack: p.stack ?? 0,
               timestamp: Date.now(),
             });
+            // TABLE TALK (Phase 10, 2026-10-06): a horse seated ten hands or
+            // more may greet the arrival, human or horse alike. The module
+            // decides who and whether (gate, cadence, claim); the loop never
+            // waits for it. handCount is the last hand this table dealt.
+            void greetArrival(
+              buildArrivalInput(
+                p,
+                this.seatedPlayers,
+                this.tableInfo,
+                this.handCount,
+                this.isTournamentTable()
+              )
+            );
           }
         }
         // Phase X5 (2026-04-29) — online_count broadcast every hand-start so
@@ -982,6 +996,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             this.stopIfClusterTableClosed()
           );
           if (!this.lifecycleCanMutate()) return;
+          // The freshly adopted idle roster must also replace the hub's last
+          // hand snapshot. Otherwise a late subscriber sees departed chairs
+          // even though GET /state and the native roster are already empty.
+          await this.broadcastCurrentState();
           // A completed short-handed sweep is real progress just like the
           // startup waiting sweep. Stamp after all awaited idle work so a
           // hung read or move remains visible to the existing watchdog.

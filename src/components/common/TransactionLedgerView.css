@@ -128,3 +128,9 @@
     text-align: right;
   }
 }
+
+/* The list scrolls and takes focus so a keyboard can reach every row. */
+.tlv-list:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: 2px;
+}

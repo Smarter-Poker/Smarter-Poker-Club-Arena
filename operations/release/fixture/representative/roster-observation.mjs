@@ -1,0 +1,7 @@
+import assert from 'node:assert/strict';
+export function validateObservedRoster({next,previous,before,after,tableId,ownId}){
+ const chairs=after.seats.filter(s=>s.table_id===tableId),oldChairs=before.seats.filter(s=>s.table_id===tableId);let historical=false;
+ for(const p of next.players){const registration=after.players.find(x=>x.user_id===p.user_id);assert.ok(registration,'unregistered wire player');const present=chairs.some(s=>s.user_id===p.user_id&&s.seat_number===p.seat);const eliminated=Number(p.stack)===0&&registration.status==='eliminated';const prior=previous&&next.hand_number>=previous.hand_number&&previous.players.some(x=>x.user_id===p.user_id&&x.seat===p.seat)&&oldChairs.some(s=>s.user_id===p.user_id&&s.seat_number===p.seat&&s.left_at===null&&Number(s.stack)>0);assert.ok(present||eliminated||prior,'wire player lacks actual occupancy');if(!present&&!eliminated)historical=true;}
+ for(const old of previous?.players??[]){if(next.players.some(p=>p.user_id===old.user_id))continue;const p=after.players.find(p=>p.user_id===old.user_id);assert.ok(p&&(p.status==='eliminated'||(p.table_id!==tableId&&after.seats.some(s=>s.user_id===p.user_id&&s.table_id===p.table_id))),'missing player lacks elimination/relocation');}
+ const p=after.players.find(p=>p.user_id===ownId),own=chairs.find(s=>s.user_id===ownId);return {historicalFrame:historical,mayAct:!!own&&p?.status==='playing'&&p.table_id===tableId&&p.seat_number===own.seat_number&&Number(own.stack)>0,ownOccupancyId:own?.occupancy_id??null};
+}

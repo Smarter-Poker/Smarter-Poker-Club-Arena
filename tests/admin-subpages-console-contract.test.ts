@@ -67,6 +67,9 @@ describe('financial admin subpages keep the Club Arena console contract', () => 
     );
     expect(page).toContain('title={ledgerTitle}');
     expect(page).toContain('aria-label={ledgerTitle}');
+    // One region carries the ledger's name: the console, never the list inside it.
+    expect(page.match(/ledgerTitle\}/g)?.length).toBe(2);
+    expect(page).not.toMatch(/<TransactionLedgerView[^>]*title=\{ledgerTitle\}/);
     expect(page).toContain('className={styles.backButton}');
     expect(page).not.toContain('plates={{ secondary');
     expect(page).not.toMatch(/style=\{\{/);

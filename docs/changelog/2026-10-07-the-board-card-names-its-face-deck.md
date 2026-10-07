@@ -76,3 +76,39 @@ In run 37539487040 two were missing:
   production capacity defect outside this change; it is recorded here and in
   the PR so it has a reader. A Post-Deploy E2E run whose browser suites do not
   overlap that stall is the one that can certify Phase 1.
+
+## Follow-up (same day): an unreadable card claims no deck, and teardown reports the journey's own failure
+
+- `CardImage`'s unreadable tile no longer carries `data-face-deck`. It paints
+  no face-deck finish (`CardImage.css` excludes `--unreadable`), so once
+  felt cards started stamping their table's deck, the tile would have
+  claimed one anyway, and the certificate's per-card deck check could have
+  passed over a board of "?". Only a real face names a deck now. This is
+  pinned in `tests/unit/faceDeck.test.tsx`.
+- Post-Deploy run 37556137203 tested production `5c8ae8d9b5`, the commit
+  before #6323, so its spec still had the string board. It reported only
+  `route.fetch: Target page, context or browser has been closed` from the
+  profiles route (spec line 370), and the error context still showed three
+  "?" cards. Playwright gave the error of a route callback still in flight
+  when `finally` closed the contexts instead of the journey's real failure.
+  The spec now calls `unrouteAll({ behavior: 'ignoreErrors' })` on both
+  contexts before closing them, so the journey verdict is the one reported.
+  No assertion changed.
+
+## Second follow-up: the release window can read a release published after checkout
+
+Post-Deploy run 37559264622 tested production `68fdeb670c`, which contains
+#6323. Coverage passed:
+
+    All three required Phase 1 customization journeys passed exactly once on their first attempt.
+
+The Phase 1 verdict was still red, because the release-window classifier
+failed with `Production SHA f681634a08... does not resolve to a trusted
+repository commit`. Production had moved forward during the run to a later
+commit on protected main, and the job's checkout predated it. The workflow
+says such a move is a NON-VERDICT ("superseded"), not a defect, but the
+classifier never had the commit to prove it. Both
+`Classify the release window` steps in `post-deploy-e2e.yml` now fetch the
+closing SHA from origin before they classify. A SHA that origin does not
+have still fails closed. This is pinned in
+`tests/unit/postDeployE2eHonestyLaw.test.ts` for both lanes.

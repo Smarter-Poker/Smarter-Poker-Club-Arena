@@ -79,6 +79,16 @@ vi.mock('../../src/lib/supabase', () => ({
 
 import SettlementHistoryPage from '../../src/pages/SettlementHistoryPage';
 
+// The console names a cycle by its split week number, never by period_id, so
+// each fixture's label maps to a distinct "Period N" the assertions can find.
+const PERIOD_NUMBER: Record<string, number> = {
+  'Current Week': 11,
+  'Previous Week': 12,
+  'Broken Week': 13,
+  'Wrong Club Week': 14,
+  'First Account Week': 15,
+};
+
 const cycle = (id: string, period: string, clubId = m.clubId) => ({
   id,
   club_id: clubId,
@@ -86,7 +96,7 @@ const cycle = (id: string, period: string, clubId = m.clubId) => ({
   invoice_type: 'union_to_club',
   gross_amount: 100,
   net_amount: 10,
-  breakdown: { union_hold_amount: 10, club_retained: 90 },
+  breakdown: { union_hold_amount: 10, club_retained: 90, period_number: PERIOD_NUMBER[period] },
   status: 'paid',
   created_at: '2026-10-03T12:00:00Z',
 });
@@ -123,7 +133,7 @@ describe('SettlementHistoryPage request scope', () => {
         error: null,
       });
     });
-    expect(await screen.findByText(/Current Week/)).toBeTruthy();
+    expect(await screen.findByText(/Period 11\b/)).toBeTruthy();
 
     await act(async () => {
       m.reads[0].resolve({
@@ -137,7 +147,7 @@ describe('SettlementHistoryPage request scope', () => {
         error: null,
       });
     });
-    expect(screen.queryByText(/Previous Week/)).toBeNull();
+    expect(screen.queryByText(/Period 12\b/)).toBeNull();
     expect(m.reads[0].filters).toContainEqual(['club_id', '11111111-1111-4111-8111-111111111111']);
     expect(m.reads[1].filters).toContainEqual(['club_id', '22222222-2222-4222-8222-222222222222']);
     expect(m.reads[1].filters).toContainEqual(['breakdown->>union_hold_amount:is', null]);
@@ -167,7 +177,7 @@ describe('SettlementHistoryPage request scope', () => {
       'The Settlement History Could Not Be Loaded'
     );
     expect(screen.queryByText('Completed')).toBeNull();
-    expect(screen.queryByText(/Broken Week/)).toBeNull();
+    expect(screen.queryByText(/Period 13\b/)).toBeNull();
   });
 
   it('refuses a non-conserving settlement split instead of publishing false net revenue', async () => {
@@ -218,7 +228,7 @@ describe('SettlementHistoryPage request scope', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'The Settlement History Could Not Be Loaded'
     );
-    expect(screen.queryByText(/Wrong Club Week/)).toBeNull();
+    expect(screen.queryByText(/Period 14\b/)).toBeNull();
   });
 
   it('removes the prior account history before a same-club scope recheck completes', async () => {
@@ -234,7 +244,7 @@ describe('SettlementHistoryPage request scope', () => {
         error: null,
       });
     });
-    expect(await screen.findByText(/First Account Week/)).toBeTruthy();
+    expect(await screen.findByText(/Period 15\b/)).toBeTruthy();
 
     m.viewerId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
     view.rerender(
@@ -243,7 +253,7 @@ describe('SettlementHistoryPage request scope', () => {
       </MemoryRouter>
     );
 
-    expect(screen.queryByText(/First Account Week/)).toBeNull();
+    expect(screen.queryByText(/Period 15\b/)).toBeNull();
     expect(screen.getAllByText('Checking Your Club Finance Access.')).not.toHaveLength(0);
     expect(m.reads).toHaveLength(1);
   });

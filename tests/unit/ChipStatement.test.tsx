@@ -330,4 +330,37 @@ describe('ChipStatement', () => {
       )
     ).toBe('The Club (Deep Stack)');
   });
+
+  it('names a storage path by its account and never prints a table or column name', () => {
+    // Production chip_ledger labels are storage paths: clubs.chip_treasury
+    // rendered as "The Club (Clubs.Chip_Treasury)" on the Treasury Statement.
+    expect(
+      counterpartyLabel(
+        leg({ counterparty_type: 'club_treasury', counterparty_label: 'clubs.chip_treasury' })
+      )
+    ).toBe('The Club (Club Treasury)');
+    expect(
+      counterpartyLabel(
+        leg({ counterparty_type: 'bbj_pool', counterparty_label: 'bbj_pools.main_balance' })
+      )
+    ).toBe('The Jackpot (Jackpot Main Pool)');
+    const unknown = counterpartyLabel(
+      leg({ counterparty_type: 'club_treasury', counterparty_label: 'some_table.some_column' })
+    );
+    expect(unknown).toBe('The Club');
+    expect(
+      counterpartyLabel(
+        leg({ counterparty_type: 'prize_liability', counterparty_label: 'tournament entry ticket' })
+      )
+    ).toBe('A Prize Pool (Tournament Entry Ticket)');
+    for (const label of [
+      'union_wallets.rake_wallet',
+      'tournaments.prize_pool+total_rake',
+      'spin_bonus_pools.balance',
+    ]) {
+      expect(
+        counterpartyLabel(leg({ counterparty_type: 'union_wallet', counterparty_label: label }))
+      ).not.toMatch(/_|\./);
+    }
+  });
 });

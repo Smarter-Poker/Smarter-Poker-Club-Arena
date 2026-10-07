@@ -632,7 +632,14 @@ export class HorseDecisionWorkerRuntime {
     this.admitPhase11Authority();
     this.admitPhase12Authority();
     this.admitPhase13Authority();
-    this.readyPromise = this.deps.startServices();
+    // The admitted state of every authority is counted only once the owned
+    // services have started: telemetry is armed by startServices, and a count
+    // taken before that is silently dropped (no phaseN_authority_worker_*
+    // counter had ever reached horse_brain_telemetry before this).
+    this.readyPromise = this.deps.startServices().then((readiness) => {
+      this.noteAuthorityAdmissions();
+      return readiness;
+    });
     void this.readyPromise
       .then((readiness) => this.send({ type: 'READY', ...readiness }))
       .catch((error) => {
@@ -1617,6 +1624,25 @@ export class HorseDecisionWorkerRuntime {
     }
   }
 
+  /**
+   * One count per admitted authority holder, named by phase, variant and the
+   * holder's state when the worker became ready (for example
+   * `phase13_authority_worker_nlh_unselected`). Called after startServices has
+   * armed telemetry, so the counts reach horse_brain_telemetry.
+   */
+  private noteAuthorityAdmissions(): void {
+    this.deps.noteFeature(`phase8_authority_worker_${this.phase8Authority.currentState()}`);
+    this.deps.noteFeature(`phase10_authority_worker_${this.phase10Authority.currentState()}`);
+    for (const [variant, holder] of Object.entries(this.phase11Authority))
+      this.deps.noteFeature(`phase11_authority_worker_${variant}_${holder.currentState()}`);
+    for (const [variant, holder] of Object.entries(this.phase12Authority))
+      this.deps.noteFeature(`phase12_authority_worker_${variant}_${holder.currentState()}`);
+    for (const variant of HORSE_PHASE13_VARIANTS)
+      this.deps.noteFeature(
+        `phase13_authority_worker_${variant}_${this.phase13Authority[variant].currentState()}`
+      );
+  }
+
   private admitPhase8Authority(): void {
     if (this.phase8AuthorityAdmitted) return;
     this.phase8AuthorityAdmitted = true;
@@ -1631,7 +1657,6 @@ export class HorseDecisionWorkerRuntime {
       admission = { status: 'refused', reason: 'unreadable_evidence', transient: true };
     }
     this.phase8Authority.apply(admission);
-    noteFire(`phase8_authority_worker_${this.phase8Authority.currentState()}`);
   }
 
   /** A tripped safety sentinel is an explicit local withdrawal. */
@@ -1682,7 +1707,6 @@ export class HorseDecisionWorkerRuntime {
       admission = { status: 'refused', reason: 'unreadable_evidence', transient: true };
     }
     this.phase10Authority.apply(admission);
-    noteFire(`phase10_authority_worker_${this.phase10Authority.currentState()}`);
   }
 
   /**
@@ -1728,7 +1752,6 @@ export class HorseDecisionWorkerRuntime {
       }
       const holder = this.phase11Authority[variant];
       holder.apply(admission);
-      noteFire(`phase11_authority_worker_${variant}_${holder.currentState()}`);
     }
   }
 
@@ -1793,7 +1816,6 @@ export class HorseDecisionWorkerRuntime {
       }
       const holder = this.phase12Authority[variant];
       holder.apply(admission);
-      noteFire(`phase12_authority_worker_${variant}_${holder.currentState()}`);
     }
   }
 
@@ -1863,7 +1885,6 @@ export class HorseDecisionWorkerRuntime {
       }
       const holder = this.phase13Authority[variant];
       holder.apply(admission);
-      noteFire(`phase13_authority_worker_${variant}_${holder.currentState()}`);
     }
   }
 
@@ -2279,7 +2300,8 @@ export class HorseDecisionWorkerRuntime {
     let request = received;
     if (Object.hasOwn(received, 'acceptedActorRoster')) {
       if (!acceptedRosterBindsToHand(received)) {
-        const { acceptedActorRoster: _refused, ...rest } = received;
+        const rest: ObserveCompletedHandRequest = { ...received };
+        delete rest.acceptedActorRoster;
         request = rest;
         this.deps.noteFeature('phase14_accepted_roster_refused');
       }

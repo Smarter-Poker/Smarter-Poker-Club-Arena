@@ -280,6 +280,16 @@ describe('a wallet journal row moves the wallet', () => {
     expect(flat).toContain('diamond_cash_rake_not_retired_from_players');
   });
 
+  it('the register attribution carries only journal rows that moved the wallet', () => {
+    // 20261007122947: a journal_backfill row (the cash rake corrections among
+    // them) moves no balance, so carrying it put 8 chains off by exactly its sum.
+    const attr = latestDefinition('fn_ca_mint_wallet_attribution');
+    expect(attr, 'fn_ca_mint_wallet_attribution is defined in a migration').toBeDefined();
+    const flat = attr!.body.replace(/\s+/g, ' ');
+    expect(flat).toContain("COALESCE(t.source, '') <> 'journal_backfill'");
+    expect(flat).toContain('fn_ca_diamond_journal_origin(');
+  });
+
   it('the cash rake settlement changes no balance, corrects row for row, and stays out of the register', () => {
     const file = '20261007112808_the_cash_rake_journal_rows_are_settled.sql';
     expect(readdirSync(MIG_DIR)).toContain(file);

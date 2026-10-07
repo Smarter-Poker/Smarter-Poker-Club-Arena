@@ -3,7 +3,13 @@ import { ServerTableEngine } from './ServerTableEngine.js';
 import * as database from '../services/supabase.js';
 
 vi.mock('../services/supabase/client.js', () => ({
-  supabase: { from: vi.fn(), rpc: vi.fn() },
+  supabase: {
+    from: vi.fn(),
+    rpc: vi.fn(async (name: string) => {
+      if (name === 'fn_ca_get_table_operator_hold')
+        return { data: { paused: false, version: 0, command_id: null }, error: null };
+    }),
+  },
   maintenanceSupabase: {},
 }));
 afterEach(() => vi.restoreAllMocks());

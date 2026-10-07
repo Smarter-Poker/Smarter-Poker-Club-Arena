@@ -9,7 +9,11 @@ const data = vi.hoisted(() => ({
 }));
 vi.mock('../services/supabase/client.js', () => ({
   supabase: {
-    rpc: data.rpc,
+    rpc: (name: string, ...args: unknown[]) => {
+      if (name === 'fn_ca_get_table_operator_hold')
+        return { data: { paused: false, version: 0, command_id: null }, error: null };
+      return data.rpc(name, ...args);
+    },
     from: (tableName: string) =>
       tableName === 'hand_history'
         ? {

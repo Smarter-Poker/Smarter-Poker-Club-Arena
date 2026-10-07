@@ -340,8 +340,11 @@ describe('completed idle roster adoption reaches reconnecting subscribers', () =
       };
       engine.running = true;
       await engine.dealingLoop();
-      expect(connectedFrames.map((frame) => frame.type)).toEqual(['SNAPSHOT', 'DELTA']);
-      const delta = connectedFrames[1];
+      // Named roster/phase events have their own sequence; they remain
+      // delivered and must not be confused with the public-state counter.
+      const stateFrames = connectedFrames.filter((frame) => frame.type !== 'EVENT');
+      expect(stateFrames.map((frame) => frame.type)).toEqual(['SNAPSHOT', 'DELTA']);
+      const delta = stateFrames[1];
       expect(delta.prev).toBe(1);
       expect(delta.seq).toBe(2);
       const applied = jsonPatch.applyPatch(

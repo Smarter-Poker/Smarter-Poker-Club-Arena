@@ -454,13 +454,16 @@ test.describe('Financial Admin production console certificate', () => {
   test('fails closed on every directly linked platform-only console', async ({
     page,
   }, testInfo) => {
-    const arenaRoot = expectedUrl('', testInfo);
+    // A refused platform route lands on the router's root, which is its
+    // basename WITHOUT a trailing slash (src/lib/appBase.ts ROUTER_BASENAME,
+    // '/hub/club-arena'): <Navigate to="/"> resolves to the basename itself.
+    // The configured base URL's '/hub/club-arena/' is the same lobby, but it is
+    // not the URL the guard writes, so pinning it could never pass.
+    const arenaRoot = expectedUrl('', testInfo).pathname.replace(/\/$/, '');
     for (const route of ['diamond-staff-desk', 'financial-health'] as const) {
       await test.step(route, async () => {
         await page.goto(route, { waitUntil: 'domcontentloaded' });
-        await expect
-          .poll(() => new URL(page.url()).pathname, { timeout: 60_000 })
-          .toBe(arenaRoot.pathname);
+        await expect.poll(() => new URL(page.url()).pathname, { timeout: 60_000 }).toBe(arenaRoot);
         await page.evaluate(() => window.stop());
         await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/);
         await expect(

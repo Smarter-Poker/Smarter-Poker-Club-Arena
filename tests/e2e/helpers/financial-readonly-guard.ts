@@ -66,6 +66,14 @@ export const FINANCIAL_ADMIN_CONSOLE_READ_ONLY_RPC_PATHS = Object.freeze([
   '/rest/v1/rpc/fn_club_money_panel',
   '/rest/v1/rpc/fn_bbj_pool_for_club',
   '/rest/v1/rpc/fn_ca_chip_statement_page',
+  // Diamond Staff Desk and Financial Health fail closed to the arena lobby
+  // (PlatformStaffGuard -> <Navigate to="/">), and the lobby mounts these
+  // reads before the certificate can stop the page. All STABLE, no DML
+  // (pg_proc, 2026-10-07).
+  '/rest/v1/rpc/fn_batch_club_realtime_active_counts',
+  '/rest/v1/rpc/fn_batch_club_realtime_member_counts',
+  '/rest/v1/rpc/fn_get_club_entry_flags',
+  '/rest/v1/rpc/get_club_players_playing',
 ] as const);
 
 export type FinancialReadOnlyAction = 'allow' | 'ignore' | 'quarantine' | 'block';

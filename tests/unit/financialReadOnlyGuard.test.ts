@@ -97,6 +97,11 @@ describe('financial read-only request classification', () => {
       '/rest/v1/rpc/fn_club_money_panel',
       '/rest/v1/rpc/fn_bbj_pool_for_club',
       '/rest/v1/rpc/fn_ca_chip_statement_page',
+      // the arena lobby a refused platform route lands on
+      '/rest/v1/rpc/fn_batch_club_realtime_active_counts',
+      '/rest/v1/rpc/fn_batch_club_realtime_member_counts',
+      '/rest/v1/rpc/fn_get_club_entry_flags',
+      '/rest/v1/rpc/get_club_players_playing',
     ];
     for (const path of clubConsoleReads) {
       expect(

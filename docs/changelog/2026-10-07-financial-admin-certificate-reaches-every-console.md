@@ -85,6 +85,19 @@ production data would have hit:
   SHARK CLUB's one cycle). The parser now carries `breakdown.period_number`
   and the console prints "Period 1"; the UUID stays identity only.
 
+Test 4 (platform-only routes fail closed) had two certificate faults of its
+own, found the same way:
+
+- **The pinned landing path could never match.** `PlatformStaffGuard` writes
+  `<Navigate to="/">`, which React Router resolves to the basename itself,
+  `/hub/club-arena` (`src/lib/appBase.ts`). The spec pinned the configured base
+  URL, `/hub/club-arena/`. Same lobby, different string; the pin now names the
+  router's root, with the reason written beside it.
+- **The lobby it lands on reads four more RPCs** before `window.stop()`:
+  `fn_batch_club_realtime_active_counts`, `fn_batch_club_realtime_member_counts`,
+  `fn_get_club_entry_flags`, `get_club_players_playing`. All STABLE, no DML;
+  allowlisted.
+
 After these, all seven consoles and the hub pass every check in that harness,
 and the only RPC POSTs any of them make are the ones on the allowlist.
 

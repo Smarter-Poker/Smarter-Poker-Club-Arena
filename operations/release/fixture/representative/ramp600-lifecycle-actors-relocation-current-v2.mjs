@@ -36,7 +36,11 @@ export async function runTournamentActors({ tournamentId, users, session, anonKe
     const after=await read();
     assert.ok(a.boundary,'board closed without connected hand boundary');
     const settledHand=await committed(a.tableId,a.boundary.handNumber);
-    const transition=validateBoardTransition({before:a.boardWitness,after,tableId:a.tableId,boundary:a.boundary,lastGameplay:a.lastGameplay,teardown,settledHand});
+    const input={before:a.boardWitness,after,tableId:a.tableId,boundary:a.boundary,lastGameplay:a.lastGameplay,teardown,settledHand};
+    let transition;try{transition=validateBoardTransition(input);}catch(error){
+      (result.boardEndRefusals??=[]).push({...input,actorId:a.user.id,observedAt:new Date().toISOString(),reason:error.message});
+      try{await persist();}catch(persistenceError){throw new AggregateError([error,persistenceError],'Board ending refusal evidence could not be retained',{cause:error});}throw error;
+    }
     result.transitions.push({...transition,actorId:a.user.id,tableId:a.tableId,at:new Date().toISOString()}); witness=after;
     if(transition.kind==='completed'){completed=true;result.terminalWitness=after;closing=true;for(const actor of actors){clearTimeout(actor.timer);actor.socket?.close();}return;}
     const assignment=after.seats.find(s=>s.user_id===a.user.id);

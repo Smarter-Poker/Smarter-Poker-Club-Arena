@@ -158,6 +158,8 @@ if(mode==='play'||mode==='continuous'){
    const handle=await startRampActors({tableId:group.tableId,users:group.users,startPaused:true,observeArrival:true,onFailure:markFailure,signal:control.signal,checkpoint:operation=>append(`ramp-${size}-actions.jsonl`,{group:group.index,...operation})});cash.push({group,handle});
   });
   const activationDeadline=Date.now()+20000;
+  result.activationDeadlineMs=activationDeadline;
+  append(`ramp-${size}-attempt${state.attempt??1}-activation.jsonl`,{observedAt:new Date().toISOString(),activationDeadlineMs:activationDeadline,startupBudgetMs:20000});
   // Complete each final tournament registration and attach actual actors promptly.
   await admitIndependentGroups(state.groups.filter(g=>g.kind!=='cash'),async group=>{
    if(failure)throw failure;assert.ok(Date.now()<activationDeadline,'cohort admission budget exceeded');

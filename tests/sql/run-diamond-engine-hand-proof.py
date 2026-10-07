@@ -106,6 +106,37 @@ def literal(value: str) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
+def expected_rake_shares(elements: list, rake_amount: int) -> list:
+    """Independent whole-Diamond floor/remainder oracle; no horse exemption.
+
+    A positive contribution can correctly receive zero when the indivisible
+    remainder belongs to another player. Only positive shares create rows.
+    """
+    if isinstance(rake_amount, bool) or int(rake_amount) != rake_amount or rake_amount < 0:
+        raise ValueError('Whole nonnegative rake required')
+    contributions = {}
+    for element in elements:
+        uid, amount = element['user_id'], element['contributed']
+        if uid in contributions or isinstance(amount, bool) or int(amount) != amount or amount < 0:
+            raise ValueError('Unique players and whole nonnegative contributions required')
+        contributions[uid] = int(amount)
+    pot = sum(contributions.values())
+    if rake_amount > pot:
+        raise ValueError('Rake cannot exceed contributed pot')
+    if not rake_amount:
+        return []
+    shares = {}
+    remainders = []
+    for uid, amount in contributions.items():
+        if amount:
+            shares[uid], remainder = divmod(int(rake_amount) * amount, pot)
+            remainders.append((remainder, uid))
+    remaining = int(rake_amount) - sum(shares.values())
+    for _, uid in sorted(remainders, key=lambda item: (-item[0], item[1]))[:remaining]:
+        shares[uid] += 1
+    return [{'user_id': uid, 'amount': shares[uid]} for uid in sorted(shares) if shares[uid] > 0]
+
+
 def main() -> int:
     passes = 0
     source = SETTLEMENT.read_text()
@@ -267,7 +298,6 @@ def main() -> int:
                 passes += 1
 
             print('\nEVERY ENGINE HAND THROUGH THE INSTALLED SETTLER:')
-            horse = next(s['user_id'] for s in seats if s['is_horse'])
             cumulative_rake = 0
             raked_with_flop = 0
             unraked_no_flop = 0
@@ -296,11 +326,16 @@ def main() -> int:
                 for e in hand['elements']:
                     check(f"(SELECT stack FROM public.table_seats WHERE id='{e['seat_id']}') = {e['stack']}",
                           f"hand {n}: seat {e['user_id'][-1]} lands on the engine's stack {e['stack']}")
-                horse_el = next((e for e in hand['elements'] if e['user_id'] == horse), None)
-                if horse_el and horse_el['contributed'] > 0 and hand['rake'] > 0:
-                    check(f"EXISTS (SELECT 1 FROM public.ca_diamond_rake_accrual WHERE "
-                          f"hand_number={n} AND user_id='{horse}' AND amount > 0)",
-                          f'hand {n}: the horse is attributed its share of the rake like the people (10.5)')
+                expected_shares = expected_rake_shares(hand['elements'], hand['rake'])
+                actual_shares = json.loads(run(
+                    "SELECT COALESCE(jsonb_agg(jsonb_build_object('user_id',user_id,'amount',amount) "
+                    "ORDER BY user_id),'[]'::jsonb)::text FROM public.ca_diamond_rake_accrual "
+                    f"WHERE table_id='{rake.T_20}' AND hand_number={n} AND kind='rake';",
+                    f'hand {n} exact player rake shares'))
+                if actual_shares != expected_shares:
+                    raise SystemExit(f'hand {n}: exact contributor rake shares differ from independent floor/remainder oracle')
+                print(f'  PASS: hand {n}: exact whole-Diamond contributor shares, including the horse, match (10.5)')
+                passes += 1
                 check("(SELECT difference FROM public.fn_ca_diamond_register_vs_supply()) = 0",
                       f'hand {n}: the Diamond identity closes')
                 if hand['rake'] > 0 and not wrong_rake_refused:

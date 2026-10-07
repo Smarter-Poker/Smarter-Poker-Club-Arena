@@ -27,6 +27,29 @@ destination_role_category() {
   esac
   printf '%s:%s\n' "$state" "$category"
 }
+destination_error_category() {
+  local diagnostic state='unknown' category='unclassified-destination'
+  diagnostic="$(cat)"
+  if [[ "$diagnostic" =~ ERROR:[[:space:]]+([0-9A-Z]{5}): ]]; then state="${BASH_REMATCH[1]}"; fi
+  case "$diagnostic" in
+    *'has no installation script nor update path for version'*|*'has no installation script for version'*) category='extension-version-unavailable' ;;
+    *'extension'*'is not available'*|*'could not open extension control file'*) category='extension-control-unavailable' ;;
+    *'must be loaded via shared_preload_libraries'*|*'must be loaded via shared preload'*) category='extension-preload-required' ;;
+    *'required extension'*'is not installed'*) category='extension-dependency-missing' ;;
+    *'schema'*'does not exist'*) category='schema-missing' ;;
+    *'already exists'*) category='duplicate-destination-object' ;;
+    *'permission denied'*|*'must be superuser'*|*'must be owner'*) category='destination-permission' ;;
+    *'could not access file'*|*'could not load library'*) category='extension-library-unavailable' ;;
+    *'unrecognized configuration parameter'*) category='unsupported-destination-configuration' ;;
+    *'syntax error'*) category='destination-syntax' ;;
+  esac
+  printf '%s:%s\n' "$state" "$category"
+}
+if [[ "${1:-}" == '--classify-destination-error' ]]; then
+  [[ $# == 1 ]] || exit 1
+  destination_error_category
+  exit 0
+fi
 if [[ "${1:-}" == '--prepare-roles' ]]; then
   [[ $# == 2 ]] || exit 1
   prepare_roles "$2"
@@ -128,6 +151,13 @@ source_failure() {
   category="$(source_error_category "$status" < "$log")"
   failure "$reason ($category)"
 }
+destination_failure() {
+  local stage="$1" log="$2" status="$3" category diagnostic line='unknown'
+  category="$(destination_error_category < "$log")"
+  diagnostic="$(cat "$log")"
+  if [[ "$diagnostic" =~ (^|$'\n')psql:\<stdin\>:([0-9]+):[[:space:]]+ERROR: ]]; then line="${BASH_REMATCH[2]}"; fi
+  failure "$stage (client-status=$status;$category;stdin-line=$line)"
+}
 docker pull "$image" >"$scratch/image.log" 2>&1 || failure 'required Supabase PostgreSQL image unavailable'
 # Use the same pg_dump build on source and destination. Source credentials are
 # process environment only; dumps and errors stay private and are never uploaded.
@@ -191,8 +221,8 @@ docker exec "$container" psql -h /tmp -Xq -U "$source_bootstrap" -d template1 -v
   -c "CREATE ROLE $bootstrap SUPERUSER LOGIN;" >"$scratch/bootstrap-create.log" 2>&1 || failure 'isolated qualification role creation failed'
 docker exec -i "$container" psql -h /tmp -Xq -U "$bootstrap" -d template1 -v ON_ERROR_STOP=1 \
   -v VERBOSITY=verbose <"$scratch/roles-restore.sql" >"$scratch/role-restore.log" 2>&1 || failure "exact roles cannot be restored ($(destination_role_category <"$scratch/role-restore.log"))"
-docker exec "$container" psql -h /tmp -Xq -U "$bootstrap" -d template1 -v ON_ERROR_STOP=1 \
-  -c 'DROP DATABASE postgres;' >"$scratch/drop-empty-database.log" 2>&1 || failure 'empty local database preparation failed'
+docker exec "$container" psql -h /tmp -Xq -U "$bootstrap" -d template1 -v ON_ERROR_STOP=1 -v VERBOSITY=verbose \
+  -c 'DROP DATABASE postgres;' >"$scratch/drop-empty-database.log" 2>&1 || destination_failure 'empty local database preparation failed' "$scratch/drop-empty-database.log" "$?"
 docker run --rm -i --entrypoint /usr/lib/postgresql/bin/pg_restore "$image" --list \
   <"$scratch/schema.dump" >"$scratch/archive.list" 2>"$scratch/list-error.log" || failure 'archive ordering unavailable'
 awk '$4 == "DATABASE" {print}' "$scratch/archive.list" >"$scratch/database.list"
@@ -204,12 +234,12 @@ docker cp "$scratch/schemas.list" "$container:/tmp/schemas.list" >/dev/null
 docker cp "$scratch/remaining.list" "$container:/tmp/remaining.list" >/dev/null
 docker exec -i "$container" pg_restore -h /tmp -U "$bootstrap" --dbname=template1 --create \
   --schema-only --exit-on-error --use-list=/tmp/database.list \
-  <"$scratch/schema.dump" >"$scratch/database-restore.log" 2>&1 || failure 'database attributes cannot be restored'
+  <"$scratch/schema.dump" >"$scratch/database-restore.log" 2>&1 || destination_failure 'database attributes cannot be restored' "$scratch/database-restore.log" "$?"
 docker exec "$container" psql -h /tmp -Xq -U "$bootstrap" -d postgres -v ON_ERROR_STOP=1 \
-  -c 'DROP SCHEMA public; DROP EXTENSION plpgsql;' >"$scratch/empty-schema.log" 2>&1 || failure 'empty isolated defaults cannot be prepared'
+  -v VERBOSITY=verbose -c 'DROP SCHEMA public; DROP EXTENSION plpgsql;' >"$scratch/empty-schema.log" 2>&1 || destination_failure 'empty isolated defaults cannot be prepared' "$scratch/empty-schema.log" "$?"
 docker exec -i "$container" pg_restore -h /tmp -U "$bootstrap" --dbname=postgres \
   --schema-only --exit-on-error --use-list=/tmp/schemas.list \
-  <"$scratch/schema.dump" >"$scratch/schemas-restore.log" 2>&1 || failure 'source namespaces cannot be restored'
+  <"$scratch/schema.dump" >"$scratch/schemas-restore.log" 2>&1 || destination_failure 'source namespaces cannot be restored' "$scratch/schemas-restore.log" "$?"
 # Start pg_cron only after the database exists. Otherwise its idle launcher
 # connection can prevent dropping the original empty postgres database.
 docker exec "$container" pg_ctl -D /tmp/leaderboard-qualification-db -m fast -w stop \
@@ -221,13 +251,13 @@ docker exec "$container" pg_ctl -D /tmp/leaderboard-qualification-db \
 # tablespace ownership statements, and is executed exclusively in isolation.
 # Temporary installer privilege is transaction-scoped locally and restored to
 # the original role attribute in that same transaction before any qualification.
-docker exec -i "$container" psql -h /tmp -Xq -U "$bootstrap" -d postgres -v ON_ERROR_STOP=1 \
-  <"$scratch/extensions.sql" >"$scratch/extension-restore.log" 2>&1 || failure 'original-owner extensions or exact versions cannot be restored'
+docker exec -i "$container" psql -h /tmp -Xq -U "$bootstrap" -d postgres -v ON_ERROR_STOP=1 -v VERBOSITY=verbose --file=- \
+  <"$scratch/extensions.sql" >"$scratch/extension-restore.log" 2>&1 || destination_failure 'original-owner extensions or exact versions cannot be restored' "$scratch/extension-restore.log" "$?"
 docker exec -i "$container" pg_restore -h /tmp -U "$bootstrap" --dbname=postgres \
   --schema-only --exit-on-error --use-list=/tmp/remaining.list \
-  <"$scratch/schema.dump" >"$scratch/schema-restore.log" 2>&1 || failure 'schema incompatibility during isolated restore'
-docker exec -i "$container" psql -h /tmp -XAtq -U "$bootstrap" -d postgres -v ON_ERROR_STOP=1 \
-  <"$catalog" >"$scratch/isolated.json" 2>"$scratch/local-error.log" || failure 'isolated catalog readback failed'
+  <"$scratch/schema.dump" >"$scratch/schema-restore.log" 2>&1 || destination_failure 'schema incompatibility during isolated restore' "$scratch/schema-restore.log" "$?"
+docker exec -i "$container" psql -h /tmp -XAtq -U "$bootstrap" -d postgres -v ON_ERROR_STOP=1 -v VERBOSITY=verbose \
+  <"$catalog" >"$scratch/isolated.json" 2>"$scratch/local-error.log" || destination_failure 'isolated catalog readback failed' "$scratch/local-error.log" "$?"
 cmp -s "$scratch/source-before.json" "$scratch/isolated.json" || failure 'isolated catalog differs from current source'
 hash="$(sha256sum "$scratch/isolated.json" | cut -d' ' -f1)"
 cleanup || failure 'explicit cleanup verification failed'

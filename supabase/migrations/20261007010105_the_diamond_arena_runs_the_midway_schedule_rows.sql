@@ -23,6 +23,8 @@
 -- Data only: no DDL, so no schema-cache reload. Deep Stack Society's schedules
 -- are not touched and stay inactive. Runs once: if the arena already has any
 -- schedule this refuses rather than duplicating the line-up.
+--
+-- @live-proof: (SELECT count(*) FROM public.tournament_schedules WHERE club_id = '002c2d27-9584-4e52-835a-bb2be148fc81' AND union_id IS NULL) > 0
 
 BEGIN;
 

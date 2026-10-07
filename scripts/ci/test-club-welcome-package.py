@@ -11,6 +11,7 @@ CLUB_HISTORY_MIGRATION = ROOT / 'supabase/migrations/20261001232445_welcome_club
 REQUEST_ACTIVATION_MIGRATION = ROOT / 'supabase/migrations/20261001232452_welcome_request_activation_runs_last.sql'
 LEDGER_COUNTERPARTY_REPAIR_MIGRATION = ROOT / 'supabase/migrations/20261002002030_welcome_allocations_use_the_declared_opening_clearing_store.sql'
 LEDGER_CATEGORY_REPAIR_MIGRATION = ROOT / 'supabase/migrations/20261002010726_welcome_allocations_use_the_declared_opening_category.sql'
+DIAMOND_WALLET_MIGRATION = ROOT / 'supabase/migrations/20261007030307_the_diamond_arena_does_not_open_a_chip_wallet.sql'
 CURRENT_RESET_MIGRATION = ROOT / 'supabase/migrations/20261002152207_new_clubs_open_complete_and_reset_to_zero.sql'
 INDEXED_RESET_HAND_CHECKS_MIGRATION = ROOT / 'supabase/migrations/20261002165000_welcome_reset_indexed_hand_checks.sql'
 CURRENT_BBJ_PROMO_HISTORY_MIGRATION = ROOT / 'supabase/migrations/20261002172627_welcome_reset_optional_bbj_promo_history.sql'
@@ -56,7 +57,7 @@ results = {'migrations': [
     CONTROLLER_PROVENANCE_REPAIR_MIGRATION.name, SCHEDULE_SPAWN_CLEANUP_MIGRATION.name,
     UNMATERIALIZED_SPAWN_CLEANUP_MIGRATION.name, BOARD_GAME_CLEANUP_MIGRATION.name,
     BOARD_LEASE_CLEANUP_MIGRATION.name, BOARD_ORIGIN_CLEANUP_MIGRATION.name,
-    BOARD_DELETE_PERMIT_MIGRATION.name, CURRENT_RESET_MIGRATION.name,
+    BOARD_DELETE_PERMIT_MIGRATION.name, CURRENT_RESET_MIGRATION.name, DIAMOND_WALLET_MIGRATION.name,
     INDEXED_RESET_HAND_CHECKS_MIGRATION.name, CURRENT_BBJ_PROMO_HISTORY_MIGRATION.name,
     FRESH_BOARD_CLEANUP_MIGRATION.name, POST_RESET_CLEANUP_MIGRATION.name,
     POST_RESET_UUID_ORDER_MIGRATION.name, POST_RESET_ATOMIC_BOARD_MIGRATION.name,
@@ -149,7 +150,7 @@ BEGIN
 END $guard$;
 CREATE EVENT TRIGGER fixture_money_registry_guard ON ddl_command_end
   WHEN TAG IN ('CREATE FUNCTION') EXECUTE FUNCTION fn_fixture_money_registry_guard();
-CREATE TABLE clubs(id uuid PRIMARY KEY,owner_id uuid,name text,is_union boolean DEFAULT false,union_id uuid,
+CREATE TABLE clubs(id uuid PRIMARY KEY,owner_id uuid,name text,asset text DEFAULT 'chips',is_union boolean DEFAULT false,union_id uuid,
  chip_treasury numeric DEFAULT 100000,chip_pool numeric DEFAULT 0,promo_balance numeric DEFAULT 0,
  insurance_balance numeric DEFAULT 0,bbj_enabled boolean DEFAULT false,bbj_rake_enabled boolean DEFAULT false,
  spins_enabled boolean DEFAULT false,spins_preseed_amount numeric DEFAULT 0,spins_wallet_funding text,
@@ -408,6 +409,16 @@ SELECT pg_get_triggerdef(t.oid,true),t.tgenabled
 """)
     run('install-board-delete-permit',BOARD_DELETE_PERMIT_MIGRATION.read_text())
     run('install-current-reset',CURRENT_RESET_MIGRATION.read_text())
+    # The real trigger function is installed by its existing owning migrations.
+    # This isolated child-store guard models the native Diamond no-chip-money
+    # refusal; full acceptance qualification also runs the actual catalog guard.
+    run('diamond-wallet-refusal-guard',"CREATE FUNCTION fn_fixture_no_diamond_chip_wallet() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF EXISTS(SELECT 1 FROM clubs WHERE id=NEW.club_id AND asset='diamonds') THEN RAISE EXCEPTION 'Diamond Arena Has No Chip Money';END IF;RETURN NEW;END $$; CREATE TRIGGER fixture_no_diamond_chip_wallet BEFORE INSERT ON club_wallets FOR EACH ROW EXECUTE FUNCTION fn_fixture_no_diamond_chip_wallet();")
+    run_refusal('diamond-wallet-before-source-fix',"INSERT INTO clubs(id,name,asset) VALUES('30000000-0000-0000-0000-000000000001','Diamond qualification','diamonds');",'Diamond Arena Has No Chip Money')
+    run('install-diamond-wallet-asset-boundary',DIAMOND_WALLET_MIGRATION.read_text())
+    run('diamond-wallet-after-source-fix',"BEGIN;INSERT INTO clubs(id,name,asset) VALUES('30000000-0000-0000-0000-000000000001','Diamond qualification','diamonds');SELECT count(*) FROM club_wallets WHERE club_id='30000000-0000-0000-0000-000000000001';ROLLBACK;",'0')
+    run('chip-wallet-after-source-fix',"BEGIN;INSERT INTO clubs(id,name,asset) VALUES('30000000-0000-0000-0000-000000000002','Chip qualification','chips');SELECT count(*) FROM club_wallets WHERE club_id='30000000-0000-0000-0000-000000000002';ROLLBACK;",'1')
+    run_refusal('diamond-wallet-direct-insert-still-refused',"BEGIN;INSERT INTO clubs(id,name,asset) VALUES('30000000-0000-0000-0000-000000000001','Diamond qualification','diamonds');INSERT INTO club_wallets(club_id) VALUES('30000000-0000-0000-0000-000000000001');COMMIT;",'Diamond Arena Has No Chip Money')
+
     run('install-indexed-reset-hand-checks',INDEXED_RESET_HAND_CHECKS_MIGRATION.read_text())
     run('install-current-bbj-promo-history',CURRENT_BBJ_PROMO_HISTORY_MIGRATION.read_text())
     run('install-fresh-board-cleanup',FRESH_BOARD_CLEANUP_MIGRATION.read_text())

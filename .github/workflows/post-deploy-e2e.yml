@@ -236,6 +236,19 @@ jobs:
     runs-on: ubuntu-latest
     # Serialize only jobs that will really touch the shared production test
     # accounts. Gate-only no-op runs never occupy this lock.
+    #
+    # A "cancelled" client lane is almost always a QUEUED job that never ran,
+    # not a running certificate that was killed. With cancel-in-progress false,
+    # GitHub keeps one running and one pending job per group, and a newer
+    # pending job replaces the older pending one. The replaced job has
+    # runner_id 0 and zero steps, and nothing is lost: the job that does run
+    # reads build-info.json when it starts and re-targets onto that commit
+    # (the `descendant` branch below), so it covers every commit it replaced.
+    # Measured 2026-10-07 04:00-07:25 UTC: all nineteen cancelled client lanes
+    # had runner_id 0 and zero steps, and every job that took the lock
+    # (04:10, 04:49, 05:28, 06:08, 06:41, 07:25) ran to its own verdict.
+    # cancel-in-progress true would instead kill the running certificate on
+    # every merge; see tests/unit/postDeployE2EConcurrency.test.ts.
     concurrency:
       group: post-deploy-e2e-production
       cancel-in-progress: false

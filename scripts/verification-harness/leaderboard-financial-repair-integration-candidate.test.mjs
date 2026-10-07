@@ -1,6 +1,6 @@
 // Local source contracts and shell stubs only; no database/runtime proof.
 import assert from 'node:assert/strict';
-import { readFileSync, mkdtempSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync, rmSync, existsSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
@@ -23,7 +23,7 @@ const modes = [
 test('historical mode prepares every input before original paid bootstrap then all prospective replacements', () => {
   const output = buildFinancialRepairCandidate(source, 'historical-replay');
   let prior = output.indexOf('chmod 600 "$scratch"/repair-*.sql');
-  for (const stage of ['historical-before', 'consolidated', 'historical-after']) {
+  for (const stage of ['historical-before', 'consolidated', 'postimage', 'historical-after']) {
     const position = output.indexOf(`repair_sql '${stage}'`);
     assert.ok(position > prior);
     prior = position;
@@ -121,10 +121,10 @@ test('installation order and transaction owners differ deliberately between mode
       previous = position;
     }
   }
-  ordered(payout, ['consolidated', 'fixture']);
+  ordered(payout, ['consolidated', 'postimage', 'fixture']);
   ordered(compatibility, ['bootstrap', 'capture', 'fixture']);
-  ordered(opening, ['consolidated', 'fixture']);
-  ordered(worker, ['consolidated', 'bootstrap', 'fixture']);
+  ordered(opening, ['consolidated', 'postimage', 'fixture']);
+  ordered(worker, ['consolidated', 'postimage', 'bootstrap', 'fixture']);
   assert.match(
     worker,
     /cat "\$scratch\/repair-authorization.sql" "\$here\/leaderboard-isolated-concurrency-fixture-draft.sql" >"\$scratch\/repair-bootstrap.sql" \|\| failure/
@@ -210,8 +210,74 @@ function scratch() {
       (parent.startsWith('/Volumes/SmarterWork/agent-work/') ||
         (process.env.CI === 'true' && parent === process.env.RUNNER_TEMP))
   );
-  return mkdtempSync(join(parent, 'repair-contract-'));
+  const directory = mkdtempSync(join(parent, 'repair-contract-'));
+  writeFileSync(
+    join(directory, 'leaderboard-consolidated-postimage-candidate.sql'),
+    'BEGIN;\nSELECT 9;\nROLLBACK;\n'
+  );
+  return directory;
 }
+
+test('all six consolidated modes qualify postimage immediately before any fixture and reject absent input', () => {
+  const name = 'leaderboard-consolidated-postimage-candidate.sql';
+  for (const mode of modes) {
+    const output = buildFinancialRepairCandidate(source, mode);
+    if (mode === 'capture-compatibility') {
+      assert.doesNotMatch(output, /repair-postimage|consolidated-postimage/);
+      continue;
+    }
+    assert.match(output, /sha256sum "\$here\/leaderboard-consolidated-postimage-candidate.sql"/);
+    assert.ok(
+      output.includes(
+        'repair_sql \'consolidated\' "$scratch/repair-consolidated.sql"\nrepair_sql \'postimage\' "$scratch/repair-postimage.sql"'
+      )
+    );
+    assert.ok(
+      output.indexOf('cp "$here/' + name + '"') <
+        output.indexOf('chmod 600 "$scratch"/repair-*.sql')
+    );
+    assert.throws(() =>
+      buildFinancialRepairCandidate(source, mode, (input) => {
+        if (input === name) throw new Error('missing');
+        return readRepairInput(input);
+      })
+    );
+  }
+  const output = buildFinancialRepairCandidate(source, 'historical-replay');
+  const prepare = output.slice(
+    output.indexOf('# SET ROLE is scoped'),
+    output.indexOf('repair_sql() {')
+  );
+  const directory = scratch();
+  try {
+    unlinkSync(join(directory, name));
+    writeFileSync(join(directory, 'leaderboard-capture-basis-candidate.sql'), 'BEGIN;\nCOMMIT;\n');
+    writeFileSync(
+      join(directory, 'leaderboard-isolated-authorization-draft.sql'),
+      'BEGIN;\nROLLBACK;\n'
+    );
+    writeFileSync(
+      join(directory, 'leaderboard-isolated-historical-replay-candidate.sql'),
+      'ROLLBACK;\n'
+    );
+    const result = spawnSync(
+      'bash',
+      [
+        '-c',
+        `set -euo pipefail\numask 077\nfailure(){ exit 42; }\nnode(){ printf 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'; }\n${prepare}\nprintf admitted >"$scratch/admitted"`,
+      ],
+      {
+        encoding: 'utf8',
+        timeout: 3000,
+        env: { ...process.env, here: directory, scratch: directory },
+      }
+    );
+    assert.notEqual(result.status, 0);
+    assert.equal(existsSync(join(directory, 'admitted')), false);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
 test('historical missing private input or body extraction failure cannot admit original COMMIT', () => {
   const output = buildFinancialRepairCandidate(source, 'historical-replay');
   const prepare = output.slice(
@@ -432,6 +498,10 @@ test('manual workflow enforces contracts and preserves main-only owned cleanup w
   assert.match(workflow, /timeout-minutes: 20/);
   assert.match(workflow, /leaderboard-financial-repair-integration-candidate.test.mjs/);
   assert.match(workflow, /leaderboard-worker-candidate.test.mjs/);
+  assert.match(
+    workflow,
+    /node --test scripts\/verification-harness\/leaderboard-consolidated-postimage-candidate.test.mjs/
+  );
   assert.match(workflow, /v2-payout\|capture-compatibility\|opening\|worker/);
   assert.match(workflow, /node-version: '22'/);
   assert.match(workflow, /shellcheck "\$candidate"/);

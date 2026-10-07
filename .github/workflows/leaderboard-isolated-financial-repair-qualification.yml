@@ -53,6 +53,7 @@ jobs:
           node --test scripts/verification-harness/leaderboard-capture-payout-fixture-candidate.test.mjs
           node --test scripts/verification-harness/leaderboard-repair-financial-diagnostics.test.mjs
           node --test scripts/verification-harness/leaderboard-consolidated-migration-candidate.test.mjs
+          node --test scripts/verification-harness/leaderboard-consolidated-postimage-candidate.test.mjs
           node --test scripts/verification-harness/leaderboard-financial-repair-integration-candidate.test.mjs scripts/verification-harness/leaderboard-worker-candidate.test.mjs scripts/verification-harness/leaderboard-capture-basis-regression-candidate.test.mjs scripts/verification-harness/leaderboard-promo-payout-candidate.test.mjs scripts/verification-harness/leaderboard-promo-config-candidate.test.mjs scripts/verification-harness/leaderboard-promo-opening-candidate.test.mjs scripts/verification-harness/leaderboard-complete-ranking-candidate.test.mjs scripts/verification-harness/leaderboard-isolated-opening-policy-draft.test.mjs scripts/verification-harness/leaderboard-isolation-startup-profile.test.mjs scripts/verification-harness/leaderboard-isolation-catalog-diagnostic.test.mjs
       - name: Run One Fresh Catalog Guarded Isolated Candidate
         shell: bash

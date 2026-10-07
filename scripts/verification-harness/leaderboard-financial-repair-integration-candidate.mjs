@@ -15,6 +15,7 @@ const opening = 'leaderboard-promo-opening-candidate.mjs';
 const adapter = 'leaderboard-capture-payout-fixture-candidate.mjs';
 const repairDiagnostics = 'leaderboard-repair-financial-diagnostics.mjs';
 const consolidated = 'leaderboard-consolidated-migration-candidate.mjs';
+const postimage = 'leaderboard-consolidated-postimage-candidate.sql';
 const compatibility = 'leaderboard-capture-basis-regression-candidate.sql';
 const openingFixture = 'leaderboard-isolated-opening-policy-draft.sql';
 const workerFixture = 'leaderboard-isolated-worker-regression-candidate.sql';
@@ -37,6 +38,7 @@ const reviewed = Object.freeze({
   [adapter]: 'c42b0620d6c05d69fc5589e3bd8c89f0305186e347a668f3ae9ae9f432812953',
   [repairDiagnostics]: 'd449d4108207a44e665752369aee24bd1a7b0663078274b8a98a3c0e27e9912b',
   [consolidated]: '3142633c836966b32234cb7606d4e5c8d79f11b18fa75017e6d1ef80843e9807',
+  [postimage]: '0212896886873d10c9dc073865f13e544f496e8d38a5e924ab1d3f41e7277f1c',
   [compatibility]: 'a1654508e9a44b849d6ccd67afed6173fe50300488b232e8c028c82ff8f06e6e',
   [openingFixture]: '40ec7d17deda73f27cad1706f44f212288d7781767eabb1c2d05258c3e622047',
   [workerFixture]: '2dada967cdb8bff98c8f8904f3b4d99e0a64eb67eba76a0ff4787236a92d4163',
@@ -157,14 +159,17 @@ function transaction(source, ending) {
 export function buildFinancialRepairCandidate(source, mode, readInput = readRepairInput) {
   assert.equal(hash(source), preflightHash, 'Reviewed maintained preflight changed');
   assert.ok(Object.hasOwn(modes, mode), 'Exactly one reviewed candidate mode required');
-  for (const name of modes[mode]) {
+  const selectedInputs =
+    mode === 'capture-compatibility' ? modes[mode] : [...modes[mode], postimage];
+  for (const name of selectedInputs) {
     const input = readInput(name);
     assert.equal(hash(input), reviewed[name], `Reviewed candidate input changed: ${name}`);
     if (
       name === auth ||
       name === compatibility ||
       name === openingFixture ||
-      name === workerFixture
+      name === workerFixture ||
+      name === postimage
     )
       transaction(input, 'ROLLBACK');
     if (name === capture || name === concurrencyFixture) transaction(input, 'COMMIT');
@@ -189,7 +194,7 @@ export function buildFinancialRepairCandidate(source, mode, readInput = readRepa
     'unset DATABASE_URL PGDATABASE PGOPTIONS\n',
     'unset DATABASE_URL PGDATABASE PGOPTIONS PGHOST PGUSER PGPASSWORD\n'
   );
-  const checks = modes[mode]
+  const checks = selectedInputs
     .map(
       (name) =>
         `[[ "$(sha256sum "$here/${name}" | cut -d' ' -f1)" == '${reviewed[name]}' ]] || failure 'reviewed candidate input changed'`
@@ -313,10 +318,15 @@ cat "$scratch/repair-authorization.sql" "$here/${openingFixture}" >"$scratch/rep
       2,
       'One complete install sequence required'
     );
-    invocation = invocation.replace(splitInstall, invoke('consolidated'));
+    invocation = invocation.replace(
+      splitInstall,
+      [invoke('consolidated'), invoke('postimage')].join('\n')
+    );
     preparation += `\nprintf '%s\\n' 'SET ROLE postgres;' >"$scratch/repair-consolidated.sql" || failure 'consolidated owner preparation failed'
 node "$here/${consolidated}" >>"$scratch/repair-consolidated.sql" || failure 'exact consolidated migration preparation refused'
-printf '%s\\n' 'RESET ROLE;' >>"$scratch/repair-consolidated.sql" || failure 'consolidated owner reset preparation failed'`;
+printf '%s\\n' 'RESET ROLE;' >>"$scratch/repair-consolidated.sql" || failure 'consolidated owner reset preparation failed'
+[[ "$(tail -n 1 "$here/${postimage}")" == 'ROLLBACK;' && "$(grep -c '^ROLLBACK;$' "$here/${postimage}")" == 1 ]] || failure 'postimage terminal boundary changed'
+cp "$here/${postimage}" "$scratch/repair-postimage.sql" || failure 'postimage private input preparation failed'`;
   }
   once(
     cleanup,

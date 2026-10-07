@@ -20,6 +20,14 @@ import {
   publicationDecision,
 } from '../../scripts/ci/client-runtime-retention.mjs';
 
+// Git invokes hooks with repository-selection variables. The isolated fixture
+// process must never inherit the parent's index/worktree/objects selection.
+for (const name of execFileSync('git', ['rev-parse', '--local-env-vars'])
+  .toString()
+  .trim()
+  .split(/\s+/))
+  delete process.env[name];
+
 const scratchParent = process.env.RUNNER_TEMP || process.env.TMPDIR;
 if (
   !scratchParent ||

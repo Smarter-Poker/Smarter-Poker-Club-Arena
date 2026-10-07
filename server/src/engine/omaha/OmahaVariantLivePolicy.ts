@@ -1,4 +1,13 @@
-import { sampleOmahaVariantEquity } from './OmahaVariantSampler.js';
+import {
+  sampleOmahaVariantEquity,
+  type OmahaVariantTerminalShowdowns,
+} from './OmahaVariantSampler.js';
+import {
+  omahaVariantActionEconomics,
+  omahaVariantActionEconomicsIsValid,
+  OMAHA_VARIANT_NET_ACTION_BUDGET_MS,
+  type OmahaVariantActionEconomics,
+} from './OmahaVariantActionEconomics.js';
 import type { HorseDecision, SeatPlayer } from '../../types.js';
 import type { HorseGameStateV2 } from '../HorseLogic.js';
 import { omahaNutStatus } from '../HorseEval.js';
@@ -221,6 +230,14 @@ export interface OmahaVariantReceipt {
   authority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt | null;
   /** P11.3: main-scheduler verdict immediately before acceptance; null in the worker. */
   authorityVerdict?: import('../HorseQualifiedAuthority.js').HorseAuthorityVerdict | null;
+  /** P11-A (audit 2026-10-07): the net chip result of every legal candidate
+   * at a fired PLO5/PLO6/PLO8 river node, priced on the showdowns the policy
+   * already sampled. Diagnostic: nothing reads it to decide. Priced AFTER the
+   * policy has finished, on its own budget, so its cost never reaches
+   * `latencyMs`, the reason or the proposal. Phase 11 receipts only; absent
+   * on retained receipts, on unpriced nodes and on the Phase 12 receipts that
+   * share this type (which carry their own `actionEconomics`). */
+  netActionEconomics?: OmahaVariantActionEconomics;
 }
 const same = (a: HorseDecision, b: HorseDecision) =>
   a.action === b.action && (!['bet', 'raise'].includes(a.action) || a.amount === b.amount);
@@ -708,6 +725,10 @@ export function omahaVariantInputBindingIsValid(value: unknown): value is OmahaV
  * retained receipt without the field claims no binding and is not refused. */
 export function omahaVariantReceiptBindingIsValid(value: unknown): boolean {
   if (!object(value)) return false;
+  return omahaInputBindingIsValid(value) && omahaNetActionBindingIsValid(value);
+}
+
+function omahaInputBindingIsValid(value: Record<string, unknown>): boolean {
   if (!Object.hasOwn(value, 'inputs')) return true;
   if (value.inputs === null) return value.eligible === false;
   return (
@@ -715,6 +736,29 @@ export function omahaVariantReceiptBindingIsValid(value: unknown): boolean {
     omahaVariantInputBindingIsValid(value.inputs) &&
     value.inputs.variant === value.variant &&
     value.inputs.pack.version === value.version
+  );
+}
+
+/**
+ * P11-A (audit 2026-10-07): the net-action field is re-checked against this
+ * running module, not merely carried. An eligible river receipt must declare
+ * its own variant and street and a result the economics validator accepts,
+ * and the `net_action_economics` feature must be present exactly when a
+ * result is available. A receipt without the field claims no economics.
+ */
+function omahaNetActionBindingIsValid(receipt: Record<string, unknown>): boolean {
+  const features = Array.isArray(receipt.features) ? (receipt.features as unknown[]) : [];
+  const tagged = features.includes('net_action_economics');
+  if (!Object.hasOwn(receipt, 'netActionEconomics')) return !tagged;
+  const economics = receipt.netActionEconomics;
+  if (!omahaVariantActionEconomicsIsValid(economics)) return false;
+  const bound = economics as OmahaVariantActionEconomics;
+  return (
+    receipt.eligible === true &&
+    bound.variant === receipt.variant &&
+    bound.street === receipt.street &&
+    receipt.street === 'river' &&
+    tagged === (bound.unavailable === null)
   );
 }
 
@@ -1119,6 +1163,73 @@ export function evaluateOmahaVariantPolicy(
     if (amount < s.minRaiseTo) return call();
     return { action, amount: Math.round(amount * 100) / 100, thinkTime: baseline.thinkTime };
   };
+  /**
+   * P11-A (audit 2026-10-07). The pot-share price below cannot express a side
+   * pot hero is not eligible for, an uncalled-bet refund, the BBJ fee or a
+   * PLO8 quarter, so a fired river node also carries an explicit net chip
+   * result for every legal candidate.
+   *
+   * It runs on the showdowns the sampler ALREADY scored (no extra sample,
+   * card or deck draw) and STRICTLY AFTER `finish`, on its own budget, the
+   * order P12-B proved necessary: `finish` has already fixed the reason, the
+   * proposal, `changed`, `applied` and `latencyMs`, so no cost incurred here
+   * can turn a firing proposal into a `work_budget` fallback. A refused node
+   * is not priced at all, and an unavailable pass is NAMED.
+   *
+   * The wager sizes priced are the controller's minimum and the largest the
+   * pot-limit, stack and controller bounds allow, each in the owner's legal
+   * form; a size the legalizer would turn into another action is not priced.
+   */
+  let terminal: OmahaVariantTerminalShowdowns | null = null;
+  const finishPriced = (reason: string, proposal = baseline) => {
+    const out = finish(reason, proposal);
+    if (!out.receipt.fired || s.stage !== 'river') return out;
+    const economicsStart = now();
+    const wagerAction = s.currentBet > 0 ? 'raise' : 'bet';
+    const sizes: number[] = [];
+    if (
+      s.legalActions!.includes(wagerAction) &&
+      s.minRaiseTo != null &&
+      wagerCap !== null &&
+      wagerCap >= s.minRaiseTo
+    )
+      for (const target of [s.minRaiseTo, Math.floor(wagerCap / chipUnit + 1e-7) * chipUnit]) {
+        const raw: HorseDecision = {
+          action: wagerAction,
+          amount: Math.round(target * 100) / 100,
+          thinkTime: baseline.thinkTime,
+        };
+        const legal = legalForm ? legalForm(raw) : raw;
+        if (legal.action === wagerAction && typeof legal.amount === 'number')
+          sizes.push(legal.amount);
+      }
+    const showdowns = terminal as OmahaVariantTerminalShowdowns | null;
+    const economics = omahaVariantActionEconomics({
+      variant,
+      stage: s.stage,
+      hero,
+      players: seats,
+      opponentIds: showdowns ? showdowns.opponentIds : [],
+      samples: showdowns ? showdowns.samples : [],
+      currentBet: s.currentBet,
+      legalActions: s.legalActions!,
+      minRaiseTo: s.minRaiseTo ?? null,
+      maxRaiseTo: s.maxRaiseTo ?? null,
+      wagerSizes: sizes,
+      chipUnit: s.chipUnit === 1 || s.chipUnit === 0.01 ? s.chipUnit : chipUnit,
+      asset: s.asset === 'diamonds' ? 'diamonds' : 'chips',
+      gameMode: s.gameMode === 'tournament' ? 'tournament' : 'cash',
+      bigBlind: s.bigBlind,
+      dealerSeat: s.dealerSeat!,
+      rakeConfig: rake,
+      bbjConfig: s.bbjConfig ?? null,
+      withinBudget: () => now() - economicsStart < OMAHA_VARIANT_NET_ACTION_BUDGET_MS,
+      now,
+    });
+    out.receipt.netActionEconomics = economics;
+    if (economics.unavailable === null) out.receipt.features.push('net_action_economics');
+    return out;
+  };
   if (s.stage === 'preflop') {
     const bars = omahaVariantEntryBars(variant, {
       position: receipt.position,
@@ -1148,7 +1259,15 @@ export function evaluateOmahaVariantPolicy(
   }
 
   if (!evidence && sampleWhenMissing) {
-    evidence = sampleOmahaVariantEquity(variant, hero, s, () => now() - start < 3);
+    evidence = sampleOmahaVariantEquity(
+      variant,
+      hero,
+      s,
+      () => now() - start < 3,
+      (showdowns) => {
+        terminal = showdowns;
+      }
+    );
     if (evidence) evidence.decisionEquityCeiling = decisionEquityCeiling;
   }
   const made = omahaNutStatus(hero.cards, s.communityCards);
@@ -1275,7 +1394,7 @@ export function evaluateOmahaVariantPolicy(
       (lower !== null && lower > pack.valueEquity + pressure) ||
       (highStrong && !lowPossible && equity !== null && equity > pack.protectionEquity + pressure)
     )
-      return finish('variant_value_bet', wager(spr < 2 ? 1 : 0.66));
+      return finishPriced('variant_value_bet', wager(spr < 2 ? 1 : 0.66));
     if (
       !lowOnly &&
       !quarterRisk &&
@@ -1285,23 +1404,27 @@ export function evaluateOmahaVariantPolicy(
       (nutDraw || nutWrap) &&
       (!pack.splitPot || shape.backupLow)
     )
-      return finish('variant_draw_pressure', wager(0.5));
-    return finish(lowOnly ? 'low_only_protected_check' : 'variant_protected_check', passive());
+      return finishPriced('variant_draw_pressure', wager(0.5));
+    return finishPriced(
+      lowOnly ? 'low_only_protected_check' : 'variant_protected_check',
+      passive()
+    );
   }
-  if (upper !== null && upper < price + pressure) return finish('variant_price_fold', passive());
+  if (upper !== null && upper < price + pressure)
+    return finishPriced('variant_price_fold', passive());
   if (scoopStructure && (s.stage === 'river' || spr <= 2))
-    return finish('variant_scoop_raise', wager(1));
+    return finishPriced('variant_scoop_raise', wager(1));
   // Low-only strength must not turn a quarter/sixth into an expensive raise.
   // The actual combined, per-pot distribution still decides whether to call.
   if (quarterRisk || sixthRisk || lowOnly) {
     if (equity !== null)
-      return finish(
+      return finishPriced(
         equity >= price + pressure ? 'split_price_call' : 'split_price_fold',
         equity >= price + pressure ? call() : passive()
       );
     if (facts.nutLow && !counterfeit && price <= 0.125 && receipt.role !== 'facing_raise')
-      return finish('unmeasured_nut_low_small_call', call());
-    return finish('split_equity_unavailable', passive());
+      return finishPriced('unmeasured_nut_low_small_call', call());
+    return finishPriced('split_equity_unavailable', passive());
   }
   if (
     dominatedDraw &&
@@ -1311,18 +1434,18 @@ export function evaluateOmahaVariantPolicy(
     price > 0.2 &&
     (lower === null || lower < price + 0.08)
   )
-    return finish('variant_dominated_draw_fold', passive());
+    return finishPriced('variant_dominated_draw_fold', passive());
   if (
     lower !== null &&
     lower > Math.max(price + pressure, pack.valueEquity + pressure) &&
     receipt.role !== 'call_off'
   )
-    return finish('variant_value_raise', wager(0.66));
+    return finishPriced('variant_value_raise', wager(0.66));
   if (
     (equity !== null && equity >= price + pressure) ||
     (highNuts && !lowPossible) ||
     (!e && !lowPossible && price <= 0.2 && (highStrong || nutDraw || nutWrap))
   )
-    return finish('variant_price_call', call());
-  return finish(e ? 'variant_bluff_catcher_fold' : 'variant_uncalibrated_texture', passive());
+    return finishPriced('variant_price_call', call());
+  return finishPriced(e ? 'variant_bluff_catcher_fold' : 'variant_uncalibrated_texture', passive());
 }

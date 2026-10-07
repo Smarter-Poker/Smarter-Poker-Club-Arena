@@ -88,7 +88,8 @@ describe('the certified V31 release boundary', () => {
     expect(CONTEXT_COMPACTION.indexOf('node_context,facing_size_bucket}')).toBeLessThan(
       CONTEXT_COMPACTION.indexOf('fn_gto_v31_source_artifact_checksum(')
     );
-    expect(CONTEXT_COMPACTION.match(/jsonb_to_recordset\(v_source_nodes\)/g)).toHaveLength(3);
+    const functionBody = CONTEXT_COMPACTION.split('AS $fn$')[1].split('$fn$;')[0];
+    expect(functionBody.match(/jsonb_to_recordset\(v_source_nodes\)/g)).toHaveLength(3);
     expect(CONTEXT_COMPACTION).toContain('rank-disjoint train and holdout sources');
     expect(CONTEXT_COMPACTION).toContain('fn_gto_v31_cell_payload_valid(v_cell)');
     expect(CONTEXT_COMPACTION).toContain('source_row_id uuid');

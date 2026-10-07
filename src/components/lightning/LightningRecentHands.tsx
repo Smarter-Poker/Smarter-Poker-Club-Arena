@@ -120,7 +120,9 @@ export default function LightningRecentHands({
                   <span className="lightning-recent__meta">
                     {h.position ? h.position.toUpperCase() : '-'} · Pot {lightningChipsText(h.pot)}
                     {' · '}
-                    {lightningChipsText(h.stackBefore)} to {lightningChipsText(h.stackAfter)}
+                    {lightningChipsText(h.stackBefore)}
+                    {' \u2192 '}
+                    {lightningChipsText(h.stackAfter)}
                   </span>
                   {!h.handHistoryId ? (
                     <span className="lightning-recent__pending">Replay Not Ready</span>

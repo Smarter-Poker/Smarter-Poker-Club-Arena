@@ -10,11 +10,17 @@ import { DIAMOND_GAME_TITLES } from './utils/diamondGameTitles';
 
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { SessionSummaryHost } from './components/session/SessionSummaryHost';
-import { LightningSessionSummaryHost } from './components/lightning/LightningSessionSummary';
+// LIGHTNING PHASE 8: lazy, so the Lightning component tree stays out of the
+// entry chunk every player downloads before first paint (entry-chunk gate).
+const LightningSessionSummaryHost = lazy(() =>
+  import('./components/lightning/LightningSessionSummary').then((m) => ({
+    default: m.LightningSessionSummaryHost,
+  }))
+);
 import TournamentRankingHost from './components/tournament/TournamentRankingHost';
 import TournamentAutoSeat from './components/tournament/TournamentAutoSeat';
 import { MEDIA_BASE } from './utils/mediaBase';
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, lazy, useState, useEffect } from 'react';
 import { supabase } from './lib/supabase';
 import { realtimeChannelService } from './services/RealtimeChannelService';
 import { OfflineQueueService } from './services/OfflineQueueService';
@@ -634,7 +640,9 @@ function FullApp() {
         <SessionSummaryHost />
         {/* LIGHTNING PHASE 8: the Lightning session summary, over the lobby a
             player lands in after leaving Lightning. */}
-        <LightningSessionSummaryHost />
+        <Suspense fallback={null}>
+          <LightningSessionSummaryHost />
+        </Suspense>
         {/* Dan 2026-08-20: the tournament bust card. Same feed as the cash
           summary above, split on payload.tournament — see TournamentRankingHost. */}
         <TournamentRankingHost />

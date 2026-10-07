@@ -510,7 +510,7 @@ describe('Recent Hands', () => {
     expect(rows[1].textContent).toContain('Replay Not Ready');
     expect((rows[1] as HTMLButtonElement).disabled).toBe(true);
     expect(rows[0].textContent).toContain('BB');
-    expect(rows[0].textContent).toContain('210 to 230');
+    expect(rows[0].textContent).toContain('210 \u2192 230');
     fireEvent.click(rows[0]);
     expect((await screen.findByTestId('hand-replay')).textContent).toBe(HH_2);
     fireEvent.click(screen.getByTestId('lightning-recent-all'));

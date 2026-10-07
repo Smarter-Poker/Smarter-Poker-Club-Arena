@@ -13,6 +13,7 @@ test('source emits exact custom extension-table triggers without mutating the so
   assert.match(source, /NOT EXISTS\(SELECT 1 FROM pg_depend trigger_dependency/);
   assert.match(source, /NOT t\.tgisinternal AND t\.tgparentid=0/);
   assert.match(source, /pg_get_triggerdef\(t\.oid\),t\.tgenabled::text/);
+  assert.ok(source.includes("SELECT format('DO %L;',format($body$"));
   for (const state of ['ENABLE', 'DISABLE', 'ENABLE REPLICA', 'ENABLE ALWAYS'])
     assert.ok(source.includes(`'${state}'`));
   assert.doesNotMatch(source, /^BEGIN;|^COMMIT;|^ROLLBACK;|^CREATE|^ALTER|^UPDATE|^DELETE/m);
@@ -88,7 +89,7 @@ test(
         psql(
           'source_fixture',
           base +
-            `CREATE TRIGGER toy_custom BEFORE INSERT ON public.toy_ext FOR EACH ROW EXECUTE FUNCTION public.toy_ext_trigger(); ALTER TABLE public.toy_ext ENABLE REPLICA TRIGGER toy_custom; ALTER EXTENSION plpgsql ADD TABLE public.toy_ext;`
+            `CREATE TRIGGER "toy_custom$extension_trigger$" BEFORE INSERT ON public.toy_ext FOR EACH ROW EXECUTE FUNCTION public.toy_ext_trigger(); ALTER TABLE public.toy_ext ENABLE REPLICA TRIGGER "toy_custom$extension_trigger$"; ALTER EXTENSION plpgsql ADD TABLE public.toy_ext;`
         )
       );
       const archive = join(directory, 'schema.dump');
@@ -109,18 +110,26 @@ test(
       const list = success(command('pg_restore', ['--list', archive]));
       assert.doesNotMatch(list, /TRIGGER public toy_ext toy_custom/);
       const emitted = success(psql('source_fixture', source));
-      assert.match(emitted, /CREATE TRIGGER toy_custom/);
+      assert.match(emitted, /CREATE TRIGGER "toy_custom\$extension_trigger\$"/);
       success(psql('postgres', base));
       success(psql('postgres', 'BEGIN;' + emitted + 'COMMIT;'));
       assert.equal(
         success(
-          psql('postgres', "SELECT tgenabled FROM pg_trigger WHERE tgname='toy_custom';")
+          psql(
+            'postgres',
+            "SELECT tgenabled FROM pg_trigger WHERE tgname='toy_custom$extension_trigger$';"
+          )
         ).trim(),
         'R'
       );
       // Preserve the deliberately differing preimage and roll back every write
       // attempted by the same parent transaction; never rewrite a mismatch.
-      success(psql('postgres', 'ALTER TABLE public.toy_ext ENABLE ALWAYS TRIGGER toy_custom;'));
+      success(
+        psql(
+          'postgres',
+          'ALTER TABLE public.toy_ext ENABLE ALWAYS TRIGGER "toy_custom$extension_trigger$";'
+        )
+      );
       const refusal = psql(
         'postgres',
         'BEGIN; INSERT INTO public.toy_ext VALUES(1);' + emitted + 'COMMIT;'
@@ -131,7 +140,7 @@ test(
         success(
           psql(
             'postgres',
-            "SELECT count(*)::text||'|'||(SELECT tgenabled::text FROM pg_trigger WHERE tgname='toy_custom') FROM public.toy_ext;"
+            "SELECT count(*)::text||'|'||(SELECT tgenabled::text FROM pg_trigger WHERE tgname='toy_custom$extension_trigger$') FROM public.toy_ext;"
           )
         ).trim(),
         '0|A'

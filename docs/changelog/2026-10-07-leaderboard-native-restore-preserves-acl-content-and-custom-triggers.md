@@ -19,6 +19,12 @@ differing trigger is refused, never replaced. The source database is not changed
 The native regression runs in accounting shard four and proves omission,
 restoration, mismatch rollback and stopped-server cleanup.
 
+The native control also reproduces a legal quoted trigger identifier containing
+the original DO delimiter. Quoting the entire generated body as a SQL literal
+prevents that identifier from terminating the body; native trigger definitions
+remain unchanged. The original renderer fails this retained control before the
+repair. No source object is renamed or altered.
+
 Bounded diagnostics retain opaque identity and definition hashes and character
 lengths, never private definitions or raw catalog data. Definition equality and
 all original catalog/security checks remain mandatory.

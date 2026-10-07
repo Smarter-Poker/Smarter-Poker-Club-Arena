@@ -1,8 +1,9 @@
 -- Read-only SOURCE metadata. Output is private SQL for the exact disposable
 -- destination, inside its parent's transaction; never execute on source.
 SET search_path=pg_catalog;
-SELECT format($output$
-DO $extension_trigger$
+-- Quote the entire generated body as a SQL literal. A native definition can
+-- itself contain a dollar-quote delimiter in a legal quoted identifier/value.
+SELECT format('DO %L;',format($body$
 DECLARE observed record; prior_search_path text:=current_setting('search_path');
 BEGIN
   IF session_user<>'leaderboard_qualification_bootstrap'
@@ -30,12 +31,12 @@ BEGIN
     END IF;
   END IF;
   PERFORM pg_catalog.set_config('search_path',prior_search_path,true);
-END $extension_trigger$;
-$output$,format('%I.%I',n.nspname,c.relname),t.tgname,
+END;
+$body$,format('%I.%I',n.nspname,c.relname),t.tgname,
   pg_get_triggerdef(t.oid),t.tgenabled::text,
   format('ALTER TABLE %I.%I %s TRIGGER %I',n.nspname,c.relname,
     CASE t.tgenabled WHEN 'O' THEN 'ENABLE' WHEN 'D' THEN 'DISABLE'
-      WHEN 'R' THEN 'ENABLE REPLICA' WHEN 'A' THEN 'ENABLE ALWAYS' END,t.tgname))
+      WHEN 'R' THEN 'ENABLE REPLICA' WHEN 'A' THEN 'ENABLE ALWAYS' END,t.tgname)))
 FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
 JOIN pg_namespace n ON n.oid=c.relnamespace
 JOIN pg_depend relation_dependency ON relation_dependency.classid='pg_class'::regclass

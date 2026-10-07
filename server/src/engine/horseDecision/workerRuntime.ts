@@ -163,6 +163,7 @@ import type {
   HorseDecisionStatusRequest,
 } from './protocol.js';
 import { buildHorseDecisionKey, validatedHorsePolicySamplingKey } from './protocol.js';
+import { horseDecisionReplayState } from './replayState.js';
 
 export interface HorseDecisionWorkerDependencies {
   journalEnabled?: () => boolean;
@@ -178,6 +179,12 @@ export interface HorseDecisionWorkerDependencies {
   decideDiscard: typeof HorseLogic.decideDiscard;
   captureDecisionEffects<T>(fn: () => T): CapturedHorseMindDecision<T>;
   applyDecisionEffects(effects: readonly HorseMindDecisionEffect[]): void;
+  /**
+   * The mind view the FAST read frame is encoded from, after the decision.
+   * Absent: the worker's own HorseMind. A replay passes the sandbox it decided
+   * in, so the frame it re-encodes is the original's and not its own process's.
+   */
+  snapshotDecisionReads?: typeof HorseMind.snapshotDecisionReads;
   saveRng(): number;
   restoreRng(state: number): void;
   governorScale(): number;
@@ -1896,6 +1903,19 @@ export class HorseDecisionWorkerRuntime {
     const phase11 = this.phase11Admission(request);
     const phase12 = this.phase12Admission(request);
     const phase13 = this.phase13Admission(request);
+    // P15-A step 4: the worker-owned state this decision reads besides its
+    // request and read frame, journaled beside it for exact replay. Capture
+    // only; the decision below reads the same values it always has.
+    const replayState = horseDecisionReplayState(
+      {
+        phase8Postflop: phase8.mode,
+        phase10Plo4: phase10.mode,
+        phase11Omaha: phase11.mode,
+        phase12Remaining: phase12.mode,
+        phase13Joint: phase13.mode,
+      },
+      liveHorsePhase8Safety.disabledReason
+    );
     let captured: CapturedHorseMindDecision<ReturnType<typeof HorseLogic.decide>>;
     let rngAfter: number;
     let governorScale: number;
@@ -1952,7 +1972,10 @@ export class HorseDecisionWorkerRuntime {
     try {
       const handKey = horsePlanHandKey(request.gameState.actionHistory, planContext);
       readFrame = encodeHorseDecisionReads(
-        HorseMind.snapshotDecisionReads(request.gameState.players, handKey),
+        (this.deps.snapshotDecisionReads ?? HorseMind.snapshotDecisionReads.bind(HorseMind))(
+          request.gameState.players,
+          handKey
+        ),
         request.gameState.players,
         handKey,
         planContext
@@ -2007,6 +2030,7 @@ export class HorseDecisionWorkerRuntime {
           governorScale,
           readiness: this.deps.workerReadiness(),
           runtimePins: 'incomplete',
+          replayState,
           lifecycleVersion: 1,
         });
     } catch {

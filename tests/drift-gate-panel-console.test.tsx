@@ -177,7 +177,7 @@ describe('Drift Gate painted console', () => {
     render(<DriftGatePanel />);
     await screen.findByRole('region', { name: 'Burn-In Gate' });
 
-    fireEvent.change(screen.getByRole('textbox', { name: 'Entity ID' }), {
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Entity ID' }), {
       target: { value: '22222222-2222-4222-8222-222222222222' },
     });
     fireEvent.change(screen.getByLabelText('Balance As Of Time'), {
@@ -203,7 +203,7 @@ describe('Drift Gate painted console', () => {
     render(<DriftGatePanel />);
     await screen.findByRole('region', { name: 'Burn-In Gate' });
 
-    fireEvent.change(screen.getByRole('textbox', { name: 'Entity ID' }), {
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Entity ID' }), {
       target: { value: '22222222-2222-4222-8222-222222222222' },
     });
     fireEvent.change(screen.getByLabelText('Balance As Of Time'), {

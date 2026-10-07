@@ -6,6 +6,7 @@ import {
   type DailyPage,
   type DailyRequest,
   type DailyRow,
+  type DailySelectionCursor,
 } from './contract.js';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const uuid = (v: unknown): v is string => typeof v === 'string' && UUID.test(v);
@@ -37,6 +38,9 @@ export function cursor(v: unknown): v is DailyCursor {
   );
 }
 export const cursorKey = (v: DailyCursor) => `${v.playedAt}|${v.handId}|${v.horseId}`;
+export function selectionCursor(v: unknown): v is DailySelectionCursor {
+  return object(v) && Object.keys(v).length === 2 && utcTime(v.playedAt) && uuid(v.handId);
+}
 export function validateRequest(v: DailyRequest): void {
   if (
     !v ||
@@ -173,6 +177,10 @@ export function parseDailyManifest(raw: unknown): DailyManifest {
     (raw.after !== undefined &&
       raw.after !== null &&
       (!cursor(raw.after) || raw.after.playedAt.slice(0, 10) !== raw.day)) ||
+    (raw.selectionAfter !== undefined &&
+      raw.selectionAfter !== null &&
+      (!selectionCursor(raw.selectionAfter) ||
+        raw.selectionAfter.playedAt.slice(0, 10) !== raw.day)) ||
     !Array.isArray(raw.mappings) ||
     raw.mappings.length > DAILY_LIMITS.hands
   )
@@ -212,6 +220,9 @@ export function parseDailyManifest(raw: unknown): DailyManifest {
     version: 1,
     day: raw.day,
     after: cursor(raw.after) ? Object.freeze({ ...raw.after }) : null,
+    selectionAfter: selectionCursor(raw.selectionAfter)
+      ? Object.freeze({ playedAt: raw.selectionAfter.playedAt, handId: raw.selectionAfter.handId })
+      : null,
     journalDirectory: raw.journalDirectory,
     mappings: Object.freeze(mappings),
   });

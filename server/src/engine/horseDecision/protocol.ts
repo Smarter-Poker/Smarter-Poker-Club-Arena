@@ -198,6 +198,15 @@ export interface CompletedHandObservation extends HorseDecisionFence {
   bigBlind: number;
   showdown?: Array<{ user_id: string; mucked: boolean; hand_name?: string }> | null;
   scope?: ReadScope | null;
+  /**
+   * P14.2: the private accepted actor roster the settlement transaction built
+   * on first acceptance (or returned unchanged on replay), copied from the
+   * door's success receipt. Absent means unknown. Private: journal and worker
+   * only, never a public, projection, broadcast or client path. The worker
+   * re-validates it (readReturnedRosterTransport, 16 KiB capsule bound) and
+   * observes without it when it does not bind to this hand.
+   */
+  acceptedActorRoster?: import('../../services/horseAcceptedRoster/contract.js').ReturnedRosterTransport;
 }
 
 export interface ObserveCompletedHandRequest extends CompletedHandObservation {

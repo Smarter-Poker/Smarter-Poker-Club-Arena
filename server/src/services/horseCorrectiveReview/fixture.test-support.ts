@@ -39,22 +39,50 @@ export const TRUSTED_KEY_DIGEST = journalHash(
   keyPair.publicKey.export({ type: 'spki', format: 'der' }).toString('base64')
 );
 
-export function authorize(commitments: unknown, references: readonly unknown[]) {
+/** Synthetic-only reference provenance. These are not a real sampling
+ * contract or producer build; they only exercise the binding. */
+export const SYNTHETIC_SAMPLING_CONTRACT_DIGEST = journalHash('synthetic-sampling-contract');
+export const SYNTHETIC_PRODUCER_DIGEST = journalHash('synthetic-reference-producer');
+/** Every synthetic fixture domain the default authority covers. */
+export const FIXTURE_AUTHORITY_DOMAINS = (
+  ['nlh', 'plo4', 'plo5', 'plo6', 'plo8', 'short_deck', 'pineapple', 'flh', 'flo8'] as const
+).flatMap((variant) =>
+  (['cash', 'mtt', 'sng', 'spin', 'hu_sng'] as const).map((format) => ({
+    variant,
+    format,
+    mode: format === 'cash' ? ('cash' as const) : ('tournament' as const),
+  }))
+);
+export const FIXTURE_AUTHORITY_EXPIRES_AT = '2099-01-01T00:00:00.000Z';
+
+export function authorize(
+  commitments: unknown,
+  references: readonly unknown[],
+  overrides: Partial<CorrectiveReviewAuthority> = {}
+) {
   const authority: CorrectiveReviewAuthority = {
-    version: 1,
+    version: 2,
     role: 'accepted_source_and_counterfactual_reference',
     handKey: HAND_KEY,
     qualificationId: 'synthetic-counterfactual-fixture',
     evidenceClass: 'synthetic_fixture',
     commitmentDigest: evidenceDigest(commitments),
     referenceDigests: references.map(evidenceDigest),
+    approvalGeneration: 1,
+    expiresAt: FIXTURE_AUTHORITY_EXPIRES_AT,
+    domains: FIXTURE_AUTHORITY_DOMAINS.map((d) => ({ ...d })),
+    ...overrides,
   };
   const envelope = {
     authority,
     publicKeyPem,
     signature: sign(null, authoritySigningBytes(authority), keyPair.privateKey).toString('base64'),
   };
-  return { envelope, authority: verifyCorrectiveAuthority(envelope, TRUSTED_KEY_DIGEST)! };
+  return {
+    envelope,
+    authority: verifyCorrectiveAuthority(envelope, TRUSTED_KEY_DIGEST)!,
+    privateKey: keyPair.privateKey,
+  };
 }
 
 export function correctiveFixture(
@@ -229,9 +257,17 @@ export function correctiveFixture(
     payloadDigest: journalHash(payloadText),
   };
   const reference: AlternativeActionReference = {
-    version: 1,
+    version: 2,
     sourceId: 'synthetic-only',
     qualificationId: 'synthetic-counterfactual-fixture',
+    evidenceClass: 'synthetic_fixture',
+    domain: {
+      variant,
+      format,
+      mode: format === 'cash' ? 'cash' : 'tournament',
+    },
+    samplingContractDigest: SYNTHETIC_SAMPLING_CONTRACT_DIGEST,
+    producerDigest: SYNTHETIC_PRODUCER_DIGEST,
     basis: 'counterfactual',
     method: 'exact_enumeration',
     causal: true,

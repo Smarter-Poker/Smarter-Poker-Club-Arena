@@ -51,6 +51,7 @@ import {
   reconcileHorseJournalHand,
 } from './review.js';
 import { runtimeHorseJournalArchiveOptions } from './config.js';
+import { doorRosterTransport } from '../horseAcceptedRoster/fixture.test-support.js';
 
 const table = '10000000-0000-4000-8000-000000000001',
   hand = '30000000-0000-4000-8000-000000000001',
@@ -952,15 +953,39 @@ describe('private retained-hand journal consumer', () => {
       expect(report.matchedActions).toBe(0);
     }
   );
-  it.each(['identity', 'actions', 'blind'])('refuses contradictory accepted %s', (change) => {
-    const f = fixture(),
-      a = structuredClone(f.a);
-    if (change === 'identity') a.committedHandId = table;
-    else if (change === 'blind') a.bigBlind++;
-    else a.actions.at(-1)!.amount++;
+  it.each(['identity', 'actions', 'blind', 'roster', 'roster_absent'])(
+    'refuses contradictory accepted %s',
+    (change) => {
+      const f = fixture(),
+        a = structuredClone(f.a) as typeof f.a & { acceptedActorRoster?: unknown };
+      // P14.2: retained acceptances of one hand must agree on the private roster.
+      const roster = (horse: string) =>
+        doorRosterTransport(table, 12, hand, (r) => {
+          r.actors[1]!.classification = horse as 'horse';
+        });
+      if (change === 'identity') a.committedHandId = table;
+      else if (change === 'blind') a.bigBlind++;
+      else if (change === 'roster' || change === 'roster_absent') {
+        a.acceptedActorRoster = roster('horse');
+        if (change === 'roster')
+          f.a = { ...f.a, acceptedActorRoster: roster('human') } as typeof f.a;
+      } else a.actions.at(-1)!.amount++;
+      expect(
+        reconcileHorseJournalHand([...f.rows(), f.make('accepted_hand', 4, a)], handKey)
+      ).toMatchObject({ status: 'unavailable', gaps: ['accepted_hand_conflict'] });
+    }
+  );
+  it('treats identical retained accepted rosters as one acceptance', () => {
+    const f = fixture();
+    f.a = { ...f.a, acceptedActorRoster: doorRosterTransport(table, 12, hand) } as typeof f.a;
+    const rows = f.rows();
+    const accepted = rows.find((r) => r.kind === 'accepted_hand')!;
     expect(
-      reconcileHorseJournalHand([...f.rows(), f.make('accepted_hand', 4, a)], handKey)
-    ).toMatchObject({ status: 'unavailable', gaps: ['accepted_hand_conflict'] });
+      reconcileHorseJournalHand(
+        [...rows, f.make('accepted_hand', 4, { ...JSON.parse(accepted.body), requestId: 99 })],
+        handKey
+      )
+    ).toMatchObject({ status: 'reconciled', matchedActions: 1 });
   });
   it.each([
     'selected',

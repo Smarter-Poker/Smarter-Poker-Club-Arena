@@ -4,9 +4,12 @@ import {
   type DailyManifest,
   type DailyResult,
   type DailyRow,
+  type DailySelectionCursor,
+  type DailySelectionSource,
   type DailySource,
 } from './contract.js';
 import { object, sha, parseDailyManifest, parseDailyPage } from './validation.js';
+import { parseSelectionReceipt } from './selection.js';
 import type {
   CorrectiveHandReview,
   CorrectiveReviewInput,
@@ -19,12 +22,35 @@ export interface DailyTrust {
   /** Test dependency injection only; production CLI always supplies false. */
   allowSynthetic?: boolean;
 }
+/** The queue-row screen shared with the mapping producer: null means the
+ * row may be joined to private evidence; otherwise the named pending reason. */
+export function dailyRowScreen(row: DailyRow): string | null {
+  if (row.status !== 'retained_diagnostic') return 'daily_payload_unavailable';
+  if (
+    row.eligibility !== 'over_10bb' ||
+    row.bigBlind === null ||
+    Number(row.bigBlind) <= 0 ||
+    row.committedBb === null ||
+    Number(row.committedBb) <= 10
+  )
+    return 'monetary_eligibility_unknown';
+  if (
+    row.gaps.length ||
+    row.reasons.some((r) => !['decision_replay_not_matched', 'reference_not_matched'].includes(r))
+  )
+    return 'daily_source_gap';
+  return null;
+}
 /** Explicit offline invocation. The queue selects work; only the unchanged
- * signature/reference/core contracts can qualify that work. No database writes. */
+ * signature/reference/core contracts can qualify that work. No database writes.
+ * The selection receipt (fn_horse_commitment_selection_receipt) adds explicit
+ * pending missing-source / late-arrival / gap rows for hands the review page
+ * cannot show; without it no selection can be reported as reviewed. */
 export async function reviewDailySelection(
   rawManifest: DailyManifest,
   source: DailySource,
-  rawTrust: DailyTrust = {}
+  rawTrust: DailyTrust = {},
+  selectionSource?: DailySelectionSource
 ): Promise<DailyResult> {
   const manifest = parseDailyManifest(rawManifest);
   const { correctiveKeyDigest, rosterKeyDigest, rosterProducerDigest, allowSynthetic } = rawTrust;
@@ -46,6 +72,22 @@ export async function reviewDailySelection(
     rows: [],
     snapshots: [],
     selectionExhausted: false,
+    selection: {
+      status: 'not_read',
+      pages: 0,
+      snapshots: [],
+      startCursor: manifest.selectionAfter ?? null,
+      resumeCursor: manifest.selectionAfter ?? null,
+      exhausted: false,
+      dayState: null,
+      passes: [],
+      missingSourceRows: 0,
+      lateArrivalRows: 0,
+      sourceGapRows: 0,
+      unreadableGapRows: 0,
+      sourceCoverage: 'not_established',
+    },
+    sourceGaps: [],
     fullWindow: false,
     sourcePopulationVerified: false,
     gtoVerified: false,
@@ -248,22 +290,8 @@ export async function reviewDailySelection(
           evidenceClass: null as string | null,
           actor: null as unknown,
         };
-        if (row.status !== 'retained_diagnostic') result.reason = 'daily_payload_unavailable';
-        else if (
-          row.eligibility !== 'over_10bb' ||
-          row.bigBlind === null ||
-          Number(row.bigBlind) <= 0 ||
-          row.committedBb === null ||
-          Number(row.committedBb) <= 10
-        )
-          result.reason = 'monetary_eligibility_unknown';
-        else if (
-          row.gaps.length ||
-          row.reasons.some(
-            (r) => !['decision_replay_not_matched', 'reference_not_matched'].includes(r)
-          )
-        )
-          result.reason = 'daily_source_gap';
+        const screened = dailyRowScreen(row);
+        if (screened) result.reason = screened;
         else {
           const reviewed = await hand(row);
           result.reason = reviewed.reason || 'retained_review_incomplete';
@@ -316,6 +344,74 @@ export async function reviewDailySelection(
       store?.close();
     } catch {
       reason('private_reader_cleanup_unavailable');
+    }
+  }
+  // Gap-only hands are invisible to the review page. Read them, bounded and
+  // resumable, and emit every one as an explicit pending row; never a skip.
+  const selection = out.selection;
+  if (!selectionSource) reason('daily_selection_receipt_not_read');
+  else {
+    try {
+      let after: DailySelectionCursor | null = manifest.selectionAfter ?? null;
+      let passesSeen: string | null = null;
+      for (let pageIndex = 0; pageIndex < DAILY_LIMITS.pages; pageIndex++) {
+        const request = Object.freeze({
+          day: manifest.day,
+          after: after ? Object.freeze({ ...after }) : null,
+        });
+        const received = await selectionSource({
+          day: request.day,
+          after: request.after ? { ...request.after } : null,
+        });
+        // Injected transports cannot skip the same detached receipt validator.
+        const receipt = parseSelectionReceipt(received, request);
+        selection.pages++;
+        selection.snapshots.push(receipt.readAt);
+        const passes = JSON.stringify(receipt.passes);
+        if (passesSeen !== null && passesSeen !== passes)
+          reason('daily_selection_changed_between_pages');
+        passesSeen = passes;
+        selection.dayState = JSON.parse(JSON.stringify(receipt.dayState));
+        selection.passes = JSON.parse(passes);
+        let previous = request.after;
+        for (const gap of receipt.gaps) {
+          const cursor = { playedAt: gap.playedAt, handId: gap.handId };
+          out.sourceGaps.push({
+            kind: gap.kind,
+            status: 'pending',
+            handRef: journalHash(gap.handId),
+            handId: gap.handId,
+            tableId: gap.tableId,
+            playedAt: gap.playedAt,
+            reasons: [...gap.reasons],
+            cursor,
+            retryAfter: previous ? { ...previous } : null,
+          });
+          previous = cursor;
+          if (gap.kind === 'missing_source') selection.missingSourceRows++;
+          else if (gap.kind === 'late_arrival') selection.lateArrivalRows++;
+          else if (gap.kind === 'reasons_unavailable') selection.unreadableGapRows++;
+          else selection.sourceGapRows++;
+        }
+        selection.resumeCursor = receipt.next ? { ...receipt.next } : selection.resumeCursor;
+        if (!receipt.hasMore) {
+          selection.exhausted = true;
+          break;
+        }
+        after = receipt.next;
+      }
+      selection.status = 'read';
+      if (!selection.exhausted) reason('daily_selection_receipt_page_limit');
+      if (!selection.dayState) reason('daily_selection_day_missing');
+      else if (selection.dayState.finishedAt === null) reason('daily_selection_pass_in_progress');
+      if (!selection.passes.length) reason('daily_selection_no_completed_pass');
+      if (selection.missingSourceRows) reason('daily_missing_source_rows');
+      if (selection.lateArrivalRows) reason('daily_late_arrival_rows');
+      if (selection.sourceGapRows) reason('daily_source_gap_rows');
+      if (selection.unreadableGapRows) reason('daily_gap_reasons_unavailable');
+    } catch {
+      selection.status = 'unavailable';
+      reason('daily_selection_unavailable');
     }
   }
   if (!out.rows.length) reason('no_retained_review_rows');

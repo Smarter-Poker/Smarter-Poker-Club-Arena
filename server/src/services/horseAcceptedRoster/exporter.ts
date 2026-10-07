@@ -213,16 +213,24 @@ SELECT h.id::text AS hand_id, h.table_id::text AS table_id,
        c.stack_result::text AS stack_result_text,
        c.committed_at::text AS committed_at,
        c.post_commit_completed_at::text AS post_commit_completed_at,
+       r.hand_id::text AS roster_hand_id,
+       r.status AS roster_status,
+       r.post_commit_payload_hash AS roster_payload_digest,
+       r.producer_version AS roster_producer_version,
+       r.roster::text AS roster_text,
        statement_timestamp()::text AS read_at,
        pg_current_snapshot()::text AS snapshot_id
 FROM public.hand_history h
 JOIN public.hand_atomic_commits c
   ON c.hand_id = h.id AND c.table_id = h.table_id AND c.hand_number = h.hand_number
+LEFT JOIN smarter_private.accepted_hand_rosters r
+  ON r.table_id = c.table_id AND r.hand_number = c.hand_number
 WHERE h.id = $1::uuid AND h.table_id = $2::uuid AND h.hand_number = $3::bigint
   AND octet_length(c.post_commit_payload::text) <= 262144
   AND octet_length(h.actions::text) <= 262144
   AND octet_length(h.players::text) <= 32768
   AND octet_length(c.stack_result::text) <= 262144
+  AND (r.roster IS NULL OR octet_length(r.roster::text) <= 32768)
 LIMIT 2`;
 
 /** Retained JSON joins are structural evidence only. An unsigned export can
@@ -401,6 +409,14 @@ export function createUnsignedAcceptedCommitmentExport({
       acceptedHandRecordDigest,
       payloadText: row.payload_text,
       payloadDigest: row.payload_digest,
+      // P14.2: the roster comes only from the first-write discriminator.
+      provenance: {
+        status: row.roster_status,
+        payloadDigest: row.roster_payload_digest,
+        producerVersion: row.roster_producer_version,
+        rosterText: row.roster_text,
+        handId: row.roster_hand_id,
+      },
     });
     if (rosterRead.status !== 'structurally_bound') fail(rosterRead.reason);
     if (!rosterMatchesAcceptedActors(rosterRead.roster, players, receipt))
@@ -478,7 +494,7 @@ export function createUnsignedAcceptedCommitmentExport({
     return candidate;
   } catch (error) {
     const allowed =
-      /^(requested_identity_invalid|source_row_missing_or_ambiguous|source_row_exceeds_bounds|retained_journal_invalid|accepted_record_pin_missing|retained_hand_coordinate_invalid|accepted_source_identity_mismatch|big_blind_invalid|big_blind_mismatch|source_context_invalid|source_state_metadata_invalid|source_receipt_hash_missing|payload_invalid|payload_digest_mismatch|source_actions_invalid|full_accepted_actions_mismatch|source_roster_invalid|source_action_roster_mismatch|stack_receipt_invalid|stack_receipt_identity_mismatch|accepted_fact_map_invalid|accepted_actor_facts_missing|accepted_horse_origin_subset_missing|gross_commitment_exceeds_bounds|export_exceeds_bounds|settlement_actor_coverage_invalid|settlement_request_invalid|settlement_written_mismatch|settlement_departed_mismatch|roster_input_invalid|roster_retained_join_invalid|roster_accepted_pin_missing|accepted_roster_legacy_missing|accepted_roster_schema_invalid|retained_roster_missing|retained_roster_schema_invalid|retained_roster_binding_mismatch|roster_retained_evidence_invalid|roster_exact_accepted_actor_mismatch|roster_capture_after_read|roster_action_classification_conflict)$/;
+      /^(requested_identity_invalid|source_row_missing_or_ambiguous|source_row_exceeds_bounds|retained_journal_invalid|accepted_record_pin_missing|retained_hand_coordinate_invalid|accepted_source_identity_mismatch|big_blind_invalid|big_blind_mismatch|source_context_invalid|source_state_metadata_invalid|source_receipt_hash_missing|payload_invalid|payload_digest_mismatch|source_actions_invalid|full_accepted_actions_mismatch|source_roster_invalid|source_action_roster_mismatch|stack_receipt_invalid|stack_receipt_identity_mismatch|accepted_fact_map_invalid|accepted_actor_facts_missing|accepted_horse_origin_subset_missing|gross_commitment_exceeds_bounds|export_exceeds_bounds|settlement_actor_coverage_invalid|settlement_request_invalid|settlement_written_mismatch|settlement_departed_mismatch|roster_input_invalid|roster_retained_join_invalid|roster_accepted_pin_missing|accepted_roster_legacy_missing|accepted_roster_schema_invalid|retained_roster_missing|retained_roster_schema_invalid|retained_roster_binding_mismatch|roster_retained_evidence_invalid|roster_provenance_missing|roster_provenance_mismatch|payload_roster_unprovenanced|accepted_roster_unavailable|roster_exact_accepted_actor_mismatch|roster_capture_after_read|roster_action_classification_conflict)$/;
     meta.reasons.push(
       error instanceof Error && allowed.test(error.message)
         ? error.message

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Four sequential, disposable PG17 daily-audit/reader controls. No remote connection."""
+"""Five sequential, disposable PG17 daily-audit/reader/selection controls. No remote connection."""
 from pathlib import Path
 import argparse
 import hashlib
@@ -25,12 +25,16 @@ INPUTS = {
     'reader_auth': ('scripts/ci/probes/horse-commitment-audit/reader-auth.sql', 'fed395d00a7abff91d72309cf2f27b0edc6260c9451f3142a5ba39492c84d45c'),
     'reader': ('supabase/migrations/20260917052511_horse_private_commitment_review_reader.sql', '51a8337cc2f699d5f602247f1fb996cc87b303055cbabf83e52dff4b9452e427'),
     'reader27': ('scripts/ci/probes/horse-commitment-audit/reader-page.sql', '9f2f3598b8df9dc6eb7d2ede83b7e09e99de326d35486743885709685902395b'),
+    'selection_setup': ('scripts/ci/probes/horse-commitment-audit/selection-setup.sql', '245de0734cf4c976b943fb5fad2139577755f67bbf98aed9fe70d33776cfff0a'),
+    'selection': ('supabase/migrations/20261007075304_horse_commitment_selection_receipts.sql', '61e3dcc24fe51724be86befe955427f3999175e89347d9dcabf94ec9da5666fd'),
+    'selection58': ('scripts/ci/probes/horse-commitment-audit/selection-receipts.sql', '35060c9879e9d61261e6c9b828af9a8249526b35bbf4931840fc2678c3b1d58b'),
 }
 JOBS = (
     ('R1_duplicate_negative', 'r1', 'roster24', None),
     ('R2_existing85', 'r2', 'format85', b'prepared_expectations_reached_only_if_this_fixture_is_actually_executed|85'),
     ('R2_roster24', 'r2', 'roster24', b'synthetic_roster_controls_only_if_executed|24'),
     ('private_reader27', 'reader', 'reader27', b'synthetic_reader_controls_only_if_executed|27'),
+    ('selection_receipts58', 'selection', 'selection58', b'synthetic_selection_controls_only_if_executed|58'),
 )
 
 
@@ -241,6 +245,75 @@ def main():
                     if checked(name + '-repeat-refused-snapshot', psql, reader_snapshot_sql) != reader_before:
                         raise RuntimeError('reader_repeat_refusal_changed_state')
                     job['migrationRepeatRefusedUnchanged'] = True
+                elif body == 'selection':
+                    # P14.3 forward migration on the real r2 step and reader,
+                    # never on a copied body. The selection setup only extends
+                    # the fixture source tables to the columns the readers name.
+                    for item in ('reader_auth', 'r2', 'reader', 'selection_setup'):
+                        checked(name + '-' + item, psql, payloads[item])
+                    selection_snapshot_sql = b"""SELECT jsonb_build_object(
+                      'functions',(SELECT jsonb_agg(jsonb_build_object('sig',p.oid::regprocedure::text,
+                        'definition',pg_get_functiondef(p.oid),'owner',p.proowner,'acl',p.proacl) ORDER BY p.oid::regprocedure::text)
+                        FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+                        WHERE n.nspname='public' AND p.proname LIKE 'fn_horse_%'),
+                      'tables',(SELECT jsonb_agg(jsonb_build_object('name',c.relname,'acl',c.relacl,'rls',c.relrowsecurity,
+                        'columns',(SELECT jsonb_agg(jsonb_build_object('name',a.attname,'type',format_type(a.atttypid,a.atttypmod),
+                          'default',pg_get_expr(d.adbin,d.adrelid),'acl',a.attacl) ORDER BY a.attnum)
+                          FROM pg_attribute a LEFT JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum
+                          WHERE a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped),
+                        'constraints',(SELECT jsonb_agg(pg_get_constraintdef(k.oid) ORDER BY k.conname) FROM pg_constraint k WHERE k.conrelid=c.oid),
+                        'triggers',(SELECT jsonb_agg(pg_get_triggerdef(g.oid) ORDER BY g.tgname) FROM pg_trigger g WHERE g.tgrelid=c.oid AND NOT g.tgisinternal))
+                        ORDER BY c.relname)
+                        FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+                        WHERE n.nspname='public' AND c.relname LIKE 'horse_commitment_%' AND c.relkind='r'),
+                      'days',(SELECT coalesce(jsonb_agg(to_jsonb(d) ORDER BY day),'[]'::jsonb) FROM public.horse_commitment_audit_days d))"""
+                    original = checked(name + '-original-snapshot', psql, selection_snapshot_sql)
+                    definition = checked(name + '-original-definition', psql,
+                        b"SELECT pg_get_functiondef('public.fn_horse_commitment_audit_step()'::regprocedure);")
+                    # A drifted step header or body must refuse the whole file
+                    # and leave the drifted state exactly as it was.
+                    for drift, sql in (
+                        ('header', b'ALTER FUNCTION public.fn_horse_commitment_audit_step() COST 123;'),
+                        ('body', b"""DO $drift$
+                          DECLARE source text; definition text;
+                          BEGIN
+                            SELECT prosrc,pg_get_functiondef(oid) INTO source,definition
+                              FROM pg_proc WHERE oid='public.fn_horse_commitment_audit_step()'::regprocedure;
+                            EXECUTE replace(definition,source,source || E'\\n-- synthetic unreviewed body\\n');
+                          END; $drift$;"""),
+                    ):
+                        checked(name + '-drift-' + drift, psql, sql)
+                        changed = checked(name + '-drift-snapshot-' + drift, psql, selection_snapshot_sql)
+                        if changed == original:
+                            raise RuntimeError('selection_drift_not_created_' + drift)
+                        code, _, err = command(name + '-refuse-' + drift, psql, payloads['selection'])
+                        if code != 3 or b'ERROR:  P0001: horse_commitment_selection_preimage_changed' not in err:
+                            raise RuntimeError('selection_drift_not_refused_' + drift)
+                        if checked(name + '-refused-snapshot-' + drift, psql, selection_snapshot_sql) != changed:
+                            raise RuntimeError('selection_refusal_changed_state_' + drift)
+                        checked(name + '-restore-original-' + drift, psql, definition)
+                        if checked(name + '-restored-snapshot-' + drift, psql, selection_snapshot_sql) != original:
+                            raise RuntimeError('selection_original_restore_mismatch_' + drift)
+                    job['migrationRefusals'] = ['header_cost_123', 'unreviewed_body']
+                    checked(name + '-selection', psql, payloads['selection'])
+                    selection_before = checked(name + '-installed-snapshot', psql, selection_snapshot_sql)
+                    if selection_before == original:
+                        raise RuntimeError('selection_migration_changed_nothing')
+                    code, _, err = command(name + '-selection-repeat', psql, payloads['selection'])
+                    if code != 3 or b'ERROR:  P0001: horse_commitment_selection_receipts_already_installed' not in err:
+                        raise RuntimeError('selection_existing_target_not_refused')
+                    if checked(name + '-repeat-refused-snapshot', psql, selection_snapshot_sql) != selection_before:
+                        raise RuntimeError('selection_repeat_refusal_changed_state')
+                    job['migrationRepeatRefusedUnchanged'] = True
+                    # The retained 85/24 controls must still hold on the new
+                    # step body; their markers are checked here, not counted
+                    # into this job's own synthetic rows.
+                    for retained, retained_marker in (('format85', b'prepared_expectations_reached_only_if_this_fixture_is_actually_executed|85'),
+                                                      ('roster24', b'synthetic_roster_controls_only_if_executed|24')):
+                        code, out, err = command(name + '-retained-' + retained, psql, payloads[retained], timeout=30)
+                        if code != 0 or retained_marker not in out or b'ERROR:' in err:
+                            raise RuntimeError('selection_retained_control_failed_' + retained)
+                    job['retainedControlsOnNewStep'] = [85, 24]
                 else:
                     checked(name + '-' + body, psql, payloads[body])
                 result['executed'] = True
@@ -251,6 +324,11 @@ def main():
                     fixture_sql += b"\nSELECT 'synthetic_reader_controls_only_if_executed',27;\n"
                 code, out, err = command(name + '-fixture', psql, fixture_sql, timeout=30)
                 job['fixtureReturncode'] = code
+                if fixture == 'selection58':
+                    job['fixtureRollbackUnchanged'] = checked(
+                        name + '-post-fixture-snapshot', psql, selection_snapshot_sql) == selection_before
+                    if not job['fixtureRollbackUnchanged']:
+                        raise RuntimeError('selection_fixture_rollback_changed_state')
                 if fixture == 'reader27':
                     # psql exits/closes on failure too. Observe from a new session
                     # that the original private rows and function remain unchanged.
@@ -271,6 +349,8 @@ def main():
                     job['status'] = 'candidate_fixture_passed'
                     if fixture == 'reader27':
                         job['syntheticReaderRows'] = 27
+                    elif fixture == 'selection58':
+                        job['selectionChecks'] = 58
                     else:
                         job['caseRows'] = 85 if fixture == 'format85' else 24
             except BaseException as error:

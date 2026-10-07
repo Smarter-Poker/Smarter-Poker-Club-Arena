@@ -22,6 +22,11 @@ import { readScopeOf } from '../../engine/HorseMind.js';
 import { getLiveHorseDecisionWorker } from '../../engine/horseDecision/index.js';
 import { wakeHandProjection } from './handProjection.js';
 import { bindHorseObservationIdentity } from '../../engine/HorseObservationIdentity.js';
+import {
+  ACCEPTED_ROSTER_RESULT_FIELD,
+  readAcceptedRosterReturn,
+} from '../horseAcceptedRoster/acceptance.js';
+import type { ReturnedRosterTransport } from '../horseAcceptedRoster/contract.js';
 
 /**
  * A RETAINED HAND THE DOOR REFUSES FROM DURABLE STATE (2026-09-29).
@@ -829,6 +834,14 @@ export async function logHandHistory(params: {
   // as the observation has been accepted into the FIFO.
   try {
     const handKey = `${params.tableId}:${params.handNumber}`;
+    const acceptedActorRoster = acceptedRosterForObservation(
+      inserted.stackResult,
+      params.tableId,
+      params.handNumber,
+      handId
+    );
+    // P14.2: private only. Absent (never undefined-valued) is the explicit unknown.
+    const acceptedRosterField = acceptedActorRoster ? { acceptedActorRoster } : {};
     const observation = getLiveHorseDecisionWorker().observeCompletedHand({
       generation: params.handNumber,
       fence: [
@@ -847,6 +860,7 @@ export async function logHandHistory(params: {
         params.gameVariant,
         params.holeCardsAll?.size ?? params.roster?.length ?? params.players?.length ?? 0
       ),
+      ...acceptedRosterField,
     });
     void observation.catch((error) =>
       reportError(error, 'HandHistory.horse_mind_observation_failed')
@@ -910,6 +924,50 @@ export async function logHandHistory(params: {
     settlementCommitted: inserted.settlementCommitted,
     stackResult: inserted.stackResult,
   };
+}
+
+/**
+ * P14.2: THE ACCEPTED ROSTER RIDES THE PRIVATE OBSERVATION, NEVER THE MONEY.
+ *
+ * The settlement door builds the hand's accepted actor roster inside its own
+ * transaction on first acceptance, stores it only in its protected
+ * discriminator row (the post-commit payload and its hashes are unchanged),
+ * and returns it, or the stored one on replay, as `accepted_roster` on the
+ * private success receipt. Only a 'captured' capsule
+ * that validates and binds to this exact table, hand number and history id
+ * becomes the completed-hand observation's `acceptedActorRoster` transport.
+ * 'unavailable', 'legacy_missing', an absent field (an older door, or a path
+ * without post-commit obligations) or a malformed value all observe without a
+ * roster. This runs after the hand is committed and can neither throw into
+ * settlement nor change the value logHandHistory returns; a malformed value is
+ * reported by name, never by its contents. It is never broadcast, projected or
+ * sent to a client.
+ */
+function acceptedRosterForObservation(
+  receipt: Record<string, unknown> | undefined,
+  tableId: string,
+  handNumber: number,
+  historyId: string
+): ReturnedRosterTransport | undefined {
+  try {
+    if (!receipt || !Object.hasOwn(receipt, ACCEPTED_ROSTER_RESULT_FIELD)) return undefined;
+    const read = readAcceptedRosterReturn(receipt[ACCEPTED_ROSTER_RESULT_FIELD], {
+      tableId,
+      handNumber,
+      historyId,
+      payloadDigest: receipt.post_commit_payload_hash,
+    });
+    if (read.status === 'captured') return read.transport;
+    if (read.status === 'malformed') {
+      reportError(new Error(read.reason), 'HandHistory.accepted_roster_unusable', {
+        tableId,
+        handNumber,
+      });
+    }
+  } catch (error) {
+    reportError(error, 'HandHistory.accepted_roster_unusable', { tableId, handNumber });
+  }
+  return undefined;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

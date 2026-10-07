@@ -1924,6 +1924,20 @@ jobs:
           path: artifacts/hand-submission/
           if-no-files-found: error
           retention-days: 7
+      - name: The accepted actor roster is produced inside the settlement transaction
+        id: accepted_hand_roster
+        if: matrix.shard == 3
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-accepted-hand-roster.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/accepted-hand-roster
+      - name: Retain accepted actor roster proof
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.accepted_hand_roster.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: accepted-hand-roster-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/accepted-hand-roster/
+          if-no-files-found: error
+          retention-days: 7
       - name: A hand the table has already dealt past is disposed, and stops blocking the start
         id: hand_submission_disposal
         if: matrix.shard == 3

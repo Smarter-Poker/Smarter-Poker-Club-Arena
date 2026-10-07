@@ -143,6 +143,28 @@ class NativeLogReader(unittest.TestCase):
         self.assertNotIn('RETIRED_CASH_WRONG', json.dumps(result))
         self.assertNotIn('RETIRED_CASH_FOREIGN', json.dumps(result))
 
+    def test_original_postcommit_keeps_exact_state_and_static_native_cause_only(self):
+        sources = [
+            STAMP+'[ServerTableEngine.'+TABLE+'.failed_to_start] Error: RETIRED_CASH_ORIGINAL_POSTCOMMIT_REFUSED: 23514 cash_earning_seat_provenance_missing_or_ambiguous PRIVATE_SQL',
+            STAMP+'[ServerTableEngine.'+TABLE+'.failed_to_start] Error: RETIRED_CASH_ORIGINAL_POSTCOMMIT_REFUSED: 23514 PRIVATE_MESSAGE',
+            STAMP+'[ServerTableEngine.'+TABLE+'.failed_to_start] Error: arbitrary 23514 cash_earning_seat_provenance_missing_or_ambiguous',
+            STAMP+'[ServerTableEngine.'+TABLE+'.failed_to_start] Error: RETIRED_CASH_ORIGINAL_POSTCOMMIT_REFUSED: 23514x cash_earning_seat_provenance_missing_or_ambiguous',
+            STAMP+'[ServerTableEngine.'+TABLE+'.failed_to_start] Error: RETIRED_CASH_ORIGINAL_POSTCOMMIT_REFUSED: 23514 cash_earning_seat_provenance_missing_or_ambiguous_extra',
+            STAMP+'[Other] RETIRED_CASH_ORIGINAL_POSTCOMMIT_REFUSED: 23514 cash_earning_seat_provenance_missing_or_ambiguous '+TABLE,
+        ]
+        result = reader.extract(('\n'.join(sources)).encode(), [{'tableIds': [TABLE]}])
+        self.assertEqual(result['matchingRecords'], 5)
+        first = result['records'][0]
+        self.assertEqual(first['originalPostcommitSqlstates'], ['23514'])
+        self.assertEqual(first['nativeErrorClasses'], ['cash_earning_seat_provenance_missing_or_ambiguous'])
+        self.assertEqual(result['records'][1]['nativeErrorClasses'], [])
+        for record in result['records'][2:4]:
+            self.assertNotIn('originalPostcommitSqlstates', record)
+            self.assertNotIn('nativeErrorClasses', record)
+        self.assertEqual(result['records'][4]['nativeErrorClasses'], [])
+        self.assertNotIn('PRIVATE_', json.dumps(result))
+        self.assertNotIn('ambiguous_extra', json.dumps(result))
+
     def test_scope_and_malicious_input(self):
         self.assertEqual(reader.selection(SCOPES), SCOPES)
         for value in [[], SCOPES*3, SCOPES*2, [{'tournamentId': EVENT, 'tableIds': [TABLE], 'command': 'restart'}], [{'tournamentId': '../secrets', 'tableIds': [TABLE]}], [{'tournamentId': EVENT, 'tableIds': [TABLE]*2}], [{'tournamentId': EVENT, 'tableIds': 'bad'}]]:

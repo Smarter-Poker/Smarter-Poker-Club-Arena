@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import {cashSeedReady} from './cash-seed-admission.mjs';
 import {witnessNaturalBlindEntry} from './post-bb-observation.mjs';
 import {recoverPurchases} from './purchase-journal.mjs';
 import {admitIndependentGroups,admitIndependentBatches} from './independent-admissions.mjs';
@@ -28,7 +29,7 @@ const save=()=>atomic(path,state);
 const journalName=`ramp-${size}-attempt${state.attempt}-operations.jsonl`;
 if(fs.existsSync(dir+journalName)){recoverPurchases(state,fs.readFileSync(dir+journalName,'utf8').trim().split('\n').filter(Boolean).map(line=>JSON.parse(line)));save();}
 const agreementPath=dir+`ramp-${size}-attempt${state.attempt}-setup-agreements.jsonl`;if(fs.existsSync(agreementPath)){const last=new Map();for(const line of fs.readFileSync(agreementPath,'utf8').trim().split('\n').filter(Boolean)){const op=JSON.parse(line);last.set(op.actorId,op);}for(const op of last.values()){const group=state.groups.find(g=>g.kind==='cash'&&g.tableId===op.tableId&&g.users.some(u=>u.id===op.actorId));assert.ok(group,'Foreign setup agreement receipt');assert.equal(op.outcome,'returned','Unknown post-BB requires native readback');if(op.result?.success!==true){assert.ok(op.naturalObservation);witnessNaturalBlindEntry(op.naturalObservation);}group.users.find(u=>u.id===op.actorId).setupPostAgreement=op;}}
-const setupHandles=new Map();let setupObserverFailure;let measuredFailure;let requestDeadline;let deadline=Date.now()+(['admit','resume-admit','continuous'].includes(mode)?10*60000:5*60000);
+const setupHandles=new Map();const seededObservers=new Map();let setupObserverFailure;let measuredFailure;let requestDeadline;let deadline=Date.now()+(['admit','resume-admit','continuous'].includes(mode)?10*60000:5*60000);
 requestDeadline=deadline;
 function within(){assert.ok(Date.now()<requestDeadline,'finite stage deadline exceeded');}
 function append(name,value){fs.appendFileSync(dir+name,JSON.stringify(value)+'\n',{mode:0o600});}
@@ -62,8 +63,15 @@ if(['admit','resume-admit','continuous'].includes(mode)){
   }
   append(`ramp-${size}-attempt${state.attempt}-setup-agreements.jsonl`,{actorId:u.id,tableId:group.tableId,...u.setupPostAgreement});
  }
+ async function attachSeedObserver(group){
+  const chairUrl=new URL('http://gateway:8000/rest/v1/table_seats');chairUrl.search=new URLSearchParams({select:'table_id,user_id,seat_number,occupancy_id,stack,left_at',table_id:'eq.'+group.tableId,left_at:'is.null',limit:'3'});const native=await fetch(chairUrl,{headers:{authorization:'Bearer '+owner.session.access_token,apikey:keys.anonKey},signal:AbortSignal.timeout(5000)});assert.ok(native.ok);const chairs=await native.json();
+  const until=Math.min(requestDeadline,Date.now()+20000);let admitted=false;
+  while(Date.now()<until){const response=await fetch('http://engine:8080/state/'+group.tableId,{headers:{authorization:'Bearer '+group.users[0].session.access_token},signal:AbortSignal.timeout(5000)});assert.ok(response.ok||response.status===404,'Seed dealer admission refused');const v=await response.json();if(response.ok&&cashSeedReady({group,chairs,wire:v})){admitted=true;break;}await new Promise(r=>setTimeout(r,50));}
+  assert.ok(admitted,'Original two-chair seed not adopted');
+  const handle=await startRampActors({tableId:group.tableId,users:group.users,startPaused:false,setupFold:true,observeArrival:true,onFailure:error=>{setupObserverFailure??=error;measuredFailure?.(error);},checkpoint:operation=>append(`ramp-${size}-${state.measurementActivationAt?'actions':'setup-fold-actions'}.jsonl`,{group:group.index,phase:state.measurementActivationAt?'measured':'setup',...operation})});seededObservers.set(group.index,handle);append(`ramp-${size}-attempt${state.attempt}-cash-admission.jsonl`,{group:group.index,phase:'original-two-chair-observer',at:new Date().toISOString(),chairs,observations:handle.observations()});
+ }
  async function prepareCashGroup(group){
-  let observationFailure;let observer;
+  let observationFailure;let observer=seededObservers.get(group.index);
   const readChairs=async()=>{const url=new URL('http://gateway:8000/rest/v1/table_seats');url.search=new URLSearchParams({select:'id,table_id,user_id,seat_number,occupancy_id,stack,is_sitting_out,sit_out_at,left_at,entry_hold,entry_post_agreed',table_id:'eq.'+group.tableId,left_at:'is.null',limit:String(group.count+1)});const r=await fetch(url,{headers:{authorization:'Bearer '+owner.session.access_token,apikey:keys.anonKey},signal:AbortSignal.timeout(10000)});assert.ok(r.ok);const chairs=await r.json();assert.equal(chairs.length,group.count);assert.equal(new Set(chairs.map(c=>c.user_id)).size,group.count);assert.ok(chairs.every(c=>group.users.some(u=>u.id===c.user_id)&&c.left_at===null&&Number(c.stack)>0));return chairs;};
   try{
    const chairs=await readChairs();append(`ramp-${size}-attempt${state.attempt}-cash-admission.jsonl`,{group:group.index,phase:'native-entry-preflight',at:new Date().toISOString(),chairs});
@@ -74,16 +82,19 @@ if(['admit','resume-admit','continuous'].includes(mode)){
    assert.ok(ready,'Authoritative full-group first-hand roster was not admitted');if(mode==='continuous'){assert.ok(observer);if(observationFailure)throw observationFailure;setupHandles.set(group.index,observer);}else for(const u of group.users){await sit(u,group.tableId,true);u.parked=true;save();}
   }finally{if(observer){if(!setupHandles.has(group.index))await observer.close();append(`ramp-${size}-attempt${state.attempt}-cash-admission.jsonl`,{group:group.index,phase:'setup-fold-observations',at:new Date().toISOString(),observations:observer.observations(),measuredLoadActions:false});}if(observationFailure)throw observationFailure;}
  }
+ async function buyCashUser(group,i){if(setupObserverFailure)throw setupObserverFailure;const u=group.users[i];if(!u.buyinEntered){if(state.cashReentry){assert.ok(u.originalBuyinOp&&u.buyinOp!==u.originalBuyinOp);const quote=await rpc('fn_cash_effective_buyin',{p_table_id:group.tableId},u);assert.equal(quote.ok,true);assert.ok(Number.isFinite(quote.min)&&Number.isFinite(quote.max)&&quote.max>=quote.min);u.buyinAmount=Math.min(quote.max,Math.max(200,quote.min));}await rpc('atomic_table_buyin',{p_user_id:u.id,p_table_id:group.tableId,p_seat_number:i+1,p_amount:u.buyinAmount??200,p_auto_rebuy:false,p_club_id:group.clubId,p_idempotency_key:u.buyinOp},u);u.buyinEntered=true;}}
+ const seeds=[];
  await admitIndependentBatches(state.groups,8,async group=>{within();
-  if(group.kind==='cash')for(let i=0;i<group.users.length;i++){const u=group.users[i];if(!u.buyinEntered){if(state.cashReentry){assert.ok(u.originalBuyinOp&&u.buyinOp!==u.originalBuyinOp);const quote=await rpc('fn_cash_effective_buyin',{p_table_id:group.tableId},u);assert.equal(quote.ok,true);assert.ok(Number.isFinite(quote.min)&&Number.isFinite(quote.max)&&quote.max>=quote.min);u.buyinAmount=Math.min(quote.max,Math.max(200,quote.min));}await rpc('atomic_table_buyin',{p_user_id:u.id,p_table_id:group.tableId,p_seat_number:i+1,p_amount:u.buyinAmount??200,p_auto_rebuy:false,p_club_id:group.clubId,p_idempotency_key:u.buyinOp},u);u.buyinEntered=true;}}
-  else {for(const user of group.users.slice(0,-1))if(!user.registered)await register(group,user);}
-  if(group.kind==='cash'&&!group.users.every(u=>u.parked))setupTasks.push(prepareCashGroup(group).then(()=>({status:'fulfilled'}),reason=>({status:'rejected',reason})));
+  if(group.kind==='cash'){for(let i=0;i<2;i++)await buyCashUser(group,i);if(mode==='continuous')seeds.push(attachSeedObserver(group).then(()=>({ok:true}),error=>({ok:false,error})));}
+  else for(const user of group.users.slice(0,-1))if(!user.registered)await register(group,user);
  });
+ const seeded=await Promise.all(seeds);const seedFailure=seeded.find(s=>!s.ok);if(seedFailure){await Promise.allSettled([...seededObservers.values()].map(h=>h.close()));throw seedFailure.error;}
+ await admitIndependentBatches(state.groups.filter(g=>g.kind==='cash'),8,async group=>{within();for(let i=2;i<group.users.length;i++)await buyCashUser(group,i);if(!group.users.every(u=>u.parked))setupTasks.push(prepareCashGroup(group).then(()=>({status:'fulfilled'}),reason=>({status:'rejected',reason})));});
  // All ordinary purchases are durable before bounded independent group setup.
  // Positive native waiting entries receive one ordinary post-BB agreement.
  // Failed or unknown original post operations remain failed or unknown.
  // Existing parks are read before an explicit new sit-back; no purchase replay.
- const setupResults=await Promise.all(setupTasks);const setupFailure=setupResults.find(r=>r.status==='rejected')??(setupObserverFailure?{reason:setupObserverFailure}:null);if(setupFailure){await Promise.allSettled([...setupHandles.values()].map(h=>h.close()));throw setupFailure.reason;}
+ const setupResults=await Promise.all(setupTasks);const setupFailure=setupResults.find(r=>r.status==='rejected')??(setupObserverFailure?{reason:setupObserverFailure}:null);if(setupFailure){await Promise.allSettled([...new Set([...setupHandles.values(),...seededObservers.values()])].map(h=>h.close()));throw setupFailure.reason;}
  if(mode==='continuous'){assertCashSetupComplete(state.groups,setupHandles.keys());state.stage='continuous-ready';state.continuousAdmissionAt=new Date().toISOString();save();}else{
  // Final tournament registration is reserved for play so an SNG cannot complete
  // by automatic folds while a large unrelated roster is still being prepared.
@@ -160,4 +171,4 @@ if(mode==='play'||mode==='continuous'){
  }
 }
 
-}catch(error){atomic(dir+`ramp-${size}-attempt${state.attempt??1}-admission-failure.json`,{at:new Date().toISOString(),stage:state.stage,message:error.message,product_certificate:false});throw error;}
+}catch(error){await Promise.allSettled([...seededObservers.values()].map(h=>h.close()));atomic(dir+`ramp-${size}-attempt${state.attempt??1}-admission-failure.json`,{at:new Date().toISOString(),stage:state.stage,message:error.message,product_certificate:false});throw error;}

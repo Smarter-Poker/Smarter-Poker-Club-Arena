@@ -50,6 +50,8 @@ vi.mock('../services/supabase.js', async () => {
 });
 
 const { ServerTableEngine } = await import('./ServerTableEngine.js');
+const { TableStateHub } = await import('../transport/TableStateHub.js');
+const { default: jsonPatch } = await import('fast-json-patch');
 const { supabase } = await import('../services/supabase.js');
 
 const TABLE = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
@@ -101,6 +103,7 @@ function idleEngine() {
   // so the test's own bail timer could never fire.
   engine.sleep = vi.fn().mockImplementation(() => new Promise((r) => setTimeout(r, 5)));
   engine.hub = { emitEvent: vi.fn() };
+  engine.broadcastCurrentState = vi.fn(async () => {});
   engine.disconnectEngine = {
     isSittingOut: () => false,
     registerPlayer: vi.fn(),
@@ -289,4 +292,84 @@ describe('processPendingAddOns resolves a busted player who is not in the hand',
     await engine.processPendingAddOns([]);
     expect(from).not.toHaveBeenCalled();
   });
+});
+
+describe('completed idle roster adoption reaches reconnecting subscribers', () => {
+  it.each([0, 1])(
+    'replaces a retired roster with %i current chairs before late subscribe',
+    async (chairCount) => {
+      const { engine } = idleEngine();
+      const current = Array.from({ length: chairCount }, (_, i) => ({
+        user_id: `new-occupant-${i}`,
+        seat_number: i + 1,
+        stack: 200,
+        is_horse: false,
+      }));
+      loadSeatedPlayers.mockResolvedValue(current);
+      engine.processPendingAddOns = vi.fn(async () => {});
+      engine.disconnectEngine.getFsmStatesForTable = () => ({});
+      engine.disconnectEngine.isConnected = () => true;
+      engine.timeBankEngine.getRemainingSeconds = () => 0;
+      engine.timeBankEngine.getUsesRemaining = () => 0;
+      engine.broadcastCurrentState = (
+        ServerTableEngine.prototype as any
+      ).broadcastCurrentState.bind(engine);
+      const hub = new TableStateHub();
+      engine.hub = hub;
+      // A settled hand's last public roster is still cached when every old
+      // occupancy has departed and the ordinary native read adopts this one.
+      hub.publish(TABLE, {
+        players: [{ user_id: 'retired-occupant', seat: 6, stack: 200 }],
+        stage: 'waiting',
+        current_player: 'retired-occupant',
+        turn_deadline_ms: 100,
+      });
+      const connectedFrames: any[] = [];
+      hub.subscribe(TABLE, {
+        id: 'already-connected',
+        readyState: 1,
+        bufferedAmount: 0,
+        send: (text: string) => connectedFrames.push(JSON.parse(text)),
+      });
+      // Two unchanged completed idle boundaries retain ordinary hub no-op
+      // suppression: the second must not create an invisible sequence gap.
+      vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+      let ticks = 0;
+      engine.sleep = async () => {
+        if (++ticks === 2) engine.running = false;
+      };
+      engine.running = true;
+      await engine.dealingLoop();
+      // Named roster/phase events have their own sequence; they remain
+      // delivered and must not be confused with the public-state counter.
+      const stateFrames = connectedFrames.filter((frame) => frame.type !== 'EVENT');
+      expect(stateFrames.map((frame) => frame.type)).toEqual(['SNAPSHOT', 'DELTA']);
+      const delta = stateFrames[1];
+      expect(delta.prev).toBe(1);
+      expect(delta.seq).toBe(2);
+      const applied = jsonPatch.applyPatch(
+        connectedFrames[0].state,
+        delta.patch,
+        true,
+        false
+      ).newDocument;
+      expect(applied.players.map((p: any) => p.user_id)).toEqual(current.map((p) => p.user_id));
+      const frames: any[] = [];
+      hub.subscribe(TABLE, {
+        id: 'late-subscriber',
+        readyState: 1,
+        bufferedAmount: 0,
+        send: (text: string) => frames.push(JSON.parse(text)),
+      });
+      const snapshot = frames.find((frame) => frame.type === 'SNAPSHOT');
+      expect(snapshot.seq).toBe(2);
+      expect(snapshot.state.players.map((p: any) => p.user_id)).toEqual(
+        current.map((p) => p.user_id)
+      );
+      expect(snapshot.state.current_player).toBeNull();
+      expect(snapshot.state.turn_deadline_ms).toBe(0);
+      expect(snapshot.state.action_history).toEqual([]);
+      expect(engine.handController).toBeFalsy();
+    }
+  );
 });

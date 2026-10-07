@@ -302,6 +302,92 @@ ${script}`,
   );
 });
 
+describe.each([
+  { lane: 'client', workflow: WORKFLOW },
+  { lane: 'live-table', workflow: TABLE_WORKFLOW },
+])('$lane release window fetches a release published after checkout', ({ workflow }) => {
+  // Run 37559264622: all three Phase 1 journeys passed on 68fdeb670c, and the
+  // run was still red because production had moved to f681634a08, a later
+  // commit on main that this job's checkout had never seen, so the classifier
+  // answered "does not resolve to a trusted repository commit". The step must
+  // refresh protected main before it classifies.
+  const run = (fetchStatus: number) => {
+    const proof = step(workflow, 'Classify the release window this certificate covers');
+    const script = proof.split('\n        run: |\n')[1].replace(/^ {10}/gm, '');
+    const dir = mkdtempSync(join(tmpdir(), 'e2e-release-fetch-'));
+    const calls = join(dir, 'calls.txt');
+    const summary = join(dir, 'summary.md');
+    const output = join(dir, 'output.txt');
+    writeFileSync(calls, '');
+    writeFileSync(summary, '');
+    writeFileSync(output, '');
+    try {
+      const result = spawnSync(
+        'bash',
+        [
+          '--noprofile',
+          '--norc',
+          '-e',
+          '-o',
+          'pipefail',
+          '-c',
+          `curl() { printf '%s' '{"ca_sha":"${'b'.repeat(40)}","built_by":"publish-club-arena.yml"}'; }
+timeout() { shift; "$@"; }
+git() {
+  printf 'git %s\\n' "$*" >> "$CALLS"
+  case "$1" in
+    cat-file) return 1 ;;
+    fetch) return "$FETCH_STATUS" ;;
+  esac
+  return 99
+}
+node() {
+  cat >/dev/null
+  printf 'node %s\\n' "$2" >> "$CALLS"
+  printf '%s\\n' "superseded ${'b'.repeat(40)}"
+  return 3
+}
+${script}`,
+        ],
+        {
+          cwd: ROOT,
+          encoding: 'utf8',
+          timeout: 5_000,
+          env: {
+            ...process.env,
+            CALLS: calls,
+            FETCH_STATUS: String(fetchStatus),
+            EXPECTED_LIVE_SHA: 'a'.repeat(40),
+            GITHUB_STEP_SUMMARY: summary,
+            GITHUB_OUTPUT: output,
+            RUNTIME_RESUMED: 'true',
+            LIVE_COVERAGE_COMPLETE: 'true',
+          },
+        }
+      );
+      return { result, calls: readFileSync(calls, 'utf8').trim().split('\n') };
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  it('fetches the closing SHA from origin before the classifier reads it', () => {
+    const { result, calls } = run(0);
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(0);
+    expect(calls).toEqual(['git fetch --no-tags origin main', 'node release-window']);
+    expect(result.stdout).toContain('::warning::UNKNOWN: production advanced');
+  });
+
+  it('refuses certification without asking the classifier when protected history is unreadable', () => {
+    const { result, calls } = run(1);
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('::warning::UNKNOWN: protected-main history was unreadable');
+    expect(calls).toEqual(['git fetch --no-tags origin main']);
+  });
+});
+
 describe('the checker refuses a run that verified nothing', () => {
   it('fails when every test in a spec file skipped', () => {
     expect(check([spec('tests/e2e/a.spec.ts', [null, null])])).toBe(1);

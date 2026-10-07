@@ -687,6 +687,47 @@ test('source diagnostics return allowlisted categories without raw error or secr
     [137, 'secret marker', 'signal-termination'],
     [2, 'canceling statement due to statement timeout secret', 'server-statement-timeout'],
     [2, 'canceling statement due to lock timeout secret', 'server-lock-timeout'],
+    [
+      1,
+      'pg_dump: error: query failed: server closed the connection unexpectedly\npg_dump: detail: Query was: SECRET_SQL',
+      'source-connection-lost',
+    ],
+    [
+      1,
+      'pg_dump: error: query failed: SSL SYSCALL error: EOF detected SECRET_URI',
+      'source-connection-lost',
+    ],
+    [
+      1,
+      'pg_dump: error: query failed: SSL connection has been closed unexpectedly SECRET',
+      'source-connection-lost',
+    ],
+    [
+      1,
+      'pg_dump: error: query failed: SECRET_UNKNOWN_ERROR\npg_dump: detail: Query was: SECRET_SQL',
+      'pg-dump-query-failure',
+    ],
+    [1, 'pg_dump: error: query failed: permission denied for SECRET_OBJECT', 'catalog-permission'],
+    [
+      1,
+      'pg_dump: error: query failed: canceling statement due to statement timeout SECRET',
+      'server-statement-timeout',
+    ],
+    [
+      124,
+      'pg_dump: error: query failed: server closed the connection unexpectedly SECRET',
+      'bounded-timeout',
+    ],
+    [
+      137,
+      'pg_dump: error: query failed: SSL SYSCALL error: EOF detected SECRET',
+      'signal-termination',
+    ],
+    [
+      1,
+      'pg_dump: detail: Query was: SECRET_SQL\nquery failed without native error prefix SECRET',
+      'unclassified-source-client',
+    ],
     [2, 'unrecognized raw error secret marker', 'unclassified-source-client'],
   ];
   for (const [status, input, category] of samples) {
@@ -698,6 +739,7 @@ test('source diagnostics return allowlisted categories without raw error or secr
     assert.equal(result.status, 0);
     assert.equal(result.stdout.trim(), category);
     assert.equal(result.stderr, '');
+    assert.doesNotMatch(result.stdout, /SECRET|private\.example|postgres:\/\//);
   }
 });
 

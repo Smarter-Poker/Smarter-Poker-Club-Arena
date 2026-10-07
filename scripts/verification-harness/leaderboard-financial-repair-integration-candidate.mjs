@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-const preflightHash = 'afbd3aee140c3b242ff93e4eb3c9171e228a72178d99a91216321859c36577ae';
+const preflightHash = 'a07652713873223527eedbf1500607607a7d8c96d7b3ec2dd4c85bfa96eae690';
 const auth = 'leaderboard-isolated-authorization-draft.sql';
 const capture = 'leaderboard-capture-basis-candidate.sql';
 const ranking = 'leaderboard-complete-ranking-candidate.mjs';

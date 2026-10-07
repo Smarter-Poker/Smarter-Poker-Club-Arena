@@ -1,3 +1,4 @@
+import {readEmptyTableReady} from './empty-table-readiness.mjs';
 import {prepareReentryQuotes} from './reentry-quotes.mjs';
 import fs from 'node:fs';
 import {cashSeedReady} from './cash-seed-admission.mjs';
@@ -56,6 +57,20 @@ if(['admit','resume-admit','continuous'].includes(mode)){
  // Refresh the complete existing cohort before any actor wall-clock lifetime starts.
  const refreshedAt=Date.now();for(const group of state.groups)for(const user of group.users)await refresh(user);save();state.sessionRefresh={finished:new Date().toISOString(),durationMs:Date.now()-refreshedAt};save();
  if(state.cashReentry){const quoteStart=Date.now();await prepareReentryQuotes(state.groups,(group,user)=>rpc('fn_cash_effective_buyin',{p_table_id:group.tableId},user));state.quotePreflight={finished:new Date().toISOString(),durationMs:Date.now()-quoteStart};save();}
+ // The maintained actor contract requires a ready candidate engine. Qualify
+ // empty on-demand table setup before funding, inside this same ten-minute
+ // deadline. The measured session is warm; cold setup duration stays explicit.
+ if(mode==='continuous'){
+  assert.ok(!state.groups.some(g=>g.kind==='cash'&&g.users.some(u=>u.buyinEntered)),'Existing funded admission requires original-operation recovery');
+  const started=new Date().toISOString(),readyTables=[];
+  await admitIndependentBatches(state.groups.filter(g=>g.kind==='cash'),8,async group=>{
+   within();const user=group.users[0];const url=new URL('http://gateway:8000/rest/v1/table_seats');url.search=new URLSearchParams({select:'table_id,user_id,left_at',table_id:'eq.'+group.tableId,left_at:'is.null',limit:'1'});
+   const chairs=await request(url.toString(),undefined,user.session.access_token,'native-empty-table-readiness','GET');
+   const began=Date.now();const wire=await request('http://engine:8080/state/'+group.tableId,undefined,user.session.access_token,'cold-table-setup-readiness','GET');
+   assert.equal(wire.table_id,group.tableId);assert.ok(Array.isArray(wire.players)&&wire.players.length===0);assert.ok(['idle','waiting'].includes(wire.stage));const snapshot=await readEmptyTableReady({group,chairs,user,deadline:requestDeadline,checkpoint:operation=>append(`ramp-${size}-attempt${state.attempt}-engine-readiness-operations.jsonl`,operation)});const receipt={group:group.index,tableId:group.tableId,observedAt:new Date().toISOString(),durationMs:Date.now()-began,chairs,httpState:wire,snapshot};readyTables.push(receipt);append(`ramp-${size}-attempt${state.attempt}-engine-readiness.jsonl`,receipt);
+  });
+  state.engineReadiness={started,finished:new Date().toISOString(),durationMs:Date.now()-Date.parse(started),tables:readyTables.length,setupDeadline:new Date(requestDeadline).toISOString(),scope:'bounded-cold-table-setup-before-warm-session'};save();
+ }
  async function agreeToPost(group,u,chair,readChairs){
   u.setupPostAgreement={occupancyId:chair.occupancy_id,outcome:'unknown'};append(`ramp-${size}-attempt${state.attempt}-setup-agreements.jsonl`,{actorId:u.id,tableId:group.tableId,...u.setupPostAgreement});
   const result=await request('http://engine:8080/post-bb',{tableId:group.tableId},u.session.access_token,'ordinary-setup-post-bb');u.setupPostAgreement.outcome='returned';u.setupPostAgreement.result=result;append(`ramp-${size}-attempt${state.attempt}-setup-agreements.jsonl`,{actorId:u.id,tableId:group.tableId,...u.setupPostAgreement});
@@ -110,7 +125,7 @@ if(['admit','resume-admit','continuous'].includes(mode)){
 }
 if(mode==='play'||mode==='continuous'){
  assert.equal(state.stage,mode==='continuous'?'continuous-ready':'parked-and-partially-registered');deadline=Date.now()+5*60000;requestDeadline=deadline;state.stage='playing';save();
- const result={size,runId:state.runId,attempt:state.attempt??1,started:new Date().toISOString(),plan,resources:[],cash:[],tournaments:[],reconnects:[],product_certificate:false,sustained15MinuteSLOQualified:false,workload:{authenticatedSyntheticHumanActors:size,horseActors:0,productionBackgroundEquityQualified:false,demandForecast:false}};
+ const result={size,runId:state.runId,attempt:state.attempt??1,started:new Date().toISOString(),plan,resources:[],cash:[],tournaments:[],reconnects:[],product_certificate:false,sustained15MinuteSLOQualified:false,engineReadiness:state.engineReadiness??null,workload:{tableAdmissionScope:mode==='continuous'?'warm-session-after-accounted-cold-setup':'parked-session',cold1000StartupQualified:false,authenticatedSyntheticHumanActors:size,horseActors:0,productionBackgroundEquityQualified:false,demandForecast:false}};
  const control=new AbortController(),cash=[],tournamentPromises=[],tournamentLive=new Map(),tournamentReady=new Set();let failure;let cohortActive=false;
  const markFailure=e=>{if(!failure){failure=e;result.firstFailure={message:e.message,at:new Date().toISOString()};}control.abort();};
  measuredFailure=markFailure;

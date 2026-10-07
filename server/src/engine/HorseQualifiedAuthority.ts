@@ -60,10 +60,12 @@ export interface HorseQualifiedAuthoritySelection {
  * `HorsePhase12Authority.ts` with the same three additions (the P12.2
  * contract digest, the pack variant, its natural completion evidence). Phase 13
  * (P13.3) admits it per variant through `HorsePhase13Authority.ts` for the
- * joint multiway owner, with the same three additions. */
+ * joint multiway owner, with the same three additions. Phase 14 (P14-D, inactive
+ * slice) admits it per corrective domain through `HorsePhase14Authority.ts`,
+ * adding the inactive catalog digest and holdout digest; nothing selects it. */
 export interface HorseQualifiedAuthority {
   readonly schema: 'horse-qualified-authority-v1';
-  readonly phase: 'phase8' | 'phase10' | 'phase11' | 'phase12' | 'phase13';
+  readonly phase: 'phase8' | 'phase10' | 'phase11' | 'phase12' | 'phase13' | 'phase14';
   readonly sourceSha: string;
   readonly continuationVersion: string;
   readonly policyDigest: string;
@@ -82,6 +84,9 @@ export interface HorseQualifiedAuthority {
   /** Phases 11 to 13: the committed natural completion evidence admitted with it. */
   readonly completionPath?: string;
   readonly completionSha256?: string;
+  /** Phase 14: the inactive corrective catalog and holdout the qualification binds. */
+  readonly catalogDigest?: string;
+  readonly holdoutDigest?: string;
   readonly authorityKey: string;
 }
 
@@ -119,7 +124,10 @@ export type HorseAuthorityRefusal =
   | 'completion_evidence_mismatch'
   | 'completion_release_mismatch'
   | 'completion_window_invalid'
-  | 'completion_below_floor';
+  | 'completion_below_floor'
+  // Phase 14 (P14-D) corrective catalog refusals, named by what failed.
+  | 'catalog_digest_mismatch'
+  | 'holdout_digest_mismatch';
 
 export type HorseAuthorityAdmission =
   | { readonly status: 'admitted'; readonly authority: HorseQualifiedAuthority }

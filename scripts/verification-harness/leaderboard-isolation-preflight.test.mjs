@@ -6,6 +6,33 @@ import test from 'node:test';
 
 const shell = fileURLToPath(new URL('./leaderboard-isolation-preflight.sh', import.meta.url));
 const source = readFileSync(shell, 'utf8');
+test('initdb public namespace is retained for extension installation', () => {
+  const command = source.match(/-c '([^']+)' >"\$scratch\/empty-schema.log"/)?.[1];
+  assert.equal(command, 'DROP EXTENSION plpgsql;');
+  assert.doesNotMatch(source, /DROP SCHEMA public/);
+  assert.match(source, /--schema-only --exit-on-error --use-list=\/tmp\/remaining.list/);
+  assert.match(source, /isolated catalog differs from current source/);
+  // Execute the actual extracted preparation SQL through a finite stub model:
+  // it must remove default plpgsql but preserve the namespace pg_dump omits.
+  function prepare(sql) {
+    const namespaces = new Set(['public', 'pg_catalog']);
+    const extensions = new Set(['plpgsql']);
+    for (const statement of sql
+      .split(';')
+      .map((value) => value.trim())
+      .filter(Boolean)) {
+      if (statement === 'DROP SCHEMA public') namespaces.delete('public');
+      else if (statement === 'DROP EXTENSION plpgsql') extensions.delete('plpgsql');
+      else assert.fail('Unreviewed preparation statement');
+    }
+    return {
+      namespacePresent: namespaces.has('public'),
+      extensionPresent: extensions.has('plpgsql'),
+    };
+  }
+  assert.equal(prepare('DROP SCHEMA public; DROP EXTENSION plpgsql;').namespacePresent, false);
+  assert.deepEqual(prepare(command), { namespacePresent: true, extensionPresent: false });
+});
 test('destination refusal diagnostics retain fixed categories without private error contents', () => {
   const classifier = source.slice(
     source.indexOf('destination_error_category() {'),

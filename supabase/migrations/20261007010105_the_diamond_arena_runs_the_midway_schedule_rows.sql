@@ -21,10 +21,17 @@
 -- guarantee aside on the house at creation.
 --
 -- Data only: no DDL, so no schema-cache reload. Deep Stack Society's schedules
--- are not touched and stay inactive. Runs once: if the arena already has any
--- schedule this refuses rather than duplicating the line-up.
+-- are not touched and stay inactive. Runs once: if the arena already carries
+-- any Midway-named schedule this refuses rather than duplicating the line-up.
 --
--- @live-proof: (SELECT count(*) FROM public.tournament_schedules WHERE club_id = '002c2d27-9584-4e52-835a-bb2be148fc81' AND union_id IS NULL) > 0
+-- THE STARTER BOARD IS SWITCHED OFF, NOT DELETED. 20261006090619 gave the
+-- arena a four-event starter schedule (Diamond Daily Turbo 300, Daily Deep
+-- Stack 500, Bounty Hunt 1000, Progressive Bounty 2000) before Dan ruled the
+-- arena's line-up is Midway's. Those four rows are set active = false so the
+-- arena runs exactly the Midway schedule; nothing is deleted, the events they
+-- already spawned keep running, and turning one back on is a single flag.
+--
+-- @live-proof: EXISTS (SELECT 1 FROM public.tournament_schedules WHERE club_id = '002c2d27-9584-4e52-835a-bb2be148fc81' AND union_id IS NULL AND active AND name = 'Afternoon PLO Turbo')
 
 BEGIN;
 
@@ -34,13 +41,23 @@ DECLARE
   c_midway constant uuid := 'fade0000-0000-0000-0000-000000000001';
   v_source int;
   v_copied int;
+  v_starter int;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM public.clubs WHERE id = c_arena) THEN
     RAISE EXCEPTION 'the Diamond Arena club % does not exist', c_arena;
   END IF;
-  IF EXISTS (SELECT 1 FROM public.tournament_schedules WHERE club_id = c_arena) THEN
-    RAISE EXCEPTION 'the Diamond Arena already has schedules; refusing to duplicate the line-up';
+  IF EXISTS (SELECT 1 FROM public.tournament_schedules a
+               JOIN public.tournament_schedules m
+                 ON m.union_id = c_midway AND m.active AND m.name = a.name
+              WHERE a.club_id = c_arena) THEN
+    RAISE EXCEPTION 'the Diamond Arena already carries Midway schedules; refusing to duplicate the line-up';
   END IF;
+
+  UPDATE public.tournament_schedules
+     SET active = false, updated_at = now()
+   WHERE club_id = c_arena AND active;
+  GET DIAGNOSTICS v_starter = ROW_COUNT;
+  RAISE NOTICE 'switched off % starter schedule(s) on the Diamond Arena', v_starter;
 
   SELECT count(*) INTO v_source
     FROM public.tournament_schedules

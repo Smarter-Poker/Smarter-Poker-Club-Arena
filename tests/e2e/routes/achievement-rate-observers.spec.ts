@@ -140,7 +140,18 @@ test.describe('Visible achievement and rate history readers', () => {
     expect(rows.length, 'the settlement observer needs a real rendered cycle').toBeGreaterThan(0);
     await expect(page.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
     await expect(page.getByText('No Settlement Cycles Yet', { exact: true })).toHaveCount(0);
-    await expect(page.getByText(/^Period:/).first()).toBeVisible({ timeout: 30_000 });
+    const firstInvoice = rows[0];
+    expect(typeof firstInvoice.created_at).toBe('string');
+    const periodNumber = firstInvoice.breakdown?.period_number;
+    const label =
+      typeof periodNumber === 'number' && Number.isSafeInteger(periodNumber) && periodNumber > 0
+        ? `Period ${periodNumber.toLocaleString()}`
+        : 'Settlement Cycle';
+    const firstCycle = page.getByRole('main').locator('ol > li').first();
+    await expect(firstCycle.getByText(label, { exact: true })).toBeVisible({ timeout: 30_000 });
+    await expect(firstCycle.locator('time')).toHaveAttribute('datetime', firstInvoice.created_at);
+    await expect(firstCycle.getByText(/^Rake /)).toBeVisible();
+    await expect(firstCycle.getByText(/^Net /)).toBeVisible();
     await expectPhoneFit(page);
   });
   test('a reserved owner notification invalidates progress without inventing an unlock', async ({

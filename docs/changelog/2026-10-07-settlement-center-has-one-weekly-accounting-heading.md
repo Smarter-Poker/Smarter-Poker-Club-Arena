@@ -25,3 +25,23 @@ section for what it lists ("Recorded Union Periods").
 "Refresh Weekly Summaries", "Export Weekly Summaries"). The workspace keeps the
 single "Club Weekly Accounting" heading. Pinned in
 `tests/components/ClubWeeklyAccountingSummary.test.tsx` (fails on the old name).
+
+## Two more, found before they could fail
+
+Rendering the remaining consoles at 393px against production-shaped payloads
+(the same local harness as #6321) and counting what each outcome locator
+resolves to showed two more strict-mode collisions behind this one:
+
+- **Settlement Center, `getByLabel('Club Transaction Records')` resolved to 2.**
+  The console carries that name (pinned by
+  `tests/admin-subpages-console-contract.test.ts`) and the ledger inside it was
+  handed the same name as its `title`. The page was wrong: the list now keeps
+  its own default name, and the contract test pins that only the console
+  carries `ledgerTitle`.
+- **CSV Exports, `getByRole('tablist', { name: 'Reporting Window' })` resolved
+  to 2:** the page's "Reporting Window" and RakeReports' "Rake Reporting
+  Window". Both names are right; the spec matched by substring. The spec now
+  matches exactly.
+
+After these, every outcome locator in test 2 resolves to exactly one element in
+the harness.

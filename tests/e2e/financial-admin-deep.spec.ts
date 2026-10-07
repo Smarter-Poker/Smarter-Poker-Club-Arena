@@ -329,7 +329,11 @@ async function expectLinkedConsoleOutcome(page: Page, route: LinkedConsole): Pro
       await expect(page.getByLabel('Club Transaction Records')).toBeVisible();
       break;
     case 'CSV Exports':
-      await expect(page.getByRole('tablist', { name: 'Reporting Window' })).toBeVisible();
+      // Exact: CSV Exports also mounts RakeReports' "Rake Reporting Window"
+      // tablist, which a substring match resolves alongside this one.
+      await expect(
+        page.getByRole('tablist', { name: 'Reporting Window', exact: true })
+      ).toBeVisible();
       await expect(page.getByText('Financials Unavailable', { exact: true })).toHaveCount(0);
       break;
   }

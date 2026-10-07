@@ -248,7 +248,12 @@ describe('a table that never dealt is moved from its seated entries', () => {
       });
     // 20261002134551 (a late entry) redefines f06_movement_prior only, and
     // refuses to run unless the installed body is exactly this post-image.
-    expect(later).toEqual([ADD_ON, LATE_ENTRY, BUSTED_ENTRY]);
+    expect(later).toEqual([
+      ADD_ON,
+      LATE_ENTRY,
+      BUSTED_ENTRY,
+      '20261007031952_a_never_dealt_rebuy_keeps_its_original_paid_chair.sql',
+    ]);
     expect(readFileSync(join(MIGRATIONS, ADD_ON), 'utf8')).toContain(
       `md5(p.prosrc) = '${ASSERT_POST}'`
     );

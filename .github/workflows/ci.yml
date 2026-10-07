@@ -1864,6 +1864,18 @@ jobs:
           path: artifacts/retirement-original-helper/
           if-no-files-found: error
           retention-days: 7
+      - name: Never-dealt rebuy original funding and generation proof
+        id: never_dealt_rebuy
+        if: matrix.shard == 3
+        run: python3 scripts/ci/test-never-dealt-rebuy.py --pg-bin /usr/lib/postgresql/17/bin --evidence artifacts/never-dealt-rebuy --socket-root "$RUNNER_TEMP"
+      - name: Retain never-dealt rebuy native proof
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.never_dealt_rebuy.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: never-dealt-rebuy-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/never-dealt-rebuy/
+          if-no-files-found: error
+          retention-days: 7
       - name: Two omitted tournament originals preserve exact native custody
         id: two_retired_tournament_originals
         if: matrix.shard == 3

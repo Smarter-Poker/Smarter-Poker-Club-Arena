@@ -27,11 +27,22 @@
  * failure this file exists to prevent (CLAUDE.md 10.86: unknown is never
  * reported as clean).
  *
- * While an episode is firing and the fleet has not closed it, later occurrences
- * reuse its identity, so a repeated failure bumps delivery_count instead of
- * minting another open row; fn_record_operational_alert's ON CONFLICT updates
- * last_received_at and delivery_count only, so the payload is the first
- * occurrence's and later run ids are in this job's own log. A recovery is
+ * Each occurrence keeps its own identity. An earlier version of this file
+ * reused the newest open row's event_key while an episode was firing and the
+ * fleet had not closed it, on the reasoning that a repeated failure should bump
+ * delivery_count rather than mint another open row. The premise was false: no
+ * lane closes rows on this path, so "while the fleet has not closed it" is
+ * forever, and because fn_record_operational_alert's ON CONFLICT updates
+ * last_received_at and delivery_count ONLY, every later occurrence's payload was
+ * discarded. Row 240356 reached delivery_count 20 between 2026-10-06T00:07:48Z
+ * and 02:58:19Z while naming only run 37391734160 / head 9e8d17e5; a store read
+ * for sixteen distinct run ids returned that one row, so nineteen production
+ * verification outcomes - run 37389347702, the only conclusion=failure in forty
+ * runs, among them - became permanently unattributable (intake records
+ * 2026-10-06T01:05:24Z and 02:01:30Z). Identity is now a function of the verdict
+ * alone, as this file's own test contract always said it was; a genuine repeat of
+ * the SAME occurrence still hashes to the same key and still bumps
+ * delivery_count, which is the dedup that was actually wanted. A recovery is
  * recorded ONLY to close an episode that is actually open: a green run against
  * no open episode writes nothing, because a store that mints a row every time
  * something succeeds is the reason 78.9 pct of the open backlog is already
@@ -50,6 +61,20 @@ export const UNKNOWN = 3;
 export const CLOSED = ['verified_fixed', 'historical'];
 /** A lane that reached none of these did not verify anything. */
 export const SUCCESS = 'success';
+
+/**
+ * The identity of one verification occurrence, minted in exactly one place.
+ *
+ * Exported so the regression test asserts the real function and not a copy of
+ * its arithmetic. It reads nothing but the verdict and the job sets derived from
+ * it: that is what makes the collapse of 2026-10-06 unrepresentable rather than
+ * merely fixed.
+ */
+export function episodeKey(verdict, failed, skipped) {
+  const identity = [verdict.source, verdict.runId, verdict.headSha,
+    failed.slice().sort().join(','), skipped.slice().sort().join(',')].join(':');
+  return createHash('sha256').update(identity).digest('hex');
+}
 
 /**
  * Pure decision, exported for the regression test.
@@ -90,18 +115,19 @@ export function decide(verdict, previous) {
 
   if (unverified) {
     const gateFailed = Boolean(gate) && gate.result !== SUCCESS;
-    // Identity carries run id, head sha and the failing jobs, as the intake
-    // record of 2026-10-05T22:01:53Z requires, so two distinct occurrences are
-    // two incidents and never collapse onto one another.
-    const identity = [verdict.source, verdict.runId, verdict.headSha,
-      failed.slice().sort().join(','), skipped.slice().sort().join(',')].join(':');
-    const reusable = previous && previous.status === 'firing'
-      && !CLOSED.includes(previous.investigation_status);
+    // THE INVARIANT: on the fire path the event key is a function of the verdict
+    // ALONE. `previous` is deliberately not read here. Identity carries run id,
+    // head sha and the failing jobs, as the intake record of 2026-10-05T22:01:53Z
+    // requires, so two distinct occurrences are two incidents and never collapse
+    // onto one another - and no shape of unrelated store state can override that.
+    // A true repeat of the same occurrence hashes to the same key and is deduped
+    // by fn_record_operational_alert's ON CONFLICT (source, event_key), which is
+    // the only dedup this path ever needed.
     return {
       action: 'fire',
       exitCode: 0,
       severity: gateFailed ? 'critical' : 'warning',
-      eventKey: reusable ? previous.event_key : createHash('sha256').update(identity).digest('hex'),
+      eventKey: episodeKey(verdict, failed, skipped),
       payload: {
         target_task_id: FLEET_TASK_ID,
         workflow: verdict.workflow,

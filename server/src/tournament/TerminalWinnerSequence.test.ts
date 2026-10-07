@@ -39,6 +39,7 @@ function finishStage(
     countError?: boolean;
     witnessError?: boolean;
     durableWinnerError?: boolean;
+    unsequencedCountError?: boolean;
     variant?: string;
   } = {}
 ) {
@@ -48,6 +49,7 @@ function finishStage(
     expect(table).toBe('tournament_players');
     let rows = [...entrants];
     let status: string | undefined;
+    let unsequencedRead = false;
     const query: any = {
       select: vi.fn().mockReturnThis(),
       eq: vi.fn((column: string, value: unknown) => {
@@ -56,6 +58,12 @@ function finishStage(
           rows = rows.filter((row) => row.status === value);
         }
         if (column === 'position') rows = rows.filter((row) => row.position === value);
+        return query;
+      }),
+      is: vi.fn((column: keyof Entrant, value: unknown) => {
+        expect(value).toBeNull();
+        unsequencedRead = true;
+        rows = rows.filter((row) => row[column] === null);
         return query;
       }),
       not: vi.fn((column: keyof Entrant, operation: string, value: unknown) => {
@@ -89,10 +97,17 @@ function finishStage(
         };
       }),
       then: (resolve: any, reject: any) =>
-        Promise.resolve({
-          count: options.countError ? null : rows.length,
-          error: options.countError ? { message: 'count failed' } : null,
-        }).then(resolve, reject),
+        Promise.resolve(
+          unsequencedRead
+            ? {
+                count: options.unsequencedCountError ? null : rows.length,
+                error: options.unsequencedCountError ? { message: 'count failed' } : null,
+              }
+            : {
+                count: options.countError ? null : rows.length,
+                error: options.countError ? { message: 'count failed' } : null,
+              }
+        ).then(resolve, reject),
     };
     return query;
   });
@@ -159,13 +174,57 @@ describe('terminal candidate follows the durable elimination authority', () => {
     expect(manager.finishTournament).toHaveBeenCalledWith(lastUserId);
   });
 
-  it('does not let an unsequenced legacy row precede the durable witness', async () => {
+  /* Replaced 2026-10-07. This case used to pin the opposite: an unsequenced
+     row was skipped and the last sequenced bust was named. The database never
+     accepted that (fn_settle_tournament_places voids the witness when any
+     eliminated row has a NULL sequence), and on 2026-10-06 the same rule named
+     tournament 62a15104's first player out as its winner. */
+  it('names nobody while any elimination lacks a durable sequence', async () => {
     const rows = finalField(null);
     rows[0].elimination_sequence = null;
     const manager = finishStage(rows);
     await manager.runEliminationSweep(new AbortController().signal);
-    expect(manager.finishTournament).toHaveBeenCalledOnce();
-    expect(manager.finishTournament).toHaveBeenCalledWith(lastUserId);
+    expect(manager.finishTournament).not.toHaveBeenCalled();
+    expect(manager.requestUrgentEliminationSweepAfter).toHaveBeenCalledOnce();
+    expect(manager.requestUrgentEliminationSweepAfter).toHaveBeenCalledWith(60_000);
+    expect(fixture.reportError).toHaveBeenCalledWith(
+      expect.any(Error),
+      'Tournament.finish_elimination_witness_unsequenced'
+    );
+  });
+
+  it('does not name the first player out when the live field was retired unsequenced (62a15104)', async () => {
+    // 15:29 ca905025 busts with a sequence (third place). 15:33 a retirement
+    // marks the two live players eliminated with NULL sequences.
+    const firstOut = '00000000-0000-4000-8000-0000000000aa';
+    const rows: Entrant[] = [
+      {
+        user_id: firstOut,
+        status: 'eliminated',
+        elimination_sequence: 612399,
+        eliminated_at: '2026-10-06T15:29:23.417Z',
+      },
+      {
+        user_id: firstUserId,
+        status: 'eliminated',
+        elimination_sequence: null,
+        eliminated_at: '2026-10-06T15:33:04.000Z',
+      },
+      {
+        user_id: lastUserId,
+        status: 'eliminated',
+        elimination_sequence: null,
+        eliminated_at: '2026-10-06T15:33:04.000Z',
+      },
+    ];
+    const manager = finishStage(rows, { variant: 'mtt' });
+    await manager.runEliminationSweep(new AbortController().signal);
+    expect(manager.finishTournament).not.toHaveBeenCalled();
+    expect(manager.rearmIfTheFinishWasRefused).not.toHaveBeenCalled();
+    expect(fixture.reportError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('2 elimination(s) without') }),
+      'Tournament.finish_elimination_witness_unsequenced'
+    );
   });
 
   it('keeps a missing witness pending without inventing a winner', async () => {
@@ -177,9 +236,20 @@ describe('terminal candidate follows the durable elimination authority', () => {
     expect(manager.requestUrgentEliminationSweepAfter).toHaveBeenCalledOnce();
     expect(fixture.reportError).toHaveBeenCalledWith(
       expect.any(Error),
-      'Tournament.finish_elimination_witness_unavailable'
+      'Tournament.finish_elimination_witness_unsequenced'
     );
     expect(manager.eliminationSweepCursor.nextStage).toBe(2);
+  });
+
+  it('keeps the field pending when the unsequenced count cannot be read', async () => {
+    const manager = finishStage(finalField(null), { unsequencedCountError: true });
+    await manager.runEliminationSweep(new AbortController().signal);
+    expect(manager.finishTournament).not.toHaveBeenCalled();
+    expect(manager.requestUrgentEliminationSweepAfter).toHaveBeenCalledWith(5_000);
+    expect(fixture.reportError).toHaveBeenCalledWith(
+      expect.anything(),
+      'Tournament.unsequenced_elimination_count_unreadable'
+    );
   });
 
   it.each(['countError', 'witnessError'] as const)(

@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  CLIP MODE — the replay page as a camera subject (Phase 9.1, 2026-09-30)
+ *  CLIP MODE: the hand share page as a camera subject (Phase 9.1, 2026-09-30)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * The hand clip renderer (World Hub, `/api/cron/render-hand-clips`) opens
@@ -12,30 +12,27 @@
  * duration. A wall-clock screencast of `start()` playback was the first
  * capture (2026-10-01); on the renderer's starved CPU it dropped frames and
  * lost the river and the showdown, so the camera now reads the plan and
- * never the clock. Everything the page needs to turn that payload into a
- * replay is here, and none of it touches React:
+ * never the clock.
+ *
+ * A HAND CLIP IS THE HAND SHARE PAGE, PIXEL FOR PIXEL (owner decision, Dan,
+ * 2026-10-07). Until then the clip was its own stripped felt: every seat that
+ * was not the hero became "Seat N", there was no table name, no hand number,
+ * no street tabs, no transport, no results strip and no footer, and the row
+ * went into the model straight from the record. Now the payload goes through
+ * exactly the path a share link goes through: `clipHandFrom` builds the
+ * ShareableHand the archive's share button builds (`shareableFromModel`, as
+ * `panelHandToShareable` in handHistoryAdapter.ts does), and the page renders
+ * it with the same `sourceFrom` a link is rendered with. Every player's
+ * screen name, the table name, the hand number, the starting stacks and the
+ * showdown travel exactly as they do in a link. Nothing anonymises any more.
+ * The renderer sets a 4:5 portrait viewport, 1080x1350; the page does nothing
+ * special for it except the camera contract (HandReplay's `clip` prop).
+ * Everything the page needs is here, and none of it touches React:
  *
  *   readClipPayload       the payload, validated, or null
- *   anonymiseRowForClip   contract C2 step 1: every seat that is not the hero
- *                         becomes "Seat N", no winner name, no villain cards
- *                         the showdown record does not mark as shown
+ *   clipHandFrom          the ShareableHand a share link carries, from the payload
  *   fitClipRate           contract C3: the slowest replay rate that fits the
  *                         hand inside the clip window, or "too long"
- *   buildClipSource       contract C2 step 2: the ReplaySource HandReplay plays
- *
- * WHY THE ANONYMISER PINS THE WRITER'S KEYS. `server/src/services/supabase/
- * handHistory.ts` stores `players[]` as {userId, username, seat, stack, cards},
- * `winners[]` as {userId, amount, potIndex, hand:{name, ranking, cards}},
- * `winners_by_board[]` as {board, userId, amount, handName, low}, `showdown[]`
- * as {user_id, seat, reveal_order, mucked, hand_name, hand_description} and
- * `hole_cards` as {<user id>: [{rank, suit}]} - showdown-revealed holdings
- * only. A clip is PUBLIC and may be a horse's; a horse never names a human
- * player, so every name that is not the hero's is replaced by the seat
- * number, and any name-shaped field a future writer might add to the winner
- * or showdown records is replaced the same way. `hand.name` is a HAND name
- * ("Two Pair") and stays; `hand.cards` of a seat that did not show is dropped
- * because the model never reads it and a public clip has no business carrying
- * it.
  *
  * NO EMOJI, NO EM DASH, NO EN DASH in anything a viewer can read.
  */
@@ -44,10 +41,14 @@ import type { ReplayFrame } from '../utils/replayFrames';
 import { replayBeatMs, type ReplayRate } from '../utils/replayMotion';
 import { buildReplay, replayInputFromRow, type HandHistoryRowLike } from '../utils/handReplay';
 import type { StoredCard } from '../utils/deckCards';
-import type { ReplaySource } from '../components/replay/HandReplay';
+import type { ShareableHand } from '../components/table/ShareHand';
+import { shareableFromModel } from './shareHandModel';
 
 // ── Contract C1: the injected payload ────────────────────────────────────────
 
+/* The job style key the queue, the renderer and this page agree on. The frame
+   it names is history: since 2026-10-07 the renderer captures 4:5 portrait,
+   1080x1350, and the key stays so no job row or cron has to be renamed. */
 export const CLIP_STYLE = 'felt-720p' as const;
 export const CLIP_PAYLOAD_KEY = '__SP_CLIP__' as const;
 export const CLIP_MIN_MS_DEFAULT = 15000;
@@ -68,6 +69,12 @@ export interface ClipPayload {
   /** The seat the felt is anchored on; the author of the clip. */
   heroId: string;
   row: ClipRow;
+  /**
+   * The table the hand was played on, printed in the share page's header
+   * exactly as a link prints it. Null when the renderer sent none or sent an
+   * empty string; the hand then says "Club Arena", as an archive share does.
+   */
+  tableName: string | null;
   /** The hero's `ca_hand_facts.hole_cards` when the row holds none for them. */
   privateHoleCards: Record<string, StoredCard[]>;
   /** The hero's `hand_discards` row when any (draw variants). */
@@ -108,6 +115,9 @@ export function readClipPayload(win: Window | null | undefined): ClipPayload | n
     style: CLIP_STYLE,
     heroId: raw.heroId,
     row: row as ClipRow,
+    /* Optional, unlike the rest: a renderer that does not know the table name
+       still gets a clip, and the hand names the club instead. */
+    tableName: nonEmptyString(raw.tableName) ? raw.tableName : null,
     privateHoleCards: isRecord(raw.privateHoleCards)
       ? (raw.privateHoleCards as Record<string, StoredCard[]>)
       : {},
@@ -118,101 +128,6 @@ export function readClipPayload(win: Window | null | undefined): ClipPayload | n
     minMs: minMs <= maxMs ? minMs : CLIP_MIN_MS_DEFAULT,
     maxMs: minMs <= maxMs ? maxMs : CLIP_MAX_MS_DEFAULT,
   };
-}
-
-// ── Contract C2 step 1: the anonymiser ───────────────────────────────────────
-
-/** The user id a winner / showdown entry carries, under either spelling. */
-function entryUserId(entry: Record<string, unknown>): string | null {
-  const id = entry.userId ?? entry.user_id;
-  return nonEmptyString(id) ? id : null;
-}
-
-/** The seat label every non-hero name becomes. */
-export function seatLabel(seat: number | null | undefined): string {
-  return Number.isFinite(seat) && (seat as number) > 0 ? `Seat ${seat}` : 'Player';
-}
-
-/**
- * The user ids the showdown record marks as SHOWN: an entry for the id with
- * `mucked` not true. A mucked entry, or no entry at all, is not a reveal.
- */
-export function shownIdsFromShowdown(showdown: unknown): Set<string> {
-  const out = new Set<string>();
-  if (!Array.isArray(showdown)) return out;
-  for (const e of showdown) {
-    if (!isRecord(e)) continue;
-    const id = entryUserId(e);
-    if (id && e.mucked !== true) out.add(id);
-  }
-  return out;
-}
-
-export function anonymiseRowForClip<R extends HandHistoryRowLike>(row: R, heroId: string): R {
-  const players = Array.isArray(row.players) ? row.players : [];
-  const seatOf = new Map<string, number>();
-  for (const p of players) {
-    if (!isRecord(p)) continue;
-    const id = entryUserId(p);
-    const seat = Number(p.seat);
-    if (id && Number.isFinite(seat)) seatOf.set(id, seat);
-  }
-  const shown = shownIdsFromShowdown(row.showdown);
-  const isHero = (id: string | null) => id !== null && id === heroId;
-  const nameFor = (id: string | null, own: unknown): string =>
-    seatLabel(id !== null ? seatOf.get(id) : Number(own));
-
-  /* Every name-shaped field on a non-hero entry becomes the seat label. The
-     writer stores none today on winners / winners_by_board / showdown (pinned
-     in tests/unit/clipMode.test.ts); this is what happens if one appears. */
-  const scrubEntry = (entry: unknown): unknown => {
-    if (!isRecord(entry)) return entry;
-    const id = entryUserId(entry);
-    if (isHero(id)) return entry;
-    const out: Record<string, unknown> = { ...entry };
-    const label = nameFor(id, entry.seat);
-    for (const key of ['username', 'name', 'user_name', 'display_name', 'displayName']) {
-      if (typeof out[key] === 'string') out[key] = label;
-    }
-    /* `hand.cards` is a holding the model never reads. It leaves the row
-       unless the table saw this seat's cards face up. */
-    if (isRecord(out.hand) && 'cards' in out.hand && !(id && shown.has(id))) {
-      const hand: Record<string, unknown> = { ...out.hand };
-      delete hand.cards;
-      out.hand = hand;
-    }
-    return out;
-  };
-  const scrubList = (v: unknown): unknown => (Array.isArray(v) ? v.map(scrubEntry) : v);
-
-  const anonPlayers = players.map((p) => {
-    if (!isRecord(p)) return p;
-    const id = entryUserId(p);
-    if (isHero(id)) return p;
-    const out: Record<string, unknown> = { ...p, username: seatLabel(Number(p.seat)) };
-    /* `players[].cards` is written as [] on every row; a non-empty one on a
-       seat that did not show would be a leak, so it is emptied regardless. */
-    if ('cards' in out && !(id && shown.has(id))) out.cards = [];
-    return out;
-  });
-
-  const holeCards: Record<string, unknown> = {};
-  if (isRecord(row.hole_cards)) {
-    for (const [id, cards] of Object.entries(row.hole_cards)) {
-      if (id === heroId || shown.has(id)) holeCards[id] = cards;
-    }
-  }
-
-  const out: HandHistoryRowLike & { winner_name: null } = {
-    ...row,
-    players: anonPlayers,
-    winner_name: null,
-    winners: scrubList(row.winners),
-    winners_by_board: scrubList(row.winners_by_board),
-    showdown: scrubList(row.showdown),
-    hole_cards: isRecord(row.hole_cards) ? holeCards : row.hole_cards,
-  };
-  return out as unknown as R;
 }
 
 // ── Contract C3: the rate that fits the window ───────────────────────────────
@@ -278,43 +193,27 @@ export function fitClipRate(
   return { tooLong: true, rate: fastest?.rate ?? ascending[0], plannedMs: fastest?.plannedMs ?? 0 };
 }
 
-// ── Contract C2 step 2: the source ───────────────────────────────────────────
-
-/** Only the hero's own entries travel: a clip carries nobody else's private cards. */
-function heroOnly<T>(map: Record<string, T> | null | undefined, heroId: string): Record<string, T> {
-  const out: Record<string, T> = {};
-  if (isRecord(map) && heroId in map) out[heroId] = map[heroId];
-  return out;
-}
+// ── The hand: the share path (2026-10-07) ────────────────────────────────────
 
 /**
- * The ReplaySource for a clip: the anonymised row through the one
- * reconstruction every surface renders, anchored on the hero, with no table
- * name (so no club or person name can appear) and no viewer facts.
+ * The ShareableHand a clip renders: the payload's row through the one
+ * reconstruction every surface renders (`buildReplay`), then onto the wire
+ * the way the archive's share button puts a hand there
+ * (`panelHandToShareable` in handHistoryAdapter.ts: `shareableFromModel` with
+ * the hand's id, the table name or "Club Arena", and the hero). The page
+ * reads it back with `replayFromShareable`, exactly as it reads a link, so a
+ * clip and a share of the same hand are the same page.
  */
-export function buildClipSource(payload: ClipPayload): ReplaySource {
-  const row = anonymiseRowForClip(payload.row, payload.heroId);
+export function clipHandFrom(payload: ClipPayload): ShareableHand {
   const model = buildReplay(
-    replayInputFromRow(row, {
-      discardedCards: heroOnly(payload.discardedCards, payload.heroId),
-      privateHoleCards: heroOnly(payload.privateHoleCards, payload.heroId),
+    replayInputFromRow(payload.row, {
+      discardedCards: payload.discardedCards,
+      privateHoleCards: payload.privateHoleCards,
     })
   );
-  const reveals: Record<string, { mucked?: boolean }> = {};
-  if (Array.isArray(row.showdown)) {
-    for (const e of row.showdown) {
-      if (!isRecord(e)) continue;
-      const id = entryUserId(e);
-      if (id) reveals[id] = { mucked: e.mucked === true };
-    }
-  }
-  return {
-    model,
-    tableName: null,
-    handNumber: (row.hand_number as string | number | null | undefined) ?? null,
-    gameType: row.game_variant ?? null,
-    viewerId: payload.heroId,
-    reveals,
-    viewerFacts: null,
-  };
+  return shareableFromModel(model, {
+    id: String(payload.row.id),
+    tableName: payload.tableName || 'Club Arena',
+    heroUserId: payload.heroId,
+  });
 }

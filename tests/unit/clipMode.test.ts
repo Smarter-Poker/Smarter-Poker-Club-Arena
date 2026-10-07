@@ -1,29 +1,32 @@
 /**
- * CLIP MODE (Phase 9.1, 2026-09-30): the pure half of the hand clip renderer.
+ * CLIP MODE (Phase 9.1, 2026-09-30; the share path since 2026-10-07): the pure
+ * half of the hand clip renderer.
  *
- * - The anonymiser (contract C2 step 1) leaves the hero whole, turns every
- *   other seat into "Seat N", drops the winner name, keeps the cards of a
- *   villain the showdown record marks as shown and drops the cards of one who
- *   folded. The writer's own keys (server/src/services/supabase/handHistory.ts)
- *   are pinned here so a renamed column cannot quietly stop the scrub.
+ * - The hand (the share path): the payload becomes the same ShareableHand the
+ *   archive's share button builds, through `shareableFromModel`. Every
+ *   player's screen name and seat is kept, the hero is marked, the table name
+ *   comes from the payload with the archive's "Club Arena" fallback, the hand
+ *   number is carried, and the hero's private cards and discard travel into
+ *   the model. Nothing is anonymised: a clip is the share page, by owner
+ *   decision (Dan, 2026-10-07).
  * - The rate fit (contract C3) picks the slowest rate that fits the window,
  *   extends the end hold to reach the minimum, and refuses a hand that runs
  *   past the maximum at the fastest rate.
- * - A malformed payload reads as null.
+ * - A malformed payload reads as null; a payload without a table name reads
+ *   with `tableName` null.
  */
 import { describe, it, expect } from 'vitest';
 import {
   CLIP_END_HOLD_MS,
-  anonymiseRowForClip,
-  buildClipSource,
+  clipHandFrom,
   clipRunMs,
   fitClipRate,
   readClipPayload,
-  shownIdsFromShowdown,
   type ClipRow,
 } from '@/lib/clipMode';
 import { buildReplay, replayInputFromRow } from '@/utils/handReplay';
 import { buildReplayFrames, type ReplayFrame } from '@/utils/replayFrames';
+import { replayFromShareable, shareableFromModel, shareUserId } from '@/lib/shareHandModel';
 import { ACTION_BEAT_MS, REPLAY_RATES, STREET_BEAT_MS, replayBeatMs } from '@/utils/replayMotion';
 
 const HERO = 'hero-uuid';
@@ -91,12 +94,29 @@ function fixtureRow(): ClipRow {
   };
 }
 
+/** The same hand folded around to the hero preflop: no showdown, no shown cards. */
+function foldAroundRow(): ClipRow {
+  const row = fixtureRow();
+  row.actions = [
+    { seat: 2, userId: SHOWN, action: 'fold', amount: 0, stage: 'preflop' },
+    { seat: 3, userId: FOLDED, action: 'fold', amount: 0, stage: 'preflop' },
+  ];
+  row.community_cards = [];
+  row.winners = [{ userId: HERO, amount: 3, potIndex: 0 }];
+  row.hole_cards = null;
+  row.showdown = null;
+  row.pots = [{ index: 0, amount: 3, eligible: [HERO] }];
+  row.pot_size = 3;
+  return row;
+}
+
 function payloadFor(row: ClipRow, extra: Record<string, unknown> = {}) {
   return {
     v: 1,
     style: 'felt-720p',
     heroId: HERO,
     row,
+    tableName: 'Kingfish Club',
     privateHoleCards: {},
     discardedCards: {},
     minMs: 15000,
@@ -107,107 +127,147 @@ function payloadFor(row: ClipRow, extra: Record<string, unknown> = {}) {
 
 const withPayload = (p: unknown): Window => ({ __SP_CLIP__: p }) as unknown as Window;
 
-describe('the anonymiser (contract C2 step 1)', () => {
-  const row = fixtureRow();
-  const out = anonymiseRowForClip(row, HERO);
-  const players = out.players as Array<Record<string, unknown>>;
+const read = (p: unknown) => {
+  const payload = readClipPayload(withPayload(p));
+  if (!payload) throw new Error('fixture payload did not read');
+  return payload;
+};
 
-  it('keeps the hero whole and turns every other seat into its seat number', () => {
-    expect(players[0]).toEqual(row.players[0]);
-    expect(players[1].username).toBe('Seat 2');
-    expect(players[2].username).toBe('Seat 3');
-    expect(players.map((p) => p.userId)).toEqual([HERO, SHOWN, FOLDED]);
-    const text = JSON.stringify(out);
-    expect(text).not.toContain('Emerson');
-    expect(text).not.toContain('Folder');
-    expect(text).toContain('kingfish');
+describe('the hand (the share path)', () => {
+  it('is the ShareableHand the archive builds for a share of the same hand', () => {
+    const hand = clipHandFrom(read(payloadFor(fixtureRow())));
+    /* panelHandToShareable, src/lib/handHistoryAdapter.ts: the same call. */
+    const reference = shareableFromModel(buildReplay(replayInputFromRow(fixtureRow())), {
+      id: 'hand-uuid',
+      tableName: 'Kingfish Club',
+      heroUserId: HERO,
+    });
+    expect(hand).toEqual(reference);
+    /* And the page reads it back as it reads a link: the one reconstruction. */
+    const model = replayFromShareable(hand);
+    const direct = buildReplay(replayInputFromRow(fixtureRow()));
+    expect(model.players.map((p) => p.username)).toEqual(direct.players.map((p) => p.username));
+    expect(model.potTotal).toBe(direct.potTotal);
+    expect(buildReplayFrames(model).length).toBe(buildReplayFrames(direct).length);
   });
 
-  it('drops the winner name', () => {
-    expect(out.winner_name).toBeNull();
+  it('keeps the name and the seat of every player, and marks the hero', () => {
+    const hand = clipHandFrom(read(payloadFor(fixtureRow())));
+    expect(hand.players.map((p) => [p.seat, p.name])).toEqual([
+      [1, 'kingfish'],
+      [2, 'Emerson'],
+      [3, 'Folder'],
+    ]);
+    expect(hand.players.map((p) => p.isHero)).toEqual([true, false, false]);
+    /* The hero's seat is the one the felt is anchored on, as a link's is. */
+    expect(hand.players.find((p) => p.isHero)?.seat).toBe(1);
+    const text = JSON.stringify(hand);
+    expect(text).toContain('Emerson');
+    expect(text).toContain('Folder');
+    expect(text).not.toContain('Seat 2');
+    expect(text).not.toContain('Seat 3');
   });
 
-  it("keeps the hero's cards and the shown villain's, and drops the folded villain's", () => {
-    const leaky = fixtureRow();
-    /* A row that somehow carried a folded seat's holding must still not show it. */
-    (leaky.hole_cards as Record<string, unknown>)[FOLDED] = [
-      { rank: 'A', suit: 's' },
-      { rank: 'A', suit: 'd' },
+  it('carries the table name from the payload, and "Club Arena" when it sent none', () => {
+    expect(clipHandFrom(read(payloadFor(fixtureRow()))).tableName).toBe('Kingfish Club');
+    expect(clipHandFrom(read(payloadFor(fixtureRow(), { tableName: null }))).tableName).toBe(
+      'Club Arena'
+    );
+    expect(clipHandFrom(read(payloadFor(fixtureRow(), { tableName: '' }))).tableName).toBe(
+      'Club Arena'
+    );
+  });
+
+  it('carries the hand number, the stakes, the variant and the showdown as a link does', () => {
+    const hand = clipHandFrom(read(payloadFor(fixtureRow())));
+    expect(hand.id).toBe('hand-uuid');
+    expect(hand.handNumber).toBe(4242);
+    expect(hand.stakes).toBe('1/2');
+    expect(hand.variant).toBe('NLH');
+    const hero = hand.players.find((p) => p.seat === 1);
+    const shown = hand.players.find((p) => p.seat === 2);
+    const folded = hand.players.find((p) => p.seat === 3);
+    /* The cards the table saw are the shown cards, for the hero and the villain alike. */
+    expect(hero?.cards).toEqual([
+      { rank: '9', suit: 'c' },
+      { rank: '9', suit: 'd' },
+    ]);
+    expect(hero?.privateCards).toBeUndefined();
+    expect(shown?.cards).toEqual([
+      { rank: 'A', suit: 'h' },
+      { rank: 'K', suit: 'h' },
+    ]);
+    expect(folded?.cards).toBeUndefined();
+    expect(hero?.isWinner).toBe(true);
+    expect(hero?.won).toBe(200);
+    expect(hero?.handName).toBe('Three Of A Kind');
+    const model = replayFromShareable(hand);
+    expect(model.showdown.map((r) => r.userId)).toEqual([shareUserId(1), shareUserId(2)]);
+  });
+
+  it("the hero's private cards travel into the model, marked private, as a link carries them", () => {
+    const hand = clipHandFrom(
+      read(
+        payloadFor(foldAroundRow(), {
+          privateHoleCards: {
+            [HERO]: [
+              { rank: 'A', suit: 'c' },
+              { rank: 'K', suit: 'c' },
+            ],
+          },
+        })
+      )
+    );
+    const hero = hand.players.find((p) => p.isHero);
+    expect(hero?.cards).toEqual([
+      { rank: 'A', suit: 'c' },
+      { rank: 'K', suit: 'c' },
+    ]);
+    expect(hero?.privateCards).toBe(true);
+    expect(hand.players.filter((p) => !p.isHero).every((p) => p.cards === undefined)).toBe(true);
+    const model = replayFromShareable(hand);
+    const heroModel = model.players.find((p) => p.userId === shareUserId(1));
+    expect(heroModel?.privateHole?.length).toBe(2);
+    expect(heroModel?.hole ?? null).toBeNull();
+    /* A fold-around has no showdown, so the private cards did not invent one. */
+    expect(model.showdown).toEqual([]);
+  });
+
+  it("the hero's discard travels into the model as the discard street", () => {
+    const row = fixtureRow();
+    row.game_variant = 'pineapple';
+    row.actions = [
+      { seat: 3, userId: FOLDED, action: 'fold', amount: 0, stage: 'preflop' },
+      { seat: 1, userId: HERO, action: 'raise', amount: 6, stage: 'preflop' },
+      { seat: 2, userId: SHOWN, action: 'call', amount: 4, stage: 'preflop' },
+      { seat: 1, userId: HERO, action: 'discard', amount: 0, stage: 'pineapple_discard' },
+      { seat: 2, userId: SHOWN, action: 'discard', amount: 0, stage: 'pineapple_discard' },
+      { seat: 2, userId: SHOWN, action: 'check', amount: 0, stage: 'flop' },
+      { seat: 1, userId: HERO, action: 'all_in', amount: 94, stage: 'flop' },
+      { seat: 2, userId: SHOWN, action: 'call', amount: 94, stage: 'flop' },
     ];
-    const scrubbed = anonymiseRowForClip(leaky, HERO);
-    expect(Object.keys(scrubbed.hole_cards as object).sort()).toEqual([HERO, SHOWN].sort());
-    expect((scrubbed.hole_cards as Record<string, unknown>)[HERO]).toEqual(
-      (row.hole_cards as Record<string, unknown>)[HERO]
+    const hand = clipHandFrom(
+      read(payloadFor(row, { discardedCards: { [HERO]: { rank: '2', suit: 'd' } } }))
     );
-    expect((scrubbed.hole_cards as Record<string, unknown>)[SHOWN]).toEqual(
-      (row.hole_cards as Record<string, unknown>)[SHOWN]
-    );
-  });
-
-  it('a mucked showdown entry is not a reveal', () => {
-    const mucked = fixtureRow();
-    (mucked.showdown as Array<Record<string, unknown>>)[1].mucked = true;
-    expect([...shownIdsFromShowdown(mucked.showdown)]).toEqual([HERO]);
-    const scrubbed = anonymiseRowForClip(mucked, HERO);
-    expect(Object.keys(scrubbed.hole_cards as object)).toEqual([HERO]);
-  });
-
-  it('pins the writer keys: userId on players / winners / winners_by_board, user_id on showdown, hand.name kept', () => {
-    /* server/src/services/supabase/handHistory.ts stores exactly these. */
-    expect(Object.keys(row.players[0] as object).sort()).toEqual(
-      ['cards', 'seat', 'stack', 'userId', 'username'].sort()
-    );
-    expect(Object.keys((row.winners as unknown[])[0] as object).sort()).toEqual(
-      ['amount', 'hand', 'potIndex', 'userId'].sort()
-    );
-    /* hand_description rides beside hand_name on revealed entries; the fixture
-       leaves it off, which the writer also does on a mucked entry. */
-    expect(Object.keys((row.showdown as unknown[])[0] as object).sort()).toEqual(
-      ['hand_name', 'mucked', 'reveal_order', 'seat', 'user_id'].sort()
-    );
-    const winners = out.winners as Array<Record<string, unknown>>;
-    expect((winners[0].hand as Record<string, unknown>).name).toBe('Three Of A Kind');
-    /* The hero's own winning hand keeps its cards; a seat that did not show loses them. */
-    expect((winners[0].hand as Record<string, unknown>).cards).toBeDefined();
-    const foldWin = fixtureRow();
-    foldWin.winners = [
-      {
-        userId: FOLDED,
-        amount: 10,
-        potIndex: 0,
-        hand: { name: 'High Card', ranking: 1, cards: ['As'] },
-      },
-    ];
-    const scrubbed = anonymiseRowForClip(foldWin, HERO);
-    const w = (scrubbed.winners as Array<Record<string, unknown>>)[0];
-    expect((w.hand as Record<string, unknown>).name).toBe('High Card');
-    expect('cards' in (w.hand as object)).toBe(false);
-  });
-
-  it('replaces a name-shaped field on a non-hero winner, per-board winner or showdown entry', () => {
-    const named = fixtureRow();
-    named.winners = [{ userId: SHOWN, username: 'Emerson', amount: 200, potIndex: 0 }];
-    named.winners_by_board = [
-      { board: 1, userId: SHOWN, name: 'Emerson', amount: 100, handName: 'Pair' },
-      { board: 2, userId: HERO, name: 'kingfish', amount: 100, handName: 'Flush' },
-    ];
-    (named.showdown as Array<Record<string, unknown>>)[1].username = 'Emerson';
-    const scrubbed = anonymiseRowForClip(named, HERO);
-    expect((scrubbed.winners as Array<Record<string, unknown>>)[0].username).toBe('Seat 2');
-    const byBoard = scrubbed.winners_by_board as Array<Record<string, unknown>>;
-    expect(byBoard[0].name).toBe('Seat 2');
-    expect(byBoard[0].handName).toBe('Pair');
-    expect(byBoard[1].name).toBe('kingfish');
-    expect((scrubbed.showdown as Array<Record<string, unknown>>)[1].username).toBe('Seat 2');
-    expect(JSON.stringify(scrubbed)).not.toContain('Emerson');
-  });
-
-  it('leaves everything else on the row as it was', () => {
-    expect(out.actions).toEqual(row.actions);
-    expect(out.community_cards).toEqual(row.community_cards);
-    expect(out.pots).toEqual(row.pots);
-    expect(out.id).toBe(row.id);
-    expect(out.hand_number).toBe(row.hand_number);
+    expect(hand.variant).toBe('Crazy Pineapple');
+    expect(hand.discard?.actions).toEqual([
+      { seat: 1, action: 'DISCARD' },
+      { seat: 2, action: 'DISCARD' },
+    ]);
+    const model = replayFromShareable(hand);
+    const discards = model.streets.find((s) => s.key === 'pineapple_discard');
+    expect(discards?.rows.map((r) => [r.seat, r.verb])).toEqual([
+      [1, 'discard'],
+      [2, 'discard'],
+    ]);
+    /* The card itself never travels on the wire; it is the viewer's own. */
+    expect(hand.discard).toEqual({
+      actions: [
+        { seat: 1, action: 'DISCARD' },
+        { seat: 2, action: 'DISCARD' },
+      ],
+    });
+    expect(discards?.rows.every((r) => r.discardedCard === null)).toBe(true);
   });
 });
 
@@ -281,9 +341,25 @@ describe('the payload (contract C1)', () => {
     const p = readClipPayload(withPayload(payloadFor(fixtureRow())));
     expect(p).not.toBeNull();
     expect(p?.heroId).toBe(HERO);
+    expect(p?.tableName).toBe('Kingfish Club');
     expect(p?.minMs).toBe(15000);
     expect(p?.maxMs).toBe(40000);
     expect(p?.style).toBe('felt-720p');
+  });
+
+  it('reads a payload without a table name, with tableName null', () => {
+    const noTable: Record<string, unknown> = payloadFor(fixtureRow());
+    delete noTable.tableName;
+    expect(readClipPayload(withPayload(noTable))?.tableName).toBeNull();
+    expect(
+      readClipPayload(withPayload(payloadFor(fixtureRow(), { tableName: '' })))?.tableName
+    ).toBeNull();
+    expect(
+      readClipPayload(withPayload(payloadFor(fixtureRow(), { tableName: '  ' })))?.tableName
+    ).toBeNull();
+    expect(
+      readClipPayload(withPayload(payloadFor(fixtureRow(), { tableName: 42 })))?.tableName
+    ).toBeNull();
   });
 
   it('returns null for a malformed payload', () => {
@@ -313,53 +389,5 @@ describe('the payload (contract C1)', () => {
     );
     expect(inverted?.minMs).toBe(15000);
     expect(inverted?.maxMs).toBe(40000);
-  });
-});
-
-describe('the source (contract C2 step 2)', () => {
-  it('builds the one model from the anonymised row, anchored on the hero, with no table name', () => {
-    const payload = readClipPayload(withPayload(payloadFor(fixtureRow())));
-    expect(payload).not.toBeNull();
-    const source = buildClipSource(payload!);
-    expect(source.tableName).toBeNull();
-    expect(source.viewerId).toBe(HERO);
-    expect(source.viewerFacts).toBeNull();
-    expect(source.handNumber).toBe(4242);
-    expect(source.gameType).toBe('nlh');
-    expect(source.model.players.map((p) => p.username)).toEqual(['kingfish', 'Seat 2', 'Seat 3']);
-    expect(source.reveals).toEqual({ [HERO]: { mucked: false }, [SHOWN]: { mucked: false } });
-    /* The same reconstruction the archive renders, with the names scrubbed. */
-    const reference = buildReplay(replayInputFromRow(anonymiseRowForClip(fixtureRow(), HERO)));
-    expect(source.model.pots).toEqual(reference.pots);
-    expect(buildReplayFrames(source.model).length).toBe(buildReplayFrames(reference).length);
-    const text = JSON.stringify(source);
-    expect(text).not.toContain('Emerson');
-    expect(text).not.toContain('Folder');
-  });
-
-  it("only the hero's private cards and discard travel into the model", () => {
-    const payload = readClipPayload(
-      withPayload(
-        payloadFor(fixtureRow(), {
-          privateHoleCards: {
-            [HERO]: [
-              { rank: '9', suit: 'c' },
-              { rank: '9', suit: 'd' },
-            ],
-            [FOLDED]: [
-              { rank: 'A', suit: 's' },
-              { rank: 'A', suit: 'd' },
-            ],
-          },
-        })
-      )
-    );
-    const source = buildClipSource(payload!);
-    const folded = source.model.players.find((p) => p.userId === FOLDED);
-    expect(folded).toBeDefined();
-    expect(folded?.hole ?? null).toBeNull();
-    expect(folded?.privateHole ?? null).toBeNull();
-    const hero = source.model.players.find((p) => p.userId === HERO);
-    expect((hero?.hole ?? hero?.privateHole ?? []).length).toBe(2);
   });
 });

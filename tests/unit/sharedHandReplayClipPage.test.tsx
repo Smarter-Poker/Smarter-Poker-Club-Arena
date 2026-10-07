@@ -1,9 +1,13 @@
 /**
- * SHARED HAND REPLAY PAGE, CLIP MODE (Phase 9.1, 2026-09-30).
+ * SHARED HAND REPLAY PAGE, CLIP MODE (Phase 9.1, 2026-09-30; the share page
+ * since 2026-10-07).
  *
- * `/replay?clip=1` with `window.__SP_CLIP__` injected renders the clip stage
- * from the payload: no `h=`, no footer, no database read. Without the payload
- * the page is exactly what it is today: an unreadable link says so.
+ * `/replay?clip=1` with `window.__SP_CLIP__` injected renders the share page
+ * from the payload, pixel for pixel (owner decision, Dan, 2026-10-07): every
+ * screen name, the table name and the hand number in the header, the footer
+ * under the replayer, the camera contract on top. No `h=`, no database read.
+ * Without the payload the page is exactly what it is today: an unreadable
+ * link says so.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup, screen, waitFor } from '@testing-library/react';
@@ -70,12 +74,13 @@ afterEach(() => {
 });
 
 describe('/replay?clip=1 with the injected payload', () => {
-  it('renders the clip stage from the payload: no h=, no footer, no database read', async () => {
+  it('renders the share page from the payload: every screen name, the table name and hand number in the header, the footer, no h=, no database read', async () => {
     inject({
       v: 1,
       style: 'felt-720p',
       heroId: HERO,
       row: ROW,
+      tableName: 'Kingfish Club',
       privateHoleCards: { [HERO]: ['Ac', 'Kc'] },
       discardedCards: {},
       minMs: 15000,
@@ -83,26 +88,45 @@ describe('/replay?clip=1 with the injected payload', () => {
     });
     await openPage('?clip=1');
     await waitFor(() =>
-      expect(document.querySelector('.hand-replay--clip')?.getAttribute('data-clip-state')).toBe(
-        'ready'
-      )
+      expect(document.querySelector('.hand-replay')?.getAttribute('data-clip-state')).toBe('ready')
     );
-    expect(document.querySelector('.shared-replay--clip')).not.toBeNull();
-    expect(document.querySelector('.shared-replay__footer')).toBeNull();
-    expect(document.body.textContent).not.toContain('Shared From');
+    /* The share page's frame, not a clip frame of its own. */
+    expect(document.querySelector('.shared-replay')).not.toBeNull();
+    expect(document.querySelector('.shared-replay--clip')).toBeNull();
+    expect(document.querySelector('.hand-replay--clip')).toBeNull();
+    expect(document.querySelector('.hand-replay__clip-eyebrow')).toBeNull();
+    /* The header a link gets: the table name, the blinds, the hand number. */
+    const header = document.querySelector('.hand-replay__header');
+    expect(header).not.toBeNull();
+    expect(header?.querySelector('.hand-replay__eyebrow')?.textContent).toContain('Kingfish Club');
+    expect(header?.querySelector('.hand-replay__title')?.textContent).toBe('Hand #77');
+    /* The transport and the seat strip a link gets. */
+    expect(document.querySelector('.hand-replay__controls')).not.toBeNull();
+    expect(document.querySelector('.hand-replay__seats')).not.toBeNull();
+    /* Every screen name; nobody is a seat number. */
+    expect(document.body.textContent).toContain('kingfish');
+    expect(document.body.textContent).toContain('Emerson');
+    expect(document.body.textContent).not.toContain('Seat 2');
+    /* The footer a link gets, naming the sharer. */
+    expect(document.querySelector('.shared-replay__footer')?.textContent).toBe(
+      "Shared From kingfish's Hand History · Smarter Poker"
+    );
     expect(document.body.textContent).not.toContain('Not Readable');
-    expect(document.body.textContent).toContain('Seat 2');
-    expect(document.body.textContent).not.toContain('Emerson');
+    /* No h= was given and nothing asked the database for the hand. */
     expect(getHand).not.toHaveBeenCalled();
-    const handle = (window as unknown as { __spClip?: { v: number } }).__spClip;
+    /* The camera contract is on top of it all. */
+    const handle = (window as unknown as { __spClip?: { v: number; frames: number } }).__spClip;
     expect(handle?.v).toBe(1);
+    expect(handle?.frames).toBeGreaterThan(0);
+    expect(document.querySelector('.hand-replay')?.getAttribute('data-clip-step')).toBe('0');
   });
 
   it('a malformed payload is not a clip: the link reads as today', async () => {
     inject({ v: 1, style: 'felt-720p', heroId: HERO, row: { id: 'x' } });
     await openPage('?clip=1');
     expect(await screen.findByText('This Replay Link Is Not Readable')).toBeTruthy();
-    expect(document.querySelector('.hand-replay--clip')).toBeNull();
+    expect(document.querySelector('.hand-replay')).toBeNull();
+    expect((window as unknown as { __spClip?: unknown }).__spClip).toBeUndefined();
   });
 });
 
@@ -110,7 +134,8 @@ describe('without the payload, the page is what it is today', () => {
   it('clip=1 alone still needs h=', async () => {
     await openPage('?clip=1');
     expect(await screen.findByText('This Replay Link Is Not Readable')).toBeTruthy();
-    expect(document.querySelector('.shared-replay--clip')).toBeNull();
+    expect(document.querySelector('.hand-replay')).toBeNull();
+    expect((window as unknown as { __spClip?: unknown }).__spClip).toBeUndefined();
   });
 
   it('an ordinary link with no readable payload says so, with the lobby link', async () => {
@@ -125,6 +150,7 @@ describe('without the payload, the page is what it is today', () => {
       style: 'felt-720p',
       heroId: HERO,
       row: ROW,
+      tableName: 'Kingfish Club',
       privateHoleCards: {},
       discardedCards: {},
       minMs: 15000,
@@ -132,6 +158,7 @@ describe('without the payload, the page is what it is today', () => {
     });
     await openPage('');
     expect(await screen.findByText('This Replay Link Is Not Readable')).toBeTruthy();
-    expect(document.querySelector('.hand-replay--clip')).toBeNull();
+    expect(document.querySelector('.hand-replay')).toBeNull();
+    expect((window as unknown as { __spClip?: unknown }).__spClip).toBeUndefined();
   });
 });

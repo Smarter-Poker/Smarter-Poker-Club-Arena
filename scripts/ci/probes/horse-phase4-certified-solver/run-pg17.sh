@@ -87,6 +87,7 @@ grep -q 'cannot change the V31 hand-key contract while certified datasets exist'
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909180000_v31_agreement_receipts_bind_the_runtime_cell.sql"
 # V31 decision receipts, database binding, and reference-specific audit logic are replay-safe.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909180000_v31_agreement_receipts_bind_the_runtime_cell.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261007014629_the_solver_compacts_only_its_matching_verified_source_nodes.sql"
 "${PSQL[@]}" -f "$HERE/input-bundle-bootstrap.sql"
 "${PSQL[@]}" -f "$HERE/certified-v31.sql"
 "${PSQL[@]}" -f "$HERE/solver-agreement.sql"

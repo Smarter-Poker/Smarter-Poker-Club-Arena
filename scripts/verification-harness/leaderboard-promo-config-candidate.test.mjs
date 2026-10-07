@@ -25,11 +25,15 @@ test('only guarded funding gate and publication are replaced, preserving false-o
     )
     .replace('CREATE OR REPLACE FUNCTION', 'CREATE FUNCTION')
     .replace(
-      /\n  IF COALESCE\(p_overlay_enabled, false\) THEN\n    RAISE EXCEPTION 'LEADERBOARD_PROMO_ONLY\|Club Bank Overlay Is Not Allowed For Leaderboard Prizes'\n      USING ERRCODE = '22023';\n  END IF;/,
+      /  -- Exact historical operation replay above never creates a new program\.\n  -- Preserve that immutable response; refuse overlays for new publications\.\n  IF COALESCE\(p_overlay_enabled, false\) THEN\n    RAISE EXCEPTION 'LEADERBOARD_PROMO_ONLY\|Club Bank Overlay Is Not Allowed For Leaderboard Prizes'\n      USING ERRCODE = '22023';\n  END IF;\n\n/,
       ''
     );
   assert.equal(restored, original);
   assert.ok(sql.indexOf('IF NOT v_can_manage') < sql.indexOf('LEADERBOARD_PROMO_ONLY'));
+  assert.ok(
+    sql.indexOf('RETURN public.fn_get_leaderboard_reward_setup(p_club_id)') <
+      sql.indexOf('LEADERBOARD_PROMO_ONLY')
+  );
   assert.ok(
     sql.indexOf('LEADERBOARD_PROMO_ONLY') <
       sql.indexOf('INSERT INTO public.leaderboard_reward_program_versions')

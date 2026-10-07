@@ -7,10 +7,48 @@ import test from 'node:test';
 import {
   buildFinancialRepairCandidate,
   readRepairInput,
+  candidateFunctionBodyMd5,
 } from './leaderboard-financial-repair-integration-candidate.mjs';
 
 const source = readRepairInput('leaderboard-isolation-preflight.sh');
-const modes = ['v2-payout', 'capture-compatibility', 'opening'];
+const modes = [
+  'v2-payout',
+  'capture-compatibility',
+  'opening',
+  'worker',
+  'historical-replay',
+  'concurrency',
+  'unknown-ack',
+];
+test('historical mode prepares every input before original bootstrap then only config/opening replacements', () => {
+  const output = buildFinancialRepairCandidate(source, 'historical-replay');
+  let prior = output.indexOf('chmod 600 "$scratch"/repair-*.sql');
+  for (const stage of ['historical-before', 'config', 'opening', 'historical-after']) {
+    const position = output.indexOf(`repair_sql '${stage}'`);
+    assert.ok(position > prior);
+    prior = position;
+  }
+  assert.doesNotMatch(output, /repair_sql '(capture|ranking|payout)'/);
+  assert.match(output, /--body-md5 "\$scratch\/repair-opening.sql" fn_complete_club_opening_setup/);
+  assert.match(
+    output,
+    /--body-md5 "\$scratch\/repair-config.sql" fn_publish_leaderboard_reward_program/
+  );
+  assert.match(output, /candidate_opening_body_md5 \$opening_body/);
+  assert.match(output, /candidate_publish_body_md5 \$publish_body/);
+});
+test('function body identity derives exact leading/trailing newlines and rejects duplicate/missing boundaries', () => {
+  const name = 'fn_complete_club_opening_setup';
+  const definition = `CREATE OR REPLACE FUNCTION public.${name}()\nRETURNS jsonb\nAS $function$\nBEGIN\nRETURN '{}';\nEND;\n$function$;\n`;
+  assert.equal(candidateFunctionBodyMd5(definition, name), 'b86d941d4cde7d9ccbd87f8443ee2333');
+  for (const invalid of [
+    '',
+    definition + definition,
+    definition.replace('$function$;', '$other$;'),
+  ])
+    assert.throws(() => candidateFunctionBodyMd5(invalid, name));
+  assert.throws(() => candidateFunctionBodyMd5(definition, 'unreviewed'));
+});
 const gate = "|| failure 'isolated catalog differs from current source'";
 const cleanup = "cleanup || failure 'explicit cleanup verification failed'";
 test('all modes retain fresh read-only restore, exact catalog gate and original owned cleanup', () => {
@@ -51,6 +89,7 @@ test('installation order and transaction owners differ deliberately between mode
   const payout = buildFinancialRepairCandidate(source, 'v2-payout');
   const compatibility = buildFinancialRepairCandidate(source, 'capture-compatibility');
   const opening = buildFinancialRepairCandidate(source, 'opening');
+  const worker = buildFinancialRepairCandidate(source, 'worker');
   function ordered(output, stages) {
     let previous = -1;
     for (const stage of stages) {
@@ -62,7 +101,16 @@ test('installation order and transaction owners differ deliberately between mode
   ordered(payout, ['capture', 'ranking', 'payout', 'config', 'opening', 'fixture']);
   ordered(compatibility, ['bootstrap', 'capture', 'fixture']);
   ordered(opening, ['config', 'opening', 'fixture']);
-  for (const output of [payout, compatibility]) {
+  ordered(worker, ['capture', 'ranking', 'payout', 'config', 'opening', 'bootstrap', 'fixture']);
+  assert.match(
+    worker,
+    /cat "\$scratch\/repair-authorization.sql" "\$here\/leaderboard-isolated-concurrency-fixture-draft.sql" >"\$scratch\/repair-bootstrap.sql" \|\| failure/
+  );
+  assert.match(
+    worker,
+    /cp "\$here\/leaderboard-isolated-worker-regression-candidate.sql" "\$scratch\/repair-fixture.sql" \|\| failure/
+  );
+  for (const output of [payout, compatibility, worker]) {
     assert.match(
       output,
       /printf '%s\\n' 'SET ROLE postgres;' >"\$scratch\/repair-capture.sql" \|\| failure/
@@ -81,7 +129,7 @@ test('installation order and transaction owners differ deliberately between mode
   assert.match(compatibility, /printf '%s\\n' 'COMMIT;'/);
   assert.doesNotMatch(payout, /printf '%s\\n' 'COMMIT;'/);
   assert.doesNotMatch(opening, /printf '%s\\n' 'COMMIT;'/);
-  for (const output of [payout, compatibility, opening]) {
+  for (const output of [payout, compatibility, opening, worker]) {
     assert.ok(output.indexOf('chmod 600 "$scratch"/repair-*.sql') < output.indexOf("repair_sql '"));
     assert.match(
       output,
@@ -94,14 +142,7 @@ test('installation order and transaction owners differ deliberately between mode
   }
 });
 test('unreviewed modes and whole input drift fail closed before generation', () => {
-  for (const mode of [
-    '',
-    'all',
-    'concurrency',
-    'unknown-ack',
-    'constructor',
-    'v2-payout;echo unsafe',
-  ])
+  for (const mode of ['', 'all', 'constructor', 'v2-payout;echo unsafe'])
     assert.throws(() => buildFinancialRepairCandidate(source, mode));
   for (const changed of [source + '\n', source.replace(gate, 'weakened'), source + cleanup])
     assert.throws(() => buildFinancialRepairCandidate(changed, 'opening'));
@@ -109,6 +150,28 @@ test('unreviewed modes and whole input drift fail closed before generation', () 
     assert.throws(() =>
       buildFinancialRepairCandidate(source, mode, (name) => readRepairInput(name) + '\n')
     );
+  }
+});
+test('prospective concurrency and unknown-ack prepare complete inputs and safely bind private drivers', () => {
+  for (const mode of ['concurrency', 'unknown-ack']) {
+    const output = buildFinancialRepairCandidate(source, mode);
+    const driverCall =
+      'LEADERBOARD_REPAIR_HARNESS="$here" bash "$scratch/repair-driver.sh" "$container" "$scratch"';
+    assert.ok(output.includes(driverCall));
+    assert.ok(
+      output.indexOf('chmod 600 "$scratch"/repair-*.sql') < output.indexOf("repair_sql 'capture'")
+    );
+    assert.ok(output.indexOf("repair_sql 'opening'") < output.indexOf(driverCall));
+    assert.ok(
+      output.includes(
+        'cat "$scratch/repair-authorization.sql" "$scratch/repair-complete-companion.sql" >"$scratch/repair-bootstrap.sql" || failure'
+      )
+    );
+    assert.ok(output.includes('here="${LEADERBOARD_REPAIR_HARNESS:?}"'));
+    assert.ok(output.includes('candidate harness boundary changed'));
+    if (mode === 'unknown-ack')
+      assert.ok(output.indexOf("repair_sql 'bootstrap'") < output.indexOf(driverCall));
+    else assert.doesNotMatch(output, /repair_sql 'bootstrap'/);
   }
 });
 function scratch() {
@@ -121,6 +184,54 @@ function scratch() {
   );
   return mkdtempSync(join(parent, 'repair-contract-'));
 }
+test('historical missing private input or body extraction failure cannot admit original COMMIT', () => {
+  const output = buildFinancialRepairCandidate(source, 'historical-replay');
+  const prepare = output.slice(
+    output.indexOf('node "$here/leaderboard-promo-config'),
+    output.indexOf('repair_sql() {')
+  );
+  for (const missing of ['none', 'authorization', 'history', 'body']) {
+    const directory = scratch();
+    try {
+      if (missing !== 'authorization')
+        writeFileSync(
+          join(directory, 'leaderboard-isolated-authorization-draft.sql'),
+          'BEGIN;\nSELECT 1;\nROLLBACK;\n'
+        );
+      if (missing !== 'history')
+        writeFileSync(
+          join(directory, 'leaderboard-isolated-historical-replay-candidate.sql'),
+          '\\if :historical_before\nCOMMIT;\n\\else\nROLLBACK;\n\\endif\n'
+        );
+      const result = spawnSync(
+        'bash',
+        [
+          '-c',
+          `set -euo pipefail\numask 077\nfailure(){ exit 42; }\nnode(){ if [[ "\${2-}" == --body-md5 ]]; then [[ "$MISSING" != body ]] || return 8; printf 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'; else printf 'PREPARED_SQL'; fi; }\n${prepare}\nprintf admitted >"$scratch/admitted"\n`,
+        ],
+        {
+          encoding: 'utf8',
+          timeout: 3000,
+          env: { ...process.env, here: directory, scratch: directory, MISSING: missing },
+        }
+      );
+      assert.equal(existsSync(join(directory, 'admitted')), missing === 'none');
+      if (missing === 'none') {
+        assert.equal(result.status, 0, result.stderr);
+        assert.match(
+          readFileSync(join(directory, 'repair-historical-before.sql'), 'utf8'),
+          /BEGIN;\nSELECT 1;\n\\set historical_before true/
+        );
+        assert.match(
+          readFileSync(join(directory, 'repair-historical-after.sql'), 'utf8'),
+          /\\set candidate_opening_body_md5 a{32}/
+        );
+      } else assert.notEqual(result.status, 0);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  }
+});
 test('failed private preparation never admits a client or compatibility COMMIT', () => {
   const output = buildFinancialRepairCandidate(source, 'capture-compatibility');
   const prepare = output.slice(output.indexOf('[[ "$(tail -n 1'), output.indexOf('repair_sql() {'));
@@ -164,6 +275,63 @@ test('failed private preparation never admits a client or compatibility COMMIT',
         assert.equal(
           readFileSync(join(directory, 'repair-capture.sql'), 'utf8'),
           'SET ROLE postgres;\nBEGIN;\nSELECT 2;\nCOMMIT;\nRESET ROLE;\n'
+        );
+      } else assert.notEqual(result.status, 0);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  }
+});
+test('worker complete private inputs precede every client and missing companion cannot admit COMMIT', () => {
+  const output = buildFinancialRepairCandidate(source, 'worker');
+  const prepare = output.slice(
+    output.indexOf('# SET ROLE is scoped'),
+    output.indexOf('repair_sql() {')
+  );
+  for (const missing of ['none', 'authorization', 'companion', 'fixture']) {
+    const directory = scratch();
+    try {
+      writeFileSync(
+        join(directory, 'leaderboard-capture-basis-candidate.sql'),
+        'BEGIN;\nSELECT 2;\nCOMMIT;\n'
+      );
+      if (missing !== 'authorization')
+        writeFileSync(
+          join(directory, 'leaderboard-isolated-authorization-draft.sql'),
+          'BEGIN;\nSELECT 1;\nROLLBACK;\n'
+        );
+      if (missing !== 'companion')
+        writeFileSync(
+          join(directory, 'leaderboard-isolated-concurrency-fixture-draft.sql'),
+          'SELECT 3;\nCOMMIT;\n'
+        );
+      if (missing !== 'fixture')
+        writeFileSync(
+          join(directory, 'leaderboard-isolated-worker-regression-candidate.sql'),
+          'BEGIN;\nSELECT 4;\nROLLBACK;\n'
+        );
+      const result = spawnSync(
+        'bash',
+        [
+          '-c',
+          `set -euo pipefail\numask 077\nfailure(){ exit 42; }\nnode(){ printf 'BEGIN;\\nCOMMIT;\\n'; }\n${prepare}\nprintf admitted >"$scratch/admitted"\n`,
+        ],
+        {
+          encoding: 'utf8',
+          timeout: 3000,
+          env: { ...process.env, here: directory, scratch: directory },
+        }
+      );
+      assert.equal(existsSync(join(directory, 'admitted')), missing === 'none');
+      if (missing === 'none') {
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(
+          readFileSync(join(directory, 'repair-bootstrap.sql'), 'utf8'),
+          'BEGIN;\nSELECT 1;\nSELECT 3;\nCOMMIT;\n'
+        );
+        assert.equal(
+          readFileSync(join(directory, 'repair-fixture.sql'), 'utf8'),
+          'BEGIN;\nSELECT 4;\nROLLBACK;\n'
         );
       } else assert.notEqual(result.status, 0);
     } finally {
@@ -225,6 +393,8 @@ test('manual workflow enforces contracts and preserves main-only owned cleanup w
   assert.match(workflow, /cancel-in-progress: false/);
   assert.match(workflow, /timeout-minutes: 20/);
   assert.match(workflow, /leaderboard-financial-repair-integration-candidate.test.mjs/);
+  assert.match(workflow, /leaderboard-worker-candidate.test.mjs/);
+  assert.match(workflow, /v2-payout\|capture-compatibility\|opening\|worker/);
   assert.match(workflow, /node-version: '22'/);
   assert.match(workflow, /shellcheck "\$candidate"/);
   assert.match(workflow, /trap cleanup_candidate EXIT/);

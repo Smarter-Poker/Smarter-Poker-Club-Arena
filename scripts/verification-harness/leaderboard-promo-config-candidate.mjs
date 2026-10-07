@@ -40,18 +40,19 @@ export function buildPromoConfigCandidate(source) {
     'CREATE FUNCTION public.fn_publish_leaderboard_reward_program(',
     'CREATE OR REPLACE FUNCTION public.fn_publish_leaderboard_reward_program('
   );
-  const permission = `  IF NOT v_can_manage THEN
-    RAISE EXCEPTION 'Only The Funding Owner Can Manage Leaderboard Rewards'
-      USING ERRCODE = '42501';
-  END IF;`;
+  const nextPublication =
+    '  SELECT program.version, program.id INTO v_current_version, v_previous_id';
   publish = once(
     publish,
-    permission,
-    `${permission}
+    nextPublication,
+    `  -- Exact historical operation replay above never creates a new program.
+  -- Preserve that immutable response; refuse overlays for new publications.
   IF COALESCE(p_overlay_enabled, false) THEN
     RAISE EXCEPTION 'LEADERBOARD_PROMO_ONLY|Club Bank Overlay Is Not Allowed For Leaderboard Prizes'
       USING ERRCODE = '22023';
-  END IF;`
+  END IF;
+
+${nextPublication}`
   );
   // All false-overlay hashing, immutable history and idempotent replay text
   // remains byte-identical; no opening setup or settled record is modified.

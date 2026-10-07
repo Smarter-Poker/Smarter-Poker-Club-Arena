@@ -20,6 +20,10 @@ STAMP = re.compile(r'^(\d{4}-\d\d-\d\dT[\d:.]+Z)\s+')
 # Retain only named symbolic failure families, never arbitrary log messages,
 # player objects, credentials, SQL parameters, or stack traces.
 ERROR = re.compile(r'\b(?:F06|STOPPED_BANK|MOVEMENT|DRAINED_CUSTODY|HAND_SUBMISSION|RETIRED_CASH|RETIREMENT)_[A-Z0-9_]{1,80}\b|\bf06_[a-z0-9_]{1,80}\b|\bLEDGER_INVARIANT_REFUSED\b')
+# The native retired-cash owner embeds one SQLSTATE directly after this
+# fixed outer refusal. Do not extract arbitrary numbers or object fields.
+POSTCOMMIT_SQLSTATE = re.compile(r'\bRETIRED_CASH_ORIGINAL_POSTCOMMIT_REFUSED: ([0-9A-Z]{5})(?=[ \t]|$)')
+CASH_EARNING_REFUSAL = re.compile(r'(?<![a-zA-Z0-9_])cash_earning_seat_provenance_missing_or_ambiguous(?![a-zA-Z0-9_])')
 CONTEXT = re.compile(r'^\[(Tournament(?:ManagerBase)?\.[a-zA-Z0-9_]{1,80})\]')
 # Managers emit this marker immediately after the Error label. A prefix is
 # inferred attribution only, never evidence that the full UUID was logged.
@@ -168,6 +172,10 @@ def extract(raw, scopes):
                       'symbolicErrors': sorted(set(ERROR.findall(text))),
                       'engineReasons': sorted(set(ENGINE_REASON.findall(text)))
                       if context == 'ServerTableEngine.watchdog_kill' else []}
+            nested_states = sorted(set(POSTCOMMIT_SQLSTATE.findall(text)))
+            if nested_states:
+                record['originalPostcommitSqlstates'] = nested_states
+                record['nativeErrorClasses'] = sorted(set(CASH_EARNING_REFUSAL.findall(text)))
             if inferred:
                 record.update(inferredScopeIds=inferred,
                               scopeAttribution='canonical_event_prefix_inferred')

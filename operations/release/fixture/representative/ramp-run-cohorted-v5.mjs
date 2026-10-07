@@ -1,3 +1,4 @@
+import {prepareReentryQuotes} from './reentry-quotes.mjs';
 import fs from 'node:fs';
 import {cashSeedReady} from './cash-seed-admission.mjs';
 import {witnessNaturalBlindEntry} from './post-bb-observation.mjs';
@@ -54,6 +55,7 @@ if(['admit','resume-admit','continuous'].includes(mode)){
  const setupTasks=[];
  // Refresh the complete existing cohort before any actor wall-clock lifetime starts.
  const refreshedAt=Date.now();for(const group of state.groups)for(const user of group.users)await refresh(user);save();state.sessionRefresh={finished:new Date().toISOString(),durationMs:Date.now()-refreshedAt};save();
+ if(state.cashReentry){const quoteStart=Date.now();await prepareReentryQuotes(state.groups,(group,user)=>rpc('fn_cash_effective_buyin',{p_table_id:group.tableId},user));state.quotePreflight={finished:new Date().toISOString(),durationMs:Date.now()-quoteStart};save();}
  async function agreeToPost(group,u,chair,readChairs){
   u.setupPostAgreement={occupancyId:chair.occupancy_id,outcome:'unknown'};append(`ramp-${size}-attempt${state.attempt}-setup-agreements.jsonl`,{actorId:u.id,tableId:group.tableId,...u.setupPostAgreement});
   const result=await request('http://engine:8080/post-bb',{tableId:group.tableId},u.session.access_token,'ordinary-setup-post-bb');u.setupPostAgreement.outcome='returned';u.setupPostAgreement.result=result;append(`ramp-${size}-attempt${state.attempt}-setup-agreements.jsonl`,{actorId:u.id,tableId:group.tableId,...u.setupPostAgreement});
@@ -84,7 +86,7 @@ if(['admit','resume-admit','continuous'].includes(mode)){
    assert.ok(ready,'Authoritative full-group first-hand roster was not admitted');if(mode==='continuous'){assert.ok(observer);if(observationFailure)throw observationFailure;setupHandles.set(group.index,observer);}else for(const u of group.users){await sit(u,group.tableId,true);u.parked=true;save();}
   }catch(error){append(`ramp-${size}-attempt${state.attempt}-cash-admission.jsonl`,{group:group.index,phase:'cash-admission-refusal',at:new Date().toISOString(),error:error.message,wire:observer?.stateObservations()});setupObserverFailure??=error;throw error;}finally{if(observer){if(!setupHandles.has(group.index))await observer.close();append(`ramp-${size}-attempt${state.attempt}-cash-admission.jsonl`,{group:group.index,phase:'setup-fold-observations',at:new Date().toISOString(),observations:observer.observations(),measuredLoadActions:false});}if(observationFailure)throw observationFailure;}
  }
- async function buyCashUser(group,i){if(setupObserverFailure)throw setupObserverFailure;const u=group.users[i];if(!u.buyinEntered){if(state.cashReentry){assert.ok(u.originalBuyinOp&&u.buyinOp!==u.originalBuyinOp);const quote=await rpc('fn_cash_effective_buyin',{p_table_id:group.tableId},u);assert.equal(quote.ok,true);assert.ok(Number.isFinite(quote.min)&&Number.isFinite(quote.max)&&quote.max>=quote.min);u.buyinAmount=Math.min(quote.max,Math.max(200,quote.min));}await rpc('atomic_table_buyin',{p_user_id:u.id,p_table_id:group.tableId,p_seat_number:i+1,p_amount:u.buyinAmount??200,p_auto_rebuy:false,p_club_id:group.clubId,p_idempotency_key:u.buyinOp},u);u.buyinEntered=true;}}
+ async function buyCashUser(group,i){if(setupObserverFailure)throw setupObserverFailure;const u=group.users[i];if(!u.buyinEntered){if(state.cashReentry){assert.ok(u.originalBuyinOp&&u.buyinOp!==u.originalBuyinOp);assert.ok(u.buyinQuote&&u.buyinQuote.tableId===group.tableId&&u.buyinQuote.buyinOp===u.buyinOp&&Number.isFinite(u.buyinAmount),'Original pre-admission quote missing');}await rpc('atomic_table_buyin',{p_user_id:u.id,p_table_id:group.tableId,p_seat_number:i+1,p_amount:u.buyinAmount??200,p_auto_rebuy:false,p_club_id:group.clubId,p_idempotency_key:u.buyinOp},u);u.buyinEntered=true;}}
  const seeds=seedTasks;
  await admitIndependentBatches(state.groups,8,async group=>{within();
   if(group.kind==='cash'){for(let i=0;i<2;i++)await buyCashUser(group,i);if(mode==='continuous')seeds.push(attachSeedObserver(group).then(()=>({ok:true}),error=>{setupObserverFailure??=error;return {ok:false,error};}));}

@@ -276,13 +276,11 @@ export const WalletService = {
       }
     }
 
-    // ── Dan 2026-08-21, BINDING: "100 DIAMONDS EQUALS 10,000 CHIPS." ──
-    // The old 38-per-100 "75% cheaper law" is superseded. One rate, one place.
-    // NOTE (audit 2026-08-21): this legacy path calls /api/club-arena/mint-chips
-    // -> mint_club_chips, which credits the pool WITHOUT burning diamonds. The
-    // diamond-backed mint is fn_mint_chips_from_diamonds (ChipMintModal). This
-    // figure is therefore display-only here; do not treat it as a charge.
-    const diamondCost = Math.ceil(chipAmount / 100);
+    // The price is NOT computed here. /api/club-arena/mint-chips converts the
+    // chips with the live rate (fn_ca_bridge_rate, the same function
+    // fn_mint_chips_from_diamonds charges at) and reports what it actually
+    // spent as diamondsSpent; the literal 1-per-100 that used to sit here was
+    // the 2026-08-21 rate and a hundredth of one percent of the live price.
 
     // Mint SERVER-SIDE via the World Hub API route. mint_club_chips is
     // service_role-only, so a direct browser supabase.rpc() returns 42501 -- that
@@ -315,6 +313,7 @@ export const WalletService = {
     if (!mintData.success) {
       throw new Error(mintData.error || `Mint failed (HTTP ${mintResp.status})`);
     }
+    const diamondCost = Number(mintData.diamondsSpent) || 0;
 
     // 4. Determine who receives the minted chips
     const mintRecipientId = club.union_id

@@ -11,7 +11,8 @@
  *
  * The modal is a thin skin over fn_mint_chips_from_diamonds (migration
  * 20260821), which owns ALL of the law server-side:
- *   - rate locked at 1 diamond = 100 chips;
+ *   - rate read from ca_bridge_rate (fn_ca_bridge_rate, diamonds per chip;
+ *     100 since 2026-09-07) - the preview reads the same function;
  *   - diamonds burned through the whitelisted deduct_diamonds();
  *   - standalone club  -> owner/co_owner/admin mints into the CLUB BANK
  *     (clubs.chip_treasury, migration 20260823170000);
@@ -53,16 +54,14 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { ownProfile } from '../../lib/ownProfile';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { useBridgeRate } from '../../hooks/useBridgeRate';
 import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { uuid } from '../../utils/uuid';
-import { compactChips } from '../../utils/format';
 import { SpadeConsole } from '../console/SpadeConsole';
 import './ChipMintModal.css';
-
-const CHIPS_PER_DIAMOND = 100; // 100 diamonds = 10,000 chips
 
 interface ChipMintModalProps {
   isOpen: boolean;
@@ -73,7 +72,7 @@ interface ChipMintModalProps {
   onMinted?: () => void;
 }
 
-const fmt = (n: number) => n.toLocaleString('en-US');
+const fmt = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 2 });
 
 /** Where this mint will land, resolved before a single diamond is burned. */
 type MintTarget =
@@ -94,6 +93,10 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
   const [balanceFailed, setBalanceFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [target, setTarget] = useState<MintTarget>({ state: 'loading' });
+  // The live rate the server charges at (fn_ca_bridge_rate). Until it is read
+  // the preview says so and the mint stays shut: a guessed rate is how this
+  // sheet came to print "100 Diamonds = 10K Chips" while the server credited 1.
+  const { diamondsPerChip: rate, failed: rateFailed } = useBridgeRate(isOpen);
   /**
    * BEATS THE DOUBLE TAP THAT LANDS BEFORE `busy` RE-RENDERS.
    *
@@ -248,12 +251,12 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
   if (!isOpen) return null;
 
   const d = Math.floor(Number(diamonds) || 0);
-  const chips = d * CHIPS_PER_DIAMOND;
+  const chips = rate ? Math.round((d / rate) * 100) / 100 : 0;
   const canMintHere = target.state === 'club' || target.state === 'union';
   const overBalance = balance !== null && d > balance;
   // AUDIT: validity used to pass while `balance` was still null (loading), so
   // a fast tap could submit an amount the player does not hold.
-  const valid = d > 0 && balance !== null && !overBalance && canMintHere;
+  const valid = d > 0 && balance !== null && !overBalance && canMintHere && rate !== null;
 
   const mint = async () => {
     if (!valid || busy || busyRef.current) return;
@@ -310,7 +313,13 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
           as="div"
           eyebrow="Club Bank"
           title="Chip Mint"
-          subtitle={`100 Diamonds = ${compactChips(100 * CHIPS_PER_DIAMOND)} Chips`}
+          subtitle={
+            rate
+              ? `${fmt(rate)} Diamonds = 1 Chip`
+              : rateFailed
+                ? 'Rate Unavailable'
+                : 'Reading Rate...'
+          }
           // The pill slot is painted in the master: never leave it unlabelled.
           pill={
             target.state === 'loading'
@@ -432,7 +441,9 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
               <div className="cmm-rows">
                 <div className={`cmm-row ${valid ? '' : 'cmm-row-dim'}`}>
                   <span className="cmm-label sc-label sc-ink--blue">You Receive</span>
-                  <span className="cmm-value sc-ink--green">{fmt(chips)} Chips</span>
+                  <span className="cmm-value sc-ink--green">
+                    {rate ? `${fmt(chips)} Chips` : rateFailed ? 'Unavailable' : '...'}
+                  </span>
                 </div>
 
                 {overBalance && (

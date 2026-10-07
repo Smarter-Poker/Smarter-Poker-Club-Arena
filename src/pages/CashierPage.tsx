@@ -30,6 +30,7 @@ import {
 } from '../hooks/useMasterBusSubscription';
 import { useWalletStore } from '../stores/useWalletStore';
 import { useAuthUser } from '../hooks/useAuthUser';
+import { useBridgeRate } from '../hooks/useBridgeRate';
 import type { CashoutRequest } from '../services/CashoutService';
 import { validateCashoutAmount } from '../utils/cashoutAmount';
 import { useCashoutScope, useCashoutScopeKey } from '../hooks/useCashoutScope';
@@ -225,6 +226,8 @@ function CashierContent() {
      what a send debits). Leaving it destructured is an invitation to reach for
      it again. */
   const { mintChips, loadBalances } = useWalletStore();
+  // The live diamonds-per-chip rate fn_mint_chips_from_diamonds charges at.
+  const { diamondsPerChip: mintRate, failed: mintRateFailed } = useBridgeRate();
   const toast = useToast();
 
   const [action, setActionState] = useState<CashierAction>('send');
@@ -1646,6 +1649,13 @@ function CashierContent() {
           notifyWalletChange(recipientIdForAction, value);
         } else if (action === 'mint') {
           // ─── MINT CHIPS ───
+          // The mint route mints whole chips (its contract floors the amount),
+          // so 1.5 would be charged and credited as 1 while this page said 1.5.
+          if (!Number.isInteger(value)) {
+            if (isMounted.current) setMessage({ type: 'error', text: 'Mint Whole Chips Only' });
+            if (isMounted.current) setIsProcessing(false);
+            return;
+          }
           lastActionRef.current = now;
           const mintResult = await mintChips(clubId!, value);
           if (!mintResult.success) {
@@ -1866,12 +1876,11 @@ function CashierContent() {
     startCooldown();
   };
 
-  // Dan 2026-08-21, BINDING: "100 DIAMONDS EQUALS 10,000 CHIPS" — i.e. 1
-  // diamond per 100 chips. Supersedes the old 38-per-100 rate, which made the
-  // classic cashier quote a different price than the Chip Mint for the same
-  // chips. Integer arithmetic kept so the quote can never drift by a cent.
-  const DIAMOND_RATE_NUM = 1;
-  const DIAMOND_RATE_DEN = 100;
+  // THE RATE IS A ROW (Dan 2026-09-07: 1 diamond = $0.01, 1 chip = $1.00).
+  // The mint quote reads fn_ca_bridge_rate (mintRate above), the same function
+  // fn_mint_chips_from_diamonds charges at. It used to print a literal 1 per
+  // 100 chips left over from 2026-08-21, a hundredth of one percent of the
+  // live price.
   const preset = [100, 500, 1000, 5000];
 
   const filteredTransactions = useMemo(
@@ -2748,10 +2757,11 @@ function CashierContent() {
 
                   {action === 'mint' && amount && (
                     <div className="sc-copy">
-                      {Math.ceil(
-                        (parseFloat(amount || '0') * DIAMOND_RATE_NUM) / DIAMOND_RATE_DEN
-                      ).toLocaleString()}{' '}
-                      Diamonds Required
+                      {mintRate
+                        ? `${Math.round((parseFloat(amount || '0') || 0) * mintRate).toLocaleString()} Diamonds Required (${mintRate.toLocaleString()} Diamonds Per Chip)`
+                        : mintRateFailed
+                          ? 'Mint Rate Unavailable'
+                          : 'Reading Mint Rate...'}
                     </div>
                   )}
 

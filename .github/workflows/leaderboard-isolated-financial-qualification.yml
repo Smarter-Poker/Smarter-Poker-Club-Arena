@@ -1,0 +1,95 @@
+# Unqualified preparation: explicit isolated baseline only, never a release.
+# Normative failures remain failures and require source repair, not acceptance.
+name: Leaderboard Isolated Financial Baseline Qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: One Mode Only; Each Run Restores A Fresh Isolated Database
+        required: true
+        type: choice
+        options:
+          - payout
+          - funding
+          - concurrency
+          - unknown-ack
+
+permissions:
+  contents: read
+
+concurrency:
+  group: leaderboard-isolated-financial-qualification
+  cancel-in-progress: false
+
+jobs:
+  qualify-financial-baseline:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Record Immutable Source And Check Prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git rev-parse HEAD
+          for command in docker timeout sha256sum cmp node mktemp bash shellcheck; do
+            command -v "$command" >/dev/null
+          done
+          bash scripts/verification-harness/leaderboard-isolation-preflight.sh --check
+          node --check scripts/verification-harness/leaderboard-financial-integration-candidate.mjs
+          node --check scripts/verification-harness/leaderboard-financial-diagnostics.mjs
+          node --check scripts/verification-harness/leaderboard-isolation-catalog-diagnostic.mjs
+          node --test scripts/verification-harness/leaderboard-isolation-catalog-diagnostic.test.mjs
+          node --check scripts/verification-harness/leaderboard-unknown-ack-proxy-draft.mjs
+          bash -n scripts/verification-harness/leaderboard-isolated-concurrency-draft.sh
+          bash -n scripts/verification-harness/leaderboard-unknown-ack-draft.sh
+          node --test scripts/verification-harness/leaderboard-financial-integration-candidate.test.mjs scripts/verification-harness/leaderboard-financial-diagnostics.test.mjs scripts/verification-harness/leaderboard-isolation-startup-profile.test.mjs
+      - name: Run One Fresh Catalog Guarded Isolated Financial Baseline
+        shell: bash
+        env:
+          FINANCIAL_MODE: ${{ inputs.mode }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          LEADERBOARD_ISOLATION_SCRATCH_PARENT: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          umask 077
+          case "$FINANCIAL_MODE" in
+            payout|funding|concurrency|unknown-ack) ;;
+            *) echo 'Exactly One Supported Financial Mode Is Required.' >&2; exit 1 ;;
+          esac
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ && "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
+          harness="$GITHUB_WORKSPACE/scripts/verification-harness"
+          # Keep dirname/here at the maintained harness, not runner.temp.
+          candidate="$(mktemp "$harness/leaderboard-financial-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.XXXXXX.sh")"
+          cleanup_candidate() {
+            local status=$?
+            trap - EXIT
+            if ! rm -f -- "$candidate"; then
+              echo 'Owned Generated Candidate Cleanup Failed.' >&2
+              [[ "$status" != 0 ]] || status=1
+            elif [[ -e "$candidate" ]]; then
+              echo 'Owned Generated Candidate Still Exists.' >&2
+              [[ "$status" != 0 ]] || status=1
+            fi
+            exit "$status"
+          }
+          trap cleanup_candidate EXIT
+          # Generator reads maintained preflight, never the Auth qualification
+          # shell. It verifies seven fixture/input pins plus the safe reporter.
+          node "$harness/leaderboard-financial-integration-candidate.mjs" "$FINANCIAL_MODE" >"$candidate"
+          bash -n "$candidate"
+          shellcheck "$candidate"
+          bash "$candidate" --check
+          # Full fresh restore/catalog comparison precedes the selected draft;
+          # its own trap verifies isolated-runtime cleanup on success/failure.
+          # No continue-on-error or accepted expected-failure path is allowed.
+          bash "$candidate"

@@ -24,7 +24,9 @@ section for what it lists ("Recorded Union Periods").
 "Club Weekly Summaries", matching its own copy ("Issued Weekly Summaries",
 "Refresh Weekly Summaries", "Export Weekly Summaries"). The workspace keeps the
 single "Club Weekly Accounting" heading. Pinned in
-`tests/components/ClubWeeklyAccountingSummary.test.tsx` (fails on the old name).
+`tests/components/settlementCenterNamesEachRegionOnce.test.tsx` (fails on the old
+name). It is a new file because `ClubWeeklyAccountingSummary.test.tsx` is
+byte-pinned by `tests/fixtures/full-weekly-accounting/source-binding.json`.
 
 ## Two more, found before they could fail
 

@@ -102,6 +102,29 @@ class NativeLogReader(unittest.TestCase):
         self.assertNotIn('NEVER_PRINT_THIS', json.dumps(result))
         self.assertNotIn('post_hand_settlement_failed', json.dumps(result))
 
+    def test_cash_table_scope_and_exact_postcommit_refusal_are_sanitized(self):
+        scopes = [{'tableIds': [TABLE]}]
+        self.assertEqual(reader.selection(scopes), scopes)
+        source = '\n'.join([
+            STAMP+'[GameServer.retained_hand_refusal_holds_table] Error: HAND_SUBMISSION_HANDOFF_STATE_CHANGED',
+            "  tableId: '"+TABLE+"', code: 'HAND_SUBMISSION_HANDOFF_STATE_CHANGED', password: 'PRIVATE_SECRET'",
+            STAMP+'[ServerTableEngine.post_commit_obligations_pending] Error: f06_finish_unproven',
+            "  tableId: '"+TABLE+"', handId: 'PRIVATE_HAND', cards: 'PRIVATE_CARDS'",
+            STAMP+'[ServerTableEngine.post_commit_obligations_pending_extra] Error: f06_wrong '+TABLE,
+            STAMP+'[Other] HAND_SUBMISSION_FAKE '+TABLE])
+        result = reader.extract(source.encode(), scopes)
+        self.assertEqual(result['matchingRecords'], 2)
+        self.assertEqual(result['records'][0]['context'], 'GameServer.retained_hand_refusal_holds_table')
+        self.assertEqual(result['records'][0]['symbolicErrors'], ['HAND_SUBMISSION_HANDOFF_STATE_CHANGED'])
+        self.assertEqual(result['records'][1]['symbolicErrors'], ['f06_finish_unproven'])
+        self.assertTrue(all(r['scopeIds'] == [TABLE] for r in result['records']))
+        self.assertNotIn('PRIVATE_', json.dumps(result))
+        self.assertNotIn('f06_wrong', json.dumps(result))
+        for invalid in [[{'tableIds': []}], [{'tableIds': [TABLE]*2}], scopes*2,
+                        [{'tableIds': [TABLE], 'command': 'restart'}], [{'tableIds': ['bad']}]]:
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                reader.selection(invalid)
+
     def test_scope_and_malicious_input(self):
         self.assertEqual(reader.selection(SCOPES), SCOPES)
         for value in [[], SCOPES*3, SCOPES*2, [{'tournamentId': EVENT, 'tableIds': [TABLE], 'command': 'restart'}], [{'tournamentId': '../secrets', 'tableIds': [TABLE]}], [{'tournamentId': EVENT, 'tableIds': [TABLE]*2}], [{'tournamentId': EVENT, 'tableIds': 'bad'}]]:

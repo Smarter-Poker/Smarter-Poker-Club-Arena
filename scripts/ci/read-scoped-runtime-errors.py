@@ -19,7 +19,7 @@ UUID = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 STAMP = re.compile(r'^(\d{4}-\d\d-\d\dT[\d:.]+Z)\s+')
 # Retain only named symbolic failure families, never arbitrary log messages,
 # player objects, credentials, SQL parameters, or stack traces.
-ERROR = re.compile(r'\b(?:F06|STOPPED_BANK|MOVEMENT|DRAINED_CUSTODY)_[A-Z0-9_]{1,80}\b|\bf06_[a-z0-9_]{1,80}\b')
+ERROR = re.compile(r'\b(?:F06|STOPPED_BANK|MOVEMENT|DRAINED_CUSTODY|HAND_SUBMISSION|RETIRED_CASH|RETIREMENT)_[A-Z0-9_]{1,80}\b|\bf06_[a-z0-9_]{1,80}\b')
 CONTEXT = re.compile(r'^\[(Tournament(?:ManagerBase)?\.[a-zA-Z0-9_]{1,80})\]')
 # Managers emit this marker immediately after the Error label. A prefix is
 # inferred attribution only, never evidence that the full UUID was logged.
@@ -30,7 +30,8 @@ ENGINE_CONTEXT = re.compile(r'^\[ServerTableEngine\.([0-9a-f-]{36})\.(watchdog_k
 ENGINE_REASON = re.compile(r'Engine self-terminating for restart: (tournament_table_zombie|cash_table_zombie|cash_lease_proof_expired|tournament_lease_proof_expired|dealing_loop_threw|post_hand_settlement_failed|authoritative_hand_commit_not_proved|atomic_stack_settlement_refused|post_commit_stack_refresh_failed|stalled_no_seat)\b')
 # Successor admission is owned by GameServer, before or while a new manager
 # recovers its originals. Keep this an exact call-site list, never GameServer.*.
-ADMISSION_CONTEXT = re.compile(r'^\[(GameServer\.(?:Tournament_resume_failed_for_t|tournament_admission_retry_failed|mixed_original_recovery_retained))\]')
+ADMISSION_CONTEXT = re.compile(r'^\[(GameServer\.(?:Tournament_resume_failed_for_t|tournament_admission_retry_failed|mixed_original_recovery_retained|retained_hand_refusal_holds_table|retained_hand_refused_cleanup_unconfirmed|direct_table_recovery_admission_threw|discovery_table_admission_threw))\]')
+POSTCOMMIT_CONTEXT = re.compile(r'^\[(ServerTableEngine\.post_commit_obligations_pending)\]')
 HEADER = re.compile(r'^\[[^\]\r\n]{1,160}\]')
 MAX_BYTES = 8 * 1024 * 1024
 HEALTH_TIMEOUT = 10
@@ -126,25 +127,26 @@ def selection(value):
         raise ValueError('Invalid observation scope')
     result = []
     for item in value:
-        if not isinstance(item, dict) or set(item) != {'tournamentId', 'tableIds'}:
+        if not isinstance(item, dict) or set(item) not in ({'tournamentId', 'tableIds'}, {'tableIds'}):
             raise ValueError('Invalid observation scope')
-        ids = [item['tournamentId'], *item['tableIds']] if isinstance(item['tableIds'], list) else []
-        if not 2 <= len(ids) <= 9 or any(not isinstance(i, str) or not UUID.fullmatch(i) for i in ids):
+        ids = ([item['tournamentId']] if 'tournamentId' in item else []) + item['tableIds'] if isinstance(item['tableIds'], list) else []
+        if not (2 if 'tournamentId' in item else 1) <= len(ids) <= (9 if 'tournamentId' in item else 8) or any(not isinstance(i, str) or not UUID.fullmatch(i) for i in ids):
             raise ValueError('Invalid observation scope')
         if len(set(ids)) != len(ids):
             raise ValueError('Duplicate observation scope')
         result.append(item)
-    if len({i['tournamentId'] for i in result}) != len(result):
+    if len({i['tournamentId'] for i in result if 'tournamentId' in i}) != sum('tournamentId' in i for i in result) or len({t for i in result for t in i['tableIds']}) != sum(len(i['tableIds']) for i in result):
         raise ValueError('Duplicate observation scope')
     return result
 
 
 def extract(raw, scopes):
-    allowed = {x for s in scopes for x in [s['tournamentId'], *s['tableIds']]}
+    allowed = {x for s in scopes for x in ([s['tournamentId']] if 'tournamentId' in s else []) + s['tableIds']}
     allowed_tables = {x for s in scopes for x in s['tableIds']}
     event_prefixes = {}
     for scope in scopes:
-        event_prefixes.setdefault(scope['tournamentId'][:8], []).append(scope['tournamentId'])
+        if 'tournamentId' in scope:
+            event_prefixes.setdefault(scope['tournamentId'][:8], []).append(scope['tournamentId'])
     records, block, context, stamp = [], [], None, None
     oversized = 0
 
@@ -176,7 +178,7 @@ def extract(raw, scopes):
         body = line[ts.end():] if ts else line
         if HEADER.match(body):
             finish()
-            match = CONTEXT.match(body) or ADMISSION_CONTEXT.match(body)
+            match = CONTEXT.match(body) or ADMISSION_CONTEXT.match(body) or POSTCOMMIT_CONTEXT.match(body)
             context = match.group(1) if match else None
             engine_match = ENGINE_CONTEXT.match(body)
             if engine_match and engine_match.group(1) in allowed_tables:

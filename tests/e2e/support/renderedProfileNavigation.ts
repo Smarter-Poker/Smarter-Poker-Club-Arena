@@ -17,11 +17,12 @@ export async function navigateToRenderedProfile(page: Page, baseURL: string, tim
     await studio.waitFor({ state: 'hidden', timeout: remaining() });
   }
   // The real GlobalHeader uses React Router. A document reload discards the
-  // reader's current app and can lose its commit notification after rendering.
+  // reader's current app and imposes document readiness on a SPA transition.
   await page
     .getByRole('button', { name: 'My Profile', exact: true })
     .click({ timeout: remaining() });
   await page.waitForURL((url) => url.origin === target.origin && url.pathname === target.pathname, {
+    waitUntil: 'commit',
     timeout: remaining(),
   });
   const current = new URL(page.url());

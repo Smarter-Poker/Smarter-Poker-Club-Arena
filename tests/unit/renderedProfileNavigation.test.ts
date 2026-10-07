@@ -39,7 +39,15 @@ function fixture(
     waitForURL: vi.fn(async () => undefined),
     locator: vi.fn(() => heading),
   };
-  return { page: page as unknown as Page, goto: page.goto, profile, studio, close, heading };
+  return {
+    page: page as unknown as Page,
+    goto: page.goto,
+    waitForURL: page.waitForURL,
+    profile,
+    studio,
+    close,
+    heading,
+  };
 }
 afterEach(() => vi.restoreAllMocks());
 describe('rendered production profile navigation', () => {
@@ -72,6 +80,10 @@ describe('rendered production profile navigation', () => {
     const f = fixture();
     await navigateToRenderedProfile(f.page, 'https://smarter.poker/hub/club-arena/', 60_000);
     expect(f.profile.click).toHaveBeenCalledWith({ timeout: 5000 });
+    expect(f.waitForURL).toHaveBeenCalledWith(expect.any(Function), {
+      waitUntil: 'commit',
+      timeout: 5000,
+    });
     expect(f.heading.waitFor).toHaveBeenCalledWith({ state: 'visible', timeout: 5000 });
   });
   it('refuses a failed gesture without retrying or navigating around it', async () => {

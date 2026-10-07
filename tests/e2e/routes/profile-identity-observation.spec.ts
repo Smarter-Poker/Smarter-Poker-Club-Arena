@@ -35,19 +35,33 @@ test('profile isolation compares one text domain while preserving identity chang
 // Browser history/actionability semantics only; no app, auth or financial requests.
 test('profile gesture closes Table Studio and preserves the document', async ({ browser }) => {
   const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+  let releaseImage = () => {};
   try {
     const page = await context.newPage();
     const base = 'https://profile-fixture.invalid/hub/club-arena/';
-    await page.route('**/*', (route) =>
+    const heldImage = new Promise<void>((resolve) => {
+      releaseImage = resolve;
+    });
+    await page.route('**/pending-image.svg', async (route) => {
+      await heldImage;
+      await route.fulfill({
+        contentType: 'image/svg+xml',
+        body: '<svg xmlns="http://www.w3.org/2000/svg" />',
+      });
+    });
+    await page.route(base, (route) =>
       route.fulfill({
         contentType: 'text/html',
         body: `
       <button aria-label="My Profile" onclick="window.profileClicks++; history.pushState({}, '', 'profile'); document.querySelector('main').innerHTML='<h1 id=profile-heading>Own Profile</h1>'">Profile</button>
       <dialog open aria-label="Make The Table Yours"><button aria-label="Close Table Studio" onclick="window.studioCloses++; this.closest('dialog').remove()">Close</button></dialog>
-      <main>Table</main><script>window.profileClicks=0;window.studioCloses=0;window.documentIdentity={};</script>`,
+      <main>Table</main><img src="pending-image.svg"><script>window.profileClicks=0;window.studioCloses=0;window.documentIdentity={};window.fixtureLoaded=false;window.addEventListener('load',()=>window.fixtureLoaded=true);</script>`,
       })
     );
-    await page.goto(base);
+    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    expect(
+      await page.evaluate(() => (window as unknown as { fixtureLoaded: boolean }).fixtureLoaded)
+    ).toBe(false);
     const documentIdentity = await page.evaluateHandle(
       () => (window as unknown as { documentIdentity: object }).documentIdentity
     );
@@ -57,6 +71,9 @@ test('profile gesture closes Table Studio and preserves the document', async ({ 
     });
     await navigateToRenderedProfile(page, base, 60_000);
     expect(page.url()).toBe(`${base}profile`);
+    expect(
+      await page.evaluate(() => (window as unknown as { fixtureLoaded: boolean }).fixtureLoaded)
+    ).toBe(false);
     await expect(page.locator('#profile-heading')).toHaveText('Own Profile');
     expect(documents).toEqual([]);
     expect(
@@ -74,6 +91,7 @@ test('profile gesture closes Table Studio and preserves the document', async ({ 
     ).toEqual({ clicks: 1, closes: 1 });
     await documentIdentity.dispose();
   } finally {
+    releaseImage();
     await context.close();
   }
 });

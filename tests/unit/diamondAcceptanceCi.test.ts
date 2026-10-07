@@ -39,7 +39,7 @@ const read = (p: string) => readFileSync(join(root, p), 'utf8');
 const ci = parse(read('.github/workflows/ci.yml'));
 const wrapper = read(WRAPPER);
 
-/* THE TWENTY-EIGHT RUNNERS, NAMED, AND COUNTED IN WORDS.
+/* THE TWENTY-NINE RUNNERS, NAMED, AND COUNTED IN WORDS.
 
    Every other assertion here derives the population from the directory, which
    is right and is not enough on its own: a directory read agrees with itself
@@ -68,6 +68,7 @@ const EVERY_DIAMOND_RUNNER = [
   'run-diamond-incident-resolution.py',
   'run-diamond-plain-cash-rule.py',
   'run-diamond-run-it-twice.py',
+  'run-diamond-scheduled-tournaments.py',
   'run-diamond-stats-asset-dimension.py',
   'run-diamond-straddle.py',
   'run-diamond-top-up.py',
@@ -77,7 +78,7 @@ const EVERY_DIAMOND_RUNNER = [
   'run-diamond-wallet-transfer.py',
   'run-poker-diamond-custody.py',
 ];
-/* The thirteen that stand up a cluster of their own. Declared in the wrapper
+/* The sixteen that stand up a cluster of their own. Declared in the wrapper
    and repeated here, so the split cannot move in one file alone. */
 const A_PRIVATE_CLUSTER = [
   'run-diamond-bad-beat-jackpot.py',
@@ -92,12 +93,13 @@ const A_PRIVATE_CLUSTER = [
   'run-diamond-concurrency.py',
   'run-diamond-cross-format-conservation.py',
   'run-diamond-engine-hand-proof.py',
+  'run-diamond-scheduled-tournaments.py',
   'run-diamond-stats-asset-dimension.py',
   'run-diamond-tournament-doors.py',
   'run-diamond-tournament-lifecycle.py',
 ];
-const HOW_MANY_RUNNERS = 28;
-const HOW_MANY_ON_A_PRIVATE_CLUSTER = 15;
+const HOW_MANY_RUNNERS = 29;
+const HOW_MANY_ON_A_PRIVATE_CLUSTER = 16;
 const HOW_MANY_ON_THE_WRAPPER_CLUSTER = 13;
 /* No environment variable but PG_BIN may choose a runner's server. PG17_BINDIR
    is the estate's other name for a bin directory, and two variables naming one

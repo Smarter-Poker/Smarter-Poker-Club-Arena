@@ -255,6 +255,10 @@ source_client() {
 source_catalog() { source_client 180 psql -XAtq --no-password -v ON_ERROR_STOP=1 < "$catalog"; }
 startup_query="$(node "$startup_helper" query)" || failure 'numeric startup query unavailable'
 source_startup() { source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 -c "$startup_query"; }
+auth_versions() {
+  source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
+    -c 'SELECT jsonb_agg(version ORDER BY version) FROM auth.schema_migrations;'
+}
 export PGDATABASE="$DATABASE_URL"
 export PGOPTIONS='-c default_transaction_read_only=on -c lock_timeout=5000 -c statement_timeout=120000'
 bootstrap_exists="$(source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 -c "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname='$bootstrap');" \
@@ -273,6 +277,7 @@ source_database="$(source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 
 [[ "$source_database" == 'postgres' ]] || failure 'source database name requires a separate supported restore'
 source_startup >"$scratch/startup-before.json" 2>"$scratch/source-error.log" || source_failure 'source startup profile unavailable' "$scratch/source-error.log" "$?"
 startup_config="$(node "$startup_helper" config "$scratch/startup-before.json")" || failure 'unsupported source numeric startup profile'
+auth_versions >"$scratch/auth-versions-before.json" 2>"$scratch/source-error.log" || failure 'Auth migration metadata unavailable'
 source_catalog >"$scratch/source-before.json" 2>"$scratch/source-error.log" || source_failure 'source catalog read unavailable' "$scratch/source-error.log" "$?"
 # Run 37579107745 observed inner client status 0 and outer elapsed 514s.
 # Preserve a finite measured command envelope, not a claimed inner duration.
@@ -290,7 +295,9 @@ cmp -s "$scratch/source-before.json" "$scratch/source-after.json" || failure 'so
 source_startup >"$scratch/startup-after.json" 2>"$scratch/source-error.log" || source_failure 'source startup profile recheck unavailable' "$scratch/source-error.log" "$?"
 node "$startup_helper" verify "$scratch/startup-before.json" "$scratch/startup-after.json" || failure 'source numeric startup profile changed during export'
 prepare_roles "$source_bootstrap" <"$scratch/roles.sql" >"$scratch/roles-restore.sql" || failure 'exact existing bootstrap role creation unavailable'
-unset DATABASE_URL PGDATABASE PGOPTIONS
+auth_versions >"$scratch/auth-versions-after.json" 2>"$scratch/source-error.log" || failure 'Auth migration metadata recheck unavailable'
+cmp -s "$scratch/auth-versions-before.json" "$scratch/auth-versions-after.json" || failure 'Auth migration history changed during export'
+unset DATABASE_URL PGDATABASE PGOPTIONS PGHOST PGUSER PGPASSWORD
 docker network create --internal "$network" >"$scratch/network.log" 2>&1
 # Bootstrap the official PostgreSQL image without its canned application schema.
 # Live roles/schema are attempted below; ownership is proven only by readback.
@@ -369,6 +376,15 @@ docker exec -i "$container" psql -h /tmp -XAtq -U "$bootstrap" -d postgres -v ON
   <"$catalog" >"$scratch/isolated.json" 2>"$scratch/local-error.log" || destination_failure 'isolated catalog readback failed' "$scratch/local-error.log" "$?"
 cmp -s "$scratch/source-before.json" "$scratch/isolated.json" || failure 'isolated catalog differs from current source'
 hash="$(sha256sum "$scratch/isolated.json" | cut -d' ' -f1)"
+# Actual Auth runs only AFTER full current catalog equivalence, BEFORE owner cleanup.
+# Launcher performs exact local metadata insertion/readback; no Auth users copied.
+node --input-type=module - "$container" "$scratch" <<'AUTH_INPUT' | node "$here/leaderboard-real-auth-launcher-draft.mjs" || failure 'isolated actual Auth qualification failed'
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+const [container, scratch] = process.argv.slice(2);
+const authVersions = JSON.parse(readFileSync(join(scratch, 'auth-versions-before.json'), 'utf8'));
+process.stdout.write(JSON.stringify({ container, scratch, sourceCatalog: join(scratch, 'source-before.json'), authVersions }));
+AUTH_INPUT
 cleanup || failure 'explicit cleanup verification failed'
 echo "Captured schema/security catalog coverage matched isolated restore and cleanup. Catalog SHA256: $hash"
-echo 'This preflight does not qualify Supabase service/auth runtime, synthetic configuration, authorization, funding, payouts, recovery, reconciliation or worker execution.'
+echo 'Selected isolated Auth/REST authorization matrix and owner cleanup completed; production binary/config parity, payouts, recovery and worker qualification remain excluded.'

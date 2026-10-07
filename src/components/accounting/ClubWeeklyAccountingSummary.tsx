@@ -171,7 +171,12 @@ export function ClubWeeklyAccountingSummary({ clubId }: { clubId: string }) {
             No Issued Weekly Summaries Were Found For This Club.
           </p>
         ) : (
-          <div className={styles.tableScroll}>
+          <div
+            className={styles.tableScroll}
+            tabIndex={0}
+            role="region"
+            aria-label="Weekly Accounting Totals"
+          >
             <table className={styles.table}>
               <thead>
                 <tr>

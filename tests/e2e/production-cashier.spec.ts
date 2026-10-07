@@ -96,7 +96,7 @@ test.describe('Production Cashier Certification', () => {
     await expect
       .poll(
         async () => ({
-          status: await cashierStatus.textContent(),
+          status: (await cashierStatus.allTextContents()).join(''),
           unverified: await reconciliation.getByText('Not Yet Verified', { exact: true }).count(),
         }),
         { timeout: 30_000 }
@@ -288,7 +288,7 @@ test.describe('Production Cashier Certification', () => {
           loading: await console.getByText('Loading Your Cashier', { exact: true }).count(),
           walletVisible: await agentWallet.isVisible(),
           walletVerified: /\d/.test(
-            (await agentWallet.locator('.dw__row-value').textContent()) || ''
+            (await agentWallet.locator('.dw__row-value').allTextContents()).join('')
           ),
         }),
         { timeout: 30_000 }

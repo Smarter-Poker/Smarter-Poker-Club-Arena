@@ -51,7 +51,7 @@ for(const flaw of ['none','unknown_actor','accepted_only','missing_roster','wron
   if(flaw==='wrong_roster_key')f.trust.rosterKeyDigest='b'.repeat(64);
   if(flaw==='wrong_producer')f.trust.rosterProducerDigest='c'.repeat(64);
   if(flaw==='invalid_signature'){f.input.rosterSource.authorityEnvelope.signature='A'.repeat(88);f.put('v2-input.json',f.input);}
-  const r=await reviewDailySelection(f.manifest,async()=>page([f.row]),f.trust);
+  const r=await reviewDailySelection(f.manifest,async()=>page([f.row]),f.trust,f.selection);
   expect(r.status).toBe(flaw==='none'?'reviewed_selection':'incomplete');
   expect(r.rows[0].status).toBe(flaw==='none'?'reviewed_retained_menu':'pending');
   if(flaw==='none')expect(r.rows[0].actor.decisions[0].candidate.activationAllowed).toBe(false);

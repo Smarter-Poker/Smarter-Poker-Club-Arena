@@ -42,8 +42,17 @@ export function readPrivateCorrectiveJson(path: string, maximumBytes: number): u
 
 /** Publish only a complete fsynced private artifact; never overwrite a prior
  * finding, follow an output symlink or write into a shared directory. */
-export function writePrivateCorrectiveResult(path: string, json: string): void {
-  if (!isAbsolute(path) || Buffer.byteLength(json) > CORRECTIVE_LIMITS.outputBytes)
+export function writePrivateCorrectiveResult(
+  path: string,
+  json: string,
+  maximumBytes: number = CORRECTIVE_LIMITS.outputBytes
+): void {
+  if (
+    !isAbsolute(path) ||
+    !Number.isSafeInteger(maximumBytes) ||
+    maximumBytes < 1 ||
+    Buffer.byteLength(json) > maximumBytes
+  )
     throw Error('private_output_invalid');
   const parent = dirname(path),
     s = lstatSync(parent);

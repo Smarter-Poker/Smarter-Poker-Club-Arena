@@ -104,6 +104,8 @@ RUNNERS = [
      'cross-format conservation checks passed on isolated PostgreSQL 17; this is a fixture proof, not a production installation.'),
     ('run-diamond-bad-beat-jackpot.py',
      'Diamond bad beat jackpot certified on isolated PostgreSQL 17; the jackpot ships shut and public gameplay remains gated.'),
+    ('run-diamond-scheduled-tournaments.py',
+     'Diamond scheduled tournaments certified on isolated PostgreSQL 17; the migration is applied by the lead, never by this runner.'),
     ('run-diamond-engine-hand-proof.py', 'ENGINE HAND PROOF PASSED:'),
 ]
 # Plain psql acceptance scripts: (file, database, the line that proves it ran).
@@ -133,6 +135,7 @@ PRIVATE_CLUSTER_RUNNERS = [
     'run-diamond-concurrency.py',
     'run-diamond-cross-format-conservation.py',
     'run-diamond-engine-hand-proof.py',
+    'run-diamond-scheduled-tournaments.py',
     'run-diamond-stats-asset-dimension.py',
     'run-diamond-tournament-doors.py',
     'run-diamond-tournament-lifecycle.py',

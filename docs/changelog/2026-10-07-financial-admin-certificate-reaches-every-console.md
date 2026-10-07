@@ -51,6 +51,11 @@ test 2 ran.
   44px minimums.
 - Unit pins in `tests/unit/financialReadOnlyGuard.test.ts`.
 
+`#6324` landed the first three entries (`fn_poker_arena_context`,
+`ca_club_operations_overview`, the `bus_event_log` quarantine) independently
+while this was in review; the merge keeps its entries and its stronger
+bus-log test, and adds the rest.
+
 ## The six consoles that had never run
 
 Tests 2 to 4 had never executed on production, so every later console check

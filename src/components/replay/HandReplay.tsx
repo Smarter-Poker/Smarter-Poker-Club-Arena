@@ -128,14 +128,17 @@ interface HandReplayProps {
    * CLIP MODE (Phase 9.1, 2026-09-30): the replay as a camera subject.
    *
    * The hand clip renderer opens the public replay page in a headless
-   * browser and screencasts it. In clip mode there are no header controls,
+   * browser and takes one still per frame. In clip mode there are no header controls,
    * tabs, rundown, scrubber, rate buttons or close, no sound cues, and the
    * felt sits in a fixed 1280x720 stage (`.hand-replay--clip`). On mount
    * the replay rate is chosen so the whole hand plus a 1,500 ms end hold
    * fits between `minMs` and `maxMs` (`fitClipRate`); the stage root
    * carries `data-clip-state` (ready, too_long, playing, done) and
-   * `window.__spClip` exposes `start()`. Nothing here changes for a
-   * caller that does not pass it. MEMOISE IT like `source`.
+   * `data-clip-step` (the frame on the felt), and `window.__spClip`
+   * exposes the plan (`beats`, `holdMs`), `seek(i)` (the camera's way:
+   * frame i, no motion, no sound) and `start()` (wall-clock playback).
+   * Nothing here changes for a caller that does not pass it. MEMOISE IT
+   * like `source`.
    */
   clip?: { minMs: number; maxMs: number } | null;
 }
@@ -149,7 +152,18 @@ export interface ClipHandle {
   state: ClipStageState;
   frames: number;
   rate: ReplayRate;
+  /** The beat of every frame at `rate`, in frame order (empty when too_long). */
+  beats: number[];
+  /** The end hold after the last frame's beat (0 when too_long). */
+  holdMs: number;
+  /** Sum of beats plus holdMs. */
   plannedMs: number;
+  /**
+   * Show frame `index` with no motion and no sound, as a scrub does, and
+   * stop any playback. True when the frame exists and the hand fits; the
+   * stage root's `data-clip-step` says when the frame is on the felt.
+   */
+  seek: (index: number) => boolean;
   start: () => boolean;
 }
 
@@ -842,6 +856,24 @@ export default function HandReplay({
   }, [clipFit]);
   const startClipRef = useRef(startClip);
   startClipRef.current = startClip;
+  /* seek(i): the camera's step. Frame i goes on the felt the way a scrub
+     puts it there - no motion, no cue - and playback, if any, stops. The
+     renderer reads `data-clip-step` to know the frame has been committed
+     before it takes the still. */
+  const seekClip = useCallback(
+    (index: number): boolean => {
+      if (!clipFit || clipFit.tooLong) return false;
+      if (!Number.isInteger(index) || index < 0 || index > last) return false;
+      if (playbackRef.current) clearTimeout(playbackRef.current);
+      setIsPlaying(false);
+      setClipState('ready');
+      setCursor((c) => (c.step === index && !c.motion ? c : { step: index, motion: false }));
+      return true;
+    },
+    [clipFit, last]
+  );
+  const seekClipRef = useRef(seekClip);
+  seekClipRef.current = seekClip;
   /* Done: the last frame has been reached, its own beat has passed (the
      motion it owes has settled) and the end hold is over. The hold is the
      fit's: 1,500 ms, or longer when the run alone was shorter than minMs. */
@@ -863,12 +895,17 @@ export default function HandReplay({
       state: clipState,
       frames: frames.length,
       rate,
+      beats: [],
+      holdMs: 0,
       plannedMs: 0,
+      seek: (index: number) => seekClipRef.current(index),
       start: () => startClipRef.current(),
     };
     handle.state = clipState;
     handle.frames = frames.length;
     handle.rate = rate;
+    handle.beats = clipFit && !clipFit.tooLong ? [...clipFit.beats] : [];
+    handle.holdMs = clipFit && !clipFit.tooLong ? clipFit.holdMs : 0;
     handle.plannedMs = clipFit?.plannedMs ?? 0;
     clipHandleRef.current = handle;
     w.__spClip = handle;
@@ -969,6 +1006,7 @@ export default function HandReplay({
     <div
       className={`hand-replay${clipMode ? ' hand-replay--clip' : ''}`}
       data-clip-state={clipMode ? clipState : undefined}
+      data-clip-step={clipMode ? at : undefined}
       onKeyDown={onKeyDown}
       tabIndex={0}
       /* A `tabIndex={0}` div is a focus stop, and an unnamed one is a stop

@@ -71,6 +71,37 @@ describe('financial read-only request classification', () => {
     ).toMatchObject({ action: 'block' });
   });
 
+  it('admits the installed STABLE access and overview reads on linked consoles', () => {
+    for (const name of ['fn_poker_arena_context', 'ca_club_operations_overview']) {
+      expect(
+        classifyFinancialReadOnlyRequest(
+          'POST',
+          `https://project.supabase.co/rest/v1/rpc/${name}`,
+          FINANCIAL_ADMIN_CONSOLE_READ_ONLY_RPC_PATHS
+        )
+      ).toMatchObject({ action: 'allow' });
+    }
+  });
+
+  it('quarantines first-party bus observation writes without forwarding them', async () => {
+    const harness = pageHarness();
+    const guard = await installFinancialReadOnlyGuard(harness.page, {
+      allowedRpcPaths: FINANCIAL_ADMIN_CONSOLE_READ_ONLY_RPC_PATHS,
+      quarantinedPostPaths: FINANCIAL_ADMIN_QUARANTINED_SHELL_POST_PATHS,
+    });
+    const observed = routeHarness('POST', 'https://project.supabase.co/rest/v1/bus_event_log');
+    await harness.handler()(observed.route, observed.route.request());
+    expect(observed.abort).toHaveBeenCalledWith('blockedbyclient');
+    expect(observed.fallback).not.toHaveBeenCalled();
+    expect(guard.quarantinedShellWrites).toEqual([
+      { method: 'POST', path: '/rest/v1/bus_event_log' },
+    ]);
+    expect(() => guard.assertNoViolations()).not.toThrow();
+    const mutation = routeHarness('PATCH', 'https://project.supabase.co/rest/v1/bus_event_log');
+    await harness.handler()(mutation.route, mutation.route.request());
+    expect(() => guard.assertNoViolations()).toThrow('PATCH /rest/v1/bus_event_log');
+  });
+
   it('keeps the linked-console certificate free of the volatile daily-bonus status RPC', () => {
     expect(FINANCIAL_ADMIN_CONSOLE_READ_ONLY_RPC_PATHS).not.toContain(
       '/rest/v1/rpc/fn_ca_daily_bonus_status'
@@ -113,17 +144,6 @@ describe('financial read-only request classification', () => {
         )
       ).toEqual({ action: 'allow', method: 'POST', path });
     }
-  });
-
-  it('never forwards the shell bus event log insert', () => {
-    expect(
-      classifyFinancialReadOnlyRequest(
-        'POST',
-        'https://project.supabase.co/rest/v1/bus_event_log',
-        FINANCIAL_ADMIN_CONSOLE_READ_ONLY_RPC_PATHS,
-        FINANCIAL_ADMIN_QUARANTINED_SHELL_POST_PATHS
-      )
-    ).toEqual({ action: 'quarantine', method: 'POST', path: '/rest/v1/bus_event_log' });
   });
 
   it('declares the club money panel STABLE before the certificate admits it', () => {

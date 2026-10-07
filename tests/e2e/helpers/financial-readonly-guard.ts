@@ -24,6 +24,7 @@ export const FINANCIAL_ADMIN_SHELL_READ_ONLY_RPC_PATHS = Object.freeze([
   '/rest/v1/rpc/fn_batch_club_member_counts',
   '/rest/v1/rpc/fn_can_i_create_a_union',
   '/rest/v1/rpc/fn_can_i_operate_the_union_network',
+  '/rest/v1/rpc/fn_poker_arena_context',
 ] as const);
 
 /**
@@ -33,14 +34,9 @@ export const FINANCIAL_ADMIN_SHELL_READ_ONLY_RPC_PATHS = Object.freeze([
  */
 export const FINANCIAL_ADMIN_QUARANTINED_SHELL_POST_PATHS = Object.freeze([
   '/rest/v1/client_shell_telemetry',
+  '/rest/v1/bus_event_log',
   '/rest/v1/rpc/fn_update_presence',
   '/rest/v1/rpc/fn_report_client_errors',
-  // App.tsx starts BusEventLogger on every route; it batches client bus events
-  // (BALANCE_UPDATED and friends) into an INSERT on bus_event_log every 10s.
-  // A genuine write, so it is aborted rather than forwarded, and a shell one,
-  // so it is not a Financial page mutation. First seen on /clubs/:id/disputes,
-  // Post-Deploy E2E run 37539487040.
-  '/rest/v1/bus_event_log',
 ] as const);
 
 /** Reviewed read-only RPCs mounted by the Financial Admin hub and its linked consoles. */
@@ -51,13 +47,6 @@ export const FINANCIAL_ADMIN_CONSOLE_READ_ONLY_RPC_PATHS = Object.freeze([
   '/rest/v1/rpc/ca_club_financials',
   '/rest/v1/rpc/ca_club_chip_ledger',
   '/rest/v1/rpc/fn_accounting_run_observation_v1',
-  // Every /clubs/:clubId/* console (Club Disputes, CSV Exports) mounts behind
-  // ClubMemberGuard -> ArenaAccessBoundary, which reads fn_poker_arena_context
-  // before the page renders, and the Club Operations rail, which reads
-  // ca_club_operations_overview. Both are STABLE with only STABLE callees
-  // (pg_proc, 2026-10-07). Blocking the first is what rendered "Could Not
-  // Verify Arena Access" instead of Club Disputes in run 37539487040.
-  '/rest/v1/rpc/fn_poker_arena_context',
   '/rest/v1/rpc/ca_club_operations_overview',
   // CSV Exports (/clubs/:clubId/financials) mounts DynamicWallet, ChipStatement
   // and the jackpot feed. fn_bbj_pool_for_club and fn_ca_chip_statement_page are

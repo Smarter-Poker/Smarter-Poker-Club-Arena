@@ -116,8 +116,7 @@ AS $function$
     -- Line (c)
     WHEN 'chip_account_may_fund_a_diamond_format' THEN 'boolean'
   END
-$function$
-;
+$function$;
 ALTER FUNCTION public.fn_ca_diamond_economics_units_of(p_name text) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.fn_ca_diamond_economics_units_of(p_name text) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.fn_ca_diamond_economics_units_of(p_name text) TO service_role;
@@ -133,8 +132,7 @@ AS $function$
 BEGIN
   RAISE EXCEPTION 'ca_diamond_economics is append-only: a changed answer is a new row, never an edit'
     USING ERRCODE = '42501';
-END $function$
-;
+END $function$;
 ALTER FUNCTION public.fn_ca_diamond_economics_append_only() OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.fn_ca_diamond_economics_append_only() FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.fn_ca_diamond_economics_append_only() TO service_role;
@@ -175,8 +173,7 @@ BEGIN
       USING ERRCODE = 'PDE01';
   END IF;
   RETURN v_value;
-END $function$
-;
+END $function$;
 ALTER FUNCTION public.fn_ca_diamond_economic(p_name text, p_scope text) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.fn_ca_diamond_economic(p_name text, p_scope text) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.fn_ca_diamond_economic(p_name text, p_scope text) TO service_role;
@@ -216,8 +213,7 @@ BEGIN
       USING ERRCODE = 'PDE01';
   END IF;
   RETURN v_value;
-END $function$
-;
+END $function$;
 ALTER FUNCTION public.fn_ca_diamond_economic_text(p_name text, p_scope text) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.fn_ca_diamond_economic_text(p_name text, p_scope text) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.fn_ca_diamond_economic_text(p_name text, p_scope text) TO service_role;
@@ -232,8 +228,7 @@ CREATE OR REPLACE FUNCTION public.fn_ca_diamond_economic_on(p_name text, p_scope
  SET search_path TO 'public', 'pg_temp'
 AS $function$
   SELECT public.fn_ca_diamond_economic_text(p_name, p_scope) = 'yes'
-$function$
-;
+$function$;
 ALTER FUNCTION public.fn_ca_diamond_economic_on(p_name text, p_scope text) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.fn_ca_diamond_economic_on(p_name text, p_scope text) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.fn_ca_diamond_economic_on(p_name text, p_scope text) TO service_role;
@@ -293,8 +288,7 @@ AS $function$
 BEGIN
   RAISE EXCEPTION 'ca_diamond_house_earmarks is append-only: a promise is closed by a pay or a release entry, never by editing the promise'
     USING ERRCODE = '42501';
-END $function$
-;
+END $function$;
 ALTER FUNCTION public.fn_ca_diamond_house_earmarks_append_only() OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.fn_ca_diamond_house_earmarks_append_only() FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.fn_ca_diamond_house_earmarks_append_only() TO service_role;
@@ -311,8 +305,7 @@ AS $function$
   SELECT COALESCE(SUM(CASE e.entry WHEN 'open' THEN e.amount ELSE -e.amount END), 0)::bigint
     FROM public.ca_diamond_house_earmarks e
    WHERE e.earmark_key = p_key
-$function$
-;
+$function$;
 ALTER FUNCTION public.fn_ca_diamond_earmark_open(p_key text) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.fn_ca_diamond_earmark_open(p_key text) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.fn_ca_diamond_earmark_open(p_key text) TO service_role;
@@ -329,8 +322,7 @@ AS $function$
   SELECT COALESCE(SUM(CASE e.entry WHEN 'open' THEN e.amount ELSE -e.amount END), 0)::bigint
     FROM public.ca_diamond_house_earmarks e
    WHERE p_purpose IS NULL OR e.purpose = p_purpose
-$function$
-;
+$function$;
 ALTER FUNCTION public.fn_ca_diamond_earmarks_open(p_purpose text) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.fn_ca_diamond_earmarks_open(p_purpose text) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.fn_ca_diamond_earmarks_open(p_purpose text) TO service_role;
@@ -346,8 +338,7 @@ CREATE OR REPLACE FUNCTION public.fn_ca_diamond_house_available()
 AS $function$
   SELECT (SELECT h.balance FROM public.ca_diamond_house h WHERE h.id = 1)::bigint
        - public.fn_ca_diamond_earmarks_open(NULL)
-$function$
-;
+$function$;
 ALTER FUNCTION public.fn_ca_diamond_house_available() OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.fn_ca_diamond_house_available() FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.fn_ca_diamond_house_available() TO service_role;
@@ -466,8 +457,7 @@ BEGIN
   END IF;
 
   RETURN NEW;
-END $function$
-;
+END $function$;
 ALTER FUNCTION public.fn_ca_diamond_earmark_guard() OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.fn_ca_diamond_earmark_guard() FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.fn_ca_diamond_earmark_guard() TO service_role;
@@ -482,6 +472,35 @@ CREATE TRIGGER trg_ca_diamond_earmark_guard BEFORE INSERT ON public.ca_diamond_h
 -- production carries since 2026-09-10 and the historical base predates.
 ALTER TABLE public.ca_guard_defs ADD COLUMN IF NOT EXISTS declared_ref text,
   ADD COLUMN IF NOT EXISTS declared_at timestamptz;
+-- The ticket columns the horse registration chain's ticket lookup reads,
+-- which production carries and the historical base predates.
+ALTER TABLE public.tournament_tickets
+  ADD COLUMN IF NOT EXISTS source_tournament_id uuid,
+  ADD COLUMN IF NOT EXISTS source_satellite_id uuid,
+  ADD COLUMN IF NOT EXISTS source_refund_entitlement_id uuid,
+  ADD COLUMN IF NOT EXISTS source_satellite_award_place integer,
+  ADD COLUMN IF NOT EXISTS entry_prize numeric(15,2),
+  ADD COLUMN IF NOT EXISTS entry_bounty numeric(15,2),
+  ADD COLUMN IF NOT EXISTS entry_fee numeric(15,2);
+-- The read-only shape the horse registration chain's ticket lookup plans
+-- against (fn_ca_find_tournament_entry_ticket_for): production's columns of
+-- these tables, added where the historical base predates them. Nothing writes
+-- to them here; a planned column that does not exist is an error even when no
+-- row is ever read.
+CREATE TABLE IF NOT EXISTS public.chip_ledger ("id" uuid, "performed_by" uuid, "from_type" text, "from_entity_id" uuid, "from_label" text, "to_type" text, "to_entity_id" uuid, "to_label" text, "amount" numeric(15,2), "category" text, "description" text, "notes" text, "club_id" uuid, "union_id" uuid, "table_id" uuid, "hand_id" uuid, "tournament_id" uuid, "created_at" timestamp with time zone, "idempotency_key" text, "correlation_id" uuid, "causation_id" uuid, "settlement_id" text, "epoch_id" integer, "actor_service" text, "db_role" text, "pre_from_balance" numeric, "post_from_balance" numeric, "pre_to_balance" numeric, "post_to_balance" numeric, "status" text, "metadata" jsonb, "chain_seq" bigint, "prev_hash" text, "row_hash" text);
+ALTER TABLE public.chip_ledger ADD COLUMN IF NOT EXISTS "id" uuid, ADD COLUMN IF NOT EXISTS "performed_by" uuid, ADD COLUMN IF NOT EXISTS "from_type" text, ADD COLUMN IF NOT EXISTS "from_entity_id" uuid, ADD COLUMN IF NOT EXISTS "from_label" text, ADD COLUMN IF NOT EXISTS "to_type" text, ADD COLUMN IF NOT EXISTS "to_entity_id" uuid, ADD COLUMN IF NOT EXISTS "to_label" text, ADD COLUMN IF NOT EXISTS "amount" numeric(15,2), ADD COLUMN IF NOT EXISTS "category" text, ADD COLUMN IF NOT EXISTS "description" text, ADD COLUMN IF NOT EXISTS "notes" text, ADD COLUMN IF NOT EXISTS "club_id" uuid, ADD COLUMN IF NOT EXISTS "union_id" uuid, ADD COLUMN IF NOT EXISTS "table_id" uuid, ADD COLUMN IF NOT EXISTS "hand_id" uuid, ADD COLUMN IF NOT EXISTS "tournament_id" uuid, ADD COLUMN IF NOT EXISTS "created_at" timestamp with time zone, ADD COLUMN IF NOT EXISTS "idempotency_key" text, ADD COLUMN IF NOT EXISTS "correlation_id" uuid, ADD COLUMN IF NOT EXISTS "causation_id" uuid, ADD COLUMN IF NOT EXISTS "settlement_id" text, ADD COLUMN IF NOT EXISTS "epoch_id" integer, ADD COLUMN IF NOT EXISTS "actor_service" text, ADD COLUMN IF NOT EXISTS "db_role" text, ADD COLUMN IF NOT EXISTS "pre_from_balance" numeric, ADD COLUMN IF NOT EXISTS "post_from_balance" numeric, ADD COLUMN IF NOT EXISTS "pre_to_balance" numeric, ADD COLUMN IF NOT EXISTS "post_to_balance" numeric, ADD COLUMN IF NOT EXISTS "status" text, ADD COLUMN IF NOT EXISTS "metadata" jsonb, ADD COLUMN IF NOT EXISTS "chain_seq" bigint, ADD COLUMN IF NOT EXISTS "prev_hash" text, ADD COLUMN IF NOT EXISTS "row_hash" text;
+CREATE TABLE IF NOT EXISTS public.chip_transactions ("id" uuid, "club_id" uuid, "from_user_id" uuid, "to_user_id" uuid, "amount" numeric(14,2), "transaction_type" text, "notes" text, "related_cashout_id" uuid, "metadata" jsonb, "created_at" timestamp with time zone, "balance_after" numeric(14,2), "clawed_back" boolean, "reversible_until" timestamp with time zone, "is_reversed" boolean, "table_id" uuid);
+ALTER TABLE public.chip_transactions ADD COLUMN IF NOT EXISTS "id" uuid, ADD COLUMN IF NOT EXISTS "club_id" uuid, ADD COLUMN IF NOT EXISTS "from_user_id" uuid, ADD COLUMN IF NOT EXISTS "to_user_id" uuid, ADD COLUMN IF NOT EXISTS "amount" numeric(14,2), ADD COLUMN IF NOT EXISTS "transaction_type" text, ADD COLUMN IF NOT EXISTS "notes" text, ADD COLUMN IF NOT EXISTS "related_cashout_id" uuid, ADD COLUMN IF NOT EXISTS "metadata" jsonb, ADD COLUMN IF NOT EXISTS "created_at" timestamp with time zone, ADD COLUMN IF NOT EXISTS "balance_after" numeric(14,2), ADD COLUMN IF NOT EXISTS "clawed_back" boolean, ADD COLUMN IF NOT EXISTS "reversible_until" timestamp with time zone, ADD COLUMN IF NOT EXISTS "is_reversed" boolean, ADD COLUMN IF NOT EXISTS "table_id" uuid;
+CREATE TABLE IF NOT EXISTS public.tournament_payouts ("id" uuid, "tournament_id" uuid, "user_id" uuid, "position" integer, "amount" numeric(15,2), "source" text, "created_at" timestamp with time zone, "idempotency_key" text, "paid_at" timestamp with time zone, "tournament_type" text, "field_size" integer, "prize_pool" numeric, "payout_structure" jsonb, "recorded_by" text, "metadata" jsonb, "terminal_closed_at" timestamp with time zone);
+ALTER TABLE public.tournament_payouts ADD COLUMN IF NOT EXISTS "id" uuid, ADD COLUMN IF NOT EXISTS "tournament_id" uuid, ADD COLUMN IF NOT EXISTS "user_id" uuid, ADD COLUMN IF NOT EXISTS "position" integer, ADD COLUMN IF NOT EXISTS "amount" numeric(15,2), ADD COLUMN IF NOT EXISTS "source" text, ADD COLUMN IF NOT EXISTS "created_at" timestamp with time zone, ADD COLUMN IF NOT EXISTS "idempotency_key" text, ADD COLUMN IF NOT EXISTS "paid_at" timestamp with time zone, ADD COLUMN IF NOT EXISTS "tournament_type" text, ADD COLUMN IF NOT EXISTS "field_size" integer, ADD COLUMN IF NOT EXISTS "prize_pool" numeric, ADD COLUMN IF NOT EXISTS "payout_structure" jsonb, ADD COLUMN IF NOT EXISTS "recorded_by" text, ADD COLUMN IF NOT EXISTS "metadata" jsonb, ADD COLUMN IF NOT EXISTS "terminal_closed_at" timestamp with time zone;
+CREATE TABLE IF NOT EXISTS public.tournament_refund_entitlements ("id" uuid, "tournament_id" uuid, "user_id" uuid, "entitlement_kind" text, "charge_category" text, "refund_wallet_club_id" uuid, "gross" numeric(15,2), "refund_prize" numeric(15,2), "refund_bounty" numeric(15,2), "refund_fee" numeric(15,2), "source_ledger_id" uuid, "registration_id" uuid, "source_satellite_id" uuid, "source_award_place" integer, "source_ticket_id" uuid, "escrow_bucket" text, "evidence_kind" text, "created_at" timestamp with time zone);
+ALTER TABLE public.tournament_refund_entitlements ADD COLUMN IF NOT EXISTS "id" uuid, ADD COLUMN IF NOT EXISTS "tournament_id" uuid, ADD COLUMN IF NOT EXISTS "user_id" uuid, ADD COLUMN IF NOT EXISTS "entitlement_kind" text, ADD COLUMN IF NOT EXISTS "charge_category" text, ADD COLUMN IF NOT EXISTS "refund_wallet_club_id" uuid, ADD COLUMN IF NOT EXISTS "gross" numeric(15,2), ADD COLUMN IF NOT EXISTS "refund_prize" numeric(15,2), ADD COLUMN IF NOT EXISTS "refund_bounty" numeric(15,2), ADD COLUMN IF NOT EXISTS "refund_fee" numeric(15,2), ADD COLUMN IF NOT EXISTS "source_ledger_id" uuid, ADD COLUMN IF NOT EXISTS "registration_id" uuid, ADD COLUMN IF NOT EXISTS "source_satellite_id" uuid, ADD COLUMN IF NOT EXISTS "source_award_place" integer, ADD COLUMN IF NOT EXISTS "source_ticket_id" uuid, ADD COLUMN IF NOT EXISTS "escrow_bucket" text, ADD COLUMN IF NOT EXISTS "evidence_kind" text, ADD COLUMN IF NOT EXISTS "created_at" timestamp with time zone;
+CREATE TABLE IF NOT EXISTS public.tournament_refund_tranches ("wallet_transaction_id" uuid, "idempotency_key" text, "tournament_id" uuid, "obligation_id" uuid, "user_id" uuid, "source_wallet_club_id" uuid, "entitlement_id" uuid, "credit_ledger_id" uuid, "amount_paid_before" numeric(15,2), "amount_paid_now" numeric(15,2), "refund_prize" numeric(15,2), "refund_bounty" numeric(15,2), "refund_fee" numeric(15,2), "source" text, "description" text, "created_at" timestamp with time zone, "transaction_id" xid8);
+ALTER TABLE public.tournament_refund_tranches ADD COLUMN IF NOT EXISTS "wallet_transaction_id" uuid, ADD COLUMN IF NOT EXISTS "idempotency_key" text, ADD COLUMN IF NOT EXISTS "tournament_id" uuid, ADD COLUMN IF NOT EXISTS "obligation_id" uuid, ADD COLUMN IF NOT EXISTS "user_id" uuid, ADD COLUMN IF NOT EXISTS "source_wallet_club_id" uuid, ADD COLUMN IF NOT EXISTS "entitlement_id" uuid, ADD COLUMN IF NOT EXISTS "credit_ledger_id" uuid, ADD COLUMN IF NOT EXISTS "amount_paid_before" numeric(15,2), ADD COLUMN IF NOT EXISTS "amount_paid_now" numeric(15,2), ADD COLUMN IF NOT EXISTS "refund_prize" numeric(15,2), ADD COLUMN IF NOT EXISTS "refund_bounty" numeric(15,2), ADD COLUMN IF NOT EXISTS "refund_fee" numeric(15,2), ADD COLUMN IF NOT EXISTS "source" text, ADD COLUMN IF NOT EXISTS "description" text, ADD COLUMN IF NOT EXISTS "created_at" timestamp with time zone, ADD COLUMN IF NOT EXISTS "transaction_id" xid8;
+CREATE TABLE IF NOT EXISTS public.tournament_satellite_awards ("tournament_id" uuid, "place" integer, "user_id" uuid, "delivery_kind" text, "amount" numeric(15,2), "payout_id" uuid, "payout_source" text, "idempotency_key" text, "registration_id" uuid, "ticket_id" uuid, "obligation_id" uuid, "obligation_kind" text, "created_at" timestamp with time zone);
+ALTER TABLE public.tournament_satellite_awards ADD COLUMN IF NOT EXISTS "tournament_id" uuid, ADD COLUMN IF NOT EXISTS "place" integer, ADD COLUMN IF NOT EXISTS "user_id" uuid, ADD COLUMN IF NOT EXISTS "delivery_kind" text, ADD COLUMN IF NOT EXISTS "amount" numeric(15,2), ADD COLUMN IF NOT EXISTS "payout_id" uuid, ADD COLUMN IF NOT EXISTS "payout_source" text, ADD COLUMN IF NOT EXISTS "idempotency_key" text, ADD COLUMN IF NOT EXISTS "registration_id" uuid, ADD COLUMN IF NOT EXISTS "ticket_id" uuid, ADD COLUMN IF NOT EXISTS "obligation_id" uuid, ADD COLUMN IF NOT EXISTS "obligation_kind" text, ADD COLUMN IF NOT EXISTS "created_at" timestamp with time zone;
+CREATE TABLE IF NOT EXISTS public.tournament_satellite_settlements ("tournament_id" uuid, "target_id" uuid, "target_was_missing" boolean, "target_contract_version" bigint, "winner_id" uuid, "field_size" integer, "advertised_seats" integer, "pool" numeric(15,2), "target_buy_in" numeric(15,2), "target_fee" numeric(15,2), "ticket_cost" numeric(15,2), "ticket_award_count" integer, "seat_count" integer, "cash_ticket_count" integer, "entry_ticket_count" integer, "remainder" numeric(15,2), "bubble_user_id" uuid, "bubble_position" integer, "source_table_count" integer, "source_table_ids" uuid[], "source_seat_count" integer, "source_seat_ids" uuid[], "released_seat_count" integer, "released_seat_ids" uuid[], "source_closed_at" timestamp with time zone, "source_escrow_closed_at" timestamp with time zone, "source_escrow_close_note" text, "settled_at" timestamp with time zone, "receipt_version" integer, "qualifier_ids" uuid[]);
+ALTER TABLE public.tournament_satellite_settlements ADD COLUMN IF NOT EXISTS "tournament_id" uuid, ADD COLUMN IF NOT EXISTS "target_id" uuid, ADD COLUMN IF NOT EXISTS "target_was_missing" boolean, ADD COLUMN IF NOT EXISTS "target_contract_version" bigint, ADD COLUMN IF NOT EXISTS "winner_id" uuid, ADD COLUMN IF NOT EXISTS "field_size" integer, ADD COLUMN IF NOT EXISTS "advertised_seats" integer, ADD COLUMN IF NOT EXISTS "pool" numeric(15,2), ADD COLUMN IF NOT EXISTS "target_buy_in" numeric(15,2), ADD COLUMN IF NOT EXISTS "target_fee" numeric(15,2), ADD COLUMN IF NOT EXISTS "ticket_cost" numeric(15,2), ADD COLUMN IF NOT EXISTS "ticket_award_count" integer, ADD COLUMN IF NOT EXISTS "seat_count" integer, ADD COLUMN IF NOT EXISTS "cash_ticket_count" integer, ADD COLUMN IF NOT EXISTS "entry_ticket_count" integer, ADD COLUMN IF NOT EXISTS "remainder" numeric(15,2), ADD COLUMN IF NOT EXISTS "bubble_user_id" uuid, ADD COLUMN IF NOT EXISTS "bubble_position" integer, ADD COLUMN IF NOT EXISTS "source_table_count" integer, ADD COLUMN IF NOT EXISTS "source_table_ids" uuid[], ADD COLUMN IF NOT EXISTS "source_seat_count" integer, ADD COLUMN IF NOT EXISTS "source_seat_ids" uuid[], ADD COLUMN IF NOT EXISTS "released_seat_count" integer, ADD COLUMN IF NOT EXISTS "released_seat_ids" uuid[], ADD COLUMN IF NOT EXISTS "source_closed_at" timestamp with time zone, ADD COLUMN IF NOT EXISTS "source_escrow_closed_at" timestamp with time zone, ADD COLUMN IF NOT EXISTS "source_escrow_close_note" text, ADD COLUMN IF NOT EXISTS "settled_at" timestamp with time zone, ADD COLUMN IF NOT EXISTS "receipt_version" integer, ADD COLUMN IF NOT EXISTS "qualifier_ids" uuid[];
 -- @@DOOR fn_ca_guard_watchlist()
 -- @@PIN md5=ab4f9d0e402186fff9b4af288e443609 len=3499 owner=postgres
 CREATE OR REPLACE FUNCTION public.fn_ca_guard_watchlist()
@@ -540,8 +559,7 @@ AS $function$
       -- And the list itself.
       'fn_ca_guard_watchlist'
     ]) x)
-$function$
-;
+$function$;
 ALTER FUNCTION public.fn_ca_guard_watchlist() OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.fn_ca_guard_watchlist() FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.fn_ca_guard_watchlist() TO service_role;
@@ -597,8 +615,7 @@ BEGIN
 
   RETURN v_hash;
 END;
-$function$
-;
+$function$;
 ALTER FUNCTION public.fn_ca_declare_guard_redefinition(p_proname text, p_ref text) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.fn_ca_declare_guard_redefinition(p_proname text, p_ref text) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.fn_ca_declare_guard_redefinition(p_proname text, p_ref text) TO service_role;
@@ -692,8 +709,7 @@ begin
 
   return new;
 end;
-$function$
-;
+$function$;
 ALTER FUNCTION public.trg_tournaments_guarantee_affordable() OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.trg_tournaments_guarantee_affordable() FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.trg_tournaments_guarantee_affordable() TO service_role;
@@ -920,8 +936,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$function$
-;
+$function$;
 ALTER FUNCTION public.fn_ca_fund_overlay_on_lock() OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.fn_ca_fund_overlay_on_lock() FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.fn_ca_fund_overlay_on_lock() TO service_role;
@@ -1068,8 +1083,7 @@ BEGIN
     'pool_before', v_pool, 'pool_after', round(v_pool - v_excess, 2),
     'ledger_id', v_ledger_id);
 END;
-$function$
-;
+$function$;
 ALTER FUNCTION public.fn_ca_return_excess_start_overlay_locked(p_tournament_id uuid) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.fn_ca_return_excess_start_overlay_locked(p_tournament_id uuid) FROM PUBLIC, anon, authenticated, service_role;
 -- @@END fn_ca_return_excess_start_overlay_locked(p_tournament_id uuid)
@@ -1331,8 +1345,7 @@ BEGIN
     'already_finalized', v_t.finalized AND v_overlay = 0,
     'retryable', false);
 END;
-$function$
-;
+$function$;
 ALTER FUNCTION public.fn_ca_apply_prize_guarantee_core(p_tournament_id uuid, p_source text) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.fn_ca_apply_prize_guarantee_core(p_tournament_id uuid, p_source text) FROM PUBLIC, anon, authenticated, service_role;
 -- @@END fn_ca_apply_prize_guarantee_core(p_tournament_id uuid, p_source text)
@@ -1408,8 +1421,7 @@ BEGIN
            THEN jsonb_build_object('excess_overlay_returned',v_return)
            ELSE '{}'::jsonb END;
 END;
-$function$
-;
+$function$;
 ALTER FUNCTION public.fn_apply_prize_guarantee(p_tournament_id uuid, p_source text) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.fn_apply_prize_guarantee(p_tournament_id uuid, p_source text) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.fn_apply_prize_guarantee(p_tournament_id uuid, p_source text) TO service_role;
@@ -1661,8 +1673,7 @@ BEGIN
     'portfolio_short_by', v_portfolio_short
   );
 END;
-$function$
-;
+$function$;
 ALTER FUNCTION public.fn_tournament_management_readiness_for_row(p_row jsonb) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.fn_tournament_management_readiness_for_row(p_row jsonb) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.fn_tournament_management_readiness_for_row(p_row jsonb) TO service_role;
@@ -1935,8 +1946,7 @@ BEGIN
                            THEN (SELECT p.diamonds FROM public.profiles p WHERE p.id = p_user_id) END,
     'seat', v_seat);
 END;
-$function$
-;
+$function$;
 ALTER FUNCTION public.fn_register_horse_for_tournament_before_maintenance_gate(p_tournament_id uuid, p_user_id uuid) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.fn_register_horse_for_tournament_before_maintenance_gate(p_tournament_id uuid, p_user_id uuid) FROM PUBLIC, anon, authenticated, service_role;
 -- @@END fn_register_horse_for_tournament_before_maintenance_gate(p_tournament_id uuid, p_user_id uuid)
@@ -1996,8 +2006,7 @@ BEGIN
   RETURN public.fn_register_horse_for_tournament_before_terminal_gate(
     p_tournament_id,p_user_id,p_allow_wallet_charge);
 END;
-$function$
-;
+$function$;
 ALTER FUNCTION public.fn_register_horse_for_tournament(p_tournament_id uuid, p_user_id uuid, p_allow_wallet_charge boolean) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.fn_register_horse_for_tournament(p_tournament_id uuid, p_user_id uuid, p_allow_wallet_charge boolean) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.fn_register_horse_for_tournament(p_tournament_id uuid, p_user_id uuid, p_allow_wallet_charge boolean) TO service_role;
@@ -2217,8 +2226,7 @@ BEGIN
   'attributed_users',COALESCE((v_att->>'attributed_users')::int,0),'attribution_attempts',v_attempt,
   'no_attribution_due',v_net=0,'accounting',public.fn_accounting_tournament_terminal_fee_receipt(p_tournament_id));
 END;
-$function$
-;
+$function$;
 ALTER FUNCTION public.fn_settle_tournament_rake(p_tournament_id uuid, p_source text) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.fn_settle_tournament_rake(p_tournament_id uuid, p_source text) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.fn_settle_tournament_rake(p_tournament_id uuid, p_source text) TO service_role;

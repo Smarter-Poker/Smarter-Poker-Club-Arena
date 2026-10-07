@@ -7,6 +7,7 @@ import {
   type HorsePlanBatchBinding,
   type HorsePlanRetirementReason,
 } from '../HorsePlanHandIdentity.js';
+import { horsePlanAcceptanceIsValid, type HorsePlanAcceptance } from '../HorsePlanEffectReceipt.js';
 import { horsePhase6AttributionMismatch } from '../HorsePhase6Attribution.js';
 import { Worker } from 'node:worker_threads';
 import { HorseCommittedDecisionTracker } from '../HorseCommittedDecisionTracker.js';
@@ -654,7 +655,10 @@ export class LiveHorseDecisionWorkerClient {
     return this.enqueue<HorseDecisionWorkerAck>(request, 'ACK', signal);
   }
 
-  async commitDecisionEffects(result: FastHorseDecisionResult): Promise<HorseDecisionWorkerAck> {
+  async commitDecisionEffects(
+    result: FastHorseDecisionResult,
+    acceptance: HorsePlanAcceptance
+  ): Promise<HorseDecisionWorkerAck> {
     if (
       !horsePlanBatchBindingIsValid(result.planBinding) ||
       result.planBinding.fastRequestId !== result.requestId ||
@@ -663,6 +667,10 @@ export class LiveHorseDecisionWorkerClient {
     ) {
       return Promise.reject(new Error('Horse plan commit lacks its original FAST binding'));
     }
+    // Phase 15.1: the exact controller-accepted wager becomes part of the
+    // durable receipt. Without it nothing is posted; the finalizer retires.
+    if (!horsePlanAcceptanceIsValid(acceptance, result.planBinding))
+      return Promise.reject(new Error('Horse plan commit lacks its exact acceptance'));
     const owner = this.planOwners.get(result);
     if (!owner || owner.state === 'retired' || result.planIssueDisposition !== 'issued')
       return Promise.reject(new Error('Horse plan commit has no available client ownership'));
@@ -741,10 +749,12 @@ export class LiveHorseDecisionWorkerClient {
       requestId: this.nextRequestId++,
       planBinding: structuredClone(result.planBinding),
       effects: structuredClone(result.effects),
+      acceptance: structuredClone(acceptance),
     };
     // Transfer only after the detached request exists and before enqueue.
     // A caller timeout cannot prove whether the accepted plan applied.
     owner.state = 'committing';
+    noteFire('phase15_plan_commit_posted');
     // Worker issue ownership is checked separately. This transport method does
     // not certify table acceptance; Turns retains its exact accepted-wager gate.
     return this.enqueue<HorseDecisionWorkerAck>(request, 'ACK', undefined, true).catch((error) => {

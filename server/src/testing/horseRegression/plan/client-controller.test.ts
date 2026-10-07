@@ -17,7 +17,7 @@ import { horsePlanHandKey } from '../../../engine/HorseDecisionEffects.js';
 import { captureHorseHandJournalContext } from '../../../engine/HorseDecisionHandBinding.js';
 import { seedFastRandom } from '../../../engine/HorseEval.js';
 import type { ActionRecord } from '../../../types.js';
-import { workerHarness, requestAt, tableId, heroId, wager } from './fixture.js';
+import { workerHarness, requestAt, tableId, heroId, wager, acceptanceOf } from './fixture.js';
 
 class LocalTransport extends EventEmitter implements WorkerLike {
   readonly sent: HorseDecisionWorkerRequest[] = [];
@@ -139,7 +139,7 @@ describe('actual local client/worker and controller acceptance composition', () 
         expect(transport.sent.filter((m) => m.type === 'OBSERVE_EXECUTION')).toHaveLength(
           journal ? 1 : 0
         );
-        await expect(client.commitDecisionEffects(fast)).rejects.toThrow(
+        await expect(client.commitDecisionEffects(fast, acceptanceOf(fast))).rejects.toThrow(
           'no available client ownership'
         );
         expect(transport.harness.applied()).toBe(0);
@@ -160,13 +160,13 @@ describe('actual local client/worker and controller acceptance composition', () 
       const fast = await client.decideFast(requestAt(), abort.signal);
       abort.abort();
       const commit = client.runWithDispatchBarrier(() => {
-        const pending = client.commitDecisionEffects(fast);
+        const pending = client.commitDecisionEffects(fast, acceptanceOf(fast));
         retireHorseExecutionWitness(fast.decision.executionWitness, 'turn_abandoned');
         return pending;
       });
       await expect(commit).resolves.toMatchObject({ planDisposition: 'applied_volatile' });
       expect(transport.sent.filter((m) => m.type === 'RETIRE_DECISION_EFFECTS')).toHaveLength(0);
-      await expect(client.commitDecisionEffects(fast)).resolves.toMatchObject({
+      await expect(client.commitDecisionEffects(fast, acceptanceOf(fast))).resolves.toMatchObject({
         planDisposition: 'already_applied_volatile',
       });
       expect(transport.harness.applied()).toBe(1);
@@ -231,7 +231,9 @@ describe('actual local client/worker and controller acceptance composition', () 
         });
         expect(HorseMind.getPlan(key, heroId)).toBeUndefined();
         await expect(
-          client.runWithDispatchBarrier(() => client.commitDecisionEffects(fast))
+          client.runWithDispatchBarrier(() =>
+            client.commitDecisionEffects(fast, acceptanceOf(fast))
+          )
         ).resolves.toMatchObject({ type: 'ACK', operation: 'COMMIT_DECISION_EFFECTS' });
         expect(transport.harness.applied()).toBe(1);
         expect(HorseMind.getPlan(key, heroId)).toBe(true);
@@ -282,7 +284,9 @@ describe('actual local client/worker and controller acceptance composition', () 
         // This is an explicit fixture composition of the accepted-record gate.
         // Actual Turns invocation remains covered by its separately migrated suite.
         if (exact) {
-          const commit = client.runWithDispatchBarrier(() => client.commitDecisionEffects(fast));
+          const commit = client.runWithDispatchBarrier(() =>
+            client.commitDecisionEffects(fast, acceptanceOf(fast))
+          );
           if (mode === 'mutated_batch') await expect(commit).rejects.toThrow('effects_mismatch');
           else
             await expect(commit).resolves.toMatchObject({

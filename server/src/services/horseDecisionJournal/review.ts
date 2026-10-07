@@ -359,6 +359,10 @@ export function reconcileHorseJournalHand(
         (row.kind === 'discard_decision' ? turn.decisions : turn.executions).push(row);
         if (row.kind === 'discard_decision') out.discardDecisions++;
         discards.set(k, turn);
+      } else if (row.kind === 'plan_receipt') {
+        // Phase 15.1 durable accepted-effect receipts are never an execution
+        // or a decision of this turn join.
+        continue;
       } else {
         const k = `${row.producerId}:${row.turnKey}`;
         const turn = turns.get(k) ?? { decisions: [], executions: [] };

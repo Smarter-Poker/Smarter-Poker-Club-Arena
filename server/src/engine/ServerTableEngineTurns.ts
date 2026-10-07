@@ -10,6 +10,7 @@
 
 import { HandController } from './HandController.js';
 import { captureHorseHandJournalContext } from './HorseDecisionHandBinding.js';
+import { horsePlanAcceptanceFromController } from './HorsePlanEffectReceipt.js';
 import {
   isPotLimitVariant,
   isFixedLimitVariant,
@@ -4164,12 +4165,22 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               } else if (fastResult.planIssueDisposition !== 'issued') {
                 noteFire(`phase15_plan_accepted_${fastResult.planIssueDisposition}`);
               } else
-                void worker.commitDecisionEffects(fastResult).catch((error) => {
-                  reportError(
-                    error,
-                    'ServerTableEngine.' + this.tableId + '.horse_decision_effect_commit_failed'
-                  );
-                });
+                void worker
+                  .commitDecisionEffects(
+                    fastResult,
+                    // Phase 15.1: the exact accepted wager joins the durable receipt.
+                    horsePlanAcceptanceFromController(
+                      acceptedWager?.record,
+                      { action, amount: normalizedAmount },
+                      decision.executionWitness?.identity
+                    )
+                  )
+                  .catch((error) => {
+                    reportError(
+                      error,
+                      'ServerTableEngine.' + this.tableId + '.horse_decision_effect_commit_failed'
+                    );
+                  });
             }
             if (!applied) {
               attemptingFallback = true;

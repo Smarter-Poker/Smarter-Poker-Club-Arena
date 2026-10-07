@@ -287,10 +287,13 @@ test.describe('Production Cashier Certification', () => {
         async () => ({
           loading: await console.getByText('Loading Your Cashier', { exact: true }).count(),
           walletVisible: await agentWallet.isVisible(),
+          walletVerified: /\d/.test(
+            (await agentWallet.locator('.dw__row-value').textContent()) || ''
+          ),
         }),
         { timeout: 30_000 }
       )
-      .toEqual({ loading: 0, walletVisible: true });
+      .toEqual({ loading: 0, walletVisible: true, walletVerified: true });
     await expectNoRawCashierCents(page.locator('main'), 'Advanced Cashier');
     await expectCashierAxeClean(page, testInfo, 'main', 'advanced-cashier');
     await attachCashierScreenshot(page, testInfo, 'advanced-cashier');

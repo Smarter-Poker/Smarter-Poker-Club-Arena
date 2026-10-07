@@ -8,13 +8,16 @@ from pathlib import Path
 sys.dont_write_bytecode=True
 from satellite_qualifier_fixture import module,table_sql
 MIGRATION=Path("supabase/migrations/20261006182937_a_retirement_cannot_erase_the_original_tournament_hand.sql")
+SEAT_CONTINUATION=Path('supabase/migrations/20261007000711_a_retained_tournament_seat_keeps_its_original_paid_stack.sql')
+SEAT_READ_DEPS=Path('scripts/ci/fixtures/retirement-original/recorded-seat-first-read-dependencies.sql')
+SEAT_GUARD_PROOF=Path('scripts/ci/fixtures/retirement-original/aged-seat-guard-proof.sql')
 def main():
  p=argparse.ArgumentParser(description=__doc__);p.add_argument('--evidence',type=Path,required=True);p.add_argument('--pg-bin',type=Path,required=True);p.add_argument('--socket-root',type=Path,required=True);a=p.parse_args()
  root=Path(__file__).resolve().parents[2];out=a.evidence.resolve();out.mkdir(parents=True,exist_ok=False)
  hand=module(root/'scripts/ci/test-hand-submission.py','retirement_hand_fixture');hand.prepare(root,out)
  native=module(root/'scripts/ci/test-mtt-unlimited.py','retirement_pg_owner');a.socket_root.mkdir(parents=True,exist_ok=True);e=native.Execution(root,out,a.pg_bin.resolve(),out,300,socket_parent=a.socket_root)
  e.report['scope']='native original custody helper; not current financial owner certification'
- inputs=[MIGRATION,Path('scripts/admin/retire-patterned-identities.sql'),Path('scripts/qualification/build-retirement-native-fixture.py'),Path('scripts/qualification/retirement-native-proof.sql'),Path('scripts/qualification/retirement-original-57-manifest.json'),Path('scripts/ci/fixtures/retirement-original/readonly-provenance-shapes.json'),Path('scripts/ci/fixtures/retirement-original/retirement-catalog.sql'),Path(__file__).relative_to(root)]
+ inputs=[MIGRATION,SEAT_CONTINUATION,SEAT_READ_DEPS,SEAT_GUARD_PROOF,Path('scripts/admin/retire-patterned-identities.sql'),Path('scripts/qualification/build-retirement-native-fixture.py'),Path('scripts/qualification/retirement-native-proof.sql'),Path('scripts/qualification/retirement-original-57-manifest.json'),Path('scripts/ci/fixtures/retirement-original/readonly-provenance-shapes.json'),Path('scripts/ci/fixtures/retirement-original/retirement-catalog.sql'),Path(__file__).relative_to(root)]
  e.report['source_sha256']={str(f):hashlib.sha256((root/f).read_bytes()).hexdigest() for f in inputs}
  for sig in native.CANCELLATION_SIGNALS:signal.signal(sig,native.interrupted)
  try:
@@ -43,6 +46,9 @@ def main():
   if any(x not in s for x in required):raise ValueError('native financial claim/rollback wiring changed')
   start=s.index('CREATE TABLE smarter_private.retirement_original_hand_qualification');end=s.index('DO $native_patch$')
   e.sql(db,'BEGIN;'+s[start:end]+'COMMIT;',label='exact-private-custody-helper')
+  e.sql(db,'ALTER TABLE public.tournaments ADD COLUMN format_contract text;',label='captured-current-format-discriminator-column')
+  e.sql(db,file=root/SEAT_READ_DEPS,label='exact-recorded-seat-first-read-guards')
+  e.sql(db,file=root/SEAT_CONTINUATION,label='exact-retained-seat-continuation-helper-and-guard')
   subprocess.run([sys.executable,str(root/'scripts/qualification/build-retirement-native-fixture.py'),'--output',str(out)],check=True)
   cohort=(out/'cohort-native-opening.sql').read_text()
   cohort=cohort.replace('CREATE TRIGGER zz_retirement_original_failure BEFORE INSERT ON public.hand_projection_outbox FOR EACH ROW EXECUTE FUNCTION retirement_native.submission_fault();','').replace('DROP TRIGGER zz_retirement_original_failure ON public.hand_projection_outbox;','')
@@ -94,6 +100,7 @@ SELECT retirement_native.assert_true((SELECT count(*)=66 FROM public.profiles WH
 ROLLBACK;
 SELECT retirement_native.assert_true((SELECT count(*)=66 FROM public.tournament_players WHERE status='eliminated') AND NOT EXISTS(SELECT 1 FROM smarter_private.retirement_original_hand_restorations),'whole owner transaction rollback preserves all66 postimages and zero receipts');
 SELECT 'RETIREMENT_HELPER_NATIVE_PASS';"""
+  success=success.replace('ROLLBACK;',(root/SEAT_GUARD_PROOF).read_text()+'\nROLLBACK;')
   code,stdout,stderr=e.sql(db,success,label='real-helper-57-restore-and-owner-rollback',seconds=120)
   if stdout.splitlines().count('RETIREMENT_HELPER_NATIVE_PASS')!=1:raise RuntimeError('native helper completion absent')
   e.report.update(status='passed',passed=True,native_originals=57,affected_custodies=66,synthetic_only=True)

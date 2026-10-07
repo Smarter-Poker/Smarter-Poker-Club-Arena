@@ -511,6 +511,45 @@ export class HorseSessionRotator {
           }
         }
 
+        /* A SEAT NO CLUB WALLET PAID FOR IS A DIAMOND SEAT (2026-10-06).
+           Every chip cash seat is bought out of a club membership, so once the
+           membership read is WHOLE, a seat whose club has no membership row for
+           its horse can only be a Diamond Arena seat - the arena admits every
+           profile and is paid from `profiles.diamonds`, through the same
+           `addChips` -> `addDiamonds` door the top-up below uses. Its roll is
+           that Diamond balance, keyed exactly like a club roll, so
+           `topUpAllowance` holds a Diamond reload to the same bankroll rule a
+           chip reload meets. Without it the roll read as undefined and the
+           horse reloaded the full desired amount with no cap at all. */
+        if (memRead.complete) {
+          const unpaidBy = horseCashSeats.filter(
+            (s) =>
+              !rolls.has(`${(s as { club_id?: string }).club_id ?? ''}:${s.user_id}`) &&
+              !!(s as { club_id?: string }).club_id
+          );
+          if (unpaidBy.length > 0) {
+            const diaRead = await selectInChunks<{ id: string; diamonds: unknown }>(
+              [...new Set(unpaidBy.map((s) => s.user_id))],
+              (batch) => supabase.from('profiles').select('id, diamonds').in('id', batch),
+              'HorseSessionRotator.diamondRolls'
+            );
+            if (!this.lifecycleIsCurrent(generation)) return;
+            if (diaRead.complete) {
+              const diamondsOf = new Map<string, number>();
+              for (const r of diaRead.rows) {
+                const d = Number(r.diamonds);
+                if (Number.isFinite(d)) diamondsOf.set(r.id, Math.floor(d));
+              }
+              for (const s of unpaidBy) {
+                const d = diamondsOf.get(s.user_id);
+                if (d !== undefined) {
+                  rolls.set(`${(s as { club_id?: string }).club_id ?? ''}:${s.user_id}`, d);
+                }
+              }
+            }
+          }
+        }
+
         /**
          * ═══════════════════════════════════════════════════════════════════
          *  WHAT EACH SEAT HAS COST - THE HORSE'S OWN ROWS, THIS SITTING ONLY
@@ -936,6 +975,14 @@ export class HorseSessionRotator {
            */
           const roll = rolls.get(`${(seat as { club_id?: string }).club_id ?? ''}:${seat.user_id}`);
           const desiredTopUp = amount;
+          /* AN UNREAD ROLL REFUSES THE RELOAD, AS THIS FILE ALWAYS SAID IT DID
+             (2026-10-06). The note on the roll read promises that an
+             unreadable roll "refuses the top-up rather than uncapping it", and
+             the code skipped the cap instead: a horse whose roll could not be
+             read reloaded the full amount, uncapped. A reload is never urgent -
+             the seat is still funded - so with no roll there is no reload this
+             pass, and the next pass reads again. */
+          if (roll === undefined) amount = 0;
           if (roll !== undefined) {
             amount = topUpAllowance({
               bankroll: roll,

@@ -10,8 +10,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 188063,
-      "sha256": "da7e11de4a53dc2fbb7ea15c795fc3d099c9e5abae2937aa2e9531302219df20"
+      "bytes": 188873,
+      "sha256": "d71b8b3900aa260d98942f0c761e89b3e741307d43726a9ac214b5aa4095e933"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1674,6 +1674,17 @@
           "sha256": "2fc728ea5555ced40641d89f8c85b8f094a09f9f14d5decaa405ffbc5e11ea2a"
         }
       }
+    }
+  },
+  "retirementOriginalHelper20261006": {
+    "why": "Additive accounting shard3 real custody-helper regression and always artifact retention only; existing cash commands, financial inputs, assertions, and SOURCE_ONLY_UNRUN unchanged. This pin update is source identity, not native cash execution evidence.",
+    "before": {
+      "bytes": 187319,
+      "sha256": "72832049eaebb04b646352004f25412f4390684586d930b12584edc1a18c0f14"
+    },
+    "after": {
+      "bytes": 188129,
+      "sha256": "4641d7d1d1a63c002688590cf34420d054a215ecd06cdc74edcb03871e5b0bb1"
     }
   },
   "retired_cash_custody_enforcement_20261006": {

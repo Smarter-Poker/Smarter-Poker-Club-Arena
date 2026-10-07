@@ -33,6 +33,8 @@ export type BuyInRefusal =
   | 'no_wallet'
   | 'frozen'
   | 'already_in_game'
+  | 'diamond_closed'
+  | 'no_diamonds'
   | 'refused';
 
 /**
@@ -47,6 +49,13 @@ export function classifyBuyInRefusal(message: string | null | undefined): BuyInR
   if (m.includes('Insufficient club chips') || m.includes('Insufficient balance'))
     return 'no_chips';
   if (m.includes('Player already seated')) return 'already_seated';
+  /* THE DIAMOND ARENA DOOR (2026-10-06). `fn_poker_diamond_buyin` says the
+     same three ordinary things in its own words: the arena's cash games are
+     closed, the horse's settled Diamonds no longer cover the buy-in, or the
+     chair (or the horse) is already seated. */
+  if (m.includes('diamond_cash_not_open')) return 'diamond_closed';
+  if (m.includes('insufficient_settled_diamonds')) return 'no_diamonds';
+  if (m.includes('Diamond seat or player is already seated')) return 'already_seated';
   if (m.includes('duplicate key')) return 'seat_taken';
   if (m.includes('SEAT_RESERVED')) return 'seat_reserved';
   if (m.includes('BUYIN_BELOW_FLOOR')) return 'below_floor';

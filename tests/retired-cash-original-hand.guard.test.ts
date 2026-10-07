@@ -19,7 +19,7 @@ const refusal = readFileSync(
 );
 describe('retired cash retains original custody inside the original financial owner', () => {
   it('bounds installation and pins the serial tournament predecessor', () => {
-    expect(sql.trimEnd().endsWith("COMMIT;")).toBe(true);
+    expect(sql.trimEnd().endsWith('COMMIT;')).toBe(true);
     expect(sql).toContain("SET LOCAL lock_timeout='2s'");
     expect(sql).toContain("SET LOCAL statement_timeout='15s'");
     expect(sql).toContain('0f9432bbd2ac735c53731e6eec75449e');

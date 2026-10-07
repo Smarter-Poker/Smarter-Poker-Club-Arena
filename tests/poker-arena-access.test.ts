@@ -2,7 +2,15 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ rpc: vi.fn(), emit: vi.fn(), track: vi.fn() }));
-vi.mock('../src/lib/supabase', () => ({ supabase: { rpc: mocks.rpc } }));
+vi.mock('../src/lib/supabase', () => ({
+  supabase: {
+    rpc: (...args: unknown[]) => {
+      const response = mocks.rpc(...args);
+      // Match the real PostgREST thenable, including its request-scoped abort API.
+      return Object.assign(response, { abortSignal: () => response });
+    },
+  },
+}));
 vi.mock('../src/core/MasterBus', () => ({ masterBus: { emit: mocks.emit } }));
 vi.mock('../src/services/ClubEntryTrustService', () => ({
   ClubEntryTrustService: { track: mocks.track },

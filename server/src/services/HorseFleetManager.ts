@@ -14,7 +14,15 @@
  */
 
 import { supabase, seedingSupabase } from './supabase.js';
-import { isChipFleetTable } from './HorseFleetFundingBoundary.js';
+import { randomUUID } from 'node:crypto';
+import {
+  isChipFleetTable,
+  DIAMOND_ARENA_HORSE_CLUBS,
+  diamondArenaIdFrom,
+  isDiamondArenaCashTable,
+  isDiamondTableRow,
+  wholeDiamondBuyIn,
+} from './HorseFleetFundingBoundary.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import {
   bodiesOnHostFrom,
@@ -1088,6 +1096,38 @@ export class HorseFleetManager {
       }
       const tables = tablePage.rows.filter(isChipFleetTable);
 
+      /* ── THE DIAMOND ARENA (Dan 2026-10-06) ─────────────────────────────
+         Deep Stack Society's horses play the arena's cash games too, through
+         this same cycle and this same door. The arena's tables are kept OUT of
+         `tables` on purpose: every planning structure built from that list -
+         band and stake supply, the per-host caps, the wallet scope map, the
+         chip exposure set, the seat-call answerer, the feeder opener and
+         `fn_cash_game_ensure` - is a chip-floor structure, and none of them
+         may ever plan, open or close an arena table. The arena's tables join
+         only the seeding walk itself (`orderedTables`), where a seat is
+         actually decided by the same candidate filter and the same verdict.
+
+         READ ONCE, FAIL CLOSED, AND LATENT WHILE CLOSED. Opening cash games is
+         a person's decision; until `cash_games_enabled` reads true, or if the
+         row cannot be read, this list is empty and the cycle is exactly what
+         it was before this block existed. See HorseFleetFundingBoundary. */
+      let diamondArenaId: string | null = null;
+      try {
+        const { data: arenaRow, error: arenaErr } = await supabase
+          .from('ca_arena_settings')
+          .select('club_id, cash_games_enabled')
+          .eq('id', 1)
+          .maybeSingle();
+        diamondArenaId = diamondArenaIdFrom(arenaRow, arenaErr);
+      } catch (err) {
+        reportError(err, 'HorseFleet.arena_settings_read_failed');
+        diamondArenaId = null;
+      }
+      if (!readIsCurrent()) return;
+      let diamondTables = diamondArenaId
+        ? tablePage.rows.filter((t) => isDiamondArenaCashTable(t, diamondArenaId))
+        : [];
+
       /* WHO MAY SIT WHERE (Dan 2026-09-02, verbatim: "FREE THEM TO PLAY OPENLY
          INSIDE THE DEEP STACK SOCIETY ONLY. THEY HAVE NO AFFILIATION OR ARE A
          PART OF THE MIDWAY UNION.")
@@ -1305,6 +1345,22 @@ export class HorseFleetManager {
        */
       const horseExposure = new Map<string, number>();
       const openCashTableIds = new Set<string>(tables.map((t) => String(t.id)));
+      /* DIAMONDS ARE A DIFFERENT WALLET (2026-10-06). A horse's stack at an
+         arena table is Diamonds, a share of `profiles.diamonds`, not chips from
+         a club wallet - so it is its own exposure, measured against its own
+         roll, exactly as the chip exposure above is. Summing the two would put
+         a 2,000-Diamond seat against a 10,000-chip roll. Empty while the arena
+         is closed, because then no arena table is in this list. */
+      const diamondTableIds = new Set<string>(diamondTables.map((t) => String(t.id)));
+      const diamondExposure = new Map<string, number>();
+      for (const seat of allActiveSeats) {
+        if (diamondTableIds.has(String(seat.table_id))) {
+          const dst = Number(seat.stack);
+          if (Number.isFinite(dst) && dst > 0) {
+            diamondExposure.set(seat.user_id, (diamondExposure.get(seat.user_id) ?? 0) + dst);
+          }
+        }
+      }
       for (const seat of allActiveSeats) {
         if (!horseTables.has(seat.user_id)) horseTables.set(seat.user_id, new Set());
         horseTables.get(seat.user_id)!.add(seat.table_id);
@@ -1480,6 +1536,66 @@ export class HorseFleetManager {
         }
       } catch (err) {
         reportError(err, 'HorseFleet.bankroll_load_failed');
+      }
+
+      /* ── THE ARENA WALLET (Dan 2026-10-06) ──────────────────────────────
+         A horse of one of DIAMOND_ARENA_HORSE_CLUBS may pay for an arena seat,
+         and what it pays with is its own Diamonds - the balance the arena
+         door (`fn_poker_diamond_buyin` -> `fn_poker_diamond_reserve`) reserves
+         from. So the arena becomes one more membership in the maps above,
+         keyed exactly like a club wallet (`${arena}:${horse}`), and from here
+         on resolveSeatClub, the bankroll gate, the buy-in sizing and the
+         aggregate ceiling all reason about it with the code they already use
+         for chips. Nothing funds the horse: the roll is what it already holds.
+
+         FAILS CLOSED, UNLIKE THE CHIP LOADER. The chip loader fails open
+         because a horse's chip membership is real and the database is the
+         final guard. This membership is DERIVED here, so a map that could not
+         be built has no arena wallet in it at all - and an arena table with
+         no wallet behind any horse is left out of the walk rather than
+         offered to everybody. Only read when the arena is open AND the chip
+         memberships it is derived from loaded whole. */
+      if (diamondTables.length > 0) {
+        let diamondRollsLoaded = false;
+        if (bankrollsLoaded && diamondArenaId) {
+          try {
+            const rollPage = await fetchAllRows<{ id: string; diamonds: number | string | null }>(
+              (cursor, want) => {
+                let q = supabase
+                  .from('profiles')
+                  .select('id, diamonds')
+                  .eq('is_horse', true)
+                  .order('id', { ascending: true })
+                  .limit(want);
+                if (cursor) q = q.gt('id', cursor);
+                return q;
+              },
+              { label: 'HorseFleet.diamondRolls', maxRows: 50_000, shouldContinue: readIsCurrent }
+            );
+            if (!readIsCurrent()) return;
+            if (rollPage.complete) {
+              const arena = diamondArenaId;
+              for (const r of rollPage.rows) {
+                const clubs = memberships.get(r.id);
+                if (!clubs || !DIAMOND_ARENA_HORSE_CLUBS.some((c) => clubs.has(c))) continue;
+                const d = Number(r.diamonds);
+                if (!Number.isFinite(d)) continue;
+                clubs.add(arena);
+                bankrolls.set(`${arena}:${r.id}`, Math.floor(d));
+              }
+              diamondRollsLoaded = true;
+            }
+          } catch (err) {
+            reportError(err, 'HorseFleet.diamond_rolls_load_failed');
+          }
+        }
+        if (!diamondRollsLoaded) {
+          console.warn(
+            '[HorseFleet] Diamond Arena skipped this cycle - the horse Diamond rolls ' +
+              'could not be read whole, so no arena wallet exists to seat from.'
+          );
+          diamondTables = [];
+        }
       }
 
       /* ── THE DOOR RULES, READ ONCE (2026-09-05) ──────────────────────────
@@ -2034,6 +2150,12 @@ export class HorseFleetManager {
       const activeHostOf = new Map<string, string>();
       for (const seat of allActiveSeats) {
         if (!horseIdSet.has(seat.user_id)) continue;
+        /* An arena seat is played from the horse's Diamonds, not from a club
+           wallet, so it does not make the horse "represent" a club or a host
+           for the one-club-at-a-time rule - the same way a tournament chair
+           does not spend the club roll. Without this, a horse at an arena
+           table would be refused every chip table as `other_club`. */
+        if (diamondTableIds.has(String(seat.table_id))) continue;
         const club = (seat as { club_id?: string | null }).club_id;
         if (club && !activeClubOf.has(seat.user_id)) activeClubOf.set(seat.user_id, String(club));
         const host = hostOfTable.get(String(seat.table_id));
@@ -2138,7 +2260,11 @@ export class HorseFleetManager {
             : t.role === 'feeder'
               ? 1000
               : Number(t.main_index ?? 999);
-      const orderedTables = [...tables].sort(
+      /* The arena's tables join HERE and nowhere earlier (see where they are
+         read): the walk is the only place a seat is decided, and the order
+         below already puts a short-handed human's table first whatever its
+         currency. Empty while the arena is closed. */
+      const orderedTables = [...tables, ...diamondTables].sort(
         (a, b) =>
           Number(humanShort(b)) - Number(humanShort(a)) ||
           Number(!!b.cluster_id) - Number(!!a.cluster_id) ||
@@ -2407,6 +2533,8 @@ export class HorseFleetManager {
         rejoin,
         horseTables,
         horseExposure,
+        diamondExposure,
+        diamondArenaId,
         activeClubOf,
         activeHostOf,
         book,
@@ -2814,6 +2942,10 @@ export class HorseFleetManager {
           /* The game key the door rules are written against (club, variant,
              sb, bb), formatted once per table. See rejoinTableKey. */
           const constraintTableKey = rejoinTableKey(table);
+          /* A Diamond Arena table (only ever present while the arena is open,
+             see where `diamondTables` is read). Decides the lane tag, the
+             stake gate and the seat's idempotency key below; nothing else. */
+          const arenaTable = diamondTableIds.has(String(table.id));
           const candidateHorses = validHorses.filter((h) => {
             /* THE DATABASE ALREADY SAID THIS HORSE IS FULL (2026-09-11). It
                refused a buy-in for it at an earlier table in THIS cycle with
@@ -2869,10 +3001,24 @@ export class HorseFleetManager {
                opinion" - the same fail-open answer the club gate itself
                gives on that branch. */
             const tag = seatClub ? book?.tags.get(tagKey(h.id, seatClub)) : undefined;
+            /* AN ARENA SEAT IS PLAYED BY THE SAME HORSE (2026-10-06). The
+               tagger writes tags per CLUB membership and the arena is not a
+               club the tagger knows, so at an arena table `tag` is always
+               undefined. The horse's own game - cash or events, and which
+               variants - is the one its Deep Stack tag already says; reading
+               it here keeps a tournament-only horse off the arena's cash
+               tables and an NLH-only horse off another variant, exactly as at
+               home. The STAKE is not read from it: those are chip blinds, and
+               the arena's are Diamond blinds (see the stake gate below). */
+            const laneTag = arenaTable
+              ? DIAMOND_ARENA_HORSE_CLUBS.map((c) => book?.tags.get(tagKey(h.id, c))).find(
+                  (t) => t !== undefined
+                )
+              : tag;
 
             // Dan 2026-08-26 game lanes: a third of the stable plays events
             // only (tournaments / spins / heads-up) and never sits at cash.
-            const cashOk = tagAllowsCash(tag);
+            const cashOk = arenaTable ? tagAllowsCash(laneTag) : tagAllowsCash(tag);
             if (cashOk === false) {
               tagDropped++;
               return false;
@@ -2885,7 +3031,7 @@ export class HorseFleetManager {
                starve: Midway Union carries 438 NLH horses, 110 PLO4 and 45 of
                the thinnest limit variant, against 20 NLH tables and a limit
                board trimmed to two. */
-            const variantOk = tagAllowsVariant(tag, String(table.game_variant ?? ''));
+            const variantOk = tagAllowsVariant(laneTag, String(table.game_variant ?? ''));
             if (variantOk === false && !humanNeedsRescue) {
               tagDropped++;
               return false;
@@ -2923,6 +3069,15 @@ export class HorseFleetManager {
               tagDropped++;
               return false;
             }
+            /* AT THE ARENA THE ROLL IS THE STAKE GATE (2026-10-06). A merit
+               band is earned in CHIP blinds (`stakeBandForBigBlind`: anything
+               over 6 reads 'high'), and the arena's blinds are whole Diamonds
+               from 1/2 to 5,000/10,000, so a band would read every arena table
+               as 'high' and refuse every horse not ranked there. What decides
+               which arena game a horse can play is what it holds: the bankroll
+               gate below (`canSit` on this table's reference buy-in, in
+               Diamonds) - the same rule, in the arena's unit. */
+            if (arenaTable && stakeOk === undefined) stakeOk = true;
             if (
               stakeOk === undefined &&
               !stakeBandAllows(
@@ -3413,7 +3568,8 @@ export class HorseFleetManager {
                 if (reason === 'four_game_limit' || reason === 'table_cap') {
                   cappedThisCycle.add(horse.id);
                 }
-              }
+              },
+              { diamond: arenaTable }
             );
             if (!success) return false;
             seated++;
@@ -3449,8 +3605,13 @@ export class HorseFleetManager {
             // The seat we just bought is exposure NOW, not next cycle: without
             // this the aggregate ceiling only ever sees the position the cycle
             // STARTED with, and a single pass could seat a horse at four
-            // tables while every check reads zero.
-            horseExposure.set(horse.id, (horseExposure.get(horse.id) ?? 0) + buyIn);
+            // tables while every check reads zero. An arena seat is
+            // Diamonds and lands on the Diamond exposure (2026-10-06).
+            if (arenaTable) {
+              diamondExposure.set(horse.id, (diamondExposure.get(horse.id) ?? 0) + buyIn);
+            } else {
+              horseExposure.set(horse.id, (horseExposure.get(horse.id) ?? 0) + buyIn);
+            }
             return true;
           };
 
@@ -3761,6 +3922,10 @@ export class HorseFleetManager {
         if (Number.isFinite(cheapestRef)) {
           let stranded = 0;
           for (const [key, roll] of bankrolls) {
+            /* A chip-ladder gauge: an arena roll is Diamonds, priced against
+               no chip game, and counting it would call every horse with a
+               small Diamond balance "stranded" on the chip floor. */
+            if (diamondArenaId && key.startsWith(`${diamondArenaId}:`)) continue;
             const horseId = key.slice(key.indexOf(':') + 1);
             if (!canSit(roll, cheapestRef, bankrollPolicyFor(horseId))) stranded++;
           }
@@ -4563,6 +4728,24 @@ export class HorseFleetManager {
        decides what is sensible, the floor decides what is possible, and
        possible wins or the horse does not sit. The candidate filter has
        already dropped a horse whose known roll cannot cover it. */
+    /* A DIAMOND IS INDIVISIBLE (2026-10-06). The bankroll share above is
+       floored to the cent, so at an arena table it can size 545.07, and the
+       arena door refuses a fractional amount (`invalid_diamond_cash_purchase`).
+       Floored to whole Diamonds - never rounded up past the share - and no
+       seat if that falls under the table minimum. The floor is still applied
+       LAST, in whole Diamonds. Chip tables are untouched. */
+    if (isDiamondTableRow(table)) {
+      const whole = wholeDiamondBuyIn(buyIn, minB);
+      if (whole <= 0) {
+        note('seat_refused_share_below_min');
+        return 0;
+      }
+      return applyRejoinFloor(
+        whole,
+        rejoinFloor === undefined ? undefined : Math.ceil(rejoinFloor),
+        maxB
+      );
+    }
     return applyRejoinFloor(buyIn, rejoinFloor, maxB);
   }
 
@@ -4577,7 +4760,14 @@ export class HorseFleetManager {
        deliberately not reported - a seeding race is not an incident - and the
        cost of that silence was two days of "selected 4, seated 0" with nothing
        anywhere naming the door. The caller counts what comes back. */
-    onRefusal?: (reason: BuyInRefusal) => void
+    onRefusal?: (reason: BuyInRefusal) => void,
+    /* A DIAMOND ARENA SEAT (2026-10-06). `atomic_table_buyin` routes an arena
+       table to `fn_poker_diamond_buyin`, which refuses a purchase that carries
+       no idempotency key: the key is what binds the reservation, the custody
+       row and the seat into one receipt, so a lost response can be replayed
+       instead of paid twice. One fresh key per ATTEMPT, exactly as the
+       browser's buy-in mints one per click. Chip seats send nothing new. */
+    opts?: { diamond?: boolean }
   ): Promise<boolean> {
     // THE FREEZE IS TOTAL (Dan 2026-09-03): a cycle that began before :53 stops at
     // the first seat after it (a cycle has run for 47 minutes before).
@@ -4606,6 +4796,7 @@ export class HorseFleetManager {
         p_amount: buyIn,
         p_auto_rebuy: false,
         p_club_id: clubId,
+        ...(opts?.diamond ? { p_idempotency_key: randomUUID() } : {}),
       });
 
       // CHIP CONTINUITY / HORSES ARE PLAYERS (CLAUDE.md 10.5). A horse that
@@ -4624,9 +4815,10 @@ export class HorseFleetManager {
             p_user_id: horseId,
             p_table_id: tableId,
             p_seat_number: seatNumber,
-            p_amount: required,
+            p_amount: opts?.diamond ? Math.ceil(required) : required,
             p_auto_rebuy: false,
             p_club_id: clubId,
+            ...(opts?.diamond ? { p_idempotency_key: randomUUID() } : {}),
           }));
         }
       }
@@ -4656,7 +4848,15 @@ export class HorseFleetManager {
           // A rejoin floor the roll could not meet is the horse declining a
           // higher minimum, not a defect.
           !msg.includes('BUYIN_BELOW_FLOOR') &&
-          !msg.includes('Insufficient club chips')
+          !msg.includes('Insufficient club chips') &&
+          /* The arena door's own words for the same three ordinary races:
+             the arena closed under the cycle, the roll moved, the chair was
+             taken. A fractional or mismatched purchase is NOT here - that is
+             a defect in this file and is reported. */
+          !msg.includes('diamond_cash_not_open') &&
+          !msg.includes('insufficient_settled_diamonds') &&
+          !msg.includes('Diamond seat or player is already seated') &&
+          !msg.includes('SEAT_RESERVED')
         ) {
           reportError(rpcErr, 'HorseFleet.atomic_table_buyin_failed_for_horse');
         }

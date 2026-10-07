@@ -860,9 +860,18 @@ test.describe('production routed gameplay customization', () => {
           await expect
             .poll(() => writerRoot.evaluate((element) => getComputedStyle(element).backgroundImage))
             .not.toBe(firstRoomPaint);
-          expect(
-            await writerRoot.evaluate((element) => getComputedStyle(element).backgroundSize)
-          ).not.toContain('100% 100%');
+          // The maintained portrait contract shows the complete room frame;
+          // wide viewports retain cover. Prove the exact five-layer sizing.
+          const roomSizing = await writerRoot.evaluate((element) => ({
+            size: getComputedStyle(element).backgroundSize,
+            portrait: element.ownerDocument.defaultView!.matchMedia('(max-aspect-ratio: 3 / 4)')
+              .matches,
+          }));
+          expect(roomSizing.size).toBe(
+            roomSizing.portrait
+              ? 'cover, cover, 100% 100%, auto, cover'
+              : 'cover, cover, cover, auto, cover'
+          );
         },
       });
 

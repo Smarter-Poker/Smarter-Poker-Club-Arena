@@ -95,7 +95,7 @@ function patched(source, operations) {
   return result;
 }
 
-function stateShape(state, tableId, actorIds) {
+function stateShape(state, tableId, actorIds, previous, event, previousSequence) {
   protocol(record(state) && state.table_id === tableId && stages.has(state.stage), 'STATE');
   protocol(Number.isSafeInteger(state.hand_number) && state.hand_number >= 0, 'HAND');
   protocol(
@@ -122,12 +122,43 @@ function stateShape(state, tableId, actorIds) {
       validMoney(state.current_bet) &&
         validMoney(player.bet) &&
         validMoney(player.stack) &&
-        player.stack > 0 &&
         player.bet <= state.current_bet &&
-        player.is_folded === false &&
-        player.is_all_in === false,
+        typeof player.is_folded === 'boolean' &&
+        typeof player.is_all_in === 'boolean',
       'DECISION_STATE'
     );
+    if (player.stack === 0 || player.is_folded || player.is_all_in) {
+      const old = previous?.players.find((p) => p.user_id === state.current_player);
+      protocol(
+        old &&
+          previous.current_player === state.current_player &&
+          previous.hand_number === state.hand_number &&
+          (previous.turn_start_time_ms === state.turn_start_time_ms ||
+            (event?.stateSequence === previousSequence &&
+              Number.isSafeInteger(event.timestamp) &&
+              state.turn_start_time_ms >= previous.turn_start_time_ms &&
+              state.turn_start_time_ms <= event.timestamp)) &&
+          Number.isSafeInteger(event?.wireSequence) &&
+          Number.isSafeInteger(event?.stateSequence) &&
+          event.stateSequence <= previousSequence &&
+          (old.is_all_in || old.is_folded || event.stateSequence === previousSequence) &&
+          event?.type === 'player_action' &&
+          event.hand_number === state.hand_number &&
+          event.user_id === player.user_id &&
+          event.replayed !== true &&
+          ((event.action === 'all_in' &&
+            player.stack === 0 &&
+            player.is_all_in &&
+            !player.is_folded &&
+            !old.is_folded &&
+            (old.stack > 0 || old.is_all_in)) ||
+            (event.action === 'fold' &&
+              player.is_folded &&
+              !player.is_all_in &&
+              player.stack === old.stack)),
+        'DECISION_STATE'
+      );
+    }
   }
   return state;
 }
@@ -277,6 +308,8 @@ export async function startFixtureActors({
       return;
     const state = actor.state;
     if (!bettingStages.has(state.stage) || state.current_player !== actor.user.id) return;
+    const player = state.players.find((p) => p.user_id === actor.user.id);
+    if (player.stack <= 0 || player.is_folded || player.is_all_in) return;
     const context = state.action_context;
     const turn = turnKey(state);
     if (actor.decisions.has(context) || actor.turns.has(turn)) return;
@@ -407,7 +440,14 @@ export async function startFixtureActors({
             message.seq === actor.seq + 1,
           'SEQUENCE'
         );
-        actor.state = stateShape(patched(actor.state, message.patch), tableId, actorIds);
+        actor.state = stateShape(
+          patched(actor.state, message.patch),
+          tableId,
+          actorIds,
+          actor.state,
+          actor.lastPublicEvent,
+          actor.seq
+        );
         actor.seq = message.seq;
         break;
       case 'USER_EVENT':
@@ -422,6 +462,20 @@ export async function startFixtureActors({
       case 'EVENT':
         // Cards, clocks and animation events cannot replace authoritative state.
         protocol(record(message.payload) && typeof message.payload.type === 'string', 'EVENT');
+        if (message.payload.type === 'player_action') {
+          protocol(
+            Number.isSafeInteger(message.seq) &&
+              message.seq >= 0 &&
+              Number.isSafeInteger(message.payload.hand_number) &&
+              actorIds.has(message.payload.user_id),
+            'EVENT'
+          );
+        }
+        actor.lastPublicEvent = {
+          ...message.payload,
+          wireSequence: message.seq,
+          stateSequence: actor.seq,
+        };
         if (financial) void financial.event(message.payload).catch((error) => fail(error.message));
         return;
       case 'ERROR':

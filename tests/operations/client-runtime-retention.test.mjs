@@ -16,6 +16,8 @@ import {
   verifyImmutableBundle,
   readRetentionReceipt,
   receiptArtifactId,
+  assertReceiptOrigins,
+  publicationDecision,
 } from '../../scripts/ci/client-runtime-retention.mjs';
 
 const scratchParent = process.env.RUNNER_TEMP || process.env.TMPDIR;
@@ -292,4 +294,122 @@ test('receipt source binding and metadata reject missing, expired, PR, foreign o
         '34'
       )
     );
+});
+
+test('missing evidence, origin disagreement and same-SHA repair events use normal publication', async () => {
+  for (const error of [
+    new Error('missing original inventory'),
+    new Error('incomplete immutable bytes'),
+  ]) {
+    assert.equal(
+      (
+        await publicationDecision(async () => {
+          throw error;
+        })
+      ).publish,
+      true
+    );
+  }
+  const info = Buffer.from(
+    JSON.stringify({ ca_sha: 'a'.repeat(40), run_id: '56', built_by: 'publish-club-arena.yml' })
+  );
+  const manifest = Buffer.from('complete actual immutable manifest');
+  const receipt = {
+    runtimeSha: 'a'.repeat(40),
+    originalPublisherRunId: '56',
+    buildInfoSHA256: hash(info),
+    manifestSHA256: hash(manifest),
+  };
+  assertReceiptOrigins(receipt, [info, info], [manifest, manifest]);
+  assert.equal(
+    (
+      await publicationDecision(async () => {
+        assertReceiptOrigins(receipt, [info, Buffer.from('{}')], [manifest, manifest]);
+        return receipt;
+      })
+    ).publish,
+    true
+  );
+  const cwd = temp();
+  try {
+    const output = resolve(cwd, 'output');
+    execFileSync(
+      process.execPath,
+      [
+        new URL('../../scripts/ci/client-runtime-retention.mjs', import.meta.url).pathname,
+        'admit',
+        'a'.repeat(40),
+      ],
+      {
+        cwd,
+        env: {
+          PATH: process.env.PATH,
+          GITHUB_EVENT_NAME: 'repository_dispatch',
+          GITHUB_OUTPUT: output,
+          TMPDIR: scratchParent,
+        },
+      }
+    );
+    assert.equal(readFileSync(output, 'utf8'), 'publish=true\n');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('unknown virtual producers and foreign node_modules cannot qualify an actual Vite build', async () => {
+  const cwd = temp();
+  const foreign = temp();
+  try {
+    git(cwd, 'init', '-q');
+    put(cwd, '.gitignore', 'dist/\n.client-runtime-*.json\n');
+    const realLock = JSON.parse(
+      readFileSync(new URL('../../package-lock.json', import.meta.url), 'utf8')
+    );
+    put(cwd, 'package.json', '{"name":"runtime-fixture"}');
+    put(
+      cwd,
+      'package-lock.json',
+      JSON.stringify({ packages: { 'node_modules/vite': realLock.packages['node_modules/vite'] } })
+    );
+    put(foreign, 'node_modules/foreign/input.js', 'export const foreign = 3;');
+    put(cwd, 'index.html', '<script type="module" src="/src/main.js"></script>');
+    put(
+      cwd,
+      'src/main.js',
+      `import { foreign } from '${resolve(foreign, 'node_modules/foreign/input.js')}'; import custom from 'virtual:unknown'; console.log(foreign, custom);`
+    );
+    const baseline = commit(cwd);
+    const plugin = {
+      name: 'unsupported-fixture-producer',
+      resolveId(id) {
+        if (id === 'virtual:unknown') return '\0unsupported:custom';
+      },
+      load(id) {
+        if (id === '\0unsupported:custom') return 'export default 4';
+      },
+    };
+    await build({
+      root: cwd,
+      configFile: false,
+      logLevel: 'silent',
+      plugins: [plugin, runtimeInputPlugin('app', cwd)],
+      build: { outDir: resolve(cwd, 'dist') },
+    });
+    const graph = JSON.parse(readFileSync(resolve(cwd, '.client-runtime-app.json'), 'utf8'));
+    assert.ok(graph.unknown.includes('unqualified-or-external-dependency-input'));
+    assert.ok(graph.unknown.some((entry) => entry.startsWith('unsupported-virtual-input:')));
+    assert.throws(() => makeRuntimeInputs(baseline, [graph, graph, graph], cwd));
+    const inputs = makeRuntimeInputs(
+      baseline,
+      ['app', 'diamond', 'prerender'].map((build) => ({ ...graph, build })),
+      cwd
+    );
+    assert.equal(inputs.complete, false);
+    assert.throws(() =>
+      makeRuntimeInputs(baseline, [{ ...graph, sourceSha: 'a'.repeat(40) }, graph, graph], cwd)
+    );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(foreign, { recursive: true, force: true });
+  }
 });

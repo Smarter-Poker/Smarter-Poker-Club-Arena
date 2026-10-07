@@ -190,6 +190,17 @@ async function requireCurrentReceipt(receipt) {
     readOrigin('build-info.json'),
     readOrigin('.release-manifest.sha256'),
   ]);
+  assertReceiptOrigins(receipt, info, manifests);
+}
+
+export function assertReceiptOrigins(receipt, info, manifests) {
+  if (
+    !Array.isArray(info) ||
+    info.length !== 2 ||
+    !Array.isArray(manifests) ||
+    manifests.length !== 2
+  )
+    throw new Error('Both actual origins are required.');
   for (let i = 0; i < 2; i++) {
     const value = json(info[i]);
     if (
@@ -318,19 +329,30 @@ async function admit(target) {
   }
 }
 
+export async function publicationDecision(admission) {
+  try {
+    const receipt = await admission();
+    if (!receipt) throw new Error('Missing retention admission evidence.');
+    return { publish: false, receipt };
+  } catch (error) {
+    return { publish: true, reason: error.message };
+  }
+}
+
 async function main() {
   const [command, ...args] = process.argv.slice(2);
   if (command === 'admit') {
-    try {
-      const receipt = await admit(args[0]);
+    const decision = await publicationDecision(() => admit(args[0]));
+    if (!decision.publish) {
+      const receipt = decision.receipt;
       writeFileSync('runtime-admission.json', `${JSON.stringify(receipt, null, 2)}\n`);
       appendFileSync(process.env.GITHUB_OUTPUT, 'publish=false\n');
       console.log(
         `Retaining actual client ${receipt.runtimeSha}; verification source ${receipt.verificationSha}.`
       );
-    } catch (error) {
+    } else {
       appendFileSync(process.env.GITHUB_OUTPUT, 'publish=true\n');
-      console.log(`Normal publication required: ${error.message}`);
+      console.log(`Normal publication required: ${decision.reason}`);
     }
   } else if (command === 'finalize') {
     const receipt = readRetentionReceipt(

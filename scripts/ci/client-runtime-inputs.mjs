@@ -110,13 +110,13 @@ export function runtimeInputPlugin(label, root = process.cwd()) {
           if (/^\0vite\//.test(raw) && locked('vite')) continue;
           if (
             /^\0commonjs(?:Helpers\.js|-dynamic-modules)$/.test(raw) &&
-            locked('@rollup/plugin-commonjs')
+            (locked('@rollup/plugin-commonjs') || locked('vite'))
           )
             continue;
           if (
             raw.startsWith('\0') &&
-            /\?commonjs-(?:proxy|external|es-import|entry)$/.test(raw) &&
-            locked('@rollup/plugin-commonjs')
+            /\?commonjs-(?:proxy|external|es-import|entry|exports|module)$/.test(raw) &&
+            (locked('@rollup/plugin-commonjs') || locked('vite'))
           ) {
             const underlying = raw.slice(1).split('?')[0];
             if (isAbsolute(underlying) && dependency(underlying)) continue;
@@ -127,12 +127,17 @@ export function runtimeInputPlugin(label, root = process.cwd()) {
         let clean = raw.split('?')[0];
         if (!isAbsolute(clean)) {
           if (clean.startsWith('node:')) continue;
-          try {
-            clean = require.resolve(clean);
-          } catch {
-            unknown.push(`unsupported-module-input:${raw}`);
-            continue;
-          }
+          // Vite also reports root-relative watch files (HTML and media),
+          // whose actual source blob must remain in the sealed inventory.
+          if (safePath(clean) && existsSync(resolve(root, clean))) {
+            clean = resolve(root, clean);
+          } else
+            try {
+              clean = require.resolve(clean);
+            } catch {
+              unknown.push(`unsupported-module-input:${raw}`);
+              continue;
+            }
           if (!isAbsolute(clean)) {
             unknown.push(`unsupported-module-input:${raw}`);
             continue;
@@ -154,10 +159,16 @@ export function runtimeInputPlugin(label, root = process.cwd()) {
         if (statSync(clean).isDirectory()) directories.add(path + '/');
         else files.add(path);
       }
+      const sourceSha = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD']).toString().trim();
+      const cleanSource =
+        execFileSync('git', ['-C', root, 'status', '--porcelain']).toString() === '';
       writeFileSync(
         resolve(root, `.client-runtime-${label}.json`),
         JSON.stringify({
           schema: 1,
+          build: label,
+          sourceSha,
+          cleanSource,
           files: [...files].sort(),
           directories: [...directories].sort(),
           unknown: [...new Set(unknown)].sort(),
@@ -187,9 +198,16 @@ export function makeRuntimeInputs(sourceSha, observations, cwd = process.cwd()) 
   const files = new Set([...tree.keys()].filter(conservativeClientInput));
   const directories = new Set();
   const unknown = [];
+  if (
+    JSON.stringify(observations.map((entry) => entry?.build).sort()) !==
+    JSON.stringify(['app', 'diamond', 'prerender'])
+  )
+    throw new Error('Distinct actual app, Diamond and prerender graphs are required.');
   for (const observation of observations) {
     if (
       observation?.schema !== 1 ||
+      observation.sourceSha !== sourceSha ||
+      observation.cleanSource !== true ||
       !Array.isArray(observation.files) ||
       !Array.isArray(observation.directories) ||
       !Array.isArray(observation.unknown)

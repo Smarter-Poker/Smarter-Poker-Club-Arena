@@ -79,6 +79,10 @@
 -- else in a function can move. CREATE OR REPLACE keeps the owner, SECURITY
 -- DEFINER, search_path and every grant. No money, row or grant is touched.
 --
+-- LIVE PROOF: true once every one of the eleven bodies has no disagreement
+-- refusal left on 40001 (false before this migration: all eleven matched).
+-- @live-proof: (SELECT count(*) = 11 AND bool_and(pg_get_functiondef(p.oid) !~ $re$(does not match|disagree|differs|conflicts with)[^;]*ERRCODE\s*=\s*'40001'$re$) FROM pg_proc p WHERE p.oid = ANY(ARRAY['public.fn_settle_tournament_places(uuid,uuid)','public.fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid)','public.fn_settle_tournament_bubble_protection(uuid,uuid)','public.fn_complete_tournament_terminal_pre_seat_guard(uuid,uuid,text)','public.fn_resolve_tournament_terminal_outcome(uuid,uuid,text)','public.fn_ca_tournament_terminal_receipt(uuid,uuid)','public.fn_resolve_satellite_settlement_outcome(uuid,uuid)','public.fn_ca_satellite_settlement_receipt(uuid,uuid)','public.fn_ca_satellite_cohort_receipt(uuid,uuid[])','public.fn_ca_tournament_cancellation_receipt(uuid,uuid)','public.fn_poker_diamond_tournament_cancellation_receipt(uuid,uuid)']::regprocedure[]))
+--
 -- Wrap ALL DDL for one change in ONE transaction: every DDL statement fires
 -- Supabase's schema-cache reload, which takes ~28s on this database, and ten
 -- loose statements mean ten reloads (club-arena CLAUDE.md, production DDL policy).

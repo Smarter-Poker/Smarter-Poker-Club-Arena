@@ -493,3 +493,40 @@ test('sealed external font inputs require exact allowed URLs, request identity a
     true
   );
 });
+
+test('locked Vite SSR aggregate CSS records real source inputs without inventing a source file', async () => {
+  const cwd = temp();
+  try {
+    git(cwd, 'init', '-q');
+    put(cwd, '.gitignore', 'dist/\n.client-runtime-*.json\n');
+    const lock = JSON.parse(
+      readFileSync(new URL('../../package-lock.json', import.meta.url), 'utf8')
+    );
+    put(cwd, 'package.json', '{"name":"ssr-fixture"}');
+    put(
+      cwd,
+      'package-lock.json',
+      JSON.stringify({ packages: { 'node_modules/vite': lock.packages['node_modules/vite'] } })
+    );
+    put(cwd, 'src/main.js', "import './page.css'; export const page = 'SSR';");
+    put(cwd, 'src/page.css', 'body{color:red}');
+    commit(cwd);
+    await build({
+      root: cwd,
+      configFile: false,
+      logLevel: 'silent',
+      plugins: [runtimeInputPlugin('prerender', cwd)],
+      build: {
+        ssr: resolve(cwd, 'src/main.js'),
+        ssrEmitAssets: true,
+        cssCodeSplit: false,
+        outDir: resolve(cwd, 'dist'),
+      },
+    });
+    const graph = JSON.parse(readFileSync(resolve(cwd, '.client-runtime-prerender.json'), 'utf8'));
+    assert.deepEqual(graph.unknown, []);
+    assert.ok(graph.files.includes('src/page.css'));
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});

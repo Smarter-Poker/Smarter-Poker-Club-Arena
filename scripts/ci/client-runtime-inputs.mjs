@@ -56,9 +56,13 @@ export function separateComponentPath(path) {
 // Directories are recorded as addition/deletion scopes. Files outside the
 // checked repository/dependency store make the inventory unqualified.
 export function runtimeInputPlugin(label, root = process.cwd()) {
+  let config;
   return {
     name: `client-runtime-inputs-${label}`,
-    writeBundle() {
+    configResolved(value) {
+      config = value;
+    },
+    writeBundle(_options, bundle) {
       const files = new Set();
       const directories = new Set();
       const unknown = [];
@@ -125,6 +129,21 @@ export function runtimeInputPlugin(label, root = process.cwd()) {
           unknown.push(`unsupported-virtual-input:${raw.replace(/\0/g, '<nul>')}`);
           continue;
         }
+        // Vite's CSS producer reports its emitted aggregate as a watch input
+        // (defaultCssBundleName/originalFileName in locked Vite), not a source
+        // file. Admit only the actual non-split SSR asset and its observed CSS
+        // sources; an absent or custom producer remains unknown.
+        if (
+          raw === 'style.css' &&
+          !existsSync(resolve(root, raw)) &&
+          locked('vite') &&
+          config?.build.ssr &&
+          config.build.cssCodeSplit === false &&
+          Object.values(bundle).some(
+            (asset) => asset.type === 'asset' && asset.originalFileNames?.includes('style.css')
+          )
+        )
+          continue;
         let clean = raw.split('?')[0];
         if (!isAbsolute(clean)) {
           if (isBuiltin(clean)) continue;

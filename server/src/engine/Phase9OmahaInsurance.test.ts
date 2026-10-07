@@ -29,10 +29,10 @@
  *     rounded to the cent.
  *   - Payouts are OmahaReference awards scaled by net / gross.
  *
- * PLO8 and FLO8 pin the documented behaviour (record rule L6,
- * InsuranceEquity.ts header, InsuranceEngine.settle FIX 118): the price is the
- * high half only, and a hand with more than one winner, a hi-lo split
- * included, pushes: no premium and no payout.
+ * PLO8 and FLO8 are no longer offered insurance at all (owner decision
+ * 2026-10-07, insuranceContractIsExact in ServerTableEngineRunout.ts): the
+ * retired high-half price with a pushing split was not the contract the
+ * dialog showed. Their cases now prove the turn all-in runs out with no offer.
  *
  * As in the other Phase 9 suites this is not persistence, ledger-RPC or
  * natural-use evidence: postHandTasks (the database writes, including
@@ -286,7 +286,7 @@ async function playToOffer(
   river: Card,
   // Route each hub event through the audit capture first, as
   // TableStateHub.emitEvent does in production.
-  opts: { auditCapture?: boolean } = {}
+  opts: { auditCapture?: boolean; expectNoOffer?: boolean } = {}
 ): Promise<Played> {
   const seats = maxSeatsForVariant(variant);
   expect(seats).toBe({ plo4: 8, plo5: 7, plo6: 6, plo8: 8, flo8: 8 }[variant]);
@@ -470,6 +470,21 @@ async function playToOffer(
     'an insurance offer on the turn'
   );
   const offers = engine.insuranceEngine.getOffers(table);
+  if (opts.expectNoOffer) {
+    await waitFor(() => events.some((e) => e.type === 'HAND_COMPLETE'), 'the hand to complete');
+    expect(engine.insuranceEngine.getOffers(table)).toHaveLength(0);
+    expect(emitted.some((e) => e.type === 'insurance_offers')).toBe(false);
+    return {
+      engine,
+      controller,
+      events,
+      emitted,
+      ids,
+      initialStacks,
+      offer: undefined,
+      broadcast: undefined,
+    } as unknown as Played;
+  }
   expect(offers).toHaveLength(1);
   const broadcast = emitted.find((e) => e.type === 'insurance_offers')!;
   expect(broadcast).toBeDefined();
@@ -681,65 +696,27 @@ describe('Phase 9 P9.2 chip-cash insurance, PLO4/PLO5/PLO6 at the seat ceiling',
   }
 });
 
-/* ── PLO8, FLO8: high half priced, any split pushes ──────────────────────── */
+/* ── PLO8, FLO8: insurance is not offered (owner decision 2026-10-07) ──── */
 
-describe('Phase 9 P9.2 chip-cash insurance, PLO8/FLO8: high-half price, a split pushes', () => {
+describe('PLO8/FLO8: a hi-lo hand runs out with no insurance offer', () => {
   for (const variant of ['plo8', 'flo8'] as const) {
-    it(`${variant}: the price ignores the low (same as PLO4 on the same cards)`, async () => {
-      // By hand: twelve of the 33 rivers the price counts as wins give the
-      // opponent a low (A7 with 4-2 and a non-club 3, 5, 6 or 8), so a hi-lo
-      // contract would push there; the price does not see them.
-      const leader = parse(HOLES[variant].leader);
-      const opp = parse(HOLES[variant].opp);
-      const known = new Set([...leader, ...opp, ...TURN_BOARD].map(key));
-      const splits = referenceDeck().filter(
-        (river) =>
-          !known.has(key(river)) &&
-          highOutcome(leader, opp, [...TURN_BOARD, river]) === 'win' &&
-          referenceOmaha(opp, [...TURN_BOARD, river]).low !== null
-      );
-      expect(splits.map(key).sort()).toEqual(
-        parse('3d 3h 3s 5d 5h 5s 6d 6h 6s 8d 8h 8s').map(key).sort()
-      );
-      const played = await playToOffer(variant, parse('Qs')[0]);
-      expectOffer(variant, played);
-      expect(cents(played.offer.fullPremium)).toBe(
-        variant === 'plo8' ? BOOK.plo4.premiumCents : BOOK.flo8.premiumCents
-      );
-      played.engine.respondToInsurance(played.ids[LEADER_SEAT - 1], 'decline');
-      await waitFor(
-        () => played.events.some((e) => e.type === 'HAND_COMPLETE'),
-        'the hand to complete'
-      );
-    });
-
-    it(`${variant}: the leader scoops (Qs, no low), the premium is charged`, async () => {
-      const river = parse('Qs')[0];
-      const played = await playToOffer(variant, river);
-      await buyAndSettle(played);
-      expectSettlement(variant, played, river, 'premium');
-    });
-
-    it(`${variant}: the opponent scoops (8c flush and 8-7-4-2-A low), the bank pays`, async () => {
-      const river = parse('8c')[0];
-      const played = await playToOffer(variant, river);
-      await buyAndSettle(played);
-      expectSettlement(variant, played, river, 'payout');
-    });
-
-    it(`${variant}: the leader takes the high and the opponent the low (5d), the contract pushes`, async () => {
-      const river = parse('5d')[0];
-      const played = await playToOffer(variant, river);
-      await buyAndSettle(played);
-      expectSettlement(variant, played, river, 'push');
-    });
+    for (const river of ['Qs', '8c', '5d']) {
+      it(`${variant}: the turn all-in is run out to ${river} with no offer and no EV cashout`, async () => {
+        // Qs is a leader scoop, 8c an opponent scoop and 5d a high/low split:
+        // under the retired high-half contract the last one pushed. None of
+        // the three is offered now, whatever the river.
+        const played = await playToOffer(variant, parse(river)[0], { expectNoOffer: true });
+        const r = played.engine.respondToInsurance(played.ids[LEADER_SEAT - 1], 'accept');
+        expect(r.success).toBe(false);
+      });
+    }
   }
 });
 
 /* ── Phase 9 close-out: the offer's audit row re-checks its own premium ───── */
 
 describe('Phase 9 close-out: the engine_insurance_offers audit row carries the pricing inputs', () => {
-  for (const variant of ['plo4', 'plo5', 'plo6', 'plo8', 'flo8'] as const) {
+  for (const variant of ['plo4', 'plo5', 'plo6'] as const) {
     it(`${variant}: details.pricing alone reproduces the offered premium by the formula, with no cards`, async () => {
       const book = BOOK[variant];
       const rows: Record<string, any>[] = [];

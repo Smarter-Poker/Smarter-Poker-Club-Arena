@@ -1177,9 +1177,19 @@ function HomePageInner() {
 
         if (isMounted) {
           setClubStats(statsMap);
-          // Lazy-backfill baked card images for clubs missing card_image_url
+          // Lazy-backfill baked card images for clubs missing card_image_url.
+          // Only a club's OWNER may write its card (storage policy "club cards
+          // club owner insert", owner decision 2026-10-07), so a member's
+          // browser never tries for someone else's club.
           const backfillTargets = displayClubs
-            .filter((c) => c.logo_url && !c.card_image_url && c.club_id)
+            .filter(
+              (c) =>
+                c.is_owner === true &&
+                c.entity_type !== 'union' &&
+                c.logo_url &&
+                !c.card_image_url &&
+                c.club_id
+            )
             .map((c) => ({
               id: c.id,
               club_id: Number(c.club_id),

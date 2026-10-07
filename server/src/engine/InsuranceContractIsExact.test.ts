@@ -78,6 +78,28 @@ describe('insurance is offered only on a one-pot hand', () => {
     ).toBe(false);
   });
 
+  it('a hi-lo hand is never offered, even on one pot (owner decision 2026-10-07)', () => {
+    const onePot = () => [{ amount: 200 }];
+    for (const variant of ['plo8', 'flo8', 'PLO8']) {
+      expect(
+        insuranceContractIsExact({ computeLivePots: onePot, getGameVariant: () => variant })
+      ).toBe(false);
+    }
+  });
+
+  it('a high-only Omaha hand on one pot is still offered', () => {
+    const onePot = () => [{ amount: 200 }];
+    for (const variant of ['plo4', 'plo5', 'plo6', 'nlh']) {
+      expect(
+        insuranceContractIsExact({ computeLivePots: onePot, getGameVariant: () => variant })
+      ).toBe(true);
+    }
+  });
+
+  it('the real controller reports the hand variant the gate reads', () => {
+    expect(allInHand([100, 60]).getGameVariant()).toBe('nlh');
+  });
+
   it('the runout asks before it enables the offer', () => {
     const src = readFileSync(resolve(__dirname, 'ServerTableEngineRunout.ts'), 'utf8');
     expect(src).toContain(

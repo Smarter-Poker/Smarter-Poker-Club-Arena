@@ -22,7 +22,7 @@ import {
   determineWinners,
   describeHand,
 } from './PokerEngine.js';
-import { deckSizeFor, isOmahaVariant, isShortDeckVariant } from './VariantRules.js';
+import { deckSizeFor, isHiLoVariant, isOmahaVariant, isShortDeckVariant } from './VariantRules.js';
 import type { Card, SeatPlayer, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { HAND_COMPLETION } from '../config/handCompletionSpec.js';
@@ -118,13 +118,41 @@ export function insurablePotBreakdown(
  * with a side pot is run out with no offer, which is what a table without
  * insurance does. Nothing is adjusted afterwards.
  *
+ * INSURANCE IS NOT OFFERED ON A HI-LO HAND (owner decision, 2026-10-07).
+ *
+ * On PLO8 and FLO8 the pot is two halves. The old contract priced the HIGH
+ * half only and called any hand with more than one winner a push, so the
+ * commonest hi-lo outcome, the leader taking one half, either cost him
+ * nothing (he scooped the high, someone else took the low: free cover) or
+ * paid him nothing (he lost the high and kept the low). The price on the
+ * dialog was not the contract that settled. The rooms this product copies
+ * do not sell insurance on split-pot games, so neither does this one: a
+ * hi-lo hand (the HAND's variant, so a hi-lo bomb pot on a high-only table
+ * counts too) runs out with no offer and no EV cashout, exactly like a
+ * table without insurance. No hi-lo insurance contract has ever been sold
+ * (horse-brain Phase 9 record), so nothing historical is owed.
+ *
  * A controller with no computeLivePots is a test double that predates it;
  * the real HandController always has one. A read that throws offers nothing.
  */
 export function insuranceContractIsExact(
-  controller: { computeLivePots?: () => Array<{ amount: number }> } | null | undefined
+  controller:
+    | {
+        computeLivePots?: () => Array<{ amount: number }>;
+        getGameVariant?: () => string | null | undefined;
+      }
+    | null
+    | undefined
 ): boolean {
-  if (!controller || typeof controller.computeLivePots !== 'function') return true;
+  if (!controller) return true;
+  if (typeof controller.getGameVariant === 'function') {
+    try {
+      if (isHiLoVariant(controller.getGameVariant())) return false;
+    } catch {
+      return false;
+    }
+  }
+  if (typeof controller.computeLivePots !== 'function') return true;
   try {
     return controller.computeLivePots().filter((pot) => pot.amount > 0).length === 1;
   } catch {

@@ -58,6 +58,10 @@ SUPERSEDED = ROOT / 'supabase' / 'migrations' / \
 # The live kind map, whose text the migration restates with two lines added.
 KIND_MAP = ROOT / 'supabase' / 'migrations' / \
     '20260920141807_the_diamond_kind_map_names_the_spins_perks.sql'
+# The sweep production runs: it retires each payer's rake in the register and
+# writes no wallet journal row (the cash-out already carries the rake).
+LIVE_SWEEP = ROOT / 'supabase' / 'migrations' / \
+    '20261007112751_the_cash_rake_leaves_custody_without_a_wallet_journal_row.sql'
 
 PG_BIN = os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin')
 PACKAGED_BINDIRS = ('/usr/lib/postgresql/17/bin', '/usr/pgsql-17/bin')
@@ -752,24 +756,40 @@ BEGIN
   END IF;
   RAISE NOTICE 'PASS: 75 Diamonds of rake crossed to the house in ONE house write, over four raked hands';
 
-  -- One spend row per payer, and the register retired each one from that player.
-  IF (SELECT count(*) FROM public.diamond_transactions WHERE type='cash_rake') <> 4 THEN
-    RAISE EXCEPTION 'the sweep wrote % payer spend rows, not one per payer',
-      (SELECT count(*) FROM public.diamond_transactions WHERE type='cash_rake');
+  -- ONE REGISTER BURN PER PAYER, AND NO WALLET JOURNAL ROW (20261007112751).
+  -- The rake left with the table stack and the cash-out already shows it, so a
+  -- diamond_transactions row would record it twice (46 rows, 13 wallets, 4,460
+  -- Diamonds on production before the fix).
+  IF EXISTS (SELECT 1 FROM public.diamond_transactions WHERE type='cash_rake' OR transaction_type='cash_rake') THEN
+    RAISE EXCEPTION 'the sweep wrote % wallet journal rows; the rake is already in the cash-out',
+      (SELECT count(*) FROM public.diamond_transactions WHERE type='cash_rake' OR transaction_type='cash_rake');
+  END IF;
+  RAISE NOTICE 'PASS: the sweep wrote no wallet journal row: the cash-out already carries the rake';
+  IF (SELECT count(*) FROM public.ca_mint_ledger m
+      WHERE m.action='burn' AND m.holder_type='player' AND m.diamond_tx_id IS NULL
+        AND m.op_id LIKE 'poker-cash-rake-sweep:%:%') <> 4 THEN
+    RAISE EXCEPTION 'the sweep wrote % payer register burns, not one per payer',
+      (SELECT count(*) FROM public.ca_mint_ledger m
+        WHERE m.action='burn' AND m.holder_type='player' AND m.op_id LIKE 'poker-cash-rake-sweep:%:%');
   END IF;
   IF (SELECT COALESCE(sum(m.amount),0) FROM public.ca_mint_ledger m
-       JOIN public.diamond_transactions t ON t.id=m.diamond_tx_id
-      WHERE m.action='burn' AND m.holder_type='player' AND t.type='cash_rake') <> 75 THEN
+      WHERE m.action='burn' AND m.holder_type='player' AND m.op_id LIKE 'poker-cash-rake-sweep:%:%') <> 75 THEN
     RAISE EXCEPTION 'the register did not retire 75 Diamonds from the players';
   END IF;
-  RAISE NOTICE 'PASS: one spend row per payer, and the register retired all 75 from the payers themselves';
+  IF EXISTS (SELECT 1 FROM public.ca_mint_ledger m
+              WHERE m.action='burn' AND m.holder_type='player' AND m.op_id LIKE 'poker-cash-rake-sweep:%:%'
+                AND m.balance_before <> m.balance_after) THEN
+    RAISE EXCEPTION 'a payer register burn claims the wallet moved';
+  END IF;
+  RAISE NOTICE 'PASS: one register burn per payer, retiring all 75 from the payers themselves, with no wallet movement';
 
   -- CLAUDE.md 10.5 again, on the way out.
-  IF NOT EXISTS (SELECT 1 FROM public.diamond_transactions t JOIN public.profiles p ON p.id=t.user_id
-                  WHERE t.type='cash_rake' AND p.is_horse) THEN
+  IF NOT EXISTS (SELECT 1 FROM public.ca_mint_ledger m JOIN public.profiles p ON p.id=m.holder_id
+                  WHERE m.action='burn' AND m.holder_type='player'
+                    AND m.op_id LIKE 'poker-cash-rake-sweep:%:%' AND p.is_horse) THEN
     RAISE EXCEPTION 'the horse was left out of the sweep (CLAUDE.md 10.5)';
   END IF;
-  RAISE NOTICE 'PASS: the horse has its own spend row in the sweep, like every other payer';
+  RAISE NOTICE 'PASS: the horse has its own register burn in the sweep, like every other payer';
 
   -- Wallets never moved: these Diamonds were never in profiles.diamonds.
   IF (SELECT sum(diamonds) FROM public.profiles) <> 0 THEN
@@ -1010,6 +1030,14 @@ def main() -> int:
             psql(MIGRATION.read_text(), 'the migration')
             print('  the migration committed, including its own assertion blocks')
             passes += 1
+
+            ls = LIVE_SWEEP.read_text()
+            live_sweep = ls[ls.index('CREATE OR REPLACE FUNCTION public.fn_ca_diamond_sweep_cash_rake'):]
+            live_sweep = live_sweep[:live_sweep.index('COMMENT ON FUNCTION public.fn_ca_diamond_sweep_cash_rake')]
+            if 'diamond_transactions' in live_sweep or len(live_sweep) < 500:
+                raise SystemExit(f'the live sweep could not be sliced out of {LIVE_SWEEP.name}')
+            print(f'\nTHE LIVE SWEEP, from {LIVE_SWEEP.name}:')
+            psql(live_sweep, 'the live sweep')
 
             print('\nTHE ANSWERS - B4 to B13, read back by name and scope:')
             psql(SETTINGS, 'the recorded answers')

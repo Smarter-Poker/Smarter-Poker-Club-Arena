@@ -28,3 +28,16 @@ profiles.diamonds a non-zero literal on INSERT. It also pins the settlement,
 20260930055147, to changing no balance, keying every row per user so a re-run
 cannot double it, and marking every row 'journal_backfill' so the Mint's
 register does not count supply it already holds a second time.
+
+Extended 2026-10-07 for the second way a journal stopped explaining a balance:
+a writer that INSERTs a diamond_transactions row and moves no
+profiles.diamonds. fn_ca_diamond_sweep_cash_rake journalled each payer's
+Diamond cash rake, which had already left with the table stack and was already
+inside the smaller cash-out, so 46 rows in its first six hourly sweeps put 13
+wallets 4,460 Diamonds out. The law now refuses, from 20261007112751 on, any
+function whose body inserts a wallet journal row without moving the wallet in
+the same body (a settlement row marked 'journal_backfill' is the only
+exception), pins the sweep to retiring the rake in the Mint register with no
+journal row, and pins the settlement 20261007112808 to changing no balance,
+keying every correction to the row it corrects, and staying out of the
+register.

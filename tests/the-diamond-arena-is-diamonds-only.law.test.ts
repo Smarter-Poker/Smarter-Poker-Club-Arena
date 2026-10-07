@@ -86,9 +86,10 @@ describe('the Diamond Arena is diamonds only', () => {
     /* The LIVE map is the latest redefinition of fn_diamond_kind_bucket
        (20260914110559 first draft, 20260914114052 every writer, 20260920141527
        the Diamond Games, 20260920141807 the Diamond Spins perks, 20261005183028
-       the Diamond cash rake). Pin the version production runs. */
+       the Diamond cash rake, 20261007112751 a Mint grant is a bonus). Pin the
+       version production runs. */
     const migration = read(
-      'supabase/migrations/20261005183028_diamond_cash_rake_reads_the_owner_settings.sql'
+      'supabase/migrations/20261007112751_the_cash_rake_leaves_custody_without_a_wallet_journal_row.sql'
     );
     const map = migration.slice(
       migration.indexOf('CREATE OR REPLACE FUNCTION public.fn_diamond_kind_bucket'),
@@ -108,6 +109,15 @@ describe('the Diamond Arena is diamonds only', () => {
        seat. */
     expect(map).toMatch(/k = 'cash_rake'\s+THEN 'arena_rake'/);
     expect(map).toMatch(/WHEN 'arena_rake'\s+THEN 'Diamond Arena Rake'/);
+    /* A MINT GRANT IS NOT A PURCHASE (2026-10-07, 20261007112751). Every 'mint'
+       journal row is a signup grant, a Lifetime VIP monthly benefit or a horse
+       bankroll (1,857 rows, 2,758,000 Diamonds); none was ever bought. */
+    const purchasesLine = map.slice(map.indexOf("WHEN k IN ('diamond_purchase'"));
+    expect(purchasesLine.slice(0, purchasesLine.indexOf("THEN 'purchases'"))).not.toContain(
+      "'mint'"
+    );
+    const bonusesLine = map.slice(map.indexOf("WHEN k IN ('signup_bonus'"));
+    expect(bonusesLine.slice(0, bonusesLine.indexOf("THEN 'bonuses'"))).toContain("'mint'");
     // Nothing that says "arena" ever lands in the club-chips bucket, and the
     // only chip bucket is a member-club purchase, named so.
     const chipLines = map.split('\n').filter((l) => /THEN 'club_chips'/.test(l));

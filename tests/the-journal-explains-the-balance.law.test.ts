@@ -179,3 +179,123 @@ describe('the journal explains the balance', () => {
     expect(flat).toContain('the board moved');
   });
 });
+
+/**
+ * ===========================================================================
+ *  A WALLET JOURNAL ROW MOVES THE WALLET (2026-10-07)
+ * ===========================================================================
+ *
+ * The second way the journal stopped explaining a balance, and the converse of
+ * DR6: not a balance that moved without a row, but a row written for a balance
+ * that never moved.
+ *
+ * THE CAUSE, named to the line: fn_ca_diamond_sweep_cash_rake (20261005183028)
+ * did
+ *     INSERT INTO public.diamond_transactions(user_id,type,transaction_type,amount,...)
+ *     VALUES (v_p.user_id,'cash_rake','cash_rake',-v_p.amount::integer, ...)
+ * for each payer, and did not touch profiles.diamonds - correctly, because the
+ * rake had already left with the table stack and the payer's cash-out was
+ * already smaller by it. So the rake was journalled twice. The hourly cron
+ * (20261007034146) ran it six times before it was read: 46 rows, 13 wallets,
+ * 4,460 Diamonds the journal could no longer explain.
+ *
+ * THE FIX: 20261007112751 makes the sweep retire the rake in the Mint register
+ * itself (one player-holder burn per payer, no wallet movement) and write no
+ * journal row. THE SETTLEMENT: 20261007112808 writes one correcting
+ * 'cash_rake_correction' row per original row, moves no balance, and is marked
+ * 'journal_backfill' so the register does not follow it.
+ *
+ * KNOWN, SAME CLASS, NOT YET CHANGED: fn_poker_diamond_tournament_drain (last
+ * defined before this law binds) still journals a house-bound tournament fee
+ * or Spin surplus from custody. It has written no row yet. The moment anyone
+ * redefines it, the rule below binds it too.
+ */
+export const WALLET_ROW_BINDS_FROM = '20261007112751';
+
+type FnDef = { file: string; version: string; name: string; body: string };
+
+function functionDefinitions(sql: string, file: string, version: string): FnDef[] {
+  const out: FnDef[] = [];
+  const re =
+    /create\s+(?:or\s+replace\s+)?function\s+([\w."]+)\s*\([\s\S]*?\bas\s+(\$[a-z_]*\$)([\s\S]*?)\2/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(sql))) {
+    out.push({ file, version, name: m[1].replace(/"/g, '').toLowerCase(), body: m[3] });
+  }
+  return out;
+}
+
+function allMigrations(): Migration[] {
+  return readdirSync(MIG_DIR)
+    .filter((f) => f.endsWith('.sql'))
+    .sort()
+    .map((f) => ({ version: (f.match(/^(\d{14})/) || [])[1] || '', file: f }))
+    .filter((m) => m.version)
+    .map((m) => ({ ...m, sql: stripComments(readFileSync(join(MIG_DIR, m.file), 'utf8')) }));
+}
+
+function latestDefinition(name: string): FnDef | undefined {
+  let latest: FnDef | undefined;
+  for (const m of allMigrations()) {
+    for (const d of functionDefinitions(m.sql, m.file, m.version)) {
+      if (d.name === name || d.name === `public.${name}`) latest = d;
+    }
+  }
+  return latest;
+}
+
+const INSERTS_JOURNAL = /insert\s+into\s+(public\.)?diamond_transactions\b/i;
+const MOVES_WALLET = /update\s+(public\.)?profiles\b[\s\S]*?\bset\b[\s\S]*?\bdiamonds\s*=/i;
+
+describe('a wallet journal row moves the wallet', () => {
+  it('no function written from 20261007112751 on journals a wallet movement it does not make', () => {
+    const offenders: string[] = [];
+    for (const m of allMigrations().filter((x) => x.version >= WALLET_ROW_BINDS_FROM)) {
+      for (const d of functionDefinitions(m.sql, m.file, m.version)) {
+        if (!INSERTS_JOURNAL.test(d.body)) continue;
+        if (MOVES_WALLET.test(d.body)) continue;
+        offenders.push(
+          `${m.file}: ${d.name} inserts a diamond_transactions row and never moves profiles.diamonds. ` +
+            'A wallet journal row is the record of a wallet movement; a movement that is not in the wallet ' +
+            '(custody, the house, the register) belongs in its own record. This is how 46 cash_rake rows ' +
+            'left 13 wallets 4,460 Diamonds unexplained.'
+        );
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('the Diamond cash rake sweep retires the rake in the register and writes no wallet journal row', () => {
+    const sweep = latestDefinition('fn_ca_diamond_sweep_cash_rake');
+    expect(sweep, 'fn_ca_diamond_sweep_cash_rake is defined in a migration').toBeDefined();
+    expect(sweep!.version >= WALLET_ROW_BINDS_FROM).toBe(true);
+    expect(sweep!.body).not.toMatch(/diamond_transactions/i);
+    const flat = sweep!.body.replace(/\s+/g, ' ');
+    expect(flat).toContain('INSERT INTO public.ca_mint_ledger');
+    expect(flat).toMatch(/'burn', 'diamonds', 'player'/);
+    // The wallet does not move, and the burn says so.
+    expect(flat).toMatch(/COALESCE\(v_wallet,0\), COALESCE\(v_wallet,0\)/);
+    // The retired-from-players assertion reads the burns themselves.
+    expect(flat).toContain("m.op_id LIKE v_key||':%'");
+    expect(flat).toContain('diamond_cash_rake_not_retired_from_players');
+  });
+
+  it('the cash rake settlement changes no balance, corrects row for row, and stays out of the register', () => {
+    const file = '20261007112808_the_cash_rake_journal_rows_are_settled.sql';
+    expect(readdirSync(MIG_DIR)).toContain(file);
+    const flat = stripComments(readFileSync(join(MIG_DIR, file), 'utf8'))
+      .replace(/\s+/g, ' ')
+      .toLowerCase();
+    expect(/update\s+(public\.)?profiles\b/.test(flat)).toBe(false);
+    expect(/set\s+diamonds\s*=/.test(flat)).toBe(false);
+    expect(/delete\s+from\s+(public\.)?diamond_transactions/.test(flat)).toBe(false);
+    expect(/update\s+(public\.)?diamond_transactions/.test(flat)).toBe(false);
+    expect(flat).toContain("'cash_rake_correction:' || r.id::text");
+    expect(flat).toContain("'journal_backfill'");
+    expect(flat).toContain('the board moved');
+    // It refuses to run before the live writer is fixed.
+    expect(flat).toContain('apply 20261007112751 first');
+    // Horses are players (CLAUDE.md 10.5): the cohort is the rows, nothing else.
+    expect(flat).not.toMatch(/is_horse/);
+  });
+});

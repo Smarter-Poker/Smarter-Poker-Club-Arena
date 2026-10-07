@@ -274,8 +274,8 @@ describe('the certified V31 release boundary', () => {
     expect(STORE).toContain(
       'canonicalHandKey(handKey, row.street, gtoV31FeatureContractVersion(row) ?? undefined)'
     );
-    expect(STORE).toContain(
-      "if (version === 'holdem-board-relative-v2') return boardRelativeFeatureKeyV2Valid"
+    expect(STORE).toMatch(
+      /if \(version === 'holdem-board-relative-v2'\)\s+return boardRelativeFeatureKeyV2Valid/
     );
     expect(STORE).toContain('gtoV31FeatureContractVersion(row) !== null');
     expect(CANONICAL_POLICY_JSON).toContain(

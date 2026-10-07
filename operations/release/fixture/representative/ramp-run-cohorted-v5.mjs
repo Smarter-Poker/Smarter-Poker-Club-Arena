@@ -2,7 +2,7 @@ import {readEmptyTableReady} from './empty-table-readiness.mjs';
 import {prepareReentryQuotes} from './reentry-quotes.mjs';
 import fs from 'node:fs';
 import {cashSeedReady} from './cash-seed-admission.mjs';
-import {witnessNaturalBlindEntry} from './post-bb-observation.mjs';
+import {witnessNaturalBlindEntry,awaitPostAgreementReadiness} from './post-bb-observation.mjs';
 import {recoverPurchases} from './purchase-journal.mjs';
 import {admitIndependentGroups,admitIndependentBatches,admitPipelinedGroups} from './independent-admissions.mjs';
 import {handoffObservers} from './observer-handoff.mjs';
@@ -71,11 +71,21 @@ if(['admit','resume-admit','continuous'].includes(mode)){
   state.engineReadiness={started,finished:new Date().toISOString(),durationMs:Date.now()-Date.parse(started),tables:readyTables.length,setupDeadline:new Date(requestDeadline).toISOString(),scope:'bounded-cold-table-setup-before-warm-session'};save();
  }
  async function agreeToPost(group,u,chair,readChairs){
+  assert.equal(u.setupPostAgreement,undefined,'Existing original post requires receipt recovery, never another POST');
+  const readiness=await awaitPostAgreementReadiness({before:chair,userId:u.id,tableId:group.tableId,readNative:async()=>(await readChairs()).find(c=>c.user_id===u.id),readWire:async()=>{
+   const observations=seededObservers.get(group.index)?.stateObservations();
+   if(observations?.length)return observations.slice().sort((a,b)=>b.sequence-a.sequence)[0].state;
+   const response=await fetch('http://engine:8080/state/'+group.tableId,{headers:{authorization:'Bearer '+u.session.access_token},signal:AbortSignal.timeout(Math.max(1,Math.min(5000,requestDeadline-Date.now())))});assert.ok(response.ok);return response.json();
+  },deadline:Math.min(requestDeadline,Date.now()+20000),checkFailure:()=>{if(setupObserverFailure)throw setupObserverFailure;},observe:evidence=>append(`ramp-${size}-attempt${state.attempt}-cash-admission.jsonl`,{group:group.index,at:new Date().toISOString(),...evidence})});
+  if(readiness.phase==='released-before-post')return;
+  chair=readiness.before;
   u.setupPostAgreement={occupancyId:chair.occupancy_id,outcome:'unknown'};append(`ramp-${size}-attempt${state.attempt}-setup-agreements.jsonl`,{actorId:u.id,tableId:group.tableId,...u.setupPostAgreement});
   const result=await request('http://engine:8080/post-bb',{tableId:group.tableId},u.session.access_token,'ordinary-setup-post-bb');u.setupPostAgreement.outcome='returned';u.setupPostAgreement.result=result;append(`ramp-${size}-attempt${state.attempt}-setup-agreements.jsonl`,{actorId:u.id,tableId:group.tableId,...u.setupPostAgreement});
   if(result.success!==true){
    const after=(await readChairs()).find(c=>c.user_id===u.id);const response=await fetch('http://engine:8080/state/'+group.tableId,{headers:{authorization:'Bearer '+u.session.access_token},signal:AbortSignal.timeout(5000)});assert.ok(response.ok);const wire=await response.json();
-   const proof={before:chair,after,wire,userId:u.id,tableId:group.tableId,result};u.setupPostAgreement.naturalObservation=proof;witnessNaturalBlindEntry(proof);
+   const proof={before:chair,after,wire,userId:u.id,tableId:group.tableId,result};u.setupPostAgreement.naturalObservation=proof;
+   // Retain the exact original response before strict witness validation throws.
+   append(`ramp-${size}-attempt${state.attempt}-setup-agreements.jsonl`,{actorId:u.id,tableId:group.tableId,...u.setupPostAgreement});witnessNaturalBlindEntry(proof);
   }
   append(`ramp-${size}-attempt${state.attempt}-setup-agreements.jsonl`,{actorId:u.id,tableId:group.tableId,...u.setupPostAgreement});
  }

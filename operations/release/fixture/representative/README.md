@@ -7,3 +7,13 @@ Session refresh and all actual read-only reentry quotes complete before the firs
 Tournament admission requires a coherent native roster and positive actual dealer roster before an ordinary sit-back. A proved historical relocation frame can remain nonacting after a newer native movement or elimination; only a current own-seat snapshot and a genuinely new actionable clock authorize input.
 
 The existing component fixture workflow enforces the connected socket, interrupted journal, clock, independent admission and relocation regressions. Native financial evidence and observed simultaneous actors are separately required. These finite engineering targets do not certify a production demand forecast, a 15-minute service objective, horse/equity background workloads or physical-device acceptance.
+
+Continuous admission uses a finite financial pool of eight groups and a separate
+seed-subscription pool of eight groups. Each group buys its remaining chairs
+only after its own two-chair native/dealer seed is ready. It does not wait for
+all eighty seed frames before allowing the first ready group to progress.
+The first refusal stops queued successors and drains active operations. The
+original actor construction time remains the 240-second lifetime origin;
+setup and measurement still share it, with 180 seconds plus ten seconds of
+reserve required at handoff. Empty-table provisioning remains inside the same
+ten-minute setup deadline and is reported separately from warm-session capacity.

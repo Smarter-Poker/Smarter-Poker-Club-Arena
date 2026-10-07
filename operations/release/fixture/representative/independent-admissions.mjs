@@ -32,3 +32,27 @@ export function assertEmptyTableReady({group,chairs,wire}){
  assert.equal(wire.max_seats,group.count,'Dealer capacity differs from planned table');
  return true;
 }
+
+// Two finite foreground pools overlap independent work without detaching actual
+// subscriptions. A group's remaining purchases require its own real seed frame.
+export async function admitPipelinedGroups(groups,{width=8,financialSeed,observeSeed,financialCompletion,prepare,onFailure=()=>{},getFailure=()=>undefined}){
+ if(!Number.isSafeInteger(width)||width<1||width>8)throw new Error('Independent admission width exceeds finite ceiling');
+ let firstFailure;
+ const queues=[];
+ const fail=error=>{if(!firstFailure){firstFailure=error;for(const queue of queues)queue.stop(error);onFailure(error);}return firstFailure;};
+ function pool(){let active=0;const waiting=[];
+  const next=()=>{if(!firstFailure&&getFailure())fail(getFailure());while(!firstFailure&&active<width&&waiting.length){const item=waiting.shift();active++;Promise.resolve().then(()=>{if(getFailure())fail(getFailure());if(firstFailure)throw firstFailure;return item.run();}).then(value=>item.resolve({ok:true,value}),error=>item.resolve({ok:false,error:fail(error)})).finally(()=>{active--;next();});}};
+  const queue={stop:error=>{for(const item of waiting.splice(0))item.resolve({ok:false,error});},run:run=>new Promise(resolve=>{if(firstFailure){resolve({ok:false,error:firstFailure});return;}waiting.push({run,resolve});next();})};queues.push(queue);return queue;
+ }
+ const financial=pool(),seeds=pool();
+ async function step(queue,run){const outcome=await queue.run(run);if(!outcome.ok)throw outcome.error;return outcome.value;}
+ const outcomes=await Promise.all(groups.map(group=>Promise.resolve().then(async()=>{
+  await step(financial,()=>financialSeed(group));
+  if(observeSeed&&group.kind==='cash')await step(seeds,()=>observeSeed(group));
+  if(financialCompletion&&group.kind==='cash')await step(financial,()=>financialCompletion(group));
+  if(getFailure())fail(getFailure());if(firstFailure)throw firstFailure;
+  return prepare?await prepare(group):undefined;
+ }).then(value=>({ok:true,value}),error=>({ok:false,error:fail(error)}))));
+ if(firstFailure)throw firstFailure;
+ return outcomes.map(outcome=>outcome.value);
+}

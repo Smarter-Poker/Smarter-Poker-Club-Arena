@@ -9,3 +9,13 @@ The regression exercises the actual batch scheduler with eighty pending observer
 The maintained actor contract requires a ready candidate engine. Before any new cash purchase, the driver now performs bounded eight-wide, real authenticated GET/state provisioning followed by a nonacting WebSocket acknowledgement and full empty snapshot, with native empty chairs and initialized empty dealer state, inside the existing ten-minute setup budget. Original cold setup duration and setup deadline are recorded; measured play is explicitly warm session capacity, never cold 1,000-table startup qualification. Later twenty-second seed frames and the earliest actor's unchanged 240-second lifetime still must leave the full 180-second measurement plus ten-second reserve. Occupied tables, stale dealer players, missing initialization, wrong capacity and actionable pointers refuse before funding.
 
 The first no-purchase readiness qualification retained its refusal: GET/state emitted its documented three-field idle fallback, which does not prove initialized dealer state. The corrected qualification requires the real SUBSCRIBED and full SNAPSHOT through the existing mux producer; no state is synthesized and no playing actor is admitted from the fallback.
+
+The continuous path also removes the global all-seeds barrier. Separate finite
+pools cap financial group work and real seed subscriptions at eight each;
+a ready group can complete its own original purchases while later independent
+seeds subscribe. Every queued promise is owned immediately. A first refusal
+rejects queued successors and drains current operations without resetting actor
+construction times or widening startup, setup, or measurement budgets. Focused
+regressions pin both ceilings, own-seed-before-remainder ordering, actual
+cross-stage overlap, and refusal/drain ownership. Capacity remains unqualified
+until a real finite mixed run meets the unchanged lifetime margin.

@@ -57,7 +57,7 @@
     "tests/fixtures/sep8-spin-custody/final-readback.sql": "064f0d0443ec4919d219e5f33524adcc92e8b66b02c5c7e640f28c2fe0c69760",
     "tests/fixtures/sep8-spin-custody/union-journal-guard.sql": "9e51de2fff3be93ea99ea493d54eca2f2da2ede7c189f710ff4a401572a8912d",
     "tests/fixtures/sep8-spin-custody/union-journal-after.sql": "fdb962f82796d0d3d2244de0bd2092467d337c7f4bb86e5bdc06a8745f11d5ae",
-    "tests/fixtures/sep8-spin-custody/qualify-current-case-reader.py": "3895e9bce5741a6e68ef2e27adf19c37299641ec25413f52b8b306fefb116659",
+    "tests/fixtures/sep8-spin-custody/qualify-current-case-reader.py": "d69d33790e066bca1376c9f3c8c18d65fcc3448ca4e2f0bb5c389f39c5050fe2",
     "tests/fixtures/sep8-spin-custody/current-case-reader-coverage.sql": "8a4ef16e65398f34d72fd683b3993f327cdaa1be016e37d77492b775a65159ae",
     "tests/fixtures/sep8-spin-custody/current-case-reader-catalog.json": "bcd4f2b0dcd810c35d676809b5b1bba7eab81a86df3e09e550cca2c5f6d74766",
     "supabase/migrations/20260918212229_original_spin_reader_preserves_exact_indexed_history_coverag.sql": "e780f7ac61a15aa0b03b34c264e4f87597d41314702847a63cb024cadba36acf",
@@ -69,6 +69,13 @@
     "supabase/migrations/20260918225150_original_spin_closure_ignores_only_elapsed_clock_metadata.sql": "f4a3660b311d3270e9d0dbec17c33a0d35488dfccc43dc97836dbcd54491a18d"
   },
   "restamp_audit": [
+    {
+      "on": "2026-10-07",
+      "file": "tests/fixtures/sep8-spin-custody/qualify-current-case-reader.py",
+      "from": "3895e9bce5741a6e68ef2e27adf19c37299641ec25413f52b8b306fefb116659",
+      "to": "d69d33790e066bca1376c9f3c8c18d65fcc3448ca4e2f0bb5c389f39c5050fe2",
+      "why": "Required CI37591051072 produced a successor sequential scan while the comparable unchanged fixture passed with a scoped bitmap scan. The population selected an unordered row outside the tournament but did not exclude target-table links admitted by the actual reader. Select a deterministic non-null, genuinely unrelated source and assert all 30000 inserted identities are disjoint inside the setup transaction before ANALYZE. Preserve the original unscoped rejection, exact successor indexed-plan requirement, planner settings and financial SQL. The failed artifact did not retain the chosen source identity; no claim that its copied row was directly observed. Three focused source/model regressions passed; matching hashes are not full PostgreSQL qualification."
+    },
     {
       "on": "2026-10-07",
       "file": "scripts/ci/classify-ci-changes.mjs",

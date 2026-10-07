@@ -1,6 +1,12 @@
 {
   "status": "source_changed_unrun_pending_qualification",
   "captured_on": "2026-09-14",
+  "leaderboard_launch_reader_population_rebinding_20261007": {
+    "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+    "previous_sha256": "2d692559319e6734daecb5d381bf2638097e98723adc542cdf2794427a5b8881",
+    "sha256": "d8c30e4b613e71021b5cb6e36b957208f9a9b3baa2cf5b6c1a5cc99b02689758",
+    "reason": "Cascade the reviewed nested binding for deterministic genuinely unrelated reader-plan population and pre-analysis count/disjointness assertions. The original unscoped and successor indexed-plan assertions, planner settings and financial SQL are unchanged. This pin refresh is not PostgreSQL runtime proof; exact-candidate required accounting qualification remains mandatory."
+  },
   "historical_scope": {
     "tables": 255,
     "functions": 741,
@@ -442,7 +448,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "2d692559319e6734daecb5d381bf2638097e98723adc542cdf2794427a5b8881",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "d8c30e4b613e71021b5cb6e36b957208f9a9b3baa2cf5b6c1a5cc99b02689758",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",

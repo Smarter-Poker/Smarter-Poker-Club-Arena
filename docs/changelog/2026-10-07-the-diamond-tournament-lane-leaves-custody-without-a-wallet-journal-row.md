@@ -87,7 +87,35 @@ detector, not a fix (CLAUDE.md 10.11).
 - `tests/a-diamond-tournament-pays-from-its-own-custody.law.test.ts`: the
   historical pin of the 2026-09-14 drain text is labelled as history.
 
-## The damage
+## The damage, settled (20261007134548)
 
-Settled by its own migration once this one has stopped the growth, with the
-numbers read then (CLAUDE.md 10.9 rule 4); see the section below.
+20261007132503 was merged (squash `1146f649b1`) and applied through Apply
+Merged Migration at 14:14 UTC; read back at 14:15: no lane function inserts a
+journal row, both watched guards declared under it, the movement CHECK
+installed, identity 0, `register_drifts` 0. The board was then read again: 4
+wallets, 800 Diamonds, exactly the four -200 `tournament_fee` rows, and no
+other tournament-lane row of any kind.
+
+No balance moves: the wallets are right and the journal is wrong. The four
+rows stay as written (append-only); each gets one correcting `adjustment` row
+of +200, keyed `tournament_lane_correction:<original id>`, marked
+`journal_backfill` so the register (whose burns were correct) does not follow
+it, `issuance_class 'admin'` so it never reaches the promotional earn ledger,
+and positive, so it allocates no Lifetime VIP lot. Proved first in one
+self-aborting `DO` block on production at 14:04 UTC: cohort 4 rows, 800
+Diamonds, 4 wallets, 0 credit rows; drift 4 wallets, 800, 0 mismatched; 4
+inserted; after: 0 wallets unexplained, 0 register rows followed, 0 lot
+allocations, identity 0.00, 0 Diamonds of balance moved. Rolled back and
+re-read: 0 correction rows remained.
+
+Who and why: four players, every one a horse, settled exactly as humans would
+be (CLAUDE.md 10.5). The Diamond Progressive Bounty 2000 charged each entrant a
+200 Diamond fee inside the entry they bought from their wallet; at completion
+(13:03:21 UTC) the fee moved from each entry's custody to the house, and the
+drain also wrote it as a second -200 wallet spend. cyruswhitlock,
+flintivorson, slatenightingale and vegadeveraux each keep every Diamond in
+their wallet and get one +200 correcting ledger line for that duplicate fee
+line. Nothing is taken back (10.9 rule 3).
+
+No `financial_alerts` row exists for this defect (searched the last day for
+tournament_fee, journal and diamond); nothing to resolve.

@@ -406,3 +406,24 @@ describe("the tournament lane's house legs write no wallet journal row", () => {
     expect(flat).not.toMatch(/disable\s+trigger/i);
   });
 });
+
+describe("the tournament lane's journal rows are settled without moving a balance", () => {
+  it('corrects row for row, moves no balance, stays out of the register, and refuses to run first', () => {
+    const file = '20261007134548_the_diamond_tournament_lane_journal_rows_are_settled.sql';
+    expect(readdirSync(MIG_DIR)).toContain(file);
+    const flat = stripComments(readFileSync(join(MIG_DIR, file), 'utf8'))
+      .replace(/\s+/g, ' ')
+      .toLowerCase();
+    expect(/update\s+(public\.)?profiles\b/.test(flat)).toBe(false);
+    expect(/set\s+diamonds\s*=/.test(flat)).toBe(false);
+    expect(/delete\s+from\s+(public\.)?diamond_transactions/.test(flat)).toBe(false);
+    expect(/update\s+(public\.)?diamond_transactions/.test(flat)).toBe(false);
+    expect(flat).toContain("'tournament_lane_correction:' || r.id::text");
+    expect(flat).toContain("'journal_backfill'");
+    expect(flat).toContain('the board moved');
+    // It refuses to run before the live writers are fixed.
+    expect(flat).toContain('apply 20261007132503 first');
+    // Horses are players (CLAUDE.md 10.5): the cohort is the rows, nothing else.
+    expect(flat).not.toMatch(/is_horse/);
+  });
+});

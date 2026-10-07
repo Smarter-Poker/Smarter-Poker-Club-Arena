@@ -53,7 +53,7 @@ The runtime encodes the read frame after the decision from `HorseMind.snapshotDe
 
 ## 5. Pre-Merge Diagnostic (Not Replay Evidence)
 
-Before merge, 1,109 natural decision records made by the serving release `6b1af5c5fb11b158c3c8871b93360df566ad7a49` (read-only copy of the newest 400 archive segments of each shard, 2026-10-07 about 16:24Z) were replayed in process on this branch, whose decision code equals `6b1af5c5` apart from this change, with a `replayState` injected (unselected authority, so each owner `shadow` unless the request turns it off). The records carry store identities equal to the 2026-09-27 snapshots.
+Before merge, 1,109 natural decision records made by the serving release `6b1af5c5fb11b158c3c8871b93360df566ad7a49` (read-only copy of the newest 400 archive segments of each shard, 2026-10-07 about 21:25Z) were replayed in process on this branch, whose decision code equals `6b1af5c5` apart from this change, with a `replayState` injected (unselected authority, so each owner `shadow` unless the request turns it off). The records carry store identities equal to the 2026-09-27 snapshots.
 
 | Injected Phase 8 sentinel                                              | replayed_exact | replayed_mismatch                                                                          | non_replayable:retained_fast_read_view |
 | ---------------------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------ | -------------------------------------- |

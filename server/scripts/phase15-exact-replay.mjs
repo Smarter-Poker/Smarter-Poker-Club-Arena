@@ -3,13 +3,14 @@
  * P15-A step 4: exact historical replay, one fresh process per decision.
  *
  *   node scripts/phase15-exact-replay.mjs <journal copy .ndjson> [--limit N] [--since <iso>]
- *        [--store-snapshot <json>]... [--concurrency K] [--out <dir>]
+ *        [--until <iso>] [--store-snapshot <json>]... [--concurrency K] [--out <dir>]
  *        [--full-verdicts <path outside the repo>] [--label <name>] [--note <text>]...
  *
  *   node scripts/phase15-exact-replay.mjs --child --running-source <sha> [--store-snapshot <json>]...
  *        (stdin: {"record": <decision record>, "execution": <execution record> | null})
  *
- * The batch mode selects the newest N decision records (at or after --since)
+ * The batch mode selects the newest N decision records (at or after --since,
+ * before --until)
  * in the read-only copy, joins each to the execution record of the same turn,
  * and replays each in its own child process: a new Node process with no
  * module state from any other record, a scrubbed environment (no database
@@ -43,6 +44,7 @@ function parseArgs(argv) {
     journal: null,
     limit: 200,
     since: null,
+    until: null,
     storeSnapshots: [],
     concurrency: 4,
     out: join(repoRoot, 'docs', 'evidence', 'phase15'),
@@ -57,6 +59,7 @@ function parseArgs(argv) {
     else if (a === '--running-source') out.runningSource = next();
     else if (a === '--limit') out.limit = Number(next());
     else if (a === '--since') out.since = next();
+    else if (a === '--until') out.until = next();
     else if (a === '--store-snapshot') out.storeSnapshots.push(resolve(next()));
     else if (a === '--concurrency') out.concurrency = Number(next());
     else if (a === '--out') out.out = resolve(next());
@@ -235,9 +238,12 @@ async function batch(args) {
       'the server tree differs from HEAD; exact replay runs only on a clean checkout'
     );
   const sinceMs = args.since ? Date.parse(args.since) : 0;
+  const untilMs = args.until ? Date.parse(args.until) : Number.POSITIVE_INFINITY;
+  if (Number.isNaN(sinceMs) || Number.isNaN(untilMs))
+    throw new Error('--since/--until must be ISO times');
   const { decisions, executions } = readCopy(args.journal);
   const selected = decisions
-    .filter((row) => Number(row.record.atMs) >= sinceMs)
+    .filter((row) => Number(row.record.atMs) >= sinceMs && Number(row.record.atMs) < untilMs)
     .sort((a, b) => Number(b.record.atMs) - Number(a.record.atMs) || b.ordinal - a.ordinal)
     .slice(0, args.limit);
   const startedAt = new Date();
@@ -271,7 +277,7 @@ async function batch(args) {
     command: ['node', 'scripts/phase15-exact-replay.mjs', ...process.argv.slice(2)].join(' '),
     runningSource,
     journalCopySha256: createHash('sha256').update(readFileSync(args.journal)).digest('hex'),
-    batchRule: `newest ${args.limit} decision records at or after ${args.since ?? 'the start of the copy'}, one fresh process each`,
+    batchRule: `newest ${args.limit} decision records at or after ${args.since ?? 'the start of the copy'} and before ${args.until ?? 'the end of the copy'}, one fresh process each`,
     startedAt: startedAt.toISOString(),
     finishedAt: finishedAt.toISOString(),
     decisionsInCopy: decisions.length,

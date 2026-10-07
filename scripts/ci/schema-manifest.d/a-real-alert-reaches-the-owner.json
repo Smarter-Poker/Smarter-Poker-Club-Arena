@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/alerts-reach-a-person. Applied to production as migration 20261007000420_a_real_alert_reaches_the_owner (schema_migrations 20261007000825): the owner page state table, the page-kind classifier and the inbox trigger function.",
+  "tables": ["ca_owner_page_state"],
+  "functions": ["fn_ca_owner_page_kind", "fn_ca_a_real_alert_reaches_the_owner"]
+}

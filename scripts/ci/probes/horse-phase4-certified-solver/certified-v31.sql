@@ -33,6 +33,7 @@ DECLARE
   failed boolean; kind text; family text; result_id bigint; eval_id uuid; status jsonb;
   target_eval uuid; target_source bigint; saved_metrics jsonb; tampered_metrics jsonb;
   saved_eval_checksum text;
+  saved_source_checksum text;
   eval_scenarios text[]; eval_roles text[]:=ARRAY['all_in','barrel','bet_raise','cbet',
     'check_raise','delayed_cbet','facing_bet','facing_raise','open','probe'];
   components jsonb; bad_components jsonb; scenario_hands integer; component_stderr numeric;
@@ -439,6 +440,25 @@ BEGIN
       DELETE FROM public.solved_spots_gold WHERE id=duplicate_id;
     END IF;
     PERFORM public.fn_gto_v31_ingest_source_artifact(dataset,'M2',holdout_art);
+    IF i=1 THEN
+      SELECT source_artifact_checksum INTO saved_source_checksum
+        FROM public.solved_spots_gold WHERE id=holdout_id;
+      -- Both stored copies agree, so only recomputation of the matching source
+      -- artifact can reject this counterfeit. The missing holdout must fail closed.
+      UPDATE public.solved_spots_gold SET source_artifact_checksum=repeat('9',64)
+        WHERE id=holdout_id;
+      UPDATE public.gto_v31_source_artifacts SET source_artifact_checksum=repeat('9',64)
+        WHERE dataset_id=dataset AND source_row_id=holdout_id;
+      failed:=false;
+      BEGIN
+        PERFORM public.fn_gto_v31_build_cell(dataset,coverage->(i-1));
+      EXCEPTION WHEN OTHERS THEN failed:=true; END;
+      IF NOT failed THEN RAISE EXCEPTION 'a matching counterfeit artifact was compacted'; END IF;
+      UPDATE public.solved_spots_gold SET source_artifact_checksum=saved_source_checksum
+        WHERE id=holdout_id;
+      UPDATE public.gto_v31_source_artifacts SET source_artifact_checksum=saved_source_checksum
+        WHERE dataset_id=dataset AND source_row_id=holdout_id;
+    END IF;
     PERFORM public.fn_gto_v31_build_cell(dataset,coverage->(i-1));
   END LOOP;
 

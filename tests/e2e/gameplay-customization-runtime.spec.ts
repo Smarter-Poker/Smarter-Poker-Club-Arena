@@ -7,6 +7,7 @@ import {
   type Page,
   type Route,
 } from '@playwright/test';
+import { GAMEPLAY_CERTIFICATE_BOARD } from './support/gameplayCertificateBoard';
 import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
 import { OneShotRequestGate, runWithOneShotRequestGate } from './support/oneShotRequestGate';
@@ -123,7 +124,7 @@ async function installEngineProjection(
   runtime: RuntimeProfile
 ) {
   await context.addInitScript(
-    ({ selectedTableId, heroId, rivalId, heroAvatar, rivalAvatar }) => {
+    ({ selectedTableId, heroId, rivalId, heroAvatar, rivalAvatar, board }) => {
       const NativeWebSocket = window.WebSocket;
       const snapshot = () => ({
         type: 'SNAPSHOT',
@@ -133,7 +134,9 @@ async function installEngineProjection(
           table_id: selectedTableId,
           hand_number: 7,
           pot: 3,
-          community_cards: ['As', 'Kd', '7h'],
+          // Preserve the serving engine Card-object contract repaired on main;
+          // the shared board helper also pins that wire shape in the caller regression.
+          community_cards: board,
           community_cards2: [],
           community_cards3: [],
           current_bet: 2,
@@ -276,6 +279,7 @@ async function installEngineProjection(
       rivalId: VILLAIN_ID,
       heroAvatar: runtime.avatar,
       rivalAvatar: VILLAIN_AVATAR,
+      board: GAMEPLAY_CERTIFICATE_BOARD,
     }
   );
 }
@@ -1061,6 +1065,18 @@ test.describe('production routed gameplay customization', () => {
     } catch (error) {
       journeyFailure = error;
     } finally {
+      // Detach the projection routes before closing. A route callback still
+      // awaiting route.fetch() when its context closes throws "Target page,
+      // context or browser has been closed", and Playwright reports THAT in
+      // place of the journey's own failure: run 37556137203 showed only the
+      // profiles route error at line 370 while the board was still drawing
+      // "Card Could Not Be Read". The journey verdict above is unchanged.
+      await writerContext
+        ?.unrouteAll({ behavior: 'ignoreErrors' })
+        .catch((error) => cleanupFailures.push(error));
+      await readerContext
+        ?.unrouteAll({ behavior: 'ignoreErrors' })
+        .catch((error) => cleanupFailures.push(error));
       await writerContext?.close().catch((error) => cleanupFailures.push(error));
       await readerContext?.close().catch((error) => cleanupFailures.push(error));
       if (account) {

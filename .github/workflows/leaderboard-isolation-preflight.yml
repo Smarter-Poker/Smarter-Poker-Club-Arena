@@ -26,6 +26,8 @@ jobs:
           git rev-parse HEAD
       - name: Check source safeguards
         run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y postgresql-client
           bash scripts/verification-harness/leaderboard-isolation-preflight.sh --check
           node --test scripts/verification-harness/leaderboard-isolation-preflight.test.mjs
       - name: Export metadata and verify isolated catalog coverage

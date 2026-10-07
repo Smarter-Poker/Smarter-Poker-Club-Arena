@@ -24,7 +24,7 @@ import {
 } from '@/lib/clipMode';
 import { buildReplay, replayInputFromRow } from '@/utils/handReplay';
 import { buildReplayFrames, type ReplayFrame } from '@/utils/replayFrames';
-import { ACTION_BEAT_MS, REPLAY_RATES, STREET_BEAT_MS } from '@/utils/replayMotion';
+import { ACTION_BEAT_MS, REPLAY_RATES, STREET_BEAT_MS, replayBeatMs } from '@/utils/replayMotion';
 
 const HERO = 'hero-uuid';
 const SHOWN = 'shown-villain-uuid';
@@ -235,6 +235,11 @@ describe('the rate fit (contract C3)', () => {
     expect(fit.runMs).toBe(32000);
     expect(fit.holdMs).toBe(CLIP_END_HOLD_MS);
     expect(fit.plannedMs).toBe(33500);
+    /* The camera's plan: one beat per frame, in frame order, summing to the run. */
+    expect(fit.beats).toHaveLength(f.length);
+    expect(fit.beats).toEqual(f.map((fr) => replayBeatMs(fr, 1, 0.5)));
+    expect(fit.beats.reduce((a, b) => a + b, 0)).toBe(fit.runMs);
+    expect(fit.beats.reduce((a, b) => a + b, 0) + fit.holdMs).toBe(fit.plannedMs);
     /* 20 actions + 5 streets: 50,000 ms at half, 25,000 ms at 1x. */
     const g = fitClipRate(frames(20, 5), REPLAY_RATES, 15000, 40000);
     expect(g.tooLong).toBe(false);

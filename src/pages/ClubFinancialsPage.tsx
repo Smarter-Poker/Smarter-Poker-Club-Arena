@@ -624,7 +624,6 @@ export default function ClubFinancialsPage() {
               role="tab"
               className={`cf-rail__word ${period === p ? 'sc-ink--silver' : 'sc-ink--muted'}`}
               aria-selected={period === p}
-              aria-pressed={period === p}
               onClick={() => setPeriod(p)}
             >
               {p === 'week' ? 'This Week' : p === 'month' ? 'This Month' : 'All Time'}

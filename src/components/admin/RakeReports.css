@@ -22,6 +22,7 @@
 .rr__rail-word,
 .rr__word-action {
   appearance: none;
+  min-width: 44px; /* "Today" measured 38px wide at 393px */
   min-height: 44px;
   margin: 0;
   padding: 1cqw;

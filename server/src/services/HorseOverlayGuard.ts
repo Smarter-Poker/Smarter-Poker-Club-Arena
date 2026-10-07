@@ -66,6 +66,48 @@ import { TournamentRecurringService } from './TournamentRecurringService.js';
 /** Midway Union — the union Club JAQK and Shark Club belong to. */
 export const MIDWAY_UNION_ID = 'fade0000-0000-0000-0000-000000000001';
 
+/**
+ * THE DIAMOND ARENA RUNS THE MIDWAY SCHEDULE, SO IT GETS THE MIDWAY GUARD
+ * (Dan 2026-10-06: "USE THE SAME TOURNAMENT SCHEDULE AND RAKE AS THE MIDWAY
+ * UNION FOR NOW").
+ *
+ * The arena's guarantees are earmarked on its house, and an arena event that
+ * falls short overlays out of that house exactly as a Midway event overlays
+ * out of the union bank. No database change is needed: both reads this guard
+ * makes - `fn_overlay_at_risk(p_union)` and `fn_freeroll_fill_targets(p_union)`
+ * - already match `c.union_id = p_union OR c.id = p_union`, so passing the
+ * arena's own club id selects exactly the arena's events.
+ *
+ * The arena is read from its one settings row and joins the cycle only while
+ * its tournaments are switched on. FAILS CLOSED: an unreadable row, a missing
+ * club id or a switch that is anything but `true` leaves the cycle as it was -
+ * Midway alone. Opening the arena is a person's decision; this never touches
+ * the switch.
+ */
+export function overlayHostsFrom(
+  row: { club_id?: unknown; tournaments_enabled?: unknown } | null | undefined,
+  error?: unknown
+): string[] {
+  if (error || !row || row.tournaments_enabled !== true) return [MIDWAY_UNION_ID];
+  const arena = typeof row.club_id === 'string' && row.club_id ? row.club_id : null;
+  return arena && arena !== MIDWAY_UNION_ID ? [MIDWAY_UNION_ID, arena] : [MIDWAY_UNION_ID];
+}
+
+/** The hosts this cycle guards: Midway, and the Diamond Arena while it runs events. */
+export async function overlayGuardHosts(): Promise<string[]> {
+  try {
+    const { data, error } = await supabase
+      .from('ca_arena_settings')
+      .select('club_id, tournaments_enabled')
+      .eq('id', 1)
+      .maybeSingle();
+    return overlayHostsFrom(data as Record<string, unknown> | null, error);
+  } catch (err) {
+    reportError(err, 'HorseOverlayGuard.arena_settings_read_failed');
+    return [MIDWAY_UNION_ID];
+  }
+}
+
 const CYCLE_MS = 2 * 60_000;
 const BOOT_DELAY_MS = 90_000;
 /** Never add more than this many horses to one event in one cycle. */
@@ -247,12 +289,18 @@ function launchOwnedCycle(context: string): void {
   let tracked!: Promise<void>;
   tracked = (async () => {
     if (!lifecycleIsCurrent(generation)) return;
-    await runOverlayGuardOnce(MIDWAY_UNION_ID, () => lifecycleIsCurrent(generation));
+    const hosts = await overlayGuardHosts();
+    for (const host of hosts) {
+      if (!lifecycleIsCurrent(generation)) return;
+      await runOverlayGuardOnce(host, () => lifecycleIsCurrent(generation));
+    }
     // Shutdown revokes this scheduler between its two independent mutation
     // passes. The already-started pass is joined by stop(); the second one is
     // never launched by a stale generation.
-    if (!lifecycleIsCurrent(generation)) return;
-    await fillFreerollsOnce(MIDWAY_UNION_ID, () => lifecycleIsCurrent(generation));
+    for (const host of hosts) {
+      if (!lifecycleIsCurrent(generation)) return;
+      await fillFreerollsOnce(host, () => lifecycleIsCurrent(generation));
+    }
   })()
     .catch((err: unknown) => reportError(err, context))
     .finally(() => inFlightCycles.delete(tracked));

@@ -151,6 +151,7 @@ import {
   type RetainedRabbitBoard,
 } from '../components/table/retainedRabbitBoard';
 import { normalizeCardBack } from '../components/table/CardImage';
+import { FaceDeckContext } from '../components/table/faceDeckContext';
 // (The rabbit-hunt artwork note that used to sit here moved to RabbitHunt.tsx,
 // which is where the image is now actually imported and rendered. It had been
 // stranded above the table-skin registry for weeks, describing an import that
@@ -23760,7 +23761,7 @@ function LiveTablePage({
     getPlayerAtSeat,
   ]);
 
-  return (
+  const tablePage = (
     <div
       ref={pageRootRef}
       /* `--embedded` (Dan 2026-08-23: "+ does not create the action box for
@@ -28359,5 +28360,12 @@ function LiveTablePage({
           table - a card drawn inside a display:none slot is a card nobody
           sees (BBJ audit 2026-09-05). */}
     </div>
+  );
+
+  /* Every card face on this table carries this table's own deck
+     (faceDeckContext.ts): the board and the hands name the deck they are
+     drawn with, instead of borrowing whichever ancestor carries one. */
+  return (
+    <FaceDeckContext.Provider value={v8Theme.faceDeckId}>{tablePage}</FaceDeckContext.Provider>
   );
 }

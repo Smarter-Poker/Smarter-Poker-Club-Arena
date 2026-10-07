@@ -22,6 +22,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const mocks = vi.hoisted(() => ({
+  unionAccess: null as null | (() => Promise<boolean>),
   access: null as
     | null
     | (() => Promise<{ allowed: boolean; unionId: string | null; reason: string }>),
@@ -40,7 +41,10 @@ vi.mock('../../src/hooks/useGameManagementRealtime', () => ({
   useGameManagementRealtime: () => 'live',
   default: () => 'live',
 }));
-vi.mock('../../src/utils/clubIdResolver', () => ({ resolveClubUUID: async () => 'club-uuid-1' }));
+vi.mock('../../src/utils/clubIdResolver', () => ({
+  resolveClubUUID: async () => 'club-uuid-1',
+  isUUID: (value: string) => /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(value),
+}));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: () => {} }));
 vi.mock('../../src/services/GameAccessService', () => ({
   fetchGameCreationAccess: () =>
@@ -61,7 +65,9 @@ vi.mock('../../src/lib/supabase', () => ({
   },
 }));
 vi.mock('../../src/services/UnionService', () => ({
-  unionService: { isUnionAdmin: async () => false },
+  unionService: {
+    isUnionAdmin: () => (mocks.unionAccess ? mocks.unionAccess() : Promise.resolve(false)),
+  },
 }));
 vi.mock('../../src/components/common/Toast', () => ({
   useToast: () => ({ success: () => {}, error: () => {}, info: () => {} }),
@@ -198,6 +204,7 @@ const familyOf = (frame: HTMLElement) =>
 
 describe('each Table Management section is its own page on its own frame', () => {
   beforeEach(() => {
+    mocks.unionAccess = null;
     mocks.access = null;
     mocks.list = null;
     mocks.confirm.mockReset();
@@ -214,6 +221,28 @@ describe('each Table Management section is its own page on its own frame', () =>
     expect(within(drawn[0]).getByRole('heading', { name: 'Table Management' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Ticker Management' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Club Messages' })).toBeNull();
+  });
+
+  it('keeps an unreadable union authority locked and lets an explicit retry return a real refusal', async () => {
+    mocks.unionAccess = () => Promise.reject(new Error('Union Authority Read Failed'));
+    render(
+      <MemoryRouter
+        initialEntries={['/unions/11111111-1111-4111-8111-111111111111/table-management']}
+      >
+        <Routes>
+          <Route
+            path="/unions/:unionId/table-management"
+            element={<GameManagementPage scope="union" />}
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+    await screen.findByRole('heading', { name: 'Management Access Could Not Be Verified' });
+    expect(screen.queryByText('Friday Deep Stack')).toBeNull();
+    mocks.unionAccess = async () => false;
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await screen.findByRole('heading', { name: 'Union Admin Required' });
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
   });
 
   it('normalizes dynamic game, readiness, and command labels before painting them', async () => {
@@ -539,6 +568,18 @@ describe('each Table Management section is its own page on its own frame', () =>
       'Only The Club Owner And Club Admins Can Manage Games For A Standalone Club.'
     );
     expect(screen.queryByText(/Managed By Its Union/i)).toBeNull();
+  });
+
+  it('a rejected authority read leaves Checking and permits an explicit fresh retry', async () => {
+    mocks.access = () => Promise.reject(new Error('Authority Read Failed'));
+    renderAt(BASE);
+    expect(
+      await screen.findByRole('heading', { name: 'Management Access Could Not Be Verified' })
+    ).toBeTruthy();
+    expect(screen.queryByText('Verifying Game-Management Access…')).toBeNull();
+    mocks.access = async () => ({ allowed: true, unionId: null, reason: 'ok' });
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('Friday Deep Stack')).toBeTruthy();
   });
 
   it('reports an unverifiable access check without inventing a union affiliation', async () => {

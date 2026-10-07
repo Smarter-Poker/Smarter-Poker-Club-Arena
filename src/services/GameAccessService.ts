@@ -23,13 +23,13 @@ import {
 
 /** Ask the database whether the signed-in user may build games for this club. */
 export async function fetchGameCreationAccess(
-  clubUuid: string | null | undefined
+  clubUuid: string | null | undefined,
+  signal?: AbortSignal
 ): Promise<GameCreationAccess> {
   if (!clubUuid) return { allowed: false, unionId: null, reason: 'unknown_club' };
   try {
-    const { data, error } = await supabase.rpc('fn_game_creation_access', {
-      p_club_id: clubUuid,
-    });
+    const request = supabase.rpc('fn_game_creation_access', { p_club_id: clubUuid });
+    const { data, error } = await (signal ? request.abortSignal(signal) : request);
     if (error) return GAME_CREATION_DENIED;
     return parseGameCreationAccess(data);
   } catch {

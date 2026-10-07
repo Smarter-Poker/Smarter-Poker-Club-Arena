@@ -24,6 +24,7 @@ export const FINANCIAL_ADMIN_SHELL_READ_ONLY_RPC_PATHS = Object.freeze([
   '/rest/v1/rpc/fn_batch_club_member_counts',
   '/rest/v1/rpc/fn_can_i_create_a_union',
   '/rest/v1/rpc/fn_can_i_operate_the_union_network',
+  '/rest/v1/rpc/fn_poker_arena_context',
 ] as const);
 
 /**
@@ -33,6 +34,7 @@ export const FINANCIAL_ADMIN_SHELL_READ_ONLY_RPC_PATHS = Object.freeze([
  */
 export const FINANCIAL_ADMIN_QUARANTINED_SHELL_POST_PATHS = Object.freeze([
   '/rest/v1/client_shell_telemetry',
+  '/rest/v1/bus_event_log',
   '/rest/v1/rpc/fn_update_presence',
   '/rest/v1/rpc/fn_report_client_errors',
 ] as const);
@@ -45,6 +47,22 @@ export const FINANCIAL_ADMIN_CONSOLE_READ_ONLY_RPC_PATHS = Object.freeze([
   '/rest/v1/rpc/ca_club_financials',
   '/rest/v1/rpc/ca_club_chip_ledger',
   '/rest/v1/rpc/fn_accounting_run_observation_v1',
+  '/rest/v1/rpc/ca_club_operations_overview',
+  // CSV Exports (/clubs/:clubId/financials) mounts DynamicWallet, ChipStatement
+  // and the jackpot feed. fn_bbj_pool_for_club and fn_ca_chip_statement_page are
+  // STABLE; fn_club_money_panel is STABLE since migration 20261007000616, which
+  // corrected a select-only function the catalogue had recorded as VOLATILE.
+  '/rest/v1/rpc/fn_club_money_panel',
+  '/rest/v1/rpc/fn_bbj_pool_for_club',
+  '/rest/v1/rpc/fn_ca_chip_statement_page',
+  // Diamond Staff Desk and Financial Health fail closed to the arena lobby
+  // (PlatformStaffGuard -> <Navigate to="/">), and the lobby mounts these
+  // reads before the certificate can stop the page. All STABLE, no DML
+  // (pg_proc, 2026-10-07).
+  '/rest/v1/rpc/fn_batch_club_realtime_active_counts',
+  '/rest/v1/rpc/fn_batch_club_realtime_member_counts',
+  '/rest/v1/rpc/fn_get_club_entry_flags',
+  '/rest/v1/rpc/get_club_players_playing',
 ] as const);
 
 export type FinancialReadOnlyAction = 'allow' | 'ignore' | 'quarantine' | 'block';

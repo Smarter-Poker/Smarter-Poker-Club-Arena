@@ -1,0 +1,56 @@
+{
+  "schema": "horse-phase13-qualification-v1",
+  "qualified": false,
+  "mode": "contract",
+  "variant": "plo5",
+  "sourceSha": "886cc9655461c1049ece829c1fc86c14e2d3ba75",
+  "packVersion": "joint-action-response-round2-v1",
+  "contractVersion": "joint-strength-contract-v1",
+  "contractDigest": "a036e702e7659334a2c531f8bf90fb5e3a852686028fad47f182e486b57bb754",
+  "domain": "plo5-cash-joint-multiway-after-rake-horse-population",
+  "policyDigest": "6d8c3a37dabef12aa22f2bc3bc9e70e6f9c549d53a383e583bda27a88206c96b",
+  "policyDigestDefinition": "horse-phase13-policy-digest-v1",
+  "objectives": {
+    "cash": { "qualified": false, "status": "measured", "regressionMarginBbPer100": -10 },
+    "tournament": {
+      "status": "unavailable dependency",
+      "qualified": false,
+      "reasons": [
+        "tournament:plo5_joint_whole_tournament_outcome_model_unavailable",
+        "tournament:qualified_plo5_joint_tournament_reference_population_unavailable",
+        "tournament:plo5_joint_tournament_thresholds_not_specified"
+      ]
+    }
+  },
+  "admissionAlsoRequires": [
+    "natural completion-share evidence for the variant: on the release under admission, the share of eligible live joint decisions that complete without work_budget, insufficient_joint_samples or a joint_response_ refusal, per street and per board count, measured from natural decisions with the release unchanged throughout the window; P13.3 must state and meet its own floor for that share before admitting the variant, because this contract measures strength only for decisions that complete their fixed work"
+  ],
+  "evidencePath": "docs/evidence/phase13/strength-2026-10-06-plo5/strength.json",
+  "evidenceSha256": "9d5e0b09f6e45299f682d74c361f25e2bde7ae9d7b54336ceb10388ceeb15029",
+  "reasons": [
+    "cash:primary:lower_bound_not_above_zero",
+    "cash:seed:13261163:point_estimate_not_above_zero",
+    "cash:seed:13262317:point_estimate_not_above_zero",
+    "cash:seed:13263353:point_estimate_not_above_zero",
+    "cash:profile:p13c-plo5-3dealt-100bb:regression_margin_exceeded",
+    "cash:profile:p13c-plo5-7max-100bb:regression_margin_exceeded",
+    "cash:profile:p13c-plo5-6max-40bb:regression_margin_exceeded",
+    "cash:profile:p13c-plo5-6max-100bb:regression_margin_exceeded",
+    "cash:profile:p13c-plo5-6max-200bb:regression_margin_exceeded",
+    "cash:profile:p13c-plo5-bomb1-6max-100bb:regression_margin_exceeded",
+    "cash:profile:p13c-plo5-bomb2-6max-100bb:regression_margin_exceeded",
+    "cash:profile:p13c-plo5-bomb3-6max-100bb:regression_margin_exceeded",
+    "cash:position:button:regression_margin_exceeded",
+    "cash:position:small_blind:regression_margin_exceeded",
+    "cash:position:big_blind:regression_margin_exceeded",
+    "cash:position:cutoff:regression_margin_exceeded",
+    "cash:position:middle:regression_margin_exceeded",
+    "cash:position:early:regression_margin_exceeded",
+    "cash:depth:short:regression_margin_exceeded",
+    "cash:depth:standard:regression_margin_exceeded",
+    "cash:depth:deep:regression_margin_exceeded",
+    "cash:boards:1:regression_margin_exceeded",
+    "cash:boards:2:regression_margin_exceeded",
+    "cash:boards:3:regression_margin_exceeded"
+  ]
+}

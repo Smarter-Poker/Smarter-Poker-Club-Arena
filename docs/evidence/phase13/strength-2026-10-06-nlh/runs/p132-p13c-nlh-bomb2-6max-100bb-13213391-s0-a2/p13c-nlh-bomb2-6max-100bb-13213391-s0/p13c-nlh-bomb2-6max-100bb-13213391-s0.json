@@ -1,0 +1,221 @@
+{
+  "schema": "horse-phase13-strength-shard-v1",
+  "variant": "nlh",
+  "contractVersion": "joint-strength-contract-v1",
+  "contractDigest": "a036e702e7659334a2c531f8bf90fb5e3a852686028fad47f182e486b57bb754",
+  "packVersion": "joint-action-response-round2-v1",
+  "domainVersion": "joint-multiway-round1-v4",
+  "rangePackVersion": "joint-public-range-round1-v1",
+  "evidenceMode": "contract",
+  "profileId": "p13c-nlh-bomb2-6max-100bb",
+  "seed": 13213391,
+  "shard": 0,
+  "firstPair": 0,
+  "requestedPairs": 45360,
+  "pairs": 45360,
+  "complete": true,
+  "positionCoverageComplete": true,
+  "offsetCounts": [7560, 7560, 7560, 7560, 7560, 7560],
+  "strata": {
+    "0|flop": {
+      "n": 7494,
+      "s1": "-23365400",
+      "s2": "733055706926",
+      "s3": "-9437357431366094",
+      "s4": "250268896511007124082"
+    },
+    "0|none": {
+      "n": 30,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "0|turn": {
+      "n": 36,
+      "s1": "1600",
+      "s2": "810749800",
+      "s3": "11948699197750",
+      "s4": "277380337760072500"
+    },
+    "1|flop": {
+      "n": 7498,
+      "s1": "-15435937",
+      "s2": "646428645117",
+      "s3": "-8152877614016227",
+      "s4": "221012994484891055073"
+    },
+    "1|none": {
+      "n": 8,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "1|river": {
+      "n": 2,
+      "s1": "6100",
+      "s2": "36010000",
+      "s3": "216001000000",
+      "s4": "1296000100000000"
+    },
+    "1|turn": {
+      "n": 52,
+      "s1": "-25902",
+      "s2": "1847864194",
+      "s3": "-9013237296228",
+      "s4": "331098428539123486"
+    },
+    "2|flop": {
+      "n": 7503,
+      "s1": "-17513389",
+      "s2": "677733797105",
+      "s3": "-8403628267388719",
+      "s4": "239196276531960991901"
+    },
+    "2|none": {
+      "n": 18,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "2|river": {
+      "n": 1,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "2|turn": {
+      "n": 38,
+      "s1": "-42463",
+      "s2": "768445319",
+      "s3": "-5217595195447",
+      "s4": "79342660861992311"
+    },
+    "3|flop": {
+      "n": 7507,
+      "s1": "-17473420",
+      "s2": "652990901810",
+      "s3": "-8305136352848770",
+      "s4": "225745338627037479974"
+    },
+    "3|none": {
+      "n": 22,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "3|river": {
+      "n": 1,
+      "s1": "-7425",
+      "s2": "55130625",
+      "s3": "-409344890625",
+      "s4": "3039385812890625"
+    },
+    "3|turn": {
+      "n": 30,
+      "s1": "-12205",
+      "s2": "1218871275",
+      "s3": "-844820277625",
+      "s4": "270399778297771875"
+    },
+    "4|flop": {
+      "n": 7498,
+      "s1": "-18105518",
+      "s2": "675396996574",
+      "s3": "-8149537666406714",
+      "s4": "246988684142269857862"
+    },
+    "4|none": {
+      "n": 28,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "4|turn": {
+      "n": 34,
+      "s1": "-5735",
+      "s2": "363212275",
+      "s3": "-459413034125",
+      "s4": "22061792792314375"
+    },
+    "5|flop": {
+      "n": 7497,
+      "s1": "-19534905",
+      "s2": "680408284105",
+      "s3": "-8590617440101965",
+      "s4": "234838225709424419209"
+    },
+    "5|none": {
+      "n": 40,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "5|turn": {
+      "n": 23,
+      "s1": "-54305",
+      "s2": "485171275",
+      "s3": "-5065311168125",
+      "s4": "61108717798901875"
+    }
+  },
+  "pairDigest": "224f03152967e8fa20b5ba6fdf44758ff658557848d44c53c549ab991d15745f",
+  "candidateNetCents": -115107904,
+  "referenceNetCents": -3539000,
+  "changedPairs": 45214,
+  "decisions": 1159531,
+  "eligible": 83525,
+  "fired": 83525,
+  "changed": 73892,
+  "illegalCandidates": 0,
+  "earlierPhaseRefusals": 0,
+  "workBudgetRefusals": 0,
+  "responseBranchUnavailable": 0,
+  "insufficientSamples": 0,
+  "eligibleByBoards": {
+    "2": 83525
+  },
+  "discards": 0,
+  "illegalActions": 0,
+  "conservationErrors": 0,
+  "cardErrors": 0,
+  "truncatedHands": 0,
+  "settlementMismatches": 0,
+  "deductionMismatches": 0,
+  "pairedReplayMismatches": 0,
+  "showdownsChecked": 45678,
+  "multiBoardShowdownsChecked": 45678,
+  "foldWinsChecked": 45042,
+  "lowHalvesChecked": 0,
+  "totalRake": 377273.4,
+  "totalBbj": 45360,
+  "nodeCounts": {
+    "cash/flop/joint-board-2": 47714,
+    "cash/turn/joint-board-2": 25668,
+    "cash/river/joint-board-2": 10143
+  },
+  "reasons": {
+    "joint_cash_action_distribution": 82261,
+    "protected_multiway_commitment_floor": 1231,
+    "protected_dominated_commitment_floor": 33
+  },
+  "equityWork": {
+    "225": 1159531
+  },
+  "fixedWork": {
+    "governor": "off",
+    "scale": 1,
+    "policyClock": "phase13_evidence_mode_fixed_clock",
+    "moodClock": "deal_seed_time_of_day"
+  },
+  "durationMs": 2761276,
+  "promotionEligible": false,
+  "sourceUnchanged": true,
+  "cancelled": false
+}

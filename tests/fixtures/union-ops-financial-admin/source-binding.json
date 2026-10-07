@@ -7,7 +7,11 @@
     "supabase/migrations/20261004221303_union_risk_uses_player_keyed_chip_flow_indexes.sql": "8c17b6af62dfb23436e51e9399bd3b5084875b5516e0adec8c4aff1f0781bc70",
     "supabase/migrations/20261004230841_union_risk_uses_pair_keyed_commission_sums.sql": "fc10ce7b0dde19ecc176c74c3b03f0b44c2c19248491b1fa99da2b7e754b67b8",
     "supabase/migrations/20261005001852_union_risk_bounds_gap_hand_allocation.sql": "b83f4f9d6a33113f9988636aec311ea237d1f4a544b35496e3dabf9e38e80aab",
-    "tests/fixtures/union-ops-financial-admin/assertions.sql": "fadc4a913d0fe25b53b1eef2f6cdabd4b7e03d401fdad511bae6b18510381fc7",
-    "tests/fixtures/union-ops-financial-admin/bootstrap.sql": "2037ca8292f2c5001f6fa8081935ca0e1e026c877fc249ce18942cefa331dfe6"
+    "supabase/migrations/20261007002335_union_risk_reads_transaction_owned_agent_commission_days.sql": "c4b6c048f35eb54332236f70812f3a6ffd94ae999e2f3bd3a57962bd172d5044",
+    "tests/fixtures/union-ops-financial-admin/assertions.sql": "69f2d44209f2000d278486f47606aba72c6c5008b764ac54bf5df4c3a5d5eb93",
+    "tests/fixtures/union-ops-financial-admin/bootstrap.sql": "2037ca8292f2c5001f6fa8081935ca0e1e026c877fc249ce18942cefa331dfe6",
+    "tests/fixtures/union-ops-financial-admin/transaction-owned-commission-proof.sql": "7b83d5eb45167527d570d18058ec2c9127264edd906c6382fa7d531295a983bc",
+    "tests/fixtures/union-ops-financial-admin/transaction-owned-commission-source.sql": "61b1fa26f29778ddb7ccf58a1ca526c4cf15444abdd289248fb5856d544e4db3",
+    "tests/fixtures/union-ops-financial-admin/transaction-owned-commission-concurrency.py": "5d687e5894cc0afdf33f9183e761c16466a0c6a07f7f6cfb2d3f392b28bca977"
   }
 }

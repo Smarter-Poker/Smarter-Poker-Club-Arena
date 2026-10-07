@@ -131,10 +131,14 @@ describe('the open menu follows the owning table hand identity', () => {
     const view = render(<TableTabBar {...props} tabs={tabs} activeTabId="a" />);
     fireEvent.click(screen.getByRole('button', { name: 'Table Menu' }));
     expect(screen.getByRole('menu').textContent).toContain('Hand #101');
+    const handLabel = screen.getByText('Hand #101');
+    expect(handLabel.childNodes).toHaveLength(1);
+    expect(handLabel.firstChild?.nodeType).toBe(Node.TEXT_NODE);
     view.rerender(
       <TableTabBar {...props} tabs={[{ ...tabs[0], handNumber: 102 }, tabs[1]]} activeTabId="a" />
     );
     expect(screen.getByRole('menu').textContent).toContain('Hand #102');
+    expect(screen.getByText('Hand #102').childNodes).toHaveLength(1);
     expect(screen.getByRole('menu').textContent).not.toContain('Hand #900');
     view.rerender(<TableTabBar {...props} tabs={tabs} activeTabId="b" />);
     expect(screen.getByRole('menu').textContent).toContain('Hand #900');

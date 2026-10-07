@@ -90,16 +90,18 @@ export default function SettlementDashboardPage() {
         foot="foot"
         aria-label={ledgerTitle}
       >
+        {/* The console above is the one region named ledgerTitle. The list keeps
+            its own default name; passing ledgerTitle here as well gave the page
+            two regions called "Club Transaction Records" (financial-admin-deep). */}
         {scopeClubId ? (
           <TransactionLedgerView
             clubId={scopeClubId}
             clubScoped
             key={`${scopeClubId}:${user.id}`}
             limit={25}
-            title={ledgerTitle}
           />
         ) : (
-          <TransactionLedgerView key={user.id} userId={user.id} limit={25} title={ledgerTitle} />
+          <TransactionLedgerView key={user.id} userId={user.id} limit={25} />
         )}
       </SpadeConsole>
     </main>

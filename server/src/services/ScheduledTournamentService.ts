@@ -703,8 +703,8 @@ export class ScheduledTournamentService {
     if (!this.lifecycleIsCurrent(generation) || isMaintenanceFrozen()) return;
     if (this.polling) return;
     this.polling = true;
-    this.fundingBankReads = new Map();
     this.clubRowReads = new Map();
+    this.fundingBankReads = new Map();
     this.retiredScheduleIds = new Set();
     try {
       const { data: schedules, error } = await supabase

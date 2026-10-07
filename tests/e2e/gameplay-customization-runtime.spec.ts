@@ -7,6 +7,7 @@ import {
   type Page,
   type Route,
 } from '@playwright/test';
+import { GAMEPLAY_CERTIFICATE_BOARD } from './support/gameplayCertificateBoard';
 import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
 import { OneShotRequestGate, runWithOneShotRequestGate } from './support/oneShotRequestGate';
@@ -123,7 +124,7 @@ async function installEngineProjection(
   runtime: RuntimeProfile
 ) {
   await context.addInitScript(
-    ({ selectedTableId, heroId, rivalId, heroAvatar, rivalAvatar }) => {
+    ({ selectedTableId, heroId, rivalId, heroAvatar, rivalAvatar, board }) => {
       const NativeWebSocket = window.WebSocket;
       const snapshot = () => ({
         type: 'SNAPSHOT',
@@ -133,18 +134,9 @@ async function installEngineProjection(
           table_id: selectedTableId,
           hand_number: 7,
           pot: 3,
-          // The engine's wire shape, not a hand-history code string:
-          // projectLiveHandState sends server Card objects ({ rank, suit },
-          // suit spelled out). The bare string codes this fixture used to
-          // send ('As', 'Kd', '7h') are never on that wire, and the felt
-          // correctly refuses to guess a card it cannot read: every board
-          // card drew as "Card Could Not Be Read", so no face-deck finish
-          // could ever be observed on one (run 37539487040).
-          community_cards: [
-            { rank: 'A', suit: 'spades' },
-            { rank: 'K', suit: 'diamonds' },
-            { rank: '7', suit: 'hearts' },
-          ],
+          // Preserve the serving engine Card-object contract repaired on main;
+          // the shared board helper also pins that wire shape in the caller regression.
+          community_cards: board,
           community_cards2: [],
           community_cards3: [],
           current_bet: 2,
@@ -287,6 +279,7 @@ async function installEngineProjection(
       rivalId: VILLAIN_ID,
       heroAvatar: runtime.avatar,
       rivalAvatar: VILLAIN_AVATAR,
+      board: GAMEPLAY_CERTIFICATE_BOARD,
     }
   );
 }

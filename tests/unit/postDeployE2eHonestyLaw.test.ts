@@ -100,9 +100,23 @@ describe.each([
       const checkout = join(dir, 'checkout');
       const summary = join(dir, 'summary');
       const output = join(dir, 'output');
+      // Hooks export the real repository's Git directory/index. Fixtures must
+      // never inherit them, a global URL rewrite, or credentials/network I/O.
+      const gitEnv = { ...process.env };
+      for (const key of Object.keys(gitEnv)) {
+        if (key.startsWith('GIT_')) delete gitEnv[key];
+      }
+      const emptyConfig = join(dir, 'empty-git-config');
+      writeFileSync(emptyConfig, '');
+      Object.assign(gitEnv, {
+        GIT_CONFIG_GLOBAL: emptyConfig,
+        GIT_CONFIG_NOSYSTEM: '1',
+        GIT_ALLOW_PROTOCOL: 'file',
+      });
       const git = (cwd: string, ...args: string[]) =>
         execFileSync('git', args, {
           cwd,
+          env: gitEnv,
           encoding: 'utf8',
           stdio: ['ignore', 'pipe', 'pipe'],
         }).trim();
@@ -127,7 +141,10 @@ describe.each([
         if (kind === 'rollback') git(checkout, 'fetch', 'origin', 'main');
         if (kind === 'forward')
           expect(
-            spawnSync('git', ['cat-file', '-e', `${actual}^{commit}`], { cwd: checkout }).status
+            spawnSync('git', ['cat-file', '-e', `${actual}^{commit}`], {
+              cwd: checkout,
+              env: gitEnv,
+            }).status
           ).not.toBe(0);
         writeFileSync(summary, '');
         writeFileSync(output, '');
@@ -155,7 +172,7 @@ ${body}`,
             encoding: 'utf8',
             timeout: 5000,
             env: {
-              ...process.env,
+              ...gitEnv,
               NODE_BIN: process.execPath,
               PROVENANCE_CLI: join(ROOT, 'scripts/ci/production-e2e-provenance.mjs'),
               EXPECTED_LIVE_SHA: expected,
@@ -178,7 +195,10 @@ ${body}`,
           expect(readFileSync(summary, 'utf8')).toContain('protected-main history was unreadable');
         if (kind === 'foreign')
           expect(
-            spawnSync('git', ['cat-file', '-e', `${actual}^{commit}`], { cwd: checkout }).status
+            spawnSync('git', ['cat-file', '-e', `${actual}^{commit}`], {
+              cwd: checkout,
+              env: gitEnv,
+            }).status
           ).not.toBe(0);
       } finally {
         rmSync(dir, { recursive: true, force: true });

@@ -1,4 +1,8 @@
 import {
+  finalizeMissionCleanupWithEvidence,
+  reloadMissionPageWithEvidence,
+} from './support/missionReloadObservation';
+import {
   devices,
   expect,
   test,
@@ -329,7 +333,7 @@ test.describe('production Daily Missions certification', () => {
     let compatibilityCycleRowId: string | null = null;
     let receiptBearingUiRowId: string | null = null;
     const report: JsonObject = {};
-    const cleanupErrors: string[] = [];
+    let journeyError: unknown;
 
     try {
       account = await createTemporaryCustomizationAccount(environment, 'missions', 7_000);
@@ -1375,7 +1379,12 @@ test.describe('production Daily Missions certification', () => {
         );
         expect(new Set(replacementIds).size).toBe(2);
         await expect.poll(() => diamondBalance(environment, account!.id)).toBe(balanceBefore - 2);
-        await page.reload({ waitUntil: 'domcontentloaded' });
+        await reloadMissionPageWithEvidence(page, async (observation) => {
+          await test.info().attach('daily-missions-reload-observation.json', {
+            body: JSON.stringify(observation, null, 2),
+            contentType: 'application/json',
+          });
+        });
         await expect(page.getByText('Live Now')).toBeVisible({
           timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
         });
@@ -2125,16 +2134,26 @@ test.describe('production Daily Missions certification', () => {
         body: JSON.stringify(report, null, 2),
         contentType: 'application/json',
       });
+    } catch (error) {
+      journeyError = error;
+      throw error;
     } finally {
       for (const context of contexts.reverse()) {
         await context.close().catch(() => undefined);
       }
-      if (account) {
-        await cleanupTemporaryCustomizationAccount(environment, account).catch((error) =>
-          cleanupErrors.push(`account: ${(error as Error).message}`)
-        );
-      }
+      await finalizeMissionCleanupWithEvidence(
+        account?.id ?? null,
+        journeyError,
+        async () => {
+          if (account) await cleanupTemporaryCustomizationAccount(environment, account);
+        },
+        async (observation) => {
+          await test.info().attach('daily-missions-cleanup.json', {
+            body: JSON.stringify(observation, null, 2),
+            contentType: 'application/json',
+          });
+        }
+      );
     }
-    expect(cleanupErrors, 'Daily Missions certification cleanup failed').toEqual([]);
   });
 });

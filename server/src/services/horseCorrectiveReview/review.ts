@@ -11,7 +11,13 @@ import {
   type HorseJournalRecord,
 } from '../horseDecisionJournal/record.js';
 import { reconcileHorseJournalHand } from '../horseDecisionJournal/review.js';
-import { evidenceDigest, isVerifiedCorrectiveAuthority } from './authority.js';
+import { evidenceDigest, isVerifiedCorrectiveAuthority, sha256 } from './authority.js';
+import {
+  correctiveDecisionDomain,
+  correctiveDomainIsValid,
+  correctiveDomainKey,
+  type CorrectiveReferenceDomain,
+} from './domain.js';
 import { acceptedCommitmentEligibility, actorIdValid, chipCents } from './eligibility.js';
 import {
   CORRECTIVE_LIMITS,
@@ -23,6 +29,7 @@ import {
   type CorrectiveReferenceBinding,
   type AlternativeActionReference,
   type CorrectiveAction,
+  type CorrectiveReviewAuthority,
 } from './contract.js';
 
 import { resolveRosterCommitment } from './roster-adapter.js';
@@ -30,6 +37,44 @@ import type { CorrectiveRosterTrust } from './contract.js';
 
 type Capture = { snapshot: FastHorseDecisionRequest; readFrame: unknown; decision: unknown };
 const same = (a: unknown, b: unknown) => horseJournalJson(a) === horseJournalJson(b);
+const EVIDENCE_CLASSES = ['synthetic_fixture', 'reviewed_reference'] as const;
+const isoMs = (value: unknown): number | null => {
+  if (typeof value !== 'string') return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) && new Date(ms).toISOString() === value ? ms : null;
+};
+
+/**
+ * Phase 14.4: the signed authority's own generation, expiry and domains,
+ * judged at review time. Each failure is named; none is folded into a missing
+ * signature. Returns null when the authority may be used.
+ */
+export function correctiveAuthorityRefusal(
+  authority: CorrectiveReviewAuthority,
+  nowMs: number
+): string | null {
+  if (!Number.isSafeInteger(authority.approvalGeneration) || authority.approvalGeneration <= 0)
+    return 'authority_generation_invalid';
+  const expires = isoMs(authority.expiresAt);
+  if (expires === null) return 'authority_expiry_invalid';
+  if (!Number.isFinite(nowMs) || nowMs >= expires) return 'authority_expired';
+  if (
+    authority.domains.length === 0 ||
+    !authority.domains.every(correctiveDomainIsValid) ||
+    new Set(authority.domains.map(correctiveDomainKey)).size !== authority.domains.length
+  )
+    return 'authority_domains_invalid';
+  return null;
+}
+
+/** Synthetic and reviewed are one axis: the roster's reviewed_source and the
+ * reference's reviewed_reference are both "not synthetic". */
+const syntheticClass = (value: unknown): boolean | null =>
+  value === 'synthetic_fixture'
+    ? true
+    : value === 'reviewed_reference' || value === 'reviewed_source'
+      ? false
+      : null;
 const safeDigest = (value: unknown, fallback: string) => {
   try {
     return evidenceDigest(value);
@@ -118,8 +163,9 @@ function compareReference(
   selected: CorrectiveAction,
   binding: CorrectiveReferenceBinding,
   decisionId: string,
-  qualificationId: string
+  authority: CorrectiveReviewAuthority
 ): CorrectiveDecisionReview {
+  const qualificationId = authority.qualificationId;
   const no = (
     disposition: CorrectiveDecisionReview['disposition'],
     reason: string
@@ -131,9 +177,10 @@ function compareReference(
     candidate: null,
   });
   const r = raw as AlternativeActionReference;
+  // A version 1 reference carries no domain, sampling contract or producer.
+  // It is refused by name, never upgraded with defaults.
+  if (!r || r.version !== 2) return no('reference_unavailable', 'reference_version_unsupported');
   if (
-    !r ||
-    r.version !== 1 ||
     typeof r.sourceId !== 'string' ||
     !/^[a-zA-Z0-9_.:-]{1,128}$/.test(r.sourceId) ||
     r.qualificationId !== qualificationId ||
@@ -141,6 +188,20 @@ function compareReference(
     !same(r.binding, binding)
   )
     return no('reference_unavailable', 'reference_input_or_source_mismatch');
+  if (!EVIDENCE_CLASSES.includes(r.evidenceClass))
+    return no('reference_unavailable', 'reference_evidence_class_invalid');
+  if (r.evidenceClass !== authority.evidenceClass)
+    return no('reference_unavailable', 'mixed_synthetic_and_reviewed_evidence');
+  if (!sha256(r.samplingContractDigest) || !sha256(r.producerDigest))
+    return no('reference_unavailable', 'reference_provenance_missing');
+  if (!correctiveDomainIsValid(r.domain))
+    return no('reference_unavailable', 'reference_domain_invalid');
+  const decisionDomain = correctiveDecisionDomain(snapshot.gameState);
+  if (!decisionDomain) return no('insufficient_evidence', 'original_domain_unavailable');
+  if (!same(r.domain, decisionDomain))
+    return no('reference_unavailable', 'reference_domain_mismatch');
+  if (!authority.domains.some((d) => same(d, decisionDomain)))
+    return no('reference_unavailable', 'reference_domain_not_authorized');
   if (
     r.basis !== 'counterfactual' ||
     r.causal !== true ||
@@ -227,6 +288,13 @@ function compareReference(
       conservativeGain: gain,
       maximumProbabilityDelta: 0.05 as const,
       scope: 'exact_original_information_set' as const,
+      domain: { ...decisionDomain } as CorrectiveReferenceDomain,
+      binding: { ...binding },
+      menu: r.alternatives.map((a) => ({ action: a.choice.action, amount: a.choice.amount })),
+      samplingContractDigest: r.samplingContractDigest,
+      producerDigest: r.producerDigest,
+      qualificationId,
+      evidenceClass: r.evidenceClass,
       requiredBeforeActivation: [
         'independent_holdout',
         'complete_policy_distribution',
@@ -253,13 +321,15 @@ function compareReference(
  * scheduler or current-policy call on this path. */
 export function reviewHorseCorrectiveHand(
   input: CorrectiveReviewInput,
-  options: { rosterTrust?: CorrectiveRosterTrust } = {}
+  options: { rosterTrust?: CorrectiveRosterTrust; nowMs?: number } = {}
 ): CorrectiveHandReview {
+  const nowMs = options.nowMs ?? Date.now();
   const rosterV2 = (input.commitments as { version?: unknown } | undefined)?.version === 2;
   const out: CorrectiveHandReview = {
     version: rosterV2 ? CORRECTIVE_ROSTER_REVIEW_VERSION : CORRECTIVE_REVIEW_VERSION,
     scope: 'single_retained_hand_qualified_menu',
     reviewId: '',
+    handKey: typeof input.handKey === 'string' ? input.handKey : '',
     journalManifest: null,
     evidenceClass: 'unqualified',
     status: 'incomplete',
@@ -354,6 +424,31 @@ export function reviewHorseCorrectiveHand(
       isVerifiedCorrectiveAuthority(input.authority) && input.authority.handKey === input.handKey
         ? input.authority
         : undefined;
+    // Phase 14.4: a verified signature is not a usable authority when its own
+    // signed generation, expiry or domains say otherwise.
+    const authorityRefusal = authority ? correctiveAuthorityRefusal(authority, nowMs) : null;
+    if (authorityRefusal) {
+      authority = undefined;
+      reason(authorityRefusal);
+    }
+    // Synthetic and reviewed evidence never combine, wherever either appears.
+    // Every supplied reference counts, matched to a decision or not.
+    const referenceClasses = refs.map((r) =>
+      syntheticClass((r as { evidenceClass?: unknown } | null)?.evidenceClass)
+    );
+    let mixedEvidence =
+      new Set(
+        [authority ? syntheticClass(authority.evidenceClass) : null, ...referenceClasses].filter(
+          (c) => c !== null
+        )
+      ).size > 1;
+    // The class the signer claimed, kept for the roster comparison below even
+    // when mixing has already made the authority unusable.
+    const signedClass = authority ? syntheticClass(authority.evidenceClass) : null;
+    if (mixedEvidence) {
+      authority = undefined;
+      reason('mixed_synthetic_and_reviewed_evidence');
+    }
     // V2 monetary authority never substitutes for the existing independently
     // signed reference authority or its exact commitment pin.
     if (
@@ -366,6 +461,8 @@ export function reviewHorseCorrectiveHand(
     }
     if (authority) out.evidenceClass = authority.evidenceClass;
     else if (!rosterV2) reason('trusted_source_authority_missing');
+    // Mixed evidence never claims a reviewed (real-history) class.
+    if (mixedEvidence) out.evidenceClass = 'synthetic_fixture';
     const roster = rosterV2
       ? resolveRosterCommitment(input, acceptedRecord, options.rosterTrust)
       : null;
@@ -377,13 +474,26 @@ export function reviewHorseCorrectiveHand(
         out.evidenceClass = 'synthetic_fixture';
       if (
         roster.audit.evidenceClass &&
-        authority &&
-        (roster.audit.evidenceClass === 'synthetic_fixture') !==
-          (authority.evidenceClass === 'synthetic_fixture')
+        signedClass !== null &&
+        (roster.audit.evidenceClass === 'synthetic_fixture') !== signedClass
       ) {
         rosterEvidenceClassMismatch = true;
         authority = undefined;
         reason('roster_reference_evidence_class_mismatch');
+      }
+      const rosterClass = syntheticClass(roster.audit.evidenceClass);
+      if (
+        rosterClass !== null &&
+        referenceClasses.some((c) => c !== null && c !== rosterClass) &&
+        !mixedEvidence
+      ) {
+        mixedEvidence = true;
+        authority = undefined;
+      }
+      if (rosterEvidenceClassMismatch || mixedEvidence) {
+        rosterEvidenceClassMismatch = true;
+        out.evidenceClass = 'synthetic_fixture';
+        reason('mixed_synthetic_and_reviewed_evidence');
       }
     }
     const commitment = roster
@@ -527,7 +637,7 @@ export function reviewHorseCorrectiveHand(
             selected,
             correctiveReferenceBinding(decision, execution, acceptedRecord),
             decision.sha256,
-            authority.qualificationId
+            authority
           )
         );
       }

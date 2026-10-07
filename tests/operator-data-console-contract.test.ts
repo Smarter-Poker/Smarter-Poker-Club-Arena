@@ -62,6 +62,14 @@ describe('operator Data surfaces use intentional Club Arena console families', (
     expect(controls).toContain('min-height: 44px');
   });
 
+  it('keeps the Financial Admin union selector above the iOS zoom floor', () => {
+    const hub = read('src/pages/FinancialAdminHub.module.css');
+    const select = hub.match(/\.select\s*\{[^}]*\}/s)?.[0] ?? '';
+
+    expect(select).toContain('min-height: 44px');
+    expect(select).toContain('font-size: max(16px, 3.4cqw)');
+  });
+
   it('keeps every Data route in the retained phone-fit and thumb sweeps', () => {
     const phoneFit = read('tests/e2e/mobile-fit-audit.spec.ts');
     const thumbSweep = read('tests/e2e/mobile-tap-targets.spec.ts');

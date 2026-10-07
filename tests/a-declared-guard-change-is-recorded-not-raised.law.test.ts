@@ -38,6 +38,9 @@ import {
 /** The migration that introduced the declaration. Migrations before it are history. */
 const LAW = '20260910143032_a_declared_guard_change_is_recorded_not_raised.sql';
 const DECLARE = 'fn_ca_declare_guard_redefinition';
+/** Ratchet added after an unapplied migration tried to declare an unlisted trigger. */
+const DECLARATION_TARGET_LAW =
+  '20261006012010_a_resolved_incident_never_predates_its_detection.sql';
 
 /**
  * An already-installed migration is immutable. Each of these omitted its
@@ -179,6 +182,27 @@ const redefines = (sql: string, guard: string): boolean =>
     sql.includes(`p.proname = '${guard}'`));
 
 describe('a declared guard change is recorded, not raised', () => {
+  it('never declares a function outside the watchlist installed by that migration', () => {
+    const definitions = watchlistDefinitions();
+    const offenders: string[] = [];
+    for (const migration of migrationCorpus()) {
+      // Earlier files are installed history. This prospective law prevents a
+      // recurrence without rewriting migrations production already accepted.
+      if (migration.name < DECLARATION_TARGET_LAW) continue;
+      const installed = definitions
+        .filter((definition) => definition.name <= migration.name)
+        .at(-1)?.guards;
+      if (!installed) continue;
+      for (const match of migration.sql.matchAll(
+        /fn_ca_declare_guard_redefinition\s*\(\s*'([^']+)'/g
+      )) {
+        if (!installed.includes(match[1])) offenders.push(`${migration.name} declares ${match[1]}`);
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
   it('a migration that redefines a watched guard declares it in the same transaction', () => {
     const guards = watchlist();
     const from = watchedFrom();

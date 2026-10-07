@@ -254,7 +254,18 @@ describe('the P/L chart draws hand results, not wallet flow', () => {
 
 describe('the public dossier', () => {
   it('shows the public arena record and no meaningless level badge', () => {
-    expect(PUBLIC_PROFILE).toContain("from('player_stats')");
+    // NOT from('player_stats'): that table carried "Player stats are public"
+    // (FOR SELECT, roles PUBLIC, USING (true)) and published every player's
+    // money to any anonymous browser holding the published anon key. It is now
+    // readable only by its owner and by members of the club the row belongs
+    // to, and this page is the one reader that is legitimately cross-club, so
+    // it reads through a SECURITY DEFINER function that returns the five play
+    // fields and no money at all. The ROW SHAPE is unchanged, which is why the
+    // folding assertions below still measure the same thing.
+    expect(PUBLIC_PROFILE).toContain("rpc('ca_public_arena_record_v1'");
+    expect(PUBLIC_PROFILE, 'the page must not read player_stats directly again').not.toContain(
+      "from('player_stats')"
+    );
     expect(PUBLIC_PROFILE).toContain('aggregateArenaRecord(data)');
     expect(PUBLIC_PROFILE).toContain('className={styles.publicProfileRecord}');
     expect(PUBLIC_PROFILE).not.toContain('Level {profile.level}');

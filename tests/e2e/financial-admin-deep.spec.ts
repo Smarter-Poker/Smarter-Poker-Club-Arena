@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
 import {
   FINANCIAL_ADMIN_CONSOLE_READ_ONLY_RPC_PATHS,
+  FINANCIAL_ADMIN_QUARANTINED_SHELL_POST_PATHS,
   installFinancialReadOnlyGuard,
   type FinancialReadOnlyGuard,
 } from './helpers/financial-readonly-guard';
@@ -348,6 +349,7 @@ test.describe('Financial Admin production console certificate', () => {
       page,
       await installFinancialReadOnlyGuard(page, {
         allowedRpcPaths: FINANCIAL_ADMIN_CONSOLE_READ_ONLY_RPC_PATHS,
+        quarantinedPostPaths: FINANCIAL_ADMIN_QUARANTINED_SHELL_POST_PATHS,
       })
     );
   });

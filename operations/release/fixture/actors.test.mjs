@@ -636,3 +636,143 @@ test('only two matching authenticated sessions can start, endpoints remain local
     );
   }
 });
+
+for (const action of ['all_in', 'fold']) {
+  test(`published ${action} retains the answered pointer without another decision`, async (t) => {
+    const fixture = await harness(t, { state: snapshot(ids[0], 'original-turn') });
+    await fixture.start();
+    await until(() => fixture.actions.length === 1);
+    fixture.broadcast({
+      type: 'EVENT',
+      tableId,
+      seq: 10,
+      payload: { type: 'player_action', hand_number: 1, user_id: ids[0], action },
+    });
+    const patch =
+      action === 'all_in'
+        ? [
+            { op: 'replace', path: '/players/0/stack', value: 0 },
+            { op: 'replace', path: '/players/0/is_all_in', value: true },
+          ]
+        : [{ op: 'replace', path: '/players/0/is_folded', value: true }];
+    fixture.broadcast({
+      type: 'DELTA',
+      tableId,
+      prev: 1,
+      seq: 2,
+      patch: [...patch, { op: 'replace', path: '/action_context', value: 'answered-context' }],
+    });
+    await wait(450);
+    assert.deepEqual(fixture.failures, []);
+    assert.equal(fixture.actions.length, 1);
+    fixture.broadcast({
+      type: 'DELTA',
+      tableId,
+      prev: 2,
+      seq: 3,
+      patch: [{ op: 'add', path: '/server_time_ms', value: 123 }],
+    });
+    await wait(30);
+    assert.deepEqual(fixture.failures, []);
+    fixture.broadcast({
+      type: 'DELTA',
+      tableId,
+      prev: 3,
+      seq: 4,
+      patch: [
+        { op: 'replace', path: '/current_player', value: ids[1] },
+        { op: 'replace', path: '/turn_start_time_ms', value: 1791270329275 },
+        { op: 'replace', path: '/action_context', value: 'next-turn' },
+      ],
+    });
+    await until(() => fixture.actions.length === 2);
+    assert.equal(fixture.actions[1].actor, ids[1]);
+    assert.deepEqual(fixture.failures, []);
+  });
+}
+for (const variation of [
+  'missing-event',
+  'wrong-player',
+  'wrong-hand',
+  'replayed',
+  'new-clock',
+  'intervening-state',
+]) {
+  test(`inactive pointer refuses ${variation}`, async (t) => {
+    const fixture = await harness(t, { state: snapshot(ids[0], 'original') });
+    await fixture.start();
+    await until(() => fixture.actions.length === 1);
+    if (variation !== 'missing-event')
+      fixture.broadcast({
+        type: 'EVENT',
+        tableId,
+        seq: 10,
+        payload: {
+          type: 'player_action',
+          hand_number: variation === 'wrong-hand' ? 2 : 1,
+          user_id: variation === 'wrong-player' ? ids[1] : ids[0],
+          action: 'all_in',
+          replayed: variation === 'replayed',
+        },
+      });
+    let prev = 1;
+    if (variation === 'intervening-state') {
+      fixture.broadcast({
+        type: 'DELTA',
+        tableId,
+        prev: 1,
+        seq: 2,
+        patch: [{ op: 'add', path: '/server_time_ms', value: 1 }],
+      });
+      prev = 2;
+    }
+    fixture.broadcast({
+      type: 'DELTA',
+      tableId,
+      prev,
+      seq: prev + 1,
+      patch: [
+        { op: 'replace', path: '/players/0/stack', value: 0 },
+        { op: 'replace', path: '/players/0/is_all_in', value: true },
+        ...(variation === 'new-clock'
+          ? [{ op: 'replace', path: '/turn_start_time_ms', value: 1791270329275 }]
+          : []),
+      ],
+    });
+    await until(() => fixture.failures.length === 1);
+    assert.equal(fixture.failures[0], 'FIXTURE_ACTOR_DECISION_STATE');
+    assert.equal(fixture.actions.length, 1);
+  });
+}
+test('an accepted action may publish its reconnect grace clock with the inactive pointer', async (t) => {
+  const fixture = await harness(t, { state: snapshot(ids[0], 'original') });
+  await fixture.start();
+  await until(() => fixture.actions.length === 1);
+  fixture.broadcast({
+    type: 'EVENT',
+    tableId,
+    seq: 10,
+    payload: {
+      type: 'player_action',
+      hand_number: 1,
+      user_id: ids[0],
+      action: 'all_in',
+      timestamp: 1791270329775,
+    },
+  });
+  fixture.broadcast({
+    type: 'DELTA',
+    tableId,
+    prev: 1,
+    seq: 2,
+    patch: [
+      { op: 'replace', path: '/players/0/stack', value: 0 },
+      { op: 'replace', path: '/players/0/is_all_in', value: true },
+      { op: 'replace', path: '/turn_start_time_ms', value: 1791270329275 },
+      { op: 'replace', path: '/action_context', value: 'post-reconnect-all-in' },
+    ],
+  });
+  await wait(450);
+  assert.deepEqual(fixture.failures, []);
+  assert.equal(fixture.actions.length, 1);
+});

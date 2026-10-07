@@ -250,6 +250,13 @@ test('destination refusal diagnostics retain fixed categories without private er
     ['ERROR: 3F000: schema private does not exist', '3F000:schema-missing'],
     ['ERROR: 42710: private already exists', '42710:duplicate-destination-object'],
     ['ERROR: 42501: permission denied secret', '42501:destination-permission'],
+    [
+      'ERROR: 53200: out of shared memory\nHINT: You might need to increase max_locks_per_transaction. private',
+      '53200:shared-memory-lock-capacity',
+    ],
+    ['ERROR: 53200: out of shared memory private', '53200:shared-memory-unclassified'],
+    ['ERROR: 53200: out of memory private', '53200:server-memory-unavailable'],
+    ['ERROR: 53200: private unknown memory issue', '53200:server-memory-unclassified'],
     ['ERROR: 42501: must be owner of function private', '42501:destination-owner-required'],
     ['ERROR: 42501: must be superuser secret', '42501:destination-superuser-required'],
     [

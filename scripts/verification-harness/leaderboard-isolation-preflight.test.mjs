@@ -65,6 +65,8 @@ test('native schema restore compares primary and dedicated replica before and af
   ].map(([name, setting]) => ({ name, setting }));
   for (const scenario of [
     'success',
+    'minor-success',
+    'minor-drift',
     'feedback-before',
     'feedback-after',
     'promoted-before',
@@ -86,7 +88,11 @@ test('native schema restore compares primary and dedicated replica before and af
       if (scenario === 'feedback-after') after.feedback = 'on';
       if (scenario === 'promoted-before') before.in_recovery = false;
       if (scenario === 'promoted-after') after.in_recovery = false;
-      if (scenario === 'version') before.version_num = '170011';
+      if (scenario === 'version') before.version_num = '180001';
+      if (scenario === 'minor-success' || scenario === 'minor-drift') {
+        before.version_num = '170011';
+        after.version_num = scenario === 'minor-success' ? '170011' : '170012';
+      }
       if (scenario === 'lag') before.replay_lsn = '1/FFFFFFFF';
       const changedStartup = startup.map((row) =>
         row.name === 'max_connections' ? { ...row, setting: '100' } : row
@@ -138,10 +144,11 @@ ${block}
           CHANGED_STARTUP: JSON.stringify(changedStartup),
         },
       });
-      assert.equal(result.status, scenario === 'success' ? 0 : 42, `${scenario}: ${result.stderr}`);
+      const succeeds = scenario === 'success' || scenario === 'minor-success';
+      assert.equal(result.status, succeeds ? 0 : 42, `${scenario}: ${result.stderr}`);
       const routes = readFileSync(join(scratch, 'routes'), 'utf8');
       assert.ok(routes.startsWith('psql|primary\npsql|replica\n'));
-      if (scenario === 'success')
+      if (succeeds)
         assert.equal(routes, 'psql|primary\npsql|replica\npg_dump|replica\npsql|replica\n');
       if (
         [

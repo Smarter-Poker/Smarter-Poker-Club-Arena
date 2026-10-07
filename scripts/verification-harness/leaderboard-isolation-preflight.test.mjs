@@ -13,6 +13,33 @@ import './leaderboard-isolation-acl-order.test.mjs';
 
 const shell = fileURLToPath(new URL('./leaderboard-isolation-preflight.sh', import.meta.url));
 const source = readFileSync(shell, 'utf8');
+test('definition metadata is privately drift-checked before unchanged atomic restore and exact catalog', () => {
+  const before = source.indexOf('>"$scratch/definitions-before.sql"');
+  const dump = source.indexOf('source_client 600 pg_dump');
+  const after = source.indexOf('>"$scratch/definitions-after.sql"');
+  const stable = source.indexOf(
+    'cmp -s "$scratch/definitions-before.sql" "$scratch/definitions-after.sql"'
+  );
+  const restore = source.indexOf('cat "$scratch/event-owners-elevate.sql"');
+  const compare = source.indexOf('cmp -s "$scratch/source-before.json" "$scratch/isolated.json"');
+  assert.ok(
+    before > 0 &&
+      dump > before &&
+      after > dump &&
+      stable > after &&
+      restore > stable &&
+      compare > restore
+  );
+  assert.equal(
+    source.match(
+      /source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 \\\n  <"\$definition_bootstrap"/g
+    )?.length,
+    2
+  );
+  for (const suffix of ['before', 'after'])
+    assert.ok(source.includes(`chmod 600 "$scratch/definitions-${suffix}.sql"`));
+  assert.ok(source.includes('test -s "$definition_bootstrap"'));
+});
 test('exact source ACL replay is private, drift guarded and precedes full catalog comparison', () => {
   const before = source.indexOf('>"$scratch/acl-before.sql"');
   const dump = source.indexOf('source_client 600 pg_dump');
@@ -174,7 +201,7 @@ test('atomic archive validation preserves quoted routine bodies and refuses tran
   );
   assert.match(
     source,
-    /cat "\$scratch\/event-owners-elevate.sql" "\$scratch\/remaining.sql" "\$scratch\/extension-triggers-before.sql" "\$scratch\/event-owners-restore.sql"[\s\S]*--single-transaction[\s\S]*--file=-/
+    /cat "\$scratch\/event-owners-elevate.sql" "\$scratch\/remaining.sql" "\$scratch\/extension-triggers-before.sql" "\$scratch\/definitions-before.sql" "\$scratch\/event-owners-restore.sql"[\s\S]*--single-transaction[\s\S]*--file=-/
   );
   assert.match(source, /isolated catalog differs from current source/);
 });
@@ -190,6 +217,7 @@ test('actual restore input prepares all private files before one transactional c
       ['event-owners-elevate.sql', 'ELEVATE\n'],
       ['remaining.sql', 'ARCHIVE\n'],
       ['extension-triggers-before.sql', 'TRIGGERS\n'],
+      ['definitions-before.sql', 'DEFINITIONS\n'],
       ['event-owners-restore.sql', 'RESTORE\n'],
     ])
       writeFileSync(join(scratch, name), content, { mode: 0o600, flag: 'wx' });
@@ -208,7 +236,7 @@ test('actual restore input prepares all private files before one transactional c
       assert.equal(result.status, status);
       assert.equal(
         readFileSync(join(scratch, 'schema-restore.log'), 'utf8'),
-        'ELEVATE\nARCHIVE\nTRIGGERS\nRESTORE\n'
+        'ELEVATE\nARCHIVE\nTRIGGERS\nDEFINITIONS\nRESTORE\n'
       );
       assert.equal(result.stderr, '');
     }

@@ -102,7 +102,10 @@ const TX_TYPES: Record<string, { icon: string; label: string; color: string }> =
   promo_code: { icon: 'ticket', label: 'Promo Code', color: '#38bdf8' },
   refund: { icon: 'refresh', label: 'Refund', color: '#94a3b8' },
   adjustment: { icon: 'settings', label: 'Adjustment', color: '#94a3b8' },
-  mint: { icon: 'coin', label: 'Chip Mint', color: '#38bdf8' },
+  /* `mint` in THIS ledger is a diamond grant (a signup grant, a Lifetime VIP
+     monthly benefit), never chips, and the Mint itself is internal (Dan,
+     2026-09-05). It used to say "Chip Mint". 2026-10-07. */
+  mint: { icon: 'gift', label: 'Bonus Diamonds', color: '#38bdf8' },
   diamond_purchase: { icon: 'gem', label: 'Diamond Purchase', color: '#00d4ff' },
   diamond_deduction: { icon: 'gem', label: 'Diamond Spent', color: '#ef4444' },
   diamond_reward: { icon: 'gem', label: 'Diamond Reward', color: '#38bdf8' },

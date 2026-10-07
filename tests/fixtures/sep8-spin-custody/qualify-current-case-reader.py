@@ -49,13 +49,28 @@ def qualify(root, fix, out, cmd, run, schema):
 BEGIN;
 SET LOCAL session_replication_role=replica;
 CREATE TABLE sep8_spin_fixture.reader_population(id uuid PRIMARY KEY);
-WITH source AS (SELECT h.* FROM public.hand_history h WHERE tournament_id<>'199a71a9-f364-4e90-a3ba-3cdcfb7755bc' LIMIT 1),
+WITH source AS (
+ SELECT h.* FROM public.hand_history h
+ WHERE h.tournament_id IS NOT NULL
+ AND h.tournament_id<>'199a71a9-f364-4e90-a3ba-3cdcfb7755bc'
+ AND NOT EXISTS (SELECT 1 FROM public.tables t WHERE t.id=h.table_id AND t.tournament_id='199a71a9-f364-4e90-a3ba-3cdcfb7755bc')
+ ORDER BY h.id LIMIT 1
+),
 rows AS (
  SELECT r.* FROM source s,generate_series(1,30000) n,
  jsonb_populate_record(NULL::public.hand_history,to_jsonb(s)||jsonb_build_object('id',md5('spin-reader-scale:'||n)::uuid,'hand_number',200000000+n)) r
 ), inserted AS (INSERT INTO public.hand_history SELECT * FROM rows RETURNING id)
 INSERT INTO sep8_spin_fixture.reader_population SELECT id FROM inserted;
 SET LOCAL session_replication_role=origin;
+SELECT sep8_spin_fixture.assert(
+ (SELECT count(*) FROM sep8_spin_fixture.reader_population)=30000,
+ 'Reader scale population must contain exactly 30000 inserted rows');
+SELECT sep8_spin_fixture.assert(
+ (SELECT count(*) FROM sep8_spin_fixture.reader_population p JOIN public.hand_history h ON h.id=p.id
+  WHERE h.tournament_id IS NOT NULL
+  AND h.tournament_id<>'199a71a9-f364-4e90-a3ba-3cdcfb7755bc'
+  AND NOT EXISTS (SELECT 1 FROM public.tables t WHERE t.id=h.table_id AND t.tournament_id='199a71a9-f364-4e90-a3ba-3cdcfb7755bc'))=30000,
+ 'Reader scale population must be disjoint from direct tournament and target-table history scope');
 COMMIT;
 ANALYZE public.hand_history;
 ANALYZE public.tables;

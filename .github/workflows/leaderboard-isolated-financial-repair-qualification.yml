@@ -1,0 +1,89 @@
+# Source-only candidate qualification wiring. Never a production install/release.
+name: Leaderboard Isolated Financial Repair Qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: One Candidate Mode; Fresh Restore And Original Catalog Guard
+        required: true
+        type: choice
+        options:
+          - v2-payout
+          - capture-compatibility
+          - opening
+          - worker
+          - historical-replay
+          - concurrency
+          - unknown-ack
+
+permissions:
+  contents: read
+
+concurrency:
+  group: leaderboard-isolated-financial-repair-qualification
+  cancel-in-progress: false
+
+jobs:
+  qualify-isolated-candidate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check Immutable Candidate Source Contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git rev-parse HEAD
+          for command in docker timeout sha256sum cmp node mktemp bash shellcheck head cp; do
+            command -v "$command" >/dev/null
+          done
+          bash scripts/verification-harness/leaderboard-isolation-preflight.sh --check
+          node --check scripts/verification-harness/leaderboard-financial-repair-integration-candidate.mjs
+          node --test scripts/verification-harness/leaderboard-isolated-historical-replay-candidate.test.mjs
+          node --test scripts/verification-harness/leaderboard-concurrency-repair-candidate.test.mjs
+          node --test scripts/verification-harness/leaderboard-financial-repair-integration-candidate.test.mjs scripts/verification-harness/leaderboard-worker-candidate.test.mjs scripts/verification-harness/leaderboard-capture-basis-regression-candidate.test.mjs scripts/verification-harness/leaderboard-promo-payout-candidate.test.mjs scripts/verification-harness/leaderboard-promo-config-candidate.test.mjs scripts/verification-harness/leaderboard-promo-opening-candidate.test.mjs scripts/verification-harness/leaderboard-complete-ranking-candidate.test.mjs scripts/verification-harness/leaderboard-isolated-opening-policy-draft.test.mjs scripts/verification-harness/leaderboard-isolation-startup-profile.test.mjs scripts/verification-harness/leaderboard-isolation-catalog-diagnostic.test.mjs
+      - name: Run One Fresh Catalog Guarded Isolated Candidate
+        shell: bash
+        env:
+          REPAIR_MODE: ${{ inputs.mode }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          LEADERBOARD_ISOLATION_SCRATCH_PARENT: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          umask 077
+          case "$REPAIR_MODE" in
+            v2-payout|capture-compatibility|opening|worker|historical-replay|concurrency|unknown-ack) ;;
+            *) echo 'Exactly One Supported Candidate Mode Is Required.' >&2; exit 1 ;;
+          esac
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ && "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
+          harness="$GITHUB_WORKSPACE/scripts/verification-harness"
+          candidate="$(mktemp "$harness/leaderboard-financial-repair-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.XXXXXX.sh")"
+          cleanup_candidate() {
+            local status=$?
+            trap - EXIT
+            if ! rm -f -- "$candidate"; then
+              echo 'Owned Generated Candidate Cleanup Failed.' >&2
+              [[ "$status" != 0 ]] || status=1
+            elif [[ -e "$candidate" ]]; then
+              echo 'Owned Generated Candidate Still Exists.' >&2
+              [[ "$status" != 0 ]] || status=1
+            fi
+            exit "$status"
+          }
+          trap cleanup_candidate EXIT
+          # Maintained preflight input, never the Auth shell or baseline runner.
+          # No accepted expected-failure branch, provider mutation or raw artifact.
+          node "$harness/leaderboard-financial-repair-integration-candidate.mjs" "$REPAIR_MODE" >"$candidate"
+          bash -n "$candidate"
+          shellcheck "$candidate"
+          bash "$candidate" --check
+          bash "$candidate"

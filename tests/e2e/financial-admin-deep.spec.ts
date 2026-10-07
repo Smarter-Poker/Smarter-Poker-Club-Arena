@@ -165,9 +165,21 @@ async function expectPaintedConsole(root: Locator): Promise<void> {
 }
 
 async function expectNoRawBackendCopy(root: Locator): Promise<void> {
-  const copy = await root.evaluate((element) => (element as HTMLElement).innerText);
+  const { copy, copyWithoutPlayerNames } = await root.evaluate((element) => {
+    const text = (element as HTMLElement).innerText;
+    // A player's poker alias is the player's own words, not backend copy:
+    // "the_kicker" and "whale_77" are real SHARK CLUB agent handles (run
+    // 37562538452, Credit Admin) and must print exactly as chosen. Only text the
+    // page marks data-player-name is set aside, and only from the raw-enum scan.
+    const names = Array.from(element.querySelectorAll<HTMLElement>('[data-player-name]'))
+      .map((node) => node.innerText.trim())
+      .filter(Boolean);
+    let withoutNames = text;
+    for (const name of names) withoutNames = withoutNames.split(name).join(' ');
+    return { copy: text, copyWithoutPlayerNames: withoutNames };
+  });
   expect(copy).not.toMatch(UUID_IN_COPY);
-  expect(copy).not.toMatch(RAW_ENUM_IN_COPY);
+  expect(copyWithoutPlayerNames).not.toMatch(RAW_ENUM_IN_COPY);
 }
 
 async function expectTouchSafeControls(root: Locator): Promise<void> {

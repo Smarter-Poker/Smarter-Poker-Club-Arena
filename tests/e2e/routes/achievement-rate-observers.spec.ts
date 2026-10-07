@@ -140,7 +140,11 @@ test.describe('Visible achievement and rate history readers', () => {
     expect(rows.length, 'the settlement observer needs a real rendered cycle').toBeGreaterThan(0);
     await expect(page.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
     await expect(page.getByText('No Settlement Cycles Yet', { exact: true })).toHaveCount(0);
-    await expect(page.getByText(/^Period:/).first()).toBeVisible({ timeout: 30_000 });
+    // A cycle is headed by its split week number ("Period 1"), or "Settlement
+    // Cycle" when the split carries none; the period UUID is never printed.
+    await expect(page.getByText(/^(?:Period \d[\d,]*|Settlement Cycle)$/).first()).toBeVisible({
+      timeout: 30_000,
+    });
     await expectPhoneFit(page);
   });
   test('a reserved owner notification invalidates progress without inventing an unlock', async ({

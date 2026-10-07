@@ -2,6 +2,11 @@ name: Leaderboard Isolated Actual Auth Qualification
 
 on:
   workflow_dispatch:
+    inputs:
+      replica_descriptor:
+        description: Reviewed Dedicated Read Replica Provider Metadata; No Credentials
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -34,11 +39,16 @@ jobs:
           node --check scripts/verification-harness/leaderboard-real-auth-draft.mjs
           node --check scripts/verification-harness/leaderboard-delegated-role-matrix.mjs
           node --check scripts/verification-harness/leaderboard-isolation-catalog-diagnostic.mjs
+          node --check scripts/verification-harness/leaderboard-schema-replica.mjs
+          node --test scripts/verification-harness/leaderboard-schema-replica.test.mjs
           node --test scripts/verification-harness/leaderboard-isolation-catalog-diagnostic.test.mjs
           node --test --test-name-pattern='native schema restore compares' scripts/verification-harness/leaderboard-isolation-preflight.test.mjs
           node --test scripts/verification-harness/leaderboard-real-auth-launcher-draft.test.mjs scripts/verification-harness/leaderboard-delegated-role-matrix.test.mjs scripts/verification-harness/leaderboard-signup-fixture-draft.test.mjs scripts/verification-harness/leaderboard-auth-integration-candidate.test.mjs scripts/verification-harness/leaderboard-isolation-startup-profile.test.mjs
       - name: Qualify actual Auth in a faithfully restored disposable database
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          LEADERBOARD_SCHEMA_REPLICA_DESCRIPTOR: ${{ inputs.replica_descriptor }}
           LEADERBOARD_ISOLATION_SCRATCH_PARENT: ${{ runner.temp }}
-        run: bash scripts/verification-harness/leaderboard-isolated-auth-qualification.sh
+        run: |
+          test -n "$LEADERBOARD_SCHEMA_REPLICA_DESCRIPTOR"
+          bash scripts/verification-harness/leaderboard-isolated-auth-qualification.sh

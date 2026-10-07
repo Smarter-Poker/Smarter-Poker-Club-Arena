@@ -12,7 +12,7 @@
  *      door;
  *   3. on the arena, the light scheme is published on its own attribute
  *      (`data-arena-scheme`) and not by rewriting the player's `data-theme`;
- *   4. the closed-arena copy is shown, a refresh on the route keeps the arena,
+ *   4. controls match the current server switches, a refresh keeps the arena,
  *      and walking back out takes the scheme away again. A scheme that is
  *      applied but never removed reads as correct on the arena and turns the
  *      chip estate white.
@@ -31,6 +31,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
+import { parseDiamondDoorContext } from './helpers/diamond-door-context';
 
 const ARENA_ROUTE = 'clubs/diamond-arena';
 /* Leaving the arena, by a route inside this app that no account is refused
@@ -144,23 +145,65 @@ for (const [orientation, viewport] of ORIENTATIONS) {
       expect(theme === null || theme === 'dark' || theme === 'light').toBe(true);
     });
 
-    test('says the arena is not open yet while its switch is off', async ({ page }) => {
+    test('matches the arena controls to the current server switches', async ({ page }) => {
+      // Observe the real boundary read before navigation. Missing/error/malformed
+      // authority is a failure, never evidence that either door is closed.
+      const contextRead = page
+        .waitForResponse(
+          (response) => {
+            if (!new URL(response.url()).pathname.endsWith('/rpc/fn_poker_arena_context'))
+              return false;
+            return response.request().postDataJSON()?.p_club_key === 'diamond-arena';
+          },
+          { timeout: 10_000 }
+        )
+        .then(async (response) => {
+          if (!response.ok()) throw new Error(`Arena context returned HTTP ${response.status()}`);
+          return { context: parseDiamondDoorContext(await response.json()), error: null };
+        })
+        .catch((error: unknown) => ({ context: null, error: String(error) }));
       const { onArena, why } = await openArena(page);
       test.skip(!onArena, why);
-      /* Both switches are off, and neither is ours to flip: the seat card and
-         the registration card each carry the same label. If the lobby never
-         rendered a card, that is a third outcome too, not a verdict. */
-      const label = page.getByText(CLOSED_COPY).first();
-      const appeared = await label
-        .waitFor({ state: 'visible', timeout: 20_000 })
-        .then(() => true)
-        .catch(() => false);
-      test.skip(
-        !appeared,
-        'the arena lobby did not render a seat or registration card within 20s, so the ' +
-          'closed-arena copy could not be read. This case reports that rather than passing.'
+      const authority = await contextRead;
+      expect(authority.error, 'the actual arena switch read could not be verified').toBeNull();
+      const context = authority.context!;
+      const cards = page.getByTestId('arena-lobby-game-card');
+      await cards.first().waitFor({ state: 'visible', timeout: 20_000 });
+      // data-kind belongs to the wrapper itself, so filter by that attribute.
+      const cashCards = page.locator('[data-testid="arena-lobby-game-card"][data-kind="cash"]');
+      expect(await cashCards.count(), 'the arena stake ladder did not render').toBeGreaterThan(0);
+      await expect(cashCards.first().locator('button[data-zone="primaryAction"]')).toBeVisible();
+      const closedCash = cashCards.getByRole('button', { name: CLOSED_COPY, exact: true });
+      if (context.cashGamesEnabled) {
+        await expect(closedCash).toHaveCount(0);
+      } else {
+        const eligible = page.locator(
+          '[data-testid="arena-lobby-game-card"][data-kind="cash"]:not([data-status="full"]):not([data-status="waitlist"]):not([data-status="closed"])'
+        );
+        for (const card of await eligible.all())
+          await expect(card.getByRole('button', { name: CLOSED_COPY, exact: true })).toBeDisabled();
+      }
+      const tournamentCards = page.locator(
+        '[data-testid="arena-lobby-game-card"][data-kind="mtt"]'
       );
-      await expect(label).toBeVisible();
+      const closedRegistration = tournamentCards.getByRole('button', {
+        name: CLOSED_COPY,
+        exact: true,
+      });
+      if (context.tournamentsEnabled) await expect(closedRegistration).toHaveCount(0);
+      else {
+        const eligible = page.locator(
+          '[data-testid="arena-lobby-game-card"][data-kind="mtt"][data-status="registering"], [data-testid="arena-lobby-game-card"][data-kind="mtt"][data-status="starting_soon"], [data-testid="arena-lobby-game-card"][data-kind="mtt"][data-status="late_reg"]'
+        );
+        for (const card of await eligible.all())
+          await expect(card.getByRole('button', { name: CLOSED_COPY, exact: true })).toBeDisabled();
+      }
+      // An empty live tournament catalogue cannot qualify a negative register
+      // branch. Its rendered closed/open controls are exercised in isolation.
+      test.info().annotations.push({
+        type: 'arena-door-state',
+        description: JSON.stringify({ ...context, tournamentCards: await tournamentCards.count() }),
+      });
       expect((await horizontalOverflow(page)).root).toBeLessThanOrEqual(1);
     });
   });

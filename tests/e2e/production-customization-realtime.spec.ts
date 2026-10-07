@@ -216,7 +216,10 @@ async function expectAppearance(studio: Locator, appearance: Appearance) {
     } catch (diagnosticError) {
       throw new AggregateError(
         [error, diagnosticError],
-        'Appearance assertion and diagnostic attachment both failed.'
+        withCauses('Appearance assertion and diagnostic attachment both failed.', [
+          error,
+          diagnosticError,
+        ])
       );
     }
     throw error;

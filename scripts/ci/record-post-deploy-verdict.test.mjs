@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { decide, readVerdict, classifyCancelledLanes, coverageOf, FLEET_TASK_ID } from './record-post-deploy-verdict.mjs';
+import { decide, readVerdict, classifyCancelledLanes, coverageOf, settleOtherEpisodes, FLEET_TASK_ID } from './record-post-deploy-verdict.mjs';
 
 const LANES = [
   'The Live SEO Contract Holds',
@@ -563,4 +563,37 @@ test('with an episode open, no green verdict is silently dropped and only a cove
     assert.equal(out.action, expected);
     assert.equal(out.payload.target_task_id, FLEET_TASK_ID);
   }
+});
+
+// THE FORK OF 2026-10-07, 13:53Z. e951244 opened at 13:12Z on 68b28e5b and was
+// still firing when run 37625799569 (91c98ed7) failed; the recorder of that
+// hour read an info receipt as the newest row and minted 57e641b3 beside it.
+// The newest-episode rule alone would never close e951244. Each open episode
+// is judged on its own releases.
+const R91C = '91c98ed73477790369ab0f96424c674559c6783c';
+const R886 = '886213752243a060e9f3c45901dcea5d24b58d0a';
+const FORK = lineage([R365, RB6A, R68B, R86E, R91C, R886]);
+const E951 = { event_key: 'e951244168fae5f5', status: 'firing', investigation_status: 'new', head_sha: R68B, delivery_count: 1 };
+
+test('a success settles an older open episode it covers, beside the newest', () => {
+  const settled = settleOtherEpisodes(greenRun('9001', R886), [{ episode: E951, history: { failedReleases: [], relate: FORK } }]);
+  assert.equal(settled.length, 1);
+  assert.equal(settled[0].action, 'resolve');
+  assert.equal(settled[0].eventKey, 'e951244168fae5f5:resolved');
+  assert.deepEqual(settled[0].payload.covers_failed_releases, [R68B]);
+});
+
+test('an older open episode is never closed by a success older than its failure', () => {
+  const settled = settleOtherEpisodes(greenRun('9002', RB6A), [{ episode: E951, history: { failedReleases: [], relate: FORK } }]);
+  assert.equal(settled[0].action, 'stale');
+  assert.deepEqual(settled[0].payload.newer_failed_releases, [R68B]);
+});
+
+test('a failing or non-verdict run settles no other episode', () => {
+  const failing = verdict({ headSha: R886, lanes: [{ name: LANES[1], result: 'failure' }] });
+  assert.deepEqual(settleOtherEpisodes(failing, [{ episode: E951, history: { failedReleases: [], relate: FORK } }]), []);
+  const stoodDown = verdict({ headSha: R886, gate: { name: GATE, result: 'success', shouldRun: '' } });
+  assert.deepEqual(settleOtherEpisodes(stoodDown, [{ episode: E951, history: { failedReleases: [], relate: FORK } }]), []);
+  const closed = { ...E951, investigation_status: 'verified_fixed' };
+  assert.deepEqual(settleOtherEpisodes(greenRun('9003', R886), [{ episode: closed, history: { failedReleases: [], relate: FORK } }]), []);
 });

@@ -335,6 +335,31 @@ export function coverageOf(headSha, previous, history) {
 }
 
 /**
+ * A SUCCESS SETTLES EVERY OPEN EPISODE IT COVERS, NOT ONLY THE NEWEST (2026-10-07).
+ *
+ * decide() reads the newest episode. An older episode can still be open beside
+ * it: on 2026-10-07 the 13:53Z failure (run 37625799569) minted episode 57e641b3
+ * while e951244 (opened 13:12Z on 68b28e5b) was still firing, because the
+ * recorder of that hour read an info receipt as "the newest row" and saw no
+ * open episode. Nothing would ever have closed e951244. Each other open
+ * episode is judged on its own failed releases, by the same rule: only a
+ * success that covers all of them resolves it; otherwise it is recorded stale
+ * or could-not-tell, and stays open. A failing or non-verdict run settles
+ * nothing here.
+ *
+ * episodes = [{ episode, history }], episode shaped as decide()'s previous.
+ */
+export function settleOtherEpisodes(verdict, episodes) {
+  const settled = [];
+  for (const { episode, history } of episodes || []) {
+    if (!episode || episode.status !== 'firing' || CLOSED.includes(episode.investigation_status)) continue;
+    const outcome = decide(verdict, episode, history);
+    if (['resolve', 'stale', 'could-not-tell'].includes(outcome.action)) settled.push(outcome);
+  }
+  return settled;
+}
+
+/**
  * Did each CANCELLED lane ever start? Read from the run's own job record.
  *
  * Returns { [laneName]: 'replaced' | 'started' | 'unknown' } for every name
@@ -459,22 +484,35 @@ async function main() {
         WHERE source = $1 AND alertname = $2 AND status IN ('firing', 'resolved')
         ORDER BY last_received_at DESC, id DESC LIMIT 1
         FOR UPDATE`, [verdict.source, verdict.alertName]);
-    let history = {};
-    if (previous && previous.status === 'firing') {
+    const historyOf = async (episodeKey) => {
       const { rows } = await db.query(
         `SELECT payload->>'head_sha' AS head_sha, delivery_count
            FROM public.operational_alert_events
           WHERE source = $1 AND alertname = $2 AND status = 'info'
             AND payload->>'kind' = 'failed-release' AND payload->>'episode' = $3`,
-        [verdict.source, verdict.alertName, previous.event_key]);
-      history = { failedReleases: rows, relate: classifyRepositoryLineage };
-    }
+        [verdict.source, verdict.alertName, episodeKey]);
+      return { failedReleases: rows, relate: classifyRepositoryLineage };
+    };
+    const history = previous && previous.status === 'firing' ? await historyOf(previous.event_key) : {};
     const outcome = decide(verdict, previous, history);
-    if (outcome.action === 'none') {
-      await db.query('COMMIT');
-      console.log(`ok    ${outcome.reason}`);
-      return;
-    }
+
+    // Every other episode still open beside the newest one (see settleOtherEpisodes).
+    const { rows: others } = await db.query(
+      `SELECT e.id, e.event_key, e.status, e.investigation_status, e.delivery_count,
+              e.payload->>'head_sha' AS head_sha
+         FROM public.operational_alert_events e
+        WHERE e.source = $1 AND e.alertname = $2 AND e.status = 'firing'
+          AND e.investigation_status <> ALL($3::text[])
+          AND e.event_key <> $4
+          AND NOT EXISTS (SELECT 1 FROM public.operational_alert_events r
+                           WHERE r.source = e.source AND r.event_key = e.event_key || ':resolved')
+        ORDER BY e.id
+        FOR UPDATE OF e`,
+      [verdict.source, verdict.alertName, CLOSED, previous ? previous.event_key : '']);
+    const earlier = [];
+    for (const episode of others) earlier.push({ episode, history: await historyOf(episode.event_key) });
+    const settled = settleOtherEpisodes(verdict, earlier);
+
     const record = async (eventKey, status, severity, payload) => {
       const { rows: [receipt] } = await db.query(
         'SELECT public.fn_record_operational_alert($1,$2,$3,$4,$5,$6::jsonb) AS id',
@@ -482,27 +520,43 @@ async function main() {
       if (!receipt || !(Number(receipt.id) > 0)) throw new Error('operational inbox returned no receipt');
       return receipt.id;
     };
-    const status = outcome.action === 'fire' ? 'firing' : outcome.action === 'resolve' ? 'resolved' : 'info';
-    const id = await record(outcome.eventKey, status, outcome.severity, outcome.payload);
+    const statusOf = (action) => (action === 'fire' ? 'firing' : action === 'resolve' ? 'resolved' : 'info');
+    const labelOf = (action) => (action === 'stale' ? 'STALE (closes nothing)'
+      : action === 'could-not-tell' ? 'COULD NOT TELL (closes nothing)' : statusOf(action));
+
+    let id = null;
     let occurrenceId = null;
-    if (outcome.occurrence) {
-      occurrenceId = await record(outcome.occurrence.eventKey, 'info', outcome.occurrence.severity,
-        outcome.occurrence.payload);
+    if (outcome.action !== 'none') {
+      id = await record(outcome.eventKey, statusOf(outcome.action), outcome.severity, outcome.payload);
+      if (outcome.occurrence) {
+        occurrenceId = await record(outcome.occurrence.eventKey, 'info', outcome.occurrence.severity,
+          outcome.occurrence.payload);
+      }
+    }
+    const settledIds = [];
+    for (const other of settled) {
+      settledIds.push(await record(other.eventKey, statusOf(other.action), other.severity, other.payload));
     }
     await db.query('COMMIT');
-    const label = outcome.action === 'stale' ? 'STALE (closes nothing)'
-      : outcome.action === 'could-not-tell' ? 'COULD NOT TELL (closes nothing)' : status;
-    console.log(`${label}: operational alert ${id} (${verdict.source}/${verdict.alertName})`);
-    if (outcome.reason) console.log(`      ${outcome.reason}`);
+
+    if (outcome.action === 'none') console.log(`ok    ${outcome.reason}`);
+    else console.log(`${labelOf(outcome.action)}: operational alert ${id} (${verdict.source}/${verdict.alertName})`);
+    if (outcome.action !== 'none' && outcome.reason) console.log(`      ${outcome.reason}`);
     if (outcome.action === 'fire') {
       console.log(`      failed release receipt: ${occurrenceId} (${outcome.occurrence.payload.head_sha || 'release unknown'})`);
       console.log(`      failed: ${outcome.payload.failed_jobs.join(', ') || 'none'}`);
       console.log(`      skipped: ${outcome.payload.skipped_jobs.join(', ') || 'none'}`);
       console.log(`      could not tell: ${outcome.payload.could_not_tell_jobs.join(', ') || 'none'}`);
     }
-    if (process.env.GITHUB_STEP_SUMMARY && (outcome.action === 'stale' || outcome.action === 'could-not-tell')) {
-      appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-        `${label}: this success did not close the open episode. ${outcome.reason}\n`);
+    settled.forEach((other, i) => {
+      console.log(`${labelOf(other.action)}: earlier open episode ${other.payload.resolves || other.payload.episode} -> alert ${settledIds[i]}`);
+      if (other.reason) console.log(`      ${other.reason}`);
+    });
+    const unclosed = [outcome, ...settled].filter((o) => o.action === 'stale' || o.action === 'could-not-tell');
+    if (process.env.GITHUB_STEP_SUMMARY && unclosed.length > 0) {
+      appendFileSync(process.env.GITHUB_STEP_SUMMARY, unclosed
+        .map((o) => `${labelOf(o.action)}: this success did not close episode ${o.payload.episode}. ${o.reason}\n`)
+        .join(''));
     }
   } catch (error) {
     await db.query('ROLLBACK').catch(() => {});

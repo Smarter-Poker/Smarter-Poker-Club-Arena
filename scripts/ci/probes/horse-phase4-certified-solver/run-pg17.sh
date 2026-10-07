@@ -130,11 +130,14 @@ awk '/^-- EXECUTABLE ROLLBACK:/{copy=1;next} /^-- END EXECUTABLE ROLLBACK/{copy=
   "$ROOT/supabase/migrations/20261007030040_the_solver_binds_immutable_feature_contracts.sql" > "$WORK/feature-rollback.sql"
 "${PSQL[@]}" -f "$WORK/feature-rollback.sql"
 ROLLBACK_HASH=$("${PSQL[@]}" -Atc "select md5(pg_get_functiondef('public.fn_gto_v31_build_cell(uuid,jsonb)'::regprocedure));")
-[[ "$ROLLBACK_HASH" == 'fc7eb5e3be9a52b6dc83db65900edc50' ]]
+[[ "$ROLLBACK_HASH" == 'fc7eb5e3be9a52b6dc83db65900edc50' ]] || { echo "V31 feature rollback build postimage mismatch: $ROLLBACK_HASH" >&2; exit 1; }
 LEGACY_VALID=$("${PSQL[@]}" -Atc "select public.fn_gto_v31_hand_matrix_valid('{\"AKo:21\":{\"check\":1}}'::jsonb,'flop');")
-[[ "$LEGACY_VALID" == 't' ]]
-LEGACY_COMPACT_VALID=$("${PSQL[@]}" -Atc "select public.fn_gto_v31_compact_matrices_valid('{\"AKo:21\":{\"c\":1}}'::jsonb,'{\"c\":{\"family\":\"check\",\"size_unit\":\"none\",\"size_value\":null,\"all_in\":false}}'::jsonb,'{\"AKo:21\":1}'::jsonb,'{\"AKo:21\":{\"c\":1}}'::jsonb,'flop');")
-[[ "$LEGACY_COMPACT_VALID" == 't' ]]
+[[ "$LEGACY_VALID" == 't' ]] || { echo "V31 feature rollback legacy matrix rejected: $LEGACY_VALID" >&2; exit 1; }
+# A compact policy requires at least two legal actions, even after legacy rollback.
+LEGACY_COMPACT_VALID=$("${PSQL[@]}" -Atc "select public.fn_gto_v31_compact_matrices_valid('{\"AKo:21\":{\"c\":1,\"b50\":0}}'::jsonb,'{\"c\":{\"family\":\"check\",\"size_unit\":\"none\",\"size_value\":null,\"all_in\":false},\"b50\":{\"family\":\"bet\",\"size_unit\":\"pot_fraction\",\"size_value\":0.5,\"all_in\":false}}'::jsonb,'{\"AKo:21\":1}'::jsonb,'{\"AKo:21\":{\"c\":1,\"b50\":2}}'::jsonb,'flop');")
+[[ "$LEGACY_COMPACT_VALID" == 't' ]] || { echo "V31 feature rollback legacy compact matrix rejected: $LEGACY_COMPACT_VALID" >&2; exit 1; }
+LEGACY_SINGLE_ACTION_VALID=$("${PSQL[@]}" -Atc "select public.fn_gto_v31_compact_matrices_valid('{\"AKo:21\":{\"c\":1}}'::jsonb,'{\"c\":{\"family\":\"check\",\"size_unit\":\"none\",\"size_value\":null,\"all_in\":false}}'::jsonb,'{\"AKo:21\":1}'::jsonb,'{\"AKo:21\":{\"c\":1}}'::jsonb,'flop');")
+[[ "$LEGACY_SINGLE_ACTION_VALID" == 'f' ]] || { echo "V31 feature rollback accepted single-action compact policy: $LEGACY_SINGLE_ACTION_VALID" >&2; exit 1; }
 echo V31_FEATURE_ROLLBACK_OK
 # The exact blank-line-preserving rollback restores canonical legacy bodies.
 # Recover the two versioned UUID-owning functions before their correction: the immutable

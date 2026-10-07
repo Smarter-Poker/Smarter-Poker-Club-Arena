@@ -1890,7 +1890,25 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
   /**
    * POST /admin/pause — Bible V8 §6.17: Admin pause. Current hand finishes, then no new hands.
    */
-  public adminPause(reason?: string): { success: boolean } {
+  public async requestOperatorHold(
+    paused: boolean,
+    actorId: string,
+    commandId: string,
+    reason?: string
+  ): Promise<{ success: true; admin_paused: boolean; paused: boolean; command_id: string }> {
+    const held = await this.persistOperatorHold(paused, actorId, commandId);
+    // Replay returns CURRENT state, so an old pause cannot undo a later resume.
+    if (held) this.adminPause(reason);
+    else this.adminResume();
+    return {
+      success: true,
+      admin_paused: held,
+      paused: this.isNextHandPaused() || this.handForHandPaused,
+      command_id: commandId,
+    };
+  }
+
+  protected adminPause(reason?: string): { success: boolean } {
     this.adminPauseLock = true;
     console.log(
       `[ServerTableEngine:${this.tableId}] Admin pause activated${reason ? `: ${reason}` : ''}`
@@ -1909,7 +1927,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
   /**
    * POST /admin/resume — Bible V8 §6.17: Resume dealing after admin pause.
    */
-  public adminResume(): { success: boolean } {
+  protected adminResume(): { success: boolean } {
     this.adminPauseLock = false;
     // Clearing the operator's request cannot announce or transition a resume
     // while a different owner still holds this table.

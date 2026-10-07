@@ -17,6 +17,7 @@ LEGACY_CHECKPOINT_SHA=2f4e33560bcd23bfb5cc731f31816b2c2e2847e5
 CHECKPOINT_758_SHA=758610f3f844406bbbaee2f5100ced36d84fb943
 CHECKPOINT_A0_SHA=a0ab287d902879280f0c915e44f5222c5db4d7df
 CHECKPOINT_8825_SHA=8825af51817f379c4261658ca29ecc9d8d81932d
+CHECKPOINT_OPERATOR_SHA=6b1af5c5fb11b158c3c8871b93360df566ad7a49
 REPO_DIR="${REPO_DIR:-/opt/club-arena}"
 ENV_FILE="${ENV_FILE:-$REPO_DIR/server/.env}"
 REQUEST_ROOT="${ENGINE_RELEASE_REQUEST_ROOT:-/var/lib/club-arena/engine-release-requests}"
@@ -1300,13 +1301,20 @@ print(values[0])
   role_label="$(bounded_break_command 8 docker container inspect -f '{{index .Config.Labels "sp.role"}}' "$CONTAINER")"
   restart_policy="$(bounded_break_command 8 docker container inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$CONTAINER")"
   autoheal_state="$(bounded_break_command 8 docker container inspect -f '{{.State.Status}}' sp-autoheal)"
+  rollback_operator_spec="$(bounded_break_command 8 docker container inspect --format '{"id":{{json .Id}},"image":{{json .Image}},"startedAt":{{json .State.StartedAt}},"pid":{{json .State.Pid}},"cmd":{{json .Config.Cmd}},"mounts":{{json .Mounts}}}' "$CONTAINER" \
+    | python3 "$CONTROL_DIR/operator-hold-run-spec.py" "$rollback_sha")" \
+    || die 'rollback readiness found an unqualified operator hold run specification'
+  rollback_autoheal_policy="$(bounded_break_command 8 docker container inspect -f '{{.HostConfig.RestartPolicy.Name}}' sp-autoheal)"
   [[ "$rollback_cid" =~ ^[0-9a-f]{64}$ ]] && [ -n "$rollback_started_at" ] \
     && [ "$actual_image" = "$rollback_image" ] && [ "$state" = running ] \
     && { [ "$actual_release" = "$rollback_sha" ] \
       || { [ "$rollback_legacy" = true ] && [ -z "$actual_release" ]; }; } \
     && [ "$autoheal_label" = true ] && [ "$role_label" = engine ] \
-    && [ "$restart_policy" = always ] && [ "$autoheal_state" = running ] \
+    && { { [ "$rollback_operator_spec" != operator_hold_run_spec:original_owner ] && [ "$restart_policy" = always ] && [ "$autoheal_state" = running ]; } \
+      || { [ "$rollback_operator_spec" = operator_hold_run_spec:original_owner ] && [ "$restart_policy" = no ] && [ "$autoheal_state" = exited ] && [ "$rollback_autoheal_policy" = no ]; }; } \
     || die 'rollback readiness found the sealed desired run specification inexact or not live'
+
+
 
   local_instance="$(source_instance_for_sha 'http://127.0.0.1:8080/health' "$rollback_sha")" \
     || die 'rollback readiness found no exact desired local identity and liveness'
@@ -1548,6 +1556,28 @@ if EXACT_INSTANCE="$(exact_runtime_instance)"; then
 fi
 release_engine_lock
 
+# Recovery of an already owning operation above retains its authority even if
+# this catalog is unavailable. Only NEW release work depends on this one GET.
+# Missing installation must refuse before a candidate build, checkpoint or cutover.
+timeout --signal=TERM --kill-after=1s 8s python3 "$DATABASE_PROOF" \
+  --env-file "$ENV_FILE" --sha "$SHA" --operator-hold-contract \
+  || die 'installed operator-hold authority is unqualified; new release not started'
+
+# A newer unrelated publication is not proof that the outgoing process persists
+# its operator holds. Refuse unknown pre-store images rather than bypass import.
+OPERATOR_PREDECESSOR_SHA="$(timeout 3s "$RELEASE_SEAL" get desired-sha)" \
+  || die 'operator predecessor source unknown'
+OPERATOR_PREDECESSOR_IMAGE="$(timeout 3s "$RELEASE_SEAL" get desired-image-id)" \
+  || die 'operator predecessor image unknown'
+OPERATOR_PREDECESSOR_CAPABILITY="$(timeout 3s docker image inspect --format '{{index .Config.Labels "sp.operator-hold.persistence"}}' "$OPERATOR_PREDECESSOR_IMAGE")" \
+  || die 'operator predecessor capability unknown'
+if [ "$OPERATOR_PREDECESSOR_CAPABILITY" != 1 ]; then
+  [ "$OPERATOR_PREDECESSOR_SHA" = "$CHECKPOINT_OPERATOR_SHA" ] \
+    && [ -f "$CONTROL_DIR/operator-hold-predecessor-profile.json" ] \
+    && [ ! -L "$CONTROL_DIR/operator-hold-predecessor-profile.json" ] \
+    || die 'operator predecessor has no qualified capture profile; new release not started'
+fi
+
 # The durable unit, not the SSH session, owns image construction. The outer
 # timeout bounds both the host build-lock wait and Docker itself. A source
 # check after the build repeats protected-main containment and the sealed
@@ -1578,10 +1608,15 @@ LEGACY_CHECKPOINT_REQUIRED=0
 if [ "$CHECKPOINT_PREDECESSOR_SHA" = "$LEGACY_CHECKPOINT_SHA" ] \
   || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_758_SHA" ] \
   || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_A0_SHA" ] \
-  || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_8825_SHA" ]; then
+  || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_8825_SHA" ] \
+  || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_OPERATOR_SHA" ]; then
   LEGACY_CHECKPOINT_REQUIRED=1
 fi
-if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ] && [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 1 ]; then
+OPERATOR_CHECKPOINT_READBACK=0
+if [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_OPERATOR_SHA" ] && [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 1 ]; then
+  OPERATOR_CHECKPOINT_READBACK=1
+fi
+if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ] && [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 1 ] && [ "$OPERATOR_CHECKPOINT_READBACK" = 0 ]; then
   # Refused HERE, before a break is entered and before any lock, rather than
   # by the helper crashing on its own O_EXCL write several minutes later.
   #
@@ -1697,7 +1732,8 @@ while :; do
     if [ "$CHECKPOINT_PREDECESSOR_SHA" != "$LEGACY_CHECKPOINT_SHA" ] \
       && [ "$CHECKPOINT_PREDECESSOR_SHA" != "$CHECKPOINT_758_SHA" ] \
       && [ "$CHECKPOINT_PREDECESSOR_SHA" != "$CHECKPOINT_A0_SHA" ] \
-      && [ "$CHECKPOINT_PREDECESSOR_SHA" != "$CHECKPOINT_8825_SHA" ]; then
+      && [ "$CHECKPOINT_PREDECESSOR_SHA" != "$CHECKPOINT_8825_SHA" ] \
+      && [ "$CHECKPOINT_PREDECESSOR_SHA" != "$CHECKPOINT_OPERATOR_SHA" ]; then
       # A different release may have advanced desired while this run waited.
       # Source/high-water admission above still owns whether our target may
       # follow it. Never apply the old-image compatibility path to its successor.
@@ -1710,7 +1746,7 @@ while :; do
       bounded_sleep 5
       continue
     fi
-    [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 0 ] \
+    { [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 0 ] || [ "$OPERATOR_CHECKPOINT_READBACK" = 1 ]; } \
       || die 'legacy checkpoint was already attempted; refusing a retry'
     # This provisional deadline bounds predecessor proof only. It is not
     # persisted as a cutover certificate. The checkpoint and its cleanup
@@ -1733,8 +1769,9 @@ while :; do
     [ "$BREAK_ENTRY_BUDGET_MS" -le "$BREAK_ENTRY_BUDGET_CEILING_MS" ] \
       || BREAK_ENTRY_BUDGET_MS="$BREAK_ENTRY_BUDGET_CEILING_MS"
     LEGACY_CHECKPOINT_ATTEMPTED=1
+    OPERATOR_CHECKPOINT_READBACK=0
     set +e
-    "$LEGACY_CHECKPOINT" "$RUN_ID"
+    timeout --signal=TERM --kill-after=1s "$(( LEGACY_CHECKPOINT_BUDGET_SECONDS - 1 ))s" "$LEGACY_CHECKPOINT" "$RUN_ID"
     LEGACY_CHECKPOINT_RC=$?
     set -e
     if [ "$LEGACY_CHECKPOINT_RC" = 75 ]; then
@@ -1963,6 +2000,14 @@ bounded_break_command 10 "$RELEASE_SEAL" attest-commit \
 
 bounded_break_command 10 docker tag "$TARGET_IMAGE_ID" "$IMAGE_REPO:current"
 bounded_break_command 10 docker update --restart always "$CONTAINER" >/dev/null
+if [ -e /var/lib/club-arena/operator-hold-required ] || [ -L /var/lib/club-arena/operator-hold-required ]; then
+  AUTOHEAL_RESTORE_ID="$(bounded_break_command 5 docker container inspect -f '{{.Id}}' sp-autoheal)"
+  AUTOHEAL_RESTORE_POLICY="$(bounded_break_command 5 python3 "$CONTROL_DIR/operator-hold-autoheal-policy.py" "$AUTOHEAL_RESTORE_ID")" \
+    || die 'original autoheal policy receipt refused after seal'
+  bounded_break_command 5 docker update --restart "$AUTOHEAL_RESTORE_POLICY" "$AUTOHEAL_RESTORE_ID" >/dev/null
+  [ "$(bounded_break_command 5 docker container inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$AUTOHEAL_RESTORE_ID")" = "$AUTOHEAL_RESTORE_POLICY" ] \
+    || die 'original autoheal restart policy outcome unknown after seal'
+fi
 bounded_break_command 10 docker start sp-autoheal >/dev/null
 [ "$(bounded_break_command 10 \
   docker container inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$CONTAINER")" = always ]

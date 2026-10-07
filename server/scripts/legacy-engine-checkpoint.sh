@@ -55,11 +55,13 @@ case "$LEGACY_SHA" in
     LEGACY_IMAGE=sha256:a58e0d3983b73b59bfc26e0ad55f67759730a7313d0280f80311fe20109658f6 ;;
   8825af51817f379c4261658ca29ecc9d8d81932d)
     LEGACY_IMAGE=sha256:7973b0cd170e7ea00a948f6376b17a201485c3e03ae47c06f0248b17a4bfae1c ;;
+  6b1af5c5fb11b158c3c8871b93360df566ad7a49)
+    LEGACY_IMAGE=sha256:3826023ce250a6844739a674fd17c92ce662ba654374b24b3df6fe52514e2811 ;;
   *) die 'sealed predecessor has no qualified checkpoint profile' ;;
 esac
 [ "$(timeout 3s "$CONTROL_DIR/engine-release-seal.py" get desired-image-id)" = "$LEGACY_IMAGE" ] \
   || die 'sealed predecessor is not the qualified legacy image'
-IDENTITY="$(timeout 3s docker inspect --format '{{.Id}} {{.Image}} {{.State.Running}} {{.State.StartedAt}} {{.State.Pid}}' "$CONTAINER")"
+IDENTITY="$(bounded_operator_command 3 docker inspect --format '{{.Id}} {{.Image}} {{.State.Running}} {{.State.StartedAt}} {{.State.Pid}}' "$CONTAINER")"
 read -r CONTAINER_ID IMAGE RUNNING STARTED_AT HOST_PID <<< "$IDENTITY"
 [[ "$CONTAINER_ID" =~ ^[0-9a-f]{64}$ ]] && [ "$IMAGE" = "$LEGACY_IMAGE" ] \
   && [ "$RUNNING" = true ] || die 'serving predecessor identity mismatch'
@@ -69,6 +71,16 @@ if [ "$LEGACY_SHA" = 8825af51817f379c4261658ca29ecc9d8d81932d ]; then
     || die 'original mixed-custody process changed'
 fi
 NODE_BOOT_STARTED_MS="$(date +%s%3N)"
+if [ "$LEGACY_SHA" = 6b1af5c5fb11b158c3c8871b93360df566ad7a49 ]; then
+  [ -f "$CONTROL_DIR/operator-hold-predecessor-profile.json" ] && [ ! -L "$CONTROL_DIR/operator-hold-predecessor-profile.json" ] || die 'operator predecessor profile unavailable'
+  timeout 5s docker exec -i "$CONTAINER_ID" node -e '
+const fs=require("node:fs"),crypto=require("node:crypto");
+const p=JSON.parse(fs.readFileSync(0,"utf8"));
+const args=fs.readFileSync("/proc/1/cmdline","utf8").split("\0").filter(Boolean);
+const paths=["GameServer.js","engine/ServerTableEngineBase.js","engine/ServerTableEngineSeating.js","engine/ServerTableEngineDealing.js","handlers/admin.js","tournament/TournamentManagerBase.js","services/tableLease.js","services/supabase/client.js","releaseIdentity.js","http/createEngineHttpServer.js","engine/ServerTableEngine.js","maintenance/MaintenanceBreak.js","maintenance/freezeState.js","services/supabase/dataActorContext.js"].map(x=>"/app/dist/"+x);
+if(p.kind!=="operator_hold_predecessor_v1"||p.releaseSha!==process.argv[1]||p.imageId!==process.argv[2]||process.version!==p.runtimeNode||process.env.GIT_COMMIT_SHA!==p.releaseSha||JSON.stringify(args)!==JSON.stringify(["node","dist/index.js"])||/--(?:inspect|debug)/.test(process.env.NODE_OPTIONS??"")||!Array.isArray(p.compiled)||p.compiled.length!==14||p.compiled.some((r,i)=>r.path!==paths[i]||crypto.createHash("sha256").update(fs.readFileSync(r.path)).digest("hex")!==r.sha256))process.exit(1);
+' "$LEGACY_SHA" "$LEGACY_IMAGE" < "$CONTROL_DIR/operator-hold-predecessor-profile.json" || die 'operator predecessor immutable runtime proof refused'
+else
 timeout 3s docker exec "$CONTAINER_ID" node -e '
 const fs = require("node:fs");
 const args = fs.readFileSync("/proc/1/cmdline", "utf8").split("\0").filter(Boolean);
@@ -77,6 +89,7 @@ if (process.version !== "v22.23.2" ||
     /--(?:inspect|debug)/.test(process.env.NODE_OPTIONS ?? "") ||
     process.env.GIT_COMMIT_SHA !== process.argv[1]) process.exit(1);
 ' "$LEGACY_SHA" || die 'predecessor runtime or loopback inspector configuration refused'
+fi
 NODE_BOOT_MS=$(( $(date +%s%3N) - NODE_BOOT_STARTED_MS ))
 # The guard's own boot - one durable intent write with two fsyncs and a cold
 # containerised node module boot that streams the two guard files in and
@@ -122,6 +135,19 @@ if not ok: raise SystemExit(1)
 print(instance)
 ' "$LEGACY_SHA")" || defer 'the break window closed before the checkpoint could start; nothing was attempted'
 
+# One absolute 40-second work+cleanup budget, unchanged from the owning lane.
+OPERATOR_CHECKPOINT_END_MS=$(( $(date +%s%3N) + 40000 ))
+bounded_operator_command() {
+  local maximum="$1"; shift
+  local remaining_ms=$(( OPERATOR_CHECKPOINT_END_MS - $(date +%s%3N) - ${OPERATOR_CHECKPOINT_RESERVED_MS:-0} - 1000 ))
+  [ "$remaining_ms" -ge 100 ] || die 'original operator checkpoint work budget exhausted'
+  local allowance_ms=$(( maximum * 1000 ))
+  [ "$remaining_ms" -ge "$allowance_ms" ] || allowance_ms="$remaining_ms"
+  local allowance_seconds
+  printf -v allowance_seconds '%d.%03ds' "$(( allowance_ms / 1000 ))" "$(( allowance_ms % 1000 ))"
+  timeout --signal=TERM --kill-after=1s "$allowance_seconds" "$@"
+}
+
 # Persist intent before opening debugger access. A disconnect is unknown, not
 # permission to invoke again. Existing release recovery retains this run key.
 #
@@ -142,6 +168,30 @@ import json,os,sys,time,uuid
 path,instance,container,started,pid,source,run,control=sys.argv[1:]
 intent={"instance":instance,"container":container,"startedAt":started,"hostPid":int(pid),
         "source":source,"runId":run,"controlSha":control,"at":time.time(),"retryAllowed":False}
+if os.path.lexists(path):
+    if source!="6b1af5c5fb11b158c3c8871b93360df566ad7a49": raise SystemExit(70)
+    import stat
+    st=os.lstat(path)
+    if not stat.S_ISREG(st.st_mode) or st.st_uid!=0 or st.st_nlink!=1 or stat.S_IMODE(st.st_mode)!=0o600: raise SystemExit("original intent unsafe")
+    prior=json.loads(open(path).read())
+    for key in ["instance","container","startedAt","hostPid","source","runId","controlSha"]:
+        if prior.get(key)!=intent[key]: raise SystemExit("original intent identity changed")
+    if prior.get("retryAllowed") is not False or str(uuid.UUID(prior.get("handoffId","")))!=prior['handoffId']: raise SystemExit("original handoff identity invalid")
+    marker='/var/lib/club-arena/operator-hold-required'
+    if os.path.islink(marker) or json.loads(open(marker).read())!=prior: raise SystemExit("original recovery marker changed")
+    root='/var/lib/club-arena/operator-hold'
+    if os.path.islink(root) or not os.path.isdir(root): raise SystemExit("original bundle unavailable")
+    bundle=json.loads(open(root+'/handoff.json').read())
+    if bundle.get('handoffId')!=prior['handoffId'] or bundle.get('sourceInstance')!=instance or bundle.get('sourceRelease')!=source: raise SystemExit("original bundle identity changed")
+    # ONLY a readback observer deadline is fresh. The original durable intent,
+    # operation not-after, fleet, process and native import UUID stay unchanged.
+    prior['mode']='resume-first-upgrade'
+    prior['proofDeadline']=int(time.time()*1000)+20000
+    print(json.dumps(prior,separators=(",",":")))
+    raise SystemExit(0)
+if source=="6b1af5c5fb11b158c3c8871b93360df566ad7a49":
+    intent["handoffId"]=str(uuid.uuid4())
+    intent["proofDeadline"]=int(time.time()*1000)+20000
 if source=="8825af51817f379c4261658ca29ecc9d8d81932d":
     if instance!="1-3846b8bb": raise SystemExit("original process instance changed")
     intent["custody"]=[{"tournament_id":event,"transfer_id":str(uuid.uuid4()),"successor_generation":str(uuid.uuid4())}
@@ -170,9 +220,137 @@ fi
 [ "$CHECKPOINT_INTENT_RC" = 0 ] \
   || die 'the durable one-shot checkpoint intent could not be written; nothing was attempted'
 
+CHECKPOINT_MODE="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("mode","first-upgrade"))' "$CHECKPOINT_INTENT")"
+CHECKPOINT_RESULT_FILE="$(mktemp "$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-result.XXXXXX")" \
+  || die 'original checkpoint observation receipt unavailable'
+# Fence the exact outgoing plain process before any durable hold capture. The
+# fence stays in place after an unknown import; EXIT must never rearm plain boot.
+# Both Docker and the existing autoheal container can otherwise restart it.
+if [ "$LEGACY_SHA" = 6b1af5c5fb11b158c3c8871b93360df566ad7a49 ]; then
+  AUTOHEAL_ID="$(bounded_operator_command 5 docker container inspect -f '{{.Id}}' sp-autoheal)" \
+    || die 'outgoing autoheal identity unknown; checkpoint not invoked'
+  ENGINE_RESTART_POLICY="$(bounded_operator_command 5 docker container inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$CONTAINER_ID")" \
+    || die 'outgoing engine restart policy unknown'
+  AUTOHEAL_RESTART_POLICY="$(bounded_operator_command 5 docker container inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$AUTOHEAL_ID")" \
+    || die 'outgoing autoheal restart policy unknown'
+  bounded_operator_command 5 python3 - "$REQUEST_ROOT/$RUN_ID.operator-restart-fence" "$CHECKPOINT_INTENT" "$AUTOHEAL_ID" "$ENGINE_RESTART_POLICY" "$AUTOHEAL_RESTART_POLICY" <<'OPERATOR_RESTART_INTENT'
+import json,os,stat,sys
+path,intent,autoheal,engine_policy,autoheal_policy=sys.argv[1:];i=json.loads(intent)
+if engine_policy not in ['always','no'] or autoheal_policy not in ['always','unless-stopped','no']: raise SystemExit('unsupported original restart policy')
+record={'kind':'operator_restart_fence_v1','handoffId':i['handoffId'],'container':i['container'],'source':i['source'],'startedAt':i['startedAt'],'hostPid':i['hostPid'],'autohealContainer':autoheal,'enginePolicy':engine_policy,'autohealPolicy':autoheal_policy}
+if os.path.lexists(path):
+ st=os.lstat(path)
+ if not stat.S_ISREG(st.st_mode) or st.st_uid!=0 or st.st_nlink!=1 or stat.S_IMODE(st.st_mode)!=0o600: raise SystemExit('original restart intent unsafe')
+ prior=json.loads(open(path).read())
+ if any(prior.get(k)!=record[k] for k in ['kind','handoffId','container','source','startedAt','hostPid','autohealContainer']): raise SystemExit('original restart intent changed')
+else:
+ fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+ try: os.write(fd,(json.dumps(record,sort_keys=True)+'\n').encode());os.fsync(fd)
+ finally: os.close(fd)
+ fd=os.open(os.path.dirname(path),os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+ try: os.fsync(fd)
+ finally: os.close(fd)
+OPERATOR_RESTART_INTENT
+  bounded_operator_command 5 python3 - "$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent" <<'OPERATOR_REQUIRED_MARKER'
+import json,os,stat,sys
+from pathlib import Path
+i=json.loads(Path(sys.argv[1]).read_text());p=Path('/var/lib/club-arena/operator-hold-required')
+if os.path.lexists(p):
+ s=p.lstat()
+ if not stat.S_ISREG(s.st_mode) or s.st_uid!=0 or s.st_nlink!=1 or stat.S_IMODE(s.st_mode)!=0o600 or json.loads(p.read_text())!=i: raise SystemExit('original marker identity changed')
+else:
+ fd=os.open(p,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+ try: os.write(fd,(json.dumps(i,sort_keys=True)+'\n').encode());os.fsync(fd)
+ finally: os.close(fd)
+ fd=os.open(p.parent,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+ try: os.fsync(fd)
+ finally: os.close(fd)
+OPERATOR_REQUIRED_MARKER
+  bounded_operator_command 5 docker update --restart no "$CONTAINER_ID" >/dev/null \
+    || die 'outgoing restart fence outcome unknown; checkpoint not invoked'
+  bounded_operator_command 5 docker update --restart no "$AUTOHEAL_ID" >/dev/null \
+    || die 'autoheal restart fence outcome unknown; checkpoint not invoked'
+  if [ "$(bounded_operator_command 5 docker container inspect -f '{{.State.Status}}' "$AUTOHEAL_ID")" = running ]; then
+    bounded_operator_command 20 docker stop -t 15 "$AUTOHEAL_ID" >/dev/null \
+      || die 'autoheal stop outcome unknown; checkpoint not invoked'
+  fi
+  [ "$(bounded_operator_command 5 docker container inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$CONTAINER_ID")" = no ] \
+    && [ "$(bounded_operator_command 5 docker container inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$AUTOHEAL_ID")" = no ] \
+    && [ "$(bounded_operator_command 5 docker container inspect -f '{{.State.Status}}' "$AUTOHEAL_ID")" = exited ] \
+    && [ "$(bounded_operator_command 5 docker container inspect -f '{{.State.Pid}}' "$CONTAINER_ID")" = "$HOST_PID" ] \
+    && [ "$(bounded_operator_command 5 docker container inspect -f '{{.State.StartedAt}}' "$CONTAINER_ID")" = "$STARTED_AT" ] \
+    || die 'exact original restart fence refused; checkpoint not invoked'
+fi
+
+# Recovery intent is durable BEFORE the first possible native import. If its
+# acknowledgment is lost, an old-image boot must read that SAME immutable native
+# receipt before any deal; an uncommitted/unknown import refuses that boot.
+if [ "$LEGACY_SHA" = 6b1af5c5fb11b158c3c8871b93360df566ad7a49 ] && [ "$CHECKPOINT_MODE" = first-upgrade ]; then
+  bounded_operator_command 5 python3 - "$CONTROL_DIR" "$CHECKPOINT_INTENT" "$REQUEST_ROOT/$RUN_ID.operator-restart-fence" <<'OPERATOR_INTENT_BUNDLE'
+import json,os,pathlib,sys
+control,intent,restart_path=sys.argv[1:]; i=json.loads(intent)
+root=pathlib.Path('/var/lib/club-arena/operator-hold')
+marker=root.parent/'operator-hold-required'
+if marker.is_symlink() or json.loads(marker.read_text())!=i: raise SystemExit('original recovery marker changed')
+fd=os.open(root.parent,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+try: os.fsync(fd)
+finally: os.close(fd)
+root.mkdir(mode=0o700)
+fd=os.open(root.parent,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+try: os.fsync(fd)
+finally: os.close(fd)
+payload={'kind':'operator_hold_handoff_v1','handoffId':i['handoffId'],'sourceRelease':i['source'],'sourceInstance':i['instance'],'fleet':None}
+files={'handoff.json':(json.dumps(payload,sort_keys=True)+'\n').encode(),'restart-fence.json':pathlib.Path(restart_path).read_bytes()}
+for name in ['operator-hold-predecessor-profile.json','operator-hold-checkpoint-guard.mjs','operator-hold-rollback-bootstrap.mjs']:
+ p=pathlib.Path(control)/name
+ if p.is_symlink() or not p.is_file(): raise SystemExit('immutable control missing')
+ files[name]=p.read_bytes()
+for name,data in files.items():
+ if (root/name).exists():
+  if (root/name).is_symlink() or (root/name).read_bytes()!=data: raise SystemExit('original verified handoff changed')
+  continue
+ fd=os.open(root/name,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+ try:
+  view=memoryview(data)
+  while view:
+   n=os.write(fd,view)
+   if n<=0: raise SystemExit('bundle short write')
+   view=view[n:]
+  os.fsync(fd)
+ finally: os.close(fd)
+fd=os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+try: os.fsync(fd)
+finally: os.close(fd)
+fd=os.open(root/'intent',os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+try: os.write(fd,(i['handoffId']+'\n').encode());os.fsync(fd)
+finally: os.close(fd)
+fd=os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+try: os.fsync(fd)
+finally: os.close(fd)
+OPERATOR_INTENT_BUNDLE
+fi
+
+if [ "$LEGACY_SHA" = 6b1af5c5fb11b158c3c8871b93360df566ad7a49 ]; then
+  CHECKPOINT_INTENT="$(python3 - "$CHECKPOINT_INTENT" "$OPERATOR_CHECKPOINT_END_MS" <<'OPERATOR_OBSERVER_DEADLINE'
+import json,sys,time
+i=json.loads(sys.argv[1]);now=int(time.time()*1000)
+i['proofDeadline']=min(now+20000,int(sys.argv[2])-13000)
+if i['proofDeadline']-now<100: raise SystemExit('original observer budget exhausted')
+print(json.dumps(i,separators=(',',':')))
+OPERATOR_OBSERVER_DEADLINE
+)" || die 'original observer budget exhausted before invocation'
+fi
+
 set +e
-{ cat "$CONTROL_DIR/legacy-engine-checkpoint-guard.mjs"; cat "$CONTROL_DIR/legacy-engine-checkpoint.mjs"; } \
-  | docker exec -i "$CONTAINER_ID" node --input-type=module - "$INSTANCE" "$LEGACY_SHA" "$CHECKPOINT_INTENT"
+{
+  if [ "$LEGACY_SHA" = 6b1af5c5fb11b158c3c8871b93360df566ad7a49 ]; then
+    cat "$CONTROL_DIR/operator-hold-checkpoint-guard.mjs"
+  else
+    cat "$CONTROL_DIR/legacy-engine-checkpoint-guard.mjs"
+  fi
+  cat "$CONTROL_DIR/legacy-engine-checkpoint.mjs"
+} | OPERATOR_CHECKPOINT_RESERVED_MS=8000 bounded_operator_command 27 docker exec -i "$CONTAINER_ID" node --input-type=module - "$INSTANCE" "$LEGACY_SHA" "$CHECKPOINT_INTENT" \
+  | tee "$CHECKPOINT_RESULT_FILE"
 CHECKPOINT_RC=$?
 set -e
 if [ "$CHECKPOINT_RC" = 75 ]; then
@@ -204,9 +382,53 @@ PY
 fi
 [ "$CHECKPOINT_RC" = 0 ] \
   || die 'checkpoint or inspector cleanup refused; do not retry this operation'
-[ "$(timeout 3s docker inspect --format '{{.Id}} {{.Image}} {{.State.Running}} {{.State.StartedAt}} {{.State.Pid}}' "$CONTAINER")" = "$IDENTITY" ] \
+[ "$(bounded_operator_command 3 docker inspect --format '{{.Id}} {{.Image}} {{.State.Running}} {{.State.StartedAt}} {{.State.Pid}}' "$CONTAINER")" = "$IDENTITY" ] \
   || die 'predecessor changed during checkpoint'
 # This helper cannot certify or start cutover. Entry above demanded the strict
 # 285000ms; the caller must now pass the original maintenance_certificate with
 # the 245000ms legacy reserve (285000ms entry minus the 40000ms checkpoint
 # budget, taken from candidate proof, never from the 135s rollback reserve).
+
+# Persist the original verified import and its exact preload generation BEFORE
+# replacement. The same immutable directory is used by rollback and crash boot.
+if [ "$LEGACY_SHA" = 6b1af5c5fb11b158c3c8871b93360df566ad7a49 ]; then
+  bounded_operator_command 5 python3 - "$CONTROL_DIR" "$CHECKPOINT_RESULT_FILE" "$CHECKPOINT_INTENT" <<'OPERATOR_HANDOFF'
+import json,os,pathlib,sys
+control,result,intent=sys.argv[1:]; intent=json.loads(intent)
+rows=[json.loads(line) for line in pathlib.Path(result).read_text().splitlines() if line.startswith('{')]
+if len(rows)!=1: raise SystemExit('operator receipt incomplete')
+r=rows[0]
+if not (r.get('ok') is True and r.get('inspectorClosed') is True and r.get('checkpointInvoked') is True and r.get('phase')=='import_verified' and r.get('handoffId')==intent['handoffId'] and r.get('operatorRoutesRefused') is True and r.get('futureStartFenced') is True): raise SystemExit('operator receipt unknown')
+root=pathlib.Path('/var/lib/club-arena/operator-hold')
+# A prior original import is not permission to invent/replay another capture.
+if not root.is_dir() or root.is_symlink(): raise SystemExit('original bundle missing')
+payload={'kind':'operator_hold_handoff_v1','handoffId':intent['handoffId'],'sourceRelease':intent['source'],'sourceInstance':intent['instance'],'fleet':r['fleet']}
+files={'verified-handoff.json':(json.dumps(payload,sort_keys=True)+'\n').encode()}
+for name,data in files.items():
+ if (root/name).exists():
+  if (root/name).is_symlink() or (root/name).read_bytes()!=data: raise SystemExit('original verified handoff changed')
+  continue
+ fd=os.open(root/name,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+ try:
+  view=memoryview(data)
+  while view:
+   n=os.write(fd,view)
+   if n<=0: raise SystemExit('handoff short write')
+   view=view[n:]
+  os.fsync(fd)
+ finally: os.close(fd)
+fd=os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+try: os.fsync(fd)
+finally: os.close(fd)
+# Readiness marker is last; a partial bundle cannot start a predecessor.
+if (root/'ready').exists():
+ if (root/'ready').is_symlink() or (root/'ready').read_text()!=intent['handoffId']+'\n': raise SystemExit('original readiness changed')
+ raise SystemExit(0)
+fd=os.open(root/'ready',os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+try: os.write(fd,(intent['handoffId']+'\n').encode());os.fsync(fd)
+finally: os.close(fd)
+fd=os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+try: os.fsync(fd)
+finally: os.close(fd)
+OPERATOR_HANDOFF
+fi

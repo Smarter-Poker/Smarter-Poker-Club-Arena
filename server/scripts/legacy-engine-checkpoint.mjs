@@ -106,7 +106,11 @@ function remoteValue(response) {
  *  object when the call's outcome is unknown (see the guard's `progress`).
  *  Observability only: a fixed set of keys, each held to its shape, or absent. */
 function progressSummary(value) {
-  if (!value || typeof value !== 'object' || value.schema !== 'legacy-engine-checkpoint-progress/v1')
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    value.schema !== 'legacy-engine-checkpoint-progress/v1'
+  )
     return null;
   const out = {};
   for (const key of ['elapsedMs', 'attemptedTables', 'completedCalls', 'verifiedTables']) {
@@ -412,8 +416,7 @@ export const CHECKPOINT_DEFERRABLE_REFUSALS = Object.freeze([
  * (CLAUDE.md 10.86 rules 1 and 2 - an unreadable answer is not an empty one).
  */
 export function deferrableCheckpointRefusal(outcome) {
-  const isRecord = (value) =>
-    value !== null && typeof value === 'object' && !Array.isArray(value);
+  const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
   if (!isRecord(outcome) || outcome.ok !== false || outcome.retryAllowed !== false) return false;
   // A retained debugger session is an unknown process state, never a deferral.
   if (outcome.inspectorClosed !== true || outcome.cleanupConnections !== 0) return false;
@@ -437,6 +440,48 @@ export function deferrableCheckpointRefusal(outcome) {
   );
 }
 
+export function operatorCheckpointSummary(value, handoffId) {
+  const uuid = (s) =>
+    typeof s === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+  if (
+    !value ||
+    value.ok !== true ||
+    value.phase !== 'import_verified' ||
+    value.handoffId !== handoffId ||
+    value.operatorRoutesRefused !== true ||
+    value.futureStartFenced !== true ||
+    value.bootQualified !== false ||
+    !Number.isSafeInteger(value.retired) ||
+    value.retired < 0 ||
+    !Array.isArray(value.fleet) ||
+    value.fleet.length > 2000 ||
+    value.fleet.some(
+      (row) =>
+        !row ||
+        !uuid(row.table_id) ||
+        !uuid(row.lease_generation) ||
+        typeof row.paused !== 'boolean'
+    ) ||
+    new Set(value.fleet.map((row) => row.table_id)).size !== value.fleet.length
+  )
+    throw refused('operator checkpoint receipt refused');
+  return {
+    ok: true,
+    phase: value.phase,
+    handoffId,
+    retired: value.retired,
+    fleet: value.fleet.map(({ table_id, paused, lease_generation }) => ({
+      table_id,
+      paused,
+      lease_generation,
+    })),
+    operatorRoutesRefused: true,
+    futureStartFenced: true,
+    bootQualified: false,
+  };
+}
+
 export async function runLegacyEngineCheckpoint({
   pid,
   instanceId,
@@ -444,6 +489,7 @@ export async function runLegacyEngineCheckpoint({
   moduleExpression,
   guard,
   custodyIntent = null,
+  operatorHold = null,
   port = 9229,
   workBudgetMs = 20000,
   cleanupBudgetMs = 5000,
@@ -470,7 +516,19 @@ export async function runLegacyEngineCheckpoint({
     cleanupBudgetMs > 5000
   )
     throw refused('legacy checkpoint invocation identity refused');
-  const deadline = Date.now() + workBudgetMs;
+  if (
+    operatorHold !== null &&
+    (releaseSha !== '6b1af5c5fb11b158c3c8871b93360df566ad7a49' ||
+      !['first-upgrade', 'resume-first-upgrade'].includes(operatorHold.mode) ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        operatorHold.handoffId ?? ''
+      ) ||
+      !Number.isFinite(operatorHold.proofDeadline) ||
+      operatorHold.proofDeadline <= Date.now())
+  )
+    throw refused('operator checkpoint identity refused');
+  const startedAt = Date.now();
+  const deadline = Math.min(startedAt + workBudgetMs, operatorHold?.proofDeadline ?? Infinity);
   let signalled = false,
     endpoint,
     connection,
@@ -484,7 +542,6 @@ export async function runLegacyEngineCheckpoint({
   // Which operation the transport is on. It is the name an unknown outcome
   // reports; it takes part in no decision and no branch reads it.
   let operation = 'inspectorEntry';
-  const startedAt = deadline - workBudgetMs;
   const describeLoss = (error) =>
     [
       detailOf(error) ??
@@ -580,6 +637,48 @@ export async function runLegacyEngineCheckpoint({
       )
     );
     if (!server?.objectId) throw refused('singleton unavailable');
+    let operatorHttp = null;
+    if (operatorHold !== null) {
+      operation = 'httpPrototype';
+      const httpPrototype = remoteValue(
+        await connection.request(
+          'Runtime.callFunctionOn',
+          {
+            objectId: modules.objectId,
+            functionDeclaration: 'function() { return this.http.Server.prototype; }',
+            objectGroup: 'legacy-checkpoint',
+          },
+          deadline,
+          operation
+        )
+      );
+      if (!httpPrototype?.objectId) throw refused('cached HTTP prototype unavailable');
+      operation = 'httpObjects';
+      const httpObjects = await connection.request(
+        'Runtime.queryObjects',
+        {
+          prototypeObjectId: httpPrototype.objectId,
+          objectGroup: 'legacy-checkpoint',
+        },
+        deadline,
+        operation
+      );
+      operation = 'httpSingleton';
+      operatorHttp = remoteValue(
+        await connection.request(
+          'Runtime.callFunctionOn',
+          {
+            objectId: httpObjects.objects.objectId,
+            functionDeclaration:
+              'function() { const live=this.filter(s=>s.listening && s.address()?.port===8080); if(live.length!==1) throw new Error("http singleton refused"); return live[0]; }',
+            objectGroup: 'legacy-checkpoint',
+          },
+          deadline,
+          operation
+        )
+      );
+      if (!operatorHttp?.objectId) throw refused('HTTP singleton unavailable');
+    }
     checkpointInvoked = true;
     operation = 'guardCall';
     const response = remoteValue(
@@ -595,10 +694,12 @@ export async function runLegacyEngineCheckpoint({
                 expectedInstanceId: instanceId,
                 expectedPid: pid,
                 custodyIntent,
+                ...(operatorHold ?? {}),
               },
             },
             { objectId: objects.objects.objectId },
             { objectId: modules.objectId },
+            ...(operatorHttp ? [{ objectId: operatorHttp.objectId }] : []),
           ],
           awaitPromise: true,
           returnByValue: true,
@@ -607,7 +708,10 @@ export async function runLegacyEngineCheckpoint({
         operation
       )
     );
-    result = checkpointSummary(response?.value);
+    result =
+      operatorHold === null
+        ? checkpointSummary(response?.value)
+        : operatorCheckpointSummary(response?.value, operatorHold.handoffId);
     if (result?.ok !== true) throw refused('native checkpoint did not qualify');
   } catch (error) {
     failure =
@@ -754,6 +858,7 @@ if (process.argv[1] === '-' && new URL(import.meta.url).pathname.endsWith('/[eva
       '758610f3f844406bbbaee2f5100ced36d84fb943',
       'a0ab287d902879280f0c915e44f5222c5db4d7df',
       '8825af51817f379c4261658ca29ecc9d8d81932d',
+      '6b1af5c5fb11b158c3c8871b93360df566ad7a49',
     ].includes(checkpointRelease)
   )
     throw refused('checkpoint predecessor profile refused');
@@ -764,13 +869,27 @@ if (process.argv[1] === '-' && new URL(import.meta.url).pathname.endsWith('/[eva
   const checkpointModuleExpression = `process.getBuiltinModule('node:vm').runInThisContext(
     "Promise.all([import('file:///app/dist/GameServer.js'), import('file:///app/dist/engine/ServerTableEngineBase.js'), import('file:///app/dist/releaseIdentity.js'), import('file:///app/dist/services/tableLease.js'), import('file:///app/dist/services/supabase/client.js'), import('node:fs'), import('node:crypto'), import('file:///app/dist/maintenance/MaintenanceBreak.js'), import('file:///app/dist/maintenance/freezeState.js'), import('file:///app/dist/services/supabase/dataActorContext.js')${mixedImports}]).then(([gameServer,base,releaseIdentity,tableLease,client,fs,crypto,maintenance,freezeState,dataActorContext,manager,managerBase,permit,retirement])=>({gameServer,base,releaseIdentity,tableLease,client,fs,crypto,maintenance,freezeState,dataActorContext,manager,managerBase,permit,retirement}))",
     { importModuleDynamically: process.getBuiltinModule('node:vm').constants.USE_MAIN_CONTEXT_DEFAULT_LOADER })`;
+  const operatorIntent =
+    checkpointRelease === '6b1af5c5fb11b158c3c8871b93360df566ad7a49'
+      ? JSON.parse(process.argv[4] ?? 'null')
+      : null;
+  const operatorModuleExpression = `process.getBuiltinModule('node:vm').runInThisContext(
+    "Promise.all([import('file:///app/dist/GameServer.js'),import('file:///app/dist/engine/ServerTableEngineBase.js'),import('file:///app/dist/engine/ServerTableEngineSeating.js'),import('file:///app/dist/engine/ServerTableEngineDealing.js'),import('file:///app/dist/tournament/TournamentManagerBase.js'),import('file:///app/dist/releaseIdentity.js'),import('file:///app/dist/services/tableLease.js'),import('file:///app/dist/services/supabase/client.js'),import('node:http')]).then(([gameServer,base,seating,dealing,managerBase,releaseIdentity,tableLease,client,http])=>({gameServer,base,seating,dealing,managerBase,releaseIdentity,tableLease,client,http}))",
+    { importModuleDynamically: process.getBuiltinModule('node:vm').constants.USE_MAIN_CONTEXT_DEFAULT_LOADER })`;
   const checkpointResult = await runLegacyEngineCheckpoint({
     pid: 1,
     port: 9229,
     instanceId: process.argv[2],
     releaseSha: checkpointRelease,
-    moduleExpression: checkpointModuleExpression,
-    guard: legacyEngineCheckpointGuard,
+    moduleExpression: operatorIntent ? operatorModuleExpression : checkpointModuleExpression,
+    guard: operatorIntent ? operatorHoldCheckpointGuard : legacyEngineCheckpointGuard,
+    operatorHold: operatorIntent
+      ? {
+          mode: operatorIntent.mode ?? 'first-upgrade',
+          handoffId: operatorIntent.handoffId,
+          proofDeadline: operatorIntent.proofDeadline,
+        }
+      : null,
     custodyIntent: JSON.parse(process.argv[4] ?? 'null'),
   }).catch(() => ({
     ok: false,
@@ -783,6 +902,5 @@ if (process.argv[1] === '-' && new URL(import.meta.url).pathname.endsWith('/[eva
   // 75 is `legacy-engine-checkpoint.sh`'s deferral, and it is reachable here
   // ONLY on a receipt that proves this attempt touched nothing. Anything else,
   // including an unreadable or partial receipt, is 1 and ends the release.
-  if (!checkpointResult.ok)
-    process.exit(deferrableCheckpointRefusal(checkpointResult) ? 75 : 1);
+  if (!checkpointResult.ok) process.exit(deferrableCheckpointRefusal(checkpointResult) ? 75 : 1);
 }

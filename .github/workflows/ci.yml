@@ -1409,6 +1409,15 @@ jobs:
           STATS_PG_SCRATCH_PARENT: ${{ runner.temp }}
           DATA_CONSOLE_PG_SCRATCH_PARENT: ${{ runner.temp }}
         run: npm run test:data:postgres
+      - name: Operator holds survive engine replacement with native receipts
+        if: matrix.shard == 2
+        env:
+          PG17_BINDIR: /usr/lib/postgresql/17/bin
+          OPERATOR_HOLD_PG_SCRATCH_PARENT: ${{ runner.temp }}
+        run: |
+          npm ci --prefix server --ignore-scripts --no-audit --no-fund
+          npm run build --prefix server
+          bash scripts/dev/test-operator-pause-postgres.sh
       - name: Managed games keep one receipted browser command door
         if: matrix.shard == 2
         env:

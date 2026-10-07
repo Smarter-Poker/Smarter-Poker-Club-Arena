@@ -89,6 +89,9 @@ export function mockEngine(overrides: Record<string, unknown> = {}): unknown {
     previewInsurance: vi.fn().mockReturnValue({ cost: 100 }),
     showHand: vi.fn().mockReturnValue({ success: true }),
     submitDiscard: vi.fn().mockReturnValue({ success: true }),
+    requestOperatorHold: vi
+      .fn()
+      .mockResolvedValue({ success: true, admin_paused: true, paused: true }),
     adminPause: vi.fn().mockReturnValue({ paused: true }),
     adminResume: vi.fn().mockReturnValue({ resumed: true }),
     postBBToEnter: vi.fn().mockReturnValue({ posted: true }),

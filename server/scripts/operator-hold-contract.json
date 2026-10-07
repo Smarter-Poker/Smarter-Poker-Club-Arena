@@ -1,0 +1,247 @@
+{
+  "kind": "operator_hold_contract_v1",
+  "tables": [
+    {
+      "acl": "{postgres=arwdDxtm/postgres}",
+      "rls": true,
+      "name": "ca_operator_hold_handoffs",
+      "owner": "postgres",
+      "columns": [
+        {
+          "name": "handoff_id",
+          "type": "uuid",
+          "default": null,
+          "not_null": true
+        },
+        {
+          "name": "source_instance",
+          "type": "text",
+          "default": null,
+          "not_null": true
+        },
+        {
+          "name": "source_release_sha",
+          "type": "text",
+          "default": null,
+          "not_null": true
+        },
+        {
+          "name": "fleet",
+          "type": "jsonb",
+          "default": null,
+          "not_null": true
+        },
+        {
+          "name": "committed_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "not_null": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ca_operator_hold_handoffs_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (handoff_id)"
+        },
+        {
+          "name": "ca_operator_hold_handoffs_source_release_sha_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((source_release_sha ~ '^[0-9a-f]{40}$'::text))"
+        }
+      ]
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres}",
+      "rls": true,
+      "name": "ca_table_operator_hold_commands",
+      "owner": "postgres",
+      "columns": [
+        {
+          "name": "command_id",
+          "type": "uuid",
+          "default": null,
+          "not_null": true
+        },
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "not_null": true
+        },
+        {
+          "name": "actor_id",
+          "type": "uuid",
+          "default": null,
+          "not_null": true
+        },
+        {
+          "name": "paused",
+          "type": "boolean",
+          "default": null,
+          "not_null": true
+        },
+        {
+          "name": "version",
+          "type": "bigint",
+          "default": null,
+          "not_null": true
+        },
+        {
+          "name": "committed_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "not_null": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ca_table_operator_hold_commands_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (command_id)"
+        },
+        {
+          "name": "ca_table_operator_hold_commands_version_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((version > 0))"
+        }
+      ]
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres}",
+      "rls": true,
+      "name": "ca_table_operator_holds",
+      "owner": "postgres",
+      "columns": [
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "not_null": true
+        },
+        {
+          "name": "paused",
+          "type": "boolean",
+          "default": null,
+          "not_null": true
+        },
+        {
+          "name": "version",
+          "type": "bigint",
+          "default": null,
+          "not_null": true
+        },
+        {
+          "name": "command_id",
+          "type": "uuid",
+          "default": null,
+          "not_null": false
+        },
+        {
+          "name": "actor_id",
+          "type": "uuid",
+          "default": null,
+          "not_null": false
+        },
+        {
+          "name": "inherited_handoff_id",
+          "type": "uuid",
+          "default": null,
+          "not_null": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "not_null": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ca_table_operator_holds_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((((command_id IS NOT NULL) AND (actor_id IS NOT NULL) AND (inherited_handoff_id IS NULL)) OR ((command_id IS NULL) AND (actor_id IS NULL) AND (inherited_handoff_id IS NOT NULL))))"
+        },
+        {
+          "name": "ca_table_operator_holds_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (table_id)"
+        },
+        {
+          "name": "ca_table_operator_holds_version_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((version > 0))"
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public"],
+      "signature": "fn_ca_get_operator_hold_handoff(uuid)",
+      "volatility": "s",
+      "definition_md5": "99cce72220c4b383c26831a85a27e849",
+      "security_definer": true
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public"],
+      "signature": "fn_ca_get_table_operator_hold(uuid)",
+      "volatility": "s",
+      "definition_md5": "eae4d6c22644dc12da6b4f9fd0854797",
+      "security_definer": true
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public", "lock_timeout=500ms", "statement_timeout=5s"],
+      "signature": "fn_ca_import_operator_holds(uuid,text,text,jsonb)",
+      "volatility": "v",
+      "definition_md5": "9fd2fc5c054d0cca07974b8ec0237793",
+      "security_definer": true
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public", "lock_timeout=500ms", "statement_timeout=5s"],
+      "signature": "fn_ca_set_table_operator_hold(uuid,boolean,uuid,uuid,uuid,text,bigint)",
+      "volatility": "v",
+      "definition_md5": "25e867fdc39a26326fd9020d2a294193",
+      "security_definer": true
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=public"],
+      "signature": "fn_emit_game_management_event(text,uuid,uuid,uuid,text,uuid,uuid,jsonb)",
+      "volatility": "v",
+      "definition_md5": "7286c5f7f9f749b236a0021f16194ca7",
+      "security_definer": true
+    },
+    {
+      "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=public"],
+      "signature": "fn_list_managed_games(text,uuid,timestamp with time zone,text,uuid,integer,integer,integer,text,uuid,integer)",
+      "volatility": "s",
+      "definition_md5": "bed15c766920802390c605845e9e637a",
+      "security_definer": true
+    }
+  ],
+  "migration": {
+    "name": "an_operator_pause_survives_its_engine",
+    "sql_md5": "6bc1813150e16da3749c11c9492c5fa0",
+    "version": "20261007154739",
+    "statements_count": 1
+  }
+}

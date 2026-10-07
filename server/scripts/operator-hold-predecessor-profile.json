@@ -1,0 +1,84 @@
+{
+  "kind": "operator_hold_predecessor_v1",
+  "releaseSha": "6b1af5c5fb11b158c3c8871b93360df566ad7a49",
+  "imageId": "sha256:3826023ce250a6844739a674fd17c92ce662ba654374b24b3df6fe52514e2811",
+  "runtimeNode": "v22.23.2",
+  "compiled": [
+    {
+      "path": "/app/dist/GameServer.js",
+      "bytes": 594514,
+      "sha256": "8b4b0dbe3a22834ec51ca4298e25697ea54eef14287b261a9fe7cb505e11d7db"
+    },
+    {
+      "path": "/app/dist/engine/ServerTableEngineBase.js",
+      "bytes": 530247,
+      "sha256": "56252b3fecef847f9ec28c90ba392e778295a2d57b7e5457a0875057f28a1456"
+    },
+    {
+      "path": "/app/dist/engine/ServerTableEngineSeating.js",
+      "bytes": 109105,
+      "sha256": "6935e4a9457b26349417ba40c6d0b5997cc9d82f324a83a1e5c6fdc7c1c62ee7"
+    },
+    {
+      "path": "/app/dist/engine/ServerTableEngineDealing.js",
+      "bytes": 248575,
+      "sha256": "5dc8d831fdb8586e85595514bfdfde04694ae14af0a6a172e08773fecb7047e3"
+    },
+    {
+      "path": "/app/dist/handlers/admin.js",
+      "bytes": 15468,
+      "sha256": "7600cf1b170b80e775691d413c8791aab3c441b09c3821c16951c06bdd67fc7e"
+    },
+    {
+      "path": "/app/dist/tournament/TournamentManagerBase.js",
+      "bytes": 568882,
+      "sha256": "95d25e403c684b4b3fe938292c7b0026735efe6825738f348dcb16889b949a57"
+    },
+    {
+      "path": "/app/dist/services/tableLease.js",
+      "bytes": 25463,
+      "sha256": "f6483c4692c99ad4042cdd174cb99a38346a507446306684a491c986ba1d4d0e"
+    },
+    {
+      "path": "/app/dist/services/supabase/client.js",
+      "bytes": 13939,
+      "sha256": "c27acc261be7815a4686d903b8a6cbfa2dc75e1f0bd289ab25079555f9d91f5f"
+    },
+    {
+      "path": "/app/dist/releaseIdentity.js",
+      "bytes": 797,
+      "sha256": "3386b6a5740b7f6fa936b4e1f0727199b0d661e134dcb20424e602c1d3db8c89"
+    },
+    {
+      "path": "/app/dist/http/createEngineHttpServer.js",
+      "bytes": 291,
+      "sha256": "2925b3958172cb841a1c35c205b3566b6a25e155b8e01b1acec1f961fa6b2b9b"
+    },
+    {
+      "path": "/app/dist/engine/ServerTableEngine.js",
+      "bytes": 27163,
+      "sha256": "185b993331bd71243e32c1ca9e2ff4d6d1df075fc837eed9597c3a9e539e1ce1"
+    },
+    {
+      "path": "/app/dist/maintenance/MaintenanceBreak.js",
+      "bytes": 130108,
+      "sha256": "5cd742c67380abd091bad322619c20c6ebb72d3162c477c43d91b37be0cf0f4f"
+    },
+    {
+      "path": "/app/dist/maintenance/freezeState.js",
+      "bytes": 4199,
+      "sha256": "c962466ac1178f35a073ed265554d197c4d214467e190d83edfa2c2f4034e001"
+    },
+    {
+      "path": "/app/dist/services/supabase/dataActorContext.js",
+      "bytes": 9096,
+      "sha256": "07ff29c562d000690437b62c46c87a10adb1fc40beb54e82ad863632b7e18985"
+    }
+  ],
+  "provenance": {
+    "schema": "operator-hold-runtime-provenance/v1",
+    "observedAt": "2026-10-07T17:08:24.984299+00:00",
+    "sourceSha256": "64fd2c639fc24ed02898743d0e43225e91f953994aa48bbb94157da53faa7243",
+    "scope": "exact14_compiled_and_source_parity;not_boot_or_handoff_qualification"
+  }
+}

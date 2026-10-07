@@ -101,7 +101,13 @@ autoheal_status() {
 }
 
 ensure_autoheal_running() {
-  local status
+  local status policy autoheal_id
+  if [ -e /var/lib/club-arena/operator-hold-required ] || [ -L /var/lib/club-arena/operator-hold-required ]; then
+    autoheal_id="$(bounded_recovery_command 5 docker container inspect -f '{{.Id}}' "$AUTOHEAL_CONTAINER")" || return 1
+    policy="$(python3 "$CONTROL_DIR/operator-hold-autoheal-policy.py" "$autoheal_id")" || return 1
+    bounded_recovery_command 5 docker update --restart "$policy" "$autoheal_id" >/dev/null || return 1
+    [ "$(bounded_recovery_command 5 docker container inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$autoheal_id")" = "$policy" ] || return 1
+  fi
   status="$(autoheal_status)"
   [ "$status" = running ] && return 0
   log "$AUTOHEAL_CONTAINER is '$status' during exact desired recovery - starting it"
@@ -120,6 +126,8 @@ recreate() {
     CONTAINER="$CONTAINER" IMAGE="$DESIRED_IMAGE_ID" PORT="$PORT" \
     "$UP_SCRIPT" \
     || return 1
+  [ "$(operator_run_spec)" != operator_hold_run_spec:original_owner ] || return 1
+  operator_run_spec >/dev/null || return 1
   ensure_autoheal_running
 }
 
@@ -184,6 +192,11 @@ print(instance)
   printf '%s\n' "$instance"
 }
 
+operator_run_spec() {
+  bounded_recovery_command 5 docker container inspect --format '{"id":{{json .Id}},"image":{{json .Image}},"startedAt":{{json .State.StartedAt}},"pid":{{json .State.Pid}},"cmd":{{json .Config.Cmd}},"mounts":{{json .Mounts}}}' "$CONTAINER" \
+    | python3 "$CONTROL_DIR/operator-hold-run-spec.py" "$DESIRED_SHA"
+}
+
 prove_exact_desired_recovery() {
   local local_instance public_instance state image_id release_label autoheal_label role_label restart_policy
   while recovery_remaining >/dev/null; do
@@ -205,7 +218,10 @@ prove_exact_desired_recovery() {
         || { [ "$DESIRED_LEGACY_UNLABELLED" = true ] && [ -z "$release_label" ]; }; } \
       && [ "$autoheal_label" = true ] \
       && [ "$role_label" = engine ] \
-      && [ "$restart_policy" = always ]; then
+      && { [ "$restart_policy" = always ] || { [ "${OPERATOR_RUN_SPEC:-}" = operator_hold_run_spec:original_owner ] && [ "$restart_policy" = no ]; }; }; then
+      bounded_recovery_command 5 docker container inspect --format '{"id":{{json .Id}},"image":{{json .Image}},"startedAt":{{json .State.StartedAt}},"pid":{{json .State.Pid}},"cmd":{{json .Config.Cmd}},"mounts":{{json .Mounts}}}' "$CONTAINER" \
+        | python3 "$CONTROL_DIR/operator-hold-run-spec.py" "$DESIRED_SHA" \
+        || return 1
       local_instance="$(health_identity "http://127.0.0.1:${PORT}/health")" \
         || local_instance=''
       if [ -n "$local_instance" ]; then
@@ -242,6 +258,13 @@ if [ "$RUNNING_IMAGE_ID" != "$DESIRED_IMAGE_ID" ] \
   log "force-desired recovery is evicting every unsealed runtime and restoring sealed $DESIRED_SHA"
   recreate_or_die
 else
+  # Qualify BEFORE docker start or unpause. A plain predecessor whose original
+  # process died must be reconstructed through engine-up's pre-index preload.
+  OPERATOR_RUN_SPEC="$(operator_run_spec)" || {
+    recreate_or_die
+    OPERATOR_RUN_SPEC="$(operator_run_spec)" || die 'restored operator run specification refused'
+    RUNNING_STATUS=running
+  }
   case "$RUNNING_STATUS" in
     running) ;;
     paused)
@@ -258,11 +281,20 @@ fi
 
 RUNNING_RESTART_POLICY="$(bounded_recovery_command 5 docker container inspect \
   -f '{{.HostConfig.RestartPolicy.Name}}' "$CONTAINER" 2>/dev/null || true)"
-if [ "$RUNNING_RESTART_POLICY" != always ]; then
+OPERATOR_RUN_SPEC="$(operator_run_spec)" || die 'operator run specification refused before restart policy'
+if [ "$OPERATOR_RUN_SPEC" = operator_hold_run_spec:original_owner ]; then
+  # Keep the captured live predecessor; never rearm its plain boot command.
+  [ "$RUNNING_RESTART_POLICY" = no ] || die 'captured predecessor restart fence missing'
+  [ "$(autoheal_status)" = exited ] \
+    && [ "$(bounded_recovery_command 5 docker container inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$AUTOHEAL_CONTAINER")" = no ] \
+    || die 'captured predecessor autoheal fence missing'
+elif [ "$RUNNING_RESTART_POLICY" != always ]; then
   bounded_recovery_command 10 docker update --restart always "$CONTAINER" >/dev/null \
     || die 'could not arm sealed desired restart policy'
 fi
-ensure_autoheal_running \
-  || die "exact desired recovery could not start $AUTOHEAL_CONTAINER"
+if [ "$OPERATOR_RUN_SPEC" != operator_hold_run_spec:original_owner ]; then
+  ensure_autoheal_running \
+    || die "exact desired recovery could not start $AUTOHEAL_CONTAINER"
+fi
 prove_exact_desired_recovery \
   || exit 1

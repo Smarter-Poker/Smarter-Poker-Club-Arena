@@ -85,10 +85,11 @@ describe('the exact legacy checkpoint enters the existing release transaction', 
     (status) => {
       const requestRoot = mkdtempSync(join(tmpdir(), 'legacy-custody-prerequisite-'));
       try {
-        const block = checkpointShell.slice(
-          checkpointShell.indexOf('# Installed SQL is a prerequisite'),
-          checkpointShell.indexOf('{ cat "$CONTROL_DIR/legacy-engine-checkpoint-guard.mjs";')
-        );
+        const prerequisite = checkpointShell.indexOf('# Installed SQL is a prerequisite');
+        const invocation = checkpointShell.indexOf('\nset +e\n{\n', prerequisite);
+        expect(prerequisite).toBeGreaterThan(0);
+        expect(invocation).toBeGreaterThan(prerequisite);
+        const block = checkpointShell.slice(prerequisite, invocation);
         expect(block).toContain('--mixed-custody-contract');
         const result = spawnSync(
           'bash',

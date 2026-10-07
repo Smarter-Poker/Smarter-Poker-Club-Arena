@@ -228,3 +228,6 @@ tests/visual/__shots__/
 # alone - burying the handful of genuinely unsaved edits sitting beside them.
 # That is how uncommitted work gets lost: not deleted, just never noticed.
 work/release-journal-pg-*/
+
+# Actual build-graph scratch; the sealed combined inventory ships in dist.
+.client-runtime-*.json

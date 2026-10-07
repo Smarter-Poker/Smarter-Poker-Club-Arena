@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -130,7 +130,13 @@ describe('post-deploy E2E concurrency', () => {
         input: script,
         encoding: 'utf8',
       });
-      return { status: run.status, output: readFileSync(output, 'utf8'), stderr: run.stderr };
+      const result = {
+        status: run.status,
+        output: readFileSync(output, 'utf8'),
+        stderr: run.stderr,
+      };
+      rmSync(directory, { recursive: true, force: true });
+      return result;
     };
 
     const originJob = (publish: string, proof: string, standDown = 'success') => ({
@@ -153,10 +159,11 @@ describe('post-deploy E2E concurrency', () => {
     });
 
     it.each([
-      ['a publisher cancelled before any job started', { jobs: [] }],
+      ['a publisher cancelled before any job started', { total_count: 0, jobs: [] }],
       [
         'a publisher whose every job was cancelled or skipped',
         {
+          total_count: 2,
           jobs: [
             { name: 'tests', conclusion: 'cancelled' },
             { name: 'x', conclusion: 'skipped' },
@@ -173,13 +180,45 @@ describe('post-deploy E2E concurrency', () => {
 
     it('still certifies a real publish and a safe forward stand-down', () => {
       for (const payload of [
-        { jobs: [originJob('success', 'success')] },
-        { jobs: [originJob('skipped', 'skipped')] },
+        { total_count: 1, jobs: [originJob('success', 'success')] },
+        { total_count: 1, jobs: [originJob('skipped', 'skipped')] },
       ]) {
         const result = verdict(payload);
         expect(result.status, result.stderr).toBe(0);
         expect(result.output).toBe('should_run=true\n');
       }
+    });
+
+    it('admits only complete successful runtime qualification with no origin transaction', () => {
+      const retention = {
+        name: 'retain-runtime',
+        status: 'completed',
+        conclusion: 'success',
+        steps: [
+          {
+            name: 'Verify both origins still serve the qualified immutable runtime',
+            status: 'completed',
+            conclusion: 'success',
+          },
+          { name: 'Record qualified retained runtime', status: 'completed', conclusion: 'success' },
+        ],
+      };
+      const skipped = {
+        name: 'publish-to-origin',
+        status: 'completed',
+        conclusion: 'skipped',
+        steps: [],
+      };
+      const valid = verdict({ total_count: 2, jobs: [retention, skipped] });
+      expect(valid.status, valid.stderr).toBe(0);
+      expect(valid.output).toBe('should_run=true\nretained=true\n');
+      for (const payload of [
+        { total_count: 3, jobs: [retention, skipped] },
+        { jobs: [retention, skipped] },
+        { total_count: 2, jobs: [retention, originJob('success', 'success')] },
+        { total_count: 2, jobs: [{ ...retention, steps: retention.steps.slice(0, 1) }, skipped] },
+      ])
+        expect(verdict(payload).status).toBe(1);
     });
 
     // The stand-down must never become a way to skip certification when a
@@ -188,9 +227,12 @@ describe('post-deploy E2E concurrency', () => {
     it.each([
       [
         'jobs ran but none is publish-to-origin',
-        { jobs: [{ name: 'publish-to-hetzner', status: 'completed', conclusion: 'success' }] },
+        {
+          total_count: 1,
+          jobs: [{ name: 'publish-to-hetzner', status: 'completed', conclusion: 'success' }],
+        },
       ],
-      ['the origin job failed', { jobs: [originJob('failure', 'failure')] }],
+      ['the origin job failed', { total_count: 1, jobs: [originJob('failure', 'failure')] }],
       ['the jobs response is malformed', { total_count: 1 }],
     ])('still refuses %s', (_label, payload) => {
       expect(verdict(payload).status).toBe(1);

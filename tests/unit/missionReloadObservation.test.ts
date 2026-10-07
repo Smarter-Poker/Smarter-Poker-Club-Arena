@@ -126,13 +126,13 @@ describe('failed mission reload evidence', () => {
       vi.useRealTimers();
     }
   });
-  it('runs evidence before the owned context closes while keeping the reload failure visible', () => {
+  it('preserves strict document-reload refusal while the separate remount proof owns concurrent persistence', () => {
     const source = readFileSync(
       resolve(import.meta.dirname, '../e2e/production-daily-missions.spec.ts'),
       'utf8'
     );
-    expect(source).toContain('await reloadMissionPageWithEvidence(page, async (observation) =>');
-    expect(source.indexOf('daily-missions-reload-observation.json')).toBeLessThan(
+    expect(source).toContain('await remountConcurrentMissionReceipts({');
+    expect(source.indexOf('daily-missions-reroll-remount.json')).toBeLessThan(
       source.indexOf('for (const context of contexts.reverse())')
     );
     const helper = readFileSync(

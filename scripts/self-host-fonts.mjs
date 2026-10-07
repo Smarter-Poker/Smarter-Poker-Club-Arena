@@ -47,6 +47,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fontFileName } from './lib/font-file-name.mjs';
+import { FONT_UA, fontInputHash, validateFontInputs } from './ci/client-runtime-font-inputs.mjs';
 
 const ROOT = process.argv[2] || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // CA_DIST: the native build (npm run build:native) writes dist-native/ so the
@@ -54,8 +55,7 @@ const ROOT = process.argv[2] || path.resolve(path.dirname(fileURLToPath(import.m
 const DIST = path.join(ROOT, process.env.CA_DIST || 'dist');
 // CA_PUBLIC_BASE: the bundle's public base. Web '/hub/club-arena/', native '/'.
 const PUBLIC_BASE = (process.env.CA_PUBLIC_BASE || '/hub/club-arena/').replace(/\/?$/, '/');
-const UA =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+const UA = FONT_UA;
 
 async function main() {
   const htmlPath = path.join(DIST, 'index.html');
@@ -80,7 +80,13 @@ async function main() {
 
   const cssRes = await fetch(cssUrl, { headers: { 'User-Agent': UA } });
   if (!cssRes.ok) throw new Error(`css2 fetch failed: ${cssRes.status}`);
-  let css = await cssRes.text();
+  const cssBytes = Buffer.from(await cssRes.arrayBuffer());
+  let css = cssBytes.toString('utf8');
+  const externalInputs = {
+    schema: 1,
+    userAgent: UA,
+    files: [{ url: cssUrl, sha256: fontInputHash(cssBytes), bytes: cssBytes.length }],
+  };
 
   const fontUrls = [
     ...new Set(
@@ -102,6 +108,7 @@ async function main() {
     const buf = Buffer.from(await res.arrayBuffer());
     writeFileSync(path.join(fontsDir, name), buf);
     bytes += buf.length;
+    externalInputs.files.push({ url, sha256: fontInputHash(buf), bytes: buf.length });
     css = css.split(url).join(`${PUBLIC_BASE}fonts/${name}`);
   }
   // PERF PASS 2026-08-22 (handoff item 5): the stylesheet is content-hashed
@@ -123,6 +130,11 @@ async function main() {
     .replace(/\s*<link rel="preconnect" href="https:\/\/fonts\.googleapis\.com"[^>]*>/, '')
     .replace(/\s*<link rel="preconnect" href="https:\/\/fonts\.gstatic\.com"[^>]*>/, '');
   writeFileSync(htmlPath, newHtml);
+  validateFontInputs(externalInputs);
+  writeFileSync(
+    path.join(DIST, 'client-runtime-font-inputs.json'),
+    JSON.stringify(externalInputs) + '\n'
+  );
 
   console.log(
     `[self-host-fonts] self-hosted ${fontUrls.length} woff2 files (${(bytes / 1024).toFixed(0)}KB) + ${cssName} (+legacy fonts.css); index.html rewritten`

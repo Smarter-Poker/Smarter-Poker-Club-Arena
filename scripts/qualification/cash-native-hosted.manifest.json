@@ -1,5 +1,12 @@
 {
   "schemaVersion": 1,
+  "leaderboardCurrentMainIntegration20261007": {
+    "reason": "Preserve both the native leaderboard extension-table restoration regression and current main's authenticated client runtime retention step. Only the actual combined workflow source fingerprint changes; all financial inputs, assertions, qualification status and historical audit entries remain unchanged.",
+    "previousCurrentMainWorkflowPin": {
+      "bytes": 190898,
+      "sha256": "b35b4da5a652263f1d9c9693ffedc029befb4500eb0839991fb7e243a79ada88"
+    }
+  },
   "leaderboardNativeRestoreRegression20261007": {
     "reason": "Add one isolated native PostgreSQL 17 custom extension-table trigger restore regression to accounting shard four, preserving current main's independently delivered atomic horse hand-review step. Existing cash commands, financial inputs, assertions and SOURCE_ONLY_UNRUN status are unchanged. This source fingerprint refresh does not establish current-schema or financial qualification.",
     "previousWorkflowPin": {
@@ -17,8 +24,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 191102,
-      "sha256": "617dd53ed904045c79244a2971c97adc158e12a55f9175618a111586d775e538"
+      "bytes": 191263,
+      "sha256": "16071380ef8d3e4801b527c4f766e40d88d7443ff7d4b024432031ce4b694d64"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,

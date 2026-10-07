@@ -287,9 +287,11 @@ export function CardImage({
      rank and suit are exactly what we failed to read. */
   if (unreadable) {
     return (
+      /* No data-face-deck: this tile paints no face-deck finish (CardImage.css
+         excludes --unreadable from it), so naming a deck here would report a
+         finish that is not on screen. A deck is only claimed by a real face. */
       <div
         className={classes}
-        data-face-deck={explicitFaceDeckId}
         role="img"
         aria-label="Card Could Not Be Read"
         title="This Card Could Not Be Read. Do Not Act On It, Reload The Table."

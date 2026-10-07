@@ -97,6 +97,22 @@ describe('face-deck catalog', () => {
     expect(cards[2]).not.toHaveAttribute('data-face-deck');
   });
 
+  it('never names a deck on a card it could not read', () => {
+    // The unreadable tile paints no finish, so it must not claim one: a deck
+    // attribute there would let a face-deck check pass over a board of "?".
+    const view = render(
+      <FaceDeckContext.Provider value="broadcast-pro">
+        <CardImage card={{ rank: 'As', suit: '' } as never} deckStyle="4color" />
+        <CardImage card={{ rank: 'A', suit: 's' }} deckStyle="4color" faceDeckId="ivory-club" />
+      </FaceDeckContext.Provider>
+    );
+    const [unreadable, readable] = view.container.querySelectorAll<HTMLElement>('.card-image');
+
+    expect(unreadable).toHaveClass('card-image--unreadable');
+    expect(unreadable).not.toHaveAttribute('data-face-deck');
+    expect(readable).toHaveAttribute('data-face-deck', 'ivory-club');
+  });
+
   it('keeps the twelve-card-back product separate from face-deck finishes', () => {
     const view = render(
       <section data-face-deck="neon-circuit">

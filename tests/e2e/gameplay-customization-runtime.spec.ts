@@ -1065,6 +1065,18 @@ test.describe('production routed gameplay customization', () => {
     } catch (error) {
       journeyFailure = error;
     } finally {
+      // Detach the projection routes before closing. A route callback still
+      // awaiting route.fetch() when its context closes throws "Target page,
+      // context or browser has been closed", and Playwright reports THAT in
+      // place of the journey's own failure: run 37556137203 showed only the
+      // profiles route error at line 370 while the board was still drawing
+      // "Card Could Not Be Read". The journey verdict above is unchanged.
+      await writerContext
+        ?.unrouteAll({ behavior: 'ignoreErrors' })
+        .catch((error) => cleanupFailures.push(error));
+      await readerContext
+        ?.unrouteAll({ behavior: 'ignoreErrors' })
+        .catch((error) => cleanupFailures.push(error));
       await writerContext?.close().catch((error) => cleanupFailures.push(error));
       await readerContext?.close().catch((error) => cleanupFailures.push(error));
       if (account) {

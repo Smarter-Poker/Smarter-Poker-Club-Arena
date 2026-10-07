@@ -1,4 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
+import { financialConsoleEnumCopy } from './helpers/financial-console-copy';
 import { readFileSync } from 'node:fs';
 import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
 import {
@@ -167,7 +168,7 @@ async function expectPaintedConsole(root: Locator): Promise<void> {
 async function expectNoRawBackendCopy(root: Locator): Promise<void> {
   const copy = await root.evaluate((element) => (element as HTMLElement).innerText);
   expect(copy).not.toMatch(UUID_IN_COPY);
-  expect(copy).not.toMatch(RAW_ENUM_IN_COPY);
+  expect(await root.evaluate(financialConsoleEnumCopy)).not.toMatch(RAW_ENUM_IN_COPY);
 }
 
 async function expectTouchSafeControls(root: Locator): Promise<void> {

@@ -628,6 +628,7 @@ test.describe('production routed gameplay customization', () => {
     let writerContext: BrowserContext | undefined;
     let readerContext: BrowserContext | undefined;
     let journeyFailure: unknown;
+    let captureReconciliationFailure: (() => Promise<void>) | undefined;
     const cleanupFailures: unknown[] = [];
 
     try {
@@ -776,6 +777,39 @@ test.describe('production routed gameplay customization', () => {
 
       const writerRoot = writer.locator('.multi-table-page__table-slot--active .table-page');
       const readerRoot = reader.locator('.multi-table-page__table-slot--active .table-page');
+      captureReconciliationFailure = async () => {
+        const reads = await Promise.allSettled([
+          readTheme(environment, account!.id),
+          writerRoot.getAttribute('data-felt-theme', { timeout: 5_000 }),
+          readerRoot.getAttribute('data-felt-theme', { timeout: 5_000 }),
+          readerRoot.getAttribute('data-player-appearance-sync', { timeout: 5_000 }),
+        ]);
+        const value = (index: number) => {
+          const result = reads[index];
+          return result.status === 'fulfilled' ? result.value : { outcome: 'unavailable' };
+        };
+        const row = reads[0].status === 'fulfilled' ? reads[0].value : null;
+        await test.info().attach('gameplay-appearance-reconciliation.json', {
+          contentType: 'application/json',
+          body: Buffer.from(
+            JSON.stringify({
+              observedAt: new Date().toISOString(),
+              // Fixed safe projection only: never sessions, headers or profiles.
+              persistedTheme:
+                row && typeof row === 'object'
+                  ? Object.fromEntries(
+                      ['game_type', 'table_id', 'updated_at'].map((key) => [key, row[key]])
+                    )
+                  : value(0),
+              writerFelt: value(1),
+              readerFelt: value(2),
+              readerSync: value(3),
+              writerRealtime,
+              readerRealtime,
+            })
+          ),
+        });
+      };
       const writerTableArt = writerRoot.locator('.table-art');
       const writerDealer = writerRoot.locator('.dealer-button');
       const writerCardBack = writerRoot.locator('.seat__cards--opponent .card-back').first();
@@ -1064,6 +1098,9 @@ test.describe('production routed gameplay customization', () => {
       console.log('[gameplay-customization] every selected graphic survived a cold route reload');
     } catch (error) {
       journeyFailure = error;
+      // Evidence must not replace the original journey failure, retry its
+      // write, or relax the assertion that the second browser reconciles.
+      await captureReconciliationFailure?.().catch(() => undefined);
     } finally {
       // Detach the projection routes before closing. A route callback still
       // awaiting route.fetch() when its context closes throws "Target page,

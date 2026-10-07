@@ -26,12 +26,12 @@ that everywhere else on the page.
 - Each console that prints an alias marks it `data-player-name`: Credit Admin
   agent and audit rows, the credit request inbox requester, and the Club
   Disputes submitter.
-- The certificate removes only marked alias text, and only from the raw-enum
-  scan. The UUID scan still reads every character, and every unmarked word is
-  still held to the raw-enum rule.
-- `tests/e2e/routes/achievement-rate-observers.spec.ts` pinned the Settlement
-  History cycle head as `Period:` followed by the period UUID, which #6321
-  removed. It now pins the head that is printed, `Period 1` (or `Settlement
-Cycle` when the split has no number). Seen in the same run's `sweep.json`.
+- `#6363` landed the same correction for Credit Admin's agent rows while this
+  was in review (`tests/e2e/helpers/financial-console-copy.ts`, keyed on the
+  agent-identity class), and a stronger Settlement History observer pin. This
+  change keeps both and extends the helper to the explicit marker, so the audit
+  rows, the request inbox and the Disputes submitter are covered too. The UUID
+  scan still reads every character, and every unmarked word is still held to
+  the raw-enum rule.
 - `tests/unit/financialConsolesMarkPlayerNames.test.ts` pins the markers and the
   narrow exclusion.

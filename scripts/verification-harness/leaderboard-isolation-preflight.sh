@@ -245,7 +245,10 @@ docker exec -i "$container" pg_restore -h /tmp -U "$bootstrap" --dbname=template
   --schema-only --exit-on-error --use-list=/tmp/database.list \
   <"$scratch/schema.dump" >"$scratch/database-restore.log" 2>&1 || destination_failure 'database attributes cannot be restored' "$scratch/database-restore.log" "$?"
 docker exec "$container" psql -h /tmp -Xq -U "$bootstrap" -d postgres -v ON_ERROR_STOP=1 \
-  -v VERBOSITY=verbose -c 'DROP SCHEMA public; DROP EXTENSION plpgsql;' >"$scratch/empty-schema.log" 2>&1 || destination_failure 'empty isolated defaults cannot be prepared' "$scratch/empty-schema.log" "$?"
+  -v VERBOSITY=verbose -c 'DROP EXTENSION plpgsql;' >"$scratch/empty-schema.log" 2>&1 || destination_failure 'empty isolated defaults cannot be prepared' "$scratch/empty-schema.log" "$?"
+# PG17 pg_dump omits CREATE SCHEMA for initdb's standard public namespace.
+# Retain that namespace; archive owner/ACL statements and final exact catalog
+# comparison still enforce source security. Only plpgsql is recreated below.
 docker exec -i "$container" pg_restore -h /tmp -U "$bootstrap" --dbname=postgres \
   --schema-only --exit-on-error --use-list=/tmp/schemas.list \
   <"$scratch/schema.dump" >"$scratch/schemas-restore.log" 2>&1 || destination_failure 'source namespaces cannot be restored' "$scratch/schemas-restore.log" "$?"

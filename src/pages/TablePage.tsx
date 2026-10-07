@@ -1127,6 +1127,7 @@ interface TablePageProps {
     turnStartMs?: number;
     actionContext?: string;
     pot?: number;
+    handNumber?: number;
     /**
      * PokerBros parity (Dan 2026-08-20, from live multi-table footage): each
      * tab previews the hero's hole cards AT THAT TABLE. Reported as ONE
@@ -6732,6 +6733,7 @@ function LiveTablePage({
       turnDeadlineMs: isHeroTurn ? tableState.actionTimerDeadline : undefined,
       turnStartMs: isHeroTurn ? tableState.actionTimerStartTime : undefined,
       pot: tableState.pot,
+      handNumber: tableState.handNumber,
       holeCards: heroTabCards,
       lastAction: heroTabLastAction,
       folded: heroTabFolded,
@@ -6761,6 +6763,7 @@ function LiveTablePage({
     tableState.gameType,
     tableState.blinds,
     tableState.pot,
+    tableState.handNumber,
     tableState.currentPlayerSeat,
     tableState.heroSeat,
     tableState.isHandInProgress,
@@ -24310,6 +24313,7 @@ function LiveTablePage({
                   },
                 ]}
                 tableName={tableState.tableName}
+                handNumber={tableState.handNumber}
                 // 2026-08-22: the indicator used to mirror the LEGACY Supabase
                 // channel (presence/chat) while the game rides the engine WS —
                 // a dead engine socket showed a green dot and a Supabase blip

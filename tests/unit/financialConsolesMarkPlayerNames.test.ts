@@ -30,9 +30,13 @@ describe('financial consoles mark the player aliases they print', () => {
   });
 
   it('the certificate sets marked aliases aside only from the raw-enum scan', () => {
+    expect(source('tests/e2e/helpers/financial-console-copy.ts')).toContain(
+      "copy.querySelectorAll('[data-player-name]').forEach((name) => name.remove());"
+    );
     const spec = source('tests/e2e/financial-admin-deep.spec.ts');
-    expect(spec).toContain("querySelectorAll<HTMLElement>('[data-player-name]')");
     expect(spec).toContain('expect(copy).not.toMatch(UUID_IN_COPY);');
-    expect(spec).toContain('expect(copyWithoutPlayerNames).not.toMatch(RAW_ENUM_IN_COPY);');
+    expect(spec).toContain(
+      'expect(await root.evaluate(financialConsoleEnumCopy)).not.toMatch(RAW_ENUM_IN_COPY);'
+    );
   });
 });

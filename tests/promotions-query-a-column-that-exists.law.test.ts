@@ -156,16 +156,16 @@ describe('a promotion cannot advertise a prize nobody can win, silently', () => 
    *
    * WHEN THE PAYOUT IS BUILT: delete the trigger and this test together.
    */
-  it('warns when an unpayable promotion type goes active with a prize pool', () => {
+  it('a promotion can no longer advertise a prize at all (owner decision 2026-10-07)', () => {
+    // The 2026-08-29 guard only WARNED. The owner decision of 2026-10-07
+    // (docs/changelog/2026-10-07-five-launch-owner-decisions.md) replaced the
+    // warning with the cause: no promotion type has a payer, so a CHECK
+    // refuses any prize pool and the warning trigger was dropped with it.
     const owning = migrationsMentioning('trg_promotion_prize_has_no_payout_path').map((m) => m.sql);
-
     expect(owning.length, 'the no-payout-path guard migration is missing').toBeGreaterThan(0);
     const latest = owning[owning.length - 1];
-    expect(latest).toMatch(/'leaderboard', 'high_hand', 'rake_race'/);
-    expect(latest).toMatch(/promotions\.no_payout_path/);
-    // It must WARN, never block: refusing the insert would break a club
-    // mid-setup for a feature gap that is not their fault.
-    expect(latest).not.toMatch(/RAISE EXCEPTION[^;]*no_payout_path/);
+    expect(latest).toMatch(/DROP TRIGGER IF EXISTS trg_promotion_prize_has_no_payout_path/);
+    expect(latest).toMatch(/CHECK \(COALESCE\(prize_pool, 0\) = 0\)/);
   });
 
   it('still has no writer for promotion_leaderboards.prize — the guard is not vacuous', () => {

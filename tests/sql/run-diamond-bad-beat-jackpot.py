@@ -31,6 +31,10 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 SQL = ROOT / 'tests/sql'
 MIGRATION = (ROOT / 'supabase/migrations'
              / '20261005152000_the_diamond_jackpot_is_decided_and_its_pool_is_player_side.sql')
+# The hit's leftover rule, replaced on 2026-10-07: every announced Diamond is
+# paid, the floors' leftover to the losing hand. Loaded after MIGRATION.
+LEFTOVER_MIGRATION = (ROOT / 'supabase/migrations'
+                      / '20261007015026_a_diamond_jackpot_hit_pays_every_diamond_it_announces.sql')
 # ca_diamond_economics is SHARED. It is the A1 to A20 lane's table, and this
 # lane joins it rather than holding a copy.
 SHARED_ECONOMICS = (ROOT / 'supabase/migrations'
@@ -68,7 +72,7 @@ def main():
     ap.add_argument('--keep', action='store_true')
     args = ap.parse_args()
 
-    for f in (MIGRATION, SHARED_ECONOMICS, SQL / 'poker-diamond-custody.sql',
+    for f in (MIGRATION, LEFTOVER_MIGRATION, SHARED_ECONOMICS, SQL / 'poker-diamond-custody.sql',
               SQL / 'poker-diamond-cash-custody-setup.sql',
               SQL / 'poker-diamond-bad-beat-jackpot-fixture.sql',
               SQL / 'poker-diamond-bad-beat-jackpot-acceptance.sql'):
@@ -159,6 +163,7 @@ def main():
         # edited: if an asserted substitution does not meet its pinned md5 here,
         # it would not meet it in production either.
         load(MIGRATION, 'the migration, verbatim and unnarrowed')
+        load(LEFTOVER_MIGRATION, 'the leftover rule, verbatim and unnarrowed')
         load(SQL / 'poker-diamond-bad-beat-jackpot-acceptance.sql', 'the acceptance cases')
 
         shut = run(psql + ['-At', '-d', DB, '-c',

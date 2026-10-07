@@ -226,7 +226,8 @@ SELECT fixture_assert(public.fn_poker_diamond_jackpot_diamonds() = 300,
 --   loser       floor(105 * 50/100)  =  52
 --   winner      floor(105 * 25/100)  =  26
 --   the table   105 - 52 - 26        =  27, which is 13 each to two players
---   left behind 105 - 52 - 26 - 26   =   1, and it stays in the main pool
+--   leftover    27 - 13 - 13         =   1, which goes to the losing hand
+--               (the chip jackpot's rule; 20261007015026), so 105 is paid
 CREATE TABLE fixture_bbj_hit AS
  SELECT public.fn_poker_diamond_jackpot_pay(
    '30000000-0000-0000-0000-000000000001', 1000002, 600, 4,
@@ -236,18 +237,19 @@ CREATE TABLE fixture_bbj_hit AS
 SELECT fixture_assert((SELECT (r->>'main_before')::bigint = 150 AND (r->>'payout_percent')::numeric = 70
                        AND (r->>'paid_total')::bigint = 105 FROM fixture_bbj_hit),
   'B19: the hit paid 70 percent of a 150 Diamond main pool, 105 Diamonds');
-SELECT fixture_assert((SELECT (r->>'loser')::bigint = 52 AND (r->>'winner')::bigint = 26
+SELECT fixture_assert((SELECT (r->>'loser')::bigint = 53 AND (r->>'winner')::bigint = 26
                        AND (r->>'table_total')::bigint = 27 AND (r->>'table_each')::bigint = 13
                        FROM fixture_bbj_hit),
-  'B19: half to the losing hand, a quarter to the winner, a quarter among the rest of the table');
-SELECT fixture_assert((SELECT (r->>'paid_out')::bigint = 104 AND (r->>'left_in_main_pool')::bigint = 1
+  'B19: half to the losing hand plus the leftover Diamond, a quarter to the winner, a quarter among the rest of the table');
+SELECT fixture_assert((SELECT (r->>'paid_out')::bigint = 105 AND (r->>'left_in_main_pool')::bigint = 0
+                       AND (r->>'table_remainder_to_loser')::bigint = 1
                        FROM fixture_bbj_hit),
-  'the one Diamond no floor could allocate STAYED IN THE MAIN POOL; nothing was taken from a player to round it');
+  'the hit paid every Diamond it announced: the one Diamond the table floors left went to the losing hand, as in chips');
 SELECT fixture_assert((SELECT (r->>'qualifying_hand') = 'AAAJJ' FROM fixture_bbj_hit),
   'B16: hold''em qualifies on aces full of jacks or better');
 
-SELECT fixture_assert((SELECT diamonds = 752 FROM profiles WHERE id = '10000000-0000-0000-0000-000000000001'),
-  'the losing hand was paid 52 into its wallet');
+SELECT fixture_assert((SELECT diamonds = 753 FROM profiles WHERE id = '10000000-0000-0000-0000-000000000001'),
+  'the losing hand was paid 53 into its wallet');
 SELECT fixture_assert((SELECT diamonds = 99726 FROM profiles WHERE id = '10000000-0000-0000-0000-000000000003'),
   'the winning hand was paid 26');
 SELECT fixture_assert((SELECT diamonds = 713 FROM profiles WHERE id = '10000000-0000-0000-0000-000000000002'),
@@ -256,12 +258,12 @@ SELECT fixture_assert((SELECT diamonds = 99713 AND is_horse FROM profiles WHERE 
   'A HORSE WAS PAID ITS 13 DIAMOND TABLE SHARE, on the same terms as the human beside it (CLAUDE.md 10.5)');
 
 SELECT fixture_assert(public.fn_poker_diamond_jackpot_bank(
-  (SELECT id FROM poker_diamond_jackpot_pools WHERE status = 'active'), 'main') = 46,
-  'main fell by the 104 it paid out and by nothing else: 150 less 104 is 46');
-SELECT fixture_assert(public.fn_poker_diamond_jackpot_diamonds() = 196,
-  'the jackpot holds 196: 300 dropped less 104 paid');
-SELECT fixture_assert(public.fn_ca_arena_diamonds() = 1096,
-  'the arena float fell by exactly what the wallets gained: 1200 less 104');
+  (SELECT id FROM poker_diamond_jackpot_pools WHERE status = 'active'), 'main') = 45,
+  'main fell by the 105 it paid out and by nothing else: 150 less 105 is 45');
+SELECT fixture_assert(public.fn_poker_diamond_jackpot_diamonds() = 195,
+  'the jackpot holds 195: 300 dropped less 105 paid');
+SELECT fixture_assert(public.fn_ca_arena_diamonds() = 1095,
+  'the arena float fell by exactly what the wallets gained: 1200 less 105');
 SELECT fixture_assert((SELECT count(*) FROM ca_mint_ledger) = (SELECT n FROM fixture_bbj_register_before),
   'a payout writes NO register row either: pool to wallet is a transfer inside the player supply, exactly like a Diamond prize');
 SELECT fixture_assert((SELECT count(*) = 4 FROM diamond_transactions
@@ -276,11 +278,11 @@ CREATE TABLE fixture_bbj_hit_replay AS
    '30000000-0000-0000-0000-000000000001', 1000002, 600, 4,
    '10000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000003',
    ARRAY['10000000-0000-0000-0000-000000000002','10000000-0000-0000-0000-000000000004']::uuid[]) AS r;
-SELECT fixture_assert((SELECT (r->>'replay')::boolean AND (r->>'paid')::bigint = 104
+SELECT fixture_assert((SELECT (r->>'replay')::boolean AND (r->>'paid')::bigint = 105
                        FROM fixture_bbj_hit_replay),
   'the second delivery of the hit is a replay, and it reports what the first one paid');
-SELECT fixture_assert(public.fn_poker_diamond_jackpot_diamonds() = 196
-  AND (SELECT diamonds = 752 FROM profiles WHERE id = '10000000-0000-0000-0000-000000000001')
+SELECT fixture_assert(public.fn_poker_diamond_jackpot_diamonds() = 195
+  AND (SELECT diamonds = 753 FROM profiles WHERE id = '10000000-0000-0000-0000-000000000001')
   AND (SELECT count(*) = 4 FROM poker_diamond_jackpot_ledger WHERE kind = 'payout'),
   'THE REPLAY PAID NOTHING: the pool, the wallets and the ledger are where the first hit left them');
 
@@ -301,9 +303,9 @@ CREATE TABLE fixture_bbj_withdraw AS
  SELECT public.fn_poker_diamond_jackpot_withdraw(
    (SELECT id FROM poker_diamond_jackpot_pools WHERE arena_id='20000000-0000-0000-0000-000000000001' AND status='active'),
    (SELECT id FROM poker_diamond_jackpot_pools WHERE arena_id='20000000-0000-0000-0000-000000000002')) AS r;
-SELECT fixture_assert((SELECT (r->>'total')::bigint = 196 FROM fixture_bbj_withdraw),
-  'B22: all 196 Diamonds moved to the surviving pool');
-SELECT fixture_assert(public.fn_poker_diamond_jackpot_diamonds() = 196,
+SELECT fixture_assert((SELECT (r->>'total')::bigint = 195 FROM fixture_bbj_withdraw),
+  'B22: all 195 Diamonds moved to the surviving pool');
+SELECT fixture_assert(public.fn_poker_diamond_jackpot_diamonds() = 195,
   'the withdrawal moved Diamonds between pools and created or destroyed none');
 SELECT fixture_assert((SELECT status = 'retired_settled' AND merged_into_pool_id IS NOT NULL
   FROM poker_diamond_jackpot_pools WHERE arena_id='20000000-0000-0000-0000-000000000001'),

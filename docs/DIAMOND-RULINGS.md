@@ -308,3 +308,7 @@ production rehearsal of the engine's own request found and fixed the commit
 door's refusal of every raked Diamond hand (`20261006154344`), then settled
 the hand with its rake. `cash_games_enabled` being true is Dan's decision. It
 is not an unexplained open, and closing it again is his call.
+
+## A Diamond jackpot hit pays every Diamond it announces (decided by Claude on Dan's delegation, 2026-10-07; migration 20261007015026; docs/changelog/2026-10-07-five-launch-owner-decisions.md)
+
+Dan, 2026-10-07: "THESE ARE ALL YOURS TO FINISH UP AND DECIDE". B19's hit floored each share and left the leftover in the main pool, so a hit announced as 105 paid 104. The chip jackpot (`bbj_atomic_payout_v2`) pays its whole announced total and gives the table remainder to the losing hand. **The ruling:** the Diamond hit floors its paid total once from the pool, pays every Diamond of it, and gives the floors' leftover to the losing hand, horses on the same terms. No Diamond hit had been paid when this was decided, so nothing is owed.

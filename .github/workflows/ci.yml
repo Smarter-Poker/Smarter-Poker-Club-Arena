@@ -1396,7 +1396,11 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
           TMPDIR: ${{ runner.temp }}
           LEADERBOARD_NATIVE_PG17_TEST: '1'
-        run: node --test scripts/verification-harness/leaderboard-isolation-extension-trigger-bootstrap.test.mjs
+        run: >-
+          node --test
+          scripts/verification-harness/leaderboard-isolation-extension-trigger-bootstrap.test.mjs
+          scripts/verification-harness/leaderboard-isolation-definition-portability.test.mjs
+          scripts/verification-harness/leaderboard-isolation-acl-bootstrap.test.mjs
       - name: Data console native PostgreSQL contracts
         if: matrix.shard == 2
         env:

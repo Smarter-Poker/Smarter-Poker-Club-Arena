@@ -7,6 +7,7 @@ readonly catalog="$here/leaderboard-isolation-catalog.sql"
 readonly extension_bootstrap="$here/leaderboard-isolation-extension-bootstrap.sql"
 readonly event_owner_bootstrap="$here/leaderboard-isolation-event-owner-bootstrap.sql"
 readonly extension_trigger_bootstrap="$here/leaderboard-isolation-extension-trigger-bootstrap.sql"
+readonly acl_bootstrap="$here/leaderboard-isolation-acl-bootstrap.sql"
 readonly restore_script_helper="$here/leaderboard-isolation-restore-script.mjs"
 readonly startup_helper="$here/leaderboard-isolation-startup-profile.mjs"
 readonly catalog_diagnostic="$here/leaderboard-isolation-catalog-diagnostic.mjs"
@@ -151,6 +152,7 @@ if [[ "${1:-}" == '--check' ]]; then
   test -s "$extension_bootstrap"
   test -s "$event_owner_bootstrap"
   test -s "$extension_trigger_bootstrap"
+  test -s "$acl_bootstrap"
   test -s "$restore_script_helper"
   test -s "$startup_helper"
   test -s "$catalog_diagnostic"
@@ -281,6 +283,9 @@ source_catalog >"$scratch/source-before.json" 2>"$scratch/source-error.log" || s
 source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
   <"$extension_trigger_bootstrap" >"$scratch/extension-triggers-before.sql" 2>"$scratch/source-error.log" || source_failure 'extension-table trigger metadata unavailable' "$scratch/source-error.log" "$?"
 chmod 600 "$scratch/extension-triggers-before.sql"
+source_client 180 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
+  <"$acl_bootstrap" >"$scratch/acl-before.sql" 2>"$scratch/source-error.log" || source_failure 'source ACL metadata unavailable' "$scratch/source-error.log" "$?"
+chmod 600 "$scratch/acl-before.sql"
 # Run 37579107745 observed inner client status 0 and outer elapsed 514s.
 # Preserve a finite measured command envelope, not a claimed inner duration.
 source_client 600 pg_dump \
@@ -298,6 +303,10 @@ source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
   <"$extension_trigger_bootstrap" >"$scratch/extension-triggers-after.sql" 2>"$scratch/source-error.log" || source_failure 'extension-table trigger metadata recheck unavailable' "$scratch/source-error.log" "$?"
 chmod 600 "$scratch/extension-triggers-after.sql"
 cmp -s "$scratch/extension-triggers-before.sql" "$scratch/extension-triggers-after.sql" || failure 'extension-table trigger metadata changed during export'
+source_client 180 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
+  <"$acl_bootstrap" >"$scratch/acl-after.sql" 2>"$scratch/source-error.log" || source_failure 'source ACL metadata recheck unavailable' "$scratch/source-error.log" "$?"
+chmod 600 "$scratch/acl-after.sql"
+cmp -s "$scratch/acl-before.sql" "$scratch/acl-after.sql" || failure 'source ACL metadata changed during export'
 source_startup >"$scratch/startup-after.json" 2>"$scratch/source-error.log" || source_failure 'source startup profile recheck unavailable' "$scratch/source-error.log" "$?"
 node "$startup_helper" verify "$scratch/startup-before.json" "$scratch/startup-after.json" || failure 'source numeric startup profile changed during export'
 prepare_roles "$source_bootstrap" <"$scratch/roles.sql" >"$scratch/roles-restore.sql" || failure 'exact existing bootstrap role creation unavailable'
@@ -325,11 +334,11 @@ docker exec -i "$container" psql -h /tmp -Xq -U "$bootstrap" -d template1 -v ON_
   -v VERBOSITY=verbose <"$scratch/roles-restore.sql" >"$scratch/role-restore.log" 2>&1 || failure "exact roles cannot be restored ($(destination_role_category <"$scratch/role-restore.log"))"
 docker exec "$container" psql -h /tmp -Xq -U "$bootstrap" -d template1 -v ON_ERROR_STOP=1 -v VERBOSITY=verbose \
   -c 'DROP DATABASE postgres;' >"$scratch/drop-empty-database.log" 2>&1 || destination_failure 'empty local database preparation failed' "$scratch/drop-empty-database.log" "$?"
-docker run --rm -i --entrypoint /usr/lib/postgresql/bin/pg_restore "$image" --list \
+docker run --rm -i --entrypoint /usr/lib/postgresql/bin/pg_restore "$image" --list --create \
   <"$scratch/schema.dump" >"$scratch/archive.list" 2>"$scratch/list-error.log" || failure 'archive ordering unavailable'
-awk '$4 == "DATABASE" {print}' "$scratch/archive.list" >"$scratch/database.list"
+awk '$4 == "DATABASE" || ($4 == "ACL" && $6 == "DATABASE") {print}' "$scratch/archive.list" >"$scratch/database.list"
 awk '$4 == "SCHEMA" {print}' "$scratch/archive.list" >"$scratch/schemas.list"
-awk '$4 != "DATABASE" && $4 != "SCHEMA" && $4 != "EXTENSION" {print}' \
+awk '$4 != "DATABASE" && !($4 == "ACL" && $6 == "DATABASE") && $4 != "SCHEMA" && $4 != "EXTENSION" {print}' \
   "$scratch/archive.list" >"$scratch/remaining.list"
 docker cp "$scratch/database.list" "$container:/tmp/database.list" >/dev/null
 docker cp "$scratch/schemas.list" "$container:/tmp/schemas.list" >/dev/null
@@ -376,6 +385,12 @@ docker exec -i "$container" psql -h /tmp -Xq -U "$bootstrap" -d postgres \
   -v ON_ERROR_STOP=1 -v VERBOSITY=verbose --single-transaction \
   --file=- \
   <"$scratch/atomic-restore.sql" >"$scratch/schema-restore.log" 2>&1 || destination_failure 'schema incompatibility during isolated restore' "$scratch/schema-restore.log" "$?"
+# Replay only exact owner-bound source ACLs in a separately guarded atomic
+# transaction after original role attributes are restored. Full catalog equality
+# remains mandatory; the generated input refuses unsupported grant chains.
+docker exec -i "$container" psql -h /tmp -Xq -U "$bootstrap" -d postgres \
+  -v ON_ERROR_STOP=1 -v VERBOSITY=verbose --file=- \
+  <"$scratch/acl-before.sql" >"$scratch/acl-restore.log" 2>&1 || destination_failure 'exact source ACL restoration failed' "$scratch/acl-restore.log" "$?"
 docker exec -i "$container" psql -h /tmp -XAtq -U "$bootstrap" -d postgres -v ON_ERROR_STOP=1 -v VERBOSITY=verbose \
   <"$catalog" >"$scratch/isolated.json" 2>"$scratch/local-error.log" || destination_failure 'isolated catalog readback failed' "$scratch/local-error.log" "$?"
 # Fixed-section diagnostics retain no private identifiers or field values.

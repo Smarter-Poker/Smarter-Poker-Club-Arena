@@ -13,6 +13,27 @@ import './leaderboard-isolation-acl-order.test.mjs';
 
 const shell = fileURLToPath(new URL('./leaderboard-isolation-preflight.sh', import.meta.url));
 const source = readFileSync(shell, 'utf8');
+test('exact source ACL replay is private, drift guarded and precedes full catalog comparison', () => {
+  const before = source.indexOf('>"$scratch/acl-before.sql"');
+  const dump = source.indexOf('source_client 600 pg_dump');
+  const after = source.indexOf('>"$scratch/acl-after.sql"');
+  const stable = source.indexOf('cmp -s "$scratch/acl-before.sql" "$scratch/acl-after.sql"');
+  const restore = source.indexOf('<"$scratch/acl-before.sql" >"$scratch/acl-restore.log"');
+  const compare = source.indexOf('cmp -s "$scratch/source-before.json" "$scratch/isolated.json"');
+  assert.ok(
+    before > 0 &&
+      dump > before &&
+      after > dump &&
+      stable > after &&
+      restore > stable &&
+      compare > restore
+  );
+  for (const suffix of ['before', 'after'])
+    assert.ok(source.includes(`chmod 600 "$scratch/acl-${suffix}.sql"`));
+  assert.ok(source.includes('test -s "$acl_bootstrap"'));
+  assert.ok(source.includes("failure 'source ACL metadata changed during export'"));
+  assert.ok(source.includes("destination_failure 'exact source ACL restoration failed'"));
+});
 test('custom extension-table trigger metadata is private, stable and captured before the atomic restore', () => {
   const before = source.indexOf('>"$scratch/extension-triggers-before.sql"');
   const after = source.indexOf('>"$scratch/extension-triggers-after.sql"');
@@ -161,10 +182,7 @@ test('actual restore input prepares all private files before one transactional c
   const scratch = mkdtempSync(join(tmpdir(), 'restore-stream-'));
   const pipeline = source.slice(
     source.indexOf('cat "$scratch/event-owners-elevate.sql"'),
-    source.indexOf(
-      'docker exec -i "$container" psql -h /tmp -XAtq',
-      source.indexOf('cat "$scratch/event-owners-elevate.sql"')
-    )
+    source.indexOf('# Replay only exact owner-bound source ACLs')
   );
   assert.ok(pipeline.includes('--single-transaction') && pipeline.includes('--file=-'));
   try {
@@ -456,6 +474,28 @@ test('source export is schema-only and password-free, with drift and isolation r
       source.indexOf('shared_preload_libraries=pg_cron,pg_stat_statements')
   );
   assert.match(source, /--schema-only --exit-on-error --use-list/);
+  assert.match(source, /--list --create/);
+  const databaseSelection = 'awk \'$4 == "DATABASE" || ($4 == "ACL" && $6 == "DATABASE") {print}\'';
+  const remainingSelection =
+    'awk \'$4 != "DATABASE" && !($4 == "ACL" && $6 == "DATABASE") && $4 != "SCHEMA" && $4 != "EXTENSION" {print}\'';
+  assert.ok(source.includes(databaseSelection));
+  assert.ok(source.includes(remainingSelection));
+  const archive =
+    '3830; 1262 16388 DATABASE - postgres postgres\n3831; 0 0 ACL - DATABASE postgres postgres\n6; 2615 16390 SCHEMA - auth supabase_admin\n3832; 0 0 ACL - SCHEMA auth supabase_admin\n218; 1259 16391 TABLE auth sample supabase_admin\n';
+  const selected = spawnSync('bash', ['-c', databaseSelection], {
+    input: archive,
+    encoding: 'utf8',
+  });
+  assert.equal(selected.status, 0);
+  assert.equal(selected.stdout, archive.split('\n').slice(0, 2).join('\n') + '\n');
+  const remaining = spawnSync('bash', ['-c', remainingSelection], {
+    input: archive,
+    encoding: 'utf8',
+  });
+  assert.equal(remaining.status, 0);
+  assert.doesNotMatch(remaining.stdout, /DATABASE/);
+  assert.match(remaining.stdout, /ACL - SCHEMA auth/);
+  assert.match(remaining.stdout, /TABLE auth sample/);
   assert.match(source, /isolated catalog differs from current source/);
   assert.doesNotMatch(source, /--data-only|fn_payout_leaderboard|fn_settle_due_leaderboards/);
 });

@@ -423,7 +423,7 @@
     "scripts/ci/classify-ci-changes.mjs": "9e32091e5a712856d7593b6650b54e60e9d49f52b44af7d1f87972b27ed79388",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "606333e586607087f8f21e7ee05922b6be392033c47df6a5c87e215a77a70202",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "6ae172e3fd75acdfaba8e8c36ad6a45c53625679f2b1c6ed844550efb4e6b10c",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -442,7 +442,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "0ff491199bd893a004e2b3abc2202e26de8bff71170e8f42918b7afaabef4568",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "2d692559319e6734daecb5d381bf2638097e98723adc542cdf2794427a5b8881",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -1717,6 +1717,22 @@
     "verification": "PG_BIN=postgresql@17 scripts/dev/test-union-weekly-basis.py: 74 PASS steps, 0 failures, including club-floor-run-journal, club-floor-behaviour-seed and club-floor-behaviour-regression (20 assertions). Red control on the same stack, reverting only the three GREATEST clamps of 20260920232503 in the running coordinator: 5 of those 20 assertions fail - the below-floor club week is re-attempted, the first week above the floor is neither reached nor completed, and the club whose earlier week succeeded no longer reaches its next due week."
   },
   "restamp_audit": [
+    {
+      "on": "2026-10-07",
+      "why": "Reviewed nested legacy-fee-finality and sep8-spin-custody binding diffs: each changes only the reviewed V4 classifier pin and its audit entry. Refresh their parent hashes without changing captured financial inputs or assertions.",
+      "changed_bindings": [
+        {
+          "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
+          "from": "606333e586607087f8f21e7ee05922b6be392033c47df6a5c87e215a77a70202",
+          "to": "6ae172e3fd75acdfaba8e8c36ad6a45c53625679f2b1c6ed844550efb4e6b10c"
+        },
+        {
+          "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+          "from": "0ff491199bd893a004e2b3abc2202e26de8bff71170e8f42918b7afaabef4568",
+          "to": "2d692559319e6734daecb5d381bf2638097e98723adc542cdf2794427a5b8881"
+        }
+      ]
+    },
     {
       "on": "2026-10-07",
       "file": "scripts/ci/classify-ci-changes.mjs",

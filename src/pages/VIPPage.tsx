@@ -24,6 +24,7 @@ import { DiamondTopUpModal } from '../components/vip/DiamondTopUpModal';
 import { VIPMembershipPlate } from '../components/vip/VIPMembershipPlate';
 import { RewardsMarketplace, Reward } from '../components/vip/RewardsMarketplace';
 import { VIPActivityHistory, type DiamondActivity } from '../components/vip/VIPActivityHistory';
+import { readBalanceAfter } from '../utils/readBalanceAfter';
 import { useToast } from '../components/common/Toast';
 import DiamondWalletModal, { diamondTxLabel } from '../components/wallet/DiamondWalletModal';
 import './VIPPage.css';
@@ -372,7 +373,11 @@ export default function VIPPage() {
                 (typeof entry.player_line === 'string' && entry.player_line) ||
                 diamondTxLabel(kind),
               diamonds: Math.abs(amount),
-              balanceAfter: Number(entry.balance_after ?? 0),
+              /* A row with no recorded balance-after is UNKNOWN, not 0
+                 (CLAUDE.md 10.86): three production rows carry none, and
+                 printing "Diamond Balance 0" under them told the player a
+                 figure nobody wrote down. */
+              balanceAfter: readBalanceAfter(entry.balance_after),
             } as DiamondActivity;
           });
           setRecentDiamondActivities(mapped);

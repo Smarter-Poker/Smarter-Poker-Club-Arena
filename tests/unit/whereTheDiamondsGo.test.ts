@@ -187,18 +187,26 @@ describe('the wiring', () => {
     expect(body).toContain('CREATE OR REPLACE FUNCTION public.fn_diamond_flow_by_kind(');
     /* The kind map production runs is the latest redefinition (20260914114052
        named every writer; 20260920141527 learned the Diamond Games;
-       20260920141807 the Diamond Spins perks). The flow function is unchanged
-       and still lives here. The kind resolution below is pinned on the live
-       version. */
+       20260920141807 the Diamond Spins perks; 20261005183028 the cash rake;
+       20261007112751 a Mint grant is a bonus, never a purchase). The flow
+       function is unchanged and still lives here. The kind resolution below
+       is pinned on the live version. */
     const liveMap = read(
-      'supabase/migrations/20260920141807_the_diamond_kind_map_names_the_spins_perks.sql'
+      'supabase/migrations/20261007112751_the_cash_rake_leaves_custody_without_a_wallet_journal_row.sql'
     );
     expect(liveMap).toContain('CREATE OR REPLACE FUNCTION public.fn_diamond_kind_bucket(');
     expect(liveMap).toContain("NULLIF(BTRIM(p_transaction_type), '')");
     expect(liveMap).toContain("THEN 'other_spent'");
     expect(liveMap).toContain("ELSE 'other_earned'");
     expect(liveMap).toMatch(/^IMMUTABLE$/m);
-    expect(liveMap).not.toMatch(/\bFROM public\./);
+    // The map itself reads no table. Sliced to the function, because the file
+    // that last restated it (20261007112751) also redefines the cash rake sweep.
+    const liveMapFn = liveMap.slice(
+      liveMap.indexOf('CREATE OR REPLACE FUNCTION public.fn_diamond_kind_bucket('),
+      liveMap.indexOf('COMMENT ON FUNCTION public.fn_diamond_kind_bucket')
+    );
+    expect(liveMapFn.length).toBeGreaterThan(500);
+    expect(liveMapFn).not.toMatch(/\bFROM public\./);
     expect(liveMap.match(/^BEGIN;/gm)).toHaveLength(1);
     expect(liveMap.match(/^COMMIT;/gm)).toHaveLength(1);
     expect(body).toContain("RAISE EXCEPTION 'diamond_flow_is_own_only'");
@@ -328,7 +336,7 @@ describe('the wiring', () => {
       'house',
     ];
     const migration = read(
-      'supabase/migrations/20260920141807_the_diamond_kind_map_names_the_spins_perks.sql'
+      'supabase/migrations/20261007112751_the_cash_rake_leaves_custody_without_a_wallet_journal_row.sql'
     );
     const map = migration.slice(
       migration.indexOf('CREATE OR REPLACE FUNCTION public.fn_diamond_kind_bucket'),

@@ -1,0 +1,8 @@
+{
+  "_owner": "fix/diamond-rake-ledger-double-count (2026-10-07). Redefines three existing functions in 20261007112751; creates and retires nothing.",
+  "functions": [
+    "fn_ca_diamond_sweep_cash_rake",
+    "fn_diamond_kind_bucket",
+    "fn_ca_mint_wallet_attribution"
+  ]
+}

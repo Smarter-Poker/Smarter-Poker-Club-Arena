@@ -10,7 +10,9 @@ export interface DiamondActivity {
   action: 'earned' | 'spent' | 'redeemed';
   description: string;
   diamonds: number;
-  balanceAfter: number;
+  /** The wallet balance the ledger row recorded after it, or null when the row
+   *  recorded none. Null renders as unknown, never as 0 (CLAUDE.md 10.86). */
+  balanceAfter: number | null;
 }
 
 type ActivityFilter = 'all' | 'earned' | 'spent';
@@ -158,7 +160,11 @@ export const VIPActivityHistory: React.FC<VIPActivityHistoryProps> = ({
                   </div>
                   <div className="timeline-balance">
                     <span className="balance-label">Diamond Balance</span>
-                    <span className="balance-value">{activity.balanceAfter.toLocaleString()}</span>
+                    <span className="balance-value">
+                      {activity.balanceAfter === null
+                        ? 'Not Recorded'
+                        : activity.balanceAfter.toLocaleString()}
+                    </span>
                   </div>
                 </article>
               ))

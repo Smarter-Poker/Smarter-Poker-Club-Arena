@@ -4,6 +4,10 @@ name: Leaderboard Isolated Financial Repair Qualification
 on:
   workflow_dispatch:
     inputs:
+      replica_descriptor:
+        description: Reviewed Dedicated Read Replica Provider Metadata; No Credentials
+        required: true
+        type: string
       mode:
         description: One Candidate Mode; Fresh Restore And Original Catalog Guard
         required: true
@@ -48,6 +52,8 @@ jobs:
           done
           bash scripts/verification-harness/leaderboard-isolation-preflight.sh --check
           node --check scripts/verification-harness/leaderboard-financial-repair-integration-candidate.mjs
+          node --check scripts/verification-harness/leaderboard-schema-replica.mjs
+          node --test scripts/verification-harness/leaderboard-schema-replica.test.mjs
           node --test scripts/verification-harness/leaderboard-isolated-historical-replay-candidate.test.mjs
           node --test scripts/verification-harness/leaderboard-concurrency-repair-candidate.test.mjs
           node --test scripts/verification-harness/leaderboard-capture-payout-fixture-candidate.test.mjs
@@ -60,10 +66,12 @@ jobs:
         env:
           REPAIR_MODE: ${{ inputs.mode }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          LEADERBOARD_SCHEMA_REPLICA_DESCRIPTOR: ${{ inputs.replica_descriptor }}
           LEADERBOARD_ISOLATION_SCRATCH_PARENT: ${{ runner.temp }}
         run: |
           set -euo pipefail
           umask 077
+          test -n "$LEADERBOARD_SCHEMA_REPLICA_DESCRIPTOR"
           case "$REPAIR_MODE" in
             v2-payout|capture-compatibility|opening|worker|historical-replay|concurrency|unknown-ack) ;;
             *) echo 'Exactly One Supported Candidate Mode Is Required.' >&2; exit 1 ;;

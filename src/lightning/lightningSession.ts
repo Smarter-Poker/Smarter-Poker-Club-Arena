@@ -462,13 +462,14 @@ export function clearLightningEntryIntent(anchorTableId: string): void {
 
 export type LightningEntryDecision =
   | { kind: 'open'; poolSessionId: string }
-  /** LIGHTNING PHASE 7: the Cluster is MUST MOVE and the caller is seated there. */
+  /** LIGHTNING PHASE 7: the caller is seated in the Cluster's game with no open pool session. */
   | { kind: 'seat'; seatTableId: string }
   | { kind: 'entry'; joinLabel: 'Join Lightning' | 'Join Game'; lightning: boolean };
 
 /**
- * A caller with a live pool session goes straight into its room. Anyone else
- * is shown the Cluster's entry: JOIN LIGHTNING while the Cluster runs as
+ * A caller with a live pool session goes straight into its room. One already
+ * seated at a table of the Cluster is offered that seat (VIEW GAME). Anyone
+ * else is shown the Cluster's entry: JOIN LIGHTNING while the Cluster runs as
  * Lightning, JOIN GAME otherwise (the same door either way).
  */
 export function lightningEntryDecision(
@@ -478,10 +479,13 @@ export function lightningEntryDecision(
   if (session && hasLightningRoom(session) && session.poolSessionId) {
     return { kind: 'open', poolSessionId: session.poolSessionId };
   }
-  /* A Cluster back in MUST MOVE with the caller already seated: their table,
-     never a second join. The player is offered it; nothing moves them. */
-  const seatTableId = lightningReturnTableId(session);
-  if (seatTableId) return { kind: 'seat', seatTableId };
+  /* The caller already seated with no open pool session (the branch above
+     took every open one): their table, never a second join - whatever the
+     mode. MUST MOVE after the reversion is the common case, but a seat held
+     while the Cluster is still turning (pending_on, pending_off) is the same
+     seat, and offering JOIN GAME there invites a second join attempt. The
+     player is offered it; nothing moves them (CLAUDE.md 10.6). */
+  if (session?.seatTableId) return { kind: 'seat', seatTableId: session.seatTableId };
   const mode = meta?.clusterMode ?? session?.clusterMode ?? null;
   /* JOIN LIGHTNING only while the Cluster IS Lightning. On its way in
      (pending_on) or out (pending_off, draining) the door is JOIN GAME. */

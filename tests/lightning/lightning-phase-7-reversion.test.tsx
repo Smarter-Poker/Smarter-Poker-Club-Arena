@@ -256,23 +256,52 @@ describe('3. the Lightning route after reversion', () => {
     expect(rpc.mock.calls.map((c) => c[0])).not.toContain('fn_cash_game_join');
   });
 
+  it('a seated caller on a Cluster still turning (pending_on) is offered the seat too', async () => {
+    gameRow.cluster_mode = 'pending_on';
+    rpc.mockResolvedValue({ data: { ...reverted, cluster_mode: 'pending_on' }, error: null });
+    renderRoute();
+    expect(await screen.findByRole('button', { name: 'View Game' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /join/i })).toBeNull();
+    expect(rpc.mock.calls.map((c) => c[0])).not.toContain('fn_cash_game_join');
+  });
+
   it('a caller with no seat on the MUST MOVE Cluster still sees JOIN GAME', async () => {
     rpc.mockResolvedValue({ data: { ...reverted, seat_table_id: null }, error: null });
     renderRoute();
     expect(await screen.findByRole('button', { name: /join game/i })).toBeTruthy();
   });
 
-  it('the decision itself', () => {
+  it('the decision itself: a held seat is offered whatever the mode', () => {
     expect(lightningEntryDecision(parseLightningMySession(reverted), null)).toEqual({
       kind: 'seat',
       seatTableId: SEAT_TABLE,
     });
+    // A seat held while the Cluster is still turning (pending_on, pending_off)
+    // is the same seat: VIEW GAME, never JOIN GAME and a second join attempt.
+    for (const cluster_mode of ['pending_on', 'pending_off', 'lightning']) {
+      expect(
+        lightningEntryDecision(parseLightningMySession({ ...reverted, cluster_mode }), null)
+      ).toEqual({ kind: 'seat', seatTableId: SEAT_TABLE });
+    }
+    // No seat held: the Cluster's entry door, as before.
     expect(
       lightningEntryDecision(
-        parseLightningMySession({ ...reverted, cluster_mode: 'pending_off' }),
+        parseLightningMySession({ ...reverted, cluster_mode: 'pending_off', seat_table_id: null }),
         null
       )
     ).toMatchObject({ kind: 'entry', joinLabel: 'Join Game', lightning: false });
+    // An open pool session outranks the seat: straight into its room.
+    expect(
+      lightningEntryDecision(
+        parseLightningMySession({
+          ...reverted,
+          pool_session_id: POOL,
+          state: 'active',
+          cluster_mode: 'pending_off',
+        }),
+        null
+      )
+    ).toEqual({ kind: 'open', poolSessionId: POOL });
   });
 });
 

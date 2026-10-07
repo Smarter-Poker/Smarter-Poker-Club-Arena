@@ -679,6 +679,11 @@ $sql$;
 END;
 $function$;
 
+-- Both stay owner-only helpers, exactly as production holds them
+-- ({postgres=X/postgres}); restated so no reader has to take a default on trust.
+REVOKE ALL ON FUNCTION public.ca_club_game_page_core_20261006(uuid,date,date,text,text,text,text,jsonb,integer) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_cashier_statement_rows(uuid,uuid,text,timestamptz,timestamptz,jsonb,timestamptz,text,uuid,integer) FROM PUBLIC, anon, authenticated;
+
 -- The installed text is exactly the reviewed text, and both stay owner-only
 -- SECURITY DEFINER helpers that no browser role can execute.
 DO $post$

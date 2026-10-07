@@ -130,6 +130,10 @@ describe('both bodies are exactly the reviewed text', () => {
     expect(MIG).toMatch(
       /has_function_privilege\('authenticated', v\.sig::regprocedure, 'EXECUTE'\)/
     );
-    expect(MIG).not.toMatch(/^\s*(GRANT|REVOKE)\b/im);
+    // Restated, never widened: the only grant statements are the two revokes.
+    expect(MIG).not.toMatch(/^\s*GRANT\b/im);
+    expect(
+      MIG.match(/^REVOKE ALL ON FUNCTION .* FROM PUBLIC, anon, authenticated;$/gm)
+    ).toHaveLength(2);
   });
 });

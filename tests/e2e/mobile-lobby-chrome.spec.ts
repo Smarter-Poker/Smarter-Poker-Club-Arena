@@ -148,8 +148,16 @@ test('cash navigation retires an already running invitation without a second dec
       (error: unknown) => error
     );
   expect(await trigger).toBeTruthy();
+  let originalFinished = false;
+  const original = handler.idle().then(() => {
+    originalFinished = true;
+  });
+  // A real page round trip gives an idle handler's microtask time to finish.
+  // Require the original callback to be pending, not merely registered.
+  await page.evaluate(() => document.readyState);
+  expect(originalFinished).toBe(false);
   await prepareCashLobbyActions(page, { retainInvitationHandler: false });
-  await handler.idle();
+  await original;
   expect(invitationError).toBeUndefined();
   await expect(page.locator('#declines')).toHaveText('1');
   await expect(page.getByRole('dialog', { name: 'Diamond Spins', exact: true })).toBeHidden();

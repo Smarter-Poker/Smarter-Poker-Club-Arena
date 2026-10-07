@@ -11,6 +11,7 @@ import {
   normalizeFaceDeckId,
 } from '../../src/lib/faceDeck';
 import { CARD_BACK_CATALOG, CardBack, CardImage } from '../../src/components/table/CardImage';
+import { FaceDeckContext } from '../../src/components/table/faceDeckContext';
 
 describe('face-deck catalog', () => {
   it('ships the exact ten ids, prices, and free default in display order', () => {
@@ -74,6 +75,26 @@ describe('face-deck catalog', () => {
     expect(cards[1]).toHaveAttribute('data-face-deck', 'neon-circuit');
     expect(images[0].getAttribute('src')).toBe(images[1].getAttribute('src'));
     expect(images[0].getAttribute('src')).toContain('/cards/4color/spades_a.webp');
+  });
+
+  it('stamps the deck of the table a card sits on, and an explicit preview deck still wins', () => {
+    // Run 37539487040: the live table repainted its root to Broadcast Pro but
+    // the board card itself reported no deck at all. A felt card now names the
+    // deck it was drawn with; a card outside any table still inherits.
+    const view = render(
+      <>
+        <FaceDeckContext.Provider value="broadcast-pro">
+          <CardImage card={{ rank: 'A', suit: 's' }} deckStyle="4color" />
+          <CardImage card={{ rank: 'K', suit: 'd' }} deckStyle="4color" faceDeckId="ivory-club" />
+        </FaceDeckContext.Provider>
+        <CardImage card={{ rank: '7', suit: 'h' }} deckStyle="4color" />
+      </>
+    );
+    const cards = view.container.querySelectorAll<HTMLElement>('.card-image');
+
+    expect(cards[0]).toHaveAttribute('data-face-deck', 'broadcast-pro');
+    expect(cards[1]).toHaveAttribute('data-face-deck', 'ivory-club');
+    expect(cards[2]).not.toHaveAttribute('data-face-deck');
   });
 
   it('keeps the twelve-card-back product separate from face-deck finishes', () => {

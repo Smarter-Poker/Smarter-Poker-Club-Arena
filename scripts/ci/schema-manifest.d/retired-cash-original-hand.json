@@ -1,0 +1,14 @@
+{
+  "_owner": "Native PG17 four-hand/five-custody qualification; pending protected merge and exact production installation/readback after tournament predecessor 20261006182937. These are isolated qualified declarations, not a live installation claim.",
+  "tables": [
+    "smarter_private.retired_cash_hand_qualification",
+    "smarter_private.retired_cash_hand_custody"
+  ],
+  "functions": [
+    "smarter_private.retired_cash_qualification_immutable",
+    "smarter_private.retired_cash_custody_guard",
+    "smarter_private.adopt_retired_cash_original_hand",
+    "smarter_private.retired_cash_original_stack",
+    "smarter_private.retired_cash_original_time_bank"
+  ]
+}

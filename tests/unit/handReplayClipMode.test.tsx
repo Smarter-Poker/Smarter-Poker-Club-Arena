@@ -5,7 +5,10 @@
  *   jumps, scrubber, rate buttons, close or seat strip; the variant and blinds
  *   line kept; the table name gone; the villains named by seat.
  * - On mount the rate is the fit's, `data-clip-state` is ready (or too_long)
- *   and `window.__spClip` carries v, state, frames, rate, plannedMs, start().
+ *   and `window.__spClip` carries v, state, frames, rate, beats, holdMs,
+ *   plannedMs, seek(i), start().
+ * - seek(i) is the camera's step: frame i on the felt with no motion and no
+ *   sound, `data-clip-step` confirming it; out of range or too_long is false.
  * - start() rewinds and plays with no sound cue; reaching the last frame,
  *   letting its beat settle and holding sets done, at exactly plannedMs.
  * - A hand that cannot fit is too_long: start() returns false, nothing plays.
@@ -150,7 +153,12 @@ describe('the clip stage', () => {
     expect(h?.frames).toBe(frames.length);
     expect(h?.rate).toBe(fit.rate);
     expect(h?.plannedMs).toBe(fit.plannedMs);
+    expect(h?.beats).toEqual(fit.beats);
+    expect(h?.holdMs).toBe(fit.holdMs);
+    expect(h!.beats.reduce((a, b) => a + b, 0) + h!.holdMs).toBe(fit.plannedMs);
+    expect(typeof h?.seek).toBe('function');
     expect(typeof h?.start).toBe('function');
+    expect(stage()?.getAttribute('data-clip-step')).toBe('0');
     expect(stage()?.style.getPropertyValue('--hr-rate')).toBe(String(fit.rate));
   });
 
@@ -247,6 +255,73 @@ describe('the clip stage', () => {
     });
     expect(clipState()).toBe('too_long');
     expect(document.querySelector('.hand-replay__caption-street')?.textContent).toBe('Deal');
+  });
+
+  it('seek(i) puts frame i on the felt with no motion and no sound, and data-clip-step says so', async () => {
+    const { frames } = await open(15000, 40000);
+    const last = frames.length - 1;
+    const h = handle()!;
+    for (const i of [3, last, 0, 1]) {
+      let ok = false;
+      await act(async () => {
+        ok = h.seek(i);
+      });
+      expect(ok).toBe(true);
+      expect(stage()?.getAttribute('data-clip-step')).toBe(String(i));
+      expect(document.querySelector('.hand-replay__caption-street')?.textContent).toBe(
+        frames[i].streetLabel
+      );
+      expect(document.querySelector('.hand-replay__caption-text')?.textContent).toBe(
+        frames[i].caption
+      );
+      expect(clipState()).toBe('ready');
+      /* A seek is a scrub: nothing slides, flips or flies. */
+      expect(
+        stage()?.querySelector(
+          '.hr-bet--in, .hr-bet--sweep, .hr-seat__cards--flip, .hr-seat__cards--fold, .hr-felt__pot--award'
+        )
+      ).toBeNull();
+    }
+    expect(Object.values(sound).some((fn) => fn.mock.calls.length > 0)).toBe(false);
+    /* Out of range, not an integer: refused, the felt unchanged. */
+    for (const bad of [-1, last + 1, 1.5, NaN]) {
+      let ok = true;
+      await act(async () => {
+        ok = h.seek(bad);
+      });
+      expect(ok).toBe(false);
+      expect(stage()?.getAttribute('data-clip-step')).toBe('1');
+    }
+    /* A seek during playback stops it: the clock no longer moves the felt. */
+    vi.useFakeTimers();
+    await act(async () => {
+      h.start();
+    });
+    expect(clipState()).toBe('playing');
+    await act(async () => {
+      h.seek(2);
+    });
+    expect(clipState()).toBe('ready');
+    await act(async () => {
+      vi.advanceTimersByTime(60000);
+    });
+    expect(stage()?.getAttribute('data-clip-step')).toBe('2');
+    expect(clipState()).toBe('ready');
+  });
+
+  it('seek(i) is false on a hand that cannot fit, and the plan is empty', async () => {
+    await open(1000, 2000);
+    const h = handle()!;
+    expect(h.state).toBe('too_long');
+    expect(h.beats).toEqual([]);
+    expect(h.holdMs).toBe(0);
+    let ok = true;
+    await act(async () => {
+      ok = h.seek(1);
+    });
+    expect(ok).toBe(false);
+    expect(stage()?.getAttribute('data-clip-step')).toBe('0');
+    expect(clipState()).toBe('too_long');
   });
 
   it('removes the handle when the stage unmounts', async () => {

@@ -134,6 +134,8 @@ async function installEngineProjection(
           table_id: selectedTableId,
           hand_number: 7,
           pot: 3,
+          // Preserve the serving engine Card-object contract repaired on main;
+          // the shared board helper also pins that wire shape in the caller regression.
           community_cards: board,
           community_cards2: [],
           community_cards3: [],

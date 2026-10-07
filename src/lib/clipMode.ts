@@ -6,8 +6,13 @@
  * The hand clip renderer (World Hub, `/api/cron/render-hand-clips`) opens
  * `/hub/club-arena/replay?clip=1` in a headless browser with the hand injected
  * as `window.__SP_CLIP__` before any script runs, waits for the stage to say
- * `ready`, starts a screencast, calls `window.__spClip.start()` and stops when
- * the stage says `done`. Everything the page needs to turn that payload into a
+ * `ready`, reads the plan off `window.__spClip` (one beat per frame and the
+ * end hold), then takes ONE STILL PER FRAME: `seek(i)`, `data-clip-step`
+ * confirming the commit, a screenshot, and the frame's own beat as its
+ * duration. A wall-clock screencast of `start()` playback was the first
+ * capture (2026-10-01); on the renderer's starved CPU it dropped frames and
+ * lost the river and the showdown, so the camera now reads the plan and
+ * never the clock. Everything the page needs to turn that payload into a
  * replay is here, and none of it touches React:
  *
  *   readClipPayload       the payload, validated, or null
@@ -216,7 +221,9 @@ export type ClipFit =
   | {
       tooLong: false;
       rate: ReplayRate;
-      /** The beats of every frame at `rate`, animation speed 1. */
+      /** The beat of every frame at `rate`, animation speed 1, in frame order. */
+      beats: number[];
+      /** The beats summed: what playback pays before the end hold. */
       runMs: number;
       /** The end hold: 1,500 ms, longer when the run alone is shorter than minMs. */
       holdMs: number;
@@ -231,10 +238,15 @@ export type ClipFit =
       plannedMs: number;
     };
 
-/** The beats of every frame at `rate`, as playback will pay them. */
+/** The beat of every frame at `rate`, as playback will pay them, in order. */
+export function clipBeats(frames: readonly ReplayFrame[], rate: ReplayRate): number[] {
+  return frames.map((f) => replayBeatMs(f, 1, rate));
+}
+
+/** The beats of every frame at `rate`, summed. */
 export function clipRunMs(frames: readonly ReplayFrame[], rate: ReplayRate): number {
   let total = 0;
-  for (const f of frames) total += replayBeatMs(f, 1, rate);
+  for (const b of clipBeats(frames, rate)) total += b;
   return total;
 }
 
@@ -254,11 +266,12 @@ export function fitClipRate(
   const ascending = [...rates].sort((a, b) => a - b);
   let fastest: { rate: ReplayRate; plannedMs: number } | null = null;
   for (const rate of ascending) {
-    const runMs = clipRunMs(frames, rate);
+    const beats = clipBeats(frames, rate);
+    const runMs = beats.reduce((a, b) => a + b, 0);
     const natural = runMs + endHoldMs;
     if (natural <= maxMs) {
       const holdMs = Math.max(endHoldMs, minMs - runMs);
-      return { tooLong: false, rate, runMs, holdMs, plannedMs: runMs + holdMs };
+      return { tooLong: false, rate, beats, runMs, holdMs, plannedMs: runMs + holdMs };
     }
     fastest = { rate, plannedMs: natural };
   }

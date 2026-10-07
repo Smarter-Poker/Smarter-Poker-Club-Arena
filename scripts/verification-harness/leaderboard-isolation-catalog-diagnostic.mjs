@@ -46,6 +46,90 @@ const unknown = () => {
   throw new Error('CATALOG_DIAGNOSTIC_UNKNOWN');
 };
 const hash = (value) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+const ACL_FIELDS = {
+  database: 2,
+  tablespaces: 2,
+  schemas: 2,
+  relations: 6,
+  columns: 9,
+  routines: 7,
+  types: 7,
+  defaults: 3,
+};
+const DEFINITION_FIELDS = { constraints: 4, domain_constraints: 4, triggers: 3, relations: 9 };
+const MAX_DETAILS = 32;
+
+// Parse PostgreSQL's one-dimensional array text, not comma-split aclitems.
+// Quoted commas and backslash escapes are data; NULL and {} remain distinct.
+function aclItems(value) {
+  if (value === null) return null;
+  if (Array.isArray(value))
+    return value.every((item) => typeof item === 'string') ? value : undefined;
+  if (typeof value !== 'string' || value[0] !== '{' || value.at(-1) !== '}') return undefined;
+  if (value === '{}') return [];
+  const items = [];
+  let i = 1;
+  while (i < value.length - 1) {
+    let item = '';
+    const quoted = value[i] === '"';
+    if (quoted) i += 1;
+    let closed = !quoted;
+    while (i < value.length - 1) {
+      const char = value[i++];
+      if (char === '\\') {
+        if (i >= value.length - 1) return undefined;
+        item += value[i++];
+      } else if (quoted && char === '"') {
+        closed = true;
+        break;
+      } else if (!quoted && char === ',') {
+        i -= 1;
+        break;
+      } else if (!quoted && /[{}"\s]/.test(char)) return undefined;
+      else item += char;
+    }
+    if (!closed || !item || (!quoted && item === 'NULL')) return undefined;
+    items.push(item);
+    if (i === value.length - 1) break;
+    if (value[i++] !== ',' || i === value.length - 1) return undefined;
+  }
+  return i === value.length - 1 ? items : undefined;
+}
+
+function aclDifference(left, right) {
+  const a = aclItems(left);
+  const b = aclItems(right);
+  if (a === undefined || b === undefined) return 'unknown';
+  if (![...(a ?? []), ...(b ?? [])].every(validAclItem)) return 'unknown';
+  if (a === null || b === null) return a === b ? 'equal' : 'content_different';
+  if (JSON.stringify(a) === JSON.stringify(b)) return 'equal';
+  return JSON.stringify([...a].sort()) === JSON.stringify([...b].sort())
+    ? 'order_only'
+    : 'content_different';
+}
+
+function validAclItem(item) {
+  let quoted = false;
+  const separators = [];
+  for (let i = 0; i < item.length; i += 1) {
+    if (item[i] === '"') {
+      if (quoted && item[i + 1] === '"') i += 1;
+      else quoted = !quoted;
+    } else if (!quoted && (item[i] === '=' || item[i] === '/')) separators.push([item[i], i]);
+  }
+  if (quoted || separators.length !== 2 || separators[0][0] !== '=' || separators[1][0] !== '/')
+    return false;
+  const equal = separators[0][1];
+  const slash = separators[1][1];
+  const role = (value) =>
+    value === '' || /^"(?:[^"]|"")*"$/.test(value) || /^[^\s"=\/]+$/.test(value);
+  return (
+    role(item.slice(0, equal)) &&
+    role(item.slice(slash + 1)) &&
+    slash < item.length - 1 &&
+    /^(?:[arwdDxtXUCTcsAm]\*?)*$/.test(item.slice(equal + 1, slash))
+  );
+}
 
 function readPrivate(file) {
   let fd;
@@ -159,18 +243,48 @@ export function diagnoseCatalog(sourceText, destinationText) {
     const fieldCounts = Array(SECTIONS[name][0]).fill(0);
     let matched = 0;
     let changedRows = 0;
+    const details = [];
+    let detailTotal = 0;
+    const acl = { order_only: 0, content_different: 0, unknown: 0 };
+    const detail = (value) => {
+      detailTotal += 1;
+      if (details.length < MAX_DETAILS) details.push(value);
+    };
     for (const [key, row] of left.indexed) {
       const other = right.indexed.get(key);
-      if (!other) continue;
+      if (!other) {
+        detail({ kind: 'removed', identity_hash: hash(JSON.parse(key)) });
+        continue;
+      }
       matched += 1;
       let changed = false;
       for (let index = 0; index < row.length; index += 1) {
         if (JSON.stringify(row[index]) !== JSON.stringify(other[index])) {
           fieldCounts[index] += 1;
           changed = true;
+          if (index === ACL_FIELDS[name]) {
+            const classification = aclDifference(row[index], other[index]);
+            if (classification !== 'equal') acl[classification] += 1;
+          }
+          if (index === DEFINITION_FIELDS[name]) {
+            detail({
+              kind: 'definition_changed',
+              identity_hash: hash(JSON.parse(key)),
+              field_index: index,
+              source_field_hash: hash(row[index]),
+              destination_field_hash: hash(other[index]),
+              source_character_length:
+                typeof row[index] === 'string' ? [...row[index]].length : null,
+              destination_character_length:
+                typeof other[index] === 'string' ? [...other[index]].length : null,
+            });
+          }
         }
       }
       if (changed) changedRows += 1;
+    }
+    for (const key of right.indexed.keys()) {
+      if (!left.indexed.has(key)) detail({ kind: 'added', identity_hash: hash(JSON.parse(key)) });
     }
     sections.push({
       section: name,
@@ -184,6 +298,10 @@ export function diagnoseCatalog(sourceText, destinationText) {
       removed_identities: left.indexed.size - matched,
       added_identities: right.indexed.size - matched,
       changed_rows: changedRows,
+      identity_details: details,
+      identity_details_total: detailTotal,
+      identity_details_truncated: detailTotal > MAX_DETAILS,
+      ...(Object.hasOwn(ACL_FIELDS, name) ? { acl_difference_counts: acl } : {}),
       changed_field_indices: fieldCounts.flatMap((count, index) =>
         count ? [{ index, count }] : []
       ),

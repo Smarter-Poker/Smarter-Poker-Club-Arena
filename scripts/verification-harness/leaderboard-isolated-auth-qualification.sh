@@ -6,6 +6,7 @@ readonly here
 readonly catalog="$here/leaderboard-isolation-catalog.sql"
 readonly extension_bootstrap="$here/leaderboard-isolation-extension-bootstrap.sql"
 readonly event_owner_bootstrap="$here/leaderboard-isolation-event-owner-bootstrap.sql"
+readonly extension_trigger_bootstrap="$here/leaderboard-isolation-extension-trigger-bootstrap.sql"
 readonly restore_script_helper="$here/leaderboard-isolation-restore-script.mjs"
 readonly startup_helper="$here/leaderboard-isolation-startup-profile.mjs"
 readonly catalog_diagnostic="$here/leaderboard-isolation-catalog-diagnostic.mjs"
@@ -149,6 +150,7 @@ if [[ "${1:-}" == '--check' ]]; then
   test -s "$catalog"
   test -s "$extension_bootstrap"
   test -s "$event_owner_bootstrap"
+  test -s "$extension_trigger_bootstrap"
   test -s "$restore_script_helper"
   test -s "$startup_helper"
   test -s "$catalog_diagnostic"
@@ -281,6 +283,9 @@ source_startup >"$scratch/startup-before.json" 2>"$scratch/source-error.log" || 
 startup_config="$(node "$startup_helper" config "$scratch/startup-before.json")" || failure 'unsupported source numeric startup profile'
 auth_versions >"$scratch/auth-versions-before.json" 2>"$scratch/source-error.log" || failure 'Auth migration metadata unavailable'
 source_catalog >"$scratch/source-before.json" 2>"$scratch/source-error.log" || source_failure 'source catalog read unavailable' "$scratch/source-error.log" "$?"
+source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
+  <"$extension_trigger_bootstrap" >"$scratch/extension-triggers-before.sql" 2>"$scratch/source-error.log" || source_failure 'extension-table trigger metadata unavailable' "$scratch/source-error.log" "$?"
+chmod 600 "$scratch/extension-triggers-before.sql"
 # Run 37579107745 observed inner client status 0 and outer elapsed 514s.
 # Preserve a finite measured command envelope, not a claimed inner duration.
 source_client 600 pg_dump \
@@ -294,6 +299,10 @@ source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
   <"$event_owner_bootstrap" >"$scratch/event-owners.json" 2>"$scratch/source-error.log" || source_failure 'event-trigger owner metadata unavailable' "$scratch/source-error.log" "$?"
 source_catalog >"$scratch/source-after.json" 2>"$scratch/source-error.log" || source_failure 'source catalog recheck unavailable' "$scratch/source-error.log" "$?"
 cmp -s "$scratch/source-before.json" "$scratch/source-after.json" || failure 'source schema changed during export'
+source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
+  <"$extension_trigger_bootstrap" >"$scratch/extension-triggers-after.sql" 2>"$scratch/source-error.log" || source_failure 'extension-table trigger metadata recheck unavailable' "$scratch/source-error.log" "$?"
+chmod 600 "$scratch/extension-triggers-after.sql"
+cmp -s "$scratch/extension-triggers-before.sql" "$scratch/extension-triggers-after.sql" || failure 'extension-table trigger metadata changed during export'
 source_startup >"$scratch/startup-after.json" 2>"$scratch/source-error.log" || source_failure 'source startup profile recheck unavailable' "$scratch/source-error.log" "$?"
 node "$startup_helper" verify "$scratch/startup-before.json" "$scratch/startup-after.json" || failure 'source numeric startup profile changed during export'
 prepare_roles "$source_bootstrap" <"$scratch/roles.sql" >"$scratch/roles-restore.sql" || failure 'exact existing bootstrap role creation unavailable'
@@ -367,7 +376,7 @@ node "$restore_script_helper" "$scratch/remaining.sql" "$scratch/event-owners.js
   "$scratch/event-owners-elevate.sql" "$scratch/event-owners-restore.sql" || failure 'atomic restore script validation failed'
 # Stream host-private inputs; docker cp would preserve root-owned 0600 files
 # unreadable to the destination's postgres OS user. One psql owns all inputs.
-cat "$scratch/event-owners-elevate.sql" "$scratch/remaining.sql" "$scratch/event-owners-restore.sql" \
+cat "$scratch/event-owners-elevate.sql" "$scratch/remaining.sql" "$scratch/extension-triggers-before.sql" "$scratch/event-owners-restore.sql" \
   >"$scratch/atomic-restore.sql" || failure 'complete atomic restore input unavailable'
 chmod 600 "$scratch/atomic-restore.sql"
 docker exec -i "$container" psql -h /tmp -Xq -U "$bootstrap" -d postgres \

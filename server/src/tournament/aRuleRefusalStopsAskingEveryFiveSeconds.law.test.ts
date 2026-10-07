@@ -43,6 +43,9 @@ import {
   finishRefusalRetryDelayMs,
 } from '../observability/engineInstruments.js';
 import { TournamentManagerBase } from './TournamentManagerBase.js';
+import { TournamentManagerEliminations } from './TournamentManagerEliminations.js';
+
+const ELIM_PROTO = TournamentManagerEliminations.prototype;
 
 const ELIM = readFileSync(resolve(__dirname, './TournamentManagerEliminations.ts'), 'utf8');
 // The bookkeeping lives beside the constant its delay is derived from, and
@@ -220,5 +223,44 @@ describe('the manager asks with that delay and alerts once', () => {
       MANAGER.indexOf('protected noteFinishRefusal(') + 600
     );
     expect(note).toContain('if (!provenRefusal) return true;');
+  });
+});
+
+/*
+ * 2026-10-07. The finish-stage re-arm (2026-10-01) asked with the fixed five
+ * seconds, and the scheduler keeps the earliest pending wake, so it overrode
+ * the doubled delay above for every refusal. Four Spins that can never settle
+ * asked about 2,900 times an hour for eighteen hours.
+ */
+describe('the finish-stage re-arm keeps the refusal delay', () => {
+  const rearmWith = (reason: string | null, streak: number) => {
+    const m = Object.create(ELIM_PROTO) as any;
+    m.tournamentFinished = false;
+    m.eliminationSweepCursor = { rewindTo: () => undefined };
+    m.lastFinishRefusalReason = reason;
+    m.finishRefusalStreak = streak;
+    const calls: number[] = [];
+    m.requestUrgentEliminationSweepAfter = (ms: number) => calls.push(ms);
+    m.rearmIfTheFinishWasRefused();
+    return calls;
+  };
+
+  it('a repeated rule refusal is re-armed on the backed-off delay, not five seconds', () => {
+    expect(rearmWith('other', 9)).toEqual([FINISH_REFUSAL_BACKOFF_CAP_MS]);
+    expect(rearmWith('fee_reconciliation', 3)).toEqual([BASE * 4]);
+  });
+
+  it('a transient or first refusal still comes straight back', () => {
+    expect(rearmWith('timeout', 12)).toEqual([BASE]);
+    expect(rearmWith('other', 1)).toEqual([BASE]);
+    expect(rearmWith(null, 0)).toEqual([BASE]);
+  });
+
+  it('the re-arm source asks the same delay as releaseFinishGuard', () => {
+    const rearm = sliceMethod(ELIM, 'private rearmIfTheFinishWasRefused(): void');
+    expect(rearm).toContain('this.requestUrgentEliminationSweepAfter(this.finishRetryDelayMs())');
+    expect(rearm).not.toMatch(
+      /requestUrgentEliminationSweepAfter\(\s*TournamentManagerBase\.UNRESOLVED_BUST_RETRY_MS/
+    );
   });
 });

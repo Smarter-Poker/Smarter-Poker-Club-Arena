@@ -1414,6 +1414,53 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               } else {
                 // Without a committed winner, use the durable elimination sequence.
                 // Timestamp ties and out-of-order callbacks cannot nominate a winner.
+                /* AN UNSEQUENCED BUST MAKES THE LAST BUST UNKNOWABLE (2026-10-07).
+                   The "last sequenced elimination" is only the last elimination
+                   when EVERY elimination carries a sequence. On 2026-10-06 at
+                   15:33 a platform retirement marked tournament 62a15104's two
+                   live players eliminated with no sequence; this branch then
+                   read the only sequenced row - ca905025, the FIRST player out
+                   (15:29, third place) - and submitted them as the winner. The
+                   database refused it (fn_settle_tournament_places voids the
+                   witness whenever any eliminated row has a NULL or later
+                   sequence), and the refusal ran for ten and a half hours.
+                   A row without a sequence could have gone out before or after
+                   every sequenced one, so no bust can be named. Ask the same
+                   question the database asks, and name nobody. The field only
+                   changes when a recovery restores or sequences those rows, so
+                   the re-check runs at a slow cadence instead of every 5 s. */
+                const { count: unsequencedCount, error: unsequencedErr } = await supabase
+                  .from('tournament_players')
+                  .select('*', { count: 'exact', head: true })
+                  .eq('tournament_id', this.tournamentId)
+                  .eq('status', 'eliminated')
+                  .is('elimination_sequence', null);
+                if (sweepStopped()) return;
+                if (unsequencedErr || unsequencedCount === null || unsequencedCount === undefined) {
+                  reportError(
+                    unsequencedErr ??
+                      new Error(
+                        `[Tournament:${this.tournamentId.slice(0, 8)}] unsequenced-elimination count unavailable`
+                      ),
+                    'Tournament.unsequenced_elimination_count_unreadable'
+                  );
+                  this.requestUrgentEliminationSweepAfter(
+                    TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+                  );
+                  return;
+                }
+                if (unsequencedCount > 0) {
+                  reportError(
+                    new Error(
+                      `[Tournament:${this.tournamentId.slice(0, 8)}] No survivor and ${unsequencedCount} elimination(s) without a durable sequence - no final elimination can be named`
+                    ),
+                    'Tournament.finish_elimination_witness_unsequenced'
+                  );
+                  this.requestUrgentEliminationSweepAfter(
+                    TournamentManagerBase.UNSEQUENCED_WITNESS_RETRY_MS
+                  );
+                  return;
+                }
                 const { data: lastEliminated, error: lastEliminatedErr } = await supabase
                   .from('tournament_players')
                   .select('user_id')
@@ -4015,7 +4062,18 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
        own fairness rule still holds: a rewind is applied once, and the
        interrupted stage gets the admission after it. */
     this.eliminationSweepCursor.rewindTo(FINISH_STAGE);
-    this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+    /* THE RE-ARM KEEPS THE REFUSAL'S OWN DELAY (2026-10-07).
+       This line used the fixed five seconds. The scheduler keeps the EARLIEST
+       pending wake per tournament, so it overrode the doubled delay
+       releaseFinishGuard had just asked for (2026-09-18,
+       aRuleRefusalStopsAskingEveryFiveSeconds): every rule refusal went back
+       to a five-second clock. Measured 2026-10-07: four Spins whose field can
+       never settle (P0404 "no complete durable elimination sequence") asked
+       about 2,900 times an hour for eighteen hours, ~313 ms of roster locks
+       each. finishRetryDelayMs() is still the base five seconds for a
+       transient refusal (deadlock, timeout) and for the first refusal of any
+       kind, so the winner owed the next admission still gets it. */
+    this.requestUrgentEliminationSweepAfter(this.finishRetryDelayMs());
   }
 
   // ── FINAL TABLE DEAL (2026-08-22 parity) ─────────────────────────────────

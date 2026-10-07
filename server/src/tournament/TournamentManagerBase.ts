@@ -656,6 +656,13 @@ export abstract class TournamentManagerBase {
   static readonly FINAL_TABLE_DEAL_POLL_MS = 10_000;
   /** Preserve fast recovery while a known zero-stack player is unresolved. */
   static readonly UNRESOLVED_BUST_RETRY_MS = 5_000;
+  /**
+   * A field with an elimination that carries no durable sequence cannot name
+   * its final bust, and it does not change by being asked again: only a
+   * recovery that restores or sequences those rows changes it. Re-check it
+   * once a minute rather than every UNRESOLVED_BUST_RETRY_MS.
+   */
+  static readonly UNSEQUENCED_WITNESS_RETRY_MS = 60_000;
 
   /**
    * WHY A REFUSED FINISH STOPPED ASKING EVERY FIVE SECONDS (2026-09-18)

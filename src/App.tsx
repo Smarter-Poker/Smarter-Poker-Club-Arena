@@ -10,6 +10,7 @@ import { DIAMOND_GAME_TITLES } from './utils/diamondGameTitles';
 
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { SessionSummaryHost } from './components/session/SessionSummaryHost';
+import { LightningSessionSummaryHost } from './components/lightning/LightningSessionSummary';
 import TournamentRankingHost from './components/tournament/TournamentRankingHost';
 import TournamentAutoSeat from './components/tournament/TournamentAutoSeat';
 import { MEDIA_BASE } from './utils/mediaBase';
@@ -631,6 +632,9 @@ function FullApp() {
           table, and "the lobby" is HomePage OR ClubHomePage (which now serves
           /clubs/:clubId and /clubs/:clubId/lobby alike). */}
         <SessionSummaryHost />
+        {/* LIGHTNING PHASE 8: the Lightning session summary, over the lobby a
+            player lands in after leaving Lightning. */}
+        <LightningSessionSummaryHost />
         {/* Dan 2026-08-20: the tournament bust card. Same feed as the cash
           summary above, split on payload.tournament — see TournamentRankingHost. */}
         <TournamentRankingHost />

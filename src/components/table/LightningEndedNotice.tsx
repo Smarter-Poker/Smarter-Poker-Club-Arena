@@ -11,9 +11,21 @@ import {
   LIGHTNING_ENDED_TEXT,
   LIGHTNING_RETURN_LABEL,
 } from '../../lightning/lightningReversion';
+import { LightningSessionSummaryCard } from '../lightning/LightningSessionSummary';
 import './LightningFoldBar.css';
 
-export default function LightningEndedNotice({ onViewGame }: { onViewGame: () => void }) {
+export default function LightningEndedNotice({
+  onViewGame,
+  session = null,
+}: {
+  onViewGame: () => void;
+  /**
+   * LIGHTNING PHASE 8: the session that just ended, summarised under the
+   * notice (VIEW SESSION opens its hands). No PLAY AGAIN: the Cluster is
+   * MUST MOVE now, and the player's way back is VIEW GAME.
+   */
+  session?: { poolSessionId: string; clusterId: string; name: string | null } | null;
+}) {
   return (
     <div className="lightning-ended" data-testid="lightning-ended" role="alert">
       <p className="lightning-ended__eyebrow">{LIGHTNING_ENDED_EYEBROW}</p>
@@ -26,6 +38,14 @@ export default function LightningEndedNotice({ onViewGame }: { onViewGame: () =>
       >
         {LIGHTNING_RETURN_LABEL}
       </button>
+      {session ? (
+        <LightningSessionSummaryCard
+          poolSessionId={session.poolSessionId}
+          clusterId={session.clusterId}
+          name={session.name}
+          offerPlayAgain={false}
+        />
+      ) : null}
     </div>
   );
 }

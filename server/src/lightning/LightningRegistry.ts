@@ -23,7 +23,7 @@
  */
 import { supabase } from '../services/supabase/client.js';
 import type { TableConnectionAccess } from '../services/TableConnectionAccess.js';
-import type { PresenceTableReport } from './LightningPresence.js';
+import type { LightningDevicePlatform, PresenceTableReport } from './LightningPresence.js';
 import { isUuid } from './LightningRpc.js';
 import { LightningSeatProxy } from './LightningSeatProxy.js';
 import {
@@ -42,7 +42,49 @@ interface RoomInfo {
   userId: string;
   clusterId: string | null;
   sockets: number;
+  /** The device class the room's latest socket reported (Lightning Phase 8). */
+  platform?: LightningDevicePlatform | null;
 }
+
+/**
+ * LIGHTNING PHASE 8: ONE PLAYER, SEVERAL HANDS, ONE QUEUE OF DECISIONS.
+ *
+ * A player in several Clusters can owe a decision in more than one hand at
+ * once. Each owed decision is announced to EVERY Lightning room the player
+ * has open here (a private USER_EVENT), so whichever room they are looking
+ * at can list it, and retracted the moment it is no longer owed (acted,
+ * folded, timed out, the hand ended). Every clock value is the engine's:
+ * `deadline_at` is this process's epoch ms and `time_remaining_ms` is
+ * computed here at send time. The client orders by them and offers a tap;
+ * it never moves the view by itself (CLAUDE.md 10.6).
+ */
+export type LightningDecisionUrgency = 'normal' | 'high' | 'critical';
+
+/** At or under this, a decision is critical; at or under the next, high. */
+export const LIGHTNING_DECISION_CRITICAL_MS = 5_000;
+export const LIGHTNING_DECISION_HIGH_MS = 10_000;
+
+export function lightningDecisionUrgency(remainingMs: number): LightningDecisionUrgency {
+  if (remainingMs <= LIGHTNING_DECISION_CRITICAL_MS) return 'critical';
+  if (remainingMs <= LIGHTNING_DECISION_HIGH_MS) return 'high';
+  return 'normal';
+}
+
+/** One owed decision, as the host announces it. */
+export interface LightningDecision {
+  poolSessionId: string;
+  handId: string;
+  street: string;
+  /** Engine epoch ms the decision's clock runs out (time bank included once it is burning). */
+  deadlineAt: number;
+}
+
+/** How a frame reaches one player's sockets in one room (TableStateHub.sendToUser). */
+export type LightningUserEventSink = (
+  roomId: string,
+  userId: string,
+  payload: Record<string, unknown>
+) => number;
 
 export interface LightningRegistryDeps {
   /** fn_lightning_hand_view_access(p_pool_session_id, p_user_id). */
@@ -53,6 +95,8 @@ export interface LightningRegistryDeps {
   roomOwner?(roomId: string): Promise<{ playerId: string; clusterId: string } | null>;
   /** `cash_games.cluster_mode` of a Cluster: why a room ended, for its close reason. */
   clusterMode?(clusterId: string): Promise<string | null>;
+  /** Engine clock (injected for tests). */
+  now?: () => number;
 }
 
 /** The close reason of a room whose player left (or was cashed out of) the pool. */
@@ -117,12 +161,22 @@ export class LightningRegistry {
   private closeRoom: ((roomId: string, reason: string) => void) | null;
   private sweeping: Promise<number> | null = null;
   private readonly clusterMode: (clusterId: string) => Promise<string | null>;
+  /** userId -> handId -> the decision owed there (Lightning Phase 8). */
+  private readonly decisions = new Map<string, Map<string, LightningDecision>>();
+  private userEventSink: LightningUserEventSink | null = null;
+  private readonly clock: () => number;
 
   constructor(deps: LightningRegistryDeps = {}) {
     this.viewAccess = deps.viewAccess ?? lightningHandViewAccess;
     this.roomOwner = deps.roomOwner ?? lightningRoomOwner;
     this.clusterMode = deps.clusterMode ?? lightningClusterMode;
     this.closeRoom = deps.closeRoom ?? null;
+    this.clock = deps.now ?? Date.now;
+  }
+
+  /** Boot wiring: how a private frame reaches a player's sockets in a room. */
+  setUserEventSink(sink: LightningUserEventSink): void {
+    this.userEventSink = sink;
   }
 
   /** Boot wiring: the transport that can close a room's sockets. */
@@ -225,10 +279,11 @@ export class LightningRegistry {
     return { allowed: true, reason: 'seated', clubId: null, banned: false, ipRestricted: false };
   }
 
-  connect(roomId: string, userId: string): void {
+  connect(roomId: string, userId: string, platform: LightningDevicePlatform | null = null): void {
     const info = this.rooms.get(roomId);
     if (!info || info.userId !== userId) return;
     info.sockets++;
+    if (platform) info.platform = platform;
     this.hostByRoom.get(roomId)?.notePresence(userId, true);
   }
 
@@ -261,7 +316,11 @@ export class LightningRegistry {
         tableId: room,
         clusterId: info.clusterId,
         players: [
-          { userId: info.userId, presence: info.sockets > 0 ? 'connected' : 'disconnected' },
+          {
+            userId: info.userId,
+            presence: info.sockets > 0 ? 'connected' : 'disconnected',
+            ...(info.platform ? { platform: info.platform } : {}),
+          },
         ],
       };
     }
@@ -349,9 +408,85 @@ export class LightningRegistry {
     return tracked;
   }
 
-  /** On (re)connect / RESYNC: the player's own cards, again. */
+  /** On (re)connect / RESYNC: the player's own cards, again, and every decision they owe. */
   rePushHoleCards(roomId: string, userId: string): void {
     this.hostByRoom.get(roomId)?.rePushHoleCards(userId);
+    this.rePushDecisions(roomId, userId);
+  }
+
+  // ─── THE DECISION QUEUE (Lightning Phase 8) ─────────────────────────────
+
+  /** Every Lightning room this player has here (any Cluster). */
+  roomsOfUser(userId: string): string[] {
+    const out: string[] = [];
+    for (const [room, info] of this.rooms) if (info.userId === userId) out.push(room);
+    return out.sort();
+  }
+
+  /** The decisions a player owes right now, soonest deadline first. */
+  openDecisions(userId: string): LightningDecision[] {
+    const mine = this.decisions.get(userId);
+    return mine ? [...mine.values()].sort((a, b) => a.deadlineAt - b.deadlineAt) : [];
+  }
+
+  /** The `lightning_decision` frame for one decision, with the clock as of now. */
+  decisionFrame(d: LightningDecision): Record<string, unknown> {
+    const remaining = Math.max(0, d.deadlineAt - this.clock());
+    return {
+      type: 'lightning_decision',
+      pool_session_id: d.poolSessionId,
+      hand_id: d.handId,
+      street: d.street,
+      time_remaining_ms: remaining,
+      deadline_at: d.deadlineAt,
+      urgency: lightningDecisionUrgency(remaining),
+      server_now: this.clock(),
+    };
+  }
+
+  /** A decision is owed (or its clock moved, e.g. the time bank started): tell every room. */
+  announceDecision(userId: string, decision: LightningDecision): void {
+    if (!isUuid(userId) || !decision.handId) return;
+    let mine = this.decisions.get(userId);
+    if (!mine) {
+      mine = new Map();
+      this.decisions.set(userId, mine);
+    }
+    mine.set(decision.handId, { ...decision });
+    const frame = this.decisionFrame(decision);
+    for (const room of this.roomsOfUser(userId)) this.sendUserEvent(room, userId, frame);
+  }
+
+  /** No longer owed (acted, folded, timed out, hand over): retract it everywhere, once. */
+  clearDecision(userId: string, handId: string, reason: string): void {
+    const mine = this.decisions.get(userId);
+    const d = mine?.get(handId);
+    if (!mine || !d) return;
+    mine.delete(handId);
+    if (mine.size === 0) this.decisions.delete(userId);
+    const frame = {
+      type: 'lightning_decision_cleared',
+      pool_session_id: d.poolSessionId,
+      hand_id: handId,
+      reason,
+    };
+    for (const room of this.roomsOfUser(userId)) this.sendUserEvent(room, userId, frame);
+  }
+
+  private rePushDecisions(roomId: string, userId: string): void {
+    const info = this.rooms.get(roomId);
+    if (!info || info.userId !== userId) return;
+    for (const d of this.openDecisions(userId)) {
+      if (d.deadlineAt > this.clock()) this.sendUserEvent(roomId, userId, this.decisionFrame(d));
+    }
+  }
+
+  private sendUserEvent(roomId: string, userId: string, payload: Record<string, unknown>): void {
+    try {
+      this.userEventSink?.(roomId, userId, payload);
+    } catch {
+      /* the transport must never take the registry down */
+    }
   }
 }
 
@@ -375,7 +510,12 @@ export class LightningHosting {
   /** Per Cluster: consecutive abandoned hands, and no forming before `until`. */
   private readonly abandonBackoff = new Map<string, { count: number; until: number }>();
 
-  constructor(private readonly deps: LightningHostingDeps) {}
+  constructor(private readonly deps: LightningHostingDeps) {
+    // The decision queue's frames travel the hub's private per-player path.
+    deps.registry.setUserEventSink((room, user, payload) =>
+      deps.hub.sendToUser(room, user, payload)
+    );
+  }
 
   /**
    * A host already exists for this instance - registered (dealing), or still
@@ -450,6 +590,10 @@ export class LightningHosting {
         }
       },
       onDealing: (h) => registry.register(h),
+      onDecision: (playerId, decision, reason) => {
+        if (decision) registry.announceDecision(playerId, decision);
+        else registry.clearDecision(playerId, host.currentHandId, reason ?? 'cleared');
+      },
       onClusterFrozen: (clusterId) => onClusterFrozen?.(clusterId),
       onFinished: (h) => {
         registry.unregister(h);

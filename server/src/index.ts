@@ -123,9 +123,11 @@ const engineWs = new EngineWebSocketServer({
   // milliseconds; before this the engine waited up to 30s for the HTTP
   // heartbeat to go stale, burning a full action clock on a player who was
   // already gone (and giving reconnects a laggy, frozen-feeling re-entry).
-  onConnect: (tableId, userId) => {
+  onConnect: (tableId, userId, platform) => {
     gameServer.getTableEngine(tableId)?.heartbeat(userId);
-    gameServer.lightningRooms.connect(tableId, userId);
+    // Lightning Phase 8: the device class rides along for the matcher's
+    // per-platform Cluster limit (only a Lightning room records it).
+    gameServer.lightningRooms.connect(tableId, userId, platform ?? null);
   },
   // 2026-10-05: a PONG or RESYNC on an admitted table socket is proof of
   // life, the same as an HTTP /heartbeat (presence only, never strikes).

@@ -70,3 +70,42 @@ FLH and FLO8 had no journaled decisions in the window, so the readers at `886cc9
 ## Statement
 
 Phase 13 is complete and closed as **not promoted**. The joint owner, its input binding, response tree, economics checks, strength contract, authority path and completion readers are built, served and verified, and select nothing. Every one of the nine variants loses to the reference on the primary cash cell at 99% and on every seed block, so all nine selections stay `null` and horses play exactly as before. The next round must calibrate opponent responses to the horse population and pass a development-seed calibration gate before any held-out run, as the loss diagnosis sets out; it must not tune on the held-out seeds used here.
+
+## Audit Of October 7, 2026
+
+Read-only audit of everything Phase 13 built, against `origin/main` at `761aeb8b` and the serving engine release `6b1af5c5` (container started 2026-10-07T16:55:48Z). Statuses use the maintained vocabulary.
+
+### Checklist
+
+- **Packages on main.** P13.1 input binding (`multiway/JointInputBinding.ts`), P13-A response tree (`JointResponseTree.ts`, `JointStreetBetting.ts`, `JointResponseOrder.ts`, `JointActionShared.ts`), P13-B economics (`WinnerUnitScaling.ts`, `JointDeductions.ts` and the controller harnesses), P13.2 strength contract, league, checks, assembler and workflow (`benchmark/JointStrength{Contract,League,Checks}.ts`, `scripts/phase13-strength-assemble.mjs`, `scripts/jointStrengthEvaluate.ts`, `.github/workflows/horse-phase13-strength-league.yml`), P13.3 authority and completion readers (`HorsePhase13Authority.ts`, `HorsePhase13PolicyDigest.ts`, `scripts/phase13CompletionRecord.ts`, `scripts/phase13-completion-extract.py`), the audit fixes (#6289) and the fixed-limit jam pricing fix (#6292). Verified now: every file of #6280, #6289, #6292 and #6293 exists on main.
+- **Stubs.** No `TODO`, `FIXME`, placeholder or stub was left by the work in any changed source file (the only `placeholder` strings are the offline service-key values the strength scripts set on purpose). Verified now.
+- **Producers and consumers (imports and call sites).** `JointInputBinding` is consumed by `JointLivePolicy`, `HorsePhase13Authority`, the worker runtime, client, response validation, protocol and `HorseExecutionWitness`. `JointResponseTree` is consumed by `JointActionModel`, `JointStreetBetting` by `JointResponseTree`, `JointResponseOrder` by `JointActionShared` and `JointLivePolicy`. `WinnerUnitScaling` is consumed by `HandController` and `JointDeductions`. `HorsePhase13Authority` is consumed by the worker runtime, client, response validation, `ServerTableEngineTurns` and the completion record script. `JointStrengthLeague` is consumed by `jointStrengthEvaluate.ts` (npm script `horse:joint-strength-evaluate`, run by the strength workflow). `phase13CompletionRecord.ts` and `phase13-completion-extract.py` are operator CLIs with usage headers. Verified now: no unwired producer and no unreachable consumer.
+- **Selection and authority.** Every entry of `PHASE13_PROTECTED_RELEASE_SELECTIONS` is `null` on main and in the served release (no difference between `6b1af5c5` and main in any Phase 13 source). The live worker refuses a request carrying `phase13Joint: 'candidate'` or `phase13EvidenceMode`, and `horsePhase13AdmittedMode` lets a caller only turn the joint owner off. Verified now: nothing can activate a candidate from runtime input.
+- **Migrations.** Phase 13 installed none. Not applicable with reason.
+
+### Tests (fresh worktree of `761aeb8b`)
+
+`npx vitest run src/engine/multiway src/benchmark/JointStrengthContract.test.ts src/benchmark/JointStrengthLeague.test.ts src/benchmark/phase13StrengthAssemble.test.ts src/benchmark/JointPolicyLeague.test.ts src/benchmark/JointBoardReference.test.ts src/engine/HorsePhase13Authority.test.ts src/engine/HorsePhase13PolicyDigest.test.ts src/engine/HorsePhase13Selection.test.ts src/engine/HorseDecisionEffectCommit.test.ts src/engine/HorseExecutionWitness.test.ts src/engine/horseDecision src/scripts/phase13CompletionRecord.test.ts src/services/horseDecisionJournal/review.test.ts src/engine/HorseTournamentUtilityFixedLimitJam.test.ts`: 49 files, 1,820 passed, 1 skipped. The skip is `theJournalWriterIsNotBornNice.test.ts`, a Linux-only process-priority case (`skipIf(process.platform !== 'linux')`) predating Phase 13; it runs in CI. Every suite is inside the maintained selection (`server/vitest.config.ts` includes `src/**/*.test.ts`). The scheduled CI run on main [37659059600](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37659059600) passed all four server engine shards. Verified now.
+
+### Publication
+
+`886cc965`, `9fdbf692`, `72790c35` and `4c064de9` are each ancestors of the serving release `6b1af5c5` (`git merge-base --is-ancestor`). Phase 13 changed no client file, so no web publication applies. Verified now.
+
+### Natural evidence today
+
+- **Every decision stays shadow.** Stage 1 of the completion reader at `761aeb8b`, run read-only on the engine host for NLH first-look decisions in [20:30:00Z, 20:40:00Z) on release `6b1af5c5`: 15,672 receipts (169,221 closed segments read; 1,809 Diamond, 304 bomb and multi-board, 659 second looks counted apart by name). All 15,672 have `mode: shadow`, `applied: false`, authority state `unselected`, and a final action and amount equal to the baseline. Verified now.
+- **Fleet telemetry for 2026-10-07** (`horse_brain_telemetry`, read-only): `phase13_selection_none` 3,109,939 and `phase13_selection_shadow_change` 596,385, and no other `phase13_selection_*` or applied feature. Verified now: no proposal applied.
+- **Engine logs**, the 4.3 hours since the container started: no joint owner or Phase 13 error line. Verified now.
+- The closure's completion records and held-out verdicts are historical only (they measure `886cc965` and the window on `ffbd89d6`); nothing since changes them, and the jam fix (#6292) moved only the Phase 13 policy digest as recorded above.
+
+### Findings and fixes
+
+- **Wiring (fixed).** The worker admits its Phase 8, 10, 11, 12 and 13 authorities before `startServices` arms brain telemetry, so every `phaseN_authority_worker_*` admission count (including `phase13_authority_worker_<variant>_<state>`) was dropped: production had never recorded one. Root fix in [#6439](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/6439), merged ``71ab03df` (2026-10-07T22:42:43Z)`: the counts are taken once through `noteFeature` after the services start and before `READY`; admission itself is unchanged. Regression cases in `workerRuntime.test.ts` fail on the previous source and pass now. Publication: Engine Release run [37697966313](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37697966313) for `71ab03df` passed its four exact-release test shards and the production-door proof and was dispatching to the engine host at 22:56Z, while the engine still served `6b1af5c5`; implemented but unverified until the engine serves a release containing `71ab03df`.
+- **Documentation (fixed in this record's PR).** The P13.1, P13.2 and P13.3 package records and the loss diagnosis still said their work was committed on a branch and not pushed or merged. Each now carries a dated delivery note naming the merge that delivered it (#6280, and #6292 for the jam fix).
+- No defect, stub, regression or unpublished change was found in the joint owner, its readers or its authority path.
+
+### Remaining open
+
+- G8 work budget: implemented but unverified. The four-millisecond budget is still the leading completion refusal; the closure's floor verdict stands.
+- Opponent response calibration: implemented but unverified, as the loss diagnosis states; the next round must pass a development-seed calibration gate before any held-out run.
+- Promotion: not applicable with reason. No variant qualified, every selection stays `null`.

@@ -211,3 +211,7 @@ From `server/` in the task worktree:
 - `npx vitest run` over the direct consumers of the edited shared files (`Plo4PolicyLeague`, `Plo4StrengthContract`, `OmahaLegalFormCandidates`, `OmahaVariantStrengthContract`, `OmahaVariantStrengthLeague`, `RemainingVariantStrengthContract`, `RemainingVariantStrengthLeague`, `JointPolicyLeague`, `phase12StrengthAssemble`): 181 tests pass in 9 files.
 - From the repository root, the 21 workflow law suites that read `.github/workflows/` (among them `a-workflow-step-fits-what-github-will-run`, `no-workflow-gains-a-new-timer`, `workflow-run-names-a-live-workflow`, `no-commit-left-behind`, `no-merge-gate-without-a-producer`, `schedule-liveness`): 201 tests pass.
 - `npx tsc --noEmit -p .`: clean. Prettier on every changed file: clean.
+
+## Audit Of October 7, 2026
+
+Delivery note: the contract, league, assembler and workflow were delivered to main in [#6280](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/6280), merged `886cc965` on 2026-10-06, and the held-out matrices were dispatched from main for that commit; every variant returned `qualified: false`. The G10 row above is historical. Status now: see the [Phase 13 closure record](horse-brain-phase13-closure-2026-10-06.md) and its audit section.

@@ -46,10 +46,47 @@ test 2 ran.
   `BusEventLogger` on every route and it batches client bus events into an
   INSERT every 10 s. It is a genuine write from the shell, so it is aborted and
   never forwarded, exactly like `client_shell_telemetry`.
-- **Club Disputes touch targets.** A one-word filter ("All") was narrower than
-  44px and the search field was shorter than 44px; `.dmp-word` and `.dmp__field`
-  now carry 44px minimums.
+- **Club Disputes touch targets.** Measured at 393px: "All" 32px wide, "Open"
+  42px wide, the search field 39px tall. `.dmp-word` and `.dmp__field` now carry
+  44px minimums.
 - Unit pins in `tests/unit/financialReadOnlyGuard.test.ts`.
+
+## The six consoles that had never run
+
+Tests 2 to 4 had never executed on production, so every later console check
+was unknown. Rather than discover them one Post-Deploy run at a time, each
+console was rendered locally at 393px (Vite dev, Supabase stubbed with payload
+shapes read from production by read-only `SELECT`s as a disposable
+certification identity) and put through the spec's own checks: heading, root,
+painted head, overflow, UUID and raw-enum copy, 44px controls, 16px inputs and
+axe serious/critical. That found five more defects, each a real page fault that
+production data would have hit:
+
+- **CSV Exports, axe `aria-allowed-attr` (serious).** The Reporting Window and
+  Rake Reporting Window tabs carried `aria-pressed` beside `aria-selected`;
+  `role="tab"` does not allow it. Removed in `ClubFinancialsPage.tsx` and
+  `RakeReports.tsx`.
+- **CSV Exports, "Today" was 38px wide.** `.rr__rail-word` now has a 44px
+  minimum width.
+- **CSV Exports, "Clubs.Chip_Treasury" on the Treasury Statement.**
+  `chip_ledger.from_label/to_label` are storage paths (`clubs.chip_treasury`,
+  `bbj_pools.main_balance`, ...; 14 distinct values in 30 days). `ChipStatement`
+  title-cased them into copy. They now map to account names, an unknown path is
+  left off, and a label that is already words is still shown.
+- **CSV Exports, the embedded Dashboard and Rake Report always failed on the
+  default week.** `ClubFinancialsPage` hands them its _parsed_ reading; both
+  re-parsed it with the wire parser, which requires the wire-only receipt
+  (`contract`, `club_id`, `requested_*`) and refused it: "The Financial Reading
+  Could Not Be Verified" over a valid reading. They now use the verified
+  reading as-is (the reuse guard already pins club and window). The component
+  tests had passed the wire payload, which is how it hid; they now pass the
+  parsed reading the page really supplies, and fail on the old code.
+- **Settlement History printed the period UUID** ("Period: 21d817b2-A416-...",
+  SHARK CLUB's one cycle). The parser now carries `breakdown.period_number`
+  and the console prints "Period 1"; the UUID stays identity only.
+
+After these, all seven consoles and the hub pass every check in that harness,
+and the only RPC POSTs any of them make are the ones on the allowlist.
 
 ## Verification
 

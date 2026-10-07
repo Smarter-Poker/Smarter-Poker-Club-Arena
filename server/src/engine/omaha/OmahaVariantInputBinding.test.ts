@@ -456,7 +456,11 @@ describe('P11.1 what the proposal records', () => {
         cards: 5,
         lowPossible: variant === 'plo8' ? true : null,
       });
-      expect(inputs.board.features).toEqual(r.receipt.features);
+      // The inputs record what the proposal read. P11-A's tag is added after
+      // the proposal is fixed, by the river pricing pass, and is not an input.
+      expect(inputs.board.features).toEqual(
+        r.receipt.features.filter((f) => f !== 'net_action_economics')
+      );
       expect(inputs.geometry.postflop!.callPrice).toBe(r.receipt.callPrice);
       expect(Object.isFrozen(r.receipt.equity)).toBe(true);
       expect(Object.isFrozen(r.receipt.equity!.perPot)).toBe(true);
@@ -677,9 +681,18 @@ describe('P11.1 the binding validator refuses relabeling', () => {
     const legacy = { ...receipt };
     delete legacy.inputs;
     expect(omahaVariantReceiptBindingIsValid(legacy)).toBe(true);
-    expect(omahaVariantReceiptBindingIsValid({ ...receipt, eligible: false, inputs: null })).toBe(
-      true
-    );
+    // An ineligible node is never priced (P11-A), so the ineligible receipt
+    // carries no river net-action result either.
+    const ineligible = { ...receipt, eligible: false, inputs: null };
+    delete ineligible.netActionEconomics;
+    ineligible.features = ineligible.features.filter((f: string) => f !== 'net_action_economics');
+    expect(omahaVariantReceiptBindingIsValid(ineligible)).toBe(true);
+    expect(
+      omahaVariantReceiptBindingIsValid({
+        ...ineligible,
+        netActionEconomics: receipt.netActionEconomics,
+      })
+    ).toBe(false);
   });
 });
 

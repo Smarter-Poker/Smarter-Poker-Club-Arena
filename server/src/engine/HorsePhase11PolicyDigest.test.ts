@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import {
+  HORSE_PHASE11_POLICY_DIAGNOSTIC_BOUNDARY,
   HORSE_PHASE11_POLICY_DIGEST_DEFINITION,
   HORSE_PHASE11_POLICY_EXCLUDED_CLOSURE_FILES,
   HORSE_PHASE11_POLICY_SOURCE_FILES,
@@ -65,6 +66,7 @@ function runtimeClosure(roots: string[]): string[] {
     const rel = path.relative(serverRoot, file).split(path.sep).join('/');
     if (seen.has(rel)) continue;
     seen.add(rel);
+    if (HORSE_PHASE11_POLICY_DIAGNOSTIC_BOUNDARY.includes(rel)) continue;
     for (const spec of runtimeImports(file)) {
       const target = path.resolve(path.dirname(file), spec).replace(/\.js$/, '.ts');
       if (!existsSync(target)) throw new Error(`unresolved ${spec} from ${rel}`);

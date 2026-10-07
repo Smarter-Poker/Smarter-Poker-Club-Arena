@@ -6,6 +6,8 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { ownerStatements, validateRestoreScript } from './leaderboard-isolation-restore-script.mjs';
+// The existing directly invoked preflight lane also runs startup-parity contracts.
+import './leaderboard-isolation-startup-profile.test.mjs';
 
 const shell = fileURLToPath(new URL('./leaderboard-isolation-preflight.sh', import.meta.url));
 const source = readFileSync(shell, 'utf8');

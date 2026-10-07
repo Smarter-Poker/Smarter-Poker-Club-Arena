@@ -808,20 +808,12 @@ jobs:
             echo "NON-VERDICT: the closing release document was unreadable; this run does not certify a release." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          # A release published after this job checked out is not in the local
-          # history, and the classifier refuses a SHA it cannot resolve. Run
-          # 37559264622 passed all three Phase 1 journeys on 68fdeb670c and was
-          # still red, "does not resolve to a trusted repository commit",
-          # because production had moved to f681634a08: a later commit on
-          # protected main this checkout had never seen. Fetch the closing SHA
-          # from origin first. A SHA origin does not have still fails closed.
-          ACTUAL="$(printf '%s' "$BODY" \
-            | grep -oE '"ca_sha"[[:space:]]*:[[:space:]]*"[0-9a-f]{40}"' \
-            | grep -oE '[0-9a-f]{40}' | head -n 1)" || ACTUAL=''
-          if [ -n "$ACTUAL" ] && [ "$ACTUAL" != "$EXPECTED_LIVE_SHA" ] \
-            && ! git cat-file -e "$ACTUAL^{commit}" 2>/dev/null; then
-            git fetch --no-tags --quiet origin "$ACTUAL" \
-              || echo "::warning::Could not fetch production SHA $ACTUAL from origin; the classifier will refuse it."
+          # The certificate may outlive a new protected publication. Refresh
+          # only trusted main, never an arbitrary SHA from the live document.
+          if ! timeout 30s git fetch --no-tags origin main; then
+            echo "::warning::UNKNOWN: protected-main history was unreadable at the end of certification."
+            echo "NON-VERDICT: protected-main history was unreadable; this run does not certify a release." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
           STATUS=0
           WINDOW="$(printf '%s' "$BODY" \
@@ -1233,20 +1225,12 @@ jobs:
             echo "NON-VERDICT: the closing release document was unreadable; this run does not certify a release." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          # A release published after this job checked out is not in the local
-          # history, and the classifier refuses a SHA it cannot resolve. Run
-          # 37559264622 passed all three Phase 1 journeys on 68fdeb670c and was
-          # still red, "does not resolve to a trusted repository commit",
-          # because production had moved to f681634a08: a later commit on
-          # protected main this checkout had never seen. Fetch the closing SHA
-          # from origin first. A SHA origin does not have still fails closed.
-          ACTUAL="$(printf '%s' "$BODY" \
-            | grep -oE '"ca_sha"[[:space:]]*:[[:space:]]*"[0-9a-f]{40}"' \
-            | grep -oE '[0-9a-f]{40}' | head -n 1)" || ACTUAL=''
-          if [ -n "$ACTUAL" ] && [ "$ACTUAL" != "$EXPECTED_LIVE_SHA" ] \
-            && ! git cat-file -e "$ACTUAL^{commit}" 2>/dev/null; then
-            git fetch --no-tags --quiet origin "$ACTUAL" \
-              || echo "::warning::Could not fetch production SHA $ACTUAL from origin; the classifier will refuse it."
+          # The certificate may outlive a new protected publication. Refresh
+          # only trusted main, never an arbitrary SHA from the live document.
+          if ! timeout 30s git fetch --no-tags origin main; then
+            echo "::warning::UNKNOWN: protected-main history was unreadable at the end of certification."
+            echo "NON-VERDICT: protected-main history was unreadable; this run does not certify a release." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
           STATUS=0
           WINDOW="$(printf '%s' "$BODY" \

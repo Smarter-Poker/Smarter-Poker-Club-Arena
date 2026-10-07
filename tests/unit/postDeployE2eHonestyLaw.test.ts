@@ -90,6 +90,126 @@ const spec = (file: string, statuses: (string | null)[]) => ({
 describe.each([
   { lane: 'client', workflow: WORKFLOW },
   { lane: 'live-table', workflow: TABLE_WORKFLOW },
+])('$lane closing protected-main history', ({ workflow }) => {
+  it.each(['forward', 'rollback', 'foreign', 'fetch-refused'])(
+    'retains the exact %s verdict with a real stale checkout',
+    (kind) => {
+      const dir = mkdtempSync(join(tmpdir(), 'closing-lineage-'));
+      const origin = join(dir, 'origin.git');
+      const seed = join(dir, 'seed');
+      const checkout = join(dir, 'checkout');
+      const summary = join(dir, 'summary');
+      const output = join(dir, 'output');
+      // Hooks export the real repository's Git directory/index. Fixtures must
+      // never inherit them, a global URL rewrite, or credentials/network I/O.
+      const gitEnv = { ...process.env };
+      for (const key of Object.keys(gitEnv)) {
+        if (key.startsWith('GIT_')) delete gitEnv[key];
+      }
+      const emptyConfig = join(dir, 'empty-git-config');
+      writeFileSync(emptyConfig, '');
+      Object.assign(gitEnv, {
+        GIT_CONFIG_GLOBAL: emptyConfig,
+        GIT_CONFIG_NOSYSTEM: '1',
+        GIT_ALLOW_PROTOCOL: 'file',
+      });
+      const git = (cwd: string, ...args: string[]) =>
+        execFileSync('git', args, {
+          cwd,
+          env: gitEnv,
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+        }).trim();
+      try {
+        git(dir, 'init', '--bare', '--initial-branch=main', origin);
+        git(dir, 'clone', origin, seed);
+        git(seed, 'config', 'user.name', 'Scoped Certificate Fixture');
+        git(seed, 'config', 'user.email', 'certificate-fixture@example.invalid');
+        writeFileSync(join(seed, 'proof'), 'first');
+        git(seed, 'add', 'proof');
+        git(seed, 'commit', '-m', 'first');
+        git(seed, 'push', 'origin', 'main');
+        const first = git(seed, 'rev-parse', 'HEAD');
+        git(dir, 'clone', origin, checkout);
+        writeFileSync(join(seed, 'proof'), 'second');
+        git(seed, 'add', 'proof');
+        git(seed, 'commit', '-m', 'second');
+        const second = git(seed, 'rev-parse', 'HEAD');
+        if (kind !== 'foreign') git(seed, 'push', 'origin', 'main');
+        const expected = kind === 'rollback' ? second : first;
+        const actual = kind === 'rollback' ? first : second;
+        if (kind === 'rollback') git(checkout, 'fetch', 'origin', 'main');
+        if (kind === 'forward')
+          expect(
+            spawnSync('git', ['cat-file', '-e', `${actual}^{commit}`], {
+              cwd: checkout,
+              env: gitEnv,
+            }).status
+          ).not.toBe(0);
+        writeFileSync(summary, '');
+        writeFileSync(output, '');
+        const body = step(workflow, 'Classify the release window this certificate covers')
+          .split('\n        run: |\n')[1]
+          .replace(/^ {10}/gm, '');
+        const result = spawnSync(
+          'bash',
+          [
+            '--noprofile',
+            '--norc',
+            '-e',
+            '-o',
+            'pipefail',
+            '-c',
+            `
+curl() { printf '%s' '{"ca_sha":"${actual}"}'; }
+node() { command "$NODE_BIN" "$PROVENANCE_CLI" "$2" "$3"; }
+timeout() { shift; "$@"; }
+git() { [ "$FETCH_REFUSED" != true ] || return 1; command git "$@"; }
+${body}`,
+          ],
+          {
+            cwd: checkout,
+            encoding: 'utf8',
+            timeout: 5000,
+            env: {
+              ...gitEnv,
+              NODE_BIN: process.execPath,
+              PROVENANCE_CLI: join(ROOT, 'scripts/ci/production-e2e-provenance.mjs'),
+              EXPECTED_LIVE_SHA: expected,
+              GITHUB_STEP_SUMMARY: summary,
+              GITHUB_OUTPUT: output,
+              RUNTIME_RESUMED: 'true',
+              LIVE_COVERAGE_COMPLETE: 'true',
+              FETCH_REFUSED: String(kind === 'fetch-refused'),
+            },
+          }
+        );
+        expect(result.error).toBeUndefined();
+        expect(result.status, result.stderr).toBe(
+          ['forward', 'fetch-refused'].includes(kind) ? 0 : 1
+        );
+        expect(readFileSync(output, 'utf8')).not.toContain('certified=true');
+        if (kind === 'forward')
+          expect(readFileSync(summary, 'utf8')).toContain('production advanced');
+        if (kind === 'fetch-refused')
+          expect(readFileSync(summary, 'utf8')).toContain('protected-main history was unreadable');
+        if (kind === 'foreign')
+          expect(
+            spawnSync('git', ['cat-file', '-e', `${actual}^{commit}`], {
+              cwd: checkout,
+              env: gitEnv,
+            }).status
+          ).not.toBe(0);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  );
+});
+
+describe.each([
+  { lane: 'client', workflow: WORKFLOW },
+  { lane: 'live-table', workflow: TABLE_WORKFLOW },
 ])('$lane release-window status under Actions bash -e', ({ workflow, lane }) => {
   it.each([
     { status: 0, complete: 'true' },
@@ -123,6 +243,8 @@ describe.each([
             'pipefail',
             '-c',
             `curl() { printf '%s' '{"ca_sha":"${'a'.repeat(40)}"}'; }
+timeout() { shift; "$@"; }
+git() { [ "$*" = 'fetch --no-tags origin main' ]; }
 node() {
   cat >/dev/null
   [ "$1" = scripts/ci/production-e2e-provenance.mjs ] || return 99
@@ -188,7 +310,7 @@ describe.each([
   // run was still red because production had moved to f681634a08, a later
   // commit on main that this job's checkout had never seen, so the classifier
   // answered "does not resolve to a trusted repository commit". The step must
-  // fetch the closing SHA from origin before it classifies.
+  // refresh protected main before it classifies.
   const run = (fetchStatus: number) => {
     const proof = step(workflow, 'Classify the release window this certificate covers');
     const script = proof.split('\n        run: |\n')[1].replace(/^ {10}/gm, '');
@@ -210,6 +332,7 @@ describe.each([
           'pipefail',
           '-c',
           `curl() { printf '%s' '{"ca_sha":"${'b'.repeat(40)}","built_by":"publish-club-arena.yml"}'; }
+timeout() { shift; "$@"; }
 git() {
   printf 'git %s\\n' "$*" >> "$CALLS"
   case "$1" in
@@ -252,19 +375,16 @@ ${script}`,
     const { result, calls } = run(0);
     expect(result.error).toBeUndefined();
     expect(result.status).toBe(0);
-    expect(calls).toEqual([
-      `git cat-file -e ${'b'.repeat(40)}^{commit}`,
-      `git fetch --no-tags --quiet origin ${'b'.repeat(40)}`,
-      'node release-window',
-    ]);
+    expect(calls).toEqual(['git fetch --no-tags origin main', 'node release-window']);
     expect(result.stdout).toContain('::warning::UNKNOWN: production advanced');
   });
 
-  it('still asks the classifier, which fails closed, when origin does not have it', () => {
+  it('refuses certification without asking the classifier when protected history is unreadable', () => {
     const { result, calls } = run(1);
     expect(result.error).toBeUndefined();
-    expect(result.stdout).toContain('::warning::Could not fetch production SHA');
-    expect(calls.at(-1)).toBe('node release-window');
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('::warning::UNKNOWN: protected-main history was unreadable');
+    expect(calls).toEqual(['git fetch --no-tags origin main']);
   });
 });
 

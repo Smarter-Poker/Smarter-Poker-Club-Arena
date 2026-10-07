@@ -18,6 +18,8 @@ The inherited heldout materialized CTE carried complete 1326-combo nodes and mat
 
 ## Regression And Delivery Boundary
 
+The rollback qualification extractor now preserves bare comment lines as SQL blank lines. A regression independently compares its restored function body with the immutable predecessor. Forward recovery reinstalls only the two versioned UUID-owning function definitions before their existing correction; it does not replay retained column DDL or loosen either preimage assertion. The exact isolated PG17 run passes feature rollback and UUID rollback/forward recovery.
+
 The existing PG17 qualification runner loads the exact new migration and focused feature-contract probe before the existing certified-source, agreement, liveness and authorization probes. The independent probe covers legacy identity, explicit-version separation, unknown/null rejection, street dispatch, matrix admission, admin approval idempotence, dataset/worker bindings and immutable version mutation refusal. The SQL/TS parity runner additionally checks the actual consumer validator on 88 valid and 15 malformed keys plus seven invalid decks and all 24 suit permutations.
 
 The migration is Tier 3 because its two service-only RPC return contracts append metadata. Its transaction has short lock/statement timeouts and a contextual-compaction preimage guard. Rollback prerequisites and immutable historical function sources are documented in its header; rollback must preserve all versioned artifacts and cannot relabel rows. Source qualification is not production installation, protected publication, genuine solver quality certification or live consumer adoption. Root retains those operations.

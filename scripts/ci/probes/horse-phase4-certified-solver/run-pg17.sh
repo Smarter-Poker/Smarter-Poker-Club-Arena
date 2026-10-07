@@ -126,7 +126,7 @@ echo V31_VALIDATOR_ROLLBACK_RECOVERY_OK
 # Restore the newer validator migration first before rolling back its prerequisite.
 "${PSQL[@]}" -f "$WORK/validator-rollback.sql"
 # Qualify the copy/paste Tier-3 function-only rollback in this disposable database.
-awk '/^-- EXECUTABLE ROLLBACK:/{copy=1;next} /^-- END EXECUTABLE ROLLBACK/{copy=0} copy && /^-- BEGIN;/{sql=1} copy && sql {sub(/^-- /, "");print}' \
+awk '/^-- EXECUTABLE ROLLBACK:/{copy=1;next} /^-- END EXECUTABLE ROLLBACK/{copy=0} copy && /^-- BEGIN;/{sql=1} copy && sql {sub(/^-- ?/, "");print}' \
   "$ROOT/supabase/migrations/20261007030040_the_solver_binds_immutable_feature_contracts.sql" > "$WORK/feature-rollback.sql"
 "${PSQL[@]}" -f "$WORK/feature-rollback.sql"
 ROLLBACK_HASH=$("${PSQL[@]}" -Atc "select md5(pg_get_functiondef('public.fn_gto_v31_build_cell(uuid,jsonb)'::regprocedure));")
@@ -136,9 +136,18 @@ LEGACY_VALID=$("${PSQL[@]}" -Atc "select public.fn_gto_v31_hand_matrix_valid('{\
 LEGACY_COMPACT_VALID=$("${PSQL[@]}" -Atc "select public.fn_gto_v31_compact_matrices_valid('{\"AKo:21\":{\"c\":1}}'::jsonb,'{\"c\":{\"family\":\"check\",\"size_unit\":\"none\",\"size_value\":null,\"all_in\":false}}'::jsonb,'{\"AKo:21\":1}'::jsonb,'{\"AKo:21\":{\"c\":1}}'::jsonb,'flop');")
 [[ "$LEGACY_COMPACT_VALID" == 't' ]]
 echo V31_FEATURE_ROLLBACK_OK
-# The immutable legacy rollback restores old validator bodies. Recover forward
-# before serving them; the correction preserves the legacy body byte-for-byte
-# except its UUID shape predicate, OIDs and ACLs.
+# The exact blank-line-preserving rollback restores canonical legacy bodies.
+# Recover the two versioned UUID-owning functions before their correction: the immutable
+# correction's legacy pins describe the earlier comment-preserving extraction,
+# not these canonical rollback bytes. No preimage assertion is relaxed.
+awk '
+ /^CREATE OR REPLACE FUNCTION public.fn_gto_v31_register_dataset\(/ ||
+ /^CREATE OR REPLACE FUNCTION public.fn_horse_solver_agreement_v31_decision\(/ {copy=1;count++}
+ copy {print}
+ copy && /^\$fn\$;$/ {copy=0}
+ END {if(count!=2 || copy) exit 1}
+' "$ROOT/supabase/migrations/20261007030040_the_solver_binds_immutable_feature_contracts.sql" > "$WORK/uuid-function-forward.sql"
+"${PSQL[@]}" -f "$WORK/uuid-function-forward.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261007040648_solver_platform_ids_validate_uuid_shape.sql"
 "${PSQL[@]}" -f "$HERE/platform-uuid-shape.sql"
 "${PSQL[@]}" -f "$HERE/certified-v31.sql"

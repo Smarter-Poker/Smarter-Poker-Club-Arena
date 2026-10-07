@@ -23,15 +23,7 @@ const modes = [
 test('historical mode prepares every input before original paid bootstrap then all prospective replacements', () => {
   const output = buildFinancialRepairCandidate(source, 'historical-replay');
   let prior = output.indexOf('chmod 600 "$scratch"/repair-*.sql');
-  for (const stage of [
-    'historical-before',
-    'capture',
-    'ranking',
-    'payout',
-    'config',
-    'opening',
-    'historical-after',
-  ]) {
+  for (const stage of ['historical-before', 'consolidated', 'historical-after']) {
     const position = output.indexOf(`repair_sql '${stage}'`);
     assert.ok(position > prior);
     prior = position;
@@ -71,7 +63,7 @@ test('prospective payout reads fixed case receipts on success and failure withou
   const output = buildFinancialRepairCandidate(source, 'v2-payout');
   const body = output.slice(
     output.indexOf('repair_sql() {'),
-    output.indexOf("repair_sql 'capture'")
+    output.indexOf("repair_sql 'consolidated'")
   );
   assert.equal(body.split('node "$here/leaderboard-repair-financial-diagnostics.mjs"').length, 3);
   assert.match(body, /prospective verdict evidence refused/);
@@ -129,10 +121,10 @@ test('installation order and transaction owners differ deliberately between mode
       previous = position;
     }
   }
-  ordered(payout, ['capture', 'ranking', 'payout', 'config', 'opening', 'fixture']);
+  ordered(payout, ['consolidated', 'fixture']);
   ordered(compatibility, ['bootstrap', 'capture', 'fixture']);
-  ordered(opening, ['config', 'opening', 'fixture']);
-  ordered(worker, ['capture', 'ranking', 'payout', 'config', 'opening', 'bootstrap', 'fixture']);
+  ordered(opening, ['consolidated', 'fixture']);
+  ordered(worker, ['consolidated', 'bootstrap', 'fixture']);
   assert.match(
     worker,
     /cat "\$scratch\/repair-authorization.sql" "\$here\/leaderboard-isolated-concurrency-fixture-draft.sql" >"\$scratch\/repair-bootstrap.sql" \|\| failure/
@@ -154,9 +146,13 @@ test('installation order and transaction owners differ deliberately between mode
       output,
       /printf '%s\\n' 'RESET ROLE;' >>"\$scratch\/repair-capture.sql" \|\| failure/
     );
-    assert.equal(output.split('SET ROLE postgres;').length, 2);
+    assert.equal(output.split('SET ROLE postgres;').length, output === compatibility ? 2 : 3);
   }
-  assert.doesNotMatch(opening, /SET ROLE postgres;/);
+  for (const output of [payout, opening, worker]) {
+    assert.equal(output.split("repair_sql 'consolidated'").length, 2);
+    assert.doesNotMatch(output, /repair_sql '(capture|ranking|payout|config|opening)'/);
+    assert.match(output, /leaderboard-consolidated-migration-candidate.mjs/);
+  }
   assert.match(compatibility, /printf '%s\\n' 'COMMIT;'/);
   assert.doesNotMatch(payout, /printf '%s\\n' 'COMMIT;'/);
   assert.doesNotMatch(opening, /printf '%s\\n' 'COMMIT;'/);
@@ -190,9 +186,10 @@ test('prospective concurrency and unknown-ack prepare complete inputs and safely
       'LEADERBOARD_REPAIR_HARNESS="$here" bash "$scratch/repair-driver.sh" "$container" "$scratch"';
     assert.ok(output.includes(driverCall));
     assert.ok(
-      output.indexOf('chmod 600 "$scratch"/repair-*.sql') < output.indexOf("repair_sql 'capture'")
+      output.indexOf('chmod 600 "$scratch"/repair-*.sql') <
+        output.indexOf("repair_sql 'consolidated'")
     );
-    assert.ok(output.indexOf("repair_sql 'opening'") < output.indexOf(driverCall));
+    assert.ok(output.indexOf("repair_sql 'consolidated'") < output.indexOf(driverCall));
     assert.ok(
       output.includes(
         'cat "$scratch/repair-authorization.sql" "$scratch/repair-complete-companion.sql" >"$scratch/repair-bootstrap.sql" || failure'
@@ -383,7 +380,7 @@ test('failure diagnostics expose only fixed stage and strict SQLSTATE, preservin
   const output = buildFinancialRepairCandidate(source, 'opening');
   const body = output.slice(
     output.indexOf('repair_sql() {'),
-    output.indexOf("repair_sql 'config'")
+    output.indexOf("repair_sql 'consolidated'")
   );
   for (const privateError of [
     'ERROR:  55000\nSECRET_SQL_TOKEN_NEVER_EMIT\n',
@@ -405,6 +402,7 @@ test('failure diagnostics expose only fixed stage and strict SQLSTATE, preservin
           env: {
             ...process.env,
             scratch: directory,
+            here: directory,
             container: 'stub',
             bootstrap: 'stub',
             PRIVATE_ERROR: privateError,

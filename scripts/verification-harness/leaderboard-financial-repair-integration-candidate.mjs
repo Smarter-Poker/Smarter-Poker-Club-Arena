@@ -14,6 +14,7 @@ const config = 'leaderboard-promo-config-candidate.mjs';
 const opening = 'leaderboard-promo-opening-candidate.mjs';
 const adapter = 'leaderboard-capture-payout-fixture-candidate.mjs';
 const repairDiagnostics = 'leaderboard-repair-financial-diagnostics.mjs';
+const consolidated = 'leaderboard-consolidated-migration-candidate.mjs';
 const compatibility = 'leaderboard-capture-basis-regression-candidate.sql';
 const openingFixture = 'leaderboard-isolated-opening-policy-draft.sql';
 const workerFixture = 'leaderboard-isolated-worker-regression-candidate.sql';
@@ -34,7 +35,8 @@ const reviewed = Object.freeze({
   [config]: '5c81d18b10cea37854d8bb84f0453cd76c00d9da082bf0f890abc33ab6d8f2bd',
   [opening]: 'ec53053f330856156395c4f0c95ee94e4950c34e8f6ea4047b35fe2fd7bb78b3',
   [adapter]: 'c42b0620d6c05d69fc5589e3bd8c89f0305186e347a668f3ae9ae9f432812953',
-  [repairDiagnostics]: 'bcd885c2faddea84001ab25ffc05be4adbf42bf3bc7cd7aabc80370b852f32eb',
+  [repairDiagnostics]: 'd449d4108207a44e665752369aee24bd1a7b0663078274b8a98a3c0e27e9912b',
+  [consolidated]: '3142633c836966b32234cb7606d4e5c8d79f11b18fa75017e6d1ef80843e9807',
   [compatibility]: 'a1654508e9a44b849d6ccd67afed6173fe50300488b232e8c028c82ff8f06e6e',
   [openingFixture]: '40ec7d17deda73f27cad1706f44f212288d7781767eabb1c2d05258c3e622047',
   [workerFixture]: '2dada967cdb8bff98c8f8904f3b4d99e0a64eb67eba76a0ff4787236a92d4163',
@@ -48,11 +50,50 @@ const reviewed = Object.freeze({
   [unknownAckProxy]: 'd94d01708225596d90d2ee892d2634d995078cc1d6f7ac604fae9e56ac8227b5',
 });
 const modes = Object.freeze({
-  'v2-payout': [auth, capture, ranking, payout, config, opening, adapter, repairDiagnostics],
+  'v2-payout': [
+    auth,
+    capture,
+    ranking,
+    payout,
+    config,
+    opening,
+    adapter,
+    repairDiagnostics,
+    consolidated,
+  ],
   'capture-compatibility': [auth, capture, compatibility],
-  opening: [auth, config, opening, openingFixture],
-  worker: [auth, capture, ranking, payout, config, opening, concurrencyFixture, workerFixture],
-  'historical-replay': [auth, capture, ranking, payout, config, opening, historicalFixture],
+  opening: [
+    auth,
+    capture,
+    ranking,
+    payout,
+    config,
+    opening,
+    openingFixture,
+    consolidated,
+    repairDiagnostics,
+  ],
+  worker: [
+    auth,
+    capture,
+    ranking,
+    payout,
+    config,
+    opening,
+    concurrencyFixture,
+    workerFixture,
+    consolidated,
+  ],
+  'historical-replay': [
+    auth,
+    capture,
+    ranking,
+    payout,
+    config,
+    opening,
+    historicalFixture,
+    consolidated,
+  ],
   concurrency: [
     auth,
     capture,
@@ -65,6 +106,7 @@ const modes = Object.freeze({
     completeFixtureAdapter,
     concurrencyAdapter,
     concurrencyBaseline,
+    consolidated,
   ],
   'unknown-ack': [
     auth,
@@ -79,6 +121,7 @@ const modes = Object.freeze({
     unknownAckAdapter,
     unknownAckBaseline,
     unknownAckProxy,
+    consolidated,
   ],
 });
 export const readRepairInput = (name) =>
@@ -250,11 +293,30 @@ ${prepareCapture}
 cp "$here/${compatibility}" "$scratch/repair-fixture.sql" || failure 'compatibility input preparation failed'`;
     invocation = ['bootstrap', 'capture', 'fixture'].map(invoke).join('\n');
   } else {
-    preparation = `${prepareGenerator(config, 'config')}
+    preparation = `${prepareCapture}
+${prepareGenerator(ranking, 'ranking')}
+${prepareGenerator(payout, 'payout')}
+${prepareGenerator(config, 'config')}
 ${prepareGenerator(opening, 'opening')}
 ${prepareAuth}
 cat "$scratch/repair-authorization.sql" "$here/${openingFixture}" >"$scratch/repair-fixture.sql" || failure 'opening complete input preparation failed'`;
-    invocation = ['config', 'opening', 'fixture'].map(invoke).join('\n');
+    invocation = ['capture', 'ranking', 'payout', 'config', 'opening', 'fixture']
+      .map(invoke)
+      .join('\n');
+  }
+  if (mode !== 'capture-compatibility') {
+    const splitInstall = ['capture', 'ranking', 'payout', 'config', 'opening']
+      .map(invoke)
+      .join('\n');
+    assert.equal(
+      invocation.split(splitInstall).length,
+      2,
+      'One complete install sequence required'
+    );
+    invocation = invocation.replace(splitInstall, invoke('consolidated'));
+    preparation += `\nprintf '%s\\n' 'SET ROLE postgres;' >"$scratch/repair-consolidated.sql" || failure 'consolidated owner preparation failed'
+node "$here/${consolidated}" >>"$scratch/repair-consolidated.sql" || failure 'exact consolidated migration preparation refused'
+printf '%s\\n' 'RESET ROLE;' >>"$scratch/repair-consolidated.sql" || failure 'consolidated owner reset preparation failed'`;
   }
   once(
     cleanup,
@@ -267,9 +329,9 @@ repair_sql() {
   local stage="$1" input="$2" status state='unknown' line
   if timeout 180 docker exec -i "$container" psql -h /tmp -XAtq -U "$bootstrap" -d postgres -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate <"$input" >"$scratch/repair-$stage.log" 2>&1; then
 ${
-  mode === 'v2-payout'
+  mode === 'v2-payout' || mode === 'opening'
     ? `    if [[ "$stage" == fixture ]]; then
-      node "$here/${repairDiagnostics}" "$scratch/repair-$stage.log" || failure 'prospective verdict evidence refused'
+      node "$here/${repairDiagnostics}" '${mode}' "$scratch/repair-$stage.log" || failure 'prospective verdict evidence refused'
     fi`
     : ''
 }
@@ -277,9 +339,9 @@ ${
   else
     status=$?
 ${
-  mode === 'v2-payout'
+  mode === 'v2-payout' || mode === 'opening'
     ? `    if [[ "$stage" == fixture ]]; then
-      node "$here/${repairDiagnostics}" "$scratch/repair-$stage.log" || printf '%s\\n' 'Financial Repair Diagnostic: unknown; private evidence outside reviewed contract' >&2
+      node "$here/${repairDiagnostics}" '${mode}' "$scratch/repair-$stage.log" || printf '%s\\n' 'Financial Repair Diagnostic: unknown; private evidence outside reviewed contract' >&2
     fi`
     : ''
 }

@@ -9,6 +9,7 @@ import {
   query,
   verify,
   admissionDiagnostic,
+  verifyReplicaVersion,
 } from './leaderboard-schema-replica.mjs';
 
 const identifier = `${primaryRef}-rr-us-west-2-feulx`;
@@ -39,7 +40,7 @@ test('admission diagnostics name exact fixed failure conditions without revealin
     [{ in_hot_standby: 'off' }, 'not-hot-standby'],
     [{ read_only: 'off' }, 'not-read-only'],
     [{ feedback: 'on' }, 'feedback-not-off'],
-    [{ version_num: '170011' }, 'version-mismatch'],
+    [{ version_num: '180001' }, 'unsupported-replica-version'],
     [{ replay_lsn: '1/FFFFFFFE' }, 'replay-behind-fence'],
   ]) {
     assert.equal(admissionDiagnostic(fence, { ...admission, ...change }), category);
@@ -148,7 +149,11 @@ test('strict recovery admission and unsigned 64-bit WAL fence refuse drift and l
     { in_hot_standby: 'off' },
     { read_only: 'off' },
     { feedback: 'on' },
-    { version_num: '170011' },
+    { version_num: '180001' },
+    { version_num: '160011' },
+    { version_num: 170011 },
+    { version_num: '170011\n' },
+    { version_num: '170011\r' },
     { replay_lsn: '1/FFFFFFFE' },
     { replay_lsn: null },
     { replay_lsn: '100000000/0' },
@@ -158,11 +163,29 @@ test('strict recovery admission and unsigned 64-bit WAL fence refuse drift and l
     assert.throws(() => verify(fence, { ...admission, ...change }));
   for (const change of [
     { version_num: 170006 },
+    { version_num: '170006\n' },
     { version_num: '180001' },
     { current_wal_lsn: '0/-1' },
     { unexpected: true },
   ])
     assert.throws(() => verify({ ...fence, ...change }, admission));
+});
+test('PG17 minor exporter compatibility retains exact replica version stability', () => {
+  const newer = { ...admission, version_num: '170011' };
+  verify(fence, newer);
+  assert.equal(admissionDiagnostic(fence, newer), 'no-admission-mismatch');
+  verifyReplicaVersion(newer, newer);
+  assert.throws(() => verifyReplicaVersion(newer, { ...newer, version_num: '170012' }));
+  assert.throws(() => verifyReplicaVersion(newer, { ...newer, version_num: 170011 }));
+  assert.throws(() =>
+    verifyReplicaVersion({ ...newer, version_num: '180001' }, { ...newer, version_num: '180001' })
+  );
+  assert.throws(() => verifyReplicaVersion(newer, { ...newer, unexpected: true }));
+  for (const suffix of ['\n', '\r']) {
+    const malformed = { ...newer, version_num: `170011${suffix}` };
+    assert.throws(() => verifyReplicaVersion(malformed, malformed));
+    assert.equal(admissionDiagnostic(fence, malformed), 'unsupported-replica-version');
+  }
 });
 test('fixed read-only queries and CLI errors never expose input credentials or paths', () => {
   assert.match(primaryQuery, /pg_current_wal_lsn/);

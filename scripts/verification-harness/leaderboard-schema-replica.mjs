@@ -105,6 +105,9 @@ function lsn(value) {
   const [high, low] = value.split('/');
   return (BigInt(`0x${high}`) << 32n) + BigInt(`0x${low}`);
 }
+function pg17Version(value) {
+  return typeof value === 'string' && value.length === 6 && /^17[0-9]{4}$/.test(value);
+}
 export function verify(primary, replica) {
   exact(primary, ['version_num', 'current_wal_lsn']);
   exact(replica, [
@@ -116,9 +119,8 @@ export function verify(primary, replica) {
     'replay_lsn',
   ]);
   if (
-    typeof primary.version_num !== 'string' ||
-    !/^17[0-9]{4}$/.test(primary.version_num) ||
-    replica.version_num !== primary.version_num ||
+    !pg17Version(primary.version_num) ||
+    !pg17Version(replica.version_num) ||
     replica.in_recovery !== true ||
     replica.in_hot_standby !== 'on' ||
     replica.read_only !== 'on' ||
@@ -126,6 +128,20 @@ export function verify(primary, replica) {
     lsn(replica.replay_lsn) < lsn(primary.current_wal_lsn)
   )
     refused();
+}
+
+export function verifyReplicaVersion(before, after) {
+  const names = [
+    'in_recovery',
+    'in_hot_standby',
+    'read_only',
+    'feedback',
+    'version_num',
+    'replay_lsn',
+  ];
+  exact(before, names);
+  exact(after, names);
+  if (!pg17Version(before.version_num) || after.version_num !== before.version_num) refused();
 }
 
 // Fixed categories only. Never print metadata values, private paths or URLs.
@@ -145,9 +161,8 @@ export function admissionDiagnostic(primary, replica) {
     if (replica.in_hot_standby !== 'on') causes.push('not-hot-standby');
     if (replica.read_only !== 'on') causes.push('not-read-only');
     if (replica.feedback !== 'off') causes.push('feedback-not-off');
-    if (typeof primary.version_num !== 'string' || !/^17[0-9]{4}$/.test(primary.version_num))
-      causes.push('unsupported-primary-version');
-    if (replica.version_num !== primary.version_num) causes.push('version-mismatch');
+    if (!pg17Version(primary.version_num)) causes.push('unsupported-primary-version');
+    if (!pg17Version(replica.version_num)) causes.push('unsupported-replica-version');
     if (lsn(replica.replay_lsn) < lsn(primary.current_wal_lsn)) causes.push('replay-behind-fence');
     return causes.length ? causes.join(',') : 'no-admission-mismatch';
   } catch {
@@ -173,10 +188,18 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       const replica = JSON.parse(readFileSync(second, 'utf8'));
       try {
         verify(primary, replica);
+        console.error(
+          `Replica Export Versions: Primary ${primary.version_num}; Replica ${replica.version_num}`
+        );
       } catch (error) {
         console.error(`Replica Admission: ${admissionDiagnostic(primary, replica)}`);
         throw error;
       }
+    } else if (mode === 'stable-version' && first && second) {
+      verifyReplicaVersion(
+        JSON.parse(readFileSync(first, 'utf8')),
+        JSON.parse(readFileSync(second, 'utf8'))
+      );
     } else refused();
   } catch {
     console.error('Replica schema route refused.');

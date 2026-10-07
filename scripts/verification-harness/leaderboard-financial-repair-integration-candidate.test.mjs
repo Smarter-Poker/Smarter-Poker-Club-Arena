@@ -20,15 +20,22 @@ const modes = [
   'concurrency',
   'unknown-ack',
 ];
-test('historical mode prepares every input before original bootstrap then only config/opening replacements', () => {
+test('historical mode prepares every input before original paid bootstrap then all prospective replacements', () => {
   const output = buildFinancialRepairCandidate(source, 'historical-replay');
   let prior = output.indexOf('chmod 600 "$scratch"/repair-*.sql');
-  for (const stage of ['historical-before', 'config', 'opening', 'historical-after']) {
+  for (const stage of [
+    'historical-before',
+    'capture',
+    'ranking',
+    'payout',
+    'config',
+    'opening',
+    'historical-after',
+  ]) {
     const position = output.indexOf(`repair_sql '${stage}'`);
     assert.ok(position > prior);
     prior = position;
   }
-  assert.doesNotMatch(output, /repair_sql '(capture|ranking|payout)'/);
   assert.match(output, /--body-md5 "\$scratch\/repair-opening.sql" fn_complete_club_opening_setup/);
   assert.match(
     output,
@@ -36,11 +43,20 @@ test('historical mode prepares every input before original bootstrap then only c
   );
   assert.match(output, /candidate_opening_body_md5 \$opening_body/);
   assert.match(output, /candidate_publish_body_md5 \$publish_body/);
+  assert.match(output, /--body-md5 "\$scratch\/repair-payout.sql" fn_payout_leaderboard/);
+  assert.match(output, /candidate_payout_body_md5 \$payout_body/);
 });
 test('function body identity derives exact leading/trailing newlines and rejects duplicate/missing boundaries', () => {
   const name = 'fn_complete_club_opening_setup';
   const definition = `CREATE OR REPLACE FUNCTION public.${name}()\nRETURNS jsonb\nAS $function$\nBEGIN\nRETURN '{}';\nEND;\n$function$;\n`;
   assert.equal(candidateFunctionBodyMd5(definition, name), 'b86d941d4cde7d9ccbd87f8443ee2333');
+  assert.equal(
+    candidateFunctionBodyMd5(
+      definition.replaceAll(name, 'fn_payout_leaderboard'),
+      'fn_payout_leaderboard'
+    ),
+    'b86d941d4cde7d9ccbd87f8443ee2333'
+  );
   for (const invalid of [
     '',
     definition + definition,
@@ -51,6 +67,21 @@ test('function body identity derives exact leading/trailing newlines and rejects
 });
 const gate = "|| failure 'isolated catalog differs from current source'";
 const cleanup = "cleanup || failure 'explicit cleanup verification failed'";
+test('prospective payout reads fixed case receipts on success and failure without hiding SQL failure', () => {
+  const output = buildFinancialRepairCandidate(source, 'v2-payout');
+  const body = output.slice(
+    output.indexOf('repair_sql() {'),
+    output.indexOf("repair_sql 'capture'")
+  );
+  assert.equal(body.split('node "$here/leaderboard-repair-financial-diagnostics.mjs"').length, 3);
+  assert.match(body, /prospective verdict evidence refused/);
+  assert.ok(body.indexOf('status=$?') < body.lastIndexOf('Financial Repair Diagnostic: unknown'));
+  assert.ok(
+    body.lastIndexOf('Financial Repair Diagnostic: unknown') <
+      body.indexOf("failure 'isolated candidate assertions or installation failed'")
+  );
+  assert.match(output, /sha256sum "\$here\/leaderboard-repair-financial-diagnostics.mjs"/);
+});
 test('all modes retain fresh read-only restore, exact catalog gate and original owned cleanup', () => {
   const cleanupBody = source.slice(
     source.indexOf('cleanup_complete=false\n'),
@@ -187,12 +218,17 @@ function scratch() {
 test('historical missing private input or body extraction failure cannot admit original COMMIT', () => {
   const output = buildFinancialRepairCandidate(source, 'historical-replay');
   const prepare = output.slice(
-    output.indexOf('node "$here/leaderboard-promo-config'),
+    output.indexOf('# SET ROLE is scoped'),
     output.indexOf('repair_sql() {')
   );
-  for (const missing of ['none', 'authorization', 'history', 'body']) {
+  for (const missing of ['none', 'authorization', 'capture', 'history', 'body', 'payout-body']) {
     const directory = scratch();
     try {
+      if (missing !== 'capture')
+        writeFileSync(
+          join(directory, 'leaderboard-capture-basis-candidate.sql'),
+          'BEGIN;\nSELECT 2;\nCOMMIT;\n'
+        );
       if (missing !== 'authorization')
         writeFileSync(
           join(directory, 'leaderboard-isolated-authorization-draft.sql'),
@@ -207,7 +243,7 @@ test('historical missing private input or body extraction failure cannot admit o
         'bash',
         [
           '-c',
-          `set -euo pipefail\numask 077\nfailure(){ exit 42; }\nnode(){ if [[ "\${2-}" == --body-md5 ]]; then [[ "$MISSING" != body ]] || return 8; printf 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'; else printf 'PREPARED_SQL'; fi; }\n${prepare}\nprintf admitted >"$scratch/admitted"\n`,
+          `set -euo pipefail\numask 077\nfailure(){ exit 42; }\nnode(){ if [[ "\${2-}" == --body-md5 ]]; then [[ "$MISSING" != body ]] || return 8; if [[ "$MISSING" == payout-body && "\${4-}" == fn_payout_leaderboard ]]; then return 8; fi; printf 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'; else printf 'PREPARED_SQL'; fi; }\n${prepare}\nprintf admitted >"$scratch/admitted"\n`,
         ],
         {
           encoding: 'utf8',
@@ -225,6 +261,10 @@ test('historical missing private input or body extraction failure cannot admit o
         assert.match(
           readFileSync(join(directory, 'repair-historical-after.sql'), 'utf8'),
           /\\set candidate_opening_body_md5 a{32}/
+        );
+        assert.match(
+          readFileSync(join(directory, 'repair-historical-after.sql'), 'utf8'),
+          /\\set candidate_payout_body_md5 a{32}/
         );
       } else assert.notEqual(result.status, 0);
     } finally {

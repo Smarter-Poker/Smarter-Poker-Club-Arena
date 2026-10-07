@@ -29,6 +29,72 @@ BEGIN
   END IF;
 END $guard$;
 
+-- Actual nonempty producer proof, isolated from the retained empty-day proof.
+-- A deliberate subtransaction rollback removes ONLY this synthetic input and
+-- its resulting captures; never delete or rewrite immutable capture history.
+DO $nonempty_producer$
+DECLARE result jsonb; expected jsonb; frozen_header jsonb; frozen_rows jsonb;
+BEGIN
+  BEGIN
+    INSERT INTO public.player_stats(user_id,club_id,hands_played,hands_dealt,
+      sum_big_blind,total_winnings,total_losses,total_rake,tournaments_played,tournaments_won)
+    VALUES('90000000-0000-4000-8000-000000000002','92000000-0000-4000-8000-000000000002',
+      11,13,26,101.25,12.50,1.75,3,1);
+    expected:=jsonb_build_array(jsonb_build_object(
+      'user_id','90000000-0000-4000-8000-000000000002',
+      'club_id','92000000-0000-4000-8000-000000000002',
+      'hands_played',11,'hands_dealt',13,'sum_big_blind',26,
+      'total_winnings',101.25,'total_losses',12.50,'total_rake',1.75,
+      'tournaments_played',3,'tournaments_won',1));
+    result:=public.fn_snapshot_player_stats();
+    IF result->'success' IS DISTINCT FROM 'true'::jsonb
+      OR result->'rows' IS DISTINCT FROM '1'::jsonb
+      OR result->>'date' IS DISTINCT FROM CURRENT_DATE::text
+      OR (SELECT jsonb_agg(to_jsonb(c)-'snapshot_date' ORDER BY club_id,user_id)
+          FROM public.leaderboard_capture_counters c) IS DISTINCT FROM expected
+      OR (SELECT jsonb_agg(jsonb_build_object('user_id',user_id,'club_id',club_id,
+          'hands_played',hands_played,'hands_dealt',hands_dealt,'sum_big_blind',sum_big_blind,
+          'total_winnings',total_winnings,'total_losses',total_losses,'total_rake',total_rake,
+          'tournaments_played',tournaments_played,'tournaments_won',tournaments_won)
+          ORDER BY club_id,user_id) FROM public.player_stats_snapshots
+          WHERE snapshot_date=CURRENT_DATE) IS DISTINCT FROM expected THEN
+      RAISE EXCEPTION 'Actual nonempty producer counter and shared snapshot values differ';
+    END IF;
+    SELECT to_jsonb(c) INTO STRICT frozen_header FROM public.leaderboard_complete_captures c
+      WHERE capture_date=CURRENT_DATE AND complete AND row_count=1
+        AND counter_hash=md5((expected->0)::text)
+        AND origin='fn_snapshot_player_stats' AND source_contract='applied_player_stats_v1'
+        AND capture_timezone='UTC' AND captured_at>=transaction_timestamp()
+        AND captured_at<=clock_timestamp()
+        AND (captured_at AT TIME ZONE 'UTC')::date=capture_date;
+    SELECT jsonb_agg(to_jsonb(c) ORDER BY club_id,user_id) INTO frozen_rows
+      FROM public.leaderboard_capture_counters c;
+    UPDATE public.player_stats SET total_winnings=202.50
+      WHERE user_id='90000000-0000-4000-8000-000000000002'
+        AND club_id='92000000-0000-4000-8000-000000000002';
+    result:=public.fn_snapshot_player_stats();
+    IF result->'rows' IS DISTINCT FROM '1'::jsonb
+      OR (SELECT to_jsonb(c) FROM public.leaderboard_complete_captures c
+          WHERE capture_date=CURRENT_DATE) IS DISTINCT FROM frozen_header
+      OR (SELECT jsonb_agg(to_jsonb(c) ORDER BY club_id,user_id)
+          FROM public.leaderboard_capture_counters c) IS DISTINCT FROM frozen_rows
+      OR (SELECT total_winnings FROM public.player_stats_snapshots
+          WHERE user_id='90000000-0000-4000-8000-000000000002'
+            AND club_id='92000000-0000-4000-8000-000000000002'
+            AND snapshot_date=CURRENT_DATE) IS DISTINCT FROM 202.50 THEN
+      RAISE EXCEPTION 'Repeated nonempty producer changed frozen capture or failed shared upsert';
+    END IF;
+    RAISE EXCEPTION USING ERRCODE='Q0003',MESSAGE='NonemptyProducerPassedAndRolledBack';
+  EXCEPTION WHEN SQLSTATE 'Q0003' THEN NULL;
+  END;
+  IF EXISTS(SELECT 1 FROM public.player_stats WHERE club_id IS NOT NULL)
+    OR EXISTS(SELECT 1 FROM public.player_stats_snapshots)
+    OR EXISTS(SELECT 1 FROM public.leaderboard_complete_captures)
+    OR EXISTS(SELECT 1 FROM public.leaderboard_capture_counters) THEN
+    RAISE EXCEPTION 'Nonempty producer subtransaction did not restore exact empty preimage';
+  END IF;
+END $nonempty_producer$;
+
 DO $producer$
 DECLARE rejected boolean:=false; result jsonb; first_header jsonb; zone text;
 BEGIN

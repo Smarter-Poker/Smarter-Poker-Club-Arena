@@ -1,4 +1,8 @@
 -- Exact original-seat continuation, not a new paid entry.
+-- The armed seat guard admits only an exact transaction-owned original paid
+-- seat restoration, proven before the revival. Positive-stack and seat-first
+-- starting-stack checks, every declared money path, identity order and unfunded
+-- refusal remain armed. New, foreign, changed-stack and unproven seats refuse.
 BEGIN;
 SET LOCAL lock_timeout='3s';
 SET LOCAL statement_timeout='30s';

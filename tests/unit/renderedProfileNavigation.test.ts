@@ -4,67 +4,101 @@ import { navigateToRenderedProfile } from '../e2e/support/renderedProfileNavigat
 
 function fixture(
   options: {
-    lifecycleLost?: boolean;
     redirected?: boolean;
-    navigationFails?: boolean;
+    clickFails?: boolean;
     headingMissing?: boolean;
+    studioOpen?: boolean;
   } = {}
 ) {
+  let current = 'https://smarter.poker/hub/club-arena/';
   const heading = {
     waitFor: vi.fn(async () => {
       if (options.headingMissing) throw new Error('Profile content never rendered');
     }),
   };
-  const page = {
-    goto: vi.fn(async (_url: string, navigation: { waitUntil: string }) => {
-      if (options.navigationFails) throw new Error('Document request failed');
-      if (options.lifecycleLost && navigation.waitUntil !== 'commit')
-        throw new Error('DOMContentLoaded never arrived despite rendered profile');
-    }),
-    url: vi.fn(() =>
-      options.redirected
+  const close = { click: vi.fn(async () => undefined) };
+  const studio = {
+    isVisible: vi.fn(async () => options.studioOpen === true),
+    getByRole: vi.fn(() => close),
+    waitFor: vi.fn(async () => undefined),
+  };
+  const profile = {
+    click: vi.fn(async () => {
+      if (options.clickFails) throw new Error('Profile control refused');
+      current = options.redirected
         ? 'https://smarter.poker/auth/login'
-        : 'https://smarter.poker/hub/club-arena/profile'
-    ),
+        : 'https://smarter.poker/hub/club-arena/profile';
+    }),
+  };
+  const page = {
+    goto: vi.fn(async () => {
+      throw new Error('Commit notification lost despite rendered document');
+    }),
+    url: vi.fn(() => current),
+    getByRole: vi.fn((role: string) => (role === 'dialog' ? studio : profile)),
+    waitForURL: vi.fn(async () => undefined),
     locator: vi.fn(() => heading),
   };
-  return { page: page as unknown as Page, goto: page.goto, heading };
+  return {
+    page: page as unknown as Page,
+    goto: page.goto,
+    waitForURL: page.waitForURL,
+    profile,
+    studio,
+    close,
+    heading,
+  };
 }
-
 afterEach(() => vi.restoreAllMocks());
 describe('rendered production profile navigation', () => {
-  it('accepts the committed, visibly rendered profile when the lifecycle notification is lost', async () => {
-    const f = fixture({ lifecycleLost: true });
+  it('uses one real profile gesture without a full-document lifecycle dependency', async () => {
+    const f = fixture();
     await navigateToRenderedProfile(f.page, 'https://smarter.poker/hub/club-arena/', 60_000);
-    expect(f.goto).toHaveBeenCalledOnce();
+    expect(f.goto).not.toHaveBeenCalled();
+    expect(f.profile.click).toHaveBeenCalledOnce();
     expect(f.heading.waitFor).toHaveBeenCalledOnce();
   });
-  it('refuses an auth redirect even if an unrelated heading happens to exist', async () => {
+  it('closes only the actual Table Studio before using the profile control', async () => {
+    const f = fixture({ studioOpen: true });
+    await navigateToRenderedProfile(f.page, 'https://smarter.poker/hub/club-arena/', 60_000);
+    expect(f.close.click).toHaveBeenCalledOnce();
+    expect(f.studio.waitFor).toHaveBeenCalledWith(expect.objectContaining({ state: 'hidden' }));
+    expect(f.profile.click).toHaveBeenCalledOnce();
+    expect(f.close.click.mock.invocationCallOrder[0]).toBeLessThan(
+      f.profile.click.mock.invocationCallOrder[0]
+    );
+  });
+  it('refuses an auth redirect even if an unrelated heading exists', async () => {
     const f = fixture({ redirected: true });
     await expect(
       navigateToRenderedProfile(f.page, 'https://smarter.poker/hub/club-arena/', 60_000)
     ).rejects.toThrow('Profile navigation did not reach its protected route');
     expect(f.heading.waitFor).not.toHaveBeenCalled();
   });
-  it('spends only the remaining original deadline on rendered content', async () => {
+  it('uses only the remaining original deadline for each operation', async () => {
     vi.spyOn(Date, 'now').mockReturnValueOnce(1000).mockReturnValue(56000);
     const f = fixture();
     await navigateToRenderedProfile(f.page, 'https://smarter.poker/hub/club-arena/', 60_000);
+    expect(f.profile.click).toHaveBeenCalledWith({ timeout: 5000 });
+    expect(f.waitForURL).toHaveBeenCalledWith(expect.any(Function), {
+      waitUntil: 'commit',
+      timeout: 5000,
+    });
     expect(f.heading.waitFor).toHaveBeenCalledWith({ state: 'visible', timeout: 5000 });
   });
-  it('refuses a document failure without retrying navigation', async () => {
-    const f = fixture({ navigationFails: true });
+  it('refuses a failed gesture without retrying or navigating around it', async () => {
+    const f = fixture({ clickFails: true });
     await expect(
       navigateToRenderedProfile(f.page, 'https://smarter.poker/hub/club-arena/', 60_000)
-    ).rejects.toThrow('Document request failed');
-    expect(f.goto).toHaveBeenCalledOnce();
+    ).rejects.toThrow('Profile control refused');
+    expect(f.profile.click).toHaveBeenCalledOnce();
+    expect(f.goto).not.toHaveBeenCalled();
     expect(f.heading.waitFor).not.toHaveBeenCalled();
   });
-  it('refuses a committed document whose actual profile never renders', async () => {
+  it('refuses the expected route if actual profile content never renders', async () => {
     const f = fixture({ headingMissing: true });
     await expect(
       navigateToRenderedProfile(f.page, 'https://smarter.poker/hub/club-arena/', 60_000)
     ).rejects.toThrow('Profile content never rendered');
-    expect(f.goto).toHaveBeenCalledOnce();
   });
 });

@@ -1,6 +1,6 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import GlobalHeader from '@/components/navigation/GlobalHeader';
 
 // Mock dependencies
@@ -67,6 +67,24 @@ describe('GlobalHeader Component', () => {
       <GlobalHeader />
     </MemoryRouter>
   );
+
+  it('navigates to the own profile through the real router with one header gesture', () => {
+    render(
+      <MemoryRouter initialEntries={['/clubs']}>
+        <GlobalHeader />
+        <Routes>
+          <Route path="/clubs" element={<h1>Clubs</h1>} />
+          <Route path="/profile" element={<h1 id="profile-heading">Own Profile</h1>} />
+        </Routes>
+      </MemoryRouter>
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'My Profile', exact: true }));
+    expect(screen.getByRole('heading', { name: 'Own Profile' })).toHaveAttribute(
+      'id',
+      'profile-heading'
+    );
+    expect(screen.queryByRole('heading', { name: 'Clubs' })).not.toBeInTheDocument();
+  });
 
   it('loads a retina-sized JPEG while preserving the existing portrait slot', () => {
     headerData.avatarUrl = photo;

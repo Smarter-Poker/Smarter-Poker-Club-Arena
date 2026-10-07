@@ -399,6 +399,7 @@ test('source safeguard check executes without credentials or production access',
 test('source export is schema-only and password-free, with drift and isolation refusal', () => {
   assert.match(source, /--schema-only --create --format=custom --no-password --no-subscriptions/);
   assert.match(source, /--database="\$PGDATABASE"/);
+  assert.match(source, /source_client 600 pg_dump/);
   assert.match(
     source,
     /source_client 180 pg_dumpall --roles-only --no-role-passwords --no-password/
@@ -464,6 +465,54 @@ test('cleanup must finish before the verdict and source entrypoints cannot initi
   assert.match(source, /docker container ls --all --format/);
   assert.match(source, /docker network ls --format/);
   assert.doesNotMatch(source, /docker (rm|network rm).*\|\| true/);
+});
+
+test('source-client timeout escalates a TERM-resistant synthetic client without extending its deadline', () => {
+  const installed = spawnSync('timeout', ['--version'], { encoding: 'utf8' });
+  assert.ifError(installed.error);
+  assert.equal(
+    installed.status,
+    0,
+    'GNU timeout must be available for the executable bound regression'
+  );
+  assert.match(installed.stdout, /GNU coreutils/);
+  const helper = source.match(/source_client\(\) \{[\s\S]*?\n\}/)?.[0];
+  assert.ok(helper);
+  assert.match(helper, /timeout --kill-after=10s "\$seconds" docker run/);
+  const scratch = mkdtempSync(join(tmpdir(), 'source-bound-'));
+  try {
+    // Finite synthetic child: TERM is ignored but native sleep exits after one second.
+    // No Docker daemon, database, container PID1 or source credential is involved.
+    writeFileSync(
+      join(scratch, 'docker'),
+      '#!/bin/bash\ntrap "" TERM\nprintf "started\\n" >&2\n/bin/sleep 1\nprintf "completed\\n"\n',
+      { mode: 0o700 }
+    );
+    for (const escalation of [false, true]) {
+      const candidate = helper.replace('--kill-after=10s ', escalation ? '--kill-after=0.1s ' : '');
+      const result = spawnSync(
+        'bash',
+        [
+          '-c',
+          `${candidate}\nscratch=$1; source_container=synthetic; image=unused; source_client 0.5 psql`,
+          'fixture',
+          scratch,
+        ],
+        {
+          env: { ...process.env, PATH: `${scratch}:${process.env.PATH}` },
+          encoding: 'utf8',
+          timeout: 3000,
+          killSignal: 'SIGKILL',
+        }
+      );
+      assert.ifError(result.error);
+      assert.equal(result.status, escalation ? 137 : 124);
+      assert.match(result.stderr, /^started$/m);
+      assert.equal(result.stdout, escalation ? '' : 'completed\n', result.stderr);
+    }
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
 });
 
 test('actual source-client connection wrapper expands URI instead of local socket defaults', () => {

@@ -1,3 +1,4 @@
+import { reloadMissionPageWithEvidence } from './support/missionReloadObservation';
 import {
   devices,
   expect,
@@ -1375,7 +1376,12 @@ test.describe('production Daily Missions certification', () => {
         );
         expect(new Set(replacementIds).size).toBe(2);
         await expect.poll(() => diamondBalance(environment, account!.id)).toBe(balanceBefore - 2);
-        await page.reload({ waitUntil: 'domcontentloaded' });
+        await reloadMissionPageWithEvidence(page, async (observation) => {
+          await test.info().attach('daily-missions-reload-observation.json', {
+            body: JSON.stringify(observation, null, 2),
+            contentType: 'application/json',
+          });
+        });
         await expect(page.getByText('Live Now')).toBeVisible({
           timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
         });

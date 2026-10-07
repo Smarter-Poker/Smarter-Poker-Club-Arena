@@ -127,18 +127,23 @@ interface HandReplayProps {
   /**
    * CLIP MODE (Phase 9.1, 2026-09-30): the replay as a camera subject.
    *
-   * The hand clip renderer opens the public replay page in a headless
-   * browser and takes one still per frame. In clip mode there are no header controls,
-   * tabs, rundown, scrubber, rate buttons or close, no sound cues, and the
-   * felt sits in a fixed 1280x720 stage (`.hand-replay--clip`). On mount
-   * the replay rate is chosen so the whole hand plus a 1,500 ms end hold
-   * fits between `minMs` and `maxMs` (`fitClipRate`); the stage root
-   * carries `data-clip-state` (ready, too_long, playing, done) and
-   * `data-clip-step` (the frame on the felt), and `window.__spClip`
-   * exposes the plan (`beats`, `holdMs`), `seek(i)` (the camera's way:
-   * frame i, no motion, no sound) and `start()` (wall-clock playback).
-   * Nothing here changes for a caller that does not pass it. MEMOISE IT
-   * like `source`.
+   * The hand clip renderer opens the public share page in a headless
+   * browser (a 4:5 portrait viewport, 1080x1350, since 2026-10-07) and
+   * takes one still per frame. THE CLIP IS THE SHARE PAGE, PIXEL FOR PIXEL
+   * (owner decision, Dan, 2026-10-07): `clip` hides nothing and adds
+   * nothing a viewer can see. Until then it hid the header, the tabs, the
+   * street jumps, the transport, the rate buttons and the seat strip and
+   * printed a blinds line of its own in a fixed 1280x720 stage; all of that
+   * is gone. What `clip` still does is the camera contract, none of it
+   * visible: on mount the replay rate is chosen so the whole hand plus a
+   * 1,500 ms end hold fits between `minMs` and `maxMs` (`fitClipRate`),
+   * never read from a remembered setting; the stage root carries
+   * `data-clip-state` (ready, too_long, playing, done) and `data-clip-step`
+   * (the frame on the felt); `window.__spClip` exposes the plan (`beats`,
+   * `holdMs`), `seek(i)` (the camera's way: frame i, no motion, no sound)
+   * and `start()` (wall-clock playback at animation speed 1, the speed the
+   * fit timed); and no sound cue plays. Nothing here changes for a caller
+   * that does not pass it. MEMOISE IT like `source`.
    */
   clip?: { minMs: number; maxMs: number } | null;
 }
@@ -797,7 +802,7 @@ export default function HandReplay({
       return;
     }
     /* The clip was timed at animation speed 1 (`fitClipRate`), so that is
-       the speed it plays at: the stage pins --animation-speed the same way. */
+       the speed start() plays it at, whatever the viewer's setting says. */
     const beat = replayBeatMs(frame, clipMode ? 1 : getAnimationSpeed(), rate);
     playbackRef.current = setTimeout(() => go((s) => Math.min(last, s + 1), true), beat);
     return () => {
@@ -1004,7 +1009,7 @@ export default function HandReplay({
 
   return (
     <div
-      className={`hand-replay${clipMode ? ' hand-replay--clip' : ''}`}
+      className="hand-replay"
       data-clip-state={clipMode ? clipState : undefined}
       data-clip-step={clipMode ? at : undefined}
       onKeyDown={onKeyDown}
@@ -1023,73 +1028,63 @@ export default function HandReplay({
       /* The replay's own rate; every motion duration divides by it in CSS. */
       style={{ '--hr-rate': rate } as React.CSSProperties}
     >
-      {clipMode && (
-        /* The variant and blinds line, kept; the table name, omitted, so no
-           club or person name can appear in a clip. */
-        <div className="hand-replay__clip-eyebrow">
-          {blindLabel(model.smallBlind)} / {blindLabel(model.bigBlind)}
-          {variant ? ` · ${variant}` : ''}
+      <header className="hand-replay__header">
+        <div className="hand-replay__titles">
+          <span className="hand-replay__eyebrow">
+            {source.tableName || 'Table'} · {blindLabel(model.smallBlind)} /{' '}
+            {blindLabel(model.bigBlind)}
+            {variant ? ` · ${variant}` : ''}
+          </span>
+          <h2 className="hand-replay__title">
+            {source.handNumber == null || source.handNumber === ''
+              ? 'Shared Hand'
+              : `Hand #${source.handNumber}`}
+          </h2>
+          <span className="hand-replay__when">{stamp(model.playedAt)}</span>
         </div>
-      )}
-      {!clipMode && (
-        <header className="hand-replay__header">
-          <div className="hand-replay__titles">
-            <span className="hand-replay__eyebrow">
-              {source.tableName || 'Table'} · {blindLabel(model.smallBlind)} /{' '}
-              {blindLabel(model.bigBlind)}
-              {variant ? ` · ${variant}` : ''}
-            </span>
-            <h2 className="hand-replay__title">
-              {source.handNumber == null || source.handNumber === ''
-                ? 'Shared Hand'
-                : `Hand #${source.handNumber}`}
-            </h2>
-            <span className="hand-replay__when">{stamp(model.playedAt)}</span>
-          </div>
-          {/* THE TABLIST PATTERN, FINISHED. It had `role="tablist"` and two
-            `role="tab"` buttons and none of what makes those roles true: both
-            tabs were tabbable, neither named its panel, neither panel named
-            its tab, and the arrow keys did nothing. A screen reader announced
-            "tab 1 of 2" and then could not move between them.
-            One tabbable tab, arrows to move (wrapping), Home/End to the ends,
-            and focus follows selection - the same pattern
-            `tests/unit/tournamentLobbyShellIsAccessible.test.ts` pins for the
-            tournament lobby. */}
-          <div
-            className="hand-replay__tabs"
-            role="tablist"
-            aria-label="Replay View"
-            onKeyDown={onTabsKeyDown}
+        {/* THE TABLIST PATTERN, FINISHED. It had `role="tablist"` and two
+          `role="tab"` buttons and none of what makes those roles true: both
+          tabs were tabbable, neither named its panel, neither panel named
+          its tab, and the arrow keys did nothing. A screen reader announced
+          "tab 1 of 2" and then could not move between them.
+          One tabbable tab, arrows to move (wrapping), Home/End to the ends,
+          and focus follows selection - the same pattern
+          `tests/unit/tournamentLobbyShellIsAccessible.test.ts` pins for the
+          tournament lobby. */}
+        <div
+          className="hand-replay__tabs"
+          role="tablist"
+          aria-label="Replay View"
+          onKeyDown={onTabsKeyDown}
+        >
+          <button
+            type="button"
+            role="tab"
+            id="hr-tab-replay"
+            aria-controls="hr-panel-replay"
+            aria-selected={tab === 'replay'}
+            tabIndex={tab === 'replay' ? 0 : -1}
+            ref={replayTabRef}
+            className={`hr-tab${tab === 'replay' ? ' hr-tab--active' : ''}`}
+            onClick={() => setTab('replay')}
           >
-            <button
-              type="button"
-              role="tab"
-              id="hr-tab-replay"
-              aria-controls="hr-panel-replay"
-              aria-selected={tab === 'replay'}
-              tabIndex={tab === 'replay' ? 0 : -1}
-              ref={replayTabRef}
-              className={`hr-tab${tab === 'replay' ? ' hr-tab--active' : ''}`}
-              onClick={() => setTab('replay')}
-            >
-              Replay
-            </button>
-            <button
-              type="button"
-              role="tab"
-              id="hr-tab-rundown"
-              aria-controls="hr-panel-rundown"
-              aria-selected={tab === 'rundown'}
-              tabIndex={tab === 'rundown' ? 0 : -1}
-              ref={rundownTabRef}
-              className={`hr-tab${tab === 'rundown' ? ' hr-tab--active' : ''}`}
-              onClick={() => setTab('rundown')}
-            >
-              Rundown
-            </button>
-          </div>
-        </header>
-      )}
+            Replay
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="hr-tab-rundown"
+            aria-controls="hr-panel-rundown"
+            aria-selected={tab === 'rundown'}
+            tabIndex={tab === 'rundown' ? 0 : -1}
+            ref={rundownTabRef}
+            className={`hr-tab${tab === 'rundown' ? ' hr-tab--active' : ''}`}
+            onClick={() => setTab('rundown')}
+          >
+            Rundown
+          </button>
+        </div>
+      </header>
 
       {tab === 'rundown' ? (
         <div
@@ -1122,152 +1117,142 @@ export default function HandReplay({
           </div>
 
           {/* Street jumps: land on the deal, or the first frame of a street. */}
-          {!clipMode && (
-            <div className="hand-replay__jumps" role="group" aria-label="Jump To Street">
-              {jumps.map((j) => {
-                const current = j.key === 'deal' ? at === 0 : at > 0 && frame?.streetKey === j.key;
-                return (
-                  <button
-                    key={j.key}
-                    type="button"
-                    className={`hr-jump${current ? ' hr-jump--current' : ''}`}
-                    aria-pressed={current}
-                    onClick={() => jumpTo(j.index)}
-                  >
-                    {j.label}
-                  </button>
-                );
-              })}
-            </div>
-          )}
+          <div className="hand-replay__jumps" role="group" aria-label="Jump To Street">
+            {jumps.map((j) => {
+              const current = j.key === 'deal' ? at === 0 : at > 0 && frame?.streetKey === j.key;
+              return (
+                <button
+                  key={j.key}
+                  type="button"
+                  className={`hr-jump${current ? ' hr-jump--current' : ''}`}
+                  aria-pressed={current}
+                  onClick={() => jumpTo(j.index)}
+                >
+                  {j.label}
+                </button>
+              );
+            })}
+          </div>
 
-          {!clipMode && (
-            <div className="hand-replay__controls">
-              <button
-                type="button"
-                className="hr-btn hr-btn--icon"
-                aria-label="First Step"
-                onClick={() => jumpTo(0)}
-                disabled={step === 0}
-              >
-                &#9198;
-              </button>
-              <button
-                type="button"
-                className="hr-btn hr-btn--icon"
-                aria-label="Previous Step"
-                onClick={stepBack}
-                disabled={step === 0}
-              >
-                &#9664;
-              </button>
-              <button
-                type="button"
-                className="hr-btn hr-btn--icon hr-btn--play"
-                aria-label={isPlaying ? 'Pause' : 'Play'}
-                onClick={togglePlay}
-              >
-                {isPlaying ? '❚❚' : '▶'}
-              </button>
-              <button
-                type="button"
-                className="hr-btn hr-btn--icon"
-                aria-label="Next Step"
-                onClick={stepForward}
-                disabled={step >= last}
-              >
-                &#9654;
-              </button>
-              <button
-                type="button"
-                className="hr-btn hr-btn--icon"
-                aria-label="Last Step"
-                onClick={() => jumpTo(last)}
-                disabled={step >= last}
-              >
-                &#9197;
-              </button>
-              <div className="hand-replay__scrub">
-                <input
-                  type="range"
-                  min={0}
-                  max={last}
-                  value={Math.min(step, last)}
-                  aria-label="Replay Position"
-                  onChange={(e) => jumpTo(Number(e.target.value))}
-                />
-                <span className="hand-replay__scrub-label">
-                  {at + 1} / {frames.length}
-                </span>
-              </div>
-              <div className="hand-replay__rate" role="group" aria-label="Replay Speed">
-                {REPLAY_RATES.map((r) => (
-                  <button
-                    key={r}
-                    type="button"
-                    className={`hr-rate${rate === r ? ' hr-rate--current' : ''}`}
-                    aria-pressed={rate === r}
-                    aria-label={
-                      r === 0.5 ? 'Half Speed' : r === 1 ? 'Normal Speed' : 'Double Speed'
-                    }
-                    onClick={() => chooseRate(r)}
-                  >
-                    {r === 0.5 ? '½×' : `${r}×`}
-                  </button>
-                ))}
-              </div>
+          <div className="hand-replay__controls">
+            <button
+              type="button"
+              className="hr-btn hr-btn--icon"
+              aria-label="First Step"
+              onClick={() => jumpTo(0)}
+              disabled={step === 0}
+            >
+              &#9198;
+            </button>
+            <button
+              type="button"
+              className="hr-btn hr-btn--icon"
+              aria-label="Previous Step"
+              onClick={stepBack}
+              disabled={step === 0}
+            >
+              &#9664;
+            </button>
+            <button
+              type="button"
+              className="hr-btn hr-btn--icon hr-btn--play"
+              aria-label={isPlaying ? 'Pause' : 'Play'}
+              onClick={togglePlay}
+            >
+              {isPlaying ? '❚❚' : '▶'}
+            </button>
+            <button
+              type="button"
+              className="hr-btn hr-btn--icon"
+              aria-label="Next Step"
+              onClick={stepForward}
+              disabled={step >= last}
+            >
+              &#9654;
+            </button>
+            <button
+              type="button"
+              className="hr-btn hr-btn--icon"
+              aria-label="Last Step"
+              onClick={() => jumpTo(last)}
+              disabled={step >= last}
+            >
+              &#9197;
+            </button>
+            <div className="hand-replay__scrub">
+              <input
+                type="range"
+                min={0}
+                max={last}
+                value={Math.min(step, last)}
+                aria-label="Replay Position"
+                onChange={(e) => jumpTo(Number(e.target.value))}
+              />
+              <span className="hand-replay__scrub-label">
+                {at + 1} / {frames.length}
+              </span>
             </div>
-          )}
+            <div className="hand-replay__rate" role="group" aria-label="Replay Speed">
+              {REPLAY_RATES.map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  className={`hr-rate${rate === r ? ' hr-rate--current' : ''}`}
+                  aria-pressed={rate === r}
+                  aria-label={r === 0.5 ? 'Half Speed' : r === 1 ? 'Normal Speed' : 'Double Speed'}
+                  onClick={() => chooseRate(r)}
+                >
+                  {r === 0.5 ? '½×' : `${r}×`}
+                </button>
+              ))}
+            </div>
+          </div>
 
-          {/* Who was in it, and how it ended for each of them. Not in a clip:
-              the strip carries each seat's net, and a clip shows no profit
-              figures. */}
-          {!clipMode && (
-            <div className="hand-replay__seats">
-              {model.players.map((p) => {
-                const reveal = revealOf.get(p.userId);
-                const mucked =
-                  reveal?.mucked === true ||
-                  (!p.hole && model.showdown.some((r) => r.userId === p.userId));
-                const rows = model.showdown.filter(
-                  (r) => r.userId === p.userId && r.boardIndex === 0
-                );
-                const high = rows.find((r) => !r.low);
-                const low = rows.find((r) => r.low);
-                /* A MULTI-BOARD HAND NAMES EVERY RUN (2026-09-13). This strip
-                 read board one only, so a player who took run 2 with a flush
-                 sat under "Two Pair" beside a felt drawing both runs. */
-                const perRun = model.boards.length > 1 ? perRunHandLabel(model, p.userId) : null;
-                return (
-                  <div
-                    key={p.seat}
-                    className={`player-hand-ranking${p.won > 0 ? ' player-hand-ranking--won' : ''}${
-                      mucked ? ' player-hand-ranking--mucked' : ''
-                    }${p.userId === heroId ? ' player-hand-ranking--hero' : ''}`}
+          {/* Who was in it, and how it ended for each of them. */}
+          <div className="hand-replay__seats">
+            {model.players.map((p) => {
+              const reveal = revealOf.get(p.userId);
+              const mucked =
+                reveal?.mucked === true ||
+                (!p.hole && model.showdown.some((r) => r.userId === p.userId));
+              const rows = model.showdown.filter(
+                (r) => r.userId === p.userId && r.boardIndex === 0
+              );
+              const high = rows.find((r) => !r.low);
+              const low = rows.find((r) => r.low);
+              /* A MULTI-BOARD HAND NAMES EVERY RUN (2026-09-13). This strip
+               read board one only, so a player who took run 2 with a flush
+               sat under "Two Pair" beside a felt drawing both runs. */
+              const perRun = model.boards.length > 1 ? perRunHandLabel(model, p.userId) : null;
+              return (
+                <div
+                  key={p.seat}
+                  className={`player-hand-ranking${p.won > 0 ? ' player-hand-ranking--won' : ''}${
+                    mucked ? ' player-hand-ranking--mucked' : ''
+                  }${p.userId === heroId ? ' player-hand-ranking--hero' : ''}`}
+                >
+                  <span className="player-hand-ranking__seat">{p.seat}</span>
+                  <span className="player-hand-ranking__name">{p.username}</span>
+                  <span className="player-hand-ranking__hand">
+                    {high?.hole
+                      ? (perRun ?? `${high.handName}${low ? ` · ${low.handName}` : ''}`)
+                      : mucked
+                        ? 'Mucked'
+                        : foldedIds.has(p.userId)
+                          ? 'Folded'
+                          : p.won > 0
+                            ? 'Took The Pot'
+                            : ''}
+                  </span>
+                  <span
+                    className={`player-hand-ranking__net${p.net > 0 ? ' is-up' : p.net < 0 ? ' is-down' : ''}`}
                   >
-                    <span className="player-hand-ranking__seat">{p.seat}</span>
-                    <span className="player-hand-ranking__name">{p.username}</span>
-                    <span className="player-hand-ranking__hand">
-                      {high?.hole
-                        ? (perRun ?? `${high.handName}${low ? ` · ${low.handName}` : ''}`)
-                        : mucked
-                          ? 'Mucked'
-                          : foldedIds.has(p.userId)
-                            ? 'Folded'
-                            : p.won > 0
-                              ? 'Took The Pot'
-                              : ''}
-                    </span>
-                    <span
-                      className={`player-hand-ranking__net${p.net > 0 ? ' is-up' : p.net < 0 ? ' is-down' : ''}`}
-                    >
-                      {`${p.net > 0 ? '+' : p.net < 0 ? '-' : ''}${money(Math.abs(p.net))}`}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                    {`${p.net > 0 ? '+' : p.net < 0 ? '-' : ''}${money(Math.abs(p.net))}`}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

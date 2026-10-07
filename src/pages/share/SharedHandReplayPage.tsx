@@ -28,16 +28,23 @@
  * NOTHING HERE READS THE DATABASE. The model is built from the payload, which
  * is what makes the link work for a recipient who is not signed in.
  *
- * PHASE 9.1 2026-09-30 - CLIP MODE. The hand clip renderer (World Hub,
- * `/api/cron/render-hand-clips`) opens this same route as
- * `/replay?clip=1` in a headless browser with the hand injected as
- * `window.__SP_CLIP__` before any script runs (contract C1). When both are
- * present, and only then, the page anonymises the row (every seat that is
- * not the hero becomes "Seat N", no villain cards the showdown did not
- * show), builds the one model from it and renders `HandReplay` in clip
- * mode: a 1280x720 stage, no footer, no `h=` needed, still no database
- * read. A `clip=1` link WITHOUT the injected payload is an ordinary link
- * and still needs `h=`.
+ * PHASE 9.1 2026-09-30 - CLIP MODE, AND 2026-10-07 - THE CLIP IS THE SHARE
+ * PAGE. The hand clip renderer (World Hub, `/api/cron/render-hand-clips`)
+ * opens this same route as `/replay?clip=1` in a headless browser with the
+ * hand injected as `window.__SP_CLIP__` before any script runs (contract
+ * C1). When both are present, and only then, the page builds the same
+ * ShareableHand a share link carries (`clipHandFrom`, the archive's own
+ * construction), hands it to the same `sourceFrom` a link goes through, and
+ * renders the same tree a link renders: the replayer with its header, tabs,
+ * transport and seat strip, and the footer under it. The only addition is
+ * the camera contract (`HandReplay`'s `clip` prop: `data-clip-state`,
+ * `data-clip-step`, `window.__spClip`, the fitted rate, no sound). Until
+ * 2026-10-07 the clip was a stripped felt of its own, with seat numbers for
+ * names and no header; by owner decision a clip is the share page, pixel for
+ * pixel. The renderer sets a 4:5 portrait viewport, 1080x1350, and the page
+ * does nothing special for it. Still no `h=` needed, still no database read.
+ * A `clip=1` link WITHOUT the injected payload is an ordinary link and still
+ * needs `h=`; a malformed payload is not a clip either.
  */
 
 import { useMemo } from 'react';
@@ -45,7 +52,7 @@ import { useSearchParams, Link } from 'react-router-dom';
 import { decodeHandFromUrl, type ShareableHand } from '../../components/table/ShareHand';
 import HandReplay, { type ReplaySource } from '../../components/replay/HandReplay';
 import { replayFromShareable, shareUserId } from '../../lib/shareHandModel';
-import { buildClipSource, readClipPayload, type ClipPayload } from '../../lib/clipMode';
+import { clipHandFrom, readClipPayload, type ClipPayload } from '../../lib/clipMode';
 import { reportError } from '../../utils/errorReporter';
 import './SharedHandReplayPage.css';
 
@@ -78,11 +85,11 @@ function sourceFrom(hand: ShareableHand): ReplaySource | null {
   }
 }
 
-/** The clip source, or null when the payload cannot be built into a hand. */
-function clipSourceFrom(payload: ClipPayload): ReplaySource | null {
+/** The clip's hand, as a link would carry it; null when the payload cannot be built into one. */
+function clipHandOf(payload: ClipPayload): ShareableHand | null {
   try {
-    const source = buildClipSource(payload);
-    return source.model.players.length ? source : null;
+    const hand = clipHandFrom(payload);
+    return hand.players.length ? hand : null;
   } catch (e) {
     reportError(e, 'SharedHandReplayPage.Failed_to_build_clip');
     return null;
@@ -100,29 +107,20 @@ export default function SharedHandReplayPage() {
     () => (clipRequested && typeof window !== 'undefined' ? readClipPayload(window) : null),
     [clipRequested]
   );
-  const clipSource = useMemo(
-    () => (clipPayload ? clipSourceFrom(clipPayload) : null),
-    [clipPayload]
-  );
   /* Memoised like `source`: HandReplay rewinds whenever either changes. */
   const clipWindow = useMemo(
     () => (clipPayload ? { minMs: clipPayload.minMs, maxMs: clipPayload.maxMs } : null),
     [clipPayload]
   );
 
-  const hand: ShareableHand | null = useMemo(
-    () => (encoded && !clipPayload ? decodeHandFromUrl(encoded) : null),
-    [encoded, clipPayload]
-  );
+  /* ONE HAND, whichever door it came through: the injected payload when this
+     is a clip, the link otherwise. A clip whose payload cannot be built into
+     a hand falls through to the link, exactly as a visitor's would. */
+  const hand: ShareableHand | null = useMemo(() => {
+    if (clipPayload) return clipHandOf(clipPayload);
+    return encoded ? decodeHandFromUrl(encoded) : null;
+  }, [encoded, clipPayload]);
   const source = useMemo(() => (hand ? sourceFrom(hand) : null), [hand]);
-
-  if (clipPayload && clipSource && clipWindow) {
-    return (
-      <div className="shared-replay shared-replay--clip">
-        <HandReplay source={clipSource} clip={clipWindow} />
-      </div>
-    );
-  }
 
   if (!hand || !source) {
     return (
@@ -141,9 +139,11 @@ export default function SharedHandReplayPage() {
 
   const hero = hand.players.find((p) => p.isHero);
 
+  /* The clip is this page, pixel for pixel. The camera contract (`clip`) is
+     the only thing it adds, and it is null for everybody else. */
   return (
     <div className="shared-replay">
-      <HandReplay source={source} />
+      <HandReplay source={source} clip={clipWindow} />
       <footer className="shared-replay__footer">
         {hero ? `Shared From ${hero.name}'s Hand History · ` : ''}Smarter Poker
       </footer>

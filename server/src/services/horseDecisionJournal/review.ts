@@ -323,6 +323,9 @@ export function reconcileHorseJournalHand(
           bigBlind: raw.bigBlind,
           showdown: raw.showdown,
           scope: raw.scope,
+          // P14.2: two retained acceptances of one hand must agree on the
+          // private accepted roster too (absent stays absent).
+          acceptedActorRoster: raw.acceptedActorRoster,
         };
         const coordinate = horseCompletedHandKey(candidate);
         if (

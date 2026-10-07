@@ -38,6 +38,11 @@ export interface SyntheticRosterRow {
   core_payload_digest: string;
   post_commit_request_digest: string;
   stack_result_text: string;
+  roster_hand_id: string | null;
+  roster_status: string | null;
+  roster_payload_digest: string | null;
+  roster_producer_version: string | null;
+  roster_text: string | null;
   committed_at: string;
   post_commit_completed_at: null;
   read_at: string;
@@ -51,7 +56,8 @@ export interface SyntheticRosterFixture {
       contributions: Record<string, number>;
       returned_uncalled: Record<string, number>;
     };
-    accepted_actor_roster: AcceptedRoster;
+    /** Only a forged (spoofed) payload ever carries this key. */
+    accepted_actor_roster?: AcceptedRoster;
   };
   row: SyntheticRosterRow;
   receipt: {
@@ -68,6 +74,17 @@ export interface SyntheticRosterFixture {
     request: { stacks: SyntheticStack[]; rake: number; bbj: number; inflow: number };
   };
   stacks: SyntheticStack[];
+  /** The emulated door success field `accepted_roster` (written by sync). */
+  result?: {
+    version: 1;
+    status: 'captured' | 'unavailable' | 'legacy_missing';
+    reasons: string[];
+    payloadDigest: string | null;
+    producerVersion: string;
+    roster: AcceptedRoster | null;
+  };
+  /** null: no discriminator row; a function edits the derived row. */
+  provenance?: null | ((row: Record<string, unknown>) => void);
   hand: Omit<CorrectiveFixture['hand'], 'actions'> & {
     actions: NonNullable<CorrectiveFixture['hand']['actions']>;
     acceptedActorRoster?: ReturnedRosterTransport;

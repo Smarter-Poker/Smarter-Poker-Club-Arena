@@ -1651,6 +1651,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase14'
   ),
   receipt(
+    'phase14_accepted_roster_refused',
+    'HorseDecisionWorkerRuntime.executeObservation',
+    'a completed-hand observation carried an accepted actor roster transport that did not validate or bind to that hand; the hand was observed and journaled without it (explicit unknown); not a settlement fault',
+    'Phase14'
+  ),
+  receipt(
     'phase5_canonical_state',
     'HorseDecisionWorkerRuntime.executeFast',
     'a schema-v1 state passed the worker privacy, legality, side-pot, rake and variant-rule boundary',

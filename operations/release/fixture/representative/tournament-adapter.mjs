@@ -118,9 +118,9 @@ export async function registerTournamentActor({tournamentId,user,requestId,anonK
     body:JSON.stringify({p_tournament_id:tournamentId,p_request_id:requestId}),
     signal:signal?AbortSignal.any([signal,AbortSignal.timeout(20000)]):AbortSignal.timeout(20000)
   });
-  const raw=await response.text();assert.ok(raw.length<=65536);
+  const raw=await response.text();const returnedAt=new Date().toISOString();assert.ok(raw.length<=65536);
   const result=raw?JSON.parse(raw):null;
-  await checkpoint({...operation,phase:'returned',httpStatus:response.status,result});
+  await checkpoint({...operation,phase:'returned',returnedAt,httpStatus:response.status,result});
   assert.ok(response.ok && result?.ok===true,'actual tournament admission refused');
   assert.match(result.registration_id,uuid);
   if(result.request_id!==undefined)assert.equal(result.request_id,requestId);

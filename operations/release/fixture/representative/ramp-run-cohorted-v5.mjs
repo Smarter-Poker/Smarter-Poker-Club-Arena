@@ -1,9 +1,10 @@
+import {readEmptyTableReady} from './empty-table-readiness.mjs';
 import {prepareReentryQuotes} from './reentry-quotes.mjs';
 import fs from 'node:fs';
 import {cashSeedReady} from './cash-seed-admission.mjs';
 import {witnessNaturalBlindEntry} from './post-bb-observation.mjs';
 import {recoverPurchases} from './purchase-journal.mjs';
-import {admitIndependentGroups,admitIndependentBatches} from './independent-admissions.mjs';
+import {admitIndependentGroups,admitIndependentBatches,admitPipelinedGroups} from './independent-admissions.mjs';
 import {handoffObservers} from './observer-handoff.mjs';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -30,7 +31,7 @@ const save=()=>atomic(path,state);
 const journalName=`ramp-${size}-attempt${state.attempt}-operations.jsonl`;
 if(fs.existsSync(dir+journalName)){recoverPurchases(state,fs.readFileSync(dir+journalName,'utf8').trim().split('\n').filter(Boolean).map(line=>JSON.parse(line)));save();}
 const agreementPath=dir+`ramp-${size}-attempt${state.attempt}-setup-agreements.jsonl`;if(fs.existsSync(agreementPath)){const last=new Map();for(const line of fs.readFileSync(agreementPath,'utf8').trim().split('\n').filter(Boolean)){const op=JSON.parse(line);last.set(op.actorId,op);}for(const op of last.values()){const group=state.groups.find(g=>g.kind==='cash'&&g.tableId===op.tableId&&g.users.some(u=>u.id===op.actorId));assert.ok(group,'Foreign setup agreement receipt');assert.equal(op.outcome,'returned','Unknown post-BB requires native readback');if(op.result?.success!==true){assert.ok(op.naturalObservation);witnessNaturalBlindEntry(op.naturalObservation);}group.users.find(u=>u.id===op.actorId).setupPostAgreement=op;}}
-const setupHandles=new Map();const seededObservers=new Map();const seedTasks=[];let setupObserverFailure;let measuredFailure;let requestDeadline;let deadline=Date.now()+(['admit','resume-admit','continuous'].includes(mode)?10*60000:5*60000);
+const setupHandles=new Map();const seededObservers=new Map();let setupObserverFailure;let measuredFailure;let requestDeadline;let deadline=Date.now()+(['admit','resume-admit','continuous'].includes(mode)?10*60000:5*60000);
 requestDeadline=deadline;
 function within(){assert.ok(Date.now()<requestDeadline,'finite stage deadline exceeded');}
 function append(name,value){fs.appendFileSync(dir+name,JSON.stringify(value)+'\n',{mode:0o600});}
@@ -52,10 +53,23 @@ async function witness(group){return readTournamentWitness({tournamentId:group.t
 try {
 if(['admit','resume-admit','continuous'].includes(mode)){
  assert.equal(state.stage,mode==='admit'?'funded-unseated':'admitting');state.stage='admitting';save();
- const setupTasks=[];
  // Refresh the complete existing cohort before any actor wall-clock lifetime starts.
  const refreshedAt=Date.now();for(const group of state.groups)for(const user of group.users)await refresh(user);save();state.sessionRefresh={finished:new Date().toISOString(),durationMs:Date.now()-refreshedAt};save();
  if(state.cashReentry){const quoteStart=Date.now();await prepareReentryQuotes(state.groups,(group,user)=>rpc('fn_cash_effective_buyin',{p_table_id:group.tableId},user));state.quotePreflight={finished:new Date().toISOString(),durationMs:Date.now()-quoteStart};save();}
+ // The maintained actor contract requires a ready candidate engine. Qualify
+ // empty on-demand table setup before funding, inside this same ten-minute
+ // deadline. The measured session is warm; cold setup duration stays explicit.
+ if(mode==='continuous'){
+  assert.ok(!state.groups.some(g=>g.kind==='cash'&&g.users.some(u=>u.buyinEntered)),'Existing funded admission requires original-operation recovery');
+  const started=new Date().toISOString(),readyTables=[];
+  await admitIndependentBatches(state.groups.filter(g=>g.kind==='cash'),8,async group=>{
+   within();const user=group.users[0];const url=new URL('http://gateway:8000/rest/v1/table_seats');url.search=new URLSearchParams({select:'table_id,user_id,left_at',table_id:'eq.'+group.tableId,left_at:'is.null',limit:'1'});
+   const chairs=await request(url.toString(),undefined,user.session.access_token,'native-empty-table-readiness','GET');
+   const began=Date.now();const wire=await request('http://engine:8080/state/'+group.tableId,undefined,user.session.access_token,'cold-table-setup-readiness','GET');
+   assert.equal(wire.table_id,group.tableId);assert.ok(Array.isArray(wire.players)&&wire.players.length===0);assert.ok(['idle','waiting'].includes(wire.stage));const snapshot=await readEmptyTableReady({group,chairs,user,deadline:requestDeadline,checkpoint:operation=>append(`ramp-${size}-attempt${state.attempt}-engine-readiness-operations.jsonl`,operation)});const receipt={group:group.index,tableId:group.tableId,observedAt:new Date().toISOString(),durationMs:Date.now()-began,chairs,httpState:wire,snapshot};readyTables.push(receipt);append(`ramp-${size}-attempt${state.attempt}-engine-readiness.jsonl`,receipt);
+  });
+  state.engineReadiness={started,finished:new Date().toISOString(),durationMs:Date.now()-Date.parse(started),tables:readyTables.length,setupDeadline:new Date(requestDeadline).toISOString(),scope:'bounded-cold-table-setup-before-warm-session'};save();
+ }
  async function agreeToPost(group,u,chair,readChairs){
   u.setupPostAgreement={occupancyId:chair.occupancy_id,outcome:'unknown'};append(`ramp-${size}-attempt${state.attempt}-setup-agreements.jsonl`,{actorId:u.id,tableId:group.tableId,...u.setupPostAgreement});
   const result=await request('http://engine:8080/post-bb',{tableId:group.tableId},u.session.access_token,'ordinary-setup-post-bb');u.setupPostAgreement.outcome='returned';u.setupPostAgreement.result=result;append(`ramp-${size}-attempt${state.attempt}-setup-agreements.jsonl`,{actorId:u.id,tableId:group.tableId,...u.setupPostAgreement});
@@ -87,18 +101,24 @@ if(['admit','resume-admit','continuous'].includes(mode)){
   }catch(error){append(`ramp-${size}-attempt${state.attempt}-cash-admission.jsonl`,{group:group.index,phase:'cash-admission-refusal',at:new Date().toISOString(),error:error.message,wire:observer?.stateObservations()});setupObserverFailure??=error;throw error;}finally{if(observer){if(!setupHandles.has(group.index))await observer.close();append(`ramp-${size}-attempt${state.attempt}-cash-admission.jsonl`,{group:group.index,phase:'setup-fold-observations',at:new Date().toISOString(),observations:observer.observations(),measuredLoadActions:false});}if(observationFailure)throw observationFailure;}
  }
  async function buyCashUser(group,i){if(setupObserverFailure)throw setupObserverFailure;const u=group.users[i];if(!u.buyinEntered){if(state.cashReentry){assert.ok(u.originalBuyinOp&&u.buyinOp!==u.originalBuyinOp);assert.ok(u.buyinQuote&&u.buyinQuote.tableId===group.tableId&&u.buyinQuote.buyinOp===u.buyinOp&&Number.isFinite(u.buyinAmount),'Original pre-admission quote missing');}await rpc('atomic_table_buyin',{p_user_id:u.id,p_table_id:group.tableId,p_seat_number:i+1,p_amount:u.buyinAmount??200,p_auto_rebuy:false,p_club_id:group.clubId,p_idempotency_key:u.buyinOp},u);u.buyinEntered=true;}}
- const seeds=seedTasks;
- await admitIndependentBatches(state.groups,8,async group=>{within();
-  if(group.kind==='cash'){for(let i=0;i<2;i++)await buyCashUser(group,i);if(mode==='continuous')seeds.push(attachSeedObserver(group).then(()=>({ok:true}),error=>{setupObserverFailure??=error;return {ok:false,error};}));}
-  else for(const user of group.users.slice(0,-1)){if(setupObserverFailure)throw setupObserverFailure;if(!user.registered)await register(group,user);}
- });
- const seeded=await Promise.all(seeds);const seedFailure=seeded.find(s=>!s.ok);if(seedFailure){await Promise.allSettled([...seededObservers.values()].map(h=>h.close()));throw seedFailure.error;}
- await admitIndependentBatches(state.groups.filter(g=>g.kind==='cash'),8,async group=>{within();for(let i=2;i<group.users.length;i++)await buyCashUser(group,i);if(!group.users.every(u=>u.parked))setupTasks.push(prepareCashGroup(group).then(()=>({status:'fulfilled'}),reason=>({status:'rejected',reason})));});
- // All ordinary purchases are durable before bounded independent group setup.
+ const financialSeed=async group=>{within();if(group.kind==='cash'){for(let i=0;i<2;i++)await buyCashUser(group,i);}else for(const user of group.users.slice(0,-1)){if(setupObserverFailure)throw setupObserverFailure;if(!user.registered)await register(group,user);}};
+ const financialCompletion=async group=>{within();for(let i=2;i<group.users.length;i++)await buyCashUser(group,i);};
+ if(mode==='continuous')await admitPipelinedGroups(state.groups,{
+  width:8,getFailure:()=>setupObserverFailure,
+  onFailure:error=>{setupObserverFailure??=error;},
+  financialSeed,observeSeed:attachSeedObserver,financialCompletion,
+  prepare:async group=>{if(group.kind==='cash'&&!group.users.every(u=>u.parked))await prepareCashGroup(group);},
+ });else{
+  // Preserve the separately qualified parked-session admission ordering.
+  const setupTasks=[];await admitIndependentBatches(state.groups,8,financialSeed);
+  await admitIndependentBatches(state.groups.filter(g=>g.kind==='cash'),8,async group=>{await financialCompletion(group);if(!group.users.every(u=>u.parked))setupTasks.push(prepareCashGroup(group).then(()=>({ok:true}),error=>({ok:false,error})));});
+  const outcomes=await Promise.all(setupTasks);const refused=outcomes.find(outcome=>!outcome.ok);if(refused)throw refused.error;
+ }
+ // Each group completes its own durable purchases before its full-roster setup.
  // Positive native waiting entries receive one ordinary post-BB agreement.
  // Failed or unknown original post operations remain failed or unknown.
  // Existing parks are read before an explicit new sit-back; no purchase replay.
- const setupResults=await Promise.all(setupTasks);const setupFailure=setupResults.find(r=>r.status==='rejected')??(setupObserverFailure?{reason:setupObserverFailure}:null);if(setupFailure){await Promise.allSettled([...new Set([...setupHandles.values(),...seededObservers.values()])].map(h=>h.close()));throw setupFailure.reason;}
+ const setupFailure=setupObserverFailure?{reason:setupObserverFailure}:null;if(setupFailure){await Promise.allSettled([...new Set([...setupHandles.values(),...seededObservers.values()])].map(h=>h.close()));throw setupFailure.reason;}
  if(mode==='continuous'){assertCashSetupComplete(state.groups,setupHandles.keys());state.stage='continuous-ready';state.continuousAdmissionAt=new Date().toISOString();save();}else{
  // Final tournament registration is reserved for play so an SNG cannot complete
  // by automatic folds while a large unrelated roster is still being prepared.
@@ -110,7 +130,7 @@ if(['admit','resume-admit','continuous'].includes(mode)){
 }
 if(mode==='play'||mode==='continuous'){
  assert.equal(state.stage,mode==='continuous'?'continuous-ready':'parked-and-partially-registered');deadline=Date.now()+5*60000;requestDeadline=deadline;state.stage='playing';save();
- const result={size,runId:state.runId,attempt:state.attempt??1,started:new Date().toISOString(),plan,resources:[],cash:[],tournaments:[],reconnects:[],product_certificate:false,sustained15MinuteSLOQualified:false,workload:{authenticatedSyntheticHumanActors:size,horseActors:0,productionBackgroundEquityQualified:false,demandForecast:false}};
+ const result={size,runId:state.runId,attempt:state.attempt??1,started:new Date().toISOString(),plan,resources:[],cash:[],tournaments:[],reconnects:[],product_certificate:false,sustained15MinuteSLOQualified:false,engineReadiness:state.engineReadiness??null,workload:{tableAdmissionScope:mode==='continuous'?'warm-session-after-accounted-cold-setup':'parked-session',cold1000StartupQualified:false,authenticatedSyntheticHumanActors:size,horseActors:0,productionBackgroundEquityQualified:false,demandForecast:false}};
  const control=new AbortController(),cash=[],tournamentPromises=[],tournamentLive=new Map(),tournamentReady=new Set();let failure;let cohortActive=false;
  const markFailure=e=>{if(!failure){failure=e;result.firstFailure={message:e.message,at:new Date().toISOString()};}control.abort();};
  measuredFailure=markFailure;
@@ -175,4 +195,4 @@ if(mode==='play'||mode==='continuous'){
  }
 }
 
-}catch(error){setupObserverFailure??=error;await Promise.allSettled(seedTasks);await Promise.allSettled([...seededObservers.values()].map(h=>h.close()));atomic(dir+`ramp-${size}-attempt${state.attempt??1}-admission-failure.json`,{at:new Date().toISOString(),stage:state.stage,message:error.message,product_certificate:false});throw error;}
+}catch(error){setupObserverFailure??=error;await Promise.allSettled([...seededObservers.values()].map(h=>h.close()));atomic(dir+`ramp-${size}-attempt${state.attempt??1}-admission-failure.json`,{at:new Date().toISOString(),stage:state.stage,message:error.message,product_certificate:false});throw error;}

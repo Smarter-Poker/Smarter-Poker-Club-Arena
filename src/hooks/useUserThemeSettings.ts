@@ -580,6 +580,7 @@ export function useUserThemeSettings(
    */
   const [error, setError] = useState<string | null>(null);
   const pendingMutationsRef = useRef(new Map<CanonicalGameType, Set<string>>());
+  const liveThemeRevisionRef = useRef(0);
   const realtime = useUserThemeRealtime(userId);
   const themeScope = `${userId || 'guest'}:${gameType || 'unresolved'}`;
   const themeScopeRef = useRef(themeScope);
@@ -625,6 +626,7 @@ export function useUserThemeSettings(
     let mounted = true;
 
     const load = async () => {
+      const liveRevisionAtRead = liveThemeRevisionRef.current;
       try {
         // ONE query for the user's rows — the table is UNIQUE(user_id,
         // game_type) over seven buckets, so this is a handful of rows at most,
@@ -643,6 +645,13 @@ export function useUserThemeSettings(
         }
 
         setError(null);
+        // A read started before a newer accepted live patch cannot replace
+        // that patch when its older snapshot arrives. The event already owns
+        // the current paint and cache; no second read or replay is needed.
+        if (liveThemeRevisionRef.current !== liveRevisionAtRead) {
+          setLoading(false);
+          return;
+        }
         // The database answered: it is the truth, and the cache follows it.
         // (Only a real array is cached — some test doubles resolve to nothing.)
         if (Array.isArray(data)) writeCachedThemeRows(userId, data as ThemeRow[]);
@@ -768,6 +777,7 @@ export function useUserThemeSettings(
       }
       if (!Object.keys(clean).length) return;
 
+      liveThemeRevisionRef.current += 1;
       setTheme((prev) => ({ ...prev, ...clean }));
       // Keep the first-paint cache current, so a page change or refresh
       // immediately after a change still opens wearing it — no flash back.

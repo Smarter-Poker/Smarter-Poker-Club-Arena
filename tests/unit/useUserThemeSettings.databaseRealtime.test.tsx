@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => ({
   channelCalls: 0,
   removeCalls: 0,
   queryCalls: 0,
+  deferredRead: undefined as undefined | ((value: unknown) => void),
+  deferRead: false,
   rows: [] as Array<Record<string, unknown>>,
   realtime: undefined as undefined | ((payload: Record<string, unknown>) => void),
   realtimeStatus: undefined as undefined | ((status: string) => void),
@@ -33,6 +35,11 @@ vi.mock('../../src/lib/supabase', () => {
           eq: vi.fn(() => builder),
           then: (resolve: (value: unknown) => unknown) => {
             mocks.queryCalls += 1;
+            if (mocks.deferRead) {
+              return new Promise((done) => {
+                mocks.deferredRead = done;
+              }).then(resolve);
+            }
             return Promise.resolve({ data: mocks.rows, error: null }).then(resolve);
           },
         };
@@ -59,6 +66,8 @@ describe('useUserThemeSettings database realtime', () => {
     mocks.channelCalls = 0;
     mocks.removeCalls = 0;
     mocks.queryCalls = 0;
+    mocks.deferRead = false;
+    mocks.deferredRead = undefined;
     mocks.rows = [];
     mocks.realtime = undefined;
     mocks.realtimeStatus = undefined;
@@ -153,6 +162,45 @@ describe('useUserThemeSettings database realtime', () => {
     });
 
     await waitFor(() => expect(result.current.theme.table_id).toBe('classic_green'));
+    unmount();
+  });
+
+  it('does not overwrite a committed cross-device row with an earlier reconciliation read', async () => {
+    mocks.rows = [
+      { game_type: 'ALL', table_id: 'classic_green', updated_at: '2026-10-07T04:50:00Z' },
+    ];
+    const { result, unmount } = renderHook(() => useUserThemeSettings('user-1', 'nlh'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    mocks.deferRead = true;
+    act(() => {
+      mocks.realtimeStatus?.('CHANNEL_ERROR');
+      mocks.realtimeStatus?.('SUBSCRIBED');
+    });
+    await waitFor(() => expect(mocks.deferredRead).toBeTypeOf('function'));
+    act(() => {
+      mocks.realtime?.({
+        eventType: 'UPDATE',
+        new: {
+          user_id: 'user-1',
+          game_type: 'ALL',
+          table_id: 'carbon_red',
+          updated_at: '2026-10-07T04:51:00Z',
+        },
+      });
+    });
+    expect(result.current.theme.table_id).toBe('carbon_red');
+    await act(async () => {
+      mocks.deferredRead?.({ data: mocks.rows, error: null });
+    });
+    expect(result.current.theme.table_id).toBe('carbon_red');
+    // The fence belongs to that read, not to the account forever. A later
+    // independent recovery still accepts the current authoritative rows.
+    mocks.deferRead = false;
+    mocks.rows = [{ game_type: 'ALL', table_id: 'jade_city', updated_at: '2026-10-07T04:52:00Z' }];
+    act(() => {
+      result.current.retryRealtime();
+    });
+    await waitFor(() => expect(result.current.theme.table_id).toBe('jade_city'));
     unmount();
   });
 });

@@ -2,8 +2,11 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import test from 'node:test';
-import ts from 'typescript';
+
+// The accounting job installs the server lockfile, not the client dependencies.
+const ts = createRequire(new URL('../../server/package.json', import.meta.url))('typescript');
 
 const source = readFileSync(
   new URL('../../server/src/engine/CashoutDeparturePostgres.test.ts', import.meta.url),

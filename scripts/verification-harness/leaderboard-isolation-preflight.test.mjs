@@ -6,6 +6,72 @@ import test from 'node:test';
 
 const shell = fileURLToPath(new URL('./leaderboard-isolation-preflight.sh', import.meta.url));
 const source = readFileSync(shell, 'utf8');
+test('destination refusal diagnostics retain fixed categories without private error contents', () => {
+  const classifier = source.slice(
+    source.indexOf('destination_error_category() {'),
+    source.indexOf('if [[ "${1:-}" == \'--classify-destination-error\' ]]')
+  );
+  const helper = source.slice(
+    source.indexOf('destination_failure() {'),
+    source.indexOf('docker pull "$image"')
+  );
+  for (const [diagnostic, line] of [
+    ['psql:<stdin>:7: ERROR: 42501: permission denied secret', '7'],
+    ['untrusted psql:<stdin>:7: ERROR: 42501: permission denied secret', 'unknown'],
+  ]) {
+    const actual = spawnSync(
+      'bash',
+      [
+        '-c',
+        `${classifier}\n${helper.replace('diagnostic="$(cat "$log")"', 'diagnostic="$fixture_error"')}\nfixture_error=$1; failure() { printf '%s' "$1"; }; destination_failure 'fixed-stage' <(printf '%s' "$fixture_error") 3`,
+        'fixture',
+        diagnostic,
+      ],
+      { encoding: 'utf8' }
+    );
+    assert.equal(actual.status, 0);
+    assert.equal(
+      actual.stdout,
+      `fixed-stage (client-status=3;42501:destination-permission;stdin-line=${line})`
+    );
+    assert.equal(actual.stderr, '');
+  }
+  for (const [input, expected] of [
+    [
+      'ERROR: 22023: extension private has no installation script nor update path for version secret',
+      '22023:extension-version-unavailable',
+    ],
+    [
+      'ERROR: 58P01: could not open extension control file private',
+      '58P01:extension-control-unavailable',
+    ],
+    [
+      'ERROR: 55000: must be loaded via shared_preload_libraries secret',
+      '55000:extension-preload-required',
+    ],
+    [
+      'ERROR: 42704: required extension private is not installed',
+      '42704:extension-dependency-missing',
+    ],
+    ['ERROR: 3F000: schema private does not exist', '3F000:schema-missing'],
+    ['ERROR: 42710: private already exists', '42710:duplicate-destination-object'],
+    ['ERROR: 42501: permission denied secret', '42501:destination-permission'],
+    ['ERROR: 58P01: could not load library private', '58P01:extension-library-unavailable'],
+    ['ERROR: malformed secret', 'unknown:unclassified-destination'],
+    ['secret configuration body', 'unknown:unclassified-destination'],
+  ]) {
+    const result = spawnSync('bash', [shell, '--classify-destination-error'], {
+      input,
+      encoding: 'utf8',
+      env: { PATH: process.env.PATH },
+    });
+    assert.equal(result.status, 0);
+    assert.equal(result.stdout.trim(), expected);
+    assert.equal(result.stderr, '');
+  }
+  assert.match(source, /client-status=\$status;\$category/);
+  assert.match(source, /VERBOSITY=verbose[^\n]*\n[^\n]*extension-restore.log/);
+});
 test('exact preexisting bootstrap CREATE is removed without changing role grants or attributes', () => {
   const input =
     'CREATE ROLE source_admin;\nALTER ROLE source_admin WITH SUPERUSER;\nGRANT member TO actor GRANTED BY source_admin;\n';

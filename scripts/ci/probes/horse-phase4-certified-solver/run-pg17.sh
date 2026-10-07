@@ -90,6 +90,8 @@ grep -q 'cannot change the V31 hand-key contract while certified datasets exist'
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261007014629_the_solver_compacts_only_its_matching_verified_source_nodes.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261007030040_the_solver_binds_immutable_feature_contracts.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261007034442_the_solver_validators_have_one_versioned_door.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261007040648_solver_platform_ids_validate_uuid_shape.sql"
+"${PSQL[@]}" -f "$HERE/platform-uuid-shape.sql"
 "${PSQL[@]}" -f "$HERE/input-bundle-bootstrap.sql"
 "${PSQL[@]}" -f "$HERE/feature-contract-v2.sql"
 "${PSQL[@]}" -f "$HERE/validator-one-door.sql"
@@ -121,3 +123,10 @@ LEGACY_VALID=$("${PSQL[@]}" -Atc "select public.fn_gto_v31_hand_matrix_valid('{\
 LEGACY_COMPACT_VALID=$("${PSQL[@]}" -Atc "select public.fn_gto_v31_compact_matrices_valid('{\"AKo:21\":{\"c\":1}}'::jsonb,'{\"c\":{\"family\":\"check\",\"size_unit\":\"none\",\"size_value\":null,\"all_in\":false}}'::jsonb,'{\"AKo:21\":1}'::jsonb,'{\"AKo:21\":{\"c\":1}}'::jsonb,'flop');")
 [[ "$LEGACY_COMPACT_VALID" == 't' ]]
 echo V31_FEATURE_ROLLBACK_OK
+# The immutable legacy rollback restores old validator bodies. Recover forward
+# before serving them; the correction preserves the legacy body byte-for-byte
+# except its UUID shape predicate, OIDs and ACLs.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261007040648_solver_platform_ids_validate_uuid_shape.sql"
+"${PSQL[@]}" -f "$HERE/platform-uuid-shape.sql"
+"${PSQL[@]}" -f "$HERE/certified-v31.sql"
+echo V31_UUID_ROLLBACK_FORWARD_RECOVERY_OK

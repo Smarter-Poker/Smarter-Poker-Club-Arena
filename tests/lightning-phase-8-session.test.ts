@@ -173,11 +173,23 @@ describe('every substitution is asserted', () => {
     expect(rw()).toMatch(/EXECUTE v_new;/);
     expect(rw()).toMatch(/does not read back carrying/);
   });
-  it('a re-signed function keeps its ACL and comment, asserted identical', () => {
+  it('a re-signed function carries who may execute and its comment, asserted semantically per role', () => {
     expect(rw()).toMatch(/EXECUTE format\('DROP FUNCTION %s', p_old\);/);
-    expect(rw()).toMatch(/FROM aclexplode\(v_acl\)/);
-    expect(rw()).toMatch(/COMMENT ON FUNCTION %s IS %L/);
-    expect(rw()).toMatch(/did not keep the ACL % and comment of %/);
+    // Production's default privileges and autorevoke event trigger make raw
+    // aclitem[] text unstable, so the carry-over is has_function_privilege
+    // per request role: captured before the drop, wiped, re-granted and read
+    // back, never compared as ACL text.
+    expect(rw()).toMatch(/ARRAY\['anon', 'authenticated', 'service_role'\]/);
+    expect(rw()).toMatch(/has_function_privilege\(t\.r, p_old::regprocedure, 'EXECUTE'\)/);
+    expect(rw()).toMatch(
+      /REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated, service_role/
+    );
+    expect(rw()).toMatch(/GRANT EXECUTE ON FUNCTION %s TO %I/);
+    expect(rw()).toMatch(
+      /has_function_privilege\(t\.r, p_new::regprocedure, 'EXECUTE'\) IS DISTINCT FROM v_had\[t\.ord\]/
+    );
+    expect(rw()).toMatch(/did not keep who may execute \(%\) and the comment of %/);
+    expect(rw()).not.toMatch(/proacl.*IS DISTINCT FROM.*::text|aclexplode/);
   });
   it('a function already carrying the change is left alone, and a half-applied pair refuses', () => {
     expect(rw()).toMatch(/IF v_same AND position\(p_marker in v_src\) > 0 THEN\s+RETURN;/);
@@ -392,6 +404,20 @@ describe('the proof around it', () => {
     expect(HARNESS).toMatch(/horse/);
     expect(HARNESS).toContain('fn_lightning_fast_fold');
     expect(HARNESS).toContain('fn_lightning_settle_hand');
+  });
+  it("the harness reproduces production's function-creation environment", () => {
+    // 2026-10-07: the first production apply was refused by the ACL
+    // read-back because the fixture lacked production's default privileges
+    // and its autorevoke event trigger. Both are ground now.
+    expect(HARNESS).toContain(
+      'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO anon, authenticated, service_role;'
+    );
+    expect(HARNESS).toContain(
+      'CREATE EVENT TRIGGER trg_autorevoke_privileged_anon ON ddl_command_end'
+    );
+    expect(HARNESS).toContain('fn_autorevoke_privileged_anon');
+    expect(HARNESS).toContain('privileged_function_lock');
+    expect(HARNESS).toContain('fx8_born_open');
   });
   it('CI runs it on shard 1 right after the Phase 7 harness', () => {
     const p7 = CI.indexOf('run: bash scripts/dev/test-lightning-phase7-reversion.sh');

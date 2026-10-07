@@ -24,10 +24,16 @@
 --    'mobile'}; missing or anything else is desktop). MULTI_TABLE_LIMIT uses
 --    the limit of that player's platform, counting the player's live Lightning
 --    hands in other Clusters exactly as before, and its detail names the
---    platform. Each is dropped and recreated from the body production carries
---    (an asserted substitution), its ACL and comment restored and asserted
---    identical, so every caller that passes the old arguments, positionally
---    or by name, keeps working.
+--    platform. Each is dropped and recreated from the body production
+--    carries (an asserted substitution). Who may execute it (anon,
+--    authenticated, service_role, asked with has_function_privilege) and its
+--    comment are carried over and asserted SEMANTICALLY, never as ACL text:
+--    production's default privileges hand every new public function to anon,
+--    authenticated and service_role at birth, and the autorevoke event
+--    trigger rewrites ACLs after CREATE FUNCTION, so the aclitem[] of a
+--    correct carry-over is not byte-stable (the first apply was refused
+--    exactly there on 2026-10-07). Every caller that passes the old
+--    arguments, positionally or by name, keeps working.
 --
 -- 3. lightning_hand_player.waited_ms: set at formation, by a BEFORE INSERT
 --    trigger, from the slot's idle_since to the hand's formed_at, and final
@@ -97,8 +103,9 @@ SET LOCAL lock_timeout = '2s';
 -- ===========================================================================
 -- 0. THE REWRITER. An asserted substitution into the body production
 --    carries. Every anchor must appear exactly as often as stated or the file
---    refuses. Where the signature changes the old function is dropped and the
---    new one created with the old ACL and comment, both asserted identical.
+--    refuses. Where the signature changes the old function is dropped and
+--    the new one created carrying what each request role could execute and
+--    the old comment, both asserted semantically with has_function_privilege.
 --    A function already carrying the change is left alone.
 -- ===========================================================================
 CREATE OR REPLACE FUNCTION pg_temp.lp8_rewrite(p_old text, p_new text, p_marker text,
@@ -110,9 +117,13 @@ DECLARE
   v_new     text;
   v_n       integer;
   k         integer;
-  v_acl     aclitem[];
+  -- The estate's request roles: what each may execute is the ACL fact that
+  -- matters, and the only one that is stable across production's default
+  -- privileges and its autorevoke event trigger.
+  v_roles   constant text[] := ARRAY['anon', 'authenticated', 'service_role'];
+  v_had     boolean[];
+  v_bad     text;
   v_comment text;
-  r         record;
 BEGIN
   IF NOT v_same AND to_regprocedure(p_new) IS NOT NULL THEN
     IF to_regprocedure(p_old) IS NOT NULL THEN
@@ -135,27 +146,37 @@ BEGIN
     END IF;
     v_new := replace(v_new, p_from[k], p_to[k]);
   END LOOP;
-  SELECT p.proacl, obj_description(p.oid, 'pg_proc') INTO v_acl, v_comment
-    FROM pg_proc p WHERE p.oid = p_old::regprocedure;
+  -- WHO MAY EXECUTE, captured before the drop. has_function_privilege reads
+  -- the effective answer (PUBLIC and role membership included), so it is the
+  -- same question PostgREST answers at the door.
+  SELECT array_agg(has_function_privilege(t.r, p_old::regprocedure, 'EXECUTE') ORDER BY t.ord)
+    INTO v_had FROM unnest(v_roles) WITH ORDINALITY t(r, ord);
+  v_comment := obj_description(p_old::regprocedure, 'pg_proc');
   IF NOT v_same THEN
     EXECUTE format('DROP FUNCTION %s', p_old);
   END IF;
   EXECUTE v_new;
   IF NOT v_same THEN
-    IF v_acl IS NOT NULL THEN
-      EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', p_new);
-      FOR r IN SELECT a.grantee, a.privilege_type FROM aclexplode(v_acl) a
-                WHERE a.grantee <> (SELECT p.proowner FROM pg_proc p WHERE p.oid = p_new::regprocedure) LOOP
-        EXECUTE format('GRANT %s ON FUNCTION %s TO %s', r.privilege_type, p_new,
-                       CASE WHEN r.grantee = 0 THEN 'PUBLIC' ELSE quote_ident(pg_get_userbyid(r.grantee)) END);
-      END LOOP;
-    END IF;
+    -- Born under production's default privileges the new function already
+    -- holds grants the old one refused, so the slate is wiped first and each
+    -- request role is granted back exactly what it had.
+    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated, service_role', p_new);
+    FOR k IN 1 .. array_length(v_roles, 1) LOOP
+      IF v_had[k] THEN
+        EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO %I', p_new, v_roles[k]);
+      END IF;
+    END LOOP;
     IF v_comment IS NOT NULL THEN
       EXECUTE format('COMMENT ON FUNCTION %s IS %L', p_new, v_comment);
     END IF;
-    IF (SELECT p.proacl FROM pg_proc p WHERE p.oid = p_new::regprocedure)::text IS DISTINCT FROM v_acl::text
+    SELECT string_agg(t.r || ': had ' || v_had[t.ord] || ', has '
+                      || has_function_privilege(t.r, p_new::regprocedure, 'EXECUTE'), '; ')
+      INTO v_bad
+      FROM unnest(v_roles) WITH ORDINALITY t(r, ord)
+     WHERE has_function_privilege(t.r, p_new::regprocedure, 'EXECUTE') IS DISTINCT FROM v_had[t.ord];
+    IF v_bad IS NOT NULL
        OR obj_description(p_new::regprocedure, 'pg_proc') IS DISTINCT FROM v_comment THEN
-      RAISE EXCEPTION '% did not keep the ACL % and comment of %', p_new, v_acl, p_old;
+      RAISE EXCEPTION '% did not keep who may execute (%) and the comment of %', p_new, coalesce(v_bad, 'comment'), p_old;
     END IF;
   END IF;
   IF position(p_marker in pg_get_functiondef(p_new::regprocedure)) = 0 THEN

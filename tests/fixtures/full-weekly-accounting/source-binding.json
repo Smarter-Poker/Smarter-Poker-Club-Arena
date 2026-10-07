@@ -420,7 +420,7 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "e42ea8ef8b84afcb3c97bfbd5750b7c2310523abe96e9dece1e4575ada84fa65",
+    "scripts/ci/classify-ci-changes.mjs": "9e32091e5a712856d7593b6650b54e60e9d49f52b44af7d1f87972b27ed79388",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
     "tests/fixtures/legacy-fee-finality/source-binding.json": "606333e586607087f8f21e7ee05922b6be392033c47df6a5c87e215a77a70202",
@@ -1717,6 +1717,13 @@
     "verification": "PG_BIN=postgresql@17 scripts/dev/test-union-weekly-basis.py: 74 PASS steps, 0 failures, including club-floor-run-journal, club-floor-behaviour-seed and club-floor-behaviour-regression (20 assertions). Red control on the same stack, reverting only the three GREATEST clamps of 20260920232503 in the running coordinator: 5 of those 20 assertions fail - the below-floor club week is re-attempted, the first week above the floor is neither reached nor completed, and the club whose earlier week succeeded no longer reaches its next due week."
   },
   "restamp_audit": [
+    {
+      "on": "2026-10-07",
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "e42ea8ef8b84afcb3c97bfbd5750b7c2310523abe96e9dece1e4575ada84fa65",
+      "to": "9e32091e5a712856d7593b6650b54e60e9d49f52b44af7d1f87972b27ed79388",
+      "why": "Reviewed exact Phase 6 V4 classifier diff: add the three V4 migrations, metadata regression, evaluation configuration and evaluator to the existing certified-solver accounting selection. No selector is removed or narrowed, and no financial fixture, SQL image, assertion or threshold changes. Routing regression passed 49 tests; matching pins are not execution evidence."
+    },
     {
       "on": "2026-10-06",
       "file": "scripts/ci/classify-ci-changes.mjs",

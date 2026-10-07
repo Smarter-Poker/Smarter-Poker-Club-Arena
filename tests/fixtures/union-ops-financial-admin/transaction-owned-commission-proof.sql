@@ -73,3 +73,15 @@ DO $$DECLARE delta bigint;started timestamptz:=clock_timestamp();BEGIN
  PERFORM public.assert_commission_report((SELECT count(*)=111 FROM smarter_private.agent_commission_report_daily WHERE club_id='97000000-0000-4000-8000-000000000001'),'111000 source rows represented by111 exact complete day facts');
  RAISE NOTICE 'COMMISSION_COMPLETE_DAY_REPORT_MS %',extract(epoch FROM clock_timestamp()-started)*1000;
 END$$;
+
+-- The journal maintenance route may replace a source primary key with other fields.
+INSERT INTO agent_commissions(id,club_id,user_id,amount,created_at) VALUES('98000000-0000-4000-8000-000000000001','97000000-0000-4000-8000-000000000001',md5('commission-agent-1')::uuid,3,((now() AT TIME ZONE 'UTC')::date-2)::timestamp AT TIME ZONE 'UTC');
+SELECT smarter_private.initialize_agent_commission_report_day('97000000-0000-4000-8000-000000000001',(now() AT TIME ZONE 'UTC')::date-2);
+BEGIN;
+UPDATE agent_commissions SET id='98000000-0000-4000-8000-000000000002',amount=-7,user_id=md5('commission-agent-2')::uuid,created_at=((now() AT TIME ZONE 'UTC')::date-1)::timestamp AT TIME ZONE 'UTC' WHERE id='98000000-0000-4000-8000-000000000001';
+SELECT public.assert_commission_report((SELECT count(*)=0 FROM smarter_private.agent_commission_report_days WHERE club_id='97000000-0000-4000-8000-000000000001' AND day IN((now() AT TIME ZONE 'UTC')::date-1,(now() AT TIME ZONE 'UTC')::date-2) AND complete),'source identity plus amount/user/day replacement invalidates both original and new day');
+ROLLBACK;
+SELECT public.assert_commission_report((SELECT count(*)=2 FROM smarter_private.agent_commission_report_days WHERE club_id='97000000-0000-4000-8000-000000000001' AND day IN((now() AT TIME ZONE 'UTC')::date-1,(now() AT TIME ZONE 'UTC')::date-2) AND complete),'source identity replacement rollback restores complete original facts');
+UPDATE agent_commissions SET id='98000000-0000-4000-8000-000000000002',amount=-7,user_id=md5('commission-agent-2')::uuid,created_at=((now() AT TIME ZONE 'UTC')::date-1)::timestamp AT TIME ZONE 'UTC' WHERE id='98000000-0000-4000-8000-000000000001';
+SELECT public.assert_commission_report((SELECT count(*)=0 FROM smarter_private.agent_commission_report_days WHERE club_id='97000000-0000-4000-8000-000000000001' AND day IN((now() AT TIME ZONE 'UTC')::date-1,(now() AT TIME ZONE 'UTC')::date-2) AND complete),'committed source identity replacement uses raw fallback');
+SELECT public.assert_risk_commission('97000000-0000-4000-8000-000000000001',now()-interval '3 days','source identity replacement exact raw financial sum');

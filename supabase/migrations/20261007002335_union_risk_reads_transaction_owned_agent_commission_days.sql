@@ -8,10 +8,11 @@
 -- changes preserve it. Missing days, exact head/tail and older windows remain
 -- original raw sums. No scheduled repair, money move, timeout increase or zero
 -- fallback is introduced. No source history is removed.
+-- unqualified-write-ok: smarter_private.agent_commission_report_days because this private postgres-only trigger clears every derived completeness marker only after the original journal is explicitly truncated; no browser role can call it or modify the private table.
 -- @live-proof: md5(pg_get_functiondef('public.fn_union_agent_risk_report(uuid,timestamptz)'::regprocedure)) = 'ee43543a1d5e512e66c327e910b4919d'
 -- @live-proof: md5(pg_get_functiondef('public.trg_agent_commission_rollup_insert()'::regprocedure)) = '1a07fad61faa37c4f9c1c78835fb7843'
 -- @live-proof: md5(pg_get_functiondef('smarter_private.initialize_agent_commission_report_day(uuid,date)'::regprocedure)) = '5dd2776e3eac285f78f8dabed9225f51'
--- @live-proof: md5(pg_get_functiondef('smarter_private.invalidate_agent_commission_report_days()'::regprocedure)) = 'dd156bfdd85153a591b426be530a2739'
+-- @live-proof: md5(pg_get_functiondef('smarter_private.invalidate_agent_commission_report_days()'::regprocedure)) = '7033729d2dc934e2c2e46beea87d8c6a'
 BEGIN;
 SET LOCAL lock_timeout='2s';
 SET LOCAL statement_timeout='15s';
@@ -79,12 +80,12 @@ BEGIN
  ELSIF TG_OP='UPDATE' THEN
    SELECT jsonb_agg(DISTINCT jsonb_build_object('club',x.club_id,'day',(x.created_at AT TIME ZONE 'UTC')::date)) INTO affected
    FROM (
-     SELECT o.club_id,o.created_at FROM old_rows o JOIN new_rows n USING(id)
-      WHERE o.amount IS DISTINCT FROM n.amount OR o.user_id IS DISTINCT FROM n.user_id
+     SELECT o.club_id,o.created_at FROM old_rows o FULL JOIN new_rows n USING(id)
+      WHERE o.id IS NULL OR n.id IS NULL OR o.amount IS DISTINCT FROM n.amount OR o.user_id IS DISTINCT FROM n.user_id
          OR o.club_id IS DISTINCT FROM n.club_id OR o.created_at IS DISTINCT FROM n.created_at
      UNION ALL
-     SELECT n.club_id,n.created_at FROM old_rows o JOIN new_rows n USING(id)
-      WHERE o.amount IS DISTINCT FROM n.amount OR o.user_id IS DISTINCT FROM n.user_id
+     SELECT n.club_id,n.created_at FROM old_rows o FULL JOIN new_rows n USING(id)
+      WHERE o.id IS NULL OR n.id IS NULL OR o.amount IS DISTINCT FROM n.amount OR o.user_id IS DISTINCT FROM n.user_id
          OR o.club_id IS DISTINCT FROM n.club_id OR o.created_at IS DISTINCT FROM n.created_at
    )x WHERE x.club_id IS NOT NULL AND x.created_at IS NOT NULL;
  ELSE
@@ -522,7 +523,7 @@ DO $postimage$ BEGIN
  IF md5(pg_get_functiondef('public.fn_union_agent_risk_report(uuid,timestamptz)'::regprocedure)) IS DISTINCT FROM 'ee43543a1d5e512e66c327e910b4919d'
  OR md5(pg_get_functiondef('public.trg_agent_commission_rollup_insert()'::regprocedure)) IS DISTINCT FROM '1a07fad61faa37c4f9c1c78835fb7843'
  OR md5(pg_get_functiondef('smarter_private.initialize_agent_commission_report_day(uuid,date)'::regprocedure)) IS DISTINCT FROM '5dd2776e3eac285f78f8dabed9225f51'
- OR md5(pg_get_functiondef('smarter_private.invalidate_agent_commission_report_days()'::regprocedure)) IS DISTINCT FROM 'dd156bfdd85153a591b426be530a2739'
+ OR md5(pg_get_functiondef('smarter_private.invalidate_agent_commission_report_days()'::regprocedure)) IS DISTINCT FROM '7033729d2dc934e2c2e46beea87d8c6a'
 
  OR EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid IN('public.fn_union_agent_risk_report(uuid,timestamptz)'::regprocedure,'public.trg_agent_commission_rollup_insert()'::regprocedure,'smarter_private.initialize_agent_commission_report_day(uuid,date)'::regprocedure,'smarter_private.invalidate_agent_commission_report_days()'::regprocedure) AND (p.proowner<>'postgres'::regrole OR NOT p.prosecdef))
  OR NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid='public.fn_union_agent_risk_report(uuid,timestamptz)'::regprocedure AND provolatile='s' AND proconfig=ARRAY['search_path=public','jit=off'])

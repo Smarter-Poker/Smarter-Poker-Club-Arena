@@ -105,9 +105,13 @@ export function ClubWeeklyAccountingSummary({ clubId }: { clubId: string }) {
   const loading = available && (!current || current.phase === 'loading');
   const unavailable = !available || current?.phase === 'unavailable';
   return (
-    <section className={styles.summary} aria-label="Club Weekly Accounting" aria-busy={loading}>
+    /* Named for what it lists. Inside the Settlement Center it sits under the
+       workspace's own "Club Weekly Accounting" heading, and a second heading
+       with that exact name gave the page two of them (Post-Deploy E2E run
+       37569802965, financial-admin-deep.spec.ts Settlement Center). */
+    <section className={styles.summary} aria-label="Club Weekly Summaries" aria-busy={loading}>
       <div className={styles.header}>
-        <h3 className={styles.title}>Club Weekly Accounting</h3>
+        <h3 className={styles.title}>Club Weekly Summaries</h3>
         <p className={styles.copy}>
           Weekly Totals For Rake Received, Rakeback Paid And Rake Retained.
         </p>

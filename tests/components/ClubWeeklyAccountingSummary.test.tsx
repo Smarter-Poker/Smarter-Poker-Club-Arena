@@ -110,6 +110,17 @@ describe('issued club weekly summaries', () => {
     expect(supabase.rpc).not.toHaveBeenCalled();
   });
 
+  it('names its own section so the Settlement Center keeps one Club Weekly Accounting heading', async () => {
+    // The workspace above it already owns "Club Weekly Accounting"; a second
+    // heading with that name broke financial-admin-deep.spec.ts (run 37569802965).
+    fixture.rows = [weeklyStatementRow()];
+    render(<ClubWeeklyAccountingSummary clubId={ID.club} />);
+    await screen.findByRole('table');
+    expect(screen.getByRole('heading', { name: 'Club Weekly Summaries' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Club Weekly Summaries' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Club Weekly Accounting' })).toBeNull();
+  });
+
   it('distinguishes unavailable reads from an actual empty authorized result', async () => {
     fixture.reply = async () => ({ data: null, error: { message: 'refused' } });
     render(<ClubWeeklyAccountingSummary clubId={ID.club} />);

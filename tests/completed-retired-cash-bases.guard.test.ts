@@ -89,6 +89,16 @@ describe('completed retired hands return only the original proven base', () => {
     expect(sql).toContain("SET LOCAL statement_timeout='15s'");
     expect(sql.trimEnd().endsWith('COMMIT;')).toBe(true);
   });
+  it('reads table linkage from the native restitution transaction, while the audited wallet ledger stays unscoped', () => {
+    const proof = sql.split('-- @live-proof: ')[1].split('\n')[0];
+    expect(proof).toContain('l.table_id IS NULL');
+    expect(proof).not.toContain('l.table_id=e.tid');
+    expect(proof).toContain("tx.transaction_type='seat_credit_restored'");
+    expect(proof).toContain('tx.to_user_id=e.uid');
+    expect(proof).toContain('tx.created_at=m.created_at');
+    expect(proof).toContain('tx.table_id=e.tid');
+    expect(proof).toContain("tx.metadata->>'restore_key'=e.k");
+  });
   it('binds the actual anonymous native proof to the complete production financial body', () => {
     const anonymousBody = canonicalBody
       .replace(

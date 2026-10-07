@@ -9,3 +9,5 @@ Isolated current PostgreSQL native positive, negative and two-zero shapes passed
 Nine separate uncommitted originals and the historical1845.87 unattributed supply difference remain distinct; this migration does not repay their deltas or infer a recipient for that remainder. Production installation and durable final receipts remain required.
 
 The required merged-migration law caught a missing durable readback declaration. The correction adds an exact23 receipt proof before final COMMIT, binding each native issuance, mint and wallet key to its original user, funding club, amount and preserved completed-hand hashes. The qualified financial DO body is byte-identical; no additional financial probe is needed.
+
+Actual native recovery readback showed the automatic wallet issuance ledger has a NULL table scope. The maintained proof now binds the table through the existing seat_credit_restored chip transaction, using the same recipient, timestamp, restore key, amount, funding club and original table. A focused regression pins that distinction; the financial restitution body and existing rollback proof are unchanged.

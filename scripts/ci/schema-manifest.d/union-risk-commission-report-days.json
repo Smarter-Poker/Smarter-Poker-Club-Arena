@@ -1,12 +1,14 @@
 {
   "_owner": "codex/launch-union-risk-commission-facts-20261007",
-  "_comment": "Pending qualified production installation. Private exact closed UTC-day commission facts are maintained inside original financial INSERT transactions. Completeness is owner-initialized explicitly under the existing club key; unknown days use raw source. Native qualification never implies current installation or live request-budget proof.",
+  "_comment": "Pending qualified production installation. Exact original INSERT-owned facts plus one explicitly initialized current/future provenance baseline maintain later closed UTC days. Explicit invalidation overrides provenance; unknown days use raw source. Native qualification does not imply installation or live cold-budget proof.",
   "tables": [
     "smarter_private.agent_commission_report_days",
-    "smarter_private.agent_commission_report_daily"
+    "smarter_private.agent_commission_report_daily",
+    "smarter_private.agent_commission_report_frontiers"
   ],
   "functions": [
     "smarter_private.initialize_agent_commission_report_day",
-    "smarter_private.invalidate_agent_commission_report_days"
+    "smarter_private.invalidate_agent_commission_report_days",
+    "smarter_private.initialize_agent_commission_report_frontier"
   ]
 }

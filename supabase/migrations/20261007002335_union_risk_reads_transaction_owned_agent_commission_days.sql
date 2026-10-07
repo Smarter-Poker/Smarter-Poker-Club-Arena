@@ -3,16 +3,20 @@
 -- exact closed UTC-day per-agent facts, initialized only by an explicit bounded
 -- operator call under the original sorted club commission keys. The original
 -- INSERT transaction adds later/backdated deltas exactly once; unqualified days
--- remain raw until the locked baseline is explicitly initialized.
+-- remain raw until the locked baseline is explicitly initialized. A one-time
+-- current/future baseline proves all later days, with original INSERT deltas
+-- maintaining that provenance; explicit invalidation always overrides it.
 -- Relevant UPDATE/DELETE/TRUNCATE invalidate completeness; settlement-only
 -- changes preserve it. Missing days, exact head/tail and older windows remain
 -- original raw sums. No scheduled repair, money move, timeout increase or zero
 -- fallback is introduced. No source history is removed.
 -- unqualified-write-ok: smarter_private.agent_commission_report_days because this private postgres-only trigger clears every derived completeness marker only after the original journal is explicitly truncated; no browser role can call it or modify the private table.
--- @live-proof: md5(pg_get_functiondef('public.fn_union_agent_risk_report(uuid,timestamptz)'::regprocedure)) = 'ee43543a1d5e512e66c327e910b4919d'
+-- @live-proof: md5(pg_get_functiondef('public.fn_union_agent_risk_report(uuid,timestamptz)'::regprocedure)) = 'cfd722f72a01fd7fe8efc08dd2027f6a'
 -- @live-proof: md5(pg_get_functiondef('public.trg_agent_commission_rollup_insert()'::regprocedure)) = '1a07fad61faa37c4f9c1c78835fb7843'
+-- unqualified-write-ok: smarter_private.agent_commission_report_frontiers because this postgres-only original-journal TRUNCATE trigger invalidates all derived future provenance; no browser role can mutate these facts.
 -- @live-proof: md5(pg_get_functiondef('smarter_private.initialize_agent_commission_report_day(uuid,date)'::regprocedure)) = '5dd2776e3eac285f78f8dabed9225f51'
--- @live-proof: md5(pg_get_functiondef('smarter_private.invalidate_agent_commission_report_days()'::regprocedure)) = '7033729d2dc934e2c2e46beea87d8c6a'
+-- @live-proof: md5(pg_get_functiondef('smarter_private.invalidate_agent_commission_report_days()'::regprocedure)) = '2a1cde231f6a8036f51179d630fbbd2d'
+-- @live-proof: md5(pg_get_functiondef('smarter_private.initialize_agent_commission_report_frontier(uuid)'::regprocedure)) = 'b4cb0882e0036ad69dde434fce8e81a2'
 BEGIN;
 SET LOCAL lock_timeout='2s';
 SET LOCAL statement_timeout='15s';
@@ -23,6 +27,7 @@ DO $preimage$ BEGIN
  OR NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid='public.trg_agent_commission_rollup_insert()'::regprocedure AND proowner='postgres'::regrole AND prosecdef AND provolatile='v' AND proconfig=ARRAY['search_path=public'])
  OR to_regclass('smarter_private.agent_commission_report_days') IS NOT NULL
  OR to_regclass('smarter_private.agent_commission_report_daily') IS NOT NULL
+ OR to_regclass('smarter_private.agent_commission_report_frontiers') IS NOT NULL
  OR NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='public.agent_commissions'::regclass AND tgname='trg_agent_commission_rollup_ins' AND tgenabled='O' AND tgfoid='public.trg_agent_commission_rollup_insert()'::regprocedure AND tgnewtable='new_rows')
  THEN RAISE EXCEPTION 'COMMISSION_REPORT_SOURCE_PREIMAGE_CHANGED'; END IF;
 END;$preimage$;
@@ -35,6 +40,40 @@ CREATE TABLE smarter_private.agent_commission_report_daily(
 ALTER TABLE smarter_private.agent_commission_report_days OWNER TO postgres;
 ALTER TABLE smarter_private.agent_commission_report_daily OWNER TO postgres;
 REVOKE ALL ON smarter_private.agent_commission_report_days,smarter_private.agent_commission_report_daily FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE TABLE smarter_private.agent_commission_report_frontiers(
+ club_id uuid PRIMARY KEY,first_complete_day date NOT NULL,
+ computed_at timestamptz NOT NULL DEFAULT clock_timestamp());
+ALTER TABLE smarter_private.agent_commission_report_frontiers OWNER TO postgres;
+REVOKE ALL ON smarter_private.agent_commission_report_frontiers FROM PUBLIC,anon,authenticated,service_role;
+CREATE FUNCTION smarter_private.initialize_agent_commission_report_frontier(p_club uuid)
+RETURNS bigint LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+SET search_path TO pg_catalog,public,smarter_private AS $function$
+DECLARE v_count bigint;v_today date:=(clock_timestamp() AT TIME ZONE 'UTC')::date;
+BEGIN
+ IF current_setting('transaction_isolation') IS DISTINCT FROM 'read committed' THEN
+   RAISE EXCEPTION 'COMMISSION_REPORT_INITIALIZATION_REQUIRES_FRESH_SNAPSHOT' USING ERRCODE='25001';
+ END IF;
+ IF p_club IS NULL THEN RAISE EXCEPTION 'COMMISSION_REPORT_CLUB_REQUIRED' USING ERRCODE='22023';END IF;
+ PERFORM pg_advisory_xact_lock(hashtextextended('agent-commission:'||p_club::text,0));
+ IF EXISTS(SELECT 1 FROM smarter_private.agent_commission_report_frontiers WHERE club_id=p_club) THEN
+   RAISE EXCEPTION 'COMMISSION_REPORT_FRONTIER_ALREADY_INITIALIZED' USING ERRCODE='55000';
+ END IF;
+ -- Capture every existing future-dated source too; there is no assumed empty tail.
+ DELETE FROM smarter_private.agent_commission_report_daily WHERE club_id=p_club AND day>=v_today;
+ INSERT INTO smarter_private.agent_commission_report_daily(club_id,day,user_id,amount)
+ SELECT p_club,(a.created_at AT TIME ZONE 'UTC')::date,a.user_id,COALESCE(SUM(a.amount),0)
+ FROM public.agent_commissions a WHERE a.club_id=p_club AND a.user_id IS NOT NULL
+ AND a.created_at>=(v_today::timestamp AT TIME ZONE 'UTC')
+ GROUP BY (a.created_at AT TIME ZONE 'UTC')::date,a.user_id;
+ GET DIAGNOSTICS v_count=ROW_COUNT;
+ -- These private markers have just been rebuilt from the locked fresh snapshot.
+ DELETE FROM smarter_private.agent_commission_report_days WHERE club_id=p_club AND day>=v_today;
+ INSERT INTO smarter_private.agent_commission_report_frontiers(club_id,first_complete_day) VALUES(p_club,v_today);
+ RETURN v_count;
+END;$function$;
+ALTER FUNCTION smarter_private.initialize_agent_commission_report_frontier(uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION smarter_private.initialize_agent_commission_report_frontier(uuid) FROM PUBLIC,anon,authenticated,service_role;
 
 CREATE FUNCTION smarter_private.initialize_agent_commission_report_day(p_club uuid,p_day date)
 RETURNS bigint LANGUAGE plpgsql VOLATILE SECURITY DEFINER
@@ -72,10 +111,11 @@ SET search_path TO pg_catalog,public,smarter_private AS $function$
 DECLARE c uuid;affected jsonb;
 BEGIN
  IF TG_OP='TRUNCATE' THEN
-   FOR c IN SELECT DISTINCT club_id FROM smarter_private.agent_commission_report_days ORDER BY club_id LOOP
+   FOR c IN SELECT club_id FROM smarter_private.agent_commission_report_days UNION SELECT club_id FROM smarter_private.agent_commission_report_frontiers ORDER BY club_id LOOP
      PERFORM pg_advisory_xact_lock(hashtextextended('agent-commission:'||c::text,0));
    END LOOP;
    DELETE FROM smarter_private.agent_commission_report_days;
+   DELETE FROM smarter_private.agent_commission_report_frontiers;
    RETURN NULL;
  ELSIF TG_OP='UPDATE' THEN
    SELECT jsonb_agg(DISTINCT jsonb_build_object('club',x.club_id,'day',(x.created_at AT TIME ZONE 'UTC')::date)) INTO affected
@@ -443,11 +483,14 @@ BEGIN
     SELECT DISTINCT r.agent_user_id, r.club_id FROM roster r
   ),
   comm_ok_days AS MATERIALIZED (
-    SELECT m.club_id,m.day
-      FROM smarter_private.agent_commission_report_days m
-     WHERE m.complete AND m.club_id=ANY(v_clubs)
-       AND v_from>=v_comm_today-interval '7 days'
-       AND m.day>=v_comm_day_lo AND m.day<(v_comm_today AT TIME ZONE 'UTC')::date
+    SELECT c.club_id,g::date AS day
+      FROM unnest(v_clubs)c(club_id)
+      CROSS JOIN generate_series(v_comm_day_lo,(v_comm_today AT TIME ZONE 'UTC')::date-1,interval '1 day')g
+      LEFT JOIN smarter_private.agent_commission_report_days m ON m.club_id=c.club_id AND m.day=g::date
+      LEFT JOIN smarter_private.agent_commission_report_frontiers f ON f.club_id=c.club_id
+     WHERE v_from>=v_comm_today-interval '7 days'
+       AND v_comm_day_lo<(v_comm_today AT TIME ZONE 'UTC')::date
+       AND (m.complete IS TRUE OR (m.club_id IS NULL AND g::date>=f.first_complete_day))
   ),
   comm_gap_days AS MATERIALIZED (
     SELECT c.club_id,g::date AS day
@@ -520,16 +563,17 @@ END
 $function$
 ;
 DO $postimage$ BEGIN
- IF md5(pg_get_functiondef('public.fn_union_agent_risk_report(uuid,timestamptz)'::regprocedure)) IS DISTINCT FROM 'ee43543a1d5e512e66c327e910b4919d'
+ IF md5(pg_get_functiondef('smarter_private.initialize_agent_commission_report_frontier(uuid)'::regprocedure)) IS DISTINCT FROM 'b4cb0882e0036ad69dde434fce8e81a2'
+ OR md5(pg_get_functiondef('public.fn_union_agent_risk_report(uuid,timestamptz)'::regprocedure)) IS DISTINCT FROM 'cfd722f72a01fd7fe8efc08dd2027f6a'
  OR md5(pg_get_functiondef('public.trg_agent_commission_rollup_insert()'::regprocedure)) IS DISTINCT FROM '1a07fad61faa37c4f9c1c78835fb7843'
  OR md5(pg_get_functiondef('smarter_private.initialize_agent_commission_report_day(uuid,date)'::regprocedure)) IS DISTINCT FROM '5dd2776e3eac285f78f8dabed9225f51'
- OR md5(pg_get_functiondef('smarter_private.invalidate_agent_commission_report_days()'::regprocedure)) IS DISTINCT FROM '7033729d2dc934e2c2e46beea87d8c6a'
+ OR md5(pg_get_functiondef('smarter_private.invalidate_agent_commission_report_days()'::regprocedure)) IS DISTINCT FROM '2a1cde231f6a8036f51179d630fbbd2d'
 
- OR EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid IN('public.fn_union_agent_risk_report(uuid,timestamptz)'::regprocedure,'public.trg_agent_commission_rollup_insert()'::regprocedure,'smarter_private.initialize_agent_commission_report_day(uuid,date)'::regprocedure,'smarter_private.invalidate_agent_commission_report_days()'::regprocedure) AND (p.proowner<>'postgres'::regrole OR NOT p.prosecdef))
+ OR EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid IN('public.fn_union_agent_risk_report(uuid,timestamptz)'::regprocedure,'public.trg_agent_commission_rollup_insert()'::regprocedure,'smarter_private.initialize_agent_commission_report_day(uuid,date)'::regprocedure,'smarter_private.initialize_agent_commission_report_frontier(uuid)'::regprocedure,'smarter_private.invalidate_agent_commission_report_days()'::regprocedure) AND (p.proowner<>'postgres'::regrole OR NOT p.prosecdef))
  OR NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid='public.fn_union_agent_risk_report(uuid,timestamptz)'::regprocedure AND provolatile='s' AND proconfig=ARRAY['search_path=public','jit=off'])
  OR NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid='public.trg_agent_commission_rollup_insert()'::regprocedure AND provolatile='v' AND proconfig=ARRAY['search_path=public'])
- OR EXISTS(SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a WHERE p.oid IN('smarter_private.initialize_agent_commission_report_day(uuid,date)'::regprocedure,'smarter_private.invalidate_agent_commission_report_days()'::regprocedure) AND (a.grantee<>'postgres'::regrole OR p.proconfig IS DISTINCT FROM ARRAY['search_path=pg_catalog, public, smarter_private']))
- OR EXISTS(SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) a WHERE c.oid IN('smarter_private.agent_commission_report_days'::regclass,'smarter_private.agent_commission_report_daily'::regclass) AND (c.relowner<>'postgres'::regrole OR a.grantee<>'postgres'::regrole))
+ OR EXISTS(SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a WHERE p.oid IN('smarter_private.initialize_agent_commission_report_day(uuid,date)'::regprocedure,'smarter_private.initialize_agent_commission_report_frontier(uuid)'::regprocedure,'smarter_private.invalidate_agent_commission_report_days()'::regprocedure) AND (a.grantee<>'postgres'::regrole OR p.proconfig IS DISTINCT FROM ARRAY['search_path=pg_catalog, public, smarter_private']))
+ OR EXISTS(SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) a WHERE c.oid IN('smarter_private.agent_commission_report_days'::regclass,'smarter_private.agent_commission_report_daily'::regclass,'smarter_private.agent_commission_report_frontiers'::regclass) AND (c.relowner<>'postgres'::regrole OR a.grantee<>'postgres'::regrole))
  OR (SELECT count(*) FROM pg_trigger WHERE tgrelid='public.agent_commissions'::regclass AND tgname IN('zz_commission_report_invalidate_update','zz_commission_report_invalidate_delete','zz_commission_report_invalidate_truncate') AND tgenabled='O' AND tgfoid='smarter_private.invalidate_agent_commission_report_days()'::regprocedure)<>3
  OR NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='public.agent_commissions'::regclass AND tgname='trg_agent_commission_rollup_ins' AND tgenabled='O' AND tgfoid='public.trg_agent_commission_rollup_insert()'::regprocedure AND tgnewtable='new_rows')
  THEN RAISE EXCEPTION 'COMMISSION_REPORT_POSTIMAGE_CHANGED';END IF;

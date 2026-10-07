@@ -48,8 +48,30 @@ SELECT public.assert_risk_commission('91000000-0000-4000-8000-000000000001',now(
 SELECT public.assert_risk_commission('91000000-0000-4000-8000-000000000001',now()+interval '1 day','future lower bound keeps future original rows');
 SET TIME ZONE 'UTC';
 SELECT public.assert_commission_report(NOT has_function_privilege('service_role','smarter_private.initialize_agent_commission_report_day(uuid,date)','EXECUTE') AND NOT has_table_privilege('authenticated','smarter_private.agent_commission_report_days','INSERT,UPDATE,DELETE,TRUNCATE'),'external callers cannot manufacture complete reporting facts');
+-- Exact future baseline plus isolated projection of the installed UTC clock.
+SELECT smarter_private.initialize_agent_commission_report_frontier('91000000-0000-4000-8000-000000000001');
+SELECT public.assert_commission_report((SELECT SUM(amount)=8 FROM smarter_private.agent_commission_report_daily WHERE club_id='91000000-0000-4000-8000-000000000001' AND day>=(now() AT TIME ZONE 'UTC')::date),'frontier captures current3 plus preexisting future5');
+INSERT INTO public.agent_commissions(club_id,user_id,amount,created_at) VALUES('91000000-0000-4000-8000-000000000001','93000000-0000-4000-8000-000000000001',-1,now()+interval '2 days');
+DO $rollover$ DECLARE src text;old_clock text:=$clock$date_trunc('day',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'$clock$;
+BEGIN
+ src:=pg_get_functiondef('public.fn_union_agent_risk_report(uuid,timestamptz)'::regprocedure);
+ IF (length(src)-length(replace(src,old_clock,'')))/length(old_clock)<>1 THEN RAISE EXCEPTION 'ROLLOVER_CLOCK_ANCHOR_CHANGED';END IF;
+ src:=replace(src,'public.fn_union_agent_risk_report(','public.fn_union_agent_risk_report_rollover(');
+ src:=replace(src,old_clock,'('||old_clock||')+interval ''4 days''');
+ EXECUTE src;
+END;$rollover$;
+SELECT public.assert_commission_report((SELECT r.commission_accrued=ROUND((SELECT COALESCE(SUM(a.amount),0) FROM agent_commissions a WHERE a.club_id='91000000-0000-4000-8000-000000000001' AND a.user_id=r.agent_user_id AND a.created_at>=now()-interval '2 days'),2) FROM public.fn_union_agent_risk_report_rollover('91000000-0000-4000-8000-000000000001',now()-interval '2 days') r),'future rows become exact closed facts without recurring initialization');
+BEGIN;
+UPDATE agent_commissions SET amount=11 WHERE id='94000000-0000-4000-8000-000000000004';
+SELECT public.assert_commission_report((SELECT complete IS FALSE FROM smarter_private.agent_commission_report_days WHERE club_id='91000000-0000-4000-8000-000000000001' AND day=(now() AT TIME ZONE 'UTC')::date+3),'explicit future invalidation overrides frontier');
+SELECT public.assert_commission_report((SELECT r.commission_accrued=ROUND((SELECT COALESCE(SUM(a.amount),0) FROM agent_commissions a WHERE a.club_id='91000000-0000-4000-8000-000000000001' AND a.user_id=r.agent_user_id AND a.created_at>=now()-interval '2 days'),2) FROM public.fn_union_agent_risk_report_rollover('91000000-0000-4000-8000-000000000001',now()-interval '2 days') r),'invalidated future day uses raw source after rollover');
+ROLLBACK;
+SELECT public.assert_commission_report(NOT EXISTS(SELECT 1 FROM smarter_private.agent_commission_report_days WHERE club_id='91000000-0000-4000-8000-000000000001' AND day=(now() AT TIME ZONE 'UTC')::date+3),'future correction rollback restores exact provenance');
+DO $$ BEGIN BEGIN PERFORM smarter_private.initialize_agent_commission_report_frontier('91000000-0000-4000-8000-000000000001');RAISE EXCEPTION 'duplicate frontier accepted';EXCEPTION WHEN SQLSTATE '55000' THEN NULL;END;END$$;
+SELECT public.assert_commission_report(NOT has_function_privilege('service_role','smarter_private.initialize_agent_commission_report_frontier(uuid)','EXECUTE'),'external caller cannot manufacture future provenance');
 TRUNCATE public.agent_commissions;
 SELECT public.assert_commission_report(NOT EXISTS(SELECT 1 FROM smarter_private.agent_commission_report_days),'source truncate invalidates every complete day');
+SELECT public.assert_commission_report(NOT EXISTS(SELECT 1 FROM smarter_private.agent_commission_report_frontiers),'truncate invalidates future provenance');
 
 -- 111 exact roster pairs and111,000 historical commissions. Only111 qualified
 -- day facts are read after initialization; preserve independently captured

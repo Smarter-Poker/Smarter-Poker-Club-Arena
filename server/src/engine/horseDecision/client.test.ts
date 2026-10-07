@@ -53,6 +53,7 @@ import {
   LiveHorseDecisionWorkerClient,
   type WorkerLike,
 } from './client.js';
+import { doorRosterTransport } from '../../services/horseAcceptedRoster/fixture.test-support.js';
 
 // The process-wide main gate admits only the committed release selection,
 // which is null today. These tests replace that one export with a gate whose
@@ -2035,6 +2036,36 @@ describe('LiveHorseDecisionWorkerClient', () => {
     expect(worker.sent[1]).toMatchObject({ type: 'DECIDE_FAST', requestId: 2 });
     worker.emitMessage(fastResult(2, 'next-hand'));
     await nextDecision;
+  });
+
+  it('P14.2: posts the private accepted roster unchanged with the completed-hand observation', async () => {
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    const table = '10000000-0000-4000-8000-000000000001';
+    const committed = '30000000-0000-4000-8000-000000000001';
+    const transport = doorRosterTransport(table, 7, committed);
+    const observation = client.observeCompletedHand({
+      generation: 7,
+      fence: `${table}:7:9:observe`,
+      handKey: `${table}:7`,
+      committedHandId: committed,
+      actions: [],
+      bigBlind: 2,
+      acceptedActorRoster: transport,
+    });
+    expect(worker.sent[0]).toMatchObject({ type: 'OBSERVE_COMPLETED_HAND', requestId: 1 });
+    expect((worker.sent[0] as { acceptedActorRoster?: unknown }).acceptedActorRoster).toEqual(
+      transport
+    );
+    worker.emitMessage({
+      type: 'ACK',
+      requestId: 1,
+      generation: 7,
+      fence: `${table}:7:9:observe`,
+      operation: 'OBSERVE_COMPLETED_HAND',
+    });
+    await observation;
   });
 
   it('drains accepted jobs before graceful service shutdown', async () => {

@@ -11,10 +11,12 @@ import type { HorseDecideOpts } from '../HorseLogic.js';
 import type { HorseMindDecisionEffect } from '../HorseMind.js';
 import type { Card } from '../../types.js';
 import type {
+  CompletedHandObservation,
   FastHorseDecisionRequest,
   HorseDecisionWorkerReady,
   HorseDecisionWorkerResponse,
   LiveHorseDecisionSnapshot,
+  ObserveCompletedHandRequest,
 } from './protocol.js';
 import { buildHorseDecisionKey, validatedHorsePolicySamplingKey } from './protocol.js';
 import { horseDecisionReceiptIsValid } from './responseValidation.js';
@@ -24,8 +26,10 @@ import { remainingVariantReceiptBindingIsValid } from '../remainingVariants/Rema
 import { HORSE_REVIEW_SIGNAL_KEYS } from '../HorseReviewSignals.js';
 import {
   HorseDecisionWorkerRuntime,
+  acceptedRosterBindsToHand,
   type HorseDecisionWorkerDependencies,
 } from './workerRuntime.js';
+import { doorRosterTransport } from '../../services/horseAcceptedRoster/fixture.test-support.js';
 import {
   buildTournamentMState,
   TOURNAMENT_ANTE_TYPES,
@@ -2022,6 +2026,77 @@ describe('HorseDecisionWorkerRuntime', () => {
     ]);
     expect(h.observations).toEqual(['table:hand']);
     expect(h.stopped()).toBe(1);
+  });
+
+  describe('P14.2 accepted actor roster at the worker boundary', () => {
+    const table = '10000000-0000-4000-8000-000000000001';
+    const committed = '30000000-0000-4000-8000-000000000001';
+    const observe = (acceptedActorRoster?: unknown) =>
+      ({
+        type: 'OBSERVE_COMPLETED_HAND',
+        requestId: 2,
+        generation: 12,
+        fence: `${table}:12:9:observe`,
+        handKey: `${table}:12`,
+        committedHandId: committed,
+        actions: [],
+        bigBlind: 2,
+        ...(acceptedActorRoster === undefined ? {} : { acceptedActorRoster }),
+      }) as ObserveCompletedHandRequest;
+    async function run(request: ObserveCompletedHandRequest) {
+      const h = harness();
+      const journaled: CompletedHandObservation[] = [];
+      const learned: ObserveCompletedHandRequest[] = [];
+      h.deps.journalAcceptedHand = (hand) => journaled.push(structuredClone(hand));
+      h.deps.observeCompletedHand = (r) => learned.push(r);
+      h.runtime.receive(request);
+      await h.runtime.drain();
+      return { h, journaled, learned };
+    }
+
+    it('keeps a bound transport on the journaled accepted hand and the learner request', async () => {
+      const transport = doorRosterTransport(table, 12, committed);
+      const { h, journaled, learned } = await run(observe(transport));
+      expect(acceptedRosterBindsToHand(observe(transport))).toBe(true);
+      expect(journaled).toHaveLength(1);
+      expect(journaled[0]!.acceptedActorRoster).toEqual(transport);
+      expect(learned[0]!.acceptedActorRoster).toEqual(transport);
+      expect(h.features).not.toContain('phase14_accepted_roster_refused');
+      expect(h.messages.at(-1)).toMatchObject({ type: 'ACK', operation: 'OBSERVE_COMPLETED_HAND' });
+    });
+
+    it.each([
+      ['another hand number', () => doorRosterTransport(table, 13, committed)],
+      ['another committed hand', () => doorRosterTransport(table, 12, table)],
+      [
+        'a forged digest',
+        () => ({ ...doorRosterTransport(table, 12, committed), rosterDigest: '0'.repeat(64) }),
+      ],
+      [
+        'an over-sized census',
+        () => {
+          const t = doorRosterTransport(table, 12, committed);
+          return {
+            ...t,
+            roster: { ...t.roster, actors: Array(11).fill(t.roster.actors[0]) },
+          };
+        },
+      ],
+      ['a non-object', () => 'captured'],
+    ])('drops %s, still observes and journals the hand, and counts it', async (_n, build) => {
+      const { h, journaled, learned } = await run(observe(build()));
+      expect(journaled).toHaveLength(1);
+      expect(journaled[0]).not.toHaveProperty('acceptedActorRoster');
+      expect(learned[0]).not.toHaveProperty('acceptedActorRoster');
+      expect(h.features).toContain('phase14_accepted_roster_refused');
+      expect(h.messages.at(-1)).toMatchObject({ type: 'ACK', operation: 'OBSERVE_COMPLETED_HAND' });
+    });
+
+    it('treats an absent roster as the explicit unknown without counting a refusal', async () => {
+      const { h, journaled } = await run(observe());
+      expect(journaled[0]).not.toHaveProperty('acceptedActorRoster');
+      expect(h.features).not.toContain('phase14_accepted_roster_refused');
+    });
   });
 
   it('does not acknowledge shutdown if a final owned telemetry batch is unconfirmed', async () => {

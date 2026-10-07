@@ -1089,10 +1089,12 @@ async function rejectedPrivateReceipt(data: Record<string, unknown>): Promise<Er
 }
 const privateReceiptExtensions = [
   {
-    name: 'hypothetical-roster',
+    // P14.2: the door's real private field name, with a malformed body.
+    name: 'accepted-roster',
     value: {
-      acceptedActorRoster: {
+      accepted_roster: {
         version: 1,
+        status: 'captured',
         roster: {
           actors: [
             {
@@ -1248,9 +1250,207 @@ describe('prepared whole-receipt diagnostic redaction', () => {
     expect(rpcCalls).toHaveLength(1);
     expect(mockWakeHandProjection).toHaveBeenCalledTimes(1);
     expect(mockObserveCompletedHand).toHaveBeenCalledTimes(1);
-    // Adding a diagnostic repair must not accidentally activate the hypothetical
-    // private roster transport used as an extension in this synthetic fixture.
+    // P14.2: the receipt's accepted_roster is malformed here, so the hand is
+    // observed without a roster and the refusal is reported by name only.
     expect(mockObserveCompletedHand.mock.calls[0]![0]).not.toHaveProperty('acceptedActorRoster');
+    expect(mockReportError).toHaveBeenCalledWith(
+      new Error('accepted_roster_shape_invalid'),
+      'HandHistory.accepted_roster_unusable',
+      { tableId: '11111111-1111-1111-1111-111111111111', handNumber: GLOBAL_HAND + 901 }
+    );
+    expect(JSON.stringify(mockReportError.mock.calls)).not.toContain('SYNTHETIC_PRIVATE');
+  });
+});
+
+/**
+ * P14.2: THE ACCEPTED ROSTER RIDES THE PRIVATE OBSERVATION, NEVER THE MONEY.
+ * The door returns `accepted_roster` on its success receipt. Only a captured
+ * capsule bound to this exact hand reaches observeCompletedHand; every other
+ * shape observes without one, and none of them changes what logHandHistory
+ * returns or makes it throw.
+ */
+describe('logHandHistory - accepted actor roster from the settlement door', () => {
+  const TABLE = '11111111-1111-1111-1111-111111111111';
+  const PAYLOAD_HASH = 'e'.repeat(64);
+  const horse = '20000000-0000-4000-8000-000000000001';
+  const human = '20000000-0000-4000-8000-000000000002';
+  const capsule = (handNumber: number) => ({
+    version: 1,
+    basis: 'profiles_read_in_acceptance_transaction',
+    tableId: TABLE,
+    handId: historyId,
+    handNumber,
+    capturedAt: '2026-10-06T22:00:00.123456Z',
+    actors: [
+      {
+        userId: horse,
+        seat: 2,
+        seatId: '30000000-0000-4000-8000-000000000001',
+        seatJoinedAt: '2026-10-06T21:00:00.654321+00:00',
+        classification: 'horse',
+        status: 'canonical_boolean',
+      },
+      {
+        userId: human,
+        seat: 1,
+        seatId: '30000000-0000-4000-8000-000000000002',
+        seatJoinedAt: '2026-10-06T21:30:00+00:00',
+        classification: 'human',
+        status: 'canonical_boolean',
+      },
+    ],
+  });
+  const field = (handNumber: number, change: Record<string, unknown> = {}) => ({
+    version: 1,
+    status: 'captured',
+    reasons: [],
+    payloadDigest: PAYLOAD_HASH,
+    producerVersion: 'accepted_hand_roster_v1',
+    roster: capsule(handNumber),
+    ...change,
+  });
+  async function commitWith(acceptedRoster: unknown, handNumber: number, extra = {}) {
+    const input = obligationsParams(handNumber);
+    const receipt = {
+      success: true,
+      atomic_hand_commit: true,
+      history_id: historyId,
+      replay: false,
+      post_commit_obligations: true,
+      post_commit_payload_hash: PAYLOAD_HASH,
+      ...extra,
+      ...(acceptedRoster === undefined ? {} : { accepted_roster: acceptedRoster }),
+    };
+    atomicRpcResults = [{ data: receipt, error: null }];
+    const result = await logHandHistory(input);
+    return { input, result, receipt };
+  }
+  const expectUnchangedSettlement = (
+    result: Awaited<ReturnType<typeof logHandHistory>>,
+    receipt: Record<string, unknown>
+  ) => {
+    expect(result).toEqual({
+      handId: historyId,
+      settlementCommitted: true,
+      stackResult: {
+        ...receipt,
+        submission_id: historyId,
+        submission_hash: 'b'.repeat(64),
+        snapshot_completed: true,
+      },
+    });
+    expect(rpcCalls).toHaveLength(1);
+    expect(mockObserveCompletedHand).toHaveBeenCalledTimes(1);
+  };
+
+  it('attaches a captured capsule as the private transport readReturnedRosterTransport accepts', async () => {
+    const { readReturnedRosterTransport, digest } =
+      await import('../horseAcceptedRoster/schema.js');
+    const n = GLOBAL_HAND + 950;
+    const { result, receipt } = await commitWith(field(n), n);
+    expectUnchangedSettlement(result, receipt);
+    const observed = mockObserveCompletedHand.mock.calls[0]![0] as CompletedHandObservation;
+    const transport = observed.acceptedActorRoster!;
+    expect(readReturnedRosterTransport(transport)).toEqual(transport);
+    expect(transport.payloadDigest).toBe(PAYLOAD_HASH);
+    expect(transport.rosterDigest).toBe(digest(capsule(n)));
+    // A silent horse is in the census although it has no action in the hand.
+    expect(transport.roster.actors.map((a) => [a.userId, a.classification])).toEqual([
+      [horse, 'horse'],
+      [human, 'human'],
+    ]);
+    expect(mockReportError).not.toHaveBeenCalled();
+    // The settlement request itself never carries a roster.
+    expect(JSON.stringify(retentionCalls)).not.toContain('accepted_actor_roster');
+  });
+
+  it.each([
+    [
+      'unavailable',
+      field(1, { status: 'unavailable', roster: null, reasons: ['seat_identity_unavailable'] }),
+    ],
+    [
+      'legacy_missing',
+      field(1, { status: 'legacy_missing', roster: null, payloadDigest: PAYLOAD_HASH }),
+    ],
+    ['absent (older door)', undefined],
+  ])('observes without a roster and without a report when the door says %s', async (_n, value) => {
+    const n = GLOBAL_HAND + 951;
+    const { result, receipt } = await commitWith(value, n);
+    expectUnchangedSettlement(result, receipt);
+    expect(mockObserveCompletedHand.mock.calls[0]![0]).not.toHaveProperty('acceptedActorRoster');
+    expect(mockReportError).not.toHaveBeenCalled();
+  });
+
+  const throwing = new Proxy(
+    {},
+    {
+      ownKeys() {
+        throw new Error('SYNTHETIC_PRIVATE unreadable');
+      },
+    }
+  );
+  it.each([
+    [
+      'another hand number',
+      (n: number) => field(n, { roster: capsule(n + 1) }),
+      'accepted_roster_binding_mismatch',
+    ],
+    [
+      'another history id',
+      (n: number) => field(n, { roster: { ...capsule(n), handId: horse } }),
+      'accepted_roster_binding_mismatch',
+    ],
+    [
+      'a payload digest the receipt does not carry',
+      (n: number) => field(n, { payloadDigest: 'f'.repeat(64) }),
+      'accepted_roster_payload_digest_mismatch',
+    ],
+    [
+      'an unsorted actor census',
+      (n: number) => field(n, { roster: { ...capsule(n), actors: capsule(n).actors.reverse() } }),
+      'accepted_roster_capsule_invalid',
+    ],
+    [
+      'a caller-style is_horse field',
+      (n: number) => field(n, { is_horse: true }),
+      'accepted_roster_shape_invalid',
+    ],
+    [
+      'a roster beside unavailable',
+      (n: number) => field(n, { status: 'unavailable' }),
+      'accepted_roster_unexpected_roster',
+    ],
+    [
+      'an unknown producer',
+      (n: number) => field(n, { producerVersion: 'caller' }),
+      'accepted_roster_producer_invalid',
+    ],
+    ['an unreadable value', () => throwing, 'accepted_roster_unreadable'],
+  ])('reports and observes without a roster for %s', async (_n, build, reason) => {
+    const n = GLOBAL_HAND + 952;
+    const { result, receipt } = await commitWith(build(n), n);
+    expectUnchangedSettlement(result, receipt);
+    expect(mockObserveCompletedHand.mock.calls[0]![0]).not.toHaveProperty('acceptedActorRoster');
+    expect(mockReportError).toHaveBeenCalledWith(
+      new Error(reason),
+      'HandHistory.accepted_roster_unusable',
+      { tableId: TABLE, handNumber: n }
+    );
+    expect(JSON.stringify(mockReportError.mock.calls)).not.toContain(horse);
+  });
+
+  it('never reads a roster off a refused or rolled-back receipt', async () => {
+    atomicRpcResults = [
+      {
+        data: { success: false, reason: 'payload_mismatch', accepted_roster: field(1) },
+        error: null,
+      },
+    ];
+    await expect(logHandHistory(obligationsParams(GLOBAL_HAND + 953))).rejects.toThrow(
+      /payload_mismatch/
+    );
+    expect(mockObserveCompletedHand).not.toHaveBeenCalled();
   });
 });
 
@@ -1409,10 +1609,11 @@ describe('a lapsed cash proof retains its finished hand before refusing', () => 
     expect(retentionCalls).toHaveLength(2);
     // Same request apart from the wall-clock stamps of two separate calls.
     const unstamped = (request: Record<string, unknown>) => {
-      const { started_at: _s, ended_at: _e, ...row } = request.p_hand_row as Record<
-        string,
-        unknown
-      >;
+      const {
+        started_at: _s,
+        ended_at: _e,
+        ...row
+      } = request.p_hand_row as Record<string, unknown>;
       return { ...request, p_hand_row: row };
     };
     expect(unstamped(retentionCalls[0])).toEqual(unstamped(retentionCalls[1]));
@@ -1450,7 +1651,9 @@ describe('a lapsed cash proof retains its finished hand before refusing', () => 
         { data: null, error: { message: 'upstream connect error' } },
       ];
       const pending = logHandHistory(lapsedParams(GLOBAL_HAND + 703)).catch((e: Error) => e);
-      await vi.advanceTimersByTimeAsync(HAND_COMMIT_RETRY_DELAYS_MS[0] + HAND_COMMIT_RETRY_DELAYS_MS[1]);
+      await vi.advanceTimersByTimeAsync(
+        HAND_COMMIT_RETRY_DELAYS_MS[0] + HAND_COMMIT_RETRY_DELAYS_MS[1]
+      );
       const refusal = await pending;
       expect(String(refusal)).toMatch(/original retained for the successor/);
       expect(retentionCalls).toHaveLength(3);
@@ -1498,7 +1701,9 @@ describe('a lapsed cash proof retains its finished hand before refusing', () => 
       await vi.advanceTimersByTimeAsync(0);
       live = false;
       await vi.advanceTimersByTimeAsync(HAND_COMMIT_RETRY_DELAYS_MS[0]);
-      expect(String(await pending)).toMatch(/^Error: atomic hand commit refused \(lease_proof_expired\)$/);
+      expect(String(await pending)).toMatch(
+        /^Error: atomic hand commit refused \(lease_proof_expired\)$/
+      );
       expect(retentionCalls).toHaveLength(1);
       expect(rpcCalls).toHaveLength(1);
     } finally {

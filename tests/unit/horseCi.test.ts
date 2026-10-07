@@ -244,10 +244,13 @@ describe('Horse commitment audit remains in the existing accounting PostgreSQL g
     'scripts/ci/probes/horse-commitment-audit/roster-identity.sql',
     'scripts/ci/probes/horse-commitment-audit/reader-auth.sql',
     'scripts/ci/probes/horse-commitment-audit/reader-page.sql',
+    'scripts/ci/probes/horse-commitment-audit/selection-setup.sql',
+    'scripts/ci/probes/horse-commitment-audit/selection-receipts.sql',
     'scripts/ci/probes/horse-commitment-audit/README.md',
     'supabase/migrations/20260914161209_horse_committed_pot_daily_audit.sql',
     'supabase/migrations/20260917051350_horse_commitment_reviews_preserve_format_and_canonical_rosters.sql',
     'supabase/migrations/20260917052511_horse_private_commitment_review_reader.sql',
+    'supabase/migrations/20261007075304_horse_commitment_selection_receipts.sql',
     'tests/unit/horseCi.test.ts',
   ])('admits the parent job and routing tests for a sole dependency edit: %s', (path) => {
     const flags = classifyChangedPaths([path]);

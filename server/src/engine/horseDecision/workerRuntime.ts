@@ -37,6 +37,7 @@ import {
 import { HorseLogic } from '../HorseLogic.js';
 import { HorseMind } from '../HorseMind.js';
 import { completedHandActionsForMind } from './completedHandActions.js';
+import { readReturnedRosterTransport } from '../../services/horseAcceptedRoster/schema.js';
 import {
   horseMindHandFromDecision,
   horseMindHandFromCompletion,
@@ -395,6 +396,23 @@ function deepFreeze<T>(value: T): T {
     Object.freeze(value);
   }
   return value;
+}
+
+/** P14.2 worker boundary: a valid, bounded transport whose capsule names this
+ * observation's table, hand number and committed hand id. Never throws. */
+export function acceptedRosterBindsToHand(request: ObserveCompletedHandRequest): boolean {
+  try {
+    const transport = readReturnedRosterTransport(request.acceptedActorRoster);
+    if (!transport || typeof request.committedHandId !== 'string') return false;
+    const roster = transport.roster;
+    return (
+      request.handKey === `${roster.tableId}:${roster.handNumber}` &&
+      request.generation === roster.handNumber &&
+      request.committedHandId.toLowerCase() === roster.handId
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -2182,7 +2200,18 @@ export class HorseDecisionWorkerRuntime {
     return decision.policyFallback === 'brain_exception' ? 'exception' : 'success';
   }
 
-  private executeObservation(request: ObserveCompletedHandRequest): void {
+  private executeObservation(received: ObserveCompletedHandRequest): void {
+    // P14.2: an accepted roster crosses the worker boundary only when it is the
+    // exact private transport for THIS hand. Anything else is dropped (the
+    // explicit unknown) and counted; the hand is still observed and journaled.
+    let request = received;
+    if (Object.hasOwn(received, 'acceptedActorRoster')) {
+      if (!acceptedRosterBindsToHand(received)) {
+        const { acceptedActorRoster: _refused, ...rest } = received;
+        request = rest;
+        this.deps.noteFeature('phase14_accepted_roster_refused');
+      }
+    }
     try {
       this.deps.journalAcceptedHand?.(request);
     } catch {

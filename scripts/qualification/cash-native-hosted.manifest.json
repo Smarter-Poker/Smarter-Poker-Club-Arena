@@ -24,8 +24,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 191463,
-      "sha256": "e0e545fb9a0426b0645e42ff1bfd1c6fd10fb1816215686627e4b69f4b0a1d09"
+      "bytes": 192254,
+      "sha256": "e0171e934b248b26f856ed94c214c57de126734dbf32f9704fd9a204ee12a8e2"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1724,6 +1724,13 @@
     "previousWorkflowPin": {
       "bytes": 190502,
       "sha256": "16805dc556f2fa14bc8884f0e880805c19d78c24f1f1481727d8b22153ff0e8f"
+    }
+  },
+  "accepted_hand_roster_enforcement_20261007": {
+    "reason": "Adds the P14.2 accepted-roster native qualification (scripts/ci/test-accepted-hand-roster.py) to existing accounting shard 3 beside the hand-submission step. All existing cash financial SQL, capture and test assertions unchanged; this binding is source integrity only.",
+    "previousWorkflowPin": {
+      "bytes": 191463,
+      "sha256": "e0e545fb9a0426b0645e42ff1bfd1c6fd10fb1816215686627e4b69f4b0a1d09"
     }
   }
 }

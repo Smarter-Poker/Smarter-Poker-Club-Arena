@@ -2,14 +2,21 @@ import { isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DAILY_LIMITS } from '../services/horseDailyCorrectiveReview/contract.js';
 import { parseDailyManifest } from '../services/horseDailyCorrectiveReview/validation.js';
-import { createDailyReviewSource } from '../services/horseDailyCorrectiveReview/source.js';
+import {
+  createDailyReviewSource,
+  createDailySelectionSource,
+} from '../services/horseDailyCorrectiveReview/source.js';
 import {
   reviewDailySelection,
   type DailyTrust,
 } from '../services/horseDailyCorrectiveReview/batch.js';
-import type { DailySource } from '../services/horseDailyCorrectiveReview/contract.js';
+import type {
+  DailySelectionSource,
+  DailySource,
+} from '../services/horseDailyCorrectiveReview/contract.js';
 export interface DailyExecutionDependencies {
   source?: DailySource;
+  selectionSource?: DailySelectionSource;
   trust?: DailyTrust;
 }
 /** Explicit local private batch. No default path, dotenv load or client on import.
@@ -32,6 +39,7 @@ export async function runHorseDailyCorrectiveReview(
     SUPABASE_SERVICE_ROLE_KEY: environment.SUPABASE_SERVICE_ROLE_KEY,
   });
   const suppliedSource = injected.source;
+  const suppliedSelection = injected.selectionSource;
   const suppliedTrust = injected.trust;
   const trust = Object.freeze(
     suppliedTrust
@@ -55,7 +63,8 @@ export async function runHorseDailyCorrectiveReview(
       readPrivateCorrectiveJson(manifestPath, DAILY_LIMITS.manifestBytes)
     );
     const source = suppliedSource ?? createDailyReviewSource(capturedEnvironment);
-    const result = await reviewDailySelection(manifest, source, trust);
+    const selection = suppliedSelection ?? createDailySelectionSource(capturedEnvironment);
+    const result = await reviewDailySelection(manifest, source, trust, selection);
     writePrivateCorrectiveResult(outputPath, JSON.stringify(result) + '\n');
     return {
       code: result.status === 'reviewed_selection' ? 0 : 2,
@@ -65,6 +74,7 @@ export async function runHorseDailyCorrectiveReview(
           scope: result.scope,
           pages: result.pages,
           rows: result.rows.length,
+          sourceGaps: result.sourceGaps.length,
           outputWritten: true,
           fullWindow: false,
           sourcePopulationVerified: false,

@@ -36,11 +36,11 @@ test('native schema restore compares primary and dedicated replica before and af
         (process.env.CI === 'true' && parent === process.env.RUNNER_TEMP))
   );
   const descriptor = {
-    identifier: 'abcdefghijklmnopqrst',
+    identifier: 'kuklfnapbkmacvwxktbh-rr-us-west-2-feulx',
     database_type: 'READ_REPLICA',
     db_host: 'aws-0-us-west-2.pooler.supabase.com',
     db_port: 6543,
-    db_user: 'postgres.abcdefghijklmnopqrst',
+    db_user: 'postgres.kuklfnapbkmacvwxktbh-rr-us-west-2-feulx',
     db_name: 'postgres',
     pool_mode: 'transaction',
   };

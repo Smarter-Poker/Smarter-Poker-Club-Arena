@@ -10,7 +10,7 @@ import {
   verify,
 } from './leaderboard-schema-replica.mjs';
 
-const identifier = 'abcdefghijklmnopqrst';
+const identifier = `${primaryRef}-rr-us-west-2-feulx`;
 const input = {
   identifier,
   database_type: 'READ_REPLICA',
@@ -64,6 +64,13 @@ test('descriptor refuses primary identity, guessed or unrelated hosts and identi
     { identifier: primaryRef },
     { database_type: 'PRIMARY' },
     { identifier: 'bad' },
+    { identifier: 'abcdefghijklmnopqrst' },
+    { identifier: 'abcdefghijklmnopqrst-rr-us-west-2-feulx' },
+    { identifier: `${primaryRef}-rr-us-east-1-feulx` },
+    { identifier: `${primaryRef}-rr-us-west-2-FEULX` },
+    { identifier: `${primaryRef}-rr-us-west-2-feul` },
+    { identifier: `${primaryRef}-rr-us-west-2-feulxx` },
+    { identifier: `${primaryRef}-rr-us-west-2-feulx\n` },
     { db_host: 'evil.supabase.com' },
     { db_host: `db.${primaryRef}.supabase.co` },
     { db_user: 'postgres.other' },

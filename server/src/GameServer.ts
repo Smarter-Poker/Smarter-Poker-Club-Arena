@@ -8398,6 +8398,13 @@ export class GameServer {
             this.noteDecidedEventHeld(String(t.id), String(t.name), playingCount, decidedAction);
             continue;
           }
+          /* A REFUSED FINISH IS NOT A STALLED ONE (2026-10-07). This recovery
+             is for a finish that never ran. A manager whose finish the
+             database refused already holds its own retry at the refusal's
+             delay; waking it here (delay zero, earliest wake wins) re-asked
+             four Spins every ~10.6 s for a day. Skip it before the stagger,
+             so it costs this pass nothing. See awaitsItsOwnFinishRetry. */
+          if (this.tournamentEngines.get(String(t.id))?.awaitsItsOwnFinishRetry?.()) continue;
           /* The per-tournament reads were this sweep's only brake: no two
              recoveries could land closer than one round trip apart. Keep that
              spacing, or a board of decided tournaments becomes one burst of
@@ -10378,6 +10385,9 @@ export class GameServer {
 
     for (const t of candidates) {
       const id = String(t.id);
+      // Its own refused finish is already due again at the refusal's delay;
+      // three reads and a zero-delay wake here would only pull it forward.
+      if (this.tournamentEngines.get(id)?.awaitsItsOwnFinishRetry?.()) continue;
       try {
         const { data: tables, error: tablesErr } = await supabase
           .from('tables')

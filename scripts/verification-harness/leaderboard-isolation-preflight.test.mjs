@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
@@ -73,9 +75,62 @@ test('atomic archive validation preserves quoted routine bodies and refuses tran
   );
   assert.match(
     source,
-    /--single-transaction[\s\S]*-f \/tmp\/event-owners-elevate.sql -f \/tmp\/remaining.sql -f \/tmp\/event-owners-restore.sql/
+    /cat "\$scratch\/event-owners-elevate.sql" "\$scratch\/remaining.sql" "\$scratch\/event-owners-restore.sql"[\s\S]*--single-transaction[\s\S]*--file=-/
   );
   assert.match(source, /isolated catalog differs from current source/);
+});
+test('actual restore input prepares all private files before one transactional client and propagates failures', () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'restore-stream-'));
+  const pipeline = source.slice(
+    source.indexOf('cat "$scratch/event-owners-elevate.sql"'),
+    source.indexOf(
+      'docker exec -i "$container" psql -h /tmp -XAtq',
+      source.indexOf('cat "$scratch/event-owners-elevate.sql"')
+    )
+  );
+  assert.ok(pipeline.includes('--single-transaction') && pipeline.includes('--file=-'));
+  try {
+    for (const [name, content] of [
+      ['event-owners-elevate.sql', 'ELEVATE\n'],
+      ['remaining.sql', 'ARCHIVE\n'],
+      ['event-owners-restore.sql', 'RESTORE\n'],
+    ])
+      writeFileSync(join(scratch, name), content, { mode: 0o600, flag: 'wx' });
+    for (const status of [0, 7]) {
+      const result = spawnSync(
+        'bash',
+        [
+          '-c',
+          `set -euo pipefail; scratch=$1; container=owned; bootstrap=qualification; fixture_status=$2; failure() { exit 1; }; docker() { [[ "$1" == exec && "$2" == -i && "$*" == *--single-transaction* && "$*" == *--file=-* ]] || return 9; cat; return "$fixture_status"; }; destination_failure() { exit "$3"; }; ${pipeline}`,
+          'fixture',
+          scratch,
+          String(status),
+        ],
+        { encoding: 'utf8' }
+      );
+      assert.equal(result.status, status);
+      assert.equal(
+        readFileSync(join(scratch, 'schema-restore.log'), 'utf8'),
+        'ELEVATE\nARCHIVE\nRESTORE\n'
+      );
+      assert.equal(result.stderr, '');
+    }
+    rmSync(join(scratch, 'remaining.sql'));
+    const result = spawnSync(
+      'bash',
+      [
+        '-c',
+        `set -euo pipefail; scratch=$1; container=owned; bootstrap=qualification; failure() { exit 1; }; docker() { echo client-was-invoked >&2; cat; }; destination_failure() { exit "$3"; }; ${pipeline}`,
+        'fixture',
+        scratch,
+      ],
+      { encoding: 'utf8' }
+    );
+    assert.notEqual(result.status, 0, 'A missing private archive must fail before any client');
+    assert.doesNotMatch(result.stderr, /client-was-invoked/);
+  } finally {
+    rmSync(scratch, { recursive: true });
+  }
 });
 test('initdb public namespace is retained for extension installation', () => {
   const command = source.match(/-c '([^']+)' >"\$scratch\/empty-schema.log"/)?.[1];

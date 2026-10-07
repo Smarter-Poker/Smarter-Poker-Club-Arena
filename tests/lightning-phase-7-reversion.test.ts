@@ -18,12 +18,17 @@ import { declaredProofs } from '../scripts/ci/check-migrations-are-live.mjs';
 
 const ROOT = path.resolve(__dirname, '..');
 const FILE = '20261001222856_lightning_phase_7_the_pool_reverts_to_must_move_and_the_tick.sql';
+const REM_FILE = '20261007222717_lightning_phase_7_remediation_the_reversion_review_findings_.sql';
 const MIGRATION =
   process.env.LIGHTNING_P7_MIGRATION ?? path.join(ROOT, 'supabase', 'migrations', FILE);
+const REM_MIGRATION =
+  process.env.LIGHTNING_P7R_MIGRATION ?? path.join(ROOT, 'supabase', 'migrations', REM_FILE);
 const SQL = fs.readFileSync(MIGRATION, 'utf8');
+const REM = fs.readFileSync(REM_MIGRATION, 'utf8');
 const read = (...p: string[]) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
 const HARNESS = read('scripts', 'dev', 'test-lightning-phase7-reversion.sh');
 const CHANGELOG = read('docs', 'changelog', '2026-10-02-lightning-phase-7-reversion.md');
+const REMLOG = read('docs', 'changelog', '2026-10-07-lightning-phase-7-remediation.md');
 const CI = read('.github', 'workflows', 'ci.yml');
 const FRAGMENT = JSON.parse(
   read('scripts', 'ci', 'schema-manifest.d', 'lightning-phase7-reversion.json')
@@ -357,6 +362,240 @@ describe('the proof around it', () => {
       expect(CHANGELOG, p).toContain(p);
     expect(CHANGELOG).not.toContain('—');
     for (const h of CHANGELOG.match(/^#{1,3} .+$/gm) ?? []) {
+      for (const w of h.replace(/^#+ /, '').split(/\s+/)) {
+        if (
+          /^[a-z]/.test(w) &&
+          ![
+            'a',
+            'an',
+            'and',
+            'the',
+            'of',
+            'to',
+            'in',
+            'on',
+            'or',
+            'by',
+            'at',
+            'for',
+            'is',
+            'its',
+          ].includes(w)
+        )
+          throw new Error(`heading word not in title case: ${w} in ${h}`);
+      }
+    }
+  });
+});
+
+/**
+ * THE REMEDIATION (20261007222717): a static reading of the migration that
+ * closes the Phase 7 review findings. The harness proves each fix against a
+ * running estate; this proves the transaction shape, that every change is an
+ * asserted substitution, the pre-lock ordering of the polls, and Law 10.5.
+ */
+const REM_CODE = REM.split('\n')
+  .map((l) => l.replace(/--.*$/, ''))
+  .join('\n');
+
+function remSub(tag: string): string {
+  const start = REM.indexOf(`DO $${tag}$`);
+  expect(start, tag).toBeGreaterThan(0);
+  return REM.slice(start, REM.indexOf(`$${tag}$;`, start + tag.length + 4));
+}
+const REM_SUBS = [
+  'sub_unfreeze',
+  'sub_reap_orphan',
+  'sub_begin_on',
+  'sub_begin_off',
+  'sub_commit_mm',
+  'sub_commit_l',
+  'sub_release',
+  'sub_config',
+  'sub_drive',
+];
+
+describe('the remediation transaction', () => {
+  it('is one BEGIN and one COMMIT, with a lock wait set first', () => {
+    expect(count(REM_CODE, /^BEGIN;$/gm)).toBe(1);
+    expect(count(REM_CODE, /^COMMIT;$/gm)).toBe(1);
+    expect(REM_CODE.trim().endsWith('COMMIT;')).toBe(true);
+    expect(REM_CODE).toMatch(/^BEGIN;\s+SET LOCAL lock_timeout = '2s';/m);
+  });
+  it('adds exactly one nullable column and otherwise creates and drops nothing', () => {
+    expect(count(REM_CODE, /\bALTER TABLE\b/g)).toBe(1);
+    expect(REM_CODE).toMatch(
+      /ALTER TABLE public\.cash_games\s+ADD COLUMN IF NOT EXISTS lightning_off_condition_since timestamptz;/
+    );
+    expect(REM_CODE).not.toMatch(/\bCREATE TABLE\b|\bDROP TABLE\b/);
+    expect(REM_CODE).not.toMatch(/CREATE (CONSTRAINT )?TRIGGER/);
+    expect(REM_CODE).not.toMatch(/DROP FUNCTION/);
+    expect(REM_CODE).not.toMatch(/\bLOCK TABLE\b/);
+    expect(REM_CODE).not.toMatch(/\b(GRANT|REVOKE)\b/);
+    expect(REM_CODE).not.toMatch(/CREATE OR REPLACE FUNCTION/);
+  });
+});
+
+describe('every remediation change is an asserted substitution', () => {
+  it.each(REM_SUBS)(
+    '%s reads production, counts each anchor, refuses a blind replace and reads back',
+    (tag) => {
+      const s = remSub(tag);
+      expect(s).toMatch(/v_src := pg_get_functiondef\(v_sig::regprocedure\);/);
+      expect(s).toMatch(
+        /IF v_n IS DISTINCT FROM c\[k\] THEN\s+RAISE EXCEPTION '% carries anchor % % time\(s\) rather than %; refusing to substitute blind'/
+      );
+      expect(s).toMatch(/EXECUTE v_new;/);
+      expect(count(s, /v_src := pg_get_functiondef/g)).toBe(2);
+      expect(s).toMatch(/IF position\('/);
+    }
+  );
+});
+
+describe('finding 1: the orphaned conversion', () => {
+  it('the unfreeze aborts any pending conversion and clears the engine acknowledgement', () => {
+    const s = remSub('sub_unfreeze');
+    expect(s).toMatch(
+      /SET status = 'aborted', abort_reason = 'cluster_unfrozen', closed_at = clock_timestamp\(\)\s+WHERE cluster_id = g\.id AND status = 'pending';/
+    );
+    expect(s).toMatch(
+      /SET dealing_halted_at = NULL, dealing_halted_reason = NULL, dealing_halt_observed_at = NULL/
+    );
+    expect(s).toMatch(/'conversions_aborted', v_convs/);
+  });
+  it('the reaper aborts an orphan as orphaned_by_<mode> and keeps the pending_off reap', () => {
+    const s = remSub('sub_reap_orphan');
+    expect(s).toMatch(
+      /IF \(c\.to_mode = 'must_move' AND c\.cluster_mode IS DISTINCT FROM 'pending_off'\)\s+OR \(c\.to_mode = 'lightning' AND c\.cluster_mode IS DISTINCT FROM 'pending_on'\) THEN/
+    );
+    expect(s).toMatch(/'orphaned_by_' \|\| coalesce\(c\.cluster_mode, 'unknown'\)/);
+    expect(s).toMatch(/'lightning_conversion_orphan_reaped'/);
+    expect(s).toMatch(/'not_a_pending_on_lightning_conversion'/);
+  });
+  it('both begins answer conversion_already_open instead of dying on the unique index', () => {
+    for (const tag of ['sub_begin_on', 'sub_begin_off']) {
+      const s = remSub(tag);
+      expect(s, tag).toMatch(/WHERE cluster_id = g\.id AND status = 'pending';/);
+      expect(s, tag).toMatch(/'reason', 'conversion_already_open'/);
+      expect(s, tag).toMatch(/'ok', false, 'pending', true/);
+    }
+  });
+});
+
+describe('finding 2: the digest is live rows under locks', () => {
+  it('takes FOR SHARE on seats, open sessions and the ledger before the first digest', () => {
+    const s = remSub('sub_commit_mm');
+    expect(s).toMatch(
+      /PERFORM 1 FROM public\.table_seats ts\s+WHERE ts\.left_at IS NULL\s+AND ts\.table_id IN \(SELECT tb\.id FROM public\.tables tb WHERE tb\.cluster_id = g\.id\)\s+ORDER BY ts\.id\s+FOR SHARE;/
+    );
+    expect(s).toMatch(
+      /PERFORM 1 FROM public\.cash_player_session s\s+WHERE s\.cluster_id = g\.id AND s\.closed_at IS NULL\s+ORDER BY s\.id\s+FOR SHARE;/
+    );
+    expect(s).toMatch(
+      /PERFORM 1 FROM public\.lightning_blind_ledger bl\s+WHERE bl\.cluster_id = g\.id\s+ORDER BY bl\.player_id\s+FOR SHARE;/
+    );
+  });
+  it('both digests cover exactly the live rows', () => {
+    const s = remSub('sub_commit_mm');
+    expect(count(s, /WHERE tb\.cluster_id = g\.id AND ts\.left_at IS NULL/g)).toBe(2);
+    expect(
+      count(
+        s,
+        /'cps:' \|\| to_jsonb\(s\)::text FROM public\.cash_player_session s\s+WHERE s\.cluster_id = g\.id AND s\.closed_at IS NULL/g
+      )
+    ).toBe(2);
+  });
+});
+
+describe('finding 3: the void hand and the dwell', () => {
+  it('the release trigger reverses exactly the formation increments, floored at zero, for a never-dealt abandon', () => {
+    const s = remSub('sub_release');
+    expect(s).toMatch(
+      /IF NEW\.state = 'abandoned' AND NEW\.started_at IS NULL AND NEW\.hand_id IS NOT NULL THEN/
+    );
+    for (const col of ['bb_count', 'sb_count', 'btn_count', 'utg_count', 'hj_count', 'co_count'])
+      expect(s, col).toMatch(new RegExp(`${col}\\s+= GREATEST\\(bl\\.${col}`));
+    expect(s).not.toMatch(/missed_bb_debt\s*=|missed_sb_debt\s*=|bb_owed\s*=|sb_owed\s*=/);
+  });
+  it('the population trigger dwells on a durable first sighting, configured as pending_off_dwell_ms', () => {
+    const s = remSub('sub_begin_off');
+    expect(s).toMatch(/'pending_off_dwell_ms', 10000, 0, 3600000, true/);
+    expect(s).toMatch(/IF v_why = 'population_at_or_below_off_threshold' THEN/);
+    expect(s).toMatch(/IF v_dwell > 0 AND g\.lightning_off_condition_since IS NULL THEN/);
+    expect(s).toMatch(/'reason', 'off_condition_dwell'/);
+    expect(s).toMatch(/SET cluster_mode = 'pending_off', lightning_off_condition_since = NULL/);
+    expect(remSub('sub_config')).toMatch(/'pending_off_dwell_ms', 10000, 0, 3600000, true/);
+    expect(remSub('sub_drive')).toMatch(
+      /UPDATE public\.cash_games cg SET lightning_off_condition_since = NULL\s+WHERE cg\.id = g\.id AND cg\.lightning_off_condition_since IS NOT NULL;/
+    );
+  });
+});
+
+describe('findings 4 and 5: the halts of a disabled game, and the pre-lock polls', () => {
+  it('a disabled game keeps its halts and the result says so', () => {
+    const s = remSub('sub_commit_mm');
+    expect(s).toMatch(/IF g\.enabled IS NOT DISTINCT FROM true THEN\s+UPDATE public\.tables tb/);
+    expect(count(s, /'halts_kept_game_disabled', g\.enabled IS DISTINCT FROM true/g)).toBe(2);
+  });
+  it('each commit polls its cheap in-flight count before taking the Cluster row', () => {
+    const mm = remSub('sub_commit_mm');
+    const b = mm.indexOf('$b$');
+    expect(mm.indexOf("'instances_in_flight'", b)).toBeLessThan(mm.indexOf('FOR UPDATE', b));
+    const cl = remSub('sub_commit_l');
+    const cb = cl.indexOf('$b$');
+    expect(cl.indexOf("'hands_in_flight'", cb)).toBeLessThan(cl.indexOf('FOR UPDATE', cb));
+    expect(cl).toMatch(/h\.is_complete = false/);
+    expect(cl).toMatch(/interval '6 hours'/);
+  });
+});
+
+describe('law 10.5 and the proof around the remediation', () => {
+  it('no remediation body reads is_horse or horse_id', () => {
+    expect(REM_CODE).not.toMatch(/is_horse|horse_id/);
+  });
+  it('declares ten balanced live proofs', () => {
+    const proofs: string[] = declaredProofs(REM);
+    expect(proofs.length).toBe(10);
+    for (const p of proofs) expect(count(p, /\(/g), p).toBe(count(p, /\)/g));
+  });
+  it('the harness applies the remediation twice, grounds its defects first and reports sections 17 to 26', () => {
+    expect(HARNESS).toContain(REM_FILE);
+    expect(HARNESS).toContain('LIGHTNING_P7R_MIGRATION');
+    expect(count(HARNESS, /-f "\$rem"/g)).toBe(2);
+    for (const n of ['17', '18', '19', '20', '21', '22', '23', '24', '25', '26'])
+      expect(HARNESS, n).toMatch(new RegExp(`\\\\echo '  ok  ${n} `));
+    const ground = HARNESS.indexOf('rem-ground.sql');
+    const apply = HARNESS.indexOf('-f "$rem"');
+    expect(ground).toBeGreaterThan(0);
+    expect(HARNESS.indexOf('FAIL 17')).toBeLessThan(HARNESS.indexOf('FAIL 18'));
+    expect(apply).toBeGreaterThan(0);
+  });
+  it('the schema manifest fragment promises the one new column and no function', () => {
+    const fragment = JSON.parse(
+      read('scripts', 'ci', 'schema-manifest.d', 'lightning-phase7-remediation.json')
+    );
+    expect(fragment.functions).toEqual([]);
+    expect(fragment.tables).toEqual([]);
+    expect(fragment.columns).toEqual({ cash_games: ['lightning_off_condition_since'] });
+  });
+  it('the remediation changelog names the file and every touched door, title case, no em dash', () => {
+    for (const p of [
+      REM_FILE,
+      'fn_cash_cluster_unfreeze',
+      'fn_cash_cluster_reap_stuck_conversions',
+      'fn_cash_cluster_begin_pending_on',
+      'fn_cash_cluster_begin_pending_off',
+      'fn_cash_cluster_commit_must_move',
+      'fn_cash_cluster_commit_lightning',
+      'fn_cash_cluster_lightning_drive',
+      'fn_lightning_instance_releases_its_reservations',
+      'fn_lightning_config',
+      'pending_off_dwell_ms',
+      'lightning_off_condition_since',
+    ])
+      expect(REMLOG, p).toContain(p);
+    expect(REMLOG).not.toContain('—');
+    for (const h of REMLOG.match(/^#{1,3} .+$/gm) ?? []) {
       for (const w of h.replace(/^#+ /, '').split(/\s+/)) {
         if (
           /^[a-z]/.test(w) &&

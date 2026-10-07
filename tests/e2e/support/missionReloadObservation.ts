@@ -14,8 +14,17 @@ export async function reloadMissionPageWithEvidence(page: Page, attach: AttachOb
     if (/\/auth(?:\/|$)/.test(url.pathname)) return 'auth';
     return 'other';
   };
-  const isDocument = (request: Request) =>
-    request.isNavigationRequest() && request.frame() === page.mainFrame();
+  const isDocument = (request: Request) => {
+    if (!request.isNavigationRequest()) return false;
+    try {
+      return request.frame() === page.mainFrame();
+    } catch {
+      // Playwright frame() throws for navigation issued before a frame exists.
+      // Metadata unavailability must never replace the original reload error.
+      if (navigation.length < 8) navigation.push({ event: 'frame_unavailable' });
+      return false;
+    }
+  };
   const onResponse = (response: Response) => {
     if (isDocument(response.request()) && navigation.length < 8)
       navigation.push({

@@ -7,3 +7,5 @@ The mission journey failed at its existing reload with ERR_ABORTED after both na
 Focused DOM and failure-boundary regressions enforce duplicate-heading refusal, exact summary selection, original-error preservation, bounded unavailable-document handling and sanitized observations. Protected checks, publication and actual affected browser proof remain separate evidence.
 
 The journey previously collected cleanup errors in finally but asserted them only after it, where an original journey error could skip the assertion. Actual guarded cleanup now finalizes within finally, attaches a bounded sanitized outcome and refuses an unsuccessful cleanup. If both journey and cleanup fail, both original exceptions are retained in an AggregateError. The maintained cleanup owner and its native row/Auth absence checks are unchanged; no duplicate cleanup or financial request is introduced.
+
+Playwright can report a navigation request before its frame exists. The observer records only a fixed frame-unavailable class and does not let that metadata exception replace the original reload failure. The focused regression reproduces this boundary before the correction.

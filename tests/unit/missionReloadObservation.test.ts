@@ -8,14 +8,19 @@ import {
   reloadMissionPageWithEvidence,
 } from '../e2e/support/missionReloadObservation';
 
-function fixture(options: { fails?: boolean; documentFails?: boolean } = {}) {
+function fixture(
+  options: { fails?: boolean; documentFails?: boolean; frameUnavailable?: boolean } = {}
+) {
   const events = new EventEmitter();
   const frame = {};
   const original = new Error('net::ERR_ABORTED; original navigation refusal');
   const expected = 'https://smarter.poker/hub/club-arena/challenges/daily?source=certification';
   const request = {
     isNavigationRequest: () => true,
-    frame: () => frame,
+    frame: () => {
+      if (options.frameUnavailable) throw new Error('Frame was not created');
+      return frame;
+    },
     url: () => expected,
     failure: () => ({ errorText: 'net::ERR_ABORTED private-untrusted-text' }),
   };
@@ -43,6 +48,15 @@ function fixture(options: { fails?: boolean; documentFails?: boolean } = {}) {
 }
 
 describe('failed mission reload evidence', () => {
+  it('never lets navigation-before-frame metadata replace the original abort', async () => {
+    const f = fixture({ fails: true, documentFails: true, frameUnavailable: true });
+    const attach = vi.fn(async (_data: object) => {});
+    await expect(reloadMissionPageWithEvidence(f.page, attach)).rejects.toBe(f.original);
+    expect(attach.mock.calls[0][0]).toMatchObject({ navigation: [{ event: 'frame_unavailable' }] });
+    expect(f.reload).toHaveBeenCalledOnce();
+    expect(f.events.listenerCount('requestfailed')).toBe(0);
+  });
+
   it('leaves successful navigation unchanged without collecting or attaching document evidence', async () => {
     const f = fixture();
     const attach = vi.fn(async (_data: object) => {});

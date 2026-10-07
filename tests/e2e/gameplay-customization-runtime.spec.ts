@@ -7,6 +7,10 @@ import {
   type Page,
   type Route,
 } from '@playwright/test';
+import {
+  observeAppearanceRealtime,
+  projectThemeBucketEvidence,
+} from './support/appearanceRealtimeObservation';
 import { GAMEPLAY_CERTIFICATE_BOARD } from './support/gameplayCertificateBoard';
 import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
@@ -761,6 +765,22 @@ test.describe('production routed gameplay customization', () => {
       const reader = await readerContext.newPage();
       const writerRealtime = observeRealtime(writer, account.id, tableId);
       const readerRealtime = observeRealtime(reader, account.id, tableId);
+      // The legacy booleans include join replies, and player-appearance-sync is
+      // the separate avatar carrier. Retain exact own-row table-art evidence so
+      // a failed repaint names whether the expected field actually arrived.
+      const expectedFirstTableArt = { gameType: 'ALL', fields: { table_id: 'carbon_red' } };
+      const writerTableArtRealtime = observeAppearanceRealtime(
+        writer,
+        account.id,
+        'table-art',
+        expectedFirstTableArt
+      );
+      const readerTableArtRealtime = observeAppearanceRealtime(
+        reader,
+        account.id,
+        'table-art',
+        expectedFirstTableArt
+      );
       await signIn(writer, baseURL, account);
       await signIn(reader, baseURL, account);
 
@@ -779,7 +799,14 @@ test.describe('production routed gameplay customization', () => {
       const readerRoot = reader.locator('.multi-table-page__table-slot--active .table-page');
       captureReconciliationFailure = async () => {
         const reads = await Promise.allSettled([
-          readTheme(environment, account!.id),
+          readServiceRows<Record<string, unknown>>(
+            environment,
+            'user_theme_settings',
+            new URLSearchParams({
+              select: 'game_type,table_id,updated_at',
+              user_id: `eq.${account!.id}`,
+            })
+          ),
           writerRoot.getAttribute('data-felt-theme', { timeout: 5_000 }),
           readerRoot.getAttribute('data-felt-theme', { timeout: 5_000 }),
           readerRoot.getAttribute('data-player-appearance-sync', { timeout: 5_000 }),
@@ -788,7 +815,10 @@ test.describe('production routed gameplay customization', () => {
           const result = reads[index];
           return result.status === 'fulfilled' ? result.value : { outcome: 'unavailable' };
         };
-        const row = reads[0].status === 'fulfilled' ? reads[0].value : null;
+        const nativeRows = value(0);
+        const savedAll = Array.isArray(nativeRows)
+          ? nativeRows.find((row) => row?.game_type === 'ALL')
+          : null;
         await test.info().attach('gameplay-appearance-reconciliation.json', {
           contentType: 'application/json',
           body: Buffer.from(
@@ -796,9 +826,9 @@ test.describe('production routed gameplay customization', () => {
               observedAt: new Date().toISOString(),
               // Fixed safe projection only: never sessions, headers or profiles.
               persistedTheme:
-                row && typeof row === 'object'
+                savedAll && typeof savedAll === 'object'
                   ? Object.fromEntries(
-                      ['game_type', 'table_id', 'updated_at'].map((key) => [key, row[key]])
+                      ['game_type', 'table_id', 'updated_at'].map((key) => [key, savedAll[key]])
                     )
                   : value(0),
               writerFelt: value(1),
@@ -806,6 +836,9 @@ test.describe('production routed gameplay customization', () => {
               readerSync: value(3),
               writerRealtime,
               readerRealtime,
+              writerTableArtRealtime,
+              readerTableArtRealtime,
+              nativeThemeBuckets: projectThemeBucketEvidence(nativeRows, 'carbon_red'),
             })
           ),
         });

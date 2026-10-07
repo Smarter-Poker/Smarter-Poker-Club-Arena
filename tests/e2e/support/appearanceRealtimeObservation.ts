@@ -15,7 +15,7 @@ type PhoenixPayload = {
     }>;
   };
   ids?: unknown[];
-  data?: { schema?: unknown; table?: unknown; type?: unknown; record?: { user_id?: unknown } };
+  data?: { schema?: unknown; table?: unknown; type?: unknown; record?: Record<string, unknown> };
 };
 
 type PhoenixFrame = {
@@ -40,12 +40,27 @@ function decodeFrame(payload: string | Buffer): PhoenixFrame | null {
   }
 }
 
+type TableArtField =
+  | 'theme_id'
+  | 'table_id'
+  | 'button_id'
+  | 'background_id'
+  | 'cards_id'
+  | 'face_deck_id';
+export type ExpectedTableArtChange = {
+  gameType: string;
+  fields: Partial<Record<TableArtField, string>>;
+};
+
 export type AppearanceRealtimeObservationState = {
   subscribed: boolean;
   signalReceived: boolean;
   channelErrors: number;
   socketCloses: number;
   generation: number;
+  ownRowChanges: number;
+  expectedTableArtFields: Partial<Record<TableArtField, boolean>> | null;
+  lastOwnRowMatchesExpected: boolean | null;
 };
 
 /**
@@ -54,7 +69,8 @@ export type AppearanceRealtimeObservationState = {
  */
 export function createAppearanceRealtimeObservation(
   userId: string,
-  carrier: 'profile' | 'table-art' = 'profile'
+  carrier: 'profile' | 'table-art' = 'profile',
+  expected?: ExpectedTableArtChange
 ) {
   const topic =
     carrier === 'profile'
@@ -66,6 +82,12 @@ export function createAppearanceRealtimeObservation(
     channelErrors: 0,
     socketCloses: 0,
     generation: 0,
+    ownRowChanges: 0,
+    expectedTableArtFields:
+      expected && carrier === 'table-art'
+        ? Object.fromEntries(Object.keys(expected.fields).map((field) => [field, false]))
+        : null,
+    lastOwnRowMatchesExpected: null,
   };
   let nextSocketId = 0;
   const sockets = new Map<
@@ -83,6 +105,13 @@ export function createAppearanceRealtimeObservation(
     state.generation += 1;
     state.subscribed = false;
     state.signalReceived = false;
+    state.ownRowChanges = 0;
+    state.lastOwnRowMatchesExpected = null;
+    if (state.expectedTableArtFields) {
+      for (const field of Object.keys(state.expectedTableArtFields) as TableArtField[]) {
+        state.expectedTableArtFields[field] = false;
+      }
+    }
     sockets.clear();
   };
 
@@ -97,7 +126,7 @@ export function createAppearanceRealtimeObservation(
     sockets.set(id, socketState);
 
     const sent = (payload: string | Buffer) => {
-      if (socketState.generation !== state.generation) return;
+      if (socketState.generation !== state.generation || !sockets.has(id)) return;
       const frame = decodeFrame(payload);
       if (frame?.topic === topic && frame.event === 'phx_join' && frame.ref) {
         socketState.pendingJoinRefs.add(frame.ref);
@@ -105,7 +134,7 @@ export function createAppearanceRealtimeObservation(
     };
 
     const received = (payload: string | Buffer) => {
-      if (socketState.generation !== state.generation) return;
+      if (socketState.generation !== state.generation || !sockets.has(id)) return;
       const frame = decodeFrame(payload);
       if (!frame || frame.topic !== topic) return;
 
@@ -130,9 +159,13 @@ export function createAppearanceRealtimeObservation(
         refreshReadiness();
         return;
       }
-      if (frame.event === 'phx_close' || frame.event === 'phx_error') {
+      if (
+        frame.event === 'phx_close' ||
+        frame.event === 'phx_error' ||
+        (frame.event === 'system' && frame.payload.status === 'error')
+      ) {
         socketState.joined = false;
-        if (frame.event === 'phx_error') state.channelErrors += 1;
+        if (frame.event === 'phx_error' || frame.event === 'system') state.channelErrors += 1;
         refreshReadiness();
         return;
       }
@@ -146,8 +179,22 @@ export function createAppearanceRealtimeObservation(
         frame.payload.data.table === 'user_theme_settings' &&
         ['INSERT', 'UPDATE'].includes(String(frame.payload.data.type)) &&
         frame.payload.data.record?.user_id === userId
-      )
+      ) {
         state.signalReceived = true;
+        state.ownRowChanges = Math.min(1000, state.ownRowChanges + 1);
+        if (expected && state.expectedTableArtFields) {
+          const row = frame.payload.data.record;
+          const entries = Object.entries(expected.fields) as [TableArtField, string][];
+          const ownBucket = row.game_type === expected.gameType;
+          state.lastOwnRowMatchesExpected =
+            ownBucket &&
+            entries.length > 0 &&
+            entries.every(([field, value]) => row[field] === value);
+          for (const [field, value] of entries) {
+            if (ownBucket && row[field] === value) state.expectedTableArtFields[field] = true;
+          }
+        }
+      }
       if (
         carrier === 'profile' &&
         socketState.joined &&
@@ -160,7 +207,11 @@ export function createAppearanceRealtimeObservation(
     };
 
     const close = () => {
+      if (!sockets.has(id)) return;
       sockets.delete(id);
+      socketState.joined = false;
+      socketState.bindingIds.clear();
+      socketState.pendingJoinRefs.clear();
       if (socketState.generation !== state.generation) return;
       state.socketCloses += 1;
       refreshReadiness();
@@ -175,18 +226,20 @@ export function createAppearanceRealtimeObservation(
 export function observeAppearanceRealtime(
   page: Page,
   userId: string,
-  carrier: 'profile' | 'table-art' = 'profile'
+  carrier: 'profile' | 'table-art' = 'profile',
+  expected?: ExpectedTableArtChange
 ) {
-  const observation = createAppearanceRealtimeObservation(userId, carrier);
+  const observation = createAppearanceRealtimeObservation(userId, carrier, expected);
   // Reset when a real top-level document request begins, before that document
   // can open its socket. History API route changes keep the current transport.
   page.on('request', (request) => {
-    if (
-      request.isNavigationRequest() &&
-      request.resourceType() === 'document' &&
-      request.frame() === page.mainFrame()
-    ) {
-      observation.resetForNavigation();
+    if (!request.isNavigationRequest() || request.resourceType() !== 'document') return;
+    // Playwright can expose a navigation request before its Frame exists.
+    // Diagnostic observation must never replace the journey's original error.
+    try {
+      if (request.frame() === page.mainFrame()) observation.resetForNavigation();
+    } catch {
+      return;
     }
   });
   page.on('websocket', (socket) => {
@@ -197,4 +250,33 @@ export function observeAppearanceRealtime(
     socket.on('close', observedSocket.close);
   });
   return observation.state;
+}
+
+/** Bounded failure evidence for the account's seven buckets, without row IDs. */
+export function projectThemeBucketEvidence(rows: unknown, expectedFelt: string) {
+  if (!Array.isArray(rows)) return null;
+  const buckets = ['ALL', 'NLH', '6+', 'PLO', 'PINEAPPLE', 'MTT', 'SNG'];
+  const ownRows = rows.filter((row) => row && typeof row === 'object');
+  const all = ownRows.find((row) => row.game_type === 'ALL');
+  const date = (value: unknown) =>
+    typeof value === 'string' && Number.isFinite(Date.parse(value)) ? Date.parse(value) : null;
+  const allAt = date(all?.updated_at);
+  return {
+    rowCount: Math.min(1000, ownRows.length),
+    unrecognizedBuckets: Math.min(
+      1000,
+      ownRows.filter((row) => !buckets.includes(row.game_type)).length
+    ),
+    buckets: ownRows
+      .filter((row) => buckets.includes(row.game_type))
+      .slice(0, 7)
+      .map((row) => {
+        const at = date(row.updated_at);
+        return {
+          gameType: row.game_type as string,
+          feltMatchesExpected: row.table_id === expectedFelt,
+          updatedAfterAll: allAt !== null && at !== null ? at > allAt : null,
+        };
+      }),
+  };
 }

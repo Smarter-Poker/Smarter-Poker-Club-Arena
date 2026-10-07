@@ -323,10 +323,17 @@ async function expectLinkedConsoleOutcome(page: Page, route: LinkedConsole): Pro
       await expect(page.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
       break;
     case 'Settlement Center':
+      // The workspace owns "Club Weekly Accounting" (h2). The issued summaries
+      // under it are their own region and heading, "Club Weekly Summaries"
+      // (#6372 renamed them: two identical headings were a page defect). Both
+      // must render; the h2 alone would not prove the summaries did.
+      await expect(
+        page.getByRole('heading', { name: 'Club Weekly Accounting', exact: true, level: 2 })
+      ).toBeVisible();
       await expect(
         page
-          .getByRole('region', { name: 'Club Weekly Accounting', exact: true })
-          .getByRole('heading', { name: 'Club Weekly Accounting', exact: true, level: 3 })
+          .getByRole('region', { name: 'Club Weekly Summaries', exact: true })
+          .getByRole('heading', { name: 'Club Weekly Summaries', exact: true, level: 3 })
       ).toBeVisible();
       await expect(page.getByLabel('Club Transaction Records')).toBeVisible();
       break;

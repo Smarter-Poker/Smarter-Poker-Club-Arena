@@ -56,6 +56,7 @@ import { selectRevealedShowdownResults } from './revealedShowdown.js';
 import { ServerTableEngineDealing } from './ServerTableEngineDealing.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { atRebuyStopLoss, horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
+import { buildTableTalkInput, speakAtTheFelt } from '../services/HorseTableTalk.js';
 import { buildDailyMissionHandEvents } from './dailyMissionEvents.js';
 import { checkTournamentChipConservation } from './tournamentChipConservation.js';
 import { checkTournamentWholeChips, describeFractionalSeats } from './tournamentWholeChips.js';
@@ -1664,8 +1665,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                      promo_playthrough -> insurance_ledger -> bbj_mini_payout
                      -> bbj_payout -> tournament_chip_sync
          THE SEATS   pending_addons -> horse_rebuys -> chip_continuity ->
-                     horse_cashouts -> deferred_sitouts -> leave_pending ->
-                     table_unlock
+                     horse_cashouts -> horse_table_talk -> deferred_sitouts ->
+                     leave_pending -> table_unlock
 
        runStep files each step by NAME into its lane (STEP_LANE) and returns
        at once; a step is run after the previous step of its own lane, in
@@ -1702,6 +1703,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       horse_rebuys: 'seats',
       chip_continuity: 'seats',
       horse_cashouts: 'seats',
+      horse_table_talk: 'seats',
       deferred_sitouts: 'seats',
       leave_pending: 'seats',
       table_unlock: 'seats',
@@ -3724,6 +3726,21 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           );
         }
       }
+    });
+    if (!this.lifecycleCanMutate()) return;
+
+    // 5.6 TABLE TALK (Phase 10, 2026-10-06): one ordinary chat line from a
+    // seated horse after a cash hand, exactly the table_chat row a browser
+    // writes. Settlement hands over the hand it captured above and never
+    // waits for the network: the gate (both owner switches, cached 30 s,
+    // fail closed), the claim ledger and the chat write all live in
+    // services/HorseTableTalk.ts, and the mode ships disabled. Not a money
+    // step; diamond cash and tournaments are skipped like the horse steps
+    // above it.
+    await runStep('horse_table_talk', false, async () => {
+      if (isDiamondCash || this.isTournamentTable()) return;
+      if (!this.lifecycleCanMutate()) return;
+      void speakAtTheFelt(buildTableTalkInput(snap, players, this.tableInfo));
     });
     if (!this.lifecycleCanMutate()) return;
 

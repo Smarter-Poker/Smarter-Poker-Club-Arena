@@ -326,7 +326,11 @@ export default function SettlementHistoryPage() {
               >
                 <div className={styles.cycleHead}>
                   <div>
-                    <strong className="sc-ink--silver">Period: {titleCase(cycle.periodId)}</strong>
+                    <strong className="sc-ink--silver">
+                      {cycle.periodNumber !== null
+                        ? `Period ${cycle.periodNumber.toLocaleString()}`
+                        : 'Settlement Cycle'}
+                    </strong>
                     <time className="sc-ink--muted" dateTime={cycle.createdAt}>
                       {new Date(cycle.createdAt).toLocaleDateString()}
                     </time>

@@ -47,7 +47,9 @@
   appearance: none;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 1.2cqw;
+  min-width: 44px; /* a short word ("All") still owns a full 44px target */
   min-height: 44px;
   margin: 0;
   padding: 1.2cqw 1.6cqw;
@@ -103,6 +105,7 @@
 .dmp__field {
   width: 100%;
   min-width: 0;
+  min-height: 44px; /* 16px text plus its rule is shorter than a touch target */
   margin: 0;
   padding: 2cqw 0;
   border: 0;

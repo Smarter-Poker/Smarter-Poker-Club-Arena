@@ -180,6 +180,7 @@ vi.mock('recharts', () => ({
 }));
 
 import ClubFinancialDashboard from '../../src/components/dashboard/ClubFinancialDashboard';
+import { parseClubFinancialsPayload } from '../../src/utils/clubFinancialsPayload';
 
 type InitialSnapshot = NonNullable<
   React.ComponentProps<typeof ClubFinancialDashboard>['initialSnapshot']
@@ -248,11 +249,14 @@ describe('Club Financial Dashboard console and truth boundary', () => {
 
   it('reuses an exact parent snapshot while still reading vault and table facts', async () => {
     const { start, end } = range();
+    // The parent hands over its PARSED reading, exactly as ClubFinancialsPage
+    // does. Passing the wire payload here once hid a re-parse that refused
+    // every reused week in production.
     mount('shark-club', {
       resolvedClubId: CLUB_ID,
       requestedStart: start,
       requestedEnd: end,
-      financials: financialPayload(),
+      financials: parseClubFinancialsPayload(financialPayload(), { clubId: CLUB_ID, start, end }),
     });
 
     expect(await screen.findByText('1.2K')).toBeInTheDocument();

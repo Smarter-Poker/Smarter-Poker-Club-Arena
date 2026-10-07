@@ -148,11 +148,11 @@ export const ClubFinancialDashboard = ({
 
       let financials: FinancialsPayload;
       if (canReuseSnapshot && snapshot) {
-        financials = parseClubFinancialsPayload(snapshot.financials, {
-          clubId: snapshot.resolvedClubId,
-          start,
-          end,
-        });
+        // The parent already verified this exact club and window with
+        // parseClubFinancialsPayload. Its output is not the wire receipt, so
+        // parsing it a second time refused every reused week ("scope receipt
+        // is invalid") and showed an error over a valid reading.
+        financials = snapshot.financials;
       } else {
         const { data: payload, error: financialError } = await supabase.rpc('ca_club_financials', {
           p_club_id: resolvedClubId,

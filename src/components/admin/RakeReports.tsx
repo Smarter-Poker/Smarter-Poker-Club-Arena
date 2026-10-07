@@ -500,10 +500,9 @@ export const RakeReports = ({ clubId, initialSnapshot }: RakeReportsProps) => {
           snapshot.financials.range.start >= range.start;
         let financials: ReturnType<typeof parseClubFinancialsPayload>;
         if (canReuseSnapshot && snapshot) {
-          financials = parseClubFinancialsPayload(snapshot.financials, {
-            clubId: snapshot.resolvedClubId,
-            ...range,
-          });
+          // Already verified by the parent for this exact club and window; the
+          // parsed payload is not the wire receipt and cannot be parsed again.
+          financials = snapshot.financials;
         } else {
           const resolvedId = await resolveClubUUIDStrict(clubId);
           const { data: payload, error } = await supabase.rpc('ca_club_financials', {
@@ -752,7 +751,6 @@ export const RakeReports = ({ clubId, initialSnapshot }: RakeReportsProps) => {
               role="tab"
               className={`rr__rail-word ${period === option ? 'sc-ink--silver' : 'sc-ink--muted'}`}
               aria-selected={period === option}
-              aria-pressed={period === option}
               onClick={() => setPeriod(option)}
             >
               {periodLabel(option)}

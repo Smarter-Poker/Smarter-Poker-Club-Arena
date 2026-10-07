@@ -22,6 +22,7 @@ describe('parseSettlementHistory', () => {
       {
         id: '11111111-1111-4111-8111-111111111111',
         periodId: '22222222-2222-4222-8222-222222222222',
+        periodNumber: null,
         totalRake: 100.25,
         unionTax: 10.05,
         netSettlement: 90.2,
@@ -30,6 +31,27 @@ describe('parseSettlementHistory', () => {
         agentPayouts: 0,
       },
     ]);
+  });
+
+  it('carries the split week number so the console never prints the period UUID', () => {
+    // Production row 85f9db2a (SHARK CLUB, 2026-04-20) rendered
+    // "Period: 21d817b2-A416-..." on Settlement History.
+    const [cycle] = parseSettlementHistory(
+      [
+        row({
+          breakdown: { union_hold_amount: '10.05', club_retained: '90.20', period_number: 1 },
+        }),
+      ],
+      CLUB_ID
+    )!;
+    expect(cycle.periodNumber).toBe(1);
+    for (const period_number of [0, -1, 1.5, '1', null]) {
+      const [other] = parseSettlementHistory(
+        [row({ breakdown: { union_hold_amount: '10.05', club_retained: '90.20', period_number } })],
+        CLUB_ID
+      )!;
+      expect(other.periodNumber).toBeNull();
+    }
   });
 
   it('accepts binary serialization dust in a duplicated historical split', () => {

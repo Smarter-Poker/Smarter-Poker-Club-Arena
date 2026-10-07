@@ -1741,7 +1741,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                       {health.eventsLastHour} Events / Hour
                     </span>
                     <span title={`${health.retentionDays}-Day Realtime Retention`}>
-                      {health.eventRows} Realtime Events
+                      {health.eventRows.toLocaleString()}
+                      {health.eventRowsCapped ? '+' : ''} Realtime Events
                     </span>
                   </>
                 )}

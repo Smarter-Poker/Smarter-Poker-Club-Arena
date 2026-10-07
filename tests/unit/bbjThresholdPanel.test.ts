@@ -99,3 +99,25 @@ describe('it tells the operator what they are deciding', () => {
     expect(PANEL).toMatch(/That Amount Is Already On The List\./);
   });
 });
+
+/*
+ * 2026-10-07. ClubSettingsPage hands the panel its route param, which is a
+ * slug ("deep-stack-society-11192") whenever the page was opened from a club
+ * link. `.eq('club_id', slug)` on a uuid column is 22P02, so the list never
+ * loaded and an add never saved: 69 such refusals in six hours of
+ * postgres_logs. The panel resolves the id before it reads or writes.
+ */
+describe('the panel keys the table by the club uuid, not the route slug', () => {
+  it('resolves a non-uuid route param before any read', () => {
+    expect(PANEL).toMatch(/clubId: clubParam/);
+    expect(PANEL).toMatch(/resolveClubUUID\(clubParam\)/);
+    expect(PANEL).toMatch(/isUUID\(resolved\)/);
+  });
+
+  it('asks nothing until it holds a real id', () => {
+    const load = PANEL.slice(PANEL.indexOf('const load = useCallback'));
+    expect(load.slice(0, 120)).toMatch(/if \(!clubId\) return;/);
+    const add = PANEL.slice(PANEL.indexOf('const add = useCallback'));
+    expect(add.slice(0, 400)).toMatch(/if \(!clubId\) return;/);
+  });
+});

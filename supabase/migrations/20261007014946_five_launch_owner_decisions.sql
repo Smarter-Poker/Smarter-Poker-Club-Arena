@@ -19,8 +19,8 @@
 --    advertised 9,500 between them; promotion_leaderboards held 0 rows and
 --    promotion_claims 0, so nobody entered and nobody is owed. 10.9's clear
 --    path to PAY does not exist (no rule says who would be owed what), so the
---    platform STOPS ADVERTISING: every row's prize_pool becomes 0, the two
---    still marked active or scheduled (both long past their end dates) are
+--    platform STOPS ADVERTISING: every row's prize_pool becomes 0, the three
+--    still marked active or scheduled (all long past their end dates) are
 --    cancelled, and a CHECK refuses a prize pool from now on. The warning
 --    trigger that only reported the gap is dropped with it, as its own header
 --    asked ("delete this trigger in the same commit"): the gap cannot recur.

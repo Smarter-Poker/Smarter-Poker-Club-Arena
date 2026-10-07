@@ -245,7 +245,7 @@ source_client() {
   # are expanded inside the container, never placed on the host Docker argv.
   # Expansion must happen inside the source container.
   # shellcheck disable=SC2016
-  timeout "$seconds" docker run --name "$source_container" --rm -i --network host -e PGDATABASE -e PGOPTIONS \
+  timeout --kill-after=10s "$seconds" docker run --name "$source_container" --rm -i --network host -e PGDATABASE -e PGOPTIONS \
     --entrypoint /bin/sh "$image" -c \
     'client=$1; shift; printf "LB_SOURCE_CLIENT_START:%s\n" "$client" >&2; case "$client" in psql|pg_dump) "/usr/lib/postgresql/bin/$client" --dbname="$PGDATABASE" "$@";; pg_dumpall) /usr/lib/postgresql/bin/pg_dumpall --database="$PGDATABASE" "$@";; *) exit 1;; esac; status=$?; printf "LB_SOURCE_CLIENT_COMPLETE:%s:%s\n" "$client" "$status" >&2; exit "$status"' \
     source-client "$client" "$@"
@@ -268,7 +268,9 @@ source_database="$(source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 
   -c 'SELECT current_database();' 2>"$scratch/source-error.log")" || source_failure 'source database identity unavailable' "$scratch/source-error.log" "$?"
 [[ "$source_database" == 'postgres' ]] || failure 'source database name requires a separate supported restore'
 source_catalog >"$scratch/source-before.json" 2>"$scratch/source-error.log" || source_failure 'source catalog read unavailable' "$scratch/source-error.log" "$?"
-source_client 300 pg_dump \
+# Run 37579107745 observed inner client status 0 and outer elapsed 514s.
+# Preserve a finite measured command envelope, not a claimed inner duration.
+source_client 600 pg_dump \
   --verbose --schema-only --create --format=custom --no-password --no-subscriptions --lock-wait-timeout=5s \
   >"$scratch/schema.dump" 2>"$scratch/dump-error.log" || source_failure 'schema-only export unavailable' "$scratch/dump-error.log" "$?"
 source_client 180 pg_dumpall --roles-only --no-role-passwords --no-password \

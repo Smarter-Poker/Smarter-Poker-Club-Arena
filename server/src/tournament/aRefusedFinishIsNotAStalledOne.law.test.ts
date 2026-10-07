@@ -25,6 +25,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceMethod } from '../testHelpers/sourceWindow.js';
 import { FINISH_REFUSAL_BACKOFF_CAP_MS } from '../observability/engineInstruments.js';
 import { TournamentManagerBase } from './TournamentManagerBase.js';
 import { TournamentManagerEliminations } from './TournamentManagerEliminations.js';
@@ -113,21 +114,22 @@ describe('a refused finish owns its next ask', () => {
 
 describe('both decided recoveries in GameServer ask before they wake', () => {
   it('STALLED DECIDED-BUT-RUNNING skips a manager awaiting its own retry before the stagger', () => {
-    const start = GAME_SERVER.indexOf('STALLED DECIDED-BUT-RUNNING RECOVERY');
-    expect(start).toBeGreaterThan(0);
-    const block = GAME_SERVER.slice(start, GAME_SERVER.indexOf('STARTED-BUT-NEVER-DEALT', start));
-    const skip = block.indexOf('?.awaitsItsOwnFinishRetry?.()) continue;');
-    expect(skip).toBeGreaterThan(0);
-    expect(skip).toBeLessThan(block.indexOf('if (decidedRecoveries++ > 0)'));
+    const body = sliceMethod(GAME_SERVER, 'private async discoverTournaments(): Promise<void>');
+    const owner = body.indexOf('const decidedAction = this.decidedOwnerActionFor(String(t.id));');
+    const skip = body.indexOf('?.awaitsItsOwnFinishRetry?.()) continue;', owner);
+    expect(owner).toBeGreaterThan(0);
+    expect(skip).toBeGreaterThan(owner);
+    expect(skip).toBeLessThan(body.indexOf('if (decidedRecoveries++ > 0)', owner));
     expect(skip).toBeLessThan(
-      block.indexOf("requestDecidedEliminationSweep('stalled_decided_survivor')")
+      body.indexOf("requestDecidedEliminationSweep('stalled_decided_survivor')", owner)
     );
   });
 
   it('the seat-first finish sweep skips it before its reads', () => {
-    const start = GAME_SERVER.indexOf('private async finishSeatFirstGamesThatAreOver');
-    expect(start).toBeGreaterThan(0);
-    const body = GAME_SERVER.slice(start, start + 6000);
+    const body = sliceMethod(
+      GAME_SERVER,
+      'private async finishSeatFirstGamesThatAreOver(): Promise<void>'
+    );
     const skip = body.indexOf('?.awaitsItsOwnFinishRetry?.()) continue;');
     expect(skip).toBeGreaterThan(0);
     expect(skip).toBeLessThan(body.indexOf(".from('tables')"));
@@ -138,9 +140,7 @@ describe('both decided recoveries in GameServer ask before they wake', () => {
 
   it('the manager refuses a decided wake on its own, whoever calls it', () => {
     const base = readFileSync(resolve(__dirname, './TournamentManagerBase.ts'), 'utf8');
-    const i = base.indexOf('requestDecidedEliminationSweep(reason: string): boolean {');
-    expect(i).toBeGreaterThan(0);
-    const body = base.slice(i, base.indexOf('\n  }\n', i));
+    const body = sliceMethod(base, 'requestDecidedEliminationSweep(reason: string): boolean');
     expect(body).toContain('if (this.awaitsItsOwnFinishRetry()) return false;');
     expect(body.indexOf('awaitsItsOwnFinishRetry')).toBeLessThan(
       body.indexOf('this.requestEliminationSweep(reason)')

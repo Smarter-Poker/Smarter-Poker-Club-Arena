@@ -292,13 +292,15 @@ docker exec -i "$container" pg_restore --file=- --schema-only --exit-on-error --
   <"$scratch/schema.dump" >"$scratch/remaining.sql" 2>"$scratch/schema-render.log" || destination_failure 'remaining archive rendering failed' "$scratch/schema-render.log" "$?"
 node "$restore_script_helper" "$scratch/remaining.sql" "$scratch/event-owners.json" \
   "$scratch/event-owners-elevate.sql" "$scratch/event-owners-restore.sql" || failure 'atomic restore script validation failed'
-docker cp "$scratch/remaining.sql" "$container:/tmp/remaining.sql" >/dev/null
-docker cp "$scratch/event-owners-elevate.sql" "$container:/tmp/event-owners-elevate.sql" >/dev/null
-docker cp "$scratch/event-owners-restore.sql" "$container:/tmp/event-owners-restore.sql" >/dev/null
-docker exec "$container" psql -h /tmp -Xq -U "$bootstrap" -d postgres \
+# Stream host-private inputs; docker cp would preserve root-owned 0600 files
+# unreadable to the destination's postgres OS user. One psql owns all inputs.
+cat "$scratch/event-owners-elevate.sql" "$scratch/remaining.sql" "$scratch/event-owners-restore.sql" \
+  >"$scratch/atomic-restore.sql" || failure 'complete atomic restore input unavailable'
+chmod 600 "$scratch/atomic-restore.sql"
+docker exec -i "$container" psql -h /tmp -Xq -U "$bootstrap" -d postgres \
   -v ON_ERROR_STOP=1 -v VERBOSITY=verbose --single-transaction \
-  -f /tmp/event-owners-elevate.sql -f /tmp/remaining.sql -f /tmp/event-owners-restore.sql \
-  >"$scratch/schema-restore.log" 2>&1 || destination_failure 'schema incompatibility during isolated restore' "$scratch/schema-restore.log" "$?"
+  --file=- \
+  <"$scratch/atomic-restore.sql" >"$scratch/schema-restore.log" 2>&1 || destination_failure 'schema incompatibility during isolated restore' "$scratch/schema-restore.log" "$?"
 docker exec -i "$container" psql -h /tmp -XAtq -U "$bootstrap" -d postgres -v ON_ERROR_STOP=1 -v VERBOSITY=verbose \
   <"$catalog" >"$scratch/isolated.json" 2>"$scratch/local-error.log" || destination_failure 'isolated catalog readback failed' "$scratch/local-error.log" "$?"
 cmp -s "$scratch/source-before.json" "$scratch/isolated.json" || failure 'isolated catalog differs from current source'

@@ -170,7 +170,7 @@
     "tests/unit/SettlementCronService.test.ts": "b436754cec532a518975b8f03ff5020dc90048d30c044ca04aa25029a1109a9f",
     "tests/unit/ServiceBootstrap.test.ts": "533800128e0f184de1437e25d2966af1b08a3926ac9398d28938b017fec6ad02",
     "tests/unit/FinancialCronService.test.ts": "19e63654d2b3cd9719e9bde91faece245392c5a05270092c779bbfd192ebb8eb",
-    "tests/components/ClubWeeklyAccountingSummary.test.tsx": "c3b8dd010b46ce1f14180ab05c4b36f7ac14c3f35c73f2fff7563f2b135ab634",
+    "tests/components/ClubWeeklyAccountingSummary.test.tsx": "9ca3b030683c58fefe32e75d30d7fddf2d605bb678d7b9df353e7fe635d9b6c9",
     "tests/unit/AccountingObservationService.test.ts": "6e571f657f66a05bd37b9aa35b867e12b54c99c75754e017034ec3bafed17ce9",
     "tests/unit/SettlementService.test.ts": "92390199785906650508d16eea99372e24a6451dd8cd9d108679381ed1ca936d",
     "tests/unit/useUnionStore.test.ts": "3b3f59aca73ce2c20fad59c82e23dfa9c4aaef4b22fdff9ab3295b379e593268",
@@ -3758,5 +3758,16 @@
       }
     ],
     "verification": "The exact formatted diff and both render sites were read before this targeted restamp. The focused Credit Admin regression, console copy gates and complete scripts/ci/verify-source-bindings.py verifier must pass on the integrated candidate."
+  },
+  "weeklySummaryKeyboardFocusRebinding20261007": {
+    "reason": "The actual 393px Financial Admin axe report identified the issued weekly totals scroll region as unreachable by keyboard. The complete component-test diff adds only four keyboard focus assertions to the existing issued-summary case. All original financial values, scoped reads, unavailable/empty distinctions and stale-account assertions remain unchanged; no SQL, native fixture or financial authority is changed.",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/components/ClubWeeklyAccountingSummary.test.tsx",
+        "previous_sha256": "c3b8dd010b46ce1f14180ab05c4b36f7ac14c3f35c73f2fff7563f2b135ab634",
+        "sha256": "9ca3b030683c58fefe32e75d30d7fddf2d605bb678d7b9df353e7fe635d9b6c9"
+      }
+    ],
+    "verification": "Before the source repair the focus regression failed; all 36 exact route and component checks passed afterward, and TypeScript and normal hooks passed. This binding records the reviewed additive test bytes, not a new native financial or hosted production qualification."
   }
 }

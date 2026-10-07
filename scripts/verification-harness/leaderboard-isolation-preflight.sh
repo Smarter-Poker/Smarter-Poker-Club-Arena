@@ -34,6 +34,9 @@ destination_error_category() {
   diagnostic="$(cat)"
   if [[ "$diagnostic" =~ ERROR:[[:space:]]+([0-9A-Z]{5}): ]]; then state="${BASH_REMATCH[1]}"; fi
   case "$diagnostic" in
+    *'out of shared memory'*'max_locks_per_transaction'*) category='shared-memory-lock-capacity' ;;
+    *'out of shared memory'*) category='shared-memory-unclassified' ;;
+    *'out of memory'*) category='server-memory-unavailable' ;;
     *'has no installation script nor update path for version'*|*'has no installation script for version'*) category='extension-version-unavailable' ;;
     *'extension'*'is not available'*|*'could not open extension control file'*) category='extension-control-unavailable' ;;
     *'must be loaded via shared_preload_libraries'*|*'must be loaded via shared preload'*) category='extension-preload-required' ;;
@@ -50,6 +53,7 @@ destination_error_category() {
     *'unrecognized configuration parameter'*) category='unsupported-destination-configuration' ;;
     *'syntax error'*) category='destination-syntax' ;;
   esac
+  if [[ "$category" == unclassified-destination && "$state" == 53200 ]]; then category='server-memory-unclassified'; fi
   printf '%s:%s\n' "$state" "$category"
 }
 if [[ "${1:-}" == '--classify-destination-error' ]]; then

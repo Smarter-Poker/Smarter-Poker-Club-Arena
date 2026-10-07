@@ -56,3 +56,20 @@ receipt run 37620236888 would have written for `b6a260b4`, and the
 naming 243237 as the receipt it supersedes. The failure itself is carried by
 the open episode `e951244...` (row 243315), opened at 13:12Z on `68b28e5b`, a
 descendant of `b6a260b4`; a success closes it only once it covers `68b28e5b`.
+
+## Follow-up: every open episode, not only the newest
+
+After the correction receipts above were written at 13:37Z, the recorder still
+running on `main` (the pre-fix version) read the newest row without filtering
+by status, saw an `info` receipt, found no open episode and minted
+`57e641b3...` (row 243499) at 13:53Z beside the still-firing `e951244...`
+(row 243315). The fixed recorder ignores `info` rows, but a success still only
+looked at the newest episode, so e951244 would have stayed open for ever.
+
+`settleOtherEpisodes()` now judges every other open episode of the same alert
+(`firing`, not closed by the fleet, no `:resolved` row) on its own failed
+releases, by the same lineage rule: resolve when covered, `stale-success` or
+`could-not-tell` otherwise. A failing or non-verdict run settles nothing. The
+three deliveries of 243499 (runs 37625799569, 37628489690, 37631535858) were
+given their failed-release receipts through `fn_record_operational_alert`
+(rows 243532-243534), so the next success that covers `88621375` can close it.

@@ -19,14 +19,14 @@ UUID = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 STAMP = re.compile(r'^(\d{4}-\d\d-\d\dT[\d:.]+Z)\s+')
 # Retain only named symbolic failure families, never arbitrary log messages,
 # player objects, credentials, SQL parameters, or stack traces.
-ERROR = re.compile(r'\b(?:F06|STOPPED_BANK|MOVEMENT|DRAINED_CUSTODY|HAND_SUBMISSION|RETIRED_CASH|RETIREMENT)_[A-Z0-9_]{1,80}\b|\bf06_[a-z0-9_]{1,80}\b')
+ERROR = re.compile(r'\b(?:F06|STOPPED_BANK|MOVEMENT|DRAINED_CUSTODY|HAND_SUBMISSION|RETIRED_CASH|RETIREMENT)_[A-Z0-9_]{1,80}\b|\bf06_[a-z0-9_]{1,80}\b|\bLEDGER_INVARIANT_REFUSED\b')
 CONTEXT = re.compile(r'^\[(Tournament(?:ManagerBase)?\.[a-zA-Z0-9_]{1,80})\]')
 # Managers emit this marker immediately after the Error label. A prefix is
 # inferred attribution only, never evidence that the full UUID was logged.
 EVENT_PREFIX = re.compile(r'^\[Tournament(?:ManagerBase)?\.[a-zA-Z0-9_]{1,80}\] Error: \[Tournament:([0-9a-f]{8})\](?:[ \t]|$)')
 # Keep the original deal refusals as well as their later watchdog consequence.
 # Only these emitted call sites, with an exactly selected table, are admitted.
-ENGINE_CONTEXT = re.compile(r'^\[ServerTableEngine\.([0-9a-f-]{36})\.(watchdog_kill|deal_error_attempt_(?:[1-9]|10)|too_many_errors_stopping)\]')
+ENGINE_CONTEXT = re.compile(r'^\[ServerTableEngine\.([0-9a-f-]{36})\.(watchdog_kill|deal_error_attempt_(?:[1-9]|10)|too_many_errors_stopping|failed_to_start)\]')
 ENGINE_REASON = re.compile(r'Engine self-terminating for restart: (tournament_table_zombie|cash_table_zombie|cash_lease_proof_expired|tournament_lease_proof_expired|dealing_loop_threw|post_hand_settlement_failed|authoritative_hand_commit_not_proved|atomic_stack_settlement_refused|post_commit_stack_refresh_failed|stalled_no_seat)\b')
 # Successor admission is owned by GameServer, before or while a new manager
 # recovers its originals. Keep this an exact call-site list, never GameServer.*.

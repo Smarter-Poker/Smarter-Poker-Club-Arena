@@ -125,6 +125,24 @@ class NativeLogReader(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 reader.selection(invalid)
 
+    def test_original_startup_financial_refusal_is_exactly_scoped(self):
+        scopes = [{'tableIds': [TABLE]}]
+        source = '\n'.join([
+            STAMP+'[ServerTableEngine.'+TABLE+'.failed_to_start] Error: RETIRED_CASH_ORIGINAL_CHANGED PRIVATE_SQL',
+            STAMP+'[GameServer.retained_hand_refusal_holds_table] Error: LEDGER_INVARIANT_REFUSED',
+            "  tableId: '"+TABLE+"', password: 'PRIVATE_SECRET'",
+            STAMP+'[ServerTableEngine.'+TABLE+'.failed_to_start_extra] Error: RETIRED_CASH_WRONG',
+            STAMP+'[ServerTableEngine.10000000-0000-4000-8000-000000000001.failed_to_start] Error: RETIRED_CASH_FOREIGN'])
+        result = reader.extract(source.encode(), scopes)
+        self.assertEqual(result['matchingRecords'], 2)
+        self.assertEqual(result['records'][0]['context'], 'ServerTableEngine.failed_to_start')
+        self.assertEqual(result['records'][0]['scopeIds'], [TABLE])
+        self.assertEqual(result['records'][0]['symbolicErrors'], ['RETIRED_CASH_ORIGINAL_CHANGED'])
+        self.assertEqual(result['records'][1]['symbolicErrors'], ['LEDGER_INVARIANT_REFUSED'])
+        self.assertNotIn('PRIVATE_', json.dumps(result))
+        self.assertNotIn('RETIRED_CASH_WRONG', json.dumps(result))
+        self.assertNotIn('RETIRED_CASH_FOREIGN', json.dumps(result))
+
     def test_scope_and_malicious_input(self):
         self.assertEqual(reader.selection(SCOPES), SCOPES)
         for value in [[], SCOPES*3, SCOPES*2, [{'tournamentId': EVENT, 'tableIds': [TABLE], 'command': 'restart'}], [{'tournamentId': '../secrets', 'tableIds': [TABLE]}], [{'tournamentId': EVENT, 'tableIds': [TABLE]*2}], [{'tournamentId': EVENT, 'tableIds': 'bad'}]]:

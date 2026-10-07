@@ -982,6 +982,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             this.stopIfClusterTableClosed()
           );
           if (!this.lifecycleCanMutate()) return;
+          // The freshly adopted idle roster must also replace the hub's last
+          // hand snapshot. Otherwise a late subscriber sees departed chairs
+          // even though GET /state and the native roster are already empty.
+          await this.broadcastCurrentState();
           // A completed short-handed sweep is real progress just like the
           // startup waiting sweep. Stamp after all awaited idle work so a
           // hung read or move remains visible to the existing watchdog.

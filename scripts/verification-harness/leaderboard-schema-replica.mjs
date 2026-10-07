@@ -29,7 +29,8 @@ export function descriptor(value) {
   exact(value, fields);
   if (
     typeof value.identifier !== 'string' ||
-    !/^[a-z]{20}$/.test(value.identifier) ||
+    value.identifier !== value.identifier.trim() ||
+    !new RegExp(`^${primaryRef}-rr-us-west-2-[a-z]{5}$`).test(value.identifier) ||
     value.identifier === primaryRef ||
     value.database_type !== 'READ_REPLICA' ||
     ![5432, 6543].includes(value.db_port) ||

@@ -149,7 +149,7 @@ describe('a refusal that cannot change is not a serialization failure', () => {
       .filter((f) => /^\d{14}_.*\.sql$/.test(f) && f.slice(0, 14) > FIX_VERSION)
       .sort();
     const offenders = later.flatMap((f) =>
-      disagreementsRaisedAsRetryable(read(f)).map((st) => `${f}: ${st.slice(0, 200)}`)
+      disagreementsRaisedAsRetryable(read(f)).map((st) => `${f}: ${st}`)
     );
     expect(offenders).toEqual([]);
   });

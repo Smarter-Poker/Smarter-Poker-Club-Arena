@@ -37,6 +37,8 @@ export interface TabInfo {
    *  timer bar under the tab. undefined when it is not your turn there. */
   turnProgress?: number;
   pot?: number;
+  /** Public engine hand identity reported by the owning table page. */
+  handNumber?: number;
   isAutoRebuyEnabled?: boolean;
   /** The owning table page's `seatCanAddFunds` answer for this seat. `false`
    *  removes Top Up and Auto Top Up from the hamburger (B12, 2026-09-19): a
@@ -1305,6 +1307,7 @@ export function TableTabBar({
                 ? 'Lobby'
                 : formatGameTitle(tabs.find((t) => t.id === activeTabId)?.name) || 'Table'
           }
+          handNumber={tabs.find((t) => t.id === activeTabId)?.handNumber}
           onOpenIdentity={activeIsLobby ? undefined : handleOpenIdentity}
         />
       </div>

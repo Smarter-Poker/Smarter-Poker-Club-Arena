@@ -13,7 +13,7 @@
  * yet, and every existing render of the bar, is byte-identical to today.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, cleanup } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createDefaultMenuSections } from '../../src/components/table/TableMenu';
@@ -118,5 +118,49 @@ describe('the answer travels from the table page to the menu, and is derived now
     const src = code(BAR);
     expect(src).toMatch(/canAddFunds: tabs\.find\(\(t\) => t\.id === activeTabId\)\?\.canAddFunds/);
     expect(src, 'the bar does not guess either').not.toMatch(/seatCanAddFunds|arenaAsset/);
+  });
+});
+
+describe('the open menu follows the owning table hand identity', () => {
+  it('updates the public hand while watching and selects only the active table', () => {
+    const props = { onTabSelect: () => {}, onAddTable: () => {} };
+    const tabs: TabInfo[] = [
+      { id: 'a', name: 'NLH 1/2', stakes: '1/2', isMyTurn: false, handNumber: 101 },
+      { id: 'b', name: 'PLO 2/4', stakes: '2/4', isMyTurn: false, handNumber: 900 },
+    ];
+    const view = render(<TableTabBar {...props} tabs={tabs} activeTabId="a" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Table Menu' }));
+    expect(screen.getByRole('menu').textContent).toContain('Hand #101');
+    view.rerender(
+      <TableTabBar {...props} tabs={[{ ...tabs[0], handNumber: 102 }, tabs[1]]} activeTabId="a" />
+    );
+    expect(screen.getByRole('menu').textContent).toContain('Hand #102');
+    expect(screen.getByRole('menu').textContent).not.toContain('Hand #900');
+    view.rerender(<TableTabBar {...props} tabs={tabs} activeTabId="b" />);
+    expect(screen.getByRole('menu').textContent).toContain('Hand #900');
+    view.rerender(
+      <TableTabBar
+        {...props}
+        tabs={[{ id: 'lobby:1', name: 'Lobby', stakes: '', isMyTurn: false }]}
+        activeTabId="lobby:1"
+      />
+    );
+    expect(screen.getByRole('menu').textContent).not.toContain('Hand #');
+    cleanup();
+  });
+  it('carries the engine hand through the existing table report and shared menu', () => {
+    const page = read('src/pages/TablePage.tsx');
+    expect(sliceStatement(page, 'onTableInfoUpdate({')).toMatch(
+      /handNumber: tableState\.handNumber/
+    );
+    expect(code('src/pages/MultiTablePage.tsx')).toMatch(/handNumber: t\.handNumber/);
+    expect(code('src/components/table/TableTabBar.tsx')).toMatch(
+      /handNumber=\{tabs\.find\(\(t\) => t\.id === activeTabId\)\?\.handNumber\}/
+    );
+    const hud = page.slice(
+      page.indexOf('<TableMenu'),
+      page.indexOf('connectionStatus={', page.indexOf('<TableMenu'))
+    );
+    expect(hud).toMatch(/handNumber=\{tableState\.handNumber\}/);
   });
 });

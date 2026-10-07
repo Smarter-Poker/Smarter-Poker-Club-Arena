@@ -1952,13 +1952,14 @@ jobs:
           path: artifacts/hand-submission-retention-disposal/
           if-no-files-found: error
           retention-days: 7
+      - name: Departure client completion drains actual refusal output
+        if: matrix.shard == 3
+        run: node --test scripts/verification-harness/departure-holder-stream-close.test.mjs
       - name: Atomic departures, ownership, rollback and concurrency
         if: matrix.shard == 3
         env:
           PGBIN: /usr/lib/postgresql/17/bin
-        run: |
-          node --test scripts/verification-harness/departure-holder-stream-close.test.mjs
-          bash scripts/dev/probe-departure-postgres.sh
+        run: bash scripts/dev/probe-departure-postgres.sh
       - name: Accepted eliminations preserve parked source custody
         id: f06_accepted_elimination
         if: matrix.shard == 3

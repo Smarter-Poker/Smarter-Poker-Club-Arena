@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "departureHolderStreamCompletion20261007": {
-    "reason": "Enforce the deterministic child-stream completion regression in the existing mandatory Accounting3 departure step. Actual financial refusal, rollback and concurrency assertions remain unchanged; only the current workflow fingerprint changes, not historical pins or qualification status.",
+    "reason": "Enforce the deterministic child-stream completion regression beside the unchanged departure invocation in the existing mandatory Accounting3 lane. Actual financial refusal, rollback and concurrency assertions remain unchanged; only the current workflow fingerprint changes, not historical pins or qualification status.",
     "previousWorkflowPin": {
       "bytes": 191554,
       "sha256": "2d99d6c83adc130f78356738319a0f591a0539752b02929429e034998fac0ca0"
@@ -38,8 +38,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 191656,
-      "sha256": "91a8eb0b0f197dfdd0c1c1f5697edf5f4e28c2ff940de54aa8e5adfded32440c"
+      "bytes": 191748,
+      "sha256": "099f83be0eee89a282972d6c6f74b7346086ab3be90fd607e13a47db20ab0aee"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,

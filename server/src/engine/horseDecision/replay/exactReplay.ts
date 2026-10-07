@@ -31,6 +31,10 @@ import {
 } from '../../../services/horseDecisionJournal/record.js';
 import { horseDecisionEffectsAreValid } from '../../HorseDecisionEffects.js';
 import {
+  horsePlanEffectReceiptIsValid,
+  horsePlanIssuedBatchDigest,
+} from '../../HorsePlanEffectReceipt.js';
+import {
   reconstructHorseReplayInput,
   HorseReplayRefusal,
   type HorseReplayInput,
@@ -74,13 +78,38 @@ export interface HorseExactReplayOptions {
    * source offers no acceptance evidence. Null: the source holds none for it.
    */
   execution?: unknown | null;
+  /**
+   * The journal's durable plan receipt (`plan_receipt`, P15-A steps 1 to 3)
+   * for this decision's turn, with the same undefined / null meaning.
+   */
+  planReceipt?: unknown | null;
 }
+
+/**
+ * The durable accepted-effect receipt joined to the decision's own issued
+ * batch (its recorded binding and effects, which an exact replay reproduces):
+ *   no_effects       the decision issued an empty batch; no receipt is due.
+ *   applied/failed   a valid receipt over exactly this batch, with its disposition.
+ *   absent           the source holds no receipt for this turn (not yet
+ *                    accepted, not accepted, or not durable): never applied.
+ *   invalid          the record or receipt does not validate.
+ *   other_batch      a valid receipt whose issued batch digest is not this batch's.
+ *   no_receipt_source the source offers no receipts at all.
+ */
+export type HorseExactReplayEffectReceipt =
+  | 'no_effects'
+  | 'applied'
+  | 'failed'
+  | 'absent'
+  | 'invalid'
+  | 'other_batch'
+  | 'no_receipt_source';
 
 export interface HorseExactReplayAcceptance {
   /** The acceptance evidence this replay joins: the journal's execution witness. */
   source: 'journal_execution_witness';
-  /** The durable accepted-effect receipt (P15-A steps 1 to 3) is not on this source. */
-  durableEffectReceipt: 'unavailable';
+  /** The durable accepted-effect receipt of the decision's issued batch. */
+  durableEffectReceipt: HorseExactReplayEffectReceipt;
   status: 'joined' | 'not_joined';
   reason: string | null;
   executionStatus: string | null;
@@ -191,15 +220,43 @@ export async function withFrozenHorseReplayClock<T>(
 /** Any constant: a frozen monotonic clock measures zero elapsed time. */
 const FROZEN_MONOTONIC_MS = 1_000_000;
 
+function joinEffectReceipt(
+  planReceipt: unknown,
+  record: HorseJournalRecord,
+  body: Record<string, unknown>
+): HorseExactReplayEffectReceipt {
+  if (Array.isArray(body.effects) && body.effects.length === 0) return 'no_effects';
+  if (planReceipt === undefined) return 'no_receipt_source';
+  if (planReceipt === null) return 'absent';
+  try {
+    validateHorseJournalRecord(planReceipt);
+  } catch {
+    return 'invalid';
+  }
+  if (planReceipt.kind !== 'plan_receipt' || planReceipt.turnKey !== record.turnKey)
+    return 'invalid';
+  let receipt: unknown;
+  try {
+    receipt = JSON.parse(planReceipt.body);
+  } catch {
+    return 'invalid';
+  }
+  if (!horsePlanEffectReceiptIsValid(receipt)) return 'invalid';
+  const issued = horsePlanIssuedBatchDigest(body.planBinding, body.effects);
+  if (issued === null || receipt.issuedBatchDigest !== issued) return 'other_batch';
+  return receipt.disposition;
+}
+
 function joinAcceptance(
   execution: unknown,
   record: HorseJournalRecord,
   original: HorseDecision | null,
-  decisionKey: string | null
+  decisionKey: string | null,
+  durableEffectReceipt: HorseExactReplayEffectReceipt
 ): HorseExactReplayAcceptance {
   const out: HorseExactReplayAcceptance = {
     source: 'journal_execution_witness',
-    durableEffectReceipt: 'unavailable',
+    durableEffectReceipt,
     status: 'not_joined',
     reason: null,
     executionStatus: null,
@@ -272,7 +329,7 @@ export async function exactReplayHorseDecisionRecord(
     original: null,
     replayed: null,
     context: { gameMode: null, format: null, variant: null, stage: null },
-    acceptance: joinAcceptance(undefined, raw as HorseJournalRecord, null, null),
+    acceptance: joinAcceptance(undefined, raw as HorseJournalRecord, null, null, 'invalid'),
   };
   const finish = (outcome: HorseExactReplayOutcome): HorseExactReplayVerdict => {
     verdict.outcome = outcome;
@@ -306,7 +363,14 @@ export async function exactReplayHorseDecisionRecord(
   const originalDecision = obj(body.decision) ? (body.decision as unknown as HorseDecision) : null;
   const decisionKey =
     snapshot && typeof snapshot.decisionKey === 'string' ? snapshot.decisionKey : null;
-  const acceptance = () => joinAcceptance(options.execution, record, originalDecision, decisionKey);
+  const acceptance = () =>
+    joinAcceptance(
+      options.execution,
+      record,
+      originalDecision,
+      decisionKey,
+      joinEffectReceipt(options.planReceipt, record, body)
+    );
   verdict.acceptance = acceptance();
   if (record.sourceRelease === null) return finish('non_replayable:source_release');
   if (record.sourceRelease !== options.runningSource)

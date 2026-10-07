@@ -18,6 +18,7 @@ import { randomUUID } from 'node:crypto';
 import {
   isChipFleetTable,
   DIAMOND_ARENA_HORSE_CLUBS,
+  arenaWalletsFor,
   diamondArenaIdFrom,
   isDiamondArenaCashTable,
   isDiamondTableRow,
@@ -1554,11 +1555,53 @@ export class HorseFleetManager {
          be built has no arena wallet in it at all - and an arena table with
          no wallet behind any horse is left out of the walk rather than
          offered to everybody. Only read when the arena is open AND the chip
-         memberships it is derived from loaded whole. */
+         map it joins loaded whole.
+
+         WHO PLAYS IT IS READ HERE, NOT BORROWED (2026-10-06). The first
+         version derived the arena wallet from the chip map above - and that
+         map only ever holds the clubs that own an OPEN CHIP TABLE (plus the
+         Midway pair in `this.clubIds`). Deep Stack Society owns none: every
+         one of its 3,151 cash tables is closed, which is why its horses were
+         sent to the arena at all. So no DSS membership was ever in the map,
+         every DSS horse was skipped by the derivation, and the arena sat at
+         zero seats with 416 horses holding ~4.2M settled Diamonds between
+         them (no_membership on every arena pair). The arena's players are now
+         read from `club_members` of DIAMOND_ARENA_HORSE_CLUBS directly, the
+         same two statuses the chip loader pays from, failing closed like the
+         rest of this block. See arenaWalletsFor. */
       if (diamondTables.length > 0) {
         let diamondRollsLoaded = false;
         if (bankrollsLoaded && diamondArenaId) {
           try {
+            const arenaHorseIds = new Set<string>();
+            let arenaMembersComplete = true;
+            for (const clubId of DIAMOND_ARENA_HORSE_CLUBS) {
+              const memberPage = await fetchAllRows<{ user_id: string }>(
+                (cursor, want) => {
+                  let q = supabase
+                    .from('club_members')
+                    .select('user_id')
+                    .eq('club_id', clubId)
+                    .in('status', ['active', 'approved'])
+                    .order('user_id', { ascending: true })
+                    .limit(want);
+                  if (cursor) q = q.gt('user_id', cursor);
+                  return q;
+                },
+                {
+                  label: 'HorseFleet.arenaHorseMembers',
+                  maxRows: 50_000,
+                  idKey: 'user_id',
+                  shouldContinue: readIsCurrent,
+                }
+              );
+              if (!readIsCurrent()) return;
+              if (!memberPage.complete) {
+                arenaMembersComplete = false;
+                break;
+              }
+              for (const m of memberPage.rows) arenaHorseIds.add(String(m.user_id));
+            }
             const rollPage = await fetchAllRows<{ id: string; diamonds: number | string | null }>(
               (cursor, want) => {
                 let q = supabase
@@ -1573,15 +1616,12 @@ export class HorseFleetManager {
               { label: 'HorseFleet.diamondRolls', maxRows: 50_000, shouldContinue: readIsCurrent }
             );
             if (!readIsCurrent()) return;
-            if (rollPage.complete) {
+            if (arenaMembersComplete && rollPage.complete) {
               const arena = diamondArenaId;
-              for (const r of rollPage.rows) {
-                const clubs = memberships.get(r.id);
-                if (!clubs || !DIAMOND_ARENA_HORSE_CLUBS.some((c) => clubs.has(c))) continue;
-                const d = Number(r.diamonds);
-                if (!Number.isFinite(d)) continue;
-                clubs.add(arena);
-                bankrolls.set(`${arena}:${r.id}`, Math.floor(d));
+              for (const [horseId, roll] of arenaWalletsFor(rollPage.rows, arenaHorseIds)) {
+                if (!memberships.has(horseId)) memberships.set(horseId, new Set());
+                memberships.get(horseId)!.add(arena);
+                bankrolls.set(`${arena}:${horseId}`, roll);
               }
               diamondRollsLoaded = true;
             }

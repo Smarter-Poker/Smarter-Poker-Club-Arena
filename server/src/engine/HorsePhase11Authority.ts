@@ -352,8 +352,10 @@ export interface HorsePhase11AuthoritySelection {
 /**
  * THE PROTECTED RELEASE SELECTIONS, one per pack. All null: no qualified
  * Phase 11 authority exists, so every live PLO5, PLO6 and PLO8 decision stays
- * in shadow, as before P11.3. P11.2 has not run any pack's matrix and no
- * qualification or completion record exists. Selecting a pack requires its
+ * in shadow, as before P11.3. Every P11.2 held-out matrix returned
+ * `qualified: false` (October 5, re-measured on the corrected legal form the
+ * same day) and every committed completion record is below the floor; see
+ * docs/horse-brain-phase11-closure-2026-10-05.md. Selecting a pack requires its
  * qualification file, the strength record it names and its natural completion
  * record committed under docs/evidence/phase11/ and shipped in the engine
  * image, their sha256 here, and the protected merge and engine release of that

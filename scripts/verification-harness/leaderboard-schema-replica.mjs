@@ -128,6 +128,33 @@ export function verify(primary, replica) {
     refused();
 }
 
+// Fixed categories only. Never print metadata values, private paths or URLs.
+export function admissionDiagnostic(primary, replica) {
+  try {
+    exact(primary, ['version_num', 'current_wal_lsn']);
+    exact(replica, [
+      'in_recovery',
+      'in_hot_standby',
+      'read_only',
+      'feedback',
+      'version_num',
+      'replay_lsn',
+    ]);
+    const causes = [];
+    if (replica.in_recovery !== true) causes.push('not-in-recovery');
+    if (replica.in_hot_standby !== 'on') causes.push('not-hot-standby');
+    if (replica.read_only !== 'on') causes.push('not-read-only');
+    if (replica.feedback !== 'off') causes.push('feedback-not-off');
+    if (typeof primary.version_num !== 'string' || !/^17[0-9]{4}$/.test(primary.version_num))
+      causes.push('unsupported-primary-version');
+    if (replica.version_num !== primary.version_num) causes.push('version-mismatch');
+    if (lsn(replica.replay_lsn) < lsn(primary.current_wal_lsn)) causes.push('replay-behind-fence');
+    return causes.length ? causes.join(',') : 'no-admission-mismatch';
+  } catch {
+    return 'invalid-admission-metadata';
+  }
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     const [mode, first, second, ...extra] = process.argv.slice(2);
@@ -141,9 +168,16 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       );
     else if (mode === 'query' && !first && !second) process.stdout.write(query);
     else if (mode === 'primary-query' && !first && !second) process.stdout.write(primaryQuery);
-    else if (mode === 'verify' && first && second)
-      verify(JSON.parse(readFileSync(first, 'utf8')), JSON.parse(readFileSync(second, 'utf8')));
-    else refused();
+    else if (mode === 'verify' && first && second) {
+      const primary = JSON.parse(readFileSync(first, 'utf8'));
+      const replica = JSON.parse(readFileSync(second, 'utf8'));
+      try {
+        verify(primary, replica);
+      } catch (error) {
+        console.error(`Replica Admission: ${admissionDiagnostic(primary, replica)}`);
+        throw error;
+      }
+    } else refused();
   } catch {
     console.error('Replica schema route refused.');
     process.exitCode = 1;

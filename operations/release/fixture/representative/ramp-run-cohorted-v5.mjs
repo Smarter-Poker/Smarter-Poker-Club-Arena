@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import {cashSeedReady} from './cash-seed-admission.mjs';
 import {witnessNaturalBlindEntry} from './post-bb-observation.mjs';
 import {recoverPurchases} from './purchase-journal.mjs';
-import {admitIndependentGroups,admitIndependentBatches} from './independent-admissions.mjs';
+import {admitIndependentGroups,admitIndependentBatches,admitTrackedSeed} from './independent-admissions.mjs';
 import {handoffObservers} from './observer-handoff.mjs';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -89,7 +89,7 @@ if(['admit','resume-admit','continuous'].includes(mode)){
  async function buyCashUser(group,i){if(setupObserverFailure)throw setupObserverFailure;const u=group.users[i];if(!u.buyinEntered){if(state.cashReentry){assert.ok(u.originalBuyinOp&&u.buyinOp!==u.originalBuyinOp);assert.ok(u.buyinQuote&&u.buyinQuote.tableId===group.tableId&&u.buyinQuote.buyinOp===u.buyinOp&&Number.isFinite(u.buyinAmount),'Original pre-admission quote missing');}await rpc('atomic_table_buyin',{p_user_id:u.id,p_table_id:group.tableId,p_seat_number:i+1,p_amount:u.buyinAmount??200,p_auto_rebuy:false,p_club_id:group.clubId,p_idempotency_key:u.buyinOp},u);u.buyinEntered=true;}}
  const seeds=seedTasks;
  await admitIndependentBatches(state.groups,8,async group=>{within();
-  if(group.kind==='cash'){for(let i=0;i<2;i++)await buyCashUser(group,i);if(mode==='continuous')seeds.push(attachSeedObserver(group).then(()=>({ok:true}),error=>{setupObserverFailure??=error;return {ok:false,error};}));}
+  if(group.kind==='cash'){for(let i=0;i<2;i++)await buyCashUser(group,i);if(mode==='continuous')await admitTrackedSeed(group,seeds,attachSeedObserver);}
   else for(const user of group.users.slice(0,-1)){if(setupObserverFailure)throw setupObserverFailure;if(!user.registered)await register(group,user);}
  });
  const seeded=await Promise.all(seeds);const seedFailure=seeded.find(s=>!s.ok);if(seedFailure){await Promise.allSettled([...seededObservers.values()].map(h=>h.close()));throw seedFailure.error;}

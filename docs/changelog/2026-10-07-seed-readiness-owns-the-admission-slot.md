@@ -1,0 +1,7 @@
+# Seed readiness owns the admission slot
+
+The representative mixed-load fixture detached its two-chair WebSocket observer from each eight-wide purchase task. All eighty tables could therefore be admitted at once. Original isolated engine transport records showed access checks returning before table admission, with nineteen engine-admission waits over twenty seconds and no acknowledgement or first frame before interruption. The measured phase never began.
+
+The original seed observer promise now remains inside the eight-wide admission task until its authoritative first frame succeeds or its original refusal propagates. Every sibling in the current batch drains; a failed batch cannot start later purchases. The continuing actor generation, financial request identities, strict native and wire checks, twenty-second startup limit, 240-second lifetime, 180-second measurement and final validation remain unchanged.
+
+The regression exercises the actual batch scheduler with eighty pending observers: the former detached shape reaches eighty simultaneous admissions, while the maintained tracked admission reaches eight. A second case preserves the first original refusal, drains its sibling and refuses the next batch. All twenty-three directly related fixture tests and TypeScript compilation passed. This source correction alone does not certify 600 or 1,000 simultaneous players; native closure and an actual qualified finite run remain required.

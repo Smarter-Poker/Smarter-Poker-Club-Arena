@@ -45,11 +45,19 @@ test('original payout creates paid historical evidence and candidate replays exa
   assert.match(sql, /payout_replay IS DISTINCT FROM proof\.payout_replay/);
   assert.ok(sql.includes(":'candidate_payout_body_md5'"));
   assert.ok(sql.includes("='2ba8db49240eac826b2f3efe0e262648'"));
-  for (const relation of ['leaderboard_payouts','leaderboard_payout_batches','leaderboard_payout_failures','player_stats_snapshots'])
+  for (const relation of [
+    'leaderboard_payouts',
+    'leaderboard_payout_batches',
+    'leaderboard_payout_failures',
+    'player_stats_snapshots',
+  ])
     assert.ok(sql.includes(`'${relation}'`));
   assert.match(sql, /to_jsonb\(m\)-'joined_at'/);
   assert.match(sql, /to_jsonb\(c\)-'created_at'/);
-  assert.doesNotMatch(sql, /UPDATE public\.leaderboard_reward_program_versions|INSERT INTO public\.leaderboard_payout(?:s|_batches)|clock_timestamp\s*\([^)]*[^)]\)/);
+  assert.doesNotMatch(
+    sql,
+    /UPDATE public\.leaderboard_reward_program_versions|INSERT INTO public\.leaderboard_payout(?:s|_batches)|clock_timestamp\s*\([^)]*[^)]\)/
+  );
 });
 test('candidate identities and exact new-overlay refusal cannot silently reuse predecessor', () => {
   for (const pin of ['578960fee3c325b9c724e976bed968f4', 'ef4ab9935eb3681ba4f1ab068a8b65fd'])

@@ -33,9 +33,12 @@ vi.mock('../src/hooks/useCashoutScope', () => ({
   useCashoutScope: () => isCurrent,
 }));
 vi.mock('../src/hooks/useVisibilityRefresh', () => ({ useVisibilityRefresh: () => undefined }));
-vi.mock('../src/components/common/Toast', () => ({
-  useToast: () => ({ error: mocks.toastError, success: mocks.toastSuccess }),
-}));
+vi.mock('../src/components/common/Toast', () => {
+  // Match the stable provider value; a new toast object on every render makes
+  // the component's load callback and mount effect restart in this fixture.
+  const toast = { error: mocks.toastError, success: mocks.toastSuccess };
+  return { useToast: () => toast };
+});
 vi.mock('../src/utils/errorReporter', () => ({ reportError: mocks.reportError }));
 vi.mock('../src/pages/DriftGatePanel', () => ({ default: () => <div>Gate Panel</div> }));
 vi.mock('../src/components/layouts/StandardContentLayout', () => ({
@@ -154,12 +157,21 @@ describe('Drift Incidents fail-closed reads', () => {
 
   it('never paints a verified empty detail queue clear while metrics are unavailable', async () => {
     mocks.dashboard.mockResolvedValue([]);
-    mocks.metrics.mockRejectedValue(new Error('metrics unavailable'));
+    let rejectMetrics!: (reason: Error) => void;
+    mocks.metrics.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectMetrics = reject;
+        })
+    );
 
     render(<DriftIncidentsPage />);
 
-    expect(await screen.findByTestId('Drift Incidents-pill')).toHaveTextContent(
-      'Open Count Unavailable'
+    expect(screen.getByTestId('Drift Incidents-pill')).toHaveTextContent('Loading');
+    expect(screen.queryByText(/^Clear$/)).not.toBeInTheDocument();
+    rejectMetrics(new Error('metrics unavailable'));
+    await waitFor(() =>
+      expect(screen.getByTestId('Drift Incidents-pill')).toHaveTextContent('Open Count Unavailable')
     );
     expect(screen.queryByText(/^Clear$/)).not.toBeInTheDocument();
   });
@@ -181,7 +193,9 @@ describe('Drift Incidents fail-closed reads', () => {
 
     render(<DriftIncidentsPage />);
 
-    expect(await screen.findByTestId('Drift Incidents-pill')).toHaveTextContent('2 Open');
+    await waitFor(() =>
+      expect(screen.getByTestId('Drift Incidents-pill')).toHaveTextContent('2 Open')
+    );
     expect(screen.getByText('Open Incidents').parentElement).toHaveTextContent('2');
     expect(screen.getByRole('tab', { name: 'Open (0)' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Acknowledged (1)' })).toBeInTheDocument();
@@ -204,7 +218,9 @@ describe('Drift Incidents fail-closed reads', () => {
 
     render(<DriftIncidentsPage />);
 
-    expect(await screen.findByTestId('Drift Incidents-pill')).toHaveTextContent('7 Open');
+    await waitFor(() =>
+      expect(screen.getByTestId('Drift Incidents-pill')).toHaveTextContent('7 Open')
+    );
     expect(screen.getByText('Open Incidents').parentElement).toHaveTextContent('7');
     expect(screen.getByText('Past 20m Target').parentElement).toHaveTextContent('3');
     expect(screen.getByText('Avg Loaded Resolution Age').parentElement).toHaveTextContent(
@@ -229,8 +245,8 @@ describe('Drift Incidents fail-closed reads', () => {
 
     render(<DriftIncidentsPage />);
 
-    expect(await screen.findByTestId('Drift Incidents-pill')).toHaveTextContent(
-      'Open Count Bounded'
+    await waitFor(() =>
+      expect(screen.getByTestId('Drift Incidents-pill')).toHaveTextContent('Open Count Bounded')
     );
     expect(screen.getByText('Open Incidents').parentElement).toHaveTextContent('0+');
     expect(screen.getByText('Past 20m Target').parentElement).toHaveTextContent('0+');

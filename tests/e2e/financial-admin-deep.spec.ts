@@ -325,8 +325,8 @@ async function expectLinkedConsoleOutcome(page: Page, route: LinkedConsole): Pro
     case 'Settlement Center':
       await expect(
         page
-          .getByRole('region', { name: 'Club Weekly Accounting', exact: true })
-          .getByRole('heading', { name: 'Club Weekly Accounting', exact: true, level: 3 })
+          .getByRole('region', { name: 'Club Weekly Summaries', exact: true })
+          .getByRole('heading', { name: 'Club Weekly Summaries', exact: true, level: 3 })
       ).toBeVisible();
       await expect(page.getByLabel('Club Transaction Records')).toBeVisible();
       break;

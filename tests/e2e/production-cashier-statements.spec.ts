@@ -15,6 +15,7 @@
 
 import { expect, test } from '@playwright/test';
 import { cashierTotalsObservation } from './support/cashierTotalsObservation';
+import { cashierStatementRouteMatches } from './support/cashierStatementRouteObservation';
 import {
   attachCashierScreenshot,
   expectCashierAxeClean,
@@ -71,14 +72,26 @@ test.describe('Cashier Statements - authenticated production route', () => {
       .catch(() => null);
 
     // (a) The signed-in visit lands on the route itself, not on auth.
-    await page.goto(`clubs/${CLUB_ID}/cashier/statements`, {
+    const statementURL = new URL(
+      `clubs/${CLUB_ID}/cashier/statements`,
+      testInfo.project.use.baseURL
+    );
+    await page.goto(statementURL.toString(), {
       waitUntil: 'domcontentloaded',
       timeout: 60_000,
     });
     await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/, { timeout: 30_000 });
-    await expect(page).toHaveURL(new RegExp(`/clubs/${CLUB_ID}/cashier/statements(?:[/?#]|$)`), {
-      timeout: 30_000,
-    });
+    const response = await pageRpc;
+    const rpcClubId: unknown = response.request().postDataJSON()?.p_club_id;
+    expect(rpcClubId, 'the native statement request must retain the original club identity').toBe(
+      CLUB_ID
+    );
+    await expect
+      .poll(
+        () => cashierStatementRouteMatches(new URL(page.url()), statementURL, CLUB_ID, rpcClubId),
+        { timeout: 30_000, message: 'Statements did not retain its route and native club identity' }
+      )
+      .toBe(true);
 
     // (b) Exactly one SpadeConsole chassis carries the page.
     const surface = page.locator('[data-cashier-surface="statements"]');
@@ -91,7 +104,6 @@ test.describe('Cashier Statements - authenticated production route', () => {
     ).toBeVisible();
 
     // (c) The page RPC answers 200 and its `authorized` flag decides the branch.
-    const response = await pageRpc;
     expect(response.status(), `${PAGE_RPC} did not answer 200`).toBe(200);
     const body = (await response.json()) as { authorized?: unknown; scope?: unknown };
     expect(typeof body.authorized, 'fn_cashier_statement_page returned no boolean authorized').toBe(

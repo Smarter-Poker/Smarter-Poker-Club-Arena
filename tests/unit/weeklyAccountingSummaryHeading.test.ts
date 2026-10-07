@@ -3,13 +3,13 @@ import { resolve } from 'node:path';
 import { within } from '@testing-library/dom';
 import { describe, expect, it } from 'vitest';
 
-const name = 'Club Weekly Accounting';
+const name = 'Club Weekly Summaries';
 
 describe('linked weekly accounting summary heading', () => {
-  it('selects the actual summary when the standalone run has the same heading', () => {
+  it('selects the current named summary above the standalone run', () => {
     const root = document.createElement('main');
-    root.innerHTML = `<section><h2>${name}</h2></section><section aria-label="${name}"><h3>${name}</h3></section>`;
-    expect(() => within(root).getByRole('heading', { name, exact: true })).toThrow();
+    root.innerHTML = `<section><h2>Club Weekly Accounting</h2></section><section aria-label="${name}"><h3>${name}</h3></section>`;
+    expect(within(root).getByRole('heading', { name, exact: true }).tagName).toBe('H3');
     const region = within(root).getByRole('region', { name, exact: true });
     expect(within(region).getByRole('heading', { name, exact: true, level: 3 }).tagName).toBe('H3');
     const spec = readFileSync(
@@ -21,13 +21,13 @@ describe('linked weekly accounting summary heading', () => {
       spec.indexOf("case 'CSV Exports':")
     );
     expect(summaryAssertion).toContain(
-      "getByRole('region', { name: 'Club Weekly Accounting', exact: true })"
+      "getByRole('region', { name: 'Club Weekly Summaries', exact: true })"
     );
     expect(summaryAssertion).toContain('level: 3');
   });
   it('refuses a missing summary instead of accepting the standalone run heading', () => {
     const root = document.createElement('main');
-    root.innerHTML = `<section><h2>${name}</h2></section>`;
+    root.innerHTML = `<section><h2>Club Weekly Accounting</h2></section>`;
     expect(() => within(root).getByRole('region', { name, exact: true })).toThrow();
   });
 });

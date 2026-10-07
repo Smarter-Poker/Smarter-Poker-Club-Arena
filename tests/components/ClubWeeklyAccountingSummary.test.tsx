@@ -96,6 +96,10 @@ describe('issued club weekly summaries', () => {
     await screen.findByRole('columnheader', { name: 'Rake Received' });
     expect(screen.getByRole('columnheader', { name: 'Rakeback Paid' })).toBeTruthy();
     expect(screen.getByRole('columnheader', { name: 'Rake Retained' })).toBeTruthy();
+    const scroll = screen.getByRole('table').parentElement!;
+    expect(scroll.tabIndex).toBe(0);
+    scroll.focus();
+    expect(scroll).toHaveFocus();
     expect(screen.queryByText('987,654.32 Chips')).toBeNull();
     expect(screen.queryByText('Agent User ID')).toBeNull();
     expect(fixture.calls).toHaveLength(1);

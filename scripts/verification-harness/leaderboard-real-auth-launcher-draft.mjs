@@ -2,6 +2,7 @@
 // Input: {container,scratch,sourceCatalog,authVersions}. No credentials accepted.
 // Root one-shot owner destroys database/network after this helper returns.
 import assert from 'node:assert/strict';
+import { delegationFixture } from './leaderboard-delegated-role-matrix.mjs';
 import { spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import {
@@ -329,6 +330,7 @@ async function main() {
   );
   assert.equal(generated.status, 0);
   sql(generated.stdout);
+  sql(delegationFixture('join', signup.ids));
   const financialQuery =
     "SELECT md5(jsonb_build_object('ledger',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.chip_ledger t),'issuance',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.ca_mint_ledger t),'chips',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.chip_transactions t),'wallet_history',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.wallet_transactions t),'clubs',(SELECT jsonb_agg(jsonb_build_object('id',id,'treasury',chip_treasury,'promo',promo_balance) ORDER BY id) FROM public.clubs),'members',(SELECT jsonb_agg(jsonb_build_object('club',club_id,'user',user_id,'chips',chip_balance,'promo',promo_balance) ORDER BY club_id,user_id) FROM public.club_members),'union_wallets',(SELECT jsonb_agg(to_jsonb(t) ORDER BY union_id) FROM public.union_wallets t))::text);";
   const financialBefore = sql(financialQuery);
@@ -342,15 +344,49 @@ async function main() {
     fixtureUserIds: signup.ids,
     expiredIssuedToken: JSON.parse(expiry).token,
   });
+  const publicationQuery =
+    "SELECT md5(jsonb_build_object('programs',(SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM public.leaderboard_reward_program_versions p),'settings',(SELECT jsonb_agg(to_jsonb(s) ORDER BY club_id) FROM public.club_leaderboard_settings s),'audit',(SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM public.audit_trail a))::text);";
+  sql(delegationFixture('appoint', signup.ids));
+  // Overseer admission/revocation uses fresh actual sessions for the SAME
+  // identities. Only owner RPC phases inside the driver prove same-token use.
+  driver(transport, { ...base, mode: 'overseer-admitted', fixtureUserIds: signup.ids });
+  sql(delegationFixture('revoke', signup.ids));
+  const publicationBeforeRefusal = sql(publicationQuery);
+  driver(transport, { ...base, mode: 'overseer-revoked', fixtureUserIds: signup.ids });
+  assert.equal(
+    sql(publicationQuery),
+    publicationBeforeRefusal,
+    'Revoked overseer changed publication state'
+  );
   assert.equal(catalog(), expected);
   assert.deepEqual(versions(), cfg.authVersions);
   assert.equal(sql(financialQuery), financialBefore, 'HTTP matrix changed financial state');
   sql(
-    "DO $$ BEGIN IF (SELECT count(*) FROM public.leaderboard_reward_program_versions)<>2 OR EXISTS(SELECT 1 FROM public.leaderboard_reward_program_versions WHERE version<>1 OR rewards_enabled OR overlay_enabled) OR EXISTS(SELECT 1 FROM public.club_members WHERE chip_balance<>0) OR EXISTS(SELECT 1 FROM public.clubs WHERE promo_balance<>0) OR EXISTS(SELECT 1 FROM public.union_wallets WHERE promo_wallet<>0) OR EXISTS(SELECT 1 FROM public.leaderboard_payout_batches) THEN RAISE EXCEPTION 'HTTP persistence/financial refusal readback failed'; END IF; END $$;"
+    "DO $$ BEGIN IF (SELECT count(*) FROM public.leaderboard_reward_program_versions)<>6 OR EXISTS(SELECT 1 FROM public.leaderboard_reward_program_versions WHERE rewards_enabled OR overlay_enabled) OR (SELECT max(version) FROM public.leaderboard_reward_program_versions WHERE club_id='92000000-0000-4000-8000-000000000001') IS DISTINCT FROM 4 OR (SELECT max(version) FROM public.leaderboard_reward_program_versions WHERE club_id='92000000-0000-4000-8000-000000000002') IS DISTINCT FROM 2 OR EXISTS(SELECT 1 FROM public.club_members WHERE chip_balance<>0) OR EXISTS(SELECT 1 FROM public.clubs WHERE promo_balance<>0) OR EXISTS(SELECT 1 FROM public.union_wallets WHERE promo_wallet<>0) OR EXISTS(SELECT 1 FROM public.leaderboard_payout_batches) THEN RAISE EXCEPTION 'HTTP persistence/financial refusal readback failed'; END IF; END $$;"
   );
   sql(
     `DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM public.leaderboard_reward_program_versions WHERE club_id='92000000-0000-4000-8000-000000000001' AND funding_owner_type='union' AND funding_union_id='91000000-0000-4000-8000-000000000001' AND published_by='${signup.ids[0]}') OR NOT EXISTS(SELECT 1 FROM public.leaderboard_reward_program_versions WHERE club_id='92000000-0000-4000-8000-000000000002' AND funding_owner_type='club' AND funding_union_id IS NULL AND published_by='${signup.ids[1]}') THEN RAISE EXCEPTION 'HTTP funding-owner persistence identity mismatch'; END IF; END $$;`
   );
+  // Independent persisted publication sequence catches writes by any refused
+  // phase, including extra versions hidden behind the latest setup response.
+  sql(`DO $$ BEGIN IF EXISTS(
+    SELECT 1 FROM public.leaderboard_reward_program_versions p
+    FULL JOIN (VALUES
+      ('92000000-0000-4000-8000-000000000001'::uuid,1,'${signup.ids[0]}'::uuid,'union','91000000-0000-4000-8000-000000000001'::uuid),
+      ('92000000-0000-4000-8000-000000000001'::uuid,2,'${signup.ids[3]}'::uuid,'union','91000000-0000-4000-8000-000000000001'::uuid),
+      ('92000000-0000-4000-8000-000000000001'::uuid,3,'${signup.ids[3]}'::uuid,'union','91000000-0000-4000-8000-000000000001'::uuid),
+      ('92000000-0000-4000-8000-000000000001'::uuid,4,'${signup.ids[4]}'::uuid,'union','91000000-0000-4000-8000-000000000001'::uuid),
+      ('92000000-0000-4000-8000-000000000002'::uuid,1,'${signup.ids[1]}'::uuid,'club',NULL::uuid),
+      ('92000000-0000-4000-8000-000000000002'::uuid,2,'${signup.ids[3]}'::uuid,'club',NULL::uuid)
+    ) e(club_id,version,publisher,funding_type,funding_union)
+    ON p.club_id=e.club_id AND p.version=e.version
+    WHERE p.id IS NULL OR e.club_id IS NULL OR p.published_by IS DISTINCT FROM e.publisher
+      OR p.funding_owner_type IS DISTINCT FROM e.funding_type
+      OR p.funding_union_id IS DISTINCT FROM e.funding_union
+      OR p.rewards_enabled IS DISTINCT FROM false OR p.overlay_enabled IS DISTINCT FROM false
+      OR p.weekly_prizes IS DISTINCT FROM '[]'::jsonb OR p.monthly_prizes IS DISTINCT FROM '[]'::jsonb
+      OR p.payout_metric IS DISTINCT FROM 'profit' OR p.payout_currency IS DISTINCT FROM 'chips'
+  ) THEN RAISE EXCEPTION 'Delegated publication sequence mismatch'; END IF; END $$;`);
   console.log(
     'Unqualified Draft Real Auth Matrix Completed; Production Binary Parity Unknown; Root Database Cleanup Required'
   );

@@ -63,3 +63,15 @@ test('source credentials are excluded and owned secret files are removed', () =>
   assert.match(launcher, /unlinkSync\(path\)/);
   assert.match(launcher, /Owned Auth\/REST Draft Cleanup Failed/);
 });
+test('delegated actual-session proof retains an independent exact publication oracle', () => {
+  assert.match(transport, /await delegatedProof/);
+  assert.match(launcher, /sql\(delegationFixture\('join', signup\.ids\)\)/);
+  assert.match(launcher, /mode: 'overseer-admitted'/);
+  assert.match(launcher, /mode: 'overseer-revoked'/);
+  assert.match(launcher, /Revoked overseer changed publication state/);
+  assert.match(launcher, /FULL JOIN \(VALUES/);
+  assert.match(launcher, /p\.published_by IS DISTINCT FROM e\.publisher/);
+  assert.match(launcher, /p\.funding_union_id IS DISTINCT FROM e\.funding_union/);
+  assert.match(launcher, /p\.weekly_prizes IS DISTINCT FROM '\[\]'::jsonb/);
+  assert.match(launcher, /fresh actual sessions for the SAME/);
+});

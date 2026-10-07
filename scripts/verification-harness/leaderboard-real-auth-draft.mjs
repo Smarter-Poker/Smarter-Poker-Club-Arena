@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
+import { delegatedProof } from './leaderboard-delegated-role-matrix.mjs';
 
 // Pinned PostgREST v14.5: JWTExpired is JwtClaimsErr, not JwtDecodeErr.
 export function assertExpiredCredential(response) {
@@ -120,11 +121,22 @@ async function main() {
     // secret, response payload or production identity is emitted.
     console.log(JSON.stringify({ kind: 'synthetic-signup-ids', ids: sessions.map((s) => s.user) }));
   } else {
-    assert.equal(cfg.mode, 'matrix');
+    assert.ok(['matrix', 'overseer-admitted', 'overseer-revoked'].includes(cfg.mode));
     assert.deepEqual(
       sessions.map((s) => s.user),
       cfg.fixtureUserIds
     );
+    if (cfg.mode !== 'matrix') {
+      await delegatedProof(
+        (path, args, token) => request(rest, path, args, token),
+        sessions,
+        cfg.mode
+      );
+      console.log(
+        JSON.stringify({ kind: 'isolated-delegation-result', mode: cfg.mode, passed: true })
+      );
+      return;
+    }
     const clubs = ['92000000-0000-4000-8000-000000000001', '92000000-0000-4000-8000-000000000002'];
     const privateFields = [
       'available_balance',
@@ -188,6 +200,7 @@ async function main() {
           assert.equal(readback.data.program_version, 1, 'Saved program must persist through REST');
         }
       }
+    await delegatedProof((path, args, token) => request(rest, path, args, token), sessions);
     const token = sessions[0].token;
     const parts = token.split('.');
     const signature = Buffer.from(parts[2], 'base64url');

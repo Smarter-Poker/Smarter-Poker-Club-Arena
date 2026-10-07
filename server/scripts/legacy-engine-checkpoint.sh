@@ -61,7 +61,10 @@ case "$LEGACY_SHA" in
 esac
 [ "$(timeout 3s "$CONTROL_DIR/engine-release-seal.py" get desired-image-id)" = "$LEGACY_IMAGE" ] \
   || die 'sealed predecessor is not the qualified legacy image'
-IDENTITY="$(bounded_operator_command 3 docker inspect --format '{{.Id}} {{.Image}} {{.State.Running}} {{.State.StartedAt}} {{.State.Pid}}' "$CONTAINER")"
+# This pre-admission identity probe runs before the absolute work clock and
+# its helper are established. Bound it directly to three seconds including
+# forced termination; the later work/cleanup allowance and reserve are unchanged.
+IDENTITY="$(timeout --signal=TERM --kill-after=1s 2s docker inspect --format '{{.Id}} {{.Image}} {{.State.Running}} {{.State.StartedAt}} {{.State.Pid}}' "$CONTAINER")"
 read -r CONTAINER_ID IMAGE RUNNING STARTED_AT HOST_PID <<< "$IDENTITY"
 [[ "$CONTAINER_ID" =~ ^[0-9a-f]{64}$ ]] && [ "$IMAGE" = "$LEGACY_IMAGE" ] \
   && [ "$RUNNING" = true ] || die 'serving predecessor identity mismatch'

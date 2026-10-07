@@ -339,13 +339,17 @@ BEGIN
      OR position('UNION ALL SELECT * FROM gap_hand_rake' in fn_src) = 0
      OR position(E'FROM gap_days gd\n      JOIN public.rake_records r' in fn_src) > 0
      OR (length(fn_src) - length(replace(fn_src, 'OFFSET 0', '')))
-        / length('OFFSET 0') IS DISTINCT FROM 3
+        / length('OFFSET 0') IS DISTINCT FROM 4
      OR position('flow_legs AS MATERIALIZED' in fn_src) > 0
      OR position('flows AS MATERIALIZED' in fn_src) = 0
      OR position('l.to_entity_id = p.player_id' in fn_src) = 0
      OR position('l.from_entity_id = p.player_id' in fn_src) = 0
      OR position('comm_pairs AS MATERIALIZED' in fn_src) = 0
      OR position('comm AS MATERIALIZED' in fn_src) = 0
+     OR position('smarter_private.agent_commission_report_daily' in fn_src) = 0
+     OR position('comm_gap_days AS MATERIALIZED' in fn_src) = 0
+     OR position('v_comm_head_end' in fn_src) = 0
+     OR position('GREATEST(v_comm_today,v_from)' in fn_src) = 0
      OR position('ac.user_id = p.agent_user_id' in fn_src) = 0
      OR position('ac.club_id = p.club_id' in fn_src) = 0
      OR position('JOIN public.agent_commissions ac' in fn_src) > 0
@@ -411,6 +415,10 @@ BEGIN
      OR position('l.from_entity_id = p.player_id' in fn_src) = 0
      OR position('flow_legs AS MATERIALIZED' in fn_src) <> 0
      OR position('comm AS MATERIALIZED' in fn_src) = 0
+     OR position('smarter_private.agent_commission_report_daily' in fn_src) = 0
+     OR position('comm_gap_days AS MATERIALIZED' in fn_src) = 0
+     OR position('v_comm_head_end' in fn_src) = 0
+     OR position('GREATEST(v_comm_today,v_from)' in fn_src) = 0
      OR position('ac.user_id = p.agent_user_id' in fn_src) = 0
      OR position('ac.club_id = p.club_id' in fn_src) = 0
      OR position('JOIN public.agent_commissions ac' in fn_src) <> 0

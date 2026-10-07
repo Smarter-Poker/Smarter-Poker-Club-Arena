@@ -1171,7 +1171,9 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
         error += String(data);
       });
       child.once('error', (e) => resolve({ code: null, error: String(e) }));
-      child.once('exit', (code) => resolve({ code, error }));
+      // Process exit can precede the final stderr data. Complete only after
+      // stdio closes so a real PostgreSQL refusal cannot appear error-free.
+      child.once('close', (code) => resolve({ code, error }));
     });
     const ready = new Promise<void>((resolve, reject) => {
       child.stdout.on('data', (data) => {
@@ -1179,7 +1181,7 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
         if (output.includes('SQL_LOCK_READY')) resolve();
       });
       child.once('error', reject);
-      child.once('exit', (code) => {
+      child.once('close', (code) => {
         if (!output.includes('SQL_LOCK_READY'))
           reject(new Error('Lock holder exited ' + code + ': ' + error));
       });

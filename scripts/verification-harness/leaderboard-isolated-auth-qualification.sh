@@ -8,6 +8,7 @@ readonly extension_bootstrap="$here/leaderboard-isolation-extension-bootstrap.sq
 readonly event_owner_bootstrap="$here/leaderboard-isolation-event-owner-bootstrap.sql"
 readonly extension_trigger_bootstrap="$here/leaderboard-isolation-extension-trigger-bootstrap.sql"
 readonly acl_bootstrap="$here/leaderboard-isolation-acl-bootstrap.sql"
+readonly definition_bootstrap="$here/leaderboard-isolation-definition-bootstrap.sql"
 readonly restore_script_helper="$here/leaderboard-isolation-restore-script.mjs"
 readonly startup_helper="$here/leaderboard-isolation-startup-profile.mjs"
 readonly catalog_diagnostic="$here/leaderboard-isolation-catalog-diagnostic.mjs"
@@ -153,6 +154,7 @@ if [[ "${1:-}" == '--check' ]]; then
   test -s "$event_owner_bootstrap"
   test -s "$extension_trigger_bootstrap"
   test -s "$acl_bootstrap"
+  test -s "$definition_bootstrap"
   test -s "$restore_script_helper"
   test -s "$startup_helper"
   test -s "$catalog_diagnostic"
@@ -291,6 +293,9 @@ chmod 600 "$scratch/extension-triggers-before.sql"
 source_client 180 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
   <"$acl_bootstrap" >"$scratch/acl-before.sql" 2>"$scratch/source-error.log" || source_failure 'source ACL metadata unavailable' "$scratch/source-error.log" "$?"
 chmod 600 "$scratch/acl-before.sql"
+source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
+  <"$definition_bootstrap" >"$scratch/definitions-before.sql" 2>"$scratch/source-error.log" || source_failure 'source definition metadata unavailable' "$scratch/source-error.log" "$?"
+chmod 600 "$scratch/definitions-before.sql"
 # Run 37579107745 observed inner client status 0 and outer elapsed 514s.
 # Preserve a finite measured command envelope, not a claimed inner duration.
 source_client 600 pg_dump \
@@ -312,6 +317,10 @@ source_client 180 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
   <"$acl_bootstrap" >"$scratch/acl-after.sql" 2>"$scratch/source-error.log" || source_failure 'source ACL metadata recheck unavailable' "$scratch/source-error.log" "$?"
 chmod 600 "$scratch/acl-after.sql"
 cmp -s "$scratch/acl-before.sql" "$scratch/acl-after.sql" || failure 'source ACL metadata changed during export'
+source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
+  <"$definition_bootstrap" >"$scratch/definitions-after.sql" 2>"$scratch/source-error.log" || source_failure 'source definition metadata recheck unavailable' "$scratch/source-error.log" "$?"
+chmod 600 "$scratch/definitions-after.sql"
+cmp -s "$scratch/definitions-before.sql" "$scratch/definitions-after.sql" || failure 'source definition metadata changed during export'
 source_startup >"$scratch/startup-after.json" 2>"$scratch/source-error.log" || source_failure 'source startup profile recheck unavailable' "$scratch/source-error.log" "$?"
 node "$startup_helper" verify "$scratch/startup-before.json" "$scratch/startup-after.json" || failure 'source numeric startup profile changed during export'
 prepare_roles "$source_bootstrap" <"$scratch/roles.sql" >"$scratch/roles-restore.sql" || failure 'exact existing bootstrap role creation unavailable'
@@ -385,7 +394,7 @@ node "$restore_script_helper" "$scratch/remaining.sql" "$scratch/event-owners.js
   "$scratch/event-owners-elevate.sql" "$scratch/event-owners-restore.sql" || failure 'atomic restore script validation failed'
 # Stream host-private inputs; docker cp would preserve root-owned 0600 files
 # unreadable to the destination's postgres OS user. One psql owns all inputs.
-cat "$scratch/event-owners-elevate.sql" "$scratch/remaining.sql" "$scratch/extension-triggers-before.sql" "$scratch/event-owners-restore.sql" \
+cat "$scratch/event-owners-elevate.sql" "$scratch/remaining.sql" "$scratch/extension-triggers-before.sql" "$scratch/definitions-before.sql" "$scratch/event-owners-restore.sql" \
   >"$scratch/atomic-restore.sql" || failure 'complete atomic restore input unavailable'
 chmod 600 "$scratch/atomic-restore.sql"
 docker exec -i "$container" psql -h /tmp -Xq -U "$bootstrap" -d postgres \

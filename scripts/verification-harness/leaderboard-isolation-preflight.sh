@@ -288,7 +288,7 @@ docker exec -i "$container" psql -h /tmp -Xq -U "$bootstrap" -d postgres -v ON_E
   <"$scratch/extensions.sql" >"$scratch/extension-restore.log" 2>&1 || destination_failure 'original-owner extensions or exact versions cannot be restored' "$scratch/extension-restore.log" "$?"
 # Render the unchanged remaining archive privately. psql owns one transaction
 # across elevation, archive restoration and exact original role attributes.
-docker exec -i "$container" pg_restore --schema-only --exit-on-error --use-list=/tmp/remaining.list \
+docker exec -i "$container" pg_restore --file=- --schema-only --exit-on-error --use-list=/tmp/remaining.list \
   <"$scratch/schema.dump" >"$scratch/remaining.sql" 2>"$scratch/schema-render.log" || destination_failure 'remaining archive rendering failed' "$scratch/schema-render.log" "$?"
 node "$restore_script_helper" "$scratch/remaining.sql" "$scratch/event-owners.json" \
   "$scratch/event-owners-elevate.sql" "$scratch/event-owners-restore.sql" || failure 'atomic restore script validation failed'

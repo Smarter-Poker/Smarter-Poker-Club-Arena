@@ -7,6 +7,28 @@ import { ownerStatements, validateRestoreScript } from './leaderboard-isolation-
 
 const shell = fileURLToPath(new URL('./leaderboard-isolation-preflight.sh', import.meta.url));
 const source = readFileSync(shell, 'utf8');
+test('remaining archive renderer selects stdout without connecting or owning transactions', () => {
+  const command = source.match(
+    /docker exec -i "\$container" pg_restore ([^\n]+)\n[^\n]*remaining.sql/
+  )?.[1];
+  assert.ok(command);
+  assert.match(command, /--file=-/);
+  assert.doesNotMatch(command, /--dbname|--create|--single-transaction|--transaction-size/);
+  const before = spawnSync('pg_restore', ['--schema-only'], {
+    input: 'invalid synthetic archive',
+    encoding: 'utf8',
+  });
+  assert.equal(before.error, undefined);
+  assert.notEqual(before.status, 0);
+  assert.match(before.stderr, /one of -d\/--dbname and -f\/--file must be specified/);
+  const after = spawnSync('pg_restore', ['--file=-', '--schema-only'], {
+    input: 'invalid synthetic archive',
+    encoding: 'utf8',
+  });
+  assert.notEqual(after.status, 0);
+  assert.doesNotMatch(after.stderr, /one of -d\/--dbname and -f\/--file must be specified/);
+  assert.match(after.stderr, /input file does not appear to be a valid archive/);
+});
 test('atomic archive validation preserves quoted routine bodies and refuses transaction or connection escape', () => {
   assert.doesNotThrow(() =>
     validateRestoreScript(

@@ -40,7 +40,10 @@ SELECT jsonb_build_object(
     LEFT JOIN pg_tablespace t ON t.oid=c.reltablespace
     WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema') q),
   'columns', (SELECT jsonb_agg(x ORDER BY x::text) FROM (
-    SELECT jsonb_build_array(n.nspname,c.relname,a.attname,a.attnum,
+    -- Ordinary pg_dump omits dropped slots. Compare the exact live-column
+    -- order, not internal physical slot numbers that native restore renumbers.
+    SELECT jsonb_build_array(n.nspname,c.relname,a.attname,
+      row_number() OVER (PARTITION BY a.attrelid ORDER BY a.attnum),
       format_type(a.atttypid,a.atttypmod),a.attnotnull,a.attidentity,a.attgenerated,
       pg_get_expr(d.adbin,d.adrelid),a.attacl::text) x
     FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid
@@ -84,7 +87,14 @@ SELECT jsonb_build_object(
     SELECT jsonb_build_array(pubname,pg_get_userbyid(pubowner),puballtables,pubinsert,
       pubupdate,pubdelete,pubtruncate,pubviaroot) x FROM pg_publication) q),
   'publication_relations', (SELECT jsonb_agg(x ORDER BY x::text) FROM (
-    SELECT jsonb_build_array(p.pubname,n.nspname,c.relname,r.prattrs,
+    -- Explicit publication columns follow restored column identity/order,
+    -- never source-internal physical attribute numbers.
+    SELECT jsonb_build_array(p.pubname,n.nspname,c.relname,
+      CASE WHEN r.prattrs IS NULL THEN NULL ELSE (
+        SELECT jsonb_agg(a.attname ORDER BY a.attnum)
+        FROM pg_attribute a WHERE a.attrelid=r.prrelid
+          AND a.attnum=ANY(r.prattrs::smallint[]) AND NOT a.attisdropped
+      ) END,
       pg_get_expr(r.prqual,r.prrelid)) x FROM pg_publication_rel r
     JOIN pg_publication p ON p.oid=r.prpubid JOIN pg_class c ON c.oid=r.prrelid
     JOIN pg_namespace n ON n.oid=c.relnamespace) q),

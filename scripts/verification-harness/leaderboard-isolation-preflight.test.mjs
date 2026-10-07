@@ -8,6 +8,7 @@ import test from 'node:test';
 import { ownerStatements, validateRestoreScript } from './leaderboard-isolation-restore-script.mjs';
 // The existing directly invoked preflight lane also runs startup-parity contracts.
 import './leaderboard-isolation-startup-profile.test.mjs';
+import './leaderboard-isolation-catalog-diagnostic.test.mjs';
 
 const shell = fileURLToPath(new URL('./leaderboard-isolation-preflight.sh', import.meta.url));
 const source = readFileSync(shell, 'utf8');
@@ -388,6 +389,30 @@ const catalog = readFileSync(
   new URL('./leaderboard-isolation-catalog.sql', import.meta.url),
   'utf8'
 );
+
+test('native schema restore compares live column order and explicit publication names, not dropped physical slots', () => {
+  assert.match(catalog, /row_number\(\) OVER \(PARTITION BY a\.attrelid ORDER BY a\.attnum\)/);
+  assert.doesNotMatch(catalog, /a\.attname,a\.attnum,/);
+  assert.match(catalog, /CASE WHEN r\.prattrs IS NULL THEN NULL ELSE/);
+  assert.match(catalog, /jsonb_agg\(a\.attname ORDER BY a\.attnum\)/);
+  assert.match(catalog, /a\.attnum=ANY\(r\.prattrs::smallint\[\]\) AND NOT a\.attisdropped/);
+  assert.doesNotMatch(catalog, /c\.relname,r\.prattrs,/);
+  // Native pg_dump omits dropped columns. This finite fixture models its
+  // documented slot compaction, not an actual isolated PostgreSQL run.
+  const original = [
+    { name: 'first', slot: 1 },
+    { name: 'last', slot: 3 },
+  ];
+  const restored = original.map((column, index) => ({ ...column, slot: index + 1 }));
+  assert.notDeepEqual(original, restored);
+  const logical = (columns) => columns.map((column, index) => [column.name, index + 1]);
+  assert.deepEqual(logical(original), logical(restored));
+  assert.notDeepEqual(logical(original), logical([...restored].reverse()));
+  const publication = (columns, slots) =>
+    columns.filter((column) => slots.includes(column.slot)).map((column) => column.name);
+  assert.deepEqual(publication(original, [3]), publication(restored, [2]));
+  assert.notDeepEqual(publication(original, [3]), publication(restored, [1]));
+});
 
 test('source safeguard check executes without credentials or production access', () => {
   const result = spawnSync('bash', [shell, '--check'], {

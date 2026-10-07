@@ -8,6 +8,7 @@ readonly extension_bootstrap="$here/leaderboard-isolation-extension-bootstrap.sq
 readonly event_owner_bootstrap="$here/leaderboard-isolation-event-owner-bootstrap.sql"
 readonly restore_script_helper="$here/leaderboard-isolation-restore-script.mjs"
 readonly startup_helper="$here/leaderboard-isolation-startup-profile.mjs"
+readonly catalog_diagnostic="$here/leaderboard-isolation-catalog-diagnostic.mjs"
 readonly image='supabase/postgres:17.6.1.063'
 readonly bootstrap='leaderboard_qualification_bootstrap'
 prepare_roles() {
@@ -150,6 +151,7 @@ if [[ "${1:-}" == '--check' ]]; then
   test -s "$event_owner_bootstrap"
   test -s "$restore_script_helper"
   test -s "$startup_helper"
+  test -s "$catalog_diagnostic"
   if grep -Ei '\b(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|CALL)\b' "$catalog" >/dev/null; then
     echo 'Catalog preflight contains a forbidden mutation.' >&2
     exit 1
@@ -367,6 +369,11 @@ docker exec -i "$container" psql -h /tmp -Xq -U "$bootstrap" -d postgres \
   <"$scratch/atomic-restore.sql" >"$scratch/schema-restore.log" 2>&1 || destination_failure 'schema incompatibility during isolated restore' "$scratch/schema-restore.log" "$?"
 docker exec -i "$container" psql -h /tmp -XAtq -U "$bootstrap" -d postgres -v ON_ERROR_STOP=1 -v VERBOSITY=verbose \
   <"$catalog" >"$scratch/isolated.json" 2>"$scratch/local-error.log" || destination_failure 'isolated catalog readback failed' "$scratch/local-error.log" "$?"
+# Fixed-section diagnostics retain no private identifiers or field values.
+# They explain a refusal only; exact equality below remains authoritative.
+if ! cmp -s "$scratch/source-before.json" "$scratch/isolated.json"; then
+  node "$catalog_diagnostic" "$scratch/source-before.json" "$scratch/isolated.json" || echo 'Catalog Diagnostic Unavailable; Equality Still Refused.' >&2
+fi
 cmp -s "$scratch/source-before.json" "$scratch/isolated.json" || failure 'isolated catalog differs from current source'
 hash="$(sha256sum "$scratch/isolated.json" | cut -d' ' -f1)"
 cleanup || failure 'explicit cleanup verification failed'

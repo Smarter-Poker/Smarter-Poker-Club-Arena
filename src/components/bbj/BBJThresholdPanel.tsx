@@ -36,6 +36,7 @@ import { supabase } from '../../lib/supabase';
 import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
 import { watchBbjPool } from '../../lib/bbjPoolFeed';
+import { isUUID, resolveClubUUID } from '../../utils/clubIdResolver';
 import { money } from '../../utils/handFormat';
 import { compactChips } from '../../utils/format';
 import { titleCase } from '../../utils/titleCase';
@@ -55,8 +56,35 @@ interface Props {
   canEdit: boolean;
 }
 
-export default function BBJThresholdPanel({ clubId, canEdit }: Props) {
+export default function BBJThresholdPanel({ clubId: clubParam, canEdit }: Props) {
   const toast = useToast();
+  /* THE ROUTE NAMES A CLUB BY SLUG; THE TABLE KEYS IT BY UUID (2026-10-07).
+     ClubSettingsPage passes its route param, which is a slug such as
+     "deep-stack-society-11192" whenever the page was opened from a club link.
+     `.eq('club_id', slug)` on a uuid column is Postgres 22P02, so the list
+     never loaded and an add could never save: 69 such refusals on
+     bbj_notify_thresholds in six hours of postgres_logs on 2026-10-07. The
+     panel resolves the id once and asks nothing until it has a real one. */
+  const [clubId, setClubId] = useState<string | null>(() => (isUUID(clubParam) ? clubParam : null));
+  useEffect(() => {
+    if (isUUID(clubParam)) {
+      setClubId(clubParam);
+      return undefined;
+    }
+    setClubId(null);
+    let cancelled = false;
+    void resolveClubUUID(clubParam).then((resolved) => {
+      if (cancelled) return;
+      if (isUUID(resolved)) setClubId(resolved);
+      else
+        reportError(new Error('club id unresolved'), 'BBJThresholdPanel.club_unresolved', {
+          clubParam,
+        });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [clubParam]);
   const [rows, setRows] = useState<Threshold[]>([]);
   const [jackpot, setJackpot] = useState<number | null>(null);
   const [amountText, setAmountText] = useState('');
@@ -65,6 +93,7 @@ export default function BBJThresholdPanel({ clubId, canEdit }: Props) {
   const [loaded, setLoaded] = useState(false);
 
   const load = useCallback(async () => {
+    if (!clubId) return;
     const { data, error } = await supabase
       .from('bbj_notify_thresholds')
       .select('id, amount, label, enabled')
@@ -104,6 +133,7 @@ export default function BBJThresholdPanel({ clubId, canEdit }: Props) {
       toast.error('Enter An Amount Above Zero.');
       return;
     }
+    if (!clubId) return;
     setBusy(true);
     const { error } = await supabase.from('bbj_notify_thresholds').insert({
       club_id: clubId,

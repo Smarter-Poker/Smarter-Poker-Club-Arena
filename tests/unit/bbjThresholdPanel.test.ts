@@ -20,7 +20,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { sliceEnclosingBlock } from '../helpers/sourceWindow';
+import { sliceCall, sliceEnclosingBlock } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(process.cwd(), p), 'utf8');
 const PANEL = read('src/components/bbj/BBJThresholdPanel.tsx');
@@ -97,5 +97,33 @@ describe('it tells the operator what they are deciding', () => {
        false alarm on a correct outcome. */
     expect(PANEL).toMatch(/duplicate\|unique/);
     expect(PANEL).toMatch(/That Amount Is Already On The List\./);
+  });
+});
+
+/*
+ * 2026-10-07. ClubSettingsPage hands the panel its route param, which is a
+ * slug ("deep-stack-society-11192") whenever the page was opened from a club
+ * link. `.eq('club_id', slug)` on a uuid column is 22P02, so the list never
+ * loaded and an add never saved: 69 such refusals in six hours of
+ * postgres_logs. The panel resolves the id before it reads or writes.
+ */
+describe('the panel keys the table by the club uuid, not the route slug', () => {
+  it('resolves a non-uuid route param before any read', () => {
+    expect(PANEL).toMatch(/clubId: clubParam/);
+    expect(PANEL).toMatch(/resolveClubUUID\(clubParam\)/);
+    expect(PANEL).toMatch(/isUUID\(resolved\)/);
+  });
+
+  it('asks nothing until it holds a real id', () => {
+    const load = sliceCall(PANEL, 'const load = useCallback(');
+    expect(load).toMatch(/if \(!clubId\) return;/);
+    expect(load.indexOf('if (!clubId) return;')).toBeLessThan(
+      load.indexOf(".from('bbj_notify_thresholds')")
+    );
+    const add = sliceCall(PANEL, 'const add = useCallback(');
+    expect(add.indexOf('if (!clubId) return;')).toBeGreaterThan(-1);
+    expect(add.indexOf('if (!clubId) return;')).toBeLessThan(
+      add.indexOf(".from('bbj_notify_thresholds')")
+    );
   });
 });

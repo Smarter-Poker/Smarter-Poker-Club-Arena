@@ -89,8 +89,10 @@ grep -q 'cannot change the V31 hand-key contract while certified datasets exist'
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909180000_v31_agreement_receipts_bind_the_runtime_cell.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261007014629_the_solver_compacts_only_its_matching_verified_source_nodes.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261007030040_the_solver_binds_immutable_feature_contracts.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261007034442_the_solver_validators_have_one_versioned_door.sql"
 "${PSQL[@]}" -f "$HERE/input-bundle-bootstrap.sql"
 "${PSQL[@]}" -f "$HERE/feature-contract-v2.sql"
+"${PSQL[@]}" -f "$HERE/validator-one-door.sql"
 "${PSQL[@]}" -f "$HERE/certified-v31.sql"
 "${PSQL[@]}" -f "$HERE/solver-agreement.sql"
 "${PSQL[@]}" -f "$HERE/pipeline-liveness.sql"
@@ -100,10 +102,22 @@ STATUS=$("${PSQL[@]}" -Atc "select ca_gto_v31_certification_status(null)->>'cont
 INDEX_COUNT=$("${PSQL[@]}" -Atc "select count(*) from pg_indexes where schemaname='public' and indexname in ('gto_v31_datasets_input_bundle_id_idx','gto_v31_release_evaluations_source_result_id_idx');")
 [[ "$INDEX_COUNT" == '2' ]]
 echo PHASE4_STATUS_OK
+awk '/^-- EXECUTABLE VALIDATOR ROLLBACK:/{copy=1;next} /^-- END EXECUTABLE VALIDATOR ROLLBACK/{copy=0} copy {sub(/^-- ?/, "");print}' \
+ "$ROOT/supabase/migrations/20261007034442_the_solver_validators_have_one_versioned_door.sql" > "$WORK/validator-rollback.sql"
+"${PSQL[@]}" -f "$WORK/validator-rollback.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261007034442_the_solver_validators_have_one_versioned_door.sql"
+"${PSQL[@]}" -f "$HERE/validator-one-door.sql"
+echo V31_VALIDATOR_ROLLBACK_RECOVERY_OK
+# Restore the newer validator migration first before rolling back its prerequisite.
+"${PSQL[@]}" -f "$WORK/validator-rollback.sql"
 # Qualify the copy/paste Tier-3 function-only rollback in this disposable database.
 awk '/^-- EXECUTABLE ROLLBACK:/{copy=1;next} /^-- END EXECUTABLE ROLLBACK/{copy=0} copy && /^-- BEGIN;/{sql=1} copy && sql {sub(/^-- /, "");print}' \
   "$ROOT/supabase/migrations/20261007030040_the_solver_binds_immutable_feature_contracts.sql" > "$WORK/feature-rollback.sql"
 "${PSQL[@]}" -f "$WORK/feature-rollback.sql"
 ROLLBACK_HASH=$("${PSQL[@]}" -Atc "select md5(pg_get_functiondef('public.fn_gto_v31_build_cell(uuid,jsonb)'::regprocedure));")
 [[ "$ROLLBACK_HASH" == 'fc7eb5e3be9a52b6dc83db65900edc50' ]]
+LEGACY_VALID=$("${PSQL[@]}" -Atc "select public.fn_gto_v31_hand_matrix_valid('{\"AKo:21\":{\"check\":1}}'::jsonb,'flop');")
+[[ "$LEGACY_VALID" == 't' ]]
+LEGACY_COMPACT_VALID=$("${PSQL[@]}" -Atc "select public.fn_gto_v31_compact_matrices_valid('{\"AKo:21\":{\"c\":1}}'::jsonb,'{\"c\":{\"family\":\"check\",\"size_unit\":\"none\",\"size_value\":null,\"all_in\":false}}'::jsonb,'{\"AKo:21\":1}'::jsonb,'{\"AKo:21\":{\"c\":1}}'::jsonb,'flop');")
+[[ "$LEGACY_COMPACT_VALID" == 't' ]]
 echo V31_FEATURE_ROLLBACK_OK

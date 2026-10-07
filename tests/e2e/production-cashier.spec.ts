@@ -90,11 +90,18 @@ test.describe('Production Cashier Certification', () => {
     const cashierStatus = page
       .getByRole('region', { name: 'Every Chip. Accounted For.' })
       .getByRole('status');
-    await expect(cashierStatus).toHaveText(
-      /^(Balances Synchronized|Cashier Ready; Loading The Rest Of The Roster After [\d,]+ Members)$/,
-      { timeout: 30_000 }
-    );
-    await expect(reconciliation.getByText('Not Yet Verified', { exact: true })).toHaveCount(0);
+    // A first roster page is usable before the remaining pages have been
+    // verified. Both witnesses must agree within the existing hydration budget;
+    // a continuation warning or refused read must still fail certification.
+    await expect
+      .poll(
+        async () => ({
+          status: await cashierStatus.textContent(),
+          unverified: await reconciliation.getByText('Not Yet Verified', { exact: true }).count(),
+        }),
+        { timeout: 30_000 }
+      )
+      .toEqual({ status: 'Balances Synchronized', unverified: 0 });
     // Role resolution can rebuild the visible tab set. The default must still
     // be the first available action after authoritative hydration completes.
     await expect(tabs.first()).toHaveAttribute('aria-selected', 'true');
@@ -272,12 +279,22 @@ test.describe('Production Cashier Certification', () => {
     await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/, { timeout: 30_000 });
     const console = page.locator('main .sc').filter({ hasText: 'Club Arena Cashier' }).first();
     await expect(console).toBeVisible({ timeout: 60_000 });
+    const agentWallet = page.getByRole('button', { name: /Agent Wallet/ }).first();
+    // The painted console precedes authoritative role and wallet hydration.
+    // Inspect the loaded surface, retaining the existing thirty-second bound.
+    await expect
+      .poll(
+        async () => ({
+          loading: await console.getByText('Loading Your Cashier', { exact: true }).count(),
+          walletVisible: await agentWallet.isVisible(),
+        }),
+        { timeout: 30_000 }
+      )
+      .toEqual({ loading: 0, walletVisible: true });
     await expectNoRawCashierCents(page.locator('main'), 'Advanced Cashier');
     await expectCashierAxeClean(page, testInfo, 'main', 'advanced-cashier');
     await attachCashierScreenshot(page, testInfo, 'advanced-cashier');
 
-    const agentWallet = page.getByRole('button', { name: /Agent Wallet/ }).first();
-    await expect(agentWallet).toBeVisible();
     await agentWallet.click();
     const dialog = page.getByRole('dialog', { name: 'Agent Wallet Cashier' });
     await expect(dialog).toBeVisible({ timeout: 30_000 });

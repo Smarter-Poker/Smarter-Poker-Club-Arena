@@ -53,6 +53,7 @@ export async function reloadMissionPageWithEvidence(page: Page, attach: AttachOb
         .evaluate(
           ({ origin, pathname }) => {
             const root = window.document.querySelector('#daily-missions');
+            const busy = root?.getAttribute('aria-busy');
             return {
               route:
                 location.origin === origin && location.pathname === pathname
@@ -62,7 +63,7 @@ export async function reloadMissionPageWithEvidence(page: Page, attach: AttachOb
                     : 'other',
               readyState: window.document.readyState,
               missionRootPresent: !!root,
-              missionBusy: root?.getAttribute('aria-busy') ?? null,
+              missionBusy: busy === 'true' || busy === 'false' ? busy : root ? 'unknown' : null,
               currentMissionIds: Array.from(
                 window.document.querySelectorAll('article[id^="mission-card-"]')
               )

@@ -55,7 +55,7 @@ describe('failed mission reload evidence', () => {
   it('retains an aborted request even if the actual mission document is rendered', async () => {
     const root = document.createElement('div');
     root.id = 'daily-missions';
-    root.setAttribute('aria-busy', 'false');
+    root.setAttribute('aria-busy', 'private-value');
     root.innerHTML =
       '<article id="mission-card-00000000-0000-4000-8000-000000000001"></article><input type="password" value="NEVER_CAPTURE"><article id="mission-card-private-value"></article>';
     document.body.append(root);
@@ -65,10 +65,11 @@ describe('failed mission reload evidence', () => {
       await expect(reloadMissionPageWithEvidence(f.page, attach)).rejects.toBe(f.original);
       expect(f.reload).toHaveBeenCalledOnce();
       const observation = attach.mock.calls[0][0] as unknown as {
-        document: { missionRootPresent: boolean; currentMissionIds: string[] };
+        document: { missionRootPresent: boolean; missionBusy: string; currentMissionIds: string[] };
         navigation: object[];
       };
       expect(observation.document.missionRootPresent).toBe(true);
+      expect(observation.document.missionBusy).toBe('unknown');
       expect(observation.document.currentMissionIds).toEqual([
         '00000000-0000-4000-8000-000000000001',
       ]);

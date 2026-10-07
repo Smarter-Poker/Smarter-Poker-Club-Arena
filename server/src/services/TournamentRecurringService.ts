@@ -5416,45 +5416,6 @@ export class TournamentRecurringService {
   }
 
   /**
-   * Is this host club the Diamond Arena? Answered by the shared arena
-   * contract on the club's own row (asset, is_platform, union), never by a
-   * hard-coded id. Null when the row could not be read; a club that does not
-   * exist is simply not the arena.
-   */
-  private async diamondArenaHost(clubId: string): Promise<boolean | null> {
-    const { data, error } = await supabase
-      .from('clubs')
-      .select('id, asset, is_platform, union_id')
-      .eq('id', clubId)
-      .maybeSingle();
-    if (error) return null;
-    return isDiamondArenaClubRow(data as Record<string, unknown> | null);
-  }
-
-  /**
-   * Each horse's settled Diamonds, floored to whole Diamonds, in the shape the
-   * bankroll gate reads a chip wallet in. Chunked like the chip read, because
-   * `ids` is the whole eligible fleet; an incomplete read is reported as such
-   * and the gate leaves the pool alone, exactly as it does for chips.
-   */
-  private async diamondRollsFor(
-    ids: string[]
-  ): Promise<{ rows: Array<{ user_id: string; chip_balance: number | null }>; complete: boolean }> {
-    const page = await selectInChunks<{ id: string; diamonds: number | string | null }>(
-      ids,
-      (batch) => supabase.from('profiles').select('id, diamonds').in('id', batch),
-      'TournamentRecurring.diamondBankrolls'
-    );
-    return {
-      complete: page.complete,
-      rows: page.rows.map((r) => {
-        const d = Number(r.diamonds);
-        return { user_id: r.id, chip_balance: Number.isFinite(d) ? Math.floor(d) : null };
-      }),
-    };
-  }
-
-  /**
    * The club wallets an entry into this event can be charged to, or null when
    * that is unknowable right now.
    *
@@ -6679,6 +6640,45 @@ export class TournamentRecurringService {
     } finally {
       releaseLifecycleScope();
     }
+  }
+
+  /**
+   * Is this host club the Diamond Arena? Answered by the shared arena
+   * contract on the club's own row (asset, is_platform, union), never by a
+   * hard-coded id. Null when the row could not be read; a club that does not
+   * exist is simply not the arena.
+   */
+  private async diamondArenaHost(clubId: string): Promise<boolean | null> {
+    const { data, error } = await supabase
+      .from('clubs')
+      .select('id, asset, is_platform, union_id')
+      .eq('id', clubId)
+      .maybeSingle();
+    if (error) return null;
+    return isDiamondArenaClubRow(data as Record<string, unknown> | null);
+  }
+
+  /**
+   * Each horse's settled Diamonds, floored to whole Diamonds, in the shape the
+   * bankroll gate reads a chip wallet in. Chunked like the chip read, because
+   * `ids` is the whole eligible fleet; an incomplete read is reported as such
+   * and the gate leaves the pool alone, exactly as it does for chips.
+   */
+  private async diamondRollsFor(
+    ids: string[]
+  ): Promise<{ rows: Array<{ user_id: string; chip_balance: number | null }>; complete: boolean }> {
+    const page = await selectInChunks<{ id: string; diamonds: number | string | null }>(
+      ids,
+      (batch) => supabase.from('profiles').select('id, diamonds').in('id', batch),
+      'TournamentRecurring.diamondBankrolls'
+    );
+    return {
+      complete: page.complete,
+      rows: page.rows.map((r) => {
+        const d = Number(r.diamonds);
+        return { user_id: r.id, chip_balance: Number.isFinite(d) ? Math.floor(d) : null };
+      }),
+    };
   }
 
   private async registerHorses(

@@ -95,6 +95,7 @@ describe('native publishing requires the exact origin verification', () => {
       contents: 'read',
       'pull-requests': 'read',
       checks: 'read',
+      actions: 'read',
     });
     expect(
       eligible(target, {

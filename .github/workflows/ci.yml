@@ -392,6 +392,9 @@ jobs:
         if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci --ignore-scripts
 
+      - name: Actual client runtime retention refuses incomplete and changed inputs
+        run: node --test tests/operations/client-runtime-retention.test.mjs
+
       - name: Record Start Time
         id: timer
         run: echo "start=$(date +%s)" >> $GITHUB_OUTPUT

@@ -51,6 +51,74 @@ function catalog() {
 }
 const encode = JSON.stringify;
 
+test('opaque definition and identity details are bounded without private text', () => {
+  const source = catalog();
+  const destination = catalog();
+  source.constraints = Array.from({ length: 40 }, (_, i) => [
+    'SECRET_SCHEMA',
+    'SECRET_TABLE',
+    `SECRET_${i}`,
+    'f',
+    'SECRET_SOURCE',
+    true,
+  ]);
+  destination.constraints = source.constraints.map((row) => [
+    ...row.slice(0, 4),
+    'SECRET_DESTINATION',
+    true,
+  ]);
+  source.triggers = [['SECRET_SCHEMA', 'SECRET_TABLE', 'SECRET_TRIGGER', 'SECRET_DEFINITION', 'O']];
+  const result = diagnoseCatalog(encode(source), encode(destination));
+  const constraints = result.sections.find((row) => row.section === 'constraints');
+  assert.equal(constraints.identity_details_total, 40);
+  assert.equal(constraints.identity_details.length, 32);
+  assert.equal(constraints.identity_details_truncated, true);
+  assert.equal(constraints.identity_details[0].source_character_length, 13);
+  assert.equal(constraints.identity_details[0].destination_character_length, 18);
+  assert.match(constraints.identity_details[0].identity_hash, /^[a-f0-9]{64}$/);
+  assert.notEqual(
+    constraints.identity_details[0].source_field_hash,
+    constraints.identity_details[0].destination_field_hash
+  );
+  assert.equal(
+    result.sections.find((row) => row.section === 'triggers').identity_details[0].kind,
+    'removed'
+  );
+  assert.doesNotMatch(encode(result), /SECRET/);
+});
+
+test('ACL diagnostics preserve quoted commas, escapes, grantors, options and NULL-empty distinction', () => {
+  const classify = (a, b) => {
+    const source = catalog();
+    const destination = catalog();
+    source.database[2] = a;
+    destination.database[2] = b;
+    return diagnoseCatalog(encode(source), encode(destination)).sections[0];
+  };
+  const items = ['"SECRET,ROLE"=r*/SECRET_OWNER', 'SECRET_BACK\\SLASH=w/SECRET_OWNER'];
+  const arrayText = (values) =>
+    `{${values.map((item) => `"${item.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`).join(',')}}`;
+  assert.equal(
+    classify(arrayText(items), arrayText([...items].reverse())).acl_difference_counts.order_only,
+    1
+  );
+  assert.equal(classify(items, [...items].reverse()).acl_difference_counts.order_only, 1);
+  assert.equal(
+    classify(items, [items[0].replace('r*', 'r'), items[1]]).acl_difference_counts
+      .content_different,
+    1
+  );
+  assert.equal(classify(null, []).acl_difference_counts.content_different, 1);
+  for (const malformed of ['{broken}', '{"unterminated}', '{NULL}', '{"a=r/b",}', ['broken']]) {
+    assert.equal(classify(malformed, items).acl_difference_counts.unknown, 1);
+  }
+  assert.notEqual(
+    classify(arrayText(items), arrayText([...items].reverse())).source_hash,
+    classify(arrayText(items), arrayText([...items].reverse())).destination_hash
+  );
+  assert.doesNotMatch(encode(classify(arrayText(items), '{}')), /SECRET/);
+});
+
 test('membership attribute changes pair exact identities and expose only indices', () => {
   const source = catalog();
   const destination = catalog();

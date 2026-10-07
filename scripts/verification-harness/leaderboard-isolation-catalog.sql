@@ -1,8 +1,12 @@
 -- Catalog metadata only. No application relation is read or mutated.
+-- ACL array order is not portable through native pg_dump. Preserve NULL
+-- versus explicit empty ACLs and every full aclitem (including grantor and
+-- grant options); normalize only the order of those exact stored items.
 SET search_path = pg_catalog;
 SELECT jsonb_build_object(
   'database', (SELECT jsonb_build_array(d.datname,pg_get_userbyid(d.datdba),
-    d.datacl::text,pg_encoding_to_char(d.encoding),d.datcollate,d.datctype,
+    CASE WHEN d.datacl IS NULL THEN NULL ELSE coalesce((SELECT jsonb_agg(v::text ORDER BY v::text) FROM unnest(d.datacl) v),'[]'::jsonb) END,
+    pg_encoding_to_char(d.encoding),d.datcollate,d.datctype,
     d.datlocprovider,d.datlocale,d.datcollversion,d.datconnlimit,
     t.spcname) FROM pg_database d JOIN pg_tablespace t ON t.oid=d.dattablespace
     WHERE d.datname=current_database()),
@@ -15,7 +19,8 @@ SELECT jsonb_build_object(
       'check_function_bodies','standard_conforming_strings','default_transaction_isolation',
       'transform_null_equals')),
   'tablespaces', (SELECT jsonb_agg(x ORDER BY x::text) FROM (
-    SELECT jsonb_build_array(spcname,pg_get_userbyid(spcowner),spcacl::text,spcoptions) x
+    SELECT jsonb_build_array(spcname,pg_get_userbyid(spcowner),
+      CASE WHEN spcacl IS NULL THEN NULL ELSE coalesce((SELECT jsonb_agg(v::text ORDER BY v::text) FROM unnest(spcacl) v),'[]'::jsonb) END,spcoptions) x
     FROM pg_tablespace) q),
   'extensions', (SELECT jsonb_agg(x ORDER BY x::text) FROM (
     SELECT jsonb_build_array(e.extname,e.extversion,n.nspname,pg_get_userbyid(e.extowner)) x
@@ -30,11 +35,13 @@ SELECT jsonb_build_object(
     JOIN pg_roles r ON r.oid=a.roleid JOIN pg_roles m ON m.oid=a.member
     JOIN pg_roles g ON g.oid=a.grantor) q),
   'schemas', (SELECT jsonb_agg(x ORDER BY x::text) FROM (
-    SELECT jsonb_build_array(n.nspname,pg_get_userbyid(n.nspowner),n.nspacl::text) x
+    SELECT jsonb_build_array(n.nspname,pg_get_userbyid(n.nspowner),
+      CASE WHEN n.nspacl IS NULL THEN NULL ELSE coalesce((SELECT jsonb_agg(v::text ORDER BY v::text) FROM unnest(n.nspacl) v),'[]'::jsonb) END) x
     FROM pg_namespace n WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema') q),
   'relations', (SELECT jsonb_agg(x ORDER BY x::text) FROM (
     SELECT jsonb_build_array(n.nspname,c.relname,c.relkind,pg_get_userbyid(c.relowner),
-      c.relrowsecurity,c.relforcerowsecurity,c.relacl::text,c.reloptions,
+      c.relrowsecurity,c.relforcerowsecurity,
+      CASE WHEN c.relacl IS NULL THEN NULL ELSE coalesce((SELECT jsonb_agg(v::text ORDER BY v::text) FROM unnest(c.relacl) v),'[]'::jsonb) END,c.reloptions,
       t.spcname,CASE WHEN c.relkind IN ('v','m') THEN md5(pg_get_viewdef(c.oid,false)) ELSE NULL END) x
     FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
     LEFT JOIN pg_tablespace t ON t.oid=c.reltablespace
@@ -45,7 +52,8 @@ SELECT jsonb_build_object(
     SELECT jsonb_build_array(n.nspname,c.relname,a.attname,
       row_number() OVER (PARTITION BY a.attrelid ORDER BY a.attnum),
       format_type(a.atttypid,a.atttypmod),a.attnotnull,a.attidentity,a.attgenerated,
-      pg_get_expr(d.adbin,d.adrelid),a.attacl::text) x
+      pg_get_expr(d.adbin,d.adrelid),
+      CASE WHEN a.attacl IS NULL THEN NULL ELSE coalesce((SELECT jsonb_agg(v::text ORDER BY v::text) FROM unnest(a.attacl) v),'[]'::jsonb) END) x
     FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid
     JOIN pg_namespace n ON n.oid=c.relnamespace
     LEFT JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum
@@ -53,7 +61,8 @@ SELECT jsonb_build_object(
       AND n.nspname <> 'information_schema') q),
   'routines', (SELECT jsonb_agg(x ORDER BY x::text) FROM (
     SELECT jsonb_build_array(n.nspname,p.proname,pg_get_function_identity_arguments(p.oid),
-      p.prokind,pg_get_userbyid(p.proowner),p.prosecdef,p.proconfig,p.proacl::text,
+      p.prokind,pg_get_userbyid(p.proowner),p.prosecdef,p.proconfig,
+      CASE WHEN p.proacl IS NULL THEN NULL ELSE coalesce((SELECT jsonb_agg(v::text ORDER BY v::text) FROM unnest(p.proacl) v),'[]'::jsonb) END,
       CASE WHEN p.prokind <> 'a' THEN md5(pg_get_functiondef(p.oid)) ELSE md5(p.prosrc) END) x
     FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
     WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema') q),
@@ -106,11 +115,13 @@ SELECT jsonb_build_object(
     FROM pg_policies WHERE schemaname !~ '^pg_' AND schemaname <> 'information_schema') q),
   'types', (SELECT jsonb_agg(x ORDER BY x::text) FROM (
     SELECT jsonb_build_array(n.nspname,t.typname,t.typtype,pg_get_userbyid(t.typowner),
-      format_type(t.typbasetype,t.typtypmod),t.typnotnull,t.typdefault,t.typacl::text,
+      format_type(t.typbasetype,t.typtypmod),t.typnotnull,t.typdefault,
+      CASE WHEN t.typacl IS NULL THEN NULL ELSE coalesce((SELECT jsonb_agg(v::text ORDER BY v::text) FROM unnest(t.typacl) v),'[]'::jsonb) END,
       (SELECT jsonb_agg(e.enumlabel ORDER BY e.enumsortorder) FROM pg_enum e WHERE e.enumtypid=t.oid)) x
     FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace
     WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema') q),
   'defaults', (SELECT jsonb_agg(x ORDER BY x::text) FROM (
-    SELECT jsonb_build_array(pg_get_userbyid(d.defaclrole),n.nspname,d.defaclobjtype,d.defaclacl::text) x
+    SELECT jsonb_build_array(pg_get_userbyid(d.defaclrole),n.nspname,d.defaclobjtype,
+      CASE WHEN d.defaclacl IS NULL THEN NULL ELSE coalesce((SELECT jsonb_agg(v::text ORDER BY v::text) FROM unnest(d.defaclacl) v),'[]'::jsonb) END) x
     FROM pg_default_acl d LEFT JOIN pg_namespace n ON n.oid=d.defaclnamespace) q)
 );

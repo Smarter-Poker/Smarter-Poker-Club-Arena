@@ -9,9 +9,23 @@ import { ownerStatements, validateRestoreScript } from './leaderboard-isolation-
 // The existing directly invoked preflight lane also runs startup-parity contracts.
 import './leaderboard-isolation-startup-profile.test.mjs';
 import './leaderboard-isolation-catalog-diagnostic.test.mjs';
+import './leaderboard-isolation-acl-order.test.mjs';
 
 const shell = fileURLToPath(new URL('./leaderboard-isolation-preflight.sh', import.meta.url));
 const source = readFileSync(shell, 'utf8');
+test('custom extension-table trigger metadata is private, stable and captured before the atomic restore', () => {
+  const before = source.indexOf('>"$scratch/extension-triggers-before.sql"');
+  const after = source.indexOf('>"$scratch/extension-triggers-after.sql"');
+  const stable = source.indexOf(
+    'cmp -s "$scratch/extension-triggers-before.sql" "$scratch/extension-triggers-after.sql"'
+  );
+  const restore = source.indexOf('cat "$scratch/event-owners-elevate.sql"');
+  assert.ok(before > 0 && after > before && stable > after && restore > stable);
+  for (const suffix of ['before', 'after'])
+    assert.ok(source.includes(`chmod 600 "$scratch/extension-triggers-${suffix}.sql"`));
+  assert.ok(source.includes('test -s "$extension_trigger_bootstrap"'));
+  assert.ok(source.includes("failure 'extension-table trigger metadata changed during export'"));
+});
 test('private source markers and exact PG17 phases disclose only validated status and enums', () => {
   for (const [input, expected] of [
     [
@@ -139,7 +153,7 @@ test('atomic archive validation preserves quoted routine bodies and refuses tran
   );
   assert.match(
     source,
-    /cat "\$scratch\/event-owners-elevate.sql" "\$scratch\/remaining.sql" "\$scratch\/event-owners-restore.sql"[\s\S]*--single-transaction[\s\S]*--file=-/
+    /cat "\$scratch\/event-owners-elevate.sql" "\$scratch\/remaining.sql" "\$scratch\/extension-triggers-before.sql" "\$scratch\/event-owners-restore.sql"[\s\S]*--single-transaction[\s\S]*--file=-/
   );
   assert.match(source, /isolated catalog differs from current source/);
 });
@@ -157,6 +171,7 @@ test('actual restore input prepares all private files before one transactional c
     for (const [name, content] of [
       ['event-owners-elevate.sql', 'ELEVATE\n'],
       ['remaining.sql', 'ARCHIVE\n'],
+      ['extension-triggers-before.sql', 'TRIGGERS\n'],
       ['event-owners-restore.sql', 'RESTORE\n'],
     ])
       writeFileSync(join(scratch, name), content, { mode: 0o600, flag: 'wx' });
@@ -175,7 +190,7 @@ test('actual restore input prepares all private files before one transactional c
       assert.equal(result.status, status);
       assert.equal(
         readFileSync(join(scratch, 'schema-restore.log'), 'utf8'),
-        'ELEVATE\nARCHIVE\nRESTORE\n'
+        'ELEVATE\nARCHIVE\nTRIGGERS\nRESTORE\n'
       );
       assert.equal(result.stderr, '');
     }
@@ -472,8 +487,8 @@ test('catalog fingerprint includes security and financial schema dependencies', 
   ]) {
     assert.match(catalog, new RegExp(`'${category}'`));
   }
-  assert.match(catalog, /relrowsecurity,c\.relforcerowsecurity,c\.relacl/);
-  assert.match(catalog, /prosecdef,p\.proconfig,p\.proacl/);
+  assert.match(catalog, /relrowsecurity,c\.relforcerowsecurity,\s*CASE WHEN c\.relacl IS NULL/);
+  assert.match(catalog, /prosecdef,p\.proconfig,\s*CASE WHEN p\.proacl IS NULL/);
   assert.match(catalog, /pg_get_viewdef/);
   assert.match(catalog, /pg_get_userbyid\(e\.extowner\)/);
   assert.match(catalog, /k\.conrelid=0/);

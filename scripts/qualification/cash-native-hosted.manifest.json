@@ -1,5 +1,19 @@
 {
   "schemaVersion": 1,
+  "leaderboardCurrentMainIntegration20261007": {
+    "reason": "Preserve both the native leaderboard extension-table restoration regression and current main's authenticated client runtime retention step. Only the actual combined workflow source fingerprint changes; all financial inputs, assertions, qualification status and historical audit entries remain unchanged.",
+    "previousCurrentMainWorkflowPin": {
+      "bytes": 190898,
+      "sha256": "b35b4da5a652263f1d9c9693ffedc029befb4500eb0839991fb7e243a79ada88"
+    }
+  },
+  "leaderboardNativeRestoreRegression20261007": {
+    "reason": "Add one isolated native PostgreSQL 17 custom extension-table trigger restore regression to accounting shard four, preserving current main's independently delivered atomic horse hand-review step. Existing cash commands, financial inputs, assertions and SOURCE_ONLY_UNRUN status are unchanged. This source fingerprint refresh does not establish current-schema or financial qualification.",
+    "previousWorkflowPin": {
+      "bytes": 190737,
+      "sha256": "e02dee68235372136d00791b020eaa637ef80a691763a8abe304df4873a252f1"
+    }
+  },
   "evIntegration20261006": "Reviewed current-main integration: preserve weekly6031 routing plus additive EV fixture coverage. Only integrated classifier fingerprint changes; every financial input, assertion and qualification status remains intact. This is not execution evidence.",
   "status": "SOURCE_ONLY_UNRUN",
   "scope": "Cash positive checker evidence and immediate job259 failed-row intake; real pg_cron SPI fixture, not production financial reconciliation",
@@ -10,8 +24,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 190898,
-      "sha256": "b35b4da5a652263f1d9c9693ffedc029befb4500eb0839991fb7e243a79ada88"
+      "bytes": 191263,
+      "sha256": "16071380ef8d3e4801b527c4f766e40d88d7443ff7d4b024432031ce4b694d64"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,

@@ -1390,6 +1390,13 @@ jobs:
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
           sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17 postgresql-17-cron ${pg_ci_build_packages[@]+"${pg_ci_build_packages[@]}"}
+      - name: Isolated leaderboard restore retains custom extension-table triggers
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+          LEADERBOARD_NATIVE_PG17_TEST: '1'
+        run: node --test scripts/verification-harness/leaderboard-isolation-extension-trigger-bootstrap.test.mjs
       - name: Data console native PostgreSQL contracts
         if: matrix.shard == 2
         env:

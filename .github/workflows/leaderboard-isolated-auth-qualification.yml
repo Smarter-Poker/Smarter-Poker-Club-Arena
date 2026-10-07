@@ -32,7 +32,8 @@ jobs:
           bash scripts/verification-harness/leaderboard-isolated-auth-qualification.sh --check
           node --check scripts/verification-harness/leaderboard-real-auth-launcher-draft.mjs
           node --check scripts/verification-harness/leaderboard-real-auth-draft.mjs
-          node --test scripts/verification-harness/leaderboard-real-auth-launcher-draft.test.mjs scripts/verification-harness/leaderboard-signup-fixture-draft.test.mjs scripts/verification-harness/leaderboard-auth-integration-candidate.test.mjs scripts/verification-harness/leaderboard-isolation-startup-profile.test.mjs
+          node --check scripts/verification-harness/leaderboard-delegated-role-matrix.mjs
+          node --test scripts/verification-harness/leaderboard-real-auth-launcher-draft.test.mjs scripts/verification-harness/leaderboard-delegated-role-matrix.test.mjs scripts/verification-harness/leaderboard-signup-fixture-draft.test.mjs scripts/verification-harness/leaderboard-auth-integration-candidate.test.mjs scripts/verification-harness/leaderboard-isolation-startup-profile.test.mjs
       - name: Qualify actual Auth in a faithfully restored disposable database
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

@@ -67,7 +67,12 @@ describe('a refused finish asks for another pass', () => {
     expect(REARM).toMatch(/if \(this\.tournamentFinished\) return;/);
     const afterGuard = REARM.slice(REARM.indexOf('if (this.tournamentFinished) return;'));
     expect(afterGuard).toContain('this.requestUrgentEliminationSweepAfter(');
-    expect(afterGuard).toContain('UNRESOLVED_BUST_RETRY_MS');
+    // 2026-10-07: the re-arm asks with the refusal's own delay, which is
+    // UNRESOLVED_BUST_RETRY_MS for a transient or first refusal and doubles for
+    // a repeated rule refusal (aRuleRefusalStopsAskingEveryFiveSeconds).
+    expect(afterGuard).toContain(
+      'this.requestUrgentEliminationSweepAfter(this.finishRetryDelayMs())'
+    );
   });
 
   it('the retry uses the sweep scheduler, which keeps one pending wake per tournament', () => {

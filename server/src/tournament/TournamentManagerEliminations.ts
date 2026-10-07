@@ -4062,7 +4062,18 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
        own fairness rule still holds: a rewind is applied once, and the
        interrupted stage gets the admission after it. */
     this.eliminationSweepCursor.rewindTo(FINISH_STAGE);
-    this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+    /* THE RE-ARM KEEPS THE REFUSAL'S OWN DELAY (2026-10-07).
+       This line used the fixed five seconds. The scheduler keeps the EARLIEST
+       pending wake per tournament, so it overrode the doubled delay
+       releaseFinishGuard had just asked for (2026-09-18,
+       aRuleRefusalStopsAskingEveryFiveSeconds): every rule refusal went back
+       to a five-second clock. Measured 2026-10-07: four Spins whose field can
+       never settle (P0404 "no complete durable elimination sequence") asked
+       about 2,900 times an hour for eighteen hours, ~313 ms of roster locks
+       each. finishRetryDelayMs() is still the base five seconds for a
+       transient refusal (deadlock, timeout) and for the first refusal of any
+       kind, so the winner owed the next admission still gets it. */
+    this.requestUrgentEliminationSweepAfter(this.finishRetryDelayMs());
   }
 
   // ── FINAL TABLE DEAL (2026-08-22 parity) ─────────────────────────────────

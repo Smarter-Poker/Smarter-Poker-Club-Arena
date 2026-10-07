@@ -43,3 +43,23 @@ rows it left behind in four running Spins and five registering events are
 reported separately and are not settled here.
 
 Engine release: activates in the :55 window.
+
+## Also: the finish-stage re-arm defeated the refusal backoff
+
+`rearmIfTheFinishWasRefused` (2026-10-01) re-armed a refused finish after the
+fixed `UNRESOLVED_BUST_RETRY_MS` (5 s). `releaseFinishGuard` had already asked
+for the refusal's own delay (`finishRetryDelayMs()`, 2026-09-18: a repeated
+rule refusal doubles to a 15-minute cap), and the scheduler keeps the
+EARLIEST pending wake, so the 5 s always won. Every rule refusal went back to
+a five-second clock.
+
+Measured 2026-10-07: four running Spins (87f6d0ee, a6ae23f9, 9d4067ab,
+a19b10fe) whose field holds a retired player with no elimination sequence
+asked `fn_complete_tournament_terminal` about 2,900 times an hour from 02:00
+to 10:00 UTC (P0404 "no complete durable elimination sequence", 17,039 in six
+hours), at a mean 313 ms of roster locks each in pg_stat_statements. The
+re-arm now asks `this.finishRetryDelayMs()`: unchanged 5 s for a transient
+(deadlock, timeout) and for the first refusal of any kind, doubling for a
+repeated rule refusal. Pinned in
+`aRuleRefusalStopsAskingEveryFiveSeconds.law.test.ts` (new block) and
+`aRefusedFinishAsksForAnotherPass.test.ts` (updated pin).

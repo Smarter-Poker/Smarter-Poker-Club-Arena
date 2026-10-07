@@ -97,15 +97,19 @@ describe('the cashier totals dedup is bounded by its range', () => {
     ).toHaveLength(0);
   });
 
-  it('keeps the club and both range bounds on the CTE arm the index serves', () => {
-    const carrying = FILES.filter((f) => /WITH omitted_movements AS MATERIALIZED/.test(text(f)));
-    expect(carrying, 'no migration carries the omitted_movements CTE any more').not.toHaveLength(0);
+  it('keeps the club and both range bounds on the arm the index serves', () => {
+    // Until 20261007041535 the arm sat in a materialized CTE beside the totals
+    // scan; from it on the totals read the same arm first, into an array
+    // (tests/two-owner-screens-read-what-they-show.law.test.ts). Either way the
+    // newest carrier is the one production runs.
+    const CARRIER =
+      /WITH omitted_movements AS MATERIALIZED|EXECUTE \$omissions\$SELECT coalesce\(array_agg\(omitted\.id\)/;
+    const carrying = FILES.filter((f) => CARRIER.test(text(f)));
+    expect(carrying, 'no migration carries the omitted-movement arm any more').not.toHaveLength(0);
 
     const sql = text(carrying[carrying.length - 1]).replace(/\s+/g, ' ');
-    const arm = sql.slice(
-      sql.indexOf('WITH omitted_movements AS MATERIALIZED'),
-      sql.indexOf(' UNION ')
-    );
+    const start = sql.search(CARRIER);
+    const arm = sql.slice(start, sql.indexOf(' UNION ', start));
 
     // Drop any one of these three and the index stops being range-scannable:
     // the planner falls back to the all-time scan and nothing says so.

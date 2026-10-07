@@ -92,7 +92,7 @@ describe('LAW: the next hand deals two seconds after completion (Dan 2026-09-07)
     // residue check below still proves the lease re-proof is the only other
     // work between the rest and the deal.
     const requestedPauseGate =
-      /if \(this\.isNextHandPaused\(\)\) \{\s*if \(this\.maintenancePaused\) await this\.persistPresenceForRestart\('parked'\);\s*if \(!this\.adminPauseLock && !this\.maintenanceLock && !this\.dealingHaltLock\)\s*await this\.awaitPauseGate\(\);\s*if \(!this\.running\) break;\s*continue;\s*\}/g;
+      /if \(this\.isNextHandPaused\(\)\) \{\s*if \(this\.maintenancePaused\) await this\.persistPresenceForRestart\('parked'\);\s*if \(\s*!this\.adminPauseLock &&\s*this\.pendingOperatorPauses === 0 &&\s*!this\.hasUnconfirmedOperatorPause\(\) &&\s*!this\.maintenanceLock &&\s*!this\.dealingHaltLock\s*\)\s*await this\.awaitPauseGate\(\);\s*if \(!this\.running\) break;\s*continue;\s*\}/g;
     expect(betweenRestAndDeal.match(boundaryGate)?.length ?? 0).toBeGreaterThanOrEqual(1);
     expect(betweenRestAndDeal.match(requestedPauseGate)).toHaveLength(1);
     expect(

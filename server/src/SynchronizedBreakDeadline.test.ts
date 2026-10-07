@@ -189,6 +189,8 @@ describe('Synchronized Break Drain', () => {
   function table() {
     const state = { state: 'running', transition: vi.fn() };
     const engine = Object.assign(Object.create(ServerTableEngineBase.prototype), {
+      unconfirmedOperatorCommands: new Map(),
+      pendingOperatorPauses: 0,
       tableId: 'long-drain',
       running: true,
       handForHandPaused: false,
@@ -304,6 +306,8 @@ describe('A table the maintenance break holds is parked', () => {
   function heldEngine() {
     const fsm = { state: 'running', transition: vi.fn() };
     const engine = Object.assign(Object.create(ServerTableEngineBase.prototype), {
+      unconfirmedOperatorCommands: new Map(),
+      pendingOperatorPauses: 0,
       tableId: 'maintenance-held',
       running: true,
       handForHandPaused: false,

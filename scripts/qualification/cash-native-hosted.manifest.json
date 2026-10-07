@@ -49,8 +49,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 192539,
-      "sha256": "1d9cdf018f8f964600e844038b36e07375eb584ab282d7c6fc9980c2374184cd"
+      "bytes": 192956,
+      "sha256": "65e578ea1f5e92b5c6582c118fd4146a457b7b80015ad3e5befca583a38014bd"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1756,6 +1756,13 @@
     "previousWorkflowPin": {
       "bytes": 191463,
       "sha256": "e0e545fb9a0426b0645e42ff1bfd1c6fd10fb1816215686627e4b69f4b0a1d09"
+    }
+  },
+  "operatorPauseNativeQualification20261007": {
+    "reason": "Adds only the isolated native operator-hold regression in the existing Accounting2 lane. Existing cash qualification inputs and financial assertions are unchanged; workflow fingerprint refresh is source admission, not a new native cash verdict.",
+    "previousWorkflowPin": {
+      "bytes": 192539,
+      "sha256": "1d9cdf018f8f964600e844038b36e07375eb584ab282d7c6fc9980c2374184cd"
     }
   }
 }

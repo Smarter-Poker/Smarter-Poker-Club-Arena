@@ -125,6 +125,11 @@ function startable(authority: any, refusal: unknown) {
 
 describe('start() fences a standing refusal instead of killing for restart', () => {
   beforeEach(() => {
+    vi.spyOn(supabase, 'rpc').mockImplementation(async (name: string) => {
+      if (name === 'fn_ca_get_table_operator_hold')
+        return { data: { paused: false, version: 0, command_id: null }, error: null } as any;
+      throw new Error(`Unexpected native RPC: ${name}`);
+    });
     vi.spyOn(errors, 'reportError').mockImplementation(() => {});
     loadTable.mockResolvedValue({ id: TABLE, small_blind: 1, big_blind: 2, ante: 0 });
     loadSeatedPlayers.mockResolvedValue([]);

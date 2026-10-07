@@ -45,6 +45,8 @@ it('actual GameServer registration and replacement refuse held retirement custod
 });
 it('actual Base retains unknown original permit and refuses a replacement', async () => {
   const e: any = Object.create(ServerTableEngineBase.prototype);
+  e.unconfirmedOperatorCommands = new Map();
+  e.pendingOperatorPauses = 0;
   Object.assign(e, { running: false, f06PermitFactory: null, f06CurrentPermit: null });
   const b = {
     tournament_id: id(3),
@@ -71,6 +73,8 @@ it('actual Base retains unknown original permit and refuses a replacement', asyn
 });
 it('real Dealing method waits for permit before preparing or starting a hand', async () => {
   const e: any = Object.create(ServerTableEngineDealing.prototype);
+  e.unconfirmedOperatorCommands = new Map();
+  e.pendingOperatorPauses = 0;
   const release = vi.fn();
   let permitReject!: (e: Error) => void;
   const roster = [
@@ -158,6 +162,8 @@ it('actual GameServer adapter does not invoke close after generation changes dur
 });
 it('actual Base accepted finish clears only exact permit after durable acknowledgement', async () => {
   const e: any = Object.create(ServerTableEngineBase.prototype);
+  e.unconfirmedOperatorCommands = new Map();
+  e.pendingOperatorPauses = 0;
   let resolve!: (v: any) => void;
   const b = {
     tournament_id: id(3),
@@ -267,6 +273,8 @@ it('actual Manager shared admission starts only after resolved projection and pr
 });
 it('actual Base no-start drain retains original permit until exact custody evidence finishes', async () => {
   const e: any = Object.create(ServerTableEngineBase.prototype);
+  e.unconfirmedOperatorCommands = new Map();
+  e.pendingOperatorPauses = 0;
   let stopped = false;
   const b = {
     tournament_id: id(3),
@@ -316,6 +324,8 @@ it('actual Base no-start drain retains original permit until exact custody evide
 });
 it('actual Base F06 allocator never retries or falls back after unknown response', async () => {
   const e: any = Object.create(ServerTableEngineBase.prototype);
+  e.unconfirmedOperatorCommands = new Map();
+  e.pendingOperatorPauses = 0;
   Object.assign(e, { running: false, f06Allocator: null });
   let calls = 0;
   e.installF06Allocator(
@@ -331,6 +341,8 @@ it('actual Base F06 allocator never retries or falls back after unknown response
 });
 it('actual Base rejects allocation after owner loss and Dealing discards stale prepared epoch', async () => {
   const e: any = Object.create(ServerTableEngineBase.prototype);
+  e.unconfirmedOperatorCommands = new Map();
+  e.pendingOperatorPauses = 0;
   Object.assign(e, { running: false, f06Allocator: null });
   let current = true;
   e.installF06Allocator(
@@ -358,6 +370,8 @@ it('ordinary Base allocation still calls the legacy RPC', async () => {
     .spyOn(supabase, 'rpc')
     .mockResolvedValue({ data: '1000002', error: null } as never);
   const e: any = Object.create(ServerTableEngineBase.prototype);
+  e.unconfirmedOperatorCommands = new Map();
+  e.pendingOperatorPauses = 0;
   e.f06Allocator = null;
   expect(await e.allocateGlobalHandNumber()).toBe(1000002);
   expect(spy).toHaveBeenCalledWith('fn_next_hand_number');
@@ -420,6 +434,8 @@ it.each(['reservation', 'movement', 'none'])(
 );
 it('actual original permit recovery replays identical BEGIN and rejects owner loss', async () => {
   const e: any = Object.create(ServerTableEngineBase.prototype);
+  e.unconfirmedOperatorCommands = new Map();
+  e.pendingOperatorPauses = 0;
   let current = true;
   let calls = 0;
   const inputs: unknown[] = [];
@@ -457,6 +473,8 @@ it('actual original permit recovery replays identical BEGIN and rejects owner lo
 });
 it('actual recovery rejects changed map during delayed reply and preserves original', async () => {
   const e: any = Object.create(ServerTableEngineBase.prototype);
+  e.unconfirmedOperatorCommands = new Map();
+  e.pendingOperatorPauses = 0;
   let resolve!: (v: any) => void;
   let owner = true;
   let calls = 0;
@@ -486,6 +504,8 @@ it('actual recovery rejects changed map during delayed reply and preserves origi
 
 it('actual F06 allocation failure fails one deal attempt and is then gone', async () => {
   const e: any = Object.create(ServerTableEngineDealing.prototype);
+  e.unconfirmedOperatorCommands = new Map();
+  e.pendingOperatorPauses = 0;
   const failure = new Error('canceling statement due to statement timeout');
   Object.assign(e, {
     allocatorMeasurement: null,
@@ -503,6 +523,8 @@ it('actual F06 allocation failure fails one deal attempt and is then gone', asyn
 });
 it('actual newer settled allocation replaces an older failure no attempt took', async () => {
   const e: any = Object.create(ServerTableEngineDealing.prototype);
+  e.unconfirmedOperatorCommands = new Map();
+  e.pendingOperatorPauses = 0;
   Object.assign(e, {
     allocatorMeasurement: null,
     f06Allocator: async () => 1000002,

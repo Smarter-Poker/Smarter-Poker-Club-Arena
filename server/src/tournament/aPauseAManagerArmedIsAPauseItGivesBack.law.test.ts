@@ -135,6 +135,8 @@ function dealer() {
     },
   };
   return Object.assign(Object.create(ServerTableEngineBase.prototype), {
+    unconfirmedOperatorCommands: new Map(),
+    pendingOperatorPauses: 0,
     tableId: TABLE,
     running: true,
     handController: null,

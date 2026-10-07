@@ -166,6 +166,10 @@ mapfile() {
       chmodSync(join(generation, 'engine-release-transaction.sh'), 0o755);
       writeFileSync(join(generation, 'control-sha'), `${controlSha}\n`);
       writeFileSync(
+        join(generation, 'operator-hold-run-spec.py'),
+        readFileSync(resolve(root, 'server/scripts/operator-hold-run-spec.py'))
+      );
+      writeFileSync(
         join(requestRoot, `${runKey}.request`),
         `${[
           targetSha,
@@ -212,14 +216,16 @@ printf '%s\\n' builder >> '${eventLog}'
       );
       writeFileSync(
         join(generation, 'engine-release-database-proof.py'),
-        `#!/usr/bin/env bash
-set -euo pipefail
-[[ " $* " == *" --sha ${sourceSha} "* ]]
-[[ " $* " == *" --instance-id ${instanceId} "* ]]
-[[ " $* " == *" --max-heartbeat-age-seconds 15 "* ]]
-printf '%s\\n' "$*" > '${databaseLog}'
-touch '${databaseMarker}'
-printf '%s\\n' database-proof >> '${eventLog}'
+        `#!/usr/bin/env python3
+import pathlib,sys
+if '--operator-hold-contract' in sys.argv: raise SystemExit(0)
+args=' '.join(sys.argv[1:])
+assert '--sha ${sourceSha}' in args
+assert '--instance-id ${instanceId}' in args
+assert '--max-heartbeat-age-seconds 15' in args
+pathlib.Path('${databaseLog}').write_text(args)
+pathlib.Path('${databaseMarker}').touch()
+with pathlib.Path('${eventLog}').open('a') as f: f.write('database-proof\\n')
 `
       );
       writeFileSync(
@@ -312,23 +318,25 @@ esac
 if [ "\${1:-}" = info ]; then exit 0; fi
 if [ "\${1:-}" = image ] && [ "\${2:-}" = inspect ]; then
   if [ "\${3:-}" = --format ]; then
+    if [[ "\${4:-}" == *sp.operator-hold.persistence* ]]; then printf '1\\n'; exit 0; fi
     if [ "\${4:-}" = '{{json .Config.Env}}' ]; then
       [ "\${5:-}" = '${sourceImage}' ] || exit 92
       printf '%s\\n' '["GIT_COMMIT_SHA=${sourceSha}"]'
       printf '%s\\n' image-source-proof >> '${eventLog}'
       exit 0
     fi
-    printf '%s\\n' '{"Id":"${targetImage}","Config":{"Labels":{"org.opencontainers.image.revision":"${targetSha}","com.smarterpoker.engine.source-tree":"${sourceTree}","com.smarterpoker.engine.build-contract":"clean-server-archive-v1"}}}'
+    printf '%s\\n' '{"Id":"${targetImage}","Config":{"Labels":{"org.opencontainers.image.revision":"${targetSha}","com.smarterpoker.engine.source-tree":"${sourceTree}","com.smarterpoker.engine.build-contract":"clean-server-archive-v1","sp.operator-hold.persistence":"1"}}}'
   fi
   exit 0
 fi
 if [ "\${1:-}" = container ] && [ "\${2:-}" = inspect ]; then
   format=''
   while [ "$#" -gt 0 ]; do
-    [ "$1" = -f ] && { format="$2"; shift 2; continue; }
+    { [ "$1" = -f ] || [ "$1" = --format ]; } && { format="$2"; shift 2; continue; }
     shift
   done
   case "$format" in
+    *'json .Config.Cmd'*) printf '%s\\n' '{"id":"${containerId}","image":"${sourceImage}","startedAt":"2026-09-11T12:00:00.000000000Z","pid":1,"cmd":["node","dist/index.js"],"mounts":[]}' ;;
     '{{.Id}}') printf '%s\\n' '${containerId}' ;;
     '{{.State.StartedAt}}') printf '%s\\n' '2026-09-11T12:00:00.000000000Z' ;;
     '{{.Image}}') printf '%s\\n' '${sourceImage}' ;;

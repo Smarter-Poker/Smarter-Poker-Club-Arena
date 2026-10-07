@@ -219,8 +219,14 @@ esac
     writeFileSync(join(bin, 'git'), git);
     chmodSync(join(bin, 'git'), 0o755);
 
+    writeFileSync(
+      join(bin, 'timeout'),
+      '#!/usr/bin/env bash\nwhile [ "$#" -gt 0 ]; do case "$1" in --signal=*|--kill-after=*|[0-9]*s) shift ;; *) break ;; esac; done\nexec "$@"\n'
+    );
+    chmodSync(join(bin, 'timeout'), 0o755);
     baseEnv = {
       ...process.env,
+      ENGINE_CONTROL_DIR: resolve(ROOT, 'server/scripts'),
       PATH: `${bin}:${process.env.PATH ?? ''}`,
       ENGINE_RELEASE_STATE_DIR: join(sandbox, 'state'),
       ENGINE_RELEASE_STATE_FILE: join(sandbox, 'state', 'seal.json'),
@@ -657,6 +663,7 @@ case "$format" in
   '{{index .Config.Labels "autoheal"}}') printf 'true\\n' ;;
   '{{index .Config.Labels "sp.release.sha"}}') printf '\\n' ;;
   '{{index .Config.Labels "sp.role"}}') printf 'engine\\n' ;;
+  *'json .Config.Cmd'*) printf '%s\\n' '{"id":"${'d'.repeat(64)}","image":"${A_IMAGE}","startedAt":"old","pid":1,"cmd":["node","dist/index.js"],"mounts":[]}' ;;
   '{{.HostConfig.RestartPolicy.Name}}') printf 'always\\n' ;;
   '{{.State.StartedAt}}') printf '\\n' ;;
   *) exit 1 ;;
@@ -772,7 +779,8 @@ if [ "$kind" = container ] && [ "$action" = inspect ] && [ "$ref" = club-arena-e
     '{{index .Config.Labels "autoheal"}}') printf 'true\\n' ;;
     '{{index .Config.Labels "sp.release.sha"}}') [ -e "$FAKE_SWITCHED" ] && printf '%s\\n' '${A_SHA}' || printf '%s\\n' '${B_SHA}' ;;
     '{{index .Config.Labels "sp.role"}}') printf 'engine\\n' ;;
-    '{{.HostConfig.RestartPolicy.Name}}') printf 'always\\n' ;;
+    *'json .Config.Cmd'*) printf '%s\\n' '{"id":"${'d'.repeat(64)}","image":"${A_IMAGE}","startedAt":"old","pid":1,"cmd":["node","dist/index.js"],"mounts":[]}' ;;
+  '{{.HostConfig.RestartPolicy.Name}}') printf 'always\\n' ;;
     *) exit 1 ;;
   esac
   exit 0

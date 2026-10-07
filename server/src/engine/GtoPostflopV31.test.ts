@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it, beforeEach } from 'vitest';
 import type { Card, CardRank, CardSuit } from '../types.js';
 import { enableBrainTelemetry, drainFires } from './BrainTelemetry.js';
+import { boardRelativeFeatureKeyV2 } from './GtoBoardRelativeFeaturesV2.js';
 import { gtoV31ExecutionMatches, HorseLogic } from './HorseLogic.js';
 import {
   _clearGtoPostflopV31,
@@ -83,6 +84,45 @@ const CELL: GtoPostflopV31Row = {
 const BOARD = cards('Qh9d7c2h');
 
 beforeEach(() => _clearGtoPostflopV31());
+
+it('admits only the sealed feature version and dispatches V2 without changing legacy keys', () => {
+  const featureKey = boardRelativeFeatureKeyV2(['As', 'Ks'], ['Qh', '9d', '7c', '2h']);
+  const legacyKey = v31HandKey('AKs', cards('AsKs'), BOARD)!;
+  const versioned: GtoPostflopV31Row = {
+    ...CELL,
+    feature_contract_version: 'holdem-board-relative-v2',
+    hand_matrix: { [featureKey]: CELL.hand_matrix[legacyKey] },
+    policy_ev_matrix: CELL.policy_ev_matrix
+      ? { [featureKey]: CELL.policy_ev_matrix[legacyKey] }
+      : {},
+    action_ev_matrix: CELL.action_ev_matrix
+      ? { [featureKey]: CELL.action_ev_matrix[legacyKey] }
+      : {},
+  };
+  expect(replaceGtoPostflopV31([versioned])).toBe(1);
+  const found = lookup();
+  expect(found.hit).toBe(true);
+  if (found.hit) {
+    expect(found.handKey).toBe(featureKey);
+    expect(found.sourceSeal.feature_contract_version).toBe('holdem-board-relative-v2');
+  }
+  expect(gtoPostflopV31Dataset()?.feature_contract_version).toBe('holdem-board-relative-v2');
+  expect(() => replaceGtoPostflopV31([{ ...versioned, hand_matrix: CELL.hand_matrix }])).toThrow();
+  expect(() =>
+    replaceGtoPostflopV31([
+      { ...CELL, feature_contract_version: 'future' } as unknown as GtoPostflopV31Row,
+    ])
+  ).toThrow();
+  expect(() =>
+    replaceGtoPostflopV31([
+      { ...CELL, feature_contract_version: null } as unknown as GtoPostflopV31Row,
+    ])
+  ).toThrow();
+  replaceGtoPostflopV31([CELL]);
+  expect(gtoPostflopV31Dataset()).not.toHaveProperty('feature_contract_version');
+  const legacy = lookup();
+  expect(legacy.hit && legacy.handKey).toBe(legacyKey);
+});
 
 function lookup(over: Partial<Parameters<typeof gtoStreetAdviceV31>[0]> = {}) {
   return gtoStreetAdviceV31({

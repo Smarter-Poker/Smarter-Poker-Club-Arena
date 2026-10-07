@@ -121,6 +121,7 @@ function evaluationEngineCommit(): string {
 }
 
 function evaluationConfig(args: {
+  feature_contract_version?: 'rank-suit-count-v1' | 'holdem-board-relative-v2';
   datasetChecksum: string;
   kind: GtoV31EvaluationKind;
   family: GtoV31EvaluationFamily;
@@ -128,6 +129,9 @@ function evaluationConfig(args: {
   engineCommit: string;
 }) {
   return {
+    ...(args.feature_contract_version !== undefined
+      ? { feature_contract_version: args.feature_contract_version }
+      : {}),
     evaluation_contract: 'gto_v31_candidate.v2',
     evaluation_kind: args.kind,
     game_family: args.family,
@@ -204,6 +208,7 @@ async function existingResult(args: {
 }
 
 async function persistEvaluation(args: {
+  feature_contract_version?: 'rank-suit-count-v1' | 'holdem-board-relative-v2';
   datasetId: string;
   datasetChecksum: string;
   incumbentChecksum: string;
@@ -322,6 +327,9 @@ async function main(): Promise<void> {
         continue;
       }
       await persistEvaluation({
+        ...(loaded.feature_contract_version !== undefined
+          ? { feature_contract_version: loaded.feature_contract_version }
+          : {}),
         datasetId,
         datasetChecksum: loaded.checksum,
         incumbentChecksum,

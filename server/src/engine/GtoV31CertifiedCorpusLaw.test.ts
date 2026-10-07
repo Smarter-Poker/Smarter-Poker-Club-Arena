@@ -271,7 +271,13 @@ describe('the certified V31 release boundary', () => {
       "IF NOT public.fn_gto_v31_hand_key_valid(v_hand.key,p_cell->>'street')"
     );
     expect(STREET_BOUND_KEY).toContain("public.fn_gto_v31_hand_key_valid('AKo:31','flop')");
-    expect(STORE).toContain('canonicalHandKey(handKey, row.street)');
+    expect(STORE).toContain(
+      'canonicalHandKey(handKey, row.street, gtoV31FeatureContractVersion(row) ?? undefined)'
+    );
+    expect(STORE).toContain(
+      "if (version === 'holdem-board-relative-v2') return boardRelativeFeatureKeyV2Valid"
+    );
+    expect(STORE).toContain('gtoV31FeatureContractVersion(row) !== null');
     expect(CANONICAL_POLICY_JSON).toContain(
       'CREATE OR REPLACE FUNCTION public.fn_gto_v31_action_specs_valid(p_specs jsonb)'
     );

@@ -27,6 +27,8 @@ const h = vi.hoisted(() => ({
   setupReads: [] as SetupRead[],
   setupCalls: 0,
   tagline: null as string | null,
+  tournaments: [] as any[],
+  register: vi.fn(),
 }));
 
 vi.mock('../../src/lib/supabase', () => ({
@@ -59,7 +61,14 @@ vi.mock('../../src/lib/bbjHitFeed', () => ({ watchBbjHits: () => vi.fn() }));
 // This lobby test owns no engine fixture. Keep its scope on the rendered tag
 // line and setup reread instead of letting speculative table warm-up contact a
 // developer engine on localhost:8080 and print a connection error.
-vi.mock('../../src/services/tableWarmup', () => ({ warmTable: vi.fn() }));
+vi.mock('../../src/services/tableWarmup', () => ({
+  warmTable: vi.fn(),
+  observeLobbyTableWarmups: () => () => {},
+}));
+vi.mock('../../src/utils/ChunkPreloader', () => ({
+  prefetchIntent: vi.fn(),
+  preloadRoute: vi.fn(),
+}));
 vi.mock('../../src/hooks/useMaintenanceBreak', () => ({
   useMaintenanceBreak: () => ({
     maintenanceBreak: { active: false, phase: 'idle', breakEndsAtMs: null, reason: '' },
@@ -68,7 +77,7 @@ vi.mock('../../src/hooks/useMaintenanceBreak', () => ({
 vi.mock('../../src/components/wallet/DynamicWallet', () => ({ default: () => null }));
 vi.mock('../../src/hooks/useMasterBusChannel', () => ({ useMasterBusChannel: vi.fn() }));
 vi.mock('../../src/hooks/useTournamentRegistration', () => ({
-  useTournamentRegistration: () => ({ register: vi.fn(), isRegistering: false }),
+  useTournamentRegistration: () => ({ register: h.register, isRegistering: false }),
 }));
 vi.mock('../../src/utils/clubIdResolver', async (original) => ({
   ...(await original<any>()),
@@ -148,6 +157,7 @@ beforeEach(() => {
   h.setupReads = [];
   h.setupCalls = 0;
   h.tagline = null;
+  h.tournaments = [];
   h.rpc.mockImplementation((name: string) => {
     if (name === 'fn_club_opening_checklist_state') {
       return Promise.resolve({
@@ -176,7 +186,10 @@ beforeEach(() => {
       return Promise.resolve({ data: null, error: null });
     };
     q.then = (resolve: any, reject: any) =>
-      (result?.promise ?? Promise.resolve({ data: [], error: null })).then(resolve, reject);
+      (
+        result?.promise ??
+        Promise.resolve({ data: table === 'tournaments' ? h.tournaments : [], error: null })
+      ).then(resolve, reject);
     return q;
   });
 });
@@ -192,6 +205,10 @@ async function mountLobby() {
     <MemoryRouter initialEntries={['/clubs/club-a']}>
       <Routes>
         <Route path="/clubs/:clubId" element={<ClubHomePage />} />
+        <Route
+          path="/tournaments/:id"
+          element={<div data-testid="tournament-destination">Tournament Review</div>}
+        />
       </Routes>
     </MemoryRouter>
   );
@@ -235,4 +252,51 @@ describe('closing the opening wizard', () => {
     });
     expect(h.setupCalls).toBe(2);
   });
+});
+
+/** Live certification uses a reserved cash-only club, so the optional live
+ * MTT case may have no input. This mounts the real owning page with synthetic
+ * read results, every admitted status, and its actual React Router callback.
+ * No database fixture, registration, chips or fabricated live result. */
+describe('the tournament row reviews every lobby-admitted status', () => {
+  it.each(['REGISTERING', 'RUNNING', 'LATE_REG', 'STARTING_SOON', 'BAGGED'])(
+    '%s selects its own screen without registering',
+    async (status) => {
+      h.setupReads = [DONE];
+      h.tournaments = [
+        {
+          id: 'event-a',
+          club_id: 'club-a',
+          name: 'Synthetic MTT',
+          format_contract: 'mtt-v1',
+          variant: 'mtt',
+          game_type: 'NLH',
+          status,
+          start_time: new Date().toISOString(),
+          started_at: new Date().toISOString(),
+          current_players: 2,
+          max_players: null,
+          buy_in_amount: 10,
+          buy_in_fee: 1,
+          starting_chips: 1000,
+          table_size: 9,
+          blind_structure: [],
+          is_private: true,
+        },
+      ];
+      await mountLobby();
+      fireEvent.click(screen.getByRole('tab', { name: 'MTT', exact: true }));
+      await flush();
+      const row = document.querySelector('.lt-row[data-kind="mtt"][data-id="event-a"]');
+      expect(row, 'the actual lobby did not render the synthetic admitted event').not.toBeNull();
+      fireEvent.click(row!);
+      await flush();
+      expect(screen.getByTestId('tournament-destination')).toBeTruthy();
+      expect(document.querySelector('.glp')).toBeNull();
+      expect(h.register).not.toHaveBeenCalled();
+      expect(
+        h.rpc.mock.calls.some(([name]) => /register|buyin|buy_in|purchase/i.test(String(name)))
+      ).toBe(false);
+    }
+  );
 });

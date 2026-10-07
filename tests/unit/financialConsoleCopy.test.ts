@@ -17,6 +17,19 @@ describe('financial console copy boundaries', () => {
     expect(financialConsoleEnumCopy(root)).not.toMatch(RAW_ENUM);
   });
 
+  it('keeps a marked player alias outside the enum-copy check, and nothing else', () => {
+    const root = surface(
+      '<li><strong data-player-name>roc_sofia</strong><small>Shark Club</small></li>' +
+        '<span class="requester" data-player-name>whale_77</span>'
+    );
+    expect(financialConsoleEnumCopy(root)).not.toMatch(RAW_ENUM);
+    expect(
+      financialConsoleEnumCopy(
+        surface('<li><strong data-player-name>whale_77</strong><small>pending_review</small></li>')
+      )
+    ).toMatch(RAW_ENUM);
+  });
+
   it.each([
     '<div class="_agentIdentity_fixture"><strong>the_kicker</strong><span>unknown_status</span></div>',
     '<div class="_agentIdentity_fixture"><strong>the_kicker</strong></div><p>unknown_status</p>',

@@ -20,8 +20,9 @@
  * into a raise, a dominated pair calling down, a blown-off big bluff.
  *
  * Fire-and-forget, never throws, and deliberately NOT awaited by settlement.
- * A permanent per-horse/day rollup is maintained via fn_hhr_rollup_add;
- * raw rows are pruned at 30 days by sp_prune_horse_hand_reviews().
+ * The rows, their permanent receipts and the per-horse/day rollup are
+ * written together by ONE call to fn_hhr_record_atomic (P14.1); raw rows are
+ * pruned at 30 days by sp_prune_horse_hand_reviews().
  */
 
 import { supabase } from './supabase/client.js';
@@ -1325,6 +1326,64 @@ async function flushHorsePlay(): Promise<void> {
   }
 }
 
+/**
+ * The exact key set fn_hhr_record_atomic accepts: every HorseReviewRow
+ * column, no more and no fewer. The function refuses unknown OR missing keys,
+ * and JSON drops a key whose value is undefined, so a field left undefined
+ * would reach the database as a missing key and refuse the whole hand. The
+ * Record type makes the compiler fail here if the interface gains or loses a
+ * column without this list following it.
+ */
+const REVIEW_ROW_KEY_SET: Record<keyof HorseReviewRow, true> = {
+  hand_id: true,
+  table_id: true,
+  tournament_id: true,
+  club_id: true,
+  played_at: true,
+  game_variant: true,
+  format: true,
+  big_blind: true,
+  horse_user_id: true,
+  seat: true,
+  net_amount: true,
+  net_bb: true,
+  pot_size: true,
+  hole_cards: true,
+  board: true,
+  actions: true,
+  leak_tags: true,
+};
+export const REVIEW_ROW_KEYS = Object.keys(REVIEW_ROW_KEY_SET) as Array<keyof HorseReviewRow>;
+
+/** One row as fn_hhr_record_atomic receives it: every key present, undefined -> null. */
+export function toAtomicPayloadRow(row: HorseReviewRow): Record<keyof HorseReviewRow, unknown> {
+  const out = {} as Record<keyof HorseReviewRow, unknown>;
+  for (const k of REVIEW_ROW_KEYS) out[k] = row[k] === undefined ? null : row[k];
+  return out;
+}
+
+interface AtomicReply {
+  version: 1;
+  rows: unknown[];
+}
+
+function isAtomicReply(v: unknown): v is AtomicReply {
+  return (
+    !!v &&
+    typeof v === 'object' &&
+    (v as { version?: unknown }).version === 1 &&
+    Array.isArray((v as { rows?: unknown }).rows)
+  );
+}
+
+function safeJson(v: unknown): string {
+  try {
+    return String(JSON.stringify(v)).slice(0, 300);
+  } catch {
+    return String(v);
+  }
+}
+
 let pruneArmed = false;
 
 /**
@@ -1339,39 +1398,37 @@ export async function recordHorseHandReviews(input: HorseReviewInput): Promise<v
     const rows = buildReviewRows(input);
     if (rows.length === 0) return;
 
-    // ignoreDuplicates = ON CONFLICT DO NOTHING, and .select() returns only
-    // the rows actually INSERTED — so a re-processed hand (settlement retry)
-    // inserts nothing, returns nothing, and the rollup below adds nothing.
-    // Without this, a retry would dedupe the rows but double-count the
-    // rollup.
-    const { data: inserted, error } = await supabase
-      .from('horse_hand_reviews')
-      .upsert(rows as never[], { onConflict: 'hand_id,horse_user_id', ignoreDuplicates: true })
-      .select('horse_user_id');
-    if (error) {
-      reportError(new Error(error.message), 'HorseHandReview.insert');
+    // ONE ATOMIC PUBLICATION (P14.1, 2026-10-06). The review rows, their
+    // permanent receipts and the per-horse/day rollup are written by ONE
+    // database function in ONE transaction. This used to be an upsert of the
+    // reviews followed by one fn_hhr_rollup_add call per inserted horse: a
+    // failed or unanswered second call left a review with no rollup (and the
+    // `break` dropped every later horse's rollup with it), and a resend could
+    // never reconcile it because the review already existed. Now either all
+    // of it lands or none of it does, and a resend of the same hand - a
+    // settlement retry, or a reply lost on the wire - finds its receipts and
+    // answers 'replayed' without adding anything. So there is deliberately no
+    // additive retry here: an error is reported and the hand is left to a
+    // later resend, which is safe.
+    const payload = rows.map(toAtomicPayloadRow);
+    let reply: unknown;
+    try {
+      const { data, error } = await supabase.rpc('fn_hhr_record_atomic', { p_rows: payload });
+      if (error) {
+        reportError(new Error(error.message), 'HorseHandReview.record_atomic');
+        return;
+      }
+      reply = data;
+    } catch (err) {
+      reportError(err, 'HorseHandReview.record_atomic');
       return;
     }
-    const insertedIds = new Set(
-      ((inserted ?? []) as Array<{ horse_user_id: string }>).map((r) => r.horse_user_id)
-    );
-
-    // Rollup, one RPC per INSERTED row (rows per hand are 1-3; volume tiny).
-    const day = input.playedAt.slice(0, 10);
-    for (const row of rows) {
-      if (!insertedIds.has(row.horse_user_id)) continue;
-      const { error: rerr } = await supabase.rpc('fn_hhr_rollup_add', {
-        p_horse: row.horse_user_id,
-        p_day: day,
-        p_variant: row.game_variant,
-        p_is_win: row.net_bb > 0,
-        p_net_bb: row.net_bb,
-        p_tags: row.leak_tags,
-      });
-      if (rerr) {
-        reportError(new Error(rerr.message), 'HorseHandReview.rollup');
-        break;
-      }
+    if (!isAtomicReply(reply)) {
+      reportError(
+        new Error(`fn_hhr_record_atomic returned an unreadable reply: ${safeJson(reply)}`),
+        'HorseHandReview.record_atomic'
+      );
+      return;
     }
 
     // Retention: prune once per process lifetime, well after boot.

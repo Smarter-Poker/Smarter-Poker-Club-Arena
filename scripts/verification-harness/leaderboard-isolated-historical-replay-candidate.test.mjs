@@ -28,11 +28,36 @@ test('two-stage historical recovery uses the pinned original real opening and du
   assert.match(sql, /promo_balance[^\n]*IS DISTINCT FROM 0/);
   assert.doesNotMatch(
     sql,
-    /INSERT INTO public\.|UPDATE public\.|DELETE FROM public\.|DISABLE TRIGGER/
+    /INSERT INTO public\.(?:leaderboard_payouts|leaderboard_payout_batches|chip_ledger)|DELETE FROM public\.|DISABLE TRIGGER/
   );
   assert.match(sql, /opening_replay IS DISTINCT FROM proof.opening_replay/);
   assert.match(sql, /publication_replay IS DISTINCT FROM proof.publication_replay/);
   assert.match(sql, /digest\(\) IS DISTINCT FROM proof.image/);
+});
+test('original payout creates paid historical evidence and candidate replays exact immutable response', () => {
+  assert.match(sql, /Exact original unpaid historical fixture required/);
+  assert.ok(sql.includes("<>'2ba8db49240eac826b2f3efe0e262648'"));
+  assert.equal(sql.match(/:=public\.fn_payout_leaderboard\(/g).length, 3);
+  assert.match(sql, /program_id=historical_program/);
+  assert.match(sql, /payout_amount=10/);
+  assert.match(sql, /seed_funded'\)::numeric IS DISTINCT FROM 10/);
+  assert.match(sql, /promo_balance[^\n]*IS DISTINCT FROM 90/);
+  assert.match(sql, /payout_replay IS DISTINCT FROM proof\.payout_replay/);
+  assert.ok(sql.includes(":'candidate_payout_body_md5'"));
+  assert.ok(sql.includes("='2ba8db49240eac826b2f3efe0e262648'"));
+  for (const relation of [
+    'leaderboard_payouts',
+    'leaderboard_payout_batches',
+    'leaderboard_payout_failures',
+    'player_stats_snapshots',
+  ])
+    assert.ok(sql.includes(`'${relation}'`));
+  assert.match(sql, /to_jsonb\(m\)-'joined_at'/);
+  assert.match(sql, /to_jsonb\(c\)-'created_at'/);
+  assert.doesNotMatch(
+    sql,
+    /UPDATE public\.leaderboard_reward_program_versions|INSERT INTO public\.leaderboard_payout(?:s|_batches)|clock_timestamp\s*\([^)]*[^)]\)/
+  );
 });
 test('candidate identities and exact new-overlay refusal cannot silently reuse predecessor', () => {
   for (const pin of ['578960fee3c325b9c724e976bed968f4', 'ef4ab9935eb3681ba4f1ab068a8b65fd'])

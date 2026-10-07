@@ -29,7 +29,7 @@ test('all eight catalog ACL fields normalize only complete item ordering and ret
   assert.match(catalog, /pg_get_userbyid\(c\.relowner\)/);
   assert.match(catalog, /c\.relrowsecurity,c\.relforcerowsecurity/);
   assert.match(catalog, /p\.prosecdef,p\.proconfig/);
-  assert.match(catalog, /md5\(pg_get_viewdef\(c\.oid,false\)\)/);
+  assert.match(catalog, /md5\(pg_get_viewdef\(c\.oid,true\)\)/);
 });
 
 // Independent exact-array oracle, not a substitute for the native PG17 receipt.

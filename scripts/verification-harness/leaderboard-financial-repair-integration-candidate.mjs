@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-const preflightHash = '76beb560e4e72d2581ade8827b2ca343cdbe47719bc30f93b3c3b77bd0e0f346';
+const preflightHash = '07d9c585f02940bb20bfed6ac732b89414e4050525e14629cc8db54f26fb1d06';
 const auth = 'leaderboard-isolated-authorization-draft.sql';
 const capture = 'leaderboard-capture-basis-candidate.sql';
 const ranking = 'leaderboard-complete-ranking-candidate.mjs';
@@ -13,6 +13,9 @@ const payout = 'leaderboard-promo-payout-candidate.mjs';
 const config = 'leaderboard-promo-config-candidate.mjs';
 const opening = 'leaderboard-promo-opening-candidate.mjs';
 const adapter = 'leaderboard-capture-payout-fixture-candidate.mjs';
+const repairDiagnostics = 'leaderboard-repair-financial-diagnostics.mjs';
+const consolidated = 'leaderboard-consolidated-migration-candidate.mjs';
+const postimage = 'leaderboard-consolidated-postimage-candidate.sql';
 const compatibility = 'leaderboard-capture-basis-regression-candidate.sql';
 const openingFixture = 'leaderboard-isolated-opening-policy-draft.sql';
 const workerFixture = 'leaderboard-isolated-worker-regression-candidate.sql';
@@ -32,11 +35,14 @@ const reviewed = Object.freeze({
   [payout]: '18ffcc9db372bc49d83e37cb42a812ddc919532807af1444678524d7cb4ba8df',
   [config]: '5c81d18b10cea37854d8bb84f0453cd76c00d9da082bf0f890abc33ab6d8f2bd',
   [opening]: 'ec53053f330856156395c4f0c95ee94e4950c34e8f6ea4047b35fe2fd7bb78b3',
-  [adapter]: '5c4792524b4c0f1b4c0b7b28de25e3cfaab22159edf87755a25a3c7ab5e8cc1b',
-  [compatibility]: '3e5440f6b4f52d71e429ba2be7d71c814c329eb5caa9ae17aa3602dd8aa8aa63',
+  [adapter]: 'c42b0620d6c05d69fc5589e3bd8c89f0305186e347a668f3ae9ae9f432812953',
+  [repairDiagnostics]: 'd449d4108207a44e665752369aee24bd1a7b0663078274b8a98a3c0e27e9912b',
+  [consolidated]: '3142633c836966b32234cb7606d4e5c8d79f11b18fa75017e6d1ef80843e9807',
+  [postimage]: '0212896886873d10c9dc073865f13e544f496e8d38a5e924ab1d3f41e7277f1c',
+  [compatibility]: 'a1654508e9a44b849d6ccd67afed6173fe50300488b232e8c028c82ff8f06e6e',
   [openingFixture]: '40ec7d17deda73f27cad1706f44f212288d7781767eabb1c2d05258c3e622047',
   [workerFixture]: '2dada967cdb8bff98c8f8904f3b4d99e0a64eb67eba76a0ff4787236a92d4163',
-  [historicalFixture]: '33244eddbafc371af6d3fc3a4a032d4d626747d72666ac718fc322857195a8f7',
+  [historicalFixture]: '2233452e0892ce60dde786578a82366fecc545b4fe5a32cae00c8ca447cdf75f',
   [concurrencyFixture]: 'c2057bbbbb9b08c860ac82cf02e98171ff9188ab36694dcb672f1abd3f37ed41',
   [completeFixtureAdapter]: 'a34d0e22319530580af03e45c3c22dbd0879d95ea7d00a44948cdb1bd5805b38',
   [concurrencyAdapter]: '7774fefd0ae702fdb597d29163a8f3f63d97d44db61d4a4d7db44c8bcc6cfef5',
@@ -46,11 +52,50 @@ const reviewed = Object.freeze({
   [unknownAckProxy]: 'd94d01708225596d90d2ee892d2634d995078cc1d6f7ac604fae9e56ac8227b5',
 });
 const modes = Object.freeze({
-  'v2-payout': [auth, capture, ranking, payout, config, opening, adapter],
+  'v2-payout': [
+    auth,
+    capture,
+    ranking,
+    payout,
+    config,
+    opening,
+    adapter,
+    repairDiagnostics,
+    consolidated,
+  ],
   'capture-compatibility': [auth, capture, compatibility],
-  opening: [auth, config, opening, openingFixture],
-  worker: [auth, capture, ranking, payout, config, opening, concurrencyFixture, workerFixture],
-  'historical-replay': [auth, config, opening, historicalFixture],
+  opening: [
+    auth,
+    capture,
+    ranking,
+    payout,
+    config,
+    opening,
+    openingFixture,
+    consolidated,
+    repairDiagnostics,
+  ],
+  worker: [
+    auth,
+    capture,
+    ranking,
+    payout,
+    config,
+    opening,
+    concurrencyFixture,
+    workerFixture,
+    consolidated,
+  ],
+  'historical-replay': [
+    auth,
+    capture,
+    ranking,
+    payout,
+    config,
+    opening,
+    historicalFixture,
+    consolidated,
+  ],
   concurrency: [
     auth,
     capture,
@@ -63,6 +108,7 @@ const modes = Object.freeze({
     completeFixtureAdapter,
     concurrencyAdapter,
     concurrencyBaseline,
+    consolidated,
   ],
   'unknown-ack': [
     auth,
@@ -77,6 +123,7 @@ const modes = Object.freeze({
     unknownAckAdapter,
     unknownAckBaseline,
     unknownAckProxy,
+    consolidated,
   ],
 });
 export const readRepairInput = (name) =>
@@ -84,7 +131,11 @@ export const readRepairInput = (name) =>
 const hash = (source) => createHash('sha256').update(source).digest('hex');
 export function candidateFunctionBodyMd5(sql, name) {
   assert.ok(
-    ['fn_complete_club_opening_setup', 'fn_publish_leaderboard_reward_program'].includes(name)
+    [
+      'fn_complete_club_opening_setup',
+      'fn_publish_leaderboard_reward_program',
+      'fn_payout_leaderboard',
+    ].includes(name)
   );
   const header = `CREATE OR REPLACE FUNCTION public.${name}(`;
   assert.equal(sql.split(header).length, 2, 'Exactly one candidate function required');
@@ -108,14 +159,17 @@ function transaction(source, ending) {
 export function buildFinancialRepairCandidate(source, mode, readInput = readRepairInput) {
   assert.equal(hash(source), preflightHash, 'Reviewed maintained preflight changed');
   assert.ok(Object.hasOwn(modes, mode), 'Exactly one reviewed candidate mode required');
-  for (const name of modes[mode]) {
+  const selectedInputs =
+    mode === 'capture-compatibility' ? modes[mode] : [...modes[mode], postimage];
+  for (const name of selectedInputs) {
     const input = readInput(name);
     assert.equal(hash(input), reviewed[name], `Reviewed candidate input changed: ${name}`);
     if (
       name === auth ||
       name === compatibility ||
       name === openingFixture ||
-      name === workerFixture
+      name === workerFixture ||
+      name === postimage
     )
       transaction(input, 'ROLLBACK');
     if (name === capture || name === concurrencyFixture) transaction(input, 'COMMIT');
@@ -140,7 +194,7 @@ export function buildFinancialRepairCandidate(source, mode, readInput = readRepa
     'unset DATABASE_URL PGDATABASE PGOPTIONS\n',
     'unset DATABASE_URL PGDATABASE PGOPTIONS PGHOST PGUSER PGPASSWORD\n'
   );
-  const checks = modes[mode]
+  const checks = selectedInputs
     .map(
       (name) =>
         `[[ "$(sha256sum "$here/${name}" | cut -d' ' -f1)" == '${reviewed[name]}' ]] || failure 'reviewed candidate input changed'`
@@ -160,18 +214,30 @@ sed '$d' "$here/${auth}" >"$scratch/repair-authorization.sql" || failure 'author
   let preparation;
   let invocation;
   if (mode === 'historical-replay') {
-    preparation = `${prepareGenerator(config, 'config')}
+    preparation = `${prepareCapture}
+${prepareGenerator(ranking, 'ranking')}
+${prepareGenerator(payout, 'payout')}
+${prepareGenerator(config, 'config')}
 ${prepareGenerator(opening, 'opening')}
 ${prepareAuth}
 opening_body=$(node "$here/leaderboard-financial-repair-integration-candidate.mjs" --body-md5 "$scratch/repair-opening.sql" fn_complete_club_opening_setup) || failure 'opening body identity preparation refused'
 publish_body=$(node "$here/leaderboard-financial-repair-integration-candidate.mjs" --body-md5 "$scratch/repair-config.sql" fn_publish_leaderboard_reward_program) || failure 'publication body identity preparation refused'
-[[ "$opening_body" =~ ^[0-9a-f]{32}$ && "$publish_body" =~ ^[0-9a-f]{32}$ ]] || failure 'candidate body identity invalid'
+payout_body=$(node "$here/leaderboard-financial-repair-integration-candidate.mjs" --body-md5 "$scratch/repair-payout.sql" fn_payout_leaderboard) || failure 'payout body identity preparation refused'
+[[ "$opening_body" =~ ^[0-9a-f]{32}$ && "$publish_body" =~ ^[0-9a-f]{32}$ && "$payout_body" =~ ^[0-9a-f]{32}$ ]] || failure 'candidate body identity invalid'
 cp "$scratch/repair-authorization.sql" "$scratch/repair-historical-before.sql" || failure 'historical bootstrap preparation failed'
 printf '%s\\n' '\\set historical_before true' >>"$scratch/repair-historical-before.sql" || failure 'historical before selection failed'
 cat "$here/${historicalFixture}" >>"$scratch/repair-historical-before.sql" || failure 'historical before input preparation failed'
-printf '%s\\n' '\\set historical_before false' "\\set candidate_opening_body_md5 $opening_body" "\\set candidate_publish_body_md5 $publish_body" >"$scratch/repair-historical-after.sql" || failure 'historical after selection failed'
+printf '%s\\n' '\\set historical_before false' "\\set candidate_opening_body_md5 $opening_body" "\\set candidate_publish_body_md5 $publish_body" "\\set candidate_payout_body_md5 $payout_body" >"$scratch/repair-historical-after.sql" || failure 'historical after selection failed'
 cat "$here/${historicalFixture}" >>"$scratch/repair-historical-after.sql" || failure 'historical after input preparation failed'`;
-    invocation = ['historical-before', 'config', 'opening', 'historical-after']
+    invocation = [
+      'historical-before',
+      'capture',
+      'ranking',
+      'payout',
+      'config',
+      'opening',
+      'historical-after',
+    ]
       .map(invoke)
       .join('\n');
   } else if (mode === 'concurrency' || mode === 'unknown-ack') {
@@ -232,11 +298,35 @@ ${prepareCapture}
 cp "$here/${compatibility}" "$scratch/repair-fixture.sql" || failure 'compatibility input preparation failed'`;
     invocation = ['bootstrap', 'capture', 'fixture'].map(invoke).join('\n');
   } else {
-    preparation = `${prepareGenerator(config, 'config')}
+    preparation = `${prepareCapture}
+${prepareGenerator(ranking, 'ranking')}
+${prepareGenerator(payout, 'payout')}
+${prepareGenerator(config, 'config')}
 ${prepareGenerator(opening, 'opening')}
 ${prepareAuth}
 cat "$scratch/repair-authorization.sql" "$here/${openingFixture}" >"$scratch/repair-fixture.sql" || failure 'opening complete input preparation failed'`;
-    invocation = ['config', 'opening', 'fixture'].map(invoke).join('\n');
+    invocation = ['capture', 'ranking', 'payout', 'config', 'opening', 'fixture']
+      .map(invoke)
+      .join('\n');
+  }
+  if (mode !== 'capture-compatibility') {
+    const splitInstall = ['capture', 'ranking', 'payout', 'config', 'opening']
+      .map(invoke)
+      .join('\n');
+    assert.equal(
+      invocation.split(splitInstall).length,
+      2,
+      'One complete install sequence required'
+    );
+    invocation = invocation.replace(
+      splitInstall,
+      [invoke('consolidated'), invoke('postimage')].join('\n')
+    );
+    preparation += `\nprintf '%s\\n' 'SET ROLE postgres;' >"$scratch/repair-consolidated.sql" || failure 'consolidated owner preparation failed'
+node "$here/${consolidated}" >>"$scratch/repair-consolidated.sql" || failure 'exact consolidated migration preparation refused'
+printf '%s\\n' 'RESET ROLE;' >>"$scratch/repair-consolidated.sql" || failure 'consolidated owner reset preparation failed'
+[[ "$(tail -n 1 "$here/${postimage}")" == 'ROLLBACK;' && "$(grep -c '^ROLLBACK;$' "$here/${postimage}")" == 1 ]] || failure 'postimage terminal boundary changed'
+cp "$here/${postimage}" "$scratch/repair-postimage.sql" || failure 'postimage private input preparation failed'`;
   }
   once(
     cleanup,
@@ -248,9 +338,23 @@ chmod 600 "$scratch"/repair-*.sql || failure 'private candidate input permission
 repair_sql() {
   local stage="$1" input="$2" status state='unknown' line
   if timeout 180 docker exec -i "$container" psql -h /tmp -XAtq -U "$bootstrap" -d postgres -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate <"$input" >"$scratch/repair-$stage.log" 2>&1; then
+${
+  mode === 'v2-payout' || mode === 'opening'
+    ? `    if [[ "$stage" == fixture ]]; then
+      node "$here/${repairDiagnostics}" '${mode}' "$scratch/repair-$stage.log" || failure 'prospective verdict evidence refused'
+    fi`
+    : ''
+}
     printf 'Isolated Candidate Stage Completed: %s\\n' "$stage"
   else
     status=$?
+${
+  mode === 'v2-payout' || mode === 'opening'
+    ? `    if [[ "$stage" == fixture ]]; then
+      node "$here/${repairDiagnostics}" '${mode}' "$scratch/repair-$stage.log" || printf '%s\\n' 'Financial Repair Diagnostic: unknown; private evidence outside reviewed contract' >&2
+    fi`
+    : ''
+}
     # Bounded private read; never expose arbitrary SQL, identifiers or values.
     while IFS= read -r line; do
       if [[ "$line" =~ ^(ERROR|FATAL|PANIC):[[:space:]]+([0-9A-Z]{5})[[:space:]]*$ ]]; then state="\${BASH_REMATCH[2]}"; break; fi

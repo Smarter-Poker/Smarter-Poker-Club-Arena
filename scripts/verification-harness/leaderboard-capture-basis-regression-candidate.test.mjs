@@ -17,6 +17,26 @@ const regression = readFileSync(
   'utf8'
 );
 const baseline = readFileSync(baselineFixture, 'utf8');
+test('actual nonempty producer proves fixed counters, legacy agreement and immutable retry in rollback isolation', () => {
+  const proof = regression.split('DO $nonempty_producer$')[1].split('END $nonempty_producer$;')[0];
+  assert.match(proof, /INSERT INTO public\.player_stats\(user_id,club_id,hands_played,hands_dealt/);
+  assert.match(proof, /11,13,26,101\.25,12\.50,1\.75,3,1/);
+  assert.equal(proof.match(/public\.fn_snapshot_player_stats\(\)/g)?.length, 2);
+  assert.match(proof, /IS DISTINCT FROM expected/);
+  assert.match(proof, /row_count=1/);
+  assert.match(proof, /counter_hash=md5\(\(expected->0\)::text\)/);
+  assert.match(proof, /IS DISTINCT FROM frozen_header/);
+  assert.match(proof, /IS DISTINCT FROM frozen_rows/);
+  assert.match(proof, /IS DISTINCT FROM 202\.50/);
+  assert.match(proof, /EXCEPTION WHEN SQLSTATE 'Q0003' THEN NULL/);
+  assert.match(proof, /Nonempty producer subtransaction did not restore exact empty preimage/);
+  assert.doesNotMatch(proof, /DELETE FROM|TRUNCATE|DISABLE TRIGGER|COMMIT;/);
+  assert.ok(regression.indexOf('END $nonempty_producer$;') < regression.indexOf('DO $producer$'));
+  assert.match(
+    regression,
+    /OR EXISTS\(SELECT 1 FROM public\.player_stats WHERE club_id IS NOT NULL\)/
+  );
+});
 test('producer freezes first complete applied capture while preserving shared daily upserts', () => {
   assert.match(capture, /WITH applied AS MATERIALIZED/);
   assert.match(capture, /FROM public\.player_stats WHERE club_id IS NOT NULL/);

@@ -2,6 +2,9 @@
 -- ACL array order is not portable through native pg_dump. Preserve NULL
 -- versus explicit empty ACLs and every full aclitem (including grantor and
 -- grant options); normalize only the order of those exact stored items.
+-- Native pretty deparsing preserves operator/cast/precedence semantics while
+-- avoiding different redundant grouping after pg_dump reparses nested BoolExpr.
+-- It is rendering only: validation, enabled states and full equality remain.
 SET search_path = pg_catalog;
 SELECT jsonb_build_object(
   'database', (SELECT jsonb_build_array(d.datname,pg_get_userbyid(d.datdba),
@@ -42,7 +45,7 @@ SELECT jsonb_build_object(
     SELECT jsonb_build_array(n.nspname,c.relname,c.relkind,pg_get_userbyid(c.relowner),
       c.relrowsecurity,c.relforcerowsecurity,
       CASE WHEN c.relacl IS NULL THEN NULL ELSE coalesce((SELECT jsonb_agg(v::text ORDER BY v::text) FROM unnest(c.relacl) v),'[]'::jsonb) END,c.reloptions,
-      t.spcname,CASE WHEN c.relkind IN ('v','m') THEN md5(pg_get_viewdef(c.oid,false)) ELSE NULL END) x
+      t.spcname,CASE WHEN c.relkind IN ('v','m') THEN md5(pg_get_viewdef(c.oid,true)) ELSE NULL END) x
     FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
     LEFT JOIN pg_tablespace t ON t.oid=c.reltablespace
     WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema') q),
@@ -68,13 +71,13 @@ SELECT jsonb_build_object(
     WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema') q),
   'constraints', (SELECT jsonb_agg(x ORDER BY x::text) FROM (
     SELECT jsonb_build_array(n.nspname,c.relname,k.conname,k.contype,
-      pg_get_constraintdef(k.oid),k.convalidated) x
+      pg_get_constraintdef(k.oid,true),k.convalidated) x
     FROM pg_constraint k JOIN pg_class c ON c.oid=k.conrelid
     JOIN pg_namespace n ON n.oid=c.relnamespace
     WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema') q),
   'domain_constraints', (SELECT jsonb_agg(x ORDER BY x::text) FROM (
     SELECT jsonb_build_array(n.nspname,t.typname,k.conname,k.contype,
-      pg_get_constraintdef(k.oid),k.convalidated) x FROM pg_constraint k
+      pg_get_constraintdef(k.oid,true),k.convalidated) x FROM pg_constraint k
     JOIN pg_type t ON t.oid=k.contypid JOIN pg_namespace n ON n.oid=t.typnamespace
     WHERE k.conrelid=0 AND n.nspname !~ '^pg_' AND n.nspname <> 'information_schema') q),
   'indexes', (SELECT jsonb_agg(x ORDER BY x::text) FROM (
@@ -83,7 +86,7 @@ SELECT jsonb_build_object(
     JOIN pg_namespace n ON n.oid=c.relnamespace
     WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema') q),
   'triggers', (SELECT jsonb_agg(x ORDER BY x::text) FROM (
-    SELECT jsonb_build_array(n.nspname,c.relname,t.tgname,pg_get_triggerdef(t.oid),t.tgenabled) x
+    SELECT jsonb_build_array(n.nspname,c.relname,t.tgname,pg_get_triggerdef(t.oid,true),t.tgenabled) x
     FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
     JOIN pg_namespace n ON n.oid=c.relnamespace WHERE NOT t.tgisinternal
     AND n.nspname !~ '^pg_' AND n.nspname <> 'information_schema') q),

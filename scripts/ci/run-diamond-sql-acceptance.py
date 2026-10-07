@@ -82,6 +82,8 @@ RUNNERS = [
     ('run-diamond-tournament-doors.py', 'Diamond tournament door capture verified.'),
     ('run-diamond-tournament-lifecycle.py',
      'Diamond tournament lifecycle cases verified against the installed doors,'),
+    ('run-diamond-tournament-lane-journal.py',
+     'Diamond tournament lane checks passed on isolated PostgreSQL 17; this is a fixture proof, not a production certification.'),
     ('run-diamond-stats-asset-dimension.py',
      'Diamond stats asset dimension certified on isolated PostgreSQL 17.'),
     ('run-diamond-club-commerce.py',
@@ -138,6 +140,7 @@ PRIVATE_CLUSTER_RUNNERS = [
     'run-diamond-scheduled-tournaments.py',
     'run-diamond-stats-asset-dimension.py',
     'run-diamond-tournament-doors.py',
+    'run-diamond-tournament-lane-journal.py',
     'run-diamond-tournament-lifecycle.py',
 ]
 RUNNER_NAMES = [name for name, _ in RUNNERS]

@@ -205,10 +205,12 @@ describe('the journal explains the balance', () => {
  * 'cash_rake_correction' row per original row, moves no balance, and is marked
  * 'journal_backfill' so the register does not follow it.
  *
- * KNOWN, SAME CLASS, NOT YET CHANGED: fn_poker_diamond_tournament_drain (last
- * defined before this law binds) still journals a house-bound tournament fee
- * or Spin surplus from custody. It has written no row yet. The moment anyone
- * redefines it, the rule below binds it too.
+ * SAME CLASS, IN THE TOURNAMENT LANE (#6411): fn_poker_diamond_tournament_drain
+ * journalled a house-bound tournament fee, Spin surplus or guarantee overlay
+ * return from custody, and settle_overlay and spin_draw journalled the house's
+ * overlay and underwrite into custody. The fee path wrote four -200 rows at
+ * 13:03 UTC on 2026-10-07. 20261007132503 makes all five write the register
+ * row directly and no journal row; the describe block below pins it.
  */
 export const WALLET_ROW_BINDS_FROM = '20261007112751';
 
@@ -307,5 +309,100 @@ describe('a wallet journal row moves the wallet', () => {
     expect(flat).toContain('apply 20261007112751 first');
     // Horses are players (CLAUDE.md 10.5): the cohort is the rows, nothing else.
     expect(flat).not.toMatch(/is_horse/);
+  });
+});
+
+/**
+ * ===========================================================================
+ *  THE TOURNAMENT LANE'S HOUSE LEGS MOVE NO WALLET (#6411, 2026-10-07)
+ * ===========================================================================
+ *
+ * A Diamond tournament fee, a Spin surplus and a guarantee overlay return leave
+ * an entry's custody for the house; a Spin underwrite and a guarantee overlay
+ * arrive in custody from the house. None of the five touches a wallet: the
+ * entry's Diamonds left the wallet once, in its arena_deposit row. Each one
+ * nevertheless wrote a diamond_transactions row, and from 13:03 UTC four
+ * wallets' journals stopped explaining their balances.
+ *
+ * 20261007132503 writes the register row (which counts custody Diamonds as the
+ * player's) directly, with the wallet unchanged on both sides, writes no
+ * journal row, and has the callers assert the register by op_id. The movement
+ * CHECK admits a NULL journal id on the two house legs only.
+ */
+const LANE_FIX = '20261007132503';
+
+describe("the tournament lane's house legs write no wallet journal row", () => {
+  const lane = [
+    'fn_poker_diamond_tournament_drain',
+    'fn_poker_diamond_tournament_settle_fee',
+    'fn_poker_diamond_tournament_settle_overlay',
+    'fn_poker_diamond_spin_draw',
+    'fn_diamond_arena_reconciliation',
+  ];
+
+  it.each(lane)('%s is last defined at or after the fix, and journals no house leg', (name) => {
+    const d = latestDefinition(name);
+    expect(d, `${name} is defined in a migration`).toBeDefined();
+    expect(d!.version >= LANE_FIX).toBe(true);
+    expect(d!.body).not.toMatch(INSERTS_JOURNAL);
+  });
+
+  it('the drain retires a house-bound drain in the register, wallet unchanged, and still carries a prize journal', () => {
+    const flat = latestDefinition('fn_poker_diamond_tournament_drain')!.body.replace(/\s+/g, ' ');
+    expect(flat).toContain("v_register := p_reason||':'||v_c.id::text;");
+    expect(flat).toContain("(v_register, 'burn', 'diamonds', 'player', v_c.user_id");
+    expect(flat).toContain('COALESCE(v_wallet,0), COALESCE(v_wallet,0), v_supply');
+    // A prize or bounty drain still carries the recipient's wallet credit.
+    expect(flat).toContain('IF p_journal_for IS NOT NULL THEN v_journal := p_journal_for;');
+    expect(flat).toContain("'register_op_id',v_register");
+  });
+
+  it('every caller asserts the register by op_id, never through journal ids', () => {
+    for (const name of [
+      'fn_poker_diamond_tournament_settle_fee',
+      'fn_poker_diamond_tournament_settle_overlay',
+      'fn_poker_diamond_spin_draw',
+    ]) {
+      const body = latestDefinition(name)!.body;
+      expect(body, `${name} still asserts through diamond_tx_id`).not.toContain('diamond_tx_id');
+      expect(body).toMatch(/m\.op_id (IN \(SELECT d->>'register_op_id'|= ANY \(v_registers\))/);
+    }
+  });
+
+  it('the overlay and the underwrite are registered to the player with the wallet unchanged', () => {
+    const overlay = latestDefinition('fn_poker_diamond_tournament_settle_overlay')!.body.replace(
+      /\s+/g,
+      ' '
+    );
+    expect(overlay).toContain("(v_register, 'mint', 'diamonds', 'player', v_c.user_id");
+    expect(overlay).toContain('v_wallet, v_wallet, v_running');
+    const spin = latestDefinition('fn_poker_diamond_spin_draw')!.body.replace(/\s+/g, ' ');
+    expect(spin).toContain("(v_register, 'mint', 'diamonds', 'player', v_c.user_id");
+    expect(spin).toContain('v_wallet, v_wallet, v_running');
+  });
+
+  it('the movement CHECK admits a missing journal id on the two house legs only', () => {
+    const file = readdirSync(MIG_DIR).find((f) => f.startsWith(LANE_FIX));
+    expect(file, 'the lane fix migration is on disk').toBeDefined();
+    const flat = stripComments(readFileSync(join(MIG_DIR, file!), 'utf8')).replace(/\s+/g, ' ');
+    // A wallet leg still needs its journal row.
+    expect(flat).toContain(
+      '((amount >= 1 AND amount <= 2147483647) AND wallet_journal_id IS NOT NULL)'
+    );
+    // Only custody to the house by a drain, or the house into custody.
+    expect(flat).toContain(
+      "(action = 'release' AND source_account LIKE 'arena_custody:%' AND destination_account = 'house' AND request->>'action' = 'tournament_drain')"
+    );
+    expect(flat).toContain(
+      "(action = 'reserve' AND source_account LIKE 'house:%' AND destination_account LIKE 'arena_custody:%' AND request->>'action' IN ('spin_underwrite', 'guarantee_overlay'))"
+    );
+    // The inflow constraint, which holds entries to their journal rows, is untouched.
+    expect(flat).not.toContain('poker_diamond_tournament_ledger_inflow');
+    // Both watched guards are declared, never disabled.
+    expect(flat).toContain('fn_ca_declare_guard_redefinition');
+    expect(flat).toContain(
+      "'fn_poker_diamond_tournament_drain', 'fn_poker_diamond_tournament_settle_fee'"
+    );
+    expect(flat).not.toMatch(/disable\s+trigger/i);
   });
 });

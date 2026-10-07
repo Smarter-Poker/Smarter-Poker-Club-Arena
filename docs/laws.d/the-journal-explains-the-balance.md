@@ -41,3 +41,13 @@ exception), pins the sweep to retiring the rake in the Mint register with no
 journal row, and pins the settlement 20261007112808 to changing no balance,
 keying every correction to the row it corrects, and staying out of the
 register.
+
+Extended again 2026-10-07 (#6411) for the Diamond tournament lane: the drain's
+house-bound arm (tournament fee, Spin surplus, guarantee overlay return), the
+guarantee overlay paid into custody and the Spin underwrite each journalled a
+custody-to-house or house-to-custody movement no wallet made; the fee path put
+4 wallets 800 Diamonds out at 13:03 UTC. The law pins all five lane functions
+to their 20261007132503 definitions: no wallet journal row for a house leg, the
+register row written directly with the wallet unchanged, every caller asserting
+the register by op_id, and the movement CHECK admitting a missing journal id on
+the two house legs only.

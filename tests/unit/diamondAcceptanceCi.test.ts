@@ -39,7 +39,7 @@ const read = (p: string) => readFileSync(join(root, p), 'utf8');
 const ci = parse(read('.github/workflows/ci.yml'));
 const wrapper = read(WRAPPER);
 
-/* THE TWENTY-NINE RUNNERS, NAMED, AND COUNTED IN WORDS.
+/* THE THIRTY RUNNERS, NAMED, AND COUNTED IN WORDS.
 
    Every other assertion here derives the population from the directory, which
    is right and is not enough on its own: a directory read agrees with itself
@@ -73,12 +73,13 @@ const EVERY_DIAMOND_RUNNER = [
   'run-diamond-straddle.py',
   'run-diamond-top-up.py',
   'run-diamond-tournament-doors.py',
+  'run-diamond-tournament-lane-journal.py',
   'run-diamond-tournament-lifecycle.py',
   'run-diamond-transfer-door-and-dr16.py',
   'run-diamond-wallet-transfer.py',
   'run-poker-diamond-custody.py',
 ];
-/* The sixteen that stand up a cluster of their own. Declared in the wrapper
+/* The seventeen that stand up a cluster of their own. Declared in the wrapper
    and repeated here, so the split cannot move in one file alone. */
 const A_PRIVATE_CLUSTER = [
   'run-diamond-bad-beat-jackpot.py',
@@ -96,10 +97,11 @@ const A_PRIVATE_CLUSTER = [
   'run-diamond-scheduled-tournaments.py',
   'run-diamond-stats-asset-dimension.py',
   'run-diamond-tournament-doors.py',
+  'run-diamond-tournament-lane-journal.py',
   'run-diamond-tournament-lifecycle.py',
 ];
-const HOW_MANY_RUNNERS = 29;
-const HOW_MANY_ON_A_PRIVATE_CLUSTER = 16;
+const HOW_MANY_RUNNERS = 30;
+const HOW_MANY_ON_A_PRIVATE_CLUSTER = 17;
 const HOW_MANY_ON_THE_WRAPPER_CLUSTER = 13;
 /* No environment variable but PG_BIN may choose a runner's server. PG17_BINDIR
    is the estate's other name for a bin directory, and two variables naming one
@@ -287,7 +289,7 @@ const socketPort = /^PORT = '([0-9]+)'$/m.exec(wrapper)?.[1];
 
 /* TWO SHAPES OF RUNNER, AND EVERY RUNNER IS EXACTLY ONE OF THEM.
  *
- * Thirteen are hard-wired to the wrapper's socket and port. Fourteen stand up
+ * Thirteen are hard-wired to the wrapper's socket and port. Seventeen stand up
  * a private cluster of their own, because they load the estate's historical
  * schema base and pin the installed doors against it: they need a cluster
  * nothing else has written to, and two postmasters cannot own one socket and

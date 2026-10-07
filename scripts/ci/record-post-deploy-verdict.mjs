@@ -63,14 +63,42 @@
  * stays counted as unverified, and the payload names it as such, because an
  * unknown is never reported as clean.
  *
+ * AN OLDER SUCCESS NEVER CLOSES A NEWER FAILURE (2026-10-07).
+ *
+ * Run 37620236888, triggered by the publish of b6a260b4, failed at 12:30:18Z and bumped
+ * the open episode 240356. Five minutes later run 37616370268, which had been
+ * verifying the OLDER release 365b5f5f since 11:46, finished green and wrote
+ * row 243237 resolving 240356. Nothing had verified b6a260b4; the newer failure
+ * was erased by an older success because "resolve" asked only whether the
+ * episode was open, never what the success had covered.
+ *
+ * Runs finish in any order, so the order of verdicts is read from the release
+ * lineage, never the clock. Every failure now leaves an occurrence receipt
+ * (status info, kind failed-release) naming the release it failed on, written in
+ * the same transaction as the episode bump. A success closes the episode only
+ * when its release is the same as, or a descendant of, EVERY release the episode
+ * has failed on (git merge-base --is-ancestor, via
+ * production-e2e-provenance.mjs). Otherwise it is one of two receipts, never a
+ * resolution:
+ *
+ *   stale          the success covered a release OLDER than one that failed.
+ *                  Recorded as kind stale-success; the episode stays open.
+ *   could not tell the lineage could not be read, the success named no
+ *                  release, or the episode holds deliveries whose release was
+ *                  never recorded (an episode opened before this receipt
+ *                  existed and bumped more than once). Recorded as kind
+ *                  could-not-tell; the episode stays open (CLAUDE.md 10.86).
+ *
  * Run:  DATABASE_URL=... WORKFLOW_LABEL=... ALERT_SOURCE=... ALERT_NAME=... RUN_ID=...
  *       GATE_RESULT=... LANES=$'success|Lane A\nskipped|Lane B' \
  *       [UNOWED_LANES=$'Lane B'] [GH_TOKEN=... GITHUB_REPOSITORY=owner/repo] \
  *       node scripts/ci/record-post-deploy-verdict.mjs
  */
 import { createHash } from 'node:crypto';
+import { appendFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
+import { classifyRepositoryLineage } from './production-e2e-provenance.mjs';
 
 export const FLEET_TASK_ID = '01a09b86-5ba8-7290-8657-1041f13dd3ca';
 export const UNKNOWN = 3;
@@ -84,9 +112,15 @@ export const SUCCESS = 'success';
  * verdict = { workflow, source, alertName, runId, runAttempt, runUrl, headSha,
  *             gate: { name, result, shouldRun } | null,
  *             lanes: [{ name, result }] }
- * previous = { event_key, status, investigation_status } | undefined
+ * previous = { event_key, status, investigation_status, head_sha, delivery_count }
+ *            | undefined
+ * history  = { failedReleases: [{ head_sha, delivery_count }],
+ *              relate(failedSha, verdictSha) -> 'same' | 'ancestor' | 'descendant',
+ *                throwing when it cannot tell }
+ *            The occurrence receipts of the open episode and the lineage
+ *            evidence. Without them a success can never close an episode.
  */
-export function decide(verdict, previous) {
+export function decide(verdict, previous, history = {}) {
   const lanes = verdict.lanes || [];
   const gate = verdict.gate || null;
 
@@ -134,11 +168,16 @@ export function decide(verdict, previous) {
       failed.slice().sort().join(','), skipped.slice().sort().join(',')].join(':');
     const reusable = previous && previous.status === 'firing'
       && !CLOSED.includes(previous.investigation_status);
+    const eventKey = reusable ? previous.event_key : createHash('sha256').update(identity).digest('hex');
     return {
       action: 'fire',
       exitCode: 0,
       severity: gateFailed ? 'critical' : 'warning',
-      eventKey: reusable ? previous.event_key : createHash('sha256').update(identity).digest('hex'),
+      eventKey,
+      // The episode row keeps its FIRST occurrence's payload, so the release
+      // each later failure covered has to be recorded beside it, or a success
+      // cannot tell whether it is newer than the failure it would close.
+      occurrence: occurrenceReceipt(verdict, eventKey),
       payload: {
         target_task_id: FLEET_TASK_ID,
         workflow: verdict.workflow,
@@ -172,23 +211,127 @@ export function decide(verdict, previous) {
   }
 
   if (previous && previous.status === 'firing' && !CLOSED.includes(previous.investigation_status)) {
+    const coverage = coverageOf(verdict.headSha, previous, history);
+    const receipt = {
+      target_task_id: FLEET_TASK_ID,
+      workflow: verdict.workflow,
+      run_id: String(verdict.runId),
+      run_attempt: String(verdict.runAttempt ?? ''),
+      head_sha: verdict.headSha || null,
+      not_owed_jobs: notOwed.slice().sort(),
+    };
+    if (coverage.verdict === 'covers') {
+      return {
+        action: 'resolve',
+        exitCode: 0,
+        severity: 'info',
+        eventKey: `${previous.event_key}:resolved`,
+        payload: { ...receipt, resolves: previous.event_key, covers_failed_releases: coverage.failed },
+      };
+    }
+    const kind = coverage.verdict === 'stale' ? 'stale-success' : 'could-not-tell';
     return {
-      action: 'resolve',
+      action: coverage.verdict === 'stale' ? 'stale' : 'could-not-tell',
       exitCode: 0,
       severity: 'info',
-      eventKey: `${previous.event_key}:resolved`,
+      eventKey: `${previous.event_key}:${kind}:${verdict.runId}:${verdict.runAttempt || '1'}`,
+      reason: coverage.reason,
       payload: {
-        target_task_id: FLEET_TASK_ID,
-        workflow: verdict.workflow,
-        run_id: String(verdict.runId),
-        head_sha: verdict.headSha || null,
-        resolves: previous.event_key,
-        not_owed_jobs: notOwed.slice().sort(),
+        ...receipt,
+        kind,
+        episode: previous.event_key,
+        // Named so nobody reads this receipt as a resolution: it closes nothing.
+        resolves: null,
+        reason: coverage.reason,
+        newer_failed_releases: coverage.newer || [],
       },
     };
   }
 
   return { action: 'none', exitCode: 0, reason: 'verification complete; no open episode to close' };
+}
+
+/** The receipt a failure leaves for the release it failed on. */
+export function occurrenceReceipt(verdict, episodeKey) {
+  const head = verdict.headSha || null;
+  return {
+    eventKey: `${episodeKey}:failed-release:${head || `unknown:${verdict.runId}`}`,
+    severity: 'info',
+    payload: {
+      target_task_id: FLEET_TASK_ID,
+      kind: 'failed-release',
+      episode: episodeKey,
+      workflow: verdict.workflow,
+      run_id: String(verdict.runId),
+      run_attempt: String(verdict.runAttempt ?? ''),
+      head_sha: head,
+    },
+  };
+}
+
+/**
+ * Does a success on `headSha` cover every release the open episode failed on?
+ *
+ *   covers  headSha is the same as, or a descendant of, every failed release.
+ *   stale   some failed release is a descendant of headSha: the success is
+ *           older than a failure, and must not erase it.
+ *   unknown anything that cannot be proved from lineage. Never a pass.
+ */
+export function coverageOf(headSha, previous, history) {
+  const unknown = (reason) => ({ verdict: 'unknown', reason });
+  if (!headSha) return unknown('the success names no release, so it cannot be ordered against the failure');
+  const relate = history && history.relate;
+  const occurrences = history && Array.isArray(history.failedReleases) ? history.failedReleases : null;
+  if (typeof relate !== 'function' || occurrences === null) {
+    return unknown('the episode history or the lineage evidence was not read');
+  }
+  // Every delivery of the episode must have a recorded release. An episode
+  // opened before occurrence receipts existed has exactly one delivery that
+  // its own payload names; any more are failures whose release nobody wrote.
+  // A KNOWN newer failure still proves the success stale; the unknowns only
+  // ever stop it from covering.
+  const recorded = occurrences.reduce((sum, row) => sum + Math.max(0, Number(row.delivery_count) || 0), 0);
+  const deliveries = Number(previous.delivery_count);
+  const doubts = [];
+  let unrecorded = 0;
+  if (!Number.isSafeInteger(deliveries) || deliveries < 1) {
+    doubts.push('the episode delivery count could not be read');
+  } else {
+    unrecorded = deliveries - recorded;
+    if (unrecorded > 1 || (unrecorded === 1 && !previous.head_sha)) {
+      doubts.push(`${unrecorded} failed deliveries of this episode name no release`);
+    }
+  }
+  const failed = [...new Set([
+    ...(unrecorded >= 1 && previous.head_sha ? [previous.head_sha] : []),
+    ...occurrences.map((row) => row.head_sha),
+  ])];
+  if (failed.length === 0) doubts.push('the episode records no failed release');
+  const newer = [];
+  for (const sha of failed) {
+    if (!sha) { doubts.push('a failure of this episode named no release'); continue; }
+    let relation;
+    try {
+      relation = relate(sha, headSha);
+    } catch (error) {
+      doubts.push(`lineage of ${sha} against ${headSha} could not be read: ${error.message}`);
+      continue;
+    }
+    if (relation === 'descendant') newer.push(sha);
+    else if (relation !== 'same' && relation !== 'ancestor') {
+      doubts.push(`lineage of ${sha} against ${headSha} is ${relation}`);
+    }
+  }
+  if (newer.length > 0) {
+    newer.sort();
+    return {
+      verdict: 'stale',
+      newer,
+      reason: `the success covered ${headSha}, older than failed release ${newer.join(', ')}`,
+    };
+  }
+  if (doubts.length > 0) return unknown(doubts.join('; '));
+  return { verdict: 'covers', failed: failed.filter(Boolean).sort() };
 }
 
 /**
@@ -304,27 +447,66 @@ async function main() {
   await db.connect();
   try {
     await db.query("SET statement_timeout = '20s'");
+    await db.query("SET lock_timeout = '10s'");
+    // One transaction: the episode bump and its occurrence receipt land
+    // together, and the open episode is locked while a success decides
+    // whether it covers it, so a failure cannot slip in between.
+    await db.query('BEGIN');
     const { rows: [previous] } = await db.query(
-      `SELECT event_key, status, investigation_status FROM public.operational_alert_events
-        WHERE source = $1 AND alertname = $2
-        ORDER BY last_received_at DESC, id DESC LIMIT 1`, [verdict.source, verdict.alertName]);
-    const outcome = decide(verdict, previous);
+      `SELECT id, event_key, status, investigation_status, delivery_count,
+              payload->>'head_sha' AS head_sha
+         FROM public.operational_alert_events
+        WHERE source = $1 AND alertname = $2 AND status IN ('firing', 'resolved')
+        ORDER BY last_received_at DESC, id DESC LIMIT 1
+        FOR UPDATE`, [verdict.source, verdict.alertName]);
+    let history = {};
+    if (previous && previous.status === 'firing') {
+      const { rows } = await db.query(
+        `SELECT payload->>'head_sha' AS head_sha, delivery_count
+           FROM public.operational_alert_events
+          WHERE source = $1 AND alertname = $2 AND status = 'info'
+            AND payload->>'kind' = 'failed-release' AND payload->>'episode' = $3`,
+        [verdict.source, verdict.alertName, previous.event_key]);
+      history = { failedReleases: rows, relate: classifyRepositoryLineage };
+    }
+    const outcome = decide(verdict, previous, history);
     if (outcome.action === 'none') {
+      await db.query('COMMIT');
       console.log(`ok    ${outcome.reason}`);
       return;
     }
-    const status = outcome.action === 'fire' ? 'firing' : 'resolved';
-    const { rows: [receipt] } = await db.query(
-      'SELECT public.fn_record_operational_alert($1,$2,$3,$4,$5,$6::jsonb) AS id',
-      [verdict.source, outcome.eventKey, verdict.alertName, status, outcome.severity,
-        JSON.stringify(outcome.payload)]);
-    if (!receipt || !(Number(receipt.id) > 0)) throw new Error('operational inbox returned no receipt');
-    console.log(`${status}: operational alert ${receipt.id} (${verdict.source}/${verdict.alertName})`);
+    const record = async (eventKey, status, severity, payload) => {
+      const { rows: [receipt] } = await db.query(
+        'SELECT public.fn_record_operational_alert($1,$2,$3,$4,$5,$6::jsonb) AS id',
+        [verdict.source, eventKey, verdict.alertName, status, severity, JSON.stringify(payload)]);
+      if (!receipt || !(Number(receipt.id) > 0)) throw new Error('operational inbox returned no receipt');
+      return receipt.id;
+    };
+    const status = outcome.action === 'fire' ? 'firing' : outcome.action === 'resolve' ? 'resolved' : 'info';
+    const id = await record(outcome.eventKey, status, outcome.severity, outcome.payload);
+    let occurrenceId = null;
+    if (outcome.occurrence) {
+      occurrenceId = await record(outcome.occurrence.eventKey, 'info', outcome.occurrence.severity,
+        outcome.occurrence.payload);
+    }
+    await db.query('COMMIT');
+    const label = outcome.action === 'stale' ? 'STALE (closes nothing)'
+      : outcome.action === 'could-not-tell' ? 'COULD NOT TELL (closes nothing)' : status;
+    console.log(`${label}: operational alert ${id} (${verdict.source}/${verdict.alertName})`);
+    if (outcome.reason) console.log(`      ${outcome.reason}`);
     if (outcome.action === 'fire') {
+      console.log(`      failed release receipt: ${occurrenceId} (${outcome.occurrence.payload.head_sha || 'release unknown'})`);
       console.log(`      failed: ${outcome.payload.failed_jobs.join(', ') || 'none'}`);
       console.log(`      skipped: ${outcome.payload.skipped_jobs.join(', ') || 'none'}`);
       console.log(`      could not tell: ${outcome.payload.could_not_tell_jobs.join(', ') || 'none'}`);
     }
+    if (process.env.GITHUB_STEP_SUMMARY && (outcome.action === 'stale' || outcome.action === 'could-not-tell')) {
+      appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+        `${label}: this success did not close the open episode. ${outcome.reason}\n`);
+    }
+  } catch (error) {
+    await db.query('ROLLBACK').catch(() => {});
+    throw error;
   } finally {
     await db.end();
   }

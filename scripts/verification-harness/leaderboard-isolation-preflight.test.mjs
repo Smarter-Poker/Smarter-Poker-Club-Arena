@@ -3,9 +3,85 @@ import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { ownerStatements, validateRestoreScript } from './leaderboard-isolation-restore-script.mjs';
 
 const shell = fileURLToPath(new URL('./leaderboard-isolation-preflight.sh', import.meta.url));
 const source = readFileSync(shell, 'utf8');
+test('atomic archive validation preserves quoted routine bodies and refuses transaction or connection escape', () => {
+  assert.doesNotThrow(() =>
+    validateRestoreScript(
+      '\\restrict abc123\nCREATE FUNCTION f() RETURNS void AS $fn$ BEGIN; COMMIT; END; \\connect secret $fn$ LANGUAGE plpgsql;\n\\unrestrict abc123\n'
+    )
+  );
+  assert.doesNotThrow(() =>
+    validateRestoreScript(
+      "CREATE FUNCTION f() RETURNS text AS 'BEGIN; COMMIT; ''quoted'';' LANGUAGE sql; /* nested /* comment */ safe */"
+    )
+  );
+  for (const sql of [
+    'BEGIN;',
+    'COMMIT;',
+    'ROLLBACK;',
+    'START TRANSACTION;',
+    'START-- token separating comment\nTRANSACTION;',
+    'START/* token separating comment */TRANSACTION;',
+    'SELECT x$tag$foo; COMMIT; SELECT x$tag$foo;',
+    "SELECT x$E'\\'; COMMIT; SELECT '\\';",
+    "PREPARE TRANSACTION 'private';",
+    '\\connect private\n',
+    '\\include private\n',
+    '\\restrict abc\n\\unrestrict wrong\n',
+    "SELECT 'unterminated",
+    'SELECT $x$unterminated',
+  ])
+    assert.throws(() => validateRestoreScript(sql));
+  const owners = [
+    {
+      elevate: 'ALTER ROLE "quoted owner" SUPERUSER;',
+      restore: 'ALTER ROLE "quoted owner" NOSUPERUSER;',
+    },
+  ];
+  assert.deepEqual(ownerStatements(owners), {
+    elevate: owners[0].elevate + '\n',
+    restore: owners[0].restore + '\n',
+  });
+  assert.throws(() => ownerStatements([...owners, ...owners]));
+  assert.throws(() =>
+    ownerStatements([{ ...owners[0], restore: 'ALTER ROLE other NOSUPERUSER;' }])
+  );
+  assert.match(
+    source,
+    /--single-transaction[\s\S]*-f \/tmp\/event-owners-elevate.sql -f \/tmp\/remaining.sql -f \/tmp\/event-owners-restore.sql/
+  );
+  assert.match(source, /isolated catalog differs from current source/);
+});
+test('initdb public namespace is retained for extension installation', () => {
+  const command = source.match(/-c '([^']+)' >"\$scratch\/empty-schema.log"/)?.[1];
+  assert.equal(command, 'DROP EXTENSION plpgsql;');
+  assert.doesNotMatch(source, /DROP SCHEMA public/);
+  assert.match(source, /--schema-only --exit-on-error --use-list=\/tmp\/remaining.list/);
+  assert.match(source, /isolated catalog differs from current source/);
+  // Execute the actual extracted preparation SQL through a finite stub model:
+  // it must remove default plpgsql but preserve the namespace pg_dump omits.
+  function prepare(sql) {
+    const namespaces = new Set(['public', 'pg_catalog']);
+    const extensions = new Set(['plpgsql']);
+    for (const statement of sql
+      .split(';')
+      .map((value) => value.trim())
+      .filter(Boolean)) {
+      if (statement === 'DROP SCHEMA public') namespaces.delete('public');
+      else if (statement === 'DROP EXTENSION plpgsql') extensions.delete('plpgsql');
+      else assert.fail('Unreviewed preparation statement');
+    }
+    return {
+      namespacePresent: namespaces.has('public'),
+      extensionPresent: extensions.has('plpgsql'),
+    };
+  }
+  assert.equal(prepare('DROP SCHEMA public; DROP EXTENSION plpgsql;').namespacePresent, false);
+  assert.deepEqual(prepare(command), { namespacePresent: true, extensionPresent: false });
+});
 test('destination refusal diagnostics retain fixed categories without private error contents', () => {
   const classifier = source.slice(
     source.indexOf('destination_error_category() {'),
@@ -15,9 +91,50 @@ test('destination refusal diagnostics retain fixed categories without private er
     source.indexOf('destination_failure() {'),
     source.indexOf('docker pull "$image"')
   );
-  for (const [diagnostic, line] of [
-    ['psql:<stdin>:7: ERROR: 42501: permission denied secret', '7'],
-    ['untrusted psql:<stdin>:7: ERROR: 42501: permission denied secret', 'unknown'],
+  for (const [diagnostic, line, toc, kind] of [
+    [
+      'psql:/tmp/remaining.sql:9: ERROR: 42501: permission denied secret',
+      '9',
+      'unknown',
+      'unknown',
+    ],
+    [
+      'psql:/tmp/private-secret.sql:9: ERROR: 42501: permission denied secret',
+      'unknown',
+      'unknown',
+      'unknown',
+    ],
+    ['psql:<stdin>:7: ERROR: 42501: permission denied secret', '7', 'unknown', 'unknown'],
+    [
+      'untrusted psql:<stdin>:7: ERROR: 42501: permission denied secret',
+      'unknown',
+      'unknown',
+      'unknown',
+    ],
+    [
+      'pg_restore: from TOC entry 123; 1255 987 FUNCTION private_secret owner_secret\nERROR: 42501: permission denied secret',
+      'unknown',
+      '123',
+      'FUNCTION',
+    ],
+    [
+      'pg_restore: from TOC entry 44; 0 0 DEFAULT ACL private_secret owner_secret\nERROR: 42501: permission denied secret',
+      'unknown',
+      '44',
+      'DEFAULT ACL',
+    ],
+    [
+      'untrusted pg_restore: from TOC entry 123; 1255 987 FUNCTION private_secret\nERROR: 42501: permission denied secret',
+      'unknown',
+      'unknown',
+      'unknown',
+    ],
+    [
+      'pg_restore: from TOC entry 123; 1255 987 PRIVATE_SECRET owner_secret\nERROR: 42501: permission denied secret',
+      'unknown',
+      '123',
+      'unknown',
+    ],
   ]) {
     const actual = spawnSync(
       'bash',
@@ -32,7 +149,7 @@ test('destination refusal diagnostics retain fixed categories without private er
     assert.equal(actual.status, 0);
     assert.equal(
       actual.stdout,
-      `fixed-stage (client-status=3;42501:destination-permission;stdin-line=${line})`
+      `fixed-stage (client-status=3;42501:destination-permission;stdin-line=${line};toc-entry=${toc};object-kind=${kind})`
     );
     assert.equal(actual.stderr, '');
   }
@@ -56,6 +173,17 @@ test('destination refusal diagnostics retain fixed categories without private er
     ['ERROR: 3F000: schema private does not exist', '3F000:schema-missing'],
     ['ERROR: 42710: private already exists', '42710:duplicate-destination-object'],
     ['ERROR: 42501: permission denied secret', '42501:destination-permission'],
+    ['ERROR: 42501: must be owner of function private', '42501:destination-owner-required'],
+    ['ERROR: 42501: must be superuser secret', '42501:destination-superuser-required'],
+    [
+      'ERROR: 42501: permission denied for function private',
+      '42501:destination-function-permission',
+    ],
+    ['ERROR: 42501: permission denied for schema private', '42501:destination-schema-permission'],
+    [
+      'ERROR: 42501: permission denied for table pg_private',
+      '42501:destination-relation-permission',
+    ],
     ['ERROR: 58P01: could not load library private', '58P01:extension-library-unavailable'],
     ['ERROR: malformed secret', 'unknown:unclassified-destination'],
     ['secret configuration body', 'unknown:unclassified-destination'],
@@ -233,6 +361,9 @@ test('source diagnostics return allowlisted categories without raw error or secr
     ],
     [2, 'could not translate host name private.example', 'name-resolution'],
     [124, 'postgres://secret:marker@private.example/db', 'bounded-timeout'],
+    [137, 'secret marker', 'signal-termination'],
+    [2, 'canceling statement due to statement timeout secret', 'server-statement-timeout'],
+    [2, 'canceling statement due to lock timeout secret', 'server-lock-timeout'],
     [2, 'unrecognized raw error secret marker', 'unclassified-source-client'],
   ];
   for (const [status, input, category] of samples) {
@@ -245,6 +376,49 @@ test('source diagnostics return allowlisted categories without raw error or secr
     assert.equal(result.stdout.trim(), category);
     assert.equal(result.stderr, '');
   }
+});
+
+test('actual source failure reports only bounded owned state and numeric elapsed/status', () => {
+  const classifier = source.slice(
+    source.indexOf('source_error_category() {'),
+    source.indexOf('if [[ "${1:-}" == \'--classify-source-error\' ]]')
+  );
+  const helper = source.slice(
+    source.indexOf('source_failure() {'),
+    source.indexOf('destination_failure() {')
+  );
+  for (const [state, expected, marker, elapsed, inspectStatus] of [
+    ['running|0|false', 'running|0|false', '2', '3', '0'],
+    ['exited|137|true', 'exited|137|true', '2', '3', '0'],
+    ['private-secret-state', 'unknown', '2', '3', '0'],
+    ['running|0|false', 'unknown', '2', '3', '1'],
+    ['running|0|false', 'unknown', '2', '3', '127'],
+    ['running|0|false', 'running|0|false', 'invalid', 'unknown', '0'],
+    ['running|0|false', 'running|0|false', 'missing', 'unknown', '0'],
+  ]) {
+    const result = spawnSync(
+      'bash',
+      [
+        '-c',
+        `${classifier}\n${helper}\nSECONDS=5; scratch=/fixture; source_container=exact-owned; cat() { if [[ "$1" == /fixture/source-client-started ]]; then [[ "$fixture_marker" != missing ]] || return 1; printf '%s' "$fixture_marker"; else command cat "$@"; fi; }; timeout() { [[ "$*" == *exact-owned* ]] || exit 9; printf '%s' "$fixture_state"; return "$fixture_inspect_status"; }; failure() { printf '%s' "$1"; }; fixture_state=$1; fixture_marker=$2; fixture_inspect_status=$3; source_failure fixed-stage <(printf 'secret') 137`,
+        'fixture',
+        state,
+        marker,
+        inspectStatus,
+      ],
+      { encoding: 'utf8' }
+    );
+    assert.equal(result.status, 0);
+    assert.equal(
+      result.stdout,
+      `fixed-stage (client-status=137;elapsed-seconds=${elapsed};signal-termination;owned-source-state=${expected})`
+    );
+    assert.equal(result.stderr, '');
+  }
+  assert.match(
+    source,
+    /timeout 10 docker inspect --format '\{\{\.State\.Status\}\}\|\{\{\.State\.ExitCode\}\}\|\{\{\.State\.OOMKilled\}\}' "\$source_container"/
+  );
 });
 
 function cleanupFixture(mode, primaryStatus = 0) {

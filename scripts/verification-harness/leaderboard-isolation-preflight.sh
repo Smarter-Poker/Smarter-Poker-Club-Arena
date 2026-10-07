@@ -5,6 +5,8 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly here
 readonly catalog="$here/leaderboard-isolation-catalog.sql"
 readonly extension_bootstrap="$here/leaderboard-isolation-extension-bootstrap.sql"
+readonly event_owner_bootstrap="$here/leaderboard-isolation-event-owner-bootstrap.sql"
+readonly restore_script_helper="$here/leaderboard-isolation-restore-script.mjs"
 readonly image='supabase/postgres:17.6.1.063'
 readonly bootstrap='leaderboard_qualification_bootstrap'
 prepare_roles() {
@@ -38,7 +40,12 @@ destination_error_category() {
     *'required extension'*'is not installed'*) category='extension-dependency-missing' ;;
     *'schema'*'does not exist'*) category='schema-missing' ;;
     *'already exists'*) category='duplicate-destination-object' ;;
-    *'permission denied'*|*'must be superuser'*|*'must be owner'*) category='destination-permission' ;;
+    *'must be owner'*) category='destination-owner-required' ;;
+    *'must be superuser'*) category='destination-superuser-required' ;;
+    *'permission denied for function'*) category='destination-function-permission' ;;
+    *'permission denied for schema'*) category='destination-schema-permission' ;;
+    *'permission denied for table'*|*'permission denied for relation'*) category='destination-relation-permission' ;;
+    *'permission denied'*) category='destination-permission' ;;
     *'could not access file'*|*'could not load library'*) category='extension-library-unavailable' ;;
     *'unrecognized configuration parameter'*) category='unsupported-destination-configuration' ;;
     *'syntax error'*) category='destination-syntax' ;;
@@ -63,8 +70,11 @@ fi
 source_error_category() {
   local status="$1" diagnostic
   diagnostic="$(cat)"
-  if [[ "$status" == 124 || "$status" == 137 ]]; then echo 'bounded-timeout'; return; fi
+  if [[ "$status" == 124 ]]; then echo 'bounded-timeout'; return; fi
+  if [[ "$status" == 137 ]]; then echo 'signal-termination'; return; fi
   case "$diagnostic" in
+    *'canceling statement due to statement timeout'*) echo 'server-statement-timeout' ;;
+    *'canceling statement due to lock timeout'*) echo 'server-lock-timeout' ;;
     *'could not translate host name'*|*'Name or service not known'*) echo 'name-resolution' ;;
     *'Network is unreachable'*|*'No route to host'*) echo 'network-route' ;;
     *'Connection refused'*) echo 'connection-refused' ;;
@@ -89,6 +99,8 @@ if [[ "${1:-}" == '--check' ]]; then
   bash -n "${BASH_SOURCE[0]}"
   test -s "$catalog"
   test -s "$extension_bootstrap"
+  test -s "$event_owner_bootstrap"
+  test -s "$restore_script_helper"
   if grep -Ei '\b(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|CALL)\b' "$catalog" >/dev/null; then
     echo 'Catalog preflight contains a forbidden mutation.' >&2
     exit 1
@@ -99,7 +111,7 @@ fi
 [[ $# == 0 ]] || { echo 'Unexpected preflight argument.' >&2; exit 1; }
 : "${DATABASE_URL:?Configured DATABASE_URL is required; never supply it in chat.}"
 : "${LEADERBOARD_ISOLATION_SCRATCH_PARENT:?An owned scratch parent is required.}"
-for command in docker timeout sha256sum cmp; do
+for command in docker timeout sha256sum cmp node; do
   command -v "$command" >/dev/null || { echo "Required tool unavailable: $command" >&2; exit 1; }
 done
 scratch="$(mktemp -d "$LEADERBOARD_ISOLATION_SCRATCH_PARENT/leaderboard-isolation.XXXXXX")"
@@ -147,16 +159,31 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 failure() { echo "Leaderboard isolation preflight refused: $1" >&2; exit 1; }
 source_failure() {
-  local reason="$1" log="$2" status="$3" category
+  local reason="$1" log="$2" status="$3" category state='unknown' elapsed='unknown' started
   category="$(source_error_category "$status" < "$log")"
-  failure "$reason ($category)"
+  started="$(cat "$scratch/source-client-started" 2>/dev/null)" || started='unknown'
+  if [[ "$started" =~ ^[0-9]+$ && "$started" -le "$SECONDS" ]]; then elapsed=$((SECONDS-started)); fi
+  if state="$(timeout 10 docker inspect --format '{{.State.Status}}|{{.State.ExitCode}}|{{.State.OOMKilled}}' "$source_container" 2>/dev/null)"; then
+    [[ "$state" =~ ^(created|running|paused|restarting|removing|exited|dead)\|[0-9]+\|(true|false)$ ]] || state='unknown'
+  else state='unknown'; fi
+  failure "$reason (client-status=$status;elapsed-seconds=$elapsed;$category;owned-source-state=$state)"
 }
 destination_failure() {
-  local stage="$1" log="$2" status="$3" category diagnostic line='unknown'
+  local stage="$1" log="$2" status="$3" category diagnostic line='unknown' toc='unknown' kind='unknown' entry candidate
   category="$(destination_error_category < "$log")"
   diagnostic="$(cat "$log")"
-  if [[ "$diagnostic" =~ (^|$'\n')psql:\<stdin\>:([0-9]+):[[:space:]]+ERROR: ]]; then line="${BASH_REMATCH[2]}"; fi
-  failure "$stage (client-status=$status;$category;stdin-line=$line)"
+  if [[ "$diagnostic" =~ (^|$'\n')psql:(\<stdin\>|/tmp/remaining\.sql|/tmp/event-owners-elevate\.sql|/tmp/event-owners-restore\.sql):([0-9]+):[[:space:]]+ERROR: ]]; then line="${BASH_REMATCH[3]}"; fi
+  while IFS= read -r entry; do
+    if [[ "$entry" =~ ^pg_restore:\ from\ TOC\ entry\ ([0-9]+)\;\ [0-9]+\ [0-9]+\ (.*)$ ]]; then
+      toc="${BASH_REMATCH[1]}"
+      entry="${BASH_REMATCH[2]}"
+      for candidate in 'DEFAULT ACL' 'EVENT TRIGGER' 'MATERIALIZED VIEW' 'FOREIGN TABLE' 'DATABASE PROPERTIES' FUNCTION PROCEDURE TABLE SCHEMA DATABASE EXTENSION VIEW SEQUENCE TYPE DOMAIN INDEX TRIGGER CONSTRAINT ACL COMMENT POLICY; do
+        if [[ "$entry" == "$candidate "* ]]; then kind="$candidate"; break; fi
+      done
+      break
+    fi
+  done <<< "$diagnostic"
+  failure "$stage (client-status=$status;$category;stdin-line=$line;toc-entry=$toc;object-kind=$kind)"
 }
 docker pull "$image" >"$scratch/image.log" 2>&1 || failure 'required Supabase PostgreSQL image unavailable'
 # Use the same pg_dump build on source and destination. Source credentials are
@@ -165,6 +192,7 @@ source_client() {
   local seconds="$1" client="$2"
   shift 2
   [[ "$client" == psql || "$client" == pg_dump || "$client" == pg_dumpall ]] || failure 'unsupported source client'
+  printf '%s\n' "$SECONDS" >"$scratch/source-client-started"
   # PGDATABASE alone does not expand a URI. Explicit libpq connection options
   # are expanded inside the container, never placed on the host Docker argv.
   # Expansion must happen inside the source container.
@@ -199,6 +227,8 @@ source_client 180 pg_dumpall --roles-only --no-role-passwords --no-password \
   >"$scratch/roles.sql" 2>"$scratch/roles-error.log" || source_failure 'password-free role export unavailable' "$scratch/roles-error.log" "$?"
 source_client 180 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
   <"$extension_bootstrap" >"$scratch/extensions.sql" 2>"$scratch/source-error.log" || source_failure 'extension owner metadata unavailable' "$scratch/source-error.log" "$?"
+source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
+  <"$event_owner_bootstrap" >"$scratch/event-owners.json" 2>"$scratch/source-error.log" || source_failure 'event-trigger owner metadata unavailable' "$scratch/source-error.log" "$?"
 source_catalog >"$scratch/source-after.json" 2>"$scratch/source-error.log" || source_failure 'source catalog recheck unavailable' "$scratch/source-error.log" "$?"
 cmp -s "$scratch/source-before.json" "$scratch/source-after.json" || failure 'source schema changed during export'
 prepare_roles "$source_bootstrap" <"$scratch/roles.sql" >"$scratch/roles-restore.sql" || failure 'exact existing bootstrap role creation unavailable'
@@ -236,7 +266,10 @@ docker exec -i "$container" pg_restore -h /tmp -U "$bootstrap" --dbname=template
   --schema-only --exit-on-error --use-list=/tmp/database.list \
   <"$scratch/schema.dump" >"$scratch/database-restore.log" 2>&1 || destination_failure 'database attributes cannot be restored' "$scratch/database-restore.log" "$?"
 docker exec "$container" psql -h /tmp -Xq -U "$bootstrap" -d postgres -v ON_ERROR_STOP=1 \
-  -v VERBOSITY=verbose -c 'DROP SCHEMA public; DROP EXTENSION plpgsql;' >"$scratch/empty-schema.log" 2>&1 || destination_failure 'empty isolated defaults cannot be prepared' "$scratch/empty-schema.log" "$?"
+  -v VERBOSITY=verbose -c 'DROP EXTENSION plpgsql;' >"$scratch/empty-schema.log" 2>&1 || destination_failure 'empty isolated defaults cannot be prepared' "$scratch/empty-schema.log" "$?"
+# PG17 pg_dump omits CREATE SCHEMA for initdb's standard public namespace.
+# Retain that namespace; archive owner/ACL statements and final exact catalog
+# comparison still enforce source security. Only plpgsql is recreated below.
 docker exec -i "$container" pg_restore -h /tmp -U "$bootstrap" --dbname=postgres \
   --schema-only --exit-on-error --use-list=/tmp/schemas.list \
   <"$scratch/schema.dump" >"$scratch/schemas-restore.log" 2>&1 || destination_failure 'source namespaces cannot be restored' "$scratch/schemas-restore.log" "$?"
@@ -253,9 +286,19 @@ docker exec "$container" pg_ctl -D /tmp/leaderboard-qualification-db \
 # the original role attribute in that same transaction before any qualification.
 docker exec -i "$container" psql -h /tmp -Xq -U "$bootstrap" -d postgres -v ON_ERROR_STOP=1 -v VERBOSITY=verbose --file=- \
   <"$scratch/extensions.sql" >"$scratch/extension-restore.log" 2>&1 || destination_failure 'original-owner extensions or exact versions cannot be restored' "$scratch/extension-restore.log" "$?"
-docker exec -i "$container" pg_restore -h /tmp -U "$bootstrap" --dbname=postgres \
-  --schema-only --exit-on-error --use-list=/tmp/remaining.list \
-  <"$scratch/schema.dump" >"$scratch/schema-restore.log" 2>&1 || destination_failure 'schema incompatibility during isolated restore' "$scratch/schema-restore.log" "$?"
+# Render the unchanged remaining archive privately. psql owns one transaction
+# across elevation, archive restoration and exact original role attributes.
+docker exec -i "$container" pg_restore --schema-only --exit-on-error --use-list=/tmp/remaining.list \
+  <"$scratch/schema.dump" >"$scratch/remaining.sql" 2>"$scratch/schema-render.log" || destination_failure 'remaining archive rendering failed' "$scratch/schema-render.log" "$?"
+node "$restore_script_helper" "$scratch/remaining.sql" "$scratch/event-owners.json" \
+  "$scratch/event-owners-elevate.sql" "$scratch/event-owners-restore.sql" || failure 'atomic restore script validation failed'
+docker cp "$scratch/remaining.sql" "$container:/tmp/remaining.sql" >/dev/null
+docker cp "$scratch/event-owners-elevate.sql" "$container:/tmp/event-owners-elevate.sql" >/dev/null
+docker cp "$scratch/event-owners-restore.sql" "$container:/tmp/event-owners-restore.sql" >/dev/null
+docker exec "$container" psql -h /tmp -Xq -U "$bootstrap" -d postgres \
+  -v ON_ERROR_STOP=1 -v VERBOSITY=verbose --single-transaction \
+  -f /tmp/event-owners-elevate.sql -f /tmp/remaining.sql -f /tmp/event-owners-restore.sql \
+  >"$scratch/schema-restore.log" 2>&1 || destination_failure 'schema incompatibility during isolated restore' "$scratch/schema-restore.log" "$?"
 docker exec -i "$container" psql -h /tmp -XAtq -U "$bootstrap" -d postgres -v ON_ERROR_STOP=1 -v VERBOSITY=verbose \
   <"$catalog" >"$scratch/isolated.json" 2>"$scratch/local-error.log" || destination_failure 'isolated catalog readback failed' "$scratch/local-error.log" "$?"
 cmp -s "$scratch/source-before.json" "$scratch/isolated.json" || failure 'isolated catalog differs from current source'

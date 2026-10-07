@@ -1,0 +1,11 @@
+{
+  "_owner": "Full current native financial owner qualification on isolated PG17.6; pending protected delivery, installation and natural continuation. Not a live proof.",
+  "tables": [
+    "smarter_private.retirement_undealt_paid_entry_qualification",
+    "smarter_private.retirement_undealt_paid_entry_restorations"
+  ],
+  "functions": [
+    "smarter_private.continue_retired_undealt_paid_entry",
+    "smarter_private.retirement_undealt_paid_entry_immutable"
+  ]
+}

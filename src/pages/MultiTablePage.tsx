@@ -130,6 +130,8 @@ interface TableInstance {
   turnStartMs?: number;
   actionContext?: string;
   pot: number;
+  /** Public hand identity follows this table, including spectator updates. */
+  handNumber?: number;
   /**
    * Hero's hole cards at this table as ONE comma-joined string ("Ah,Qc"; ""
    * when not in a hand or folded). A string, not an array, so
@@ -1891,6 +1893,7 @@ export default function MultiTablePage() {
           timeRemaining: secondsLeft(t),
           turnProgress,
           pot: t.pot,
+          handNumber: t.handNumber,
           holeCards: t.holeCards,
           lastAction: t.lastAction,
           folded: t.folded,

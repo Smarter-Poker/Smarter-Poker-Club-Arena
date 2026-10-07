@@ -31,6 +31,8 @@ import {
   gtoPostflopV31Count,
   gtoPostflopV31EvaluationCount,
   type GtoPostflopV31Row,
+  type GtoV31SourceSeal,
+  gtoV31FeatureContractVersion,
 } from '../engine/GtoPostflopV31.js';
 import { createAdaptiveRefreshLoop } from './AdaptiveRefreshLoop.js';
 
@@ -53,8 +55,15 @@ function readV31CellPage(data: unknown, expectedDatasetId?: string): GtoPostflop
     if (expectedDatasetId !== undefined && row.dataset_id !== expectedDatasetId) {
       throw new Error('v31_evaluation_dataset_mismatch');
     }
+    if (row.feature_contract_version !== null && gtoV31FeatureContractVersion(row) === null)
+      throw new Error('v31_feature_contract_unknown');
   }
-  return data as GtoPostflopV31Row[];
+  return data.map((row) => {
+    // Nullable SQL metadata is historical omission, not an explicit version.
+    if (row.feature_contract_version !== null) return row;
+    const { feature_contract_version: _legacyNull, ...legacy } = row;
+    return legacy;
+  }) as GtoPostflopV31Row[];
 }
 
 async function loadGtoPostflopV31Attempt(): Promise<{ ok: boolean; count: number }> {
@@ -104,6 +113,7 @@ export async function loadGtoPostflopV31(): Promise<number> {
 export async function loadGtoPostflopV31Evaluation(datasetId: string): Promise<{
   checksum: string;
   cells: number;
+  feature_contract_version?: GtoV31SourceSeal['feature_contract_version'];
 }> {
   if (typeof datasetId !== 'string' || !UUID.test(datasetId)) {
     throw new Error('invalid V31 evaluation dataset id');
@@ -131,7 +141,13 @@ export async function loadGtoPostflopV31Evaluation(datasetId: string): Promise<{
   console.log(
     `[GtoPostflopV31Loader] ${cells} sealed candidate cells loaded for ${checksum.slice(0, 12)}`
   );
-  return { checksum, cells };
+  return {
+    checksum,
+    cells,
+    ...(Object.prototype.hasOwnProperty.call(rows[0], 'feature_contract_version')
+      ? { feature_contract_version: rows[0].feature_contract_version }
+      : {}),
+  };
 }
 
 export function startGtoPostflopV31Loader(): void {

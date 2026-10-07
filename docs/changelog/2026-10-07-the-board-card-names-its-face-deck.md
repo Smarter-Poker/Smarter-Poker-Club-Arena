@@ -94,3 +94,21 @@ In run 37539487040 two were missing:
   The spec now calls `unrouteAll({ behavior: 'ignoreErrors' })` on both
   contexts before closing them, so the journey verdict is the one reported.
   No assertion changed.
+
+## Second follow-up: the release window can read a release published after checkout
+
+Post-Deploy run 37559264622 tested production `68fdeb670c`, which contains
+#6323. Coverage passed:
+
+    All three required Phase 1 customization journeys passed exactly once on their first attempt.
+
+The Phase 1 verdict was still red, because the release-window classifier
+failed with `Production SHA f681634a08... does not resolve to a trusted
+repository commit`. Production had moved forward during the run to a later
+commit on protected main, and the job's checkout predated it. The workflow
+says such a move is a NON-VERDICT ("superseded"), not a defect, but the
+classifier never had the commit to prove it. Both
+`Classify the release window` steps in `post-deploy-e2e.yml` now fetch the
+closing SHA from origin before they classify. A SHA that origin does not
+have still fails closed. This is pinned in
+`tests/unit/postDeployE2eHonestyLaw.test.ts` for both lanes.

@@ -498,7 +498,7 @@ export default function DisputeManagementPage() {
                         <span className="dmp__target-type sc-ink--blue">
                           {titleCase(dispute.targetType.replace('_', ' '))}
                         </span>
-                        <span className="dmp__submitter sc-ink--muted">
+                        <span className="dmp__submitter sc-ink--muted" data-player-name>
                           By {titleCase(dispute.submitterName)}
                         </span>
                       </span>

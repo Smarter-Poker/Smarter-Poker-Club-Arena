@@ -23,6 +23,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   DIAMOND_ARENA_HORSE_CLUBS,
+  arenaWalletsFor,
   diamondArenaIdFrom,
   isDiamondArenaCashTable,
   isDiamondTableRow,
@@ -125,12 +126,34 @@ describe('the arena wallet is the horses own Diamonds', () => {
     const block = SEED.slice(SEED.indexOf('THE ARENA WALLET'), SEED.indexOf('THE DOOR RULES'));
     expect(block).toContain(".from('profiles')");
     expect(block).toContain(".select('id, diamonds')");
-    expect(block).toContain('DIAMOND_ARENA_HORSE_CLUBS.some((c) => clubs.has(c))');
-    expect(block).toContain('bankrolls.set(`${arena}:${r.id}`, Math.floor(d));');
+    // who plays it is read from the named clubs' own memberships, never
+    // borrowed from the chip map (which holds only clubs with an open chip
+    // table - Deep Stack Society has none, so that map never held its horses)
+    expect(block).toMatch(
+      /for \(const clubId of DIAMOND_ARENA_HORSE_CLUBS\)[\s\S]*?\.from\('club_members'\)/
+    );
+    expect(block).not.toContain('memberships.get(r.id)');
+    expect(block).toContain('arenaWalletsFor(rollPage.rows, arenaHorseIds)');
+    expect(block).toContain('bankrolls.set(`${arena}:${horseId}`, roll);');
+    expect(block).toMatch(/if \(arenaMembersComplete && rollPage\.complete\)/);
     // an unread roll empties the arena for the cycle rather than seating blind
     expect(block).toMatch(/if \(!diamondRollsLoaded\) \{[\s\S]*diamondTables = \[\];/);
     // nothing in the arena path funds a horse
     expect(block).not.toMatch(/treasury|fn_horse_fund|fn_ca_mint/);
+  });
+
+  it('a Deep Stack horse with no chip membership anywhere still gets its arena wallet', () => {
+    const dss = new Set(['dss-horse', 'dss-null']);
+    expect(
+      arenaWalletsFor(
+        [
+          { id: 'dss-horse', diamonds: '10104.6' },
+          { id: 'midway-horse', diamonds: 9000 },
+          { id: 'dss-null', diamonds: null },
+        ],
+        dss
+      )
+    ).toEqual([['dss-horse', 10104]]);
   });
 
   it('a buy-in is whole Diamonds, floored, and none under the minimum', () => {

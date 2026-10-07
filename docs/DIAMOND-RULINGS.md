@@ -308,3 +308,13 @@ production rehearsal of the engine's own request found and fixed the commit
 door's refusal of every raked Diamond hand (`20261006154344`), then settled
 the hand with its rake. `cash_games_enabled` being true is Dan's decision. It
 is not an unexplained open, and closing it again is his call.
+
+## Ruling 26 (decided by Claude on Dan's delegation, 2026-10-07): the Diamond cash rake is swept to the house hourly at :14 UTC
+
+Dan, 2026-09-30, verbatim: "these are all for you to decide not me". The Diamond economics table's standing answer: "NOTHING IS MINE, EVER.... THEY ARE ALWAYS YOURS TO DO."
+
+**The ruling.** The Diamond cash rake is swept to the house every hour at :14 UTC. The pg_cron job `ca-diamond-cash-rake-sweep-hourly` (`14 * * * *`) calls `fn_ca_diamond_sweep_cash_rake`, which banks every unswept `ca_diamond_rake_accrual` row to `ca_diamond_house`, the destination the owner settings name (B11).
+
+**Why.** A raked hand does not pay the house when it settles. Its rake accrues player-side inside the arena float and crosses "in a periodic sweep: one house write per sweep, not per hand" (design R4), so no hand waits on the house row. Nothing ran that sweep, and no owner answer set how often it should run. Hourly keeps platform-owned rake in the player-side float for under an hour (R1), keeps the house current for the hourly Diamond snapshot (:10) and trial balance (:20), and costs the house row one write an hour. :14 because no hourly job starts there and it is far from the :50-:03 break window. The job checks `fn_platform_frozen()` first; a frozen hour is skipped and loses nothing, because unswept rows stay counted in the float and the next run takes them oldest first.
+
+**Built.** Migration `20261007034146_the_diamond_cash_rake_is_swept_to_the_house_every_hour`, pinned by `tests/the-diamond-cash-rake-is-swept-to-the-house-every-hour.law.test.ts` and listed in `docs/attestation/cron-roster.tsv`. Changing the cadence is a forward migration that moves this ruling, the roster and that law together.

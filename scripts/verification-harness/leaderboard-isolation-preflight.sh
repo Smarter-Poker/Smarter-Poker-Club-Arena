@@ -7,6 +7,27 @@ readonly catalog="$here/leaderboard-isolation-catalog.sql"
 readonly extension_bootstrap="$here/leaderboard-isolation-extension-bootstrap.sql"
 readonly image='supabase/postgres:17.6.1.063'
 readonly bootstrap='leaderboard_qualification_bootstrap'
+source_error_category() {
+  local status="$1" diagnostic
+  diagnostic="$(cat)"
+  if [[ "$status" == 124 || "$status" == 137 ]]; then echo 'bounded-timeout'; return; fi
+  case "$diagnostic" in
+    *'could not translate host name'*|*'Name or service not known'*) echo 'name-resolution' ;;
+    *'Network is unreachable'*|*'No route to host'*) echo 'network-route' ;;
+    *'Connection refused'*) echo 'connection-refused' ;;
+    *'password authentication failed'*|*'no password supplied'*) echo 'authentication' ;;
+    *'SSL error'*|*'certificate verify failed'*|*'server does not support SSL'*) echo 'tls' ;;
+    *'permission denied'*) echo 'catalog-permission' ;;
+    *'invalid URI'*|*'invalid connection option'*|*'missing "="'*) echo 'connection-input' ;;
+    *'on socket'*'No such file or directory'*) echo 'unexpected-local-socket' ;;
+    *) echo 'unclassified-source-client' ;;
+  esac
+}
+if [[ "${1:-}" == '--classify-source-error' ]]; then
+  [[ $# == 2 && "$2" =~ ^[0-9]+$ ]] || exit 1
+  source_error_category "$2"
+  exit 0
+fi
 # Official tag source: supabase/postgres/17.6.1.063/Dockerfile-17 sets
 # /usr/lib/postgresql/bin on PATH and delegates non-postgres commands directly.
 # Override entrypoints explicitly so source reads can never bootstrap a server.
@@ -35,20 +56,25 @@ network="$container-network"
 source_container="$container-source"
 cleanup_complete=false
 cleanup() {
+  local owned_container names
   [[ "$cleanup_complete" == false ]] || return 0
   docker info >"$scratch/cleanup-daemon.log" 2>&1 || { echo 'Cleanup refused: Docker state unavailable.' >&2; return 1; }
   for owned_container in "$source_container" "$container"; do
-    if docker container inspect "$owned_container" >"$scratch/cleanup-inspect.log" 2>&1; then
+    names="$(docker container ls --all --format '{{.Names}}' 2>"$scratch/cleanup-inventory.log")" || { echo 'Cleanup refused: container inventory unavailable.' >&2; return 1; }
+    if [[ $'\n'"$names"$'\n' == *$'\n'"$owned_container"$'\n'* ]]; then
       docker rm -f "$owned_container" >"$scratch/cleanup-remove.log" 2>&1 || { echo 'Cleanup failed: owned container.' >&2; return 1; }
     fi
-    if docker container inspect "$owned_container" >"$scratch/cleanup-inspect.log" 2>&1; then
+    names="$(docker container ls --all --format '{{.Names}}' 2>"$scratch/cleanup-inventory.log")" || { echo 'Cleanup refused: final container inventory unavailable.' >&2; return 1; }
+    if [[ $'\n'"$names"$'\n' == *$'\n'"$owned_container"$'\n'* ]]; then
       echo 'Cleanup failed: owned container still exists.' >&2; return 1
     fi
   done
-  if docker network inspect "$network" >"$scratch/cleanup-inspect.log" 2>&1; then
+  names="$(docker network ls --format '{{.Name}}' 2>"$scratch/cleanup-inventory.log")" || { echo 'Cleanup refused: network inventory unavailable.' >&2; return 1; }
+  if [[ $'\n'"$names"$'\n' == *$'\n'"$network"$'\n'* ]]; then
     docker network rm "$network" >"$scratch/cleanup-remove.log" 2>&1 || { echo 'Cleanup failed: owned network.' >&2; return 1; }
   fi
-  if docker network inspect "$network" >"$scratch/cleanup-inspect.log" 2>&1; then
+  names="$(docker network ls --format '{{.Name}}' 2>"$scratch/cleanup-inventory.log")" || { echo 'Cleanup refused: final network inventory unavailable.' >&2; return 1; }
+  if [[ $'\n'"$names"$'\n' == *$'\n'"$network"$'\n'* ]]; then
     echo 'Cleanup failed: owned network still exists.' >&2; return 1
   fi
   docker info >"$scratch/cleanup-daemon.log" 2>&1 || { echo 'Cleanup refused: final Docker state unavailable.' >&2; return 1; }
@@ -67,42 +93,49 @@ trap on_exit EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 failure() { echo "Leaderboard isolation preflight refused: $1" >&2; exit 1; }
+source_failure() {
+  local reason="$1" log="$2" status="$3" category
+  category="$(source_error_category "$status" < "$log")"
+  failure "$reason ($category)"
+}
 docker pull "$image" >"$scratch/image.log" 2>&1 || failure 'required Supabase PostgreSQL image unavailable'
 # Use the same pg_dump build on source and destination. Source credentials are
 # process environment only; dumps and errors stay private and are never uploaded.
-source_catalog() {
-  timeout 180 docker run --name "$source_container" --rm -i --network host -e PGDATABASE -e PGOPTIONS \
-    --entrypoint /usr/lib/postgresql/bin/psql "$image" \
-    -XAtq --no-password -v ON_ERROR_STOP=1 < "$catalog"
+source_client() {
+  local seconds="$1" client="$2"
+  shift 2
+  [[ "$client" == psql || "$client" == pg_dump || "$client" == pg_dumpall ]] || failure 'unsupported source client'
+  # PGDATABASE alone does not expand a URI. Explicit libpq connection options
+  # are expanded inside the container, never placed on the host Docker argv.
+  # Expansion must happen inside the source container.
+  # shellcheck disable=SC2016
+  timeout "$seconds" docker run --name "$source_container" --rm -i --network host -e PGDATABASE -e PGOPTIONS \
+    --entrypoint /bin/sh "$image" -c \
+    'client=$1; shift; case "$client" in psql|pg_dump) exec "/usr/lib/postgresql/bin/$client" --dbname="$PGDATABASE" "$@";; pg_dumpall) exec /usr/lib/postgresql/bin/pg_dumpall --database="$PGDATABASE" "$@";; *) exit 1;; esac' \
+    source-client "$client" "$@"
 }
+source_catalog() { source_client 180 psql -XAtq --no-password -v ON_ERROR_STOP=1 < "$catalog"; }
 export PGDATABASE="$DATABASE_URL"
 export PGOPTIONS='-c default_transaction_read_only=on -c lock_timeout=5000 -c statement_timeout=120000'
-bootstrap_exists="$(timeout 30 docker run --name "$source_container" --rm --network host -e PGDATABASE -e PGOPTIONS \
-  --entrypoint /usr/lib/postgresql/bin/psql "$image" -XAtq --no-password -v ON_ERROR_STOP=1 -c "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname='$bootstrap');" \
-  2>"$scratch/source-error.log")" || failure 'source bootstrap-name check unavailable'
+bootstrap_exists="$(source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 -c "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname='$bootstrap');" \
+  2>"$scratch/source-error.log")" || source_failure 'source bootstrap-name check unavailable' "$scratch/source-error.log" "$?"
 [[ "$bootstrap_exists" == 'f' ]] || failure 'qualification bootstrap role conflicts with a source role'
-unsupported="$(timeout 30 docker run --name "$source_container" --rm --network host -e PGDATABASE -e PGOPTIONS \
-  --entrypoint /usr/lib/postgresql/bin/psql "$image" -XAtq --no-password -v ON_ERROR_STOP=1 \
+unsupported="$(source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
   -c "SELECT (SELECT count(*) FROM pg_catalog.pg_subscription) + (SELECT count(*) FROM pg_catalog.pg_tablespace WHERE spcname NOT IN ('pg_default','pg_global') OR spcacl IS NOT NULL OR spcoptions IS NOT NULL) + (SELECT count(*) FROM pg_catalog.pg_foreign_server);" \
-  2>"$scratch/source-error.log")" || failure 'unsupported-capability catalog check unavailable'
+  2>"$scratch/source-error.log")" || source_failure 'unsupported-capability catalog check unavailable' "$scratch/source-error.log" "$?"
 [[ "$unsupported" == '0' ]] || failure 'subscriptions, custom tablespaces or foreign servers require a separate supported restore'
-source_database="$(timeout 30 docker run --name "$source_container" --rm --network host -e PGDATABASE -e PGOPTIONS \
-  --entrypoint /usr/lib/postgresql/bin/psql "$image" -XAtq --no-password -v ON_ERROR_STOP=1 \
-  -c 'SELECT current_database();' 2>"$scratch/source-error.log")" || failure 'source database identity unavailable'
+source_database="$(source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
+  -c 'SELECT current_database();' 2>"$scratch/source-error.log")" || source_failure 'source database identity unavailable' "$scratch/source-error.log" "$?"
 [[ "$source_database" == 'postgres' ]] || failure 'source database name requires a separate supported restore'
-source_catalog >"$scratch/source-before.json" 2>"$scratch/source-error.log" || failure 'source catalog read unavailable'
-timeout 300 docker run --name "$source_container" --rm --network host -e PGDATABASE -e PGOPTIONS \
-  --entrypoint /usr/lib/postgresql/bin/pg_dump "$image" \
+source_catalog >"$scratch/source-before.json" 2>"$scratch/source-error.log" || source_failure 'source catalog read unavailable' "$scratch/source-error.log" "$?"
+source_client 300 pg_dump \
   --schema-only --create --format=custom --no-password --no-subscriptions --lock-wait-timeout=5s \
-  >"$scratch/schema.dump" 2>"$scratch/dump-error.log" || failure 'schema-only export unavailable'
-timeout 180 docker run --name "$source_container" --rm --network host -e PGDATABASE -e PGOPTIONS \
-  --entrypoint /usr/lib/postgresql/bin/pg_dumpall "$image" \
-  --database="$PGDATABASE" --roles-only --no-role-passwords --no-password \
-  >"$scratch/roles.sql" 2>"$scratch/roles-error.log" || failure 'password-free role export unavailable'
-timeout 180 docker run --name "$source_container" --rm -i --network host -e PGDATABASE -e PGOPTIONS \
-  --entrypoint /usr/lib/postgresql/bin/psql "$image" -XAtq --no-password -v ON_ERROR_STOP=1 \
-  <"$extension_bootstrap" >"$scratch/extensions.sql" 2>"$scratch/source-error.log" || failure 'extension owner metadata unavailable'
-source_catalog >"$scratch/source-after.json" 2>"$scratch/source-error.log" || failure 'source catalog recheck unavailable'
+  >"$scratch/schema.dump" 2>"$scratch/dump-error.log" || source_failure 'schema-only export unavailable' "$scratch/dump-error.log" "$?"
+source_client 180 pg_dumpall --roles-only --no-role-passwords --no-password \
+  >"$scratch/roles.sql" 2>"$scratch/roles-error.log" || source_failure 'password-free role export unavailable' "$scratch/roles-error.log" "$?"
+source_client 180 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
+  <"$extension_bootstrap" >"$scratch/extensions.sql" 2>"$scratch/source-error.log" || source_failure 'extension owner metadata unavailable' "$scratch/source-error.log" "$?"
+source_catalog >"$scratch/source-after.json" 2>"$scratch/source-error.log" || source_failure 'source catalog recheck unavailable' "$scratch/source-error.log" "$?"
 cmp -s "$scratch/source-before.json" "$scratch/source-after.json" || failure 'source schema changed during export'
 unset DATABASE_URL PGDATABASE PGOPTIONS
 docker network create --internal "$network" >"$scratch/network.log" 2>&1

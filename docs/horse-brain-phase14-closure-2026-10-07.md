@@ -65,3 +65,49 @@ Package records and changelogs:
 ## Statement
 
 Phase 14 is complete and closed as **inactive by design**. The accepted-source chain (roster at settlement, audit receipts, private mapping and atomic diagnostic publication) is built, installed and verified on naturally accepted hands. The qualified-learning path exists with every selection `null`, and stays unavailable until a qualified reference producer, an independent signer and a corrective applier exist. Horses play exactly as before.
+
+## Audit Of October 7, 2026
+
+Read-only audit of everything Phase 14 built, against `origin/main` at `761aeb8b`, production `kuklfnapbkmacvwxktbh` and the serving engine release `6b1af5c5` (container started 2026-10-07T16:55:48Z). Statuses use the maintained vocabulary.
+
+### Checklist
+
+- **Packages on main.** P14.1 atomic publication (#6352: `HorseHandReview.ts`, migration `20261007020953`, `scripts/ci/test-horse-hand-review-atomic.py`) and its cutover (#6404: migration `20261007103144`); P14.2 roster at settlement and P14.3 receipts and mapping (#6409: migrations `20261007024757` and `20261007075304`, `supabase/handHistory.ts`, `horseAcceptedRoster/acceptance.ts`, the worker boundary, `horseDailyCorrectiveReview/{selection,mapping,transport,source,batch}.ts`, `scripts/horseDailyMappingProducer.ts`); row level security (#6413: migration `20261007122326`); P14.4 inactive admission (#6408: `HorsePhase14Authority.ts`, `horseCorrectiveReview/{domain,candidateCatalog,review,authority,contract}.ts`). Verified now: every file exists on main; no `TODO`, `FIXME`, placeholder or stub left by the work.
+- **Producers and consumers (imports and call sites).** `handHistory.ts` calls `readAcceptedRosterReturn` on the door's private receipt and passes only a captured, hand-bound roster to `observeCompletedHand`; the worker rechecks it (`acceptedRosterBindsToHand`) and journals it; `horseDecisionJournal/review.ts` reads it back. `recordHorseHandReviews` makes one `fn_hhr_record_atomic` call; no engine source calls `fn_hhr_rollup_add`, and the only database function that writes `horse_review_rollup` is `fn_hhr_record_atomic`. `selection.ts` and `transport.ts` are consumed by `source.ts` and `batch.ts`; `mapping.ts` by the mapping producer CLI. `candidateCatalog.ts` and `domain.ts` are consumed by `HorsePhase14Authority.ts`, which no non-test source imports, exactly as the P14.4 record declares (no applier exists). Verified now.
+- **Selection and authority.** `PHASE14_PROTECTED_RELEASE_SELECTIONS` is frozen with all 45 domains `null`, identical on main and in the served release; `horsePhase14CorrectiveMode` never returns an active mode. Verified now.
+
+### Database read back (production, read-only)
+
+- Migration ledger rows present for `20261007020953`, `20261007024757`, `20261007075304`, `20261007103144` and `20261007122326`. Verified now.
+- `md5(prosrc)` of every function each migration defines equals the md5 of the dollar-quoted body in the file on main: `fn_hhr_record_atomic` `161e5883ca636e898463e3957b1b6f45`; `accepted_hand_roster_build` `b7eae333989b74f2fcbb5aec0bc710c9`, `_first` `92f6fb3149144ded050e3b6996d32bd9`, `_guard` `d1b74469f2d61604119409f124d289d1`, `_replay` `7c10c0c753ff08570e077c3afc67ebd9`; `fn_horse_commitment_audit_step` `418ef5b18e2470629130e5074790878e` (the closure's postimage); `fn_horse_commitment_selection_receipt` `24ac066dc355f768b16adb6078a80fd9`; `fn_horse_accepted_source_rows` `e1d69afc3cfb325b6a27510a4092ccc0`; `fn_horse_commitment_audit_pass_immutable` `ad293bf1a915523f12c04a7776e50c4f`. The settlement door's `md5(pg_get_functiondef)` is `a40343a901e12f134f0e876c08f604bd`, the reviewed postimage, and its body calls the roster first-write and replay functions. Verified now: no drift.
+- ACLs and settings: `fn_hhr_record_atomic`, the two readers and the audit step are `{postgres=X/postgres,service_role=X/postgres}`, definer, with `search_path` `pg_catalog, pg_temp` (the audit step `pg_catalog, public, pg_temp`); `fn_hhr_rollup_add` is `{postgres=X/postgres}`; the four roster functions are `postgres` only. `smarter_private.accepted_hand_rosters`, `horse_hand_review_receipts`, `horse_commitment_audit_passes` and `horse_commitment_audit_days` have row level security on, no policy and no API-role privilege; the roster and pass tables carry their immutability and no-truncate triggers. Verified now.
+
+### Tests
+
+- Local, fresh worktree of `761aeb8b`: `npx vitest run src/services/HorseHandReview.atomic.test.ts src/engine/theDeadlineClockBelongsToNoTournament.test.ts src/services/supabase/handHistory.test.ts src/services/horseCorrectiveReview src/services/horseDailyCorrectiveReview src/testing/horseRegression/daily src/testing/horseRegression/merged src/engine/HorseQualifiedAuthority.test.ts src/engine/HorsePhase14Authority.test.ts src/engine/HorsePhase10Authority.test.ts src/engine/HorsePhase11Authority.test.ts src/engine/HorsePhase12Authority.test.ts src/services/horseDecisionJournal/lifecycleVersion.test.ts`: 30 files, 1,381 passed, none skipped. Root `tests/unit/horseCi.test.ts` and `tests/horse-accepted-roster-at-settlement.guard.test.ts`: 2 files, 58 passed. Verified now.
+- PostgreSQL runners: the scheduled CI run on main [37659059600](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37659059600) ran `test-horse-hand-review-atomic.py`, `test-accepted-hand-roster.py` and `test-horse-commitment-audit.py` in the accounting PostgreSQL 17 shards, all four shards successful. Verified now.
+
+### Publication
+
+`5f768074`, `1cfde06d`, `68b28e5b`, `91c98ed7` and `de0b8a51` are each ancestors of the serving release `6b1af5c5`; every migration is installed and read back above. Phase 14 changed no client file. Verified now.
+
+### Natural evidence today (bounded, read-only)
+
+- **P14-C.** 26,181 receipts from the first at 10:01:02Z to 21:12:31Z. Of the 26,229 reviews written since the first receipt's review id, none lacks its receipt; no receipt lacks its review row or its rollup row. In the 30 minutes to 21:12Z, 1,374 of 1,374 reviews have their receipt. Verified now.
+- **P14-A.** From the install at 12:20:42Z to 21:00:00Z, 417,772 accepted `hand_history` rows and 417,772 rosters, every one `captured` (430,152 by 21:13Z, 0 `unavailable`). In the 20 minutes to 21:12Z, 11,898 of 11,898 accepted hands join their roster by table and hand number with the same hand id. Verified now.
+- **P14-B.** The selection-receipt reader, called read-only as `service_role`, returns day 2026-10-04 finished at 21:06:15Z: 1,819,891 hands scanned, 390,882 flagged horse hands, 0 gaps, coverage `not_established`, no pass receipt. `horse_commitment_audit_passes` is empty, by design: the passes for 2026-10-04, 10-05 and 10-06 began before the receipt counters existed, and the step writes a receipt only for a pass that counted from its first batch. The first receipt is expected from day 2026-10-07's pass. Pass receipts: implemented but unverified.
+- **Engine.** In the 4.3 hours since the container started: no `HandHistory.accepted_roster_unusable` and no `HorseHandReview.record_atomic` report; `horse_brain_telemetry` has no `phase14_accepted_roster_refused` count on 2026-10-06 or 10-07. Verified now.
+
+### Findings and fixes
+
+- **Wiring (fixed).** The worker's authority admission counters for Phases 8 to 13 were taken before telemetry was armed and never reached `horse_brain_telemetry`; the same PR removes the unused destructured binding at the P14.2 worker boundary that `eslint` reported on every run. [#6439](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/6439), merged ``71ab03df` (2026-10-07T22:42:43Z)`. Publication: Engine Release run [37697966313](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37697966313) succeeded and the engine `/health` serves `71ab03df` (container started 2026-10-07T22:55:30Z). Verified now in production: at 22:56:31Z `horse_brain_telemetry` recorded all 18 `phaseN_authority_worker_*_unselected` counters for the first time, 2 each (one per decision worker), and no other state.
+- **Documentation (fixed in this record's PR).** The P14.4 record still said its work was not committed, pushed, merged or released; it now carries a dated delivery note naming #6408.
+- **Superseded limit.** "The daily audit cannot keep pace with production volume" (Remaining limits) is fixed by [#6432](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/6432) (`6b1af5c5`, the serving release): the audit runs on its own clock. Measured today: 613,363 hands scanned in the 4.3 hours since the container started (about 3.4 million a day against about 1.3 to 1.8 million accepted), and 2026-10-04 finished. Verified now.
+- No defect, drift, stub, regression or unpublished change was found in the roster producer, the atomic publication, the selection receipts or the inactive admission path.
+
+### Remaining open
+
+- The first P14-B pass receipt: implemented but unverified until day 2026-10-07's pass completes.
+- A natural replay of an accepted roster (a retried settlement returning the stored capsule) has not been observed in production: implemented but unverified (source and PostgreSQL tests verify it).
+- `horse_hand_review_receipts` is never pruned, by the P14.1 design (a resend after the 30-day review prune must still answer `replayed`); it grows with volume, about 57,000 rows a day at today's rate. Not applicable with reason: a retention bound would change the replay contract and needs its own decision.
+- The roster signer, the profile-based audit classification, late arrival proven only against the previous pass, a retained hand finished at table start, historical split-writer rows, and every P14-D external input (qualified reference producer, independent signer, corrective applier) stay exactly as listed above: unavailable external input or implemented but unverified as stated there.

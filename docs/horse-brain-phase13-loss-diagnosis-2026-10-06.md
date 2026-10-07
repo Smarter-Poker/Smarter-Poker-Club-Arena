@@ -52,3 +52,7 @@ No coding defect was found in the pot, price, seat, board, bomb or rake paths: c
 - Fixed-limit jam priced as the executed wager: defective on origin/main in the shared builder (Phase 7 live tournament decisions and the Phase 13 joint model), fixed at the builder on the branch; verified now by the two reproducing tests and the paired development runs above.
 - Opponent response model: implemented but unverified (uncalibrated by declaration), and measured here as the cause of the loss.
 - Settlement, seat, board and deduction paths: verified now as not the cause, by baseline-action calibration on development seeds.
+
+## Audit Of October 7, 2026
+
+Delivery note: the fixed-limit jam fix this record describes as committed on a branch was delivered to main in [#6292](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/6292), merged `72790c35`, and is served by the engine release `6b1af5c5`. The opponent response calibration remains next-round work, as stated above.

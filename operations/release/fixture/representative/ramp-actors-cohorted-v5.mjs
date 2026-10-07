@@ -279,6 +279,8 @@ export async function startRampActors({
     resolveReady = resolve;
     rejectReady = reject;
   });
+  // Own rejection immediately; the original await still propagates failure.
+  ready.catch(()=>{});
 
   function stop() {
     closed = true;
@@ -312,7 +314,7 @@ export async function startRampActors({
   }
 
   function checkReady() {
-    for(const actor of actors)if(actor.resolveAttach&&actor.subscribed&&actor.state?.players.some(p=>p.user_id===actor.user.id&&p.stack>0&&!p.is_sitting_out&&!p.is_disconnected)){clearTimeout(actor.attachTimer);const resolve=actor.resolveAttach;actor.resolveAttach=null;actor.rejectAttach=null;resolve();}
+    for(const actor of actors)if(actor.resolveAttach&&actor.subscribed&&actor.state){clearTimeout(actor.attachTimer);const resolve=actor.resolveAttach;actor.resolveAttach=null;actor.rejectAttach=null;resolve();}
     if (
       !enabled &&
       actors.length === initialUsers.length &&
@@ -578,7 +580,7 @@ export async function startRampActors({
     return Object.freeze({
       close: async()=>{closing=true;paused=true;for(const actor of actors){clearTimeout(actor.timer);actor.timer=null;}await Promise.allSettled([...actionTasks]);stop();},
       activate:()=>{protocol(!closed&&enabled&&paused&&!lifetimeTimer,'ACTIVATION');paused=false;lifetimeTimer=setTimeout(()=>fail('FIXTURE_ACTOR_LIFETIME_LIMIT'),240000);for(const actor of actors)schedule(actor);},
-      beginMeasurement:({durationMs=180000}={})=>{protocol(!closed&&enabled&&paused&&setupFold&&!startPaused,'MEASUREMENT_HANDOFF');protocol(Number.isSafeInteger(durationMs)&&durationMs>0&&durationMs<=180000&&actorStartedAt+240000-Date.now()>=durationMs+10000,'MEASUREMENT_LIFETIME');protocol(actors.length===users.length&&actors.every(a=>a.subscribed&&a.state),'MEASUREMENT_PARTIAL_ACTORS');protocol(actionTasks.size===0,'MEASUREMENT_PENDING_ACTION');setupFold=false;measurementStartedAt=new Date().toISOString();phaseStartTurns=new Map(actors.map(a=>[a.user.id,a.turns.size]));observations.setupActions=observations.actions;observations.actions=0;observations.latencies=[];paused=false;for(const actor of actors)schedule(actor);return {actorStartedAt:new Date(actorStartedAt).toISOString(),measurementStartedAt,remainingLifetimeMs:actorStartedAt+240000-Date.now(),generationRetained:true};},
+      beginMeasurement:({durationMs=180000}={})=>{protocol(!closed&&enabled&&paused&&setupFold&&!startPaused,'MEASUREMENT_HANDOFF');protocol(Number.isSafeInteger(durationMs)&&durationMs>0&&durationMs<=180000&&actorStartedAt+240000-Date.now()>=durationMs+10000,'MEASUREMENT_LIFETIME');protocol(actors.length===users.length&&actors.every(a=>a.subscribed&&a.state?.players.some(p=>p.user_id===a.user.id&&p.stack>0&&!p.is_sitting_out&&!p.is_disconnected)),'MEASUREMENT_PARTIAL_ACTORS');protocol(actionTasks.size===0,'MEASUREMENT_PENDING_ACTION');setupFold=false;measurementStartedAt=new Date().toISOString();phaseStartTurns=new Map(actors.map(a=>[a.user.id,a.turns.size]));observations.setupActions=observations.actions;observations.actions=0;observations.latencies=[];paused=false;for(const actor of actors)schedule(actor);return {actorStartedAt:new Date(actorStartedAt).toISOString(),measurementStartedAt,remainingLifetimeMs:actorStartedAt+240000-Date.now(),generationRetained:true};},
       attachActors:async ids=>{protocol(!closed&&!closing&&enabled&&setupFold&&!measurementStartedAt,'ATTACH_PHASE');protocol(Array.isArray(ids)&&ids.length>0&&new Set(ids).size===ids.length&&ids.every(id=>actorIds.has(id)&&!actors.some(a=>a.user.id===id)),'ATTACH_ACTORS');await Promise.all(ids.map(id=>{const actor=addActor(users.find(u=>u.id===id));return new Promise((resolve,reject)=>{actor.resolveAttach=resolve;actor.rejectAttach=reject;actor.attachTimer=setTimeout(()=>{reject(new Error('FIXTURE_ACTOR_ATTACH_TIMEOUT'));fail('FIXTURE_ACTOR_ATTACH_TIMEOUT');},Math.min(20000,Math.max(1,actorStartedAt+240000-Date.now())));checkReady();});}));},
       stateObservations:()=>actors.map(a=>({actor_id:a.user.id,sequence:a.seq,state:structuredClone(a.state)})),
       pendingActions:()=>actionTasks.size,

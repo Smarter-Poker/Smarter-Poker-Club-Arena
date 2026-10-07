@@ -3060,7 +3060,19 @@ describe('P10 audit F8: a PLO4 receipt whose input binding fails validation', ()
         input.state,
         'balanced',
         {},
-        { telemetry: false, mind: false, decisionTimeMs: 0, phase10Plo4: mode }
+        // Fixed-work evaluation: the policy reads an injected zero clock, so
+        // its 4 ms live work budget cannot turn this fixture into a
+        // `work_budget` fallback on a loaded CI runner. The P11.1 and P12.1
+        // siblings below build theirs the same way. Without it this test
+        // failed inside the required Server Engine check whenever the box was
+        // slow (reproduced with a clock that advances 7 ms per read).
+        {
+          telemetry: false,
+          mind: false,
+          decisionTimeMs: 0,
+          phase10Plo4: mode,
+          phase10EvidenceMode: true,
+        }
       )
     );
   };
@@ -3109,6 +3121,25 @@ describe('P10 audit F8: a PLO4 receipt whose input binding fails validation', ()
       feature: 'phase10_shadow_receipt_binding_dropped',
       fires: 1,
     });
+  });
+
+  // The cause of the flake, pinned: a box where every clock read costs 7 ms
+  // (far past the 4 ms live budget) must still build the same applied fixture.
+  it('builds its applied fixture on an injected clock, so machine load cannot change it', () => {
+    const real = performance.now.bind(performance);
+    let skew = 0;
+    const slow = vi.spyOn(performance, 'now').mockImplementation(() => {
+      skew += 7;
+      return real() + skew;
+    });
+    try {
+      const applied = plo4Decision('premium_open', 'candidate');
+      expect(applied.plo4Policy).toMatchObject({ applied: true, selection: 'selected' });
+      expect(applied.plo4Policy!.reason).not.toBe('work_budget');
+      expect(slow).toHaveBeenCalled();
+    } finally {
+      slow.mockRestore();
+    }
   });
 
   it('still fails closed for an applied receipt', async () => {

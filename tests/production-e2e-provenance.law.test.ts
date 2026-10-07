@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { resolve } from 'node:path';
-import { readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import {
   classifyTrustedLineage,
   classifyReleaseWindow,
+  classifyBracket,
   UNKNOWN_EXIT_CODE,
   readBuildInfoSha,
   requireUnchangedBuildInfoSha,
@@ -451,5 +453,97 @@ describe('production E2E uses exact trusted provenance', () => {
     // refuses it as unresolvable - a 1, never a 3 and never a 0.
     expect(run(JSON.stringify({ ca_sha: B })).status).toBe(1);
     expect(run('not-json').status).toBe(1);
+  });
+
+  // 2026-10-07. The seal's client evidence is a bracket around its own three
+  // journeys, not the whole forty-minute job. Both passing client lanes of
+  // 2026-10-06/07 (37587015087, 37598789558) ended `superseded` on the whole
+  // window, so the seal was never owed.
+  describe('the release bracket around one group of suites', () => {
+    const doc = (sha: string) => JSON.stringify({ ca_sha: sha });
+    const C = 'c'.repeat(40);
+    const forward = {
+      commitExists: () => true,
+      isAncestor: (ancestor: string, descendant: string) =>
+        (ancestor === A && (descendant === B || descendant === C)) ||
+        (ancestor === B && descendant === C),
+    };
+    const unused = {
+      commitExists: () => {
+        throw new Error('certifying both reads of the recorded SHA must not need history');
+      },
+      isAncestor: () => {
+        throw new Error('certifying both reads of the recorded SHA must not need history');
+      },
+    };
+
+    it('certifies only the SHA the run recorded, read on both sides of the group', () => {
+      expect(classifyBracket(doc(A), doc(A), A, unused)).toEqual({ verdict: 'certified', sha: A });
+    });
+
+    // Never certify a commit that was not tested: the specs came from A, so a
+    // group that met B on either side certifies neither A nor B.
+    it.each([
+      ['closed on a later release', A, B],
+      ['opened on a later release', B, B],
+      ['moved forward twice inside the group', B, C],
+    ])('calls a group that %s superseded, never certified', (_label, before, after) => {
+      expect(classifyBracket(doc(before), doc(after), A, forward)).toEqual({
+        verdict: 'superseded',
+        sha: after,
+      });
+    });
+
+    it.each([
+      ['a missing opening read', '', doc(A)],
+      ['a missing closing read', doc(A), ''],
+      ['an unreadable document', 'not-json', doc(A)],
+      ['a document without one full ca_sha', JSON.stringify({ ca_sha: 'abc' }), doc(A)],
+    ])('calls %s COULD NOT TELL, never certified', (_label, before, after) => {
+      expect(classifyBracket(before, after, A, forward)).toEqual({ verdict: 'unknown', sha: null });
+    });
+
+    it.each([
+      [
+        'a rollback before the expected release',
+        { commitExists: () => true, isAncestor: () => false },
+        'not a forward release',
+      ],
+      [
+        'a commit that does not resolve',
+        { commitExists: () => false, isAncestor: () => true },
+        'does not resolve',
+      ],
+    ])('still refuses %s outright', (_label, evidence, message) => {
+      expect(() => classifyBracket(doc(A), doc(B), A, evidence)).toThrow(message);
+    });
+
+    it('refuses a bracket that moved backwards inside itself', () => {
+      expect(() => classifyBracket(doc(C), doc(B), A, forward)).toThrow('inside one bracket');
+    });
+
+    it('gives the CLI the same three exit codes, and reads a file that was never written as unknown', () => {
+      const dir = mkdtempSync(join(tmpdir(), 'release-bracket-'));
+      try {
+        const before = join(dir, 'before.json');
+        const after = join(dir, 'after.json');
+        const run = () =>
+          spawnSync(process.execPath, [CLI, 'bracket', A, before, after], { encoding: 'utf8' });
+        writeFileSync(before, doc(A));
+        writeFileSync(after, doc(A));
+        const certified = run();
+        expect(certified.status, certified.stderr).toBe(0);
+        expect(certified.stdout.trim()).toBe(`certified ${A}`);
+        rmSync(after);
+        const unknown = run();
+        expect(unknown.status).toBe(UNKNOWN_EXIT_CODE);
+        expect(unknown.stdout.trim()).toBe('unknown unreadable');
+        // B is no commit in this repository: an anomaly, never a non-verdict.
+        writeFileSync(after, doc(B));
+        expect(run().status).toBe(1);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
   });
 });

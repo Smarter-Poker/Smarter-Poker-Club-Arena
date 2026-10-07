@@ -657,6 +657,34 @@ jobs:
               --output="test-results/$output_dir"
           }
 
+          # THE PHASE 1 JOURNEYS RUN FIRST, INSIDE ONE RELEASE BRACKET.
+          #
+          # The cutover seal needs these three journeys - not the whole forty
+          # minute sweep - to have run against one exact client. Read
+          # build-info.json immediately before the first and immediately after
+          # the last; scripts/ci/production-e2e-provenance.mjs `bracket`
+          # certifies the release only when both reads are the SHA this job
+          # recorded and took its specs from. They run first so the bracket
+          # opens minutes after that recording instead of a quarter hour later.
+          mkdir -p release-bracket
+          read_release () {
+            curl -fsS --max-time 20 -H 'Cache-Control: no-cache' \
+              "https://smarter.poker/hub/club-arena/build-info.json?bracket=$RANDOM" > "$1" 2>/dev/null \
+              || : > "$1"
+          }
+          read_release release-bracket/phase1-before.json
+
+          run_suite customization-realtime.json tests/e2e/production-customization-realtime.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
+          customization_realtime_rc=$?; [ $customization_realtime_rc -ne 0 ] && rc=$customization_realtime_rc
+
+          run_suite gameplay-customization-runtime.json tests/e2e/gameplay-customization-runtime.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
+          gameplay_customization_runtime_rc=$?; [ $gameplay_customization_runtime_rc -ne 0 ] && rc=$gameplay_customization_runtime_rc
+
+          run_suite customization-commerce.json tests/e2e/production-customization-commerce.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
+          customization_commerce_rc=$?; [ $customization_commerce_rc -ne 0 ] && rc=$customization_commerce_rc
+
+          read_release release-bracket/phase1-after.json
+
           # Certify Stats first among the broader route checks. Cashier has its
           # own preceding release gate so this suite cannot hide its verdict.
           run_suite stats.json tests/e2e/stats-deep.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
@@ -689,15 +717,6 @@ jobs:
           # reads, and skips itself without management authority.
           run_suite table-management.json tests/e2e/production-table-management.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
           table_management_rc=$?; [ $table_management_rc -ne 0 ] && rc=$table_management_rc
-
-          run_suite customization-realtime.json tests/e2e/production-customization-realtime.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
-          customization_realtime_rc=$?; [ $customization_realtime_rc -ne 0 ] && rc=$customization_realtime_rc
-
-          run_suite gameplay-customization-runtime.json tests/e2e/gameplay-customization-runtime.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
-          gameplay_customization_runtime_rc=$?; [ $gameplay_customization_runtime_rc -ne 0 ] && rc=$gameplay_customization_runtime_rc
-
-          run_suite customization-commerce.json tests/e2e/production-customization-commerce.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
-          customization_commerce_rc=$?; [ $customization_commerce_rc -ne 0 ] && rc=$customization_commerce_rc
 
           run_suite daily-missions.json tests/e2e/production-daily-missions.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
           daily_missions_rc=$?; [ $daily_missions_rc -ne 0 ] && rc=$daily_missions_rc
@@ -897,11 +916,50 @@ jobs:
               ;;
           esac
 
+      # The seal's client evidence is the bracket around the three Phase 1
+      # journeys (opened and closed in the sweep step above), not the whole
+      # job's window: see classifyBracket in production-e2e-provenance.mjs.
+      - name: Classify the release the Phase 1 journeys ran against
+        id: phase1_release
+        if: always() && steps.live.outputs.ready == 'true'
+        env:
+          EXPECTED_LIVE_SHA: ${{ steps.live.outputs.sha }}
+        run: |
+          set -uo pipefail
+          echo 'certified=false' >> "$GITHUB_OUTPUT"
+          if ! [[ "$EXPECTED_LIVE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The recorded live SHA is malformed."
+            exit 1
+          fi
+          if ! timeout 30s git fetch --no-tags origin main; then
+            echo "::warning::UNKNOWN: protected-main history was unreadable, so the Phase 1 release bracket is unknown."
+            echo "NON-VERDICT: protected-main history was unreadable; the Phase 1 journeys certify no release." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          STATUS=0
+          BRACKET="$(node scripts/ci/production-e2e-provenance.mjs bracket "$EXPECTED_LIVE_SHA" \
+            release-bracket/phase1-before.json release-bracket/phase1-after.json)" || STATUS=$?
+          case "$STATUS" in
+            0)
+              echo 'certified=true' >> "$GITHUB_OUTPUT"
+              echo "Production served \`$EXPECTED_LIVE_SHA\` before and after all three Phase 1 journeys." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            3)
+              echo "::warning::UNKNOWN: the Phase 1 journeys did not run inside one release ($BRACKET). This is a non-verdict, not a defect."
+              echo "NON-VERDICT: the Phase 1 journeys were not bracketed by \`$EXPECTED_LIVE_SHA\` ($BRACKET)." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *)
+              echo "::error::production left \`$EXPECTED_LIVE_SHA\` around the Phase 1 journeys for a release that is not a forward publish on this lineage."
+              exit 1
+              ;;
+          esac
+
       - name: Classify the Phase 1 customization certificate
         id: phase1_verdict
         if: always()
         env:
-          RELEASE_CERTIFIED: ${{ steps.release_window.outputs.certified }}
+          PHASE1_RELEASE_CERTIFIED: ${{ steps.phase1_release.outputs.certified }}
+          PHASE1_RELEASE_OUTCOME: ${{ steps.phase1_release.outcome }}
           RELEASE_WINDOW_OUTCOME: ${{ steps.release_window.outcome }}
           CUSTOMIZATION_COVERAGE_COMPLETE: ${{ steps.phase1_coverage.outputs.complete }}
           CUSTOMIZATION_COVERAGE_OUTCOME: ${{ steps.phase1_coverage.outcome }}
@@ -929,7 +987,12 @@ jobs:
             echo '::error::The release-window producer did not complete successfully.'
             exit 1
           fi
-          if [ "$RELEASE_CERTIFIED" = 'true' ]; then
+          if [ "$PHASE1_RELEASE_OUTCOME" != 'success' ]; then
+            echo 'certified=false' >> "$GITHUB_OUTPUT"
+            echo '::error::The Phase 1 release bracket producer did not complete successfully.'
+            exit 1
+          fi
+          if [ "$PHASE1_RELEASE_CERTIFIED" = 'true' ]; then
             CERTIFIED=true
             echo 'The exact served client has complete Phase 1 customization coverage.' >> "$GITHUB_STEP_SUMMARY"
           else
@@ -1359,6 +1422,14 @@ jobs:
   # route; that failure remains visible in the workflow verdict, but cannot
   # erase exact first-attempt evidence from these three affected journeys. A
   # superseded/non-verdict lane exposes certified=false and cannot reach here.
+  #
+  # The CLIENT half is phase1_certified alone (2026-10-07): the three journeys
+  # passed exactly once AND ran inside one release bracket on client_sha. The
+  # whole-job `certified` window is still computed and reported, but it spans
+  # forty minutes of unrelated routes, and at the real publish rate it held on
+  # neither passing run of 2026-10-06/07, so requiring it meant the seal was
+  # never owed. Keep this condition identical to SEAL_OWED in post-deploy-verdict
+  # below (tests/unit/phase1CustomizationCertificateCoverage.test.ts).
   phase1-customization-cutover-seal:
     needs: [publication-gate, production-e2e, live-table-e2e]
     if: >-
@@ -1366,7 +1437,6 @@ jobs:
         always() &&
         needs.publication-gate.outputs.should_run == 'true' &&
         needs.live-table-e2e.result == 'success' &&
-        needs.production-e2e.outputs.certified == 'true' &&
         needs.production-e2e.outputs.phase1_certified == 'true' &&
         needs.live-table-e2e.outputs.certified == 'true' &&
         needs.production-e2e.outputs.client_sha == needs.live-table-e2e.outputs.client_sha
@@ -1413,12 +1483,21 @@ jobs:
           CLIENT_WINDOW="$(printf '%s' "$CLIENT_BODY" \
             | node scripts/ci/production-e2e-provenance.mjs release-window "$CLIENT_SHA")" \
             || CLIENT_STATUS=$?
+          # A LATER CLIENT IS NOT AN UNTESTED SEAL. The seal records the client
+          # the journeys and the live-table lane actually ran against
+          # ($CLIENT_SHA), never what is serving now. A forward protected-main
+          # release since then is accepted only when it still declares the
+          # Phase 1 contract below; a rollback or off-lineage SHA already made
+          # release-window exit 1 above. fn_seal_phase_one_customization_cutover
+          # itself binds only the ENGINE to what is live, which is unchanged.
+          LIVE_CLIENT_SHA="$CLIENT_SHA"
           if [ "$CLIENT_STATUS" -eq 3 ]; then
-            echo 'ready=false' >> "$GITHUB_OUTPUT"
-            echo "NON-VERDICT: the client certificate was superseded before sealing ($CLIENT_WINDOW)." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
+            LIVE_CLIENT_SHA="${CLIENT_WINDOW#superseded }"
+            [[ "$LIVE_CLIENT_SHA" =~ ^[0-9a-f]{40}$ ]]
+            echo "Client \`$CLIENT_SHA\` was certified; production has since advanced to \`$LIVE_CLIENT_SHA\` on protected main." >> "$GITHUB_STEP_SUMMARY"
+          else
+            test "$CLIENT_STATUS" -eq 0
           fi
-          test "$CLIENT_STATUS" -eq 0
 
           ENGINE_BODY="$(curl -fsS --max-time 20 -H 'Cache-Control: no-store' \
             "https://engine.smarter.poker/health?cutover=$RANDOM")" || ENGINE_BODY=''
@@ -1442,7 +1521,7 @@ jobs:
           fi
 
           MARKER='scripts/ci/phase1-customization-cutover-v1.json'
-          for artifact_sha in "$CLIENT_SHA" "$ENGINE_SHA"; do
+          for artifact_sha in "$CLIENT_SHA" "$LIVE_CLIENT_SHA" "$ENGINE_SHA"; do
             git cat-file -e "$artifact_sha^{commit}"
             git merge-base --is-ancestor "$artifact_sha" origin/main
             if ! git cat-file -e "$artifact_sha:$MARKER" 2>/dev/null; then
@@ -1495,6 +1574,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 6
     permissions:
+      # actions: read lets the recorder read this run's own job record, so a
+      # lane cancelled while still queued (no runner, no steps) is told apart
+      # from one that started and was killed.
+      actions: read
       contents: read
     steps:
       - uses: actions/checkout@v4
@@ -1522,4 +1605,34 @@ jobs:
             ${{ needs.production-e2e.result }}|Client browser verification
             ${{ needs.live-table-e2e.result }}|Live-table and engine verification
             ${{ needs.phase1-customization-cutover-seal.result }}|Seal certified Phase 1 customization cutover
-        run: node scripts/ci/record-post-deploy-verdict.mjs
+          GH_TOKEN: ${{ github.token }}
+          # A lane is owed only when its own `if:` held. The SEO contract runs
+          # only for a publisher (workflow_run) event, so an engine-triggered
+          # certificate (repository_dispatch) skips it by design: run
+          # 37604057526 certified and SEALED the Phase 1 cutover and still
+          # fired PostDeployVerificationIncomplete for that skip alone. Keep
+          # each condition identical to its job's `if:` (pinned by
+          # tests/unit/phase1CustomizationCertificateCoverage.test.ts).
+          SEO_OWED: ${{ needs.publication-gate.outputs.should_run == 'true' && github.event_name == 'workflow_run' }}
+          # The seal is owed only when both browser lanes certified one exact
+          # release. A seal skipped because no run certified one is a
+          # non-verdict, not incomplete verification.
+          SEAL_OWED: >-
+            ${{
+              needs.publication-gate.outputs.should_run == 'true' &&
+              needs.live-table-e2e.result == 'success' &&
+              needs.production-e2e.outputs.phase1_certified == 'true' &&
+              needs.live-table-e2e.outputs.certified == 'true' &&
+              needs.production-e2e.outputs.client_sha == needs.live-table-e2e.outputs.client_sha
+            }}
+        run: |
+          set -euo pipefail
+          UNOWED_LANES=''
+          if [ "$SEO_OWED" != 'true' ]; then
+            UNOWED_LANES+=$'The Live SEO Contract Holds\n'
+          fi
+          if [ "$SEAL_OWED" != 'true' ]; then
+            UNOWED_LANES+=$'Seal certified Phase 1 customization cutover\n'
+          fi
+          export UNOWED_LANES
+          node scripts/ci/record-post-deploy-verdict.mjs

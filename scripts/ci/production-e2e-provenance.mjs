@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 
 const FULL_SHA = /^[0-9a-f]{40}$/;
 
@@ -193,6 +194,68 @@ export function classifyReleaseWindow(raw, expected, evidence) {
   return { verdict: 'superseded', sha: actual };
 }
 
+/**
+ * DID ONE GROUP OF SUITES RUN AGAINST ONE EXACT RELEASE? (2026-10-07)
+ *
+ * classifyReleaseWindow above asks that question of the WHOLE client job:
+ * one build-info read before the first browser and one after the last, about
+ * forty minutes apart. Post-deploy E2E runs once per publish and publishes
+ * landed every 7 to 15 minutes at peak on 2026-10-07, so that window could
+ * almost never hold: both client lanes that passed on 2026-10-06/07
+ * (runs 37587015087 and 37598789558) ended `superseded`, the Phase 1 cutover
+ * seal never became owed, and 20261005230230 could not be installed behind it.
+ *
+ * The seal does not need the whole job. It needs three named journeys to have
+ * run against one exact client. So bracket exactly those journeys: read
+ * build-info immediately before the first of them and immediately after the
+ * last. The publisher only moves `current` FORWARD on protected main (origin
+ * ancestry and compare-and-swap refuse a rollback), so a release that reads X
+ * on both sides of the group served X for the whole group. Nothing is
+ * inferred about any suite outside the bracket, and a group that straddled a
+ * publish certifies nothing.
+ *
+ *   certified  both reads are `expected` - the release the run recorded before
+ *              its first browser and took its specs from.
+ *   superseded either read is a LATER trusted commit on this lineage: could
+ *              not tell, a non-verdict.
+ *   unknown    either read is missing or unreadable: could not tell.
+ * A rollback, an off-lineage SHA, or a commit that does not resolve throws,
+ * exactly as classifyReleaseWindow does.
+ */
+export function classifyBracket(beforeRaw, afterRaw, expected, evidence) {
+  if (!FULL_SHA.test(expected)) {
+    throw new Error('The expected production provenance must be one full lowercase SHA.');
+  }
+  const read = (raw) => {
+    try {
+      return readBuildInfoSha(raw);
+    } catch {
+      return null;
+    }
+  };
+  const before = read(beforeRaw);
+  const after = read(afterRaw);
+  if (before === null || after === null) return { verdict: 'unknown', sha: null };
+  if (before === expected && after === expected) return { verdict: 'certified', sha: expected };
+  for (const actual of new Set([before, after])) {
+    if (actual === expected) continue;
+    if (!evidence.commitExists(actual)) {
+      throw new Error(`Production SHA ${actual} does not resolve to a trusted repository commit.`);
+    }
+    if (!evidence.isAncestor(expected, actual)) {
+      throw new Error(
+        `Production moved from ${expected} to ${actual}, which is not a forward release on this lineage.`
+      );
+    }
+  }
+  if (before !== after && !evidence.isAncestor(before, after)) {
+    throw new Error(
+      `Production moved from ${before} to ${after} inside one bracket, which is not forward.`
+    );
+  }
+  return { verdict: 'superseded', sha: after };
+}
+
 function gitSucceeds(args) {
   try {
     execFileSync('git', args, {
@@ -217,6 +280,10 @@ export function classifyRepositoryLineage(live, here) {
 
 export function classifyRepositoryReleaseWindow(raw, expected) {
   return classifyReleaseWindow(raw, expected, REPOSITORY_EVIDENCE);
+}
+
+export function classifyRepositoryBracket(beforeRaw, afterRaw, expected) {
+  return classifyBracket(beforeRaw, afterRaw, expected, REPOSITORY_EVIDENCE);
 }
 
 async function readStdin() {
@@ -261,8 +328,21 @@ async function main() {
     if (window.verdict !== 'certified') process.exitCode = UNKNOWN_EXIT_CODE;
     return;
   }
+  // Same three exit codes as release-window. A bracket file that was never
+  // written (the group never ran) is read as unknown, never as certified.
+  if (command === 'bracket' && args.length === 3) {
+    const readIfPresent = (path) => (existsSync(path) ? readFileSync(path, 'utf8') : '');
+    const window = classifyRepositoryBracket(
+      readIfPresent(args[1]),
+      readIfPresent(args[2]),
+      args[0]
+    );
+    process.stdout.write(`${window.verdict} ${window.sha ?? 'unreadable'}\n`);
+    if (window.verdict !== 'certified') process.exitCode = UNKNOWN_EXIT_CODE;
+    return;
+  }
   throw new Error(
-    'Usage: production-e2e-provenance.mjs publisher-artifact <run-id> <trigger-sha> <repository-id> | build-info | unchanged <expected-sha> | release-window <expected-sha> | engine-live | engine-ready <expected-sha> | lineage <live-sha> <checkout-sha>'
+    'Usage: production-e2e-provenance.mjs bracket <expected-sha> <before-file> <after-file> | publisher-artifact <run-id> <trigger-sha> <repository-id> | build-info | unchanged <expected-sha> | release-window <expected-sha> | engine-live | engine-ready <expected-sha> | lineage <live-sha> <checkout-sha>'
   );
 }
 

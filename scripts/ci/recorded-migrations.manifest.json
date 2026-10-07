@@ -591,6 +591,42 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
       "refusedBy": [],
       "liveVerdict": "Reconciliation of 2026-10-02. md5 read live the same day from public.fn_ca_migration_text(20260927154806) equals the file md5."
+    },
+    {
+      "version": "20261006024118",
+      "name": "20261006022053_stable_admin_phase11_incident_acknowledgements",
+      "file": "supabase/migrations/20261006024118_20261006022053_stable_admin_phase11_incident_acknowledgements.sql",
+      "md5": "932541af963dcda157efa72c1ed47a5a",
+      "appliedToProductionAt": "2026-10-06T02:41:18Z",
+      "recoveredOn": "2026-10-07",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte (the fn_ca_migration_text body); carried across the tool boundary as base64 and decoded by the shell, no trailing newline added",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": [],
+      "liveVerdict": "Reconciliation of 2026-10-07. Installed more than 24 hours earlier with no file in this repository or on any remote branch of either repository; the canonical successor 20261006024310_stable_admin_phase11_incident_acknowledgements_canonical.sql is on World Hub main and is also installed, but it is a different version with different bytes, so it does not record this one. md5 read live the same day from public.fn_ca_migration_text(20261006024118) equals the file md5 (7687 bytes). The only file-text finding was the 60-character name rule, which applies to new work; the ledger row already exists under this 61-character name, so the version ties the row to this file."
+    },
+    {
+      "version": "20261007001435",
+      "name": "a_satellite_seat_open_at_the_boundary_is_held_for_its_owner",
+      "file": "supabase/migrations/20261007001435_a_satellite_seat_open_at_the_boundary_is_held_for_its_owner.sql",
+      "md5": "1b784ad2d1d9076a7fca397dc6cac10a",
+      "appliedToProductionAt": "2026-10-07T00:14:35Z",
+      "recoveredOn": "2026-10-07",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte (the fn_ca_migration_text body); carried across the tool boundary as base64 and decoded by the shell, no trailing newline added",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": [],
+      "liveVerdict": "Reconciliation of 2026-10-07. Installed with no file in this repository or on any remote branch of either repository (812 Club Arena and every World Hub branch tip read by version and by name). md5 read live the same day from public.fn_ca_migration_text(20261007001435) equals the file md5 (5371 bytes). No file-text guard raised a finding."
+    },
+    {
+      "version": "20261007002846",
+      "name": "a_failure_fingerprint_never_crashes_on_a_number_shaped_string",
+      "file": "supabase/migrations/20261007002846_a_failure_fingerprint_never_crashes_on_a_number_shaped_string.sql",
+      "md5": "376087a087fc87019b23520b191c8582",
+      "appliedToProductionAt": "2026-10-07T00:28:46Z",
+      "recoveredOn": "2026-10-07",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte (the fn_ca_migration_text body); carried across the tool boundary as base64 and decoded by the shell, no trailing newline added",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": [],
+      "liveVerdict": "Reconciliation of 2026-10-07. Installed with no file in this repository or on any remote branch of either repository. md5 read live the same day from public.fn_ca_migration_text(20261007002846) equals the file md5 (1697 bytes). The only file-text finding was the 60-character name rule, which applies to new work; the ledger row already exists under this 61-character name, so the version ties the row to this file."
     }
   ]
 }

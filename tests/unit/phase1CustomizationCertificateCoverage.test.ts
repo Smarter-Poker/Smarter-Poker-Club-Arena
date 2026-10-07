@@ -147,6 +147,10 @@ describe('the Phase 1 customization cutover certificate', () => {
       'CUSTOMIZATION_COVERAGE_OUTCOME: ${{ steps.phase1_coverage.outcome }}'
     );
     expect(WORKFLOW).toContain('RELEASE_WINDOW_OUTCOME: ${{ steps.release_window.outcome }}');
+    expect(WORKFLOW).toContain(
+      'PHASE1_RELEASE_CERTIFIED: ${{ steps.phase1_release.outputs.certified }}'
+    );
+    expect(WORKFLOW).toContain('PHASE1_RELEASE_OUTCOME: ${{ steps.phase1_release.outcome }}');
     expect(WORKFLOW).toContain('ACCOUNT_CLEANUP_OUTCOME: ${{ steps.account_cleanup.outcome }}');
     expect(WORKFLOW).toContain('phase1-customization-certificate-coverage.mjs');
     for (const contract of contracts) {
@@ -154,7 +158,9 @@ describe('the Phase 1 customization cutover certificate', () => {
     }
     const seal = WORKFLOW.slice(WORKFLOW.indexOf('  phase1-customization-cutover-seal:'));
     expect(seal).toContain("needs.production-e2e.outputs.phase1_certified == 'true'");
-    expect(seal).toContain("needs.production-e2e.outputs.certified == 'true'");
+    // The whole-job window is reported, never required: the seal's client
+    // evidence is the bracket around its own three journeys (2026-10-07).
+    expect(seal).not.toContain("needs.production-e2e.outputs.certified == 'true'");
     expect(seal).not.toContain("needs.production-e2e.result == 'success'");
     expect(workflowStep('Write the durable cutover receipt')).toContain(
       "if: steps.artifacts.outcome == 'success' && steps.artifacts.outputs.ready == 'true'"
@@ -168,6 +174,7 @@ describe('the Phase 1 customization cutover certificate', () => {
       cleanup: 'success',
       release: 'true',
       releaseOutcome: 'success',
+      bracketOutcome: 'success',
       status: 0,
       certified: true,
     },
@@ -177,6 +184,7 @@ describe('the Phase 1 customization cutover certificate', () => {
       cleanup: 'success',
       release: 'false',
       releaseOutcome: 'success',
+      bracketOutcome: 'success',
       status: 0,
       certified: false,
     },
@@ -186,6 +194,7 @@ describe('the Phase 1 customization cutover certificate', () => {
       cleanup: 'success',
       release: 'true',
       releaseOutcome: 'success',
+      bracketOutcome: 'success',
       status: 1,
       certified: false,
     },
@@ -195,6 +204,7 @@ describe('the Phase 1 customization cutover certificate', () => {
       cleanup: 'success',
       release: 'true',
       releaseOutcome: 'failure',
+      bracketOutcome: 'success',
       status: 1,
       certified: false,
     },
@@ -204,6 +214,7 @@ describe('the Phase 1 customization cutover certificate', () => {
       cleanup: 'success',
       release: 'true',
       releaseOutcome: 'success',
+      bracketOutcome: 'success',
       status: 1,
       certified: false,
     },
@@ -213,12 +224,32 @@ describe('the Phase 1 customization cutover certificate', () => {
       cleanup: 'failure',
       release: 'true',
       releaseOutcome: 'success',
+      bracketOutcome: 'success',
+      status: 1,
+      certified: false,
+    },
+    {
+      coverage: 'true',
+      coverageOutcome: 'success',
+      cleanup: 'success',
+      release: 'true',
+      releaseOutcome: 'success',
+      bracketOutcome: 'failure',
       status: 1,
       certified: false,
     },
   ])(
-    'classifies coverage=$coverage/$coverageOutcome cleanup=$cleanup release=$release/$releaseOutcome without inventing a seal',
-    ({ coverage, coverageOutcome, cleanup, release, releaseOutcome, status, certified }) => {
+    'classifies coverage=$coverage/$coverageOutcome cleanup=$cleanup bracket=$release/$bracketOutcome window=$releaseOutcome without inventing a seal',
+    ({
+      coverage,
+      coverageOutcome,
+      cleanup,
+      release,
+      releaseOutcome,
+      bracketOutcome,
+      status,
+      certified,
+    }) => {
       const block = workflowStep('Classify the Phase 1 customization certificate');
       const body = block.split('\n        run: |\n')[1];
       expect(body).toBeDefined();
@@ -239,7 +270,8 @@ describe('the Phase 1 customization cutover certificate', () => {
               CUSTOMIZATION_COVERAGE_COMPLETE: coverage,
               CUSTOMIZATION_COVERAGE_OUTCOME: coverageOutcome,
               ACCOUNT_CLEANUP_OUTCOME: cleanup,
-              RELEASE_CERTIFIED: release,
+              PHASE1_RELEASE_CERTIFIED: release,
+              PHASE1_RELEASE_OUTCOME: bracketOutcome,
               RELEASE_WINDOW_OUTCOME: releaseOutcome,
               GITHUB_OUTPUT: output,
               GITHUB_STEP_SUMMARY: summary,
@@ -256,4 +288,58 @@ describe('the Phase 1 customization cutover certificate', () => {
       }
     }
   );
+});
+
+describe('the Phase 1 seal is owed exactly when its own condition holds', () => {
+  const condition = (text: string) =>
+    text
+      .replace(/\s+/g, ' ')
+      .replace(/^.*?\$\{\{ (?:always\(\) && )?/, '')
+      .replace(/ \}\}.*$/, '')
+      .trim();
+
+  it('keeps SEAL_OWED in the verdict recorder identical to the seal job if', () => {
+    const sealJob = WORKFLOW.slice(WORKFLOW.indexOf('  phase1-customization-cutover-seal:'));
+    const sealIf = sealJob.slice(sealJob.indexOf('    if: >-'), sealJob.indexOf('    name:'));
+    const verdictJob = WORKFLOW.slice(WORKFLOW.indexOf('  post-deploy-verdict:'));
+    const owed = verdictJob.slice(
+      verdictJob.indexOf('SEAL_OWED: >-'),
+      verdictJob.indexOf('        run: |', verdictJob.indexOf('SEAL_OWED: >-'))
+    );
+    expect(condition(sealIf)).toContain("needs.production-e2e.outputs.phase1_certified == 'true'");
+    expect(condition(owed)).toBe(condition(sealIf));
+    expect(verdictJob).toContain(
+      "UNOWED_LANES+=$'Seal certified Phase 1 customization cutover\\n'"
+    );
+    // The SEO lane is owed only for a publisher event; an engine-triggered
+    // certificate (run 37604057526, which sealed) skips it by design.
+    const seoJob = WORKFLOW.slice(
+      WORKFLOW.indexOf('  seo-contract:'),
+      WORKFLOW.indexOf('  production-e2e:')
+    );
+    const seoIf = seoJob.match(/\n {4}if: (.+)\n/)?.[1];
+    expect(seoIf).toBeDefined();
+    expect(verdictJob).toContain(`SEO_OWED: \${{ ${seoIf} }}`);
+    expect(verdictJob).toContain("UNOWED_LANES+=$'The Live SEO Contract Holds\\n'");
+    expect(verdictJob).toMatch(/permissions:\n(?:\s+#.*\n)*\s+actions: read\n\s+contents: read/);
+  });
+
+  it('brackets the three journeys, and runs them before every other sweep suite', () => {
+    const sweep = workflowStep('Run the specs that need a deployed page');
+    const before = sweep.indexOf('read_release release-bracket/phase1-before.json');
+    const after = sweep.indexOf('read_release release-bracket/phase1-after.json');
+    expect(before).toBeGreaterThan(0);
+    expect(after).toBeGreaterThan(before);
+    for (const contract of contracts) {
+      const at = sweep.indexOf(`run_suite ${contract.report}`);
+      expect(at).toBeGreaterThan(before);
+      expect(at).toBeLessThan(after);
+    }
+    expect(after).toBeLessThan(sweep.indexOf('run_suite stats.json'));
+    const classify = workflowStep('Classify the release the Phase 1 journeys ran against');
+    expect(classify).toContain('production-e2e-provenance.mjs bracket "$EXPECTED_LIVE_SHA"');
+    expect(classify).toContain(
+      'release-bracket/phase1-before.json release-bracket/phase1-after.json'
+    );
+  });
 });

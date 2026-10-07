@@ -37,8 +37,35 @@
  * something succeeds is the reason 78.9 pct of the open backlog is already
  * status=resolved.
  *
+ * TWO NON-VERDICTS THAT ARE NOT INCOMPLETE VERIFICATION (2026-10-07).
+ *
+ * PostDeployVerificationIncomplete was open from 2026-10-06T00:07Z with more
+ * than one hundred deliveries, because two lane shapes that verify nothing AND
+ * hide nothing were counted as "unverified" on almost every run:
+ *
+ *   replaced  A lane GitHub cancelled while it was still QUEUED: a newer run
+ *             entered the same concurrency group (cancel-in-progress false
+ *             keeps one running and one pending job and replaces the pending
+ *             one). It has no runner and no steps, so it never touched
+ *             production; the run that replaced it re-targets onto what is
+ *             live and carries the verdict. Measured 2026-10-06/07: 41 of 41
+ *             cancelled client lanes and 12 of 12 cancelled live-table lanes
+ *             had runner_id 0 and zero steps.
+ *   not owed  A lane whose own `if:` precondition was false, named by the
+ *             workflow in UNOWED_LANES. The Phase 1 cutover seal is the case:
+ *             it runs only after both browser lanes certify one exact release,
+ *             so a run that did not certify one skips it by design.
+ *
+ * Neither is a pass either: a run whose only outcome is a replaced lane writes
+ * nothing and cannot close an episode. "Replaced" is proved from the run's own
+ * job record (runner and steps), never assumed from the word cancelled. When
+ * that record cannot be read, the lane is COULD NOT TELL (CLAUDE.md 10.86): it
+ * stays counted as unverified, and the payload names it as such, because an
+ * unknown is never reported as clean.
+ *
  * Run:  DATABASE_URL=... WORKFLOW_LABEL=... ALERT_SOURCE=... ALERT_NAME=... RUN_ID=...
  *       GATE_RESULT=... LANES=$'success|Lane A\nskipped|Lane B' \
+ *       [UNOWED_LANES=$'Lane B'] [GH_TOKEN=... GITHUB_REPOSITORY=owner/repo] \
  *       node scripts/ci/record-post-deploy-verdict.mjs
  */
 import { createHash } from 'node:crypto';
@@ -73,12 +100,22 @@ export function decide(verdict, previous) {
 
   const failed = [];
   const skipped = [];
+  const replaced = [];
+  const notOwed = [];
+  const couldNotTell = [];
   if (gate && gate.result !== SUCCESS) failed.push(gate.name);
   if (!gateStoodDown) {
     for (const lane of lanes) {
       if (lane.result === SUCCESS) continue;
-      if (lane.result === 'skipped') skipped.push(lane.name);
-      else failed.push(lane.name);
+      // Only a skip can be "not owed": a lane that ran and failed, or was
+      // cancelled, failed whatever its precondition says.
+      if (lane.result === 'skipped' && lane.owed === false) notOwed.push(lane.name);
+      else if (lane.result === 'cancelled' && lane.start === 'replaced') replaced.push(lane.name);
+      else if (lane.result === 'skipped') skipped.push(lane.name);
+      else {
+        failed.push(lane.name);
+        if (lane.result === 'cancelled' && lane.start === 'unknown') couldNotTell.push(lane.name);
+      }
     }
   }
 
@@ -111,10 +148,26 @@ export function decide(verdict, previous) {
         head_sha: verdict.headSha || null,
         failed_jobs: failed.slice().sort(),
         skipped_jobs: skipped.slice().sort(),
+        // Named so a reader can tell "it broke" from "I could not read whether
+        // it ever started": both stay loud, only one is a defect on production.
+        could_not_tell_jobs: couldNotTell.slice().sort(),
+        replaced_jobs: replaced.slice().sort(),
+        not_owed_jobs: notOwed.slice().sort(),
         // The 2026-10-05 shape: the gate fails and every lane below it is
         // skipped, so nothing about production was verified at all.
         nothing_verified: gateFailed && skipped.length > 0 && failed.length === 1,
       },
+    };
+  }
+
+  // Nothing failed, but a lane that never started verified nothing either. It
+  // must not close an episode: only a run whose owed lanes all PASSED can say
+  // production is verified again.
+  if (replaced.length > 0) {
+    return {
+      action: 'none',
+      exitCode: 0,
+      reason: `replaced before it started (${replaced.slice().sort().join(', ')}); the run that replaced it carries the verdict`,
     };
   }
 
@@ -130,11 +183,37 @@ export function decide(verdict, previous) {
         run_id: String(verdict.runId),
         head_sha: verdict.headSha || null,
         resolves: previous.event_key,
+        not_owed_jobs: notOwed.slice().sort(),
       },
     };
   }
 
   return { action: 'none', exitCode: 0, reason: 'verification complete; no open episode to close' };
+}
+
+/**
+ * Did each CANCELLED lane ever start? Read from the run's own job record.
+ *
+ * Returns { [laneName]: 'replaced' | 'started' | 'unknown' } for every name
+ * asked about. 'replaced' needs all of: exactly one job by that name in the
+ * record, conclusion cancelled, no steps, and no runner. Anything else that
+ * ran is 'started'; a missing, duplicated or malformed record is 'unknown'.
+ */
+export function classifyCancelledLanes(jobsPayload, names) {
+  const out = {};
+  const jobs = jobsPayload && Array.isArray(jobsPayload.jobs) ? jobsPayload.jobs : null;
+  const complete = jobs !== null && Number.isSafeInteger(jobsPayload.total_count)
+    && jobsPayload.total_count === jobs.length;
+  for (const name of names) {
+    if (!complete) { out[name] = 'unknown'; continue; }
+    const matches = jobs.filter((job) => job && job.name === name);
+    if (matches.length !== 1) { out[name] = 'unknown'; continue; }
+    const job = matches[0];
+    if (job.conclusion !== 'cancelled' || !Array.isArray(job.steps)) { out[name] = 'unknown'; continue; }
+    const noRunner = !(Number(job.runner_id) > 0) && !String(job.runner_name ?? '').trim();
+    out[name] = job.steps.length === 0 && noRunner ? 'replaced' : 'started';
+  }
+  return out;
 }
 
 /**
@@ -162,6 +241,11 @@ export function readVerdict(env) {
       if (cut < 1 || cut === line.length - 1) throw new Error(`LANES line is not result|name: ${line}`);
       return { result: line.slice(0, cut).trim(), name: line.slice(cut + 1).trim() };
     });
+  const unowed = new Set((env.UNOWED_LANES || '').split('\n').map((line) => line.trim()).filter(Boolean));
+  for (const name of unowed) {
+    if (!lanes.some((lane) => lane.name === name)) throw new Error(`UNOWED_LANES names no lane: ${name}`);
+  }
+  for (const lane of lanes) if (unowed.has(lane.name)) lane.owed = false;
   const gateResult = (env.GATE_RESULT || '').trim();
   return {
     workflow: need('WORKFLOW_LABEL'),
@@ -178,8 +262,34 @@ export function readVerdict(env) {
   };
 }
 
+/** Read this run's job record so a cancelled lane can be told apart. */
+async function readJobRecord(env) {
+  const token = (env.GH_TOKEN || env.GITHUB_TOKEN || '').trim();
+  const repo = (env.GITHUB_REPOSITORY || '').trim();
+  const runId = (env.RUN_ID || '').trim();
+  const attempt = (env.RUN_ATTEMPT || '1').trim();
+  if (!token || !/^[\w.-]+\/[\w.-]+$/.test(repo) || !/^[0-9]+$/.test(runId) || !/^[0-9]+$/.test(attempt)) return null;
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${repo}/actions/runs/${runId}/attempts/${attempt}/jobs?per_page=100`,
+      { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' },
+        signal: AbortSignal.timeout(20000) });
+    // CLAUDE.md 10.86 rule 2: an unreadable answer is never an empty one.
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 async function main() {
   const verdict = readVerdict(process.env);
+  const cancelled = verdict.lanes.filter((lane) => lane.result === 'cancelled').map((lane) => lane.name);
+  if (cancelled.length > 0) {
+    const starts = classifyCancelledLanes(await readJobRecord(process.env), cancelled);
+    for (const lane of verdict.lanes) if (starts[lane.name]) lane.start = starts[lane.name];
+    for (const name of cancelled) console.log(`      cancelled lane ${name}: ${starts[name]}`);
+  }
   if (!process.env.DATABASE_URL) {
     console.error('COULD NOT TELL  DATABASE_URL is missing; a verdict that was not admitted is not a pass');
     process.exit(UNKNOWN);
@@ -213,6 +323,7 @@ async function main() {
     if (outcome.action === 'fire') {
       console.log(`      failed: ${outcome.payload.failed_jobs.join(', ') || 'none'}`);
       console.log(`      skipped: ${outcome.payload.skipped_jobs.join(', ') || 'none'}`);
+      console.log(`      could not tell: ${outcome.payload.could_not_tell_jobs.join(', ') || 'none'}`);
     }
   } finally {
     await db.end();

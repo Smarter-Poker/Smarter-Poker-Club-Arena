@@ -45,3 +45,30 @@ test('two seed inputs attach a nonacting waiting observer before the positive ne
  for(const s of sockets)s.send(JSON.stringify({type:'DELTA',tableId,prev:1,seq:2,patch:[{op:'add',path:'/players/-',value:{user_id:third,seat:3,stack:200,bet:0,is_folded:false,is_all_in:false}}]}));state.players.push({user_id:third,seat:3,stack:200,bet:0,is_folded:false,is_all_in:false});await until(()=>runner.stateObservations().every(o=>o.state.players.some(p=>p.user_id===third)));const boundary=runner.beginMeasurement();assert.equal(boundary.generationRetained,true);await sleep(450);assert.equal(requests.length,0,'positive seat alone authorized old turn');
  for(const s of sockets)s.send(JSON.stringify({type:'DELTA',tableId,prev:2,seq:3,patch:[{op:'replace',path:'/current_player',value:third},{op:'replace',path:'/action_context',value:'seed:clock2'},{op:'replace',path:'/turn_start_time_ms',value:200}]}));await until(()=>requests.length===1);runner.quiesce();assert.equal(requests[0].actor,'Bearer '+cohort[2].session.access_token);assert.equal(requests[0].body.action,'check');assert.equal(requests[0].body.actionContext,'seed:clock2');assert.deepEqual(failures,[]);
 });
+
+// Reproduce the native initial waiting SNAPSHOT before purchased seeds are adopted.
+async function seedBoundary(t, state) {
+ const sockets=[],failures=[],controller=new AbortController();let runner,ready=false,refusal;
+ const server=createServer((req,res)=>res.writeHead(500).end());
+ const wss=new WebSocketServer({noServer:true,handleProtocols:()=> 'bearer'});
+ server.on('upgrade',(req,socket,head)=>wss.handleUpgrade(req,socket,head,ws=>{sockets.push(ws);ws.on('message',raw=>{if(JSON.parse(String(raw)).type==='SUBSCRIBE'){ws.send(JSON.stringify({type:'SUBSCRIBED',tableId}));ws.send(JSON.stringify({type:'SNAPSHOT',tableId,seq:1,state}));}});}));
+ server.listen(0,'127.0.0.1');await once(server,'listening');const port=server.address().port;
+ const starting=startRampActors({tableId,users,initialActorIds:ids,setupFold:true,observeArrival:true,signal:controller.signal,onFailure:e=>failures.push(e.message),checkpoint:async()=>{},testEndpoints:{http:'http://127.0.0.1:'+port,ws:'ws://127.0.0.1:'+port}}).then(r=>{runner=r;ready=true;return r;},e=>{refusal=e;});
+ t.after(async()=>{controller.abort();await starting;await runner?.close();for(const s of sockets)s.terminate();await new Promise(r=>wss.close(r));server.closeAllConnections();await new Promise(r=>server.close(r));});
+ await until(()=>sockets.length===2||refusal);await sleep(40);
+ return {starting,sockets,failures,get ready(){return ready;},get refusal(){return refusal;},get runner(){return runner;}};
+}
+const waitingSeed=()=>({table_id:tableId,hand_number:1,stage:'waiting',current_player:null,action_context:'',turn_start_time_ms:0,turn_deadline_ms:0,turn_duration_ms:0,current_bet:0,pot:0,max_seats:2,community_cards:[],winner_ids:[],players:[]});
+const seedPlayers=()=>ids.map((id,i)=>({user_id:id,seat:i+1,stack:200,bet:0,is_folded:false,is_all_in:false}));
+test('empty waiting seed SNAPSHOT and singleton DELTA remain pending until both purchased seats arrive',{timeout:5000},async t=>{
+ const b=await seedBoundary(t,waitingSeed());assert.equal(b.refusal,undefined);assert.equal(b.ready,false,'empty snapshot counted as ready');
+ for(const s of b.sockets)s.send(JSON.stringify({type:'DELTA',tableId,prev:1,seq:2,patch:[{op:'add',path:'/players/-',value:seedPlayers()[0]}]}));
+ await sleep(40);assert.equal(b.refusal,undefined);assert.equal(b.ready,false,'singleton counted as ready');
+ for(const s of b.sockets)s.send(JSON.stringify({type:'DELTA',tableId,prev:2,seq:3,patch:[{op:'add',path:'/players/-',value:seedPlayers()[1]}]}));
+ await b.starting;assert.equal(b.refusal,undefined);assert.equal(b.ready,true);assert.equal(b.runner.observations().actions,0);
+ for(const s of b.sockets)s.send(JSON.stringify({type:'DELTA',tableId,prev:3,seq:4,patch:[{op:'replace',path:'/players',value:[]}]}));
+ await until(()=>b.failures.length>0);assert.deepEqual(b.failures,['FIXTURE_ACTOR_ROSTER']);
+});
+for(const [name,change] of [['active hand',{stage:'preflop'}],['pot',{pot:1}],['clock',{turn_start_time_ms:1}],['board',{community_cards:['Ac']}],['wrong capacity',{max_seats:3}],['wrong seed seat',{players:[{...seedPlayers()[0],seat:2}]}],['zero seed stack',{players:[{...seedPlayers()[0],stack:0}]}]])test('pending seed refuses '+name,{timeout:5000},async t=>{
+ const b=await seedBoundary(t,{...waitingSeed(),...change});await b.starting;assert.match(b.refusal?.message??'',/FIXTURE_ACTOR_/);assert.equal(b.ready,false);
+});

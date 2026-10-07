@@ -41,5 +41,15 @@ reading found two rows that had moved without the roster: the
 `ca-ratchet-watch-hourly` moved from :35 to :29 (`20261004002936`). Both are
 recorded there, with this job.
 
+## Rehearsal
+
+Rehearsed on production at 04:04 UTC in one rolled-back transaction: the
+file's own proofs passed (job scheduled at `14 * * * *`, active, exact
+command; switches unchanged; identity 0), then one call of the sweep. Raked
+Diamond cash hands had begun settling at 04:01 UTC, so the sweep was not
+empty: it banked 72 Diamonds of real accrued rake to `ca_diamond_house`, and
+the identity read 0.00 afterwards. Everything was rolled back; the job's
+first run sweeps those rows for real.
+
 Pinned by `tests/the-diamond-cash-rake-is-swept-to-the-house-every-hour.law.test.ts`
 and `tests/the-scheduled-work-roster-is-pinned.law.test.ts`.

@@ -7,6 +7,36 @@ readonly catalog="$here/leaderboard-isolation-catalog.sql"
 readonly extension_bootstrap="$here/leaderboard-isolation-extension-bootstrap.sql"
 readonly image='supabase/postgres:17.6.1.063'
 readonly bootstrap='leaderboard_qualification_bootstrap'
+prepare_roles() {
+  local role="$1" sql
+  [[ "$role" =~ ^[a-z_][a-z0-9_]{0,62}$ && "$role" != "$bootstrap" ]] || return 1
+  sql="$(cat)"
+  [[ "$(grep -Fxc "CREATE ROLE $role;" <<< "$sql")" == 1 ]] || return 1
+  awk -v exact="CREATE ROLE $role;" '$0 != exact' <<< "$sql"
+}
+destination_role_category() {
+  local diagnostic state='unknown' category='unclassified-role-restore'
+  diagnostic="$(cat)"
+  if [[ "$diagnostic" =~ ERROR:[[:space:]]+([0-9A-Z]{5}): ]]; then state="${BASH_REMATCH[1]}"; fi
+  case "$diagnostic" in
+    *'must have admin option'*) category='grantor-admin-option' ;;
+    *'already exists'*) category='duplicate-role' ;;
+    *'permission denied'*|*'must be superuser'*) category='role-permission' ;;
+    *'unrecognized configuration parameter'*) category='unsupported-role-configuration' ;;
+    *'syntax error'*) category='role-syntax' ;;
+  esac
+  printf '%s:%s\n' "$state" "$category"
+}
+if [[ "${1:-}" == '--prepare-roles' ]]; then
+  [[ $# == 2 ]] || exit 1
+  prepare_roles "$2"
+  exit $?
+fi
+if [[ "${1:-}" == '--classify-role-error' ]]; then
+  [[ $# == 1 ]] || exit 1
+  destination_role_category
+  exit 0
+fi
 source_error_category() {
   local status="$1" diagnostic
   diagnostic="$(cat)"
@@ -120,6 +150,10 @@ export PGOPTIONS='-c default_transaction_read_only=on -c lock_timeout=5000 -c st
 bootstrap_exists="$(source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 -c "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname='$bootstrap');" \
   2>"$scratch/source-error.log")" || source_failure 'source bootstrap-name check unavailable' "$scratch/source-error.log" "$?"
 [[ "$bootstrap_exists" == 'f' ]] || failure 'qualification bootstrap role conflicts with a source role'
+source_bootstrap="$(source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
+  -c "SELECT rolname FROM pg_catalog.pg_roles WHERE oid=10 AND rolsuper;" \
+  2>"$scratch/source-error.log")" || source_failure 'source bootstrap identity unavailable' "$scratch/source-error.log" "$?"
+[[ "$source_bootstrap" =~ ^[a-z_][a-z0-9_]{0,62}$ && "$source_bootstrap" != "$bootstrap" ]] || failure 'unsupported source bootstrap identity or attributes'
 unsupported="$(source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
   -c "SELECT (SELECT count(*) FROM pg_catalog.pg_subscription) + (SELECT count(*) FROM pg_catalog.pg_tablespace WHERE spcname NOT IN ('pg_default','pg_global') OR spcacl IS NOT NULL OR spcoptions IS NOT NULL) + (SELECT count(*) FROM pg_catalog.pg_foreign_server);" \
   2>"$scratch/source-error.log")" || source_failure 'unsupported-capability catalog check unavailable' "$scratch/source-error.log" "$?"
@@ -137,13 +171,15 @@ source_client 180 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
   <"$extension_bootstrap" >"$scratch/extensions.sql" 2>"$scratch/source-error.log" || source_failure 'extension owner metadata unavailable' "$scratch/source-error.log" "$?"
 source_catalog >"$scratch/source-after.json" 2>"$scratch/source-error.log" || source_failure 'source catalog recheck unavailable' "$scratch/source-error.log" "$?"
 cmp -s "$scratch/source-before.json" "$scratch/source-after.json" || failure 'source schema changed during export'
+prepare_roles "$source_bootstrap" <"$scratch/roles.sql" >"$scratch/roles-restore.sql" || failure 'exact existing bootstrap role creation unavailable'
 unset DATABASE_URL PGDATABASE PGOPTIONS
 docker network create --internal "$network" >"$scratch/network.log" 2>&1
 # Bootstrap the official PostgreSQL image without its canned application schema.
 # Live roles/schema are attempted below; ownership is proven only by readback.
 # Each extension is created under its source owner. No external network is allowed.
 docker run -d --name "$container" --network "$network" --user postgres --entrypoint bash "$image" -c \
-  "/usr/lib/postgresql/bin/initdb -U $bootstrap -D /tmp/leaderboard-qualification-db >/tmp/init.log 2>&1 && /usr/lib/postgresql/bin/pg_ctl -D /tmp/leaderboard-qualification-db -o \"-c listen_addresses='' -c unix_socket_directories=/tmp -c shared_preload_libraries=pg_stat_statements\" -l /tmp/postgres.log -w start && exec sleep infinity" \
+  '/usr/lib/postgresql/bin/initdb -U "$1" -D /tmp/leaderboard-qualification-db >/tmp/init.log 2>&1 && /usr/lib/postgresql/bin/pg_ctl -D /tmp/leaderboard-qualification-db -o "-c listen_addresses= -c unix_socket_directories=/tmp -c shared_preload_libraries=pg_stat_statements" -l /tmp/postgres.log -w start && exec sleep infinity' \
+  isolated-bootstrap "$source_bootstrap" \
   >"$scratch/container.log" 2>&1 || failure 'isolated runtime cannot start'
 ready=false
 for _ in {1..30}; do
@@ -151,8 +187,10 @@ for _ in {1..30}; do
   sleep 1
 done
 [[ "$ready" == true ]] || failure 'isolated PostgreSQL did not become ready'
+docker exec "$container" psql -h /tmp -Xq -U "$source_bootstrap" -d template1 -v ON_ERROR_STOP=1 \
+  -c "CREATE ROLE $bootstrap SUPERUSER LOGIN;" >"$scratch/bootstrap-create.log" 2>&1 || failure 'isolated qualification role creation failed'
 docker exec -i "$container" psql -h /tmp -Xq -U "$bootstrap" -d template1 -v ON_ERROR_STOP=1 \
-  <"$scratch/roles.sql" >"$scratch/role-restore.log" 2>&1 || failure 'exact roles cannot be restored'
+  -v VERBOSITY=verbose <"$scratch/roles-restore.sql" >"$scratch/role-restore.log" 2>&1 || failure "exact roles cannot be restored ($(destination_role_category <"$scratch/role-restore.log"))"
 docker exec "$container" psql -h /tmp -Xq -U "$bootstrap" -d template1 -v ON_ERROR_STOP=1 \
   -c 'DROP DATABASE postgres;' >"$scratch/drop-empty-database.log" 2>&1 || failure 'empty local database preparation failed'
 docker run --rm -i --entrypoint /usr/lib/postgresql/bin/pg_restore "$image" --list \

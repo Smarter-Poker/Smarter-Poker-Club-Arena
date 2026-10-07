@@ -6,6 +6,43 @@ import test from 'node:test';
 
 const shell = fileURLToPath(new URL('./leaderboard-isolation-preflight.sh', import.meta.url));
 const source = readFileSync(shell, 'utf8');
+test('exact preexisting bootstrap CREATE is removed without changing role grants or attributes', () => {
+  const input =
+    'CREATE ROLE source_admin;\nALTER ROLE source_admin WITH SUPERUSER;\nGRANT member TO actor GRANTED BY source_admin;\n';
+  const run = (role, sql) =>
+    spawnSync('bash', [shell, '--prepare-roles', role], {
+      input: sql,
+      encoding: 'utf8',
+      env: { PATH: process.env.PATH },
+    });
+  assert.equal(
+    run('source_admin', input).stdout,
+    'ALTER ROLE source_admin WITH SUPERUSER;\nGRANT member TO actor GRANTED BY source_admin;\n'
+  );
+  for (const [role, sql] of [
+    ['source_admin', input + 'CREATE ROLE source_admin;\n'],
+    ['source_admin', input.replace('CREATE ROLE source_admin;\n', '')],
+    ['source_admin; DROP ROLE actor', input],
+    ['leaderboard_qualification_bootstrap', input],
+  ]) {
+    const result = run(role, sql);
+    assert.notEqual(result.status, 0);
+    assert.equal(result.stdout, '');
+  }
+  assert.match(source, /WHERE oid=10 AND rolsuper/);
+  assert.match(source, /initdb -U "\$1"/);
+  assert.match(source, /isolated-bootstrap "\$source_bootstrap"/);
+});
+test('destination role diagnostics disclose only SQLSTATE and fixed categories', () => {
+  const result = spawnSync('bash', [shell, '--classify-role-error'], {
+    input: 'ERROR: 42501: must have admin option on role private_secret\nraw settings secret',
+    encoding: 'utf8',
+    env: { PATH: process.env.PATH },
+  });
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, '42501:grantor-admin-option\n');
+  assert.equal(result.stderr, '');
+});
 const catalog = readFileSync(
   new URL('./leaderboard-isolation-catalog.sql', import.meta.url),
   'utf8'

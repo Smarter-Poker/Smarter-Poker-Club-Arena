@@ -37,6 +37,8 @@
 --
 -- GRANT and REVOKE do not trigger a PostgREST schema reload (CLAUDE.md DDL
 -- policy rule 5).
+--
+-- @live-proof: (SELECT p.proacl::text = '{postgres=X/postgres}' FROM pg_proc p WHERE p.oid = to_regprocedure('public.fn_hhr_rollup_add(uuid,date,text,boolean,numeric,text[])'))
 
 BEGIN;
 

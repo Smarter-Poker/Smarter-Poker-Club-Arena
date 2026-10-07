@@ -1,0 +1,17 @@
+{
+  "_owner": "agent/claude-horse-brain/p14-1-atomic-hand-review",
+  "_comment": "20261007020953 horse_hand_review_atomic_publication (Horse Brain P14.1 / P14-C): the permanent replay receipt and the single atomic door that inserts a horse hand review, applies its horse_review_rollup arithmetic and keeps the receipt in one transaction. fn_hhr_rollup_add stays installed until a later cutover.",
+  "tables": ["horse_hand_review_receipts"],
+  "functions": ["fn_hhr_record_atomic"],
+  "columns": {
+    "horse_hand_review_receipts": [
+      "hand_id",
+      "horse_user_id",
+      "identity_digest",
+      "review_id",
+      "rollup_day",
+      "game_variant",
+      "applied_at"
+    ]
+  }
+}

@@ -115,6 +115,47 @@ test('cash navigation finishes a late invitation before its short visibility ass
   await expect(page.getByRole('dialog', { name: 'Diamond Spins', exact: true })).toBeHidden();
 });
 
+test('cash navigation retires an already running invitation without a second decline', async ({
+  page,
+}) => {
+  await page.setContent(`<button>View Table</button><output id="declines">0</output>
+    <div role="dialog" aria-label="Diamond Spins"><button disabled>Not Now</button></div>`);
+  let invitationError: unknown;
+  const handler = await registerDiamondInvitationDismissal(page, {
+    onFailure: (error) => {
+      invitationError = error;
+    },
+  });
+  await page.evaluate(() => {
+    const prompt = document.querySelector('[role="dialog"]')!;
+    const decline = prompt.querySelector('button')!;
+    decline.onclick = () => {
+      document.getElementById('declines')!.textContent = '1';
+      prompt.remove();
+    };
+    setTimeout(() => {
+      decline.disabled = false;
+    }, 1_500);
+  });
+  // This short action expires while its real invitation handler is waiting
+  // for the control to enable. Removal must drain that original owner before
+  // an explicit readiness flow decides whether another decline is needed.
+  const trigger = page
+    .getByRole('button', { name: 'View Table', exact: true })
+    .click({ timeout: 500 })
+    .then(
+      () => null,
+      (error: unknown) => error
+    );
+  expect(await trigger).toBeTruthy();
+  await prepareCashLobbyActions(page, { retainInvitationHandler: false });
+  await handler.idle();
+  expect(invitationError).toBeUndefined();
+  await expect(page.locator('#declines')).toHaveText('1');
+  await expect(page.getByRole('dialog', { name: 'Diamond Spins', exact: true })).toBeHidden();
+  await expect(page.getByRole('button', { name: 'View Table', exact: true })).toBeVisible();
+});
+
 /**
  * TWO LOBBY DOORS, WHICHEVER ANSWERED LAST ON TOP (2026-09-28).
  *

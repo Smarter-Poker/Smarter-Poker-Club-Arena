@@ -1,0 +1,2945 @@
+{
+  "event": {
+    "id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+    "status": "RUNNING",
+    "started_at": "2026-10-06T15:33:01.554183+00:00",
+    "ended_at": null,
+    "variant": "spin",
+    "format_contract": "spin-v1",
+    "starting_chips": 1000,
+    "max_players": 3,
+    "prize_pool": 3,
+    "total_rake": 0.24,
+    "buy_in_amount": 1,
+    "is_rebuy": false,
+    "is_reentry": false,
+    "prize_pool_finalized": true
+  },
+  "table": {
+    "id": "5df641f6-51a4-5ab7-87cc-8ef63d4e859b",
+    "tournament_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+    "status": "waiting",
+    "lifecycle": null,
+    "hands_dealt": 0,
+    "f06_lifecycle": 862554,
+    "club_id": "fade0000-0000-0000-0000-000000000001",
+    "union_id": "fade0000-0000-0000-0000-000000000001"
+  },
+  "rows": [
+    {
+      "roster": {
+        "id": "29d4ee1f-c1e8-5b4d-8595-76f22198bd41",
+        "chips": 1000,
+        "prize": 0,
+        "add_on": false,
+        "rebuys": 0,
+        "status": "playing",
+        "club_id": "a0000000-0000-0000-0000-000000000001",
+        "user_id": "6800a1d8-6940-5ca3-b404-4a1b07a140db",
+        "position": null,
+        "table_id": "5df641f6-51a4-5ab7-87cc-8ef63d4e859b",
+        "chip_count": 0,
+        "seat_number": 2,
+        "push_2m_sent": false,
+        "eliminated_at": null,
+        "push_15m_sent": false,
+        "registered_at": "2026-10-06T15:32:59.734266+00:00",
+        "tournament_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+        "current_bounty": 0,
+        "bounty_winnings": 0,
+        "bounties_collected": 0,
+        "rebuy_prompt_until": null,
+        "terminal_closed_at": null,
+        "source_satellite_id": null,
+        "elimination_sequence": null,
+        "mystery_bounty_value": 0,
+        "is_satellite_qualifier": false
+      },
+      "seat": {
+        "id": "aba8dc4a-3b5c-539f-9606-b3dc436bd65c",
+        "stack": 1000,
+        "status": "active",
+        "club_id": "a0000000-0000-0000-0000-000000000001",
+        "is_away": false,
+        "left_at": null,
+        "user_id": "6800a1d8-6940-5ca3-b404-4a1b07a140db",
+        "horse_id": "6800a1d8-6940-5ca3-b404-4a1b07a140db",
+        "table_id": "5df641f6-51a4-5ab7-87cc-8ef63d4e859b",
+        "joined_at": "2026-10-06T15:32:59.734266+00:00",
+        "member_id": null,
+        "player_id": null,
+        "auto_rebuy": false,
+        "entry_hold": null,
+        "sit_out_at": null,
+        "seat_number": 2,
+        "occupancy_id": "b0e34a3e-7c2d-5468-8bb4-a31282c939df",
+        "leave_pending": false,
+        "is_sitting_out": false,
+        "active_game_scope": "table:5df641f6-51a4-5ab7-87cc-8ef63d4e859b",
+        "active_parent_key": "tournament:88fd351e-52e4-5765-a39b-3eef190fb755",
+        "entry_post_agreed": false,
+        "terminal_closed_at": null,
+        "time_bank_remaining": 30,
+        "scheduled_leave_hands": null,
+        "time_bank_uses_remaining": 4
+      },
+      "funding": {
+        "id": "0319810d-1808-5ef2-9f63-e825d0b9e45c",
+        "asset": "chips",
+        "amount": 1,
+        "user_id": "6800a1d8-6940-5ca3-b404-4a1b07a140db",
+        "ledger_id": "c8f145ba-9065-55c5-b266-c5e7f441f4fe",
+        "operation": "entry",
+        "observed_at": "2026-10-06T15:32:59.845981+00:00",
+        "purchase_key": null,
+        "tournament_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+        "custody_result": null,
+        "entitlement_id": "0c89b19d-08a7-5b31-9f6e-5e6cdf09c4e0",
+        "transaction_id": "960848260",
+        "funding_club_id": "a0000000-0000-0000-0000-000000000001",
+        "ledger_snapshot": {
+          "id": "c8f145ba-9065-55c5-b266-c5e7f441f4fe",
+          "notes": null,
+          "amount": 1,
+          "status": "posted",
+          "club_id": "a0000000-0000-0000-0000-000000000001",
+          "db_role": "postgres",
+          "hand_id": null,
+          "to_type": "prize_liability",
+          "category": "tournament_buyin",
+          "epoch_id": 2,
+          "metadata": null,
+          "row_hash": "b119be33ceee1f97bd599d2fd44fe999f64faa3e19b1179139360b0a0dfea7fa",
+          "table_id": null,
+          "to_label": null,
+          "union_id": null,
+          "chain_seq": 12481917,
+          "from_type": "player_wallet",
+          "prev_hash": null,
+          "created_at": "2026-10-06T15:32:59.734266+00:00",
+          "from_label": null,
+          "description": "Synthetic Native Entry",
+          "causation_id": null,
+          "performed_by": "29218b47-c6ab-518e-b3af-e874c7b3e1d3",
+          "to_entity_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+          "actor_service": "PostgREST 14.5",
+          "settlement_id": null,
+          "tournament_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+          "correlation_id": null,
+          "from_entity_id": "6800a1d8-6940-5ca3-b404-4a1b07a140db",
+          "pre_to_balance": null,
+          "idempotency_key": null,
+          "post_to_balance": null,
+          "pre_from_balance": null,
+          "post_from_balance": null
+        },
+        "registration_id": "29d4ee1f-c1e8-5b4d-8595-76f22198bd41",
+        "wallet_snapshot": {
+          "id": "64a676a2-1bc2-52b0-b354-0019c051068b",
+          "type": "debit",
+          "amount": 1,
+          "hand_id": null,
+          "user_id": "6800a1d8-6940-5ca3-b404-4a1b07a140db",
+          "category": "tournament_buyin",
+          "table_id": null,
+          "created_at": "2026-10-06T15:32:59.734266+00:00",
+          "description": "Synthetic Native Entry",
+          "wallet_type": "PLAYER",
+          "balance_after": 147891.21,
+          "related_entity_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+          "terminal_closed_at": null
+        },
+        "tournament_snapshot": {
+          "id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+          "name": "Synthetic Native Entry",
+          "is_pko": false,
+          "status": "REGISTERING",
+          "club_id": "fade0000-0000-0000-0000-000000000001",
+          "is_xmtt": false,
+          "variant": "spin",
+          "ban_chat": false,
+          "ended_at": null,
+          "free_buy": false,
+          "is_rebuy": false,
+          "is_turbo": false,
+          "on_break": false,
+          "union_id": "fade0000-0000-0000-0000-000000000001",
+          "game_type": "PLO4",
+          "is_bounty": false,
+          "is_pinned": false,
+          "spin_type": "standard",
+          "addon_cost": 0,
+          "buy_in_fee": 0,
+          "created_at": "2026-10-06T15:27:30.317056+00:00",
+          "day_number": 1,
+          "is_private": false,
+          "is_reentry": false,
+          "max_rebuys": 0,
+          "prize_pool": 2,
+          "rebuy_cost": 0,
+          "start_time": "2026-10-06T15:32:36.704+00:00",
+          "started_at": null,
+          "table_size": 3,
+          "total_days": 1,
+          "total_rake": 0,
+          "updated_at": "2026-10-06T15:27:30.317056+00:00",
+          "addon_chips": 0,
+          "blind_speed": "standard",
+          "bounty_pool": 0,
+          "description": "Synthetic Native Entry",
+          "is_vip_only": false,
+          "max_players": 3,
+          "min_players": 3,
+          "rebuy_chips": 0,
+          "schedule_id": null,
+          "addon_levels": 1,
+          "is_multi_day": false,
+          "label_as_new": false,
+          "rebuy_levels": 4,
+          "bounty_amount": 0,
+          "break_ends_at": null,
+          "buy_in_amount": 1,
+          "current_level": 0,
+          "flight_number": null,
+          "late_reg_mins": 0,
+          "max_reentries": 0,
+          "all_in_or_fold": false,
+          "big_blind_ante": false,
+          "hide_club_name": false,
+          "payout_percent": 10,
+          "spin_reveal_at": null,
+          "starting_chips": 1000,
+          "accelerated_mtt": false,
+          "blind_structure": "[{\"ante\": 0, \"level\": 1, \"bigBlind\": 20, \"duration\": 180, \"smallBlind\": 10}, {\"ante\": 0, \"level\": 2, \"bigBlind\": 30, \"duration\": 180, \"smallBlind\": 15}, {\"ante\": 0, \"level\": 3, \"bigBlind\": 40, \"duration\": 180, \"smallBlind\": 20}, {\"ante\": 0, \"level\": 4, \"bigBlind\": 60, \"duration\": 180, \"smallBlind\": 30}, {\"ante\": 0, \"level\": 5, \"bigBlind\": 80, \"duration\": 180, \"smallBlind\": 40}, {\"ante\": 0, \"level\": 6, \"bigBlind\": 100, \"duration\": 180, \"smallBlind\": 50}, {\"ante\": 0, \"level\": 7, \"bigBlind\": 120, \"duration\": 180, \"smallBlind\": 60}, {\"ante\": 0, \"level\": 8, \"bigBlind\": 150, \"duration\": 180, \"smallBlind\": 75}, {\"ante\": 0, \"level\": 9, \"bigBlind\": 180, \"duration\": 180, \"smallBlind\": 90}, {\"ante\": 0, \"level\": 10, \"bigBlind\": 210, \"duration\": 180, \"smallBlind\": 105}, {\"ante\": 0, \"level\": 11, \"bigBlind\": 290, \"duration\": 180, \"smallBlind\": 145}, {\"ante\": 0, \"level\": 12, \"bigBlind\": 410, \"duration\": 180, \"smallBlind\": 205}]",
+          "current_players": 2,
+          "format_contract": "spin-v1",
+          "is_premium_spin": false,
+          "late_reg_levels": 0,
+          "satellite_seats": null,
+          "spin_multiplier": 0,
+          "tournament_type": "SPIN",
+          "add_on_available": false,
+          "addon_from_start": false,
+          "bounty_pool_paid": 0,
+          "break_started_at": null,
+          "early_bird_chips": 0,
+          "guaranteed_prize": 0,
+          "level_started_at": null,
+          "payout_structure": "[{\"place\": 1, \"percentage\": 100}]",
+          "satellite_target": null,
+          "allow_rabbit_hunt": true,
+          "blind_level_state": null,
+          "bubble_protection": false,
+          "is_mystery_bounty": false,
+          "payout_unit_cents": 1,
+          "restart_source_id": null,
+          "short_description": null,
+          "spin_locked_tiers": null,
+          "early_bird_enabled": false,
+          "mystery_bounty_max": 0,
+          "mystery_bounty_min": 0,
+          "spin_reveal_lag_ms": null,
+          "action_time_seconds": 15,
+          "addon_break_minutes": 1,
+          "payout_math_version": 1,
+          "satellite_target_id": null,
+          "synchronized_breaks": false,
+          "addon_period_ends_at": null,
+          "mystery_bounty_stage": "pending",
+          "parent_tournament_id": null,
+          "prize_pool_finalized": false,
+          "survivors_advance_to": null,
+          "entry_contract_locked": true,
+          "final_table_triggered": false,
+          "restart_every_minutes": null,
+          "addon_period_triggered": false,
+          "authorized_to_register": false,
+          "mystery_bounty_profile": "classic",
+          "addon_period_started_at": null,
+          "final_table_deal_enabled": false,
+          "flight_end_chips_snapshot": null,
+          "mystery_bounty_activation": "at_the_money",
+          "mystery_bounty_pool_cents": null,
+          "mystery_bounty_top_percent": 20,
+          "mystery_bounty_activated_at": null,
+          "mystery_bounty_pool_percent": 50,
+          "mystery_bounty_activation_value": null,
+          "mystery_bounty_activated_players": null,
+          "mystery_bounty_regular_pool_percent": 50,
+          "mystery_bounty_activation_generation": 0
+        },
+        "entitlement_snapshot": {
+          "id": "0c89b19d-08a7-5b31-9f6e-5e6cdf09c4e0",
+          "gross": 1,
+          "user_id": "6800a1d8-6940-5ca3-b404-4a1b07a140db",
+          "created_at": "2026-10-06T15:32:59.734266+00:00",
+          "refund_fee": 0,
+          "refund_prize": 1,
+          "escrow_bucket": "wallet_gross",
+          "evidence_kind": "atomic_wallet_charge",
+          "refund_bounty": 0,
+          "tournament_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+          "charge_category": "tournament_buyin",
+          "registration_id": null,
+          "entitlement_kind": "wallet_charge",
+          "source_ledger_id": "c8f145ba-9065-55c5-b266-c5e7f441f4fe",
+          "source_ticket_id": null,
+          "source_award_place": null,
+          "source_satellite_id": null,
+          "refund_wallet_club_id": "a0000000-0000-0000-0000-000000000001"
+        },
+        "registration_snapshot": {
+          "id": "29d4ee1f-c1e8-5b4d-8595-76f22198bd41",
+          "chips": 0,
+          "prize": 0,
+          "add_on": false,
+          "rebuys": 0,
+          "status": "registered",
+          "club_id": "a0000000-0000-0000-0000-000000000001",
+          "user_id": "6800a1d8-6940-5ca3-b404-4a1b07a140db",
+          "position": null,
+          "table_id": null,
+          "username": "Synthetic Native Entry",
+          "chip_count": 0,
+          "seat_number": null,
+          "push_2m_sent": false,
+          "eliminated_at": null,
+          "push_15m_sent": false,
+          "registered_at": "2026-10-06T15:32:59.734266+00:00",
+          "tournament_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+          "current_bounty": 0,
+          "bounty_winnings": 0,
+          "bounties_collected": 0,
+          "rebuy_prompt_until": null,
+          "terminal_closed_at": null,
+          "source_satellite_id": null,
+          "elimination_sequence": null,
+          "mystery_bounty_value": 0,
+          "is_satellite_qualifier": false
+        },
+        "wallet_transaction_id": "64a676a2-1bc2-52b0-b354-0019c051068b"
+      },
+      "retirement": null
+    },
+    {
+      "roster": {
+        "id": "5916e79b-15e7-5b53-90d5-f4d7dd8b9c97",
+        "chips": 1000,
+        "prize": 0,
+        "add_on": false,
+        "rebuys": 0,
+        "status": "eliminated",
+        "club_id": "a41434bb-8d0c-400a-8f0d-e8b3d65afed4",
+        "user_id": "7a9caa56-52a5-5391-9d77-45c26f6d7f72",
+        "position": null,
+        "table_id": "5df641f6-51a4-5ab7-87cc-8ef63d4e859b",
+        "chip_count": 0,
+        "seat_number": 3,
+        "push_2m_sent": false,
+        "eliminated_at": "2026-10-06T15:33:05.898452+00:00",
+        "push_15m_sent": false,
+        "registered_at": "2026-10-06T15:33:00.047904+00:00",
+        "tournament_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+        "current_bounty": 0,
+        "bounty_winnings": 0,
+        "bounties_collected": 0,
+        "rebuy_prompt_until": null,
+        "terminal_closed_at": null,
+        "source_satellite_id": null,
+        "elimination_sequence": null,
+        "mystery_bounty_value": 0,
+        "is_satellite_qualifier": false
+      },
+      "seat": {
+        "id": "76118251-d03a-5b9f-bfe1-a18b7a6dd6a9",
+        "stack": 1000,
+        "status": "left",
+        "club_id": "a41434bb-8d0c-400a-8f0d-e8b3d65afed4",
+        "is_away": false,
+        "left_at": "2026-10-06T15:33:04.811778+00:00",
+        "user_id": "7a9caa56-52a5-5391-9d77-45c26f6d7f72",
+        "horse_id": "7a9caa56-52a5-5391-9d77-45c26f6d7f72",
+        "table_id": "5df641f6-51a4-5ab7-87cc-8ef63d4e859b",
+        "joined_at": "2026-10-06T15:33:00.047904+00:00",
+        "member_id": null,
+        "player_id": null,
+        "auto_rebuy": false,
+        "entry_hold": null,
+        "sit_out_at": null,
+        "seat_number": 3,
+        "occupancy_id": "45692b2f-a5f8-5ee8-abe5-2eec4911cafe",
+        "leave_pending": false,
+        "is_sitting_out": true,
+        "active_game_scope": null,
+        "active_parent_key": null,
+        "entry_post_agreed": false,
+        "terminal_closed_at": null,
+        "time_bank_remaining": 30,
+        "scheduled_leave_hands": null,
+        "time_bank_uses_remaining": 4
+      },
+      "funding": {
+        "id": "c8d1d629-0476-5247-abc1-72b680994848",
+        "asset": "chips",
+        "amount": 1,
+        "user_id": "7a9caa56-52a5-5391-9d77-45c26f6d7f72",
+        "ledger_id": "8a9bc0bf-608d-520c-b73c-d66b0e7a3090",
+        "operation": "entry",
+        "observed_at": "2026-10-06T15:33:00.146595+00:00",
+        "purchase_key": null,
+        "tournament_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+        "custody_result": null,
+        "entitlement_id": "53dd5ce2-5f0c-578c-ab34-a1a6c55f91b7",
+        "transaction_id": "960848490",
+        "funding_club_id": "a41434bb-8d0c-400a-8f0d-e8b3d65afed4",
+        "ledger_snapshot": {
+          "id": "8a9bc0bf-608d-520c-b73c-d66b0e7a3090",
+          "notes": null,
+          "amount": 1,
+          "status": "posted",
+          "club_id": "a41434bb-8d0c-400a-8f0d-e8b3d65afed4",
+          "db_role": "postgres",
+          "hand_id": null,
+          "to_type": "prize_liability",
+          "category": "tournament_buyin",
+          "epoch_id": 2,
+          "metadata": null,
+          "row_hash": "768ff40bcf1729e4f1628aca6de42b69d2c555a919bbdfca078025b18a3e6424",
+          "table_id": null,
+          "to_label": null,
+          "union_id": null,
+          "chain_seq": 12481928,
+          "from_type": "player_wallet",
+          "prev_hash": null,
+          "created_at": "2026-10-06T15:33:00.047904+00:00",
+          "from_label": null,
+          "description": "Synthetic Native Entry",
+          "causation_id": null,
+          "performed_by": "29218b47-c6ab-518e-b3af-e874c7b3e1d3",
+          "to_entity_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+          "actor_service": "PostgREST 14.5",
+          "settlement_id": null,
+          "tournament_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+          "correlation_id": null,
+          "from_entity_id": "7a9caa56-52a5-5391-9d77-45c26f6d7f72",
+          "pre_to_balance": null,
+          "idempotency_key": null,
+          "post_to_balance": null,
+          "pre_from_balance": null,
+          "post_from_balance": null
+        },
+        "registration_id": "5916e79b-15e7-5b53-90d5-f4d7dd8b9c97",
+        "wallet_snapshot": {
+          "id": "7d1b816e-26d2-543d-bf83-84e3193d2766",
+          "type": "debit",
+          "amount": 1,
+          "hand_id": null,
+          "user_id": "7a9caa56-52a5-5391-9d77-45c26f6d7f72",
+          "category": "tournament_buyin",
+          "table_id": null,
+          "created_at": "2026-10-06T15:33:00.047904+00:00",
+          "description": "Synthetic Native Entry",
+          "wallet_type": "PLAYER",
+          "balance_after": 34559.65,
+          "related_entity_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+          "terminal_closed_at": null
+        },
+        "tournament_snapshot": {
+          "id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+          "name": "Synthetic Native Entry",
+          "is_pko": false,
+          "status": "REGISTERING",
+          "club_id": "fade0000-0000-0000-0000-000000000001",
+          "is_xmtt": false,
+          "variant": "spin",
+          "ban_chat": false,
+          "ended_at": null,
+          "free_buy": false,
+          "is_rebuy": false,
+          "is_turbo": false,
+          "on_break": false,
+          "union_id": "fade0000-0000-0000-0000-000000000001",
+          "game_type": "PLO4",
+          "is_bounty": false,
+          "is_pinned": false,
+          "spin_type": "standard",
+          "addon_cost": 0,
+          "buy_in_fee": 0,
+          "created_at": "2026-10-06T15:27:30.317056+00:00",
+          "day_number": 1,
+          "is_private": false,
+          "is_reentry": false,
+          "max_rebuys": 0,
+          "prize_pool": 3,
+          "rebuy_cost": 0,
+          "start_time": "2026-10-06T15:32:36.704+00:00",
+          "started_at": null,
+          "table_size": 3,
+          "total_days": 1,
+          "total_rake": 0,
+          "updated_at": "2026-10-06T15:27:30.317056+00:00",
+          "addon_chips": 0,
+          "blind_speed": "standard",
+          "bounty_pool": 0,
+          "description": "Synthetic Native Entry",
+          "is_vip_only": false,
+          "max_players": 3,
+          "min_players": 3,
+          "rebuy_chips": 0,
+          "schedule_id": null,
+          "addon_levels": 1,
+          "is_multi_day": false,
+          "label_as_new": false,
+          "rebuy_levels": 4,
+          "bounty_amount": 0,
+          "break_ends_at": null,
+          "buy_in_amount": 1,
+          "current_level": 0,
+          "flight_number": null,
+          "late_reg_mins": 0,
+          "max_reentries": 0,
+          "all_in_or_fold": false,
+          "big_blind_ante": false,
+          "hide_club_name": false,
+          "payout_percent": 10,
+          "spin_reveal_at": null,
+          "starting_chips": 1000,
+          "accelerated_mtt": false,
+          "blind_structure": "[{\"ante\": 0, \"level\": 1, \"bigBlind\": 20, \"duration\": 180, \"smallBlind\": 10}, {\"ante\": 0, \"level\": 2, \"bigBlind\": 30, \"duration\": 180, \"smallBlind\": 15}, {\"ante\": 0, \"level\": 3, \"bigBlind\": 40, \"duration\": 180, \"smallBlind\": 20}, {\"ante\": 0, \"level\": 4, \"bigBlind\": 60, \"duration\": 180, \"smallBlind\": 30}, {\"ante\": 0, \"level\": 5, \"bigBlind\": 80, \"duration\": 180, \"smallBlind\": 40}, {\"ante\": 0, \"level\": 6, \"bigBlind\": 100, \"duration\": 180, \"smallBlind\": 50}, {\"ante\": 0, \"level\": 7, \"bigBlind\": 120, \"duration\": 180, \"smallBlind\": 60}, {\"ante\": 0, \"level\": 8, \"bigBlind\": 150, \"duration\": 180, \"smallBlind\": 75}, {\"ante\": 0, \"level\": 9, \"bigBlind\": 180, \"duration\": 180, \"smallBlind\": 90}, {\"ante\": 0, \"level\": 10, \"bigBlind\": 210, \"duration\": 180, \"smallBlind\": 105}, {\"ante\": 0, \"level\": 11, \"bigBlind\": 290, \"duration\": 180, \"smallBlind\": 145}, {\"ante\": 0, \"level\": 12, \"bigBlind\": 410, \"duration\": 180, \"smallBlind\": 205}]",
+          "current_players": 3,
+          "format_contract": "spin-v1",
+          "is_premium_spin": false,
+          "late_reg_levels": 0,
+          "satellite_seats": null,
+          "spin_multiplier": 0,
+          "tournament_type": "SPIN",
+          "add_on_available": false,
+          "addon_from_start": false,
+          "bounty_pool_paid": 0,
+          "break_started_at": null,
+          "early_bird_chips": 0,
+          "guaranteed_prize": 0,
+          "level_started_at": null,
+          "payout_structure": "[{\"place\": 1, \"percentage\": 100}]",
+          "satellite_target": null,
+          "allow_rabbit_hunt": true,
+          "blind_level_state": null,
+          "bubble_protection": false,
+          "is_mystery_bounty": false,
+          "payout_unit_cents": 1,
+          "restart_source_id": null,
+          "short_description": null,
+          "spin_locked_tiers": null,
+          "early_bird_enabled": false,
+          "mystery_bounty_max": 0,
+          "mystery_bounty_min": 0,
+          "spin_reveal_lag_ms": null,
+          "action_time_seconds": 15,
+          "addon_break_minutes": 1,
+          "payout_math_version": 1,
+          "satellite_target_id": null,
+          "synchronized_breaks": false,
+          "addon_period_ends_at": null,
+          "mystery_bounty_stage": "pending",
+          "parent_tournament_id": null,
+          "prize_pool_finalized": false,
+          "survivors_advance_to": null,
+          "entry_contract_locked": true,
+          "final_table_triggered": false,
+          "restart_every_minutes": null,
+          "addon_period_triggered": false,
+          "authorized_to_register": false,
+          "mystery_bounty_profile": "classic",
+          "addon_period_started_at": null,
+          "final_table_deal_enabled": false,
+          "flight_end_chips_snapshot": null,
+          "mystery_bounty_activation": "at_the_money",
+          "mystery_bounty_pool_cents": null,
+          "mystery_bounty_top_percent": 20,
+          "mystery_bounty_activated_at": null,
+          "mystery_bounty_pool_percent": 50,
+          "mystery_bounty_activation_value": null,
+          "mystery_bounty_activated_players": null,
+          "mystery_bounty_regular_pool_percent": 50,
+          "mystery_bounty_activation_generation": 0
+        },
+        "entitlement_snapshot": {
+          "id": "53dd5ce2-5f0c-578c-ab34-a1a6c55f91b7",
+          "gross": 1,
+          "user_id": "7a9caa56-52a5-5391-9d77-45c26f6d7f72",
+          "created_at": "2026-10-06T15:33:00.047904+00:00",
+          "refund_fee": 0,
+          "refund_prize": 1,
+          "escrow_bucket": "wallet_gross",
+          "evidence_kind": "atomic_wallet_charge",
+          "refund_bounty": 0,
+          "tournament_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+          "charge_category": "tournament_buyin",
+          "registration_id": null,
+          "entitlement_kind": "wallet_charge",
+          "source_ledger_id": "8a9bc0bf-608d-520c-b73c-d66b0e7a3090",
+          "source_ticket_id": null,
+          "source_award_place": null,
+          "source_satellite_id": null,
+          "refund_wallet_club_id": "a41434bb-8d0c-400a-8f0d-e8b3d65afed4"
+        },
+        "registration_snapshot": {
+          "id": "5916e79b-15e7-5b53-90d5-f4d7dd8b9c97",
+          "chips": 0,
+          "prize": 0,
+          "add_on": false,
+          "rebuys": 0,
+          "status": "registered",
+          "club_id": "a41434bb-8d0c-400a-8f0d-e8b3d65afed4",
+          "user_id": "7a9caa56-52a5-5391-9d77-45c26f6d7f72",
+          "position": null,
+          "table_id": null,
+          "username": "Synthetic Native Entry",
+          "chip_count": 0,
+          "seat_number": null,
+          "push_2m_sent": false,
+          "eliminated_at": null,
+          "push_15m_sent": false,
+          "registered_at": "2026-10-06T15:33:00.047904+00:00",
+          "tournament_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+          "current_bounty": 0,
+          "bounty_winnings": 0,
+          "bounties_collected": 0,
+          "rebuy_prompt_until": null,
+          "terminal_closed_at": null,
+          "source_satellite_id": null,
+          "elimination_sequence": null,
+          "mystery_bounty_value": 0,
+          "is_satellite_qualifier": false
+        },
+        "wallet_transaction_id": "7d1b816e-26d2-543d-bf83-84e3193d2766"
+      },
+      "retirement": {
+        "cohort": "horse",
+        "user_id": "7a9caa56-52a5-5391-9d77-45c26f6d7f72",
+        "benched_at": "2026-10-06T15:07:13.363855+00:00",
+        "retired_at": "2026-10-06T15:41:00.442354+00:00",
+        "replacement": null,
+        "horse_status": "disabled",
+        "profile_status": "deleted"
+      }
+    },
+    {
+      "roster": {
+        "id": "c2c58785-18fe-5be2-88e4-c61a90f77432",
+        "chips": 1000,
+        "prize": 0,
+        "add_on": false,
+        "rebuys": 0,
+        "status": "eliminated",
+        "club_id": "a0000000-0000-0000-0000-000000000001",
+        "user_id": "49834dba-2e57-505b-8f1d-0cc1e70bee19",
+        "position": null,
+        "table_id": "5df641f6-51a4-5ab7-87cc-8ef63d4e859b",
+        "chip_count": 0,
+        "seat_number": 1,
+        "push_2m_sent": false,
+        "eliminated_at": "2026-10-06T15:33:06.609876+00:00",
+        "push_15m_sent": false,
+        "registered_at": "2026-10-06T15:32:59.417643+00:00",
+        "tournament_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+        "current_bounty": 0,
+        "bounty_winnings": 0,
+        "bounties_collected": 0,
+        "rebuy_prompt_until": null,
+        "terminal_closed_at": null,
+        "source_satellite_id": null,
+        "elimination_sequence": null,
+        "mystery_bounty_value": 0,
+        "is_satellite_qualifier": false
+      },
+      "seat": {
+        "id": "c15ba936-6db2-59ce-9111-864ee968297e",
+        "stack": 1000,
+        "status": "left",
+        "club_id": "a0000000-0000-0000-0000-000000000001",
+        "is_away": false,
+        "left_at": "2026-10-06T15:33:04.814475+00:00",
+        "user_id": "49834dba-2e57-505b-8f1d-0cc1e70bee19",
+        "horse_id": "49834dba-2e57-505b-8f1d-0cc1e70bee19",
+        "table_id": "5df641f6-51a4-5ab7-87cc-8ef63d4e859b",
+        "joined_at": "2026-10-06T15:32:59.417643+00:00",
+        "member_id": null,
+        "player_id": null,
+        "auto_rebuy": false,
+        "entry_hold": null,
+        "sit_out_at": null,
+        "seat_number": 1,
+        "occupancy_id": "7eda6429-8b60-5225-b27e-58ee0e706f2a",
+        "leave_pending": false,
+        "is_sitting_out": true,
+        "active_game_scope": null,
+        "active_parent_key": null,
+        "entry_post_agreed": false,
+        "terminal_closed_at": null,
+        "time_bank_remaining": 30,
+        "scheduled_leave_hands": null,
+        "time_bank_uses_remaining": 4
+      },
+      "funding": {
+        "id": "cfa74a43-2f71-5d24-af3e-becc02697ba1",
+        "asset": "chips",
+        "amount": 1,
+        "user_id": "49834dba-2e57-505b-8f1d-0cc1e70bee19",
+        "ledger_id": "5981027a-8a49-549b-899e-0f5c178fbc77",
+        "operation": "entry",
+        "observed_at": "2026-10-06T15:32:59.556134+00:00",
+        "purchase_key": null,
+        "tournament_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+        "custody_result": null,
+        "entitlement_id": "4a612598-a0ad-55cc-b6dd-080160b31ff0",
+        "transaction_id": "960848134",
+        "funding_club_id": "a0000000-0000-0000-0000-000000000001",
+        "ledger_snapshot": {
+          "id": "5981027a-8a49-549b-899e-0f5c178fbc77",
+          "notes": null,
+          "amount": 1,
+          "status": "posted",
+          "club_id": "a0000000-0000-0000-0000-000000000001",
+          "db_role": "postgres",
+          "hand_id": null,
+          "to_type": "prize_liability",
+          "category": "tournament_buyin",
+          "epoch_id": 2,
+          "metadata": null,
+          "row_hash": "b0db300fcb5a7abb3ddc501ce84a6e773b87c4a5a4e25f97b8a3cd2cea372bc7",
+          "table_id": null,
+          "to_label": null,
+          "union_id": null,
+          "chain_seq": 12481911,
+          "from_type": "player_wallet",
+          "prev_hash": null,
+          "created_at": "2026-10-06T15:32:59.417643+00:00",
+          "from_label": null,
+          "description": "Synthetic Native Entry",
+          "causation_id": null,
+          "performed_by": "29218b47-c6ab-518e-b3af-e874c7b3e1d3",
+          "to_entity_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+          "actor_service": "PostgREST 14.5",
+          "settlement_id": null,
+          "tournament_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+          "correlation_id": null,
+          "from_entity_id": "49834dba-2e57-505b-8f1d-0cc1e70bee19",
+          "pre_to_balance": null,
+          "idempotency_key": null,
+          "post_to_balance": null,
+          "pre_from_balance": null,
+          "post_from_balance": null
+        },
+        "registration_id": "c2c58785-18fe-5be2-88e4-c61a90f77432",
+        "wallet_snapshot": {
+          "id": "c85ef44c-db9b-557b-92e1-1c421ad7c256",
+          "type": "debit",
+          "amount": 1,
+          "hand_id": null,
+          "user_id": "49834dba-2e57-505b-8f1d-0cc1e70bee19",
+          "category": "tournament_buyin",
+          "table_id": null,
+          "created_at": "2026-10-06T15:32:59.417643+00:00",
+          "description": "Synthetic Native Entry",
+          "wallet_type": "PLAYER",
+          "balance_after": 26024.79,
+          "related_entity_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+          "terminal_closed_at": null
+        },
+        "tournament_snapshot": {
+          "id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+          "name": "Synthetic Native Entry",
+          "is_pko": false,
+          "status": "REGISTERING",
+          "club_id": "fade0000-0000-0000-0000-000000000001",
+          "is_xmtt": false,
+          "variant": "spin",
+          "ban_chat": false,
+          "ended_at": null,
+          "free_buy": false,
+          "is_rebuy": false,
+          "is_turbo": false,
+          "on_break": false,
+          "union_id": "fade0000-0000-0000-0000-000000000001",
+          "game_type": "PLO4",
+          "is_bounty": false,
+          "is_pinned": false,
+          "spin_type": "standard",
+          "addon_cost": 0,
+          "buy_in_fee": 0,
+          "created_at": "2026-10-06T15:27:30.317056+00:00",
+          "day_number": 1,
+          "is_private": false,
+          "is_reentry": false,
+          "max_rebuys": 0,
+          "prize_pool": 1,
+          "rebuy_cost": 0,
+          "start_time": "2026-10-06T15:32:36.704+00:00",
+          "started_at": null,
+          "table_size": 3,
+          "total_days": 1,
+          "total_rake": 0,
+          "updated_at": "2026-10-06T15:27:30.317056+00:00",
+          "addon_chips": 0,
+          "blind_speed": "standard",
+          "bounty_pool": 0,
+          "description": "Synthetic Native Entry",
+          "is_vip_only": false,
+          "max_players": 3,
+          "min_players": 3,
+          "rebuy_chips": 0,
+          "schedule_id": null,
+          "addon_levels": 1,
+          "is_multi_day": false,
+          "label_as_new": false,
+          "rebuy_levels": 4,
+          "bounty_amount": 0,
+          "break_ends_at": null,
+          "buy_in_amount": 1,
+          "current_level": 0,
+          "flight_number": null,
+          "late_reg_mins": 0,
+          "max_reentries": 0,
+          "all_in_or_fold": false,
+          "big_blind_ante": false,
+          "hide_club_name": false,
+          "payout_percent": 10,
+          "spin_reveal_at": null,
+          "starting_chips": 1000,
+          "accelerated_mtt": false,
+          "blind_structure": "[{\"ante\": 0, \"level\": 1, \"bigBlind\": 20, \"duration\": 180, \"smallBlind\": 10}, {\"ante\": 0, \"level\": 2, \"bigBlind\": 30, \"duration\": 180, \"smallBlind\": 15}, {\"ante\": 0, \"level\": 3, \"bigBlind\": 40, \"duration\": 180, \"smallBlind\": 20}, {\"ante\": 0, \"level\": 4, \"bigBlind\": 60, \"duration\": 180, \"smallBlind\": 30}, {\"ante\": 0, \"level\": 5, \"bigBlind\": 80, \"duration\": 180, \"smallBlind\": 40}, {\"ante\": 0, \"level\": 6, \"bigBlind\": 100, \"duration\": 180, \"smallBlind\": 50}, {\"ante\": 0, \"level\": 7, \"bigBlind\": 120, \"duration\": 180, \"smallBlind\": 60}, {\"ante\": 0, \"level\": 8, \"bigBlind\": 150, \"duration\": 180, \"smallBlind\": 75}, {\"ante\": 0, \"level\": 9, \"bigBlind\": 180, \"duration\": 180, \"smallBlind\": 90}, {\"ante\": 0, \"level\": 10, \"bigBlind\": 210, \"duration\": 180, \"smallBlind\": 105}, {\"ante\": 0, \"level\": 11, \"bigBlind\": 290, \"duration\": 180, \"smallBlind\": 145}, {\"ante\": 0, \"level\": 12, \"bigBlind\": 410, \"duration\": 180, \"smallBlind\": 205}]",
+          "current_players": 1,
+          "format_contract": "spin-v1",
+          "is_premium_spin": false,
+          "late_reg_levels": 0,
+          "satellite_seats": null,
+          "spin_multiplier": 0,
+          "tournament_type": "SPIN",
+          "add_on_available": false,
+          "addon_from_start": false,
+          "bounty_pool_paid": 0,
+          "break_started_at": null,
+          "early_bird_chips": 0,
+          "guaranteed_prize": 0,
+          "level_started_at": null,
+          "payout_structure": "[{\"place\": 1, \"percentage\": 100}]",
+          "satellite_target": null,
+          "allow_rabbit_hunt": true,
+          "blind_level_state": null,
+          "bubble_protection": false,
+          "is_mystery_bounty": false,
+          "payout_unit_cents": 1,
+          "restart_source_id": null,
+          "short_description": null,
+          "spin_locked_tiers": null,
+          "early_bird_enabled": false,
+          "mystery_bounty_max": 0,
+          "mystery_bounty_min": 0,
+          "spin_reveal_lag_ms": null,
+          "action_time_seconds": 15,
+          "addon_break_minutes": 1,
+          "payout_math_version": 1,
+          "satellite_target_id": null,
+          "synchronized_breaks": false,
+          "addon_period_ends_at": null,
+          "mystery_bounty_stage": "pending",
+          "parent_tournament_id": null,
+          "prize_pool_finalized": false,
+          "survivors_advance_to": null,
+          "entry_contract_locked": true,
+          "final_table_triggered": false,
+          "restart_every_minutes": null,
+          "addon_period_triggered": false,
+          "authorized_to_register": false,
+          "mystery_bounty_profile": "classic",
+          "addon_period_started_at": null,
+          "final_table_deal_enabled": false,
+          "flight_end_chips_snapshot": null,
+          "mystery_bounty_activation": "at_the_money",
+          "mystery_bounty_pool_cents": null,
+          "mystery_bounty_top_percent": 20,
+          "mystery_bounty_activated_at": null,
+          "mystery_bounty_pool_percent": 50,
+          "mystery_bounty_activation_value": null,
+          "mystery_bounty_activated_players": null,
+          "mystery_bounty_regular_pool_percent": 50,
+          "mystery_bounty_activation_generation": 0
+        },
+        "entitlement_snapshot": {
+          "id": "4a612598-a0ad-55cc-b6dd-080160b31ff0",
+          "gross": 1,
+          "user_id": "49834dba-2e57-505b-8f1d-0cc1e70bee19",
+          "created_at": "2026-10-06T15:32:59.417643+00:00",
+          "refund_fee": 0,
+          "refund_prize": 1,
+          "escrow_bucket": "wallet_gross",
+          "evidence_kind": "atomic_wallet_charge",
+          "refund_bounty": 0,
+          "tournament_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+          "charge_category": "tournament_buyin",
+          "registration_id": null,
+          "entitlement_kind": "wallet_charge",
+          "source_ledger_id": "5981027a-8a49-549b-899e-0f5c178fbc77",
+          "source_ticket_id": null,
+          "source_award_place": null,
+          "source_satellite_id": null,
+          "refund_wallet_club_id": "a0000000-0000-0000-0000-000000000001"
+        },
+        "registration_snapshot": {
+          "id": "c2c58785-18fe-5be2-88e4-c61a90f77432",
+          "chips": 0,
+          "prize": 0,
+          "add_on": false,
+          "rebuys": 0,
+          "status": "registered",
+          "club_id": "a0000000-0000-0000-0000-000000000001",
+          "user_id": "49834dba-2e57-505b-8f1d-0cc1e70bee19",
+          "position": null,
+          "table_id": null,
+          "username": "Synthetic Native Entry",
+          "chip_count": 0,
+          "seat_number": null,
+          "push_2m_sent": false,
+          "eliminated_at": null,
+          "push_15m_sent": false,
+          "registered_at": "2026-10-06T15:32:59.417643+00:00",
+          "tournament_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+          "current_bounty": 0,
+          "bounty_winnings": 0,
+          "bounties_collected": 0,
+          "rebuy_prompt_until": null,
+          "terminal_closed_at": null,
+          "source_satellite_id": null,
+          "elimination_sequence": null,
+          "mystery_bounty_value": 0,
+          "is_satellite_qualifier": false
+        },
+        "wallet_transaction_id": "c85ef44c-db9b-557b-92e1-1c421ad7c256"
+      },
+      "retirement": {
+        "cohort": "horse",
+        "user_id": "49834dba-2e57-505b-8f1d-0cc1e70bee19",
+        "benched_at": "2026-10-06T15:07:13.364036+00:00",
+        "retired_at": "2026-10-06T15:41:00.442613+00:00",
+        "replacement": null,
+        "horse_status": "disabled",
+        "profile_status": "deleted"
+      }
+    }
+  ],
+  "spin": {
+    "reserve": [
+      {
+        "id": "43f8866b-8578-5a7d-ad56-81c1ab36d06e",
+        "kind": "contribution",
+        "note": "three exact paid buy-ins less fixed rake",
+        "seats": 3,
+        "amount": 2.76,
+        "buy_in": 1,
+        "club_id": "fade0000-0000-0000-0000-000000000001",
+        "created_at": "2026-10-06T15:33:00.047904+00:00",
+        "house_rake": 0.24,
+        "multiplier": null,
+        "balance_after": 68039.96,
+        "tournament_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+        "terminal_closed_at": null
+      },
+      {
+        "id": "a7462fce-fb36-5344-aa20-27fcf9d2d051",
+        "kind": "jackpot_draw",
+        "note": "prize pool",
+        "seats": 3,
+        "amount": -3,
+        "buy_in": 1,
+        "club_id": "fade0000-0000-0000-0000-000000000001",
+        "created_at": "2026-10-06T15:33:01.673677+00:00",
+        "house_rake": 0.24,
+        "multiplier": 3,
+        "balance_after": 68368.16,
+        "tournament_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+        "terminal_closed_at": null
+      }
+    ],
+    "journal": [
+      {
+        "id": "bb8c9e35-ff15-5b86-b952-45c64c0272db",
+        "notes": null,
+        "amount": 2.76,
+        "status": "posted",
+        "club_id": "fade0000-0000-0000-0000-000000000001",
+        "db_role": "postgres",
+        "hand_id": null,
+        "to_type": "spin_reserve",
+        "category": "spin_entry",
+        "epoch_id": 2,
+        "metadata": null,
+        "row_hash": "18c5c32894081eae310bab5bd489f66aaba2f62725296830b508448050d7ea36",
+        "table_id": null,
+        "to_label": "spin_bonus_pools.balance",
+        "union_id": null,
+        "chain_seq": 12481930,
+        "from_type": "prize_liability",
+        "prev_hash": "a11f65dc852b53ed9a0d7057fba28dfaa9ab96ff3afd0f64ebc9a29cd0f215ba",
+        "created_at": "2026-10-06T15:33:00.047904+00:00",
+        "from_label": null,
+        "description": "Synthetic Native Entry",
+        "causation_id": null,
+        "performed_by": "29218b47-c6ab-518e-b3af-e874c7b3e1d3",
+        "to_entity_id": "8dd869f8-a576-5746-adad-304f4e444bc5",
+        "actor_service": "PostgREST 14.5",
+        "settlement_id": null,
+        "tournament_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+        "correlation_id": null,
+        "from_entity_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+        "pre_to_balance": 68037.2,
+        "idempotency_key": "spin:88fd351e-52e4-5765-a39b-3eef190fb755:entry",
+        "post_to_balance": 68039.96,
+        "pre_from_balance": null,
+        "post_from_balance": null
+      }
+    ],
+    "draw": [
+      {
+        "receipt": {
+          "ok": true,
+          "buy_in": 1,
+          "locked": [],
+          "replay": false,
+          "balance": 68368.16,
+          "entrants": [
+            {
+              "user_id": "7a9caa56-52a5-5391-9d77-45c26f6d7f72",
+              "registration_id": "5916e79b-15e7-5b53-90d5-f4d7dd8b9c97"
+            },
+            {
+              "user_id": "6800a1d8-6940-5ca3-b404-4a1b07a140db",
+              "registration_id": "29d4ee1f-c1e8-5b4d-8595-76f22198bd41"
+            },
+            {
+              "user_id": "49834dba-2e57-505b-8f1d-0cc1e70bee19",
+              "registration_id": "c2c58785-18fe-5be2-88e4-c61a90f77432"
+            }
+          ],
+          "owner_id": "fade0000-0000-0000-0000-000000000001",
+          "collected": 3,
+          "launch_id": "f4296426-1d74-5d26-99b7-3d966bfa9a1e",
+          "house_rake": 0.24,
+          "multiplier": 3,
+          "prize_pool": 3,
+          "reserve_in": 2.76,
+          "draw_inputs": {
+            "ok": true,
+            "locked": [],
+            "owner_id": "fade0000-0000-0000-0000-000000000001",
+            "multiplier": 3,
+            "contribution": 0,
+            "highest_stake": 100,
+            "eligible_count": 8,
+            "reserve_balance": 68371.16
+          },
+          "rule_sha256": "e9abcaae071463a8de2e2fbe5d8709b1869a2055c3c05d7fda9cf6100cf5934f",
+          "pool_covered": 3,
+          "rule_manifest": {
+            "seats": 3,
+            "tiers": [
+              {
+                "freq": 4809776,
+                "payouts": [1],
+                "multiplier": 2,
+                "levelMinutes": 3,
+                "blind_structure": [
+                  {
+                    "ante": 0,
+                    "level": 1,
+                    "bigBlind": 20,
+                    "duration": 180,
+                    "smallBlind": 10
+                  },
+                  {
+                    "ante": 0,
+                    "level": 2,
+                    "bigBlind": 30,
+                    "duration": 180,
+                    "smallBlind": 15
+                  },
+                  {
+                    "ante": 0,
+                    "level": 3,
+                    "bigBlind": 40,
+                    "duration": 180,
+                    "smallBlind": 20
+                  },
+                  {
+                    "ante": 0,
+                    "level": 4,
+                    "bigBlind": 60,
+                    "duration": 180,
+                    "smallBlind": 30
+                  },
+                  {
+                    "ante": 0,
+                    "level": 5,
+                    "bigBlind": 80,
+                    "duration": 180,
+                    "smallBlind": 40
+                  },
+                  {
+                    "ante": 0,
+                    "level": 6,
+                    "bigBlind": 100,
+                    "duration": 180,
+                    "smallBlind": 50
+                  },
+                  {
+                    "ante": 0,
+                    "level": 7,
+                    "bigBlind": 120,
+                    "duration": 180,
+                    "smallBlind": 60
+                  },
+                  {
+                    "ante": 0,
+                    "level": 8,
+                    "bigBlind": 150,
+                    "duration": 180,
+                    "smallBlind": 75
+                  },
+                  {
+                    "ante": 0,
+                    "level": 9,
+                    "bigBlind": 180,
+                    "duration": 180,
+                    "smallBlind": 90
+                  },
+                  {
+                    "ante": 0,
+                    "level": 10,
+                    "bigBlind": 210,
+                    "duration": 180,
+                    "smallBlind": 105
+                  },
+                  {
+                    "ante": 0,
+                    "level": 11,
+                    "bigBlind": 290,
+                    "duration": 180,
+                    "smallBlind": 145
+                  },
+                  {
+                    "ante": 0,
+                    "level": 12,
+                    "bigBlind": 410,
+                    "duration": 180,
+                    "smallBlind": 205,
+                    "spinContinuation": {
+                      "growth": 1.4,
+                      "version": 1,
+                      "roundBigTo": 10,
+                      "anchorLevel": 10,
+                      "anchorBigBlind": 210
+                    }
+                  }
+                ],
+                "payout_structure": [
+                  {
+                    "place": 1,
+                    "percentage": 100
+                  }
+                ],
+                "reserveThresholdX": 0
+              },
+              {
+                "freq": 3930716,
+                "payouts": [1],
+                "multiplier": 3,
+                "levelMinutes": 3,
+                "blind_structure": [
+                  {
+                    "ante": 0,
+                    "level": 1,
+                    "bigBlind": 20,
+                    "duration": 180,
+                    "smallBlind": 10
+                  },
+                  {
+                    "ante": 0,
+                    "level": 2,
+                    "bigBlind": 30,
+                    "duration": 180,
+                    "smallBlind": 15
+                  },
+                  {
+                    "ante": 0,
+                    "level": 3,
+                    "bigBlind": 40,
+                    "duration": 180,
+                    "smallBlind": 20
+                  },
+                  {
+                    "ante": 0,
+                    "level": 4,
+                    "bigBlind": 60,
+                    "duration": 180,
+                    "smallBlind": 30
+                  },
+                  {
+                    "ante": 0,
+                    "level": 5,
+                    "bigBlind": 80,
+                    "duration": 180,
+                    "smallBlind": 40
+                  },
+                  {
+                    "ante": 0,
+                    "level": 6,
+                    "bigBlind": 100,
+                    "duration": 180,
+                    "smallBlind": 50
+                  },
+                  {
+                    "ante": 0,
+                    "level": 7,
+                    "bigBlind": 120,
+                    "duration": 180,
+                    "smallBlind": 60
+                  },
+                  {
+                    "ante": 0,
+                    "level": 8,
+                    "bigBlind": 150,
+                    "duration": 180,
+                    "smallBlind": 75
+                  },
+                  {
+                    "ante": 0,
+                    "level": 9,
+                    "bigBlind": 180,
+                    "duration": 180,
+                    "smallBlind": 90
+                  },
+                  {
+                    "ante": 0,
+                    "level": 10,
+                    "bigBlind": 210,
+                    "duration": 180,
+                    "smallBlind": 105
+                  },
+                  {
+                    "ante": 0,
+                    "level": 11,
+                    "bigBlind": 290,
+                    "duration": 180,
+                    "smallBlind": 145
+                  },
+                  {
+                    "ante": 0,
+                    "level": 12,
+                    "bigBlind": 410,
+                    "duration": 180,
+                    "smallBlind": 205,
+                    "spinContinuation": {
+                      "growth": 1.4,
+                      "version": 1,
+                      "roundBigTo": 10,
+                      "anchorLevel": 10,
+                      "anchorBigBlind": 210
+                    }
+                  }
+                ],
+                "payout_structure": [
+                  {
+                    "place": 1,
+                    "percentage": 100
+                  }
+                ],
+                "reserveThresholdX": 0
+              },
+              {
+                "freq": 900000,
+                "payouts": [1],
+                "multiplier": 4,
+                "levelMinutes": 3,
+                "blind_structure": [
+                  {
+                    "ante": 0,
+                    "level": 1,
+                    "bigBlind": 20,
+                    "duration": 180,
+                    "smallBlind": 10
+                  },
+                  {
+                    "ante": 0,
+                    "level": 2,
+                    "bigBlind": 30,
+                    "duration": 180,
+                    "smallBlind": 15
+                  },
+                  {
+                    "ante": 0,
+                    "level": 3,
+                    "bigBlind": 40,
+                    "duration": 180,
+                    "smallBlind": 20
+                  },
+                  {
+                    "ante": 0,
+                    "level": 4,
+                    "bigBlind": 60,
+                    "duration": 180,
+                    "smallBlind": 30
+                  },
+                  {
+                    "ante": 0,
+                    "level": 5,
+                    "bigBlind": 80,
+                    "duration": 180,
+                    "smallBlind": 40
+                  },
+                  {
+                    "ante": 0,
+                    "level": 6,
+                    "bigBlind": 100,
+                    "duration": 180,
+                    "smallBlind": 50
+                  },
+                  {
+                    "ante": 0,
+                    "level": 7,
+                    "bigBlind": 120,
+                    "duration": 180,
+                    "smallBlind": 60
+                  },
+                  {
+                    "ante": 0,
+                    "level": 8,
+                    "bigBlind": 150,
+                    "duration": 180,
+                    "smallBlind": 75
+                  },
+                  {
+                    "ante": 0,
+                    "level": 9,
+                    "bigBlind": 180,
+                    "duration": 180,
+                    "smallBlind": 90
+                  },
+                  {
+                    "ante": 0,
+                    "level": 10,
+                    "bigBlind": 210,
+                    "duration": 180,
+                    "smallBlind": 105
+                  },
+                  {
+                    "ante": 0,
+                    "level": 11,
+                    "bigBlind": 290,
+                    "duration": 180,
+                    "smallBlind": 145
+                  },
+                  {
+                    "ante": 0,
+                    "level": 12,
+                    "bigBlind": 410,
+                    "duration": 180,
+                    "smallBlind": 205,
+                    "spinContinuation": {
+                      "growth": 1.4,
+                      "version": 1,
+                      "roundBigTo": 10,
+                      "anchorLevel": 10,
+                      "anchorBigBlind": 210
+                    }
+                  }
+                ],
+                "payout_structure": [
+                  {
+                    "place": 1,
+                    "percentage": 100
+                  }
+                ],
+                "reserveThresholdX": 0
+              },
+              {
+                "freq": 250000,
+                "payouts": [1],
+                "multiplier": 5,
+                "levelMinutes": 3,
+                "blind_structure": [
+                  {
+                    "ante": 0,
+                    "level": 1,
+                    "bigBlind": 20,
+                    "duration": 180,
+                    "smallBlind": 10
+                  },
+                  {
+                    "ante": 0,
+                    "level": 2,
+                    "bigBlind": 30,
+                    "duration": 180,
+                    "smallBlind": 15
+                  },
+                  {
+                    "ante": 0,
+                    "level": 3,
+                    "bigBlind": 40,
+                    "duration": 180,
+                    "smallBlind": 20
+                  },
+                  {
+                    "ante": 0,
+                    "level": 4,
+                    "bigBlind": 60,
+                    "duration": 180,
+                    "smallBlind": 30
+                  },
+                  {
+                    "ante": 0,
+                    "level": 5,
+                    "bigBlind": 80,
+                    "duration": 180,
+                    "smallBlind": 40
+                  },
+                  {
+                    "ante": 0,
+                    "level": 6,
+                    "bigBlind": 100,
+                    "duration": 180,
+                    "smallBlind": 50
+                  },
+                  {
+                    "ante": 0,
+                    "level": 7,
+                    "bigBlind": 120,
+                    "duration": 180,
+                    "smallBlind": 60
+                  },
+                  {
+                    "ante": 0,
+                    "level": 8,
+                    "bigBlind": 150,
+                    "duration": 180,
+                    "smallBlind": 75
+                  },
+                  {
+                    "ante": 0,
+                    "level": 9,
+                    "bigBlind": 180,
+                    "duration": 180,
+                    "smallBlind": 90
+                  },
+                  {
+                    "ante": 0,
+                    "level": 10,
+                    "bigBlind": 210,
+                    "duration": 180,
+                    "smallBlind": 105
+                  },
+                  {
+                    "ante": 0,
+                    "level": 11,
+                    "bigBlind": 290,
+                    "duration": 180,
+                    "smallBlind": 145
+                  },
+                  {
+                    "ante": 0,
+                    "level": 12,
+                    "bigBlind": 410,
+                    "duration": 180,
+                    "smallBlind": 205,
+                    "spinContinuation": {
+                      "growth": 1.4,
+                      "version": 1,
+                      "roundBigTo": 10,
+                      "anchorLevel": 10,
+                      "anchorBigBlind": 210
+                    }
+                  }
+                ],
+                "payout_structure": [
+                  {
+                    "place": 1,
+                    "percentage": 100
+                  }
+                ],
+                "reserveThresholdX": 0
+              },
+              {
+                "freq": 100000,
+                "payouts": [0.8, 0.2],
+                "multiplier": 10,
+                "levelMinutes": 3,
+                "blind_structure": [
+                  {
+                    "ante": 0,
+                    "level": 1,
+                    "bigBlind": 20,
+                    "duration": 180,
+                    "smallBlind": 10
+                  },
+                  {
+                    "ante": 0,
+                    "level": 2,
+                    "bigBlind": 30,
+                    "duration": 180,
+                    "smallBlind": 15
+                  },
+                  {
+                    "ante": 0,
+                    "level": 3,
+                    "bigBlind": 40,
+                    "duration": 180,
+                    "smallBlind": 20
+                  },
+                  {
+                    "ante": 0,
+                    "level": 4,
+                    "bigBlind": 60,
+                    "duration": 180,
+                    "smallBlind": 30
+                  },
+                  {
+                    "ante": 0,
+                    "level": 5,
+                    "bigBlind": 80,
+                    "duration": 180,
+                    "smallBlind": 40
+                  },
+                  {
+                    "ante": 0,
+                    "level": 6,
+                    "bigBlind": 100,
+                    "duration": 180,
+                    "smallBlind": 50
+                  },
+                  {
+                    "ante": 0,
+                    "level": 7,
+                    "bigBlind": 120,
+                    "duration": 180,
+                    "smallBlind": 60
+                  },
+                  {
+                    "ante": 0,
+                    "level": 8,
+                    "bigBlind": 150,
+                    "duration": 180,
+                    "smallBlind": 75
+                  },
+                  {
+                    "ante": 0,
+                    "level": 9,
+                    "bigBlind": 180,
+                    "duration": 180,
+                    "smallBlind": 90
+                  },
+                  {
+                    "ante": 0,
+                    "level": 10,
+                    "bigBlind": 210,
+                    "duration": 180,
+                    "smallBlind": 105
+                  },
+                  {
+                    "ante": 0,
+                    "level": 11,
+                    "bigBlind": 290,
+                    "duration": 180,
+                    "smallBlind": 145
+                  },
+                  {
+                    "ante": 0,
+                    "level": 12,
+                    "bigBlind": 410,
+                    "duration": 180,
+                    "smallBlind": 205,
+                    "spinContinuation": {
+                      "growth": 1.4,
+                      "version": 1,
+                      "roundBigTo": 10,
+                      "anchorLevel": 10,
+                      "anchorBigBlind": 210
+                    }
+                  }
+                ],
+                "payout_structure": [
+                  {
+                    "place": 1,
+                    "percentage": 80
+                  },
+                  {
+                    "place": 2,
+                    "percentage": 20
+                  }
+                ],
+                "reserveThresholdX": 0
+              },
+              {
+                "freq": 7500,
+                "payouts": [0.8, 0.12, 0.08],
+                "multiplier": 25,
+                "levelMinutes": 3,
+                "blind_structure": [
+                  {
+                    "ante": 0,
+                    "level": 1,
+                    "bigBlind": 20,
+                    "duration": 180,
+                    "smallBlind": 10
+                  },
+                  {
+                    "ante": 0,
+                    "level": 2,
+                    "bigBlind": 30,
+                    "duration": 180,
+                    "smallBlind": 15
+                  },
+                  {
+                    "ante": 0,
+                    "level": 3,
+                    "bigBlind": 40,
+                    "duration": 180,
+                    "smallBlind": 20
+                  },
+                  {
+                    "ante": 0,
+                    "level": 4,
+                    "bigBlind": 60,
+                    "duration": 180,
+                    "smallBlind": 30
+                  },
+                  {
+                    "ante": 0,
+                    "level": 5,
+                    "bigBlind": 80,
+                    "duration": 180,
+                    "smallBlind": 40
+                  },
+                  {
+                    "ante": 0,
+                    "level": 6,
+                    "bigBlind": 100,
+                    "duration": 180,
+                    "smallBlind": 50
+                  },
+                  {
+                    "ante": 0,
+                    "level": 7,
+                    "bigBlind": 120,
+                    "duration": 180,
+                    "smallBlind": 60
+                  },
+                  {
+                    "ante": 0,
+                    "level": 8,
+                    "bigBlind": 150,
+                    "duration": 180,
+                    "smallBlind": 75
+                  },
+                  {
+                    "ante": 0,
+                    "level": 9,
+                    "bigBlind": 180,
+                    "duration": 180,
+                    "smallBlind": 90
+                  },
+                  {
+                    "ante": 0,
+                    "level": 10,
+                    "bigBlind": 210,
+                    "duration": 180,
+                    "smallBlind": 105
+                  },
+                  {
+                    "ante": 0,
+                    "level": 11,
+                    "bigBlind": 290,
+                    "duration": 180,
+                    "smallBlind": 145
+                  },
+                  {
+                    "ante": 0,
+                    "level": 12,
+                    "bigBlind": 410,
+                    "duration": 180,
+                    "smallBlind": 205,
+                    "spinContinuation": {
+                      "growth": 1.4,
+                      "version": 1,
+                      "roundBigTo": 10,
+                      "anchorLevel": 10,
+                      "anchorBigBlind": 210
+                    }
+                  }
+                ],
+                "payout_structure": [
+                  {
+                    "place": 1,
+                    "percentage": 80
+                  },
+                  {
+                    "place": 2,
+                    "percentage": 12
+                  },
+                  {
+                    "place": 3,
+                    "percentage": 8
+                  }
+                ],
+                "reserveThresholdX": 0
+              },
+              {
+                "freq": 1000,
+                "payouts": [0.8, 0.12, 0.08],
+                "multiplier": 50,
+                "levelMinutes": 3,
+                "blind_structure": [
+                  {
+                    "ante": 0,
+                    "level": 1,
+                    "bigBlind": 20,
+                    "duration": 180,
+                    "smallBlind": 10
+                  },
+                  {
+                    "ante": 0,
+                    "level": 2,
+                    "bigBlind": 30,
+                    "duration": 180,
+                    "smallBlind": 15
+                  },
+                  {
+                    "ante": 0,
+                    "level": 3,
+                    "bigBlind": 40,
+                    "duration": 180,
+                    "smallBlind": 20
+                  },
+                  {
+                    "ante": 0,
+                    "level": 4,
+                    "bigBlind": 60,
+                    "duration": 180,
+                    "smallBlind": 30
+                  },
+                  {
+                    "ante": 0,
+                    "level": 5,
+                    "bigBlind": 80,
+                    "duration": 180,
+                    "smallBlind": 40
+                  },
+                  {
+                    "ante": 0,
+                    "level": 6,
+                    "bigBlind": 100,
+                    "duration": 180,
+                    "smallBlind": 50
+                  },
+                  {
+                    "ante": 0,
+                    "level": 7,
+                    "bigBlind": 120,
+                    "duration": 180,
+                    "smallBlind": 60
+                  },
+                  {
+                    "ante": 0,
+                    "level": 8,
+                    "bigBlind": 150,
+                    "duration": 180,
+                    "smallBlind": 75
+                  },
+                  {
+                    "ante": 0,
+                    "level": 9,
+                    "bigBlind": 180,
+                    "duration": 180,
+                    "smallBlind": 90
+                  },
+                  {
+                    "ante": 0,
+                    "level": 10,
+                    "bigBlind": 210,
+                    "duration": 180,
+                    "smallBlind": 105
+                  },
+                  {
+                    "ante": 0,
+                    "level": 11,
+                    "bigBlind": 290,
+                    "duration": 180,
+                    "smallBlind": 145
+                  },
+                  {
+                    "ante": 0,
+                    "level": 12,
+                    "bigBlind": 410,
+                    "duration": 180,
+                    "smallBlind": 205,
+                    "spinContinuation": {
+                      "growth": 1.4,
+                      "version": 1,
+                      "roundBigTo": 10,
+                      "anchorLevel": 10,
+                      "anchorBigBlind": 210
+                    }
+                  }
+                ],
+                "payout_structure": [
+                  {
+                    "place": 1,
+                    "percentage": 80
+                  },
+                  {
+                    "place": 2,
+                    "percentage": 12
+                  },
+                  {
+                    "place": 3,
+                    "percentage": 8
+                  }
+                ],
+                "reserveThresholdX": 0
+              },
+              {
+                "freq": 1008,
+                "payouts": [0.8, 0.12, 0.08],
+                "multiplier": 100,
+                "levelMinutes": 3,
+                "blind_structure": [
+                  {
+                    "ante": 0,
+                    "level": 1,
+                    "bigBlind": 20,
+                    "duration": 180,
+                    "smallBlind": 10
+                  },
+                  {
+                    "ante": 0,
+                    "level": 2,
+                    "bigBlind": 30,
+                    "duration": 180,
+                    "smallBlind": 15
+                  },
+                  {
+                    "ante": 0,
+                    "level": 3,
+                    "bigBlind": 40,
+                    "duration": 180,
+                    "smallBlind": 20
+                  },
+                  {
+                    "ante": 0,
+                    "level": 4,
+                    "bigBlind": 60,
+                    "duration": 180,
+                    "smallBlind": 30
+                  },
+                  {
+                    "ante": 0,
+                    "level": 5,
+                    "bigBlind": 80,
+                    "duration": 180,
+                    "smallBlind": 40
+                  },
+                  {
+                    "ante": 0,
+                    "level": 6,
+                    "bigBlind": 100,
+                    "duration": 180,
+                    "smallBlind": 50
+                  },
+                  {
+                    "ante": 0,
+                    "level": 7,
+                    "bigBlind": 120,
+                    "duration": 180,
+                    "smallBlind": 60
+                  },
+                  {
+                    "ante": 0,
+                    "level": 8,
+                    "bigBlind": 150,
+                    "duration": 180,
+                    "smallBlind": 75
+                  },
+                  {
+                    "ante": 0,
+                    "level": 9,
+                    "bigBlind": 180,
+                    "duration": 180,
+                    "smallBlind": 90
+                  },
+                  {
+                    "ante": 0,
+                    "level": 10,
+                    "bigBlind": 210,
+                    "duration": 180,
+                    "smallBlind": 105
+                  },
+                  {
+                    "ante": 0,
+                    "level": 11,
+                    "bigBlind": 290,
+                    "duration": 180,
+                    "smallBlind": 145
+                  },
+                  {
+                    "ante": 0,
+                    "level": 12,
+                    "bigBlind": 410,
+                    "duration": 180,
+                    "smallBlind": 205,
+                    "spinContinuation": {
+                      "growth": 1.4,
+                      "version": 1,
+                      "roundBigTo": 10,
+                      "anchorLevel": 10,
+                      "anchorBigBlind": 210
+                    }
+                  }
+                ],
+                "payout_structure": [
+                  {
+                    "place": 1,
+                    "percentage": 80
+                  },
+                  {
+                    "place": 2,
+                    "percentage": 12
+                  },
+                  {
+                    "place": 3,
+                    "percentage": 8
+                  }
+                ],
+                "reserveThresholdX": 1.5
+              }
+            ],
+            "buy_in": 1,
+            "version": 1,
+            "rake_rate": 0.08,
+            "starting_chips": 1000,
+            "draw_function_md5": "9530aa9c1b2c05604e3af611aa6b7ce8"
+          },
+          "seed_returned": 0,
+          "tournament_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+          "starting_chips": 1000,
+          "blind_structure": [
+            {
+              "ante": 0,
+              "level": 1,
+              "bigBlind": 20,
+              "duration": 180,
+              "smallBlind": 10
+            },
+            {
+              "ante": 0,
+              "level": 2,
+              "bigBlind": 30,
+              "duration": 180,
+              "smallBlind": 15
+            },
+            {
+              "ante": 0,
+              "level": 3,
+              "bigBlind": 40,
+              "duration": 180,
+              "smallBlind": 20
+            },
+            {
+              "ante": 0,
+              "level": 4,
+              "bigBlind": 60,
+              "duration": 180,
+              "smallBlind": 30
+            },
+            {
+              "ante": 0,
+              "level": 5,
+              "bigBlind": 80,
+              "duration": 180,
+              "smallBlind": 40
+            },
+            {
+              "ante": 0,
+              "level": 6,
+              "bigBlind": 100,
+              "duration": 180,
+              "smallBlind": 50
+            },
+            {
+              "ante": 0,
+              "level": 7,
+              "bigBlind": 120,
+              "duration": 180,
+              "smallBlind": 60
+            },
+            {
+              "ante": 0,
+              "level": 8,
+              "bigBlind": 150,
+              "duration": 180,
+              "smallBlind": 75
+            },
+            {
+              "ante": 0,
+              "level": 9,
+              "bigBlind": 180,
+              "duration": 180,
+              "smallBlind": 90
+            },
+            {
+              "ante": 0,
+              "level": 10,
+              "bigBlind": 210,
+              "duration": 180,
+              "smallBlind": 105
+            },
+            {
+              "ante": 0,
+              "level": 11,
+              "bigBlind": 290,
+              "duration": 180,
+              "smallBlind": 145
+            },
+            {
+              "ante": 0,
+              "level": 12,
+              "bigBlind": 410,
+              "duration": 180,
+              "smallBlind": 205,
+              "spinContinuation": {
+                "growth": 1.4,
+                "version": 1,
+                "roundBigTo": 10,
+                "anchorLevel": 10,
+                "anchorBigBlind": 210
+              }
+            }
+          ],
+          "rule_provenance": "at_draw",
+          "payout_structure": [
+            {
+              "place": 1,
+              "percentage": 100
+            }
+          ],
+          "seed_outstanding": 20000,
+          "operator_shortfall": 0,
+          "source_wallet_after": null,
+          "entry_booked_at_seat": true
+        },
+        "entrants": [
+          {
+            "user_id": "7a9caa56-52a5-5391-9d77-45c26f6d7f72",
+            "registration_id": "5916e79b-15e7-5b53-90d5-f4d7dd8b9c97"
+          },
+          {
+            "user_id": "6800a1d8-6940-5ca3-b404-4a1b07a140db",
+            "registration_id": "29d4ee1f-c1e8-5b4d-8595-76f22198bd41"
+          },
+          {
+            "user_id": "49834dba-2e57-505b-8f1d-0cc1e70bee19",
+            "registration_id": "c2c58785-18fe-5be2-88e4-c61a90f77432"
+          }
+        ],
+        "launch_id": "f4296426-1d74-5d26-99b7-3d966bfa9a1e",
+        "created_at": "2026-10-06T15:33:01.673677+00:00",
+        "rule_sha256": "e9abcaae071463a8de2e2fbe5d8709b1869a2055c3c05d7fda9cf6100cf5934f",
+        "rule_manifest": {
+          "seats": 3,
+          "tiers": [
+            {
+              "freq": 4809776,
+              "payouts": [1],
+              "multiplier": 2,
+              "levelMinutes": 3,
+              "blind_structure": [
+                {
+                  "ante": 0,
+                  "level": 1,
+                  "bigBlind": 20,
+                  "duration": 180,
+                  "smallBlind": 10
+                },
+                {
+                  "ante": 0,
+                  "level": 2,
+                  "bigBlind": 30,
+                  "duration": 180,
+                  "smallBlind": 15
+                },
+                {
+                  "ante": 0,
+                  "level": 3,
+                  "bigBlind": 40,
+                  "duration": 180,
+                  "smallBlind": 20
+                },
+                {
+                  "ante": 0,
+                  "level": 4,
+                  "bigBlind": 60,
+                  "duration": 180,
+                  "smallBlind": 30
+                },
+                {
+                  "ante": 0,
+                  "level": 5,
+                  "bigBlind": 80,
+                  "duration": 180,
+                  "smallBlind": 40
+                },
+                {
+                  "ante": 0,
+                  "level": 6,
+                  "bigBlind": 100,
+                  "duration": 180,
+                  "smallBlind": 50
+                },
+                {
+                  "ante": 0,
+                  "level": 7,
+                  "bigBlind": 120,
+                  "duration": 180,
+                  "smallBlind": 60
+                },
+                {
+                  "ante": 0,
+                  "level": 8,
+                  "bigBlind": 150,
+                  "duration": 180,
+                  "smallBlind": 75
+                },
+                {
+                  "ante": 0,
+                  "level": 9,
+                  "bigBlind": 180,
+                  "duration": 180,
+                  "smallBlind": 90
+                },
+                {
+                  "ante": 0,
+                  "level": 10,
+                  "bigBlind": 210,
+                  "duration": 180,
+                  "smallBlind": 105
+                },
+                {
+                  "ante": 0,
+                  "level": 11,
+                  "bigBlind": 290,
+                  "duration": 180,
+                  "smallBlind": 145
+                },
+                {
+                  "ante": 0,
+                  "level": 12,
+                  "bigBlind": 410,
+                  "duration": 180,
+                  "smallBlind": 205,
+                  "spinContinuation": {
+                    "growth": 1.4,
+                    "version": 1,
+                    "roundBigTo": 10,
+                    "anchorLevel": 10,
+                    "anchorBigBlind": 210
+                  }
+                }
+              ],
+              "payout_structure": [
+                {
+                  "place": 1,
+                  "percentage": 100
+                }
+              ],
+              "reserveThresholdX": 0
+            },
+            {
+              "freq": 3930716,
+              "payouts": [1],
+              "multiplier": 3,
+              "levelMinutes": 3,
+              "blind_structure": [
+                {
+                  "ante": 0,
+                  "level": 1,
+                  "bigBlind": 20,
+                  "duration": 180,
+                  "smallBlind": 10
+                },
+                {
+                  "ante": 0,
+                  "level": 2,
+                  "bigBlind": 30,
+                  "duration": 180,
+                  "smallBlind": 15
+                },
+                {
+                  "ante": 0,
+                  "level": 3,
+                  "bigBlind": 40,
+                  "duration": 180,
+                  "smallBlind": 20
+                },
+                {
+                  "ante": 0,
+                  "level": 4,
+                  "bigBlind": 60,
+                  "duration": 180,
+                  "smallBlind": 30
+                },
+                {
+                  "ante": 0,
+                  "level": 5,
+                  "bigBlind": 80,
+                  "duration": 180,
+                  "smallBlind": 40
+                },
+                {
+                  "ante": 0,
+                  "level": 6,
+                  "bigBlind": 100,
+                  "duration": 180,
+                  "smallBlind": 50
+                },
+                {
+                  "ante": 0,
+                  "level": 7,
+                  "bigBlind": 120,
+                  "duration": 180,
+                  "smallBlind": 60
+                },
+                {
+                  "ante": 0,
+                  "level": 8,
+                  "bigBlind": 150,
+                  "duration": 180,
+                  "smallBlind": 75
+                },
+                {
+                  "ante": 0,
+                  "level": 9,
+                  "bigBlind": 180,
+                  "duration": 180,
+                  "smallBlind": 90
+                },
+                {
+                  "ante": 0,
+                  "level": 10,
+                  "bigBlind": 210,
+                  "duration": 180,
+                  "smallBlind": 105
+                },
+                {
+                  "ante": 0,
+                  "level": 11,
+                  "bigBlind": 290,
+                  "duration": 180,
+                  "smallBlind": 145
+                },
+                {
+                  "ante": 0,
+                  "level": 12,
+                  "bigBlind": 410,
+                  "duration": 180,
+                  "smallBlind": 205,
+                  "spinContinuation": {
+                    "growth": 1.4,
+                    "version": 1,
+                    "roundBigTo": 10,
+                    "anchorLevel": 10,
+                    "anchorBigBlind": 210
+                  }
+                }
+              ],
+              "payout_structure": [
+                {
+                  "place": 1,
+                  "percentage": 100
+                }
+              ],
+              "reserveThresholdX": 0
+            },
+            {
+              "freq": 900000,
+              "payouts": [1],
+              "multiplier": 4,
+              "levelMinutes": 3,
+              "blind_structure": [
+                {
+                  "ante": 0,
+                  "level": 1,
+                  "bigBlind": 20,
+                  "duration": 180,
+                  "smallBlind": 10
+                },
+                {
+                  "ante": 0,
+                  "level": 2,
+                  "bigBlind": 30,
+                  "duration": 180,
+                  "smallBlind": 15
+                },
+                {
+                  "ante": 0,
+                  "level": 3,
+                  "bigBlind": 40,
+                  "duration": 180,
+                  "smallBlind": 20
+                },
+                {
+                  "ante": 0,
+                  "level": 4,
+                  "bigBlind": 60,
+                  "duration": 180,
+                  "smallBlind": 30
+                },
+                {
+                  "ante": 0,
+                  "level": 5,
+                  "bigBlind": 80,
+                  "duration": 180,
+                  "smallBlind": 40
+                },
+                {
+                  "ante": 0,
+                  "level": 6,
+                  "bigBlind": 100,
+                  "duration": 180,
+                  "smallBlind": 50
+                },
+                {
+                  "ante": 0,
+                  "level": 7,
+                  "bigBlind": 120,
+                  "duration": 180,
+                  "smallBlind": 60
+                },
+                {
+                  "ante": 0,
+                  "level": 8,
+                  "bigBlind": 150,
+                  "duration": 180,
+                  "smallBlind": 75
+                },
+                {
+                  "ante": 0,
+                  "level": 9,
+                  "bigBlind": 180,
+                  "duration": 180,
+                  "smallBlind": 90
+                },
+                {
+                  "ante": 0,
+                  "level": 10,
+                  "bigBlind": 210,
+                  "duration": 180,
+                  "smallBlind": 105
+                },
+                {
+                  "ante": 0,
+                  "level": 11,
+                  "bigBlind": 290,
+                  "duration": 180,
+                  "smallBlind": 145
+                },
+                {
+                  "ante": 0,
+                  "level": 12,
+                  "bigBlind": 410,
+                  "duration": 180,
+                  "smallBlind": 205,
+                  "spinContinuation": {
+                    "growth": 1.4,
+                    "version": 1,
+                    "roundBigTo": 10,
+                    "anchorLevel": 10,
+                    "anchorBigBlind": 210
+                  }
+                }
+              ],
+              "payout_structure": [
+                {
+                  "place": 1,
+                  "percentage": 100
+                }
+              ],
+              "reserveThresholdX": 0
+            },
+            {
+              "freq": 250000,
+              "payouts": [1],
+              "multiplier": 5,
+              "levelMinutes": 3,
+              "blind_structure": [
+                {
+                  "ante": 0,
+                  "level": 1,
+                  "bigBlind": 20,
+                  "duration": 180,
+                  "smallBlind": 10
+                },
+                {
+                  "ante": 0,
+                  "level": 2,
+                  "bigBlind": 30,
+                  "duration": 180,
+                  "smallBlind": 15
+                },
+                {
+                  "ante": 0,
+                  "level": 3,
+                  "bigBlind": 40,
+                  "duration": 180,
+                  "smallBlind": 20
+                },
+                {
+                  "ante": 0,
+                  "level": 4,
+                  "bigBlind": 60,
+                  "duration": 180,
+                  "smallBlind": 30
+                },
+                {
+                  "ante": 0,
+                  "level": 5,
+                  "bigBlind": 80,
+                  "duration": 180,
+                  "smallBlind": 40
+                },
+                {
+                  "ante": 0,
+                  "level": 6,
+                  "bigBlind": 100,
+                  "duration": 180,
+                  "smallBlind": 50
+                },
+                {
+                  "ante": 0,
+                  "level": 7,
+                  "bigBlind": 120,
+                  "duration": 180,
+                  "smallBlind": 60
+                },
+                {
+                  "ante": 0,
+                  "level": 8,
+                  "bigBlind": 150,
+                  "duration": 180,
+                  "smallBlind": 75
+                },
+                {
+                  "ante": 0,
+                  "level": 9,
+                  "bigBlind": 180,
+                  "duration": 180,
+                  "smallBlind": 90
+                },
+                {
+                  "ante": 0,
+                  "level": 10,
+                  "bigBlind": 210,
+                  "duration": 180,
+                  "smallBlind": 105
+                },
+                {
+                  "ante": 0,
+                  "level": 11,
+                  "bigBlind": 290,
+                  "duration": 180,
+                  "smallBlind": 145
+                },
+                {
+                  "ante": 0,
+                  "level": 12,
+                  "bigBlind": 410,
+                  "duration": 180,
+                  "smallBlind": 205,
+                  "spinContinuation": {
+                    "growth": 1.4,
+                    "version": 1,
+                    "roundBigTo": 10,
+                    "anchorLevel": 10,
+                    "anchorBigBlind": 210
+                  }
+                }
+              ],
+              "payout_structure": [
+                {
+                  "place": 1,
+                  "percentage": 100
+                }
+              ],
+              "reserveThresholdX": 0
+            },
+            {
+              "freq": 100000,
+              "payouts": [0.8, 0.2],
+              "multiplier": 10,
+              "levelMinutes": 3,
+              "blind_structure": [
+                {
+                  "ante": 0,
+                  "level": 1,
+                  "bigBlind": 20,
+                  "duration": 180,
+                  "smallBlind": 10
+                },
+                {
+                  "ante": 0,
+                  "level": 2,
+                  "bigBlind": 30,
+                  "duration": 180,
+                  "smallBlind": 15
+                },
+                {
+                  "ante": 0,
+                  "level": 3,
+                  "bigBlind": 40,
+                  "duration": 180,
+                  "smallBlind": 20
+                },
+                {
+                  "ante": 0,
+                  "level": 4,
+                  "bigBlind": 60,
+                  "duration": 180,
+                  "smallBlind": 30
+                },
+                {
+                  "ante": 0,
+                  "level": 5,
+                  "bigBlind": 80,
+                  "duration": 180,
+                  "smallBlind": 40
+                },
+                {
+                  "ante": 0,
+                  "level": 6,
+                  "bigBlind": 100,
+                  "duration": 180,
+                  "smallBlind": 50
+                },
+                {
+                  "ante": 0,
+                  "level": 7,
+                  "bigBlind": 120,
+                  "duration": 180,
+                  "smallBlind": 60
+                },
+                {
+                  "ante": 0,
+                  "level": 8,
+                  "bigBlind": 150,
+                  "duration": 180,
+                  "smallBlind": 75
+                },
+                {
+                  "ante": 0,
+                  "level": 9,
+                  "bigBlind": 180,
+                  "duration": 180,
+                  "smallBlind": 90
+                },
+                {
+                  "ante": 0,
+                  "level": 10,
+                  "bigBlind": 210,
+                  "duration": 180,
+                  "smallBlind": 105
+                },
+                {
+                  "ante": 0,
+                  "level": 11,
+                  "bigBlind": 290,
+                  "duration": 180,
+                  "smallBlind": 145
+                },
+                {
+                  "ante": 0,
+                  "level": 12,
+                  "bigBlind": 410,
+                  "duration": 180,
+                  "smallBlind": 205,
+                  "spinContinuation": {
+                    "growth": 1.4,
+                    "version": 1,
+                    "roundBigTo": 10,
+                    "anchorLevel": 10,
+                    "anchorBigBlind": 210
+                  }
+                }
+              ],
+              "payout_structure": [
+                {
+                  "place": 1,
+                  "percentage": 80
+                },
+                {
+                  "place": 2,
+                  "percentage": 20
+                }
+              ],
+              "reserveThresholdX": 0
+            },
+            {
+              "freq": 7500,
+              "payouts": [0.8, 0.12, 0.08],
+              "multiplier": 25,
+              "levelMinutes": 3,
+              "blind_structure": [
+                {
+                  "ante": 0,
+                  "level": 1,
+                  "bigBlind": 20,
+                  "duration": 180,
+                  "smallBlind": 10
+                },
+                {
+                  "ante": 0,
+                  "level": 2,
+                  "bigBlind": 30,
+                  "duration": 180,
+                  "smallBlind": 15
+                },
+                {
+                  "ante": 0,
+                  "level": 3,
+                  "bigBlind": 40,
+                  "duration": 180,
+                  "smallBlind": 20
+                },
+                {
+                  "ante": 0,
+                  "level": 4,
+                  "bigBlind": 60,
+                  "duration": 180,
+                  "smallBlind": 30
+                },
+                {
+                  "ante": 0,
+                  "level": 5,
+                  "bigBlind": 80,
+                  "duration": 180,
+                  "smallBlind": 40
+                },
+                {
+                  "ante": 0,
+                  "level": 6,
+                  "bigBlind": 100,
+                  "duration": 180,
+                  "smallBlind": 50
+                },
+                {
+                  "ante": 0,
+                  "level": 7,
+                  "bigBlind": 120,
+                  "duration": 180,
+                  "smallBlind": 60
+                },
+                {
+                  "ante": 0,
+                  "level": 8,
+                  "bigBlind": 150,
+                  "duration": 180,
+                  "smallBlind": 75
+                },
+                {
+                  "ante": 0,
+                  "level": 9,
+                  "bigBlind": 180,
+                  "duration": 180,
+                  "smallBlind": 90
+                },
+                {
+                  "ante": 0,
+                  "level": 10,
+                  "bigBlind": 210,
+                  "duration": 180,
+                  "smallBlind": 105
+                },
+                {
+                  "ante": 0,
+                  "level": 11,
+                  "bigBlind": 290,
+                  "duration": 180,
+                  "smallBlind": 145
+                },
+                {
+                  "ante": 0,
+                  "level": 12,
+                  "bigBlind": 410,
+                  "duration": 180,
+                  "smallBlind": 205,
+                  "spinContinuation": {
+                    "growth": 1.4,
+                    "version": 1,
+                    "roundBigTo": 10,
+                    "anchorLevel": 10,
+                    "anchorBigBlind": 210
+                  }
+                }
+              ],
+              "payout_structure": [
+                {
+                  "place": 1,
+                  "percentage": 80
+                },
+                {
+                  "place": 2,
+                  "percentage": 12
+                },
+                {
+                  "place": 3,
+                  "percentage": 8
+                }
+              ],
+              "reserveThresholdX": 0
+            },
+            {
+              "freq": 1000,
+              "payouts": [0.8, 0.12, 0.08],
+              "multiplier": 50,
+              "levelMinutes": 3,
+              "blind_structure": [
+                {
+                  "ante": 0,
+                  "level": 1,
+                  "bigBlind": 20,
+                  "duration": 180,
+                  "smallBlind": 10
+                },
+                {
+                  "ante": 0,
+                  "level": 2,
+                  "bigBlind": 30,
+                  "duration": 180,
+                  "smallBlind": 15
+                },
+                {
+                  "ante": 0,
+                  "level": 3,
+                  "bigBlind": 40,
+                  "duration": 180,
+                  "smallBlind": 20
+                },
+                {
+                  "ante": 0,
+                  "level": 4,
+                  "bigBlind": 60,
+                  "duration": 180,
+                  "smallBlind": 30
+                },
+                {
+                  "ante": 0,
+                  "level": 5,
+                  "bigBlind": 80,
+                  "duration": 180,
+                  "smallBlind": 40
+                },
+                {
+                  "ante": 0,
+                  "level": 6,
+                  "bigBlind": 100,
+                  "duration": 180,
+                  "smallBlind": 50
+                },
+                {
+                  "ante": 0,
+                  "level": 7,
+                  "bigBlind": 120,
+                  "duration": 180,
+                  "smallBlind": 60
+                },
+                {
+                  "ante": 0,
+                  "level": 8,
+                  "bigBlind": 150,
+                  "duration": 180,
+                  "smallBlind": 75
+                },
+                {
+                  "ante": 0,
+                  "level": 9,
+                  "bigBlind": 180,
+                  "duration": 180,
+                  "smallBlind": 90
+                },
+                {
+                  "ante": 0,
+                  "level": 10,
+                  "bigBlind": 210,
+                  "duration": 180,
+                  "smallBlind": 105
+                },
+                {
+                  "ante": 0,
+                  "level": 11,
+                  "bigBlind": 290,
+                  "duration": 180,
+                  "smallBlind": 145
+                },
+                {
+                  "ante": 0,
+                  "level": 12,
+                  "bigBlind": 410,
+                  "duration": 180,
+                  "smallBlind": 205,
+                  "spinContinuation": {
+                    "growth": 1.4,
+                    "version": 1,
+                    "roundBigTo": 10,
+                    "anchorLevel": 10,
+                    "anchorBigBlind": 210
+                  }
+                }
+              ],
+              "payout_structure": [
+                {
+                  "place": 1,
+                  "percentage": 80
+                },
+                {
+                  "place": 2,
+                  "percentage": 12
+                },
+                {
+                  "place": 3,
+                  "percentage": 8
+                }
+              ],
+              "reserveThresholdX": 0
+            },
+            {
+              "freq": 1008,
+              "payouts": [0.8, 0.12, 0.08],
+              "multiplier": 100,
+              "levelMinutes": 3,
+              "blind_structure": [
+                {
+                  "ante": 0,
+                  "level": 1,
+                  "bigBlind": 20,
+                  "duration": 180,
+                  "smallBlind": 10
+                },
+                {
+                  "ante": 0,
+                  "level": 2,
+                  "bigBlind": 30,
+                  "duration": 180,
+                  "smallBlind": 15
+                },
+                {
+                  "ante": 0,
+                  "level": 3,
+                  "bigBlind": 40,
+                  "duration": 180,
+                  "smallBlind": 20
+                },
+                {
+                  "ante": 0,
+                  "level": 4,
+                  "bigBlind": 60,
+                  "duration": 180,
+                  "smallBlind": 30
+                },
+                {
+                  "ante": 0,
+                  "level": 5,
+                  "bigBlind": 80,
+                  "duration": 180,
+                  "smallBlind": 40
+                },
+                {
+                  "ante": 0,
+                  "level": 6,
+                  "bigBlind": 100,
+                  "duration": 180,
+                  "smallBlind": 50
+                },
+                {
+                  "ante": 0,
+                  "level": 7,
+                  "bigBlind": 120,
+                  "duration": 180,
+                  "smallBlind": 60
+                },
+                {
+                  "ante": 0,
+                  "level": 8,
+                  "bigBlind": 150,
+                  "duration": 180,
+                  "smallBlind": 75
+                },
+                {
+                  "ante": 0,
+                  "level": 9,
+                  "bigBlind": 180,
+                  "duration": 180,
+                  "smallBlind": 90
+                },
+                {
+                  "ante": 0,
+                  "level": 10,
+                  "bigBlind": 210,
+                  "duration": 180,
+                  "smallBlind": 105
+                },
+                {
+                  "ante": 0,
+                  "level": 11,
+                  "bigBlind": 290,
+                  "duration": 180,
+                  "smallBlind": 145
+                },
+                {
+                  "ante": 0,
+                  "level": 12,
+                  "bigBlind": 410,
+                  "duration": 180,
+                  "smallBlind": 205,
+                  "spinContinuation": {
+                    "growth": 1.4,
+                    "version": 1,
+                    "roundBigTo": 10,
+                    "anchorLevel": 10,
+                    "anchorBigBlind": 210
+                  }
+                }
+              ],
+              "payout_structure": [
+                {
+                  "place": 1,
+                  "percentage": 80
+                },
+                {
+                  "place": 2,
+                  "percentage": 12
+                },
+                {
+                  "place": 3,
+                  "percentage": 8
+                }
+              ],
+              "reserveThresholdX": 1.5
+            }
+          ],
+          "buy_in": 1,
+          "version": 1,
+          "rake_rate": 0.08,
+          "starting_chips": 1000,
+          "draw_function_md5": "9530aa9c1b2c05604e3af611aa6b7ce8"
+        },
+        "tournament_id": "88fd351e-52e4-5765-a39b-3eef190fb755",
+        "lease_generation": "b1f85186-ba82-5f0f-894b-d6ac33bf5e8f"
+      }
+    ]
+  }
+}

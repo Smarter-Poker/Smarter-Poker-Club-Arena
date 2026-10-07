@@ -7,6 +7,7 @@ import {
   type Page,
 } from '@playwright/test';
 import { rawProfileHeading } from './support/rawProfileHeading';
+import { navigateToRenderedProfile } from './support/renderedProfileNavigation';
 import { readProfileInterfaceMode } from './support/profileInterfaceMode';
 import { walletPlayableAmount } from './support/walletPlayableAmount';
 
@@ -689,13 +690,7 @@ test.describe('production Table Studio realtime contract', () => {
       // Same real third session, now exercising the separate metadata/settings
       // carrier on mounted profiles. No synthetic bus emission or read polling.
       for (const page of [primaryPage, mobilePage, otherPage]) {
-        await page.goto(new URL('profile', baseURL.endsWith('/') ? baseURL : `${baseURL}/`).href, {
-          waitUntil: 'domcontentloaded',
-          timeout: PRODUCTION_RESPONSE_TIMEOUT,
-        });
-        await expect(page.locator('#profile-heading')).toBeVisible({
-          timeout: PRODUCTION_RESPONSE_TIMEOUT,
-        });
+        await navigateToRenderedProfile(page, baseURL, PRODUCTION_RESPONSE_TIMEOUT);
       }
       const otherName = await rawProfileHeading(otherPage);
       const otherMode = await readProfileInterfaceMode(otherPage, PRODUCTION_RESPONSE_TIMEOUT);

@@ -8,6 +8,7 @@ import {
   _clearGtoPostflopV31,
   gtoPostflopV31Count,
   gtoPostflopV31Dataset,
+  gtoV31PolicyContractIdentity,
   gtoPostflopV31EvaluationCount,
   gtoV31CellMatrix,
   gtoStreetAdviceV31,
@@ -122,6 +123,40 @@ it('admits only the sealed feature version and dispatches V2 without changing le
   expect(gtoPostflopV31Dataset()).not.toHaveProperty('feature_contract_version');
   const legacy = lookup();
   expect(legacy.hit && legacy.handKey).toBe(legacyKey);
+});
+
+it('binds V4 policy metadata without changing omitted V3 seal bytes', () => {
+  replaceGtoPostflopV31([CELL]);
+  const before = lookup();
+  expect(before.hit).toBe(true);
+  if (!before.hit) throw new Error('legacy fixture missed');
+  const legacySeal = JSON.stringify(before.sourceSeal);
+  const v4 = { ...CELL, policy_export_schema: 'smarter-poker.pio-policy.v4' as const };
+  expect(replaceGtoPostflopV31([v4])).toBe(1);
+  const after = lookup();
+  expect(after.hit).toBe(true);
+  if (!after.hit) throw new Error('versioned fixture missed');
+  const { policy_export_schema, ...rest } = after.sourceSeal;
+  expect(policy_export_schema).toBe('smarter-poker.pio-policy.v4');
+  expect(JSON.stringify(rest)).toBe(legacySeal);
+  expect(gtoPostflopV31Dataset()?.policy_export_schema).toBe(policy_export_schema);
+  expect(gtoV31PolicyContractIdentity({})).toEqual({});
+  for (const invalid of [null, undefined, false, 'unknown']) {
+    expect(() => gtoV31PolicyContractIdentity({ policy_export_schema: invalid })).toThrow();
+    expect(() =>
+      replaceGtoPostflopV31([
+        { ...CELL, policy_export_schema: invalid } as unknown as GtoPostflopV31Row,
+      ])
+    ).toThrow();
+  }
+  expect(() =>
+    replaceGtoPostflopV31([
+      { ...v4, dataset_cells: 2 },
+      { ...CELL, dataset_cells: 2 },
+    ])
+  ).toThrow();
+  replaceGtoPostflopV31([CELL]);
+  expect(gtoPostflopV31Dataset()).not.toHaveProperty('policy_export_schema');
 });
 
 function lookup(over: Partial<Parameters<typeof gtoStreetAdviceV31>[0]> = {}) {

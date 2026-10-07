@@ -42,6 +42,7 @@ export interface GtoV31ActionSpec {
 
 export interface GtoV31SourceSeal {
   feature_contract_version?: 'rank-suit-count-v1' | 'holdem-board-relative-v2';
+  policy_export_schema?: 'smarter-poker.pio-policy.v4';
   dataset_id: string;
   dataset_key: string;
   dataset_checksum: string;
@@ -173,6 +174,22 @@ export function gtoV31FeatureContractVersion(value: {
     : null;
 }
 
+export function gtoV31PolicyContractValid(value: { policy_export_schema?: unknown }): boolean {
+  return (
+    !Object.prototype.hasOwnProperty.call(value, 'policy_export_schema') ||
+    value.policy_export_schema === 'smarter-poker.pio-policy.v4'
+  );
+}
+
+export function gtoV31PolicyContractIdentity(value: {
+  policy_export_schema?: unknown;
+}): Pick<GtoV31SourceSeal, 'policy_export_schema'> {
+  if (!gtoV31PolicyContractValid(value)) throw new Error('v31_policy_contract_unknown');
+  return Object.prototype.hasOwnProperty.call(value, 'policy_export_schema')
+    ? { policy_export_schema: value.policy_export_schema as 'smarter-poker.pio-policy.v4' }
+    : {};
+}
+
 function canonicalHandKey(
   value: string,
   street: GtoPostflopV31Row['street'],
@@ -286,6 +303,7 @@ function sealIsValid(
     typeof value === 'string' && HEX64.test(value) && value !== '0'.repeat(64);
   return (
     gtoV31FeatureContractVersion(row) !== null &&
+    gtoV31PolicyContractValid(row) &&
     UUID.test(row.dataset_id) &&
     typeof row.dataset_key === 'string' &&
     row.dataset_key.length > 0 &&
@@ -325,6 +343,9 @@ function sealIsValid(
 
 function datasetSealKey(row: GtoPostflopV31Row): string {
   return JSON.stringify({
+    ...(Object.prototype.hasOwnProperty.call(row, 'policy_export_schema')
+      ? { policy_export_schema: row.policy_export_schema }
+      : {}),
     ...(Object.prototype.hasOwnProperty.call(row, 'feature_contract_version')
       ? { feature_contract_version: row.feature_contract_version }
       : {}),
@@ -521,6 +542,9 @@ function rowIsValid(
 
 function sealOf(row: GtoPostflopV31Row): GtoV31SourceSeal {
   return {
+    ...(Object.prototype.hasOwnProperty.call(row, 'policy_export_schema')
+      ? { policy_export_schema: row.policy_export_schema }
+      : {}),
     ...(Object.prototype.hasOwnProperty.call(row, 'feature_contract_version')
       ? { feature_contract_version: row.feature_contract_version }
       : {}),
@@ -814,12 +838,16 @@ export function gtoPostflopV31Dataset(): {
   id: string;
   checksum: string;
   feature_contract_version?: GtoV31SourceSeal['feature_contract_version'];
+  policy_export_schema?: GtoV31SourceSeal['policy_export_schema'];
 } | null {
   const seal = activeStore.cells.values().next().value?.seal;
   return activeStore.datasetId && activeStore.datasetChecksum
     ? {
         id: activeStore.datasetId,
         checksum: activeStore.datasetChecksum,
+        ...(seal && Object.prototype.hasOwnProperty.call(seal, 'policy_export_schema')
+          ? { policy_export_schema: seal.policy_export_schema }
+          : {}),
         ...(seal && Object.prototype.hasOwnProperty.call(seal, 'feature_contract_version')
           ? { feature_contract_version: seal.feature_contract_version }
           : {}),

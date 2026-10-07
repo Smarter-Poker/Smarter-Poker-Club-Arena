@@ -33,6 +33,7 @@ import {
   type GtoPostflopV31Row,
   type GtoV31SourceSeal,
   gtoV31FeatureContractVersion,
+  gtoV31PolicyContractValid,
 } from '../engine/GtoPostflopV31.js';
 import { createAdaptiveRefreshLoop } from './AdaptiveRefreshLoop.js';
 
@@ -57,11 +58,14 @@ function readV31CellPage(data: unknown, expectedDatasetId?: string): GtoPostflop
     }
     if (row.feature_contract_version !== null && gtoV31FeatureContractVersion(row) === null)
       throw new Error('v31_feature_contract_unknown');
+    if (row.policy_export_schema !== null && !gtoV31PolicyContractValid(row))
+      throw new Error('v31_policy_contract_unknown');
   }
   return data.map((row) => {
     // Nullable SQL metadata is historical omission, not an explicit version.
-    if (row.feature_contract_version !== null) return row;
-    const { feature_contract_version: _legacyNull, ...legacy } = row;
+    const legacy = { ...row };
+    if (row.feature_contract_version === null) delete legacy.feature_contract_version;
+    if (row.policy_export_schema === null) delete legacy.policy_export_schema;
     return legacy;
   }) as GtoPostflopV31Row[];
 }
@@ -114,6 +118,7 @@ export async function loadGtoPostflopV31Evaluation(datasetId: string): Promise<{
   checksum: string;
   cells: number;
   feature_contract_version?: GtoV31SourceSeal['feature_contract_version'];
+  policy_export_schema?: GtoV31SourceSeal['policy_export_schema'];
 }> {
   if (typeof datasetId !== 'string' || !UUID.test(datasetId)) {
     throw new Error('invalid V31 evaluation dataset id');
@@ -144,6 +149,9 @@ export async function loadGtoPostflopV31Evaluation(datasetId: string): Promise<{
   return {
     checksum,
     cells,
+    ...(Object.prototype.hasOwnProperty.call(rows[0], 'policy_export_schema')
+      ? { policy_export_schema: rows[0].policy_export_schema }
+      : {}),
     ...(Object.prototype.hasOwnProperty.call(rows[0], 'feature_contract_version')
       ? { feature_contract_version: rows[0].feature_contract_version }
       : {}),

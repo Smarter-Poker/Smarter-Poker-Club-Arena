@@ -104,11 +104,41 @@ awk '
 "${PSQL[@]}" -f "$WORK/prior-physical-fixture.sql"
 "${PSQL[@]}" -c "DO \$proof\$ BEGIN IF NOT EXISTS(SELECT 1 FROM public.gto_v31_source_artifacts a JOIN public.solved_spots_gold s ON s.id=a.source_row_id WHERE s.strategy_matrix_v2#>>'{nodes,0,node_context,table_size}'='2' AND public.fn_gto_v31_source_node_valid(s.strategy_matrix_v2#>'{nodes,0}')) THEN RAISE EXCEPTION 'prior reversed HU admission was not reproduced'; END IF; END \$proof\$;"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261007042245_solver_nodes_prove_physical_postflop_order.sql"
+# Capture the genuine legacy checksum function before conditional V4 identity
+# changes, so the metadata probe compares actual PostgreSQL JSON bytes.
+"${PSQL[@]}" -Atc "SELECT replace(pg_get_functiondef('public.fn_gto_v31_input_bundle_checksum(jsonb)'::regprocedure),'public.fn_gto_v31_input_bundle_checksum','public.v31_metadata_legacy_checksum')" > "$WORK/legacy-metadata-checksum.sql"
+"${PSQL[@]}" -f "$WORK/legacy-metadata-checksum.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261007043848_v4_policy_schema_is_immutable_input_metadata.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261007043945_solver_v4_nodes_prove_complete_public_state.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261007051641_v4_consumers_bind_the_immutable_policy_schema.sql"
+"${PSQL[@]}" -f "$HERE/policy-export-schema.sql"
+# Execute the documented function-only rollback in this disposable database,
+# then require the exact immutable preimages on forward recovery.
+awk '/^-- node <<.ROLLBACK_JS./ {copy=1;next} /^-- ROLLBACK_JS$/ {copy=0} copy {sub(/^-- ?/, "");print}' \
+ "$ROOT/supabase/migrations/20261007051641_v4_consumers_bind_the_immutable_policy_schema.sql" | \
+ (cd "$ROOT" && node) > "$WORK/v4-consumer-rollback.sql"
+"${PSQL[@]}" -f "$WORK/v4-consumer-rollback.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261007051641_v4_consumers_bind_the_immutable_policy_schema.sql"
+echo V31_V4_CONSUMER_ROLLBACK_RECOVERY_OK
+"${PSQL[@]}" -f "$HERE/v4-version-boundary.sql"
 "${PSQL[@]}" -f "$HERE/physical-position-transition.sql"
+"${PSQL[@]}" -f "$HERE/v4-complete-state.sql"
+awk '
+ /PERFORM public.fn_gto_v31_ingest_source_artifact\(dataset,.*train_art\);/ && !called {
+   print "    PERFORM public.v31_v4_probe(node,train_art,dataset);";called=1
+ }
+ {print}
+' "$HERE/certified-v31.sql" > "$WORK/v4-admission-fixture.sql"
+"${PSQL[@]}" -f "$WORK/v4-admission-fixture.sql"
+"${PSQL[@]}" -c 'DROP FUNCTION public.v31_v4_probe(jsonb,jsonb,uuid)'
 "${PSQL[@]}" -f "$HERE/input-bundle-bootstrap.sql"
 "${PSQL[@]}" -f "$HERE/feature-contract-v2.sql"
 "${PSQL[@]}" -f "$HERE/validator-one-door.sql"
-"${PSQL[@]}" -f "$HERE/certified-v31.sql"
+"${PSQL[@]}" -f "$HERE/v4-consumer-boundary.sql"
+awk '/eval_id:=public.fn_gto_v31_record_evaluation\(dataset,kind,family,result_id\);/ {print "      PERFORM public.v31_v4_consumer_probe(dataset,kind,family,result_id);"} {print}' \
+ "$HERE/certified-v31.sql" > "$WORK/v4-consumer-fixture.sql"
+"${PSQL[@]}" -f "$WORK/v4-consumer-fixture.sql"
+"${PSQL[@]}" -c 'DROP FUNCTION public.v31_v4_consumer_probe(uuid,text,text,bigint)'
 "${PSQL[@]}" -f "$HERE/solver-agreement.sql"
 "${PSQL[@]}" -f "$HERE/pipeline-liveness.sql"
 "${PSQL[@]}" -f "$HERE/operator-read-authorization.sql"

@@ -20,6 +20,7 @@ import {
   type GtoV31EvaluationKind,
 } from '../benchmark/GtoV31CandidateEvaluation.js';
 import { gtoPostflopV31Dataset } from '../engine/GtoPostflopV31.js';
+import { evaluationConfig } from '../benchmark/GtoV31EvaluationConfig.js';
 import {
   loadGtoPostflopV31,
   loadGtoPostflopV31Evaluation,
@@ -85,12 +86,6 @@ function canonicalJson(value: unknown): string {
   return scalar;
 }
 
-function evaluationProfile(kind: GtoV31EvaluationKind): string {
-  return kind === 'paired_replay'
-    ? 'policy_only_duplicate_deals'
-    : 'full_brain_duplicate_deal_league';
-}
-
 function evaluationEngineCommit(): string {
   const root = execFileSync('git', ['rev-parse', '--show-toplevel'], {
     cwd: process.cwd(),
@@ -118,29 +113,6 @@ function evaluationEngineCommit(): string {
     throw new Error(`GIT_COMMIT_SHA does not match the checked-out evaluation engine (${head})`);
   }
   return head;
-}
-
-function evaluationConfig(args: {
-  feature_contract_version?: 'rank-suit-count-v1' | 'holdem-board-relative-v2';
-  datasetChecksum: string;
-  kind: GtoV31EvaluationKind;
-  family: GtoV31EvaluationFamily;
-  scenarios: string[];
-  engineCommit: string;
-}) {
-  return {
-    ...(args.feature_contract_version !== undefined
-      ? { feature_contract_version: args.feature_contract_version }
-      : {}),
-    evaluation_contract: 'gto_v31_candidate.v2',
-    evaluation_kind: args.kind,
-    game_family: args.family,
-    dataset_checksum: args.datasetChecksum,
-    candidate: 'v31_certified',
-    evaluation_profile: evaluationProfile(args.kind),
-    scenarios: args.scenarios,
-    evaluation_engine_commit: args.engineCommit,
-  };
 }
 
 async function certificationStatus(datasetId: string): Promise<DatasetStatus> {
@@ -209,6 +181,7 @@ async function existingResult(args: {
 
 async function persistEvaluation(args: {
   feature_contract_version?: 'rank-suit-count-v1' | 'holdem-board-relative-v2';
+  policy_export_schema?: 'smarter-poker.pio-policy.v4';
   datasetId: string;
   datasetChecksum: string;
   incumbentChecksum: string;
@@ -327,6 +300,9 @@ async function main(): Promise<void> {
         continue;
       }
       await persistEvaluation({
+        ...(Object.prototype.hasOwnProperty.call(loaded, 'policy_export_schema')
+          ? { policy_export_schema: loaded.policy_export_schema }
+          : {}),
         ...(loaded.feature_contract_version !== undefined
           ? { feature_contract_version: loaded.feature_contract_version }
           : {}),

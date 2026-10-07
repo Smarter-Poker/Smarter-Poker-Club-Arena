@@ -581,16 +581,26 @@ export function functionChunks(sql) {
  * its contract INSIDE a dollar-quoted function body, which is the one place a
  * comment-stripping parser would throw it away.
  */
+// Keep only the last exact input, not the migration corpus. Verdict/remedy
+// checks parse the same bytes repeatedly; return fresh arrays so a caller
+// cannot mutate the next verdict's facts.
+let lastContractFacts;
+const copyContractFacts = (facts) => Object.fromEntries(
+  Object.entries(facts).map(([key, values]) => [key, [...values]])
+);
 export function contractFactsInSql(sql) {
   const text = String(sql);
-  const chunks = functionChunks(text);
+  if (lastContractFacts?.text === text) return copyContractFacts(lastContractFacts.facts);
+  // Every wheel declaration recognized by functionChunks contains this token.
+  // Receipt and bonus facts below still inspect all bytes independently.
+  const chunks = /fn_wheel_/i.test(text) ? functionChunks(text) : [];
   const wheel = chunks.filter((c) => c.name.startsWith('fn_wheel_')).map((c) => c.text).join('\n');
   /* A receipt version only means this contract where a Diamond Spins round is
      the subject. `payout_version` is a column name a tournament could reuse. */
   const receipts = /\b(crash_rounds|diamond_choice_rounds|wheel_bonus_awards|fn_diamond_bonus_|fn_plinko_bonus_)/i.test(text)
     ? text
     : '';
-  return {
+  const facts = {
     contract_versions: uniq(all(wheel, /'contract_version'\s*,\s*(\d+)/g, Number)).sort((a, b) => a - b),
     model_versions: uniq(all(wheel, /'model_version'\s*,\s*'([^']+)'/g)).sort(),
     /* fn_wheel_v4_segments / fn_wheel_v4_model name the generation directly. */
@@ -611,6 +621,8 @@ export function contractFactsInSql(sql) {
       )
     ).sort(),
   };
+  lastContractFacts = { text, facts };
+  return copyContractFacts(facts);
 }
 
 function changedMigrations(base) {

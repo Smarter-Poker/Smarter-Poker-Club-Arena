@@ -29,3 +29,5 @@ Regression protection builds a real lazy shared-server Vite fixture and checks
 complete Git backlog, runtime inputs, unknowns, original artifact byte coverage,
 symlinks and exact run/repository/branch receipt provenance. No new publisher,
 release freeze, retry loop, certificate equivalence or manual seal is introduced.
+
+The post-Vite Google Fonts inputs are separately recorded inside the sealed artifact with their exact allowlisted URL, fixed request user agent, length and SHA-256. Retention freshly compares every CSS and font byte within a bounded request budget; missing, changed or unavailable external input forces ordinary publication. The Vite graph alone never claims this external-input completeness. Exact-SHA repair/configuration events always publish normally.

@@ -17,6 +17,7 @@ import {
   separateComponentPath,
   qualifiesRuntimeInputs,
 } from './client-runtime-inputs.mjs';
+import { verifyFontInputs } from './client-runtime-font-inputs.mjs';
 import { readPublisherArtifactSha } from './production-e2e-provenance.mjs';
 
 const SHA = /^[0-9a-f]{40}$/;
@@ -290,6 +291,12 @@ async function admit(target) {
       throw new Error('The complete backlog changes client build inputs or an unclassified path.');
     if (!readFileSync(resolve(dir, 'build-info.json')).equals(info[0]))
       throw new Error('The real bundle build-info differs from both origins.');
+    if (
+      JSON.stringify(inputs.fontInputs) !==
+      JSON.stringify(json(readFileSync(resolve(dir, 'client-runtime-font-inputs.json'))))
+    )
+      throw new Error('External font inventory differs from the original sealed receipt.');
+    await verifyFontInputs(inputs.fontInputs);
     const provenance = json(readFileSync(resolve(dir, 'ca-provenance.json')));
     if (
       provenance.schema !== 1 ||

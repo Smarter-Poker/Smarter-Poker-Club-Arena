@@ -413,3 +413,83 @@ test('unknown virtual producers and foreign node_modules cannot qualify an actua
     rmSync(foreign, { recursive: true, force: true });
   }
 });
+
+test('sealed external font inputs require exact allowed URLs, request identity and every byte', async () => {
+  const { FONT_UA, validateFontInputs, verifyFontInputs } =
+    await import('../../scripts/ci/client-runtime-font-inputs.mjs');
+  const url = 'https://fonts.gstatic.com/s/inter/v19/font.woff2';
+  const css = Buffer.from(`@font-face{src:url(${url})}`);
+  const font = Buffer.from('original font input');
+  const receipt = {
+    schema: 1,
+    userAgent: FONT_UA,
+    files: [
+      {
+        url: 'https://fonts.googleapis.com/css2?family=Inter',
+        sha256: hash(css),
+        bytes: css.length,
+      },
+      { url, sha256: hash(font), bytes: font.length },
+    ],
+  };
+  let calls = 0;
+  const fetcher = async (url, options) => {
+    assert.equal(options.redirect, 'error');
+    assert.equal(options.headers['User-Agent'], FONT_UA);
+    calls++;
+    return new Response(url.includes('googleapis') ? css : font);
+  };
+  await verifyFontInputs(receipt, fetcher);
+  assert.equal(calls, 2);
+  for (const invalid of [
+    undefined,
+    { ...receipt, userAgent: 'different' },
+    { ...receipt, files: [receipt.files[0]] },
+    {
+      ...receipt,
+      files: [receipt.files[0], { ...receipt.files[1], url: 'https://evil.invalid/font' }],
+    },
+    {
+      ...receipt,
+      files: [receipt.files[0], { ...receipt.files[1], url: 'https://fonts.gstatic.com/unknown' }],
+    },
+    {
+      ...receipt,
+      files: [
+        receipt.files[0],
+        { ...receipt.files[1], url: 'https://user@fonts.gstatic.com/s/font' },
+      ],
+    },
+  ])
+    assert.throws(() => validateFontInputs(invalid));
+  await assert.rejects(verifyFontInputs(receipt, async () => new Response('changed')));
+  await assert.rejects(verifyFontInputs(receipt, async () => new Response('', { status: 503 })));
+  await assert.rejects(
+    verifyFontInputs(receipt, async () => {
+      throw new Error('timeout');
+    })
+  );
+  const incompleteCss = Buffer.from(
+    `@font-face{src:url(${url})} @font-face{src:url(https://fonts.gstatic.com/s/inter/v19/other.woff2)}`
+  );
+  await assert.rejects(
+    verifyFontInputs(
+      {
+        ...receipt,
+        files: [
+          { ...receipt.files[0], sha256: hash(incompleteCss), bytes: incompleteCss.length },
+          receipt.files[1],
+        ],
+      },
+      async (url) => new Response(url.includes('googleapis') ? incompleteCss : font)
+    )
+  );
+  assert.equal(
+    (
+      await publicationDecision(() =>
+        verifyFontInputs(receipt, async () => new Response('changed'))
+      )
+    ).publish,
+    true
+  );
+});

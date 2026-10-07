@@ -2,7 +2,8 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, statSync, realpathSync } from 'node:fs';
 import { resolve, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createRequire } from 'node:module';
+import { createRequire, isBuiltin } from 'node:module';
+import { validateFontInputs } from './client-runtime-font-inputs.mjs';
 
 const SHA = /^[0-9a-f]{40}$/;
 const safePath = (path) =>
@@ -126,7 +127,7 @@ export function runtimeInputPlugin(label, root = process.cwd()) {
         }
         let clean = raw.split('?')[0];
         if (!isAbsolute(clean)) {
-          if (clean.startsWith('node:')) continue;
+          if (isBuiltin(clean)) continue;
           // Vite also reports root-relative watch files (HTML and media),
           // whose actual source blob must remain in the sealed inventory.
           if (safePath(clean) && existsSync(resolve(root, clean))) {
@@ -358,6 +359,19 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     JSON.parse(readFileSync(`.client-runtime-${label}.json`, 'utf8'))
   );
   const inventory = makeRuntimeInputs(sourceSha, observations);
+  try {
+    inventory.fontInputs = validateFontInputs(
+      JSON.parse(
+        readFileSync(
+          resolve(process.env.CA_DIST || 'dist', 'client-runtime-font-inputs.json'),
+          'utf8'
+        )
+      )
+    );
+  } catch {
+    inventory.unknown.push('missing-or-incomplete-external-font-inputs');
+    inventory.complete = false;
+  }
   writeFileSync(
     resolve(process.env.CA_DIST || 'dist', 'client-runtime-inputs.json'),
     JSON.stringify(inventory, null, 2) + '\n'

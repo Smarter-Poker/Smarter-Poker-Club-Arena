@@ -31,7 +31,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
-import { parseDiamondDoorContext } from './helpers/diamond-door-context';
+import { parseDiamondDoorContext, parseLobbyHoldingIds } from './helpers/diamond-door-context';
 
 const ARENA_ROUTE = 'clubs/diamond-arena';
 /* Leaving the arena, by a route inside this app that no account is refused
@@ -162,41 +162,106 @@ for (const [orientation, viewport] of ORIENTATIONS) {
           return { context: parseDiamondDoorContext(await response.json()), error: null };
         })
         .catch((error: unknown) => ({ context: null, error: String(error) }));
+      const holdingRead = (
+        table: 'table_seats' | 'tournament_players',
+        field: 'table_id' | 'tournament_id'
+      ) =>
+        page
+          .waitForResponse(
+            (response) => {
+              const url = new URL(response.url());
+              const select = url.searchParams.get('select') || '';
+              return (
+                url.pathname.endsWith(`/rest/v1/${table}`) &&
+                (url.searchParams.get('user_id') || '').startsWith('eq.') &&
+                (table === 'table_seats'
+                  ? select.startsWith('table_id, tables!') || select.startsWith('table_id,tables!')
+                  : select === 'tournament_id')
+              );
+            },
+            { timeout: 10_000 }
+          )
+          .then(async (response) => {
+            if (!response.ok())
+              throw new Error(`Own lobby holdings returned HTTP ${response.status()}`);
+            return { ids: parseLobbyHoldingIds(await response.json(), field), error: null };
+          })
+          .catch((error: unknown) => ({ ids: new Set<string>(), error: String(error) }));
+      const seatsRead = holdingRead('table_seats', 'table_id');
+      const registrationsRead = holdingRead('tournament_players', 'tournament_id');
       const { onArena, why } = await openArena(page);
       test.skip(!onArena, why);
-      const authority = await contextRead;
+      const [authority, seats, registrations] = await Promise.all([
+        contextRead,
+        seatsRead,
+        registrationsRead,
+      ]);
       expect(authority.error, 'the actual arena switch read could not be verified').toBeNull();
+      expect(seats.error, 'own seat state could not be verified').toBeNull();
+      expect(registrations.error, 'own registration state could not be verified').toBeNull();
       const context = authority.context!;
       const cards = page.getByTestId('arena-lobby-game-card');
       await cards.first().waitFor({ state: 'visible', timeout: 20_000 });
-      // data-kind belongs to the wrapper itself, so filter by that attribute.
       const cashCards = page.locator('[data-testid="arena-lobby-game-card"][data-kind="cash"]');
       expect(await cashCards.count(), 'the arena stake ladder did not render').toBeGreaterThan(0);
-      await expect(cashCards.first().locator('button[data-zone="primaryAction"]')).toBeVisible();
-      const closedCash = cashCards.getByRole('button', { name: CLOSED_COPY, exact: true });
-      if (context.cashGamesEnabled) {
-        await expect(closedCash).toHaveCount(0);
-      } else {
-        const eligible = page.locator(
-          '[data-testid="arena-lobby-game-card"][data-kind="cash"]:not([data-status="full"]):not([data-status="waitlist"]):not([data-status="closed"])'
-        );
-        for (const card of await eligible.all())
-          await expect(card.getByRole('button', { name: CLOSED_COPY, exact: true })).toBeDisabled();
+      for (const card of await cashCards.all()) {
+        const id = await card.getAttribute('data-id');
+        const status = await card.getAttribute('data-status');
+        const primary = card.locator('button[data-zone="primaryAction"]');
+        await expect(primary).toBeVisible();
+        if (seats.ids.has(id!)) {
+          await expect(primary).toHaveAccessibleName('Return To Game');
+          await expect(primary).toBeEnabled();
+        } else if (status === 'full' || status === 'waitlist') {
+          await expect(primary).toHaveAccessibleName(/^(Join|Leave) Waitlist$/);
+          await expect(primary).toBeEnabled();
+        } else if (status === 'closed') {
+          await expect(primary).toBeDisabled();
+        } else if (!context.cashGamesEnabled) {
+          await expect(primary).toHaveAccessibleName(CLOSED_COPY);
+          await expect(primary).toBeDisabled();
+        } else {
+          const game = (await card.getAttribute('data-target')) === 'game';
+          await expect(primary).toHaveAccessibleName(
+            game ? /^Join (Game|Lightning)$/ : 'Join Table'
+          );
+          await expect(primary).toBeEnabled();
+        }
       }
       const tournamentCards = page.locator(
         '[data-testid="arena-lobby-game-card"][data-kind="mtt"]'
       );
-      const closedRegistration = tournamentCards.getByRole('button', {
-        name: CLOSED_COPY,
-        exact: true,
-      });
-      if (context.tournamentsEnabled) await expect(closedRegistration).toHaveCount(0);
-      else {
-        const eligible = page.locator(
-          '[data-testid="arena-lobby-game-card"][data-kind="mtt"][data-status="registering"], [data-testid="arena-lobby-game-card"][data-kind="mtt"][data-status="starting_soon"], [data-testid="arena-lobby-game-card"][data-kind="mtt"][data-status="late_reg"]'
-        );
-        for (const card of await eligible.all())
-          await expect(card.getByRole('button', { name: CLOSED_COPY, exact: true })).toBeDisabled();
+      for (const card of await tournamentCards.all()) {
+        const id = await card.getAttribute('data-id');
+        const status = await card.getAttribute('data-status');
+        const primary = card.locator('button[data-zone="primaryAction"]');
+        const full =
+          Number(await card.getAttribute('data-capacity')) > 0 &&
+          Number(await card.getAttribute('data-players')) >=
+            Number(await card.getAttribute('data-capacity'));
+        await expect(primary).toBeVisible();
+        if (registrations.ids.has(id!)) {
+          await expect(primary).toHaveAccessibleName(
+            status === 'running' || status === 'late_reg' ? 'Return To Tournament' : 'Unregister'
+          );
+          await expect(primary).toBeEnabled();
+        } else if (status === 'running' || status === 'closed' || status === 'completed') {
+          await expect(primary).toHaveAccessibleName(
+            full ? 'Tournament Full' : 'Registration Closed'
+          );
+          await expect(primary).toBeDisabled();
+        } else if (!context.tournamentsEnabled) {
+          await expect(primary).toHaveAccessibleName(CLOSED_COPY);
+          await expect(primary).toBeDisabled();
+        } else if (full) {
+          await expect(primary).toHaveAccessibleName('Tournament Full');
+          await expect(primary).toBeDisabled();
+        } else {
+          await expect(primary).toHaveAccessibleName(
+            status === 'late_reg' ? 'Late Register' : 'Register'
+          );
+          await expect(primary).toBeEnabled();
+        }
       }
       // An empty live tournament catalogue cannot qualify a negative register
       // branch. Its rendered closed/open controls are exercised in isolation.

@@ -9,7 +9,7 @@ import {
   type LobbyTournamentRow,
 } from '../../src/components/lobby/lobbyEntries';
 import type { LobbyRowContext } from '../../src/components/lobby/lobbyCardContext';
-import { parseDiamondDoorContext } from '../e2e/helpers/diamond-door-context';
+import { parseDiamondDoorContext, parseLobbyHoldingIds } from '../e2e/helpers/diamond-door-context';
 
 vi.mock('../../src/services/tableWarmup', () => ({ warmTable: vi.fn() }));
 afterEach(cleanup);
@@ -140,4 +140,22 @@ describe('rendered full cash queue', () => {
     expect(ctx.onJoinTable).not.toHaveBeenCalled();
     expect(ctx.onViewTable).not.toHaveBeenCalled();
   });
+});
+
+describe('actual own-seat and registration reads', () => {
+  it('keeps exact own keys and accepts a verified empty holding list', () => {
+    expect([
+      ...parseLobbyHoldingIds([{ table_id: 'cash-1' }, { table_id: 'cash-1' }], 'table_id'),
+    ]).toEqual(['cash-1']);
+    expect([...parseLobbyHoldingIds([{ tournament_id: 'event-1' }], 'tournament_id')]).toEqual([
+      'event-1',
+    ]);
+    expect(parseLobbyHoldingIds([], 'table_id').size).toBe(0);
+  });
+  it.each([null, {}, [{ table_id: '' }], [{ table_id: 1 }], [{ tournament_id: 'other' }]])(
+    'refuses unknown holdings instead of claiming no existing paid obligation',
+    (value) => {
+      expect(() => parseLobbyHoldingIds(value, 'table_id')).toThrow();
+    }
+  );
 });

@@ -1,4 +1,4 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {EventEmitter} from 'node:events';import {observeIsolatedRequest} from './request-timing.mjs';
+import test from 'node:test';import assert from 'node:assert/strict';import {EventEmitter} from 'node:events';import {readFile} from 'node:fs/promises';import {observeIsolatedRequest} from './request-timing.mjs';
 test('isolated RPC timing records actual start/end once without credentials or body/query data',async()=>{
  const rows=[],sink=observeIsolatedRequest({method:'POST',url:'/rest/v1/rpc/fn_assign_tournament_player_seat_atomic?secret=DO_NOT_RECORD',ordinal:7,onFailure:()=>assert.fail('Timing sink failed'),record:r=>rows.push(r)});
  const response=new EventEmitter();response.statusCode=200;sink.response(response);await new Promise(r=>setTimeout(r,10));response.emit('end');response.emit('error',new Error('SECRET_ERROR'));sink.aborted();
@@ -14,6 +14,8 @@ test('timing sink failure stays sticky and cannot throw into the original respon
  const response=new EventEmitter();response.statusCode=200;assert.doesNotThrow(()=>{sink.response(response);response.emit('end');response.emit('error',new Error('private upstream detail'));sink.error();});assert.equal(sink.observationFailed,true);assert.equal(records,1);assert.equal(failures,1);
 });
 
-test('both actual launch atomic RPC names are observed with returned refusals unchanged',()=>{
- for(const operation of ['fn_begin_tournament_launch_atomic','fn_complete_tournament_launch_atomic']){const rows=[];const sink=observeIsolatedRequest({method:'POST',url:'/rest/v1/rpc/'+operation,ordinal:11,record:r=>rows.push(r),onFailure:()=>assert.fail()});assert.ok(sink);const response=new EventEmitter();response.statusCode=422;sink.response(response);response.emit('end');assert.equal(rows[1].operation,operation);assert.equal(rows[1].httpStatus,422);assert.equal(rows[1].outcome,'returned');}
+test('both actual launch atomic RPC names are observed with returned refusals unchanged',async()=>{
+ const source=await readFile(new URL('../../../../server/src/tournament/TournamentManagerBase.ts',import.meta.url),'utf8');
+ const names=[...source.matchAll(/supabase\.rpc\('([^']+)'/g)].map(m=>m[1]);
+ for(const operation of ['fn_begin_tournament_launch_atomic','fn_complete_tournament_launch_atomic']){assert.ok(names.includes(operation),'Actual launch producer RPC not covered');const rows=[];const sink=observeIsolatedRequest({method:'POST',url:'/rest/v1/rpc/'+operation,ordinal:11,record:r=>rows.push(r),onFailure:()=>assert.fail()});assert.ok(sink);const response=new EventEmitter();response.statusCode=422;sink.response(response);response.emit('end');assert.equal(rows[1].operation,operation);assert.equal(rows[1].httpStatus,422);assert.equal(rows[1].outcome,'returned');}
 });

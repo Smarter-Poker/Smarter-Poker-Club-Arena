@@ -39,6 +39,7 @@
  * Signed out is the one honest skip: globalSetup can fail to get a session.
  */
 import { expect, test, type Page } from '@playwright/test';
+import { observeCashierFailure } from './support/cashierFailureDiagnostics';
 
 /** The standalone reserved club: its own games, so its own board. */
 const STANDALONE_CLUB = process.env.E2E_TEMPLATE_CLUB_ID || '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3';
@@ -54,6 +55,24 @@ const MOBILE_SWEEP_TIMEOUT_MS =
 
 /** Every painted frame on the page: SpadeConsole's root always carries `sc`. */
 const FRAMES = '.sc';
+
+// Preserve bounded network evidence on failure without changing live requests.
+const diagnostics = new WeakMap<Page, ReturnType<typeof observeCashierFailure>>();
+test.beforeEach(async ({ page }) => {
+  diagnostics.set(page, observeCashierFailure(page));
+});
+test.afterEach(async ({ page }, testInfo) => {
+  const observer = diagnostics.get(page);
+  if (!observer) return;
+  observer.stop();
+  if (testInfo.status !== testInfo.expectedStatus) {
+    await testInfo.attach('table-management-network-diagnostics', {
+      body: Buffer.from(JSON.stringify(observer.snapshot())),
+      contentType: 'application/json',
+    });
+  }
+  diagnostics.delete(page);
+});
 
 type Outcome = 'board' | 'refused';
 

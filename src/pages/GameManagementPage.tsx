@@ -914,8 +914,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
            the club it runs under. Naming is not hosting. */
         let nextMemberNames: Record<string, string> = {};
         if (scope === 'club') {
-          resolvedScopeId = await withGameManagementReadDeadline(() =>
-            resolveClubUUID(clubId || '')
+          resolvedScopeId = await withGameManagementReadDeadline((signal) =>
+            resolveClubUUID(clubId || '', signal)
           );
           const [access, clubResult] = await withGameManagementReadDeadline((signal) =>
             Promise.all([

@@ -127,9 +127,11 @@ interface HandReplayProps {
   /**
    * CLIP MODE (Phase 9.1, 2026-09-30): the replay as a camera subject.
    *
-   * The hand clip renderer opens the public share page in a headless
-   * browser (a 4:5 portrait viewport, 1080x1350, since 2026-10-07) and
-   * takes one still per frame. THE CLIP IS THE SHARE PAGE, PIXEL FOR PIXEL
+   * The hand clip renderer opens the public share route in a headless
+   * browser (a 4:5 portrait viewport, 1080x1350, since 2026-10-07) with a
+   * `source` built exactly as this component builds one for a hand fetched
+   * by id (`clipSourceFrom`, src/lib/clipMode.ts) and takes one still per
+   * frame. THE CLIP IS THIS REPLAYER AS THE ARENA SHOWS IT, PIXEL FOR PIXEL
    * (owner decision, Dan, 2026-10-07): `clip` hides nothing and adds
    * nothing a viewer can see. Until then it hid the header, the tabs, the
    * street jumps, the transport, the rate buttons and the seat strip and

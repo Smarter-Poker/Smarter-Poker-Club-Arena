@@ -1,24 +1,27 @@
 /**
- * CLIP MODE (Phase 9.1, 2026-09-30; the share path since 2026-10-07): the pure
- * half of the hand clip renderer.
+ * CLIP MODE (Phase 9.1, 2026-09-30; the arena's own replayer since
+ * 2026-10-07): the pure half of the hand clip renderer.
  *
- * - The hand (the share path): the payload becomes the same ShareableHand the
- *   archive's share button builds, through `shareableFromModel`. Every
- *   player's screen name and seat is kept, the hero is marked, the table name
- *   comes from the payload with the archive's "Club Arena" fallback, the hand
- *   number is carried, and the hero's private cards and discard travel into
- *   the model. Nothing is anonymised: a clip is the share page, by owner
- *   decision (Dan, 2026-10-07).
+ * - The source: the payload becomes the `ReplaySource` HandReplay builds for
+ *   a hand it fetched by id, from the same record. The reference is built
+ *   here the way the arena builds it: the archive's own mapper
+ *   (HandHistoryService.mapHandHistoryRow) on the row, folded into a source
+ *   exactly as HandReplay's `source` memo folds a fetched record. Every
+ *   player's screen name and seat is kept, the hero is the viewer, the table
+ *   name comes from the payload with the archive's "Table" fallback, the
+ *   hand number, the variant and the reveal record are carried, and the
+ *   hero's private cards and discard travel into the model. A clip is the
+ *   hand replayer inside Club Arena, by owner decision (Dan, 2026-10-07).
  * - The rate fit (contract C3) picks the slowest rate that fits the window,
  *   extends the end hold to reach the minimum, and refuses a hand that runs
  *   past the maximum at the fastest rate.
  * - A malformed payload reads as null; a payload without a table name reads
  *   with `tableName` null.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   CLIP_END_HOLD_MS,
-  clipHandFrom,
+  clipSourceFrom,
   clipRunMs,
   fitClipRate,
   readClipPayload,
@@ -26,8 +29,15 @@ import {
 } from '@/lib/clipMode';
 import { buildReplay, replayInputFromRow } from '@/utils/handReplay';
 import { buildReplayFrames, type ReplayFrame } from '@/utils/replayFrames';
-import { replayFromShareable, shareableFromModel, shareUserId } from '@/lib/shareHandModel';
 import { ACTION_BEAT_MS, REPLAY_RATES, STREET_BEAT_MS, replayBeatMs } from '@/utils/replayMotion';
+import type { ReplaySource } from '@/components/replay/HandReplay';
+
+/* The archive's mapper is the reference; it is reached the way
+   tests/unit/ritBoardsPersistence.test.ts reaches it, with the database
+   client stubbed out, because the mapper itself never touches it. */
+vi.mock('@/lib/supabase', () => ({ supabase: { from: () => ({}), rpc: vi.fn() } }));
+vi.mock('@/utils/retryAsync', () => ({ retryAsync: <T>(fn: () => Promise<T>) => fn() }));
+import { handHistoryService } from '@/services/HandHistoryService';
 
 const HERO = 'hero-uuid';
 const SHOWN = 'shown-villain-uuid';
@@ -133,107 +143,150 @@ const read = (p: unknown) => {
   return payload;
 };
 
-describe('the hand (the share path)', () => {
-  it('is the ShareableHand the archive builds for a share of the same hand', () => {
-    const hand = clipHandFrom(read(payloadFor(fixtureRow())));
-    /* panelHandToShareable, src/lib/handHistoryAdapter.ts: the same call. */
-    const reference = shareableFromModel(buildReplay(replayInputFromRow(fixtureRow())), {
-      id: 'hand-uuid',
-      tableName: 'Kingfish Club',
-      heroUserId: HERO,
-    });
-    expect(hand).toEqual(reference);
-    /* And the page reads it back as it reads a link: the one reconstruction. */
-    const model = replayFromShareable(hand);
-    const direct = buildReplay(replayInputFromRow(fixtureRow()));
-    expect(model.players.map((p) => p.username)).toEqual(direct.players.map((p) => p.username));
-    expect(model.potTotal).toBe(direct.potTotal);
-    expect(buildReplayFrames(model).length).toBe(buildReplayFrames(direct).length);
+/**
+ * THE REFERENCE: the source the arena's replayer renders for this record.
+ * The archive's mapper on the row (with the table's name, the viewer's own
+ * discard and private cards, as the archive supplies them), folded into a
+ * `ReplaySource` exactly as HandReplay's `source` memo folds a fetched
+ * record (src/components/replay/HandReplay.tsx, `handId` mode).
+ */
+function arenaSourceFor(
+  row: ClipRow,
+  opts: {
+    tableName?: string;
+    discard?: { seat: number; card: { rank: string; suit: string } };
+    privateCards?: { rank: string; suit: string }[];
+  } = {}
+): ReplaySource {
+  const tableId = 'table-uuid';
+  const tableNames = new Map<string, { name?: string }>();
+  if (opts.tableName) tableNames.set(tableId, { name: opts.tableName });
+  const discards = new Map<string, { seat: number; card: { rank: string; suit: string } }>();
+  if (opts.discard) discards.set(`${tableId}:${row.hand_number}`, opts.discard);
+  /* `facts` is required by the mapper's type and read only by the Rundown
+     tab; the clip never shows it (see clipSourceFrom), so it is null here. */
+  const privateByHand = new Map<string, { user_id: string; cards: unknown[]; facts: null }>();
+  if (opts.privateCards) {
+    privateByHand.set(row.id, { user_id: HERO, cards: opts.privateCards, facts: null });
+  }
+  const record = (handHistoryService as unknown as Record<string, any>).mapHandHistoryRow(
+    { ...row, table_id: tableId },
+    new Map(),
+    discards,
+    privateByHand,
+    tableNames
+  );
+  if (!record) throw new Error('the archive did not map the fixture row');
+  const reveals: Record<string, { mucked?: boolean } | undefined> = {};
+  for (const p of record.players) reveals[p.user_id] = p.showdown_reveal;
+  return {
+    model: record.replay,
+    tableName: record.table_name ?? null,
+    handNumber: record.hand_number ?? null,
+    gameType: record.game_type ?? null,
+    reveals,
+    viewerId: HERO,
+    viewerFacts: record.players.find((p: any) => p.user_id === HERO)?.facts ?? null,
+  };
+}
+
+describe("the source (the arena's own replayer)", () => {
+  it('is the source HandReplay builds for the same hand fetched by id, field for field', () => {
+    const source = clipSourceFrom(read(payloadFor(fixtureRow())));
+    const arena = arenaSourceFor(fixtureRow(), { tableName: 'Kingfish Club' });
+    expect(source).toEqual(arena);
+    /* The model is the record's own reconstruction, not a wire round trip. */
+    expect(source.model).toEqual(buildReplay(replayInputFromRow(fixtureRow())));
+    expect(buildReplayFrames(source.model).length).toBe(buildReplayFrames(arena.model).length);
   });
 
-  it('keeps the name and the seat of every player, and marks the hero', () => {
-    const hand = clipHandFrom(read(payloadFor(fixtureRow())));
-    expect(hand.players.map((p) => [p.seat, p.name])).toEqual([
+  it('keeps the name and the seat of every player, and anchors the felt on the hero', () => {
+    const source = clipSourceFrom(read(payloadFor(fixtureRow())));
+    expect(source.model.players.map((p) => [p.seat, p.username])).toEqual([
       [1, 'kingfish'],
       [2, 'Emerson'],
       [3, 'Folder'],
     ]);
-    expect(hand.players.map((p) => p.isHero)).toEqual([true, false, false]);
-    /* The hero's seat is the one the felt is anchored on, as a link's is. */
-    expect(hand.players.find((p) => p.isHero)?.seat).toBe(1);
-    const text = JSON.stringify(hand);
+    expect(source.viewerId).toBe(HERO);
+    const text = JSON.stringify(source);
     expect(text).toContain('Emerson');
     expect(text).toContain('Folder');
     expect(text).not.toContain('Seat 2');
     expect(text).not.toContain('Seat 3');
   });
 
-  it('carries the table name from the payload, and "Club Arena" when it sent none', () => {
-    expect(clipHandFrom(read(payloadFor(fixtureRow()))).tableName).toBe('Kingfish Club');
-    expect(clipHandFrom(read(payloadFor(fixtureRow(), { tableName: null }))).tableName).toBe(
-      'Club Arena'
+  it('carries the table name from the payload, and "Table" when it sent none, as the archive does', () => {
+    expect(clipSourceFrom(read(payloadFor(fixtureRow()))).tableName).toBe('Kingfish Club');
+    expect(clipSourceFrom(read(payloadFor(fixtureRow(), { tableName: null }))).tableName).toBe(
+      'Table'
     );
-    expect(clipHandFrom(read(payloadFor(fixtureRow(), { tableName: '' }))).tableName).toBe(
-      'Club Arena'
+    expect(clipSourceFrom(read(payloadFor(fixtureRow(), { tableName: '' }))).tableName).toBe(
+      'Table'
+    );
+    expect(arenaSourceFor(fixtureRow()).tableName).toBe('Table');
+    expect(clipSourceFrom(read(payloadFor(fixtureRow(), { tableName: null })))).toEqual(
+      arenaSourceFor(fixtureRow())
     );
   });
 
-  it('carries the hand number, the stakes, the variant and the showdown as a link does', () => {
-    const hand = clipHandFrom(read(payloadFor(fixtureRow())));
-    expect(hand.id).toBe('hand-uuid');
-    expect(hand.handNumber).toBe(4242);
-    expect(hand.stakes).toBe('1/2');
-    expect(hand.variant).toBe('NLH');
-    const hero = hand.players.find((p) => p.seat === 1);
-    const shown = hand.players.find((p) => p.seat === 2);
-    const folded = hand.players.find((p) => p.seat === 3);
-    /* The cards the table saw are the shown cards, for the hero and the villain alike. */
-    expect(hero?.cards).toEqual([
-      { rank: '9', suit: 'c' },
-      { rank: '9', suit: 'd' },
-    ]);
-    expect(hero?.privateCards).toBeUndefined();
-    expect(shown?.cards).toEqual([
-      { rank: 'A', suit: 'h' },
-      { rank: 'K', suit: 'h' },
-    ]);
-    expect(folded?.cards).toBeUndefined();
-    expect(hero?.isWinner).toBe(true);
+  it('carries the hand number, the variant, the stakes and the reveal record as the arena does', () => {
+    const source = clipSourceFrom(read(payloadFor(fixtureRow())));
+    expect(source.handNumber).toBe(4242);
+    expect(source.gameType).toBe('NLH');
+    expect(source.model.smallBlind).toBe(1);
+    expect(source.model.bigBlind).toBe(2);
+    expect(source.reveals).toEqual({
+      [HERO]: { reveal_order: 0, mucked: false, hand_name: 'Three Of A Kind' },
+      [SHOWN]: { reveal_order: 1, mucked: false, hand_name: 'Pair' },
+      [FOLDED]: undefined,
+    });
+    expect(Object.keys(source.reveals ?? {})).toEqual([HERO, SHOWN, FOLDED]);
+    /* The cards the table saw are in the model for the hero and the villain alike. */
+    const hero = source.model.players.find((p) => p.userId === HERO);
+    const shown = source.model.players.find((p) => p.userId === SHOWN);
+    const folded = source.model.players.find((p) => p.userId === FOLDED);
+    expect(hero?.hole?.length).toBe(2);
+    expect(shown?.hole?.length).toBe(2);
+    expect(folded?.hole ?? null).toBeNull();
     expect(hero?.won).toBe(200);
-    expect(hero?.handName).toBe('Three Of A Kind');
-    const model = replayFromShareable(hand);
-    expect(model.showdown.map((r) => r.userId)).toEqual([shareUserId(1), shareUserId(2)]);
+    expect(source.model.showdown.map((r) => r.userId)).toEqual([HERO, SHOWN]);
+    /* A mucked seat is marked as the record marks it. */
+    const row = fixtureRow();
+    row.showdown = [
+      { user_id: HERO, seat: 1, reveal_order: 0, mucked: false, hand_name: 'Three Of A Kind' },
+      { user_id: SHOWN, seat: 2, reveal_order: 1, mucked: true },
+    ];
+    const mucked = clipSourceFrom(read(payloadFor(row)));
+    expect(mucked.reveals?.[SHOWN]).toEqual({ reveal_order: 1, mucked: true });
+    expect(mucked).toEqual(arenaSourceFor(row, { tableName: 'Kingfish Club' }));
+    /* A hand that never reached showdown has a key for every seat and no record. */
+    const quiet = clipSourceFrom(read(payloadFor(foldAroundRow())));
+    expect(quiet.reveals).toEqual({ [HERO]: undefined, [SHOWN]: undefined, [FOLDED]: undefined });
+    expect(quiet).toEqual(arenaSourceFor(foldAroundRow(), { tableName: 'Kingfish Club' }));
   });
 
-  it("the hero's private cards travel into the model, marked private, as a link carries them", () => {
-    const hand = clipHandFrom(
-      read(
-        payloadFor(foldAroundRow(), {
-          privateHoleCards: {
-            [HERO]: [
-              { rank: 'A', suit: 'c' },
-              { rank: 'K', suit: 'c' },
-            ],
-          },
-        })
-      )
-    );
-    const hero = hand.players.find((p) => p.isHero);
-    expect(hero?.cards).toEqual([
+  it("the hero's private cards travel into the model, marked private, as the archive carries them", () => {
+    const cards = [
       { rank: 'A', suit: 'c' },
       { rank: 'K', suit: 'c' },
-    ]);
-    expect(hero?.privateCards).toBe(true);
-    expect(hand.players.filter((p) => !p.isHero).every((p) => p.cards === undefined)).toBe(true);
-    const model = replayFromShareable(hand);
-    const heroModel = model.players.find((p) => p.userId === shareUserId(1));
-    expect(heroModel?.privateHole?.length).toBe(2);
-    expect(heroModel?.hole ?? null).toBeNull();
+    ];
+    const source = clipSourceFrom(
+      read(payloadFor(foldAroundRow(), { privateHoleCards: { [HERO]: cards } }))
+    );
+    const hero = source.model.players.find((p) => p.userId === HERO);
+    expect(hero?.privateHole?.length).toBe(2);
+    expect(hero?.hole ?? null).toBeNull();
+    expect(source.model.players.filter((p) => p.userId !== HERO).every((p) => !p.privateHole)).toBe(
+      true
+    );
     /* A fold-around has no showdown, so the private cards did not invent one. */
-    expect(model.showdown).toEqual([]);
+    expect(source.model.showdown).toEqual([]);
+    expect(source).toEqual(
+      arenaSourceFor(foldAroundRow(), { tableName: 'Kingfish Club', privateCards: cards })
+    );
   });
 
-  it("the hero's discard travels into the model as the discard street", () => {
+  it("the hero's discard travels into the model as the discard street, card and all", () => {
     const row = fixtureRow();
     row.game_variant = 'pineapple';
     row.actions = [
@@ -246,28 +299,20 @@ describe('the hand (the share path)', () => {
       { seat: 1, userId: HERO, action: 'all_in', amount: 94, stage: 'flop' },
       { seat: 2, userId: SHOWN, action: 'call', amount: 94, stage: 'flop' },
     ];
-    const hand = clipHandFrom(
-      read(payloadFor(row, { discardedCards: { [HERO]: { rank: '2', suit: 'd' } } }))
-    );
-    expect(hand.variant).toBe('Crazy Pineapple');
-    expect(hand.discard?.actions).toEqual([
-      { seat: 1, action: 'DISCARD' },
-      { seat: 2, action: 'DISCARD' },
-    ]);
-    const model = replayFromShareable(hand);
-    const discards = model.streets.find((s) => s.key === 'pineapple_discard');
+    const card = { rank: '2', suit: 'd' };
+    const source = clipSourceFrom(read(payloadFor(row, { discardedCards: { [HERO]: card } })));
+    expect(source.gameType).toBe('PINEAPPLE');
+    const discards = source.model.streets.find((s) => s.key === 'pineapple_discard');
     expect(discards?.rows.map((r) => [r.seat, r.verb])).toEqual([
       [1, 'discard'],
       [2, 'discard'],
     ]);
-    /* The card itself never travels on the wire; it is the viewer's own. */
-    expect(hand.discard).toEqual({
-      actions: [
-        { seat: 1, action: 'DISCARD' },
-        { seat: 2, action: 'DISCARD' },
-      ],
-    });
-    expect(discards?.rows.every((r) => r.discardedCard === null)).toBe(true);
+    /* The hero's own card is in the model, as it is in the arena; nobody else's is. */
+    expect(discards?.rows.find((r) => r.seat === 1)?.discardedCard).toEqual(card);
+    expect(discards?.rows.find((r) => r.seat === 2)?.discardedCard ?? null).toBeNull();
+    expect(source).toEqual(
+      arenaSourceFor(row, { tableName: 'Kingfish Club', discard: { seat: 1, card } })
+    );
   });
 });
 

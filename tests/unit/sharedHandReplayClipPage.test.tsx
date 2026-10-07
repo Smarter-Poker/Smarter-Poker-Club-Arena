@@ -1,18 +1,23 @@
 /**
- * SHARED HAND REPLAY PAGE, CLIP MODE (Phase 9.1, 2026-09-30; the share page
- * since 2026-10-07).
+ * SHARED HAND REPLAY PAGE, CLIP MODE (Phase 9.1, 2026-09-30; the arena's own
+ * replayer since 2026-10-07).
  *
- * `/replay?clip=1` with `window.__SP_CLIP__` injected renders the share page
- * from the payload, pixel for pixel (owner decision, Dan, 2026-10-07): every
- * screen name, the table name and the hand number in the header, the footer
- * under the replayer, the camera contract on top. No `h=`, no database read.
- * Without the payload the page is exactly what it is today: an unreadable
- * link says so.
+ * `/replay?clip=1` with `window.__SP_CLIP__` injected renders the hand
+ * replayer as the arena shows it, from the payload, pixel for pixel (owner
+ * decision, Dan, 2026-10-07): every screen name, the table name and the hand
+ * number in the header, the transport and the seat strip, the camera
+ * contract on top, and NO share footer, because the arena's replayer has
+ * none. No `h=`, no database read. Without the payload the page is exactly
+ * what it is today: a link renders the replayer with the footer under it,
+ * and an unreadable link says so.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import type { ClipRow } from '@/lib/clipMode';
+import { encodeHand } from '@/components/table/ShareHand';
+import { shareableFromModel } from '@/lib/shareHandModel';
+import { buildReplay, replayInputFromRow } from '@/utils/handReplay';
 
 vi.mock('@/services/SoundService', () => ({
   soundService: new Proxy({}, { get: () => vi.fn() }),
@@ -74,7 +79,7 @@ afterEach(() => {
 });
 
 describe('/replay?clip=1 with the injected payload', () => {
-  it('renders the share page from the payload: every screen name, the table name and hand number in the header, the footer, no h=, no database read', async () => {
+  it("renders the arena's replayer from the payload: every screen name, the table name and hand number in the header, no footer, no h=, no database read", async () => {
     inject({
       v: 1,
       style: 'felt-720p',
@@ -90,27 +95,30 @@ describe('/replay?clip=1 with the injected payload', () => {
     await waitFor(() =>
       expect(document.querySelector('.hand-replay')?.getAttribute('data-clip-state')).toBe('ready')
     );
-    /* The share page's frame, not a clip frame of its own. */
+    /* The column the arena's by-id page holds the replayer in (the same frame
+       as `.hand-replayer-page`), not a clip frame of its own. */
     expect(document.querySelector('.shared-replay')).not.toBeNull();
+    expect(document.querySelector('.shared-replay')?.children).toHaveLength(1);
+    expect(document.querySelector('.shared-replay > .hand-replay')).not.toBeNull();
     expect(document.querySelector('.shared-replay--clip')).toBeNull();
     expect(document.querySelector('.hand-replay--clip')).toBeNull();
     expect(document.querySelector('.hand-replay__clip-eyebrow')).toBeNull();
-    /* The header a link gets: the table name, the blinds, the hand number. */
+    /* The header the arena prints: the table name, the blinds, the hand number. */
     const header = document.querySelector('.hand-replay__header');
     expect(header).not.toBeNull();
     expect(header?.querySelector('.hand-replay__eyebrow')?.textContent).toContain('Kingfish Club');
     expect(header?.querySelector('.hand-replay__title')?.textContent).toBe('Hand #77');
-    /* The transport and the seat strip a link gets. */
+    /* The transport and the seat strip the arena shows. */
     expect(document.querySelector('.hand-replay__controls')).not.toBeNull();
     expect(document.querySelector('.hand-replay__seats')).not.toBeNull();
     /* Every screen name; nobody is a seat number. */
     expect(document.body.textContent).toContain('kingfish');
     expect(document.body.textContent).toContain('Emerson');
     expect(document.body.textContent).not.toContain('Seat 2');
-    /* The footer a link gets, naming the sharer. */
-    expect(document.querySelector('.shared-replay__footer')?.textContent).toBe(
-      "Shared From kingfish's Hand History · Smarter Poker"
-    );
+    /* No share footer: the arena's replayer has none. Nothing but the replayer. */
+    expect(document.querySelector('.shared-replay__footer')).toBeNull();
+    expect(document.body.textContent).not.toContain('Shared From');
+    expect(document.body.textContent).not.toContain('Smarter Poker');
     expect(document.body.textContent).not.toContain('Not Readable');
     /* No h= was given and nothing asked the database for the hand. */
     expect(getHand).not.toHaveBeenCalled();
@@ -131,6 +139,23 @@ describe('/replay?clip=1 with the injected payload', () => {
 });
 
 describe('without the payload, the page is what it is today', () => {
+  it('a link renders the replayer with the footer under it', async () => {
+    const hand = shareableFromModel(buildReplay(replayInputFromRow(ROW)), {
+      id: ROW.id,
+      tableName: 'Kingfish Club',
+      heroUserId: HERO,
+    });
+    await openPage(`?h=${encodeHand(hand)}`);
+    await screen.findByText('Hand #77');
+    expect(document.querySelector('.shared-replay > .hand-replay')).not.toBeNull();
+    expect(document.querySelector('.shared-replay__footer')?.textContent).toBe(
+      "Shared From kingfish's Hand History · Smarter Poker"
+    );
+    expect(document.querySelector('.hand-replay')?.hasAttribute('data-clip-state')).toBe(false);
+    expect((window as unknown as { __spClip?: unknown }).__spClip).toBeUndefined();
+    expect(getHand).not.toHaveBeenCalled();
+  });
+
   it('clip=1 alone still needs h=', async () => {
     await openPage('?clip=1');
     expect(await screen.findByText('This Replay Link Is Not Readable')).toBeTruthy();

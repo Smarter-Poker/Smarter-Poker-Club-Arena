@@ -208,9 +208,27 @@ export const DiamondService = {
     const { data: profileData, error: profileError } = await ownProfile(userId)
       .select('diamonds')
       .maybeSingle();
-    if (profileError) reportError(profileError, 'DiamondService.getBalance', { userId });
-
-    const balance = profileData?.diamonds || 0;
+    /*
+     * AN UNREAD BALANCE IS NOT A BALANCE OF ZERO (2026-10-07, 10.86 rules 1-2).
+     *
+     * This used to report the error and carry on to `profileData?.diamonds || 0`,
+     * so a refused read, a PGRST 503 or a dropped connection RESOLVED as
+     * `{ balance: 0 }`. useWalletStore's catch - which exists to keep the last
+     * known figure on a failed fetch - never ran, and the store painted 0 and
+     * stamped it as fresh. Same for a missing row: the owner door answers only
+     * for the signed-in player's own id, so "no row" means this read could not
+     * tell, never that the player holds nothing. Both now throw, and every
+     * caller already has (or now has) the catch that keeps what it knew.
+     */
+    if (profileError) {
+      reportError(profileError, 'DiamondService.getBalance', { userId });
+      throw profileError;
+    }
+    const raw = profileData?.diamonds;
+    if (raw === null || raw === undefined || !Number.isFinite(Number(raw))) {
+      throw new Error('diamond_balance_unread');
+    }
+    const balance = Number(raw);
 
     /*
      * The two `wallet_transactions` reads that used to follow are gone.
@@ -225,7 +243,7 @@ export const DiamondService = {
      * actually records diamonds, via `getLifetimeStats`, and only when a
      * surface asks for them.
      */
-    return { balance: balance || 0 };
+    return { balance };
   },
 
   /**

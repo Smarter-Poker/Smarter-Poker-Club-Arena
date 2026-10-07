@@ -724,9 +724,13 @@ export default function ProfilePage() {
         .then(({ data: { user: authUser } }) => {
           if (authUser && ownsActiveAccount(authUser.id)) {
             const requestedUserId = authUser.id;
-            DiamondService.getBalance(requestedUserId).then((dw) => {
-              if (dw && ownsActiveAccount(requestedUserId)) setDiamonds(dw.balance || 0);
-            });
+            /* getBalance throws when the balance could not be read; the last
+               figure on screen stays rather than becoming a zero. */
+            DiamondService.getBalance(requestedUserId)
+              .then((dw) => {
+                if (dw && ownsActiveAccount(requestedUserId)) setDiamonds(dw.balance);
+              })
+              .catch((e) => console.warn('[Profile] Diamond balance unread:', e));
           }
         })
         .catch((e) => console.warn('[Profile] Refreshing diamond balance failed:', e));

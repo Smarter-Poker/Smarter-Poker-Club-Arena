@@ -84,6 +84,34 @@ describe('the ledger speaks to the player', () => {
     expect(line).toContain('THEN public.fn_diamond_kind_row_label(k, p_amount)');
   });
 
+  /* THE MINT AND THE RAKE SWEEP NEVER REACH A PLAYER (2026-10-07, migration
+     20261007102421). Read off production that day: "The Mint: signup grant" on
+     832 human wallets, "The Mint: Lifetime VIP Monthly Diamond Benefit" on 21,
+     and every cash_rake row printing the sweep's operator sentence "attributed
+     to this player's contributions (from the arena to the house)". Dan,
+     2026-09-05: the Mint is internal (tests/the-mint-is-internal.law.test.ts).
+     These pins fail if a redefinition drops the prefix strip, the rake label or
+     narrows the recasing beyond the Mint's own reasons. */
+  it('the Mint prefix, the rake sweep sentence and a quoted owner instruction never reach a player', () => {
+    // The prefix is stripped before any other clean-up runs.
+    expect(line).toContain(
+      "regexp_replace(BTRIM(COALESCE(p_description, '')), '^the mint:\\s*', '', 'i') AS d"
+    );
+    expect(line).toContain("BTRIM(COALESCE(p_description, '')) ~* '^the mint:' AS minted");
+    // The rake sweep's sentence is never player copy: the kind takes its label.
+    expect(line).toContain("OR k = 'cash_rake'");
+    expect(line).toContain("OR LOWER(d) ~ '\\(dan \\d{4}-\\d{2}-\\d{2}'");
+    // Only a Mint reason is recased; every other line is printed as written.
+    expect(line).toContain(
+      'ELSE CASE WHEN minted AND line = LOWER(line) THEN INITCAP(line) ELSE line END'
+    );
+    expect(line).not.toMatch(/ELSE\s+INITCAP\(line\)/);
+    // The words "The Mint" appear in this function only inside comments and the
+    // case-insensitive prefix pattern, never as copy it could emit.
+    const code = line.replace(/--[^\n]*/g, '');
+    expect(code).not.toMatch(/'The Mint/);
+  });
+
   it('the row labels are Title Case, carry no em dash, and name the arena as diamonds', () => {
     const labels = labelBody.slice(
       labelBody.indexOf('CREATE OR REPLACE FUNCTION public.fn_diamond_kind_row_label'),

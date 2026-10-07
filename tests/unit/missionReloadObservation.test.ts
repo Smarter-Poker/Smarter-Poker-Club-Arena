@@ -3,7 +3,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { Page } from '@playwright/test';
-import { reloadMissionPageWithEvidence } from '../e2e/support/missionReloadObservation';
+import {
+  finalizeMissionCleanupWithEvidence,
+  reloadMissionPageWithEvidence,
+} from '../e2e/support/missionReloadObservation';
 
 function fixture(options: { fails?: boolean; documentFails?: boolean } = {}) {
   const events = new EventEmitter();
@@ -124,5 +127,87 @@ describe('failed mission reload evidence', () => {
     expect(helper).toContain("await page.reload({ waitUntil: 'domcontentloaded' });");
     expect(helper).toContain('throw error;');
     expect(helper).not.toContain("waitUntil: 'commit'");
+  });
+});
+
+describe('mission cleanup evidence placement', () => {
+  it('finalizes actual cleanup and its evidence inside finally before an original journey failure can exit', () => {
+    const source = readFileSync(
+      resolve(import.meta.dirname, '../e2e/production-daily-missions.spec.ts'),
+      'utf8'
+    );
+    const finalizer = source.slice(source.lastIndexOf('} finally {'));
+    expect(finalizer).toContain('await finalizeMissionCleanupWithEvidence(');
+    expect(finalizer).toContain('daily-missions-cleanup.json');
+    expect(finalizer).toContain('cleanupTemporaryCustomizationAccount(environment, account)');
+    expect(source).toContain('journeyError = error;');
+  });
+});
+
+describe('mission cleanup preserves actual failures', () => {
+  it('records independently verified absence even when the original journey failed', async () => {
+    const original = new Error('original abort');
+    const cleanup = vi.fn(async () => {});
+    const attach = vi.fn(async (_data: object) => {});
+    await finalizeMissionCleanupWithEvidence('owned-fixture', original, cleanup, attach);
+    expect(cleanup).toHaveBeenCalledOnce();
+    expect(attach.mock.calls[0][0]).toMatchObject({
+      cleanupStatus: 'verified_absent',
+      journeyFailed: true,
+    });
+  });
+  it('retains BOTH original abort and cleanup refusal instead of skipping the cleanup assertion', async () => {
+    const original = new Error('original abort');
+    const refusal = new Error('cleanup refused');
+    const attach = vi.fn(async (_data: object) => {});
+    let result: unknown;
+    try {
+      await finalizeMissionCleanupWithEvidence(
+        'owned-fixture',
+        original,
+        async () => {
+          throw refusal;
+        },
+        attach
+      );
+    } catch (error) {
+      result = error;
+    }
+    expect(result).toBeInstanceOf(AggregateError);
+    expect((result as AggregateError).errors).toEqual([original, refusal]);
+    expect((result as AggregateError).cause).toBe(original);
+    expect(attach.mock.calls[0][0]).toMatchObject({ cleanupStatus: 'refused' });
+  });
+  it('does not hide cleanup failure behind an unavailable artifact transport', async () => {
+    const refusal = new Error('cleanup refused');
+    await expect(
+      finalizeMissionCleanupWithEvidence(
+        'owned-fixture',
+        undefined,
+        async () => {
+          throw refusal;
+        },
+        async () => {
+          throw new Error('artifact unavailable');
+        }
+      )
+    ).rejects.toBeInstanceOf(AggregateError);
+  });
+  it('bounds stalled evidence delivery without skipping actual cleanup', async () => {
+    vi.useFakeTimers();
+    const cleanup = vi.fn(async () => {});
+    const done = finalizeMissionCleanupWithEvidence(
+      null,
+      undefined,
+      cleanup,
+      () => new Promise(() => {})
+    );
+    try {
+      await vi.advanceTimersByTimeAsync(1000);
+      await done;
+      expect(cleanup).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

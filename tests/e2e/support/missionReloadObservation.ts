@@ -81,16 +81,63 @@ export async function reloadMissionPageWithEvidence(page: Page, attach: AttachOb
     if (timer) clearTimeout(timer);
     // The observer cannot replace the authoritative original failure, even
     // when the browser context or attachment transport is already unavailable.
-    await attach({
+    await attachWithinObservationBudget(attach, {
       diagnosticOnly: true,
       observationTimeoutMs: OBSERVATION_TIMEOUT_MS,
       elapsedMs: Date.now() - startedAt,
       navigation,
       document,
-    }).catch(() => undefined);
+    });
     throw error;
   } finally {
     page.off('response', onResponse);
     page.off('requestfailed', onFailed);
+  }
+}
+
+async function attachWithinObservationBudget(attach: AttachObservation, observation: object) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      attach(observation).catch(() => undefined),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, OBSERVATION_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/** The cleanup owner already verifies every reserved row and Auth absence. */
+export async function finalizeMissionCleanupWithEvidence(
+  accountId: string | null,
+  journeyError: unknown,
+  cleanup: () => Promise<void>,
+  attach: AttachObservation
+) {
+  let cleanupError: unknown;
+  try {
+    await cleanup();
+  } catch (error) {
+    cleanupError = error;
+  }
+  await attachWithinObservationBudget(attach, {
+    accountId,
+    cleanupStatus:
+      cleanupError === undefined
+        ? accountId
+          ? 'verified_absent'
+          : 'no_account_returned'
+        : 'refused',
+    journeyFailed: journeyError !== undefined,
+    observationTimeoutMs: OBSERVATION_TIMEOUT_MS,
+  });
+  if (cleanupError !== undefined) {
+    throw new AggregateError(
+      journeyError === undefined ? [cleanupError] : [journeyError, cleanupError],
+      'Daily Missions cleanup failed; the original journey failure is retained.',
+      { cause: journeyError }
+    );
   }
 }

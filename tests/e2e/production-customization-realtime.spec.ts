@@ -6,6 +6,7 @@ import {
   type Locator,
   type Page,
 } from '@playwright/test';
+import { readAppearanceRoots } from './support/appearancePreviewObservation';
 import { rawProfileHeading } from './support/rawProfileHeading';
 import { navigateToRenderedProfile } from './support/renderedProfileNavigation';
 import { readProfileInterfaceMode } from './support/profileInterfaceMode';
@@ -99,6 +100,43 @@ const PRODUCTION_RESPONSE_TIMEOUT = 60_000;
 const PRESENCE_TOPIC_PREFIX = 'cert-presence:';
 const accountObservations = new WeakMap<Page, ReturnType<typeof observeAccountRealtime>>();
 const appearanceObservations = new WeakMap<Page, AppearanceRealtimeObservationState>();
+const tableArtObservations = new WeakMap<Page, AppearanceRealtimeObservationState>();
+const tableArtReadOutcomes = new WeakMap<
+  Page,
+  {
+    role: string;
+    requested: number;
+    responses: number;
+    failed: number;
+    lastStatus: number | null;
+    lastResponseMs: number | null;
+    stage: string | null;
+    operationStartedAt: number | null;
+    freshResponses: number;
+    olderRequestResponses: number;
+    unattributedResponses: number;
+    beforeOperation: { requested: number; responses: number; failed: number } | null;
+  }
+>();
+function markTableArtOperation(pages: Page[], stage: string) {
+  for (const page of pages) {
+    const art = tableArtObservations.get(page);
+    if (art) art.signalReceived = false;
+    const reads = tableArtReadOutcomes.get(page);
+    if (reads) {
+      reads.stage = stage;
+      reads.operationStartedAt = performance.now();
+      reads.freshResponses = 0;
+      reads.olderRequestResponses = 0;
+      reads.unattributedResponses = 0;
+      reads.beforeOperation = {
+        requested: reads.requested,
+        responses: reads.responses,
+        failed: reads.failed,
+      };
+    }
+  }
+}
 const accountSignalReceived = new WeakMap<Page, boolean>();
 function observeAccountSignal(page: Page, userId: string) {
   accountSignalReceived.set(page, false);
@@ -148,7 +186,41 @@ async function readAppearance(studio: Locator): Promise<Appearance> {
 }
 
 async function expectAppearance(studio: Locator, appearance: Appearance) {
-  await expect.poll(() => readAppearance(studio), { timeout: 20_000 }).toEqual(appearance);
+  let sample: { roots: number; values: Appearance[] } | null = null;
+  try {
+    await expect
+      .poll(
+        async () => {
+          const values = await readAppearanceRoots(preview(studio));
+          sample = { roots: values.length, values };
+          return sample;
+        },
+        { timeout: 20_000 }
+      )
+      .toEqual({ roots: 1, values: [appearance] });
+  } catch (error) {
+    // A single-root evaluate can wait for a missing locator inside the predicate,
+    // losing both the last paint and the distinction between absent and stale.
+    // These passive projections contain no actor IDs, sessions or wire payloads.
+    try {
+      await test.info().attach('table-art-consumer-failure', {
+        contentType: 'application/json',
+        body: JSON.stringify({
+          sample,
+          expected: appearance,
+          tableArt: tableArtObservations.get(studio.page()),
+          settingsReads: tableArtReadOutcomes.get(studio.page()),
+          profileAppearance: appearanceObservations.get(studio.page()),
+        }),
+      });
+    } catch (diagnosticError) {
+      throw new AggregateError(
+        [error, diagnosticError],
+        'Appearance assertion and diagnostic attachment both failed.'
+      );
+    }
+    throw error;
+  }
 }
 
 async function expectPreviewAvatarsLoaded(studio: Locator) {
@@ -304,11 +376,59 @@ async function expectSelectedAppearanceTiles(studio: Locator, appearance: Appear
 async function signIn(
   context: BrowserContext,
   baseURL: string,
-  account: TemporaryCustomizationAccount
+  account: TemporaryCustomizationAccount,
+  role: 'writer' | 'mobile' | 'other-player'
 ) {
   const page = await context.newPage();
   accountObservations.set(page, observeAccountRealtime(page, account.id, ''));
   appearanceObservations.set(page, observeAppearanceRealtime(page, account.id));
+  tableArtObservations.set(page, observeAppearanceRealtime(page, account.id, 'table-art'));
+  const reads = {
+    role,
+    requested: 0,
+    responses: 0,
+    failed: 0,
+    lastStatus: null as number | null,
+    lastResponseMs: null as number | null,
+    stage: null as string | null,
+    operationStartedAt: null as number | null,
+    freshResponses: 0,
+    olderRequestResponses: 0,
+    unattributedResponses: 0,
+    beforeOperation: null as { requested: number; responses: number; failed: number } | null,
+  };
+  const readStarts = new WeakMap<object, number>();
+  tableArtReadOutcomes.set(page, reads);
+  const isOwnSettingsRead = (request: { method(): string; url(): string }) => {
+    const url = new URL(request.url());
+    return (
+      request.method() === 'GET' &&
+      url.pathname.endsWith('/rest/v1/user_theme_settings') &&
+      url.searchParams.get('user_id') === `eq.${account.id}`
+    );
+  };
+  page.on('request', (request) => {
+    if (!isOwnSettingsRead(request)) return;
+    reads.requested += 1;
+    readStarts.set(request, performance.now());
+  });
+  page.on('response', (response) => {
+    if (!isOwnSettingsRead(response.request())) return;
+    reads.responses += 1;
+    const started = readStarts.get(response.request());
+    reads.lastResponseMs = started === undefined ? null : performance.now() - started;
+    // A response arriving after the marker is not a fresh read if its request
+    // began before the existing user action. Preserve that distinction.
+    if (reads.operationStartedAt !== null) {
+      if (started === undefined) reads.unattributedResponses += 1;
+      else if (started < reads.operationStartedAt) reads.olderRequestResponses += 1;
+      else reads.freshResponses += 1;
+    }
+    reads.lastStatus = response.status();
+  });
+  page.on('requestfailed', (request) => {
+    if (isOwnSettingsRead(request)) reads.failed += 1;
+  });
   observeAccountSignal(page, account.id);
   // The public landing page deliberately does not redirect signed-out visitors.
   // These contexts are empty: enter a protected route and require real sign-in.
@@ -546,11 +666,11 @@ test.describe('production Table Studio realtime contract', () => {
         storageState: { cookies: [], origins: [] },
       });
 
-      primaryPage = await signIn(primaryDesktop, baseURL, primaryAccount);
+      primaryPage = await signIn(primaryDesktop, baseURL, primaryAccount, 'writer');
       primaryStudio = await openStudio(primaryPage);
-      const mobilePage = await signIn(primaryMobile, baseURL, primaryAccount);
+      const mobilePage = await signIn(primaryMobile, baseURL, primaryAccount, 'mobile');
       mobileStudio = await openStudio(mobilePage);
-      const otherPage = await signIn(otherPlayer, baseURL, otherAccount);
+      const otherPage = await signIn(otherPlayer, baseURL, otherAccount, 'other-player');
       otherStudio = await openStudio(otherPage);
       console.log('[customization-realtime] three isolated sessions ready');
       const primaryUserId = await sessionUserId(primaryPage);
@@ -630,6 +750,7 @@ test.describe('production Table Studio realtime contract', () => {
       );
 
       const primaryPreset = different(primaryOriginal.selections.Looks, Object.keys(PRESETS));
+      markTableArtOperation([primaryPage, mobilePage, otherPage], 'primary-preset');
       await selectAsset(primaryStudio, 'Looks', primaryPreset);
       let expectedPrimary = { ...PRESETS[primaryPreset] };
       await expectPersistedAppearance(environment, primaryUserId, expectedPrimary);
@@ -656,6 +777,7 @@ test.describe('production Table Studio realtime contract', () => {
           [current, primaryOriginal.selections[category]],
           CATEGORY_ALTERNATIVES[category]
         );
+        markTableArtOperation([primaryPage, mobilePage, otherPage], `primary-${category}`);
         await selectAsset(primaryStudio, category, target);
         const targetId = FREE_ASSET_ID_BY_NAME[target];
         if (!targetId) throw new Error(`The free design ${target} has no expected asset id.`);
@@ -682,6 +804,7 @@ test.describe('production Table Studio realtime contract', () => {
       console.log('[customization-realtime] persisted appearance survived a device reload');
 
       const otherPreset = different(primaryPreset, Object.keys(PRESETS));
+      markTableArtOperation([primaryPage, mobilePage, otherPage], 'other-player-preset');
       await selectAsset(otherStudio, 'Looks', otherPreset);
       await expectAppearance(otherStudio, PRESETS[otherPreset]);
       await expectAppearance(primaryStudio, finalPrimary);

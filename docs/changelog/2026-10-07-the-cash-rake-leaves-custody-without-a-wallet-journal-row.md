@@ -128,3 +128,14 @@ change. The extended law binds it the moment it is next redefined.
   PostgreSQL 17 and asserts no journal row, one register burn per payer
   (horse included), no wallet movement, identity 0 (49 checks).
 - `tests/unit/aMissingBalanceAfterIsUnknown.test.tsx`.
+
+## Follow-up (20261007122947): the attribution carries only what moved the wallet
+
+Read at 12:28 UTC, two minutes after the settlement applied, `register_drifts`
+was 8. In each of the 8 wallets the rows after the last register instant were
+arena buy-ins (carried, correctly) and the settlement's own
+`cash_rake_correction` rows, which are `journal_backfill` and move no balance.
+Carrying them put each chain end exactly their sum away from holdings. A
+`journal_backfill` row writes down a movement that already happened, or
+corrects one that never did, so the verdict no longer carries it. Read against
+production before writing: 0 drifts.

@@ -20,7 +20,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { sliceEnclosingBlock } from '../helpers/sourceWindow';
+import { sliceCall, sliceEnclosingBlock } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(process.cwd(), p), 'utf8');
 const PANEL = read('src/components/bbj/BBJThresholdPanel.tsx');
@@ -115,9 +115,15 @@ describe('the panel keys the table by the club uuid, not the route slug', () => 
   });
 
   it('asks nothing until it holds a real id', () => {
-    const load = PANEL.slice(PANEL.indexOf('const load = useCallback'));
-    expect(load.slice(0, 120)).toMatch(/if \(!clubId\) return;/);
-    const add = PANEL.slice(PANEL.indexOf('const add = useCallback'));
-    expect(add.slice(0, 400)).toMatch(/if \(!clubId\) return;/);
+    const load = sliceCall(PANEL, 'const load = useCallback(');
+    expect(load).toMatch(/if \(!clubId\) return;/);
+    expect(load.indexOf('if (!clubId) return;')).toBeLessThan(
+      load.indexOf(".from('bbj_notify_thresholds')")
+    );
+    const add = sliceCall(PANEL, 'const add = useCallback(');
+    expect(add.indexOf('if (!clubId) return;')).toBeGreaterThan(-1);
+    expect(add.indexOf('if (!clubId) return;')).toBeLessThan(
+      add.indexOf(".from('bbj_notify_thresholds')")
+    );
   });
 });

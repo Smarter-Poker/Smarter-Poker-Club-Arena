@@ -2319,7 +2319,9 @@ jobs:
           (github.event_name == 'schedule' || needs.changes.result != 'success' || needs.changes.outputs.phase4 == 'true')
         env:
           PG17_BIN: /usr/lib/postgresql/17/bin
-        run: bash scripts/ci/probes/horse-phase4-certified-solver/run-pg17.sh
+        run: |
+          node --test scripts/ci/test-v4-policy-metadata.mjs
+          bash scripts/ci/probes/horse-phase4-certified-solver/run-pg17.sh
 
   server_shards:
     # Independent engine tests run alongside isolated PostgreSQL qualification.

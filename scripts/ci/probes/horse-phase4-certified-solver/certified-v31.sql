@@ -69,12 +69,20 @@ BEGIN
     bucket:=CASE WHEN role='all_in' THEN 'all_in' WHEN facing='none' THEN 'none'
       ELSE 'small' END;
     board:=CASE streets[i] WHEN 'flop' THEN 'AsKd7c' WHEN 'turn' THEN 'AsKd7c2h' ELSE 'AsKd7c2h3s' END;
+    -- Derive physical seats from the same actual Pio line used below. Pio 0
+    -- is OOP: BB heads-up, SB when three or more seats are at the table.
+    preflop_aggressor:=CASE WHEN role='open' THEN NULL WHEN role='probe' THEN 1
+      WHEN role IN ('cbet','delayed_cbet') THEN 0
+      WHEN i>10 OR (ARRAY['limped','srp','3bet','4bet_plus'])[((i-1)%4)+1]='limped' THEN NULL ELSE 0 END;
+    derived_line:=public.fn_gto_v31_node_line_proof(nodes[i],preflop_aggressor,1000,8000);
+    hero_solver_player:=(derived_line->>'current_actor_solver_player')::integer;
     cov:=jsonb_build_object('street',streets[i],'game_family',families[i],
       'objective',objectives[i],'utility_context',utilities[i],
       'table_size',CASE WHEN i<=9 THEN i+1 ELSE 10 END,
       'pot_type',CASE WHEN i>10 THEN 'limped'
         ELSE (ARRAY['limped','srp','3bet','4bet_plus'])[((i-1)%4)+1] END,
-      'hero_position','SB','opponent_position','BB','depth_bucket',80,
+      'hero_position',CASE WHEN (i=1)=(hero_solver_player=0) THEN 'BB' ELSE 'SB' END,
+      'opponent_position',CASE WHEN (i=1)=(hero_solver_player=0) THEN 'SB' ELSE 'BB' END,'depth_bucket',80,
       'texture_class',public.fn_gto_texture_class_any(board),'node_role',role,
       'facing_kind',facing,'facing_size_bucket',bucket);
     coverage:=coverage||jsonb_build_array(cov);
@@ -461,6 +469,8 @@ BEGIN
     END IF;
     PERFORM public.fn_gto_v31_build_cell(dataset,coverage->(i-1));
   END LOOP;
+  -- V31_PHYSICAL_PRIOR_FIXTURE_END: the isolated transition probe captures
+  -- admitted artifacts and already-built cells here, before seal/promotion.
 
   SELECT to_jsonb(c) INTO forged
     FROM public.gto_v31_runtime_cells c

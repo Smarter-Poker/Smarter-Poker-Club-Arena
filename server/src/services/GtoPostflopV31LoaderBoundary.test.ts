@@ -41,7 +41,9 @@ function liveUnchanged() {
 describe('actual V31 loader transport boundaries', () => {
   it('strips nullable legacy SQL metadata without changing the admitted legacy seal', async () => {
     transport.rpc.mockResolvedValueOnce({
-      data: [{ ...structuredClone(CELL), feature_contract_version: null }],
+      data: [
+        { ...structuredClone(CELL), feature_contract_version: null, policy_export_schema: null },
+      ],
       error: null,
     });
     await expect(loadGtoPostflopV31()).resolves.toBe(1);
@@ -59,6 +61,20 @@ describe('actual V31 loader transport boundaries', () => {
       expect.objectContaining({ message: 'v31_feature_contract_unknown' }),
       'GtoPostflopV31Loader.load'
     );
+  });
+  it('carries exact V4 metadata and refuses unknown SQL policy metadata', async () => {
+    transport.rpc.mockResolvedValueOnce({
+      data: [{ ...structuredClone(CELL), policy_export_schema: 'smarter-poker.pio-policy.v4' }],
+      error: null,
+    });
+    await expect(loadGtoPostflopV31()).resolves.toBe(1);
+    expect(gtoPostflopV31Dataset()?.policy_export_schema).toBe('smarter-poker.pio-policy.v4');
+    transport.rpc.mockResolvedValueOnce({
+      data: [{ ...structuredClone(CELL), policy_export_schema: 'unknown' }],
+      error: null,
+    });
+    await expect(loadGtoPostflopV31()).resolves.toBe(0);
+    expect(gtoPostflopV31Dataset()?.policy_export_schema).toBe('smarter-poker.pio-policy.v4');
   });
   it.each([
     ['null', null],

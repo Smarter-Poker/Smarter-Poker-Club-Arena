@@ -9,6 +9,67 @@ import { ownerStatements, validateRestoreScript } from './leaderboard-isolation-
 
 const shell = fileURLToPath(new URL('./leaderboard-isolation-preflight.sh', import.meta.url));
 const source = readFileSync(shell, 'utf8');
+test('private source markers and exact PG17 phases disclose only validated status and enums', () => {
+  for (const [input, expected] of [
+    [
+      'pg_dump: reading indexes\nLB_SOURCE_CLIENT_START:psql\nLB_SOURCE_CLIENT_COMPLETE:psql:2\n',
+      'inner-status=2;dump-stage=unknown',
+    ],
+    [
+      'LB_SOURCE_CLIENT_START:pg_dumpall\npg_dump: reading indexes\nLB_SOURCE_CLIENT_COMPLETE:pg_dumpall:2\n',
+      'inner-status=2;dump-stage=unknown',
+    ],
+    [
+      'LB_SOURCE_CLIENT_START:pg_dump\npg_dump: reading policies\nLB_SOURCE_CLIENT_COMPLETE:pg_dump:2\npg_dump: reading indexes\n',
+      'inner-status=2;dump-stage=policies',
+    ],
+    [
+      'LB_SOURCE_CLIENT_COMPLETE:pg_dump:2\nLB_SOURCE_CLIENT_START:pg_dump\n',
+      'inner-status=unknown;dump-stage=unknown',
+    ],
+    [
+      'LB_SOURCE_CLIENT_START:pg_dump\nLB_SOURCE_CLIENT_START:pg_dump\n',
+      'inner-status=unknown;dump-stage=unknown',
+    ],
+    [
+      'LB_SOURCE_CLIENT_START:pg_dump\npg_dump: reading user-defined tables\nLB_SOURCE_CLIENT_COMPLETE:pg_dump:2\n',
+      'inner-status=2;dump-stage=tables',
+    ],
+    [
+      'LB_SOURCE_CLIENT_START:pg_dump\npg_dump: reading indexes\nprivate secret\n',
+      'inner-status=unknown;dump-stage=indexes',
+    ],
+    [
+      'LB_SOURCE_CLIENT_START:pg_dump\npg_dump: reading indexes private_secret\n',
+      'inner-status=unknown;dump-stage=unknown',
+    ],
+    [
+      'LB_SOURCE_CLIENT_START:pg_dump\nLB_SOURCE_CLIENT_COMPLETE:psql:2\n',
+      'inner-status=unknown;dump-stage=unknown',
+    ],
+    [
+      'LB_SOURCE_CLIENT_START:pg_dump\nLB_SOURCE_CLIENT_COMPLETE:pg_dump:2\nLB_SOURCE_CLIENT_COMPLETE:pg_dump:3\n',
+      'inner-status=unknown;dump-stage=unknown',
+    ],
+    [
+      'LB_SOURCE_CLIENT_START:pg_dump\nLB_SOURCE_CLIENT_COMPLETE:pg_dump:999\n',
+      'inner-status=unknown;dump-stage=unknown',
+    ],
+    [
+      'LB_SOURCE_CLIENT_START:pg_dump\nLB_SOURCE_CLIENT_COMPLETE:pg_dump:08\n',
+      'inner-status=unknown;dump-stage=unknown',
+    ],
+    ['LB_SOURCE_CLIENT_START:private_secret\n', 'inner-status=unknown;dump-stage=unknown'],
+  ]) {
+    const result = spawnSync('bash', [shell, '--classify-source-progress'], {
+      input,
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 0);
+    assert.equal(result.stdout.trim(), expected);
+    assert.equal(result.stderr, '');
+  }
+});
 test('remaining archive renderer selects stdout without connecting or owning transactions', () => {
   const command = source.match(
     /docker exec -i "\$container" pg_restore ([^\n]+)\n[^\n]*remaining.sql/
@@ -399,18 +460,31 @@ test('cleanup must finish before the verdict and source entrypoints cannot initi
   );
   assert.match(source, /docker run --name "\$source_container" --rm/);
   assert.match(source, /--entrypoint \/bin\/sh/);
-  assert.match(source, /exec "\/usr\/lib\/postgresql\/bin\/\$client" --dbname="\$PGDATABASE"/);
+  assert.match(source, /"\/usr\/lib\/postgresql\/bin\/\$client" --dbname="\$PGDATABASE"/);
   assert.match(source, /docker container ls --all --format/);
   assert.match(source, /docker network ls --format/);
   assert.doesNotMatch(source, /docker (rm|network rm).*\|\| true/);
 });
 
 test('actual source-client connection wrapper expands URI instead of local socket defaults', () => {
-  const wrapper = source.match(/'client=\$1; shift; case[^\n]+'/)?.[0].slice(1, -1);
+  const wrapper = source.match(/'client=\$1; shift; printf[^\n]+'/)?.[0].slice(1, -1);
   assert.ok(wrapper);
   // Synthetic unreachable loopback endpoint only: no source data or credentials.
   // Use installed clients with exactly the maintained argument construction.
   const executable = wrapper.replaceAll('/usr/lib/postgresql/bin/', '');
+  const success = spawnSync(
+    'sh',
+    [
+      '-c',
+      `psql() { printf 'synthetic-result\\n'; return 0; }; ${executable}`,
+      'source-client',
+      'psql',
+    ],
+    { encoding: 'utf8' }
+  );
+  assert.equal(success.status, 0);
+  assert.equal(success.stdout, 'synthetic-result\n');
+  assert.equal(success.stderr, 'LB_SOURCE_CLIENT_START:psql\nLB_SOURCE_CLIENT_COMPLETE:psql:0\n');
   const env = {
     PATH: process.env.PATH,
     PGHOST: '/leaderboard-qualification-nonexistent-fixture-socket',
@@ -431,6 +505,12 @@ test('actual source-client connection wrapper expands URI instead of local socke
     assert.equal(after.error, undefined, 'Required shell unavailable');
     assert.notEqual(after.status, 127, `Required PostgreSQL ${client} client unavailable`);
     assert.ok(after.status !== 0);
+    assert.equal(after.stdout, '');
+    assert.match(after.stderr, new RegExp(`LB_SOURCE_CLIENT_START:${client}\\n`));
+    assert.match(
+      after.stderr,
+      new RegExp(`LB_SOURCE_CLIENT_COMPLETE:${client}:${after.status}\\n`)
+    );
     assert.match(after.stderr, /127\.0\.0\.1/);
     assert.doesNotMatch(after.stderr, /on socket/);
   }
@@ -495,7 +575,7 @@ test('actual source failure reports only bounded owned state and numeric elapsed
     assert.equal(result.status, 0);
     assert.equal(
       result.stdout,
-      `fixed-stage (client-status=137;elapsed-seconds=${elapsed};signal-termination;owned-source-state=${expected})`
+      `fixed-stage (client-status=137;elapsed-seconds=${elapsed};signal-termination;owned-source-state=${expected};inner-status=unknown;dump-stage=unknown)`
     );
     assert.equal(result.stderr, '');
   }

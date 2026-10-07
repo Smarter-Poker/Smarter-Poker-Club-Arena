@@ -90,6 +90,49 @@ source_error_category() {
     *) echo 'unclassified-source-client' ;;
   esac
 }
+source_progress() {
+  local entry client='' started=0 completed=0 status='unknown' phase='unknown' valid=true
+  while IFS= read -r entry; do
+    if [[ "$entry" =~ ^LB_SOURCE_CLIENT_START:(psql|pg_dump|pg_dumpall)$ ]]; then
+      started=$((started+1)); client="${BASH_REMATCH[1]}"
+    elif [[ "$entry" =~ ^LB_SOURCE_CLIENT_COMPLETE:(psql|pg_dump|pg_dumpall):([0-9]+)$ ]]; then
+      completed=$((completed+1))
+      [[ "$started" == 1 && "${BASH_REMATCH[1]}" == "$client" ]] || valid=false
+      status="${BASH_REMATCH[2]}"
+      if [[ ! "$status" =~ ^(0|[1-9][0-9]{0,2})$ ]] || [[ "$status" -gt 255 ]]; then valid=false; fi
+    elif [[ "$entry" == LB_SOURCE_CLIENT_* ]]; then valid=false
+    fi
+    # Exact PG17 common.c / pg_dump.c messages, never object-bearing output.
+    if [[ "$valid" == true && "$started" == 1 && "$completed" == 0 && "$client" == pg_dump ]]; then
+    case "$entry" in
+      'pg_dump: reading extensions') phase='extensions' ;;
+      'pg_dump: identifying extension members') phase='extension-members' ;;
+      'pg_dump: reading schemas') phase='schemas' ;;
+      'pg_dump: reading user-defined tables') phase='tables' ;;
+      'pg_dump: reading user-defined functions') phase='functions' ;;
+      'pg_dump: reading user-defined types') phase='types' ;;
+      'pg_dump: reading table inheritance information') phase='inheritance' ;;
+      'pg_dump: reading event triggers') phase='event-triggers' ;;
+      'pg_dump: reading column info for interesting tables') phase='columns' ;;
+      'pg_dump: finding table default expressions') phase='column-defaults' ;;
+      'pg_dump: finding table check constraints') phase='table-checks' ;;
+      'pg_dump: reading indexes') phase='indexes' ;;
+      'pg_dump: reading constraints') phase='constraints' ;;
+      'pg_dump: reading triggers') phase='triggers' ;;
+      'pg_dump: reading policies') phase='policies' ;;
+      'pg_dump: reading dependency data') phase='dependencies' ;;
+    esac
+    fi
+  done
+  if [[ "$valid" != true || "$started" != 1 || "$completed" -gt 1 ]]; then status='unknown'; phase='unknown'; fi
+  [[ "$completed" == 1 ]] || status='unknown'
+  printf 'inner-status=%s;dump-stage=%s\n' "$status" "$phase"
+}
+if [[ "${1:-}" == '--classify-source-progress' ]]; then
+  [[ $# == 1 ]] || exit 1
+  source_progress
+  exit 0
+fi
 if [[ "${1:-}" == '--classify-source-error' ]]; then
   [[ $# == 2 && "$2" =~ ^[0-9]+$ ]] || exit 1
   source_error_category "$2"
@@ -163,14 +206,15 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 failure() { echo "Leaderboard isolation preflight refused: $1" >&2; exit 1; }
 source_failure() {
-  local reason="$1" log="$2" status="$3" category state='unknown' elapsed='unknown' started
+  local reason="$1" log="$2" status="$3" category state='unknown' elapsed='unknown' started progress
   category="$(source_error_category "$status" < "$log")"
+  progress="$(source_progress < "$log")"
   started="$(cat "$scratch/source-client-started" 2>/dev/null)" || started='unknown'
   if [[ "$started" =~ ^[0-9]+$ && "$started" -le "$SECONDS" ]]; then elapsed=$((SECONDS-started)); fi
   if state="$(timeout 10 docker inspect --format '{{.State.Status}}|{{.State.ExitCode}}|{{.State.OOMKilled}}' "$source_container" 2>/dev/null)"; then
     [[ "$state" =~ ^(created|running|paused|restarting|removing|exited|dead)\|[0-9]+\|(true|false)$ ]] || state='unknown'
   else state='unknown'; fi
-  failure "$reason (client-status=$status;elapsed-seconds=$elapsed;$category;owned-source-state=$state)"
+  failure "$reason (client-status=$status;elapsed-seconds=$elapsed;$category;owned-source-state=$state;$progress)"
 }
 destination_failure() {
   local stage="$1" log="$2" status="$3" category diagnostic line='unknown' toc='unknown' kind='unknown' entry candidate
@@ -203,7 +247,7 @@ source_client() {
   # shellcheck disable=SC2016
   timeout "$seconds" docker run --name "$source_container" --rm -i --network host -e PGDATABASE -e PGOPTIONS \
     --entrypoint /bin/sh "$image" -c \
-    'client=$1; shift; case "$client" in psql|pg_dump) exec "/usr/lib/postgresql/bin/$client" --dbname="$PGDATABASE" "$@";; pg_dumpall) exec /usr/lib/postgresql/bin/pg_dumpall --database="$PGDATABASE" "$@";; *) exit 1;; esac' \
+    'client=$1; shift; printf "LB_SOURCE_CLIENT_START:%s\n" "$client" >&2; case "$client" in psql|pg_dump) "/usr/lib/postgresql/bin/$client" --dbname="$PGDATABASE" "$@";; pg_dumpall) /usr/lib/postgresql/bin/pg_dumpall --database="$PGDATABASE" "$@";; *) exit 1;; esac; status=$?; printf "LB_SOURCE_CLIENT_COMPLETE:%s:%s\n" "$client" "$status" >&2; exit "$status"' \
     source-client "$client" "$@"
 }
 source_catalog() { source_client 180 psql -XAtq --no-password -v ON_ERROR_STOP=1 < "$catalog"; }
@@ -225,7 +269,7 @@ source_database="$(source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 
 [[ "$source_database" == 'postgres' ]] || failure 'source database name requires a separate supported restore'
 source_catalog >"$scratch/source-before.json" 2>"$scratch/source-error.log" || source_failure 'source catalog read unavailable' "$scratch/source-error.log" "$?"
 source_client 300 pg_dump \
-  --schema-only --create --format=custom --no-password --no-subscriptions --lock-wait-timeout=5s \
+  --verbose --schema-only --create --format=custom --no-password --no-subscriptions --lock-wait-timeout=5s \
   >"$scratch/schema.dump" 2>"$scratch/dump-error.log" || source_failure 'schema-only export unavailable' "$scratch/dump-error.log" "$?"
 source_client 180 pg_dumpall --roles-only --no-role-passwords --no-password \
   >"$scratch/roles.sql" 2>"$scratch/roles-error.log" || source_failure 'password-free role export unavailable' "$scratch/roles-error.log" "$?"

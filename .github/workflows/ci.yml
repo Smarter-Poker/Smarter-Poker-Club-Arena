@@ -1956,7 +1956,9 @@ jobs:
         if: matrix.shard == 3
         env:
           PGBIN: /usr/lib/postgresql/17/bin
-        run: bash scripts/dev/probe-departure-postgres.sh
+        run: |
+          node --test scripts/verification-harness/departure-holder-stream-close.test.mjs
+          bash scripts/dev/probe-departure-postgres.sh
       - name: Accepted eliminations preserve parked source custody
         id: f06_accepted_elimination
         if: matrix.shard == 3

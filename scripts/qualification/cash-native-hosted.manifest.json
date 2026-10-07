@@ -1,5 +1,12 @@
 {
   "schemaVersion": 1,
+  "departureHolderStreamCompletion20261007": {
+    "reason": "Enforce the deterministic child-stream completion regression in the existing mandatory Accounting3 departure step. Actual financial refusal, rollback and concurrency assertions remain unchanged; only the current workflow fingerprint changes, not historical pins or qualification status.",
+    "previousWorkflowPin": {
+      "bytes": 191554,
+      "sha256": "2d99d6c83adc130f78356738319a0f591a0539752b02929429e034998fac0ca0"
+    }
+  },
   "leaderboardExactDefinitionRestore20261007": {
     "reason": "Enforce the new native PostgreSQL 17 exact definition restore regression in the existing Accounting4 step. Existing financial inputs, assertions, historical pins and SOURCE_ONLY_UNRUN status remain unchanged; fingerprint refresh is not runtime qualification.",
     "previousWorkflowPin": {
@@ -31,8 +38,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 191554,
-      "sha256": "2d99d6c83adc130f78356738319a0f591a0539752b02929429e034998fac0ca0"
+      "bytes": 191656,
+      "sha256": "91a8eb0b0f197dfdd0c1c1f5697edf5f4e28c2ff940de54aa8e5adfded32440c"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,

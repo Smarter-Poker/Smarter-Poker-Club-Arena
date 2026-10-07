@@ -84,6 +84,8 @@ source_error_category() {
   case "$diagnostic" in
     *'canceling statement due to statement timeout'*) echo 'server-statement-timeout' ;;
     *'canceling statement due to lock timeout'*) echo 'server-lock-timeout' ;;
+    # Exact PG17 libpq EOF/closure messages do not establish a server crash.
+    *'server closed the connection unexpectedly'*|*'SSL SYSCALL error: EOF detected'*|*'SSL connection has been closed unexpectedly'*) echo 'source-connection-lost' ;;
     *'could not translate host name'*|*'Name or service not known'*) echo 'name-resolution' ;;
     *'Network is unreachable'*|*'No route to host'*) echo 'network-route' ;;
     *'Connection refused'*) echo 'connection-refused' ;;
@@ -92,6 +94,9 @@ source_error_category() {
     *'permission denied'*) echo 'catalog-permission' ;;
     *'invalid URI'*|*'invalid connection option'*|*'missing "="'*) echo 'connection-input' ;;
     *'on socket'*'No such file or directory'*) echo 'unexpected-local-socket' ;;
+    # pg_backup_db.c reports the private libpq error/query then exits 1.
+    # Retain only its fixed failure category, never either private payload.
+    *'pg_dump: error: query failed:'*) echo 'pg-dump-query-failure' ;;
     *) echo 'unclassified-source-client' ;;
   esac
 }

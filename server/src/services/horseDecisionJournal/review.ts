@@ -16,6 +16,11 @@ import {
 } from '../../engine/HorseExecutionWitness.js';
 import { decodeHorseDecisionReads } from '../../engine/HorseDecisionReadFrame.js';
 import {
+  horsePlanEffectReceiptIsValid,
+  horsePlanIssuedBatchDigest,
+  type HorsePlanEffectReceipt,
+} from '../../engine/HorsePlanEffectReceipt.js';
+import {
   buildHorseDecisionKey,
   type CompletedHandObservation,
   type FastHorseDecisionRequest,
@@ -791,5 +796,179 @@ export function readHorseJournalHand(directory: string, handKey: string): HorseJ
     return reconcileHorseJournalHand(readHorseJournalHandRecords(directory, handKey), handKey);
   } catch {
     return { ...empty(), gaps: ['storage_unavailable'] };
+  }
+}
+
+/** Phase 15.1 plan-effect ledger gaps. A gap is never a repair instruction. */
+export type HorsePlanEffectsGap =
+  | 'invalid_records'
+  | 'execution_conflict'
+  | 'plan_receipt_missing'
+  | 'plan_receipt_unbound'
+  | 'plan_receipt_conflict';
+/**
+ * One retained hand's nonempty FAST plan batches, classified from retained
+ * records only. `issued` counts every retained nonempty batch; `accepted` the
+ * ones whose execution witness holds exactly one intended accepted bet or
+ * raise equal to the decision; `durable` the accepted ones with a valid
+ * receipt bound to the decision's binding, effects and that accepted wager;
+ * `applied` and `failed` that receipt's disposition; `unknown` accepted
+ * batches without a binding receipt once the accepted hand is retained.
+ */
+export interface HorsePlanEffectsReview {
+  version: 1;
+  scope: 'single_retained_hand';
+  acceptedHandRetained: boolean;
+  issued: number;
+  accepted: number;
+  durable: number;
+  applied: number;
+  failed: number;
+  unknown: number;
+  gaps: HorsePlanEffectsGap[];
+  /** True only from authoritative receipts: every accepted batch of a
+   * retained hand is durably applied and nothing is unknown or failed. */
+  applicationVerified: boolean;
+  replayVerified: false;
+  completePopulation: false;
+  activationAllowed: false;
+}
+const emptyPlanEffects = (): HorsePlanEffectsReview => ({
+  version: 1,
+  scope: 'single_retained_hand',
+  acceptedHandRetained: false,
+  issued: 0,
+  accepted: 0,
+  durable: 0,
+  applied: 0,
+  failed: 0,
+  unknown: 0,
+  gaps: [],
+  applicationVerified: false,
+  replayVerified: false,
+  completePopulation: false,
+  activationAllowed: false,
+});
+
+/** Read-only. Journal corruption, absence or a forged record can lower these
+ * counts or add a gap; it can never produce `applied` or strategy authority. */
+export function reviewHorsePlanEffects(
+  records: readonly HorseJournalRecord[],
+  handKey: string
+): HorsePlanEffectsReview {
+  const out = emptyPlanEffects();
+  const gap = (reason: HorsePlanEffectsGap) => {
+    if (!out.gaps.includes(reason)) out.gaps.push(reason);
+  };
+  try {
+    if (!/^[0-9a-f]{64}$/.test(handKey) || !Array.isArray(records) || records.length > 256)
+      throw Error();
+    const unique = new Map<string, HorseJournalRecord>();
+    for (const record of records) {
+      validateHorseJournalRecord(record);
+      if (record.handKey !== handKey) throw Error();
+      const old = unique.get(record.eventId);
+      if (old && !same(old, record)) throw Error();
+      unique.set(record.eventId, record);
+    }
+    const turns = new Map<
+      string,
+      { decisions: HorseJournalRecord[]; executions: HorseJournalRecord[]; receipts: string[] }
+    >();
+    for (const row of unique.values()) {
+      if (row.kind === 'accepted_hand') out.acceptedHandRetained = true;
+      if (row.kind !== 'decision' && row.kind !== 'execution' && row.kind !== 'plan_receipt')
+        continue;
+      const k = `${row.producerId}:${row.turnKey}`;
+      const turn = turns.get(k) ?? { decisions: [], executions: [], receipts: [] };
+      if (row.kind === 'decision') turn.decisions.push(row);
+      else if (row.kind === 'execution') turn.executions.push(row);
+      else if (!turn.receipts.includes(row.body)) turn.receipts.push(row.body);
+      turns.set(k, turn);
+    }
+    let pendingUnknown = 0;
+    for (const turn of turns.values()) {
+      const capture =
+        turn.decisions.length === 1
+          ? (JSON.parse(turn.decisions[0]!.body) as Record<string, any>)
+          : null;
+      const binding = capture?.planBinding;
+      const digest =
+        capture?.snapshot?.type === 'DECIDE_FAST' &&
+        Array.isArray(capture.effects) &&
+        capture.effects.length > 0
+          ? horsePlanIssuedBatchDigest(binding, capture.effects)
+          : null;
+      if (!digest) {
+        if (turn.receipts.length) gap('plan_receipt_unbound');
+        continue;
+      }
+      out.issued++;
+      let accepted: { action: string; amount: unknown; requestId: unknown } | null = null;
+      if (turn.executions.length > 1) gap('execution_conflict');
+      else if (turn.executions.length === 1) {
+        const witness = JSON.parse(turn.executions[0]!.body) as Record<string, any>;
+        const actions = Array.isArray(witness?.acceptedActions) ? witness.acceptedActions : [];
+        const record =
+          actions.length === 1 && actions[0]?.intended === true ? actions[0].record : null;
+        if (
+          record &&
+          (record.action === 'bet' || record.action === 'raise') &&
+          record.action === capture!.decision?.action &&
+          record.amount === (capture!.decision?.amount ?? null) &&
+          witness.identity?.requestId === binding.fastRequestId &&
+          witness.identity?.decisionKey === binding.decisionKey
+        )
+          accepted = {
+            action: record.action,
+            amount: record.amount,
+            requestId: witness.identity.requestId,
+          };
+      }
+      if (accepted) out.accepted++;
+      if (turn.receipts.length > 1) {
+        gap('plan_receipt_conflict');
+        if (accepted) pendingUnknown++;
+        continue;
+      }
+      const receipt: unknown = turn.receipts.length ? JSON.parse(turn.receipts[0]!) : null;
+      const binds =
+        accepted !== null &&
+        horsePlanEffectReceiptIsValid(receipt) &&
+        receipt.issuedBatchDigest === digest &&
+        receipt.acceptance.action === accepted.action &&
+        receipt.acceptance.amount === accepted.amount &&
+        (receipt.acceptance.witness === null ||
+          receipt.acceptance.witness.requestId === accepted.requestId);
+      if (receipt !== null && !binds) gap('plan_receipt_unbound');
+      if (binds) {
+        out.durable++;
+        if ((receipt as HorsePlanEffectReceipt).disposition === 'applied') out.applied++;
+        else out.failed++;
+      } else if (accepted) pendingUnknown++;
+    }
+    if (out.acceptedHandRetained) {
+      out.unknown = pendingUnknown;
+      if (pendingUnknown) gap('plan_receipt_missing');
+    }
+    out.applicationVerified =
+      out.acceptedHandRetained &&
+      out.accepted > 0 &&
+      out.applied === out.accepted &&
+      out.unknown === 0 &&
+      out.failed === 0 &&
+      out.gaps.length === 0;
+    return out;
+  } catch {
+    return { ...emptyPlanEffects(), gaps: ['invalid_records'] };
+  }
+}
+
+/** Explicit offline reader for the plan-effect ledger of one retained hand. */
+export function readHorsePlanEffects(directory: string, handKey: string): HorsePlanEffectsReview {
+  try {
+    return reviewHorsePlanEffects(readHorseJournalHandRecords(directory, handKey), handKey);
+  } catch {
+    return { ...emptyPlanEffects(), gaps: ['invalid_records'] };
   }
 }

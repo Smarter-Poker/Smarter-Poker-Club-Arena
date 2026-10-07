@@ -1,6 +1,9 @@
 import { pathToFileURL } from 'node:url';
 import { isAbsolute } from 'node:path';
-import { readHorseJournalHand } from '../services/horseDecisionJournal/review.js';
+import {
+  readHorseJournalHand,
+  readHorsePlanEffects,
+} from '../services/horseDecisionJournal/review.js';
 import { HorseDecisionJournalStore } from '../services/horseDecisionJournal/store.js';
 import {
   horseJournalArchiveDirectoryNames,
@@ -51,6 +54,20 @@ export function runHorseJournalReview(args: readonly string[]): { code: number; 
         // Closing a read-only observer cannot certify missing capture.
       }
     }
+  }
+  if (args[0] === '--plan-effects') {
+    // Phase 15.1: one retained hand's plan-effect ledger, read-only.
+    if (args.length !== 3 || !isAbsolute(args[1]!) || !/^[0-9a-f]{64}$/.test(args[2]!))
+      return {
+        code: 64,
+        output:
+          'Usage: horseJournalReview --plan-effects <absolute-private-journal-directory> <SHA256-hand-coordinate>\n',
+      };
+    const result = readHorsePlanEffects(args[1]!, args[2]!);
+    return {
+      code: result.gaps.includes('invalid_records') ? 3 : result.gaps.length ? 2 : 0,
+      output: JSON.stringify(result) + '\n',
+    };
   }
   if (args.length !== 2 || !isAbsolute(args[0]!) || !/^[0-9a-f]{64}$/.test(args[1]!))
     return {

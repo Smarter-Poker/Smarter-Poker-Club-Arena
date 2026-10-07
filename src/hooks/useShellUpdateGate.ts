@@ -59,6 +59,52 @@ import { useEffect } from 'react';
 import { masterBus } from '../core/MasterBus';
 import { readDeployedShell } from '../lib/readDeployedShell';
 
+/** The longest a reload waits for a waiting worker to take control. */
+export const HANDOVER_TIMEOUT_MS = 3000;
+
+type WorkerContainer = Pick<
+  ServiceWorkerContainer,
+  'getRegistration' | 'addEventListener' | 'removeEventListener'
+>;
+
+/**
+ * A NEW WORKER TAKES OVER ONLY WHEN THIS TAB IS READY FOR IT (2026-10-07).
+ *
+ * public/sw-bus.js no longer calls skipWaiting() at install: activating under
+ * an open tab while that tab was navigating left the navigation uncommitted
+ * for a minute or more (Post-Deploy E2E run 37620236888). A deployed worker
+ * therefore waits, and the one moment it is handed control is here, right
+ * before this tab reloads anyway: ask it to activate, wait for it to become
+ * this tab's controller, then reload. Resolves at once when nothing is
+ * waiting, and after HANDOVER_TIMEOUT_MS at the latest; the reload is correct
+ * either way, because the old worker's freshness race serves the new shell.
+ */
+export function handOverToWaitingWorker(
+  container: WorkerContainer | undefined,
+  timeoutMs: number = HANDOVER_TIMEOUT_MS
+): Promise<'handed-over' | 'nothing-waiting' | 'timed-out'> {
+  if (!container) return Promise.resolve('nothing-waiting');
+  return container
+    .getRegistration()
+    .then((reg) => {
+      const waiting = reg?.waiting;
+      if (!waiting) return 'nothing-waiting' as const;
+      return new Promise<'handed-over' | 'timed-out'>((resolve) => {
+        let timer = 0;
+        const done = (outcome: 'handed-over' | 'timed-out') => {
+          container.removeEventListener('controllerchange', onChange);
+          window.clearTimeout(timer);
+          resolve(outcome);
+        };
+        const onChange = () => done('handed-over');
+        container.addEventListener('controllerchange', onChange);
+        timer = window.setTimeout(() => done('timed-out'), timeoutMs);
+        waiting.postMessage({ type: 'SKIP_WAITING' });
+      });
+    })
+    .catch(() => 'nothing-waiting' as const);
+}
+
 /** How long before another shell reload may be attempted in this tab. */
 export const RELOAD_COOLDOWN_MS = 10 * 60 * 1000;
 
@@ -250,8 +296,11 @@ export function useShellUpdateGate(): void {
            the fix working (adopt before the player settles in); one long
            after paint is the glitch Dan reported — the rate of the latter is
            what must stay at zero. */
+        /* The new worker waits for this tab (public/sw-bus.js, install): hand
+           over to it first, then reload onto it, so its activation never
+           overlaps a navigation. */
         masterBus.emit('SHELL_RELOADED', { pageAgeMs: Math.round(performance.now()) });
-        window.location.reload();
+        void handOverToWaitingWorker(navigator.serviceWorker).then(() => window.location.reload());
       }, settleDelayMs(performance.now()));
     };
 

@@ -131,10 +131,10 @@ async function trimCache(cacheName, maxEntries) {
  *  - trimCache above will not evict that set, which is what would otherwise
  *    break this the moment a session touched 400 chunks.
  *  - A new deploy ships a new sw-bus.js (DEPLOY_TS changes), so the browser
- *    installs a new SW, precaches the NEW shell + chunks, skipWaiting()s and
- *    claims. The following navigation serves the new shell. One extra
- *    navigation of latency on a deploy, in exchange for removing a round trip
- *    from every navigation.
+ *    installs a new SW and precaches the NEW shell + chunks. It takes over
+ *    when no tab is open, or when an open tab's update gate hands over to it
+ *    just before reloading (see the install handler). Until then the old
+ *    worker's freshness race still serves the new shell from the network.
  *  - When the background revalidation shows the shell has changed under a
  *    still-current SW, clients are told, so the app can refresh itself at a
  *    moment of its own choosing rather than mid-hand (see SHELL_UPDATED).
@@ -471,9 +471,25 @@ sw.addEventListener('notificationclick', (event) => {
 });
 
 // Install: precache the app shell — the HTML document AND the chunk/CSS list
-// the build injected for this exact deploy — into the versioned cache, then
-// activate immediately. Fetch failures (offline install, mid-deploy 404) are
-// swallowed — the runtime paths cover anything missed.
+// the build injected for this exact deploy — into the versioned cache. Fetch
+// failures (offline install, mid-deploy 404) are swallowed — the runtime paths
+// cover anything missed.
+//
+// A NEW WORKER NEVER ACTIVATES ITSELF UNDER AN OPEN TAB (2026-10-07). Install
+// used to end in skipWaiting(), so the new worker took over within about
+// 400ms of a page booting after a deploy, whatever that page was doing. When
+// that activation landed while the page was being navigated away, Chromium
+// never committed the navigation: no request left the tab, the page stopped
+// answering, and the navigation sat there until it timed out. That is
+// Post-Deploy E2E run 37620236888 (12:27Z, the first navigation after the
+// publish of 68b28e5b: 60s, twice) and run 37579424861 (06:10Z, the publish
+// of 32baeb2c: 60s, recovered on retry). On two local builds it reproduced in
+// about half of attempts with the self-activation and in none of 8 without
+// it. So the worker now waits:
+//   - with no open tab it activates on its own, as every waiting worker does;
+//   - an open tab hands over on purpose: the shell update gate posts
+//     SKIP_WAITING and reloads only after the new worker has taken control,
+//     so activation can never overlap a navigation the page did not start.
 sw.addEventListener('install', (event) => {
     event.waitUntil(
         caches.open(CACHE_NAME).then((cache) => {
@@ -497,8 +513,14 @@ sw.addEventListener('install', (event) => {
                 }).catch(() => {})
             );
             return Promise.allSettled(jobs);
-        }).then(() => sw.skipWaiting())
+        })
     );
+});
+
+// The one way an open tab lets a waiting worker take over: on request, from
+// the page that is about to reload onto it (useShellUpdateGate).
+sw.addEventListener('message', (event) => {
+    if (event.data?.type === 'SKIP_WAITING') event.waitUntil(sw.skipWaiting());
 });
 
 // Activate: claim clients + clean up old caches

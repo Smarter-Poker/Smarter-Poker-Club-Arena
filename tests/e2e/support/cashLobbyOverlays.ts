@@ -183,6 +183,12 @@ export async function declineDiamondInvitationIfShown(page: Page): Promise<void>
   await declineDiamondInvitation(page);
 }
 
+interface OwnedDiamondInvitationDismissal extends DiamondInvitationDismissal {
+  failure(): { error: unknown } | undefined;
+}
+
+const invitationOwners = new WeakMap<Page, OwnedDiamondInvitationDismissal>();
+
 export async function prepareCashLobbyActions(
   page: Page,
   { retainInvitationHandler = true }: { retainInvitationHandler?: boolean } = {}
@@ -192,7 +198,17 @@ export async function prepareCashLobbyActions(
     // Readiness can await engine API evidence while an invitation appears.
     // Finish its real action before the short navigation assertions start;
     // otherwise their deadline can abandon the handler during dismissal.
+    const owner = invitationOwners.get(page);
     await page.removeLocatorHandler(diamondPrompt);
+    // Unregistering prevents future callbacks, but Playwright leaves a
+    // callback already running. Drain that original action before deciding
+    // whether another real Not Now is needed; never race two declines.
+    if (owner) {
+      await owner.idle();
+      invitationOwners.delete(page);
+      const failure = owner.failure();
+      if (failure) throw failure.error;
+    }
     await declineDiamondInvitationIfShown(page);
     // The initial selection phase already handled the club greeting.
     return;
@@ -248,6 +264,7 @@ export async function registerDiamondInvitationDismissal(
 ): Promise<DiamondInvitationDismissal> {
   const diamondPrompt = diamondInvitation(page);
   let inFlight: Promise<void> = Promise.resolve();
+  let failure: { error: unknown } | undefined;
   const handle = async () => {
     try {
       const cover = await layerCovering(
@@ -261,6 +278,9 @@ export async function registerDiamondInvitationDismissal(
       }
       await declineDiamondInvitation(page);
     } catch (error) {
+      // Keep the original failure even when global setup owns its collector.
+      // Retirement must not turn an already failed decline into success.
+      failure ??= { error };
       if (!onFailure) throw error;
       onFailure(error);
     }
@@ -280,5 +300,10 @@ export async function registerDiamondInvitationDismissal(
     // hidden itself when it acts, and must not wait on it when it yields.
     { noWaitAfter: true }
   );
-  return { idle: () => inFlight };
+  const owner: OwnedDiamondInvitationDismissal = {
+    idle: () => inFlight,
+    failure: () => failure,
+  };
+  invitationOwners.set(page, owner);
+  return owner;
 }

@@ -1454,6 +1454,12 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 tests/sql/run-horse-observation-window.py
 
+      - name: Horse hand review publishes its row, rollup and receipt atomically
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-horse-hand-review-atomic.py
+
       - name: Reserved certification identities retain immutable ledger actors
         if: matrix.shard == 4
         run: python3 scripts/ci/test-certification-retirement-postgres.py

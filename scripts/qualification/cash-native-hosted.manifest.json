@@ -10,8 +10,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 190502,
-      "sha256": "16805dc556f2fa14bc8884f0e880805c19d78c24f1f1481727d8b22153ff0e8f"
+      "bytes": 190737,
+      "sha256": "e02dee68235372136d00791b020eaa637ef80a691763a8abe304df4873a252f1"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1692,6 +1692,13 @@
     "previousWorkflowPin": {
       "bytes": 187319,
       "sha256": "72832049eaebb04b646352004f25412f4390684586d930b12584edc1a18c0f14"
+    }
+  },
+  "hand_review_atomic_publication_20261007": {
+    "reason": "Adds the P14.1 atomic horse hand-review qualification (scripts/ci/test-horse-hand-review-atomic.py) to existing accounting shard 4 beside the observation-window step. All existing cash financial SQL, capture and test assertions unchanged; this binding is source integrity only.",
+    "previousWorkflowPin": {
+      "bytes": 190502,
+      "sha256": "16805dc556f2fa14bc8884f0e880805c19d78c24f1f1481727d8b22153ff0e8f"
     }
   }
 }

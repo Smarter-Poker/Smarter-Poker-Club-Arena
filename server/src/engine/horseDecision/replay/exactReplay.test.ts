@@ -34,6 +34,11 @@ import {
   type HorseDecisionWorkerDependencies,
 } from '../workerRuntime.js';
 import { HORSE_DECISION_REPLAY_STATE_VERSION } from '../replayState.js';
+import {
+  HORSE_PLAN_ACCEPTANCE_VERSION,
+  createHorsePlanEffectReceipt,
+} from '../../HorsePlanEffectReceipt.js';
+import { horsePlanContextKey, type HorsePlanBatchBinding } from '../../HorsePlanHandIdentity.js';
 import { currentReplaySolverStores } from './references.js';
 import {
   exactReplayHorseDecisionRecord,
@@ -214,7 +219,7 @@ describe('P15-A exact historical replay', () => {
     });
     expect(verdict.acceptance).toMatchObject({
       source: 'journal_execution_witness',
-      durableEffectReceipt: 'unavailable',
+      durableEffectReceipt: 'no_effects',
       status: 'joined',
       executionStatus: 'intended',
       selectedEqualsDecision: true,
@@ -370,6 +375,71 @@ describe('P15-A exact historical replay', () => {
     const t0 = performance.now();
     await new Promise((r) => setTimeout(r, 5));
     expect(performance.now()).toBeGreaterThan(t0);
+  });
+
+  it('joins the durable plan receipt of exactly the issued batch, and nothing else', async () => {
+    // A river decision whose record issued one plan effect, with the receipt
+    // the worker writes for that batch on the same journal turn.
+    const { record } = await liveOriginal(IDS.cashNlhRiver);
+    const body = JSON.parse(record.body) as { planBinding: HorsePlanBatchBinding };
+    const binding = body.planBinding;
+    const handKey = horsePlanContextKey(binding.planContext);
+    expect(handKey).not.toBeNull();
+    const effects = [
+      { type: 'plan', handKey: handKey!, userId: binding.actorId, barrelIntent: true },
+    ];
+    const issued = resignHorseJournalRecord(record, (b) => {
+      b.effects = effects;
+    });
+    const receiptRecord = (fx: typeof effects, disposition: 'applied' | 'failed') =>
+      makeHorseJournalRecord(
+        {
+          producerId: record.producerId,
+          sequence: 3,
+          atMs: record.atMs + 2,
+          sourceRelease: SOURCE,
+          kind: 'plan_receipt',
+          handKey: record.handKey,
+          turnKey: record.turnKey,
+        },
+        createHorsePlanEffectReceipt({
+          binding,
+          effects: fx as never,
+          issuedAction: { action: 'bet', amount: 4 },
+          acceptance: {
+            version: HORSE_PLAN_ACCEPTANCE_VERSION,
+            action: 'bet',
+            amount: 4,
+            witness: { requestId: binding.fastRequestId, decisionKey: binding.decisionKey },
+          },
+          policy: { graph: null, candidates: [] },
+          sourceRelease: SOURCE,
+          workerEpoch: randomUUID(),
+          disposition,
+        })
+      );
+    const receiptOf = async (planReceipt: unknown) =>
+      (await exactReplayHorseDecisionRecord(issued, { runningSource: SOURCE, planReceipt }))
+        .acceptance.durableEffectReceipt;
+    expect(await receiptOf(receiptRecord(effects, 'applied'))).toBe('applied');
+    expect(await receiptOf(receiptRecord(effects, 'failed'))).toBe('failed');
+    expect(
+      await receiptOf(receiptRecord([{ ...effects[0], barrelIntent: false }], 'applied'))
+    ).toBe('other_batch');
+    expect(await receiptOf(null)).toBe('absent');
+    expect(await receiptOf(undefined)).toBe('no_receipt_source');
+    const forged = receiptRecord(effects, 'applied');
+    expect(await receiptOf({ ...forged, body: forged.body.replace('applied', 'failed') })).toBe(
+      'invalid'
+    );
+    // A receipt never makes a replay exact: the effects this record claims are
+    // not the ones the decision issues, and the comparison says so first.
+    const verdict = await exactReplayHorseDecisionRecord(issued, {
+      runningSource: SOURCE,
+      planReceipt: receiptRecord(effects, 'applied'),
+    });
+    expect(verdict.outcome).toBe('replayed_mismatch');
+    expect(verdict.firstDifference).toMatch(/^effects/);
   });
 
   it('compares portable values field by field with the action first', () => {

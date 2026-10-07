@@ -158,6 +158,7 @@ async function child(args) {
     runningSource: args.runningSource,
     stores: currentReplaySolverStores(),
     execution: input.execution === undefined ? undefined : input.execution,
+    planReceipt: input.planReceipt === undefined ? undefined : input.planReceipt,
   });
   process.stdout.write(
     `${JSON.stringify({ ...verdict, isolation: { pid: process.pid, networkAttempts: attempts } })}\n`
@@ -165,7 +166,13 @@ async function child(args) {
 }
 
 /** Replay one record in a fresh process; resolves to its verdict or a named failure. */
-export function replayInFreshProcess({ record, execution, runningSource, storeSnapshots = [] }) {
+export function replayInFreshProcess({
+  record,
+  execution,
+  planReceipt,
+  runningSource,
+  storeSnapshots = [],
+}) {
   return new Promise((resolvePromise) => {
     const argv = [fileURLToPath(import.meta.url), '--child', '--running-source', runningSource];
     for (const file of storeSnapshots) argv.push('--store-snapshot', file);
@@ -191,13 +198,14 @@ export function replayInFreshProcess({ record, execution, runningSource, storeSn
         });
       }
     });
-    proc.stdin.end(JSON.stringify({ record, execution }));
+    proc.stdin.end(JSON.stringify({ record, execution, planReceipt }));
   });
 }
 
 function readCopy(path) {
   const decisions = [];
   const executions = new Map();
+  const planReceipts = new Map();
   const lines = readFileSync(path, 'utf8').split('\n');
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index].trim();
@@ -207,8 +215,9 @@ function readCopy(path) {
     if (!record || typeof record.kind !== 'string') continue;
     if (record.kind === 'decision') decisions.push({ ordinal: index, record });
     else if (record.kind === 'execution') executions.set(record.turnKey, record);
+    else if (record.kind === 'plan_receipt') planReceipts.set(record.turnKey, record);
   }
-  return { decisions, executions };
+  return { decisions, executions, planReceipts };
 }
 
 const tally = (rows, key) => {
@@ -241,7 +250,7 @@ async function batch(args) {
   const untilMs = args.until ? Date.parse(args.until) : Number.POSITIVE_INFINITY;
   if (Number.isNaN(sinceMs) || Number.isNaN(untilMs))
     throw new Error('--since/--until must be ISO times');
-  const { decisions, executions } = readCopy(args.journal);
+  const { decisions, executions, planReceipts } = readCopy(args.journal);
   const selected = decisions
     .filter((row) => Number(row.record.atMs) >= sinceMs && Number(row.record.atMs) < untilMs)
     .sort((a, b) => Number(b.record.atMs) - Number(a.record.atMs) || b.ordinal - a.ordinal)
@@ -258,6 +267,7 @@ async function batch(args) {
       const run = await replayInFreshProcess({
         record,
         execution,
+        planReceipt: planReceipts.get(record.turnKey) ?? null,
         runningSource,
         storeSnapshots: args.storeSnapshots,
       });
@@ -282,6 +292,7 @@ async function batch(args) {
     finishedAt: finishedAt.toISOString(),
     decisionsInCopy: decisions.length,
     executionsInCopy: executions.size,
+    planReceiptsInCopy: planReceipts.size,
     replayed: selected.length,
     freshProcesses: pids.size,
     childFailures: failures,
@@ -318,6 +329,11 @@ async function batch(args) {
         ? `joined:${v.acceptance.executionStatus}:selected_${v.acceptance.selectedEqualsDecision ? 'equal' : 'differs'}`
         : `not_joined:${v.acceptance.reason}`
     ),
+    durableEffectReceipts: tally(verdicts, (v) => v.acceptance.durableEffectReceipt),
+    durableEffectReceiptsByOutcome: tally(
+      verdicts,
+      (v) => `${v.outcome} ${v.acceptance.durableEffectReceipt}`
+    ),
     notes: args.notes,
   };
   mkdirSync(args.out, { recursive: true });
@@ -338,7 +354,7 @@ async function batch(args) {
       `- Command: \`${summary.command}\``,
       `- Running source: \`${runningSource}\``,
       `- Batch rule: ${summary.batchRule}`,
-      `- Copy: ${summary.decisionsInCopy} decision records, ${summary.executionsInCopy} execution records (sha256 \`${summary.journalCopySha256}\`)`,
+      `- Copy: ${summary.decisionsInCopy} decision records, ${summary.executionsInCopy} execution records, ${summary.planReceiptsInCopy} plan receipts (sha256 \`${summary.journalCopySha256}\`)`,
       `- Window: ${summary.window ? `${summary.window.from} to ${summary.window.to}` : 'empty'}`,
       `- Replayed: ${summary.replayed} in ${summary.freshProcesses} fresh processes, ${failures} child failures`,
       `- replayVerified: ${summary.replayVerified}`,
@@ -359,6 +375,10 @@ async function batch(args) {
       '## Acceptance Join',
       '',
       table(summary.acceptance),
+      '',
+      '## Durable Accepted-Effect Receipts',
+      '',
+      table(summary.durableEffectReceiptsByOutcome),
       '',
       '## Outcomes By Format, Variant And Street',
       '',

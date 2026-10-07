@@ -45,7 +45,12 @@ Outcomes:
 
 ## 3. Acceptance Join
 
-The durable accepted-effect receipt of P15-A steps 1 to 3 is built by a sibling lane and is not on `main` as this is written. Until it lands, the replay joins the acceptance evidence the journal already holds: the `execution` record of the same turn (same journal `turnKey`, same decision key), reporting its execution status, whether its selected action equals the decision, the executed action and the number of accepted actions. Every verdict says `durableEffectReceipt: unavailable`. A missing execution record is `not_joined:execution_record_absent`, never an acceptance.
+After the comparison, the replay joins two kinds of acceptance evidence the journal holds for the same turn (same journal `turnKey`):
+
+- the `execution` witness (same decision key): its execution status, whether its selected action equals the decision, the executed action and the number of accepted actions. A missing witness is `not_joined:execution_record_absent`, never an acceptance;
+- the durable accepted-effect receipt of P15-A steps 1 to 3 (`plan_receipt`, `HorsePlanEffectReceipt.ts`, merged in #6445 after this replay first merged; the replay joins it from #6442's follow-up on). `durableEffectReceipt` is `applied` or `failed` only for a valid receipt whose issued batch digest equals the digest of the decision's own recorded binding and effects (which an exact replay reproduces); otherwise `no_effects` (an empty batch, no receipt due), `absent`, `invalid`, `other_batch` or `no_receipt_source`. A receipt never makes a replay exact, and an absent receipt is never an application.
+
+Releases before the follow-up report `durableEffectReceipt: unavailable`.
 
 ## 4. Defect Found And Fixed: The Replay Re-Encoded The Read Frame From Its Own Mind
 

@@ -8,9 +8,10 @@ import {
   primaryQuery,
   query,
   verify,
+  admissionDiagnostic,
 } from './leaderboard-schema-replica.mjs';
 
-const identifier = 'abcdefghijklmnopqrst';
+const identifier = `${primaryRef}-rr-us-west-2-feulx`;
 const input = {
   identifier,
   database_type: 'READ_REPLICA',
@@ -30,6 +31,33 @@ const admission = {
   version_num: '170006',
   replay_lsn: '2/0',
 };
+
+test('admission diagnostics name exact fixed failure conditions without revealing input values', () => {
+  assert.equal(admissionDiagnostic(fence, admission), 'no-admission-mismatch');
+  for (const [change, category] of [
+    [{ in_recovery: false }, 'not-in-recovery'],
+    [{ in_hot_standby: 'off' }, 'not-hot-standby'],
+    [{ read_only: 'off' }, 'not-read-only'],
+    [{ feedback: 'on' }, 'feedback-not-off'],
+    [{ version_num: '170011' }, 'version-mismatch'],
+    [{ replay_lsn: '1/FFFFFFFE' }, 'replay-behind-fence'],
+  ]) {
+    assert.equal(admissionDiagnostic(fence, { ...admission, ...change }), category);
+    assert.throws(() => verify(fence, { ...admission, ...change }));
+  }
+  assert.equal(
+    admissionDiagnostic(fence, { ...admission, feedback: 'PRIVATE_SECRET' }),
+    'feedback-not-off'
+  );
+  assert.equal(
+    admissionDiagnostic(fence, { ...admission, replay_lsn: 'PRIVATE_SECRET' }),
+    'invalid-admission-metadata'
+  );
+  assert.equal(
+    admissionDiagnostic({ ...fence, private: 'PRIVATE_SECRET' }, admission),
+    'invalid-admission-metadata'
+  );
+});
 
 test('verified descriptor changes endpoint only and preserves synthetic credential and SSL', () => {
   assert.deepEqual(descriptor(input), input);
@@ -64,6 +92,13 @@ test('descriptor refuses primary identity, guessed or unrelated hosts and identi
     { identifier: primaryRef },
     { database_type: 'PRIMARY' },
     { identifier: 'bad' },
+    { identifier: 'abcdefghijklmnopqrst' },
+    { identifier: 'abcdefghijklmnopqrst-rr-us-west-2-feulx' },
+    { identifier: `${primaryRef}-rr-us-east-1-feulx` },
+    { identifier: `${primaryRef}-rr-us-west-2-FEULX` },
+    { identifier: `${primaryRef}-rr-us-west-2-feul` },
+    { identifier: `${primaryRef}-rr-us-west-2-feulxx` },
+    { identifier: `${primaryRef}-rr-us-west-2-feulx\n` },
     { db_host: 'evil.supabase.com' },
     { db_host: `db.${primaryRef}.supabase.co` },
     { db_user: 'postgres.other' },

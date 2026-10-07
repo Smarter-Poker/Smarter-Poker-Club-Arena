@@ -63,8 +63,11 @@ fi
 source_error_category() {
   local status="$1" diagnostic
   diagnostic="$(cat)"
-  if [[ "$status" == 124 || "$status" == 137 ]]; then echo 'bounded-timeout'; return; fi
+  if [[ "$status" == 124 ]]; then echo 'bounded-timeout'; return; fi
+  if [[ "$status" == 137 ]]; then echo 'signal-termination'; return; fi
   case "$diagnostic" in
+    *'canceling statement due to statement timeout'*) echo 'server-statement-timeout' ;;
+    *'canceling statement due to lock timeout'*) echo 'server-lock-timeout' ;;
     *'could not translate host name'*|*'Name or service not known'*) echo 'name-resolution' ;;
     *'Network is unreachable'*|*'No route to host'*) echo 'network-route' ;;
     *'Connection refused'*) echo 'connection-refused' ;;
@@ -147,9 +150,14 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 failure() { echo "Leaderboard isolation preflight refused: $1" >&2; exit 1; }
 source_failure() {
-  local reason="$1" log="$2" status="$3" category
+  local reason="$1" log="$2" status="$3" category state='unknown' elapsed='unknown' started
   category="$(source_error_category "$status" < "$log")"
-  failure "$reason ($category)"
+  started="$(cat "$scratch/source-client-started" 2>/dev/null)" || started='unknown'
+  if [[ "$started" =~ ^[0-9]+$ && "$started" -le "$SECONDS" ]]; then elapsed=$((SECONDS-started)); fi
+  if state="$(timeout 10 docker inspect --format '{{.State.Status}}|{{.State.ExitCode}}|{{.State.OOMKilled}}' "$source_container" 2>/dev/null)"; then
+    [[ "$state" =~ ^(created|running|paused|restarting|removing|exited|dead)\|[0-9]+\|(true|false)$ ]] || state='unknown'
+  else state='unknown'; fi
+  failure "$reason (client-status=$status;elapsed-seconds=$elapsed;$category;owned-source-state=$state)"
 }
 destination_failure() {
   local stage="$1" log="$2" status="$3" category diagnostic line='unknown'
@@ -165,6 +173,7 @@ source_client() {
   local seconds="$1" client="$2"
   shift 2
   [[ "$client" == psql || "$client" == pg_dump || "$client" == pg_dumpall ]] || failure 'unsupported source client'
+  printf '%s\n' "$SECONDS" >"$scratch/source-client-started"
   # PGDATABASE alone does not expand a URI. Explicit libpq connection options
   # are expanded inside the container, never placed on the host Docker argv.
   # Expansion must happen inside the source container.

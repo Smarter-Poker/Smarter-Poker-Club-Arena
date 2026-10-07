@@ -233,6 +233,9 @@ test('source diagnostics return allowlisted categories without raw error or secr
     ],
     [2, 'could not translate host name private.example', 'name-resolution'],
     [124, 'postgres://secret:marker@private.example/db', 'bounded-timeout'],
+    [137, 'secret marker', 'signal-termination'],
+    [2, 'canceling statement due to statement timeout secret', 'server-statement-timeout'],
+    [2, 'canceling statement due to lock timeout secret', 'server-lock-timeout'],
     [2, 'unrecognized raw error secret marker', 'unclassified-source-client'],
   ];
   for (const [status, input, category] of samples) {
@@ -245,6 +248,49 @@ test('source diagnostics return allowlisted categories without raw error or secr
     assert.equal(result.stdout.trim(), category);
     assert.equal(result.stderr, '');
   }
+});
+
+test('actual source failure reports only bounded owned state and numeric elapsed/status', () => {
+  const classifier = source.slice(
+    source.indexOf('source_error_category() {'),
+    source.indexOf('if [[ "${1:-}" == \'--classify-source-error\' ]]')
+  );
+  const helper = source.slice(
+    source.indexOf('source_failure() {'),
+    source.indexOf('destination_failure() {')
+  );
+  for (const [state, expected, marker, elapsed, inspectStatus] of [
+    ['running|0|false', 'running|0|false', '2', '3', '0'],
+    ['exited|137|true', 'exited|137|true', '2', '3', '0'],
+    ['private-secret-state', 'unknown', '2', '3', '0'],
+    ['running|0|false', 'unknown', '2', '3', '1'],
+    ['running|0|false', 'unknown', '2', '3', '127'],
+    ['running|0|false', 'running|0|false', 'invalid', 'unknown', '0'],
+    ['running|0|false', 'running|0|false', 'missing', 'unknown', '0'],
+  ]) {
+    const result = spawnSync(
+      'bash',
+      [
+        '-c',
+        `${classifier}\n${helper}\nSECONDS=5; scratch=/fixture; source_container=exact-owned; cat() { if [[ "$1" == /fixture/source-client-started ]]; then [[ "$fixture_marker" != missing ]] || return 1; printf '%s' "$fixture_marker"; else command cat "$@"; fi; }; timeout() { [[ "$*" == *exact-owned* ]] || exit 9; printf '%s' "$fixture_state"; return "$fixture_inspect_status"; }; failure() { printf '%s' "$1"; }; fixture_state=$1; fixture_marker=$2; fixture_inspect_status=$3; source_failure fixed-stage <(printf 'secret') 137`,
+        'fixture',
+        state,
+        marker,
+        inspectStatus,
+      ],
+      { encoding: 'utf8' }
+    );
+    assert.equal(result.status, 0);
+    assert.equal(
+      result.stdout,
+      `fixed-stage (client-status=137;elapsed-seconds=${elapsed};signal-termination;owned-source-state=${expected})`
+    );
+    assert.equal(result.stderr, '');
+  }
+  assert.match(
+    source,
+    /timeout 10 docker inspect --format '\{\{\.State\.Status\}\}\|\{\{\.State\.ExitCode\}\}\|\{\{\.State\.OOMKilled\}\}' "\$source_container"/
+  );
 });
 
 function cleanupFixture(mode, primaryStatus = 0) {

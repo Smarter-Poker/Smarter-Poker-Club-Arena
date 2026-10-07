@@ -200,9 +200,7 @@ AS $function$
           AND p_name ~ ('^club-cards/' || c.club_id::text || '-card-[A-Za-z0-9._-]+$'));
 $function$;
 
-REVOKE ALL ON FUNCTION public.fn_club_card_object_is_callers(text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.fn_club_card_object_is_callers(text) FROM anon;
-REVOKE ALL ON FUNCTION public.fn_club_card_object_is_callers(text) FROM service_role;
+REVOKE ALL ON FUNCTION public.fn_club_card_object_is_callers(text) FROM PUBLIC, anon, service_role;
 GRANT EXECUTE ON FUNCTION public.fn_club_card_object_is_callers(text) TO authenticated;
 
 DROP POLICY IF EXISTS "club cards authenticated insert" ON storage.objects;

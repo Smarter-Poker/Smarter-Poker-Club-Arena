@@ -13,6 +13,157 @@ import './leaderboard-isolation-acl-order.test.mjs';
 
 const shell = fileURLToPath(new URL('./leaderboard-isolation-preflight.sh', import.meta.url));
 const source = readFileSync(shell, 'utf8');
+test('native schema restore compares primary and dedicated replica before and after only the long dump', () => {
+  const missing = spawnSync('bash', [shell], {
+    encoding: 'utf8',
+    env: { PATH: process.env.PATH, DATABASE_URL: 'SYNTHETIC_PRIVATE_INPUT' },
+  });
+  assert.notEqual(missing.status, 0);
+  assert.match(missing.stderr, /primary export fallback is prohibited/);
+  assert.doesNotMatch(
+    missing.stderr + missing.stdout,
+    /SYNTHETIC_PRIVATE_INPUT|Docker state|scratch parent/
+  );
+  const start = source.indexOf('# Keep all authoritative metadata reads on PRIMARY.');
+  const end = source.indexOf('source_client 180 pg_dumpall', start);
+  assert.ok(start > 0 && end > start);
+  const block = source.slice(start, end);
+  const parent =
+    process.env.TMPDIR || (process.env.CI === 'true' ? process.env.RUNNER_TEMP : undefined);
+  assert.ok(
+    parent &&
+      (parent.startsWith('/Volumes/SmarterWork/agent-work/') ||
+        (process.env.CI === 'true' && parent === process.env.RUNNER_TEMP))
+  );
+  const descriptor = {
+    identifier: 'abcdefghijklmnopqrst',
+    database_type: 'READ_REPLICA',
+    db_host: 'aws-0-us-west-2.pooler.supabase.com',
+    db_port: 6543,
+    db_user: 'postgres.abcdefghijklmnopqrst',
+    db_name: 'postgres',
+    pool_mode: 'transaction',
+  };
+  const primaryURL =
+    'postgresql://postgres.kuklfnapbkmacvwxktbh:synthetic@aws-0-us-west-2.pooler.supabase.com:6543/postgres?sslmode=require';
+  const fence = { version_num: '170006', current_wal_lsn: '2/0' };
+  const admitted = {
+    in_recovery: true,
+    in_hot_standby: 'on',
+    read_only: 'on',
+    feedback: 'off',
+    version_num: '170006',
+    replay_lsn: '2/1',
+  };
+  const startup = [
+    ['max_connections', '480'],
+    ['max_locks_per_transaction', '64'],
+    ['max_prepared_transactions', '0'],
+    ['autovacuum_max_workers', '3'],
+    ['max_worker_processes', '16'],
+    ['max_wal_senders', '80'],
+  ].map(([name, setting]) => ({ name, setting }));
+  for (const scenario of [
+    'success',
+    'feedback-before',
+    'feedback-after',
+    'promoted-before',
+    'promoted-after',
+    'version',
+    'lag',
+    'catalog-before',
+    'catalog-after',
+    'startup-before',
+    'startup-after',
+  ]) {
+    const scratch = mkdtempSync(join(parent, 'leaderboard-replica-route-'));
+    try {
+      writeFileSync(join(scratch, 'source-before.json'), '[1]\n');
+      writeFileSync(join(scratch, 'startup-before.json'), JSON.stringify(startup));
+      const before = { ...admitted };
+      const after = { ...admitted };
+      if (scenario === 'feedback-before') before.feedback = 'on';
+      if (scenario === 'feedback-after') after.feedback = 'on';
+      if (scenario === 'promoted-before') before.in_recovery = false;
+      if (scenario === 'promoted-after') after.in_recovery = false;
+      if (scenario === 'version') before.version_num = '170011';
+      if (scenario === 'lag') before.replay_lsn = '1/FFFFFFFF';
+      const changedStartup = startup.map((row) =>
+        row.name === 'max_connections' ? { ...row, setting: '100' } : row
+      );
+      const script = `set -euo pipefail
+export PGDATABASE="$DATABASE_URL"
+guards=0; catalogs=0; startups=0
+failure(){ echo "$1" >&2; exit 42; }
+source_failure(){ exit 43; }
+source_client(){
+  local client="$2"
+  if [[ "$PGDATABASE" == "$DATABASE_URL" ]]; then endpoint=primary; else endpoint=replica; fi
+  printf '%s|%s\\n' "$client" "$endpoint" >>"$scratch/routes"
+  if [[ "$client" == pg_dump ]]; then printf dumped >"$scratch/dumped"; return; fi
+  if [[ "$endpoint" == primary ]]; then printf '%s' "$FENCE"; return; fi
+  guards=$((guards+1))
+  if [[ "$guards" == 1 ]]; then printf '%s' "$BEFORE"; else printf '%s' "$AFTER"; fi
+}
+source_catalog(){
+  catalogs=$((catalogs+1))
+  if [[ "$SCENARIO" == "catalog-before" && "$catalogs" == 1 || "$SCENARIO" == "catalog-after" && "$catalogs" == 2 ]]; then printf '[2]\\n'; else printf '[1]\\n'; fi
+}
+source_startup(){
+  startups=$((startups+1))
+  if [[ "$SCENARIO" == "startup-before" && "$startups" == 1 || "$SCENARIO" == "startup-after" && "$startups" == 2 ]]; then printf '%s' "$CHANGED_STARTUP"; else printf '%s' "$STARTUP"; fi
+}
+${block}
+[[ "$PGDATABASE" == "$DATABASE_URL" ]]
+`;
+      const result = spawnSync('bash', ['-c', script], {
+        encoding: 'utf8',
+        timeout: 10000,
+        env: {
+          ...process.env,
+          DATABASE_URL: primaryURL,
+          LEADERBOARD_SCHEMA_REPLICA_DESCRIPTOR: JSON.stringify(descriptor),
+          scratch,
+          replica_helper: fileURLToPath(
+            new URL('./leaderboard-schema-replica.mjs', import.meta.url)
+          ),
+          startup_helper: fileURLToPath(
+            new URL('./leaderboard-isolation-startup-profile.mjs', import.meta.url)
+          ),
+          SCENARIO: scenario,
+          FENCE: JSON.stringify(fence),
+          BEFORE: JSON.stringify(before),
+          AFTER: JSON.stringify(after),
+          STARTUP: JSON.stringify(startup),
+          CHANGED_STARTUP: JSON.stringify(changedStartup),
+        },
+      });
+      assert.equal(result.status, scenario === 'success' ? 0 : 42, `${scenario}: ${result.stderr}`);
+      const routes = readFileSync(join(scratch, 'routes'), 'utf8');
+      assert.ok(routes.startsWith('psql|primary\npsql|replica\n'));
+      if (scenario === 'success')
+        assert.equal(routes, 'psql|primary\npsql|replica\npg_dump|replica\npsql|replica\n');
+      if (
+        [
+          'feedback-before',
+          'promoted-before',
+          'version',
+          'lag',
+          'catalog-before',
+          'startup-before',
+        ].includes(scenario)
+      )
+        assert.ok(!routes.includes('pg_dump'));
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  }
+  assert.ok(
+    source.indexOf('unset schema_replica_url replica_query LEADERBOARD_SCHEMA_REPLICA_DESCRIPTOR') <
+      source.indexOf('docker network create --internal')
+  );
+  assert.equal(source.split('export PGDATABASE="$DATABASE_URL"').length, 2);
+});
 test('definition metadata is privately drift-checked before unchanged atomic restore and exact catalog', () => {
   const before = source.indexOf('>"$scratch/definitions-before.sql"');
   const dump = source.indexOf('source_client 600 pg_dump');
@@ -687,6 +838,11 @@ test('source diagnostics return allowlisted categories without raw error or secr
     [137, 'secret marker', 'signal-termination'],
     [2, 'canceling statement due to statement timeout secret', 'server-statement-timeout'],
     [2, 'canceling statement due to lock timeout secret', 'server-lock-timeout'],
+    [
+      1,
+      'canceling statement due to conflict with recovery private detail',
+      'replica-recovery-conflict',
+    ],
     [
       1,
       'pg_dump: error: query failed: server closed the connection unexpectedly\npg_dump: detail: Query was: SECRET_SQL',

@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, statSync, realpathSync } from 'node:fs';
 import { resolve, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
 const SHA = /^[0-9a-f]{40}$/;
 const safePath = (path) =>
@@ -61,10 +62,87 @@ export function runtimeInputPlugin(label, root = process.cwd()) {
       const files = new Set();
       const directories = new Set();
       const unknown = [];
+      let lock;
+      try {
+        lock = JSON.parse(readFileSync(resolve(root, 'package-lock.json'), 'utf8'));
+      } catch {
+        unknown.push('missing-locked-dependency-authority');
+      }
+      const locked = (name) => {
+        const entry = lock?.packages?.[`node_modules/${name}`];
+        return (
+          entry &&
+          typeof entry.version === 'string' &&
+          typeof entry.integrity === 'string' &&
+          entry.link !== true
+        );
+      };
+      const dependencyRoot = resolve(root, 'node_modules') + '/';
+      const require = createRequire(resolve(root, 'package.json'));
+      const dependency = (clean) => {
+        if (!clean.startsWith(dependencyRoot)) return false;
+        let real;
+        try {
+          real = realpathSync(clean);
+        } catch {
+          return false;
+        }
+        if (!real.startsWith(dependencyRoot)) return false;
+        const rel = relative(root, clean).replace(/\\/g, '/');
+        const packagePath = Object.keys(lock?.packages || {})
+          .filter((path) => path.startsWith('node_modules/') && rel.startsWith(path + '/'))
+          .sort((a, b) => b.length - a.length)[0];
+        const entry = lock?.packages?.[packagePath];
+        if (!entry || entry.link === true || typeof entry.integrity !== 'string') return false;
+        try {
+          return (
+            JSON.parse(readFileSync(resolve(root, packagePath, 'package.json'), 'utf8')).version ===
+            entry.version
+          );
+        } catch {
+          return false;
+        }
+      };
       for (const raw of new Set([...this.getModuleIds(), ...this.getWatchFiles()])) {
-        if (raw.includes('\0') || !isAbsolute(raw)) continue;
-        const clean = raw.split('?')[0];
-        if (clean.includes('/node_modules/')) continue;
+        if (raw.includes('\0')) {
+          // Known Vite/Rollup CommonJS virtual producers are qualified by the
+          // original immutable build, unchanged root configs/build sources and
+          // their exact locked packages. Unknown plugin IDs cannot disappear.
+          if (/^\0vite\//.test(raw) && locked('vite')) continue;
+          if (
+            /^\0commonjs(?:Helpers\.js|-dynamic-modules)$/.test(raw) &&
+            locked('@rollup/plugin-commonjs')
+          )
+            continue;
+          if (
+            raw.startsWith('\0') &&
+            /\?commonjs-(?:proxy|external|es-import|entry)$/.test(raw) &&
+            locked('@rollup/plugin-commonjs')
+          ) {
+            const underlying = raw.slice(1).split('?')[0];
+            if (isAbsolute(underlying) && dependency(underlying)) continue;
+          }
+          unknown.push(`unsupported-virtual-input:${raw.replace(/\0/g, '<nul>')}`);
+          continue;
+        }
+        let clean = raw.split('?')[0];
+        if (!isAbsolute(clean)) {
+          if (clean.startsWith('node:')) continue;
+          try {
+            clean = require.resolve(clean);
+          } catch {
+            unknown.push(`unsupported-module-input:${raw}`);
+            continue;
+          }
+          if (!isAbsolute(clean)) {
+            unknown.push(`unsupported-module-input:${raw}`);
+            continue;
+          }
+        }
+        if (clean.includes('/node_modules/')) {
+          if (!dependency(clean)) unknown.push('unqualified-or-external-dependency-input');
+          continue;
+        }
         const path = relative(root, clean).replace(/\\/g, '/');
         if (!safePath(path)) {
           unknown.push('external-build-input');

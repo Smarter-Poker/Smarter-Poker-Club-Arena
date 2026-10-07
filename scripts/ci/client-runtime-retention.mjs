@@ -204,6 +204,8 @@ async function requireCurrentReceipt(receipt) {
 }
 
 async function admit(target) {
+  if (process.env.GITHUB_EVENT_NAME === 'repository_dispatch')
+    throw new Error('Exact-SHA repair/configuration events require normal publication.');
   if (!SHA.test(target) || git('rev-parse', 'HEAD').toString().trim() !== target)
     throw new Error('Admission checkout differs from current protected target.');
   git('merge-base', '--is-ancestor', target, 'origin/main');

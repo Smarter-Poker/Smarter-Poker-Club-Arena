@@ -56,6 +56,15 @@ test('actual lazy shared-server module/watch graph excludes engine-only churn an
   try {
     git(cwd, 'init', '-q');
     put(cwd, '.gitignore', 'dist/\n.client-runtime-*.json\n');
+    const realLock = JSON.parse(
+      readFileSync(new URL('../../package-lock.json', import.meta.url), 'utf8')
+    );
+    put(cwd, 'package.json', '{\"name\":\"runtime-fixture\"}');
+    put(
+      cwd,
+      'package-lock.json',
+      JSON.stringify({ packages: { 'node_modules/vite': realLock.packages['node_modules/vite'] } })
+    );
     put(cwd, 'index.html', '<script type="module" src="/src/main.js"></script>');
     put(cwd, 'src/main.js', 'window.readShared = () => import("../server/shared.js");');
     put(cwd, 'server/shared.js', 'export const value = 7;');

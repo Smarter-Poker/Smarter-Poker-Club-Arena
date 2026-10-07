@@ -22,7 +22,8 @@ const cue = [{ at: 0, sample: 'clink' }];
 const bytes = () => new ArrayBuffer(8);
 const response = () => ({ ok: true, arrayBuffer: async () => bytes() });
 
-async function fixture() {
+async function fixture(suspended = false) {
+  const resume = vi.fn().mockRejectedValue(new Error('Autoplay refused'));
   const start = vi.fn();
   const stop = vi.fn();
   const decode = vi.fn().mockResolvedValue({ duration: 1 });
@@ -30,7 +31,8 @@ async function fixture() {
   vi.stubGlobal(
     'AudioContext',
     class {
-      state = 'running';
+      state = suspended ? 'suspended' : 'running';
+      resume = resume;
       currentTime = 0;
       destination = {};
       decodeAudioData = decode;
@@ -48,12 +50,24 @@ async function fixture() {
   );
   const { throwableSoundService: service } =
     await import('../../src/services/ThrowableSoundService');
-  return { service, start, stop, decode };
+  return { service, start, stop, decode, resume };
 }
 
 describe('recorded throwable cue lifecycle', () => {
   beforeEach(() => vi.resetModules());
   afterEach(() => vi.unstubAllGlobals());
+
+  it('handles an autoplay refusal and retries when a user gestures', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => response())
+    );
+    const { service, resume } = await fixture(true);
+    service.scheduleCues(cue, opts);
+    await vi.waitFor(() => expect(resume).toHaveBeenCalledOnce());
+    window.dispatchEvent(new Event('pointerdown'));
+    await vi.waitFor(() => expect(resume).toHaveBeenCalledTimes(2));
+  });
 
   it('does not start a cue whose fetch finishes after cancellation', async () => {
     let finish!: (value: ReturnType<typeof response>) => void;

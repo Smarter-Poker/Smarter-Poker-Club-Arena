@@ -186,6 +186,8 @@ describe('the Final Table database rollout is safe and ordered', () => {
     const sealJob = POST_DEPLOY.slice(POST_DEPLOY.indexOf('  phase1-customization-cutover-seal:'));
     expect(sealJob).toContain('needs: [publication-gate, production-e2e, live-table-e2e]');
     expect(sealJob).toContain("needs.production-e2e.outputs.certified == 'true'");
+    expect(sealJob).toContain("needs.production-e2e.outputs.phase1_certified == 'true'");
+    expect(sealJob).not.toContain("needs.production-e2e.result == 'success'");
     expect(sealJob).toContain("needs.live-table-e2e.outputs.certified == 'true'");
     expect(sealJob).toContain(
       'needs.production-e2e.outputs.client_sha == needs.live-table-e2e.outputs.client_sha'

@@ -79,6 +79,12 @@ async function requireDataRouteReady(page: import('@playwright/test').Page, rout
     ).toBeVisible({
       timeout: 30_000,
     });
+    // The dossier heading is also present during loading and privacy checks.
+    // Measure only once the real, accessible controls have actually arrived.
+    await expect(page.locator('.stats-page')).not.toHaveAttribute('aria-busy', 'true', {
+      timeout: 30_000,
+    });
+    await expect(page.locator('.stats-page button').first()).toBeVisible({ timeout: 30_000 });
   } else if (route.startsWith('rate-audit')) {
     await expect(page.getByRole('heading', { name: 'Rate Audit Trail', exact: true })).toBeVisible({
       timeout: 30_000,

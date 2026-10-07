@@ -42,10 +42,15 @@ import {
 import { recordNonVerdict } from './support/nonVerdict';
 import {
   createHudClockReader,
+  hudCandidateTableIdBatches,
   hudEventObservationMs,
+  HUD_DISCOVERY_CANDIDATE_LIMIT,
   MTT_HUD_LEVEL_CAP_MS,
+  mergeHudCandidateTableIds,
   mttCaseTimeoutMs,
   observeHudLevels,
+  OperationalPollFailure,
+  scanHudCandidateBatches,
   selectableHudClock,
   sharedNaturalLevel,
   waitForSharedNaturalLevel,
@@ -170,7 +175,8 @@ type LivenessScope = { tableIds: string[] } | { gameFormat: (typeof TOURNAMENT_F
 
 async function readEngineHealth(
   request: APIRequestContext,
-  scope: LivenessScope
+  scope: LivenessScope,
+  timeoutMs = 15_000
 ): Promise<EngineHealth> {
   const url = new URL(ENGINE_HEALTH_URL);
   url.searchParams.set('cb', String(Date.now()));
@@ -183,7 +189,7 @@ async function readEngineHealth(
     url.searchParams.set('liveness_club_ids', [CLUB_ID, UNION_ID].join(','));
   }
   const response = await request.get(url.toString(), {
-    timeout: 15_000,
+    timeout: Math.max(1, Math.min(15_000, Math.floor(timeoutMs))),
     headers: { 'cache-control': 'no-store' },
   });
   expect(response.status(), 'the public engine health endpoint did not answer 200').toBe(200);
@@ -509,27 +515,6 @@ async function selectProgressingTournamentTable(
   const excluded = new Set(options.excludeTableIds ?? []);
   const pollBudgetMs = () =>
     Math.min(CAUSAL_HAND_TIMEOUT_MS, remainingObservationMs(options.deadline));
-  /* A board that already finished, or is one hand from finishing, is not a
-     running board, and the deepest boards are the least likely to finish
-     while the browser is watching. Read the rows; never guess. */
-  const refineByBoard = async (tables: EngineTableLiveness[]): Promise<EngineTableLiveness[]> => {
-    const fresh = tables.filter((table) => !excluded.has(table.tableId));
-    if (options.hudReader && fresh.length > 0) {
-      const clocks = await options.hudReader.clocks(
-        fresh.map((table) => table.tableId),
-        MTT_HUD_LEVEL_CAP_MS,
-        selectableHudClock
-      );
-      return fresh.filter((table) => clocks.has(table.tableId));
-    }
-    if (!options.boardReader || fresh.length === 0) return fresh;
-    const facts = await options.boardReader.boardFacts(fresh.map((table) => table.tableId));
-    return orderByEndurance(
-      fresh.filter((table) => selectableWhileRunning(facts.get(table.tableId))),
-      facts
-    );
-  };
-  let before = await readEngineHealth(request, { gameFormat });
   /* The live SNG board is presently heads-up, so two seats is a real SNG,
      not an unstable fallback. Spins and MTTs retain a three-player floor to
      avoid selecting a table already on its terminal heads-up hand. */
@@ -551,21 +536,128 @@ async function selectProgressingTournamentTable(
           a.msSinceProgress - b.msSinceProgress ||
           a.tableId.localeCompare(b.tableId)
       );
+  /* A board that already finished, or is one hand from finishing, is not a
+     running board, and the deepest boards are the least likely to finish
+     while the browser is watching. Read the rows; never guess. */
+  const refineByBoard = async (tables: EngineTableLiveness[]): Promise<EngineTableLiveness[]> => {
+    const fresh = tables.filter((table) => !excluded.has(table.tableId));
+    if (options.hudReader && fresh.length > 0) {
+      const clocks = await options.hudReader.clocks(
+        fresh.map((table) => table.tableId),
+        MTT_HUD_LEVEL_CAP_MS,
+        selectableHudClock
+      );
+      return fresh.filter((table) => clocks.has(table.tableId));
+    }
+    if (!options.boardReader || fresh.length === 0) return fresh;
+    const facts = await options.boardReader.boardFacts(fresh.map((table) => table.tableId));
+    return orderByEndurance(
+      fresh.filter((table) => selectableWhileRunning(facts.get(table.tableId))),
+      facts
+    );
+  };
+  let lastHudCandidateHealth: {
+    requestedTableCount: number;
+    returnedTableCount: number;
+    missingTableIds: string[];
+    rejectionCategories: { engine_health_absent?: number };
+  } | null = null;
+  const readCandidateHealth = async (
+    deadline = Math.min(options.deadline, Date.now() + pollBudgetMs())
+  ): Promise<{
+    scoped: EngineHealth;
+    candidates: EngineHealth;
+  }> => {
+    const readDeadline = Math.min(options.deadline, deadline);
+    const requestTimeoutMs = () =>
+      Math.max(1, Math.min(15_000, Math.floor(remainingObservationMs(readDeadline))));
+    const scoped = await readEngineHealth(request, { gameFormat }, requestTimeoutMs());
+    if (!options.hudReader) return { scoped, candidates: scoped };
+    const discovered = await options.hudReader.discoverSelectableTableIds(
+      [CLUB_ID, UNION_ID],
+      MTT_HUD_LEVEL_CAP_MS,
+      HUD_DISCOVERY_CANDIDATE_LIMIT,
+      readDeadline
+    );
+    /* Eligibility always comes first. The public occupancy sample is only a
+       fallback, and exact health advances through bounded 32-ID batches until
+       it finds a usable discovered table. */
+    const tableIds = mergeHudCandidateTableIds(
+      discovered,
+      scoped.tableLiveness.map((table) => table.tableId)
+    );
+    if (!tableIds.length) {
+      lastHudCandidateHealth = {
+        requestedTableCount: 0,
+        returnedTableCount: 0,
+        missingTableIds: [],
+        rejectionCategories: {},
+      };
+      return { scoped, candidates: scoped };
+    }
+    const discoveredIds = new Set(discovered);
+    const scanned = await scanHudCandidateBatches({
+      batches: hudCandidateTableIdBatches(tableIds),
+      read: (batch) => readEngineHealth(request, { tableIds: batch }, requestTimeoutMs()),
+      usable: (health) =>
+        readyTables(health).some(
+          (table) => discoveredIds.size === 0 || discoveredIds.has(table.tableId)
+        ),
+    });
+    const tableLiveness = [
+      ...new Map(
+        scanned.results
+          .flatMap((health) => health.tableLiveness)
+          .map((table) => [table.tableId, table] as const)
+      ).values(),
+    ];
+    const candidates = scanned.results.length
+      ? { ...scanned.results.at(-1)!, tableLiveness }
+      : scoped;
+    const returnedIds = new Set(tableLiveness.map((table) => table.tableId));
+    const missingTableIds = scanned.requestedTableIds.filter(
+      (tableId) => !returnedIds.has(tableId)
+    );
+    lastHudCandidateHealth = {
+      requestedTableCount: scanned.requestedTableIds.length,
+      returnedTableCount: tableLiveness.length,
+      missingTableIds,
+      rejectionCategories: missingTableIds.length
+        ? { engine_health_absent: missingTableIds.length }
+        : {},
+    };
+    return {
+      scoped,
+      candidates,
+    };
+  };
+  let healthRead = await readCandidateHealth();
+  let before = healthRead.candidates;
+  let lastScopedHealth = healthRead.scoped;
   let baselines = await refineByBoard(readyTables(before));
+  const operationalPollFailure = new OperationalPollFailure();
 
   // A publisher can finish while natural tournament tables are still resuming.
   // Wait only for the same live-table prerequisites, before freezing identities.
+  const readinessPollBudgetMs = pollBudgetMs();
+  const readinessReadDeadline = Math.min(
+    options.deadline,
+    Date.now() + Math.max(1, readinessPollBudgetMs - 1_000)
+  );
   try {
     if (baselines.length === 0) {
       await expect
         .poll(
-          async () => {
-            before = await readEngineHealth(request, { gameFormat });
-            baselines = await refineByBoard(readyTables(before));
-            return baselines.length;
-          },
+          () =>
+            operationalPollFailure.attempt(async () => {
+              healthRead = await readCandidateHealth(readinessReadDeadline);
+              before = healthRead.candidates;
+              lastScopedHealth = healthRead.scoped;
+              baselines = await refineByBoard(readyTables(before));
+              return baselines.length;
+            }),
           {
-            timeout: pollBudgetMs(),
+            timeout: readinessPollBudgetMs,
             intervals: [2_000, 3_000, 5_000, 5_000],
             message:
               `production exposed no already-running ${gameFormat.toUpperCase()} table with ` +
@@ -582,12 +674,15 @@ async function selectProgressingTournamentTable(
         )
         .toBeGreaterThan(0);
     }
-  } catch (error) {
+  } catch {
+    // An RLS/PostgREST, exact-health, or clock-read failure is a production
+    // error, not evidence that no certifiable subject exists.
+    operationalPollFailure.rethrowIfPresent();
     /* WAS PRODUCTION BROKEN, OR WAS THERE NOTHING TO WATCH? (2026-09-30)
        Both used to arrive here as the same red. They are not the same thing,
        and the scoped health that was just read says which one it is. */
     const classification = classifyMissingTournamentSubject({
-      rows: before.tableLiveness,
+      rows: lastScopedHealth.tableLiveness,
       gameFormat,
       clubIds: [CLUB_ID, UNION_ID],
       minimumStableSeats,
@@ -601,7 +696,10 @@ async function selectProgressingTournamentTable(
       requiresNaturalHudClock: Boolean(options.hudReader),
       boardsAlreadyEndedThisCase: [...excluded],
       classification,
-      lastScopedHealth: before,
+      lastScopedHealth,
+      lastCandidateHealth: before,
+      hudCandidateHealth: lastHudCandidateHealth,
+      hudQualification: options.hudReader?.refusalEvidence() ?? null,
     };
     await testInfo.attach(`${gameFormat}-baseline-readiness-refusal`, {
       body: Buffer.from(JSON.stringify(evidence, null, 2)),

@@ -250,7 +250,8 @@ jobs:
     timeout-minutes: 80
     outputs:
       client_sha: ${{ steps.live.outputs.sha }}
-      certified: ${{ steps.release_window.outputs.certified }}
+      certified: ${{ steps.release_window.outcome == 'success' && steps.release_window.outputs.certified == 'true' }}
+      phase1_certified: ${{ steps.phase1_verdict.outcome == 'success' && steps.phase1_verdict.outputs.certified == 'true' }}
 
     steps:
       - name: Checkout
@@ -728,7 +729,22 @@ jobs:
           e2e-report/daily-missions-settlement.json
           e2e-report/sweep.json
 
+      # The broad client job deliberately keeps unrelated routes visible and
+      # red. The database cutover has a narrower question: did every affected
+      # customization journey pass exactly once, without a skip or retry?
+      # Report that answer independently so a Club Data or Financial Admin
+      # defect cannot either impersonate or erase the Phase 1 evidence.
+      - name: Did every Phase 1 customization journey pass exactly?
+        id: phase1_coverage
+        if: always() && steps.live.outputs.ready == 'true'
+        run: >-
+          node scripts/ci/phase1-customization-certificate-coverage.mjs
+          e2e-report/customization-realtime.json
+          e2e-report/gameplay-customization-runtime.json
+          e2e-report/customization-commerce.json
+
       - name: Hard-delete the isolated production E2E account
+        id: account_cleanup
         if: always() && steps.live.outputs.ready == 'true'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -813,12 +829,52 @@ jobs:
               ;;
           esac
 
+      - name: Classify the Phase 1 customization certificate
+        id: phase1_verdict
+        if: always()
+        env:
+          RELEASE_CERTIFIED: ${{ steps.release_window.outputs.certified }}
+          RELEASE_WINDOW_OUTCOME: ${{ steps.release_window.outcome }}
+          CUSTOMIZATION_COVERAGE_COMPLETE: ${{ steps.phase1_coverage.outputs.complete }}
+          CUSTOMIZATION_COVERAGE_OUTCOME: ${{ steps.phase1_coverage.outcome }}
+          ACCOUNT_CLEANUP_OUTCOME: ${{ steps.account_cleanup.outcome }}
+        run: |
+          set -euo pipefail
+          CERTIFIED=false
+          if [ "$CUSTOMIZATION_COVERAGE_OUTCOME" != 'success' ]; then
+            echo 'certified=false' >> "$GITHUB_OUTPUT"
+            echo '::error::The Phase 1 customization coverage producer did not complete successfully.'
+            exit 1
+          fi
+          if [ "$CUSTOMIZATION_COVERAGE_COMPLETE" != 'true' ]; then
+            echo 'certified=false' >> "$GITHUB_OUTPUT"
+            echo '::error::Phase 1 customization coverage was missing or incomplete.'
+            exit 1
+          fi
+          if [ "$ACCOUNT_CLEANUP_OUTCOME" != 'success' ]; then
+            echo 'certified=false' >> "$GITHUB_OUTPUT"
+            echo '::error::The isolated production account was not proven deleted.'
+            exit 1
+          fi
+          if [ "$RELEASE_WINDOW_OUTCOME" != 'success' ]; then
+            echo 'certified=false' >> "$GITHUB_OUTPUT"
+            echo '::error::The release-window producer did not complete successfully.'
+            exit 1
+          fi
+          if [ "$RELEASE_CERTIFIED" = 'true' ]; then
+            CERTIFIED=true
+            echo 'The exact served client has complete Phase 1 customization coverage.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'NON-VERDICT: no Phase 1 cutover seal may be written without one exact release and all three exact customization journeys.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "certified=$CERTIFIED" >> "$GITHUB_OUTPUT"
+
       - name: Upload the report when something is wrong on production
         # `failure()` is false when GitHub cancels a job at its time limit. The
         # old condition therefore discarded the only report from exactly the
         # run that exposed the obsolete timeout. Preserve evidence for both
         # kinds of non-verdict, while still skipping uploads on a clean run.
-        if: always() && (failure() || cancelled())
+        if: always() && (failure() || cancelled() || steps.phase1_coverage.outputs.complete != 'true')
         uses: actions/upload-artifact@v4
         with:
           name: post-deploy-playwright-report
@@ -850,7 +906,7 @@ jobs:
     outputs:
       client_sha: ${{ steps.live.outputs.sha }}
       engine_sha: ${{ steps.engine.outputs.sha }}
-      certified: ${{ steps.release_window.outputs.certified }}
+      certified: ${{ steps.release_window.outcome == 'success' && steps.release_window.outputs.certified == 'true' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -1204,18 +1260,19 @@ jobs:
 
   # The database cutover receipt is written only after BOTH browser lanes have
   # completed against one exact client and the live-table lane has completed
-  # against one exact engine. A superseded/non-verdict lane reports success to
-  # avoid calling a forward publish a defect, but exposes certified=false and
-  # therefore cannot reach this job.
+  # against one exact engine. The broad client job may remain red for another
+  # route; that failure remains visible in the workflow verdict, but cannot
+  # erase exact first-attempt evidence from these three affected journeys. A
+  # superseded/non-verdict lane exposes certified=false and cannot reach here.
   phase1-customization-cutover-seal:
     needs: [publication-gate, production-e2e, live-table-e2e]
     if: >-
       ${{
         always() &&
         needs.publication-gate.outputs.should_run == 'true' &&
-        needs.production-e2e.result == 'success' &&
         needs.live-table-e2e.result == 'success' &&
         needs.production-e2e.outputs.certified == 'true' &&
+        needs.production-e2e.outputs.phase1_certified == 'true' &&
         needs.live-table-e2e.outputs.certified == 'true' &&
         needs.production-e2e.outputs.client_sha == needs.live-table-e2e.outputs.client_sha
       }}
@@ -1304,7 +1361,7 @@ jobs:
 
       - name: Write the durable cutover receipt
         id: seal
-        if: steps.artifacts.outputs.ready == 'true'
+        if: steps.artifacts.outcome == 'success' && steps.artifacts.outputs.ready == 'true'
         env:
           CLIENT_SHA: ${{ needs.production-e2e.outputs.client_sha }}
           ENGINE_SHA: ${{ needs.live-table-e2e.outputs.engine_sha }}

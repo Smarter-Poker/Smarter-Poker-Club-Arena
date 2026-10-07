@@ -20,6 +20,10 @@ const appearanceObservation = readFileSync(
   resolve(__dirname, '../e2e/support/appearanceRealtimeObservation.ts'),
   'utf8'
 );
+const oneShotRequestGate = readFileSync(
+  resolve(__dirname, '../e2e/support/oneShotRequestGate.ts'),
+  'utf8'
+);
 
 describe('post-deploy E2E concurrency', () => {
   it('runs only after exact publish proof or a successful safe stand-down', () => {
@@ -245,5 +249,32 @@ describe('post-deploy E2E concurrency', () => {
     expect(gameplayCertification).not.toContain(
       'The certification club has no readable live cash table for routed proof.'
     );
+  });
+
+  it('releases a held appearance write before expecting another browser to reconcile it', () => {
+    const chooseStart = gameplayCertification.indexOf('async function chooseAppearance');
+    const chooseEnd = gameplayCertification.indexOf('\nasync function readTheme', chooseStart);
+    const chooseAppearance = gameplayCertification.slice(chooseStart, chooseEnd);
+
+    expect(chooseStart).toBeGreaterThanOrEqual(0);
+    expect(chooseEnd).toBeGreaterThan(chooseStart);
+    expect(chooseAppearance).toContain('runWithOneShotRequestGate({');
+    expect(chooseAppearance.indexOf('runWithOneShotRequestGate({')).toBeLessThan(
+      chooseAppearance.indexOf('await expect(readerRoot)')
+    );
+    expect(oneShotRequestGate.indexOf('const persistedOutcome')).toBeLessThan(
+      oneShotRequestGate.indexOf('gate.arm();')
+    );
+    expect(oneShotRequestGate).toContain('finally {');
+    expect(oneShotRequestGate).toContain('gate.release();');
+    expect(oneShotRequestGate.indexOf('await verifyImmediate();')).toBeLessThan(
+      oneShotRequestGate.indexOf('gate.release();')
+    );
+    expect(oneShotRequestGate.indexOf('gate.release();')).toBeLessThan(
+      oneShotRequestGate.indexOf('const outcome = await persistedOutcome;')
+    );
+    expect(gameplayCertification.match(/runWithOneShotRequestGate\(\{/g)).toHaveLength(3);
+    expect(gameplayCertification).not.toContain('writerProfileGate.arm()');
+    expect(gameplayCertification).not.toContain('writerProfileGate.release()');
   });
 });

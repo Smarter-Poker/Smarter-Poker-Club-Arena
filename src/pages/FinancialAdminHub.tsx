@@ -627,7 +627,11 @@ export default function FinancialAdminHub() {
                     {compactChips(reading?.revenueTotal ?? 0)} Chips
                   </strong>
                 </div>
-                <div className={styles.chart} aria-label="Seven Complete Days Revenue Chart">
+                <div
+                  className={styles.chart}
+                  role="group"
+                  aria-label="Seven Complete Days Revenue Chart"
+                >
                   <ResponsiveContainer
                     width="100%"
                     height="100%"

@@ -3,8 +3,8 @@
 # A change here is a change to what this platform runs on a timer. Never edit a
 # line to make a check pass: tests/the-scheduled-work-roster-is-pinned.law.test.ts
 # pins the count, and the count is supposed to be argued about.
-# observed_at: 2026-10-03T13:25:00Z
-# active: 126
+# observed_at: 2026-10-07T03:46:42Z
+# active: 128
 # retained-inactive: 2	the two bust sweeps restored disabled by 20260910073355
 # 2026-09-20: 135 -> 132. union-seat-provenance-heal, ca-bbj-repair-unbanked-15m
 # and reconcile-club-table-counts-nightly were retired by migration
@@ -96,6 +96,23 @@
 # the_api_pool_is_renewed_before_it_outgrows_the_host: PostgREST's pool
 # connections grow ~20 MB/min each until the pool is replaced, and the
 # Management API exposes no pool lifetime. The argument is in that header.
+# 2026-10-07: 126 -> 128 active, retained-inactive unchanged at 2. Read live
+# from fn_ca_cron_health('24 hours') at the observed_at above: 127 active, the
+# same 127 rows cron.job holds active. This body is that reading plus the one
+# job migration 20261007034146 adds, which is what production holds once that
+# migration is applied. Two rows had moved without this file being told:
+#   horse-presence-heartbeat  * * * * *  APPEARED, scheduled by applied
+#     migration 20261005174041 a_horse_keeps_a_heartbeat_like_a_person.
+#     Another owner's; listed here, not judged here.
+#   ca-ratchet-watch-hourly  35 * * * *  ->  29 * * * *, moved by applied
+#     migration 20261004002936 the_heavy_hourly_watches_do_not_start_together
+#     (recorded as 20261004003020) so the heavy hourly watches do not start
+#     in the same minute.
+# ONE IS ADDED:
+#   ca-diamond-cash-rake-sweep-hourly  14 * * * *  scheduled by migration
+#     20261007034146 the_diamond_cash_rake_is_swept_to_the_house_every_hour:
+#     design R4's periodic sweep, which carries accrued Diamond cash rake to
+#     the house (ruling 26). The argument is in that header.
 bbj-rollup-catchup	45 * * * *
 ca-alarm-drill-weekly	7 11 * * 1
 ca-bbj-threshold-notify-5m	*/5 * * * *
@@ -107,6 +124,7 @@ ca-conservation-sweep-hourly	52 * * * *
 ca-crash-settle-abandoned-minute	* * * * *
 ca-cron-health-30m	7,37 * * * *
 ca-daily-attestation	10 6 * * *
+ca-diamond-cash-rake-sweep-hourly	14 * * * *
 ca-diamond-economy-watch-daily	25 6 * * *
 ca-diamond-health-watch-hourly	35 * * * *
 ca-diamond-prune-history-daily	40 6 * * *
@@ -136,7 +154,7 @@ ca-orphaned-checks-daily	18 6 * * *
 ca-pay-backed-payout-shortfalls-hourly	26 * * * *
 ca-payout-guarantee-check-hourly	18 * * * *
 ca-quick-reconcile-5m	*/10 * * * *
-ca-ratchet-watch-hourly	35 * * * *
+ca-ratchet-watch-hourly	29 * * * *
 ca-resolve-cleared-incidents-hourly	23 * * * *
 ca-resolve-settled-alerts-20m	4,24,44 * * * *
 ca-results-without-a-hand-6h	46 */6 * * *
@@ -179,6 +197,7 @@ home-trending-refresh	*/15 * * * *
 home-view-log-prune	0 3 * * *
 home-weekly-snapshots	30 0 * * 1
 horse-daily-audit-fallback	30 7 * * *
+horse-presence-heartbeat	* * * * *
 horse-stackoff-audit-20m	7,27,47 * * * *
 index-usage-snapshot-daily	41 */2 * * *
 index-usage-snapshot-prune-daily	17 5 * * *

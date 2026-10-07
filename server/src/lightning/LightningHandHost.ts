@@ -55,6 +55,7 @@
 import { createHash } from 'node:crypto';
 import { HandController } from '../engine/HandController.js';
 import { PreciseActionTimer } from '../engine/PreciseActionTimer.js';
+import { horsePlanAcceptanceFromController } from '../engine/HorsePlanEffectReceipt.js';
 import { TimeBankEngine, type TimeBankEvent } from '../engine/TimeBankEngine.js';
 import { DisconnectEngine } from '../engine/DisconnectEngine.js';
 import { playerActionContext } from '../engine/PlayerActionContext.js';
@@ -1343,7 +1344,15 @@ export class LightningHandHost {
             (shaped.action === 'bet' || shaped.action === 'raise')
           ) {
             void lane()
-              .commitDecisionEffects(fast)
+              .commitDecisionEffects(
+                fast,
+                // Phase 15.1: the wager this controller accepted, as shaped.
+                horsePlanAcceptanceFromController(
+                  null,
+                  { action: shaped.action, amount: shaped.amount ?? null },
+                  fast.decision.executionWitness?.identity
+                )
+              )
               .catch((err) =>
                 this.logger.error(
                   `[LightningHost:${this.instanceId}] horse decision effects not committed`,

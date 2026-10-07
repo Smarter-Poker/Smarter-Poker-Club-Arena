@@ -5,7 +5,24 @@ import { seedFastRandom } from '../../../engine/HorseEval.js';
 import { horsePlanContextFromDecision } from '../../../engine/HorsePlanHandIdentity.js';
 import { horsePlanHandKey } from '../../../engine/HorseDecisionEffects.js';
 import { buildHorseDecisionKey } from '../../../engine/horseDecision/protocol.js';
-import { workerHarness, requestAt, commitOf, otherTableId, heroId, wager } from './fixture.js';
+import {
+  workerHarness,
+  requestAt,
+  commitOf,
+  otherTableId,
+  heroId,
+  wager,
+  tableId,
+  lease,
+  acceptanceOf,
+} from './fixture.js';
+import {
+  createHorsePlanEffectReceipt,
+  horsePlanEffectReceiptIsValid,
+  horsePlanIssuedBatchDigest,
+  type HorsePlanEffectReceipt,
+  type HorsePlanLiveHand,
+} from '../../../engine/HorsePlanEffectReceipt.js';
 
 beforeEach(() => {
   HorseMind.reset();
@@ -460,6 +477,334 @@ describe('actual worker issue ownership and volatile plan application', () => {
       expect(HorseMind.getPlan(otherKey, heroId)).toBe(false);
     } finally {
       await h.close();
+    }
+  });
+});
+
+describe('Phase 15.1 durable accepted-effect receipt and fresh-process recovery', () => {
+  const release = 'a'.repeat(40);
+  const liveHand = (over: Partial<HorsePlanLiveHand> = {}) => ({
+    tableId,
+    handNumber: 1000100,
+    lease,
+    street: 'flop',
+    generation: 100,
+    ...over,
+  });
+  const live =
+    (over: Partial<HorsePlanLiveHand> = {}) =>
+    (table: string) =>
+      table === tableId ? liveHand(over) : null;
+  const durable = (overrides: Parameters<typeof workerHarness>[0] = {}) => {
+    const receipts: HorsePlanEffectReceipt[] = [];
+    const features: string[] = [];
+    const h = workerHarness({
+      journalPlanReceipt: (_request, receipt) => {
+        receipts.push(receipt);
+      },
+      sourceRelease: () => release,
+      noteFeature: (feature) => {
+        features.push(feature);
+      },
+      ...overrides,
+    });
+    return { h, receipts, features };
+  };
+  const keyOf = (result: Awaited<ReturnType<ReturnType<typeof workerHarness>['fast']>>) =>
+    horsePlanHandKey(requestAt().gameState.actionHistory, result.planBinding.planContext)!;
+  /** Process A accepts and applies one batch; its memory then dies with it. */
+  async function processA() {
+    const a = durable();
+    const result = await a.h.fast();
+    a.h.runtime.receive(commitOf(result, 2));
+    await a.h.runtime.drain();
+    await a.h.close();
+    HorseMind.reset();
+    return { result, receipts: a.receipts, epoch: a.h.runtime.planEpoch };
+  }
+
+  it('crash before durable acceptance: an issued batch that never committed leaves no receipt and nothing to recover', async () => {
+    const a = durable();
+    const result = await a.h.fast();
+    await a.h.close();
+    HorseMind.reset();
+    expect(a.receipts).toEqual([]);
+    const b = durable();
+    try {
+      const recovery = b.h.runtime.recoverPlanReceipts(a.receipts, live());
+      expect(recovery.replaced).toEqual([]);
+      expect(b.h.applied()).toBe(0);
+      expect(HorseMind.getPlan(keyOf(result), heroId)).toBeUndefined();
+    } finally {
+      await b.h.close();
+    }
+  });
+
+  it('crash after durable acceptance: one receipt binds the exact issued digest, accepted wager, policy, source and epoch', async () => {
+    const a = durable();
+    try {
+      const result = await a.h.fast();
+      a.h.runtime.receive(commitOf(result, 2));
+      a.h.runtime.receive(commitOf(result, 3));
+      await a.h.runtime.drain();
+      expect(a.h.applied()).toBe(1);
+      expect(a.receipts).toHaveLength(1);
+      const receipt = a.receipts[0]!;
+      expect(horsePlanEffectReceiptIsValid(receipt)).toBe(true);
+      expect(receipt).toMatchObject({
+        version: 'horse-plan-receipt-v1',
+        issuedBatchDigest: horsePlanIssuedBatchDigest(result.planBinding, result.effects),
+        binding: result.planBinding,
+        effects: result.effects,
+        issuedAction: { action: 'bet', amount: 6 },
+        acceptance: acceptanceOf(result),
+        policy: { graph: 'horse-policy-order-v1', candidates: [] },
+        sourceRelease: release,
+        workerEpoch: a.h.runtime.planEpoch,
+        disposition: 'applied',
+      });
+      expect(Object.isFrozen(receipt)).toBe(true);
+      expect(a.features).toContain('phase15_plan_receipt_applied');
+      expect(a.features).not.toContain('phase15_plan_receipt_unavailable');
+    } finally {
+      await a.h.close();
+    }
+  });
+
+  it('lost durable ACK: a fresh process reconstructs the same live lease by keyed replacement, idempotently, and keeps duplicate / conflict handling', async () => {
+    const { result, receipts, epoch } = await processA();
+    expect(HorseMind.getPlan(keyOf(result), heroId)).toBeUndefined();
+    const b = durable();
+    try {
+      expect(b.h.runtime.planEpoch).not.toBe(epoch);
+      const recovery = b.h.runtime.recoverPlanReceipts(receipts, live());
+      expect(recovery.outcomes).toEqual(['replaced']);
+      expect(b.h.applied()).toBe(1);
+      expect(HorseMind.getPlan(keyOf(result), heroId)).toBe(true);
+      expect(HorseMind.getRaisePlan(keyOf(result), heroId, 'flop')).toBe('foldToRaise');
+      expect(HorseMind.outlookOf(keyOf(result), heroId, 'flop', 'Ah')).toBe('good');
+      // Reconstructing again applies nothing new.
+      b.h.runtime.recoverPlanReceipts(receipts, live());
+      expect(b.h.applied()).toBe(1);
+      // The late duplicate COMMIT is acknowledged from the seeded applied batch.
+      b.h.runtime.receive(commitOf(result, 2));
+      await b.h.runtime.drain();
+      expect(b.h.messages.at(-1)).toMatchObject({
+        type: 'ACK',
+        operation: 'COMMIT_DECISION_EFFECTS',
+        planDisposition: 'already_applied_volatile',
+      });
+      // A conflicting batch for the same identity is refused, not applied.
+      const conflicting = commitOf(result, 3);
+      (conflicting.effects[0] as { barrelIntent: boolean }).barrelIntent = false;
+      b.h.runtime.receive(conflicting);
+      await b.h.runtime.drain();
+      expect(b.h.messages.at(-1)).toMatchObject({ type: 'ERROR', planRefusal: 'effects_mismatch' });
+      expect(b.h.applied()).toBe(1);
+      expect(b.receipts).toEqual([]);
+    } finally {
+      await b.h.close();
+    }
+  });
+
+  it('a fresh process with a new lease reconstructs the empty materialization', async () => {
+    const { result, receipts } = await processA();
+    const b = durable();
+    try {
+      const recovery = b.h.runtime.recoverPlanReceipts(
+        receipts,
+        live({ lease: '55555555-5555-4555-8555-555555555555' })
+      );
+      expect(recovery.outcomes).toEqual(['lease_superseded']);
+      expect(b.h.applied()).toBe(0);
+      expect(HorseMind.getPlan(keyOf(result), heroId)).toBeUndefined();
+      expect(b.features).toContain('phase15_plan_recovery_lease_superseded');
+    } finally {
+      await b.h.close();
+    }
+  });
+
+  it.each([
+    ['hand_not_live', (): HorsePlanLiveHand | null => null],
+    ['table_mismatch', (): HorsePlanLiveHand | null => liveHand({ tableId: otherTableId })],
+    ['hand_superseded', (): HorsePlanLiveHand | null => liveHand({ handNumber: 1000101 })],
+    ['street_superseded', (): HorsePlanLiveHand | null => liveHand({ street: 'turn' })],
+    ['generation_expired', (): HorsePlanLiveHand | null => liveHand({ generation: 99 })],
+  ] as const)('never replays into an old hand, table, street or turn: %s', async (outcome, at) => {
+    const { result, receipts } = await processA();
+    const b = durable();
+    try {
+      expect(b.h.runtime.recoverPlanReceipts(receipts, at).outcomes).toEqual([outcome]);
+      expect(b.h.applied()).toBe(0);
+      expect(HorseMind.getPlan(keyOf(result), heroId)).toBeUndefined();
+    } finally {
+      await b.h.close();
+    }
+  });
+
+  it('refuses every receipt of a conflicting batch identity', async () => {
+    const { receipts } = await processA();
+    const twin = createHorsePlanEffectReceipt({
+      ...receipts[0]!,
+      workerEpoch: '77777777-7777-4777-8777-777777777777',
+    });
+    const b = durable();
+    try {
+      expect(b.h.runtime.recoverPlanReceipts([receipts[0], twin], live()).outcomes).toEqual([
+        'conflict',
+        'conflict',
+      ]);
+      expect(b.h.runtime.recoverPlanReceipts([receipts[0], receipts[0]], live()).outcomes).toEqual([
+        'replaced',
+        'replaced',
+      ]);
+      expect(b.h.applied()).toBe(1);
+    } finally {
+      await b.h.close();
+    }
+  });
+
+  it('partial materialization stays failed: the receipt says failed, the duplicate is refused and recovery never replays it', async () => {
+    const a = durable({
+      applyDecisionEffects: (effects) => {
+        HorseMind.applyDecisionEffects(effects.slice(0, 1));
+        throw Error('synthetic partial application');
+      },
+    });
+    let receipts: HorsePlanEffectReceipt[] = [];
+    let result!: Awaited<ReturnType<typeof a.h.fast>>;
+    try {
+      result = await a.h.fast();
+      a.h.runtime.receive(commitOf(result, 2));
+      await a.h.runtime.drain();
+      expect(a.h.messages.at(-1)).toMatchObject({ type: 'ERROR', requestId: 2 });
+      a.h.runtime.receive(commitOf(result, 3));
+      await a.h.runtime.drain();
+      expect(a.h.messages.at(-1)).toMatchObject({ type: 'ERROR', planRefusal: 'issue_failed' });
+      receipts = a.receipts;
+      expect(receipts.map((r) => r.disposition)).toEqual(['failed']);
+      expect(a.features).toContain('phase15_plan_receipt_failed');
+    } finally {
+      await a.h.close();
+    }
+    HorseMind.reset();
+    const b = durable();
+    try {
+      expect(b.h.runtime.recoverPlanReceipts(receipts, live()).outcomes).toEqual([
+        'failed_not_replayed',
+      ]);
+      expect(b.h.applied()).toBe(0);
+      expect(HorseMind.getPlan(keyOf(result), heroId)).toBeUndefined();
+    } finally {
+      await b.h.close();
+    }
+  });
+
+  it('policy withdrawal: a receipt whose candidate authority is not usable in this worker is never materialized', async () => {
+    const { receipts } = await processA();
+    const withdrawn = createHorsePlanEffectReceipt({
+      ...receipts[0]!,
+      policy: {
+        graph: 'horse-policy-order-v1',
+        candidates: [
+          {
+            owner: 'phase8',
+            variant: null,
+            epoch: '88888888-8888-4888-8888-888888888888',
+            generation: 3,
+            authorityKey: 'withdrawn-authority',
+          },
+        ],
+      },
+    });
+    const b = durable();
+    try {
+      expect(b.h.runtime.recoverPlanReceipts([withdrawn], live()).outcomes).toEqual([
+        'policy_withdrawn',
+      ]);
+      expect(b.h.applied()).toBe(0);
+    } finally {
+      await b.h.close();
+    }
+  });
+
+  it('records a coerced accepted wager as observed and never reconstructs it', async () => {
+    const a = durable();
+    let receipts: HorsePlanEffectReceipt[] = [];
+    try {
+      const result = await a.h.fast();
+      const commit = commitOf(result, 2);
+      commit.acceptance = { ...commit.acceptance, amount: 8 };
+      a.h.runtime.receive(commit);
+      await a.h.runtime.drain();
+      receipts = a.receipts;
+      expect(receipts[0]).toMatchObject({
+        issuedAction: { action: 'bet', amount: 6 },
+        acceptance: { action: 'bet', amount: 8 },
+      });
+    } finally {
+      await a.h.close();
+    }
+    HorseMind.reset();
+    const b = durable();
+    try {
+      expect(b.h.runtime.recoverPlanReceipts(receipts, live()).outcomes).toEqual([
+        'acceptance_mismatch',
+      ]);
+      expect(b.h.applied()).toBe(0);
+    } finally {
+      await b.h.close();
+    }
+  });
+
+  it('journal-only forged application: decision captures and forged receipts never materialize plan state', async () => {
+    const a = durable();
+    let receipts: HorsePlanEffectReceipt[] = [];
+    let captures: unknown[] = [];
+    try {
+      const result = await a.h.fast();
+      a.h.runtime.receive(commitOf(result, 2));
+      await a.h.runtime.drain();
+      receipts = a.receipts;
+      captures = a.h.captures;
+    } finally {
+      await a.h.close();
+    }
+    HorseMind.reset();
+    const forgedEffects = structuredClone(receipts[0]!) as any;
+    forgedEffects.effects[0].barrelIntent = false;
+    const forgedDigest = { ...structuredClone(receipts[0]!), issuedBatchDigest: 'f'.repeat(64) };
+    const forgedWitness = structuredClone(receipts[0]!) as any;
+    forgedWitness.acceptance.witness.requestId += 1;
+    const b = durable();
+    try {
+      const recovery = b.h.runtime.recoverPlanReceipts(
+        [...captures, forgedEffects, forgedDigest, forgedWitness, { kind: 'plan_receipt' }],
+        live()
+      );
+      expect(new Set(recovery.outcomes)).toEqual(new Set(['invalid']));
+      expect(b.h.applied()).toBe(0);
+    } finally {
+      await b.h.close();
+    }
+  });
+
+  it('without a journal there is no durable receipt: the gap is counted and live application is unchanged', async () => {
+    const a = durable({ journalEnabled: () => false });
+    try {
+      const result = await a.h.fast();
+      a.h.runtime.receive(commitOf(result, 2));
+      await a.h.runtime.drain();
+      expect(a.h.applied()).toBe(1);
+      expect(a.h.messages.at(-1)).toMatchObject({
+        type: 'ACK',
+        planDisposition: 'applied_volatile',
+      });
+      expect(a.receipts).toEqual([]);
+      expect(a.features).toContain('phase15_plan_receipt_unavailable');
+      expect(HorseMind.getPlan(keyOf(result), heroId)).toBe(true);
+    } finally {
+      await a.h.close();
     }
   });
 });

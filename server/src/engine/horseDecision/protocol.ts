@@ -7,6 +7,7 @@ import type {
   HorsePlanCommitDisposition,
   HorsePlanRetirementDisposition,
 } from '../HorsePlanHandIdentity.js';
+import type { HorsePlanAcceptance } from '../HorsePlanEffectReceipt.js';
 /**
  * Structured-clone-safe messages for the one live HorseLogic compute lane.
  *
@@ -220,6 +221,9 @@ export interface CommitDecisionEffectsRequest extends HorseDecisionFence {
   /** Original FAST issue identity; this requestId is only the new FIFO job. */
   planBinding: HorsePlanBatchBinding;
   effects: HorseMindDecisionEffect[];
+  /** The exact controller-accepted wager. It must equal the issued decision's
+   * final action; it becomes part of the durable accepted-effect receipt. */
+  acceptance: HorsePlanAcceptance;
 }
 
 /** Ends only this original FAST's volatile ownership; never authorizes a wager. */

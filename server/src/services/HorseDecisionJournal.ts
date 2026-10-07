@@ -16,6 +16,10 @@ import type {
 } from '../engine/horseDecision/protocol.js';
 import type { HorseExecutionWitness } from '../engine/HorseExecutionWitness.js';
 import {
+  horsePlanEffectReceiptIsValid,
+  type HorsePlanEffectReceipt,
+} from '../engine/HorsePlanEffectReceipt.js';
+import {
   horseDiscardHandKey,
   horseDiscardTurnKey,
   validateHorseDiscardDecision,
@@ -891,6 +895,15 @@ export class HorseDecisionJournalPublisher {
       const head = this.queue.shift()!;
       this.queuedBytes -= Buffer.byteLength(JSON.stringify(head));
       this.count(message.receipts[i].status);
+      // Phase 15.1: a plan receipt is durable accepted intent only from here,
+      // the writer's exact fsynced ACK; enqueue never counts.
+      if (head.kind === 'plan_receipt') {
+        try {
+          this.noteFire('phase15_plan_receipt_durable');
+        } catch {
+          /* diagnostic only */
+        }
+      }
     }
     if (this.recoveryPending) {
       this.recoveryPending = false;
@@ -1281,6 +1294,22 @@ export function journalHorseExecution(witness: HorseExecutionWitness): void {
     witness.handAnchor.status === 'anchored' ? horseHandAnchorKey(witness.handAnchor) : null,
     turnKey(witness.identity),
     witness
+  );
+}
+/** Phase 15.1: the durable accepted-effect receipt, under the exact hand and
+ * turn keys of its original FAST decision record so the reader joins them. */
+export function journalHorsePlanReceipt(
+  snapshot: LiveHorseDecisionSnapshot & { requestId: number },
+  receipt: HorsePlanEffectReceipt
+): void {
+  if (!publisher) return;
+  if (!horsePlanEffectReceiptIsValid(receipt)) throw Error('Invalid Horse plan receipt');
+  const anchor = anchorHorseDecisionHand(snapshot);
+  publisher.record(
+    'plan_receipt',
+    anchor.status === 'anchored' ? horseHandAnchorKey(anchor) : null,
+    turnKey(snapshot),
+    receipt
   );
 }
 export function journalHorseAcceptedHand(hand: CompletedHandObservation): void {

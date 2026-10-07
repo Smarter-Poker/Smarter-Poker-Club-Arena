@@ -2161,6 +2161,12 @@ describe('HorseDecisionWorkerRuntime', () => {
       generation: 4,
       fence: 'table:hand:turn',
       effects,
+      acceptance: {
+        version: 'horse-plan-acceptance-v1',
+        action: 'bet',
+        amount: 1,
+        witness: null,
+      },
     });
     await h.runtime.drain();
 
@@ -2204,6 +2210,12 @@ describe('HorseDecisionWorkerRuntime', () => {
           scare: [],
         } as any,
       ],
+      acceptance: {
+        version: 'horse-plan-acceptance-v1',
+        action: 'bet',
+        amount: 1,
+        witness: null,
+      },
     });
     h.runtime.receive(fastRequest(3));
     await h.runtime.drain();

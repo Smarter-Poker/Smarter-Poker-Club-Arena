@@ -8,6 +8,22 @@ import {
   type HorsePlanIssueDisposition,
   type HorsePlanRefusal,
 } from '../HorsePlanHandIdentity.js';
+import {
+  createHorsePlanEffectReceipt,
+  horsePlanAcceptanceIsValid,
+  horsePlanBatchIdentity,
+  horsePlanIssuedBatchDigest,
+  horsePlanPolicyGenerationFromDecision,
+  reconstructHorsePlanEffects,
+  type HorsePlanAcceptance,
+  type HorsePlanEffectReceipt,
+  type HorsePlanLiveHand,
+  type HorsePlanPolicyAuthority,
+  type HorsePlanPolicyGeneration,
+  type HorsePlanRecovery,
+  type HorsePlanReceiptDisposition,
+} from '../HorsePlanEffectReceipt.js';
+import { resolveReleaseIdentity } from '../../releaseIdentity.js';
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import {
@@ -19,6 +35,7 @@ import {
   journalHorseDiscard,
   journalHorseDiscardExecution,
   journalHorseRequestLifecycle,
+  journalHorsePlanReceipt,
   horseDecisionJournalConfigured,
   horseDecisionJournalHealth,
   type HorseJournalHealth,
@@ -173,6 +190,10 @@ export interface HorseDecisionWorkerDependencies {
   journalDiscard?: typeof journalHorseDiscard;
   journalDiscardExecution?: typeof journalHorseDiscardExecution;
   journalLifecycle?: typeof journalHorseRequestLifecycle;
+  /** Phase 15.1: the durable accepted-effect receipt's private journal sink. */
+  journalPlanReceipt?: typeof journalHorsePlanReceipt;
+  /** Release SHA bound into each receipt; absent means unavailable (null). */
+  sourceRelease?: () => string | null;
   startServices(): Promise<HorseDecisionWorkerReadiness>;
   stopServices(): Promise<void>;
   decide: typeof HorseLogic.decide;
@@ -330,6 +351,8 @@ export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependen
   journalDiscard: journalHorseDiscard,
   journalDiscardExecution: journalHorseDiscardExecution,
   journalLifecycle: journalHorseRequestLifecycle,
+  journalPlanReceipt: journalHorsePlanReceipt,
+  sourceRelease: () => resolveReleaseIdentity().releaseSha,
   startServices: startOwnedServices,
   stopServices: stopOwnedServices,
   admitPhase8Authority: () => admitHorsePhase8ReleaseAuthority(),
@@ -441,7 +464,8 @@ export class HorseDecisionWorkerRuntime {
 
   /** Pending ownership cannot be displaced by later traffic or elapsed compute
    * time. Only explicit retirement/application makes an entry reclaimable.
-   * Still volatile: worker loss is not durable application/replay proof. */
+   * Still volatile: the durable accepted-effect receipt written at the first
+   * terminal transition is the only state that outlives this worker epoch. */
   private readonly issuedPlanBatches = new Map<
     string,
     {
@@ -451,15 +475,25 @@ export class HorseDecisionWorkerRuntime {
       effects: HorseMindDecisionEffect[];
       effectsKey: string;
       state: 'issued' | 'ambiguous' | 'applied' | 'failed' | 'retired' | 'no_effects';
+      /** Phase 15.1 receipt inputs captured at issue, never from a caller. */
+      issuedBatchDigest: string;
+      finalAction: Readonly<{ action: string; amount: number | null }>;
+      policy: HorsePlanPolicyGeneration;
+      /** The original FAST request: the receipt joins its journal decision. */
+      request: FastHorseDecisionRequest | null;
     }
   >();
+  /** A new worker runtime is a new epoch; receipts name the epoch they came from. */
+  readonly planEpoch = randomUUID();
   private static readonly MAX_ISSUED_PLAN_BATCHES = 128;
   private static readonly ISSUED_PLAN_BATCH_TTL_MS = 60_000;
 
   private issuePlanBatch(
     binding: HorsePlanBatchBinding,
     effects: HorseMindDecisionEffect[],
-    at: number
+    at: number,
+    decision: HorseDecision,
+    request: FastHorseDecisionRequest
   ): HorsePlanIssueDisposition {
     for (const [key, entry] of this.issuedPlanBatches) {
       if (
@@ -491,6 +525,12 @@ export class HorseDecisionWorkerRuntime {
       effects: deepFreeze(structuredClone(effects)),
       effectsKey: horseDecisionEffectsKey(effects)!,
       state: effects.length ? 'issued' : 'no_effects',
+      issuedBatchDigest: effects.length ? horsePlanIssuedBatchDigest(binding, effects)! : '',
+      finalAction: Object.freeze({ action: decision.action, amount: decision.amount ?? null }),
+      policy: effects.length
+        ? horsePlanPolicyGenerationFromDecision(decision)
+        : Object.freeze({ graph: null, candidates: Object.freeze([]) }),
+      request: effects.length ? request : null,
     });
     return effects.length ? 'issued' : 'no_effects';
   }
@@ -891,6 +931,8 @@ export class HorseDecisionWorkerRuntime {
       ) {
         throw new Error('invalid decision effects: expected at most 16 bounded plan records');
       }
+      if (!horsePlanAcceptanceIsValid(request.acceptance, request.planBinding))
+        throw Error('invalid Horse plan acceptance');
     }
     if (
       request.type === 'RETIRE_DECISION_EFFECTS' &&
@@ -2038,7 +2080,13 @@ export class HorseDecisionWorkerRuntime {
     }
     // Reserve before promising issuance. The synchronous lane cannot run a
     // commit until send returns; a failed send relinquishes only this reservation.
-    const planIssueDisposition = this.issuePlanBatch(planBinding, effects, startedAt);
+    const planIssueDisposition = this.issuePlanBatch(
+      planBinding,
+      effects,
+      startedAt,
+      captured.value,
+      request
+    );
     try {
       this.send({
         type: 'FAST_RESULT',
@@ -2286,8 +2334,11 @@ export class HorseDecisionWorkerRuntime {
         issued.state = 'failed';
         issued.at = this.deps.now();
         this.deps.noteFeature('phase15_plan_apply_failed');
+        this.recordPlanReceipt(issued, request.acceptance, 'failed');
         throw error;
       }
+      // First terminal transition only: a duplicate COMMIT writes no receipt.
+      this.recordPlanReceipt(issued, request.acceptance, 'applied');
     }
     this.send({
       type: 'ACK',
@@ -2299,6 +2350,138 @@ export class HorseDecisionWorkerRuntime {
     });
     this.deps.noteFeature(
       alreadyApplied ? 'phase15_plan_already_applied_volatile' : 'phase15_plan_applied_volatile'
+    );
+  }
+
+  /** Durable accepted intent with the outcome of this synchronous step. It is
+   * durable only when the private journal writer's fsynced ACK names it; the
+   * enqueue here is neither intent nor application. Never throws into play. */
+  private recordPlanReceipt(
+    issued: {
+      binding: HorsePlanBatchBinding;
+      effects: HorseMindDecisionEffect[];
+      finalAction: Readonly<{ action: string; amount: number | null }>;
+      policy: HorsePlanPolicyGeneration;
+      request: FastHorseDecisionRequest | null;
+    },
+    acceptance: HorsePlanAcceptance,
+    disposition: HorsePlanReceiptDisposition
+  ): void {
+    try {
+      const receipt = createHorsePlanEffectReceipt({
+        binding: issued.binding,
+        effects: issued.effects,
+        issuedAction: issued.finalAction,
+        acceptance,
+        policy: issued.policy,
+        sourceRelease: this.planSourceRelease(),
+        workerEpoch: this.planEpoch,
+        disposition,
+      });
+      this.deps.noteFeature(`phase15_plan_receipt_${disposition}`);
+      if (
+        !issued.request ||
+        !(this.deps.journalEnabled?.() ?? true) ||
+        !this.deps.journalPlanReceipt
+      )
+        this.deps.noteFeature('phase15_plan_receipt_unavailable');
+      else this.deps.journalPlanReceipt(issued.request, receipt);
+    } catch {
+      this.deps.noteFeature('phase15_plan_receipt_unavailable');
+    }
+  }
+
+  private planSourceReleaseValue: string | null | undefined;
+  private planSourceRelease(): string | null {
+    if (this.planSourceReleaseValue === undefined) {
+      let value: string | null = null;
+      try {
+        value = this.deps.sourceRelease?.() ?? null;
+      } catch {
+        value = null;
+      }
+      this.planSourceReleaseValue =
+        typeof value === 'string' && /^[0-9a-f]{40}$/.test(value) ? value : null;
+    }
+    return this.planSourceReleaseValue;
+  }
+
+  /**
+   * Phase 15.1 fresh-process recovery: deterministic keyed replacement from
+   * durable accepted receipts into the hand currently live at each table.
+   * Refused receipts (failed, conflicting, other hand / table / street /
+   * lease, older live turn, withdrawn policy) are never materialized. A
+   * replaced batch is seeded as applied so a late duplicate COMMIT answers
+   * already_applied_volatile and a conflicting one is refused. No receipt is
+   * written: the recovered receipt is already the durable record.
+   */
+  recoverPlanReceipts(
+    receipts: readonly unknown[],
+    live: (tableId: string) => HorsePlanLiveHand | null
+  ): HorsePlanRecovery {
+    const recovery = reconstructHorsePlanEffects(receipts, {
+      live,
+      policyUsable: (authority) => this.planPolicyUsable(authority),
+    });
+    for (const outcome of recovery.outcomes)
+      this.deps.noteFeature(`phase15_plan_recovery_${outcome}`);
+    for (const receipt of recovery.replaced) this.seedRecoveredPlan(receipt);
+    return recovery;
+  }
+
+  private seedRecoveredPlan(receipt: HorsePlanEffectReceipt): void {
+    const key = horsePlanBatchIdentity(receipt.binding);
+    const existing = this.issuedPlanBatches.get(key);
+    if (existing) {
+      // This epoch already owns the batch: only its exact applied twin is idempotent.
+      if (existing.issuedBatchDigest !== receipt.issuedBatchDigest || existing.state !== 'applied')
+        this.deps.noteFeature('phase15_plan_recovery_owned_conflict');
+      return;
+    }
+    const effects = deepFreeze(structuredClone(receipt.effects)) as HorseMindDecisionEffect[];
+    this.deps.applyDecisionEffects(effects);
+    if (this.issuedPlanBatches.size >= HorseDecisionWorkerRuntime.MAX_ISSUED_PLAN_BATCHES) {
+      const terminal = [...this.issuedPlanBatches].find(([, entry]) => entry.state !== 'issued');
+      if (!terminal) return;
+      this.issuedPlanBatches.delete(terminal[0]);
+      this.deps.noteFeature('phase15_plan_terminal_evicted');
+    }
+    this.issuedPlanBatches.set(key, {
+      at: this.deps.now(),
+      binding: deepFreeze(structuredClone(receipt.binding)) as HorsePlanBatchBinding,
+      bindingKey: horsePlanBatchBindingKey(receipt.binding)!,
+      effects,
+      effectsKey: horseDecisionEffectsKey(effects)!,
+      state: 'applied',
+      issuedBatchDigest: receipt.issuedBatchDigest,
+      finalAction: receipt.issuedAction,
+      policy: receipt.policy,
+      request: null,
+    });
+  }
+
+  /** A recorded candidate stays usable only under this worker's exact holder. */
+  private planPolicyUsable(authority: HorsePlanPolicyAuthority): boolean {
+    const variant = authority.variant ?? '';
+    const pack = (holders: Readonly<Record<string, HorseQualifiedAuthorityHolder>>) =>
+      Object.hasOwn(holders, variant) ? holders[variant] : undefined;
+    const holder =
+      authority.owner === 'phase8'
+        ? this.phase8Authority
+        : authority.owner === 'phase10'
+          ? this.phase10Authority
+          : authority.owner === 'phase11'
+            ? pack(this.phase11Authority)
+            : authority.owner === 'phase12'
+              ? pack(this.phase12Authority)
+              : pack(this.phase13Authority);
+    if (!holder) return false;
+    const current = holder.receipt();
+    return (
+      current.state === 'usable' &&
+      current.epoch === authority.epoch &&
+      current.generation === authority.generation &&
+      current.authorityKey === authority.authorityKey
     );
   }
 

@@ -1425,7 +1425,15 @@ describe('HorseDecisionWorkerRuntime', () => {
     });
     expect(h.rng()).toBe(101);
     expect(h.latency).toEqual([{ scope: 'plo4', ms: 6 }]);
-    expect(h.features).toEqual(['phase5_canonical_state', 'phase15_plan_issue_no_effects']);
+    // The 18 authority admission counters are taken once the services start,
+    // before READY and before this decision's own counters.
+    const admissions = h.features.filter((feature) => feature.includes('_authority_worker_'));
+    expect(admissions).toHaveLength(18);
+    expect(h.features.slice(0, 18)).toEqual(admissions);
+    expect(h.features.slice(18)).toEqual([
+      'phase5_canonical_state',
+      'phase15_plan_issue_no_effects',
+    ]);
     expect(h.frozenSnapshots).toEqual([true]);
   });
 
@@ -4926,5 +4934,52 @@ describe('P13.3 worker-owned joint multiway authority (the Phase 8 path, reused 
     expect(deep?.type === 'DEEP_RESULT' && deep.phase13Authority?.flh.state).toBe('unselected');
     // Phase 12 holders are untouched by a Phase 13 selection.
     expect(deep?.type === 'DEEP_RESULT' && deep.phase12Authority?.flo8.state).toBe('unselected');
+  });
+});
+
+describe('worker authority admission counters (audit of October 7, 2026)', () => {
+  const JOINT = ['nlh', 'plo4', 'plo5', 'plo6', 'plo8', 'flo8', 'flh', 'pineapple', 'short_deck'];
+  const OMAHA = ['plo5', 'plo6', 'plo8'];
+  const REMAINING = ['short_deck', 'pineapple', 'flh', 'flo8'];
+  const expected = [
+    'phase8_authority_worker_unselected',
+    'phase10_authority_worker_unselected',
+    ...OMAHA.map((variant) => `phase11_authority_worker_${variant}_unselected`),
+    ...REMAINING.map((variant) => `phase12_authority_worker_${variant}_unselected`),
+    ...JOINT.map((variant) => `phase13_authority_worker_${variant}_unselected`),
+  ];
+
+  it('counts every holder state through noteFeature once the owned services have started', async () => {
+    // Production telemetry is armed inside startServices; a count taken before
+    // it resolves is dropped. Production read on 2026-10-07: no
+    // phaseN_authority_worker_* row had ever reached horse_brain_telemetry.
+    const h = harness();
+    const startServices = h.deps.startServices.bind(h.deps);
+    h.deps.startServices = async () => {
+      const readiness = await startServices();
+      h.features.push('services_started');
+      return readiness;
+    };
+    const ready = h.runtime.start();
+    expect(h.features.filter((feature) => feature.includes('_authority_worker_'))).toEqual([]);
+    await ready;
+    const started = h.features.indexOf('services_started');
+    expect(started).toBeGreaterThanOrEqual(0);
+    for (const feature of expected) {
+      expect(h.features.indexOf(feature)).toBeGreaterThan(started);
+      expect(h.features.filter((noted) => noted === feature)).toHaveLength(1);
+    }
+    expect(h.features.filter((feature) => feature.includes('_authority_worker_'))).toHaveLength(
+      expected.length
+    );
+  });
+
+  it('a second start counts nothing more', async () => {
+    const h = harness();
+    await h.runtime.start();
+    await h.runtime.start();
+    expect(h.features.filter((feature) => feature.includes('_authority_worker_'))).toHaveLength(
+      expected.length
+    );
   });
 });

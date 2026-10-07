@@ -417,7 +417,10 @@ export default function TransactionLedgerView({
       <div className="tlv-count sc-label sc-ink--muted">
         {entries.length} Transaction{entries.length !== 1 ? 's' : ''} Shown
       </div>
-      <ol className="tlv-list">
+      {/* A capped-height list that scrolls with no control inside it must take
+          focus itself to be readable by keyboard (axe scrollable-region-focusable,
+          Post-Deploy E2E run 37575691538, Settlement Center). */}
+      <ol className="tlv-list" tabIndex={0} aria-label="Ledger Rows">
         {entries.map((e) => {
           const timeStr = new Date(e.created_at).toLocaleString();
           const copy = visibleLedgerCopy(e);

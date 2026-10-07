@@ -763,7 +763,7 @@ function ChipStatementRows({ scope, clubId, pageSize = 50, title, actorId, viewK
         {legs.length === 0 ? (
           <div className="chip-statement__empty">No Chip Movements Yet.</div>
         ) : (
-          <ol className="chip-statement__legs" aria-label="Chip Movements">
+          <ol className="chip-statement__legs" aria-label="Chip Movements" tabIndex={0}>
             {legs.map((leg) => (
               <li
                 key={`${leg.id}:${leg.direction}`}

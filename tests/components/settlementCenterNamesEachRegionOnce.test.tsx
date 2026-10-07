@@ -95,4 +95,14 @@ describe('the summary is named for what it lists', () => {
     expect(screen.queryByRole('heading', { name: 'Club Weekly Accounting' })).toBeNull();
     expect(screen.queryByRole('region', { name: 'Club Weekly Accounting' })).toBeNull();
   });
+
+  it('lets a keyboard reach the sideways-scrolling table', async () => {
+    // axe scrollable-region-focusable, Post-Deploy E2E run 37575691538.
+    fixture.rows = [weeklyStatementRow()];
+    render(<ClubWeeklyAccountingSummary clubId={ID.club} />);
+    await screen.findByRole('table');
+    const scroller = screen.getByRole('region', { name: 'Weekly Summaries Table' });
+    expect(scroller.getAttribute('tabindex')).toBe('0');
+    expect(scroller.querySelector('table')).not.toBeNull();
+  });
 });

@@ -867,13 +867,63 @@ BEGIN
 END $function$;
 
 -- ---------------------------------------------------------------------------
--- 6. THE RECONCILIATION COMPARES WALLET LEGS TO THE JOURNAL, NOT HOUSE LEGS.
+-- 6. GRANTS, EXACTLY AS LIVE: the four money steps are owner-only.
+-- ---------------------------------------------------------------------------
+REVOKE ALL ON FUNCTION public.fn_poker_diamond_tournament_drain(uuid, text, bigint, text, text, uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_poker_diamond_tournament_settle_fee(uuid, text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_poker_diamond_tournament_settle_overlay(uuid, text, numeric) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_poker_diamond_spin_draw(uuid, uuid, uuid) FROM PUBLIC, anon, authenticated, service_role;
+
+-- Watched guards moved on purpose, in this transaction.
+SELECT public.fn_ca_declare_guard_redefinition(n, '20261007132503_the_diamond_tournament_lane_leaves_custody_without_a_wallet_')
+  FROM unnest(ARRAY['fn_poker_diamond_tournament_drain', 'fn_poker_diamond_tournament_settle_fee']) AS n;
+
+-- ---------------------------------------------------------------------------
+-- 7. PROOF, IN THIS TRANSACTION.
+-- ---------------------------------------------------------------------------
+DO $proof$
+DECLARE v_sig text; v_diff numeric;
+BEGIN
+  FOREACH v_sig IN ARRAY ARRAY[
+    'public.fn_poker_diamond_tournament_drain(uuid,text,bigint,text,text,uuid)',
+    'public.fn_poker_diamond_tournament_settle_overlay(uuid,text,numeric)',
+    'public.fn_poker_diamond_spin_draw(uuid,uuid,uuid)'] LOOP
+    IF position('INSERT INTO public.diamond_transactions' IN pg_get_functiondef(v_sig::regprocedure)) > 0 THEN
+      RAISE EXCEPTION '% still writes a wallet journal row for a movement that is not in the wallet', v_sig;
+    END IF;
+  END LOOP;
+  FOREACH v_sig IN ARRAY ARRAY[
+    'public.fn_poker_diamond_tournament_settle_fee(uuid,text)',
+    'public.fn_poker_diamond_tournament_settle_overlay(uuid,text,numeric)',
+    'public.fn_poker_diamond_spin_draw(uuid,uuid,uuid)'] LOOP
+    IF position('diamond_tx_id' IN pg_get_functiondef(v_sig::regprocedure)) > 0 THEN
+      RAISE EXCEPTION '% still asserts its register rows through journal ids', v_sig;
+    END IF;
+  END LOOP;
+  IF (SELECT def_hash FROM public.ca_guard_defs WHERE proname = 'fn_poker_diamond_tournament_drain')
+     IS DISTINCT FROM (SELECT md5(string_agg(pg_get_functiondef(p.oid), '|' ORDER BY p.oid)) FROM pg_proc p
+                        JOIN pg_namespace n ON n.oid = p.pronamespace
+                       WHERE n.nspname = 'public' AND p.proname = 'fn_poker_diamond_tournament_drain') THEN
+    RAISE EXCEPTION 'the drain guard baseline was not moved to this definition';
+  END IF;
+  SELECT difference INTO v_diff FROM public.fn_ca_diamond_register_vs_supply();
+  IF v_diff IS DISTINCT FROM 0 THEN
+    RAISE EXCEPTION 'the Diamond identity is not whole (difference %)', v_diff;
+  END IF;
+  RAISE NOTICE 'the tournament lane writes no wallet journal row for a house leg; guards declared; identity 0';
+END
+$proof$;
+
+-- ---------------------------------------------------------------------------
+-- 8. THE RECONCILIATION COMPARES WALLET LEGS TO THE JOURNAL, NOT HOUSE LEGS.
+--    Last in this file, because tests/the-route-and-the-client-agree.law.test.ts
+--    reads the keys it emits from its definition to the end of the file.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.fn_diamond_arena_reconciliation(p_user_id uuid DEFAULT NULL::uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
  STABLE SECURITY DEFINER
- SET search_path TO 'public', 'pg_temp'
+ SET search_path = public, pg_temp
 AS $function$
 DECLARE
     v_user      uuid := COALESCE(p_user_id, auth.uid());
@@ -970,55 +1020,8 @@ BEGIN
 END;
 $function$;
 
--- ---------------------------------------------------------------------------
--- 7. GRANTS, EXACTLY AS LIVE: the four money steps are owner-only; the
---    reconciliation is the player's own read and the service role's.
--- ---------------------------------------------------------------------------
-REVOKE ALL ON FUNCTION public.fn_poker_diamond_tournament_drain(uuid, text, bigint, text, text, uuid) FROM PUBLIC, anon, authenticated, service_role;
-REVOKE ALL ON FUNCTION public.fn_poker_diamond_tournament_settle_fee(uuid, text) FROM PUBLIC, anon, authenticated, service_role;
-REVOKE ALL ON FUNCTION public.fn_poker_diamond_tournament_settle_overlay(uuid, text, numeric) FROM PUBLIC, anon, authenticated, service_role;
-REVOKE ALL ON FUNCTION public.fn_poker_diamond_spin_draw(uuid, uuid, uuid) FROM PUBLIC, anon, authenticated, service_role;
+-- The player's own read and the service role's, exactly as live.
 REVOKE ALL ON FUNCTION public.fn_diamond_arena_reconciliation(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.fn_diamond_arena_reconciliation(uuid) TO authenticated, service_role;
-
--- Watched guards moved on purpose, in this transaction.
-SELECT public.fn_ca_declare_guard_redefinition(n, '20261007132503_the_diamond_tournament_lane_leaves_custody_without_a_wallet_')
-  FROM unnest(ARRAY['fn_poker_diamond_tournament_drain', 'fn_poker_diamond_tournament_settle_fee']) AS n;
-
--- ---------------------------------------------------------------------------
--- 8. PROOF, IN THIS TRANSACTION.
--- ---------------------------------------------------------------------------
-DO $proof$
-DECLARE v_sig text; v_diff numeric;
-BEGIN
-  FOREACH v_sig IN ARRAY ARRAY[
-    'public.fn_poker_diamond_tournament_drain(uuid,text,bigint,text,text,uuid)',
-    'public.fn_poker_diamond_tournament_settle_overlay(uuid,text,numeric)',
-    'public.fn_poker_diamond_spin_draw(uuid,uuid,uuid)'] LOOP
-    IF position('INSERT INTO public.diamond_transactions' IN pg_get_functiondef(v_sig::regprocedure)) > 0 THEN
-      RAISE EXCEPTION '% still writes a wallet journal row for a movement that is not in the wallet', v_sig;
-    END IF;
-  END LOOP;
-  FOREACH v_sig IN ARRAY ARRAY[
-    'public.fn_poker_diamond_tournament_settle_fee(uuid,text)',
-    'public.fn_poker_diamond_tournament_settle_overlay(uuid,text,numeric)',
-    'public.fn_poker_diamond_spin_draw(uuid,uuid,uuid)'] LOOP
-    IF position('diamond_tx_id' IN pg_get_functiondef(v_sig::regprocedure)) > 0 THEN
-      RAISE EXCEPTION '% still asserts its register rows through journal ids', v_sig;
-    END IF;
-  END LOOP;
-  IF (SELECT def_hash FROM public.ca_guard_defs WHERE proname = 'fn_poker_diamond_tournament_drain')
-     IS DISTINCT FROM (SELECT md5(string_agg(pg_get_functiondef(p.oid), '|' ORDER BY p.oid)) FROM pg_proc p
-                        JOIN pg_namespace n ON n.oid = p.pronamespace
-                       WHERE n.nspname = 'public' AND p.proname = 'fn_poker_diamond_tournament_drain') THEN
-    RAISE EXCEPTION 'the drain guard baseline was not moved to this definition';
-  END IF;
-  SELECT difference INTO v_diff FROM public.fn_ca_diamond_register_vs_supply();
-  IF v_diff IS DISTINCT FROM 0 THEN
-    RAISE EXCEPTION 'the Diamond identity is not whole (difference %)', v_diff;
-  END IF;
-  RAISE NOTICE 'the tournament lane writes no wallet journal row for a house leg; guards declared; identity 0';
-END
-$proof$;
 
 COMMIT;

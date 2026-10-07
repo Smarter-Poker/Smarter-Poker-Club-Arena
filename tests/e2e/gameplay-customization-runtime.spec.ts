@@ -133,7 +133,18 @@ async function installEngineProjection(
           table_id: selectedTableId,
           hand_number: 7,
           pot: 3,
-          community_cards: ['As', 'Kd', '7h'],
+          // The engine's wire shape, not a hand-history code string:
+          // projectLiveHandState sends server Card objects ({ rank, suit },
+          // suit spelled out). The bare string codes this fixture used to
+          // send ('As', 'Kd', '7h') are never on that wire, and the felt
+          // correctly refuses to guess a card it cannot read: every board
+          // card drew as "Card Could Not Be Read", so no face-deck finish
+          // could ever be observed on one (run 37539487040).
+          community_cards: [
+            { rank: 'A', suit: 'spades' },
+            { rank: 'K', suit: 'diamonds' },
+            { rank: '7', suit: 'hearts' },
+          ],
           community_cards2: [],
           community_cards3: [],
           current_bet: 2,

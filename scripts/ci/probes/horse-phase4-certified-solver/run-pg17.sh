@@ -92,6 +92,19 @@ grep -q 'cannot change the V31 hand-key contract while certified datasets exist'
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261007034442_the_solver_validators_have_one_versioned_door.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261007040648_solver_platform_ids_validate_uuid_shape.sql"
 "${PSQL[@]}" -f "$HERE/platform-uuid-shape.sql"
+# Build the exact old wrong-role source/cached-cell state before the forward
+# correction. Only physical labels are restored to the prior buggy fixture;
+# actual node chronology, vectors, source admission and cell construction run.
+awk '
+ /hero_position.*CASE WHEN \(i=1\)/ { print "      '\''hero_position'\'','\''SB'\'','\''opponent_position'\'','\''BB'\'','\''depth_bucket'\'',80,"; next }
+ /opponent_position.*CASE WHEN \(i=1\)/ { next }
+ /V31_PHYSICAL_PRIOR_FIXTURE_END/ { print "END\n$probe$;\nCOMMIT;"; exit }
+ { print }
+' "$HERE/certified-v31.sql" > "$WORK/prior-physical-fixture.sql"
+"${PSQL[@]}" -f "$WORK/prior-physical-fixture.sql"
+"${PSQL[@]}" -c "DO \$proof\$ BEGIN IF NOT EXISTS(SELECT 1 FROM public.gto_v31_source_artifacts a JOIN public.solved_spots_gold s ON s.id=a.source_row_id WHERE s.strategy_matrix_v2#>>'{nodes,0,node_context,table_size}'='2' AND public.fn_gto_v31_source_node_valid(s.strategy_matrix_v2#>'{nodes,0}')) THEN RAISE EXCEPTION 'prior reversed HU admission was not reproduced'; END IF; END \$proof\$;"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261007042245_solver_nodes_prove_physical_postflop_order.sql"
+"${PSQL[@]}" -f "$HERE/physical-position-transition.sql"
 "${PSQL[@]}" -f "$HERE/input-bundle-bootstrap.sql"
 "${PSQL[@]}" -f "$HERE/feature-contract-v2.sql"
 "${PSQL[@]}" -f "$HERE/validator-one-door.sql"

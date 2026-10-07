@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "entries": [
+    {
+      "file": "20261007040648_solver_platform_ids_validate_uuid_shape.sql",
+      "sha256": "bba381d3d461a11dfd51bcbf797ded4c99b68e8623a15495840fcd296f7f689c",
+      "proofs": [
+        "(SELECT count(*)=2 AND bool_and(p.prosecdef AND p.proconfig @> ARRAY['search_path=public'] AND strpos(pg_get_functiondef(p.oid),'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')>0 AND strpos(pg_get_functiondef(p.oid),'^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')=0 AND strpos(pg_get_functiondef(p.oid),'input_bundle_id')>0 AND strpos(pg_get_functiondef(p.oid),'checksum')>0 AND strpos(pg_get_functiondef(p.oid),'approved')>0) FROM pg_proc p WHERE p.oid IN (to_regprocedure('public.fn_gto_v31_register_dataset(jsonb)'),to_regprocedure('public.fn_horse_solver_agreement_v31_decision(jsonb)')))"
+      ]
+    }
+  ]
+}

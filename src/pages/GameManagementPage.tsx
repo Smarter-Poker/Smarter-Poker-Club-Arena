@@ -23,6 +23,8 @@ import { useGameManagementRealtime } from '../hooks/useGameManagementRealtime';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useDialogEscape } from '../hooks/useDialogEscape';
 import { supabase } from '../lib/supabase';
+import { withGameManagementReadDeadline } from '../lib/gameManagementReadDeadline';
+import { GAME_CREATION_DENIED } from '../lib/gameCreationAccess';
 import { fetchGameCreationAccess } from '../services/GameAccessService';
 import type { GameCreationAccess } from '../lib/gameCreationAccess';
 import {
@@ -912,11 +914,15 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
            the club it runs under. Naming is not hosting. */
         let nextMemberNames: Record<string, string> = {};
         if (scope === 'club') {
-          resolvedScopeId = await resolveClubUUID(clubId || '');
-          const [access, clubResult] = await Promise.all([
-            fetchGameCreationAccess(resolvedScopeId),
-            supabase.from('clubs').select('id,name').eq('id', resolvedScopeId).maybeSingle(),
-          ]);
+          resolvedScopeId = await withGameManagementReadDeadline(() =>
+            resolveClubUUID(clubId || '')
+          );
+          const [access, clubResult] = await withGameManagementReadDeadline((signal) =>
+            Promise.all([
+              fetchGameCreationAccess(resolvedScopeId, signal),
+              supabase.from('clubs').select('id,name').eq('id', resolvedScopeId).maybeSingle(),
+            ])
+          );
           if (!isCurrent()) return;
           // A member club is operated from its union console, even for a union
           // owner who technically has authority over the underlying rows.
@@ -940,7 +946,9 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         } else {
           if (!unionId) throw new Error('Union not found');
           resolvedScopeId = unionId;
-          const canManage = await unionService.isUnionAdmin(unionId, user.id);
+          const canManage = await withGameManagementReadDeadline(() =>
+            unionService.isUnionAdmin(unionId, user.id)
+          );
           if (!isCurrent()) return;
           setAllowed(canManage);
           if (!canManage) {
@@ -1040,6 +1048,10 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       } catch (error) {
         if (!isCurrent()) return;
         reportError(error, 'GameManagementPage.load');
+        // A failed read before an authority result must retire Checking. Keep
+        // a previously granted board for its own data-error surface.
+        setAllowed((current) => (current === null ? false : current));
+        setClubAccess((current) => current ?? GAME_CREATION_DENIED);
         /* The board prints a plain Title Case sentence, never "TypeError:
            Failed to fetch" (safeErrorMessage keeps the raw text in dev, and the
            report above keeps it for us). The health read rode in the same wave
@@ -1509,10 +1521,12 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   if (allowed === false) {
     const unionManagedClub =
       scope === 'club' && Boolean(clubAccess?.unionId || clubAccess?.reason === 'union_only');
-    const clubAccessUnverified = scope === 'club' && clubAccess?.reason === 'check_failed';
+    const accessUnverified =
+      (scope === 'club' && clubAccess?.reason === 'check_failed') ||
+      (scope === 'union' && loadError !== null);
     const clubAccessTitle = unionManagedClub
       ? 'This Club Is Managed By Its Union'
-      : clubAccessUnverified
+      : accessUnverified
         ? 'Management Access Could Not Be Verified'
         : clubAccess?.reason === 'unknown_club'
           ? 'Club Not Found'
@@ -1521,7 +1535,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
             : 'Club Staff Access Required';
     const clubAccessMessage = unionManagedClub
       ? 'When A Club Joins A Union, Its Staff Can No Longer Create, Change, Close, Or View Management Controls For Games. Use The Union Console Instead.'
-      : clubAccessUnverified
+      : accessUnverified
         ? 'The Authoritative Game-Management Access Check Is Unavailable. Try Again Before Making Changes.'
         : clubAccess?.reason === 'unknown_club'
           ? 'This Club Could Not Be Found, So Its Game-Management Controls Cannot Be Opened.'
@@ -1532,13 +1546,32 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       <main className={styles.page}>
         <SpadeConsole
           eyebrow="Management Locked"
-          title={scope === 'club' ? clubAccessTitle : 'Union Admin Required'}
+          title={
+            accessUnverified
+              ? 'Management Access Could Not Be Verified'
+              : scope === 'club'
+                ? clubAccessTitle
+                : 'Union Admin Required'
+          }
           subtitle="Game Management Is Restricted"
           pill="Locked"
           pillInk="red"
-          family="shark"
+          family={accessUnverified ? 'spade' : 'shark'}
           className={styles.stateConsole}
           plates={{
+            ...(accessUnverified
+              ? {
+                  secondary: {
+                    label: 'Retry',
+                    type: 'button' as const,
+                    onClick: () => {
+                      setAllowed(null);
+                      setClubAccess(null);
+                      void load();
+                    },
+                  },
+                }
+              : {}),
             primary: {
               label: 'Return',
               type: 'button',
@@ -1548,9 +1581,11 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         >
           <section className={styles.denied} role="alert">
             <p className="sc-copy sc-copy--center">
-              {scope === 'club'
-                ? clubAccessMessage
-                : 'Only The Union Owner And Union Admins Can Manage Union Games.'}
+              {accessUnverified
+                ? 'The Authoritative Game-Management Access Check Is Unavailable. Try Again Before Making Changes.'
+                : scope === 'club'
+                  ? clubAccessMessage
+                  : 'Only The Union Owner And Union Admins Can Manage Union Games.'}
             </p>
           </section>
         </SpadeConsole>

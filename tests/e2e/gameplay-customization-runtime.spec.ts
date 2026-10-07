@@ -7,6 +7,7 @@ import {
   type Page,
   type Route,
 } from '@playwright/test';
+import { GAMEPLAY_CERTIFICATE_BOARD } from './support/gameplayCertificateBoard';
 import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
 import { OneShotRequestGate, runWithOneShotRequestGate } from './support/oneShotRequestGate';
@@ -123,7 +124,7 @@ async function installEngineProjection(
   runtime: RuntimeProfile
 ) {
   await context.addInitScript(
-    ({ selectedTableId, heroId, rivalId, heroAvatar, rivalAvatar }) => {
+    ({ selectedTableId, heroId, rivalId, heroAvatar, rivalAvatar, board }) => {
       const NativeWebSocket = window.WebSocket;
       const snapshot = () => ({
         type: 'SNAPSHOT',
@@ -133,7 +134,7 @@ async function installEngineProjection(
           table_id: selectedTableId,
           hand_number: 7,
           pot: 3,
-          community_cards: ['As', 'Kd', '7h'],
+          community_cards: board,
           community_cards2: [],
           community_cards3: [],
           current_bet: 2,
@@ -276,6 +277,7 @@ async function installEngineProjection(
       rivalId: VILLAIN_ID,
       heroAvatar: runtime.avatar,
       rivalAvatar: VILLAIN_AVATAR,
+      board: GAMEPLAY_CERTIFICATE_BOARD,
     }
   );
 }

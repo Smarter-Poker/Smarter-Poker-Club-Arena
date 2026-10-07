@@ -60,6 +60,7 @@ import {
   code,
   declaredObjects,
   declaredProofs,
+  externalDeclaredProofs,
   errorSqlState,
   matchedByName,
   proofIsRunnable,
@@ -97,6 +98,29 @@ function migrations(): string[] {
 }
 
 describe('a merged migration must be live', () => {
+  it('immutable external proofs bind exact installed bytes and fail closed', () => {
+    const file = '20261007040648_solver_platform_ids_validate_uuid_shape.sql';
+    const sql = fs.readFileSync(path.join(MIGRATIONS, file), 'utf8');
+    const registry = JSON.parse(read('scripts/ci/migration-live-proofs.json'));
+    expect(declaredObjects(sql)).toEqual([]);
+    expect([...sql.matchAll(/^-- @live-proof: (.*)$/gm)]).toHaveLength(0);
+    expect(declaredProofs(sql)).toHaveLength(1);
+    expect(declaredProofs(sql)[0]).toContain('bool_and');
+    expect(declaredProofs(sql)[0]).toContain('input_bundle_id');
+    expect(proofIsRunnable(declaredProofs(sql)[0])).toBe(true);
+    for (const change of [
+      (r: any) => (r.entries[0].sha256 = '0'.repeat(64)),
+      (r: any) => (r.entries[0].file = '20990101000000_missing.sql'),
+      (r: any) => (r.entries[0].proofs = []),
+      (r: any) => (r.entries[0].proofs = ['']),
+      (r: any) => (r.entries[0].unknown = true),
+    ]) {
+      const copy = structuredClone(registry);
+      change(copy);
+      expect(() => externalDeclaredProofs(sql, copy, MIGRATIONS)).toThrow();
+    }
+    expect(() => externalDeclaredProofs(sql, { schema: 1 }, MIGRATIONS)).toThrow();
+  });
   it('decides by name, then by live objects, then by a declared proof', () => {
     expect(SRC).toContain('supabase_migrations.schema_migrations');
     // Step 2 reads the LIVE catalogue. A snapshot is what let the existing
@@ -122,7 +146,11 @@ describe('a merged migration must be live', () => {
     ]);
     const prefixes = new Set([...recorded].map((n) => n.slice(0, 55)));
     expect(
-      matchedByName('20260927035803_certification_cleanup_removes_archived_public_user_residue.sql', recorded, prefixes)
+      matchedByName(
+        '20260927035803_certification_cleanup_removes_archived_public_user_residue.sql',
+        recorded,
+        prefixes
+      )
     ).toBe(true);
     expect(matchedByName('20990101000000_plain_slug_name.sql', recorded, prefixes)).toBe(true);
     // A stem stored truncated still matches on its 55-character prefix.
@@ -131,7 +159,11 @@ describe('a merged migration must be live', () => {
     expect(matchedByName(`${long}.sql`, truncated, truncated)).toBe(true);
     // The same slug under ANOTHER version's stem is not this file.
     expect(
-      matchedByName('20260927999999_certification_cleanup_removes_archived_public_user_residue_v2.sql', recorded, prefixes)
+      matchedByName(
+        '20260927999999_certification_cleanup_removes_archived_public_user_residue_v2.sql',
+        recorded,
+        prefixes
+      )
     ).toBe(false);
     for (const f of [
       '20260927035803_certification_cleanup_removes_archived_public_user_residue.sql',

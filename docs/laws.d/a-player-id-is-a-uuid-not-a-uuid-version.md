@@ -7,3 +7,9 @@ generator - 95 of 1,198 profiles are valid uuids that such a pattern rejects,
 which froze bounty settlement as `invalid_claimants` and, in `ca_index_every_seat`,
 inverted into a stats index that covered only those 95. The files that already
 carry it are frozen in a HISTORICAL list that may only shrink.
+
+An already installed immutable solver migration is recognized only alongside
+its exact byte-pinned forward UUID-shape correction. No historical exemption
+is added. Missing, renamed, altered or copied predecessor/successor bytes and
+player-context mutations remain rejected; real PostgreSQL qualification proves
+the correction and forward recovery preserve bindings, ownership and grants.

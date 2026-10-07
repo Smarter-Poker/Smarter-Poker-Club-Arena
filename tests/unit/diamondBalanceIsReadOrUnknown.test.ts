@@ -46,8 +46,14 @@ describe('DiamondService.getBalance reads the balance or says it could not', () 
 
   it('the profile page keeps its last figure when the balance cannot be read', () => {
     const page = readFileSync(resolve(process.cwd(), 'src/pages/ProfilePage.tsx'), 'utf8');
-    const call = page.slice(page.indexOf('DiamondService.getBalance(requestedUserId)'));
-    expect(call.slice(0, 400)).toContain('.catch(');
-    expect(call.slice(0, 400)).not.toContain('dw.balance || 0');
+    // Bounded by structure: the refresh callback, from the read to the bus
+    // subscription that follows it.
+    const start = page.indexOf('DiamondService.getBalance(requestedUserId)');
+    const end = page.indexOf('const unsubBalance', start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const call = page.slice(start, end);
+    expect(call).toContain('.catch(');
+    expect(call).not.toContain('dw.balance || 0');
   });
 });

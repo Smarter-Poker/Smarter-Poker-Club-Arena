@@ -58,10 +58,14 @@ jobs:
       should_run: ${{ steps.origin.outputs.should_run }}
       engine_trigger_sha: ${{ steps.origin.outputs.engine_trigger_sha }}
       client_target_sha: ${{ steps.client-target.outputs.sha }}
+      verification_sha: ${{ steps.client-target.outputs.verification_sha }}
     steps:
       - name: Checkout trusted publication verification
         if: github.event_name == 'workflow_run'
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
       # workflow_run.conclusion covers the whole publisher, including the
       # optional Capgo job. A Capgo failure after a verified web publish must
       # never suppress web E2E, so read the exact origin job and its proof step.
@@ -119,6 +123,15 @@ jobs:
           // is the renamed-or-missing-job hole and still throws below. The
           // source run's own top-level conclusion is still never consulted -
           // an optional Capgo failure must not suppress web E2E.
+          if (payload.total_count !== payload.jobs.length) throw new Error('Source job metadata is incomplete.');
+          const retained = payload.jobs.filter((entry) => entry?.name === 'retain-runtime');
+          const retentionSucceeded = retained.length === 1 && retained[0].status === 'completed' && retained[0].conclusion === 'success' &&
+            ['Verify both origins still serve the qualified immutable runtime', 'Record qualified retained runtime'].every((name) =>
+              (retained[0].steps ?? []).filter((entry) => entry.name === name && entry.status === 'completed' && entry.conclusion === 'success').length === 1);
+          if (retentionSucceeded) {
+            if (jobs.length !== 1 || jobs[0].conclusion !== 'skipped') throw new Error('Retention cannot coexist with an origin transaction.');
+            fs.appendFileSync(output, 'should_run=true\nretained=true\n');
+          } else {
           const inconclusive = (entry) =>
             entry?.conclusion === 'cancelled' || entry?.conclusion === 'skipped';
           const superseded = jobs.length === 0 && payload.jobs.every(inconclusive);
@@ -164,6 +177,7 @@ jobs:
           }
           fs.appendFileSync(output, 'should_run=true\n');
           }
+          }
           NODE
 
       # The publisher selects current main, which can be newer than its trigger.
@@ -184,8 +198,22 @@ jobs:
           SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
           SOURCE_TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}
           REPOSITORY_ID: ${{ github.repository_id }}
+          RETAINED_RUNTIME: ${{ steps.origin.outputs.retained }}
         run: |
           set -euo pipefail
+          if [ "$RETAINED_RUNTIME" = 'true' ]; then
+            # The receipt is a separate same-run artifact, never a new dist.
+            timeout 30s gh api "repos/${{ github.repository }}/actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100" \
+              | node scripts/ci/client-runtime-retention.mjs receipt-artifact "$SOURCE_RUN_ID" "$SOURCE_TRIGGER_SHA" "$REPOSITORY_ID" > "$RUNNER_TEMP/retained-artifact-id"
+            timeout 60s gh run download "$SOURCE_RUN_ID" --repo "${{ github.repository }}" \
+              --name club-arena-retained-runtime --dir "$RUNNER_TEMP/retained-runtime"
+            # Fetch complete baseline and verification ancestry before receipt
+            # validation; neither an API-capped compare nor trigger diff suffices.
+            git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+            node scripts/ci/client-runtime-retention.mjs receive "$RUNNER_TEMP/retained-runtime/retained-runtime.json" \
+              "$SOURCE_RUN_ID" "$SOURCE_TRIGGER_SHA" "$REPOSITORY_ID"
+            exit 0
+          fi
           SELECTED_SHA=$(timeout 30s gh api \
             "repos/${{ github.repository }}/actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100" \
             | node scripts/ci/production-e2e-provenance.mjs \
@@ -257,6 +285,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: ${{ needs.publication-gate.outputs.verification_sha || github.sha }}
           # The step below may need to resolve the sha production is actually
           # serving, which is usually an ancestor of this run's commit and is
           # absent from the default shallow clone.
@@ -268,6 +297,15 @@ jobs:
           # cat-file -e, which are all commit-graph work - so those blobs were paid
           # for on every run and never read.
           filter: blob:none
+
+      - name: Download source-bound retained runtime evidence
+        if: needs.publication-gate.outputs.verification_sha != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: club-arena-retained-runtime
+          path: retained-runtime-evidence
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
@@ -362,6 +400,16 @@ jobs:
           [[ "$LIVE" =~ ^[0-9a-f]{40}$ ]] && [[ "$HERE" =~ ^[0-9a-f]{40}$ ]]
           if ! git cat-file -e "$LIVE^{commit}" 2>/dev/null; then
             git fetch --no-tags origin "$LIVE" --depth=1
+          fi
+          if [ -n '${{ needs.publication-gate.outputs.verification_sha }}' ]; then
+            test "$LIVE" = '${{ needs.publication-gate.outputs.client_target_sha }}'
+            test "$HERE" = '${{ needs.publication-gate.outputs.verification_sha }}'
+            node scripts/ci/client-runtime-retention.mjs harness "$LIVE" "$HERE" \
+              retained-runtime-evidence/retained-runtime.json \
+              '${{ github.event.workflow_run.id }}' '${{ github.event.workflow_run.head_sha }}' '${{ github.repository_id }}'
+            echo "specs=$HERE" >> "$GITHUB_OUTPUT"
+            echo "Actual runtime \`$LIVE\`; complete current qualified verification source \`$HERE\`." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
           RELATION=$(node scripts/ci/production-e2e-provenance.mjs lineage "$LIVE" "$HERE")
           if [ "$RELATION" = same ]; then
@@ -918,6 +966,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: ${{ needs.publication-gate.outputs.verification_sha || github.sha }}
           # The step below may need to resolve the sha production is actually
           # serving, which is usually an ancestor of this run's commit and is
           # absent from the default shallow clone.
@@ -929,6 +978,15 @@ jobs:
           # cat-file -e, which are all commit-graph work - so those blobs were paid
           # for on every run and never read.
           filter: blob:none
+
+      - name: Download source-bound retained runtime evidence
+        if: needs.publication-gate.outputs.verification_sha != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: club-arena-retained-runtime
+          path: retained-runtime-evidence
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
@@ -1049,6 +1107,16 @@ jobs:
           [[ "$LIVE" =~ ^[0-9a-f]{40}$ ]] && [[ "$HERE" =~ ^[0-9a-f]{40}$ ]]
           if ! git cat-file -e "$LIVE^{commit}" 2>/dev/null; then
             git fetch --no-tags origin "$LIVE" --depth=1
+          fi
+          if [ -n '${{ needs.publication-gate.outputs.verification_sha }}' ]; then
+            test "$LIVE" = '${{ needs.publication-gate.outputs.client_target_sha }}'
+            test "$HERE" = '${{ needs.publication-gate.outputs.verification_sha }}'
+            node scripts/ci/client-runtime-retention.mjs harness "$LIVE" "$HERE" \
+              retained-runtime-evidence/retained-runtime.json \
+              '${{ github.event.workflow_run.id }}' '${{ github.event.workflow_run.head_sha }}' '${{ github.repository_id }}'
+            echo "specs=$HERE" >> "$GITHUB_OUTPUT"
+            echo "Actual runtime \`$LIVE\`; complete current qualified verification source \`$HERE\`." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
           RELATION=$(node scripts/ci/production-e2e-provenance.mjs lineage "$LIVE" "$HERE")
           if [ "$RELATION" = same ]; then
@@ -1301,6 +1369,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: ${{ needs.publication-gate.outputs.verification_sha || github.sha }}
           fetch-depth: 0
           filter: blob:none
 

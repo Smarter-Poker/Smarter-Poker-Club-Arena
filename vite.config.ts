@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import { writeFileSync } from 'fs';
 import { viteMediaIdentity } from './scripts/optimize-dist-media.mjs';
+import { runtimeInputPlugin } from './scripts/ci/client-runtime-inputs.mjs';
 import { nativeBundleRoots } from './scripts/native/bundle-roots.mjs';
 
 /**
@@ -130,6 +131,7 @@ export default defineConfig({
     sourceMapAssetIdentity(),
     oneImmer(),
     mediaIdentity.plugin,
+    runtimeInputPlugin(TEST_ENTRY ? 'diamond' : 'app', __dirname),
 
     /**
      * ENTRY MODULE MANIFEST — what every player downloads before first paint.

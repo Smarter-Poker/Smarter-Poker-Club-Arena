@@ -1,0 +1,17 @@
+{
+  "_owner": "Phase 6 V31 controller. Observed production catalog after exact installation of 20261007030040 on 2026-10-07; source SHA-256 c637cfcd35b46c8960d8d7ad154a87573b44e63b8cc1c729ed64727e7edb5b1d. This fragment is not installation proof; retained independent readback and ledger are.",
+  "functions": [
+    "fn_gto_v31_board_relative_key_v2",
+    "fn_gto_v31_board_relative_key_v2_valid",
+    "fn_gto_v31_feature_identity",
+    "fn_gto_v31_feature_request_valid",
+    "fn_gto_v31_feature_key",
+    "fn_gto_v31_feature_key_valid",
+    "fn_gto_v31_feature_binding_immutable"
+  ],
+  "columns": {
+    "gto_v31_input_bundles": ["feature_contract_version"],
+    "gto_v31_datasets": ["feature_contract_version"],
+    "gto_v31_runtime_cells": ["feature_contract_version"]
+  }
+}

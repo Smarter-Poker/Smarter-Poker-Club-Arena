@@ -504,6 +504,13 @@ test('an episode with deliveries whose release was never recorded cannot be clos
   const out = decide(greenRun('1', R86E), legacy, { failedReleases: [], relate: MAIN });
   assert.equal(out.action, 'could-not-tell');
   assert.match(out.reason, /120 failed deliveries/);
+  // ...but a KNOWN newer failure proves an older success stale even there.
+  // This is the true state of 240356 once the 12:30 receipt exists.
+  const known = { failedReleases: [{ head_sha: RB6A, delivery_count: 1 }], relate: MAIN };
+  const real = decide(greenRun('37616370268', R365), legacy, known);
+  assert.equal(real.action, 'stale');
+  assert.deepEqual(real.payload.newer_failed_releases, [RB6A]);
+  assert.equal(decide(greenRun('9', R86E), legacy, known).action, 'could-not-tell');
   // A legacy episode delivered once is named entirely by its own payload.
   const once = openEpisode({ event_key: 'e9', head_sha: R86E, delivery_count: 1 });
   assert.equal(decide(greenRun('2', R86E), once, { failedReleases: [], relate: MAIN }).action, 'resolve');

@@ -288,42 +288,50 @@ export function coverageOf(headSha, previous, history) {
   // Every delivery of the episode must have a recorded release. An episode
   // opened before occurrence receipts existed has exactly one delivery that
   // its own payload names; any more are failures whose release nobody wrote.
+  // A KNOWN newer failure still proves the success stale; the unknowns only
+  // ever stop it from covering.
   const recorded = occurrences.reduce((sum, row) => sum + Math.max(0, Number(row.delivery_count) || 0), 0);
   const deliveries = Number(previous.delivery_count);
+  const doubts = [];
+  let unrecorded = 0;
   if (!Number.isSafeInteger(deliveries) || deliveries < 1) {
-    return unknown('the episode delivery count could not be read');
-  }
-  const unrecorded = deliveries - recorded;
-  if (unrecorded > 1 || (unrecorded === 1 && !previous.head_sha)) {
-    return unknown(`${unrecorded} failed deliveries of this episode name no release`);
+    doubts.push('the episode delivery count could not be read');
+  } else {
+    unrecorded = deliveries - recorded;
+    if (unrecorded > 1 || (unrecorded === 1 && !previous.head_sha)) {
+      doubts.push(`${unrecorded} failed deliveries of this episode name no release`);
+    }
   }
   const failed = [...new Set([
-    ...(unrecorded === 1 ? [previous.head_sha] : []),
+    ...(unrecorded >= 1 && previous.head_sha ? [previous.head_sha] : []),
     ...occurrences.map((row) => row.head_sha),
   ])];
-  if (failed.length === 0) return unknown('the episode records no failed release');
+  if (failed.length === 0) doubts.push('the episode records no failed release');
   const newer = [];
   for (const sha of failed) {
-    if (!sha) return unknown('a failure of this episode named no release');
+    if (!sha) { doubts.push('a failure of this episode named no release'); continue; }
     let relation;
     try {
       relation = relate(sha, headSha);
     } catch (error) {
-      return unknown(`lineage of ${sha} against ${headSha} could not be read: ${error.message}`);
+      doubts.push(`lineage of ${sha} against ${headSha} could not be read: ${error.message}`);
+      continue;
     }
     if (relation === 'descendant') newer.push(sha);
     else if (relation !== 'same' && relation !== 'ancestor') {
-      return unknown(`lineage of ${sha} against ${headSha} is ${relation}`);
+      doubts.push(`lineage of ${sha} against ${headSha} is ${relation}`);
     }
   }
   if (newer.length > 0) {
+    newer.sort();
     return {
       verdict: 'stale',
-      newer: newer.sort(),
-      reason: `the success covered ${headSha}, older than failed release ${newer.sort().join(', ')}`,
+      newer,
+      reason: `the success covered ${headSha}, older than failed release ${newer.join(', ')}`,
     };
   }
-  return { verdict: 'covers', failed: failed.sort() };
+  if (doubts.length > 0) return unknown(doubts.join('; '));
+  return { verdict: 'covers', failed: failed.filter(Boolean).sort() };
 }
 
 /**

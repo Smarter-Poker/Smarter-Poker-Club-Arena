@@ -79,3 +79,56 @@ No pack clears the floor, and the dominant cause is now named: the engine's equi
 Phase 12 is complete and closed as **not promoted**, and Phase 11 stays closed as not promoted after its corrected re-measurement. Every round-1 pack in both phases loses to the reference on the primary cash cell at 99% and on every seed block. The bindings, contracts, authority paths and readers are built, served and verified, and select nothing.
 
 What a next round needs before it can promote anything: a policy design that beats the reference (none of the seven round-1 packs does), a new contract with fresh held-out seeds (these are spent), and natural completion on a release whose engine is not saturated, since a governor-reduced sample is not the policy the matrix measured.
+
+## Audit Of October 7, 2026
+
+A read-only and test audit of everything Phase 12 delivered, against `origin/main` `761aeb8b` and the engine serving `6b1af5c5fb11b158c3c8871b93360df566ad7a49`, with the same method as the Phase 11 audit in [the Phase 11 closure record](horse-brain-phase11-closure-2026-10-05.md#audit-of-october-7-2026). Status words are the maintained vocabulary. Evidence: `/Volumes/SmarterArchives/agent-evidence/horse-brain-phase15-20261007/audit-p11-p12/`.
+
+### Checklist
+
+| Item                                                                                                  | Source on main and wiring traced                                                                                                                                                                                                                                                                   | Status                                       |
+| ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| P12.1 input binding (#6156 `27174382`)                                                                | `evaluateRemainingVariantPolicy` binds its inputs; `remainingVariantReceiptBindingIsValid` at the worker response boundary and the client's shadow drop (`phase12_shadow_receipt_binding_dropped`)                                                                                                 | verified now                                 |
+| P12-A accepted-discard chain (#6130 `c4091893`, #6156)                                                | `HorseLogic.decideDiscard` to the worker discard path to `HandController.performDiscard`; `discard_decision` and `discard_execution` journal records with the controller's accepted record; the next decision reads the retained pair and the private dead card                                    | verified now                                 |
+| P12-B FLH/FLO8 river net-action economics (#6151 `942943e7`)                                          | `RemainingVariantActionEconomics` priced in `finishPriced` after `finish`; re-checked at the worker boundary                                                                                                                                                                                       | verified now                                 |
+| P12.2 contract, league, assembler, digest (#6156)                                                     | `REMAINING_VARIANT_STRENGTH_CONTRACT`, `server/scripts/phase12-strength-assemble.mjs`, `horse-phase12-strength-league.yml`, `HorsePhase12PolicyDigest.ts` with its closure test                                                                                                                    | verified now                                 |
+| P12.3 authority and completion reader (#6156, #6169 `7ce58e54`)                                       | `admitHorsePhase12ReleaseAuthority`; worker `phase12Admission`; main gates `liveHorsePhase12Authorities` (client stamp/observe/forget, acceptance `check`/`withdraw`); `phase12-completion-extract.py` (first looks only, discards excluded by their real shape) then `phase12CompletionRecord.ts` | verified now                                 |
+| Selections                                                                                            | `PHASE12_PROTECTED_RELEASE_SELECTIONS` = all four `null`; the live worker throws on `phase12Remaining: 'candidate'` and on `phase12EvidenceMode`                                                                                                                                                   | verified now                                 |
+| Named budget refusals, fixed-limit jam pricing (#6173 `c5be0012`, #6177 `90bff0c3`, #6292 `72790c35`) | Deterministic refusal gates; Phase 7 prices a clamped fixed-limit jam as the executed wager                                                                                                                                                                                                        | verified now                                 |
+| Tournament catalogue migration `20260912044409_remaining_tournament_variant_allowlist.sql` (round 1)  | Ledger row present; read back below                                                                                                                                                                                                                                                                | verified now (fingerprints: historical only) |
+| Client changes                                                                                        | None in any Phase 12 merge (no `src/` path)                                                                                                                                                                                                                                                        | not applicable with reason: engine-only      |
+
+### Tests On A Fresh Worktree Of `761aeb8b`
+
+The same run as the Phase 11 audit (55 files, 1,435 tests, 0 failed, 0 skipped) contains every suite this record, the package records and the plan name for Phase 12: the Remaining Variant pack, dimensions, live policy, completion, deep fixed-limit, input binding, legal form, selection guard, Phase 12 selection, action economics and net action suites; every Pineapple choice, dead-card, all-in, clock, fold, join, journal-context, ownership and accepted-chain suite; `HorseDiscardControllerReceipt`, the journal `discard` suite, `HorseSchedulerCanonicalCommit`, `HorsePhase12Authority`, `HorsePhase12PolicyDigest`, the Phase 12 assembler, completion record, reference, settlement, league and strength league suites, and `HorseTournamentUtilityFixedLimitJam`. All are in the maintained selection.
+
+### Database Read-Back
+
+`20260912044409` (`remaining_tournament_variant_allowlist`) is in `supabase_migrations.schema_migrations`. The record's fingerprints (creator `d00caa09…`, wrapper `16305fb3…`) are historical only: later tournament migrations legitimately replaced both bodies. Today the creator `fn_create_tournament_governed_legacy(uuid,jsonb)` has `prosrc` md5 `9ff1b6c1c1396145d62face4867fbf0f`, the `post_source_md5` that `20260917065000_mtt_dual_creation_preparation.sql` declares, and definition md5 `bf284ab7932447a7d2e49a1fa7deb9d8`, the definition every later tournament migration pins; it is `SECURITY DEFINER`, `search_path=public`, executable only by `postgres` and `service_role`. Its body still carries the exact Phase 12 guard lines (the eight-game `unsupported_tournament_variant` list and the four-game `unsupported_spin_variant` list), and the public wrapper `fn_create_tournament(uuid,jsonb)` still routes to it. Natural check: since installation, 0 tournaments of Crazy Pineapple and 0 Spins outside NLH, PLO4, PLO5 and PLO6 were created.
+
+### Publication
+
+Every Phase 12 engine merge (`c4091893`, `942943e7`, `27174382`, `7ce58e54`, `c5be0012`, `90bff0c3`, `72790c35`) is an ancestor of the serving `6b1af5c5`. No Phase 12 work is unpushed (see the Phase 11 audit for the one closed evidence branch, identical to main).
+
+### Natural Evidence, Re-Read Today
+
+Read-only from closed journal segments, decisions in [2026-10-07T20:33:33Z, 21:08:33Z), all on release `6b1af5c5`:
+
+| Pack            | Decisions (all cash) | Receipts | Eligible | Inputs bound on eligible | Mode         | Authority receipt  | Applied |
+| --------------- | -------------------- | -------- | -------- | ------------------------ | ------------ | ------------------ | ------- |
+| Short Deck      | 2,217                | 2,217    | 1,848    | 1,848                    | shadow 2,217 | `unselected` 2,217 | 0       |
+| Crazy Pineapple | 2,543                | 2,543    | 2,089    | 2,089                    | shadow 2,543 | `unselected` 2,543 | 0       |
+| FLH             | 1,133                | 1,133    | 1,117    | 1,117                    | shadow 1,133 | `unselected` 1,133 | 0       |
+| FLO8            | 1,673                | 1,673    | 1,485    | 1,485                    | shadow 1,673 | `unselected` 1,673 | 0       |
+
+Accepted discards in [20:36:31Z, 21:11:31Z): 423 `discard_decision` records (419 `choice`, 4 `forced_runout`), 423 `discard_execution` records each carrying the controller's accepted record, 423 of 423 joined by request id, 0 chosen-index mismatches. P12-B in the same window: every eligible fixed-limit river receipt carries `actionEconomics` (FLH 181 of 181 available; FLO8 259, of which 254 available, 4 `work_budget_unavailable`, 1 `no_legal_candidate_priced`, each named). Engine logs over the last 3 hours carry no Phase 12 policy, discard, receipt-binding or worker error.
+
+### Findings And Fixes
+
+- **F3, stale source:** the selection comment in `HorsePhase12Authority.ts` said no held-out matrix had run and no qualification or completion record existed. Corrected in PR #6440 (merged as `0bf6dcda` at 2026-10-07T22:05Z; in the engine release `71ab03df`, serving since 22:55Z (deploy run 37697966313: tests, production doors, Hetzner publish and release receipt all succeeded)).
+- No Phase 12 defect, stub, unwired producer or unreachable consumer was found. The Phase 11 fix that touches shared code (#6444) changes no Phase 12 file and leaves the Phase 12 and Phase 13 policy digests unchanged (their closure tests pass).
+
+### What Remains Open
+
+- P12-B beyond the FLH/FLO8 river: not applicable with reason. The plan's P12-B calculation slice is FLH/FLO8 river call/completion; its Short Deck and Pineapple items are rule-preservation requirements (36-card scoring, A6789 wheel, flush over full house, three-card occupancy, flop-only prior), verified now by the reference, settlement and policy suites above.
+- Promotion: not promoted, unchanged. Every selection stays `null`. Natural completion stays below the floor (historical, cause named in this record); it admits nothing without a qualified pack.

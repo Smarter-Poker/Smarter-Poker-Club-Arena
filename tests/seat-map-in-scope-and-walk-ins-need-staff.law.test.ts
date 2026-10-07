@@ -55,6 +55,13 @@ describe('LAW: a seat is read with its table', () => {
     // It asserts its end state rather than trusting the statements ran.
     expect(sql).toContain('a SELECT policy on table_seats is still USING (true)');
     expect(sql).toContain('seat_read_with_table_or_own lost its readable-table branch');
+    // It takes the seat table before its first policy statement: every policy
+    // statement locks the auth tables (supautils.policy_grants), and waiting for
+    // the seat table while holding auth.users deadlocked with the engine.
+    const lock = sql.indexOf('LOCK TABLE public.table_seats IN ACCESS EXCLUSIVE MODE;');
+    const firstPolicy = sql.search(/\b(CREATE|ALTER|DROP)\s+POLICY\b/);
+    expect(lock).toBeGreaterThan(-1);
+    expect(firstPolicy).toBeGreaterThan(lock);
     // It leaves the two policies beside it alone.
     expect(sql).not.toMatch(/DROP POLICY "?union_overseer_read"?/);
     expect(sql).not.toMatch(/DROP POLICY "Service role manages"/);

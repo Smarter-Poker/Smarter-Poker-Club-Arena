@@ -13,7 +13,10 @@
 --         away from a browser with no account and said in its own header what
 --         it left open: any signed-in account - free to create - read every
 --         seat on the platform. Measured 2026-10-07: 1,441,223 rows, which is
---         who sits at which club's table and with what stack.
+--         who sits at which club's table and with what stack. In a rolled-back
+--         rehearsal, a signed-in account with no club read all 9 seats of a
+--         Midway Union table, and a player of another club read all 9 at a
+--         table whose row it is not allowed to see.
 --
 -- AFTER   "seat_read_with_table_or_own": FOR SELECT, TO authenticated,
 --
@@ -78,12 +81,15 @@
 --         captain_waitlist_insert (commander_waitlist): FOR INSERT TO PUBLIC
 --         WITH CHECK (player_id = auth.uid() OR player_id IS NULL
 --                     OR <active staff of the venue>).
---         anon held INSERT on both tables, and for anon the middle branch is
---         TRUE: a browser with no account could write a walk-in row into any
---         venue's waitlist, and so could any signed-in account. (An anonymous
---         ENTRY was already refused one step later, because the entries stats
---         trigger reads the table anon lost SELECT on in #6302 - an accident,
---         not a control.)
+--         Measured 2026-10-07 in a rolled-back rehearsal against production:
+--         a signed-in account that is staff nowhere inserted a walk-in row into
+--         a venue's waitlist AND into a tournament's entries. anon held INSERT
+--         on both tables and the middle branch is TRUE for anon too; anon's
+--         insert was refused only by accident - evaluating the staff branch
+--         reads commander_staff, whose own policy calls
+--         fn_user_is_active_staff_at_venue, which anon may not execute, so the
+--         statement died with 42501 on a helper function. That is an error, not
+--         a control, and it disappears the day that grant changes.
 --
 -- AFTER   Both policies TO authenticated with the middle branch gone. A row
 --         is the player's own (player_id = auth.uid()) or is written by active
@@ -104,15 +110,38 @@
 -- or edge function inserts into either table. Newest rows: waitlist
 -- 2026-03-08, entries 2026-03-03.
 --
--- ORDER: the cold Commander tables first and table_seats last, so the lock a
--- policy change takes on the busy seat table is held for the shortest time.
+-- ─── LOCKS: why the seat table is locked before anything else ──────────────
+--
+-- Every CREATE/ALTER/DROP POLICY run as postgres takes ACCESS EXCLUSIVE on all
+-- 23 tables Supabase lists in supautils.policy_grants (auth.users,
+-- auth.sessions, auth.refresh_tokens, storage.objects, realtime.messages and
+-- the rest) until the transaction ends - whichever table the policy is on.
+-- Measured 2026-10-07: after one ALTER POLICY on commander_tournament_entries
+-- the transaction held all of them.
+--
+-- The first rehearsal of this migration ran the Commander policies first and
+-- then waited for table_seats while holding auth.users. The engine holds
+-- table_seats and then checks a foreign key into auth.users when it queues a
+-- hand's Daily Missions events, so they deadlocked; the rehearsal rolled
+-- back, and three horses' Daily Missions events for three hands were not
+-- queued (fn_enqueue_hand_daily_missions caught the error and warned).
+--
+-- So this transaction (1) waits for table_seats while holding nothing anyone
+-- else needs, with LOCK TABLE and a 500 ms ceiling, and only then (2) runs the
+-- policy statements, whose locks may wait at most 250 ms. Both ceilings are
+-- below deadlock_timeout (1 s): if anything stands in the way, this
+-- transaction gives up first and rolls back, and no engine transaction is
+-- ever the one that fails. A refusal here is "dispatch again later", once,
+-- never in a loop. Held, the seat table and the auth tables are locked for the
+-- few milliseconds the statements below take.
 --
 -- @live-proof: (NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='table_seats' AND cmd='SELECT' AND qual='true') AND EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='table_seats' AND policyname='seat_read_with_table_or_own' AND cmd='SELECT' AND roles='{authenticated}'::name[]) AND NOT has_any_column_privilege('anon', 'public.table_seats', 'SELECT'))
 -- @live-proof: (NOT has_any_column_privilege('anon', 'public.commander_tournament_entries', 'INSERT') AND NOT has_any_column_privilege('anon', 'public.commander_waitlist', 'INSERT') AND (SELECT count(*) FROM pg_policies WHERE schemaname='public' AND tablename IN ('commander_tournament_entries','commander_waitlist') AND cmd='INSERT' AND roles='{authenticated}'::name[] AND with_check !~ 'player_id IS NULL') = 2)
 
 BEGIN;
 
-SET LOCAL lock_timeout = '2s';
+-- Every lock wait below stays under deadlock_timeout (1 s); see LOCKS above.
+SET LOCAL lock_timeout = '500ms';
 
 -- ─── PRE: written against this exact state, and nothing it relies on moved ──
 DO $pre$
@@ -129,7 +158,10 @@ BEGIN
     RAISE EXCEPTION 'table_seats no longer carries union_overseer_read and "Service role manages"; re-read it before narrowing';
   END IF;
   -- The reader audit above found no realtime subscriber because there is none.
-  IF EXISTS (SELECT 1 FROM pg_publication_tables WHERE schemaname='public' AND tablename='table_seats') THEN
+  -- Read off the catalogue, which opens no published table.
+  IF EXISTS (SELECT 1 FROM pg_publication p WHERE p.puballtables)
+     OR EXISTS (SELECT 1 FROM pg_publication_rel pr WHERE pr.prrelid = 'public.table_seats'::regclass)
+     OR EXISTS (SELECT 1 FROM pg_publication_namespace pn WHERE pn.pnnspid = 'public'::regnamespace) THEN
     RAISE EXCEPTION 'table_seats is in a realtime publication now; its subscribers were not part of this analysis';
   END IF;
   IF has_any_column_privilege('anon','public.table_seats','SELECT') THEN
@@ -150,6 +182,21 @@ BEGIN
   END IF;
 END
 $pre$;
+
+-- ─── the seat table first, while this transaction holds nothing else ──────
+LOCK TABLE public.table_seats IN ACCESS EXCLUSIVE MODE;
+
+SET LOCAL lock_timeout = '250ms';
+
+-- ─── 1. table_seats: a seat is read with its table, or by its occupant ──────
+DROP POLICY "Public read access" ON public.table_seats;
+
+CREATE POLICY "seat_read_with_table_or_own" ON public.table_seats
+  AS PERMISSIVE FOR SELECT TO authenticated
+  USING (
+    user_id = (SELECT auth.uid())
+    OR EXISTS (SELECT 1 FROM public.tables t WHERE t.id = table_seats.table_id)
+  );
 
 -- ─── 2. Commander: a row is the player's own or written by venue staff ──────
 ALTER POLICY "captain_entries_insert" ON public.commander_tournament_entries
@@ -177,16 +224,6 @@ ALTER POLICY "captain_waitlist_insert" ON public.commander_waitlist
 
 REVOKE INSERT, UPDATE, DELETE ON TABLE public.commander_tournament_entries FROM anon, PUBLIC;
 REVOKE INSERT, UPDATE, DELETE ON TABLE public.commander_waitlist FROM anon, PUBLIC;
-
--- ─── 1. table_seats: a seat is read with its table, or by its occupant ──────
-DROP POLICY "Public read access" ON public.table_seats;
-
-CREATE POLICY "seat_read_with_table_or_own" ON public.table_seats
-  AS PERMISSIVE FOR SELECT TO authenticated
-  USING (
-    user_id = (SELECT auth.uid())
-    OR EXISTS (SELECT 1 FROM public.tables t WHERE t.id = table_seats.table_id)
-  );
 
 -- ─── POST: assert the end state, every part of it ───────────────────────────
 DO $post$

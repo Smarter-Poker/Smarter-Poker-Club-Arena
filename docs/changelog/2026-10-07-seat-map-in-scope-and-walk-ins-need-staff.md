@@ -10,10 +10,13 @@ The two browser-access holes left over from the security fixes Dan approved on
   read away from a browser with no account, but any signed-in account - free
   to create - still read all 1,441,223 seats: who sits at which club's table,
   and with what stack.
-- **A browser with no account could write a Commander walk-in.** The insert
+- **Any signed-in account could write a Commander walk-in.** The insert
   policies on `commander_waitlist` and `commander_tournament_entries` admitted
-  any row with `player_id IS NULL` (a walk-in), to every role, and anon held
-  INSERT on both tables. Any signed-in account could do the same.
+  any row with `player_id IS NULL` (a walk-in), to every role. Measured in a
+  rolled-back rehearsal: an account that is staff nowhere inserted a walk-in
+  into a venue's waitlist and into a tournament's entries. anon held INSERT on
+  both tables too; its attempt failed only by accident, on a helper function
+  inside the staff check that anon may not execute.
 
 ## The fix
 
@@ -45,12 +48,46 @@ transaction:
   grants and the policies. No browser path, database function or edge function
   inserts into either table.
 
-## Proof
+## Proof (rolled-back rehearsals against production, 2026-10-07)
 
-Rehearsed against production in one rolled-back transaction, with role probes
-for a club member, a signed-in account with no club, a player of another club,
-an anonymous browser, a non-staff player and an active floor manager; results
-and the lobby seat-map timing are in the pull request.
+| Probe                                                               | Before                                  | After                     |
+| ------------------------------------------------------------------- | --------------------------------------- | ------------------------- |
+| Union member (no seats anywhere) reads a Midway Union table's seats | 9 of 9                                  | 9 of 9                    |
+| Signed-in account with no club reads that table's seats             | 9 of 9                                  | 0 of 9                    |
+| Same account reads a Diamond Arena table's seats                    | 6 of 6                                  | 6 of 6                    |
+| Player of another club reads that table (whose row it cannot see)   | 9 of 9                                  | 1 of 9 (their own)        |
+| That player reads all of their own seats                            | 202 of 202                              | 202 of 202                |
+| Browser with no account reads seats                                 | refused                                 | refused                   |
+| Lobby seat map for a running table, as a member                     | 9 of 9                                  | 9 of 9                    |
+| No-account walk-in, waitlist / entry                                | refused by accident (a helper function) | refused (no INSERT grant) |
+| Non-staff signed-in walk-in, waitlist / entry                       | inserted                                | refused (row security)    |
+| Player's own waitlist row / entry                                   | inserted                                | inserted                  |
+| Active floor staff walk-in, waitlist / entry                        | inserted                                | inserted                  |
+
+## A policy statement locks the auth tables
+
+Every CREATE/ALTER/DROP POLICY run as postgres takes ACCESS EXCLUSIVE on all 23
+tables in `supautils.policy_grants` (auth.users, auth.sessions,
+auth.refresh_tokens, storage.objects, realtime.messages, ...) until commit,
+whatever table the policy is on. The first rehearsal ran the Commander policies
+first and then waited for `table_seats` while holding `auth.users`; the engine
+holds `table_seats` and then checks a foreign key into `auth.users` when it
+queues a hand's Daily Missions events, so the two deadlocked. The rehearsal
+rolled back, and three horses' Daily Missions events were not queued
+(`fn_enqueue_hand_daily_missions` caught the error and warned): hand
+31742540-51b3-443c-91b0-28e573bf55f2 for 2e49e7e8-346a-49ba-91d3-699f1d9e0d6a,
+hand 368ad968-3d0a-4bf2-b388-cb92f6e1c078 for
+17e2a4ff-a54a-473d-9982-f7b41a22a9c5, and hand
+db650997-3668-43b1-baff-374d9f36ebc0 for 5eaede5f-ddbe-4d8b-b143-d9ec2bd4dd23
+(04:05:21 UTC). Not repaired here.
+
+The migration now takes `LOCK TABLE public.table_seats IN ACCESS EXCLUSIVE
+MODE` first, while it holds nothing anyone else needs, with a 500 ms ceiling,
+and only then runs the policy statements with a 250 ms ceiling. Both are under
+`deadlock_timeout` (1 s), so if anything is in the way this transaction gives
+up first and no engine transaction is the one that fails. Rehearsed that way:
+the whole transaction, probes included, took 329 ms, with no deadlock, lock
+timeout or lost event in the database log.
 
 ## Law
 

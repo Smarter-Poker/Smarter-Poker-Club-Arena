@@ -56,20 +56,25 @@ network="$container-network"
 source_container="$container-source"
 cleanup_complete=false
 cleanup() {
+  local owned_container names
   [[ "$cleanup_complete" == false ]] || return 0
   docker info >"$scratch/cleanup-daemon.log" 2>&1 || { echo 'Cleanup refused: Docker state unavailable.' >&2; return 1; }
   for owned_container in "$source_container" "$container"; do
-    if docker container inspect "$owned_container" >"$scratch/cleanup-inspect.log" 2>&1; then
+    names="$(docker container ls --all --format '{{.Names}}' 2>"$scratch/cleanup-inventory.log")" || { echo 'Cleanup refused: container inventory unavailable.' >&2; return 1; }
+    if [[ $'\n'"$names"$'\n' == *$'\n'"$owned_container"$'\n'* ]]; then
       docker rm -f "$owned_container" >"$scratch/cleanup-remove.log" 2>&1 || { echo 'Cleanup failed: owned container.' >&2; return 1; }
     fi
-    if docker container inspect "$owned_container" >"$scratch/cleanup-inspect.log" 2>&1; then
+    names="$(docker container ls --all --format '{{.Names}}' 2>"$scratch/cleanup-inventory.log")" || { echo 'Cleanup refused: final container inventory unavailable.' >&2; return 1; }
+    if [[ $'\n'"$names"$'\n' == *$'\n'"$owned_container"$'\n'* ]]; then
       echo 'Cleanup failed: owned container still exists.' >&2; return 1
     fi
   done
-  if docker network inspect "$network" >"$scratch/cleanup-inspect.log" 2>&1; then
+  names="$(docker network ls --format '{{.Name}}' 2>"$scratch/cleanup-inventory.log")" || { echo 'Cleanup refused: network inventory unavailable.' >&2; return 1; }
+  if [[ $'\n'"$names"$'\n' == *$'\n'"$network"$'\n'* ]]; then
     docker network rm "$network" >"$scratch/cleanup-remove.log" 2>&1 || { echo 'Cleanup failed: owned network.' >&2; return 1; }
   fi
-  if docker network inspect "$network" >"$scratch/cleanup-inspect.log" 2>&1; then
+  names="$(docker network ls --format '{{.Name}}' 2>"$scratch/cleanup-inventory.log")" || { echo 'Cleanup refused: final network inventory unavailable.' >&2; return 1; }
+  if [[ $'\n'"$names"$'\n' == *$'\n'"$network"$'\n'* ]]; then
     echo 'Cleanup failed: owned network still exists.' >&2; return 1
   fi
   docker info >"$scratch/cleanup-daemon.log" 2>&1 || { echo 'Cleanup refused: final Docker state unavailable.' >&2; return 1; }

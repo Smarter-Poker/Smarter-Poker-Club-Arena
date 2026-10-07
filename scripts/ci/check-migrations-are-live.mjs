@@ -94,6 +94,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { loadAliases } from './migration-aliases.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -315,7 +316,25 @@ export function declaredObjects(sql) {
  * per Lightning file against the raw line count.
  */
 export function declaredProofs(sql) {
-  return [...sql.matchAll(/^-- @live-proof: (.*)$/gm)].map((m) => m[1].trim());
+  return [...sql.matchAll(/^-- @live-proof: (.*)$/gm)].map((m) => m[1].trim()).concat(
+    externalDeclaredProofs(sql, JSON.parse(readFileSync(join(ROOT,'scripts/ci/migration-live-proofs.json'),'utf8')), DIR)
+  );
+}
+
+/** Immutable installed files cannot be edited to add markers. External proof
+ * declarations bind their exact bytes, never exempt the migration from proof.
+ * Validate every declaration even when the queried file is unrelated. */
+export function externalDeclaredProofs(sql, registry, dir) {
+  if (!registry || registry.schema !== 1 || Object.keys(registry).sort().join(',') !== 'entries,schema' || !Array.isArray(registry.entries)) throw Error('invalid external live proof registry');
+  const seen = new Set(), result = [];
+  for (const entry of registry.entries) {
+    if (!entry || Object.keys(entry).sort().join(',') !== 'file,proofs,sha256' || typeof entry.file !== 'string' || !/^\d{14}_[a-z0-9_]+\.sql$/.test(entry.file) || seen.has(entry.file) || typeof entry.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(entry.sha256) || !Array.isArray(entry.proofs) || !entry.proofs.length || entry.proofs.some(p => typeof p !== 'string' || !p.trim() || !proofIsRunnable(p))) throw Error('invalid external live proof declaration');
+    seen.add(entry.file);
+    const bytes = readFileSync(join(dir,entry.file));
+    if (createHash('sha256').update(bytes).digest('hex') !== entry.sha256) throw Error(`external live proof migration bytes changed: ${entry.file}`);
+    if (bytes.toString('utf8') === sql) result.push(...entry.proofs);
+  }
+  return result;
 }
 
 /**

@@ -12,9 +12,10 @@ const sourceRow=(hand=HAND,table=TABLE,extra={})=>({...Object.fromEntries(ACCEPT
  committed_at:'2026-09-14 14:00:00.123456+00',post_commit_completed_at:null,read_at:'2026-09-14 14:00:01.5+00',lease_generation:LEASE,...extra});
 describe('selection receipt',()=>{
  it('accepts the day state, pass receipts and an explicit gap page, detached',()=>{const raw=receipt([gapRow(1,['accepted_commitment_facts_missing']),gapRow(2,['late_arrival_after_pass:1']),gapRow(3,['dealt_roster_invalid'])]);const got=parseSelectionReceipt(raw,request);raw.gaps[0].reasons.push('changed');expect(got.gaps.map(g=>g.kind)).toEqual(['missing_source','late_arrival','source_gap']);expect(got.gaps[0].reasons).toEqual(['accepted_commitment_facts_missing']);expect(got.passes[0].sourceCoverage).toBe('not_established');expect(Object.isFrozen(got.gaps[0])).toBe(true);});
+ it('accepts every named identity basis, day and pass, and keeps each one',()=>{for(const basis of ['current_profile_is_horse','accepted_roster','current_profile_then_accepted_roster']){const r=receipt();r.identityBasis=basis;r.passes[0].identityBasis=basis;const got=parseSelectionReceipt(r,request);expect(got.identityBasis).toBe(basis);expect(got.passes[0].identityBasis).toBe(basis);}});
  it('keeps a never-observed day explicit',()=>{const got=parseSelectionReceipt(receipt([],null,false,{dayState:null,passes:[]}),request);expect(got.dayState).toBeNull();expect(got.passes).toEqual([]);});
  for(const [name,mutate] of [
-  ['extra key',r=>r.extra=1],['coverage claim',r=>r.sourceCoverage='complete'],['identity basis',r=>r.identityBasis='accepted_roster'],
+  ['extra key',r=>r.extra=1],['coverage claim',r=>r.sourceCoverage='complete'],['identity basis',r=>r.identityBasis='profile_today'],['pass identity basis',r=>r.passes[0].identityBasis='roster'],
   ['activation',r=>r.activationAllowed=true],['gto',r=>r.gtoVerified=true],['wrong day',r=>r.day='2026-09-11'],['wrong limit',r=>r.limit=9],
   ['wrong source',r=>r.source='horse_commitment_reviews'],['after echo',r=>r.after={playedAt:DAY+'T00:00:00.000001Z',handId:HAND}],
   ['pass extra key',r=>r.passes[0].x=1],['pass coverage',r=>r.passes[0].sourceCoverage='complete'],['pass order',r=>r.passes=[passReceipt(2),passReceipt(1)]],

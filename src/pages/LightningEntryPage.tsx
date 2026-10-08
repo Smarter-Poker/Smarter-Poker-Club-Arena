@@ -102,7 +102,6 @@ export default function LightningEntryPage() {
   const validId = Boolean(clusterId && isUUID(clusterId));
   /* LIGHTNING PHASE 8: the player's other Lightning tables and the device limit. */
   const mine = useLightningMySessions(clusterId ?? null, validId);
-  const tableLimit = lightningMultiTableLimit(lightningDeviceNow());
   const [prefs] = useState(() => readLightningPrefs());
 
   useEffect(() => {
@@ -157,6 +156,13 @@ export default function LightningEntryPage() {
   const joinsLightning =
     phase.kind === 'entry' && phase.decision.kind === 'entry' ? phase.decision.lightning : false;
   const poolHealth = useLightningPoolHealth(clusterId ?? null, joinsLightning);
+  /* The Cluster's configured limit when fn_lightning_pool_status carries one
+     (multi_table_limit); the 4/3/2 default until it does, or on an old
+     payload that has none. */
+  const tableLimit = lightningMultiTableLimit(
+    lightningDeviceNow(),
+    poolHealth?.multiTableLimit ?? null
+  );
   const withinLimit = clusterId ? lightningJoinWithinLimit(mine.rows, clusterId, tableLimit) : true;
   const join = useCallback(async () => {
     if (!clusterId || joining) return;
@@ -262,9 +268,16 @@ export default function LightningEntryPage() {
       ? `Blinds ${Number(meta.smallBlind)}/${Number(meta.bigBlind)}`
       : '';
   /* A paused, frozen or dead Cluster offers no door at all, and says so in the
-     board's own words; a disabled one is closed as before. */
+     board's own words; a disabled one is closed as before. The database's own
+     verdict (fn_lightning_pool_status.joinable, where pool_status's
+     cluster_mode was read before) closes the door too; an old payload or no
+     read yet decides nothing. The lobby label keeps its own cluster_mode
+     source from the lobby feed. */
   const modeDisplay = clusterModeDisplay(meta?.clusterMode ?? null);
-  const closed = meta?.enabled === false || modeDisplay.closedLabel !== null;
+  const closed =
+    meta?.enabled === false ||
+    modeDisplay.closedLabel !== null ||
+    (lightning && poolHealth?.joinable === false);
   /* At the device's limit, another Cluster's JOIN LIGHTNING is not offered. */
   const atLimit = lightning && !closed && !withinLimit;
   const eyebrow = modeDisplay.closedLabel

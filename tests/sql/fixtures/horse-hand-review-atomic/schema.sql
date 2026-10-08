@@ -6,6 +6,14 @@
 --   20260826144505_horse_hand_reviews.sql            (both tables, indexes, RLS)
 --   20260906093726_every_tag_carries_its_own_ev.sql  (leak_net_bb and the
 --                                                     current fn_hhr_rollup_add)
+-- and, for 20261008041150_horse_hand_review_receipts_retention, the review
+-- retention owner and the three day tables it also prunes:
+--   20260826170508_horse_daily_nets.sql               (horse_daily_nets)
+--   20260905201812_the_tuner_stops_fighting_the_rake_and_studies_every_horse.sql
+--                                                     (horse_daily_play)
+--   20260905204620_the_tournament_lane_gets_a_scoreboard_and_a_leak_profile.sql
+--                                                     (horse_tournament_daily and
+--                                                      the current sp_prune_horse_hand_reviews)
 -- plus the Supabase role set and its default privileges, so a REVOKE in the
 -- migration under test is exercised against grants that really exist.
 
@@ -116,3 +124,75 @@ grant execute on function public.fn_hhr_rollup_add(uuid, date, text, boolean, nu
 -- no write grant on either table.
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE, MAINTAIN ON TABLE
   public.horse_hand_reviews, public.horse_review_rollup FROM anon, authenticated;
+
+-- ── 20260826170508_horse_daily_nets.sql ────────────────────────────────────
+create table if not exists public.horse_daily_nets (
+  horse_user_id uuid not null,
+  day           date not null,
+  game_variant  text not null,
+  format        text not null default 'cash',
+  hands         int not null default 0,
+  net_bb        numeric not null default 0,
+  updated_at    timestamptz not null default now(),
+  primary key (horse_user_id, day, game_variant, format)
+);
+alter table public.horse_daily_nets enable row level security;
+create index if not exists idx_hdn_day on public.horse_daily_nets (day desc);
+
+-- ── 20260905201812_the_tuner_stops_fighting_the_rake_and_studies_every_horse.sql
+create table if not exists public.horse_daily_play (
+  horse_user_id      uuid not null,
+  day                date not null,
+  format             text not null default 'cash',
+  hands              int not null default 0,
+  vpip               int not null default 0,
+  pfr                int not null default 0,
+  three_bets         int not null default 0,
+  three_bet_opps     int not null default 0,
+  open_raises        int not null default 0,
+  faced_3bets        int not null default 0,
+  fold_to_3bets      int not null default 0,
+  saw_flop           int not null default 0,
+  won_when_saw_flop  int not null default 0,
+  post_aggr          int not null default 0,
+  post_passive       int not null default 0,
+  updated_at         timestamptz not null default now(),
+  primary key (horse_user_id, day, format)
+);
+alter table public.horse_daily_play enable row level security;
+create index if not exists idx_hdp_day on public.horse_daily_play (day desc);
+
+-- ── 20260905204620_the_tournament_lane_gets_a_scoreboard_and_a_leak_profile.sql
+create table if not exists public.horse_tournament_daily (
+  horse_user_id    uuid not null,
+  day              date not null,
+  tournament_type  text not null default 'MTT',
+  variant          text not null default 'nlh',
+  entries          int not null default 0,
+  invested         numeric not null default 0,
+  won              numeric not null default 0,
+  itm_entries      int not null default 0,
+  finish_pct_sum   numeric not null default 0,
+  best_finish      int,
+  updated_at       timestamptz not null default now(),
+  primary key (horse_user_id, day, tournament_type, variant)
+);
+alter table public.horse_tournament_daily enable row level security;
+create index if not exists idx_htd_day on public.horse_tournament_daily (day desc);
+
+create or replace function public.sp_prune_horse_hand_reviews() returns int
+language plpgsql security definer set search_path = public as $$
+declare n int; m int; k int; j int;
+begin
+  delete from horse_hand_reviews where created_at < now() - interval '30 days';
+  get diagnostics n = row_count;
+  delete from horse_daily_nets where day < current_date - 180;
+  get diagnostics m = row_count;
+  delete from horse_daily_play where day < current_date - 180;
+  get diagnostics k = row_count;
+  delete from horse_tournament_daily where day < current_date - 180;
+  get diagnostics j = row_count;
+  return n + m + k + j;
+end $$;
+revoke all on function public.sp_prune_horse_hand_reviews() from public, authenticated, anon;
+grant execute on function public.sp_prune_horse_hand_reviews() to service_role;

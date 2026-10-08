@@ -621,3 +621,143 @@ describe('law 10.5 and the proof around the remediation', () => {
     }
   });
 });
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * THE REVIEW MIGRATION (20261008043021): a static reading of the migration
+ * that closes the Phase 7/8 adversarial-review findings. This file reads the
+ * shared transaction shape and the Phase 7 findings (the dwell is a duration;
+ * a stale sighting dies with the epoch); the Phase 8 findings are read by
+ * tests/lightning-phase-8-session.test.ts.
+ *
+ * LIGHTNING_P78R_MIGRATION overrides the file under test, for mutation
+ * testing.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+const FIX_FILE = '20261008043021_lightning_phase_7_and_8_review_fixes_the_dwell_is_a_duration.sql';
+const FIX_MIGRATION =
+  process.env.LIGHTNING_P78R_MIGRATION ?? path.join(ROOT, 'supabase', 'migrations', FIX_FILE);
+const FIX = fs.readFileSync(FIX_MIGRATION, 'utf8');
+const FIX_CODE = FIX.split('\n')
+  .map((l) => l.replace(/--.*$/, ''))
+  .join('\n');
+const FIXLOG = read('docs', 'changelog', '2026-10-08-lightning-phase-7-8-review-fixes.md');
+
+describe('the review migration: shape', () => {
+  it('is one BEGIN and one COMMIT, lock wait first, and touches no table', () => {
+    expect(count(FIX_CODE, /^BEGIN;$/gm)).toBe(1);
+    expect(count(FIX_CODE, /^COMMIT;$/gm)).toBe(1);
+    expect(FIX_CODE.trim().endsWith('COMMIT;')).toBe(true);
+    expect(FIX_CODE).toMatch(/^BEGIN;\s+SET LOCAL lock_timeout = '2s';/m);
+    expect(FIX_CODE).not.toMatch(/\bCREATE TABLE\b|\bDROP TABLE\b|\bALTER TABLE\b|\bLOCK TABLE\b/);
+  });
+  it('every change is an asserted substitution through the one session-local rewriter', () => {
+    expect(count(FIX, /CREATE OR REPLACE FUNCTION/g)).toBe(1);
+    expect(FIX).toContain('CREATE OR REPLACE FUNCTION pg_temp.lp78_rewrite');
+    expect(count(FIX_CODE, /SELECT pg_temp\.lp78_rewrite\(/g)).toBe(8);
+    expect(FIX).toContain('refusing to substitute blind');
+    expect(FIX).toContain('does not read back carrying');
+  });
+  it('declares ten balanced live proofs, p.prokind f among them', () => {
+    const proofs: string[] = declaredProofs(FIX);
+    expect(proofs.length).toBe(10);
+    for (const p of proofs) {
+      const bare = p.replace(/\\[()]/g, '');
+      expect(count(bare, /\(/g), p).toBe(count(bare, /\)/g));
+    }
+    expect(proofs.some((p) => p.includes("p.prokind = 'f'"))).toBe(true);
+  });
+  it('mentions a horse only to forbid singling one out', () => {
+    // the read-back refuses any touched body that names a horse
+    expect(FIX).toMatch(/~ 'is_horse\|horse_id'/);
+    // and no substituted replacement text reads is_horse or horse_id
+    const bodies = FIX.split('$b$')
+      .filter((_, i) => i % 2 === 1)
+      .join('\n');
+    expect(bodies).not.toMatch(/is_horse|horse_id/);
+  });
+});
+
+describe('the review migration: the dwell is a duration', () => {
+  it('the non-NULL branch refuses until the standing sighting has stood for the dwell', () => {
+    expect(FIX).toContain(
+      'ELSIF clock_timestamp() < g.lightning_off_condition_since + make_interval(secs => v_dwell / 1000.0) THEN'
+    );
+    // the refusal inside the dwell carries the STANDING first sighting
+    expect(FIX).toContain("'first_seen_at', g.lightning_off_condition_since, 'dwell_ms', v_dwell");
+    // the first sighting still records itself durably
+    expect(FIX).toContain('IF g.lightning_off_condition_since IS NULL THEN');
+  });
+  it('dwell 0 keeps the two-sighting behaviour and says so', () => {
+    expect(FIX).toMatch(/0 keeps the two-sighting\s+-- rule with no minimum duration/);
+  });
+  it('the anchor it replaces is the two-pass branch the remediation shipped', () => {
+    expect(FIX).toContain('IF v_dwell > 0 AND g.lightning_off_condition_since IS NULL THEN');
+  });
+  it('the unfreeze and the ON commit clear the sighting in the same UPDATE as the mode', () => {
+    expect(FIX).toContain(
+      "SET cluster_mode = 'must_move', cluster_epoch = v_epoch, lightning_off_condition_since = NULL, updated_at = now()"
+    );
+    expect(FIX).toContain(
+      "SET cluster_mode = 'lightning', cluster_epoch = v_epoch, lightning_off_condition_since = NULL, updated_at = now()"
+    );
+  });
+});
+
+describe('the proof around the review migration (Phase 7 side)', () => {
+  it('the harness grounds the defects on the remediation code, applies Phase 8 then the file twice, and reports sections 27 to 31', () => {
+    expect(HARNESS).toContain(FIX_FILE);
+    expect(HARNESS).toContain('LIGHTNING_P78R_MIGRATION');
+    expect(HARNESS).toContain(
+      '20261007212735_lightning_phase_8_multi_table_limits_session_statistics_pool.sql'
+    );
+    expect(count(HARNESS, /-f "\$fix"/g)).toBe(2);
+    for (const n of ['27', '28', '29', '30', '31'])
+      expect(HARNESS, n).toMatch(new RegExp(`\\\\echo '  ok  ${n} `));
+    const ground = HARNESS.indexOf('fix-ground.sql');
+    const p8 = HARNESS.indexOf('-f "$p8"');
+    const fix = HARNESS.indexOf('-f "$fix"');
+    expect(ground).toBeGreaterThan(0);
+    expect(p8).toBeGreaterThan(0);
+    expect(fix).toBeGreaterThan(p8);
+    // the production function-creation environment precedes the Phase 8 apply
+    expect(HARNESS.indexOf('ALTER DEFAULT PRIVILEGES IN SCHEMA public')).toBeLessThan(p8);
+    expect(HARNESS.indexOf('FAIL 27')).toBeLessThan(HARNESS.indexOf('FAIL 28'));
+  });
+  it('the review changelog names the file, both dwell fixes and the marker, title case, no em dash', () => {
+    for (const p of [
+      FIX_FILE,
+      'fn_cash_cluster_begin_pending_off',
+      'fn_cash_cluster_unfreeze',
+      'fn_cash_cluster_commit_lightning',
+      'pending_off_dwell_ms',
+      'lightning_off_condition_since',
+    ])
+      expect(FIXLOG, p).toContain(p);
+    expect(FIXLOG).not.toContain('—');
+    for (const h of FIXLOG.match(/^#{1,3} .+$/gm) ?? []) {
+      for (const w of h.replace(/^#+ /, '').split(/\s+/)) {
+        if (
+          /^[a-z]/.test(w) &&
+          ![
+            'a',
+            'an',
+            'and',
+            'the',
+            'of',
+            'to',
+            'in',
+            'on',
+            'or',
+            'by',
+            'at',
+            'for',
+            'is',
+            'its',
+          ].includes(w)
+        )
+          throw new Error(`heading word not in title case: ${w} in ${h}`);
+      }
+    }
+  });
+});

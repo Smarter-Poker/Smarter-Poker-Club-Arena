@@ -112,8 +112,10 @@ export interface LightningFormArgs {
 
 /**
  * Whether p_player_platforms reached the database: `sent` (the new
- * signature took it), `dropped` (the old signature refused it and the call
- * was repeated without it) or `none` (there was nothing to send).
+ * signature took it), `dropped` (the old signature refused it and the
+ * repeat without it ANSWERED) or `none` (there was nothing to send, or the
+ * repeat failed too and nothing proves the argument was the problem - e.g.
+ * the whole function absent during a deploy window).
  */
 export type LightningPlatformsDelivery = 'sent' | 'dropped' | 'none';
 
@@ -271,7 +273,10 @@ export function playerPlatformsArg(
 
 /**
  * Call with p_player_platforms when there is one, and once more without it
- * when the database does not know the argument yet.
+ * when the database does not know the argument yet. `dropped` is reported
+ * ONLY when that retry answers: a retry that also fails (the whole RPC
+ * absent during a deploy window) proves nothing about the argument, and
+ * marking it dropped would pause a healthy argument for ten minutes.
  */
 async function callWithPlatforms(
   rpc: LightningRpcClient,
@@ -282,7 +287,8 @@ async function callWithPlatforms(
   if (!platforms) return { ...(await call(rpc, fn, args)), platforms: 'none' };
   const first = await call(rpc, fn, { ...args, p_player_platforms: platforms });
   if (first.status !== 'unavailable') return { ...first, platforms: 'sent' };
-  return { ...(await call(rpc, fn, args)), platforms: 'dropped' };
+  const retry = await call(rpc, fn, args);
+  return { ...retry, platforms: retry.status === 'ok' ? 'dropped' : 'none' };
 }
 
 /** The read-only matcher. One RPC, validated. */

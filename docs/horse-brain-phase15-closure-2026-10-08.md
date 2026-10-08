@@ -55,7 +55,7 @@ Recorded in each closure record's `Audit Of October 7, 2026` section ([11](horse
 - Second looks are always `non_replayable` because they are admitted only against an in-memory read view.
 - The journal reader still reports `replayVerified: false` per hand; per-record replay results stay in the private evidence archive because writing them back to production is not allowed.
 - The Lightning exact-acceptance path has not run on a natural hand: Lightning has played no hand in production.
-- `horse_hand_review_receipts` is never pruned by the P14.1 design and grows about 57,000 rows a day.
+- `horse_hand_review_receipts` is never pruned by the P14.1 design and grows about 57,000 rows a day. Superseded on 2026-10-08 by bounded retention: see "Receipt Retention" in the [Phase 14 closure](horse-brain-phase14-closure-2026-10-07.md).
 
 ## Statement
 

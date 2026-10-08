@@ -33,7 +33,10 @@ import {
   HorseDecisionWorkerRuntime,
   type HorseDecisionWorkerDependencies,
 } from '../workerRuntime.js';
-import { HORSE_DECISION_REPLAY_STATE_VERSION } from '../replayState.js';
+import {
+  HORSE_DECISION_REPLAY_STATE_V1,
+  HORSE_DECISION_REPLAY_STATE_VERSION,
+} from '../replayState.js';
 import {
   HORSE_PLAN_ACCEPTANCE_VERSION,
   createHorsePlanEffectReceipt,
@@ -197,6 +200,7 @@ describe('P15-A exact historical replay', () => {
           phase13Joint: decideOpts[0].phase13Joint,
         },
         phase8SafetyDisabledReason: 'eligible_but_silent',
+        runtime: { node: process.version, v8: process.versions.v8, arch: process.arch },
       });
     } finally {
       liveHorsePhase8Safety.disabledReason = parked;
@@ -311,6 +315,30 @@ describe('P15-A exact historical replay', () => {
         'candidate';
     });
     expect(await outcome(candidate)).toBe('non_replayable:admission:phase10Plo4');
+    // Another JavaScript runtime is not the original artifact: refused by name.
+    for (const runtime of [
+      { node: 'v22.23.2', v8: '12.4.254.21-node.56', arch: process.arch },
+      {
+        node: process.version,
+        v8: process.versions.v8,
+        arch: process.arch === 'x64' ? 'arm64' : 'x64',
+      },
+    ]) {
+      const other = resignHorseJournalRecord(record, (body) => {
+        (body.replayState as { runtime: unknown }).runtime = runtime;
+      });
+      const verdict = await exactReplayHorseDecisionRecord(other, { runningSource: SOURCE });
+      expect(verdict.outcome).toBe('non_replayable:original_runtime');
+      expect(verdict.recordedRuntime).toEqual(runtime);
+      expect(verdict.replayed).toBeNull();
+    }
+    // A v1 state (journaled before the runtime identity) names no runtime.
+    const v1 = resignHorseJournalRecord(record, (body) => {
+      const state = body.replayState as Record<string, unknown>;
+      state.version = HORSE_DECISION_REPLAY_STATE_V1;
+      delete state.runtime;
+    });
+    expect(await outcome(v1)).toBe('non_replayable:runtime_identity');
     // A record that does not name its source cannot be matched to one.
     const unnamed = makeHorseJournalRecord(
       {
@@ -336,6 +364,14 @@ describe('P15-A exact historical replay', () => {
     expect(
       (await exactReplayHorseDecisionRecord(deep, { runningSource: deep.sourceRelease! })).outcome
     ).toBe('non_replayable:retained_fast_read_view');
+    expect(
+      (
+        await exactReplayHorseDecisionRecord(deep, {
+          runningSource: deep.sourceRelease!,
+          planReceipt: null,
+        })
+      ).acceptance.durableEffectReceipt
+    ).toBe('no_effects');
   });
 
   it('refuses an artifact the decision consulted when this process does not hold it', async () => {

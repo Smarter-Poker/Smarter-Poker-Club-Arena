@@ -45,8 +45,12 @@ import { replayThroughWorkerRuntime } from './runtimeReplay.js';
 import { stableReceipt } from './HorseDecisionReplay.js';
 import {
   HORSE_OPTIONAL_OWNER_OPTIONS,
+  currentHorseDecisionRuntime,
   isHorseDecisionReplayState,
+  isHorseDecisionReplayStateV1,
+  sameHorseDecisionRuntime,
   type HorseDecisionReplayState,
+  type HorseDecisionRuntimeIdentity,
 } from '../replayState.js';
 
 export const HORSE_EXACT_REPLAY_VERSION = 'horse-exact-replay-v1';
@@ -88,7 +92,8 @@ export interface HorseExactReplayOptions {
 /**
  * The durable accepted-effect receipt joined to the decision's own issued
  * batch (its recorded binding and effects, which an exact replay reproduces):
- *   no_effects       the decision issued an empty batch; no receipt is due.
+ *   no_effects       the decision issued an empty batch, or is a second look,
+ *                    which never issues one; no receipt is due.
  *   applied/failed   a valid receipt over exactly this batch, with its disposition.
  *   absent           the source holds no receipt for this turn (not yet
  *                    accepted, not accepted, or not durable): never applied.
@@ -124,6 +129,9 @@ export interface HorseExactReplayVerdict {
   decisionId: string;
   recordedSource: string | null;
   runningSource: string;
+  /** The JavaScript runtime the record names (null when it names none) and this process's. */
+  recordedRuntime: HorseDecisionRuntimeIdentity | null;
+  runningRuntime: HorseDecisionRuntimeIdentity;
   outcome: HorseExactReplayOutcome;
   firstDifference: string | null;
   /** True only for `replayed_exact`. */
@@ -225,7 +233,13 @@ function joinEffectReceipt(
   record: HorseJournalRecord,
   body: Record<string, unknown>
 ): HorseExactReplayEffectReceipt {
-  if (Array.isArray(body.effects) && body.effects.length === 0) return 'no_effects';
+  // A second look never emits a batch; a FAST decision may issue an empty one.
+  const snapshot = body.snapshot as { type?: unknown } | undefined;
+  if (
+    snapshot?.type === 'DECIDE_DEEP' ||
+    (Array.isArray(body.effects) && body.effects.length === 0)
+  )
+    return 'no_effects';
   if (planReceipt === undefined) return 'no_receipt_source';
   if (planReceipt === null) return 'absent';
   try {
@@ -322,6 +336,8 @@ export async function exactReplayHorseDecisionRecord(
     decisionId: obj(raw) && typeof raw.eventId === 'string' ? raw.eventId : 'unknown',
     recordedSource: null,
     runningSource: options.runningSource,
+    recordedRuntime: null,
+    runningRuntime: currentHorseDecisionRuntime(),
     outcome: 'non_replayable:record',
     firstDifference: null,
     replayVerified: false,
@@ -383,8 +399,18 @@ export async function exactReplayHorseDecisionRecord(
   } catch (error) {
     return finish(`non_replayable:${refusalInput(error)}`);
   }
-  if (!isHorseDecisionReplayState(body.replayState)) return finish('non_replayable:replay_state');
+  if (!isHorseDecisionReplayState(body.replayState))
+    return finish(
+      isHorseDecisionReplayStateV1(body.replayState)
+        ? 'non_replayable:runtime_identity'
+        : 'non_replayable:replay_state'
+    );
   const state: HorseDecisionReplayState = body.replayState;
+  verdict.recordedRuntime = state.runtime;
+  // Math library results can differ in the last bit between V8 versions and
+  // architectures; a record replays only on the runtime that made it.
+  if (!sameHorseDecisionRuntime(state.runtime, verdict.runningRuntime))
+    return finish('non_replayable:original_runtime');
   if (!horseDecisionEffectsAreValid(body.effects)) return finish('non_replayable:effects');
   if (!obj(body.planBinding)) return finish('non_replayable:plan_binding');
   verdict.original = {

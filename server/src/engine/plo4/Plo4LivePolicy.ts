@@ -508,13 +508,6 @@ export function plo4ReferenceDeviation(
   if (node.street === 'preflop') {
     if (rules.headsUpButtonOpen && node.role === 'rfi' && node.position === 'button')
       return { reason: 'heads_up_button_open', fraction: 0 };
-    if (
-      rules.headsUpBigBlindThreeBet &&
-      node.role === 'defense' &&
-      node.position === 'big_blind' &&
-      node.callCost > 0
-    )
-      return { reason: 'heads_up_big_blind_three_bet', fraction: 1 };
     return null;
   }
   if (

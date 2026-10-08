@@ -95,7 +95,7 @@ vi.mock('./HorsePhase10Authority.js', async (importOriginal) => {
           transient: false,
         },
       'turns-test-phase10-main',
-      'plo4-policy-round3-v1'
+      'plo4-policy-round3-v2'
     ),
   };
 });
@@ -1913,7 +1913,7 @@ describe('P10.3 acceptance-time Phase 10 authority recheck (the Phase 8 law)', (
     liveHorsePhase10Authority.refresh();
     const worker = new HorseQualifiedAuthorityHolder(
       `turns-p10-worker-${approval}`,
-      'plo4-policy-round3-v1'
+      'plo4-policy-round3-v2'
     );
     worker.apply(qualifiedPhase10TestAdmission(approval));
     liveHorsePhase10Authority.observeWorker(worker.receipt());
@@ -1925,7 +1925,7 @@ describe('P10.3 acceptance-time Phase 10 authority recheck (the Phase 8 law)', (
     baseline: { action: string; amount: number | null },
     selected = true
   ) => ({
-    version: 'plo4-policy-round3-v1',
+    version: 'plo4-policy-round3-v2',
     mode: selected ? 'candidate' : 'shadow',
     eligible: true,
     fired: true,
@@ -2004,7 +2004,7 @@ describe('P10.3 acceptance-time Phase 10 authority recheck (the Phase 8 law)', (
     expect(witness.executionStatus).toBe('intended');
     expect(witness.selected).toEqual({ action: 'bet', amount: 20 });
     expect(witness.phase10Authority).toMatchObject({
-      continuationVersion: 'plo4-policy-round3-v1',
+      continuationVersion: 'plo4-policy-round3-v2',
       mode: 'candidate',
       selection: 'controller_accepted',
       verdict: 'usable',

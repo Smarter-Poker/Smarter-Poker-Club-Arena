@@ -782,18 +782,19 @@ describe('P10.1 binds the facts the PLO4 proposal consumed', () => {
     expect(live.plo4InputBindingIsValid(inputs)).toBe(true);
   });
 
-  it('enforces the exact pot-limit raise-to and records the geometry it used', () => {
+  it("records the exact pot-limit raise-to geometry, and retains the big blind's reference fold", () => {
     // Heads-up preflop, hero in the big blind facing a raise to 6 (pot 8):
     // call 4, then raise the pot of 8 + 4 = 12, so the pot-limit raise-to is
-    // 6 + 12 = 18. The reference folds; round 3 three-bets the pot.
+    // 6 + 12 = 18. Round 3 v2 never three-bets the big blind (it won only
+    // against horses that over-fold), so the reference fold is the decision.
     const input = bigBlindDefenseSpot();
     setHero(input, { stack: 400 });
     input.state.players[1].stack = 400;
     input.state.maxRaiseTo = 400; // a looser engine bound must not lift the pot limit
     const loose = run(input);
     expect(loose.receipt.role).toBe('defense');
-    expect(loose.receipt.reason).toBe('heads_up_big_blind_three_bet');
-    expect(loose.decision).toMatchObject({ action: 'raise', amount: 18 });
+    expect(loose.receipt.reason).toBe('reference_retained');
+    expect(loose.decision).toBe(input.baseline);
     expect(loose.receipt.inputs!.geometry).toMatchObject({
       potLimitRaiseTo: 18,
       stackRaiseTo: 402,
@@ -801,16 +802,17 @@ describe('P10.1 binds the facts the PLO4 proposal consumed', () => {
       callCost: 4,
       chipUnit: 0.01,
     });
-    // A tighter engine bound caps the raise inside the pot limit. (A stack
-    // short enough to cap it is a reshove node, which never deviates.)
+    // A tighter engine bound is the cap, inside the pot limit.
     input.state.maxRaiseTo = 16;
-    const capped = run(input);
-    expect(capped.decision).toMatchObject({ action: 'raise', amount: 16 });
-    expect(capped.receipt.inputs!.geometry).toMatchObject({ stackRaiseTo: 402, wagerCap: 16 });
-    setHero(input, { stack: 13 });
-    const reshove = run(input);
-    expect(reshove.receipt.role).toBe('reshove');
-    expect(reshove.decision).toBe(input.baseline);
+    expect(run(input).receipt.inputs!.geometry).toMatchObject({ stackRaiseTo: 402, wagerCap: 16 });
+    // The heads-up button open is the controller's minimum raise, inside the cap.
+    const open = plo4ReferenceSpot('premium_open');
+    open.hero.cards = plo4Cards('2c 7d 9h Ks');
+    open.baseline = { action: 'fold', thinkTime: 0 };
+    const opened = run(open);
+    expect(opened.receipt.reason).toBe('heads_up_button_open');
+    expect(opened.decision).toMatchObject({ action: 'raise', amount: 4 });
+    expect(opened.receipt.inputs!.geometry).toMatchObject({ potLimitRaiseTo: 6, wagerCap: 6 });
   });
 
   it.each([

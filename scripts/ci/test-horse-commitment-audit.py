@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Five sequential, disposable PG17 daily-audit/reader/selection controls. No remote connection."""
+"""Seven sequential, disposable PG17 daily-audit/reader/selection/roster-identity controls. No remote connection."""
 from pathlib import Path
 import argparse
 import hashlib
@@ -28,6 +28,9 @@ INPUTS = {
     'selection_setup': ('scripts/ci/probes/horse-commitment-audit/selection-setup.sql', '245de0734cf4c976b943fb5fad2139577755f67bbf98aed9fe70d33776cfff0a'),
     'selection': ('supabase/migrations/20261007075304_horse_commitment_selection_receipts.sql', '61e3dcc24fe51724be86befe955427f3999175e89347d9dcabf94ec9da5666fd'),
     'selection58': ('scripts/ci/probes/horse-commitment-audit/selection-receipts.sql', '35060c9879e9d61261e6c9b828af9a8249526b35bbf4931840fc2678c3b1d58b'),
+    'roster_identity': ('supabase/migrations/20261008041707_horse_commitment_audit_accepted_roster_identity.sql', '23c6c6f2a5941c200af5194d0ed290aead05ff0d98d59d9eb34b6d9e1a95c623'),
+    'roster_basis_setup': ('scripts/ci/probes/horse-commitment-audit/roster-basis-setup.sql', '5058a99b24027e891605a53efb78becd26fd3e240b074233dbddc6b2cd1a09d6'),
+    'roster_basis40': ('scripts/ci/probes/horse-commitment-audit/roster-basis.sql', '51d166ce92895e810df4b6eaa2c4f7011e3a335aa19a7e83e2503836fa111eb1'),
 }
 JOBS = (
     ('R1_duplicate_negative', 'r1', 'roster24', None),
@@ -35,6 +38,8 @@ JOBS = (
     ('R2_roster24', 'r2', 'roster24', b'synthetic_roster_controls_only_if_executed|24'),
     ('private_reader27', 'reader', 'reader27', b'synthetic_reader_controls_only_if_executed|27'),
     ('selection_receipts58', 'selection', 'selection58', b'synthetic_selection_controls_only_if_executed|58'),
+    ('roster_identity_retained58', 'roster_identity', 'selection58', b'synthetic_selection_controls_only_if_executed|58'),
+    ('roster_basis40', 'roster_basis', 'roster_basis40', b'synthetic_roster_basis_controls_only_if_executed|40'),
 )
 
 
@@ -245,12 +250,14 @@ def main():
                     if checked(name + '-repeat-refused-snapshot', psql, reader_snapshot_sql) != reader_before:
                         raise RuntimeError('reader_repeat_refusal_changed_state')
                     job['migrationRepeatRefusedUnchanged'] = True
-                elif body == 'selection':
+                elif body in ('selection', 'roster_identity', 'roster_basis'):
                     # P14.3 forward migration on the real r2 step and reader,
                     # never on a copied body. The selection setup only extends
                     # the fixture source tables to the columns the readers name.
                     for item in ('reader_auth', 'r2', 'reader', 'selection_setup'):
                         checked(name + '-' + item, psql, payloads[item])
+                    if body != 'selection':
+                        checked(name + '-selection', psql, payloads['selection'])
                     selection_snapshot_sql = b"""SELECT jsonb_build_object(
                       'functions',(SELECT jsonb_agg(jsonb_build_object('sig',p.oid::regprocedure::text,
                         'definition',pg_get_functiondef(p.oid),'owner',p.proowner,'acl',p.proacl) ORDER BY p.oid::regprocedure::text)
@@ -267,53 +274,127 @@ def main():
                         FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
                         WHERE n.nspname='public' AND c.relname LIKE 'horse_commitment_%' AND c.relkind='r'),
                       'days',(SELECT coalesce(jsonb_agg(to_jsonb(d) ORDER BY day),'[]'::jsonb) FROM public.horse_commitment_audit_days d))"""
-                    original = checked(name + '-original-snapshot', psql, selection_snapshot_sql)
-                    definition = checked(name + '-original-definition', psql,
-                        b"SELECT pg_get_functiondef('public.fn_horse_commitment_audit_step()'::regprocedure);")
-                    # A drifted step header or body must refuse the whole file
-                    # and leave the drifted state exactly as it was.
-                    for drift, sql in (
-                        ('header', b'ALTER FUNCTION public.fn_horse_commitment_audit_step() COST 123;'),
-                        ('body', b"""DO $drift$
-                          DECLARE source text; definition text;
-                          BEGIN
-                            SELECT prosrc,pg_get_functiondef(oid) INTO source,definition
-                              FROM pg_proc WHERE oid='public.fn_horse_commitment_audit_step()'::regprocedure;
-                            EXECUTE replace(definition,source,source || E'\\n-- synthetic unreviewed body\\n');
-                          END; $drift$;"""),
-                    ):
-                        checked(name + '-drift-' + drift, psql, sql)
-                        changed = checked(name + '-drift-snapshot-' + drift, psql, selection_snapshot_sql)
-                        if changed == original:
-                            raise RuntimeError('selection_drift_not_created_' + drift)
-                        code, _, err = command(name + '-refuse-' + drift, psql, payloads['selection'])
-                        if code != 3 or b'ERROR:  P0001: horse_commitment_selection_preimage_changed' not in err:
-                            raise RuntimeError('selection_drift_not_refused_' + drift)
-                        if checked(name + '-refused-snapshot-' + drift, psql, selection_snapshot_sql) != changed:
-                            raise RuntimeError('selection_refusal_changed_state_' + drift)
-                        checked(name + '-restore-original-' + drift, psql, definition)
-                        if checked(name + '-restored-snapshot-' + drift, psql, selection_snapshot_sql) != original:
-                            raise RuntimeError('selection_original_restore_mismatch_' + drift)
-                    job['migrationRefusals'] = ['header_cost_123', 'unreviewed_body']
-                    checked(name + '-selection', psql, payloads['selection'])
-                    selection_before = checked(name + '-installed-snapshot', psql, selection_snapshot_sql)
-                    if selection_before == original:
-                        raise RuntimeError('selection_migration_changed_nothing')
-                    code, _, err = command(name + '-selection-repeat', psql, payloads['selection'])
-                    if code != 3 or b'ERROR:  P0001: horse_commitment_selection_receipts_already_installed' not in err:
-                        raise RuntimeError('selection_existing_target_not_refused')
-                    if checked(name + '-repeat-refused-snapshot', psql, selection_snapshot_sql) != selection_before:
-                        raise RuntimeError('selection_repeat_refusal_changed_state')
-                    job['migrationRepeatRefusedUnchanged'] = True
-                    # The retained 85/24 controls must still hold on the new
-                    # step body; their markers are checked here, not counted
-                    # into this job's own synthetic rows.
-                    for retained, retained_marker in (('format85', b'prepared_expectations_reached_only_if_this_fixture_is_actually_executed|85'),
-                                                      ('roster24', b'synthetic_roster_controls_only_if_executed|24')):
-                        code, out, err = command(name + '-retained-' + retained, psql, payloads[retained], timeout=30)
-                        if code != 0 or retained_marker not in out or b'ERROR:' in err:
-                            raise RuntimeError('selection_retained_control_failed_' + retained)
-                    job['retainedControlsOnNewStep'] = [85, 24]
+                    if body == 'roster_basis':
+                        # The epoch is the first roster ever captured: record it at
+                        # noon two days ago, then install the identity migration.
+                        checked(name + '-roster-basis-setup', psql, payloads['roster_basis_setup'])
+                        checked(name + '-roster-identity', psql, payloads['roster_identity'])
+                        selection_before = checked(name + '-installed-snapshot', psql, selection_snapshot_sql)
+                    elif body == 'roster_identity':
+                        roster_original = checked(name + '-original-snapshot', psql, selection_snapshot_sql)
+                        # No roster has been captured yet: the audit cannot adopt one.
+                        code, _, err = command(name + '-refuse-no-roster', psql, payloads['roster_identity'])
+                        if code != 3 or b'ERROR:  P0001: horse_commitment_roster_identity_no_accepted_roster' not in err:
+                            raise RuntimeError('roster_identity_without_roster_not_refused')
+                        if checked(name + '-no-roster-refused-snapshot', psql, selection_snapshot_sql) != roster_original:
+                            raise RuntimeError('roster_identity_refusal_changed_state')
+                        # The first roster is captured now, after every fixture day,
+                        # so the retained controls run wholly before the epoch.
+                        checked(name + '-epoch-now', psql, b"""INSERT INTO smarter_private.accepted_hand_rosters(table_id,hand_number,hand_id,
+                          post_commit_payload_hash,status,roster,captured_at) VALUES('66666666-6666-4666-8666-666666666666',1,
+                          '77777777-7777-4777-8777-777777777777',repeat('e',64),'captured','{}'::jsonb,now());""")
+                        original = checked(name + '-epoch-snapshot', psql, selection_snapshot_sql)
+                        step_definition = checked(name + '-original-step-definition', psql,
+                            b"SELECT pg_get_functiondef('public.fn_horse_commitment_audit_step()'::regprocedure);")
+                        reader_definition = checked(name + '-original-reader-definition', psql,
+                            b"SELECT pg_get_functiondef('public.fn_horse_commitment_review_page(date,timestamptz,uuid,uuid,integer)'::regprocedure);")
+                        for drift, sql, expected, restore in (
+                            ('header', b'ALTER FUNCTION public.fn_horse_commitment_audit_step() COST 123;',
+                             b'ERROR:  P0001: horse_commitment_roster_identity_preimage_changed', step_definition),
+                            ('body', b"""DO $drift$
+                              DECLARE source text; definition text;
+                              BEGIN
+                                SELECT prosrc,pg_get_functiondef(oid) INTO source,definition
+                                  FROM pg_proc WHERE oid='public.fn_horse_commitment_audit_step()'::regprocedure;
+                                EXECUTE replace(definition,source,source || E'\\n-- synthetic unreviewed body\\n');
+                              END; $drift$;""", b'ERROR:  P0001: horse_commitment_roster_identity_preimage_changed', step_definition),
+                            ('reader', b"""DO $drift$
+                              DECLARE source text; definition text;
+                              BEGIN
+                                SELECT prosrc,pg_get_functiondef(oid) INTO source,definition
+                                  FROM pg_proc WHERE oid='public.fn_horse_commitment_review_page(date,timestamptz,uuid,uuid,integer)'::regprocedure;
+                                EXECUTE replace(definition,source,source || E'\\n-- synthetic unreviewed body\\n');
+                              END; $drift$;""", b'ERROR:  P0001: horse_commitment_roster_identity_reader_preimage_changed', reader_definition),
+                        ):
+                            checked(name + '-drift-' + drift, psql, sql)
+                            changed = checked(name + '-drift-snapshot-' + drift, psql, selection_snapshot_sql)
+                            if changed == original:
+                                raise RuntimeError('roster_identity_drift_not_created_' + drift)
+                            code, _, err = command(name + '-refuse-' + drift, psql, payloads['roster_identity'])
+                            if code != 3 or expected not in err:
+                                raise RuntimeError('roster_identity_drift_not_refused_' + drift)
+                            if checked(name + '-refused-snapshot-' + drift, psql, selection_snapshot_sql) != changed:
+                                raise RuntimeError('roster_identity_refusal_changed_state_' + drift)
+                            checked(name + '-restore-original-' + drift, psql, restore)
+                            if checked(name + '-restored-snapshot-' + drift, psql, selection_snapshot_sql) != original:
+                                raise RuntimeError('roster_identity_original_restore_mismatch_' + drift)
+                        job['migrationRefusals'] = ['no_accepted_roster', 'header_cost_123', 'unreviewed_body', 'unreviewed_reader_body']
+                        checked(name + '-roster-identity', psql, payloads['roster_identity'])
+                        selection_before = checked(name + '-installed-snapshot', psql, selection_snapshot_sql)
+                        if selection_before == original:
+                            raise RuntimeError('roster_identity_migration_changed_nothing')
+                        code, _, err = command(name + '-roster-identity-repeat', psql, payloads['roster_identity'])
+                        if code != 3 or b'ERROR:  P0001: horse_commitment_roster_identity_already_installed' not in err:
+                            raise RuntimeError('roster_identity_existing_target_not_refused')
+                        if checked(name + '-repeat-refused-snapshot', psql, selection_snapshot_sql) != selection_before:
+                            raise RuntimeError('roster_identity_repeat_refusal_changed_state')
+                        job['migrationRepeatRefusedUnchanged'] = True
+                        # Every retained control must hold on the new step body
+                        # while every fixture hand predates the epoch.
+                        for retained, retained_marker in (('format85', b'prepared_expectations_reached_only_if_this_fixture_is_actually_executed|85'),
+                                                          ('roster24', b'synthetic_roster_controls_only_if_executed|24')):
+                            code, out, err = command(name + '-retained-' + retained, psql, payloads[retained], timeout=30)
+                            if code != 0 or retained_marker not in out or b'ERROR:' in err:
+                                raise RuntimeError('roster_identity_retained_control_failed_' + retained)
+                        job['retainedControlsOnNewStep'] = [85, 24, 58]
+                    else:
+                        original = checked(name + '-original-snapshot', psql, selection_snapshot_sql)
+                        definition = checked(name + '-original-definition', psql,
+                            b"SELECT pg_get_functiondef('public.fn_horse_commitment_audit_step()'::regprocedure);")
+                        # A drifted step header or body must refuse the whole file
+                        # and leave the drifted state exactly as it was.
+                        for drift, sql in (
+                            ('header', b'ALTER FUNCTION public.fn_horse_commitment_audit_step() COST 123;'),
+                            ('body', b"""DO $drift$
+                              DECLARE source text; definition text;
+                              BEGIN
+                                SELECT prosrc,pg_get_functiondef(oid) INTO source,definition
+                                  FROM pg_proc WHERE oid='public.fn_horse_commitment_audit_step()'::regprocedure;
+                                EXECUTE replace(definition,source,source || E'\\n-- synthetic unreviewed body\\n');
+                              END; $drift$;"""),
+                        ):
+                            checked(name + '-drift-' + drift, psql, sql)
+                            changed = checked(name + '-drift-snapshot-' + drift, psql, selection_snapshot_sql)
+                            if changed == original:
+                                raise RuntimeError('selection_drift_not_created_' + drift)
+                            code, _, err = command(name + '-refuse-' + drift, psql, payloads['selection'])
+                            if code != 3 or b'ERROR:  P0001: horse_commitment_selection_preimage_changed' not in err:
+                                raise RuntimeError('selection_drift_not_refused_' + drift)
+                            if checked(name + '-refused-snapshot-' + drift, psql, selection_snapshot_sql) != changed:
+                                raise RuntimeError('selection_refusal_changed_state_' + drift)
+                            checked(name + '-restore-original-' + drift, psql, definition)
+                            if checked(name + '-restored-snapshot-' + drift, psql, selection_snapshot_sql) != original:
+                                raise RuntimeError('selection_original_restore_mismatch_' + drift)
+                        job['migrationRefusals'] = ['header_cost_123', 'unreviewed_body']
+                        checked(name + '-selection', psql, payloads['selection'])
+                        selection_before = checked(name + '-installed-snapshot', psql, selection_snapshot_sql)
+                        if selection_before == original:
+                            raise RuntimeError('selection_migration_changed_nothing')
+                        code, _, err = command(name + '-selection-repeat', psql, payloads['selection'])
+                        if code != 3 or b'ERROR:  P0001: horse_commitment_selection_receipts_already_installed' not in err:
+                            raise RuntimeError('selection_existing_target_not_refused')
+                        if checked(name + '-repeat-refused-snapshot', psql, selection_snapshot_sql) != selection_before:
+                            raise RuntimeError('selection_repeat_refusal_changed_state')
+                        job['migrationRepeatRefusedUnchanged'] = True
+                        # The retained 85/24 controls must still hold on the new
+                        # step body; their markers are checked here, not counted
+                        # into this job's own synthetic rows.
+                        for retained, retained_marker in (('format85', b'prepared_expectations_reached_only_if_this_fixture_is_actually_executed|85'),
+                                                          ('roster24', b'synthetic_roster_controls_only_if_executed|24')):
+                            code, out, err = command(name + '-retained-' + retained, psql, payloads[retained], timeout=30)
+                            if code != 0 or retained_marker not in out or b'ERROR:' in err:
+                                raise RuntimeError('selection_retained_control_failed_' + retained)
+                        job['retainedControlsOnNewStep'] = [85, 24]
                 else:
                     checked(name + '-' + body, psql, payloads[body])
                 result['executed'] = True
@@ -324,7 +405,7 @@ def main():
                     fixture_sql += b"\nSELECT 'synthetic_reader_controls_only_if_executed',27;\n"
                 code, out, err = command(name + '-fixture', psql, fixture_sql, timeout=30)
                 job['fixtureReturncode'] = code
-                if fixture == 'selection58':
+                if fixture in ('selection58', 'roster_basis40'):
                     job['fixtureRollbackUnchanged'] = checked(
                         name + '-post-fixture-snapshot', psql, selection_snapshot_sql) == selection_before
                     if not job['fixtureRollbackUnchanged']:
@@ -351,6 +432,8 @@ def main():
                         job['syntheticReaderRows'] = 27
                     elif fixture == 'selection58':
                         job['selectionChecks'] = 58
+                    elif fixture == 'roster_basis40':
+                        job['rosterBasisChecks'] = 40
                     else:
                         job['caseRows'] = 85 if fixture == 'format85' else 24
             except BaseException as error:

@@ -1,0 +1,41 @@
+"""Phase 12 round 3, development-seed human-calibrated check (WIN-POP population
+human-calibrated-v1-20261008). Per pack: the hero's after-rake net per hand
+against the human-calibrated field for the round-3 candidate arm and for the
+reference arm, as the winning contract's statistic (equal weight per profile,
+hands pooled within a profile, two-sided 99% normal interval), and the paired
+difference. Development measurement only, never qualification."""
+import json, glob, math, sys, collections
+Z = 2.5758293035489004
+def strat(parts):
+    # parts: list of (n, sum, sumsq) per profile, in bb
+    k = len(parts); mean = 0.0; var = 0.0
+    for n, s, ss in parts:
+        m = s / n; v = (ss - n * m * m) / (n - 1)
+        mean += m / k; var += v / n / (k * k)
+    se = math.sqrt(var)
+    return {'meanBbPer100': round(mean * 100, 3), 'confidence99BbPer100': [round((mean - Z * se) * 100, 3), round((mean + Z * se) * 100, 3)]}
+def main(directory, dest):
+    out = {}
+    for v in ['short_deck', 'pineapple', 'flh', 'flo8']:
+        prof = collections.defaultdict(lambda: [0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        seeds = set(); pop = None
+        for f in glob.glob(f'{directory}/p12c-{v}-*.json'):
+            d = json.load(open(f)); pop = d.get('population') or 'horse-population (HorseLogic, production styles)'; seeds.add(d['seed'])
+            p = prof[d['profileId']]
+            p[0] += d['pairs']
+            p[1] += d['candidateCents'] / 200; p[2] += d['candidateSqCents'] / 40000
+            p[3] += d['referenceCents'] / 200; p[4] += d['referenceSqCents'] / 40000
+            dd = [r['diff'] / 200 for r in d['rows']]
+            p[5] += sum(dd); p[6] += sum(x * x for x in dd)
+        if not prof: continue
+        out[v] = {
+            'population': pop, 'seeds': sorted(seeds), 'pairs': sum(p[0] for p in prof.values()),
+            'candidate': strat([(p[0], p[1], p[2]) for p in prof.values()]),
+            'reference': strat([(p[0], p[3], p[4]) for p in prof.values()]),
+            'pairedDifference': strat([(p[0], p[5], p[6]) for p in prof.values()]),
+            'profiles': {k: {'pairs': p[0], 'candidateBbPer100': round(p[1] / p[0] * 100, 3), 'referenceBbPer100': round(p[3] / p[0] * 100, 3)} for k, p in sorted(prof.items())},
+        }
+    json.dump(out, open(dest, 'w'), indent=1)
+    for v, r in out.items():
+        print(v, r['pairs'], 'cand', r['candidate'], 'ref', r['reference'], 'diff', r['pairedDifference'])
+main(sys.argv[1], sys.argv[2])

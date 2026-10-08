@@ -20,7 +20,10 @@ import { seedFastRandom } from '../HorseEval.js';
 import { drainFires, enableBrainTelemetry } from '../BrainTelemetry.js';
 import { plo4Cards, plo4ReferenceSpot } from '../../benchmark/Plo4PolicyEvidence.js';
 import { omahaVariantSpot, variantCards } from '../../benchmark/OmahaVariantPolicyEvidence.js';
-import { remainingVariantSpot } from '../../benchmark/RemainingVariantPolicyEvidence.js';
+import {
+  round3ChangedSpot,
+  type Round3Spot,
+} from '../remainingVariants/RemainingVariantRound3Spots.test-support.js';
 import { horseDecisionReceiptIsValid } from './responseValidation.js';
 import { jointPolicyFixture } from '../multiway/JointRangeFixture.test-support.js';
 import type { HorseDiscardExecutionObservation } from '../../services/horseDecisionJournal/discard.js';
@@ -419,6 +422,37 @@ async function transportOnlyCommitFixture(
     ],
   });
   return pending;
+}
+
+/** A real Phase 12 cash decision at the first round-3 declared spot where the
+ * pack's proposal differs from the reference (HorseLogic seeded identically). */
+function round3Decision(
+  variant: 'short_deck' | 'pineapple' | 'flh' | 'flo8',
+  mode: 'shadow' | 'candidate',
+  seed: number
+) {
+  const decide = (spot: Round3Spot) => {
+    seedFastRandom(seed);
+    return HorseLogic.decide(
+      spot.hero,
+      spot.state,
+      'balanced',
+      {},
+      {
+        telemetry: false,
+        mind: false,
+        decisionTimeMs: 0,
+        phase12Remaining: mode,
+        phase12EvidenceMode: true,
+      }
+    );
+  };
+  const make = round3ChangedSpot(
+    variant,
+    'cash',
+    (spot) => decide(spot).remainingVariantPolicy?.changed === true
+  );
+  return decide(make());
 }
 
 describe('LiveHorseDecisionWorkerClient', () => {
@@ -2960,27 +2994,10 @@ describe('P12-A: a duplicate or stale Pineapple discard answer at the client bou
 
 describe('P12.1: a Short Deck/Pineapple/FLH/FLO8 receipt whose input binding fails validation', () => {
   /** A real Phase 12 cash decision from the brain, with its frozen input binding. */
-  const variantDecision = (mode: 'shadow' | 'candidate') => {
-    // A FLO8 flop with the nut low and a pair of aces: the candidate raises
-    // the canonical fixed amount where the reference calls.
-    const spot = remainingVariantSpot('flo8', 'flop', 2);
-    seedFastRandom(100105);
-    return structuredClone(
-      HorseLogic.decide(
-        spot.hero,
-        spot.state,
-        'balanced',
-        {},
-        {
-          telemetry: false,
-          mind: false,
-          decisionTimeMs: 0,
-          phase12Remaining: mode,
-          phase12EvidenceMode: true,
-        }
-      )
-    );
-  };
+  const variantDecision = (mode: 'shadow' | 'candidate') =>
+    // A FLO8 heads-up button first in: the round-3 candidate opens the
+    // canonical fixed amount where the reference does not.
+    structuredClone(round3Decision('flo8', mode, 100105));
   const corruptBinding = (decision: ReturnType<typeof variantDecision>) => {
     (
       decision.remainingVariantPolicy!.inputs!.approximation as { solverInput: unknown }
@@ -3298,25 +3315,9 @@ describe('P12.3 per-pack authority at the client boundary', () => {
     });
     return { worker, client, holders, receipts };
   }
-  /** A real FLH cash candidate (a turn value raise the worker would select). */
+  /** A real FLH cash candidate (a round-3 heads-up open the worker would select). */
   const selectedFlh = (authority: unknown) => {
-    const spot = remainingVariantSpot('flh', 'turn', 2);
-    seedFastRandom(100101);
-    const decision = structuredClone(
-      HorseLogic.decide(
-        spot.hero,
-        spot.state,
-        'balanced',
-        {},
-        {
-          telemetry: false,
-          mind: false,
-          decisionTimeMs: 0,
-          phase12Remaining: 'candidate',
-          phase12EvidenceMode: true,
-        }
-      )
-    );
+    const decision = structuredClone(round3Decision('flh', 'candidate', 100101));
     decision.remainingVariantPolicy!.authority = authority as never;
     return decision;
   };

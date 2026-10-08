@@ -1270,7 +1270,11 @@ export function evaluateRemainingVariantPolicy(
   const maxStackBB = limit
     ? REMAINING_VARIANT_DOMAIN.fixedLimitMaxStackBB
     : REMAINING_VARIANT_DOMAIN.maxStackBB;
-  receipt.depthBB = depth;
+  // Reachability 2026-10-08: with every live opponent away (sitting out, not
+  // all-in) no seat can cover, the depth is -Infinity and the pack refuses it
+  // below. The receipt records that as an unavailable depth: a non-finite
+  // number cannot be journaled, and the whole decision record was lost.
+  receipt.depthBB = Number.isFinite(depth) ? depth : null;
   if (!Number.isFinite(depth) || depth <= 0 || depth > maxStackBB || (s.ante ?? 0) / s.bigBlind > 1)
     return finish('depth_or_ante_outside_pack');
   // Captured by the sampler below when the policy samples for itself; null

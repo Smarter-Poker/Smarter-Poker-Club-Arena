@@ -60,9 +60,11 @@ s6=$M/20261001154813_lightning_phase_6_settlement_the_hand_settles_onto_its_anch
 s6r=$M/20261001201216_lightning_phase_6_remediation_a_frozen_cluster_settles_nothi.sql
 mine=${LIGHTNING_P7_MIGRATION:-$M/20261001222856_lightning_phase_7_the_pool_reverts_to_must_move_and_the_tick.sql}
 rem=${LIGHTNING_P7R_MIGRATION:-$M/20261007222717_lightning_phase_7_remediation_the_reversion_review_findings_.sql}
+p8=$M/20261007212735_lightning_phase_8_multi_table_limits_session_statistics_pool.sql
+fix=${LIGHTNING_P78R_MIGRATION:-$M/20261008043021_lightning_phase_7_and_8_review_fixes_the_dwell_is_a_duration.sql}
 for f in "$base_fixture" "$pop_fixture" "$p5_fixture" "$p9_fixture" "$r2_fixture" "$p6_fixture" "$s6_fixture" \
          "$phase1" "$phase1r" "$phase2" "$phase2r" "$phase3" "$phase3r" "$phase4" "$phase4r" \
-         "$phase5" "$phase5r" "$phase9" "$phase9r" "$r2a" "$r2b" "$r2c" "$r2d" "$p6" "$s6" "$s6r" "$mine" "$rem"; do
+         "$phase5" "$phase5r" "$phase9" "$phase9r" "$r2a" "$r2b" "$r2c" "$r2d" "$p6" "$s6" "$s6r" "$mine" "$rem" "$p8" "$fix"; do
   [ -f "$f" ] || { echo "FAIL: missing input $f"; exit 1; }
 done
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/lightning-p7-test.XXXXXX")
@@ -1656,10 +1658,411 @@ END $$;
 \echo '  ok  26 RE-APPLIABLE  applied a second time the remediation leaves every fn_lightning_ and fn_cash_cluster body, acl and comment, seven row counts, every Cluster mode, epoch and dwell sighting and every seat stack exactly as they were'
 ASSERT
 
+# ===========================================================================
+# THE REVIEW MIGRATION (20261008043021): the Phase 7/8 adversarial-review
+# findings on the dwell and the stale sighting, each proven real on the
+# remediation code, then fixed by the file, then re-applied. Phase 8
+# (20261007212735) is applied first - the review file substitutes into the
+# functions it introduced - under production's function-creation environment
+# (default ACLs and the autorevoke event trigger), reproduced verbatim as the
+# Phase 8 harness grounds it.
+# ===========================================================================
+cat > "$fixture/fix-ground.sql" <<'ASSERT'
+-- PRODUCTION'S auth.role(): the role claim of the request, NULL without one.
+CREATE OR REPLACE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $f$
+  SELECT nullif(current_setting('request.jwt.claim.role', true), '');
+$f$;
+-- PRODUCTION'S PER-HAND PER-PLAYER FACTS, as the Phase 8 harness grounds it.
+CREATE TABLE IF NOT EXISTS public.ca_hand_facts (
+  hand_id uuid NOT NULL, user_id uuid NOT NULL, club_id uuid, table_id uuid, played_at timestamptz,
+  position text, net numeric, vpip boolean, pfr boolean, went_to_showdown boolean,
+  PRIMARY KEY (hand_id, user_id));
+-- ===========================================================================
+-- PRODUCTION'S FUNCTION-CREATION ENVIRONMENT, reproduced verbatim, because
+-- the file under test recreates functions inside it. In production every new
+-- function in public is born executable by anon, authenticated and
+-- service_role (pg_default_acl), and trg_autorevoke_privileged_anon rewrites
+-- ACLs after CREATE FUNCTION, ALTER FUNCTION and GRANT. The first apply of
+-- 20261007212735 was refused by its own ACL read-back exactly because this
+-- fixture had neither (2026-10-07), so both are ground now. Installed AFTER
+-- the chain and the helpers, which matches production: every earlier
+-- Lightning migration revoked its own grants explicitly, so the chain's ACLs
+-- here equal the chain's ACLs there.
+-- ===========================================================================
+CREATE TABLE IF NOT EXISTS public.privileged_function_lock (
+  function_signature text PRIMARY KEY,
+  security_definer   boolean NOT NULL DEFAULT false,
+  reason             text NOT NULL,
+  locked_at          timestamptz NOT NULL DEFAULT now());
+CREATE OR REPLACE FUNCTION public.fn_autorevoke_privileged_anon()
+ RETURNS event_trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  obj          record;
+  lk           record;
+  v_name       text;
+  v_sig        text;
+  v_secdef     boolean;
+  v_src        text;
+  v_behaves    boolean;
+  v_named      boolean;
+  v_saw_grant  boolean := false;
+BEGIN
+  IF COALESCE(current_setting('app.allow_privileged_anon_grant', true), 'off') = 'on' THEN
+    RETURN;
+  END IF;
+
+  FOR obj IN SELECT * FROM pg_event_trigger_ddl_commands() LOOP
+
+    -- GRANT rows carry no objid/object_identity at all (probe-verified):
+    --   [tag=GRANT | object_type=FUNCTION | objid=NULL | ident=NULL]
+    -- so the granted function cannot be identified here. Flag a lock sweep.
+    IF obj.command_tag = 'GRANT' THEN
+      IF upper(COALESCE(obj.object_type, '')) = 'FUNCTION' THEN
+        v_saw_grant := true;
+      END IF;
+      CONTINUE;
+    END IF;
+
+    IF lower(COALESCE(obj.object_type, '')) <> 'function' THEN
+      CONTINUE;
+    END IF;
+
+    SELECT p.proname,
+           format('public.%I(%s)', p.proname,
+                  COALESCE((SELECT string_agg(format_type(t.typ, NULL), ', ' ORDER BY t.ord)
+                              FROM unnest(p.proargtypes) WITH ORDINALITY AS t(typ, ord)), '')),
+           p.prosecdef,
+           p.prosrc
+      INTO v_name, v_sig, v_secdef, v_src
+      FROM pg_proc p
+      JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE p.oid = obj.objid
+       AND n.nspname = 'public';
+
+    IF v_name IS NULL
+       OR v_name IN ('fn_autorevoke_privileged_anon', 'fn_audit_privileged_grants') THEN
+      CONTINUE;
+    END IF;
+
+    -- ARM 1 - NAME. Unchanged except the prefix arm now tolerates an `fn_`
+    -- prefix: `fn_credit_stalled_seat_first_stacks` defeated the anchored
+    -- version on 2026-08-23 despite crediting stacks.
+    v_named := v_name !~ '^st_' AND (
+         v_name ~* '(mint_|_mint|chip|wallet|promo|cashout|diamond|rake|bounty|settle|payout|clawback|purchase|treasury|jackpot|bbj)'
+      OR v_name ~* '^(fn_)?(credit|debit|transfer|distribute|deduct|atomic|admin)_'
+      OR v_name ~* '(promote_member|transfer_club_ownership|remove_player)'
+    );
+
+    -- ARM 2 - BEHAVIOUR. The rule economy_invariants() actually asserts:
+    -- SECURITY DEFINER (so RLS does not apply) + writes + never consults
+    -- auth.uid() (so it cannot tell who is asking). Such a function must not
+    -- be reachable without a session, whatever it is called. This is the arm
+    -- that would have caught all six of today's.
+    v_behaves := COALESCE(v_secdef, false)
+             AND v_src ~* '\m(insert|update|delete)\M'
+             AND v_src !~* 'auth\.uid\(\)';
+
+    IF v_named OR v_behaves THEN
+      BEGIN
+        EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC', obj.object_identity);
+        EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM anon',   obj.object_identity);
+
+        INSERT INTO public.privileged_function_lock (function_signature, security_definer, reason)
+        VALUES (v_sig,
+                COALESCE(v_secdef, false),
+                'Auto-locked by trg_autorevoke_privileged_anon on ' || obj.command_tag
+                 || CASE WHEN v_behaves AND NOT v_named
+                         THEN ' (behavioural: definer + writes + no auth.uid())'
+                         WHEN v_behaves THEN ' (name + behavioural)'
+                         ELSE ' (name)' END || '.')
+        ON CONFLICT (function_signature) DO NOTHING;
+
+        RAISE NOTICE '[autorevoke] stripped PUBLIC/anon EXECUTE from % (tag %, named=%, behaviour=%)',
+          obj.object_identity, obj.command_tag, v_named, v_behaves;
+      EXCEPTION WHEN OTHERS THEN
+        RAISE WARNING '[autorevoke] could not revoke on %: %', obj.object_identity, SQLERRM;
+      END;
+    END IF;
+  END LOOP;
+
+  IF v_saw_grant THEN
+    FOR lk IN
+      SELECT l.function_signature, to_regprocedure(l.function_signature) AS rp
+        FROM public.privileged_function_lock l
+       WHERE to_regprocedure(l.function_signature) IS NOT NULL
+         AND ( has_function_privilege('anon',   to_regprocedure(l.function_signature)::oid, 'EXECUTE')
+            OR has_function_privilege('public', to_regprocedure(l.function_signature)::oid, 'EXECUTE') )
+    LOOP
+      BEGIN
+        EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC', lk.function_signature);
+        EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM anon',   lk.function_signature);
+        RAISE NOTICE '[autorevoke] GRANT sweep re-revoked anon/PUBLIC on %', lk.function_signature;
+      EXCEPTION WHEN OTHERS THEN
+        RAISE WARNING '[autorevoke] GRANT sweep could not revoke on %: %', lk.function_signature, SQLERRM;
+      END;
+    END LOOP;
+  END IF;
+END;
+$function$;
+CREATE EVENT TRIGGER trg_autorevoke_privileged_anon ON ddl_command_end
+  WHEN TAG IN ('CREATE FUNCTION', 'ALTER FUNCTION', 'GRANT')
+  EXECUTE FUNCTION public.fn_autorevoke_privileged_anon();
+ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO anon, authenticated, service_role;
+
+-- 27 THE REVIEW GROUND: THE DEFECTS ARE REAL ON THE REMEDIATION CODE ----------
+DO $$
+DECLARE v_g uuid; v_c uuid; v jsonb;
+BEGIN
+  IF pg_get_functiondef('public.fn_cash_cluster_begin_pending_off(uuid,uuid,text)'::regprocedure) ~ 'make_interval\(secs => v_dwell'
+     OR pg_get_functiondef('public.fn_cash_cluster_unfreeze(uuid,uuid,text)'::regprocedure) ~ 'lightning_off_condition_since'
+     OR pg_get_functiondef('public.fn_cash_cluster_commit_lightning(uuid,uuid)'::regprocedure) ~ 'lightning_off_condition_since' THEN
+    RAISE EXCEPTION 'FAIL 27: an object of the review migration exists before it is applied';
+  END IF;
+  -- FINDING 1, THE GROUND: the dwell never enforces its duration. A second
+  -- pass milliseconds after the first sighting opens PENDING_OFF against the
+  -- default 10000ms dwell.
+  v_g := harness.c7('REV1', 6, 7, 2, 7, 2);
+  v := harness.drive(v_g); v := harness.drive(v_g);
+  PERFORM public.fx9_pool(v_g);
+  PERFORM harness.to(v_g, 12);
+  v := harness.drive(v_g);
+  IF v -> 'result' ->> 'reason' <> 'off_condition_dwell' THEN RAISE EXCEPTION 'FIXTURE: REV1 did not record a sighting: %', v; END IF;
+  v := harness.drive(v_g);
+  IF harness.mode(v_g) <> 'pending_off' THEN
+    RAISE EXCEPTION 'FAIL 27: the dwell-duration defect is not real: a second pass milliseconds later did not open PENDING_OFF: %', v;
+  END IF;
+  v := harness.drive(v_g);
+  IF harness.mode(v_g) <> 'must_move' THEN RAISE EXCEPTION 'FIXTURE: REV1 did not revert: %', v; END IF;
+  -- FINDING 2, THE GROUND: a standing sighting survives the unfreeze, then
+  -- survives re-conversion, and the next Lightning epoch opens PENDING_OFF
+  -- on ONE observation.
+  v_c := harness.c7('REV2', 6, 7, 2, 7, 2);
+  v := harness.drive(v_c); v := harness.drive(v_c);
+  PERFORM public.fx9_pool(v_c);
+  PERFORM harness.to(v_c, 12);
+  v := harness.drive(v_c);
+  IF (SELECT lightning_off_condition_since FROM public.cash_games WHERE id = v_c) IS NULL THEN
+    RAISE EXCEPTION 'FIXTURE: REV2 has no standing sighting: %', v;
+  END IF;
+  UPDATE public.cash_games SET cluster_mode = 'frozen' WHERE id = v_c;
+  v := public.fn_cash_cluster_unfreeze(v_c, gen_random_uuid(), 'review ground');
+  IF (v ->> 'ok')::boolean IS DISTINCT FROM true
+     OR (SELECT lightning_off_condition_since FROM public.cash_games WHERE id = v_c) IS NULL THEN
+    RAISE EXCEPTION 'FAIL 27: the stale-sighting defect is not real: the unfreeze already cleared it: %', v;
+  END IF;
+  PERFORM harness.to(v_c, 18);
+  v := harness.drive(v_c);
+  IF harness.mode(v_c) <> 'pending_on' THEN RAISE EXCEPTION 'FIXTURE: REV2 did not open PENDING_ON: %', v; END IF;
+  v := harness.drive(v_c);
+  IF harness.mode(v_c) <> 'lightning'
+     OR (SELECT lightning_off_condition_since FROM public.cash_games WHERE id = v_c) IS NULL THEN
+    RAISE EXCEPTION 'FAIL 27: the stale-sighting defect is not real: the ON commit already cleared it: %', v;
+  END IF;
+  PERFORM public.fx9_pool(v_c);
+  PERFORM harness.to(v_c, 12);
+  v := harness.drive(v_c);
+  IF harness.mode(v_c) <> 'pending_off' THEN
+    RAISE EXCEPTION 'FAIL 27: the stale sighting did not open PENDING_OFF on one observation: %', v;
+  END IF;
+  v := harness.drive(v_c);
+  IF harness.mode(v_c) <> 'must_move' THEN RAISE EXCEPTION 'FIXTURE: REV2 did not revert: %', v; END IF;
+END $$;
+\echo '  ok  27 THE REVIEW GROUND  before the review migration none of its objects exists, and both defects are real on the remediation code: a second pass milliseconds after the first sighting opens PENDING_OFF against the default 10000ms dwell, and a standing sighting survives the unfreeze and the ON commit so the next Lightning epoch drains on ONE observation'
+ASSERT
+
+cat > "$fixture/fix-assertions.sql" <<'ASSERT'
+-- 28 THE DWELL IS A DURATION ----------------------------------------------------------
+DO $$
+DECLARE v_g uuid; v_h uuid; v jsonb; v_seen timestamptz;
+BEGIN
+  v_g := harness.c7('FIXD', 6, 7, 2, 7, 2);
+  v := harness.drive(v_g); v := harness.drive(v_g);
+  PERFORM public.fx9_pool(v_g);
+  PERFORM public.fx6_set(v_g, '{"pending_off_dwell_ms": 2000}');
+  PERFORM harness.to(v_g, 12);
+  v := harness.drive(v_g);
+  IF v -> 'result' ->> 'reason' <> 'off_condition_dwell' OR (v -> 'result' ->> 'dwell_ms')::integer <> 2000 THEN
+    RAISE EXCEPTION 'FAIL 28: the first sighting did not record itself: %', v;
+  END IF;
+  SELECT lightning_off_condition_since INTO v_seen FROM public.cash_games WHERE id = v_g;
+  IF v_seen IS NULL THEN RAISE EXCEPTION 'FAIL 28: no durable first sighting'; END IF;
+  -- A SECOND PASS INSIDE THE DWELL IS REFUSED, with the STANDING
+  -- first_seen_at, and rewrites nothing.
+  v := harness.drive(v_g);
+  IF v ->> 'action' <> 'begin_pending_off' OR v -> 'result' ->> 'reason' <> 'off_condition_dwell'
+     OR (v -> 'result' ->> 'first_seen_at')::timestamptz IS DISTINCT FROM v_seen
+     OR harness.mode(v_g) <> 'lightning'
+     OR (SELECT lightning_off_condition_since FROM public.cash_games WHERE id = v_g) IS DISTINCT FROM v_seen
+     OR EXISTS (SELECT 1 FROM public.cash_cluster_conversion WHERE cluster_id = v_g AND to_mode = 'must_move') THEN
+    RAISE EXCEPTION 'FAIL 28: a second pass inside the dwell was not refused with the standing sighting: %', v;
+  END IF;
+  -- A PASS AFTER THE DWELL PROCEEDS: exactly one PENDING_OFF, the marker
+  -- cleared.
+  PERFORM public.fx6_set(v_g, '{"pending_off_dwell_ms": 400}');
+  PERFORM pg_sleep(0.45);
+  v := harness.drive(v_g);
+  IF harness.mode(v_g) <> 'pending_off'
+     OR (SELECT lightning_off_condition_since FROM public.cash_games WHERE id = v_g) IS NOT NULL
+     OR (SELECT count(*) FROM public.cash_cluster_conversion WHERE cluster_id = v_g AND to_mode = 'must_move') <> 1 THEN
+    RAISE EXCEPTION 'FAIL 28: a pass after the dwell did not open exactly one PENDING_OFF: %', v;
+  END IF;
+  v := harness.drive(v_g);
+  IF harness.mode(v_g) <> 'must_move' THEN RAISE EXCEPTION 'FIXTURE: FIXD did not revert: %', v; END IF;
+  -- DWELL 0 KEEPS THE TWO-SIGHTING BEHAVIOUR this file replaces: the first
+  -- records, the second proceeds at once.
+  v_h := harness.c7('FIXD0', 6, 7, 2, 7, 2);
+  v := harness.drive(v_h); v := harness.drive(v_h);
+  PERFORM public.fx9_pool(v_h);
+  PERFORM public.fx6_set(v_h, '{"pending_off_dwell_ms": 0}');
+  PERFORM harness.to(v_h, 12);
+  v := harness.drive(v_h);
+  IF v -> 'result' ->> 'reason' <> 'off_condition_dwell' OR (v -> 'result' ->> 'dwell_ms')::integer <> 0
+     OR harness.mode(v_h) <> 'lightning'
+     OR (SELECT lightning_off_condition_since FROM public.cash_games WHERE id = v_h) IS NULL THEN
+    RAISE EXCEPTION 'FAIL 28: dwell 0 did not record the first sighting and hold: %', v;
+  END IF;
+  v := harness.drive(v_h);
+  IF harness.mode(v_h) <> 'pending_off' THEN
+    RAISE EXCEPTION 'FAIL 28: dwell 0 did not open PENDING_OFF on the second sighting: %', v;
+  END IF;
+  v := harness.drive(v_h);
+  IF harness.mode(v_h) <> 'must_move' THEN RAISE EXCEPTION 'FIXTURE: FIXD0 did not revert: %', v; END IF;
+END $$;
+\echo '  ok  28 THE DWELL IS A DURATION  the first sighting records itself durably; a second pass inside the configured dwell is refused off_condition_dwell with the STANDING first_seen_at, rewrites nothing and voids nothing; a pass after the dwell opens exactly one PENDING_OFF and clears the marker; and pending_off_dwell_ms 0 keeps the old two-sighting behaviour, recording first and proceeding second'
+
+-- 29 THE STALE SIGHTING DIES WITH THE EPOCH --------------------------------------------
+DO $$
+DECLARE v_g uuid; v jsonb; v_op uuid := gen_random_uuid();
+BEGIN
+  v_g := harness.c7('FIXU', 6, 7, 2, 7, 2);
+  v := harness.drive(v_g); v := harness.drive(v_g);
+  PERFORM public.fx9_pool(v_g);
+  PERFORM harness.to(v_g, 12);
+  v := harness.drive(v_g);
+  IF (SELECT lightning_off_condition_since FROM public.cash_games WHERE id = v_g) IS NULL THEN
+    RAISE EXCEPTION 'FIXTURE: FIXU has no standing sighting: %', v;
+  END IF;
+  -- (a) THE UNFREEZE CLEARS IT, beside its halt clearing.
+  UPDATE public.cash_games SET cluster_mode = 'frozen' WHERE id = v_g;
+  v := public.fn_cash_cluster_unfreeze(v_g, v_op, 'review fix harness');
+  IF (v ->> 'ok')::boolean IS DISTINCT FROM true
+     OR (SELECT lightning_off_condition_since FROM public.cash_games WHERE id = v_g) IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL 29: the unfreeze did not clear the standing sighting: %', v;
+  END IF;
+  -- (b) THE ON COMMIT CLEARS A MARKER FROM A DEAD EPOCH, in its mode UPDATE.
+  UPDATE public.cash_games SET lightning_off_condition_since = clock_timestamp() - interval '1 hour' WHERE id = v_g;
+  PERFORM harness.to(v_g, 18);
+  v := harness.drive(v_g);
+  IF harness.mode(v_g) <> 'pending_on' THEN RAISE EXCEPTION 'FIXTURE: FIXU did not open PENDING_ON: %', v; END IF;
+  v := harness.drive(v_g);
+  IF harness.mode(v_g) <> 'lightning'
+     OR (SELECT lightning_off_condition_since FROM public.cash_games WHERE id = v_g) IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL 29: the ON commit did not clear the stale sighting: %', v;
+  END IF;
+  -- AND THE NEW EPOCH NEEDS ITS OWN DWELL: one observation at 12 is a first
+  -- sighting, never a PENDING_OFF.
+  PERFORM public.fx9_pool(v_g);
+  PERFORM harness.to(v_g, 12);
+  v := harness.drive(v_g);
+  IF v -> 'result' ->> 'reason' <> 'off_condition_dwell' OR harness.mode(v_g) <> 'lightning' THEN
+    RAISE EXCEPTION 'FAIL 29: one observation in the new epoch opened PENDING_OFF: %', v;
+  END IF;
+END $$;
+\echo '  ok  29 THE STALE SIGHTING DIES  a standing first sighting is cleared by the unfreeze beside its halt clearing, and a marker left over from a dead epoch is cleared by the ON commit in its mode UPDATE, so the next Lightning epoch holds on one observation and dwells like any other'
+ASSERT
+
+cat > "$fixture/fix-proofs-check.sql" <<'ASSERT'
+-- 30 NOTHING EARLIER IS FALSIFIED, AND EVERY PROOF OF EVERY FILE HOLDS -----------------
+DO $$
+DECLARE v_bad text; v_n integer;
+BEGIN
+  SELECT string_agg(b.src || '#' || b.n, ', ' ORDER BY b.src, b.n) INTO v_bad
+    FROM harness.lp7 b JOIN harness.lp7 f ON f.src = b.src AND f.n = b.n AND f.phase = 'fix'
+   WHERE b.phase = 'rem' AND b.ok IS TRUE AND f.ok IS NOT TRUE;
+  -- EXACTLY the seven predecessor proofs that name the matcher argument
+  -- lists Phase 8 (20261007212735) replaces, as that file's own harness pins.
+  IF v_bad IS DISTINCT FROM 'p6#2, p6#4, p6#5, p6#6, s6r#4, s6r#5, s6r#6' THEN
+    RAISE EXCEPTION 'FAIL 30: predecessor proofs falsified beyond Phase 8''s replaced argument lists: %', v_bad;
+  END IF;
+  SELECT string_agg(b.src || '#' || b.n, ', ' ORDER BY b.src, b.n) INTO v_bad
+    FROM harness.lp7 b JOIN harness.lp7 f ON f.src = b.src AND f.n = b.n AND f.phase = 'fixp7'
+   WHERE b.phase = 'own' AND b.ok IS TRUE AND f.ok IS NOT TRUE;
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL 30: Phase 7''s own proofs falsified by the review migration: %', v_bad;
+  END IF;
+  SELECT string_agg(b.src || '#' || b.n, ', ' ORDER BY b.src, b.n) INTO v_bad
+    FROM harness.lp7 b JOIN harness.lp7 f ON f.src = b.src AND f.n = b.n AND f.phase = 'fixrem'
+   WHERE b.phase = 'remown' AND b.ok IS TRUE AND f.ok IS NOT TRUE;
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL 30: the remediation''s own proofs falsified by the review migration: %', v_bad;
+  END IF;
+  SELECT count(*) INTO v_n FROM harness.lp7 WHERE phase = 'fix' AND ok IS TRUE;
+  IF v_n < 100 THEN
+    RAISE EXCEPTION 'FAIL 30: only % predecessor proofs read true after the review migration, so this proves too little', v_n;
+  END IF;
+  IF (SELECT count(*) FROM harness.lp7 WHERE phase = 'fixown') <> 10
+     OR EXISTS (SELECT 1 FROM harness.lp7 WHERE phase = 'fixown' AND ok IS NOT TRUE) THEN
+    RAISE EXCEPTION 'FAIL 30: the review migration''s own proofs: %',
+      (SELECT string_agg(n || '=' || coalesce(ok::text, 'error'), ', ') FROM harness.lp7 WHERE phase = 'fixown');
+  END IF;
+END $$;
+\echo '  ok  30 THE PROOFS  after Phase 8 and the review migration every predecessor proof that held after the remediation still holds but exactly the seven naming the matcher argument lists Phase 8 replaces, Phase 7''s own and the remediation''s own proofs all hold, and all ten of the review migration''s own proofs evaluate true against this catalogue'
+ASSERT
+
+cat > "$fixture/fix-precapture.sql" <<'ASSERT'
+CREATE TABLE harness.rcap4 AS
+SELECT 'fn:' || p.oid::regprocedure::text AS what, md5(pg_get_functiondef(p.oid) || coalesce(p.proacl::text, '') || coalesce(obj_description(p.oid, 'pg_proc'), '')) AS v
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+ WHERE n.nspname = 'public' AND (p.proname LIKE 'fn_lightning_%' OR p.proname LIKE 'fn_cash_cluster%')
+UNION ALL
+SELECT 'rows:' || x.t, (xpath('/row/n/text()', query_to_xml(format('SELECT count(*) AS n FROM public.%I', x.t), false, true, '')))[1]::text
+  FROM unnest(ARRAY['cash_cluster_conversion', 'cash_cluster_events', 'lightning_pool_session', 'lightning_pool_slot', 'lightning_instance', 'cash_cluster_epoch', 'lightning_blind_ledger']) x(t)
+UNION ALL
+SELECT 'modes', md5(string_agg(id::text || ':' || cluster_mode || ':' || cluster_epoch || ':' || coalesce(lightning_off_condition_since::text, '-'), '|' ORDER BY id)) FROM public.cash_games
+UNION ALL
+SELECT 'stacks', md5(string_agg(id::text || ':' || coalesce(stack::text, ''), '|' ORDER BY id)) FROM public.table_seats;
+ASSERT
+
+cat > "$fixture/fix-reapply.sql" <<'ASSERT'
+-- 31 THE REVIEW MIGRATION IS RE-APPLIABLE ----------------------------------------------
+DO $$
+DECLARE v_bad text;
+BEGIN
+  SELECT string_agg(coalesce(a.what, b.what), ', ') INTO v_bad
+    FROM harness.rcap4 a
+    FULL JOIN (
+      SELECT 'fn:' || p.oid::regprocedure::text AS what, md5(pg_get_functiondef(p.oid) || coalesce(p.proacl::text, '') || coalesce(obj_description(p.oid, 'pg_proc'), '')) AS v
+        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'public' AND (p.proname LIKE 'fn_lightning_%' OR p.proname LIKE 'fn_cash_cluster%')
+      UNION ALL
+      SELECT 'rows:' || x.t, (xpath('/row/n/text()', query_to_xml(format('SELECT count(*) AS n FROM public.%I', x.t), false, true, '')))[1]::text
+        FROM unnest(ARRAY['cash_cluster_conversion', 'cash_cluster_events', 'lightning_pool_session', 'lightning_pool_slot', 'lightning_instance', 'cash_cluster_epoch', 'lightning_blind_ledger']) x(t)
+      UNION ALL
+      SELECT 'modes', md5(string_agg(id::text || ':' || cluster_mode || ':' || cluster_epoch || ':' || coalesce(lightning_off_condition_since::text, '-'), '|' ORDER BY id)) FROM public.cash_games
+      UNION ALL
+      SELECT 'stacks', md5(string_agg(id::text || ':' || coalesce(stack::text, ''), '|' ORDER BY id)) FROM public.table_seats
+    ) b ON b.what = a.what
+   WHERE a.v IS DISTINCT FROM b.v;
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL 31: the second application of the review migration changed: %', v_bad;
+  END IF;
+  IF (SELECT count(*) FROM harness.rcap4 WHERE what LIKE 'fn:%') < 60 THEN
+    RAISE EXCEPTION 'FAIL 31: the capture is too small to prove anything';
+  END IF;
+END $$;
+\echo '  ok  31 RE-APPLIABLE  applied a second time the review migration leaves every fn_lightning_ and fn_cash_cluster body, acl and comment, seven row counts, every Cluster mode, epoch and dwell sighting and every seat stack exactly as they were'
+ASSERT
+
 { predecessor_proofs before; } > "$fixture/proofs-before.sql"
 { predecessor_proofs after; } > "$fixture/proofs-after.sql"
 { gen_proofs own mine "$mine"; } > "$fixture/own-proofs-eval.sql"
 { predecessor_proofs rem; gen_proofs remp7 mine "$mine"; gen_proofs remown remfile "$rem"; } > "$fixture/rem-proofs-eval.sql"
+{ predecessor_proofs fix; gen_proofs fixp7 mine "$mine"; gen_proofs fixrem remfile "$rem"; gen_proofs fixown fixfile "$fix"; } > "$fixture/fix-proofs-eval.sql"
 
 # ===========================================================================
 # THE RUN.
@@ -1687,7 +2090,16 @@ set +e
   -f "$fixture/rem-proofs-check.sql" \
   -f "$fixture/rem-precapture.sql" \
   -f "$rem" \
-  -f "$fixture/rem-reapply.sql" 2>&1 | grep -v -E '^psql:.*: (NOTICE|WARNING):' | tee "$fixture/psql.out"
+  -f "$fixture/rem-reapply.sql" \
+  -f "$fixture/fix-ground.sql" \
+  -f "$p8" \
+  -f "$fix" \
+  -f "$fixture/fix-assertions.sql" \
+  -f "$fixture/fix-proofs-eval.sql" \
+  -f "$fixture/fix-proofs-check.sql" \
+  -f "$fixture/fix-precapture.sql" \
+  -f "$fix" \
+  -f "$fixture/fix-reapply.sql" 2>&1 | grep -v -E '^psql:.*: (NOTICE|WARNING):' | tee "$fixture/psql.out"
 status=${PIPESTATUS[0]}
 set -e
 if [ "$status" != 0 ]; then
@@ -1695,10 +2107,10 @@ if [ "$status" != 0 ]; then
   exit 1
 fi
 
-# TWENTY-SEVEN SECTIONS REPORTED, counted rather than eyeballed.
+# THIRTY-TWO SECTIONS REPORTED, counted rather than eyeballed.
 oks=$(grep -c -E '^  ok  [0-9]{2} ' "$fixture/psql.out" || true)
-if [ "$oks" != 27 ]; then
-  echo "FAIL: $oks of the 27 sections reported, so this run proved less than this file claims"
+if [ "$oks" != 32 ]; then
+  echo "FAIL: $oks of the 32 sections reported, so this run proved less than this file claims"
   exit 1
 fi
-echo "PASS: Lightning Phase 7 (spec Phase 10), 18 sections: before the file three real tick passes neither revert a Lightning Cluster at 11 nor convert a must-move Cluster at 18; after it no earlier proof is falsified; six-max 17 holds, 18 converts, 17/16/13 hold, 12 drains and reverts, 11 holds and the climb back to 17 converts nothing; nine-max 26 holds, 27 converts, 26/19 hold, 18 reverts, 17 holds; the reversion writes no seat, cash session or blind ledger row (an xmin census of every table) and keeps every stack, baseline, stay clock, rejoin window and join time of humans and horses; Lightning halts and their acknowledgements lift and the tick plans must-move moves again; on four partly filled tables the tick plans the feeder oldest first onto the shortest Main and breaks it without writing a seat; no exited pool session sees a Lightning hand; a dealt hand settles in PENDING_OFF before the revert while an undealt one is void; a population back above OFF cancels the drain; two backends open one PENDING_OFF and revert once; Lightning switched off drains and never strands; a stuck PENDING_OFF is reaped with its hand void; two full cycles with live engines keep every anchor and stack; the tick pass drives both directions and never touches a Cluster with Lightning disabled; my_session names the seat of a player with no pool session; service_role alone may call; every @live-proof holds and the file is re-appliable; then the remediation (20261007222717), its defects first proven real on the Phase 7 code: an unfreeze aborts the conversion it would orphan and clears the engine acknowledgements, the reaper aborts an orphaned conversion as orphaned_by_<mode>, both begins answer conversion_already_open structurally and the healed production wreckage converts cleanly with no lightning_drive_error; a formation voided before dealing gives back its exact blind-ledger credit on every abandon road while a dealt hand keeps its posted blinds; the OFF condition dwells (two consecutive sightings or pending_off_dwell_ms, default 10s, 0 disables) so a 12/13 flap voids nothing; the no-money digest covers live rows under FOR SHARE so a concurrent engine seat write waits instead of false-alarming; a disabled game's reversion keeps its halts and says so; both commits poll their in-flight counts without the Cluster row; no earlier proof is falsified and the remediation is re-appliable"
+echo "PASS: Lightning Phase 7 (spec Phase 10), 18 sections: before the file three real tick passes neither revert a Lightning Cluster at 11 nor convert a must-move Cluster at 18; after it no earlier proof is falsified; six-max 17 holds, 18 converts, 17/16/13 hold, 12 drains and reverts, 11 holds and the climb back to 17 converts nothing; nine-max 26 holds, 27 converts, 26/19 hold, 18 reverts, 17 holds; the reversion writes no seat, cash session or blind ledger row (an xmin census of every table) and keeps every stack, baseline, stay clock, rejoin window and join time of humans and horses; Lightning halts and their acknowledgements lift and the tick plans must-move moves again; on four partly filled tables the tick plans the feeder oldest first onto the shortest Main and breaks it without writing a seat; no exited pool session sees a Lightning hand; a dealt hand settles in PENDING_OFF before the revert while an undealt one is void; a population back above OFF cancels the drain; two backends open one PENDING_OFF and revert once; Lightning switched off drains and never strands; a stuck PENDING_OFF is reaped with its hand void; two full cycles with live engines keep every anchor and stack; the tick pass drives both directions and never touches a Cluster with Lightning disabled; my_session names the seat of a player with no pool session; service_role alone may call; every @live-proof holds and the file is re-appliable; then the remediation (20261007222717), its defects first proven real on the Phase 7 code: an unfreeze aborts the conversion it would orphan and clears the engine acknowledgements, the reaper aborts an orphaned conversion as orphaned_by_<mode>, both begins answer conversion_already_open structurally and the healed production wreckage converts cleanly with no lightning_drive_error; a formation voided before dealing gives back its exact blind-ledger credit on every abandon road while a dealt hand keeps its posted blinds; the OFF condition dwells (two consecutive sightings or pending_off_dwell_ms, default 10s, 0 disables) so a 12/13 flap voids nothing; the no-money digest covers live rows under FOR SHARE so a concurrent engine seat write waits instead of false-alarming; a disabled game's reversion keeps its halts and says so; both commits poll their in-flight counts without the Cluster row; no earlier proof is falsified and the remediation is re-appliable; then Phase 8 and the review migration (20261008043021), its defects first proven real on the remediation code: the dwell is a DURATION - a second pass inside pending_off_dwell_ms is refused with the standing first_seen_at, a pass after it opens exactly one PENDING_OFF, and dwell 0 keeps the old two-sighting behaviour - and a stale sighting dies with the epoch: the unfreeze and the ON commit both clear lightning_off_condition_since, so no Lightning epoch ever drains on one observation; no surviving proof is falsified and the review migration is re-appliable"

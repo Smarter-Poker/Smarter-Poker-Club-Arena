@@ -63,7 +63,7 @@ describe('the device class a socket reports', () => {
 });
 
 describe('the presence feed carries platforms', () => {
-  it('names a platform only for this Cluster’s players, and the narrowest report wins', () => {
+  it('carries every platform the reports name, across Clusters, and the narrowest report wins', () => {
     const presence = new LightningPresence(() => [
       {
         tableId: uid(100),
@@ -87,15 +87,32 @@ describe('the presence feed carries platforms', () => {
         players: [{ userId: P3, presence: 'connected' }],
       },
       {
-        // A player of another Cluster only: never sent to this matcher.
+        // A player seen only in another Cluster: the platform is still carried
+        // (the limit is per player, across Clusters), while presence here is not.
         tableId: uid(104),
         clusterId: OTHER_CLUSTER,
         players: [{ userId: uid(14), presence: 'connected', platform: 'desktop' }],
       },
     ]);
     const snap = presence.snapshot(CLUSTER);
-    expect(snap.platforms).toEqual({ [P1]: 'mobile', [P2]: 'tablet' });
+    expect(snap.platforms).toEqual({ [P1]: 'mobile', [P2]: 'tablet', [uid(14)]: 'desktop' });
     expect(snap.connected).toEqual([P1, P2, P3]);
+  });
+
+  it('a worker’s first pass keeps cross-Cluster platform knowledge', () => {
+    // No knownPoolPlayers yet (first pass) and no anchor table of this
+    // Cluster in-process: the platform another Cluster’s room reported must
+    // still reach this Cluster’s matcher, not be filtered to seen players.
+    const presence = new LightningPresence(() => [
+      {
+        tableId: uid(110),
+        clusterId: OTHER_CLUSTER,
+        players: [{ userId: P1, presence: 'connected', platform: 'mobile' }],
+      },
+    ]);
+    const snap = presence.snapshot(CLUSTER);
+    expect(snap.anchorTables).toBe(0);
+    expect(snap.platforms).toEqual({ [P1]: 'mobile' });
   });
 
   it('the registry reports each room’s platform with its presence', () => {
@@ -174,6 +191,41 @@ describe('p_player_platforms reaches the matcher', () => {
     expect('p_player_platforms' in calls[1]).toBe(false);
     // Same request id both times: the writer never ran twice under two ids.
     expect(calls[0].p_request_id).toBe(calls[1].p_request_id);
+  });
+
+  it('does not mark the argument dropped when the retry also fails', async () => {
+    // The whole RPC is absent (a deploy window): the retry without platforms
+    // fails too, so nothing proves the argument was the problem. Marking it
+    // dropped here would pause a healthy argument for ten minutes.
+    const calls: Array<Record<string, unknown>> = [];
+    const rpc = async (_fn: string, args: Record<string, unknown>) => {
+      calls.push(args);
+      return { data: null, error: { code: 'PGRST202', message: 'Could not find the function' } };
+    };
+    const m = await lightningMatch(rpc, {
+      clusterId: CLUSTER,
+      now,
+      disconnected: [],
+      matcherVersion: null,
+      playerPlatforms: { [P1]: 'desktop' },
+    });
+    expect(m.status).toBe('unavailable');
+    expect(m.platforms).toBe('none');
+    expect(calls).toHaveLength(2);
+    // A retry lost to transport proves nothing about the argument either.
+    const flaky = async (_fn: string, args: Record<string, unknown>) =>
+      'p_player_platforms' in args
+        ? { data: null, error: { code: 'PGRST202', message: 'Could not find the function' } }
+        : { data: null, error: { code: '57P01', message: 'terminating connection' } };
+    const e = await lightningMatch(flaky, {
+      clusterId: CLUSTER,
+      now,
+      disconnected: [],
+      matcherVersion: null,
+      playerPlatforms: { [P1]: 'desktop' },
+    });
+    expect(e.status).toBe('error');
+    expect(e.platforms).toBe('none');
   });
 
   it('sends nothing extra when no platform is known, and drops malformed entries', async () => {

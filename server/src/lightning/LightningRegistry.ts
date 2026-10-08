@@ -24,6 +24,7 @@
 import { supabase } from '../services/supabase/client.js';
 import type { TableConnectionAccess } from '../services/TableConnectionAccess.js';
 import type { LightningDevicePlatform, PresenceTableReport } from './LightningPresence.js';
+import type { LightningPresenceReport } from './LightningPresenceReporter.js';
 import { isUuid } from './LightningRpc.js';
 import { LightningSeatProxy } from './LightningSeatProxy.js';
 import {
@@ -95,6 +96,13 @@ export interface LightningRegistryDeps {
   roomOwner?(roomId: string): Promise<{ playerId: string; clusterId: string } | null>;
   /** `cash_games.cluster_mode` of a Cluster: why a room ended, for its close reason. */
   clusterMode?(clusterId: string): Promise<string | null>;
+  /**
+   * LIGHTNING PHASE 9: told on TRANSITIONS ONLY - a player's last socket in
+   * their room dropped, or their first returned - so the database can keep
+   * `disconnected_at` and reap an expired disconnect. Null (the default)
+   * reports nothing; the boot wiring passes the real reporter.
+   */
+  presenceReport?: LightningPresenceReport | null;
   /** Engine clock (injected for tests). */
   now?: () => number;
 }
@@ -159,6 +167,7 @@ export class LightningRegistry {
     roomId: string
   ) => Promise<{ playerId: string; clusterId: string } | null>;
   private closeRoom: ((roomId: string, reason: string) => void) | null;
+  private readonly presenceReport: LightningPresenceReport | null;
   private sweeping: Promise<number> | null = null;
   private readonly clusterMode: (clusterId: string) => Promise<string | null>;
   /** userId -> handId -> the decision owed there (Lightning Phase 8). */
@@ -171,6 +180,7 @@ export class LightningRegistry {
     this.roomOwner = deps.roomOwner ?? lightningRoomOwner;
     this.clusterMode = deps.clusterMode ?? lightningClusterMode;
     this.closeRoom = deps.closeRoom ?? null;
+    this.presenceReport = deps.presenceReport ?? null;
     this.clock = deps.now ?? Date.now;
   }
 
@@ -285,14 +295,37 @@ export class LightningRegistry {
     info.sockets++;
     if (platform) info.platform = platform;
     this.hostByRoom.get(roomId)?.notePresence(userId, true);
+    // FIRST socket back: a transition, told once (Lightning Phase 9). A second
+    // socket in the same room changes nothing the database should hear.
+    if (info.sockets === 1 && info.clusterId) {
+      this.reportPresence('reconnected', info.clusterId, userId);
+    }
   }
 
   disconnect(roomId: string, userId: string): void {
     const info = this.rooms.get(roomId);
     if (!info || info.userId !== userId) return;
+    const had = info.sockets;
     info.sockets = Math.max(0, info.sockets - 1);
-    if (info.sockets === 0) this.hostByRoom.get(roomId)?.notePresence(userId, false);
+    if (info.sockets === 0) {
+      this.hostByRoom.get(roomId)?.notePresence(userId, false);
+      // LAST socket gone: the transition the DB reaper's clock starts on.
+      if (had > 0 && info.clusterId) this.reportPresence('disconnected', info.clusterId, userId);
+    }
     this.pruneRoom(roomId);
+  }
+
+  private reportPresence(
+    kind: 'disconnected' | 'reconnected',
+    clusterId: string,
+    userId: string
+  ): void {
+    try {
+      if (kind === 'disconnected') this.presenceReport?.disconnected(clusterId, userId);
+      else this.presenceReport?.reconnected(clusterId, userId);
+    } catch {
+      /* a reporter must never take the registry down */
+    }
   }
 
   isConnected(playerId: string, roomId: string): boolean {

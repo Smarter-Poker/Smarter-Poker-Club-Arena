@@ -323,6 +323,8 @@ import LightningNextHand from '../components/table/LightningNextHand';
 import LightningJoining from '../components/table/LightningJoining';
 import LightningEndedNotice from '../components/table/LightningEndedNotice';
 import { lightningReturnPath, useLightningReversion } from '../lightning/lightningReversion';
+import { lightningSessionEndText, useLightningSessionEnd } from '../lightning/lightningReconnect';
+import { lightningRoute } from '../lightning/lightningLobby';
 import {
   LIGHTNING_LEAVE_QUEUED_TEXT,
   fetchLightningAnchorSeat,
@@ -3979,6 +3981,19 @@ function LiveTablePage({
   });
   const lightningReturnRef = useRef<string | null>(null);
   lightningReturnRef.current = lightningReversion.seatTableId;
+  /* LIGHTNING PHASE 9: the same 4404 may instead mean the pool session is
+     still open (engine restart: keep the ladder on the SAME room id) or that
+     it ENDED while the player was away (the disconnect reaper timed it out,
+     or a queued leave finished). fn_lightning_reconnect_state says which;
+     the MUST MOVE reversion above takes precedence in the view. */
+  const lightningSessionEnd = useLightningSessionEnd({
+    clusterId: lightningRoom?.clusterId ?? null,
+    roomId: tableId ?? null,
+    roomClosed: lightningRoom && engineLastError?.code === 4404 ? engineLastError : null,
+    onStillOpen: reconnectEngineNow,
+  });
+  const lightningEndedRef = useRef(lightningSessionEnd.ended);
+  lightningEndedRef.current = lightningSessionEnd.ended;
   useEffect(() => {
     if (!engineLastError) return;
     if (engineLastError.code === 4404) {
@@ -4048,9 +4063,10 @@ function LiveTablePage({
             }
           }
           if (lightningRoomRef.current) {
-            /* The MUST MOVE notice already says Lightning has ended, and where
-               the seat is: a second message would only repeat it. */
-            if (!lightningReturnRef.current) {
+            /* The MUST MOVE notice (Phase 7) or the ended notice (Phase 9)
+               already says what ended and where the seat is: a second message
+               would only repeat it. */
+            if (!lightningReturnRef.current && !lightningEndedRef.current) {
               heartbeatToastRef.current?.info?.('Your Lightning Session Has Ended');
             }
             return;
@@ -26878,7 +26894,8 @@ function LiveTablePage({
             tableId &&
             userId &&
             userId !== 'guest' &&
-            !lightningReversion.seatTableId ? (
+            !lightningReversion.seatTableId &&
+            !lightningSessionEnd.ended ? (
               <LightningRoomTools
                 poolSessionId={tableId}
                 clusterId={lightningRoom.clusterId}
@@ -26920,6 +26937,39 @@ function LiveTablePage({
                     return;
                   }
                   navigate(lightningReturnPath(seatTable), { replace: true });
+                }}
+              />
+            ) : null}
+            {/* LIGHTNING PHASE 9: the session ended while the player was away
+                (the disconnect reaper timed it out, or a queued leave
+                finished) and this room is gone. Never a dead felt and never a
+                spinner that cannot end: the ending's words, the session
+                summary, and VIEW GAME to the seat that remains, or to the
+                Cluster's entry. The player moves themselves (CLAUDE.md 10.6). */}
+            {lightningRoom && !lightningReversion.seatTableId && lightningSessionEnd.ended ? (
+              <LightningEndedNotice
+                eyebrow="Lightning"
+                text={lightningSessionEndText(lightningSessionEnd.ended)}
+                session={
+                  tableId
+                    ? {
+                        poolSessionId: tableId,
+                        clusterId: lightningRoom.clusterId,
+                        name: lightningRoom.meta?.name ?? null,
+                      }
+                    : null
+                }
+                onViewGame={() => {
+                  const seatTable = lightningSessionEnd.ended?.seatTableId ?? null;
+                  if (seatTable) {
+                    if (embeddedTableId) {
+                      onTableInfoUpdate?.({ movedToTableId: seatTable });
+                      return;
+                    }
+                    navigate(lightningReturnPath(seatTable), { replace: true });
+                    return;
+                  }
+                  navigate(lightningRoute(lightningRoom.clusterId), { replace: true });
                 }}
               />
             ) : null}

@@ -88,6 +88,7 @@ import { ClusterController } from './cluster/ClusterController.js';
 import { LightningSupervisor } from './lightning/LightningSupervisor.js';
 import type { PresenceTableReport } from './lightning/LightningPresence.js';
 import { LightningHosting, LightningRegistry } from './lightning/LightningRegistry.js';
+import { LightningPresenceReporter } from './lightning/LightningPresenceReporter.js';
 import { createSupabaseLightningHandBackend } from './lightning/LightningHandBackend.js';
 import { lightningAnchorSeat } from './services/supabase/lightningAnchor.js';
 import type { LightningLease } from './lightning/LightningHandHost.js';
@@ -3368,7 +3369,11 @@ export class GameServer {
    * lease (lightningLeaseFor). Dark: no Cluster is Lightning-enabled and
    * worker_mode defaults to 'off'.
    */
-  readonly lightningRooms = new LightningRegistry();
+  // Lightning Phase 9: presence TRANSITIONS are reported to the database
+  // (fn_lightning_presence_report), batched per Cluster, never per pass.
+  readonly lightningRooms = new LightningRegistry({
+    presenceReport: new LightningPresenceReporter(),
+  });
   private lightningHosting = new LightningHosting({
     registry: this.lightningRooms,
     backend: createSupabaseLightningHandBackend(),

@@ -17,6 +17,8 @@ import './LightningFoldBar.css';
 export default function LightningEndedNotice({
   onViewGame,
   session = null,
+  eyebrow = LIGHTNING_ENDED_EYEBROW,
+  text = LIGHTNING_ENDED_TEXT,
 }: {
   onViewGame: () => void;
   /**
@@ -25,11 +27,18 @@ export default function LightningEndedNotice({
    * MUST MOVE now, and the player's way back is VIEW GAME.
    */
   session?: { poolSessionId: string; clusterId: string; name: string | null } | null;
+  /**
+   * LIGHTNING PHASE 9: the ending's own words (a timed-out session, or one
+   * that ended while the player was away). The MUST MOVE defaults stand for
+   * every existing caller.
+   */
+  eyebrow?: string;
+  text?: string;
 }) {
   return (
     <div className="lightning-ended" data-testid="lightning-ended" role="alert">
-      <p className="lightning-ended__eyebrow">{LIGHTNING_ENDED_EYEBROW}</p>
-      <p className="lightning-ended__text">{LIGHTNING_ENDED_TEXT}</p>
+      <p className="lightning-ended__eyebrow">{eyebrow}</p>
+      <p className="lightning-ended__text">{text}</p>
       <button
         type="button"
         className="lightning-ended__go"

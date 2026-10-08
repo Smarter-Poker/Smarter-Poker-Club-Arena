@@ -2,10 +2,16 @@
 """Qualify the atomic horse hand-review publication on a private socket-only PG17.
 
 Applies supabase/migrations/20261007020953_horse_hand_review_atomic_publication.sql,
-UNCHANGED, over the real prerequisites (tests/sql/fixtures/horse-hand-review-atomic/
-schema.sql: both tables and the current fn_hhr_rollup_add copied from the migrations
-that installed them), then proves the publication contract by reading the raw review
-row, the rollup aggregate and the receipt together after every call.
+then 20261008041150_horse_hand_review_receipts_retention.sql, both UNCHANGED, over
+the real prerequisites (tests/sql/fixtures/horse-hand-review-atomic/
+schema.sql: both tables, the current fn_hhr_rollup_add, and the current
+sp_prune_horse_hand_reviews with the three day tables it prunes, copied from the
+migrations that installed them), then proves the publication contract by reading the
+raw review row, the rollup aggregate and the receipt together after every call, and
+the receipt retention contract (a receipt is kept while its review row exists and
+until it is past the 30-day publication horizon; a resend after the prune is refused
+by name; pruning is bounded and idempotent; sp_prune_horse_hand_reviews is left
+byte-identical and the rollup is never touched).
 
 No DSN, host, credentials, production fixtures, or existing cluster are accepted.
 PG_BIN (or argv[1]) selects the PostgreSQL 17 binaries. TMPDIR/RUNNER_TEMP selects
@@ -13,6 +19,7 @@ scratch storage; on macOS it must be the external SSD. Must not run as root
 (initdb refuses).
 """
 import concurrent.futures
+import difflib
 import hashlib
 import json
 import os
@@ -26,12 +33,15 @@ import uuid
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / 'tests/sql/fixtures/horse-hand-review-atomic'
 MIGRATION = ROOT / 'supabase/migrations/20261007020953_horse_hand_review_atomic_publication.sql'
+RETENTION = ROOT / 'supabase/migrations/20261008041150_horse_hand_review_receipts_retention.sql'
 DB = 'horse_hand_review_atomic_test'
 PORT = '55496'
 DEADLINE_SECONDS = 300
 FN = 'public.fn_hhr_record_atomic'
 SIGNATURE = 'public.fn_hhr_record_atomic(jsonb)'
 OLD_SIGNATURE = 'public.fn_hhr_rollup_add(uuid,date,text,boolean,numeric,text[])'
+PRUNE = 'public.sp_prune_horse_hand_reviews()'
+RECEIPT_PRUNE = 'public.sp_prune_horse_hand_review_receipts()'
 
 
 def u(seed):
@@ -506,6 +516,286 @@ def main():
             case('J rollup arithmetic equals the installed fn_hhr_rollup_add (rounding, repeated tags, days, variants)',
                  arithmetic_equivalence)
 
+            # ══ Receipt retention: 20261008041150 ═══════════════════════════
+            # Everything above qualified 20261007020953 alone. The cases below
+            # apply the retention migration, unchanged, over that state and prove
+            # the replay contract survives bounded pruning. Every time is taken
+            # from the cluster clock, so the cases never age.
+            def at(days, minutes=0):
+                return sql(f"""SELECT to_char((now() - interval '{days} days' - interval '{minutes} minutes')
+                               AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"');""")
+
+            def prune(prefix=''):
+                # The receipts' own prune, called as the engine calls it: service_role.
+                return int(sql(f'{prefix}SET ROLE service_role; SELECT {RECEIPT_PRUNE};').splitlines()[-1])
+
+            def prune_reviews():
+                return int(sql(f'SET ROLE service_role; SELECT {PRUNE};').splitlines()[-1])
+
+            def receipt_count():
+                return int(sql('SELECT count(*) FROM public.horse_hand_review_receipts;'))
+
+            def receipts_for(hand):
+                return json.loads(sql(f"""SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY r.horse_user_id), '[]')
+                                         FROM public.horse_hand_review_receipts r WHERE hand_id = '{hand}';"""))
+
+            def rollup_all():
+                return sql("""SELECT md5(coalesce(jsonb_agg(to_jsonb(r) ORDER BY r.horse_user_id, r.day, r.game_variant),
+                              '[]')::text) FROM public.horse_review_rollup r;""")
+
+            def proc_identity(sig):
+                return sql(f"""SELECT md5(prosrc) || ' ' || prosecdef::text || ' ' || coalesce(proconfig::text, '')
+                               || ' ' || coalesce(proacl::text, '') FROM pg_proc WHERE oid = '{sig}'::regprocedure;""")
+
+            def prosrc(sig):
+                return sql(f"SELECT prosrc FROM pg_proc WHERE oid = '{sig}'::regprocedure;")
+
+            retention_sql = RETENTION.read_text()
+            hand_old, hand_old_b, hand_lg = u('ret-hand-old'), u('ret-hand-old-b'), u('ret-hand-legacy')
+            old_1, old_2 = sorted([u('ret-old-1'), u('ret-old-2')])
+            old_3, legacy_old = u('ret-old-3'), u('ret-legacy')
+            old_played = at(45)
+            rows_old = [row(hand_old, old_1, played_at=old_played),
+                        row(hand_old, old_2, played_at=old_played, net_bb=-27.5, net_amount=-55)]
+            rows_old_b = [row(hand_old_b, old_3, played_at=at(40))]
+
+            def publish_before_retention():
+                # The 20261007020953 door has no horizon: these are real receipts, with
+                # real digests, for hands played 45 and 40 days ago.
+                assert statuses(publish(rows_old)) == [(old_1, 'applied'), (old_2, 'applied')]
+                assert statuses(publish(rows_old_b)) == [(old_3, 'applied')]
+                sql(f"""INSERT INTO public.horse_hand_reviews (hand_id, table_id, played_at, game_variant, format,
+                        big_blind, horse_user_id, net_amount, net_bb, leak_tags)
+                        VALUES ('{hand_lg}', '{u('table')}', '{old_played}', 'nlh', 'cash', 2,
+                                '{legacy_old}', 48.5, 24.25, ARRAY['river_aggr_won']);""")
+            case('R0 receipts for hands played 45 and 40 days ago exist before retention is installed',
+                 publish_before_retention)
+
+            prune_before, atomic_before = proc_identity(PRUNE), proc_identity(SIGNATURE)
+            prune_src_before, atomic_src_before = prosrc(PRUNE), prosrc(SIGNATURE)
+
+            def retention_preimage_refuses():
+                sql(f"""CREATE FUNCTION {RECEIPT_PRUNE} RETURNS integer LANGUAGE sql AS 'SELECT 0';""")
+                try:
+                    err = sql(retention_sql, succeeds=False)
+                    assert ('hhr_retention preimage: public.sp_prune_horse_hand_review_receipts already exists'
+                            in err), err
+                    assert sql("SELECT to_regclass('public.horse_hand_review_receipts_rollup_day_idx') IS NULL;") == 't'
+                    assert proc_identity(SIGNATURE) == atomic_before
+                finally:
+                    sql(f'DROP FUNCTION {RECEIPT_PRUNE};')
+                original = sql(f"SELECT pg_get_functiondef('{SIGNATURE}'::regprocedure);")
+                sql(original.replace('v_status := \'applied\';', 'v_status := \'applied\'; -- drift', 1) + ';')
+                try:
+                    assert proc_identity(SIGNATURE) != atomic_before
+                    err = sql(retention_sql, succeeds=False)
+                    assert ('hhr_retention preimage: public.fn_hhr_record_atomic(jsonb) is not the '
+                            '20261007020953 body') in err, err
+                    assert sql("SELECT to_regclass('public.horse_hand_review_receipts_rollup_day_idx') IS NULL;") == 't'
+                    assert sql(f"SELECT to_regprocedure('{RECEIPT_PRUNE}') IS NULL;") == 't'
+                finally:
+                    sql(original + ';')
+                assert proc_identity(SIGNATURE) == atomic_before
+                assert proc_identity(PRUNE) == prune_before
+            case('R1 retention preimage refuses an existing receipt prune or a drifted fn_hhr_record_atomic and '
+                 'rolls back', retention_preimage_refuses)
+
+            sql(retention_sql)
+            passed.append('retention migration applies unchanged in one transaction')
+
+            def retention_reapply_refused():
+                err = sql(retention_sql, succeeds=False)
+                assert 'hhr_retention preimage: public.horse_hand_review_receipts_rollup_day_idx already exists' in err, err
+            case('R2 reapplying the retention migration is refused by its preimage', retention_reapply_refused)
+
+            def retention_definitions():
+                now_md5, now_rest = proc_identity(SIGNATURE).split(' ', 1)
+                old_md5, old_rest = atomic_before.split(' ', 1)
+                assert now_md5 != old_md5 and now_rest == old_rest, (now_rest, old_rest)
+                # fn_hhr_record_atomic: the old body plus exactly one inserted block.
+                old_lines, new_lines = atomic_src_before.splitlines(), prosrc(SIGNATURE).splitlines()
+                ops = [op for op in difflib.SequenceMatcher(a=old_lines, b=new_lines, autojunk=False).get_opcodes()
+                       if op[0] != 'equal']
+                assert len(ops) == 1 and ops[0][0] == 'insert', ops
+                block = '\n'.join(new_lines[ops[0][3]:ops[0][4]])
+                assert 'hhr_publication_expired' in block and "'30 days'" in block, block
+                assert new_lines[ops[0][3] - 1].strip() == 'IF v_review_id IS NOT NULL THEN', new_lines[ops[0][3] - 1]
+                # sp_prune_horse_hand_reviews: byte-identical, same configuration and privileges.
+                assert proc_identity(PRUNE) == prune_before and prosrc(PRUNE) == prune_src_before
+                # The receipts' own prune: definer, pinned search_path, service_role only.
+                assert sql(f"""SELECT prosecdef::text || ' ' || proconfig::text FROM pg_proc
+                               WHERE oid = '{RECEIPT_PRUNE}'::regprocedure;""") == 'true {"search_path=pg_catalog, pg_temp"}'
+                for sig in (SIGNATURE, PRUNE, RECEIPT_PRUNE):
+                    assert sql(f"""SELECT has_function_privilege('anon', '{sig}', 'EXECUTE')::text || ',' ||
+                        has_function_privilege('authenticated', '{sig}', 'EXECUTE')::text || ',' ||
+                        has_function_privilege('service_role', '{sig}', 'EXECUTE')::text;""") == 'false,false,true', sig
+                assert sql("""SELECT indisvalid FROM pg_index
+                              WHERE indexrelid = 'public.horse_hand_review_receipts_rollup_day_idx'::regclass;""") == 't'
+                receipts_closed()
+            case('R3 fn_hhr_record_atomic keeps definer, configuration and privileges and gains only the horizon '
+                 'block; sp_prune_horse_hand_reviews is byte-identical; the receipt prune is service_role only',
+                 retention_definitions)
+
+            def publication_horizon():
+                fresh_hand, fresh = u('ret-fresh-hand'), u('ret-fresh')
+                assert statuses(publish([row(fresh_hand, fresh, played_at=at(29, 23 * 60))])) == [(fresh, 'applied')]
+                before = snapshot()
+                late = u('ret-late-hand')
+                lo, hi = sorted([u('ret-late-1'), u('ret-late-2')])
+                refused([row(late, lo, played_at=at(30, 1)), row(late, hi, played_at=at(30, 1))],
+                        'hhr_publication_expired')
+                assert snapshot() == before
+                refused([row(u('ret-ancient'), u('ret-ancient-h'), played_at='2020-01-01T00:00:00Z')],
+                        'hhr_publication_expired')
+                assert snapshot() == before
+                # The expired row is the LAST horse processed, after the first was inserted,
+                # added to the rollup and given a receipt inside the call: all of it rolls back.
+                mixed = u('ret-mixed-hand')
+                refused([row(mixed, hi, played_at=at(31)), row(mixed, lo, played_at=at(1))], 'hhr_publication_expired')
+                assert snapshot() == before
+            case('R4 applying a hand played more than 30 days ago is refused P0001 hhr_publication_expired and '
+                 'persists nothing; 29d23h still applies', publication_horizon)
+
+            def old_receipt_still_answers():
+                before = snapshot()
+                assert statuses(publish(rows_old)) == [(old_1, 'replayed'), (old_2, 'replayed')]
+                assert snapshot() == before
+                refused([dict(rows_old[0], net_bb=99)], 'hhr_identity_conflict')
+                assert snapshot() == before
+                assert statuses(publish([row(hand_lg, legacy_old, played_at=old_played)])) == \
+                    [(legacy_old, 'historical_unknown')]
+                assert snapshot() == before
+            case('R5 a 45-day-old hand with a receipt still answers replayed / hhr_identity_conflict; a legacy row '
+                 'still answers historical_unknown', old_receipt_still_answers)
+
+            def kept_while_review_exists():
+                before = snapshot()
+                assert prune_reviews() == 0
+                assert prune() == 0
+                assert snapshot() == before
+                assert len(receipts_for(hand_old)) == 2 and len(receipts_for(hand_old_b)) == 1
+            case('R6 a receipt 45 days old is kept while its review row exists', kept_while_review_exists)
+
+            def review_gone_inside_window():
+                hand_r, horse_r = u('ret-recent-hand'), u('ret-recent')
+                r = row(hand_r, horse_r, played_at=at(29))
+                assert statuses(publish([r])) == [(horse_r, 'applied')]
+                sql(f"DELETE FROM public.horse_hand_reviews WHERE hand_id = '{hand_r}';")
+                before = snapshot()
+                assert prune() == 0
+                assert snapshot() == before and len(receipts_for(hand_r)) == 1
+                assert statuses(publish([r])) == [(horse_r, 'replayed')]
+                assert snapshot() == before
+            case('R7 review row gone but rollup_day inside 32 days: receipt kept, resend replayed, nothing re-inserted',
+                 review_gone_inside_window)
+
+            def review_leaves_retention():
+                rollup_before = rollup_all()
+                sql(f"""UPDATE public.horse_hand_reviews SET created_at = now() - interval '31 days'
+                        WHERE hand_id IN ('{hand_old}', '{hand_old_b}');""")
+                # The receipt prune first: the review rows still exist, so nothing goes.
+                n_receipts = receipt_count()
+                assert prune() == 0 and receipt_count() == n_receipts
+                # The review prune removes the three review rows and never a receipt.
+                assert prune_reviews() == 3 and receipt_count() == n_receipts
+                # Then, in its own statement as the engine sends it, the receipts follow.
+                assert prune() == 3
+                snap = snapshot()
+                assert not receipts_for(hand_old) and not receipts_for(hand_old_b)
+                assert not [x for x in snap['reviews'] if x['hand_id'] in (hand_old, hand_old_b)]
+                assert rollup_all() == rollup_before
+                for rows in (rows_old, rows_old_b):
+                    refused(rows, 'hhr_publication_expired')
+                    assert snapshot() == snap, 'resend after the receipt prune wrote something'
+                assert prune() == 0 and snapshot() == snap
+            case('R8 once the review leaves retention the receipt is pruned; a resend is refused '
+                 'hhr_publication_expired, nothing re-inserted, aggregate unchanged; a second prune is a no-op',
+                 review_leaves_retention)
+
+            def utc_day_boundary():
+                kept, gone, horse = u('ret-day-32'), u('ret-day-33'), u('ret-day-horse')
+                for hand, off in ((kept, 32), (gone, 33)):
+                    sql(f"""INSERT INTO public.horse_hand_review_receipts
+                            (hand_id, horse_user_id, identity_digest, review_id, rollup_day, game_variant)
+                            VALUES ('{hand}', '{horse}', repeat('c', 64), 1,
+                                    (now() AT TIME ZONE 'UTC')::date - {off}, 'nlh');""")
+                # UTC-11 then UTC+14: whatever the hour, one of the two sessions has a
+                # local date other than the UTC date, so a session-date cutoff fails here.
+                assert prune("SET TimeZone = 'Pacific/Pago_Pago'; ") == 1
+                assert prune("SET TimeZone = 'Pacific/Kiritimati'; ") == 0
+                assert len(receipts_for(kept)) == 1 and not receipts_for(gone)
+            case('R9 cutoff is the UTC day: rollup_day 32 days back is kept, 33 is pruned, in any session TimeZone',
+                 utc_day_boundary)
+
+            def bounded_and_idempotent():
+                rollup_before = rollup_all()
+                bulk, tail = u('ret-bulk'), u('ret-tail')
+                sql(f"""INSERT INTO public.horse_hand_review_receipts
+                        (hand_id, horse_user_id, identity_digest, review_id, rollup_day, game_variant)
+                        SELECT gen_random_uuid(), '{bulk}', repeat('d', 64), g,
+                               (now() AT TIME ZONE 'UTC')::date - 60, 'nlh' FROM generate_series(1, 25000) g;
+                        INSERT INTO public.horse_hand_review_receipts
+                        (hand_id, horse_user_id, identity_digest, review_id, rollup_day, game_variant)
+                        SELECT gen_random_uuid(), '{tail}', repeat('e', 64), g,
+                               (now() AT TIME ZONE 'UTC')::date - 40, 'nlh' FROM generate_series(1, 10) g;""")
+                held = [u(f'ret-held-{i}') for i in range(3)]
+                for i, hand in enumerate(held):
+                    sql(f"""INSERT INTO public.horse_hand_reviews (hand_id, table_id, played_at, game_variant, format,
+                            big_blind, horse_user_id, net_amount, net_bb, leak_tags)
+                            VALUES ('{hand}', '{u('table')}', now() - interval '61 days', 'nlh', 'cash', 2,
+                                    '{bulk}', 48.5, 24.25, '{{}}');
+                            INSERT INTO public.horse_hand_review_receipts
+                            (hand_id, horse_user_id, identity_digest, review_id, rollup_day, game_variant)
+                            VALUES ('{hand}', '{bulk}', repeat('f', 64), {i + 1},
+                                    (now() AT TIME ZONE 'UTC')::date - 61, 'nlh');""")
+                count = ("SELECT count(*) FILTER (WHERE horse_user_id = '%s' AND identity_digest = repeat('d', 64)) || ',' || "
+                         "count(*) FILTER (WHERE horse_user_id = '%s') || ',' || "
+                         "count(*) FILTER (WHERE identity_digest = repeat('f', 64)) "
+                         "FROM public.horse_hand_review_receipts;") % (bulk, tail)
+                assert sql(count) == '25000,10,3'
+                assert prune() == 25000
+                assert sql(count) == '0,10,3', sql(count)  # the oldest went first
+                assert prune() == 10
+                assert sql(count) == '0,0,3'
+                assert prune() == 0 and sql(count) == '0,0,3'
+                assert rollup_all() == rollup_before
+            case('R10 one call removes at most 25,000 receipts, oldest rollup_day first; receipts whose review exists '
+                 'stay; repeated calls drain to zero and then change nothing', bounded_and_idempotent)
+
+            def other_retention_unchanged():
+                horse = u('ret-other')
+                sql(f"""INSERT INTO public.horse_hand_reviews (hand_id, table_id, played_at, game_variant, format,
+                        big_blind, horse_user_id, net_amount, net_bb, leak_tags, created_at)
+                        VALUES ('{u('ret-rv-old')}', '{u('table')}', now(), 'nlh', 'cash', 2, '{horse}', 48.5, 24.25,
+                                '{{}}', now() - interval '30 days' - interval '1 minute'),
+                               ('{u('ret-rv-new')}', '{u('table')}', now(), 'nlh', 'cash', 2, '{horse}', 48.5, 24.25,
+                                '{{}}', now() - interval '29 days');
+                        INSERT INTO public.horse_daily_nets (horse_user_id, day, game_variant)
+                        VALUES ('{horse}', current_date - 181, 'nlh'), ('{horse}', current_date - 180, 'nlh');
+                        INSERT INTO public.horse_daily_play (horse_user_id, day)
+                        VALUES ('{horse}', current_date - 181), ('{horse}', current_date - 180);
+                        INSERT INTO public.horse_tournament_daily (horse_user_id, day)
+                        VALUES ('{horse}', current_date - 181), ('{horse}', current_date - 180);""")
+                rollup_before = rollup_all()
+                receipts_before = sql("""SELECT md5(coalesce(jsonb_agg(to_jsonb(r) ORDER BY r.hand_id, r.horse_user_id),
+                                         '[]')::text) FROM public.horse_hand_review_receipts r;""")
+                assert prune_reviews() == 4
+                assert sql("""SELECT md5(coalesce(jsonb_agg(to_jsonb(r) ORDER BY r.hand_id, r.horse_user_id),
+                              '[]')::text) FROM public.horse_hand_review_receipts r;""") == receipts_before
+                got = sql(f"""SELECT (SELECT string_agg(hand_id::text, ',') FROM public.horse_hand_reviews
+                                       WHERE horse_user_id = '{horse}') || ' ' ||
+                                     (SELECT string_agg((current_date - day)::text, ',') FROM public.horse_daily_nets
+                                       WHERE horse_user_id = '{horse}') || ' ' ||
+                                     (SELECT string_agg((current_date - day)::text, ',') FROM public.horse_daily_play
+                                       WHERE horse_user_id = '{horse}') || ' ' ||
+                                     (SELECT string_agg((current_date - day)::text, ',') FROM public.horse_tournament_daily
+                                       WHERE horse_user_id = '{horse}');""")
+                assert got == f"{u('ret-rv-new')} 180 180 180", got
+                assert rollup_all() == rollup_before
+            case('R11 sp_prune_horse_hand_reviews is unchanged: reviews at 30 days, day tables at 180 days, '
+                 'no receipt touched, '
+                 'rollup untouched', other_retention_unchanged)
+
             case('fn_hhr_rollup_add still byte-identical after every case', old_function_unchanged)
         finally:
             if started or (data_dir / 'postmaster.pid').exists():
@@ -520,6 +810,8 @@ def main():
                       'failures': failed,
                       'migration': str(MIGRATION.relative_to(ROOT)),
                       'migrationSHA256': hashlib.sha256(MIGRATION.read_bytes()).hexdigest(),
+                      'retentionMigration': str(RETENTION.relative_to(ROOT)),
+                      'retentionMigrationSHA256': hashlib.sha256(RETENTION.read_bytes()).hexdigest(),
                       'seconds': round(time.monotonic() - started_at, 1),
                       'boundary': 'isolated PostgreSQL 17; no production mutation'}, indent=2))
     print(f"\n{'FAIL' if failed else 'PASS'}: {len(passed)} passed, {len(failed)} failed")

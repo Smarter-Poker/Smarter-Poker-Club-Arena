@@ -230,6 +230,18 @@ describe('device class and Cluster limit', () => {
     expect(LIGHTNING_CAPABILITY_MAP.mobile_web.multi_table).toBe(true);
     expect(LIGHTNING_CAPABILITY_MAP.ios.multi_table).toBe(true);
   });
+  it('the Cluster’s configured limit wins over the default, per device', () => {
+    expect(lightningMultiTableLimit('desktop', { desktop: 6, mobile: 1 })).toBe(6);
+    expect(lightningMultiTableLimit('mobile', { desktop: 6, mobile: 1 })).toBe(1);
+    // A device the payload did not name keeps its default.
+    expect(lightningMultiTableLimit('tablet', { desktop: 6 })).toBe(3);
+    // An unknown device reads as the phone, configured or not.
+    expect(lightningMultiTableLimit('toaster', { mobile: 5 })).toBe(5);
+    // Nonsense never becomes a limit.
+    expect(lightningMultiTableLimit('desktop', { desktop: 0 })).toBe(4);
+    expect(lightningMultiTableLimit('desktop', { desktop: 2.5 })).toBe(4);
+    expect(lightningMultiTableLimit('desktop', null)).toBe(4);
+  });
   it('only a Lightning room reports the device, on the URL or the SUBSCRIBE', () => {
     resetLightningDeviceReportForTests('tablet');
     const url = 'wss://engine/ws/table/' + POOL + '?v=1';
@@ -366,13 +378,33 @@ describe('parsing the Lightning session RPCs', () => {
       ended: true,
       exitReason: 'left',
     });
+    // The old payload shape (cluster_mode, no joinable/multi_table_limit) is
+    // tolerated until the migration lands: unknown is null, never a refusal.
     expect(
       parseLightningPoolHealth({ status: 'hot', players: '12', cluster_mode: 'lightning' })
     ).toEqual({
       status: 'HOT',
       players: 12,
-      clusterMode: 'lightning',
+      joinable: null,
+      multiTableLimit: null,
     });
+    // The migrated shape: the database's own verdict and configured limits.
+    expect(
+      parseLightningPoolHealth({
+        status: 'active',
+        players: 7,
+        joinable: true,
+        multi_table_limit: { desktop: 6, tablet: '4', mobile: 0 },
+      })
+    ).toEqual({
+      status: 'ACTIVE',
+      players: 7,
+      joinable: true,
+      multiTableLimit: { desktop: 6, tablet: 4 },
+    });
+    expect(parseLightningPoolHealth({ status: 'THIN', players: 1, joinable: false })).toMatchObject(
+      { joinable: false, multiTableLimit: null }
+    );
     expect(parseLightningPoolHealth({ status: 'WARM' })).toBeNull();
     const mine = parseLightningMySessions([
       {
@@ -693,6 +725,57 @@ describe('the Lightning entry with several Clusters', () => {
     withSessions(4);
     renderEntry(`/lightning/${CLUSTER}`);
     expect(await screen.findByText(/Most Lightning Tables This Device Allows/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^join lightning$/i })).toBeNull();
+    expect(moneyRpcs()).toEqual([]);
+  });
+
+  it('the Cluster’s configured limit opens the door past the 4/3/2 default', async () => {
+    // Four sessions elsewhere is the hard-coded desktop ceiling, but the
+    // pool status says this Cluster allows five on desktop: the door opens.
+    withSessions(4);
+    rpc.mockImplementation(async (name: string) => {
+      if (name === 'fn_lightning_my_session')
+        return {
+          data: { pool_session_id: null, state: null, cluster_mode: 'lightning' },
+          error: null,
+        };
+      if (name === 'fn_lightning_my_sessions') return { data: sessions(4), error: null };
+      if (name === 'fn_lightning_pool_status')
+        return {
+          data: {
+            players: 31,
+            status: 'HOT',
+            joinable: true,
+            multi_table_limit: { desktop: 5, tablet: 3, mobile: 2 },
+          },
+          error: null,
+        };
+      return defaultRpc(name);
+    });
+    renderEntry(`/lightning/${CLUSTER}`);
+    expect(await screen.findByRole('button', { name: /join lightning/i })).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.getByTestId('lightning-table-count').textContent).toBe('4 Of 5')
+    );
+    expect(screen.queryByText(/Most Lightning Tables This Device Allows/)).toBeNull();
+    expect(moneyRpcs()).toEqual([]);
+  });
+
+  it('a pool whose status says joinable false offers no door', async () => {
+    withSessions(1);
+    rpc.mockImplementation(async (name: string) => {
+      if (name === 'fn_lightning_my_session')
+        return {
+          data: { pool_session_id: null, state: null, cluster_mode: 'lightning' },
+          error: null,
+        };
+      if (name === 'fn_lightning_my_sessions') return { data: sessions(1), error: null };
+      if (name === 'fn_lightning_pool_status')
+        return { data: { players: 2, status: 'THIN', joinable: false }, error: null };
+      return defaultRpc(name);
+    });
+    renderEntry(`/lightning/${CLUSTER}`);
+    expect(await screen.findByText('This Game Is Not Taking Players.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^join lightning$/i })).toBeNull();
     expect(moneyRpcs()).toEqual([]);
   });

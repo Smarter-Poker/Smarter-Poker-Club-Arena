@@ -49,8 +49,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 193290,
-      "sha256": "645ad870dfe7fc499691b708905d3c6e914a3a0a6e3dcee5f5737f67390bb614"
+      "bytes": 193572,
+      "sha256": "8e870e6fe2e76f984f8a136cd7497d5a226822b74c3e10a8ffe6c4bc8ecb5074"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1775,5 +1775,9 @@
       "bytes": 192956,
       "sha256": "65e578ea1f5e92b5c6582c118fd4146a457b7b80015ad3e5befca583a38014bd"
     }
+  },
+  "operatorPauseCurrentMainIntegration20261008": {
+    "reason": "Preserve current protected main native steps and candidate operator-hold native qualification. Combined workflow pin is source identity only, not native financial or full-B acceptance.",
+    "protectedMain": "743ae1a1c158e828321b07d151a27fa9f9d32de0"
   }
 }

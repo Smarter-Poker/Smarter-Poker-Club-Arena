@@ -3051,7 +3051,8 @@ describe('P13.1: a joint multiway receipt whose input binding fails validation',
   /** A real Phase 13 cash bomb-pot decision from the brain, with its binding. */
   const jointDecision = (mode: 'shadow' | 'candidate') => {
     const spot = jointPolicyFixture('nlh', 2, 'cash', 'flop');
-    seedFastRandom(130999);
+    // A seed at which the round-3 candidate acts on this spot.
+    seedFastRandom(131003);
     return structuredClone(
       HorseLogic.decide(
         spot.hero,
@@ -3477,7 +3478,8 @@ describe('P13.3 per-variant joint authority at the client boundary', () => {
   /** A real NLH cash joint candidate (a bomb-pot flop the worker would select). */
   const selectedJoint = (authority: unknown) => {
     const spot = jointPolicyFixture('nlh', 2, 'cash', 'flop');
-    seedFastRandom(130999);
+    // A seed at which the round-3 candidate acts on this spot.
+    seedFastRandom(131003);
     const decision = structuredClone(
       HorseLogic.decide(
         spot.hero,

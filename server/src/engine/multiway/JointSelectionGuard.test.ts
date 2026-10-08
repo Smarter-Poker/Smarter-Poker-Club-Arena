@@ -37,44 +37,47 @@ const opts: HorseDecideOpts = {
 describe('P13.1 an applied Phase 13 candidate the legalizer would rewrite never acts', () => {
   it('refuses it as illegal_candidate and keeps the reference action', () => {
     let refused = 0;
-    for (const boards of [1, 2])
-      for (const street of ['flop', 'turn', 'river'] as const)
-        for (const invested of [5.25, 5.37, 5.5]) {
-          const s = jointPolicyFixture('nlh', boards, 'cash', street);
-          // Fractional pot fractions at a whole big blind: the settlement
-          // unit sizes them in cents, the legalizer in whole chips.
-          for (const p of s.state.players) p.totalInvested = invested;
-          s.hero.totalInvested = invested;
-          s.state.pot = invested * s.state.players.length;
-          s.state.pots = calculatePots(s.state.players);
-          s.state.contestablePot = calculateContestablePot(s.state.players, s.hero.user_id, 0);
-          seedFastRandom(131313);
-          const reference = HorseLogic.decide(
-            s.hero,
-            s.state,
-            'balanced',
-            {},
-            { ...opts, phase13Joint: 'off' }
-          );
-          seedFastRandom(131313);
-          const d = HorseLogic.decide(
-            s.hero,
-            s.state,
-            'balanced',
-            {},
-            { ...opts, phase13Joint: 'candidate' }
-          );
-          const r = d.jointPolicy!;
-          expect(r.inputs?.geometry.legalForm).toBe('not_supplied');
-          if (r.selectionRefusal !== 'illegal_candidate') continue;
-          refused++;
-          expect(r.applied).toBe(false);
-          expect({ action: d.action, amount: d.amount ?? null }).toEqual({
-            action: reference.action,
-            amount: reference.amount ?? null,
-          });
-          expect(r.finalAction).toBe(reference.action);
-        }
+    // Round 3 acts only where a wager's paired edge clears its lower bound,
+    // so the spots are swept over several decision seeds.
+    for (let seed = 131313; seed < 131313 + 24; seed++)
+      for (const boards of [1, 2])
+        for (const street of ['flop', 'turn', 'river'] as const)
+          for (const invested of [5.25, 5.37, 5.5]) {
+            const s = jointPolicyFixture('nlh', boards, 'cash', street);
+            // Fractional pot fractions at a whole big blind: the settlement
+            // unit sizes them in cents, the legalizer in whole chips.
+            for (const p of s.state.players) p.totalInvested = invested;
+            s.hero.totalInvested = invested;
+            s.state.pot = invested * s.state.players.length;
+            s.state.pots = calculatePots(s.state.players);
+            s.state.contestablePot = calculateContestablePot(s.state.players, s.hero.user_id, 0);
+            seedFastRandom(seed);
+            const reference = HorseLogic.decide(
+              s.hero,
+              s.state,
+              'balanced',
+              {},
+              { ...opts, phase13Joint: 'off' }
+            );
+            seedFastRandom(seed);
+            const d = HorseLogic.decide(
+              s.hero,
+              s.state,
+              'balanced',
+              {},
+              { ...opts, phase13Joint: 'candidate' }
+            );
+            const r = d.jointPolicy!;
+            expect(r.inputs?.geometry.legalForm).toBe('not_supplied');
+            if (r.selectionRefusal !== 'illegal_candidate') continue;
+            refused++;
+            expect(r.applied).toBe(false);
+            expect({ action: d.action, amount: d.amount ?? null }).toEqual({
+              action: reference.action,
+              amount: reference.amount ?? null,
+            });
+            expect(r.finalAction).toBe(reference.action);
+          }
     expect(refused).toBeGreaterThan(0);
   });
 });

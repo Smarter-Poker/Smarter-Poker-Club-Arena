@@ -4514,28 +4514,104 @@ describe('P13.3 worker-owned joint multiway authority (the Phase 8 path, reused 
   // the joint owner is shadow: the actions live tables execute today. Read
   // through this same harness and seed on that base before any P13.3 change
   // (docs/evidence/phase13/p13-3-pin-base.log; harness
-  // docs/evidence/phase13/p13-3-pin-base.test.ts.txt).
+  // docs/evidence/phase13/p13-3-pin-base.test.ts.txt). The shadow proposals
+  // (last column) are re-pinned for the round-3 response pack
+  // (joint-action-response-round3-v1), whose selection rule keeps the
+  // baseline unless a wager's paired edge clears its lower bound; the
+  // executed actions are unchanged.
   const LIVE_STATES = [
-    ['nlh', 'cash', 2, 'flop', 10_301_204, { action: 'check', amount: null }, ['bet', 30]],
-    ['nlh', 'cash', 1, 'turn', 100_101, { action: 'check', amount: null }, ['bet', 6]],
-    ['nlh', 'tournament', 1, 'river', 10_301_204, { action: 'check', amount: null }, ['bet', 2]],
-    ['plo4', 'cash', 2, 'flop', 10_301_204, { action: 'check', amount: null }, ['bet', 20]],
-    ['plo4', 'cash', 1, 'turn', 100_101, { action: 'check', amount: null }, ['bet', 2]],
-    ['plo4', 'tournament', 1, 'river', 10_301_204, { action: 'check', amount: null }, ['bet', 2]],
-    ['plo5', 'cash', 2, 'flop', 10_301_204, { action: 'check', amount: null }, ['bet', 15]],
-    ['plo5', 'tournament', 1, 'river', 10_301_204, { action: 'check', amount: null }, ['bet', 7]],
-    ['plo6', 'cash', 2, 'flop', 10_301_204, { action: 'check', amount: null }, ['bet', 10]],
-    ['plo6', 'tournament', 1, 'river', 10_301_204, { action: 'check', amount: null }, ['bet', 2]],
-    ['plo8', 'cash', 2, 'flop', 10_301_204, { action: 'check', amount: null }, ['bet', 20]],
-    ['plo8', 'tournament', 1, 'river', 10_301_204, { action: 'check', amount: null }, ['bet', 15]],
-    ['flo8', 'cash', 2, 'flop', 10_301_204, { action: 'check', amount: null }, ['bet', 2]],
-    ['flo8', 'cash', 1, 'turn', 100_101, { action: 'check', amount: null }, ['bet', 4]],
-    ['flo8', 'tournament', 1, 'river', 10_301_204, { action: 'check', amount: null }, ['bet', 4]],
-    ['flh', 'cash', 2, 'flop', 10_301_204, { action: 'check', amount: null }, ['bet', 2]],
-    ['flh', 'tournament', 1, 'river', 10_301_204, { action: 'check', amount: null }, ['bet', 4]],
-    ['pineapple', 'cash', 2, 'flop', 10_301_204, { action: 'check', amount: null }, ['bet', 20]],
-    ['pineapple', 'cash', 1, 'turn', 100_101, { action: 'bet', amount: 12 }, ['bet', 6]],
-    ['short_deck', 'cash', 2, 'flop', 10_301_204, { action: 'check', amount: null }, ['bet', 30]],
+    ['nlh', 'cash', 2, 'flop', 10_301_204, { action: 'check', amount: null }, ['check', null]],
+    ['nlh', 'cash', 1, 'turn', 100_101, { action: 'check', amount: null }, ['check', null]],
+    [
+      'nlh',
+      'tournament',
+      1,
+      'river',
+      10_301_204,
+      { action: 'check', amount: null },
+      ['check', null],
+    ],
+    ['plo4', 'cash', 2, 'flop', 10_301_204, { action: 'check', amount: null }, ['check', null]],
+    ['plo4', 'cash', 1, 'turn', 100_101, { action: 'check', amount: null }, ['check', null]],
+    [
+      'plo4',
+      'tournament',
+      1,
+      'river',
+      10_301_204,
+      { action: 'check', amount: null },
+      ['check', null],
+    ],
+    ['plo5', 'cash', 2, 'flop', 10_301_204, { action: 'check', amount: null }, ['check', null]],
+    [
+      'plo5',
+      'tournament',
+      1,
+      'river',
+      10_301_204,
+      { action: 'check', amount: null },
+      ['check', null],
+    ],
+    ['plo6', 'cash', 2, 'flop', 10_301_204, { action: 'check', amount: null }, ['bet', 20]],
+    [
+      'plo6',
+      'tournament',
+      1,
+      'river',
+      10_301_204,
+      { action: 'check', amount: null },
+      ['check', null],
+    ],
+    ['plo8', 'cash', 2, 'flop', 10_301_204, { action: 'check', amount: null }, ['check', null]],
+    [
+      'plo8',
+      'tournament',
+      1,
+      'river',
+      10_301_204,
+      { action: 'check', amount: null },
+      ['check', null],
+    ],
+    ['flo8', 'cash', 2, 'flop', 10_301_204, { action: 'check', amount: null }, ['check', null]],
+    ['flo8', 'cash', 1, 'turn', 100_101, { action: 'check', amount: null }, ['check', null]],
+    [
+      'flo8',
+      'tournament',
+      1,
+      'river',
+      10_301_204,
+      { action: 'check', amount: null },
+      ['check', null],
+    ],
+    ['flh', 'cash', 2, 'flop', 10_301_204, { action: 'check', amount: null }, ['check', null]],
+    [
+      'flh',
+      'tournament',
+      1,
+      'river',
+      10_301_204,
+      { action: 'check', amount: null },
+      ['check', null],
+    ],
+    [
+      'pineapple',
+      'cash',
+      2,
+      'flop',
+      10_301_204,
+      { action: 'check', amount: null },
+      ['check', null],
+    ],
+    ['pineapple', 'cash', 1, 'turn', 100_101, { action: 'bet', amount: 12 }, ['bet', 12]],
+    [
+      'short_deck',
+      'cash',
+      2,
+      'flop',
+      10_301_204,
+      { action: 'check', amount: null },
+      ['check', null],
+    ],
     [
       'short_deck',
       'tournament',
@@ -4543,7 +4619,7 @@ describe('P13.3 worker-owned joint multiway authority (the Phase 8 path, reused 
       'river',
       10_301_204,
       { action: 'check', amount: null },
-      ['bet', 2],
+      ['check', null],
     ],
   ] as const;
   const request = (
@@ -4556,9 +4632,24 @@ describe('P13.3 worker-owned joint multiway authority (the Phase 8 path, reused 
     format === 'cash'
       ? jointCash(requestId, variant, boards, street)
       : jointTournament(requestId, variant, street);
-  /** A cash spot per variant where the joint proposal differs from the baseline. */
+  /** A cash spot per variant where the round-3 joint proposal differs from
+   * the baseline through this harness: board count, street and decision seed,
+   * the first changed spot of a sweep over flop, turn and river, two, one and
+   * three boards and seeds from 10_301_204. */
+  const CHANGED: Record<JointVariant, readonly [number, Street, number]> = {
+    nlh: [2, 'flop', 10_301_216],
+    plo4: [2, 'flop', 10_301_215],
+    plo5: [2, 'flop', 10_301_217],
+    plo6: [2, 'flop', 10_301_204],
+    plo8: [2, 'flop', 10_301_208],
+    flo8: [2, 'turn', 10_301_228],
+    flh: [1, 'flop', 10_301_204],
+    pineapple: [1, 'flop', 10_301_204],
+    short_deck: [2, 'flop', 10_301_208],
+  };
   const changedCash = (requestId: number, variant: JointVariant) =>
-    jointCash(requestId, variant, 2, 'flop');
+    jointCash(requestId, variant, CHANGED[variant][0], CHANGED[variant][1]);
+  const changedSeed = (variant: JointVariant) => CHANGED[variant][2];
 
   it.each(LIVE_STATES)(
     'live behaviour is unchanged today: %s %s with %i boards on the %s (seed %i) executes the same action as before P13.3',
@@ -4577,9 +4668,12 @@ describe('P13.3 worker-owned joint multiway authority (the Phase 8 path, reused 
         mode: 'shadow',
         eligible: true,
         fired: true,
-        changed: true,
+        changed: proposal[0] !== baseAction.action || proposal[1] !== baseAction.amount,
         applied: false,
-        selection: 'shadow_change',
+        selection:
+          proposal[0] !== baseAction.action || proposal[1] !== baseAction.amount
+            ? 'shadow_change'
+            : 'none',
         selectionRefusal: null,
         authorityVerdict: null,
         authority: {
@@ -4641,10 +4735,16 @@ describe('P13.3 worker-owned joint multiway authority (the Phase 8 path, reused 
     'a %s PLO4 admission keeps the joint owner in shadow and the baseline action',
     async (_name, admission, reason) => {
       const r = changedCash(733, 'plo4');
-      const result = await decideThrough(r, (v) =>
-        v === 'plo4' ? admission() : { status: 'refused', reason: 'unselected', transient: false }
+      const result = await decideThrough(
+        r,
+        (v) =>
+          v === 'plo4'
+            ? admission()
+            : { status: 'refused', reason: 'unselected', transient: false },
+        false,
+        changedSeed('plo4')
       );
-      const reference = await decideThrough(r, undefined, true);
+      const reference = await decideThrough(r, undefined, true, changedSeed('plo4'));
       expect(result.h.decisionOpts[0].phase13Joint).toBe('shadow');
       expect(act(result.decision)).toEqual(act(reference.decision));
       expect(result.decision.jointPolicy).toMatchObject({
@@ -4661,8 +4761,8 @@ describe('P13.3 worker-owned joint multiway authority (the Phase 8 path, reused 
     'a valid %s qualification and completion record (test fixture only) select the cash proposal and record selected and baseline actions',
     async (variant) => {
       const r = changedCash(734, variant);
-      const selected = await decideThrough(r, only(variant));
-      const reference = await decideThrough(r, undefined, true);
+      const selected = await decideThrough(r, only(variant), false, changedSeed(variant));
+      const reference = await decideThrough(r, undefined, true, changedSeed(variant));
       expect(selected.h.decisionOpts[0].phase13Joint).toBe('candidate');
       const receipt = selected.decision.jointPolicy!;
       expect(receipt).toMatchObject({
@@ -4721,7 +4821,10 @@ describe('P13.3 worker-owned joint multiway authority (the Phase 8 path, reused 
         ['controller acceptance', (r: any) => (r.selection = 'controller_accepted')],
         ['a verdict', (r: any) => (r.authorityVerdict = 'usable')],
         ['an unnamed refusal', (r: any) => (r.selectionRefusal = 'retained')],
-        ['another proposal', (r: any) => (r.proposalAction = 'all_in')],
+        [
+          'another proposal',
+          (r: any) => (r.proposalAction = r.proposalAction === 'all_in' ? 'check' : 'all_in'),
+        ],
         ['no selection', (r: any) => delete r.selection],
         ['another receipt version', (r: any) => (r.version = 'joint-multiway-round1-v3')],
       ] as const) {
@@ -4737,7 +4840,12 @@ describe('P13.3 worker-owned joint multiway authority (the Phase 8 path, reused 
 
   it('an NLH selection never selects another variant', async () => {
     for (const variant of HORSE_PHASE13_VARIANTS.filter((v) => v !== 'nlh')) {
-      const other = await decideThrough(changedCash(735, variant), only('nlh'));
+      const other = await decideThrough(
+        changedCash(735, variant),
+        only('nlh'),
+        false,
+        changedSeed(variant)
+      );
       expect(other.h.decisionOpts[0].phase13Joint, variant).toBe('shadow');
       expect(other.result.phase13Authority?.nlh.state).toBe('usable');
       expect(other.decision.jointPolicy).toMatchObject({
@@ -4764,7 +4872,12 @@ describe('P13.3 worker-owned joint multiway authority (the Phase 8 path, reused 
       expect(horseDecisionReceiptIsValid(forged, variant)).toBe(false);
     }
     // A Phase 13 selection leaves every Phase 12 holder unselected.
-    const flh = await decideThrough(changedCash(736, 'flh'), only('flh'));
+    const flh = await decideThrough(
+      changedCash(736, 'flh'),
+      only('flh'),
+      false,
+      changedSeed('flh')
+    );
     for (const pack of ['short_deck', 'pineapple', 'flh', 'flo8'] as const)
       expect(flh.result.phase12Authority?.[pack].state).toBe('unselected');
   });
@@ -4809,8 +4922,10 @@ describe('P13.3 worker-owned joint multiway authority (the Phase 8 path, reused 
       expect(withAuthority.result.phase13Authority?.[variant].state).toBe('usable');
       expect(withAuthority.h.decisionOpts[0].phase13Joint).toBe('shadow');
       const receipt = withAuthority.decision.jointPolicy!;
-      expect(receipt).toMatchObject({ mode: 'shadow', applied: false, changed: true });
-      expect(receipt.selection).toBe('shadow_change');
+      // Round 3 often keeps the baseline; whatever the shadow proposal, it
+      // is Phase 7's and never applied.
+      expect(receipt).toMatchObject({ mode: 'shadow', applied: false });
+      expect(receipt.selection).toBe(receipt.changed ? 'shadow_change' : 'none');
       expect(receipt.utilityOwner).toBe('phase7_evaluated');
       expect(act(withAuthority.decision)).toEqual(act(withoutAuthority.decision));
       expect(withAuthority.decision.tournamentUtility ?? null).toEqual(
@@ -4836,8 +4951,10 @@ describe('P13.3 worker-owned joint multiway authority (the Phase 8 path, reused 
     const found: Array<{ decision: any }> = [];
     let requestId = 900;
     const spots: Array<{ hero: any; state: any }> = [];
-    forEachJointControllerSpot('short_deck', 'cash', 30, 0x13e1 + 10, (spot) => {
-      if (spots.length < 120)
+    // Round 3 applies a joint candidate only where a wager's paired edge
+    // clears its lower bound, so more natural spots are swept.
+    forEachJointControllerSpot('short_deck', 'cash', 120, 0x13e1 + 10, (spot) => {
+      if (spots.length < 600)
         spots.push({
           hero: spot.hero,
           // The worker's canonical snapshot also requires the cap fields the

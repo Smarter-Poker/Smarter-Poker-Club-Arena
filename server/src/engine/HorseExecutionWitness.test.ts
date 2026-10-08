@@ -566,19 +566,22 @@ describe('private execution witness', () => {
     }
   );
 
+  // Spots and seeds at which the round-3 shadow proposal differs from the
+  // baseline (round 3 keeps the baseline unless a wager's paired edge clears
+  // its lower bound).
   it.each([
-    ['nlh', 2, 'flop'],
-    ['plo4', 1, 'turn'],
-    ['flo8', 1, 'river'],
-    ['short_deck', 2, 'flop'],
+    ['nlh', 2, 'flop', 10_301_216],
+    ['plo4', 2, 'flop', 10_301_215],
+    ['flo8', 1, 'river', 10_301_208],
+    ['short_deck', 2, 'flop', 10_301_208],
   ] as const)(
-    'P13.3 binds the %s joint selection (%i boards, %s): proposal, shadow baseline and the accepted action',
-    (variant, boards, street) => {
+    'P13.3 binds the %s joint selection (%i boards, %s, seed %i): proposal, shadow baseline and the accepted action',
+    (variant, boards, street, seed) => {
       const spot = jointPolicyFixture(variant, boards, 'cash', street);
       const rng = saveFastRandom();
       let decision: HorseDecision;
       try {
-        seedFastRandom(10_301_204);
+        seedFastRandom(seed);
         decision = HorseLogic.decide(
           spot.hero,
           spot.state,

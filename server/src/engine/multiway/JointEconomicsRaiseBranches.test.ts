@@ -109,12 +109,15 @@ function runModel(rig: Rig, pre: Step[], strength: Record<string, number>) {
   capture.on = true;
   let result;
   try {
+    // The controller comparison builds raise branches under the retained
+    // round-2 responses; the settlement path is the one round 3 prices with.
     result = evaluateJointActions(
       decision.hero,
       decision.state,
       decision.baseline,
       evidence,
-      () => true
+      () => true,
+      { responseModel: 'round2' }
     )!;
   } finally {
     capture.on = false;

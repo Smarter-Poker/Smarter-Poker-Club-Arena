@@ -74,3 +74,10 @@ unchanged, a second prune a no-op; the UTC day boundary (32 kept, 33 pruned, in
 UTC+14 and UTC-11 sessions); the 25,000 bound, oldest first, draining to zero;
 and the review prune unchanged and touching no receipt. 32 of 32 pass. Ten
 deliberately broken copies of the migration each fail at least one case.
+
+**Delivery and install.** #6464 squash-merged `267bee12` (2026-10-08T06:37:20Z);
+installed by Apply Merged Migration run 37738632829 and read back from
+production at 06:38Z with the exact postimage md5s above,
+`sp_prune_horse_hand_reviews()` unchanged and the index valid. 55 receipts were
+applied naturally through the new body in the first minute. The engine call
+ships in #6484. The first natural prune is due on 2026-11-09 UTC.

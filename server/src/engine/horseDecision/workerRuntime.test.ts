@@ -3270,34 +3270,36 @@ describe('P10.3 worker-owned PLO4 authority (the Phase 8 path, reused)', () => {
   // Actions pinned from the unmodified P10.1 base (current main's policy):
   // the pack is shadow there, so these are the reference actions it executes.
   // Run through this same harness on the unmodified P10.1 base before the
-  // change (before-tests-with-admission-module-only.log, the PIN run).
+  // change (before-tests-with-admission-module-only.log, the PIN run). Round 3
+  // (2026-10-08): the pack retains every reference call and changes only the
+  // heads-up reference fold.
   const LIVE_STATES = [
     [
-      'cash AsKsQhJh preflop (the pack proposes raise 10)',
+      'cash AsKsQhJh preflop (the pack retains the call)',
       'cash',
       'As Ks Qh Jh',
-      true,
+      false,
       { action: 'call', amount: 2 },
     ],
     [
-      'cash QsQh4c4d preflop (the pack proposes fold)',
+      'cash QsQh4c4d preflop (the pack retains the call)',
       'cash',
       'Qs Qh 4c 4d',
-      true,
+      false,
       { action: 'call', amount: 2 },
     ],
     [
-      'cash Ah7c2s3d preflop (the pack agrees)',
+      'cash Ah7c2s3d preflop (the pack raises the heads-up fold)',
       'cash',
       'Ah 7c 2s 3d',
-      false,
+      true,
       { action: 'fold', amount: null },
     ],
     [
-      'tournament AsKsQhJh preflop (the pack proposes raise 10)',
+      'tournament AsKsQhJh preflop (the pack retains the call)',
       'tournament',
       'As Ks Qh Jh',
-      true,
+      false,
       { action: 'call', amount: 2 },
     ],
   ] as const;
@@ -3325,7 +3327,7 @@ describe('P10.3 worker-owned PLO4 authority (the Phase 8 path, reused)', () => {
       expect(receipt.finalAction).toBe(live.decision.action);
       expect(live.result.phase10Authority).toMatchObject({
         state: 'unselected',
-        continuationVersion: 'plo4-policy-round1-v3',
+        continuationVersion: 'plo4-policy-round3-v1',
       });
       expect(horseDecisionReceiptIsValid(structuredClone(live.decision), 'plo4')).toBe(true);
     }
@@ -3385,7 +3387,7 @@ describe('P10.3 worker-owned PLO4 authority (the Phase 8 path, reused)', () => {
   ] as const)(
     'a %s qualification file keeps the pack in shadow and the reference action',
     async (_name, admission, reason) => {
-      const request = plo4Cash(602, 'As Ks Qh Jh');
+      const request = plo4Cash(602, 'Ah 7c 2s 3d');
       const refused = await decideThrough(request, admission);
       const reference = await decideThrough(request, undefined, true);
       expect(refused.h.decisionOpts[0].phase10Plo4).toBe('shadow');
@@ -3401,7 +3403,7 @@ describe('P10.3 worker-owned PLO4 authority (the Phase 8 path, reused)', () => {
   );
 
   it('a valid qualified file (test fixture only) selects the cash proposal and records selected and baseline actions', async () => {
-    const request = plo4Cash(603, 'As Ks Qh Jh');
+    const request = plo4Cash(603, 'Ah 7c 2s 3d');
     const selected = await decideThrough(request, () => qualifiedPhase10TestAdmission(1));
     const reference = await decideThrough(request, undefined, true);
     expect(selected.h.decisionOpts[0].phase10Plo4).toBe('candidate');
@@ -3447,11 +3449,11 @@ describe('P10.3 worker-owned PLO4 authority (the Phase 8 path, reused)', () => {
 
   it('tournament decisions keep Phase 7 ownership even when the pack would be selected', async () => {
     const admission = () => qualifiedPhase10TestAdmission(1);
-    const cash = await decideThrough(plo4Cash(604, 'As Ks Qh Jh'), admission);
+    const cash = await decideThrough(plo4Cash(604, 'Ah 7c 2s 3d'), admission);
     expect(cash.h.decisionOpts[0].phase10Plo4).toBe('candidate');
     expect(cash.decision.plo4Policy?.selection).toBe('selected');
 
-    const request = plo4Tournament(605, 'As Ks Qh Jh');
+    const request = plo4Tournament(605, 'Ah 7c 2s 3d');
     const withAuthority = await decideThrough(request, admission);
     const withoutAuthority = await decideThrough(request);
     expect(withAuthority.result.phase10Authority?.state).toBe('usable');
@@ -3487,7 +3489,7 @@ describe('P10.3 worker-owned PLO4 authority (the Phase 8 path, reused)', () => {
     const h = harness(true);
     h.deps.admitPhase10Authority = () => qualifiedPhase10TestAdmission(1);
     h.runtime.receive({
-      ...plo4Cash(606, 'As Ks Qh Jh'),
+      ...plo4Cash(606, 'Ah 7c 2s 3d'),
       opts: { phase10Plo4: 'candidate' },
     } as unknown as FastHorseDecisionRequest);
     await h.runtime.drain();
@@ -3619,20 +3621,22 @@ describe('P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused 
   // Actions pinned from the unmodified base (fb9c43ea, P11.1 merged with
   // P11.2): the packs are shadow there, so these are the reference actions
   // live tables execute. Read through this same harness and seed on that base
-  // before any P11.3 change (docs/evidence/phase11/p11-3-pin-base.log).
+  // before any P11.3 change (docs/evidence/phase11/p11-3-pin-base.log). Round 3
+  // (2026-10-08): the packs retain every reference raise and call, and change
+  // only the heads-up reference fold.
   const LIVE_STATES = [
-    ['plo5', 'cash', 'As Ad Ks Kd Qs', true, { action: 'raise', amount: 11 }],
-    ['plo5', 'cash', 'Ah 7c 2s 3d 9h', false, { action: 'fold', amount: null }],
-    ['plo5', 'cash', 'Qs Qh 4c 4d 8s', false, { action: 'fold', amount: null }],
-    ['plo5', 'tournament', 'As Ad Ks Kd Qs', true, { action: 'raise', amount: 11 }],
-    ['plo6', 'cash', 'As Ad Ks Kd Qs Jd', true, { action: 'raise', amount: 11 }],
+    ['plo5', 'cash', 'As Ad Ks Kd Qs', false, { action: 'raise', amount: 11 }],
+    ['plo5', 'cash', 'Ah 7c 2s 3d 9h', true, { action: 'fold', amount: null }],
+    ['plo5', 'cash', 'Qs Qh 4c 4d 8s', true, { action: 'fold', amount: null }],
+    ['plo5', 'tournament', 'As Ad Ks Kd Qs', false, { action: 'raise', amount: 11 }],
+    ['plo6', 'cash', 'As Ad Ks Kd Qs Jd', false, { action: 'raise', amount: 11 }],
     ['plo6', 'cash', 'Ah 7c 2s 3d 9h 5c', true, { action: 'fold', amount: null }],
-    ['plo6', 'cash', 'Qs Qh 4c 4d 8s 9c', true, { action: 'call', amount: 2 }],
-    ['plo6', 'tournament', 'As Ad Ks Kd Qs Jd', true, { action: 'raise', amount: 11 }],
-    ['plo8', 'cash', 'As 2s 3d Ac', true, { action: 'raise', amount: 11 }],
-    ['plo8', 'cash', 'Ah 7c Ks 9d', false, { action: 'fold', amount: null }],
-    ['plo8', 'cash', 'Qs Qh 4c 4d', true, { action: 'call', amount: 2 }],
-    ['plo8', 'tournament', 'As 2s 3d Ac', true, { action: 'raise', amount: 11 }],
+    ['plo6', 'cash', 'Qs Qh 4c 4d 8s 9c', false, { action: 'call', amount: 2 }],
+    ['plo6', 'tournament', 'As Ad Ks Kd Qs Jd', false, { action: 'raise', amount: 11 }],
+    ['plo8', 'cash', 'As 2s 3d Ac', false, { action: 'raise', amount: 11 }],
+    ['plo8', 'cash', 'Ah 7c Ks 9d', true, { action: 'fold', amount: null }],
+    ['plo8', 'cash', 'Qs Qh 4c 4d', false, { action: 'call', amount: 2 }],
+    ['plo8', 'tournament', 'As 2s 3d Ac', false, { action: 'raise', amount: 11 }],
   ] as const;
 
   it.each(LIVE_STATES)(
@@ -3738,9 +3742,9 @@ describe('P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused 
   );
 
   it.each([
-    ['plo5', 'As Ad Ks Kd Qs'],
+    ['plo5', 'Ah 7c 2s 3d 9h'],
     ['plo6', 'Ah 7c 2s 3d 9h 5c'],
-    ['plo8', 'Qs Qh 4c 4d'],
+    ['plo8', 'Ah 7c Ks 9d'],
   ] as const)(
     'a valid %s qualification and completion record (test fixture only) select the cash proposal and record selected and baseline actions',
     async (variant, cards) => {
@@ -3791,7 +3795,7 @@ describe('P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused 
             continuationVersion: OMAHA_VARIANT_PACKS[otherPack].version,
           }),
         (r: any) =>
-          (r.authority = { ...r.authority, continuationVersion: 'plo4-policy-round1-v3' }),
+          (r.authority = { ...r.authority, continuationVersion: 'plo4-policy-round3-v1' }),
         (r: any) => (r.utilityOwner = 'phase7_evaluated'),
         (r: any) => (r.selection = 'controller_accepted'),
         (r: any) => (r.authorityVerdict = 'usable'),
@@ -3807,12 +3811,12 @@ describe('P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused 
   );
 
   it('a PLO5 selection never selects a PLO6 or PLO8 decision', async () => {
-    const plo5 = await decideThrough(omahaCash(615, 'plo5', 'As Ad Ks Kd Qs'), only('plo5'));
+    const plo5 = await decideThrough(omahaCash(615, 'plo5', 'Ah 7c 2s 3d 9h'), only('plo5'));
     expect(plo5.h.decisionOpts[0].phase11Omaha).toBe('candidate');
     expect(plo5.decision.omahaVariantPolicy?.selection).toBe('selected');
     for (const [variant, cards] of [
       ['plo6', 'Ah 7c 2s 3d 9h 5c'],
-      ['plo8', 'Qs Qh 4c 4d'],
+      ['plo8', 'Ah 7c Ks 9d'],
     ] as const) {
       const other = await decideThrough(omahaCash(616, variant, cards), only('plo5'));
       expect(other.h.decisionOpts[0].phase11Omaha, variant).toBe('shadow');

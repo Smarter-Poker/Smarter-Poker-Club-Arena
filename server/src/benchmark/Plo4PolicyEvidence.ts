@@ -117,15 +117,18 @@ export async function runPlo4ReferenceSpots(samples = 32) {
     request.samples = samples;
     results.push({ name, request, receipt: await evaluatePlo4Policy(request) });
   }
+  // Round 3 (2026-10-08): facing a bet and on a heads-up limp the pack
+  // retains the reference action (each spot's fixture baseline); the
+  // independent equity is still computed exactly.
   if (
-    results[0].receipt.selected.action !== 'fold' ||
+    results[0].receipt.selected.action !== results[0].request.baseline.action ||
     results[0].receipt.equity?.equity !== 0 ||
-    results[1].receipt.selected.action !== 'raise' ||
+    results[1].receipt.selected.action !== results[1].request.baseline.action ||
     results[1].receipt.equity?.equity !== 1 ||
     results[2].receipt.draws?.dominatedFlushDraw !== true ||
     !results[2].request.state.legalActions!.includes(results[2].receipt.selected.action) ||
     !results[2].receipt.livePolicy?.fired ||
-    results[3].receipt.selected.action !== 'raise'
+    results[3].receipt.selected.action !== results[3].request.baseline.action
   )
     throw new Error('PLO4 reference spot mismatch');
   return results;

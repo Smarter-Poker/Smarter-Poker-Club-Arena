@@ -406,7 +406,7 @@ def index_annotations(annotations, expected_tag, source_sha):
     if 'org.opencontainers.image.created' in annotations:
         created=annotations['org.opencontainers.image.created']
         require(isinstance(created,str) and len(created)<=64 and re.fullmatch(
-            r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?(?:Z|[+-][0-9]{2}:[0-9]{2})',created),
+            r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])',created),
             'OCI annotations refused')
         try: datetime.datetime.fromisoformat(created.replace('Z','+00:00'))
         except ValueError: require(False,'OCI annotations refused')

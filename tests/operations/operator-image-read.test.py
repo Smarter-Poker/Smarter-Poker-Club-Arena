@@ -155,7 +155,7 @@ class ReaderTests(unittest.TestCase):
                      'org.opencontainers.image.created':'2026-10-08T07:40:49.123Z'}
         fixture,image=manifest_identity_fixture(annotations=annotations)
         self.scan(fixture,image_id=image,expected_tag='club-arena-engine:'+REQUEST['releaseSha'],source_sha=REQUEST['releaseSha'],server_tree=REQUEST['serverTree'])
-        for key,value in [('io.containerd.image.name','foreign:tag'),('org.opencontainers.image.ref.name','f'*40),('org.opencontainers.image.created','2026-02-30T00:00:00Z'),('org.opencontainers.image.created',7),('unknown.annotation','opaque')]:
+        for key,value in [('io.containerd.image.name','foreign:tag'),('org.opencontainers.image.ref.name','f'*40),('org.opencontainers.image.created','2026-02-30T00:00:00Z'),('org.opencontainers.image.created','2026-10-08T07:40:49+00:99'),('org.opencontainers.image.created',7),('unknown.annotation','opaque')]:
             bad={**annotations,key:value};fixture,image=manifest_identity_fixture(annotations=bad)
             with self.subTest(key=key,value=value),self.assertRaises(RuntimeError):
                 self.scan(fixture,image_id=image,expected_tag='club-arena-engine:'+REQUEST['releaseSha'],source_sha=REQUEST['releaseSha'],server_tree=REQUEST['serverTree'])

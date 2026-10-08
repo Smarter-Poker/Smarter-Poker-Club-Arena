@@ -146,7 +146,7 @@ class ArchiveTests(unittest.TestCase):
         with tarfile.open(self.output) as tar:
             self.assertEqual(tar.extractfile('index.json').read(),dict(self.entries)['index.json'])
         self.output.unlink()
-        for key,value in [('io.containerd.image.name','foreign:tag'),('org.opencontainers.image.ref.name','f'*40),('org.opencontainers.image.created','2026-02-30T00:00:00Z'),('org.opencontainers.image.created',7),('unknown.annotation','opaque')]:
+        for key,value in [('io.containerd.image.name','foreign:tag'),('org.opencontainers.image.ref.name','f'*40),('org.opencontainers.image.created','2026-02-30T00:00:00Z'),('org.opencontainers.image.created','2026-10-08T07:40:49+00:99'),('org.opencontainers.image.created',7),('unknown.annotation','opaque')]:
             self.entries,self.image=self.native_manifest_fixture({**annotations,key:value});write_tar(self.source,self.entries)
             with self.subTest(key=key,value=value),self.assertRaises(ValueError):self.normalize()
 

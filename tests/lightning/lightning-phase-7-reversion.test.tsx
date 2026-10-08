@@ -204,20 +204,30 @@ describe('2. the room turns into the MUST MOVE notice', () => {
     expect(mount).toContain('lightningRoom && lightningReversion.seatTableId');
   });
 
-  it('TablePage: the only move to the seat is inside the button handler', () => {
-    const sites = PAGE.split('lightningReturnPath(').length - 1;
-    expect(sites).toBe(1);
-    const handler = sliceEnclosingBlock(PAGE, 'navigate(lightningReturnPath(seatTable)');
-    // That block is the body of the notice's button handler, and nothing else.
-    expect(PAGE.slice(0, PAGE.indexOf(handler)).trimEnd().endsWith('onViewGame={() =>')).toBe(true);
+  it('TablePage: every move to the seat is inside a button handler, and only there', () => {
+    /* Two notices move a player to their seat - Phase 7's MUST MOVE notice
+       and Phase 9's ended-session notice - and BOTH only by the press of
+       VIEW GAME (CLAUDE.md 10.6). Nothing outside a handler navigates. */
+    expect(PAGE.split('navigate(lightningReturnPath(').length - 1).toBe(2);
+    const handlers = PAGE.split('onViewGame={() => {').slice(1);
+    const moving = handlers.filter((h) =>
+      h.slice(0, h.indexOf('}}')).includes('navigate(lightningReturnPath(seatTable)')
+    );
+    expect(moving).toHaveLength(2);
     // The multi-table view is re-pointed by the same press, never by an effect.
-    expect(handler).toContain('onTableInfoUpdate?.({ movedToTableId: seatTable })');
+    for (const h of moving) {
+      expect(h.slice(0, h.indexOf('}}'))).toContain(
+        'onTableInfoUpdate?.({ movedToTableId: seatTable })'
+      );
+    }
   });
 
-  it('TablePage: the notice replaces the "session has ended" toast rather than repeating it', () => {
+  it('TablePage: a notice replaces the "session has ended" toast rather than repeating it', () => {
+    /* Phase 9 added its ended notice beside Phase 7's: the toast stands down
+       for EITHER of them, so one ending never says itself twice. */
     const toastSite = sliceEnclosingBlock(PAGE, "'Your Lightning Session Has Ended'", 0, 2);
     expect(toastSite).toMatch(
-      /if \(!lightningReturnRef\.current\) \{\s*heartbeatToastRef\.current\?\.info\?\.\('Your Lightning Session Has Ended'\);/
+      /if \(!lightningReturnRef\.current && !lightningEndedRef\.current\) \{\s*heartbeatToastRef\.current\?\.info\?\.\('Your Lightning Session Has Ended'\);/
     );
   });
 });

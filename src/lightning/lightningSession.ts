@@ -46,8 +46,12 @@ export interface LightningMySession {
   seatTableId: string | null;
 }
 
-/** Pool session states that mean the session is over and holds no room. */
-const ENDED_POOL_SESSION_STATES = new Set(['closed', 'ended', 'left', 'cashed_out', 'expired']);
+/**
+ * Pool session states that mean the session is over and holds no room. Never
+ * `expired`: no such state exists in lightning_pool_session - the disconnect
+ * reaper closes with state 'closed' and exit_reason 'disconnect_expired'.
+ */
+const ENDED_POOL_SESSION_STATES = new Set(['closed', 'ended', 'left', 'cashed_out']);
 
 function num(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;

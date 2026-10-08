@@ -1,0 +1,41 @@
+{
+  "schema": "horse-human-calibrated-check-v1",
+  "phase": "phase12",
+  "variant": "flo8",
+  "packVersion": "fixed-limit-omaha8-round3-v1",
+  "contractDigest": "fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0",
+  "population": "human-calibrated-v1-20261008",
+  "profileId": "p12c-flo8-6max-4dealt-100bb",
+  "leagueProfileId": "p12c-flo8-6max-4dealt-100bb--human-calibrated-v1-20261008",
+  "evidenceMode": "contract",
+  "seed": 19201101,
+  "firstHand": 0,
+  "requestedHands": 3456,
+  "hands": 3456,
+  "complete": true,
+  "candidate": {
+    "sum": -118383,
+    "sumSq": 1179956599
+  },
+  "reference": {
+    "sum": -123846,
+    "sumSq": 1395459410
+  },
+  "difference": {
+    "sum": 5463,
+    "sumSq": 219502811
+  },
+  "changedHands": 260,
+  "decisions": 40601,
+  "changed": 260,
+  "illegalCandidates": 0,
+  "illegalActions": 0,
+  "conservationErrors": 0,
+  "cardErrors": 0,
+  "incompleteHands": 0,
+  "truncatedHands": 0,
+  "candidateRake": 6541.899999999983,
+  "referenceRake": 6886.699999999974,
+  "sourceSha": "022e1e4f8172de48eb4f81dca6c69bc2b0b0b2b1",
+  "durationMs": 102329
+}

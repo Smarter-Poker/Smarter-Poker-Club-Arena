@@ -5,6 +5,7 @@
  *   node scripts/phase15-exact-replay.mjs <journal copy .ndjson> [--limit N] [--since <iso>]
  *        [--until <iso>] [--store-snapshot <json>]... [--concurrency K] [--out <dir>]
  *        [--full-verdicts <path outside the repo>] [--label <name>] [--note <text>]...
+ *        [--node <node executable>] [--esbuild-binary <esbuild executable>]
  *
  *   node scripts/phase15-exact-replay.mjs --child --running-source <sha> [--store-snapshot <json>]...
  *        (stdin: {"record": <decision record>, "execution": <execution record> | null})
@@ -20,6 +21,12 @@
  * any whose computed identity is not the one the file declares, runs
  * server/src/engine/horseDecision/replay/exactReplay.ts and prints one
  * verdict line. Nothing is written to the journal, the database or a table.
+ *
+ * A record replays only on the JavaScript runtime that made it (Node and V8
+ * version, CPU architecture; exactReplay refuses any other). --node names the
+ * executable the children run on, for example the engine's Node release for
+ * its architecture; --esbuild-binary gives the TypeScript loader the esbuild
+ * build for that architecture.
  *
  * Committed evidence is aggregate: counts by outcome, first difference,
  * (format, variant, street) and acceptance join; no decision, hand, player or
@@ -51,6 +58,8 @@ function parseArgs(argv) {
     fullVerdicts: null,
     label: null,
     notes: [],
+    node: process.execPath,
+    esbuildBinary: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -66,6 +75,8 @@ function parseArgs(argv) {
     else if (a === '--full-verdicts') out.fullVerdicts = resolve(next());
     else if (a === '--label') out.label = next();
     else if (a === '--note') out.notes.push(next());
+    else if (a === '--node') out.node = resolve(next());
+    else if (a === '--esbuild-binary') out.esbuildBinary = resolve(next());
     else if (a.startsWith('--')) throw new Error(`unknown option ${a}`);
     else out.journal = resolve(a);
   }
@@ -73,11 +84,12 @@ function parseArgs(argv) {
 }
 
 /** Only what Node needs to start; nothing that names a database, journal or artifact. */
-export function exactReplayChildEnv(env = process.env) {
+export function exactReplayChildEnv(env = process.env, esbuildBinary = null) {
   const kept = {};
   for (const key of ['PATH', 'HOME', 'TMPDIR', 'LANG']) if (env[key]) kept[key] = env[key];
   return {
     ...kept,
+    ...(esbuildBinary ? { ESBUILD_BINARY_PATH: esbuildBinary } : {}),
     TZ: 'UTC',
     // Modules that build a database client at load time get an address that
     // resolves to nothing and a key that is not one.
@@ -172,13 +184,15 @@ export function replayInFreshProcess({
   planReceipt,
   runningSource,
   storeSnapshots = [],
+  node = process.execPath,
+  esbuildBinary = null,
 }) {
   return new Promise((resolvePromise) => {
     const argv = [fileURLToPath(import.meta.url), '--child', '--running-source', runningSource];
     for (const file of storeSnapshots) argv.push('--store-snapshot', file);
-    const proc = spawn(process.execPath, argv, {
+    const proc = spawn(node, argv, {
       cwd: serverRoot,
-      env: exactReplayChildEnv(),
+      env: exactReplayChildEnv(process.env, esbuildBinary),
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     let stdout = '';
@@ -270,6 +284,8 @@ async function batch(args) {
         planReceipt: planReceipts.get(record.turnKey) ?? null,
         runningSource,
         storeSnapshots: args.storeSnapshots,
+        node: args.node,
+        esbuildBinary: args.esbuildBinary,
       });
       pids.add(run.pid);
       results[i] = run;
@@ -286,6 +302,11 @@ async function batch(args) {
     label: args.label,
     command: ['node', 'scripts/phase15-exact-replay.mjs', ...process.argv.slice(2)].join(' '),
     runningSource,
+    childRuntime: execFileSync(
+      args.node,
+      ['-p', 'JSON.stringify({node:process.version,v8:process.versions.v8,arch:process.arch})'],
+      { encoding: 'utf8' }
+    ).trim(),
     journalCopySha256: createHash('sha256').update(readFileSync(args.journal)).digest('hex'),
     batchRule: `newest ${args.limit} decision records at or after ${args.since ?? 'the start of the copy'} and before ${args.until ?? 'the end of the copy'}, one fresh process each`,
     startedAt: startedAt.toISOString(),
@@ -303,6 +324,11 @@ async function batch(args) {
         }
       : null,
     recordedSources: tally(verdicts, (v) => v.recordedSource ?? 'null'),
+    recordedRuntimesByOutcome: tally(
+      verdicts,
+      (v) =>
+        `${v.recordedRuntime ? `${v.recordedRuntime.node}/${v.recordedRuntime.arch}` : 'none'} ${v.outcome}`
+    ),
     outcomes: tally(verdicts, (v) => v.outcome),
     replayVerified: verdicts.filter((v) => v.replayVerified).length,
     networkAttempts: verdicts.reduce(
@@ -353,6 +379,7 @@ async function batch(args) {
       '',
       `- Command: \`${summary.command}\``,
       `- Running source: \`${runningSource}\``,
+      `- Child runtime: \`${summary.childRuntime}\``,
       `- Batch rule: ${summary.batchRule}`,
       `- Copy: ${summary.decisionsInCopy} decision records, ${summary.executionsInCopy} execution records, ${summary.planReceiptsInCopy} plan receipts (sha256 \`${summary.journalCopySha256}\`)`,
       `- Window: ${summary.window ? `${summary.window.from} to ${summary.window.to}` : 'empty'}`,
@@ -367,6 +394,10 @@ async function batch(args) {
       '## Outcomes',
       '',
       table(summary.outcomes),
+      '',
+      '## Recorded Runtime By Outcome',
+      '',
+      table(summary.recordedRuntimesByOutcome),
       '',
       '## First Differences',
       '',

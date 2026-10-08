@@ -14,7 +14,7 @@ Horse Brain only. This record closes Phase 15 (P15-A, durable accepted plan appl
 | Exact accepted-wager check on the Lightning commit                         | [P15.1 record, Lightning section](horse-brain-phase15-1-durable-effects-2026-10-07.md#lightning-exact-acceptance-2026-10-07) | [#6459](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/6459), merged `a29a591d`; [#6461](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/6461) record                                                                                                                                                                           |
 | 4. Exact historical replay                                                 | [P15.2 record](horse-brain-phase15-2-historical-replay-2026-10-07.md)                                                        | [#6442](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/6442) `4ad5b676`, [#6455](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/6455) `30ef59ad`, [#6458](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/6458) `f5d140d5`, [#6460](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/6460) record |
 
-The engine serving production at closure is `a29a591da2efa8acb1a67cbb93f5e67af11cfc1f`, which contains every Phase 15 merge above.
+The engine serving production at closure is `a29a591da2efa8acb1a67cbb93f5e67af11cfc1f`, which contains every Phase 15 merge above; its post-deploy live-table and engine verification (run 37715420406) passed.
 
 ## Natural Evidence (Production, Read-Only)
 
@@ -46,7 +46,7 @@ Recorded in each closure record's `Audit Of October 7, 2026` section ([11](horse
 | G7 Correctness     | verified now: crash, lost acknowledgement, conflict, partial application, stale hand, policy withdrawal, forged receipt, exact-wager and replay regressions, all in the maintained selection and green in protected CI |
 | G8 Work and replay | verified now: receipts survive a natural restart; 1,169 natural records `replayVerified`                                                                                                                               |
 | G9 Promotion       | not applicable with reason: Phase 15 promotes nothing; every selection stays `null`                                                                                                                                    |
-| G10 Publication    | verified now: every merge served by `a29a591d`                                                                                                                                                                         |
+| G10 Publication    | verified now: every merge served by `a29a591d`, post-deploy live-table and engine verification run 37715420406 passed                                                                                                  |
 
 ## Remaining Limits (Kept Open, Not Closed By This Record)
 

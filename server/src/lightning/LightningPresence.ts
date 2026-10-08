@@ -50,11 +50,30 @@
 /** One observation of one seat's client. */
 export type SeatPresence = 'connected' | 'disconnected' | 'unknown';
 
+/**
+ * LIGHTNING PHASE 8: the device class a player's client reported. It feeds
+ * `p_player_platforms`, which the matcher reads to hold a player to their
+ * platform's Cluster limit (fn_lightning_config.multi_table_limit).
+ */
+export type LightningDevicePlatform = 'desktop' | 'tablet' | 'mobile';
+
+/** Narrowest first: where two reports disagree, the narrower limit wins. */
+const PLATFORM_RANK: Record<LightningDevicePlatform, number> = {
+  mobile: 0,
+  tablet: 1,
+  desktop: 2,
+};
+
 /** What an anchor table's engine reports about the players seated at it. */
 export interface PresenceTableReport {
   tableId: string;
   clusterId: string | null;
-  players: Array<{ userId: string; presence: SeatPresence }>;
+  players: Array<{
+    userId: string;
+    presence: SeatPresence;
+    /** Reported only by a Lightning room whose socket said `?p=`. */
+    platform?: LightningDevicePlatform | null;
+  }>;
 }
 
 /** Whatever can list this process's engines' reports. Injected; GameServer supplies it. */
@@ -68,6 +87,13 @@ export interface LightningPresenceSnapshot {
   pDisconnected: string[];
   /** Anchor tables of this Cluster that an engine here reported on. */
   anchorTables: number;
+  /**
+   * Player id -> reported device class, for this Cluster's players that some
+   * report named a platform for. Reports from every Cluster are read (the
+   * limit is per player, across Clusters, and the narrowest report wins). A
+   * player with none is left out, and the SQL applies its default.
+   */
+  platforms: Record<string, LightningDevicePlatform>;
 }
 
 export class LightningPresence {
@@ -80,9 +106,17 @@ export class LightningPresence {
    */
   snapshot(clusterId: string, knownPoolPlayers: Iterable<string> = []): LightningPresenceSnapshot {
     const seen = new Map<string, SeatPresence>();
+    const platforms = new Map<string, LightningDevicePlatform>();
     let anchorTables = 0;
     for (const report of this.source()) {
-      if (!report || report.clusterId !== clusterId) continue;
+      if (!report) continue;
+      for (const { userId, platform } of report.players) {
+        if (!userId || !platform || !(platform in PLATFORM_RANK)) continue;
+        const prior = platforms.get(userId);
+        if (!prior || PLATFORM_RANK[platform] < PLATFORM_RANK[prior])
+          platforms.set(userId, platform);
+      }
+      if (report.clusterId !== clusterId) continue;
       anchorTables++;
       for (const { userId, presence } of report.players) {
         if (!userId) continue;
@@ -110,6 +144,11 @@ export class LightningPresence {
       unknown,
       pDisconnected: [...new Set([...disconnected, ...unknown])].sort(),
       anchorTables,
+      platforms: Object.fromEntries(
+        [...platforms]
+          .filter(([userId]) => seen.has(userId))
+          .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      ),
     };
   }
 }

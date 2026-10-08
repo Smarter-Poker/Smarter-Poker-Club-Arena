@@ -42,10 +42,12 @@ export const LIGHTNING_PLATFORMS: readonly LightningPlatform[] = [
   'android',
 ] as const;
 
+/* LIGHTNING PHASE 8: a handheld plays more than one Cluster too, up to its
+   own (smaller) limit: tablets 3 and phones 2 by default (multi_table_limit). */
 const HANDHELD: Readonly<LightningCapabilities> = Object.freeze({
   fast_fold: true,
   fold_and_watch: false,
-  multi_table: false,
+  multi_table: true,
   hotkeys: false,
   session_stats: true,
   replay: true,
@@ -84,6 +86,8 @@ export interface LightningPlatformSignals {
   coarsePointer?: boolean;
   /** Viewport width in CSS pixels. */
   viewportWidth?: number;
+  /** Viewport height in CSS pixels (tells a tablet from a phone). */
+  viewportHeight?: number;
 }
 
 /** Below this width the web build is a phone layout (the app is portrait-first at 375px). */
@@ -120,5 +124,58 @@ export function readLightningPlatformSignals(): LightningPlatformSignals {
   } catch {
     coarsePointer = false;
   }
-  return { nativePlatform, coarsePointer, viewportWidth: window.innerWidth };
+  return {
+    nativePlatform,
+    coarsePointer,
+    viewportWidth: window.innerWidth,
+    viewportHeight: window.innerHeight,
+  };
+}
+
+// ─── LIGHTNING PHASE 8: the device class and its Cluster limit ─────────────
+
+/**
+ * The three device classes the database's `multi_table_limit` is keyed by.
+ * This is what the client reports to the engine for the matcher; it is a
+ * different question from `LightningPlatform` (which controls to show).
+ */
+export type LightningDeviceClass = 'desktop' | 'tablet' | 'mobile';
+
+/**
+ * How many Clusters a player may hold Lightning sessions in at once, by
+ * device class: fn_lightning_config's `multi_table_limit` defaults. The
+ * database enforces the real number in the matcher; the client uses these to
+ * say so before a join, never to spend or refuse money.
+ */
+export const LIGHTNING_MULTI_TABLE_LIMIT_DEFAULTS: Readonly<Record<LightningDeviceClass, number>> =
+  Object.freeze({ desktop: 4, tablet: 3, mobile: 2 });
+
+/** A handheld whose shorter side is at least this wide is a tablet. */
+export const LIGHTNING_TABLET_MIN_SHORT_SIDE = 600;
+
+/**
+ * Desktop unless the device is held: the native shell or a finger as the
+ * primary pointer. A held device is a tablet when its shorter side is at
+ * least 600 CSS px, and a phone otherwise. A narrow desktop window is still
+ * a desktop: the limit is about the device, not the window.
+ */
+export function lightningDeviceClass(signals: LightningPlatformSignals): LightningDeviceClass {
+  const held =
+    signals.nativePlatform === 'ios' ||
+    signals.nativePlatform === 'android' ||
+    signals.coarsePointer === true;
+  if (!held) return 'desktop';
+  const w = Number(signals.viewportWidth);
+  const h = Number(signals.viewportHeight);
+  const sides = [w, h].filter((n) => Number.isFinite(n) && n > 0);
+  if (sides.length === 0) return 'mobile';
+  return Math.min(...sides) >= LIGHTNING_TABLET_MIN_SHORT_SIDE ? 'tablet' : 'mobile';
+}
+
+/** The Cluster limit for a device class (the defaults; unknown reads as the phone's). */
+export function lightningMultiTableLimit(device: LightningDeviceClass | string): number {
+  return (
+    (LIGHTNING_MULTI_TABLE_LIMIT_DEFAULTS as Record<string, number>)[device] ??
+    LIGHTNING_MULTI_TABLE_LIMIT_DEFAULTS.mobile
+  );
 }

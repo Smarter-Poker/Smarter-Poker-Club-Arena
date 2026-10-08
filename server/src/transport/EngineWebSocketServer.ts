@@ -184,6 +184,26 @@ export function clientProtocolVersion(url: URL): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+/** The device class a client reports (`?p=`), read for Lightning rooms. */
+export type ClientDevicePlatform = 'desktop' | 'tablet' | 'mobile';
+
+/**
+ * LIGHTNING PHASE 8 (2026-10-07): the device class the client says it runs
+ * on, from `?p=` on the socket URL (the one place both sockets share, like
+ * `?v=`). Anything else, or nothing (every bundle before this one), is null:
+ * "not reported", never a guess. Read only to tell the Lightning matcher how
+ * many Clusters this player may hold at once; it decides nothing else.
+ */
+export function clientDevicePlatform(url: URL): ClientDevicePlatform | null {
+  const raw = url.searchParams.get('p');
+  return raw === 'desktop' || raw === 'tablet' || raw === 'mobile' ? raw : null;
+}
+
+/** The same three words, carried on a mux SUBSCRIBE frame instead of the URL. */
+export function framePlatformOf(raw: unknown): ClientDevicePlatform | null {
+  return raw === 'desktop' || raw === 'tablet' || raw === 'mobile' ? raw : null;
+}
+
 // Round 70 + 67/190: extract real client IP from x-forwarded-for chain.
 // Caddy sits in front of the engine, so socket.remoteAddress is always
 // 127.0.0.1. The forwarded header carries the real chain.
@@ -249,7 +269,7 @@ export interface EngineWebSocketServerOptions {
    * disconnect countdown instantly instead of waiting for the next HTTP
    * heartbeat.
    */
-  onConnect?: (tableId: string, userId: string) => void;
+  onConnect?: (tableId: string, userId: string, platform?: ClientDevicePlatform | null) => void;
   onDisconnect?: (tableId: string, userId: string) => void;
   /**
    * PROOF OF LIFE FROM THE SOCKET (2026-10-05). A PONG or a RESYNC on an
@@ -289,6 +309,8 @@ interface ConnectionState {
   inboundWindowStart: number;
   /** Client address from the x-forwarded-for chain; null when unknown. */
   clientIp: string | null;
+  /** The device class from `?p=` (Lightning Phase 8); null when not reported. */
+  platform?: ClientDevicePlatform | null;
   /**
    * Roadmap batch 6 (2026-08-21) — multiplexed connection (/ws/multi).
    * One socket carries up to MUX_MAX_TABLES table subscriptions; every
@@ -438,7 +460,11 @@ export class EngineWebSocketServer {
     userId: string
   ) => Promise<TableConnectionAccess>;
   private readonly onResync?: (tableId: string, userId: string) => void;
-  private readonly onConnect?: (tableId: string, userId: string) => void;
+  private readonly onConnect?: (
+    tableId: string,
+    userId: string,
+    platform?: ClientDevicePlatform | null
+  ) => void;
   private readonly onAlive?: (tableId: string, userId: string) => void;
   private readonly onDisconnect?: (tableId: string, userId: string) => void;
   private accessStarts = new Map<symbol, number>();
@@ -557,7 +583,7 @@ export class EngineWebSocketServer {
             }
             const userId = auth.userId;
             this.wss.handleUpgrade(req, socket, head, (ws) => {
-              this.onUpgradedMux(ws, userId, muxClientIp, muxToken);
+              this.onUpgradedMux(ws, userId, muxClientIp, muxToken, clientDevicePlatform(url));
             });
           })
           .catch(() => {
@@ -685,7 +711,15 @@ export class EngineWebSocketServer {
           this.logConnectionAudit(auth.userId, tableId, clientIp);
 
           this.wss.handleUpgrade(req, socket, head, (ws) => {
-            this.onUpgraded(ws, req, auth.userId, tableId, clientIp, token);
+            this.onUpgraded(
+              ws,
+              req,
+              auth.userId,
+              tableId,
+              clientIp,
+              token,
+              clientDevicePlatform(url)
+            );
           });
         })
         .catch(() => {
@@ -866,10 +900,12 @@ export class EngineWebSocketServer {
     userId: string,
     tableId: string,
     clientIp: string | null = null,
-    token = ''
+    token = '',
+    platform: ClientDevicePlatform | null = null
   ): void {
     if (this.refuseIfOverSocketCap(ws, userId)) return;
     const conn: ConnectionState = {
+      platform,
       id: randomUUID(),
       userId,
       token,
@@ -922,7 +958,7 @@ export class EngineWebSocketServer {
     try {
       this.resyncPlayer(tableId, userId);
       // Presence belongs only to a physical connection that remains usable.
-      if (this.connectionCanWrite(conn)) this.onConnect?.(tableId, userId);
+      if (this.connectionCanWrite(conn)) this.notifyConnect(tableId, userId, conn.platform);
     } catch {
       /* engine wiring must never take down the transport */
     }
@@ -934,9 +970,16 @@ export class EngineWebSocketServer {
 
   // ─── Roadmap batch 6: mux connection lifecycle ──────────────────────────
 
-  private onUpgradedMux(ws: WebSocket, userId: string, clientIp: string | null, token = ''): void {
+  private onUpgradedMux(
+    ws: WebSocket,
+    userId: string,
+    clientIp: string | null,
+    token = '',
+    platform: ClientDevicePlatform | null = null
+  ): void {
     if (this.refuseIfOverSocketCap(ws, userId)) return;
     const conn: ConnectionState = {
+      platform,
       id: randomUUID(),
       userId,
       token,
@@ -955,6 +998,20 @@ export class EngineWebSocketServer {
     ws.on('message', (raw) => this.onMessage(conn, raw));
     ws.on('close', () => this.onClose(ws));
     ws.on('error', () => this.onClose(ws));
+  }
+
+  /**
+   * Presence for a socket that became usable. The device class (Lightning
+   * Phase 8) is passed only when the client reported one, so every existing
+   * listener keeps the exact call it always had.
+   */
+  private notifyConnect(
+    tableId: string,
+    userId: string,
+    platform: ClientDevicePlatform | null | undefined
+  ): void {
+    if (platform) this.onConnect?.(tableId, userId, platform);
+    else this.onConnect?.(tableId, userId);
   }
 
   /** A private-state replay failure must not abort transport recovery or presence. */
@@ -1042,7 +1099,11 @@ export class EngineWebSocketServer {
     this.sendControl(conn, { type: 'ERROR', tableId, code, message });
   }
 
-  private async handleMuxSubscribe(conn: ConnectionState, tableId: string): Promise<void> {
+  private async handleMuxSubscribe(
+    conn: ConnectionState,
+    tableId: string,
+    framePlatform: ClientDevicePlatform | null = null
+  ): Promise<void> {
     if (!conn.subs || !this.connectionCanWrite(conn)) return;
     const existing = conn.subs.get(tableId);
     if (typeof existing === 'symbol') return; // in flight - first one wins
@@ -1192,7 +1253,7 @@ export class EngineWebSocketServer {
       try {
         this.resyncPlayer(tableId, conn.userId);
         // Presence belongs only to an adapter that survived the private replay.
-        if (isCurrent()) this.onConnect?.(tableId, conn.userId);
+        if (isCurrent()) this.notifyConnect(tableId, conn.userId, framePlatform ?? conn.platform);
       } catch {
         /* engine wiring must never take down the transport */
       }
@@ -1225,7 +1286,10 @@ export class EngineWebSocketServer {
     }
   }
 
-  private handleMuxMessage(conn: ConnectionState, msg: { type?: string; tableId?: unknown }): void {
+  private handleMuxMessage(
+    conn: ConnectionState,
+    msg: { type?: string; tableId?: unknown; platform?: unknown }
+  ): void {
     const tableId = typeof msg.tableId === 'string' ? msg.tableId : '';
     switch (msg.type) {
       case 'PONG':
@@ -1239,7 +1303,8 @@ export class EngineWebSocketServer {
         return;
       case 'SUBSCRIBE':
         if (!tableId) return;
-        void this.handleMuxSubscribe(conn, tableId);
+        // Lightning Phase 8: a Lightning room's SUBSCRIBE names the device class.
+        void this.handleMuxSubscribe(conn, tableId, framePlatformOf(msg.platform));
         return;
       case 'UNSUBSCRIBE': {
         if (!tableId || !conn.subs) return;
@@ -1307,7 +1372,7 @@ export class EngineWebSocketServer {
     if (!msg || typeof msg.type !== 'string') return;
 
     if (conn.isMux) {
-      this.handleMuxMessage(conn, msg as { type?: string; tableId?: unknown });
+      this.handleMuxMessage(conn, msg as { type?: string; tableId?: unknown; platform?: unknown });
       return;
     }
 

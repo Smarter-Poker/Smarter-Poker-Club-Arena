@@ -271,6 +271,38 @@ describe('bounded isolated Horse journal publisher', () => {
       'phase15_journal_replayed',
     ]);
   });
+  it('counts a Phase 15.1 plan receipt durable only on its exact fsynced ACK, never on enqueue', async () => {
+    const w = new FakeWorker(),
+      notes: string[] = [],
+      p = new HorseDecisionJournalPublisher(w, (x) => notes.push(x));
+    p.record('plan_receipt', 'hand', 'turn', { receipt: 1 });
+    w.emit({ type: 'READY' });
+    expect(notes).toEqual(['phase15_journal_enqueued']);
+    const head = (w.sent[0] as { records: HorseJournalRecord[] }).records[0]!;
+    expect(head.kind).toBe('plan_receipt');
+    expect(() => validateHorseJournalRecord(head)).not.toThrow();
+    w.emit({
+      type: 'ACK',
+      receipts: [{ eventId: head.eventId, sha256: 'wrong', status: 'recorded' }],
+    });
+    expect(notes).not.toContain('phase15_plan_receipt_durable');
+    await p.stop();
+    const w2 = new FakeWorker(),
+      notes2: string[] = [],
+      p2 = new HorseDecisionJournalPublisher(w2, (x) => notes2.push(x));
+    p2.record('plan_receipt', 'hand', 'turn', { receipt: 2 });
+    p2.record('decision', 'hand', 'turn', { decision: 1 });
+    w2.emit({ type: 'READY' });
+    const records = (w2.sent[0] as { records: HorseJournalRecord[] }).records;
+    w2.emit({
+      type: 'ACK',
+      receipts: records.map((r) => ({ eventId: r.eventId, sha256: r.sha256, status: 'recorded' })),
+    });
+    expect(notes2.filter((x) => x === 'phase15_plan_receipt_durable')).toHaveLength(1);
+    const stopping = p2.stop();
+    w2.emit({ type: 'STOPPED' });
+    await stopping;
+  });
   it.each(['wrong_id', 'wrong_hash', 'unavailable'])(
     'does not claim a durable write from %s',
     async (mode) => {

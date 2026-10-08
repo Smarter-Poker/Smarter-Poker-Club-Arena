@@ -28,6 +28,14 @@
  *
  *   fn_lightning_config(p_cluster_id uuid) -> jsonb   (see LightningConfig.ts)
  *
+ *   LIGHTNING PHASE 8: both matcher functions gain a trailing optional
+ *   `p_player_platforms jsonb` ({player_id: 'desktop'|'tablet'|'mobile'}),
+ *   which holds each player to their platform's Cluster limit. Sent only when
+ *   the presence feed knows a platform for someone; a database still on the
+ *   old signature answers "function not found" for the extra argument, and
+ *   the same call is made once more without it (nothing ran the first time,
+ *   so even the writer is safe to repeat). The answer says which happened.
+ *
  * NOT YET DEPLOYED IS NOT AN ERROR. The engine ships ahead of the migration,
  * so every wrapper turns "function not found" (PGRST202 / 42883) into a typed
  * `unavailable` outcome. A caller decides what unavailable means; none of
@@ -35,6 +43,7 @@
  */
 import { parseLightningConfig, type LightningConfig } from './LightningConfig.js';
 import { isMissingFunctionError } from './rpcErrors.js';
+import type { LightningDevicePlatform } from './LightningPresence.js';
 
 /** The minimal slice of `supabase.rpc` these doors need; injected for tests. */
 export type LightningRpcClient = (
@@ -87,6 +96,8 @@ export interface LightningMatchArgs {
   now: Date;
   disconnected: readonly string[];
   matcherVersion: string | null;
+  /** p_player_platforms; omitted from the call when empty or absent. */
+  playerPlatforms?: Readonly<Record<string, LightningDevicePlatform>> | null;
 }
 
 export interface LightningFormArgs {
@@ -95,7 +106,20 @@ export interface LightningFormArgs {
   disconnected: readonly string[];
   maxHands: number;
   requestId: string;
+  /** p_player_platforms; omitted from the call when empty or absent. */
+  playerPlatforms?: Readonly<Record<string, LightningDevicePlatform>> | null;
 }
+
+/**
+ * Whether p_player_platforms reached the database: `sent` (the new
+ * signature took it), `dropped` (the old signature refused it and the call
+ * was repeated without it) or `none` (there was nothing to send).
+ */
+export type LightningPlatformsDelivery = 'sent' | 'dropped' | 'none';
+
+export type LightningPlatformAwareOutcome<T> = LightningRpcOutcome<T> & {
+  platforms: LightningPlatformsDelivery;
+};
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -232,23 +256,58 @@ function sortedUnique(ids: readonly string[]): string[] {
   return [...new Set(ids.filter(isUuid))].sort();
 }
 
+const DEVICE_PLATFORMS = new Set(['desktop', 'tablet', 'mobile']);
+
+/** The platforms map as the SQL takes it: uuid keys, known values, sorted; null when empty. */
+export function playerPlatformsArg(
+  platforms: Readonly<Record<string, LightningDevicePlatform>> | null | undefined
+): Record<string, LightningDevicePlatform> | null {
+  if (!platforms) return null;
+  const rows = Object.entries(platforms)
+    .filter(([id, p]) => isUuid(id) && DEVICE_PLATFORMS.has(p))
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return rows.length > 0 ? Object.fromEntries(rows) : null;
+}
+
+/**
+ * Call with p_player_platforms when there is one, and once more without it
+ * when the database does not know the argument yet.
+ */
+async function callWithPlatforms(
+  rpc: LightningRpcClient,
+  fn: string,
+  args: Record<string, unknown>,
+  platforms: Record<string, LightningDevicePlatform> | null
+): Promise<LightningRpcOutcome<unknown> & { platforms: LightningPlatformsDelivery }> {
+  if (!platforms) return { ...(await call(rpc, fn, args)), platforms: 'none' };
+  const first = await call(rpc, fn, { ...args, p_player_platforms: platforms });
+  if (first.status !== 'unavailable') return { ...first, platforms: 'sent' };
+  return { ...(await call(rpc, fn, args)), platforms: 'dropped' };
+}
+
 /** The read-only matcher. One RPC, validated. */
 export async function lightningMatch(
   rpc: LightningRpcClient,
   args: LightningMatchArgs
-): Promise<LightningRpcOutcome<LightningMatchResult>> {
-  if (!isUuid(args.clusterId)) return { status: 'invalid', reason: 'cluster_id_invalid' };
-  const out = await call(rpc, 'fn_lightning_match', {
-    p_cluster_id: args.clusterId,
-    p_now: args.now.toISOString(),
-    p_disconnected: sortedUnique(args.disconnected),
-    p_matcher_version: args.matcherVersion,
-  });
+): Promise<LightningPlatformAwareOutcome<LightningMatchResult>> {
+  if (!isUuid(args.clusterId))
+    return { status: 'invalid', reason: 'cluster_id_invalid', platforms: 'none' };
+  const out = await callWithPlatforms(
+    rpc,
+    'fn_lightning_match',
+    {
+      p_cluster_id: args.clusterId,
+      p_now: args.now.toISOString(),
+      p_disconnected: sortedUnique(args.disconnected),
+      p_matcher_version: args.matcherVersion,
+    },
+    playerPlatformsArg(args.playerPlatforms)
+  );
   if (out.status !== 'ok') return out;
   const checked = validateLightningMatchResult(out.value);
   return checked.ok
-    ? { status: 'ok', value: checked.value }
-    : { status: 'invalid', reason: checked.reason };
+    ? { status: 'ok', value: checked.value, platforms: out.platforms }
+    : { status: 'invalid', reason: checked.reason, platforms: out.platforms };
 }
 
 /** The Cluster's worker configuration. Unavailable when the function is not deployed. */
@@ -273,21 +332,29 @@ export async function lightningConfig(
 export async function lightningMatchAndForm(
   rpc: LightningRpcClient,
   args: LightningFormArgs
-): Promise<LightningRpcOutcome<Record<string, unknown>>> {
-  if (!isUuid(args.clusterId)) return { status: 'invalid', reason: 'cluster_id_invalid' };
-  if (!isUuid(args.requestId)) return { status: 'invalid', reason: 'request_id_invalid' };
+): Promise<LightningPlatformAwareOutcome<Record<string, unknown>>> {
+  if (!isUuid(args.clusterId))
+    return { status: 'invalid', reason: 'cluster_id_invalid', platforms: 'none' };
+  if (!isUuid(args.requestId))
+    return { status: 'invalid', reason: 'request_id_invalid', platforms: 'none' };
   if (!Number.isInteger(args.maxHands) || args.maxHands < 1)
-    return { status: 'invalid', reason: 'max_hands_invalid' };
-  const out = await call(rpc, 'fn_lightning_match_and_form', {
-    p_cluster_id: args.clusterId,
-    p_now: args.now.toISOString(),
-    p_disconnected: sortedUnique(args.disconnected),
-    p_max_hands: args.maxHands,
-    p_request_id: args.requestId,
-  });
+    return { status: 'invalid', reason: 'max_hands_invalid', platforms: 'none' };
+  const out = await callWithPlatforms(
+    rpc,
+    'fn_lightning_match_and_form',
+    {
+      p_cluster_id: args.clusterId,
+      p_now: args.now.toISOString(),
+      p_disconnected: sortedUnique(args.disconnected),
+      p_max_hands: args.maxHands,
+      p_request_id: args.requestId,
+    },
+    playerPlatformsArg(args.playerPlatforms)
+  );
   if (out.status !== 'ok') return out;
-  if (!isPlainObject(out.value)) return { status: 'invalid', reason: 'form_result_not_object' };
-  return { status: 'ok', value: { ...out.value } };
+  if (!isPlainObject(out.value))
+    return { status: 'invalid', reason: 'form_result_not_object', platforms: out.platforms };
+  return { status: 'ok', value: { ...out.value }, platforms: out.platforms };
 }
 
 /** Counts by state and the most frequent block reasons: what a shadow pass records. */

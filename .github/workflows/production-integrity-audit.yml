@@ -33,6 +33,33 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  scoped_operator_hold_provenance:
+    name: Explicit operator-hold runtime provenance
+    # Deliberate read only; scheduled observations cannot open host transport.
+    if: github.event_name == 'repository_dispatch' && github.event.action == 'audit-production-integrity' && github.event.client_payload.operator_hold_provenance != null
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Read fixed immutable engine identity and compiled hashes
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          HETZNER_HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}
+        run: python3 scripts/ci/read-scoped-operator-hold-provenance.py
+      - name: Retain only immutable identity and hashes
+        uses: actions/upload-artifact@v4
+        with:
+          name: operator-hold-provenance-${{ github.run_id }}
+          path: artifacts/operator-hold-provenance/observation.json
+          retention-days: 3
+          if-no-files-found: error
+
   scoped_runtime_errors:
     name: Explicit scoped engine error observation
     # Separate finite read. Scheduled observations cannot open host transport.

@@ -96,12 +96,12 @@ function patched(source, operations) {
   return result;
 }
 
-function stateShape(state, tableId, actorIds, previous, event, previousSequence, nonactingArrival=false) {
+function stateShape(state, tableId, actorIds, previous, event, previousSequence, nonactingArrival=false, pendingSeedRoster=false) {
   protocol(record(state) && state.table_id === tableId && stages.has(state.stage), 'STATE');
   protocol(Number.isSafeInteger(state.hand_number) && state.hand_number >= 0, 'HAND');
   protocol(
     Array.isArray(state.players) &&
-      state.players.length >= 2 && state.players.length <= 9 &&
+      state.players.length >= (pendingSeedRoster ? 0 : 2) && state.players.length <= 9 &&
       new Set(state.players.map((player) => player.user_id)).size === state.players.length &&
       state.players.every((player) => record(player) && actorIds.has(player.user_id)),
     'ROSTER'
@@ -313,12 +313,34 @@ export async function startRampActors({
     onFailure(error);
   }
 
+  // Only the initial, purchased seed cohort may await dealer adoption. This
+  // state is observable but never ready/actionable, and never resets a deadline.
+  function seedRosterPending(actor, state) {
+    if (initialActorIds === undefined || actor.seedRosterAdopted) return false;
+    protocol(record(state) && Array.isArray(state.players), 'ROSTER');
+    const adopted = initialActorIds.every(id => state.players.some(p =>
+      record(p) && p.user_id === id && Number.isSafeInteger(p.seat) &&
+      p.seat === users.findIndex(u => u.id === id) + 1 && validMoney(p.stack) && p.stack > 0));
+    if (adopted) return false;
+    protocol(state.stage === 'waiting' && state.players.length < initialUsers.length &&
+      state.current_player === null && state.current_bet === 0 && state.pot === 0 &&
+      state.turn_start_time_ms === 0 && state.turn_deadline_ms === 0 &&
+      state.turn_duration_ms === 0 && state.max_seats === users.length &&
+      Array.isArray(state.community_cards) && state.community_cards.length === 0 &&
+      Array.isArray(state.winner_ids) && state.winner_ids.length === 0 &&
+      state.players.every(p => record(p) && initialActorIds.includes(p.user_id) &&
+        Number.isSafeInteger(p.seat) && p.seat === users.findIndex(u => u.id === p.user_id) + 1 &&
+        validMoney(p.stack) && p.stack > 0 && p.bet === 0 &&
+        p.is_folded === false && p.is_all_in === false), 'SEED_ARRIVAL');
+    return true;
+  }
+
   function checkReady() {
-    for(const actor of actors)if(actor.resolveAttach&&actor.subscribed&&actor.state){clearTimeout(actor.attachTimer);const resolve=actor.resolveAttach;actor.resolveAttach=null;actor.rejectAttach=null;resolve();}
+    for(const actor of actors)if(actor.resolveAttach&&actor.subscribed&&actor.state&&!actor.seedRosterPending){clearTimeout(actor.attachTimer);const resolve=actor.resolveAttach;actor.resolveAttach=null;actor.rejectAttach=null;resolve();}
     if (
       !enabled &&
       actors.length === initialUsers.length &&
-      actors.every((actor) => actor.subscribed && actor.state)
+      actors.every((actor) => actor.subscribed && actor.state && !actor.seedRosterPending)
     ) {
       enabled = true;
       clearTimeout(startupTimer);
@@ -466,8 +488,10 @@ export async function startRampActors({
           'SEQUENCE'
         );
         if (message.seq === actor.seq) assert.deepEqual(message.state, actor.state);
+        const pendingSeed=seedRosterPending(actor,message.state);
         const arrival=observeArrival&&!actor.arrivalReady?observeArrivalClock(actor,message.state):false;
-        actor.state = stateShape(structuredClone(message.state), tableId, actorIds,undefined,undefined,undefined,arrival);
+        actor.state = stateShape(structuredClone(message.state), tableId, actorIds,undefined,undefined,undefined,arrival,pendingSeed);
+        actor.seedRosterPending=pendingSeed;if(initialActorIds!==undefined&&!pendingSeed)actor.seedRosterAdopted=true;
         actor.seq = message.seq;
         observations.snapshots++;observations.hands.add(actor.state.hand_number);
         if(actor.resolveReconnect){const resolve=actor.resolveReconnect;actor.resolveReconnect=null;actor.rejectReconnect=null;clearTimeout(actor.reconnectTimer);resolve({actorId:actor.user.id,sequence:actor.seq,handNumber:actor.state.hand_number,spentTurns:actor.turns.size,spentContexts:actor.decisions.size});}
@@ -481,8 +505,10 @@ export async function startRampActors({
           'SEQUENCE'
         );
         const next=patched(actor.state,message.patch);
+        const deltaPendingSeed=seedRosterPending(actor,next);
         const deltaArrival=observeArrival&&!actor.arrivalReady?observeArrivalClock(actor,next):false;
-        actor.state = stateShape(next, tableId, actorIds, actor.state, actor.lastPublicEvent, actor.seq,deltaArrival);
+        actor.state = stateShape(next, tableId, actorIds, actor.state, actor.lastPublicEvent, actor.seq,deltaArrival,deltaPendingSeed);
+        actor.seedRosterPending=deltaPendingSeed;if(initialActorIds!==undefined&&!deltaPendingSeed)actor.seedRosterAdopted=true;
         actor.seq = message.seq;
         observations.deltas++;observations.hands.add(actor.state.hand_number);
         break;

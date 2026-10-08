@@ -108,6 +108,13 @@ function aclDifference(left, right) {
     : 'content_different';
 }
 
+const ACL_REPRESENTATIONS = ['null', 'empty', 'nonempty', 'unknown'];
+function aclRepresentation(value) {
+  const items = aclItems(value);
+  if (items === undefined || (items !== null && !items.every(validAclItem))) return 'unknown';
+  return items === null ? 'null' : items.length === 0 ? 'empty' : 'nonempty';
+}
+
 function validAclItem(item) {
   let quoted = false;
   const separators = [];
@@ -246,6 +253,17 @@ export function diagnoseCatalog(sourceText, destinationText) {
     const details = [];
     let detailTotal = 0;
     const acl = { order_only: 0, content_different: 0, unknown: 0 };
+    const representations = () => Object.fromEntries(ACL_REPRESENTATIONS.map((kind) => [kind, 0]));
+    const aclRepresentations = { source: representations(), destination: representations() };
+    const aclPairs = Object.fromEntries(
+      ACL_REPRESENTATIONS.flatMap((a) => ACL_REPRESENTATIONS.map((b) => [`${a}_to_${b}`, 0]))
+    );
+    if (Object.hasOwn(ACL_FIELDS, name)) {
+      for (const row of left.indexed.values())
+        aclRepresentations.source[aclRepresentation(row[ACL_FIELDS[name]])] += 1;
+      for (const row of right.indexed.values())
+        aclRepresentations.destination[aclRepresentation(row[ACL_FIELDS[name]])] += 1;
+    }
     const detail = (value) => {
       detailTotal += 1;
       if (details.length < MAX_DETAILS) details.push(value);
@@ -257,6 +275,11 @@ export function diagnoseCatalog(sourceText, destinationText) {
         continue;
       }
       matched += 1;
+      if (Object.hasOwn(ACL_FIELDS, name)) {
+        aclPairs[
+          `${aclRepresentation(row[ACL_FIELDS[name]])}_to_${aclRepresentation(other[ACL_FIELDS[name]])}`
+        ] += 1;
+      }
       let changed = false;
       for (let index = 0; index < row.length; index += 1) {
         if (JSON.stringify(row[index]) !== JSON.stringify(other[index])) {
@@ -265,6 +288,15 @@ export function diagnoseCatalog(sourceText, destinationText) {
           if (index === ACL_FIELDS[name]) {
             const classification = aclDifference(row[index], other[index]);
             if (classification !== 'equal') acl[classification] += 1;
+            detail({
+              kind: 'acl_changed',
+              identity_hash: hash(JSON.parse(key)),
+              field_index: index,
+              source_field_hash: hash(row[index]),
+              destination_field_hash: hash(other[index]),
+              source_representation: aclRepresentation(row[index]),
+              destination_representation: aclRepresentation(other[index]),
+            });
           }
           if (index === DEFINITION_FIELDS[name]) {
             detail({
@@ -301,7 +333,13 @@ export function diagnoseCatalog(sourceText, destinationText) {
       identity_details: details,
       identity_details_total: detailTotal,
       identity_details_truncated: detailTotal > MAX_DETAILS,
-      ...(Object.hasOwn(ACL_FIELDS, name) ? { acl_difference_counts: acl } : {}),
+      ...(Object.hasOwn(ACL_FIELDS, name)
+        ? {
+            acl_difference_counts: acl,
+            acl_representation_counts: aclRepresentations,
+            acl_representation_pair_counts: aclPairs,
+          }
+        : {}),
       changed_field_indices: fieldCounts.flatMap((count, index) =>
         count ? [{ index, count }] : []
       ),

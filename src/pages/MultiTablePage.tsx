@@ -92,6 +92,10 @@ import { publishInTabLobbyActive } from '../components/club/inTabLobbySurface';
 import { openInBrowser } from '../lib/openExternal';
 import { isNativePlatform } from '../lib/appBase';
 import { parseTileRaiseBounds, tileAllInTo, tilePotRaiseTo } from '../utils/tileRaiseSizing';
+import LightningDecisionQueue from '../components/lightning/LightningDecisionQueue';
+import { lightningUrgencyByRoom } from '../lightning/lightningDecisionQueue';
+import { useLightningDecisions } from '../components/lightning/useLightningDecisions';
+import { getLightningPoolSession, lightningRoomPath } from '../lightning/lightningSession';
 
 // Lazy-load TablePage for code splitting
 const TablePage = lazyWithRetry(() => import('./TablePage'));
@@ -4694,6 +4698,27 @@ export default function MultiTablePage() {
     [navigate]
   );
 
+  /* LIGHTNING PHASE 8: THE DECISION QUEUE. Every Lightning room where the
+     player owes a decision, from the engine's own announcements. The strip
+     and the urgency outline only SIGNAL; the view moves from the player's tap
+     on a queue entry (handleLightningFocus), which is a tab select like any
+     other (CLAUDE.md 10.6). */
+  const lightningDecisions = useLightningDecisions();
+  const lightningUrgency = useMemo(
+    () => lightningUrgencyByRoom(lightningDecisions, serverNow()),
+    [lightningDecisions]
+  );
+  const handleLightningFocus = useCallback(
+    (roomId: string) => {
+      if (tablesRef.current.some((t) => t.id === roomId)) {
+        handleTabSelect(roomId);
+        return;
+      }
+      navigate(lightningRoomPath(roomId, getLightningPoolSession(roomId)?.meta ?? null));
+    },
+    [handleTabSelect, navigate]
+  );
+
   // ─── Render ──────────────────────────────────────────────────────────
   if (tables.length === 0) {
     // Hidden with nothing mounted: render nothing at all.
@@ -5164,6 +5189,15 @@ export default function MultiTablePage() {
           </>
         )}
 
+        {/* LIGHTNING PHASE 8: rooms owing a decision, most urgent first; a tap
+            focuses one. Renders nothing while nothing is owed elsewhere. */}
+        {!hidden ? (
+          <LightningDecisionQueue
+            activeRoomId={tables[activeIndex]?.id ?? null}
+            onFocus={handleLightningFocus}
+          />
+        ) : null}
+
         {/* Tile View Grid or Swipe Container */}
         {isTileView && tables.length > 1 ? (
           <div
@@ -5177,7 +5211,7 @@ export default function MultiTablePage() {
             {tables.map((table, idx) => (
               <div
                 key={table.id}
-                className={`multi-table-grid__cell ${idx === activeIndex ? 'multi-table-grid__cell--active' : ''}`}
+                className={`multi-table-grid__cell ${idx === activeIndex ? 'multi-table-grid__cell--active' : ''}${lightningUrgency[table.id] ? ` lightning-urgent--${lightningUrgency[table.id]}` : ''}`}
                 onClick={() => {
                   setActiveIndex(idx);
                   setIsTileView(false);
@@ -5426,7 +5460,7 @@ export default function MultiTablePage() {
               return (
                 <div
                   key={table.id}
-                  className={`multi-table-page__table-slot ${isActive ? 'multi-table-page__table-slot--active' : ''}`}
+                  className={`multi-table-page__table-slot ${isActive ? 'multi-table-page__table-slot--active' : ''}${lightningUrgency[table.id] ? ` lightning-urgent--${lightningUrgency[table.id]}` : ''}`}
                   style={
                     shouldRender
                       ? isWrapTarget

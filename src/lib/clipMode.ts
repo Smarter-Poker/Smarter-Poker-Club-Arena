@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  CLIP MODE: the hand share page as a camera subject (Phase 9.1, 2026-09-30)
+ *  CLIP MODE: the arena's hand replayer as a camera subject (Phase 9.1, 2026-09-30)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * The hand clip renderer (World Hub, `/api/cron/render-hand-clips`) opens
@@ -14,23 +14,32 @@
  * lost the river and the showdown, so the camera now reads the plan and
  * never the clock.
  *
- * A HAND CLIP IS THE HAND SHARE PAGE, PIXEL FOR PIXEL (owner decision, Dan,
- * 2026-10-07). Until then the clip was its own stripped felt: every seat that
- * was not the hero became "Seat N", there was no table name, no hand number,
- * no street tabs, no transport, no results strip and no footer, and the row
- * went into the model straight from the record. Now the payload goes through
- * exactly the path a share link goes through: `clipHandFrom` builds the
- * ShareableHand the archive's share button builds (`shareableFromModel`, as
- * `panelHandToShareable` in handHistoryAdapter.ts does), and the page renders
- * it with the same `sourceFrom` a link is rendered with. Every player's
- * screen name, the table name, the hand number, the starting stacks and the
- * showdown travel exactly as they do in a link. Nothing anonymises any more.
- * The renderer sets a 4:5 portrait viewport, 1080x1350; the page does nothing
- * special for it except the camera contract (HandReplay's `clip` prop).
- * Everything the page needs is here, and none of it touches React:
+ * A HAND CLIP IS THE HAND REPLAYER INSIDE CLUB ARENA, PIXEL FOR PIXEL (owner
+ * decision, Dan, 2026-10-07, after a first cut that cloned the public share
+ * page instead). The reference is `HandReplay` as the arena itself opens it
+ * on a hand by id: the table's Previous Hand modal (TableModalsLayer), the
+ * archive's replay (HandHistoryPage) and the by-id page (/share/hand/:id,
+ * HandReplayerPage). All three read the record through the archive
+ * (HandHistoryService.mapHandHistoryRow: `buildReplay(replayInputFromRow(
+ * row, { discardedCards, privateHoleCards }))`, the table's name, the hand
+ * number, the variant and the reveal record) and HandReplay folds it into
+ * one `ReplaySource`. `clipSourceFrom` builds THAT source from the payload,
+ * field for field, and the share route renders it inside the same 900px
+ * column the by-id page holds the replayer in, and nothing else: no share
+ * footer, because the arena's page has none. Until then the clip was first
+ * a stripped felt of its own (seat numbers for names, no header), then the
+ * share page, which rebuilds the hand from the link's wire, and the wire
+ * does not carry where the pot went: its last frame left the sample's
+ * winner at 119.20 where the arena shows 932.70, the pot pushed; and it
+ * printed a "Shared From" footer the arena never shows. The renderer sets
+ * a 4:5 portrait viewport, 1080x1350; the page
+ * does nothing special for it except the camera contract (HandReplay's
+ * `clip` prop). Everything the page needs is here, and none of it touches
+ * React:
  *
  *   readClipPayload       the payload, validated, or null
- *   clipHandFrom          the ShareableHand a share link carries, from the payload
+ *   clipSourceFrom        the ReplaySource the arena's replayer renders, from
+ *                         the payload
  *   fitClipRate           contract C3: the slowest replay rate that fits the
  *                         hand inside the clip window, or "too long"
  *
@@ -41,8 +50,7 @@ import type { ReplayFrame } from '../utils/replayFrames';
 import { replayBeatMs, type ReplayRate } from '../utils/replayMotion';
 import { buildReplay, replayInputFromRow, type HandHistoryRowLike } from '../utils/handReplay';
 import type { StoredCard } from '../utils/deckCards';
-import type { ShareableHand } from '../components/table/ShareHand';
-import { shareableFromModel } from './shareHandModel';
+import type { ReplaySource } from '../components/replay/HandReplay';
 
 // ── Contract C1: the injected payload ────────────────────────────────────────
 
@@ -70,9 +78,10 @@ export interface ClipPayload {
   heroId: string;
   row: ClipRow;
   /**
-   * The table the hand was played on, printed in the share page's header
-   * exactly as a link prints it. Null when the renderer sent none or sent an
-   * empty string; the hand then says "Club Arena", as an archive share does.
+   * The table the hand was played on (`tables.name`), printed in the
+   * replayer's header exactly as the arena prints it. Null when the renderer
+   * sent none or sent an empty string; the header then says "Table", which
+   * is what the archive prints for a table row that has been recycled.
    */
   tableName: string | null;
   /** The hero's `ca_hand_facts.hole_cards` when the row holds none for them. */
@@ -116,7 +125,7 @@ export function readClipPayload(win: Window | null | undefined): ClipPayload | n
     heroId: raw.heroId,
     row: row as ClipRow,
     /* Optional, unlike the rest: a renderer that does not know the table name
-       still gets a clip, and the hand names the club instead. */
+       still gets a clip, and the header says "Table", as the archive does. */
     tableName: nonEmptyString(raw.tableName) ? raw.tableName : null,
     privateHoleCards: isRecord(raw.privateHoleCards)
       ? (raw.privateHoleCards as Record<string, StoredCard[]>)
@@ -193,27 +202,81 @@ export function fitClipRate(
   return { tooLong: true, rate: fastest?.rate ?? ascending[0], plannedMs: fastest?.plannedMs ?? 0 };
 }
 
-// ── The hand: the share path (2026-10-07) ────────────────────────────────────
+// ── The source: the arena's own replayer (2026-10-07) ────────────────────────
 
 /**
- * The ShareableHand a clip renders: the payload's row through the one
- * reconstruction every surface renders (`buildReplay`), then onto the wire
- * the way the archive's share button puts a hand there
- * (`panelHandToShareable` in handHistoryAdapter.ts: `shareableFromModel` with
- * the hand's id, the table name or "Club Arena", and the hero). The page
- * reads it back with `replayFromShareable`, exactly as it reads a link, so a
- * clip and a share of the same hand are the same page.
+ * The reveal record for one seat, as the archive maps `hand_history.showdown`
+ * onto each player (`HandPlayer.showdown_reveal`, HandHistoryService). The
+ * replayer reads `mucked`; the rest rides along so the source is the
+ * arena's, field for field.
  */
-export function clipHandFrom(payload: ClipPayload): ShareableHand {
+interface ClipReveal {
+  reveal_order: number;
+  mucked: boolean;
+  hand_name?: string;
+  hand_description?: string;
+}
+
+/**
+ * The `ReplaySource` a clip renders: the one HandReplay builds for a hand it
+ * fetched by id, from the same record. Line for line, this is
+ * HandHistoryService.mapHandHistoryRow feeding HandReplay's `source` memo:
+ *
+ *   model        buildReplay(replayInputFromRow(row, { discardedCards,
+ *                privateHoleCards })), the one reconstruction, straight from
+ *                the record. (The share page rebuilt it from the link's wire,
+ *                which does not carry where the pot went, so its last
+ *                frame left the winner's stack short by the pot.)
+ *   tableName    the table's name, or "Table" when the renderer has none
+ *   handNumber   Number(row.hand_number) || 1
+ *   gameType     (row.game_variant || 'nlh').toUpperCase()
+ *   reveals      every seated player's reveal record, keyed by user id;
+ *                undefined for a seat the record has no entry for
+ *   viewerId     the hero: the seat the felt is anchored on
+ *   viewerFacts  null. In the arena they are the viewer's own all-in equity
+ *                and EV, read only by the Rundown tab, which a clip never
+ *                shows: the camera captures the Replay tab alone.
+ */
+export function clipSourceFrom(payload: ClipPayload): ReplaySource {
+  const row = payload.row;
   const model = buildReplay(
-    replayInputFromRow(payload.row, {
+    replayInputFromRow(row, {
       discardedCards: payload.discardedCards,
       privateHoleCards: payload.privateHoleCards,
     })
   );
-  return shareableFromModel(model, {
-    id: String(payload.row.id),
-    tableName: payload.tableName || 'Club Arena',
-    heroUserId: payload.heroId,
-  });
+  const showdownByUser = new Map<string, Record<string, unknown>>();
+  if (Array.isArray(row.showdown)) {
+    for (const e of row.showdown) {
+      if (isRecord(e) && typeof e.user_id === 'string') showdownByUser.set(e.user_id, e);
+    }
+  }
+  const reveals: Record<string, ClipReveal | undefined> = {};
+  for (const p of row.players) {
+    const uid = isRecord(p) && typeof p.userId === 'string' ? p.userId : '';
+    const e = showdownByUser.get(uid);
+    reveals[uid] = e
+      ? {
+          reveal_order: Number(e.reveal_order) || 0,
+          mucked: e.mucked === true,
+          hand_name: typeof e.hand_name === 'string' && e.hand_name ? e.hand_name : undefined,
+          hand_description:
+            typeof e.hand_description === 'string' && e.hand_description
+              ? e.hand_description
+              : undefined,
+        }
+      : undefined;
+  }
+  return {
+    model,
+    tableName: payload.tableName || 'Table',
+    handNumber: Number(row.hand_number) || 1,
+    gameType: (typeof row.game_variant === 'string' && row.game_variant
+      ? row.game_variant
+      : 'nlh'
+    ).toUpperCase(),
+    reveals,
+    viewerId: payload.heroId,
+    viewerFacts: null,
+  };
 }

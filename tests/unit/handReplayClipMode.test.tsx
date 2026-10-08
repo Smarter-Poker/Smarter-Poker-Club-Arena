@@ -1,9 +1,9 @@
 /**
- * HAND REPLAY CLIP MODE (Phase 9.1, 2026-09-30; the share page since
- * 2026-10-07): the replay as a camera subject.
+ * HAND REPLAY CLIP MODE (Phase 9.1, 2026-09-30; the arena's own replayer
+ * since 2026-10-07): the replay as a camera subject.
  *
- * - With `clip`, the stage is the share page's replayer, pixel for pixel
- *   (owner decision, Dan, 2026-10-07): the header with the table name and the
+ * - With `clip`, the stage is the replayer as the arena shows it, pixel for
+ *   pixel (owner decision, Dan, 2026-10-07): the header with the table name and the
  *   hand number, the tabs, the street jumps, the transport, the rate buttons
  *   and the seat strip are all there, every player keeps their screen name,
  *   and there is no clip class and no eyebrow of its own. The camera
@@ -20,12 +20,10 @@
  */
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, cleanup, act, waitFor, screen } from '@testing-library/react';
-import { clipHandFrom, fitClipRate, readClipPayload, type ClipRow } from '@/lib/clipMode';
-import { replayFromShareable, shareUserId } from '@/lib/shareHandModel';
+import { clipSourceFrom, fitClipRate, readClipPayload, type ClipRow } from '@/lib/clipMode';
 import { buildReplayFrames } from '@/utils/replayFrames';
 import { REPLAY_RATES, replayBeatMs } from '@/utils/replayMotion';
-import type { ShareableHand } from '@/components/table/ShareHand';
-import type { ClipHandle, ReplaySource } from '@/components/replay/HandReplay';
+import type { ClipHandle } from '@/components/replay/HandReplay';
 
 const sound = {
   playDeal: vi.fn(),
@@ -98,28 +96,8 @@ function payload(minMs: number, maxMs: number) {
   return p;
 }
 
-/**
- * What `sourceFrom` in src/pages/share/SharedHandReplayPage.tsx builds from a
- * ShareableHand: the link path, which a clip now goes through as well.
- */
-function sourceOf(hand: ShareableHand): ReplaySource {
-  const hero = hand.players.find((p) => p.isHero);
-  const reveals: Record<string, { mucked?: boolean }> = {};
-  for (const p of hand.players) {
-    if (p.mucked) reveals[shareUserId(p.seat)] = { mucked: true };
-  }
-  return {
-    model: replayFromShareable(hand),
-    tableName: hand.tableName || null,
-    handNumber: hand.handNumber ?? null,
-    gameType: hand.variant,
-    viewerId: hero ? shareUserId(hero.seat) : null,
-    reveals,
-    viewerFacts: null,
-  };
-}
-
-const clipSource = (minMs: number, maxMs: number) => sourceOf(clipHandFrom(payload(minMs, maxMs)));
+/** The source the share route hands the replayer for a clip: the arena's own. */
+const clipSource = (minMs: number, maxMs: number) => clipSourceFrom(payload(minMs, maxMs));
 
 const handle = () => (window as unknown as { __spClip?: ClipHandle }).__spClip;
 const stage = () => document.querySelector('.hand-replay') as HTMLElement | null;
@@ -154,7 +132,7 @@ beforeEach(() => {
 });
 
 describe('the clip stage', () => {
-  it('is the share page with the camera contract: header with table name and hand number, transport controls and the seat strip present, no eyebrow, no clip class', async () => {
+  it("is the arena's replayer with the camera contract: header with table name and hand number, transport controls and the seat strip present, no eyebrow, no clip class", async () => {
     await open(15000, 40000);
     const root = stage()!;
     expect(root.classList.contains('hand-replay--clip')).toBe(false);
@@ -187,7 +165,7 @@ describe('the clip stage', () => {
     expect(root.textContent).not.toContain('Seat 3');
   });
 
-  it('is the same tree the share page renders without clip, plus the camera attributes', async () => {
+  it('is the same tree the arena renders without clip, plus the camera attributes', async () => {
     const { default: HandReplay } = await import('@/components/replay/HandReplay');
     await open(15000, 40000);
     const withClip = shapeOf(stage()!);
@@ -220,7 +198,7 @@ describe('the clip stage', () => {
     expect(typeof h?.start).toBe('function');
     expect(stage()?.getAttribute('data-clip-step')).toBe('0');
     expect(stage()?.style.getPropertyValue('--hr-rate')).toBe(String(fit.rate));
-    /* The rate buttons say so too: the share page's own control, on the fit's rate. */
+    /* The rate buttons say so too: the replayer's own control, on the fit's rate. */
     expect(
       screen.getByRole('group', { name: 'Replay Speed' }).querySelector('.hr-rate--current')
         ?.textContent

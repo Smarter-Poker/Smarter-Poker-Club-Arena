@@ -9,17 +9,28 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
 import { parseLightningLobbyState, type LightningLobbyState } from './lightningLobby';
+import { fetchLightningPoolHealth } from './lightningSessionApi';
 
 export async function fetchLightningLobbyState(
   clusterId: string
 ): Promise<LightningLobbyState | null> {
-  const { data, error } = await supabase.rpc('fn_cash_game_lobby', { p_game_id: clusterId });
-  if (error) throw error;
-  return parseLightningLobbyState((data as { lightning?: unknown } | null)?.lightning ?? null);
+  const [lobby, health] = await Promise.all([
+    supabase.rpc('fn_cash_game_lobby', { p_game_id: clusterId }),
+    /* LIGHTNING PHASE 8: the pool's health in the database's own words. A
+       database without the function yet (or a failed read) leaves the card
+       on the status derived from the lobby state, as before. */
+    fetchLightningPoolHealth(clusterId).catch(() => null),
+  ]);
+  if (lobby.error) throw lobby.error;
+  const state = parseLightningLobbyState(
+    (lobby.data as { lightning?: unknown } | null)?.lightning ?? null
+  );
+  if (!state || !health) return state;
+  return { ...state, poolStatus: health.status, poolPlayers: health.players };
 }
 
-/** How often a visible board re-reads a Lightning Cluster's pool. */
-export const LIGHTNING_LOBBY_REFRESH_MS = 20_000;
+/** How often a visible board re-reads a Lightning Cluster's pool (a modest 30 s). */
+export const LIGHTNING_LOBBY_REFRESH_MS = 30_000;
 
 /**
  * The Lightning state of each listed Cluster, keyed by Cluster id. An empty

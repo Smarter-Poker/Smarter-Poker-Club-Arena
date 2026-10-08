@@ -378,7 +378,14 @@ jobs:
     permissions:
       contents: read
     steps:
+      # Full commit history, no blobs: a success closes an episode only when
+      # its release descends from every release the episode failed on, and
+      # that is read with git merge-base --is-ancestor. A shallow clone would
+      # make every lineage COULD NOT TELL and nothing would ever close.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
       - uses: actions/setup-node@v4
         with:
           node-version: 20

@@ -83,9 +83,51 @@ test(
         GRANT USAGE ON SCHEMA acl_test TO acl_reader;
         GRANT SELECT ON acl_test.sample TO acl_reader WITH GRANT OPTION;
         GRANT SELECT(id) ON acl_test.sample TO acl_extra WITH GRANT OPTION;
+        CREATE TABLE acl_test.explicit_default(id int);
+        GRANT SELECT ON acl_test.explicit_default TO acl_reader;
+        REVOKE SELECT ON acl_test.explicit_default FROM acl_reader;
+        CREATE TABLE acl_test.explicit_empty(id int);
+        REVOKE ALL ON acl_test.explicit_empty FROM acl_owner;
+        RESET ROLE;
+        CREATE SCHEMA explicit_default_schema AUTHORIZATION acl_owner;
+        SET ROLE acl_owner;
+        GRANT USAGE ON SCHEMA explicit_default_schema TO acl_reader;
+        REVOKE USAGE ON SCHEMA explicit_default_schema FROM acl_reader;
         RESET ROLE; GRANT USAGE ON SCHEMA public TO acl_reader WITH GRANT OPTION;`)
       );
       const emitted = ok(psql(sql));
+      const oldSource = sql.replace(
+        'IF NOT actual_acl_was_null AND grants IS NOT DISTINCT FROM target_text THEN CONTINUE;',
+        'IF grants IS NOT DISTINCT FROM target_text THEN CONTINUE;'
+      );
+      assert.notEqual(oldSource, sql);
+      const oldEmitted = ok(psql(oldSource));
+      ok(
+        psql(`SET ROLE acl_owner;
+        DROP TABLE acl_test.explicit_default,acl_test.explicit_empty;
+        CREATE TABLE acl_test.explicit_default(id int);
+        CREATE TABLE acl_test.explicit_empty(id int);
+        DROP SCHEMA explicit_default_schema;
+        RESET ROLE;
+        CREATE SCHEMA explicit_default_schema AUTHORIZATION acl_owner;
+        RESET ROLE;`)
+      );
+      ok(psql(oldEmitted));
+      assert.equal(
+        ok(
+          psql(
+            "SELECT relacl IS NULL FROM pg_class WHERE oid='acl_test.explicit_default'::regclass;"
+          )
+        ).trim(),
+        't',
+        'Original false-skip defect must reproduce'
+      );
+      assert.equal(
+        ok(
+          psql("SELECT nspacl IS NULL FROM pg_namespace WHERE nspname='explicit_default_schema';")
+        ).trim(),
+        't'
+      );
       const columns = ok(
         psql(
           "SELECT attacl::text FROM pg_attribute WHERE attrelid='acl_test.sample'::regclass AND attname='id';"
@@ -102,6 +144,23 @@ test(
         RESET ROLE;`)
       );
       ok(psql(emitted));
+      assert.equal(
+        ok(
+          psql(
+            "SELECT relacl IS NOT NULL FROM pg_class WHERE oid='acl_test.explicit_default'::regclass;"
+          )
+        ).trim(),
+        't'
+      );
+      assert.equal(
+        ok(
+          psql(
+            "SELECT relacl IS NOT NULL AND cardinality(relacl)=0 FROM pg_class WHERE oid='acl_test.explicit_empty'::regclass;"
+          )
+        ).trim(),
+        't',
+        'Explicit empty target must remain empty, never NULL/default'
+      );
       assert.equal(
         ok(
           psql(
@@ -208,6 +267,11 @@ test('full ACL item equality, source owner grantors and native options retained 
   assert.match(sql, /Dynamic database owner differs/);
   assert.match(sql, /SET LOCAL ROLE %%I/);
   assert.match(sql, /RESET ROLE/);
+  assert.equal(sql.match(/actual_acl_was_null:=actual_acl IS NULL;/g)?.length, 3);
+  assert.match(
+    sql,
+    /IF NOT actual_acl_was_null AND grants IS NOT DISTINCT FROM target_text THEN CONTINUE/
+  );
   assert.match(sql, /c\.relkind IN \('r','p','v','m','f','S'\)/);
   assert.match(sql, /Column ACL preimage differs/);
   assert.match(sql, /Column ACL readback differs/);

@@ -1,8 +1,9 @@
 /**
  * LIGHTNING PHASE 7: LIGHTNING -> MUST_MOVE, THE ENGINE'S HALF (2026-10-02).
  *
- *   - discovery finds `pending_off` Clusters as well as `lightning` ones, and
- *     says which are draining;
+ *   - discovery finds `pending_off` Clusters as well as `lightning` ones,
+ *     whatever `lightning_enabled` says, and says which are draining (a
+ *     `lightning` Cluster switched off drains until the tick moves it on);
  *   - a draining worker forms nothing and calls nothing, while the hands in
  *     the air are left to their hosts (nothing is abandoned);
  *   - a Cluster that turns back to `lightning` forms again;
@@ -95,18 +96,35 @@ afterEach(() => {
 });
 
 describe('discovery includes the Clusters draining out of Lightning', () => {
-  it('asks for lightning AND pending_off, with Lightning enabled, and says which drain', async () => {
+  it('asks for lightning AND pending_off, whatever lightning_enabled says, and says which drain', async () => {
     db.rows = [
-      { id: A, cluster_mode: 'lightning' },
-      { id: B, cluster_mode: 'pending_off' },
+      { id: A, cluster_mode: 'lightning', lightning_enabled: true },
+      { id: B, cluster_mode: 'pending_off', lightning_enabled: false },
     ];
     expect(await discoverLightningClusters()).toEqual([
       { clusterId: A, draining: false },
       { clusterId: B, draining: true },
     ]);
+    expect(db.calls).toContainEqual(['select', 'id, cluster_mode, lightning_enabled']);
     expect(db.calls).toContainEqual(['in', 'cluster_mode', ['lightning', 'pending_off']]);
-    expect(db.calls).toContainEqual(['eq', 'lightning_enabled', true]);
+    // No flag filter: a Cluster switched off mid-hand must not drop out.
+    expect(db.calls.filter((c) => c[0] === 'eq')).toEqual([]);
     expect([...LIGHTNING_WORKER_CLUSTER_MODES]).toEqual(['lightning', 'pending_off']);
+  });
+
+  it('a lightning Cluster forms only with lightning_enabled exactly true; otherwise it drains', () => {
+    expect(
+      parseDiscoveredClusters([
+        { id: A, cluster_mode: 'lightning', lightning_enabled: false },
+        { id: B, cluster_mode: 'lightning' },
+      ])
+    ).toEqual([
+      { clusterId: A, draining: true },
+      { clusterId: B, draining: true },
+    ]);
+    expect(
+      parseDiscoveredClusters([{ id: B, cluster_mode: 'pending_off', lightning_enabled: true }])
+    ).toEqual([{ clusterId: B, draining: true }]);
   });
 
   it('a row in any other mode, or with a malformed id, is no Cluster at all', () => {
@@ -261,6 +279,95 @@ describe('the supervisor through LIGHTNING -> PENDING_OFF -> MUST_MOVE', () => {
     rpc.mockClear();
     await w.pass();
     expect(rpc).not.toHaveBeenCalled();
+    await sup.stop();
+  });
+});
+
+describe('Lightning switched off while a hand is being dealt', () => {
+  it('the hand settles under its host: the worker drains, nothing is abandoned', async () => {
+    // The real discovery read, against cash_games rows the test changes.
+    const row = { id: A, cluster_mode: 'lightning', lightning_enabled: true };
+    let rows: unknown[] = [row];
+    const HAND = '0e0e0e0e-0000-4000-8000-00000000000e';
+    const INSTANCE = '0f0f0f0f-0000-4000-8000-00000000000f';
+    const P1 = '01010101-0000-4000-8000-000000000001';
+    const P2 = '02020202-0000-4000-8000-000000000002';
+    let formedOnce = false;
+    const rpc = vi.fn(async (fn: string) => {
+      if (fn === 'fn_lightning_config') return { data: { worker_mode: 'form' }, error: null };
+      if (fn === 'fn_lightning_match_and_form') {
+        if (formedOnce) return { data: { ok: true, hands: [] }, error: null };
+        formedOnce = true;
+        return {
+          data: {
+            ok: true,
+            hands: [
+              { hand_id: HAND, instance_id: INSTANCE, bb: P1, sb: P2, btn: P2, players: [P1, P2] },
+            ],
+          },
+          error: null,
+        };
+      }
+      throw new Error('unexpected rpc ' + fn);
+    }) as unknown as LightningRpcClient & ReturnType<typeof vi.fn>;
+    // A host that keeps each hand until it settles; an abort voids them.
+    const live = new Set<string>();
+    const voided: string[] = [];
+    const hosting = {
+      ...hostingStub(),
+      startHand: vi.fn((hand: { instanceId: string }) => live.add(hand.instanceId)),
+      hasInstance: vi.fn((id: string) => live.has(id)),
+      abortCluster: vi.fn(async () => {
+        voided.push(...live);
+        live.clear();
+      }),
+    };
+    const sup = new LightningSupervisor({
+      presenceSource: () => [],
+      discover: async () => {
+        db.rows = rows;
+        return discoverLightningClusters();
+      },
+      rpc,
+      hosting: hosting as never,
+      frontTable: async () => 'front',
+      frozen: () => false,
+      logger: quiet(),
+      metrics: new LightningMetrics(new MetricsRegistry()),
+    });
+    sup.start();
+    await sup.reconcile();
+    const w = sup.workerFor(A)!;
+    expect((await w.pass()).outcome).toBe('formed');
+    expect([...live]).toEqual([INSTANCE]); // the hand is being dealt
+
+    // The operator switches Lightning off; the tick has not run yet.
+    row.lightning_enabled = false;
+    await sup.reconcile();
+    expect(sup.workerFor(A)).toBe(w);
+    expect(w.isRunning).toBe(true);
+    expect(w.isDraining).toBe(true);
+    expect(hosting.abortCluster).not.toHaveBeenCalled();
+    expect([...live]).toEqual([INSTANCE]);
+    rpc.mockClear();
+    expect(await w.pass()).toEqual({ outcome: 'skipped', reason: 'pending_off' });
+    expect(rpc).not.toHaveBeenCalled();
+
+    // The tick: pending_off. Still draining, still nothing abandoned.
+    row.cluster_mode = 'pending_off';
+    await sup.reconcile();
+    expect(sup.workerFor(A)).toBe(w);
+    expect(w.isDraining).toBe(true);
+    expect(hosting.abortCluster).not.toHaveBeenCalled();
+
+    // The hand settles under its host; then the commit sets must_move.
+    live.delete(INSTANCE);
+    row.cluster_mode = 'must_move';
+    rows = [];
+    await sup.reconcile();
+    expect(sup.activeClusters()).toEqual([]);
+    expect(w.isRunning).toBe(false);
+    expect(voided).toEqual([]); // the dealt hand was never abandoned
     await sup.stop();
   });
 });

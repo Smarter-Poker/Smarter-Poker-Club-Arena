@@ -49,7 +49,16 @@ import {
   readHorseJournalHand,
   readHorseJournalHandRecords,
   reconcileHorseJournalHand,
+  reviewHorsePlanEffects,
 } from './review.js';
+import {
+  createHorsePlanEffectReceipt,
+  type HorsePlanEffectReceipt,
+} from '../../engine/HorsePlanEffectReceipt.js';
+import {
+  workerHarness as planWorkerHarness,
+  commitOf as planCommitOf,
+} from '../../testing/horseRegression/plan/fixture.js';
 import { runtimeHorseJournalArchiveOptions } from './config.js';
 import { doorRosterTransport } from '../horseAcceptedRoster/fixture.test-support.js';
 
@@ -2112,5 +2121,167 @@ describe('readHorseJournalHandRecords shard fan-out', () => {
     expect(() =>
       readHorseJournalHandRecords(dir, journalHash('shard-fanout:no-storage'))
     ).toThrow();
+  });
+});
+
+describe('Phase 15.1 plan-effect ledger from authoritative receipts', () => {
+  const planProducer = '40000000-0000-4000-8000-000000000009';
+  const planHand = journalHash('plan-ledger-hand');
+  const planTurn = journalHash('plan-ledger-turn');
+  async function issuedAndAccepted() {
+    HorseMind.reset();
+    const receipts: HorsePlanEffectReceipt[] = [];
+    const h = planWorkerHarness({
+      journalPlanReceipt: (_request, receipt) => {
+        receipts.push(receipt);
+      },
+    });
+    try {
+      const result = await h.fast();
+      h.runtime.receive(planCommitOf(result, 2));
+      await h.runtime.drain();
+      return { result, capture: h.captures[0]!, receipt: receipts[0]! };
+    } finally {
+      await h.close();
+      HorseMind.reset();
+    }
+  }
+  const witnessOf = (
+    result: Awaited<ReturnType<typeof issuedAndAccepted>>['result'],
+    amount = 6
+  ) => ({
+    identity: { requestId: result.requestId, decisionKey: result.planBinding.decisionKey },
+    acceptedActions: [
+      { record: { seat: 1, action: 'bet', amount, stage: 'flop' }, intended: true },
+    ],
+  });
+  let sequence = 0;
+  const row = (kind: HorseJournalRecord['kind'], payload: unknown, turnKey = planTurn) =>
+    makeHorseJournalRecord(
+      {
+        producerId: planProducer,
+        sequence: ++sequence,
+        atMs: 1,
+        sourceRelease: null,
+        kind,
+        handKey: planHand,
+        turnKey,
+      },
+      payload
+    );
+
+  it('counts issued, accepted, durable and applied, and verifies application only from the receipt', async () => {
+    const f = await issuedAndAccepted();
+    const rows = [
+      row('decision', f.capture),
+      row('execution', witnessOf(f.result)),
+      row('plan_receipt', f.receipt),
+      row('accepted_hand', { hand: 'retained' }),
+    ];
+    expect(reviewHorsePlanEffects(rows, planHand)).toEqual({
+      version: 1,
+      scope: 'single_retained_hand',
+      acceptedHandRetained: true,
+      issued: 1,
+      accepted: 1,
+      durable: 1,
+      applied: 1,
+      failed: 0,
+      unknown: 0,
+      gaps: [],
+      applicationVerified: true,
+      replayVerified: false,
+      completePopulation: false,
+      activationAllowed: false,
+    });
+    // The existing turn join never mistakes a receipt for an execution.
+    expect(reconcileHorseJournalHand(rows, planHand).gaps).not.toContain('turn_conflict');
+  });
+
+  it('keeps a failed receipt failed and an accepted batch without a receipt accepted, then unknown once the hand is retained', async () => {
+    const f = await issuedAndAccepted();
+    const failed = createHorsePlanEffectReceipt({ ...f.receipt, disposition: 'failed' });
+    expect(
+      reviewHorsePlanEffects(
+        [
+          row('decision', f.capture),
+          row('execution', witnessOf(f.result)),
+          row('plan_receipt', failed),
+          row('accepted_hand', {}),
+        ],
+        planHand
+      )
+    ).toMatchObject({ durable: 1, applied: 0, failed: 1, applicationVerified: false });
+    const pending = [row('decision', f.capture), row('execution', witnessOf(f.result))];
+    expect(reviewHorsePlanEffects(pending, planHand)).toMatchObject({
+      issued: 1,
+      accepted: 1,
+      durable: 0,
+      unknown: 0,
+      gaps: [],
+      applicationVerified: false,
+    });
+    expect(reviewHorsePlanEffects([...pending, row('accepted_hand', {})], planHand)).toMatchObject({
+      unknown: 1,
+      gaps: ['plan_receipt_missing'],
+      applicationVerified: false,
+    });
+    expect(reviewHorsePlanEffects([row('decision', f.capture)], planHand)).toMatchObject({
+      issued: 1,
+      accepted: 0,
+      durable: 0,
+    });
+  });
+
+  it('journal-only forged application never counts as applied', async () => {
+    const f = await issuedAndAccepted();
+    const forgedDigest = { ...structuredClone(f.receipt), issuedBatchDigest: 'f'.repeat(64) };
+    const coerced = createHorsePlanEffectReceipt({
+      ...f.receipt,
+      acceptance: { ...f.receipt.acceptance, amount: 8 },
+    });
+    for (const rows of [
+      // A receipt with no decision or execution behind it.
+      [row('plan_receipt', f.receipt), row('accepted_hand', {})],
+      // A receipt whose digest does not bind the retained batch.
+      [
+        row('decision', f.capture),
+        row('execution', witnessOf(f.result)),
+        row('plan_receipt', forgedDigest),
+        row('accepted_hand', {}),
+      ],
+      // A receipt naming a wager the controller did not accept.
+      [
+        row('decision', f.capture),
+        row('execution', witnessOf(f.result)),
+        row('plan_receipt', coerced),
+        row('accepted_hand', {}),
+      ],
+      // A receipt without the controller's acceptance.
+      [row('decision', f.capture), row('plan_receipt', f.receipt), row('accepted_hand', {})],
+    ]) {
+      const review = reviewHorsePlanEffects(rows, planHand);
+      expect(review.applied).toBe(0);
+      expect(review.applicationVerified).toBe(false);
+      expect(review.gaps).toContain('plan_receipt_unbound');
+    }
+    const conflict = reviewHorsePlanEffects(
+      [
+        row('decision', f.capture),
+        row('execution', witnessOf(f.result)),
+        row('plan_receipt', f.receipt),
+        row('plan_receipt', createHorsePlanEffectReceipt({ ...f.receipt, disposition: 'failed' })),
+        row('accepted_hand', {}),
+      ],
+      planHand
+    );
+    expect(conflict).toMatchObject({ applied: 0, unknown: 1, applicationVerified: false });
+    expect(conflict.gaps).toContain('plan_receipt_conflict');
+    expect(
+      reviewHorsePlanEffects(
+        [{ ...row('plan_receipt', f.receipt), sha256: '0'.repeat(64) }],
+        planHand
+      )
+    ).toMatchObject({ gaps: ['invalid_records'], applied: 0 });
   });
 });

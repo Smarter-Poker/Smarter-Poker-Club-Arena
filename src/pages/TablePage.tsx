@@ -354,6 +354,9 @@ import {
 } from '../lightning/lightningCapabilities';
 import { sendLightningFold, type LightningFoldKind } from '../lightning/lightningActions';
 import { useLightningAnchorHandoff } from '../lightning/useLightningAnchorHandoff';
+import LightningRoomTools from '../components/lightning/LightningRoomTools';
+import { openLightningSessionSummary } from '../lightning/lightningSummaryStore';
+import { readLightningPrefs, writeLightningPrefs } from '../lightning/lightningPrefs';
 // The ShareHand COMPONENT is rendered by TableModalsLayer, not here — the
 // default import this line used to carry was unused. TablePage builds the
 // payload, so it needs the types.
@@ -10371,44 +10374,55 @@ function LiveTablePage({
           ? await fetchTournamentResult(tableState.tournamentId, userId)
           : undefined;
 
-        publishSessionSummary({
-          arenaAsset: tableState.arenaAsset,
-          duration: Math.floor((Date.now() - sessionStartRef.current) / 1000),
-          handsPlayed: handsPlayedRef.current,
-          handsWon: handsWonRef.current,
-          totalRebuys: totalRebuysRef.current,
-          profitLoss: sessionPLRef.current,
-          biggestPot: biggestPotRef.current,
-          peakStack: peakStackRef.current,
-          tableName: tableState.tableName,
-          tournament: tournamentResult,
-          // Dan 2026-08-22: the card shows VPIP (not hands/hour), the total
-          // buy-in, and the session's date + time.
-          vpipPercent:
-            handsPlayedRef.current > 0
-              ? Math.round((vpipCountRef.current / handsPlayedRef.current) * 100)
-              : 0,
-          totalBuyIn: totalBuyInRef.current,
-          sessionStart: sessionStartRef.current,
-          sessionEnd: Date.now(),
-          // Phase 3 (2026-08-22): when the cashout is deferred the P/L above
-          // is an estimate (live stack at leave); the card annotates it
-          // "Pending Settlement" so the estimate is never read as settled.
-          plPending: !!result.deferred,
-          // Phase 4 (2026-08-22): and the app-root host reconciles it — it
-          // polls for the settlement's wallet_transactions cashout row and
-          // swaps the estimate for the settled figure. This component is
-          // about to navigate away and unmount, so the host must be able to
-          // find the row on its own.
-          pendingCashout: result.deferred
-            ? {
-                tableId: leaveTableId,
-                userId,
-                sinceMs: Date.now(),
-                occupancyId: result.occupancyId,
-              }
-            : undefined,
-        });
+        /* LIGHTNING PHASE 8: leaving Lightning shows the Lightning session
+           summary (the database's numbers for the whole pool session), not
+           the table card, whose counters only saw this room's hands. */
+        const lightningSummaryRoom = lightningLeave ? lightningRoomRef.current : null;
+        if (lightningSummaryRoom && tableId) {
+          openLightningSessionSummary({
+            poolSessionId: tableId,
+            clusterId: lightningSummaryRoom.clusterId,
+            name: lightningSummaryRoom.meta?.name ?? null,
+          });
+        } else
+          publishSessionSummary({
+            arenaAsset: tableState.arenaAsset,
+            duration: Math.floor((Date.now() - sessionStartRef.current) / 1000),
+            handsPlayed: handsPlayedRef.current,
+            handsWon: handsWonRef.current,
+            totalRebuys: totalRebuysRef.current,
+            profitLoss: sessionPLRef.current,
+            biggestPot: biggestPotRef.current,
+            peakStack: peakStackRef.current,
+            tableName: tableState.tableName,
+            tournament: tournamentResult,
+            // Dan 2026-08-22: the card shows VPIP (not hands/hour), the total
+            // buy-in, and the session's date + time.
+            vpipPercent:
+              handsPlayedRef.current > 0
+                ? Math.round((vpipCountRef.current / handsPlayedRef.current) * 100)
+                : 0,
+            totalBuyIn: totalBuyInRef.current,
+            sessionStart: sessionStartRef.current,
+            sessionEnd: Date.now(),
+            // Phase 3 (2026-08-22): when the cashout is deferred the P/L above
+            // is an estimate (live stack at leave); the card annotates it
+            // "Pending Settlement" so the estimate is never read as settled.
+            plPending: !!result.deferred,
+            // Phase 4 (2026-08-22): and the app-root host reconciles it — it
+            // polls for the settlement's wallet_transactions cashout row and
+            // swaps the estimate for the settled figure. This component is
+            // about to navigate away and unmount, so the host must be able to
+            // find the row on its own.
+            pendingCashout: result.deferred
+              ? {
+                  tableId: leaveTableId,
+                  userId,
+                  sinceMs: Date.now(),
+                  occupancyId: result.occupancyId,
+                }
+              : undefined,
+          });
 
         // Now actually leave. These three used to fire together from the
         // modal's close handler, where they raced each other for the
@@ -10632,34 +10646,43 @@ function LiveTablePage({
           ? await fetchTournamentResult(tableState.tournamentId, userId)
           : undefined;
 
-        publishSessionSummary({
-          arenaAsset: tableState.arenaAsset,
-          duration: Math.floor((Date.now() - sessionStartRef.current) / 1000),
-          handsPlayed: handsPlayedRef.current,
-          handsWon: handsWonRef.current,
-          totalRebuys: totalRebuysRef.current,
-          profitLoss: forcePL,
-          biggestPot: biggestPotRef.current,
-          peakStack: peakStackRef.current,
-          tableName: tableState.tableName,
-          tournament: forceTournamentResult,
-          vpipPercent:
-            handsPlayedRef.current > 0
-              ? Math.round((vpipCountRef.current / handsPlayedRef.current) * 100)
-              : 0,
-          totalBuyIn: totalBuyInRef.current,
-          sessionStart: sessionStartRef.current,
-          sessionEnd: Date.now(),
-          plPending: forceDeferred,
-          pendingCashout: forceDeferred
-            ? {
-                tableId: forceTableId,
-                userId,
-                sinceMs: Date.now(),
-                occupancyId: forced.occupancyId,
-              }
-            : undefined,
-        });
+        /* LIGHTNING PHASE 8: the same Lightning summary from this door. */
+        const forceSummaryRoom = forceLightning ? lightningRoomRef.current : null;
+        if (forceSummaryRoom && tableId) {
+          openLightningSessionSummary({
+            poolSessionId: tableId,
+            clusterId: forceSummaryRoom.clusterId,
+            name: forceSummaryRoom.meta?.name ?? null,
+          });
+        } else
+          publishSessionSummary({
+            arenaAsset: tableState.arenaAsset,
+            duration: Math.floor((Date.now() - sessionStartRef.current) / 1000),
+            handsPlayed: handsPlayedRef.current,
+            handsWon: handsWonRef.current,
+            totalRebuys: totalRebuysRef.current,
+            profitLoss: forcePL,
+            biggestPot: biggestPotRef.current,
+            peakStack: peakStackRef.current,
+            tableName: tableState.tableName,
+            tournament: forceTournamentResult,
+            vpipPercent:
+              handsPlayedRef.current > 0
+                ? Math.round((vpipCountRef.current / handsPlayedRef.current) * 100)
+                : 0,
+            totalBuyIn: totalBuyInRef.current,
+            sessionStart: sessionStartRef.current,
+            sessionEnd: Date.now(),
+            plPending: forceDeferred,
+            pendingCashout: forceDeferred
+              ? {
+                  tableId: forceTableId,
+                  userId,
+                  sinceMs: Date.now(),
+                  occupancyId: forced.occupancyId,
+                }
+              : undefined,
+          });
       }
 
       masterBus.emit('TABLE_LEFT', { tableId, seat: forceHeroSeat });
@@ -23433,12 +23456,20 @@ function LiveTablePage({
     lightningCaps
   );
   const [lightningFoldBusy, setLightningFoldBusy] = useState(false);
+  const [lightningPrefersWatch, setLightningPrefersWatch] = useState(
+    () => readLightningPrefs().preferFoldWatch
+  );
   const handleLightningFold = useCallback(
     async (kind: LightningFoldKind) => {
       if (!tableId || !lightningRoomRef.current || !userId || userId === 'guest') return;
       // The fold supersedes any armed pre-action for this hand.
       setPreAction(null);
       setLightningFoldBusy(true);
+      /* LIGHTNING PHASE 8: the player's FOLD & WATCH preference, remembered on
+         this device (a reminder only; the strip offers both, always). */
+      setLightningPrefersWatch(
+        writeLightningPrefs({ preferFoldWatch: kind === 'fold_watch' }).preferFoldWatch
+      );
       try {
         const result = await sendLightningFold(tableId, userId, kind);
         if (!result.success) {
@@ -26836,8 +26867,23 @@ function LiveTablePage({
               <LightningFoldBar
                 availability={lightningFold}
                 offerFoldWatch={lightningCaps.fold_and_watch}
+                preferFoldWatch={lightningPrefersWatch}
                 busy={lightningFoldBusy}
                 onFold={(kind) => void handleLightningFold(kind)}
+              />
+            ) : null}
+            {/* LIGHTNING PHASE 8: the pool's health, the running Session
+                numbers, Recent Hands and Previous Hand. Read-only panels. */}
+            {lightningRoom &&
+            tableId &&
+            userId &&
+            userId !== 'guest' &&
+            !lightningReversion.seatTableId ? (
+              <LightningRoomTools
+                poolSessionId={tableId}
+                clusterId={lightningRoom.clusterId}
+                handKey={lightningHandKeyNow}
+                visible={isVisible && (!isMultiTable || isActive)}
               />
             ) : null}
             {lightningRoom ? (
@@ -26857,6 +26903,15 @@ function LiveTablePage({
                 themselves, by the button (CLAUDE.md 10.6). */}
             {lightningRoom && lightningReversion.seatTableId ? (
               <LightningEndedNotice
+                session={
+                  tableId
+                    ? {
+                        poolSessionId: tableId,
+                        clusterId: lightningRoom.clusterId,
+                        name: lightningRoom.meta?.name ?? null,
+                      }
+                    : null
+                }
                 onViewGame={() => {
                   const seatTable = lightningReversion.seatTableId;
                   if (!seatTable) return;

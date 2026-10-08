@@ -1401,6 +1401,7 @@ jobs:
           scripts/verification-harness/leaderboard-isolation-extension-trigger-bootstrap.test.mjs
           scripts/verification-harness/leaderboard-isolation-definition-portability.test.mjs
           scripts/verification-harness/leaderboard-isolation-acl-bootstrap.test.mjs
+          scripts/verification-harness/leaderboard-isolation-definition-bootstrap.test.mjs
       - name: Data console native PostgreSQL contracts
         if: matrix.shard == 2
         env:
@@ -1694,6 +1695,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase7-reversion.sh
+      - name: Lightning Phase 8 limits multi-tabling per platform and reads session statistics, pool status and recent hands from settled hands
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-lightning-phase8-session.sh
       - name: Credit invoices bill only uninvoiced drawn debt
         if: matrix.shard == 1
         env:
@@ -1965,6 +1971,9 @@ jobs:
           path: artifacts/hand-submission-retention-disposal/
           if-no-files-found: error
           retention-days: 7
+      - name: Departure client completion drains actual refusal output
+        if: matrix.shard == 3
+        run: node --test scripts/verification-harness/departure-holder-stream-close.test.mjs
       - name: Atomic departures, ownership, rollback and concurrency
         if: matrix.shard == 3
         env:

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { decide, readVerdict, classifyCancelledLanes, FLEET_TASK_ID } from './record-post-deploy-verdict.mjs';
+import { decide, readVerdict, classifyCancelledLanes, coverageOf, settleOtherEpisodes, FLEET_TASK_ID } from './record-post-deploy-verdict.mjs';
 
 const LANES = [
   'The Live SEO Contract Holds',
@@ -9,6 +9,24 @@ const LANES = [
   'Seal certified Phase 1 customization cutover',
 ];
 const GATE = 'Confirm The Hetzner Web Publish Reached Production';
+
+// Lineage evidence a test can state outright. `order` lists releases oldest to
+// newest on one line of main; anything not listed shares no lineage.
+function lineage(order) {
+  return (failed, here) => {
+    const a = order.indexOf(failed);
+    const b = order.indexOf(here);
+    if (a < 0 || b < 0) throw new Error(`no lineage for ${failed} / ${here}`);
+    return a === b ? 'same' : a < b ? 'ancestor' : 'descendant';
+  };
+}
+// An open episode opened by the release every default verdict runs on, and
+// the history that proves the verdict covers it.
+const HEAD = '6953271dc1072aced0929424743473b8ea4d3f25';
+function openEpisode(over = {}) {
+  return { event_key: 'abc', status: 'firing', investigation_status: 'new', head_sha: HEAD, delivery_count: 1, ...over };
+}
+const COVERED = { failedReleases: [], relate: lineage([HEAD]) };
 
 function verdict(over = {}) {
   return {
@@ -94,7 +112,7 @@ test('a fully green run with no open episode records nothing, so success cannot 
 });
 
 test('a green run closes an episode the fleet still has open', () => {
-  const out = decide(verdict(), { event_key: 'abc', status: 'firing', investigation_status: 'new' });
+  const out = decide(verdict(), openEpisode(), COVERED);
   assert.equal(out.action, 'resolve');
   assert.equal(out.severity, 'info');
   assert.equal(out.eventKey, 'abc:resolved');
@@ -322,7 +340,7 @@ test('a seal that was not owed does not fire, and a passing run then closes the 
     { name: LANES[3], result: 'skipped', owed: false },
   ];
   assert.equal(decide(verdict({ lanes })).action, 'none');
-  const out = decide(verdict({ lanes }), { event_key: 'abc', status: 'firing', investigation_status: 'new' });
+  const out = decide(verdict({ lanes }), openEpisode(), COVERED);
   assert.equal(out.action, 'resolve');
   assert.deepEqual(out.payload.not_owed_jobs, [LANES[3]]);
 });
@@ -388,13 +406,13 @@ test('run 37604057526: a sealed engine certificate closes the episode, its SEO s
     LANES: `skipped|${LANES[0]}\nsuccess|${LANES[1]}\nsuccess|${LANES[2]}\nsuccess|${LANES[3]}\n`,
     UNOWED_LANES: `${LANES[0]}\n`,
   });
-  const open = { event_key: 'c49cb80c8d3d', status: 'firing', investigation_status: 'new' };
-  const out = decide(parsed, open);
+  const open = openEpisode({ event_key: 'c49cb80c8d3d', head_sha: parsed.headSha });
+  const out = decide(parsed, open, { failedReleases: [], relate: lineage([parsed.headSha]) });
   assert.equal(out.action, 'resolve');
   assert.equal(out.payload.resolves, 'c49cb80c8d3d');
   assert.deepEqual(out.payload.not_owed_jobs, [LANES[0]]);
   // Without the owed flag the same run is (wrongly, before 2026-10-07) loud.
-  const preFix = decide(readVerdict({ ...parsedEnvWithout(parsed) }), open);
+  const preFix = decide(readVerdict({ ...parsedEnvWithout(parsed) }), open, { failedReleases: [], relate: lineage([parsed.headSha]) });
   assert.equal(preFix.action, 'fire');
 });
 
@@ -410,3 +428,172 @@ function parsedEnvWithout(parsed) {
     LANES: parsed.lanes.map((lane) => `${lane.result}|${lane.name}`).join('\n'),
   };
 }
+
+// THE 2026-10-07 REGRESSION, replayed in the order it happened.
+//   11:46  run 37616370268 starts verifying release 365b5f5f.
+//   12:30  run 37620236888, triggered by the publish of the NEWER release
+//          b6a260b4 (HEAD_SHA in its recorder step), failed its live-table
+//          lane and bumped the open episode 240356 (opened 2026-10-06 on
+//          9e8d17e5).
+//   12:35  run 37616370268 finishes green and, before this fix, wrote row
+//          243237 resolving 240356: an older success erased a newer failure.
+const R9E8 = '9e8d17e5fd45d91ea04a2f1e040ac2b39c2a20c9';
+const R365 = '365b5f5f3e79ccdbfc1cce55058304a46f310214';
+const R68B = '68b28e5b84573fa89aab8bcc50b4f8afed6f131d';
+const R86E = '86e14862e3ba118ac787469477e3515e9d336d52';
+const RB6A = 'b6a260b4b7180cf3619cf7c58b0ddc11ebe8efb2';
+// Oldest to newest on main, as git merge-base --is-ancestor reads them.
+const MAIN = lineage([R9E8, R365, RB6A, R68B, R86E]);
+const EP240356 = 'c49cb80c8d3d50c9713e';
+
+function greenRun(runId, headSha) {
+  return verdict({ runId, headSha, lanes: LANES.map((name) => ({ name, result: 'success' })) });
+}
+
+test('replay 12:30/12:35: a success for an OLDER release never closes a newer failure', () => {
+  // 12:30 - the failure of b6a260b4 reuses the open episode and records the
+  // release it failed on beside it.
+  const open = openEpisode({ event_key: EP240356, head_sha: R9E8, delivery_count: 119 });
+  const fail = decide(verdict({
+    runId: '37620236888', headSha: RB6A,
+    lanes: [{ name: LANES[1], result: 'success' }, { name: LANES[2], result: 'failure' }],
+  }), open);
+  assert.equal(fail.action, 'fire');
+  assert.equal(fail.eventKey, EP240356);
+  assert.equal(fail.occurrence.payload.kind, 'failed-release');
+  assert.equal(fail.occurrence.payload.episode, EP240356);
+  assert.equal(fail.occurrence.payload.head_sha, RB6A);
+  assert.equal(fail.occurrence.eventKey, `${EP240356}:failed-release:${RB6A}`);
+
+  // 12:35 - the green run that had been verifying 365b5f5f finishes. Every
+  // earlier delivery is accounted for so only the lineage decides.
+  const after = openEpisode({ event_key: EP240356, head_sha: R9E8, delivery_count: 120 });
+  const history = {
+    failedReleases: [{ head_sha: R9E8, delivery_count: 119 }, { head_sha: RB6A, delivery_count: 1 }],
+    relate: MAIN,
+  };
+  const stale = decide(greenRun('37616370268', R365), after, history);
+  assert.equal(stale.action, 'stale');
+  assert.notEqual(stale.eventKey, `${EP240356}:resolved`);
+  assert.equal(stale.eventKey, `${EP240356}:stale-success:37616370268:1`);
+  assert.equal(stale.payload.kind, 'stale-success');
+  assert.equal(stale.payload.resolves, null);
+  assert.deepEqual(stale.payload.newer_failed_releases, [RB6A]);
+  assert.equal(stale.payload.target_task_id, FLEET_TASK_ID);
+
+  // Only a success that covers b6a260b4 - itself or a descendant - closes it.
+  for (const covering of [RB6A, R68B, R86E]) {
+    const out = decide(greenRun('37621089302', covering), after, history);
+    assert.equal(out.action, 'resolve');
+    assert.equal(out.eventKey, `${EP240356}:resolved`);
+    assert.deepEqual(out.payload.covers_failed_releases, [RB6A, R9E8].sort());
+  }
+});
+
+test('the 12:35 sequence against the pre-fix decision would have resolved: the replay is the defect', () => {
+  // Without any failed-release history the open episode cannot be ordered at
+  // all, so the only safe answer is COULD NOT TELL, never resolve.
+  const out = decide(greenRun('37616370268', R365), openEpisode({ event_key: EP240356, head_sha: R9E8, delivery_count: 120 }));
+  assert.equal(out.action, 'could-not-tell');
+  assert.equal(out.payload.resolves, null);
+});
+
+test('an episode with deliveries whose release was never recorded cannot be closed by inference', () => {
+  // 240356 itself: 120 deliveries, opened before occurrence receipts existed.
+  const legacy = openEpisode({ event_key: EP240356, head_sha: R9E8, delivery_count: 120 });
+  const out = decide(greenRun('1', R86E), legacy, { failedReleases: [], relate: MAIN });
+  assert.equal(out.action, 'could-not-tell');
+  assert.match(out.reason, /120 failed deliveries/);
+  // ...but a KNOWN newer failure proves an older success stale even there.
+  // This is the true state of 240356 once the 12:30 receipt exists.
+  const known = { failedReleases: [{ head_sha: RB6A, delivery_count: 1 }], relate: MAIN };
+  const real = decide(greenRun('37616370268', R365), legacy, known);
+  assert.equal(real.action, 'stale');
+  assert.deepEqual(real.payload.newer_failed_releases, [RB6A]);
+  assert.equal(decide(greenRun('9', R86E), legacy, known).action, 'could-not-tell');
+  // A legacy episode delivered once is named entirely by its own payload.
+  const once = openEpisode({ event_key: 'e9', head_sha: R86E, delivery_count: 1 });
+  assert.equal(decide(greenRun('2', R86E), once, { failedReleases: [], relate: MAIN }).action, 'resolve');
+  assert.equal(decide(greenRun('3', R68B), once, { failedReleases: [], relate: MAIN }).action, 'stale');
+  // And one bumped once more under this fix: payload head plus one receipt.
+  const bumped = openEpisode({ event_key: 'e9', head_sha: R68B, delivery_count: 2 });
+  const hist = { failedReleases: [{ head_sha: R86E, delivery_count: 1 }], relate: MAIN };
+  assert.equal(decide(greenRun('4', R86E), bumped, hist).action, 'resolve');
+  assert.equal(decide(greenRun('5', R68B), bumped, hist).action, 'stale');
+});
+
+test('unreadable lineage, an off-lineage release or a success with no release is COULD NOT TELL', () => {
+  const after = openEpisode({ event_key: EP240356, head_sha: R68B, delivery_count: 1 });
+  const offLine = decide(greenRun('6', 'f'.repeat(40)), after, { failedReleases: [], relate: MAIN });
+  assert.equal(offLine.action, 'could-not-tell');
+  assert.match(offLine.reason, /could not be read/);
+  const noHead = decide(verdict({ headSha: null }), after, { failedReleases: [], relate: MAIN });
+  assert.equal(noHead.action, 'could-not-tell');
+  const failureWithNoRelease = decide(greenRun('7', R86E), after,
+    { failedReleases: [{ head_sha: null, delivery_count: 1 }], relate: MAIN });
+  assert.equal(failureWithNoRelease.action, 'could-not-tell');
+  for (const out of [offLine, noHead, failureWithNoRelease]) {
+    assert.equal(out.payload.kind, 'could-not-tell');
+    assert.equal(out.payload.resolves, null);
+    assert.ok(out.eventKey.startsWith(`${EP240356}:could-not-tell:`));
+  }
+});
+
+test('coverageOf never answers covers without proof of every failed release', () => {
+  const prev = openEpisode({ head_sha: R68B, delivery_count: 1 });
+  assert.equal(coverageOf(R86E, prev, { failedReleases: [], relate: MAIN }).verdict, 'covers');
+  assert.equal(coverageOf(R86E, prev, {}).verdict, 'unknown');
+  assert.equal(coverageOf(R86E, { ...prev, delivery_count: 'x' }, { failedReleases: [], relate: MAIN }).verdict, 'unknown');
+  assert.equal(coverageOf(R86E, prev, { failedReleases: [], relate: () => 'sideways' }).verdict, 'unknown');
+});
+
+test('every failure leaves exactly one failed-release receipt for its episode', () => {
+  const fresh = decide(verdict({ lanes: [{ name: LANES[1], result: 'failure' }] }));
+  assert.equal(fresh.occurrence.payload.episode, fresh.eventKey);
+  assert.equal(fresh.occurrence.payload.head_sha, HEAD);
+  const unnamed = decide(verdict({ headSha: null, runId: '99', lanes: [{ name: LANES[1], result: 'failure' }] }));
+  assert.equal(unnamed.occurrence.payload.head_sha, null);
+  assert.ok(unnamed.occurrence.eventKey.endsWith(':failed-release:unknown:99'));
+});
+
+test('with an episode open, no green verdict is silently dropped and only a covering one resolves', () => {
+  for (const [head, expected] of [[R86E, 'resolve'], [R365, 'stale'], ['e'.repeat(40), 'could-not-tell']]) {
+    const out = decide(greenRun('8', head), openEpisode({ head_sha: R68B, delivery_count: 1 }),
+      { failedReleases: [], relate: MAIN });
+    assert.equal(out.action, expected);
+    assert.equal(out.payload.target_task_id, FLEET_TASK_ID);
+  }
+});
+
+// THE FORK OF 2026-10-07, 13:53Z. e951244 opened at 13:12Z on 68b28e5b and was
+// still firing when run 37625799569 (91c98ed7) failed; the recorder of that
+// hour read an info receipt as the newest row and minted 57e641b3 beside it.
+// The newest-episode rule alone would never close e951244. Each open episode
+// is judged on its own releases.
+const R91C = '91c98ed73477790369ab0f96424c674559c6783c';
+const R886 = '886213752243a060e9f3c45901dcea5d24b58d0a';
+const FORK = lineage([R365, RB6A, R68B, R86E, R91C, R886]);
+const E951 = { event_key: 'e951244168fae5f5', status: 'firing', investigation_status: 'new', head_sha: R68B, delivery_count: 1 };
+
+test('a success settles an older open episode it covers, beside the newest', () => {
+  const settled = settleOtherEpisodes(greenRun('9001', R886), [{ episode: E951, history: { failedReleases: [], relate: FORK } }]);
+  assert.equal(settled.length, 1);
+  assert.equal(settled[0].action, 'resolve');
+  assert.equal(settled[0].eventKey, 'e951244168fae5f5:resolved');
+  assert.deepEqual(settled[0].payload.covers_failed_releases, [R68B]);
+});
+
+test('an older open episode is never closed by a success older than its failure', () => {
+  const settled = settleOtherEpisodes(greenRun('9002', RB6A), [{ episode: E951, history: { failedReleases: [], relate: FORK } }]);
+  assert.equal(settled[0].action, 'stale');
+  assert.deepEqual(settled[0].payload.newer_failed_releases, [R68B]);
+});
+
+test('a failing or non-verdict run settles no other episode', () => {
+  const failing = verdict({ headSha: R886, lanes: [{ name: LANES[1], result: 'failure' }] });
+  assert.deepEqual(settleOtherEpisodes(failing, [{ episode: E951, history: { failedReleases: [], relate: FORK } }]), []);
+  const stoodDown = verdict({ headSha: R886, gate: { name: GATE, result: 'success', shouldRun: '' } });
+  assert.deepEqual(settleOtherEpisodes(stoodDown, [{ episode: E951, history: { failedReleases: [], relate: FORK } }]), []);
+  const closed = { ...E951, investigation_status: 'verified_fixed' };
+  assert.deepEqual(settleOtherEpisodes(greenRun('9003', R886), [{ episode: closed, history: { failedReleases: [], relate: FORK } }]), []);
+});

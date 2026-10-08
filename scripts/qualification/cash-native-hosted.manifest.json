@@ -1,5 +1,30 @@
 {
   "schemaVersion": 1,
+  "leaderboardAcceptedRosterIntegration20261007": {
+    "reason": "Preserve current main's accepted actor roster qualification beside the retained leaderboard restore and departure completion regressions. Only the combined workflow fingerprint changes; financial inputs, historical pins and qualification status remain unchanged.",
+    "previousCurrentMainWorkflowPin": {
+      "bytes": 192254,
+      "sha256": "e0171e934b248b26f856ed94c214c57de126734dbf32f9704fd9a204ee12a8e2"
+    },
+    "previousCandidateWorkflowPin": {
+      "bytes": 191748,
+      "sha256": "099f83be0eee89a282972d6c6f74b7346086ab3be90fd607e13a47db20ab0aee"
+    }
+  },
+  "departureHolderStreamCompletion20261007": {
+    "reason": "Enforce the deterministic child-stream completion regression beside the unchanged departure invocation in the existing mandatory Accounting3 lane. Actual financial refusal, rollback and concurrency assertions remain unchanged; only the current workflow fingerprint changes, not historical pins or qualification status.",
+    "previousWorkflowPin": {
+      "bytes": 191554,
+      "sha256": "2d99d6c83adc130f78356738319a0f591a0539752b02929429e034998fac0ca0"
+    }
+  },
+  "leaderboardExactDefinitionRestore20261007": {
+    "reason": "Enforce the new native PostgreSQL 17 exact definition restore regression in the existing Accounting4 step. Existing financial inputs, assertions, historical pins and SOURCE_ONLY_UNRUN status remain unchanged; fingerprint refresh is not runtime qualification.",
+    "previousWorkflowPin": {
+      "bytes": 191463,
+      "sha256": "e0e545fb9a0426b0645e42ff1bfd1c6fd10fb1816215686627e4b69f4b0a1d09"
+    }
+  },
   "leaderboardCurrentMainIntegration20261007": {
     "reason": "Preserve both the native leaderboard extension-table restoration regression and current main's authenticated client runtime retention step. Only the actual combined workflow source fingerprint changes; all financial inputs, assertions, qualification status and historical audit entries remain unchanged.",
     "previousCurrentMainWorkflowPin": {
@@ -24,8 +49,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 192254,
-      "sha256": "e0171e934b248b26f856ed94c214c57de126734dbf32f9704fd9a204ee12a8e2"
+      "bytes": 192834,
+      "sha256": "ab88e09bba733b4c642831d3bb8e8467d16de882cf7e4f8aa8f51fa21b12a4bc"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,

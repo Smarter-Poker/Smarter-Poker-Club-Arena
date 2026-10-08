@@ -1,0 +1,16 @@
+{
+  "_owner": "agent/claude-lightning-p8/lightning/session-db - migration 20261007212735_lightning_phase_8_multi_table_limits_session_statistics_pool",
+  "_comment": "Lightning Phase 8 (spec Phases 11, 12 and 13, database side). NOT YET APPLIED: every name below is a promise until the owner installs 20261007212735 after Phase 7 (20261001222856). lightning_hand_player.waited_ms is set at formation by trg_hand_player_records_its_wait (fn_lightning_hand_player_records_its_wait) and showed by fn_lightning_settle_hand. Five SECURITY DEFINER browser doors, authenticated and service_role: fn_lightning_session_stats(pool_session), fn_lightning_session_summary(pool_session), fn_lightning_my_sessions(), fn_lightning_pool_status(cluster), fn_lightning_recent_hands(limit, pool_session). fn_lightning_config answers multi_table_limit as {desktop, tablet, mobile}; fn_lightning_player_legality, fn_lightning_match_plan, fn_lightning_match and fn_lightning_match_and_form take a trailing p_player_platforms jsonb DEFAULT NULL.",
+  "tables": [],
+  "functions": [
+    "fn_lightning_session_stats",
+    "fn_lightning_session_summary",
+    "fn_lightning_my_sessions",
+    "fn_lightning_pool_status",
+    "fn_lightning_recent_hands",
+    "fn_lightning_hand_player_records_its_wait"
+  ],
+  "columns": {
+    "lightning_hand_player": ["waited_ms", "showed"]
+  }
+}

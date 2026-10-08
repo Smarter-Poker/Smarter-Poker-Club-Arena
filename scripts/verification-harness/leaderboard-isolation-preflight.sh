@@ -8,9 +8,11 @@ readonly extension_bootstrap="$here/leaderboard-isolation-extension-bootstrap.sq
 readonly event_owner_bootstrap="$here/leaderboard-isolation-event-owner-bootstrap.sql"
 readonly extension_trigger_bootstrap="$here/leaderboard-isolation-extension-trigger-bootstrap.sql"
 readonly acl_bootstrap="$here/leaderboard-isolation-acl-bootstrap.sql"
+readonly definition_bootstrap="$here/leaderboard-isolation-definition-bootstrap.sql"
 readonly restore_script_helper="$here/leaderboard-isolation-restore-script.mjs"
 readonly startup_helper="$here/leaderboard-isolation-startup-profile.mjs"
 readonly catalog_diagnostic="$here/leaderboard-isolation-catalog-diagnostic.mjs"
+readonly replica_helper="$here/leaderboard-schema-replica.mjs"
 readonly image='supabase/postgres:17.6.1.063'
 readonly bootstrap='leaderboard_qualification_bootstrap'
 prepare_roles() {
@@ -83,6 +85,9 @@ source_error_category() {
   case "$diagnostic" in
     *'canceling statement due to statement timeout'*) echo 'server-statement-timeout' ;;
     *'canceling statement due to lock timeout'*) echo 'server-lock-timeout' ;;
+    *'canceling statement due to conflict with recovery'*) echo 'replica-recovery-conflict' ;;
+    # Exact PG17 libpq EOF/closure messages do not establish a server crash.
+    *'server closed the connection unexpectedly'*|*'SSL SYSCALL error: EOF detected'*|*'SSL connection has been closed unexpectedly'*) echo 'source-connection-lost' ;;
     *'could not translate host name'*|*'Name or service not known'*) echo 'name-resolution' ;;
     *'Network is unreachable'*|*'No route to host'*) echo 'network-route' ;;
     *'Connection refused'*) echo 'connection-refused' ;;
@@ -91,6 +96,9 @@ source_error_category() {
     *'permission denied'*) echo 'catalog-permission' ;;
     *'invalid URI'*|*'invalid connection option'*|*'missing "="'*) echo 'connection-input' ;;
     *'on socket'*'No such file or directory'*) echo 'unexpected-local-socket' ;;
+    # pg_backup_db.c reports the private libpq error/query then exits 1.
+    # Retain only its fixed failure category, never either private payload.
+    *'pg_dump: error: query failed:'*) echo 'pg-dump-query-failure' ;;
     *) echo 'unclassified-source-client' ;;
   esac
 }
@@ -153,9 +161,11 @@ if [[ "${1:-}" == '--check' ]]; then
   test -s "$event_owner_bootstrap"
   test -s "$extension_trigger_bootstrap"
   test -s "$acl_bootstrap"
+  test -s "$definition_bootstrap"
   test -s "$restore_script_helper"
   test -s "$startup_helper"
   test -s "$catalog_diagnostic"
+  test -s "$replica_helper"
   if grep -Ei '\b(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|CALL)\b' "$catalog" >/dev/null; then
     echo 'Catalog preflight contains a forbidden mutation.' >&2
     exit 1
@@ -165,6 +175,7 @@ if [[ "${1:-}" == '--check' ]]; then
 fi
 [[ $# == 0 ]] || { echo 'Unexpected preflight argument.' >&2; exit 1; }
 : "${DATABASE_URL:?Configured DATABASE_URL is required; never supply it in chat.}"
+: "${LEADERBOARD_SCHEMA_REPLICA_DESCRIPTOR:?Reviewed dedicated read replica metadata is required; primary export fallback is prohibited.}"
 : "${LEADERBOARD_ISOLATION_SCRATCH_PARENT:?An owned scratch parent is required.}"
 for command in docker timeout sha256sum cmp node; do
   command -v "$command" >/dev/null || { echo "Required tool unavailable: $command" >&2; exit 1; }
@@ -286,11 +297,46 @@ chmod 600 "$scratch/extension-triggers-before.sql"
 source_client 180 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
   <"$acl_bootstrap" >"$scratch/acl-before.sql" 2>"$scratch/source-error.log" || source_failure 'source ACL metadata unavailable' "$scratch/source-error.log" "$?"
 chmod 600 "$scratch/acl-before.sql"
-# Run 37579107745 observed inner client status 0 and outer elapsed 514s.
-# Preserve a finite measured command envelope, not a claimed inner duration.
+source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
+  <"$definition_bootstrap" >"$scratch/definitions-before.sql" 2>"$scratch/source-error.log" || source_failure 'source definition metadata unavailable' "$scratch/source-error.log" "$?"
+chmod 600 "$scratch/definitions-before.sql"
+# Keep all authoritative metadata reads on PRIMARY. Only the long schema-only
+# dump may use an explicitly reviewed dedicated physical read replica. Its
+# catalog, PG17 major, startup settings, recovery and WAL fence must match; no
+# minor-version change during export is admitted. The disposable database stays
+# on the PRIMARY image; native pg_dump supports different PG17 minor versions.
+# No source setting is changed and feedback-on is refused, never worked around.
+if [[ -n "${LEADERBOARD_SCHEMA_REPLICA_DESCRIPTOR:-}" ]]; then
+  source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
+    -c "SELECT jsonb_build_object('version_num', current_setting('server_version_num'), 'current_wal_lsn', pg_current_wal_lsn()::text);" \
+    >"$scratch/primary-fence.json" 2>"$scratch/source-error.log" || source_failure 'primary WAL fence unavailable' "$scratch/source-error.log" "$?"
+  schema_replica_url="$(node "$replica_helper" connection)" || failure 'dedicated replica descriptor unavailable or unsupported'
+  replica_query="$(node "$replica_helper" query)" || failure 'replica admission query unavailable'
+  export PGDATABASE="$schema_replica_url"
+  source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 -c "$replica_query" \
+    >"$scratch/replica-admission-before.json" 2>"$scratch/source-error.log" || source_failure 'replica admission unavailable' "$scratch/source-error.log" "$?"
+  node "$replica_helper" verify "$scratch/primary-fence.json" "$scratch/replica-admission-before.json" || failure 'replica recovery, feedback, version or WAL fence refused'
+  source_startup >"$scratch/replica-startup-before.json" 2>"$scratch/source-error.log" || source_failure 'replica startup profile unavailable' "$scratch/source-error.log" "$?"
+  node "$startup_helper" verify "$scratch/startup-before.json" "$scratch/replica-startup-before.json" || failure 'replica numeric startup profile differs from primary'
+  source_catalog >"$scratch/replica-before.json" 2>"$scratch/source-error.log" || source_failure 'replica catalog unavailable' "$scratch/source-error.log" "$?"
+  cmp -s "$scratch/source-before.json" "$scratch/replica-before.json" || failure 'replica catalog differs from current primary'
+fi
+# Preserve the existing finite command envelope. A WAL recovery conflict is a
+# real failure; do not enable feedback or alter production to make it pass.
 source_client 600 pg_dump \
   --verbose --schema-only --create --format=custom --no-password --no-subscriptions --lock-wait-timeout=5s \
   >"$scratch/schema.dump" 2>"$scratch/dump-error.log" || source_failure 'schema-only export unavailable' "$scratch/dump-error.log" "$?"
+if [[ -n "${LEADERBOARD_SCHEMA_REPLICA_DESCRIPTOR:-}" ]]; then
+  source_catalog >"$scratch/replica-after.json" 2>"$scratch/source-error.log" || source_failure 'replica catalog recheck unavailable' "$scratch/source-error.log" "$?"
+  cmp -s "$scratch/source-before.json" "$scratch/replica-after.json" || failure 'replica schema changed during export'
+  source_startup >"$scratch/replica-startup-after.json" 2>"$scratch/source-error.log" || source_failure 'replica startup profile recheck unavailable' "$scratch/source-error.log" "$?"
+  node "$startup_helper" verify "$scratch/startup-before.json" "$scratch/replica-startup-after.json" || failure 'replica numeric startup profile changed during export'
+  source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 -c "$replica_query" \
+    >"$scratch/replica-admission-after.json" 2>"$scratch/source-error.log" || source_failure 'replica admission recheck unavailable' "$scratch/source-error.log" "$?"
+  node "$replica_helper" verify "$scratch/primary-fence.json" "$scratch/replica-admission-after.json" || failure 'replica recovery, feedback, version or WAL fence changed during export'
+  node "$replica_helper" stable-version "$scratch/replica-admission-before.json" "$scratch/replica-admission-after.json" || failure 'replica version changed during export'
+  PGDATABASE="$DATABASE_URL"
+fi
 source_client 180 pg_dumpall --roles-only --no-role-passwords --no-password \
   >"$scratch/roles.sql" 2>"$scratch/roles-error.log" || source_failure 'password-free role export unavailable' "$scratch/roles-error.log" "$?"
 source_client 180 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
@@ -307,9 +353,14 @@ source_client 180 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
   <"$acl_bootstrap" >"$scratch/acl-after.sql" 2>"$scratch/source-error.log" || source_failure 'source ACL metadata recheck unavailable' "$scratch/source-error.log" "$?"
 chmod 600 "$scratch/acl-after.sql"
 cmp -s "$scratch/acl-before.sql" "$scratch/acl-after.sql" || failure 'source ACL metadata changed during export'
+source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
+  <"$definition_bootstrap" >"$scratch/definitions-after.sql" 2>"$scratch/source-error.log" || source_failure 'source definition metadata recheck unavailable' "$scratch/source-error.log" "$?"
+chmod 600 "$scratch/definitions-after.sql"
+cmp -s "$scratch/definitions-before.sql" "$scratch/definitions-after.sql" || failure 'source definition metadata changed during export'
 source_startup >"$scratch/startup-after.json" 2>"$scratch/source-error.log" || source_failure 'source startup profile recheck unavailable' "$scratch/source-error.log" "$?"
 node "$startup_helper" verify "$scratch/startup-before.json" "$scratch/startup-after.json" || failure 'source numeric startup profile changed during export'
 prepare_roles "$source_bootstrap" <"$scratch/roles.sql" >"$scratch/roles-restore.sql" || failure 'exact existing bootstrap role creation unavailable'
+unset schema_replica_url replica_query LEADERBOARD_SCHEMA_REPLICA_DESCRIPTOR
 unset DATABASE_URL PGDATABASE PGOPTIONS
 docker network create --internal "$network" >"$scratch/network.log" 2>&1
 # Bootstrap the official PostgreSQL image without its canned application schema.
@@ -378,7 +429,7 @@ node "$restore_script_helper" "$scratch/remaining.sql" "$scratch/event-owners.js
   "$scratch/event-owners-elevate.sql" "$scratch/event-owners-restore.sql" || failure 'atomic restore script validation failed'
 # Stream host-private inputs; docker cp would preserve root-owned 0600 files
 # unreadable to the destination's postgres OS user. One psql owns all inputs.
-cat "$scratch/event-owners-elevate.sql" "$scratch/remaining.sql" "$scratch/extension-triggers-before.sql" "$scratch/event-owners-restore.sql" \
+cat "$scratch/event-owners-elevate.sql" "$scratch/remaining.sql" "$scratch/extension-triggers-before.sql" "$scratch/definitions-before.sql" "$scratch/event-owners-restore.sql" \
   >"$scratch/atomic-restore.sql" || failure 'complete atomic restore input unavailable'
 chmod 600 "$scratch/atomic-restore.sql"
 docker exec -i "$container" psql -h /tmp -Xq -U "$bootstrap" -d postgres \

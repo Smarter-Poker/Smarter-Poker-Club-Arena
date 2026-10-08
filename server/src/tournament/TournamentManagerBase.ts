@@ -688,6 +688,12 @@ export abstract class TournamentManagerBase {
    */
   private finishRefusalStreak = 0;
   private lastFinishRefusalReason: FinishRefusalReason | null = null;
+  /**
+   * When the retry this manager asked for after its last proven refusal is
+   * due (epoch ms), or null when no refusal is outstanding. Read by
+   * awaitsItsOwnFinishRetry; set beside the streak in noteFinishRefusal.
+   */
+  private finishRefusalRetryDueAtMs: number | null = null;
 
   /**
    * A TRANSIENT REFUSAL IS NEWS ONLY WHEN IT STOPS BEING TRANSIENT (2026-10-01).
@@ -727,6 +733,9 @@ export abstract class TournamentManagerBase {
       this.lastFinishRefusalReason = reason;
       this.finishRefusalStreak = 1;
     }
+    // The same delay releaseFinishGuard and the finish-stage re-arm hand the
+    // scheduler, computed from the streak just recorded.
+    this.finishRefusalRetryDueAtMs = Date.now() + this.finishRetryDelayMs();
     if (finishRefusalIsTransient(reason)) {
       // News exactly once: on the pass the streak reaches the threshold.
       return (
@@ -753,6 +762,35 @@ export abstract class TournamentManagerBase {
   protected clearFinishRefusalStreak(): void {
     this.finishRefusalStreak = 0;
     this.lastFinishRefusalReason = null;
+    this.finishRefusalRetryDueAtMs = null;
+  }
+
+  /**
+   * A REFUSED FINISH OWNS ITS OWN NEXT ASK (2026-10-07).
+   *
+   * True while this manager's last finish was definitively refused and the
+   * retry it asked for after that refusal is not yet due. The finish is then
+   * not stalled and not forgotten: it holds a pending wake on the scheduler at
+   * the refusal's own delay (finishRetryDelayMs), and asking it sooner can
+   * only return the same refusal.
+   *
+   * The decided-event recoveries in GameServer (STALLED DECIDED-BUT-RUNNING
+   * every discovery pass, and the seat-first finish sweep) exist for a finish
+   * that never ran. They woke these managers through the scheduler's wake(),
+   * whose delay is zero, and the scheduler keeps the EARLIEST pending wake, so
+   * every pass pulled the backed-off retry forward to now. Measured
+   * 2026-10-07 13:15 UTC: four Spins (87f6d0ee, 9d4067ab, a19b10fe, a6ae23f9)
+   * were each asked fn_complete_tournament_terminal every ~10.6 s, one
+   * discovery pass, the four calls 110 ms apart (DECIDED_RECOVERY_STAGGER_MS),
+   * while their own backoff stood at its 15-minute cap.
+   *
+   * Once the due time passes this answers false again, so a retry that was
+   * somehow lost is still recovered by the next pass.
+   */
+  awaitsItsOwnFinishRetry(nowMs: number = Date.now()): boolean {
+    if (this.lastFinishRefusalReason === null || this.finishRefusalStreak < 1) return false;
+    const due = this.finishRefusalRetryDueAtMs;
+    return due !== null && Number.isFinite(due) && nowMs < due;
   }
 
   /**
@@ -2673,9 +2711,16 @@ export abstract class TournamentManagerBase {
     return this.fieldDecidedDeclared === true;
   }
 
-  /** A recovery that has read the field as decided wakes it through the decided lane. */
+  /**
+   * A recovery that has read the field as decided wakes it through the decided
+   * lane - unless this manager's own finish was refused and its retry is
+   * already pending at the refusal's delay (awaitsItsOwnFinishRetry). Then the
+   * recovery is answered by the wake that is already due, and false says
+   * nothing new was asked for.
+   */
   requestDecidedEliminationSweep(reason: string): boolean {
     this.declareFieldDecided();
+    if (this.awaitsItsOwnFinishRetry()) return false;
     return this.requestEliminationSweep(reason);
   }
 

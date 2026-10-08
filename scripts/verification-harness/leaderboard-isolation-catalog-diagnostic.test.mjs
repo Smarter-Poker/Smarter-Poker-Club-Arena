@@ -51,6 +51,52 @@ function catalog() {
 }
 const encode = JSON.stringify;
 
+test('ACL representation diagnostics distinguish NULL, empty, explicit and malformed without private output', () => {
+  const source = catalog();
+  const destination = catalog();
+  const pairs = [
+    [null, []],
+    [[], ['SECRET=r/OWNER']],
+    [['SECRET=r/OWNER'], null],
+    ['{broken}', '{}'],
+  ];
+  source.schemas = pairs.map(([acl], i) => [`SECRET_${i}`, 'OWNER', acl]);
+  destination.schemas = pairs.map(([, acl], i) => [`SECRET_${i}`, 'OWNER', acl]);
+  const section = diagnoseCatalog(encode(source), encode(destination)).sections.find(
+    (row) => row.section === 'schemas'
+  );
+  assert.deepEqual(section.acl_representation_counts.source, {
+    null: 1,
+    empty: 1,
+    nonempty: 1,
+    unknown: 1,
+  });
+  assert.deepEqual(section.acl_representation_counts.destination, {
+    null: 1,
+    empty: 2,
+    nonempty: 1,
+    unknown: 0,
+  });
+  for (const pair of ['null_to_empty', 'empty_to_nonempty', 'nonempty_to_null', 'unknown_to_empty'])
+    assert.equal(section.acl_representation_pair_counts[pair], 1);
+  assert.equal(
+    Object.values(section.acl_representation_pair_counts).reduce((a, b) => a + b),
+    4
+  );
+  assert.equal(section.identity_details_total, 4);
+  assert.equal(section.identity_details[0].source_representation, 'null');
+  assert.match(section.identity_details[0].source_field_hash, /^[a-f0-9]{64}$/);
+  assert.doesNotMatch(encode(section), /SECRET|OWNER|broken/);
+  source.schemas = Array.from({ length: 40 }, (_, i) => [`SECRET_${i}`, 'OWNER', null]);
+  destination.schemas = source.schemas.map(([name, owner]) => [name, owner, []]);
+  const bounded = diagnoseCatalog(encode(source), encode(destination)).sections.find(
+    (row) => row.section === 'schemas'
+  );
+  assert.equal(bounded.identity_details.length, 32);
+  assert.equal(bounded.identity_details_total, 40);
+  assert.equal(bounded.identity_details_truncated, true);
+});
+
 test('opaque definition and identity details are bounded without private text', () => {
   const source = catalog();
   const destination = catalog();

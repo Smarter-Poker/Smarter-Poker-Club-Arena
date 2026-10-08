@@ -2498,6 +2498,24 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase15'
   ),
   receipt(
+    'phase15_plan_commit_posted',
+    'LiveHorseDecisionWorkerClient.commitDecisionEffects',
+    'Phase 15.1: an owned nonempty batch was posted for application with its exact controller-accepted wager; accepted intent in transit, not application and not durability',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_plan_receipt_*',
+    'HorseDecisionWorkerRuntime.recordPlanReceipt / HorseDecisionJournalPublisher',
+    'Phase 15.1 durable accepted-effect receipt: applied or failed is the first terminal transition captured with its exact batch digest and accepted wager; unavailable means no journal sink or a refused receipt; durable counts only the private writer exact fsynced ACK of a receipt record, never enqueue',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_plan_recovery_*',
+    'HorseDecisionWorkerRuntime.recoverPlanReceipts',
+    'Phase 15.1 fresh-process reconstruction outcome per receipt: replaced by keyed replacement into the same live hand, street and lease, or refused as invalid, conflict, failed_not_replayed, hand_not_live, table_mismatch, hand_superseded, lease_superseded, street_superseded, generation_expired or policy_withdrawn; owned_conflict is a batch this epoch already owns',
+    'Phase15'
+  ),
+  receipt(
     'phase15_graph_*',
     'HorsePolicyGraph.run/finish',
     'live outer graph started, completed or failed; no claim of full internal distribution coverage or authoritative table execution',

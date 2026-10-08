@@ -22,6 +22,11 @@ export interface LightningFoldBarProps {
   availability: LightningFoldAvailability;
   /** The platform offers FOLD & WATCH at all (capability row). */
   offerFoldWatch: boolean;
+  /**
+   * LIGHTNING PHASE 8: the player last chose FOLD & WATCH (remembered on this
+   * device). Marks that word as their usual one; both stay offered.
+   */
+  preferFoldWatch?: boolean;
   busy?: boolean;
   onFold: (kind: LightningFoldKind) => void;
 }
@@ -29,6 +34,7 @@ export interface LightningFoldBarProps {
 function LightningFoldBar({
   availability,
   offerFoldWatch,
+  preferFoldWatch = false,
   busy = false,
   onFold,
 }: LightningFoldBarProps) {
@@ -57,6 +63,7 @@ function LightningFoldBar({
           type="button"
           className="lightning-fold-bar__btn lightning-fold-bar__btn--quiet"
           data-testid="lightning-fold-watch"
+          data-preferred={preferFoldWatch ? 'true' : undefined}
           disabled={!availability.foldWatch || busy}
           aria-hidden={!availability.foldWatch}
           tabIndex={availability.foldWatch ? 0 : -1}

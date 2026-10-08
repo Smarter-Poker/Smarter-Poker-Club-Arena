@@ -142,6 +142,9 @@ export default function ClubMembersPage() {
   const [resolutionAttempt, setResolutionAttempt] = useState(0);
 
   const debouncedSearch = useDebounce(searchQuery, 260);
+  const searchSettlingRef = useRef(false);
+  searchSettlingRef.current = searchQuery !== debouncedSearch;
+  const forceNextSummaryRef = useRef(false);
   const requestEpochRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const moreAbortRef = useRef<AbortController | null>(null);
@@ -183,6 +186,7 @@ export default function ClubMembersPage() {
     directoryAvailableRef.current = false;
     setDirectoryAvailable(false);
     summaryCoordinatorRef.current.reset();
+    forceNextSummaryRef.current = false;
     summaryAvailableRef.current = false;
     setSummary(DEFAULT_SUMMARY);
     setSummaryAvailable(false);
@@ -270,6 +274,8 @@ export default function ClubMembersPage() {
   const loadFirstPage = useCallback(
     async (options: RosterLoadOptions = {}) => {
       if (!resolvedClubId) return;
+      const forceSummary = options.forceSummary === true || forceNextSummaryRef.current;
+      forceNextSummaryRef.current = false;
       const epoch = ++requestEpochRef.current;
       abortRef.current?.abort();
       const controller = new AbortController();
@@ -295,7 +301,7 @@ export default function ClubMembersPage() {
             }
           );
         },
-        { force: options.forceSummary === true }
+        { force: forceSummary }
       );
       const pageRequest = ClubRosterService.getRosterPage(resolvedClubId, {
         search: debouncedSearch,
@@ -448,6 +454,14 @@ export default function ClubMembersPage() {
   }, [loadFirstPage, resolvedClubId]);
 
   useEffect(() => {
+    // Reverting to the already committed query can cancel the debounce without
+    // changing loadFirstPage. That still owes the deferred structural read.
+    if (searchQuery !== debouncedSearch || !forceNextSummaryRef.current) return;
+    forceNextSummaryRef.current = false;
+    void latestLoadRef.current({ forceSummary: true });
+  }, [debouncedSearch, searchQuery]);
+
+  useEffect(() => {
     if (!loading || members.length > 0) {
       setLoadSlow(false);
       return;
@@ -477,6 +491,13 @@ export default function ClubMembersPage() {
     if (!resolvedClubId || refreshTimerRef.current) return;
     refreshTimerRef.current = setTimeout(() => {
       refreshTimerRef.current = null;
+      // The pending query owns its next read. Starting the old search here
+      // would be aborted as soon as its debounce commits. Carry the structural
+      // summary invalidation into that same new query instead.
+      if (searchSettlingRef.current) {
+        forceNextSummaryRef.current = true;
+        return;
+      }
       void latestLoadRef.current({ forceSummary: true });
     }, 1200);
   }, [resolvedClubId]);

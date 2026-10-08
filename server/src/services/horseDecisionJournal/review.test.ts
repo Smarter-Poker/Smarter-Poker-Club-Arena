@@ -1089,7 +1089,7 @@ describe('private retained-hand journal consumer', () => {
       const worker = new HorseQualifiedAuthorityHolder('review-worker');
       worker.apply(qualifiedTestAdmission(1));
       const ledger = (authority: unknown) => ({
-        version: 'horse-tournament-postflop-round2-v1',
+        version: 'horse-tournament-postflop-round2-v2',
         mode: 'candidate',
         changed: true,
         applied: true,

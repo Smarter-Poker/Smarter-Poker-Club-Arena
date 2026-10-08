@@ -17,7 +17,7 @@ import { FUTURE_HAND_POLICY } from './HorseTournamentFutureHand.js';
 import type { HorseAuthorityReceipt, HorseAuthorityVerdict } from './HorseQualifiedAuthority.js';
 
 export const PHASE8_POLICY = {
-  version: 'horse-tournament-postflop-round2-v1',
+  version: 'horse-tournament-postflop-round2-v2',
   defaultMode: 'shadow',
   deepStackBB: 200,
   deepCommitFraction: 0.25,

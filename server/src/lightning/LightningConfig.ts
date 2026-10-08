@@ -15,6 +15,11 @@
  * never trusted - a pass interval of 0 from a typo must not become a hot loop
  * of RPCs against a database with a CPU budget.
  */
+import {
+  LIGHTNING_SHADOW_DEFAULT_VERSION,
+  lightningMatcherParams,
+  type LightningMatcherParams,
+} from './LightningMatcherModel.js';
 
 /** What a Cluster's worker is allowed to do. */
 export type LightningWorkerMode = 'off' | 'shadow' | 'form';
@@ -47,6 +52,75 @@ export interface LightningConfig {
    * the engine reads only enough to know WHO to ask at a hand boundary.
    */
   autoRebuy: LightningAutoRebuyConfig;
+  /**
+   * LIGHTNING PHASE 11: the shadow matcher and the integrity telemetry.
+   * Absent (an older caller, a test) is off: nothing is computed or sent.
+   */
+  shadow?: LightningShadowConfig;
+}
+
+/**
+ * LIGHTNING PHASE 11. Both features are OFF unless the config turns them on,
+ * and neither can change what the live matcher deals (LightningShadowRunner).
+ */
+export interface LightningShadowConfig {
+  /** `lightning_shadow_matcher`: run the shadow matcher beside every live pass. */
+  enabled: boolean;
+  /** `shadow_matcher_version`: the candidate the shadow side runs (LightningMatcherModel). */
+  version: string;
+  /** `shadow_window_ms`: one comparison record per Cluster per window. */
+  windowMs: number;
+  /** `shadow_max_players`: a pass whose snapshot is larger is skipped (CPU bound). */
+  maxPlayers: number;
+  /** `shadow_pass_budget_ms`: a shadow pass that overruns this skips the next ones. */
+  passBudgetMs: number;
+  /** `integrity_telemetry`: decision timing and pair correlation, reported per window. */
+  integrityEnabled: boolean;
+  /** The plan keys of the same config row (instance sizes, P3, P5). */
+  params: LightningMatcherParams;
+}
+
+export const LIGHTNING_SHADOW_WINDOW_DEFAULT_MS = 5 * 60_000;
+export const LIGHTNING_SHADOW_WINDOW_MIN_MS = 60_000;
+export const LIGHTNING_SHADOW_WINDOW_MAX_MS = 60 * 60_000;
+export const LIGHTNING_SHADOW_MAX_PLAYERS_DEFAULT = 500;
+export const LIGHTNING_SHADOW_PASS_BUDGET_DEFAULT_MS = 50;
+
+/** Parse the Phase 11 keys. Never throws; anything unreadable is off. */
+export function parseLightningShadowConfig(raw: unknown): LightningShadowConfig {
+  const row =
+    raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const flag = (v: unknown): boolean => v === true || v === 'true' || v === 'on';
+  const version =
+    typeof row.shadow_matcher_version === 'string' && row.shadow_matcher_version.trim() !== ''
+      ? row.shadow_matcher_version.trim()
+      : LIGHTNING_SHADOW_DEFAULT_VERSION;
+  return {
+    enabled: flag(row.lightning_shadow_matcher) || flag(row.shadow_matcher_enabled),
+    version,
+    windowMs: readInteger(
+      row.shadow_window_ms,
+      LIGHTNING_SHADOW_WINDOW_DEFAULT_MS,
+      LIGHTNING_SHADOW_WINDOW_MIN_MS,
+      LIGHTNING_SHADOW_WINDOW_MAX_MS
+    ),
+    maxPlayers: readInteger(row.shadow_max_players, LIGHTNING_SHADOW_MAX_PLAYERS_DEFAULT, 2, 5_000),
+    passBudgetMs: readInteger(
+      row.shadow_pass_budget_ms,
+      LIGHTNING_SHADOW_PASS_BUDGET_DEFAULT_MS,
+      5,
+      1_000
+    ),
+    integrityEnabled: flag(row.integrity_telemetry) || flag(row.integrity_telemetry_enabled),
+    params: lightningMatcherParams(row),
+  };
+}
+
+export function sameLightningShadowConfig(
+  a: LightningShadowConfig | undefined,
+  b: LightningShadowConfig | undefined
+): boolean {
+  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
 
 /** How the auto-rebuy trigger is expressed. Anything else fails closed. */
@@ -255,6 +329,7 @@ export function parseLightningConfig(raw: unknown): LightningConfig {
       LIGHTNING_DEAL_WINDOW_MAX_MS
     ),
     autoRebuy: parseLightningAutoRebuyConfig(raw),
+    shadow: parseLightningShadowConfig(raw),
   };
 }
 
@@ -267,6 +342,7 @@ export function sameLightningConfig(a: LightningConfig, b: LightningConfig): boo
     a.keepaliveIntervalMs === b.keepaliveIntervalMs &&
     a.maxHandsPerPass === b.maxHandsPerPass &&
     a.dealWindowMs === b.dealWindowMs &&
-    sameLightningAutoRebuyConfig(a.autoRebuy, b.autoRebuy)
+    sameLightningAutoRebuyConfig(a.autoRebuy, b.autoRebuy) &&
+    sameLightningShadowConfig(a.shadow, b.shadow)
   );
 }

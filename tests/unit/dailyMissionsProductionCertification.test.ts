@@ -50,6 +50,13 @@ describe('Daily Missions production certification', () => {
     expect(spec).toContain('cleanupTemporaryCustomizationAccount(environment, account)');
     expect(spec).toContain('blockRevisionFrames = true');
     expect(spec).toContain('interceptedRealtimeSockets');
+    expect(spec).toContain('new MissionCursorLifecycle(');
+    expect(spec).toContain('cursorLifecycle.clientMessage(socketGeneration, message)');
+    expect(spec).toContain('cursorLifecycle.serverMessage(socketGeneration, message)');
+    expect(spec).toContain('cursorLifecycle.cursorRead()');
+    expect(spec).toContain('quietLifecycle.unexplainedReads');
+    expect(spec).toContain('quietLifecycle.joins === 0 && quietLifecycle.resumes === 0');
+    expect(spec).toContain('daily-missions-cursor-lifecycle.json');
     expect(spec).toContain('isDailyMissionRevisionFrame');
     expect(spec).toContain('observedRevisionFrames');
     expect(spec).toContain('never mints chips');

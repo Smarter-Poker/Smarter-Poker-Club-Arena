@@ -10,7 +10,19 @@
  * moves the view.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { fetchLightningRecentHands } from '../../lightning/lightningSessionApi';
+import {
+  LIGHTNING_STOP_FINISHING_TEXT,
+  LIGHTNING_STOP_PLAYING_LABEL,
+  LIGHTNING_STOP_STOPPING_TEXT,
+  LIGHTNING_STOP_UNAVAILABLE_TEXT,
+  fetchLightningRecentHands,
+  lightningAutoRebuyText,
+  stopLightningPlaying,
+} from '../../lightning/lightningSessionApi';
+import {
+  lightningHandVolumeText,
+  useLightningHandVolume,
+} from '../../lightning/lightningSessionMetrics';
 import { readLightningPrefs, writeLightningPrefs } from '../../lightning/lightningPrefs';
 import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
@@ -18,7 +30,11 @@ import LightningPoolBadge from './LightningPoolBadge';
 import LightningStatsGrid from './LightningStatsGrid';
 import LightningRecentHands from './LightningRecentHands';
 import LightningHandReplayModal from './LightningHandReplayModal';
-import { useLightningPoolHealth, useLightningSessionStats } from './useLightningSessionData';
+import {
+  useLightningAutoRebuyStatus,
+  useLightningPoolHealth,
+  useLightningSessionStats,
+} from './useLightningSessionData';
 import LightningCloseX from './LightningCloseX';
 import './LightningSession.css';
 
@@ -55,6 +71,37 @@ export default function LightningRoomTools({
     refreshKey,
     statsOpen && visible
   );
+  /* LIGHTNING PHASE 10: hand volume always on screen - the session's hands,
+     clock and rate, ticked locally and reconciled by the panel's own read. */
+  const volume = useLightningHandVolume(poolSessionId, handKey, visible, stats);
+  /* The operator's auto-rebuy configuration, read-only, read when the panel
+     opens. Unreadable (deploy window, not granted) shows nothing. */
+  const autoRebuy = useLightningAutoRebuyStatus(clusterId, statsOpen && visible);
+  /* STOP PLAYING (spec Phase 16): one tap asks fn_lightning_stop_playing;
+     the database refuses new hands at once and ends the session when the
+     live hand settles. While that hand finishes, the control says so. The
+     room's close then brings the Phase 9 ended notice - nothing here
+     navigates (CLAUDE.md 10.6). */
+  const [stopping, setStopping] = useState(false);
+  const [stopBusy, setStopBusy] = useState(false);
+  const stopPlaying = useCallback(async () => {
+    if (stopBusy || stopping) return;
+    setStopBusy(true);
+    try {
+      const out = await stopLightningPlaying(clusterId);
+      if (out === null) {
+        toast.info(LIGHTNING_STOP_UNAVAILABLE_TEXT);
+        return;
+      }
+      if (out.stopping) setStopping(true);
+      else toast.warning('We Could Not Stop Your Session Right Now.');
+    } catch (err) {
+      reportError(err, 'LightningSession.stop_playing_failed', { clusterId });
+      toast.warning('We Could Not Stop Your Session Right Now.');
+    } finally {
+      setStopBusy(false);
+    }
+  }, [clusterId, stopBusy, stopping, toast]);
 
   const toggleStats = useCallback(() => {
     setStatsOpen((open) => {
@@ -82,6 +129,9 @@ export default function LightningRoomTools({
     <>
       <div className="lightning-room-tools" data-testid="lightning-room-tools">
         <LightningPoolBadge status={health?.status ?? null} players={health?.players ?? null} />
+        <span className="lightning-room-tools__volume" data-testid="lightning-hand-volume">
+          {lightningHandVolumeText(volume)}
+        </span>
         <button
           type="button"
           className="lightning-room-tools__btn"
@@ -109,6 +159,20 @@ export default function LightningRoomTools({
         >
           Previous Hand
         </button>
+        <button
+          type="button"
+          className="lightning-room-tools__btn lightning-room-tools__btn--stop"
+          data-testid="lightning-stop-playing"
+          aria-live="polite"
+          disabled={stopBusy || stopping}
+          onClick={() => void stopPlaying()}
+        >
+          {stopping
+            ? handKey
+              ? LIGHTNING_STOP_FINISHING_TEXT
+              : LIGHTNING_STOP_STOPPING_TEXT
+            : LIGHTNING_STOP_PLAYING_LABEL}
+        </button>
       </div>
       {statsOpen ? (
         <section
@@ -127,6 +191,11 @@ export default function LightningRoomTools({
               {failed ? 'We Could Not Load Your Session Right Now.' : 'One Moment...'}
             </p>
           )}
+          {autoRebuy ? (
+            <p className="lightning-panel__note" data-testid="lightning-auto-rebuy-status">
+              {lightningAutoRebuyText(autoRebuy)}
+            </p>
+          ) : null}
         </section>
       ) : null}
       {recentOpen ? (

@@ -489,12 +489,16 @@ describe('the Lightning room tools', () => {
     expect((await screen.findByTestId('lightning-pool-badge')).getAttribute('data-status')).toBe(
       'HOT'
     );
-    expect(callsTo('fn_lightning_session_stats')).toHaveLength(0);
+    /* LIGHTNING PHASE 10 widened this pin: the hand-volume line reads the
+       stats ONCE on mount as its baseline. Still never a poll: one read at
+       mount, then one per new hand only while the panel is open. */
+    expect(callsTo('fn_lightning_session_stats')).toHaveLength(1);
     fireEvent.click(screen.getByTestId('lightning-session-toggle'));
     await screen.findByTestId('lightning-stats-session');
-    expect(callsTo('fn_lightning_session_stats')).toEqual([
-      ['fn_lightning_session_stats', { p_pool_session_id: POOL }],
-    ]);
+    expect(callsTo('fn_lightning_session_stats')).toHaveLength(2);
+    for (const call of callsTo('fn_lightning_session_stats')) {
+      expect(call).toEqual(['fn_lightning_session_stats', { p_pool_session_id: POOL }]);
+    }
     expect(readLightningPrefs().statsVisible).toBe(true);
     // Between hands (null key) nothing is read; the next hand reads once.
     view.rerender(
@@ -503,7 +507,7 @@ describe('the Lightning room tools', () => {
     view.rerender(
       <LightningRoomTools poolSessionId={POOL} clusterId={CLUSTER} handKey="id:h2" visible />
     );
-    await waitFor(() => expect(callsTo('fn_lightning_session_stats')).toHaveLength(2));
+    await waitFor(() => expect(callsTo('fn_lightning_session_stats')).toHaveLength(3));
     expect(screen.getByText('LIGHTNING FOLD')).toBeTruthy();
     expect(screen.getByText('P95 Wait')).toBeTruthy();
     expect(moneyRpcs()).toEqual([]);

@@ -25,6 +25,7 @@ const { lightningMatch, lightningMatchAndForm, playerPlatformsArg } =
 const { LightningRegistry, lightningDecisionUrgency } = await import('./LightningRegistry.js');
 const { LightningClusterWorker, LIGHTNING_PLATFORMS_RETRY_MS } =
   await import('./LightningClusterWorker.js');
+const { LIGHTNING_AUTO_REBUY_DEFAULTS } = await import('./LightningConfig.js');
 const { LightningMetrics } = await import('./LightningMetrics.js');
 const { MetricsRegistry } = await import('../observability/Metrics.js');
 const { mulberry32 } = await import('../engine/HandFuzzer.js');
@@ -277,6 +278,7 @@ describe('the worker and the old matcher signature', () => {
         keepaliveIntervalMs: 30_000,
         maxHandsPerPass: 4,
         dealWindowMs: 600_000,
+        autoRebuy: LIGHTNING_AUTO_REBUY_DEFAULTS,
       },
       {
         rpc,

@@ -39,7 +39,8 @@ describe('Phase 10 independent evidence preserves the authoritative dealt popula
     expect(result.equity?.equity).toBe(0);
     expect(result.equity?.eligiblePot).toBe(80);
     expect(result.callEvInterval).toEqual([-20, -20]);
-    expect(result.selected.action).toBe('fold');
+    // Round 3: facing the bet the pack retains the reference action.
+    expect(result.selected).toEqual(input.baseline);
   });
 
   it('excludes an undealt spectator without losing a dealt folded away seat', async () => {

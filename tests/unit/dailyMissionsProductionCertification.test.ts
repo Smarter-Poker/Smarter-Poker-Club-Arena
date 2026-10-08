@@ -50,6 +50,13 @@ describe('Daily Missions production certification', () => {
     expect(spec).toContain('cleanupTemporaryCustomizationAccount(environment, account)');
     expect(spec).toContain('blockRevisionFrames = true');
     expect(spec).toContain('interceptedRealtimeSockets');
+    expect(spec).toContain('new MissionCursorLifecycle(');
+    expect(spec).toContain('cursorLifecycle.clientMessage(socketGeneration, message)');
+    expect(spec).toContain('cursorLifecycle.serverMessage(socketGeneration, message)');
+    expect(spec).toContain('cursorLifecycle.cursorRead()');
+    expect(spec).toContain('quietLifecycle.unexplainedReads');
+    expect(spec).toContain('quietLifecycle.joins === 0 && quietLifecycle.resumes === 0');
+    expect(spec).toContain('daily-missions-cursor-lifecycle.json');
     expect(spec).toContain('isDailyMissionRevisionFrame');
     expect(spec).toContain('observedRevisionFrames');
     expect(spec).toContain('never mints chips');
@@ -71,6 +78,9 @@ describe('Daily Missions production certification', () => {
     expect(spec).toContain(
       "const REVISION_CURSOR_PATH = '/rest/v1/daily_challenge_dashboard_revisions';"
     );
+    // Socket counts cannot explain a read or erase an earlier failed interval.
+    expect(spec).not.toContain('observeMissionQuietWindow({');
+    expect(spec.match(/await page\.waitForTimeout\(NO_POLL_QUIET_WINDOW_MS\)/g)).toHaveLength(1);
     expect(spec).toContain('routedRealtimeServers.push(server)');
     expect(spec).toContain('routedRealtimeServers.splice(0)');
     expect(spec).toContain(
@@ -85,7 +95,7 @@ describe('Daily Missions production certification', () => {
     for (const code of closeCodes) {
       expect(code === 1000 || (code >= 3000 && code <= 4999), `close code ${code}`).toBe(true);
     }
-    expect(spec.indexOf('await page.waitForTimeout(NO_POLL_QUIET_WINDOW_MS)')).toBeLessThan(
+    expect(spec.indexOf('page.waitForTimeout(NO_POLL_QUIET_WINDOW_MS)')).toBeLessThan(
       spec.indexOf('routedRealtimeServers.splice(0)')
     );
     expect(spec.indexOf('routedRealtimeServers.splice(0)')).toBeLessThan(

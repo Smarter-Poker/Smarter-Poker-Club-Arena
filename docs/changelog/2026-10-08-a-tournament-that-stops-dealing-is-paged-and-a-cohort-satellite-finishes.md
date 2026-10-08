@@ -59,3 +59,43 @@ them.
 `start_failed:start_load_table` killed and rebuilt three cash tables (NLH 1/2,
 NLH 2/5, NLH 10/25) 1,482 times between 2026-10-07 11:55Z and 2026-10-08
 08:00Z. Cash lane, stopped on its own at 08:00Z, not a tournament freeze.
+
+## Hardening pass (same day, second PR)
+
+Dan: tournaments, Spins and Sit & Gos must self-heal, never freeze, always
+pay out and finish.
+
+### Found by replaying every receipt of the last seven days
+
+- 328 of 562 completed satellites refused their own receipt on replay
+  (`malformed or extra actual-seat evidence`): a redeemed entry ticket
+  registers its holder in the target with `source_satellite_id` set, and the
+  receipt read that as an extra seat from 22 seconds after settlement. The
+  manager's completion read, recovery and the player's result screen all
+  replay the receipt. Fixed in both receipts, both branches
+  (20261008140724; 20261008140504 was a no-op whose guard matched existing
+  text, recorded as such). 562/562 replay clean after.
+- 603/603 MTTs and 3,000/3,000 Spins and Sit & Gos of the last hours replay
+  clean.
+
+### Self-heal and paging now in the engine
+
+- `GameServer.rebuildManagersOfDarkTournaments` (every minute): the database's
+  own definition of dark (`fn_ca_tournament_dark_candidates(15)`, 20261008140537) names RUNNING events with 2+ live players and no sign of
+  life for 15 live minutes; the exact manager this process holds is retired
+  so RUNNING resume re-admits it from durable state - a new manager, new table
+  engines, every in-memory claim gone. Once per tournament per 30 min; never
+  during a break, a fresh admission, a healthy park (under
+  MAX_HEALTHY_PAUSE_MS) or a maintenance freeze. Dark again after a rebuild
+  raises `GameServer.tournament_dark_after_rebuild` (critical).
+- `GameServer.pageLongFailingResumes`: a tournament whose resume has been
+  failing for 10 minutes raises `GameServer.tournament_resume_failing_repeatedly`
+  (critical, per tournament, refreshed every 30 min). The 2026-10-03 outage
+  held sixteen of these for 14.4 hours with only a /health counter to show.
+
+### Standing audit
+
+- `fn_ca_replay_terminal_receipts` on cron `ca-terminal-receipt-replay-daily`
+  (04:37 UTC): replays every receipt of the last 26 hours and raises one
+  critical alert per distinct refusal text, self-closing when it no longer
+  reproduces. The next receipt divergence is found the day it appears.

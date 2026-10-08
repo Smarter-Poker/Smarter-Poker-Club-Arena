@@ -21,8 +21,8 @@ if (!process.env.OPERATOR_HOLD_PG_HOST && !process.env.OPERATOR_HOLD_PG_PORT) {
     assert.equal(result.error, undefined, result.stderr);
     assert.equal(result.signal, null, result.stderr);
     assert.equal(result.status, 0, result.stdout + result.stderr);
-    assert.match(result.stdout, /# tests 21/);
-    assert.match(result.stdout, /# pass 21/);
+    assert.match(result.stdout, /# tests 22/);
+    assert.match(result.stdout, /# pass 22/);
     assert.match(result.stdout, /# fail 0/);
     t.diagnostic(result.stdout);
   });
@@ -673,6 +673,81 @@ if (!process.env.OPERATOR_HOLD_PG_HOST && !process.env.OPERATOR_HOLD_PG_PORT) {
       ]),
       /engine_fenced/
     );
+  });
+
+  test('cash and tournament hold commands and imports admit heartbeat but exclude native takeover', async () => {
+    const second = new Client({
+      host: process.env.OPERATOR_HOLD_PG_HOST,
+      port: Number(process.env.OPERATOR_HOLD_PG_PORT),
+      user: 'fixture_admin',
+      database: 'postgres',
+    });
+    await second.connect();
+    try {
+      for (const tournament of [false, true]) {
+        for (const importing of [false, true]) {
+          const tableId = randomUUID(),
+            tournamentId = tournament ? randomUUID() : null;
+          await db.query(
+            'INSERT INTO public.tables(id,club_id,status,tournament_id) VALUES($1,$2,$3,$4)',
+            [tableId, '11111111-1111-4111-8111-111111111111', 'running', tournamentId]
+          );
+          const relation = tournament ? 'engine_tournament_leases' : 'engine_table_leases';
+          const key = tournament ? 'tournament_id' : 'table_id',
+            leaseId = tournamentId || tableId;
+          await db.query(`INSERT INTO public.${relation} VALUES($1,$2,$3,2,clock_timestamp())`, [
+            leaseId,
+            INSTANCE_ID,
+            leaseGeneration,
+          ]);
+          await db.query('BEGIN');
+          try {
+            if (importing)
+              await db.query('SELECT public.fn_ca_import_operator_holds($1,$2,$3,$4::jsonb)', [
+                randomUUID(),
+                INSTANCE_ID,
+                oldSource,
+                JSON.stringify([
+                  { table_id: tableId, paused: true, lease_generation: leaseGeneration },
+                ]),
+              ]);
+            else await write(tableId, true, owner);
+            // The real maintained heartbeat lock stays available while the
+            // operator transaction still owns its lease key and hold receipt.
+            const heartbeat = await second.query(
+              `WITH owned AS (SELECT ${key} FROM public.${relation} WHERE ${key}=$1 FOR NO KEY UPDATE SKIP LOCKED)
+              UPDATE public.${relation} e SET heartbeat_at=clock_timestamp() FROM owned WHERE e.${key}=owned.${key} RETURNING e.${key}`,
+              [leaseId]
+            );
+            assert.equal(
+              heartbeat.rowCount,
+              1,
+              `${relation} ${importing ? 'import' : 'command'} heartbeat skipped`
+            );
+            await assert.rejects(
+              second.query(`SELECT * FROM public.${relation} WHERE ${key}=$1 FOR UPDATE NOWAIT`, [
+                leaseId,
+              ]),
+              (error) => error.code === '55P03'
+            );
+          } finally {
+            await db.query('ROLLBACK');
+          }
+          // Takeover exclusion ends with the original transaction, not forever.
+          assert.equal(
+            (
+              await second.query(
+                `SELECT * FROM public.${relation} WHERE ${key}=$1 FOR UPDATE NOWAIT`,
+                [leaseId]
+              )
+            ).rowCount,
+            1
+          );
+        }
+      }
+    } finally {
+      await second.end();
+    }
   });
 
   test('the previous native generation cannot commit after replacement admission', async () => {

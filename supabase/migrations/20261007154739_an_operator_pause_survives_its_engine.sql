@@ -70,12 +70,13 @@ BEGIN
     AND cm.role IN ('owner','co_owner','admin','super_agent')) INTO allowed;
  END IF;
  IF NOT allowed THEN RAISE EXCEPTION 'operator_hold_forbidden' USING ERRCODE='42501'; END IF;
- -- Match replacement/heartbeat lease row order. The former owner cannot
+ -- Holder KEY SHARE admits heartbeat NO KEY UPDATE; native takeover FOR UPDATE
+ -- still excludes the original holder. The former owner cannot
  -- commit a late hold after a successor acquired and read its authority.
  IF t.tournament_id IS NULL THEN
-   SELECT * INTO lease_row FROM public.engine_table_leases WHERE table_id=p_table_id FOR SHARE;
+   SELECT * INTO lease_row FROM public.engine_table_leases WHERE table_id=p_table_id FOR KEY SHARE;
  ELSE
-   SELECT * INTO lease_row FROM public.engine_tournament_leases WHERE tournament_id=t.tournament_id FOR SHARE;
+   SELECT * INTO lease_row FROM public.engine_tournament_leases WHERE tournament_id=t.tournament_id FOR KEY SHARE;
  END IF;
  IF NOT FOUND OR lease_row.instance_id<>p_instance_id OR lease_row.protocol_version<>2
    OR lease_row.lease_generation<>p_lease_generation OR lease_row.heartbeat_at IS NULL
@@ -130,9 +131,9 @@ BEGIN
    SELECT tournament_id INTO t FROM public.tables WHERE id=item.table_id;
    IF NOT FOUND THEN RAISE EXCEPTION 'operator_hold_import_table_missing' USING ERRCODE='22023'; END IF;
    IF t.tournament_id IS NULL THEN
-     SELECT * INTO lease_row FROM public.engine_table_leases WHERE table_id=item.table_id FOR SHARE;
+     SELECT * INTO lease_row FROM public.engine_table_leases WHERE table_id=item.table_id FOR KEY SHARE;
    ELSE
-     SELECT * INTO lease_row FROM public.engine_tournament_leases WHERE tournament_id=t.tournament_id FOR SHARE;
+     SELECT * INTO lease_row FROM public.engine_tournament_leases WHERE tournament_id=t.tournament_id FOR KEY SHARE;
    END IF;
    IF NOT FOUND OR lease_row.instance_id<>p_source_instance OR lease_row.protocol_version<>2
       OR lease_row.lease_generation<>item.lease_generation OR lease_row.heartbeat_at IS NULL

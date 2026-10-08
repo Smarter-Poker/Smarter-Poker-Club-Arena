@@ -207,7 +207,7 @@
       "config": ["search_path=pg_catalog, public", "lock_timeout=500ms", "statement_timeout=5s"],
       "signature": "fn_ca_import_operator_holds(uuid,text,text,jsonb)",
       "volatility": "v",
-      "definition_md5": "9fd2fc5c054d0cca07974b8ec0237793",
+      "definition_md5": "383d95c360328026eb7de7ec76bb2448",
       "security_definer": true
     },
     {
@@ -216,7 +216,7 @@
       "config": ["search_path=pg_catalog, public", "lock_timeout=500ms", "statement_timeout=5s"],
       "signature": "fn_ca_set_table_operator_hold(uuid,boolean,uuid,uuid,uuid,text,bigint)",
       "volatility": "v",
-      "definition_md5": "25e867fdc39a26326fd9020d2a294193",
+      "definition_md5": "fe7a77f34becc71d508345a128d28b3c",
       "security_definer": true
     },
     {
@@ -240,7 +240,7 @@
   ],
   "migration": {
     "name": "an_operator_pause_survives_its_engine",
-    "sql_md5": "6bc1813150e16da3749c11c9492c5fa0",
+    "sql_md5": "e572fcb78b546818c5d5437a3974729d",
     "version": "20261007154739",
     "statements_count": 1
   }

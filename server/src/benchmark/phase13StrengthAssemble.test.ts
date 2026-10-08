@@ -274,7 +274,7 @@ describe('phase13-strength-assemble', () => {
         HORSE_PHASE13_POLICY_SOURCE_FILES.map((file) => `server/${file}`)
       );
       expect(strength.source.domainVersion).toBe('joint-multiway-round1-v4');
-      expect(strength.source.packVersion).toBe('joint-action-response-round2-v1');
+      expect(strength.source.packVersion).toBe('joint-action-response-round3-v1');
       // Guard refusals are software validity (refused per shard), not a
       // strength gate; the named refusals are reported beside them.
       expect(strength.shards[0]).toMatchObject({
@@ -398,7 +398,7 @@ describe('phase13-strength-assemble', () => {
         JSON.stringify({ ...qualification, packVersion: PACK.candidate.packVersion }, null, 2) +
           '\n'
       );
-      expect(PACK.candidate.packVersion).toBe('joint-action-response-round2-v1');
+      expect(PACK.candidate.packVersion).toBe('joint-action-response-round3-v1');
       expect(admit(responseVersioned)).toMatchObject({
         status: 'refused',
         reason: 'continuation_mismatch',
@@ -706,7 +706,7 @@ describe('jointStrengthEvaluate refusals', () => {
         mode: 'development',
         variant: 'nlh',
         contractDigest: jointStrengthContractDigest(),
-        packVersion: 'joint-action-response-round2-v1',
+        packVersion: 'joint-action-response-round3-v1',
         domainVersion: 'joint-multiway-round1-v4',
         rangePackVersion: 'joint-public-range-round1-v1',
         equityGovernor: 'off',

@@ -52,7 +52,7 @@ export const HORSE_PHASE13_POLICY_DIGEST_DEFINITION = 'horse-phase13-policy-dige
  */
 export const HORSE_PHASE13_POLICY_SOURCE_REASONS: Readonly<Record<string, string>> = Object.freeze({
   'src/engine/multiway/JointLivePolicy.ts':
-    'the live wrapper: modes, the 4 ms work check, the legal-form rebuild of candidates, ranking, the receipt and its validator',
+    'the live wrapper: modes, the 4 ms work check, the legal-form rebuild of candidates, the paired-edge selection rule, the receipt and its validator',
   'src/engine/multiway/JointSampleAcquisition.ts':
     'JOINT_LIVE_DOMAIN (domain version, sample counts, the 4 ms and 2.5 ms budgets, depth ceilings) and every eligibility refusal',
   'src/engine/multiway/JointRangeSampler.ts':
@@ -61,11 +61,13 @@ export const HORSE_PHASE13_POLICY_SOURCE_REASONS: Readonly<Record<string, string
     'the physical card layout every joint sample is dealt from (one to three boards, bomb hands)',
   'src/engine/multiway/DealtSeatCensus.ts': 'the dealt-seat census of live, folded and away seats',
   'src/engine/multiway/JointActionModel.ts':
-    'the response pack identities and the dispatch between the round 1 and round 2 models',
+    'the response pack identities, the dispatch between the round 1 and current models and the paired comparison with the baseline',
   'src/engine/multiway/JointActionShared.ts':
     'candidate construction, the legal-form hook, players behind and the one-response computation',
   'src/engine/multiway/JointResponseTree.ts':
     'the bounded raise tree: raise share, hero answer, the river round and the branch limits',
+  'src/engine/multiway/JointResponseCalibration.ts':
+    'the measured population response pack: continue and raise frequencies by variant and street, and the strength-percentile order of who responds',
   'src/engine/multiway/JointStreetBetting.ts':
     'the controller replica that sizes the one bounded raise and decides reopening and caps',
   'src/engine/multiway/JointResponseOrder.ts':

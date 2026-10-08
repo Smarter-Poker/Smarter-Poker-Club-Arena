@@ -439,8 +439,9 @@ describe('Phase 7 evidence is bound to the request at admission', () => {
 
 describe('P13.1 the joint receipt binding at the worker boundary', () => {
   const decide = (mode: 'shadow' | 'candidate') => {
-    const s = jointPolicyFixture('plo4', 2, 'cash', 'turn');
-    seedFastRandom(130999);
+    // A spot and seed at which the round-3 candidate acts.
+    const s = jointPolicyFixture('plo4', 2, 'cash', 'flop');
+    seedFastRandom(131012);
     return structuredClone(
       HorseLogic.decide(
         s.hero,

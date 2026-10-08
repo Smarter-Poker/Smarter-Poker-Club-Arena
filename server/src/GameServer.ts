@@ -211,6 +211,7 @@ import {
   auditGuaranteesKept,
 } from './services/FeeReconciler.js';
 import { reportError } from './services/errorReporter.js';
+import { raiseFinancialAlert } from './services/financialAlerts.js';
 import { startRakeSpecGuard, stopRakeSpecGuard } from './services/rakeSpecGuard.js';
 import { rakeSpecDriftState } from './config/rakeSpec.js';
 import {
@@ -3316,6 +3317,16 @@ export class GameServer {
   private lastSeatFirstFinishSweepAt = 0;
   /** One reopen sweep per minute for tables closed under a live tournament. */
   private lastClosedTableReopenSweepAt = 0;
+  private lastDarkTournamentSweepAt = 0;
+  /** When each dark tournament's manager was last retired for a rebuild. */
+  private readonly darkTournamentRebuiltAtMs = new Map<string, number>();
+  /** When each long-failing resume / repeat-dark event was last paged. */
+  private readonly failingResumePagedAtMs = new Map<string, number>();
+  private readonly darkAfterRebuildPagedAtMs = new Map<string, number>();
+  static readonly DARK_TOURNAMENT_LIVE_MINUTES = 15;
+  static readonly DARK_TOURNAMENT_REBUILD_EVERY_MS = 30 * 60 * 1000;
+  static readonly FAILING_RESUME_PAGE_AFTER_MS = 10 * 60 * 1000;
+  static readonly FAILING_RESUME_PAGE_EVERY_MS = 30 * 60 * 1000;
   /** Last fn_tournament_money_conservation pass (2026-08-27 phase 3). */
   private lastConservationAt = 0;
   /** Last fn_detect_results_without_a_hand pass (2026-09-01 phase 7). */
@@ -8204,6 +8215,26 @@ export class GameServer {
         }
 
         /**
+         * ── A DARK EVENT GETS ITS MANAGER REBUILT, AND A FAILING RESUME IS
+         *    PAGED (2026-10-08) ────────────────────────────────────────────
+         *
+         * See rebuildManagersOfDarkTournaments() and
+         * pageLongFailingResumes(). Same cadence and shape as the sweeps
+         * above; one bounded RPC on a healthy board.
+         */
+        if (Date.now() - this.lastDarkTournamentSweepAt > 60 * 1000) {
+          this.lastDarkTournamentSweepAt = Date.now();
+          this.launchDiscoveryJob(
+            this.rebuildManagersOfDarkTournaments(),
+            'GameServer.dark_tournament_sweep_error'
+          );
+          this.launchDiscoveryJob(
+            this.pageLongFailingResumes(),
+            'GameServer.failing_resume_page_error'
+          );
+        }
+
+        /**
          * ── A STRANDED PLAYER IS BROUGHT BACK TO THE FELT (2026-09-01) ──────
          *
          * The reopen sweep above declines when the tournament still owns an
@@ -10373,6 +10404,196 @@ export class GameServer {
     reportError(new Error(message), 'GameServer.decided_event_held_by_quarantined_manager', {
       tournamentId,
     });
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  A DARK EVENT GETS ITS MANAGER REBUILT (2026-10-08)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * Three unrelated causes left RUNNING events with two or more live players
+   * dealing nothing for hours in the seven days to 2026-10-08: a lost lease
+   * whose re-admission was refused (16 events, 14.4 h), live players marked
+   * eliminated without a sequence by a foreign session (55 events, 8-23 h),
+   * and a settlement refused by its own receipt (satellite 32190e8c, 17 h).
+   * The never-dealt sweep above only knows an event that never dealt at
+   * all, the decided sweep only one down to a single player, and the zombie
+   * reaper rebuilds TABLE engines, never the manager whose state is wedged.
+   *
+   * The database already defines "dark" (fn_ca_tournament_dark_candidates:
+   * RUNNING, not on its own break, 2+ players playing, no table write and no
+   * bust for N LIVE minutes, maintenance breaks excluded). For each dark
+   * event this process owns, the exact manager is retired the way the
+   * never-dealt sweep retires one, and the RUNNING resume lane re-admits it
+   * from durable state on its next pass: a brand-new manager, brand-new
+   * table engines, every in-memory claim gone. Bounded to one rebuild per
+   * tournament per DARK_TOURNAMENT_REBUILD_EVERY_MS. A manager still dark
+   * after its rebuild is something a rebuild cannot cure (a refused
+   * settlement, a custody refusal): that is paged as a CRITICAL financial
+   * alert, once per tournament per rebuild window, on top of the database's
+   * own page at twenty minutes.
+   *
+   * Never touches: a manager this process does not hold (the resume lane
+   * owns it), a quarantined manager (its own retry schedule owns it), a
+   * manager admitted inside the dark window (it has not had its chance), a
+   * manager on its own break, or a manager whose every open table is parked
+   * on purpose for less than MAX_HEALTHY_PAUSE_MS (hand-for-hand, a final
+   * table deal, a Spin reveal). A pause past that is never healthy, which is
+   * the zombie reaper's own rule.
+   */
+  private async rebuildManagersOfDarkTournaments(): Promise<void> {
+    if (!this.running || isMaintenanceFrozen()) return;
+    const now = Date.now();
+    const { data, error } = await supabase.rpc('fn_ca_tournament_dark_candidates', {
+      p_minutes: GameServer.DARK_TOURNAMENT_LIVE_MINUTES,
+    });
+    if (error) {
+      reportError(
+        new Error(`[GameServer] dark tournament read failed: ${error.message}`),
+        'GameServer.dark_tournament_read_failed'
+      );
+      return;
+    }
+    const rows = Array.isArray(data) ? (data as Array<Record<string, unknown>>) : [];
+    for (const row of rows) {
+      const tournamentId = String(row.tournament_id ?? '');
+      if (!tournamentId) continue;
+      const manager = this.tournamentEngines.get(tournamentId);
+      if (!manager) continue; // the RUNNING resume lane owns an unowned event
+      if (this.tournamentManagerQuarantine?.heldBy(tournamentId) === manager) continue;
+      const admittedAt = this.tournamentManagerAdmittedAtMs?.get(manager);
+      if (
+        admittedAt !== undefined &&
+        now - admittedAt < GameServer.DARK_TOURNAMENT_LIVE_MINUTES * 60 * 1000
+      ) {
+        continue;
+      }
+      try {
+        if (manager.isOnBreak()) continue;
+      } catch {
+        /* a manager that cannot say is not protected by a break it cannot name */
+      }
+      const tableIds = manager.getTableIds();
+      let openEngines = 0;
+      let healthyParks = 0;
+      for (const tableId of tableIds) {
+        const engine = this.tableEngines.get(tableId);
+        if (!engine || !engine.isRunning()) continue;
+        openEngines += 1;
+        if (engine.isParkedByDesign() && engine.msPaused() <= GameServer.MAX_HEALTHY_PAUSE_MS) {
+          healthyParks += 1;
+        }
+      }
+      if (openEngines > 0 && healthyParks === openEngines) continue;
+
+      const rebuiltAt = this.darkTournamentRebuiltAtMs.get(tournamentId);
+      const name = String(row.name ?? tournamentId.slice(0, 8));
+      const liveMinutes = Number(row.live_minutes ?? 0);
+      if (
+        rebuiltAt !== undefined &&
+        now - rebuiltAt < GameServer.DARK_TOURNAMENT_REBUILD_EVERY_MS
+      ) {
+        continue;
+      }
+      if (rebuiltAt !== undefined) {
+        const pagedAt = this.darkAfterRebuildPagedAtMs.get(tournamentId) ?? 0;
+        if (now - pagedAt >= GameServer.DARK_TOURNAMENT_REBUILD_EVERY_MS) {
+          this.darkAfterRebuildPagedAtMs.set(tournamentId, now);
+          try {
+            await raiseFinancialAlert(
+              'critical',
+              'GameServer.tournament_dark_after_rebuild',
+              `Tournament ${name} (${tournamentId}) is still dealing nothing ${Math.round(
+                liveMinutes
+              )} live minutes after its manager was rebuilt at ${new Date(
+                rebuiltAt
+              ).toISOString()}; a rebuild cannot cure it, read its engine log`,
+              {
+                tournament_id: tournamentId,
+                alive: row.alive ?? null,
+                live_minutes: liveMinutes,
+                last_activity: row.last_activity ?? null,
+                rebuilt_at: new Date(rebuiltAt).toISOString(),
+              },
+              `tournament-dark-after-rebuild:${tournamentId}`,
+              tournamentId
+            );
+          } catch (alertError) {
+            reportError(alertError, 'GameServer.tournament_dark_after_rebuild_alert_failed', {
+              tournamentId,
+            });
+          }
+        }
+      }
+      this.darkTournamentRebuiltAtMs.set(tournamentId, now);
+      const message =
+        `[GameServer] RUNNING ${name} (${tournamentId.slice(0, 8)}) has ${String(
+          row.alive ?? '?'
+        )} live players and has dealt nothing for ${Math.round(liveMinutes)} live minute(s) - ` +
+        `retiring its manager so RUNNING resume rebuilds it`;
+      console.warn(message);
+      reportError(new Error(message), 'GameServer.dark_tournament_manager_rebuilt', {
+        tournamentId,
+      });
+      this.retireTournamentManagerInDiscovery(
+        tournamentId,
+        manager,
+        'GameServer.dark_tournament_manager_rebuild'
+      );
+    }
+    for (const [tournamentId, rebuiltAt] of this.darkTournamentRebuiltAtMs) {
+      if (now - rebuiltAt > 6 * 60 * 60 * 1000) {
+        this.darkTournamentRebuiltAtMs.delete(tournamentId);
+        this.darkAfterRebuildPagedAtMs.delete(tournamentId);
+      }
+    }
+  }
+
+  /**
+   * A RESUME THAT KEEPS FAILING IS PAGED (2026-10-08). See
+   * RunningResumeCooldowns.longStreaks for the 14.4-hour outage this exists
+   * for. One CRITICAL financial alert per tournament whose resume has been
+   * failing for FAILING_RESUME_PAGE_AFTER_MS, refreshed every
+   * FAILING_RESUME_PAGE_EVERY_MS while it goes on. The retry itself is
+   * unchanged.
+   */
+  private async pageLongFailingResumes(): Promise<void> {
+    if (!this.running) return;
+    const now = Date.now();
+    const streaks = this.tournamentResumeCooldowns.longStreaks(
+      now,
+      GameServer.FAILING_RESUME_PAGE_AFTER_MS
+    );
+    const live = new Set(streaks.map((streak) => streak.tournamentId));
+    for (const tournamentId of [...this.failingResumePagedAtMs.keys()]) {
+      if (!live.has(tournamentId)) this.failingResumePagedAtMs.delete(tournamentId);
+    }
+    for (const streak of streaks) {
+      if (this.tournamentEngines.has(streak.tournamentId)) continue;
+      const pagedAt = this.failingResumePagedAtMs.get(streak.tournamentId) ?? 0;
+      if (now - pagedAt < GameServer.FAILING_RESUME_PAGE_EVERY_MS) continue;
+      this.failingResumePagedAtMs.set(streak.tournamentId, now);
+      const minutes = Math.round((now - streak.firstFailedAtMs) / 60_000);
+      try {
+        await raiseFinancialAlert(
+          'critical',
+          'GameServer.tournament_resume_failing_repeatedly',
+          `Tournament ${streak.tournamentId} is RUNNING and this engine has failed to resume it ${streak.failures} time(s) over ${minutes} min; its players are seated with no dealer. Read the engine log for its admission refusal`,
+          {
+            tournament_id: streak.tournamentId,
+            failures: streak.failures,
+            first_failed_at: new Date(streak.firstFailedAtMs).toISOString(),
+            failing_for_minutes: minutes,
+          },
+          `tournament-resume-failing:${streak.tournamentId}`,
+          streak.tournamentId
+        );
+      } catch (alertError) {
+        reportError(alertError, 'GameServer.tournament_resume_failing_alert_failed', {
+          tournamentId: streak.tournamentId,
+        });
+      }
+    }
   }
 
   /**

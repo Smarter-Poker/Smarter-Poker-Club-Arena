@@ -1,0 +1,33 @@
+# Lightning Phase 10: Responsible Gaming, Stop Playing and Auto-Rebuy Through the Reload Door
+
+Migration `20261008111425_lightning_phase_10_responsible_gaming_stop_playing_auto_rebu.sql` (specification Phases 16 and 17, the database side). One transaction with `SET LOCAL lock_timeout`; the only table altered is `lightning_pool_session`, and neither `tables` nor `table_seats` nor any wallet table is locked. Every change to an existing body is an asserted substitution into the body PokerIQ-Production carries, read with `pg_get_functiondef` on 2026-10-08 after `20261008050805`, each anchor counted or the file refuses. Not applied to production by this change.
+
+## Responsible Gaming Reuses What Exists
+
+The platform already carries `responsible_gaming_limits` (deposit and loss caps, session time, self-exclusion, cooling-off), its gate `fn_rg_require_not_excluded`, and the operator restriction policy, and `fn_lightning_player_legality` already refuses `RESTRICTED` and `RG_EXCLUDED` on every matcher pass, so an exclusion that begins mid-session stops the very next formation. Nothing parallel is built. What lands:
+
+- `fn_lightning_pool_enter` now defers to the same `fn_rg_require_not_excluded` gate before opening a pool session, so a self-excluded or cooling-off player never enters the pool at all. The refusal is the door's own NULL; the cash chair itself is untouched.
+
+## Stop Playing
+
+- `lightning_pool_session.stop_requested_at timestamptz`, with the partial index `lightning_pool_session_stop_requests` for the reaper's worklist.
+- `fn_lightning_stop_playing(p_cluster_id)` (authenticated and service_role, SECURITY DEFINER, `auth.uid()` scoped, idempotent): marks the caller's open pool session and emits one `stop_playing_requested` event on the first mark. Not in a live hand and holding no live reservation, it exits the session at once: `exit_reason` `stop_playing`, state `closed`, slot closed, one `pool_player_left` in the anchor seat trigger's own payload shape. In a live hand every in-hand rule stands untouched.
+- `fn_lightning_player_legality` gains the `STOP_REQUESTED` refusal, placed after the hand arms, so the matcher skips a stopping player from the next formation on while a stopper still playing reads `IN_HAND` until the hand lets go.
+- `fn_lightning_reap_expired_disconnects` (already wired into `fn_cash_clusters_tick_all`) widens to finish a stop request the moment the session holds no live hand and no live reservation, under the same skip rules, locks and per-item isolation, with `exit_reason` `stop_playing`; a stopped session is never counted into the `player_expired` record.
+- `fn_lightning_reconnect_state` carries the new `stop_requested` key, the caller's own and nothing else (nine keys → ten).
+- Session metrics are verified, not rebuilt: `fn_lightning_session_stats` already answers hands, `duration_s`, `hands_per_hour` and net, and `fn_lightning_session_summary` already answers `ended` and `exit_reason`, which a stopped session reads back as `stop_playing`. A live proof pins the keys.
+
+## Auto-Rebuy Through the Reload Door
+
+- Seven new `fn_lightning_config` keys, read, clamped and reported in `invalid` exactly as every other key: `auto_rebuy_enabled` (default false), `auto_rebuy_trigger` (`zero` | `below_bb` | `below_pct`), `auto_rebuy_threshold_bb` (1, clamp 0 → 100), `auto_rebuy_threshold_pct` (25, clamp 1 → 99), `auto_rebuy_target` (`initial` | `max`), `auto_rebuy_max_count` (3, clamp 0 → 100), `auto_rebuy_session_cap` (0 means uncapped, clamp 0 → 1000000).
+- `fn_lightning_auto_rebuy(p_cluster_id, p_player_id, p_now)` (service_role only): the one door the engine calls between hands. It verifies the open active session (never stop-requested, never disconnected), no live hand and no live reservation, no unresolved pending addon, responsible gaming, the count under `auto_rebuy_max_count` and the trigger against the current pool stack, then executes the top-up through `public.atomic_table_rebuy`, the manual reload's own wallet path, with a deterministic purchase key per session and count so a retry can never debit twice. A wallet refusal answers `RELOAD_REFUSED` and nothing moved. The count and total land on the session (`auto_rebuys`, `auto_rebuy_total`, both guarded non-negative) and one `auto_rebuy` event carries the stack before and after delivery. An auto-rebuy is not a leave: `session_baseline` rules, `starting_stack` and `net_result` accounting are untouched.
+
+## RNG and Hidden Information Review
+
+A review, not a build: no RNG is created or touched. What the database can prove is pinned as standing live proofs. The Lightning tables (`lightning_hand`, `lightning_hand_player`, `lightning_instance`, `lightning_reservation`, `lightning_pool_session`, `lightning_pool_slot`) carry no card, deck, seed or hole column; hidden cards live only in `table_hole_cards` and `hand_private_state`, both RLS-enabled with every player-facing read policy `auth.uid()` scoped to the owner; no authenticated- or anon-executable `fn_lightning_*` function references hole-card storage at all; and the only cross-player windows (`fn_lightning_cluster_forensics`, `fn_lightning_hand_replay_check`, `fn_lightning_settlement_seats`) are service_role alone. No leak was found, so nothing is fixed; the pins hold the reviewed state against drift.
+
+## Proof
+
+- `scripts/dev/test-lightning-phase10-rg-rebuy.sh`: 13 sections on PostgreSQL 17, port 55557, over the real Lightning chain through Phase 9's disconnect file (`20261008050805`), with humans and horses in every Cluster. No predecessor live proof is falsified. The config defaults and clamps. A self-excluded human and a cooling-off horse are seated but never pooled, a lapsed exclusion enters through the real door, a mid-session exclusion is `RG_EXCLUDED`. The idle stop exits at once and is idempotent; the mid-hand stop stands aside for the hand, reads `STOP_REQUESTED` after it and is exited by the reaper with no `player_expired` record. The reconnect snapshot and the session summary carry the stop and the metrics. Auto-rebuy is born disabled and, enabled, buys a real bust back through the reload door alone, with the club wallet, the pending addon, the session counters and the event all agreeing, and refuses `PENDING_ADDON`, `MAX_COUNT`, `SESSION_CAP`, `RELOAD_REFUSED`, `IN_HAND`, `RG_EXCLUDED`, `STOP_REQUESTED` and `NO_SESSION` each in its place. The grants are one browser door and one service door. Non-Lightning play is untouched. Every live proof; re-appliable.
+- `tests/lightning-phase-10-rg-rebuy.test.ts`: the static contract.
+- CI: shard 1, right after the Phase 9 reconnect harness.

@@ -1706,6 +1706,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase9-reconnect.sh
+      - name: Lightning Phase 10 honors responsible gaming at every door, stops playing cleanly and auto-rebuys only through the reload door
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-lightning-phase10-rg-rebuy.sh
       - name: Credit invoices bill only uninvoiced drawn debt
         if: matrix.shard == 1
         env:

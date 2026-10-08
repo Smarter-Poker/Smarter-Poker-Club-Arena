@@ -12,6 +12,7 @@ import {
   PHASE8_POLICY,
   deepOnePairCommitment,
   hasTournamentNutBlocker,
+  futureHandSeats,
 } from './HorseTournamentPostflop.js';
 import { HorsePhase8Safety } from './HorsePhase8Safety.js';
 import {
@@ -812,6 +813,81 @@ describe('Phase 8 counterfactual selection', () => {
     expect(critical.disabledReason).toBe('critical_commitment_increase');
     expect(new HorsePhase8Safety().disabledReason).toBeNull();
     expect(PHASE8_POLICY.defaultMode).toBe('shadow');
+  });
+});
+
+// WIN-P8 (2026-10-08): on the production engine host, spots whose next hand is
+// dealt to more than three seats stopped at the unchanged 4 ms work budget
+// (108 of 2,769 completed) and 32 of them in a row latched Phase 8 off for the
+// rest of the process. They are refused by name before eligibility instead.
+describe('Phase 8 future-hand seat scope', () => {
+  const evaluate = (gs: HorseGameStateV2, hero: SeatPlayer, input: TournamentUtilityInput) => {
+    const previous = evaluateTournamentUtility(input)!;
+    const baseline = { ...previous.decision, tournamentUtility: previous.ledger };
+    return {
+      baseline,
+      ...evaluateTournamentPostflop(hero, gs, baseline, input, 'shadow', () => 0),
+    };
+  };
+  const withFourthSeat = (stack: number, invested = 0) => {
+    const { gs, hero, input } = scenario();
+    const fourth = { ...seat('fourth', 4, stack, invested), is_folded: true };
+    gs.players = [...gs.players, fourth];
+    return { gs, hero, input };
+  };
+  it('counts every seat the next hand can be dealt to', () => {
+    expect(PHASE8_POLICY.maxFutureHandSeats).toBe(3);
+    expect(futureHandSeats(scenario().gs)).toBe(3);
+    // Chips behind: dealt in, folded or not, sitting out or not.
+    expect(futureHandSeats(withFourthSeat(800).gs)).toBe(4);
+    const away = withFourthSeat(800);
+    away.gs.players[3].is_sitting_out = true;
+    expect(futureHandSeats(away.gs)).toBe(4);
+    // All in and unfolded: may win the pot and be dealt in.
+    const allIn = withFourthSeat(0, 40);
+    allIn.gs.players[3].is_folded = false;
+    expect(futureHandSeats(allIn.gs)).toBe(4);
+    // Folded with nothing behind, or bust: never dealt again.
+    expect(futureHandSeats(withFourthSeat(0, 40).gs)).toBe(3);
+    expect(futureHandSeats(withFourthSeat(0, 0).gs)).toBe(3);
+  });
+  it('keeps a three-seat table eligible and computed', () => {
+    const { gs, hero, input } = scenario();
+    const { ledger } = evaluate(gs, hero, input);
+    expect(ledger.eligible).toBe(true);
+    expect(ledger.fired).toBe(true);
+  });
+  it('refuses a larger table by name before eligibility, without spending work', () => {
+    const { gs, hero, input } = withFourthSeat(800);
+    const { baseline, decision, ledger } = evaluate(gs, hero, input);
+    expect(ledger.reason).toBe('future_hand_seats_outside_work_budget');
+    expect(ledger.eligible).toBe(false);
+    expect(ledger.fired).toBe(false);
+    expect(ledger.completed).toBe(false);
+    expect(ledger.work.attempts).toBe(0);
+    expect(ledger.work.rollouts).toBe(0);
+    expect(decision).toBe(baseline);
+    // A busted seat (nothing left, nothing in the pot) is not dealt a next hand.
+    const busted = withFourthSeat(0, 0);
+    expect(evaluate(busted.gs, busted.hero, busted.input).ledger.eligible).toBe(true);
+  });
+  it('never trips the silence latch on scoped refusals, and still trips it on real silence', () => {
+    const scoped = (() => {
+      const { gs, hero, input } = withFourthSeat(800);
+      return evaluate(gs, hero, input).ledger;
+    })();
+    const { gs, hero, input } = scenario();
+    const eligible = evaluate(gs, hero, input).ledger;
+    const safety = new HorsePhase8Safety();
+    for (let n = 0; n < 1000; n++) safety.observe(scoped);
+    expect(safety.disabledReason).toBeNull();
+    // Scoped refusals neither count toward nor reset a run of eligible silence.
+    for (let n = 0; n < 31; n++)
+      safety.observe({ ...eligible, fired: false, reason: 'continuation_operation_budget' });
+    for (let n = 0; n < 200; n++) safety.observe(scoped);
+    expect(safety.disabledReason).toBeNull();
+    safety.observe({ ...eligible, fired: false, reason: 'continuation_operation_budget' });
+    expect(safety.disabledReason).toBe('eligible_but_silent');
   });
 });
 

@@ -1695,7 +1695,7 @@ describe('Phase 8.3 acceptance-time authority recheck', () => {
     candidate: { action: string; amount: number | null },
     baseline: { action: string; amount: number | null }
   ) => ({
-    version: 'horse-tournament-postflop-round1-v4',
+    version: 'horse-tournament-postflop-round2-v1',
     mode: 'candidate',
     changed: true,
     applied: true,

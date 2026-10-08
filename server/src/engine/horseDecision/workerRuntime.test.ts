@@ -3094,7 +3094,7 @@ describe('Phase 8.3 worker-owned qualified authority', () => {
     expect(h.results().map((r) => r.phase8Authority?.state)).toEqual(['unselected', 'unselected']);
     expect(h.ledgers[0].authority).toMatchObject({
       state: 'unselected',
-      continuationVersion: 'horse-tournament-postflop-round1-v4',
+      continuationVersion: 'horse-tournament-postflop-round2-v1',
       mainGeneration: null,
     });
   });

@@ -107,14 +107,44 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
          longer matched the seat, which it refuses. Until the settlement lands
          the top-up is an intent, exactly as mid hand, and it is applied after
          the settlement and before the next deal. */
-      return this.addDiamonds(
-        userId,
-        amount,
-        maxBuyIn,
-        midHand || this.hasSettlementInFlight(),
-        player,
-        opId
-      );
+      if (midHand || this.hasSettlementInFlight()) {
+        return this.addDiamonds(userId, amount, maxBuyIn, true, player, opId);
+      }
+      /* A DIAMOND SEAT CREDIT WAITS FOR THE HAND BEING PREPARED (2026-10-08).
+         The chip lane below has taken the seat boundary since 2026-09-28; this
+         branch returned above it and never did. dealHand() snapshots every
+         stack under that boundary and only then sets `handController`, so a
+         direct top-up that read "between hands" while the next hand was being
+         prepared raised table_seats.stack under a roster that still held the
+         old stack. fn_poker_diamond_settle_cash_hand then found the seat
+         disagreeing with the hand's stack_before and refused the whole hand
+         with diamond_hand_stale_seat. Production 2026-10-07: three Diamond
+         cash hands (04:35, 08:44, 15:24 UTC), each with exactly one horse
+         top-up committed 2-4 s after the previous hand's receipt, and each
+         table stopped dealing. The decision is taken only once the boundary
+         is owned: either it lands before the roster is snapshotted (and the
+         dealt stack includes it), or the hand has started and it is an
+         intent. */
+      let releaseSeatBoundary: () => void;
+      try {
+        releaseSeatBoundary = await this.acquireSeatBoundary();
+      } catch {
+        return { success: false, error: 'Diamond Top Up Failed' };
+      }
+      try {
+        const seated = this.seatedPlayers.find((p) => p.user_id === userId);
+        if (!seated) return { success: false, error: 'Player not seated' };
+        return await this.addDiamonds(
+          userId,
+          amount,
+          this.getMaxBuyIn(),
+          !!this.handController || this.hasSettlementInFlight(),
+          seated,
+          opId
+        );
+      } finally {
+        releaseSeatBoundary();
+      }
     }
 
     /* A SEAT CREDIT WAITS FOR THE HAND BEING PREPARED (2026-09-28).
@@ -443,43 +473,59 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     // the settler checks the seat's opening stack, and a top-up landing under it
     // would make that stack wrong. The next sweep lands it.
     if (this.handController || this.hasSettlementInFlight()) return;
-    const maxBuyIn = Math.floor(this.getMaxBuyIn());
-    for (const [requestId, intent] of [...this.diamondTopUpIntents]) {
-      const player = players.find((p) => p.user_id === intent.userId);
-      const stack = Number(player?.stack ?? 0);
-      if (!player || !Number.isSafeInteger(stack) || stack < 0) {
-        this.diamondTopUpIntents.delete(requestId);
-        continue;
-      }
-      const applied = Math.min(intent.amount, Math.max(0, maxBuyIn - stack));
-      if (applied < 1) {
-        this.diamondTopUpIntents.delete(requestId);
-        continue;
-      }
-      const { data, error } = await supabase.rpc('fn_poker_diamond_top_up', {
-        p_user_id: intent.userId,
-        p_table_id: this.tableId,
-        p_amount: applied,
-        p_expected_stack: stack,
-        p_request_id: requestId,
-      });
-      /* LIGHTNING (2026-09-25): the player's Diamonds are in a live Lightning
-         hand. Nothing was taken and the intent is still good, so it is KEPT
-         and landed on a later pass - the one refusal here that is a "not
-         now" rather than an intent that can no longer be honoured. */
-      if (error && isLightningHandInProgress(error)) continue;
-      this.diamondTopUpIntents.delete(requestId);
-      if (error) {
-        reportError(error, `ServerTableEngine.${this.tableId}.diamond_intent_failed`, {
-          userId: intent.userId,
-          amount: applied,
-          requestId,
+    /* And not while the next hand is being prepared (2026-10-08): the sweep
+       runs under the dealing loop's step budget, which stops waiting without
+       cancelling the RPC, so a landing still in flight could commit after
+       dealHand() snapshotted the roster. Holding the seat boundary makes hand
+       preparation wait for every landing, exactly as a direct top-up does. */
+    let releaseSeatBoundary: () => void;
+    try {
+      releaseSeatBoundary = await this.acquireSeatBoundary();
+    } catch {
+      return;
+    }
+    try {
+      if (this.handController || this.hasSettlementInFlight()) return;
+      const maxBuyIn = Math.floor(this.getMaxBuyIn());
+      for (const [requestId, intent] of [...this.diamondTopUpIntents]) {
+        const player = players.find((p) => p.user_id === intent.userId);
+        const stack = Number(player?.stack ?? 0);
+        if (!player || !Number.isSafeInteger(stack) || stack < 0) {
+          this.diamondTopUpIntents.delete(requestId);
+          continue;
+        }
+        const applied = Math.min(intent.amount, Math.max(0, maxBuyIn - stack));
+        if (applied < 1) {
+          this.diamondTopUpIntents.delete(requestId);
+          continue;
+        }
+        const { data, error } = await supabase.rpc('fn_poker_diamond_top_up', {
+          p_user_id: intent.userId,
+          p_table_id: this.tableId,
+          p_amount: applied,
+          p_expected_stack: stack,
+          p_request_id: requestId,
         });
-        continue;
+        /* LIGHTNING (2026-09-25): the player's Diamonds are in a live Lightning
+           hand. Nothing was taken and the intent is still good, so it is KEPT
+           and landed on a later pass - the one refusal here that is a "not
+           now" rather than an intent that can no longer be honoured. */
+        if (error && isLightningHandInProgress(error)) continue;
+        this.diamondTopUpIntents.delete(requestId);
+        if (error) {
+          reportError(error, `ServerTableEngine.${this.tableId}.diamond_intent_failed`, {
+            userId: intent.userId,
+            amount: applied,
+            requestId,
+          });
+          continue;
+        }
+        const written = Number((data as { stack?: number } | null)?.stack);
+        player.stack = Number.isSafeInteger(written) ? written : stack + applied;
+        this.broadcastCurrentState();
       }
-      const written = Number((data as { stack?: number } | null)?.stack);
-      player.stack = Number.isSafeInteger(written) ? written : stack + applied;
-      this.broadcastCurrentState();
+    } finally {
+      releaseSeatBoundary();
     }
   }
 

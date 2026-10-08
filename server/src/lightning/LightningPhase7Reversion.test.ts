@@ -50,7 +50,7 @@ const { LightningMetrics } = await import('./LightningMetrics.js');
 const { MetricsRegistry } = await import('../observability/Metrics.js');
 const { LightningRegistry, LIGHTNING_HAS_ENDED_REASON, LIGHTNING_SESSION_ENDED_REASON } =
   await import('./LightningRegistry.js');
-import type { LightningConfig } from './LightningConfig.js';
+import { LIGHTNING_AUTO_REBUY_DEFAULTS, type LightningConfig } from './LightningConfig.js';
 import type { LightningRpcClient } from './LightningRpc.js';
 
 const A = '0a0a0a0a-0000-4000-8000-00000000000a';
@@ -65,6 +65,7 @@ const form: LightningConfig = {
   keepaliveIntervalMs: 30_000,
   maxHandsPerPass: 8,
   dealWindowMs: 600_000,
+  autoRebuy: LIGHTNING_AUTO_REBUY_DEFAULTS,
 };
 
 const quiet = () => ({ log: vi.fn(), warn: vi.fn(), error: vi.fn() });

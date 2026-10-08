@@ -12,6 +12,7 @@ import {
   LIGHTNING_PASS_INTERVAL_MAX_MS,
   LIGHTNING_PASS_INTERVAL_MIN_MS,
   parseLightningConfig,
+  LIGHTNING_AUTO_REBUY_DEFAULTS,
   type LightningConfig,
 } from './LightningConfig.js';
 import {
@@ -52,6 +53,7 @@ const shadow: LightningConfig = {
   keepaliveIntervalMs: 30_000,
   maxHandsPerPass: 32,
   dealWindowMs: 600_000,
+  autoRebuy: LIGHTNING_AUTO_REBUY_DEFAULTS,
 };
 
 function matchReply() {
@@ -120,6 +122,7 @@ describe('LightningConfig', () => {
       keepaliveIntervalMs: 45_000,
       maxHandsPerPass: 32,
       dealWindowMs: 600_000,
+      autoRebuy: LIGHTNING_AUTO_REBUY_DEFAULTS,
     });
     expect(parseLightningConfig({ worker_mode: 'form', pass_interval_ms: 0 }).passIntervalMs).toBe(
       LIGHTNING_PASS_INTERVAL_MIN_MS

@@ -1,0 +1,71 @@
+rule_files:
+  - ../../infra/monitoring/slo-rules.yml
+  - ../../infra/monitoring/slo-alerts.yml
+evaluation_interval: 1m
+tests:
+  # Production 2026-10-07/08: SLOEngineAvailability fired at :16 and resolved
+  # at :26 after exactly the breaks that replaced the engine late in the
+  # countdown (ready_for_restart at :56:21 to :56:47 on 02:55, 07:55, 12:55,
+  # 14:55, 16:55 and 23:55). The engine is down for its cutover INSIDE the
+  # break; the 6m break guard expired at :06, the 10m `for` ran out at :16,
+  # and the 30m ratio still held the in-break failed scrapes until :26.
+  # Minute 0 here is :30 of the previous hour; the break is minutes 25-30
+  # (:55-:00), the cutover takes the engine down for minutes 27-28 and the
+  # old engine's break flag is absent while it is down.
+  - name: A cutover inside the scheduled break is not an availability failure
+    interval: 1m
+    input_series:
+      - series: 'up{job="engine_game_server",instance="host.docker.internal:8080"}'
+        values: '1x26 0 0 1x61'
+      - series: 'poker_maintenance_break_active{job="engine_game_server",instance="host.docker.internal:8080"}'
+        values: '0x24 1 1 1 _ _ 1 1 0x59'
+    alert_rule_test:
+      - eval_time: 46m
+        alertname: SLOEngineAvailability
+        exp_alerts: []
+      - eval_time: 52m
+        alertname: SLOEngineAvailability
+        exp_alerts: []
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="SLOEngineAvailability"}'
+        eval_time: 40m
+        exp_samples: []
+      - expr: sp:engine_availability:ratio30m
+        eval_time: 46m
+        exp_samples:
+          - labels: 'sp:engine_availability:ratio30m{instance="host.docker.internal:8080",job="engine_game_server"}'
+            value: 1
+  - name: The same outage outside a break still fires
+    interval: 1m
+    input_series:
+      - series: 'up{job="engine_game_server",instance="host.docker.internal:8080"}'
+        values: '1x26 0 0 1x61'
+      - series: 'poker_maintenance_break_active{job="engine_game_server",instance="host.docker.internal:8080"}'
+        values: '0x26 _ _ 0x61'
+    alert_rule_test:
+      - eval_time: 46m
+        alertname: SLOEngineAvailability
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: slo
+              objective: availability
+              instance: host.docker.internal:8080
+              job: engine_game_server
+            exp_annotations:
+              summary: Engine availability 93.39% over 30m, below the 99% objective
+              description: Scrapes of job=engine_game_server are failing outside a maintenance break.
+              runbook: docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md
+  - name: An engine that stays down after the break still fires
+    interval: 1m
+    input_series:
+      - series: 'up{job="engine_game_server",instance="host.docker.internal:8080"}'
+        values: '1x26 0x63'
+      - series: 'poker_maintenance_break_active{job="engine_game_server",instance="host.docker.internal:8080"}'
+        values: '0x24 1 1 1 _x62'
+    promql_expr_test:
+      - expr: 'count(ALERTS{alertname="SLOEngineAvailability",alertstate="firing"})'
+        eval_time: 50m
+        exp_samples:
+          - labels: '{}'
+            value: 1

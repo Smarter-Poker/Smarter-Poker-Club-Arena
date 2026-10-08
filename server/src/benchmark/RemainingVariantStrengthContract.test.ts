@@ -195,10 +195,10 @@ describe('P12.2 Phase 12 strength contract object', () => {
 
   it('leaves the Phase 10 and Phase 11 contracts and their pinned digests untouched', () => {
     expect(plo4StrengthContractDigest()).toBe(
-      'ebdbdbb48336c0425df735fa073a4a28ef4884c199a69006e27909a6bc2b6384'
+      'ffe57964d616e22a28421ce5212f068545d242fa98ac136c337f546314440cf1'
     );
     expect(omahaVariantStrengthContractDigest()).toBe(
-      '0e58a56ab8d123e32d474f23f154e4026a9a2f1a6119b06e449b2a3039c10326'
+      '586e4706bd30fde47c42d89940d01112ecfdffd92d3363f0bfdff1fba38dd72b'
     );
   });
 

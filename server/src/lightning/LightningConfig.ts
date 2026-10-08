@@ -41,6 +41,39 @@ export interface LightningConfig {
   maxHandsPerPass: number;
   /** The deal window a host asks begin_dealing for (`deal_window_ms`). */
   dealWindowMs: number;
+  /**
+   * LIGHTNING PHASE 10: the auto-rebuy keys, parsed beside the worker's own.
+   * The database validates and moves every chip (fn_lightning_auto_rebuy);
+   * the engine reads only enough to know WHO to ask at a hand boundary.
+   */
+  autoRebuy: LightningAutoRebuyConfig;
+}
+
+/** How the auto-rebuy trigger is expressed. Anything else fails closed. */
+export type LightningAutoRebuyTrigger = 'zero' | 'below_bb' | 'below_pct';
+
+/** `auto_rebuy_target`: the stack a rebuy refills to (migration 20261008111425). */
+export type LightningAutoRebuyTarget = 'initial' | 'max';
+
+export interface LightningAutoRebuyConfig {
+  /** `auto_rebuy_enabled`. Off (the default) asks the database nothing. */
+  enabled: boolean;
+  /**
+   * `auto_rebuy_trigger`: 'zero' (the stack is gone), 'below_bb' (under
+   * threshold_bb big blinds) or 'below_pct' (under threshold_pct percent of
+   * the target buy-in). Anything unreadable is 'zero', the narrowest.
+   */
+  trigger: LightningAutoRebuyTrigger;
+  /** `auto_rebuy_threshold_bb`: the below_bb trigger, in big blinds. */
+  thresholdBb: number | null;
+  /** `auto_rebuy_threshold_pct`: the below_pct trigger, percent of the target. */
+  thresholdPct: number | null;
+  /** `auto_rebuy_target`: refill to the initial buy-in, or to the table maximum. */
+  target: LightningAutoRebuyTarget;
+  /** `auto_rebuy_max_count`: the database's per-session rebuy count cap. */
+  maxCount: number | null;
+  /** `auto_rebuy_session_cap`: the database's per-session chip cap (0 = uncapped). */
+  sessionCap: number | null;
 }
 
 /**
@@ -85,6 +118,21 @@ export const LIGHTNING_FAILURE_LOG_INTERVAL_MS = 60_000;
 /** Longest a stop() waits for an in-flight pass before giving up on it. */
 export const LIGHTNING_STOP_DRAIN_MS = 15_000;
 
+/** Auto-rebuy bounds (the migration's own clamps, mirrored). */
+export const LIGHTNING_AUTO_REBUY_THRESHOLD_BB_MAX = 100;
+export const LIGHTNING_AUTO_REBUY_SESSION_CAP_MAX = 1_000_000;
+
+/** Auto-rebuy when nothing (or nonsense) is configured: off, asking nothing. */
+export const LIGHTNING_AUTO_REBUY_DEFAULTS: Readonly<LightningAutoRebuyConfig> = Object.freeze({
+  enabled: false,
+  trigger: 'zero',
+  thresholdBb: null,
+  thresholdPct: null,
+  target: 'initial',
+  maxCount: null,
+  sessionCap: null,
+});
+
 /** The configuration a Cluster gets when nothing can be read: it does nothing. */
 export const LIGHTNING_CONFIG_DEFAULTS: Readonly<LightningConfig> = Object.freeze({
   matcherVersion: null,
@@ -93,6 +141,7 @@ export const LIGHTNING_CONFIG_DEFAULTS: Readonly<LightningConfig> = Object.freez
   keepaliveIntervalMs: LIGHTNING_KEEPALIVE_DEFAULT_MS,
   maxHandsPerPass: LIGHTNING_MAX_HANDS_DEFAULT,
   dealWindowMs: LIGHTNING_DEAL_WINDOW_DEFAULT_MS,
+  autoRebuy: LIGHTNING_AUTO_REBUY_DEFAULTS,
 });
 
 function readInteger(raw: unknown, fallback: number, min: number, max: number): number {
@@ -102,6 +151,60 @@ function readInteger(raw: unknown, fallback: number, min: number, max: number): 
   else return fallback;
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, Math.round(n)));
+}
+
+/** A positive bounded number, or null (never a guess): the auto-rebuy keys. */
+function readPositive(raw: unknown, max: number): number | null {
+  let n: number;
+  if (typeof raw === 'number') n = raw;
+  else if (typeof raw === 'string' && raw.trim() !== '') n = Number(raw);
+  else return null;
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.min(max, n);
+}
+
+/**
+ * Parse the auto-rebuy keys out of `fn_lightning_config`'s jsonb. Never
+ * throws; anything unreadable is the default, and the default asks nothing.
+ */
+export function parseLightningAutoRebuyConfig(raw: unknown): LightningAutoRebuyConfig {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+    return { ...LIGHTNING_AUTO_REBUY_DEFAULTS };
+  const row = raw as Record<string, unknown>;
+  const trigger =
+    typeof row.auto_rebuy_trigger === 'string' &&
+    ['zero', 'below_bb', 'below_pct'].includes(row.auto_rebuy_trigger.trim().toLowerCase())
+      ? (row.auto_rebuy_trigger.trim().toLowerCase() as LightningAutoRebuyTrigger)
+      : 'zero';
+  const target =
+    typeof row.auto_rebuy_target === 'string' &&
+    row.auto_rebuy_target.trim().toLowerCase() === 'max'
+      ? ('max' as const)
+      : ('initial' as const);
+  return {
+    enabled: row.auto_rebuy_enabled === true,
+    trigger,
+    thresholdBb: readPositive(row.auto_rebuy_threshold_bb, LIGHTNING_AUTO_REBUY_THRESHOLD_BB_MAX),
+    thresholdPct: readPositive(row.auto_rebuy_threshold_pct, 99),
+    target,
+    maxCount: readPositive(row.auto_rebuy_max_count, 100),
+    sessionCap: readPositive(row.auto_rebuy_session_cap, LIGHTNING_AUTO_REBUY_SESSION_CAP_MAX),
+  };
+}
+
+export function sameLightningAutoRebuyConfig(
+  a: LightningAutoRebuyConfig,
+  b: LightningAutoRebuyConfig
+): boolean {
+  return (
+    a.enabled === b.enabled &&
+    a.trigger === b.trigger &&
+    a.thresholdBb === b.thresholdBb &&
+    a.thresholdPct === b.thresholdPct &&
+    a.target === b.target &&
+    a.maxCount === b.maxCount &&
+    a.sessionCap === b.sessionCap
+  );
 }
 
 function readMode(raw: unknown): LightningWorkerMode {
@@ -151,6 +254,7 @@ export function parseLightningConfig(raw: unknown): LightningConfig {
       LIGHTNING_DEAL_WINDOW_MIN_MS,
       LIGHTNING_DEAL_WINDOW_MAX_MS
     ),
+    autoRebuy: parseLightningAutoRebuyConfig(raw),
   };
 }
 
@@ -162,6 +266,7 @@ export function sameLightningConfig(a: LightningConfig, b: LightningConfig): boo
     a.passIntervalMs === b.passIntervalMs &&
     a.keepaliveIntervalMs === b.keepaliveIntervalMs &&
     a.maxHandsPerPass === b.maxHandsPerPass &&
-    a.dealWindowMs === b.dealWindowMs
+    a.dealWindowMs === b.dealWindowMs &&
+    sameLightningAutoRebuyConfig(a.autoRebuy, b.autoRebuy)
   );
 }

@@ -12,7 +12,9 @@ import { runPlo4StrengthShard } from './Plo4PolicyLeague.js';
  * PLO6 14%, PLO8 6% of changed proposals on a development shard). Each policy
  * now receives the owner's legalizer and records and executes its proposal in
  * that exact legal form: over real league hands the guard never fires and
- * changed proposals are still applied.
+ * changed proposals are still applied. Round 3 (2026-10-08): the packs
+ * deviate from the reference only heads-up, so the heads-up profile is where
+ * their proposals are applied.
  */
 describe('Phase 10 and 11 candidates are in the legalizer form', () => {
   afterEach(() => vi.restoreAllMocks());
@@ -42,12 +44,10 @@ describe('Phase 10 and 11 candidates are in the legalizer form', () => {
     async (variant) => {
       const seen = tally('omahaVariantPolicy');
       await runOmahaVariantStrengthShard(variant, {
-        profileId: `p11c-${variant}-6max-100bb`,
+        profileId: `p11c-${variant}-6max-2dealt-100bb`,
         seed: 11101101,
         shard: 0,
         mode: 'development',
-        // Enough hands that the unfixed policies are refused (measured: PLO6
-        // 15 refusals in 400 pairs on this profile and seed).
         pairs: 240,
       });
       expect(seen.applied).toBeGreaterThan(0);
@@ -59,11 +59,11 @@ describe('Phase 10 and 11 candidates are in the legalizer form', () => {
   it('plo4: no candidate is refused as illegal_candidate', async () => {
     const seen = tally('plo4Policy');
     await runPlo4StrengthShard({
-      profileId: 'p10c-6max-100bb',
+      profileId: 'p10c-6max-2dealt-100bb',
       seed: 10101101,
       shard: 0,
       mode: 'development',
-      pairs: 60,
+      pairs: 120,
     });
     expect(seen.applied).toBeGreaterThan(0);
     expect(seen.illegal).toBe(0);

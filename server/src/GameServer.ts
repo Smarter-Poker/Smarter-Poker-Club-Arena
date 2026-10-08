@@ -89,6 +89,7 @@ import { LightningSupervisor } from './lightning/LightningSupervisor.js';
 import type { PresenceTableReport } from './lightning/LightningPresence.js';
 import { LightningHosting, LightningRegistry } from './lightning/LightningRegistry.js';
 import { LightningPresenceReporter } from './lightning/LightningPresenceReporter.js';
+import { LightningAutoRebuyExecutor } from './lightning/LightningAutoRebuy.js';
 import {
   LIGHTNING_PRESENCE_RECONCILE_DELAY_MS,
   reconcileLightningPresence,
@@ -3388,6 +3389,9 @@ export class GameServer {
     backend: createSupabaseLightningHandBackend(),
     hub: tableStateHub,
     leaseFor: (hostTableId) => this.lightningLeaseFor(hostTableId),
+    // Lightning Phase 10: auto-rebuy is asked for between hands only, at the
+    // settled boundary; the database validates and moves every chip.
+    autoRebuy: new LightningAutoRebuyExecutor(),
   });
   private lightningSupervisor = new LightningSupervisor({
     presenceSource: () => this.lightningPresenceReports(),

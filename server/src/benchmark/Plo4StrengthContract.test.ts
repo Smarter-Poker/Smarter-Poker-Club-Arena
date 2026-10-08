@@ -107,10 +107,12 @@ describe('P10.2 PLO4 strength contract object', () => {
   });
 
   it('P10 audit F9: the contract digest is pinned, so a silent contract edit fails CI', () => {
-    // The digest the 2026-10-03 strength evidence and its qualification record.
-    // A deliberate contract change must update this pin and say why.
+    // A deliberate contract change must update this pin and say why. Round 3
+    // (2026-10-08) moved it only through the pack version it reads
+    // (plo4-policy-round3-v1); every term of the locked matrix is unchanged.
+    // The 2026-10-03 evidence recorded ebdbdbb4...6384 and stays refused.
     expect(plo4StrengthContractDigest()).toBe(
-      'ebdbdbb48336c0425df735fa073a4a28ef4884c199a69006e27909a6bc2b6384'
+      'ffe57964d616e22a28421ce5212f068545d242fa98ac136c337f546314440cf1'
     );
   });
 

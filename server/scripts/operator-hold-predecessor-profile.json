@@ -1,7 +1,7 @@
 {
   "kind": "operator_hold_predecessor_v1",
-  "releaseSha": "6b1af5c5fb11b158c3c8871b93360df566ad7a49",
-  "imageId": "sha256:3826023ce250a6844739a674fd17c92ce662ba654374b24b3df6fe52514e2811",
+  "releaseSha": "a29a591da2efa8acb1a67cbb93f5e67af11cfc1f",
+  "imageId": "sha256:6406071dcb436115058f5a22cbe747eca68056ed85652c7416de30823699559b",
   "runtimeNode": "v22.23.2",
   "compiled": [
     {
@@ -77,8 +77,8 @@
   ],
   "provenance": {
     "schema": "operator-hold-runtime-provenance/v1",
-    "observedAt": "2026-10-07T17:08:24.984299+00:00",
-    "sourceSha256": "64fd2c639fc24ed02898743d0e43225e91f953994aa48bbb94157da53faa7243",
-    "scope": "exact14_compiled_and_source_parity;not_boot_or_handoff_qualification"
+    "observedAt": "2026-10-08T04:25:00.917753+00:00",
+    "sourceSha256": "39a400a7763eeb3b7de4d01fe6bc3a4f17771a0364732de39a7f446d0f1daa11",
+    "scope": "exact14_current_a29_compiled_and_source_parity;not_boot_or_handoff_qualification"
   }
 }

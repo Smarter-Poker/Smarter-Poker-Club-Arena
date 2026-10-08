@@ -97,7 +97,7 @@ code=source.split("<<'OPERATOR_BOOT_PREFLIGHT'\\n",1)[1].split('\\nOPERATOR_BOOT
 with tempfile.TemporaryDirectory(dir=sys.argv[2]) as tmp:
  root=pathlib.Path(tmp)/'operator-hold';root.mkdir(mode=0o700)
  control=pathlib.Path(tmp)/'control';control.mkdir()
- sha='6b1af5c5fb11b158c3c8871b93360df566ad7a49'
+ sha='a29a591da2efa8acb1a67cbb93f5e67af11cfc1f'
  paths=['GameServer.js','engine/ServerTableEngineBase.js','engine/ServerTableEngineSeating.js','engine/ServerTableEngineDealing.js','handlers/admin.js','tournament/TournamentManagerBase.js','services/tableLease.js','services/supabase/client.js','releaseIdentity.js','http/createEngineHttpServer.js','engine/ServerTableEngine.js','maintenance/MaintenanceBreak.js','maintenance/freezeState.js','services/supabase/dataActorContext.js']
  p={'kind':'operator_hold_predecessor_v1','releaseSha':sha,'imageId':'image','runtimeNode':'v22.23.2','compiled':[{'path':'/app/dist/'+x,'sha256':'a'*64} for x in paths]}
  h={'kind':'operator_hold_handoff_v1','handoffId':'original','sourceRelease':sha,'sourceInstance':'1-a'}

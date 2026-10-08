@@ -65,6 +65,8 @@ describe('original operator hold release admission', () => {
 
 function predecessorAdmission(source: string, capability: string) {
   const shell = readFileSync(`${root}/server/scripts/engine-release-transaction.sh`, 'utf8');
+  const checkpointSha = shell.match(/^CHECKPOINT_OPERATOR_SHA=([0-9a-f]{40})$/m)?.[1];
+  if (!checkpointSha) throw new Error('Maintained checkpoint identity is unreadable');
   const block = shell.slice(
     shell.indexOf('OPERATOR_PREDECESSOR_SHA='),
     shell.indexOf('# The durable unit, not the SSH session')
@@ -74,7 +76,7 @@ function predecessorAdmission(source: string, capability: string) {
     [
       '-c',
       `set -euo pipefail
-CONTROL_DIR="$1/server/scripts"; CHECKPOINT_OPERATOR_SHA=6b1af5c5fb11b158c3c8871b93360df566ad7a49; RELEASE_SEAL=seal
+CONTROL_DIR="$1/server/scripts"; CHECKPOINT_OPERATOR_SHA=${checkpointSha}; RELEASE_SEAL=seal
 source="$2"; capability="$3"
 die(){ echo "$*" >&2; exit 1; }
 timeout(){
@@ -101,8 +103,13 @@ echo ADMITTED
 describe('operator authority predecessor compatibility admission', () => {
   it('admits only the specifically qualified pre-store predecessor', () => {
     expect(
-      predecessorAdmission('6b1af5c5fb11b158c3c8871b93360df566ad7a49', '<no value>').status
+      predecessorAdmission('a29a591da2efa8acb1a67cbb93f5e67af11cfc1f', '<no value>').status
     ).toBe(0);
+  });
+  it('refuses the superseded pre-store identity instead of broadening the profile', () => {
+    expect(
+      predecessorAdmission('6b1af5c5fb11b158c3c8871b93360df566ad7a49', '<no value>').status
+    ).not.toBe(0);
   });
   it('refuses an unknown later pre-store publication before build or capture', () => {
     expect(predecessorAdmission('a'.repeat(40), '<no value>').status).not.toBe(0);

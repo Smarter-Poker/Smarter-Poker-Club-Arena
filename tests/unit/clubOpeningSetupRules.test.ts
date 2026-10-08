@@ -122,7 +122,32 @@ describe('opening leaderboard funding gate, mirrored from the live SQL', () => {
     );
   });
 
-  it('reports the Promo Wallet every later round draws on, and ignores junk', () => {
+  it('reports Promo capacity including the new leaderboard allocation, and ignores disabled allocations', () => {
+    expect(
+      openingLeaderboardFundingCapacity({
+        promoEnabled: true,
+        promoBudget: 500,
+        leaderboardRewardsEnabled: true,
+        leaderboardPrizeBudget: 1000,
+        existingPromoBalance: 300,
+      })
+    ).toBe(1800);
+    expect(
+      openingLeaderboardFundingCapacity({
+        promoEnabled: false,
+        promoBudget: 500,
+        leaderboardRewardsEnabled: true,
+        leaderboardPrizeBudget: 1000,
+      })
+    ).toBe(1000);
+    expect(
+      openingLeaderboardFundingCapacity({
+        promoEnabled: false,
+        promoBudget: 500,
+        leaderboardRewardsEnabled: false,
+        leaderboardPrizeBudget: 1000,
+      })
+    ).toBe(0);
     expect(openingLeaderboardFundingCapacity({ promoEnabled: false, promoBudget: 5000 })).toBe(0);
     expect(openingLeaderboardFundingCapacity({ promoEnabled: true, promoBudget: 500 })).toBe(500);
     expect(
@@ -213,7 +238,7 @@ describe('opening setup request key and refusals', () => {
     spy.mockRestore();
   });
 
-  it('keeps the RPC payload contract: eighteen named arguments, disabled seeds zeroed', async () => {
+  it('keeps the RPC payload contract: explicit overlay false, disabled allocations zeroed', async () => {
     mocks.rpc.mockResolvedValue({
       data: { success: true, already_completed: false, club_bank_after: 1, operation_id: 'k' },
       error: null,
@@ -238,16 +263,17 @@ describe('opening setup request key and refusals', () => {
       p_leaderboard_rewards_enabled: true,
       p_leaderboard_metric: 'profit',
       p_leaderboard_prize_budget: 500,
+      p_leaderboard_overlay_enabled: false,
     });
   });
 
-  it('adds the Club Bank overlay as a nineteenth argument only when the owner allowed it', async () => {
+  it('never requests an overlay even if a stale caller supplies true', async () => {
     mocks.rpc.mockResolvedValue({
       data: { success: true, already_completed: false, club_bank_after: 1, operation_id: 'k' },
       error: null,
     });
     await clubOpeningSetupService.complete({ ...input, leaderboardOverlayEnabled: true }, 'k');
-    expect(mocks.rpc.mock.calls[0][1]).toMatchObject({ p_leaderboard_overlay_enabled: true });
+    expect(mocks.rpc.mock.calls[0][1]).toMatchObject({ p_leaderboard_overlay_enabled: false });
     expect(Object.keys(mocks.rpc.mock.calls[0][1])).toHaveLength(19);
 
     // A Display Only leaderboard never carries it, whatever the answer was.
@@ -255,11 +281,24 @@ describe('opening setup request key and refusals', () => {
       { ...input, leaderboardRewardsEnabled: false, leaderboardOverlayEnabled: true },
       'k'
     );
-    expect(mocks.rpc.mock.calls[1][1]).not.toHaveProperty('p_leaderboard_overlay_enabled');
+    expect(mocks.rpc.mock.calls[1][1]).toHaveProperty('p_leaderboard_overlay_enabled', false);
     // "Leave Unpaid Until Funded" is today's payload: the server's default is OFF.
     await clubOpeningSetupService.complete(input, 'k');
-    expect(mocks.rpc.mock.calls[2][1]).not.toHaveProperty('p_leaderboard_overlay_enabled');
-    expect(Object.keys(mocks.rpc.mock.calls[2][1])).toHaveLength(18);
+    expect(mocks.rpc.mock.calls[2][1]).toHaveProperty('p_leaderboard_overlay_enabled', false);
+    expect(Object.keys(mocks.rpc.mock.calls[2][1])).toHaveLength(19);
+  });
+
+  it('preserves an actual historical overlay receipt instead of rewriting its recorded policy', async () => {
+    const receipt = {
+      success: true,
+      already_completed: true,
+      club_bank_after: 1,
+      operation_id: 'earlier',
+      leaderboard_overlay_enabled: true,
+    };
+    mocks.rpc.mockResolvedValue({ data: receipt, error: null });
+    await expect(clubOpeningSetupService.complete(input, 'new')).resolves.toEqual(receipt);
+    expect(mocks.rpc.mock.calls[0][1]).toHaveProperty('p_leaderboard_overlay_enabled', false);
   });
 
   it('refuses to call the server without a key', async () => {
@@ -390,17 +429,16 @@ describe('the review copy describes the live settlement SQL', () => {
     expect(openingSql).toContain('promo_balance = COALESCE(promo_balance, 0) + v_promo_budget,');
   });
 
-  it('prints that behavior for either answer and never promises what the SQL does not do', () => {
+  it('prints the prospective Promo-only rule without changing the historical migration assertions above', () => {
     // JSX copy wraps across source lines; compare it with whitespace folded.
     const copy = wizardSource.replace(/\s+/g, ' ');
     expect(copy).toContain(
-      'The Weekly Prize Pool. Round One Is Seeded From The Club Bank When Setup Completes, Held Outside The Promo Wallet'
+      'The Weekly Prize Pool. Setup Transfers This Allocation From The Club Bank Into The Promo Wallet Before Publishing The Prize Plan'
     );
-    expect(copy).toContain('That Round Stays Unpaid And Is Retried Automatically.');
-    expect(copy).toContain('The Club Bank Never Pays A Round Of This Leaderboard.');
-    expect(copy).toContain(
-      'The Club Bank Pays Only That Shortfall, Recorded As A Separate Overlay.'
-    );
+    expect(copy).toContain('Every Round Is Paid Only From The Promo Wallet.');
+    expect(copy).toContain('Unpaid And Is Retried Automatically After Funding.');
+    expect(copy).toContain('The Club Bank Never Covers A Leaderboard Shortfall.');
+    expect(copy).not.toContain('Recorded As A Separate Overlay.');
     expect(copy).not.toContain('No Round Is Ever Paid From The Club Bank');
     expect(copy).not.toContain('Covers Any Overlay');
     expect(copy).not.toContain('Reserved In The Promo Wallet');

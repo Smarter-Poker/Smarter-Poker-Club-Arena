@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { ownerStatements, validateRestoreScript } from './leaderboard-isolation-restore-script.mjs';
+import { partitionPlainSchema } from './leaderboard-plain-schema-partition.mjs';
 // The existing directly invoked preflight lane also runs startup-parity contracts.
 import './leaderboard-isolation-startup-profile.test.mjs';
 import './leaderboard-isolation-catalog-diagnostic.test.mjs';
@@ -106,7 +107,7 @@ source_client(){
   local client="$2"
   if [[ "$PGDATABASE" == "$DATABASE_URL" ]]; then endpoint=primary; else endpoint=replica; fi
   printf '%s|%s\\n' "$client" "$endpoint" >>"$scratch/routes"
-  if [[ "$client" == pg_dump ]]; then printf dumped >"$scratch/dumped"; return; fi
+  if [[ "$client" == pg_dump ]]; then printf dumped >"$scratch/dumped"; printf '%s' "$PLAIN_DUMP"; return; fi
   if [[ "$endpoint" == primary ]]; then printf '%s' "$FENCE"; return; fi
   guards=$((guards+1))
   if [[ "$guards" == 1 ]]; then printf '%s' "$BEFORE"; else printf '%s' "$AFTER"; fi
@@ -136,6 +137,11 @@ ${block}
           startup_helper: fileURLToPath(
             new URL('./leaderboard-isolation-startup-profile.mjs', import.meta.url)
           ),
+          plain_schema_helper: fileURLToPath(
+            new URL('./leaderboard-plain-schema-partition.mjs', import.meta.url)
+          ),
+          PLAIN_DUMP:
+            'SET standard_conforming_strings = on;\nCREATE DATABASE postgres WITH TEMPLATE = template0;\nALTER DATABASE postgres OWNER TO owner;\n\\connect postgres\n',
           SCENARIO: scenario,
           FENCE: JSON.stringify(fence),
           BEFORE: JSON.stringify(before),
@@ -283,6 +289,18 @@ test('private source markers and exact PG17 phases disclose only validated statu
       'inner-status=unknown;dump-stage=unknown',
     ],
     ['LB_SOURCE_CLIENT_START:private_secret\n', 'inner-status=unknown;dump-stage=unknown'],
+    [
+      'LB_SOURCE_CLIENT_START:pg_dump\npg_dump: reading dependency data\npg_dump: saving database definition\nLB_SOURCE_CLIENT_COMPLETE:pg_dump:1\n',
+      'inner-status=1;dump-stage=database-definition',
+    ],
+    [
+      'LB_SOURCE_CLIENT_START:pg_dump\npg_dump: saving database definition private_secret\n',
+      'inner-status=unknown;dump-stage=unknown',
+    ],
+    [
+      'LB_SOURCE_CLIENT_START:psql\npg_dump: saving database definition\nLB_SOURCE_CLIENT_COMPLETE:psql:1\n',
+      'inner-status=1;dump-stage=unknown',
+    ],
   ]) {
     const result = spawnSync('bash', [shell, '--classify-source-progress'], {
       input,
@@ -293,27 +311,22 @@ test('private source markers and exact PG17 phases disclose only validated statu
     assert.equal(result.stderr, '');
   }
 });
-test('remaining archive renderer selects stdout without connecting or owning transactions', () => {
-  const command = source.match(
-    /docker exec -i "\$container" pg_restore ([^\n]+)\n[^\n]*remaining.sql/
-  )?.[1];
-  assert.ok(command);
-  assert.match(command, /--file=-/);
-  assert.doesNotMatch(command, /--dbname|--create|--single-transaction|--transaction-size/);
-  const before = spawnSync('pg_restore', ['--schema-only'], {
-    input: 'invalid synthetic archive',
-    encoding: 'utf8',
-  });
-  assert.equal(before.error, undefined);
-  assert.notEqual(before.status, 0);
-  assert.match(before.stderr, /one of -d\/--dbname and -f\/--file must be specified/);
-  const after = spawnSync('pg_restore', ['--file=-', '--schema-only'], {
-    input: 'invalid synthetic archive',
-    encoding: 'utf8',
-  });
-  assert.notEqual(after.status, 0);
-  assert.doesNotMatch(after.stderr, /one of -d\/--dbname and -f\/--file must be specified/);
-  assert.match(after.stderr, /input file does not appear to be a valid archive/);
+test('plain partitions are validated privately before destination creation without connection escape', () => {
+  const partition = source.indexOf('node "$plain_schema_helper"');
+  assert.ok(partition > 0 && partition < source.indexOf('docker network create --internal'));
+  assert.match(source, /chmod 600 "\$scratch\/schema.sql"/);
+  assert.match(source, /native plain schema partition refused/);
+  assert.doesNotMatch(source, /docker[^\n]*pg_restore|archive\.list|remaining\.list/);
+  assert.throws(() => partitionPlainSchema('invalid synthetic dump'));
+  const parts = partitionPlainSchema(
+    'SET standard_conforming_strings = on;\nCREATE DATABASE postgres WITH TEMPLATE = template0;\n\\connect postgres\nCREATE TABLE public.example(id integer);\n'
+  );
+  assert.match(parts.database, /CREATE DATABASE postgres/);
+  assert.match(parts.remaining, /CREATE TABLE public.example/);
+  for (const value of Object.values(parts)) {
+    assert.doesNotMatch(value, /^\\connect/m);
+    assert.doesNotThrow(() => validateRestoreScript(value));
+  }
 });
 test('atomic archive validation preserves quoted routine bodies and refuses transaction or connection escape', () => {
   assert.doesNotThrow(() =>
@@ -419,7 +432,8 @@ test('initdb public namespace is retained for extension installation', () => {
   const command = source.match(/-c '([^']+)' >"\$scratch\/empty-schema.log"/)?.[1];
   assert.equal(command, 'DROP EXTENSION plpgsql;');
   assert.doesNotMatch(source, /DROP SCHEMA public/);
-  assert.match(source, /--schema-only --exit-on-error --use-list=\/tmp\/remaining.list/);
+  assert.match(source, /"\$scratch\/remaining.sql"/);
+  assert.match(source, /atomic restore script validation failed/);
   assert.match(source, /isolated catalog differs from current source/);
   // Execute the actual extracted preparation SQL through a finite stub model:
   // it must remove default plpgsql but preserve the namespace pg_dump omits.
@@ -643,7 +657,7 @@ test('source safeguard check executes without credentials or production access',
 });
 
 test('source export is schema-only and password-free, with drift and isolation refusal', () => {
-  assert.match(source, /--schema-only --create --format=custom --no-password --no-subscriptions/);
+  assert.match(source, /--schema-only --create --format=plain --no-password --no-subscriptions/);
   assert.match(source, /--database="\$PGDATABASE"/);
   assert.match(source, /source_client 600 pg_dump/);
   assert.match(
@@ -659,29 +673,22 @@ test('source export is schema-only and password-free, with drift and isolation r
     source.indexOf("-c 'DROP DATABASE postgres;'") <
       source.indexOf('shared_preload_libraries=pg_cron,pg_stat_statements')
   );
-  assert.match(source, /--schema-only --exit-on-error --use-list/);
-  assert.match(source, /--list --create/);
-  const databaseSelection = 'awk \'$4 == "DATABASE" || ($4 == "ACL" && $6 == "DATABASE") {print}\'';
-  const remainingSelection =
-    'awk \'$4 != "DATABASE" && !($4 == "ACL" && $6 == "DATABASE") && $4 != "SCHEMA" && $4 != "EXTENSION" {print}\'';
-  assert.ok(source.includes(databaseSelection));
-  assert.ok(source.includes(remainingSelection));
-  const archive =
-    '3830; 1262 16388 DATABASE - postgres postgres\n3831; 0 0 ACL - DATABASE postgres postgres\n6; 2615 16390 SCHEMA - auth supabase_admin\n3832; 0 0 ACL - SCHEMA auth supabase_admin\n218; 1259 16391 TABLE auth sample supabase_admin\n';
-  const selected = spawnSync('bash', ['-c', databaseSelection], {
-    input: archive,
-    encoding: 'utf8',
-  });
-  assert.equal(selected.status, 0);
-  assert.equal(selected.stdout, archive.split('\n').slice(0, 2).join('\n') + '\n');
-  const remaining = spawnSync('bash', ['-c', remainingSelection], {
-    input: archive,
-    encoding: 'utf8',
-  });
-  assert.equal(remaining.status, 0);
-  assert.doesNotMatch(remaining.stdout, /DATABASE/);
-  assert.match(remaining.stdout, /ACL - SCHEMA auth/);
-  assert.match(remaining.stdout, /TABLE auth sample/);
+  assert.match(
+    source,
+    /node "\$plain_schema_helper" "\$scratch\/schema.sql" "\$scratch\/database.sql" "\$scratch\/schemas.sql"/
+  );
+  assert.match(source, /--dbname=template1[\s\S]*<"\$scratch\/database.sql"/);
+  assert.match(source, /--single-transaction --file=-[\s\S]*<"\$scratch\/schemas.sql"/);
+  const selected = partitionPlainSchema(
+    "SET standard_conforming_strings = on;\nCREATE DATABASE postgres WITH TEMPLATE = template0;\nGRANT CONNECT ON DATABASE postgres TO reader;\n\\connect postgres\nCREATE SCHEMA auth;\nALTER SCHEMA auth OWNER TO owner;\nCREATE EXTENSION IF NOT EXISTS hstore WITH SCHEMA auth;\nGRANT USAGE ON SCHEMA auth TO reader;\nCREATE TABLE auth.sample(id integer);\nCOMMENT ON EXTENSION hstore IS 'retained';\n"
+  );
+  assert.match(selected.database, /GRANT CONNECT ON DATABASE postgres TO reader/);
+  assert.match(selected.schemas, /ALTER SCHEMA auth OWNER TO owner/);
+  assert.match(selected.extensions, /CREATE EXTENSION/);
+  assert.doesNotMatch(selected.remaining, /CREATE DATABASE|CREATE SCHEMA|CREATE EXTENSION/);
+  assert.match(selected.remaining, /GRANT USAGE ON SCHEMA auth TO reader/);
+  assert.match(selected.remaining, /CREATE TABLE auth.sample/);
+  assert.match(selected.remaining, /COMMENT ON EXTENSION hstore/);
   assert.match(source, /isolated catalog differs from current source/);
   assert.doesNotMatch(source, /--data-only|fn_payout_leaderboard|fn_settle_due_leaderboards/);
 });

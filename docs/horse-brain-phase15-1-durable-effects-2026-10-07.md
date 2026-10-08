@@ -134,3 +134,92 @@ survives and it reconciles exactly.
   hands) is not a full population.
 - `Post-Deploy E2E` for `71ab03dfe3` was cancelled by concurrency, not
   passed.
+
+## Lightning Exact Acceptance (2026-10-07)
+
+Closes the defect recorded above under Defects Found. Delivery: #6459
+(`a29a591da2`), branch
+`agent/claude-horse-brain/p15-lightning-exact-acceptance-20261007`.
+
+### What Is Now True
+
+- The exact accepted-wager check has one owner,
+  `horsePlanWagerAcceptedExactly` in `server/src/engine/HorsePlanEffectReceipt.ts`.
+  `ServerTableEngineTurns` and `LightningHandHost` both call it. A witnessed
+  decision needs exactly one intended controller record whose action and
+  amount equal the submission, the issued decision and the FAST witness's
+  selection.
+- `LightningHandHost.executeHorseDecision` observes the controller's accepted
+  record through its action door, commits a plan batch only on an exact match
+  (inside the lane dispatch barrier, as Turns does) and then settles the
+  execution witness. A non-exact action posts no commit; the client's witness
+  finalizer retires the batch (`RETIRE_DECISION_EFFECTS`, worker disposition
+  `retired`), the physical engine's own path, and no durable receipt is
+  written for it.
+- Turn ownership matches Turns: an answer for a turn that moved on is retired
+  `response_fence`, a turn cancelled before acting `turn_abandoned`. Before
+  this change Lightning never settled a witness, so an issued batch it did
+  not commit was never retired.
+- Chips, pots and actions are unchanged: the executed action is still
+  `shapeLightningHorseAction` plus the action door. Only whether the horse's
+  plan state takes the decision's effects changed.
+
+### Reshape Cases
+
+| Case                                                 | Lightning before                   | Physical engine          | Lightning now     |
+| ---------------------------------------------------- | ---------------------------------- | ------------------------ | ----------------- |
+| Bet/raise alias                                      | commit                             | retire                   | retire            |
+| Size under the minimum, lifted                       | commit                             | retire                   | retire            |
+| Fixed-limit size snapped to the street size          | commit                             | retire                   | retire            |
+| Sized whole-stack wager promoted to all-in           | no commit, never retired           | retire                   | retire            |
+| Capped fixed-limit street, raise substituted by call | no commit, never retired           | retire                   | retire            |
+| All-in-or-fold menu substitution                     | no commit, never retired           | retire                   | retire            |
+| Controller refusal and check/fold degradation        | no commit, never retired           | retire (fallback)        | retire (fallback) |
+| Table commitment cap                                 | not applicable: Lightning has none | clamp, retire if changed | not applicable    |
+| Exact accepted bet or raise                          | commit                             | commit                   | commit            |
+
+### Tests
+
+- `server/src/lightning/LightningHorsePlanExactAcceptance.test.ts` (11, new):
+  real host, HandController and execution witness. 8 of the 11 fail on the
+  previous host; the 3 money comparisons pass on both, as they must.
+- `server/src/testing/horseRegression/plan/client-controller.test.ts` (+3):
+  actual client and worker runtime with the Lightning shaper. Exact writes one
+  `applied` receipt whose `issuedAction` equals `acceptance`; lifted and
+  aliased wagers are retired by the worker, with no commit and no receipt.
+- Targeted run 26 files, 908 tests; pre-push full server suite 569 files,
+  10,417 tests; protected CI green on every required check (TypeScript Check, Client Unit Tests, Money trigger
+  declaration authority, Server Engine and accounting shards); the non-required
+  `Installed and merged migrations agree` failed on an unrecorded production
+  migration (`20261006154000`) that is unrelated to this change.
+
+### Publication And Natural Observation
+
+Engine `/health` `releaseSha` is `a29a591da2efa8acb1a67cbb93f5e67af11cfc1f`
+from the 01:55 UTC maintenance window (status `ok` from 01:56 UTC). Bounded
+read-only observation, 01:55 to 02:07 UTC:
+
+- Lightning: `lightning_hand` has 0 rows (all time and since the release),
+  `lightning_instance` 0, `lightning_pool_session` 0. The two Lightning
+  counters this change adds, `lightning_phase15_plan_accepted_exact` and
+  `lightning_phase15_plan_retired_inexact`, have 0 fires. No Lightning horse
+  decision exists to observe.
+- Lightning decisions also carry a four-part fence, so the worker derives no
+  plan hand identity for them and issues no batch (`no_effects`). The
+  defective path was latent in production; it is closed before Lightning
+  plays a hand.
+- Physical engine, through the shared predicate, telemetry deltas for the new
+  process (01:57:54 to 02:06:50 UTC reads; worker counters flushed 02:06:22,
+  client counters 02:06:46): `phase15_plan_issue_issued` +1,663,
+  `phase15_plan_commit_posted` +1,748, `phase15_plan_applied_volatile` +1,639,
+  `phase15_plan_receipt_durable` +1,638, `phase15_execution_coerced` +2,
+  `phase15_plan_retirement_retired` +0. Exact wagers keep committing and
+  every applied batch has its durable receipt (one still in flight at the
+  read); issued and posted are read 24 s apart from different flushes.
+
+| Item                                   | Status                     | Evidence                                                                                                                              |
+| -------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Exact gate and retirement in Lightning | implemented but unverified | Served by `a29a591da2` since 01:55 UTC and pinned by the tests above; no natural Lightning horse decision has occurred to observe it. |
+| Same disposition and receipt as Turns  | verified now               | Actual client and worker composition tests above.                                                                                     |
+| No money or action change              | verified now               | Identical action records and contributions with and without a plan (tests); the gate runs after the action is accepted.               |
+| Natural Lightning horse decisions      | unavailable external input | 0 Lightning hands, instances or pool sessions in production; 0 fires of either Lightning counter.                                     |

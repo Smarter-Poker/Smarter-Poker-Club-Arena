@@ -3,7 +3,12 @@
  *
  *   node --import tsx src/scripts/jointResponseCalibration.ts \
  *     --variant=<v> --profile=<contract profile id> --seed=<development seed> \
- *     --first=<pair index> --pairs=<n> --output=<file.jsonl>
+ *     --first=<pair index> --pairs=<n> --output=<file.jsonl> [--human]
+ *
+ * --human seats the human-calibrated population (`human-calibrated-v1-20261008`,
+ * withHumanCalibratedOpponents) in every non-hero seat: a development
+ * measurement of the winning contract's condition (b), never a qualification
+ * (its held-out seeds are refused here like every other phase's).
  *
  * Plays the P13.2 paired league (playPlo4PolicyHand, the real HandController,
  * the contract profile, the contract deal seeds, buttons and hero seats) and
@@ -13,7 +18,8 @@
  *    player's own line, its present-board strength signal) and what it did;
  *  - `hero`: every candidate-arm hero decision the joint owner priced, with
  *    the baseline and selected rows' modeled value and response;
- *  - `pair`: the paired net difference and the divergence street.
+ *  - `pair`: the paired net difference, each arm's hero net after rake (cents)
+ *    and the divergence street.
  * It writes a local file only and cannot activate a policy.
  */
 import { writeFileSync } from 'node:fs';
@@ -23,7 +29,9 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = 'phase13-calibration-offline-placeholder
 
 const { HorseLogic } = await import('../engine/HorseLogic.js');
 const { jointDecisionStrength } = await import('../engine/multiway/JointRangeSampler.js');
-const { plo4LeagueSeating, playPlo4PolicyHand } = await import('../benchmark/Plo4PolicyLeague.js');
+const { plo4LeagueSeating, playPlo4PolicyHand, withHumanCalibratedOpponents } =
+  await import('../benchmark/Plo4PolicyLeague.js');
+const { isHumanCalibratedHoldoutSeed } = await import('../benchmark/HumanCalibratedPopulation.js');
 const { jointStrengthLeagueProfile } = await import('../benchmark/JointStrengthLeague.js');
 const { jointDivergenceStreet } = await import('../benchmark/JointStrengthChecks.js');
 const { isJointHoldoutSeed, isJointStrengthVariant } =
@@ -49,10 +57,12 @@ if (
   isJointHoldoutSeed(seed) ||
   isRemainingVariantHoldoutSeed(seed) ||
   isOmahaVariantHoldoutSeed(seed) ||
-  isPlo4HoldoutSeed(seed)
+  isPlo4HoldoutSeed(seed) ||
+  isHumanCalibratedHoldoutSeed(seed)
 )
   throw new Error('development seeds only');
-const profile = jointStrengthLeagueProfile(variant, args.profile);
+const contractProfile = jointStrengthLeagueProfile(variant, args.profile);
+const profile = 'human' in args ? withHumanCalibratedOpponents(contractProfile) : contractProfile;
 const lines: string[] = [];
 const emit = (r: Record<string, unknown>) => lines.push(JSON.stringify(r));
 
@@ -206,11 +216,13 @@ for (let k = 0; k < pairs; k++) {
     position: seating.relativePosition,
     diff:
       Math.round(candidate.net[heroSeat - 1] * 100) - Math.round(reference.net[heroSeat - 1] * 100),
+    candidateCents: Math.round(candidate.net[heroSeat - 1] * 100),
+    referenceCents: Math.round(reference.net[heroSeat - 1] * 100),
     street: jointDivergenceStreet(candidate.checks.trace, reference.checks.trace),
   });
 }
 writeFileSync(args.output, lines.join('\n') + '\n');
 console.log(
-  JSON.stringify({ variant, profile: args.profile, seed, first, pairs, records: lines.length })
+  JSON.stringify({ variant, profile: profile.id, seed, first, pairs, records: lines.length })
 );
 process.exit(0);

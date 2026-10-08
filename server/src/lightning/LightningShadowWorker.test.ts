@@ -123,6 +123,8 @@ describe('LightningConfig', () => {
       maxHandsPerPass: 32,
       dealWindowMs: 600_000,
       autoRebuy: LIGHTNING_AUTO_REBUY_DEFAULTS,
+      // Lightning Phase 11: the shadow matcher and integrity keys, off when absent.
+      shadow: expect.objectContaining({ enabled: false, integrityEnabled: false }),
     });
     expect(parseLightningConfig({ worker_mode: 'form', pass_interval_ms: 0 }).passIntervalMs).toBe(
       LIGHTNING_PASS_INTERVAL_MIN_MS

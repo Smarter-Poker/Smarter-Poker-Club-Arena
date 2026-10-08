@@ -33,6 +33,8 @@ import {
 } from './EngineSocketMux';
 import type { Operation } from 'fast-json-patch';
 import { NATIVE_RESUME_EVENT } from '../lib/nativeResume';
+import { withLightningDevice } from '../lightning/lightningDeviceReport';
+import { noteLightningUserEvent } from '../lightning/lightningDecisionQueue';
 const { applyPatch } = jsonPatch;
 
 /** The socket watchdog cannot run until authentication has returned a token. */
@@ -778,7 +780,11 @@ export class EngineStateClient {
       return;
     }
 
-    const wsUrl = engineSocketUrl(this.opts.baseUrl, '/ws/table/' + this.opts.tableId);
+    // LIGHTNING PHASE 8: a Lightning room says which device this is (?p=).
+    const wsUrl = withLightningDevice(
+      engineSocketUrl(this.opts.baseUrl, '/ws/table/' + this.opts.tableId),
+      this.opts.tableId
+    );
     // Subprotocol carries auth. Two entries: the literal "bearer", then the JWT.
     //
     // Roadmap batch 6 (2026-08-21), DEFAULT ON since 2026-08-24: all tables
@@ -1163,6 +1169,9 @@ export class EngineStateClient {
       this.noteScheduledRestart(p.resume_expected_at);
     }
     if (msg.type === 'USER_EVENT') {
+      // LIGHTNING PHASE 8: a decision-queue frame feeds the shared queue and
+      // stops here; it is not this table's private state.
+      if (noteLightningUserEvent(msg.payload)) return;
       // Private, unsequenced, idempotent: straight through, never queued.
       try {
         this.opts.onUserEvent(msg.payload);

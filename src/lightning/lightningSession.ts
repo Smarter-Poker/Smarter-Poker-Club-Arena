@@ -20,6 +20,7 @@ import { useSyncExternalStore } from 'react';
 import { supabase } from '../lib/supabase';
 import { isUUID } from '../utils/clubIdResolver';
 import { clusterModeDisplay } from './lightningLobby';
+import { markLightningRoom } from './lightningDeviceReport';
 
 /** fn_lightning_my_session, as the client reads it. */
 export interface LightningMySession {
@@ -235,6 +236,7 @@ function hydrate(): void {
     if (!Array.isArray(rows)) return;
     for (const r of rows as LightningPoolEntry[]) {
       if (r && isUUID(r.poolSessionId) && isUUID(r.clusterId)) {
+        markLightningRoom(r.poolSessionId);
         registry.set(r.poolSessionId, {
           poolSessionId: r.poolSessionId,
           clusterId: r.clusterId,
@@ -265,6 +267,7 @@ function emit(): void {
 export function registerLightningPoolSession(entry: LightningPoolEntry): void {
   if (!isUUID(entry.poolSessionId) || !isUUID(entry.clusterId)) return;
   hydrate();
+  markLightningRoom(entry.poolSessionId);
   const prev = registry.get(entry.poolSessionId);
   const next: LightningPoolEntry = {
     poolSessionId: entry.poolSessionId,

@@ -111,6 +111,7 @@ import type {
   LightningSettleResult,
 } from './LightningHandBackend.js';
 import { lightningMetrics, type LightningMetrics } from './LightningMetrics.js';
+import type { LightningDecision } from './LightningRegistry.js';
 import type { LightningWorkerLogger } from './LightningClusterWorker.js';
 import { settleLightningJackpot, type LightningJackpotDeps } from './LightningJackpot.js';
 import {
@@ -304,6 +305,12 @@ export interface LightningHandHostDeps {
   onFinished?(host: LightningHandHost): void;
   /** Settlement found a conservation disagreement and FROZE the Cluster. */
   onClusterFrozen?(clusterId: string): void;
+  /**
+   * LIGHTNING PHASE 8: a human player owes a decision in this hand (with the
+   * engine's deadline), or no longer does (`null`, with why). Horses owe no
+   * one a queue entry: they have no browser.
+   */
+  onDecision?(playerId: string, decision: LightningDecision | null, reason?: string): void;
   now?: () => number;
   /** The live horse decision lane (injected for tests; the process lane otherwise). */
   horseLane?: () => LiveHorseDecisionLane;
@@ -381,6 +388,8 @@ export class LightningHandHost {
   private turnStartMs = 0;
   private turnDurationSec = 0;
   private turnUser: string | null = null;
+  /** The player whose owed decision was announced (Lightning Phase 8), until retracted. */
+  private decisionOpenFor: string | null = null;
   private timeBankActive = false;
   private lastStreetAtMs = 0;
   private handStartAtMs = 0;
@@ -1086,7 +1095,37 @@ export class LightningHandHost {
 
   // ─── TURNS, CLOCKS AND HORSES ───────────────────────────────────────────
 
+  /** Announce the decision the turn's player owes, with the engine's clock. */
+  private announceDecision(userId: string): void {
+    const p = this.participants.get(userId);
+    if (!p || p.isHorse || !this.deps.onDecision || this.turnUser !== userId) return;
+    try {
+      this.deps.onDecision(userId, {
+        poolSessionId: p.poolSessionId,
+        handId: this.handId,
+        street: this.hc?.getState().stage ?? 'preflop',
+        deadlineAt: this.turnStartMs + this.turnDurationSec * 1000,
+      });
+      this.decisionOpenFor = userId;
+    } catch (err) {
+      this.logger.error(`[LightningHost:${this.instanceId}] decision announce failed`, err);
+    }
+  }
+
+  /** The announced decision is no longer owed: retract it, once. */
+  private retractDecision(reason: string): void {
+    const userId = this.decisionOpenFor;
+    if (!userId) return;
+    this.decisionOpenFor = null;
+    try {
+      this.deps.onDecision?.(userId, null, reason);
+    } catch (err) {
+      this.logger.error(`[LightningHost:${this.instanceId}] decision retract failed`, err);
+    }
+  }
+
   private clearTurn(): void {
+    this.retractDecision('turn_moved');
     if (this.turnUser) {
       this.timer.cancelTimer(this.timerKey, this.turnUser);
       this.timeBank.disarm(this.timerKey, this.turnUser);
@@ -1151,6 +1190,7 @@ export class LightningHandHost {
       })
     );
     if (this.participants.get(userId)?.isHorse) this.scheduleHorse(userId, contextAtTurn);
+    else this.announceDecision(userId);
   }
 
   /** Execute a queued pre-action now; true when it landed. */
@@ -1222,6 +1262,7 @@ export class LightningHandHost {
 
   private timeoutAct(userId: string, context: string | null): void {
     if (this.isTerminal() || !this.hc || playerActionContext(this.hc) !== context) return;
+    if (this.decisionOpenFor === userId) this.retractDecision('timed_out');
     const auth = this.hc.getAuthoritativeActionState(userId);
     this.disconnect.recordConnectedTimeout(this.timerKey, userId);
     if (auth?.legalActions.includes('check'))
@@ -1235,6 +1276,8 @@ export class LightningHandHost {
       const secs = Number(e.secondsGranted) || 0;
       this.turnDurationSec += secs;
       this.publishState();
+      // The decision's deadline moved: every room hears the new one.
+      if (this.decisionOpenFor === e.playerId) this.announceDecision(e.playerId);
     }
     const room = this.watching.get(e.playerId);
     if (!room) return;
@@ -1502,6 +1545,7 @@ export class LightningHandHost {
       }
       return { success: false, error: 'Action rejected by engine', code: 'INVALID_ACTION' };
     }
+    if (this.decisionOpenFor === userId) this.retractDecision(a === 'fold' ? 'folded' : 'acted');
     return { success: true };
   }
 

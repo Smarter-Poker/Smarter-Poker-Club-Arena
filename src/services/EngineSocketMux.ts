@@ -34,6 +34,7 @@
  * dies or the table subscription is refused, and the client's own reconnect
  * / RESYNC / watchdog logic runs unchanged on top.
  */
+import { lightningDeviceFor } from '../lightning/lightningDeviceReport';
 
 /**
  * 2026-08-24: raised 5s -> 60s. With the mux now default-ON this socket IS the
@@ -652,7 +653,13 @@ class EngineSocketMuxImpl {
 
   private subscribe(tableId: string): void {
     try {
-      this.ws?.send(JSON.stringify({ type: 'SUBSCRIBE', tableId }));
+      // LIGHTNING PHASE 8: a Lightning room's SUBSCRIBE says which device this is.
+      const platform = lightningDeviceFor(tableId);
+      this.ws?.send(
+        JSON.stringify(
+          platform ? { type: 'SUBSCRIBE', tableId, platform } : { type: 'SUBSCRIBE', tableId }
+        )
+      );
     } catch {
       /* physical onclose will fan out */
     }

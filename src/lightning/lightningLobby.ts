@@ -33,6 +33,13 @@ export interface LightningLobbyState {
   liveEligible: number | null;
   onThreshold: number | null;
   offThreshold: number | null;
+  /**
+   * LIGHTNING PHASE 8: the database's own verdict (fn_lightning_pool_status)
+   * and its player count, when it answered. The card prefers them over the
+   * status derived from the thresholds above.
+   */
+  poolStatus?: LightningPoolStatus | null;
+  poolPlayers?: number | null;
 }
 
 /**
@@ -86,6 +93,7 @@ export function parseLightningLobbyState(raw: unknown): LightningLobbyState | nu
 
 export function lightningPoolStatus(state: LightningLobbyState | null): LightningPoolStatus {
   if (!state) return 'BUILDING';
+  if (state.poolStatus) return state.poolStatus;
   if (state.clusterMode === 'pending_off' || state.clusterMode === 'draining') return 'THIN';
   const live = state.liveEligible;
   if (live === null) return 'BUILDING';
@@ -139,7 +147,7 @@ export function lightningLobbyBadge(input: {
   return {
     mode: 'lightning',
     label: 'LIGHTNING LIVE',
-    players: state?.liveEligible ?? input.boardPlayers,
+    players: state?.poolPlayers ?? state?.liveEligible ?? input.boardPlayers,
     /* On its way out the pool is THIN by definition, whatever the last read said. */
     status: input.clusterMode === 'lightning' ? lightningPoolStatus(state) : 'THIN',
     joinLightning: display.joinLightning,

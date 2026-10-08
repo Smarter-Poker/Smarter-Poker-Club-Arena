@@ -1,0 +1,68 @@
+name: Ledger replay felt counts no Diamond seat
+
+# fn_ca_account_balance() and fn_ca_ledger_replay() (migration 20261008050323).
+# Runs scripts/ci/test-ledger-replay-felt-no-diamond.py against a throwaway
+# PostgreSQL 17 cluster, never production: the exact production definitions
+# captured 2026-10-08 (pg_get_functiondef md5 equal to the live functions)
+# must count a Diamond seat on the chip felt, and the migration must count
+# chips only, move the replay to basis one-snapshot-v5, keep grants and
+# reproduce production's derived postimage md5. The same command ci.yml would
+# run, kept in its own file so the change does not edit ci.yml. No timer
+# (CLAUDE.md 10.85): pull_request only, scoped to the paths it proves. ci.yml
+# has no push trigger, so neither does this.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - supabase/migrations/20261008050323_the_ledger_replay_felt_counts_no_diamond_seat.sql
+      - scripts/ci/fixtures/ledger-replay-felt-no-diamond/**
+      - scripts/ci/test-ledger-replay-felt-no-diamond.py
+      - .github/workflows/ledger-replay-felt-no-diamond.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ledger-replay-felt-no-diamond-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ledger-replay-felt-no-diamond:
+    name: Ledger replay felt counts no Diamond seat
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      # Runs as the runner user (non-root), exactly as the ci.yml step would.
+      - name: Ledger replay felt counts no Diamond seat
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-ledger-replay-felt-no-diamond.py --output artifacts/ledger-replay-felt-no-diamond
+      - name: Retain the regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ledger-replay-felt-no-diamond-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/ledger-replay-felt-no-diamond/RESULTS.json
+          retention-days: 7
+          if-no-files-found: warn

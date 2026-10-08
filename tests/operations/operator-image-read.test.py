@@ -63,6 +63,13 @@ class ReaderTests(unittest.TestCase):
         for names in [b'SUPABASE_SERVICE_ROLE_KEY\n',b'PATH\nPATH\n',b'']:
             with self.assertRaises(RuntimeError):R.environment_names(names)
 
+    def test_docker_format_single_extra_terminal_newline(self):
+        names = b'PATH\nNODE_VERSION\nYARN_VERSION\nNODE_ENV\nENGINE_ALERT_JOURNAL_DIR\nNODE_OPTIONS\nGIT_COMMIT_SHA\n'
+        self.assertEqual(R.environment_names(names + b'\n'), sorted(names.decode().splitlines()))
+        for bad in [names + b'\n\n', b'PATH\n\nNODE_ENV\n\n', b'PATH\nPATH\n\n', b'UNKNOWN\n\n', b'\n\n']:
+            with self.subTest(raw=bad), self.assertRaises(RuntimeError):
+                R.environment_names(bad)
+
     def scan(self,fixture):
         data,layer_id=fixture
         child=subprocess.Popen([sys.executable,'-c',"import sys,base64;sys.stdout.buffer.write(base64.b64decode(sys.argv[1]))",base64.b64encode(data).decode()],stdout=subprocess.PIPE)

@@ -54,6 +54,9 @@ def common():
 
 def environment_names(raw):
     names = raw.decode().splitlines()
+    # Docker appends one newline after the template, whose range already ends in LF.
+    if raw.endswith(b"\n\n") and names and names[-1] == "":
+        names.pop()
     require(names and len(names) == len(set(names)) and set(names) <= ENV_NAMES,
             'Baked environment names refused')
     return sorted(names)

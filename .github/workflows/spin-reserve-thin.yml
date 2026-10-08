@@ -1,0 +1,66 @@
+name: Spin reserve gauge counts pools that fund spins
+
+# fn_spin_metrics reserve_thin_clubs (migration 20261008044926). Runs
+# scripts/ci/test-spin-reserve-thin.py against a throwaway PostgreSQL 17
+# cluster, never production: the exact production definition captured
+# 2026-10-08 (pg_get_functiondef md5 equal to the live function) must count
+# empty pools of clubs that never ran a Spin, and the migration must count only
+# a thin pool that funds Spins, leave every other gauge alone and reproduce
+# production's derived postimage md5. No timer (CLAUDE.md 10.85):
+# pull_request only, scoped to the paths it proves.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - supabase/migrations/20261008044926_the_spin_reserve_gauge_counts_only_pools_that_funded_a_spin.sql
+      - scripts/ci/fixtures/spin-reserve-thin/**
+      - scripts/ci/test-spin-reserve-thin.py
+      - .github/workflows/spin-reserve-thin.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spin-reserve-thin-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  spin-reserve-thin:
+    name: Spin reserve gauge counts pools that fund spins
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      # Runs as the runner user (non-root), exactly as the ci.yml step would.
+      - name: Spin reserve gauge counts pools that fund spins
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-spin-reserve-thin.py --output artifacts/spin-reserve-thin
+      - name: Retain the regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spin-reserve-thin-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/spin-reserve-thin/RESULTS.json
+          retention-days: 7
+          if-no-files-found: warn

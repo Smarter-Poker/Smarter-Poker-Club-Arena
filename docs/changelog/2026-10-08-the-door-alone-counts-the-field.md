@@ -95,3 +95,24 @@ and, read-only, no pre-start event's count should disagree with its roster:
 Read at 04:18:50 UTC on 2026-10-08, before this commit served: 0 of 117. A
 divergence from this class lasts only until the next roster change recounts
 it, so the engine log is the measure that counts.
+
+## Served and Measured
+
+#6463 merged as `38cf975a1d` at 04:54:55 UTC. Its own release run
+(37730040646) stood aside at the 05:55 break because newer main already
+contained it; the sealed release `4dbbd0672d` (#6470, which contains
+`38cf975a1d`) cut over at 05:55:30 UTC and is what `engine.smarter.poker/health`
+reports.
+
+| engine                    | window (UTC)      | hours | horse entries | `Horse registration:` passes | roster cache diverged lines | refused calls |
+| ------------------------- | ----------------- | ----- | ------------- | ---------------------------- | --------------------------- | ------------- |
+| `a29a591da2` (before fix) | 01:55:21-05:53:02 | 3.96  | 10,182        | 63                           | 3                           | 5             |
+| `4dbbd0672d` (fix served) | 05:55:30-06:51:52 | 0.94  | 2,199         | 2                            | 0                           | 0             |
+
+Before: 0.76 lines and 1.26 refused registrations an hour on the last engine
+without the fix (2.2 refusals an hour over the 78-hour archive). After: zero
+over the first served hour at a comparable entry rate (about 2,340 horse
+entries an hour against 2,570). Read-only at 06:52:08 UTC, 0 of 113 pre-start
+events held a count that disagreed with its roster. One served hour is short
+against a 0.76-an-hour baseline, so the engine-log command above remains the
+measure on every later engine.

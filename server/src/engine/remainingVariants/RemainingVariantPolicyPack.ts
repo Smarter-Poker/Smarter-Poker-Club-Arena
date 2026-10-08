@@ -4,9 +4,88 @@ import { maxSeatsFor } from '../VariantRules.js';
 import { maxSeatsForVariant } from '../../config/tableSeating.js';
 
 export type RemainingPolicyVariant = 'short_deck' | 'pineapple' | 'flh' | 'flo8';
+
+/**
+ * Round 3 (docs/horse-brain-phase12-round3-2026-10-08.md). The round-1 packs
+ * replaced every eligible reference decision with their own entry bars and
+ * sampled-equity rules, and lost to the reference on every held-out matrix.
+ * Read from the locked matrices and from development-seed attribution of each
+ * pair to its first changed decision, the losses had three named causes:
+ *
+ *  1. Blind defence and every facing-a-raise node: the shared kernel's
+ *     defence bar is a fixed hand-shape quality that ignores the price, so the
+ *     big blind folded hands the reference profitably defends (the largest
+ *     single loss in every pack), and it called hands the reference
+ *     profitably three-bets.
+ *  2. Postflop calls and raises against a bet: the sampler conditions an
+ *     opponent's range on preflop hand shape and action counts only, never on
+ *     board contact, so a bettor's range is far too wide and the hero's
+ *     equity against it is overstated. Every call the pack made where the
+ *     reference folded lost (10 to 40 big blinds a time in no limit).
+ *  3. Postflop value bets the reference does not make lost for the same
+ *     reason: the equity they rest on is measured against the wrong range.
+ *
+ * And it had one consistent gain: first-in opens the reference makes from
+ * early, middle, cutoff and (three or more dealt) button positions with a
+ * hand below the pack's own open bar lose against this population, which
+ * defends and continues too widely for a loose open to profit; folding them
+ * wins in every pack's position cells. In no limit the reference's flop
+ * stab when checked to also loses to checking.
+ *
+ * So round 3 is a delta on the reference, not a replacement of it. The pack
+ * keeps the reference action everywhere it was measured to be worse, which
+ * removes causes 1 to 3 at their source (no price-blind defence bar, no
+ * line-blind sampled call, raise or value bet is ever substituted for the
+ * reference), and it changes the decision only in these declared spots:
+ *
+ *  - `openTighten`: first in (`rfi`) from a listed position with at least
+ *    `openTightenMinDealt` dealt, when the reference opens and the hand's
+ *    pack quality is below the pack's open bar: fold.
+ *  - `flopCheckBelow` (no limit only): checked to on the flop, when the
+ *    reference bets and the sampled equity is below this value: check.
+ *  - `headsUpOpenBelowBar` (fixed limit only): heads-up, first in on the
+ *    button, when the reference does not open and the hand's quality is at
+ *    least the open bar minus this value: open. Folding a heads-up button
+ *    loses the posted small blind, and the population defends a fixed-limit
+ *    open too passively to punish a wider one.
+ *  - `smallBlindStealBelowBar` (fixed limit only): folded to the small blind
+ *    with three or more dealt, when the reference does not open and the
+ *    hand's quality is at least the open bar minus this value: open.
+ *  - `bigBlindDefendBelowCallBar` (fixed limit only): the big blind facing a
+ *    single raise, when the reference folds and the hand's quality is at
+ *    least the pack's call bar minus this value: call. A fixed-limit big
+ *    blind closes the action at three to one or better.
+ *
+ * These are heuristic choices measured on development seeds, not solver
+ * frequencies, and nothing here is calibrated (`calibratedConfidence: null`).
+ */
+export interface RemainingVariantRound3Rules {
+  readonly openTighten: readonly ('early' | 'middle' | 'cutoff' | 'button')[];
+  readonly openTightenMinDealt: number;
+  readonly flopCheckBelow: number | null;
+  readonly headsUpOpenBelowBar: number | null;
+  readonly smallBlindStealBelowBar: number | null;
+  readonly bigBlindDefendBelowCallBar: number | null;
+}
+const REMAINING_VARIANT_NO_LIMIT_ROUND3: RemainingVariantRound3Rules = Object.freeze({
+  openTighten: Object.freeze(['early', 'middle', 'cutoff', 'button'] as const),
+  openTightenMinDealt: 3,
+  flopCheckBelow: 0.95,
+  headsUpOpenBelowBar: null,
+  smallBlindStealBelowBar: null,
+  bigBlindDefendBelowCallBar: null,
+});
+const REMAINING_VARIANT_FIXED_LIMIT_ROUND3: RemainingVariantRound3Rules = Object.freeze({
+  openTighten: Object.freeze(['middle', 'cutoff', 'button'] as const),
+  openTightenMinDealt: 3,
+  flopCheckBelow: null,
+  headsUpOpenBelowBar: 0.15,
+  smallBlindStealBelowBar: 0.2,
+  bigBlindDefendBelowCallBar: 0.15,
+});
 export const REMAINING_VARIANT_PACKS = Object.freeze({
   short_deck: Object.freeze({
-    version: 'short-deck-round1-v2',
+    version: 'short-deck-round3-v1',
     holes: 2,
     deck: 36,
     splitLow: false,
@@ -25,9 +104,10 @@ export const REMAINING_VARIANT_PACKS = Object.freeze({
     value: 0.65,
     depthAdjustment: 0.065,
     multiway: 0.018,
+    round3: REMAINING_VARIANT_NO_LIMIT_ROUND3,
   }),
   pineapple: Object.freeze({
-    version: 'crazy-pineapple-round1-v2',
+    version: 'crazy-pineapple-round3-v1',
     holes: 3,
     deck: 52,
     splitLow: false,
@@ -46,9 +126,10 @@ export const REMAINING_VARIANT_PACKS = Object.freeze({
     value: 0.66,
     depthAdjustment: 0.07,
     multiway: 0.02,
+    round3: REMAINING_VARIANT_NO_LIMIT_ROUND3,
   }),
   flh: Object.freeze({
-    version: 'fixed-limit-holdem-round1-v3',
+    version: 'fixed-limit-holdem-round3-v1',
     holes: 2,
     deck: 52,
     splitLow: false,
@@ -67,9 +148,10 @@ export const REMAINING_VARIANT_PACKS = Object.freeze({
     value: 0.54,
     depthAdjustment: 0.025,
     multiway: 0.008,
+    round3: REMAINING_VARIANT_FIXED_LIMIT_ROUND3,
   }),
   flo8: Object.freeze({
-    version: 'fixed-limit-omaha8-round1-v3',
+    version: 'fixed-limit-omaha8-round3-v1',
     holes: 4,
     deck: 52,
     splitLow: true,
@@ -88,6 +170,7 @@ export const REMAINING_VARIANT_PACKS = Object.freeze({
     value: 0.58,
     depthAdjustment: 0.025,
     multiway: 0.01,
+    round3: REMAINING_VARIANT_FIXED_LIMIT_ROUND3,
   }),
 });
 export const REMAINING_VARIANT_DOMAIN = Object.freeze({

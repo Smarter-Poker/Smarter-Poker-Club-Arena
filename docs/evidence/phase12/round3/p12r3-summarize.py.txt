@@ -1,0 +1,46 @@
+"""Phase 12 round 3: summarize development-seed diagnostic runs (diag-p12r3).
+Per variant: pairs, paired mean bb/100 with its 99% normal interval, per
+profile, and the contribution of each first-changed-decision reason (or, for
+the round-1 diagnosis, street|position|role|reference>candidate class)."""
+import json, glob, math, sys, collections
+def cls(a):
+    a = a.split(':')[0]
+    return {'bet': 'W', 'raise': 'W', 'all_in': 'J', 'call': 'C', 'check': 'K', 'fold': 'F'}.get(a, a)
+def summarize(directory, mode):
+    out = {}
+    for v in ['short_deck', 'pineapple', 'flh', 'flo8']:
+        files = sorted(glob.glob(f'{directory}/p12c-{v}-*.json'))
+        if not files: continue
+        n = 0; s = 0.0; ss = 0.0; prof = {}; seeds = set()
+        keys = collections.defaultdict(lambda: [0, 0.0, 0.0])
+        for f in files:
+            d = json.load(open(f)); n += d['pairs']; seeds.add(d['seed'])
+            ps = 0.0
+            for r in d['rows']:
+                x = r['diff'] / 200.0; s += x; ss += x * x; ps += x
+                nd = r['node']
+                if nd is None: k = 'no_applied_change'
+                elif mode == 'reason': k = nd['reason']
+                else: k = '|'.join([nd['street'], nd['position'], nd['role'], cls(nd['ref']) + '>' + cls(nd['cand'])])
+                a = keys[k]; a[0] += 1; a[1] += x; a[2] += x * x
+            p = prof.setdefault(d['profileId'], [0, 0.0]); p[0] += d['pairs']; p[1] += ps
+        m = s / n; se = math.sqrt(max(0, ss / n - m * m) / n)
+        rows = []
+        for k, (c, t, tt) in sorted(keys.items(), key=lambda kv: kv[1][1]):
+            mean = t / c; var = max(0, tt / c - mean * mean)
+            rows.append({'key': k, 'n': c, 'contributionBbPer100': round(t / n * 100, 3),
+                         'halfWidth99BbPer100': round(2.5758 * math.sqrt(var * c) / n * 100, 3)})
+        out[v] = {'seeds': sorted(seeds), 'pairs': n, 'meanBbPer100': round(m * 100, 3),
+                  'confidence99BbPer100': [round((m - 2.5758 * se) * 100, 3), round((m + 2.5758 * se) * 100, 3)],
+                  'profiles': {k: {'pairs': a, 'meanBbPer100': round(b / a * 100, 3)} for k, (a, b) in sorted(prof.items())},
+                  'attribution': rows}
+    return out
+if __name__ == '__main__':
+    directory, mode, dest = sys.argv[1], sys.argv[2], sys.argv[3]
+    res = summarize(directory, mode)
+    try: res['config'] = json.load(open(f'{directory}/config.json'))
+    except Exception: res['config'] = None
+    json.dump(res, open(dest, 'w'), indent=1)
+    for v, r in res.items():
+        if v == 'config': continue
+        print(v, r['pairs'], r['meanBbPer100'], r['confidence99BbPer100'])

@@ -1,0 +1,219 @@
+{
+  "short_deck": {
+    "seeds": [12103307],
+    "pairs": 38880,
+    "meanBbPer100": 14.653,
+    "confidence99BbPer100": [3.061, 26.244],
+    "profiles": {
+      "p12c-short_deck-6max-100bb": {
+        "pairs": 6480,
+        "meanBbPer100": 22.789
+      },
+      "p12c-short_deck-6max-200bb": {
+        "pairs": 6480,
+        "meanBbPer100": 28.84
+      },
+      "p12c-short_deck-6max-2dealt-100bb": {
+        "pairs": 6480,
+        "meanBbPer100": 5.785
+      },
+      "p12c-short_deck-6max-40bb": {
+        "pairs": 6480,
+        "meanBbPer100": 7.821
+      },
+      "p12c-short_deck-6max-4dealt-100bb": {
+        "pairs": 6480,
+        "meanBbPer100": 16.356
+      },
+      "p12c-short_deck-9max-100bb": {
+        "pairs": 6480,
+        "meanBbPer100": 6.326
+      }
+    },
+    "attribution": [
+      {
+        "key": "round3_open_tightened",
+        "n": 2448,
+        "contributionBbPer100": 5.03,
+        "halfWidth99BbPer100": 7.685
+      },
+      {
+        "key": "round3_flop_bet_checked",
+        "n": 2206,
+        "contributionBbPer100": 9.623,
+        "halfWidth99BbPer100": 8.661
+      }
+    ]
+  },
+  "pineapple": {
+    "seeds": [12103307],
+    "pairs": 38880,
+    "meanBbPer100": 12.357,
+    "confidence99BbPer100": [-1.74, 26.453],
+    "profiles": {
+      "p12c-pineapple-6max-100bb": {
+        "pairs": 6480,
+        "meanBbPer100": 12.89
+      },
+      "p12c-pineapple-6max-200bb": {
+        "pairs": 6480,
+        "meanBbPer100": 6.034
+      },
+      "p12c-pineapple-6max-2dealt-100bb": {
+        "pairs": 6480,
+        "meanBbPer100": 19.398
+      },
+      "p12c-pineapple-6max-40bb": {
+        "pairs": 6480,
+        "meanBbPer100": 1.014
+      },
+      "p12c-pineapple-6max-4dealt-100bb": {
+        "pairs": 6480,
+        "meanBbPer100": 22.255
+      },
+      "p12c-pineapple-9max-100bb": {
+        "pairs": 6480,
+        "meanBbPer100": 12.55
+      }
+    },
+    "attribution": [
+      {
+        "key": "round3_open_tightened",
+        "n": 2189,
+        "contributionBbPer100": -0.885,
+        "halfWidth99BbPer100": 9.83
+      },
+      {
+        "key": "round3_flop_bet_checked",
+        "n": 1849,
+        "contributionBbPer100": 13.242,
+        "halfWidth99BbPer100": 10.074
+      }
+    ]
+  },
+  "flh": {
+    "seeds": [12103307],
+    "pairs": 45360,
+    "meanBbPer100": 3.224,
+    "confidence99BbPer100": [1.765, 4.682],
+    "profiles": {
+      "p12c-flh-6max-1000bb": {
+        "pairs": 6480,
+        "meanBbPer100": 4.202
+      },
+      "p12c-flh-6max-100bb": {
+        "pairs": 6480,
+        "meanBbPer100": 4.022
+      },
+      "p12c-flh-6max-200bb": {
+        "pairs": 6480,
+        "meanBbPer100": 4.078
+      },
+      "p12c-flh-6max-2dealt-100bb": {
+        "pairs": 6480,
+        "meanBbPer100": 3.692
+      },
+      "p12c-flh-6max-40bb": {
+        "pairs": 6480,
+        "meanBbPer100": 2.374
+      },
+      "p12c-flh-6max-4dealt-100bb": {
+        "pairs": 6480,
+        "meanBbPer100": 2.816
+      },
+      "p12c-flh-9max-100bb": {
+        "pairs": 6480,
+        "meanBbPer100": 1.381
+      }
+    },
+    "attribution": [
+      {
+        "key": "round3_big_blind_defended",
+        "n": 72,
+        "contributionBbPer100": 0.099,
+        "halfWidth99BbPer100": 0.174
+      },
+      {
+        "key": "round3_heads_up_open",
+        "n": 427,
+        "contributionBbPer100": 0.46,
+        "halfWidth99BbPer100": 0.36
+      },
+      {
+        "key": "round3_small_blind_steal",
+        "n": 390,
+        "contributionBbPer100": 0.567,
+        "halfWidth99BbPer100": 0.285
+      },
+      {
+        "key": "round3_open_tightened",
+        "n": 3110,
+        "contributionBbPer100": 2.097,
+        "halfWidth99BbPer100": 1.367
+      }
+    ]
+  },
+  "flo8": {
+    "seeds": [12103307],
+    "pairs": 20160,
+    "meanBbPer100": 2.847,
+    "confidence99BbPer100": [0.911, 4.783],
+    "profiles": {
+      "p12c-flo8-6max-1000bb": {
+        "pairs": 2880,
+        "meanBbPer100": 5.031
+      },
+      "p12c-flo8-6max-100bb": {
+        "pairs": 2880,
+        "meanBbPer100": 4.08
+      },
+      "p12c-flo8-6max-200bb": {
+        "pairs": 2880,
+        "meanBbPer100": 5.072
+      },
+      "p12c-flo8-6max-2dealt-100bb": {
+        "pairs": 2880,
+        "meanBbPer100": 0.077
+      },
+      "p12c-flo8-6max-40bb": {
+        "pairs": 2880,
+        "meanBbPer100": 4.355
+      },
+      "p12c-flo8-6max-4dealt-100bb": {
+        "pairs": 2880,
+        "meanBbPer100": 1.17
+      },
+      "p12c-flo8-8max-100bb": {
+        "pairs": 2880,
+        "meanBbPer100": 0.142
+      }
+    },
+    "attribution": [
+      {
+        "key": "round3_big_blind_defended",
+        "n": 8,
+        "contributionBbPer100": 0.005,
+        "halfWidth99BbPer100": 0.115
+      },
+      {
+        "key": "round3_heads_up_open",
+        "n": 9,
+        "contributionBbPer100": 0.006,
+        "halfWidth99BbPer100": 0.091
+      },
+      {
+        "key": "round3_small_blind_steal",
+        "n": 60,
+        "contributionBbPer100": 0.167,
+        "halfWidth99BbPer100": 0.219
+      },
+      {
+        "key": "round3_open_tightened",
+        "n": 1291,
+        "contributionBbPer100": 2.668,
+        "halfWidth99BbPer100": 1.908
+      }
+    ]
+  },
+  "config": {}
+}

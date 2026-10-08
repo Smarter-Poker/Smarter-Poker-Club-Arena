@@ -43,9 +43,9 @@ export const HORSE_PHASE12_POLICY_DIGEST_DEFINITION = 'horse-phase12-policy-dige
  */
 export const HORSE_PHASE12_POLICY_SOURCE_REASONS: Readonly<Record<string, string>> = Object.freeze({
   'src/engine/remainingVariants/RemainingVariantPolicyPack.ts':
-    'the four packs: versions, entry bars, hand shapes, seat caps and the live budgets',
+    'the four packs: versions, round-3 rules, entry bars, hand shapes, seat caps and the live budgets',
   'src/engine/remainingVariants/RemainingVariantLivePolicy.ts':
-    'the live policy: eligibility, geometry, thresholds, fixed-limit sizing and the proposal',
+    'the live policy: eligibility, geometry, the round-3 rules over the reference and the proposal',
   'src/engine/remainingVariants/RemainingVariantSampler.ts':
     'the bounded equity sampler: public-line prior, Pineapple flop-only discard prior, deadline',
   'src/engine/omaha/OmahaVariantEquity.ts':
@@ -53,7 +53,7 @@ export const HORSE_PHASE12_POLICY_SOURCE_REASONS: Readonly<Record<string, string
   'src/engine/omaha/OmahaCardFacts.ts':
     'the exact FLO8 card facts (nut low, counterfeit, quartering) the policy reads before sampling',
   'src/engine/plo4/Plo4LivePolicy.ts':
-    'the shared seat/role kernel: plo4Position, plo4Role and plo4PreflopChoice',
+    'the shared seat/role kernel: canonical positions, blind seats, plo4Role and the selection vocabulary',
   'src/engine/plo4/Plo4PolicyPack.ts': 'the position and role constants the kernel reads',
   'src/engine/HorseLogic.ts':
     'the owner: builds the reference, invokes the policy, legalizes its proposal, applies the illegal_candidate guard and the Phase 7 tournament owner',

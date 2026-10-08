@@ -27,7 +27,6 @@ import {
   plo4ButtonOffset,
   plo4CanonicalPosition,
   plo4DealerSeatIsValid,
-  plo4PreflopChoice,
   plo4Role,
   plo4SelectionOf,
   type Plo4BlindSeats,
@@ -1583,6 +1582,9 @@ export function evaluateRemainingVariantPolicy(
         );
     return legalForm({ action, amount: target, thinkTime: baseline.thinkTime });
   };
+  // Round 3 retains the reference in its own legal form; HorseLogic hands
+  // the policy an already legal reference, so this is that action unchanged.
+  const retained = (): HorseDecision => legalForm(baseline);
   receipt.features = [
     limit && 'fixed_limit_wager',
     s.wagersCapped && 'wager_cap',
@@ -1601,21 +1603,45 @@ export function evaluateRemainingVariantPolicy(
       anteBB: (s.ante ?? 0) / s.bigBlind,
       straddle: Boolean(s.straddleActive),
     });
-    const choice = plo4PreflopChoice(
-      shape.quality,
-      bars,
-      receipt.role,
-      callCost / s.bigBlind,
-      hero.stack / s.bigBlind
-    );
-    return finish(
-      choice.reason,
-      choice.action === 'wager'
-        ? wager(choice.fraction)
-        : choice.action === 'call'
-          ? call()
-          : passive()
-    );
+    // Round 3 (see REMAINING_VARIANT_PACKS[variant].round3): the reference
+    // keeps every preflop decision except the declared entry spots.
+    const rules = pack.round3;
+    const baselineWagers = ['bet', 'raise', 'all_in'].includes(baseline.action);
+    if (
+      receipt.role === 'rfi' &&
+      baselineWagers &&
+      seats.length >= rules.openTightenMinDealt &&
+      (rules.openTighten as readonly string[]).includes(receipt.position) &&
+      shape.quality < bars.open
+    )
+      return finish('round3_open_tightened', passive());
+    if (
+      rules.headsUpOpenBelowBar !== null &&
+      seats.length === 2 &&
+      receipt.role === 'rfi' &&
+      receipt.position === 'button' &&
+      !baselineWagers &&
+      shape.quality >= bars.open - rules.headsUpOpenBelowBar
+    )
+      return finish('round3_heads_up_open', wager(0.75));
+    if (
+      rules.smallBlindStealBelowBar !== null &&
+      seats.length >= 3 &&
+      receipt.role === 'limp_option' &&
+      receipt.position === 'small_blind' &&
+      !baselineWagers &&
+      shape.quality >= bars.open - rules.smallBlindStealBelowBar
+    )
+      return finish('round3_small_blind_steal', wager(0.75));
+    if (
+      rules.bigBlindDefendBelowCallBar !== null &&
+      receipt.role === 'defense' &&
+      receipt.position === 'big_blind' &&
+      baseline.action === 'fold' &&
+      shape.quality >= bars.call - rules.bigBlindDefendBelowCallBar
+    )
+      return finish('round3_big_blind_defended', call());
+    return finish('round3_reference_retained', retained());
   }
   // Reserve the sampler's remaining time after computing exact card facts.
   // Doing the FLO8 facts after sampling spent a fresh millisecond after the
@@ -1716,23 +1742,12 @@ export function evaluateRemainingVariantPolicy(
     receipt.fired = false;
     return finish('invalid_equity_ceiling');
   }
-  const equity = Math.min(e.equity, ceiling),
-    lower = Math.min(e.confidence99[0], ceiling),
-    upper = Math.min(e.confidence99[1], ceiling);
-  const pressure =
-    Math.max(0, active.length - 1) * pack.multiway +
-    Number(receipt.role === 'facing_raise') * (limit ? 0.01 : 0.04);
-  let lowOnly = false,
-    quarterRisk = false,
-    draw = false,
-    dominated = false;
+  const equity = Math.min(e.equity, ceiling);
+  // Receipt features only: round 3 decides nothing from them (see the pack).
   if (variant === 'flo8') {
     const facts = splitFacts!;
-    lowOnly = facts.nutLow && e.highEquity < 0.15;
-    quarterRisk = e.quarterOrLessProbability >= 0.2 || e.sixthOrLessProbability >= 0.1;
-    draw =
-      facts.flushes.some((f) => f.draw && !f.higherFlushPossible) ||
-      facts.nutStraightOutCards.length >= 8;
+    const lowOnly = facts.nutLow && e.highEquity < 0.15;
+    const quarterRisk = e.quarterOrLessProbability >= 0.2 || e.sixthOrLessProbability >= 0.1;
     receipt.features.push(
       ...([
         facts.nutLow && 'nut_low',
@@ -1748,44 +1763,26 @@ export function evaluateRemainingVariantPolicy(
     );
   } else {
     const all = [...hero.cards, ...s.communityCards];
-    draw = ['clubs', 'diamonds', 'hearts', 'spades'].some(
+    const draw = ['clubs', 'diamonds', 'hearts', 'spades'].some(
       (suit) =>
         all.filter((c) => c.suit === suit).length === 4 && hero.cards.some((c) => c.suit === suit)
     );
     const nuts = nlhNutStatus(hero.cards, s.communityCards, variant === 'short_deck');
-    dominated = nuts.flushPossible && nuts.higherFlushRanks > 0;
+    const dominated = nuts.flushPossible && nuts.higherFlushRanks > 0;
     if (draw) receipt.features.push('flush_draw');
     if (dominated) receipt.features.push('higher_flush_available');
   }
   if (e.perPot.length > 1) receipt.features.push('separate_pot_eligibility');
-  if (!callCost) {
-    if (!lowOnly && !quarterRisk && lower > pack.value + pressure)
-      return finishPriced('variant_value_bet', wager(0.66));
-    if (
-      s.stage !== 'river' &&
-      !limit &&
-      !dominated &&
-      draw &&
-      active.length === 1 &&
-      receipt.position === 'button' &&
-      equity > 0.4
-    )
-      return finishPriced('variant_draw_pressure', wager(0.5));
-    return finishPriced(
-      lowOnly ? 'low_only_protected_check' : 'variant_protected_check',
-      passive()
-    );
-  }
-  if (upper < price + pressure) return finishPriced('variant_price_fold', passive());
-  if (lowOnly || quarterRisk)
-    return finishPriced(
-      equity >= price + pressure ? 'split_price_call' : 'split_price_fold',
-      equity >= price + pressure ? call() : passive()
-    );
-  if (lower > Math.max(pack.value + pressure, price + pressure) && receipt.role !== 'call_off')
-    return finishPriced('variant_value_raise', wager(0.66));
-  return finishPriced(
-    equity >= price + pressure ? 'variant_price_call' : 'variant_price_fold',
-    equity >= price + pressure ? call() : passive()
-  );
+  // Round 3: postflop the reference keeps every decision except, in no
+  // limit, a flop bet into a checked pot below the declared equity.
+  const checkBelow = pack.round3.flopCheckBelow;
+  if (
+    !callCost &&
+    checkBelow !== null &&
+    s.stage === 'flop' &&
+    ['bet', 'raise', 'all_in'].includes(baseline.action) &&
+    equity < checkBelow
+  )
+    return finishPriced('round3_flop_bet_checked', passive());
+  return finishPriced('round3_reference_retained', retained());
 }

@@ -31,6 +31,25 @@ const legalize = (
   }
 ).legalize.bind(HorseLogic);
 
+/** The legal reference decision HorseLogic would hand the policy here (the
+ * pack off), so the policy is checked on the inputs it receives live. */
+const reference = (spot: { hero: SeatPlayer; state: HorseGameStateV2 }): HorseDecision => {
+  const d = HorseLogic.decide(
+    spot.hero,
+    spot.state,
+    'balanced',
+    {},
+    { telemetry: false, mind: false, decisionTimeMs: 0, phase12Remaining: 'off' }
+  );
+  return {
+    action: d.action,
+    ...(d.amount !== undefined ? { amount: d.amount } : {}),
+    thinkTime: 0,
+  };
+};
+
+const CHANGED_FLOOR = 0;
+
 const cases = [
   ['short_deck', 'cash', 70],
   ['short_deck', 'tournament', 50],
@@ -68,10 +87,12 @@ describe('P12.1 every Phase 12 proposal is in the legalizer form', () => {
       forEachControllerSpot(variant, mode, hands, 0x5121 + hands, (spot) => {
         tally.spots++;
         seedFastRandom(0x7a11 + tally.spots);
+        const baseline = reference(spot);
+        seedFastRandom(0x7a11 + tally.spots);
         const r = evaluateRemainingVariantPolicy(
           spot.hero,
           spot.state,
-          spot.baseline,
+          baseline,
           null,
           'shadow',
           () => 0
@@ -125,7 +146,8 @@ describe('P12.1 every Phase 12 proposal is in the legalizer form', () => {
       expect(rewrites).toHaveLength(0);
       // Coverage: the spots are not all one shape.
       expect(tally.eligible).toBeGreaterThan(150);
-      expect(tally.changed).toBeGreaterThan(20);
+      // Round 3 changes the reference only in its declared spots.
+      expect(tally.changed).toBeGreaterThan(CHANGED_FLOOR);
       expect(tally.wagers).toBeGreaterThan(10);
       expect(tally.calls).toBeGreaterThan(10);
     }
@@ -142,10 +164,12 @@ describe('P12.1 every Phase 12 proposal is in the legalizer form', () => {
     forEachControllerSpot(variant, 'cash', 120, 0x2a17, (spot) => {
       if (spot.state.bigBlind !== bigBlind) return;
       seedFastRandom(31);
+      const baseline = reference(spot);
+      seedFastRandom(31);
       const r = evaluateRemainingVariantPolicy(
         spot.hero,
         spot.state,
-        spot.baseline,
+        baseline,
         null,
         'shadow',
         () => 0

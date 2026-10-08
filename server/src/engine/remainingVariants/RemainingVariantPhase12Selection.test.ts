@@ -8,7 +8,7 @@
  */
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
-const forge = vi.hoisted(() => ({ amountDelta: 0 }));
+const forge = vi.hoisted(() => ({ on: false }));
 vi.mock('./RemainingVariantLivePolicy.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./RemainingVariantLivePolicy.js')>();
   return {
@@ -17,12 +17,19 @@ vi.mock('./RemainingVariantLivePolicy.js', async (importOriginal) => {
       ...args: Parameters<typeof actual.evaluateRemainingVariantPolicy>
     ) => {
       const result = actual.evaluateRemainingVariantPolicy(...args);
-      if (!forge.amountDelta || typeof result.decision.amount !== 'number') return result;
-      // An applied candidate whose wager is not a legal size.
-      return {
-        ...result,
-        decision: { ...result.decision, amount: result.decision.amount + forge.amountDelta },
-      };
+      if (!forge.on || !result.receipt.applied) return result;
+      // An applied candidate the legalizer would rewrite: a wager off the
+      // legal size, or the passive action of the other kind.
+      const d = result.decision;
+      const decision =
+        typeof d.amount === 'number' && (d.action === 'bet' || d.action === 'raise')
+          ? { ...d, amount: d.amount + 0.004 }
+          : d.action === 'check'
+            ? { ...d, action: 'fold' as const }
+            : d.action === 'fold'
+              ? { ...d, action: 'check' as const }
+              : d;
+      return { ...result, decision };
     },
   };
 });
@@ -38,12 +45,13 @@ import {
   REMAINING_VARIANT_PACKS,
   type RemainingPolicyVariant,
 } from './RemainingVariantPolicyPack.js';
+import {
+  round3ChangedSpot,
+  round3ChangedStreet,
+  type Round3Spot,
+} from './RemainingVariantRound3Spots.test-support.js';
 
-const decide = (
-  input: ReturnType<typeof remainingVariantSpot>,
-  phase12Remaining: RemainingVariantMode,
-  evidenceMode = true
-) => {
+const decide = (input: Round3Spot, phase12Remaining: RemainingVariantMode, evidenceMode = true) => {
   seedFastRandom(100101);
   return HorseLogic.decide(
     input.hero,
@@ -78,19 +86,23 @@ const usableAuthority = (continuationVersion: string) => ({
   mainGeneration: null,
 });
 
-// Tournament spots where the pack's proposal differs from the reference
-// (checked below). Pineapple is refused in tournaments before any proposal.
-const CHANGED_TOURNAMENT_SPOTS = [
-  ['short_deck', 'flop'],
-  ['flh', 'flop'],
-  ['flh', 'turn'],
-  ['flo8', 'flop'],
-] as const;
+// Round 3 changes the reference only in its declared spots (the no-limit
+// flop checked to the hero, the fixed-limit heads-up button first in); these
+// are found over fixed holdings where the shadow proposal differs from the
+// reference (checked below). Pineapple is refused in tournaments before any
+// proposal.
+const TOURNAMENT_VARIANTS = ['short_deck', 'flh', 'flo8'] as const;
+const changedSpot = (variant: RemainingPolicyVariant, mode: 'cash' | 'tournament') =>
+  round3ChangedSpot(
+    variant,
+    mode,
+    (spot) => decide(spot, 'shadow').remainingVariantPolicy?.changed === true
+  );
 
 describe('P12.3 Phase 7 keeps tournament objective ownership', () => {
-  it.each(CHANGED_TOURNAMENT_SPOTS)(
-    'a %s %s tournament decision under usable Phase 12 authority is Phase 7’s decision',
-    (variant, street) => {
+  it.each(TOURNAMENT_VARIANTS)(
+    'a %s tournament decision under usable Phase 12 authority is Phase 7’s decision',
+    (variant) => {
       const mode = horsePhase12AdmittedMode({
         callerMode: undefined,
         gameMode: 'tournament',
@@ -99,7 +111,8 @@ describe('P12.3 Phase 7 keeps tournament objective ownership', () => {
         verdict: 'usable',
       });
       expect(mode).toBe('shadow');
-      const spot = () => remainingVariantSpot(variant, street, 2, 'tournament');
+      const spot = changedSpot(variant, 'tournament');
+      expect(spot().state.stage).toBe(round3ChangedStreet(variant));
       const reference = decide(spot(), 'off');
       const admitted = decide(spot(), mode);
       expect(reference.tournamentUtility).toBeDefined();
@@ -123,10 +136,10 @@ describe('P12.3 Phase 7 keeps tournament objective ownership', () => {
     }
   );
 
-  it.each(CHANGED_TOURNAMENT_SPOTS)(
-    'even the offline candidate control cannot carry a %s %s tournament selection across the worker boundary',
-    (variant, street) => {
-      const candidate = decide(remainingVariantSpot(variant, street, 2, 'tournament'), 'candidate');
+  it.each(TOURNAMENT_VARIANTS)(
+    'even the offline candidate control cannot carry a %s tournament selection across the worker boundary',
+    (variant) => {
+      const candidate = decide(changedSpot(variant, 'tournament')(), 'candidate');
       const receipt = candidate.remainingVariantPolicy!;
       expect(receipt.utilityOwner).toBe('phase7_evaluated');
       expect(candidate.tournamentUtility?.selectedAction).toBe(candidate.action);
@@ -174,18 +187,12 @@ describe('P12.3 Phase 7 keeps tournament objective ownership', () => {
   });
 });
 
-// Cash spots where the pack applies a different action than the reference.
-const CHANGED_CASH_SPOTS = [
-  ['short_deck', 'preflop'],
-  ['pineapple', 'preflop'],
-  ['flh', 'turn'],
-  ['flo8', 'flop'],
-] as const;
+const CASH_VARIANTS = ['short_deck', 'pineapple', 'flh', 'flo8'] as const;
 
 describe('P12.3 illegal candidate retention under live candidate admission', () => {
-  it.each(CHANGED_CASH_SPOTS)(
-    'an applied %s %s candidate the legalizer would rewrite is not selected; the reference is executed',
-    (variant, street) => {
+  it.each(CASH_VARIANTS)(
+    'an applied %s candidate the legalizer would rewrite is not selected; the reference is executed',
+    (variant) => {
       // Live: the mode the worker admits from usable cash authority, on the
       // real policy clock (no offline evidence control).
       const mode = horsePhase12AdmittedMode({
@@ -196,7 +203,7 @@ describe('P12.3 illegal candidate retention under live candidate admission', () 
         verdict: 'usable',
       });
       expect(mode).toBe('candidate');
-      const spot = () => remainingVariantSpot(variant, street, 2, 'cash');
+      const spot = changedSpot(variant, 'cash');
       // Wiring, not latency: the live budget is tested by the policy suites.
       const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
       onTestFinished(() => clock.mockRestore());
@@ -209,7 +216,7 @@ describe('P12.3 illegal candidate retention under live candidate admission', () 
       });
       const reference = decide(spot(), 'off', false);
       expect(act(honest)).not.toEqual(act(reference));
-      forge.amountDelta = 0.004;
+      forge.on = true;
       try {
         const forged = decide(spot(), mode, false);
         expect(act(forged)).toEqual(act(reference));
@@ -237,7 +244,7 @@ describe('P12.3 illegal candidate retention under live candidate admission', () 
           )
         ).toBe(false);
       } finally {
-        forge.amountDelta = 0;
+        forge.on = false;
       }
     }
   );

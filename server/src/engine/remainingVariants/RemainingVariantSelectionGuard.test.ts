@@ -8,7 +8,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 
-const forge = vi.hoisted(() => ({ amountDelta: 0 }));
+const forge = vi.hoisted(() => ({ on: false }));
 vi.mock('./RemainingVariantLivePolicy.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./RemainingVariantLivePolicy.js')>();
   return {
@@ -17,29 +17,36 @@ vi.mock('./RemainingVariantLivePolicy.js', async (importOriginal) => {
       ...args: Parameters<typeof actual.evaluateRemainingVariantPolicy>
     ) => {
       const result = actual.evaluateRemainingVariantPolicy(...args);
-      if (!forge.amountDelta || typeof result.decision.amount !== 'number') return result;
-      // An applied candidate whose wager is not a legal size.
-      return {
-        ...result,
-        decision: { ...result.decision, amount: result.decision.amount + forge.amountDelta },
-      };
+      if (!forge.on || !result.receipt.applied) return result;
+      // An applied candidate the legalizer would rewrite: a wager off the
+      // legal size, or the passive action of the other kind (a fold where
+      // nothing is owed, a check against a bet).
+      const d = result.decision;
+      const decision =
+        typeof d.amount === 'number' && (d.action === 'bet' || d.action === 'raise')
+          ? { ...d, amount: d.amount + 0.004 }
+          : d.action === 'check'
+            ? { ...d, action: 'fold' as const }
+            : d.action === 'fold'
+              ? { ...d, action: 'check' as const }
+              : d;
+      return { ...result, decision };
     },
   };
 });
 
-import { remainingVariantSpot } from '../../benchmark/RemainingVariantPolicyEvidence.js';
 import { runRemainingVariantStrengthShard } from '../../benchmark/RemainingVariantStrengthLeague.js';
 import { HorseLogic } from '../HorseLogic.js';
 import { seedFastRandom } from '../HorseEval.js';
 import type { RemainingVariantMode } from './RemainingVariantLivePolicy.js';
 import type { RemainingPolicyVariant } from './RemainingVariantPolicyPack.js';
+import {
+  round3ChangedSpot,
+  round3ChangedStreet,
+  type Round3Spot,
+} from './RemainingVariantRound3Spots.test-support.js';
 
-const decide = (
-  variant: RemainingPolicyVariant,
-  street: 'preflop' | 'flop' | 'turn',
-  phase12Remaining: RemainingVariantMode
-) => {
-  const spot = remainingVariantSpot(variant, street, 2, 'cash');
+const decide = (spot: Round3Spot, phase12Remaining: RemainingVariantMode) => {
   seedFastRandom(100101);
   return HorseLogic.decide(
     spot.hero,
@@ -60,31 +67,34 @@ const act = (d: { action: string; amount?: number }) => ({
   amount: d.amount ?? null,
 });
 
-// Spots where the pack applies a wager that differs from the reference.
-const WAGER_SPOTS = [
-  ['short_deck', 'preflop'],
-  ['pineapple', 'preflop'],
-  ['flh', 'turn'],
-  ['flo8', 'flop'],
-] as const;
+// Round 3 changes the reference only in its declared spots: the no-limit
+// flop checked to the hero (the pack checks a reference bet) and the
+// fixed-limit heads-up button first in (the pack opens a reference fold).
+const VARIANTS = ['short_deck', 'pineapple', 'flh', 'flo8'] as const;
+const changedSpot = (variant: RemainingPolicyVariant) =>
+  round3ChangedSpot(variant, 'cash', (spot) => {
+    const off = decide(spot, 'off');
+    return JSON.stringify(act(decide(spot, 'candidate'))) !== JSON.stringify(act(off));
+  });
 
 describe('P12.2 illegal candidate retention', () => {
-  it.each(WAGER_SPOTS)(
-    'an applied %s %s candidate the legalizer would rewrite is not executed; the reference is',
-    (variant, street) => {
-      const honest = decide(variant, street, 'candidate');
+  it.each(VARIANTS)(
+    'an applied %s candidate the legalizer would rewrite is not executed; the reference is',
+    (variant) => {
+      const spot = changedSpot(variant);
+      expect(spot().state.stage).toBe(round3ChangedStreet(variant));
+      const honest = decide(spot(), 'candidate');
       expect(honest.remainingVariantPolicy).toMatchObject({ applied: true });
       expect(honest.remainingVariantPolicy?.selectionRefusal).toBeNull();
-      expect(['bet', 'raise']).toContain(honest.action);
-      const reference = decide(variant, street, 'off');
+      const reference = decide(spot(), 'off');
       expect(act(honest)).not.toEqual(act(reference));
       // Shadow is untouched by the guard: the reference is executed, nothing refused.
-      const shadow = decide(variant, street, 'shadow');
+      const shadow = decide(spot(), 'shadow');
       expect(act(shadow)).toEqual(act(reference));
       expect(shadow.remainingVariantPolicy?.selectionRefusal).toBeNull();
-      forge.amountDelta = 0.004;
+      forge.on = true;
       try {
-        const forged = decide(variant, street, 'candidate');
+        const forged = decide(spot(), 'candidate');
         expect(act(forged)).toEqual(act(reference));
         expect(forged.remainingVariantPolicy).toMatchObject({
           applied: false,
@@ -93,7 +103,7 @@ describe('P12.2 illegal candidate retention', () => {
           finalAmount: reference.amount ?? null,
         });
       } finally {
-        forge.amountDelta = 0;
+        forge.on = false;
       }
     }
   );
@@ -109,25 +119,24 @@ describe('P12.2 the shard runner counts guard refusals beside changed', () => {
       pairs: 96,
     };
     // P12.1 puts every proposal in the legalizer's own form
-    // (remainingVariantLegalForm): wagers land on HorseLogic's chip step, so
-    // the guard refuses no natural candidate. Before that fix the pack sized
-    // no-limit wagers in cents against a whole-dollar legalizer and this shard
-    // counted natural refusals.
+    // (remainingVariantLegalForm), so the guard refuses no natural candidate.
+    // Before that fix the round-1 pack sized no-limit wagers in cents against
+    // a whole-dollar legalizer and this shard counted natural refusals.
     const natural = await runRemainingVariantStrengthShard('short_deck', request);
     expect(natural.complete).toBe(true);
     expect(natural.illegalCandidates).toBe(0);
     expect(natural.changed).toBeGreaterThan(0);
     expect(natural.illegalActions + natural.settlementMismatches).toBe(0);
-    forge.amountDelta = 0.004;
+    forge.on = true;
     try {
       const forged = await runRemainingVariantStrengthShard('short_deck', request);
       expect(forged.complete).toBe(true);
-      // Every applied wager is now off the legal grid: refused, never changed.
+      // Every applied change is now one the legalizer rewrites: refused, never changed.
       expect(forged.illegalCandidates).toBeGreaterThan(natural.illegalCandidates);
       expect(forged.changed).toBeLessThan(natural.changed);
       expect(forged.illegalActions + forged.settlementMismatches).toBe(0);
     } finally {
-      forge.amountDelta = 0;
+      forge.on = false;
     }
   }, 120_000);
 });

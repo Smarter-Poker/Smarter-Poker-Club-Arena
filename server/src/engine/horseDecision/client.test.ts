@@ -2534,7 +2534,7 @@ describe('Phase 8.3 qualified authority at the client boundary', () => {
     return { worker, client, workerAuthority };
   }
   const candidateLedger = (authority: unknown) => ({
-    version: 'horse-tournament-postflop-round1-v4',
+    version: 'horse-tournament-postflop-round2-v1',
     mode: 'candidate',
     eligible: true,
     fired: true,
@@ -2578,10 +2578,10 @@ describe('Phase 8.3 qualified authority at the client boundary', () => {
       state: 'usable',
       generation: workerAuthority.currentGeneration(),
       mainGeneration: liveHorsePhase8Authority.mainGeneration(),
-      continuationVersion: 'horse-tournament-postflop-round1-v4',
+      continuationVersion: 'horse-tournament-postflop-round2-v1',
     });
     expect(result.decision.executionWitness?.phase8Authority).toMatchObject({
-      continuationVersion: 'horse-tournament-postflop-round1-v4',
+      continuationVersion: 'horse-tournament-postflop-round2-v1',
       mode: 'candidate',
       selection: 'selected',
       verdict: null,

@@ -31,7 +31,7 @@ describe('protected-release authority admission', () => {
     if (admission.status !== 'admitted') return;
     const a = admission.authority;
     expect(Object.isFrozen(a)).toBe(true);
-    expect(a.continuationVersion).toBe('horse-tournament-postflop-round1-v4');
+    expect(a.continuationVersion).toBe('horse-tournament-postflop-round2-v1');
     expect(a.continuationVersion).toBe(PHASE8_POLICY.version);
     expect(a.evidenceSha256).toBe(createHash('sha256').update(evidence).digest('hex'));
     expect(a.authorityKey).toMatch(/^[0-9a-f]{64}$/);

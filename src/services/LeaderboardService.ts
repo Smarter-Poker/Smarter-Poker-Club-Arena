@@ -47,7 +47,7 @@ interface PlayerStatsRow {
   tournaments_played?: number;
   tournaments_won: number;
   club_id?: string;
-  rank_change?: number;
+  rank_change?: number | null;
   qualified?: boolean;
   sum_big_blind?: number;
   rank?: number;
@@ -275,7 +275,7 @@ export interface LeaderboardEntry {
   avatar?: string;
   value: number;
   metric: LeaderboardMetric;
-  change: number; // Real position change vs yesterday's snapshot ranking
+  change: number | null; // Null means no authoritative comparison baseline.
   isVIP?: boolean;
   vipTier?: string;
   level?: number;
@@ -422,7 +422,10 @@ async function decorateWithProfiles(
       avatar: profile.avatar_url,
       value: metricValue(row, metric),
       metric,
-      change: Number(row.rank_change) || 0,
+      change:
+        row.rank_change == null || !Number.isFinite(Number(row.rank_change))
+          ? null
+          : Number(row.rank_change),
       hands: handsOf(row),
       qualified: row.qualified !== false,
       totalRanked: row.total_ranked != null ? Number(row.total_ranked) : undefined,

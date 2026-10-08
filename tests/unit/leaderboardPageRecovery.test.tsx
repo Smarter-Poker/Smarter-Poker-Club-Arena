@@ -129,6 +129,26 @@ describe('Leaderboard Page Recovery States', () => {
     vi.restoreAllMocks();
   });
 
+  it('Shows Unknown Movement Without A False Direction Or Hot Streak', async () => {
+    h.getClubLeaderboard.mockResolvedValueOnce([
+      { ...boardRow('Unknown Baseline Player', 100), change: null },
+    ]);
+    renderPage();
+    expect(await screen.findByText('Unknown Baseline Player')).toBeInTheDocument();
+    expect(screen.getAllByLabelText('Rank Movement Unknown').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/^Up \d/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Down \d/)).not.toBeInTheDocument();
+  });
+
+  it('Shows No Movement Badge For An Authoritative Zero', async () => {
+    h.getClubLeaderboard.mockResolvedValueOnce([
+      { ...boardRow('Known Baseline Player', 100), change: 0 },
+    ]);
+    renderPage();
+    expect(await screen.findByText('Known Baseline Player')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Rank Movement Unknown')).not.toBeInTheDocument();
+  });
+
   it('shows A Retryable Membership Error Instead Of A False Empty Club State', async () => {
     h.getMemberships.mockRejectedValueOnce(new Error('Network Unavailable'));
     renderPage();

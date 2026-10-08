@@ -10,6 +10,7 @@ readonly extension_trigger_bootstrap="$here/leaderboard-isolation-extension-trig
 readonly acl_bootstrap="$here/leaderboard-isolation-acl-bootstrap.sql"
 readonly definition_bootstrap="$here/leaderboard-isolation-definition-bootstrap.sql"
 readonly restore_script_helper="$here/leaderboard-isolation-restore-script.mjs"
+readonly plain_schema_helper="$here/leaderboard-plain-schema-partition.mjs"
 readonly startup_helper="$here/leaderboard-isolation-startup-profile.mjs"
 readonly catalog_diagnostic="$here/leaderboard-isolation-catalog-diagnostic.mjs"
 readonly replica_helper="$here/leaderboard-schema-replica.mjs"
@@ -133,6 +134,7 @@ source_progress() {
       'pg_dump: reading triggers') phase='triggers' ;;
       'pg_dump: reading policies') phase='policies' ;;
       'pg_dump: reading dependency data') phase='dependencies' ;;
+      'pg_dump: saving database definition') phase='database-definition' ;;
     esac
     fi
   done
@@ -163,6 +165,7 @@ if [[ "${1:-}" == '--check' ]]; then
   test -s "$acl_bootstrap"
   test -s "$definition_bootstrap"
   test -s "$restore_script_helper"
+  test -s "$plain_schema_helper"
   test -s "$startup_helper"
   test -s "$catalog_diagnostic"
   test -s "$replica_helper"
@@ -329,8 +332,16 @@ fi
 # Preserve the existing finite command envelope. A WAL recovery conflict is a
 # real failure; do not enable feedback or alter production to make it pass.
 source_client 600 pg_dump \
-  --verbose --schema-only --create --format=custom --no-password --no-subscriptions --lock-wait-timeout=5s \
-  >"$scratch/schema.dump" 2>"$scratch/dump-error.log" || source_failure 'schema-only export unavailable' "$scratch/dump-error.log" "$?"
+  --verbose --schema-only --create --format=plain --no-password --no-subscriptions --lock-wait-timeout=5s \
+  >"$scratch/schema.sql" 2>"$scratch/dump-error.log" || source_failure 'schema-only export unavailable' "$scratch/dump-error.log" "$?"
+chmod 600 "$scratch/schema.sql"
+# Native plain output avoids archive-only dependency traversal. This does not
+# establish the old failure cause or a usable restore: validate every partition
+# before a destination exists and preserve the exact final catalog comparison.
+# Canonical reconnect commands are consumed, never executed by any destination.
+node "$plain_schema_helper" "$scratch/schema.sql" "$scratch/database.sql" "$scratch/schemas.sql" \
+  "$scratch/extensions-dump.sql" "$scratch/remaining.sql" \
+  >"$scratch/partition.log" 2>&1 || failure 'native plain schema partition refused'
 if [[ -n "${LEADERBOARD_SCHEMA_REPLICA_DESCRIPTOR:-}" ]]; then
   source_catalog >"$scratch/replica-after.json" 2>"$scratch/source-error.log" || source_failure 'replica catalog recheck unavailable' "$scratch/source-error.log" "$?"
   cmp -s "$scratch/source-before.json" "$scratch/replica-after.json" || failure 'replica schema changed during export'
@@ -392,26 +403,17 @@ docker exec -i "$container" psql -h /tmp -Xq -U "$bootstrap" -d template1 -v ON_
   -v VERBOSITY=verbose <"$scratch/roles-restore.sql" >"$scratch/role-restore.log" 2>&1 || failure "exact roles cannot be restored ($(destination_role_category <"$scratch/role-restore.log"))"
 docker exec "$container" psql -h /tmp -Xq -U "$bootstrap" -d template1 -v ON_ERROR_STOP=1 -v VERBOSITY=verbose \
   -c 'DROP DATABASE postgres;' >"$scratch/drop-empty-database.log" 2>&1 || destination_failure 'empty local database preparation failed' "$scratch/drop-empty-database.log" "$?"
-docker run --rm -i --entrypoint /usr/lib/postgresql/bin/pg_restore "$image" --list --create \
-  <"$scratch/schema.dump" >"$scratch/archive.list" 2>"$scratch/list-error.log" || failure 'archive ordering unavailable'
-awk '$4 == "DATABASE" || ($4 == "ACL" && $6 == "DATABASE") {print}' "$scratch/archive.list" >"$scratch/database.list"
-awk '$4 == "SCHEMA" {print}' "$scratch/archive.list" >"$scratch/schemas.list"
-awk '$4 != "DATABASE" && !($4 == "ACL" && $6 == "DATABASE") && $4 != "SCHEMA" && $4 != "EXTENSION" {print}' \
-  "$scratch/archive.list" >"$scratch/remaining.list"
-docker cp "$scratch/database.list" "$container:/tmp/database.list" >/dev/null
-docker cp "$scratch/schemas.list" "$container:/tmp/schemas.list" >/dev/null
-docker cp "$scratch/remaining.list" "$container:/tmp/remaining.list" >/dev/null
-docker exec -i "$container" pg_restore -h /tmp -U "$bootstrap" --dbname=template1 --create \
-  --schema-only --exit-on-error --use-list=/tmp/database.list \
-  <"$scratch/schema.dump" >"$scratch/database-restore.log" 2>&1 || destination_failure 'database attributes cannot be restored' "$scratch/database-restore.log" "$?"
+docker exec -i "$container" psql -h /tmp -Xq -U "$bootstrap" --dbname=template1 \
+  -v ON_ERROR_STOP=1 -v VERBOSITY=verbose --file=- \
+  <"$scratch/database.sql" >"$scratch/database-restore.log" 2>&1 || destination_failure 'database attributes cannot be restored' "$scratch/database-restore.log" "$?"
 docker exec "$container" psql -h /tmp -Xq -U "$bootstrap" -d postgres -v ON_ERROR_STOP=1 \
   -v VERBOSITY=verbose -c 'DROP EXTENSION plpgsql;' >"$scratch/empty-schema.log" 2>&1 || destination_failure 'empty isolated defaults cannot be prepared' "$scratch/empty-schema.log" "$?"
 # PG17 pg_dump omits CREATE SCHEMA for initdb's standard public namespace.
-# Retain that namespace; archive owner/ACL statements and final exact catalog
+# Retain that namespace; native owner/ACL statements and final exact catalog
 # comparison still enforce source security. Only plpgsql is recreated below.
-docker exec -i "$container" pg_restore -h /tmp -U "$bootstrap" --dbname=postgres \
-  --schema-only --exit-on-error --use-list=/tmp/schemas.list \
-  <"$scratch/schema.dump" >"$scratch/schemas-restore.log" 2>&1 || destination_failure 'source namespaces cannot be restored' "$scratch/schemas-restore.log" "$?"
+docker exec -i "$container" psql -h /tmp -Xq -U "$bootstrap" --dbname=postgres \
+  -v ON_ERROR_STOP=1 -v VERBOSITY=verbose --single-transaction --file=- \
+  <"$scratch/schemas.sql" >"$scratch/schemas-restore.log" 2>&1 || destination_failure 'source namespaces cannot be restored' "$scratch/schemas-restore.log" "$?"
 # Start pg_cron only after the database exists. Otherwise its idle launcher
 # connection can prevent dropping the original empty postgres database.
 docker exec "$container" pg_ctl -D /tmp/leaderboard-qualification-db -m fast -w stop \
@@ -428,10 +430,8 @@ node "$startup_helper" verify "$scratch/startup-before.json" "$scratch/startup-r
 # the original role attribute in that same transaction before any qualification.
 docker exec -i "$container" psql -h /tmp -Xq -U "$bootstrap" -d postgres -v ON_ERROR_STOP=1 -v VERBOSITY=verbose --file=- \
   <"$scratch/extensions.sql" >"$scratch/extension-restore.log" 2>&1 || destination_failure 'original-owner extensions or exact versions cannot be restored' "$scratch/extension-restore.log" "$?"
-# Render the unchanged remaining archive privately. psql owns one transaction
-# across elevation, archive restoration and exact original role attributes.
-docker exec -i "$container" pg_restore --file=- --schema-only --exit-on-error --use-list=/tmp/remaining.list \
-  <"$scratch/schema.dump" >"$scratch/remaining.sql" 2>"$scratch/schema-render.log" || destination_failure 'remaining archive rendering failed' "$scratch/schema-render.log" "$?"
+# The validated remaining native SQL stays private. psql owns one transaction
+# across elevation, schema restoration and exact original role attributes.
 node "$restore_script_helper" "$scratch/remaining.sql" "$scratch/event-owners.json" \
   "$scratch/event-owners-elevate.sql" "$scratch/event-owners-restore.sql" || failure 'atomic restore script validation failed'
 # Stream host-private inputs; docker cp would preserve root-owned 0600 files

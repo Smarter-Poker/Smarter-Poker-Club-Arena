@@ -2,31 +2,35 @@
 
 Original audit date: 2026-08-29
 
-Current candidate audit: 2026-10-06
+Current candidate audit: 2026-10-08
 
 Scope: the hamburger drawer, every destination it advertises, the contextual section rails, all 27 Club Operations destinations, union workspaces, retained compatibility routes, responsive reachability, and the union weekly-accounting read path.
 
 ## Current Delivery State
 
-This document records the delivered information architecture and the final
-production-certificate correction identified by its complete authenticated
-browser sweep. It does not treat source or merge state as production success.
+Updated October 8, 2026. The historical checkpoints below are preserved; this
+section supersedes their pending publication and certificate statements.
 
-| Delivery stage                                       | Current state                                                                                                                                                                                                                                                                                                               |
-| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Source implementation                                | Main implementation and live-contract repair merged through PRs #6147 and #6155; certificate corrections merged through PRs #6183, #6205, #6231, #6253, and #6259; the adjacent Cashier request-contract repair merged in PR #6247                                                                                          |
-| Focused local validation                             | New one-shot certificate: YAML and action validation, 7 of 7 source contracts, formatting, clean diff, and exactly 14 browser cases discovered across the four correction files; no browser was run locally                                                                                                                 |
-| Commit and pull request                              | Earlier delivery is merged through `3d37ed041c`; the focused trusted-default-branch workflow is being delivered from `agent/menu-final-focused-cert` and remains uncommitted/unpushed at this source checkpoint                                                                                                             |
-| Protected merge                                      | Product and IA implementation are complete; the focused production-certificate workflow still needs its own protected merge                                                                                                                                                                                                 |
-| Database migration installation and catalog readback | `20261005111546` installed once by run `37314453207`; exact ledger, RLS policy, function security, owner, and grants read back successfully                                                                                                                                                                                 |
-| Club Arena client publication                        | The implementation published successfully; both public endpoints serve a protected descendant whose hamburger, Leaderboard, and customization trees match the certified source                                                                                                                                              |
-| Post-deploy browser certification                    | Run `37381227013`, artifact `11379125260`, discovered 464 cases: 462 executed—457 passed and 5 failed—with 2 skipped and 0 flaky across 51 files. Three failures define the correction lane; Daily Mission and financial-flow failures are outside and not certified here. Leaderboard needs fresh proof after `b6ae474fb0` |
-| Public build identity and affected live behavior     | Product behavior is live; final completion remains pending until the corrected certificate itself merges, publishes through the protected route, executes against production, and proves fixture cleanup                                                                                                                    |
+| Delivery stage                     | Current state                                                                                                                                                                                    |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Implementation and protected merge | Product and IA repairs merged; focused certificate PR #6279 merged as `6afa4e52fa69de8b6b5391afc6dc4300f4ab2593`                                                                                 |
+| Database installed                 | `20261005111546` installed once by run `37314453207`; ledger, RLS, security, owner and grants read back. No replay                                                                               |
+| Published client                   | `e16d38f3e6693f55348fd3b7a470098bbc9a51dc`, publisher `37744571669`; both public build-info endpoints reverified October 8                                                                       |
+| Retained-runtime provenance        | Protected verification source `743ae1a1c158e828321b07d151a27fa9f9d32de0`, successful publisher `37754692481`, immutable retained-runtime receipt accepted by the maintained harness              |
+| Production certificate             | `37754904430`: client browser, live-table/engine and Phase 1 cutover seal succeeded; 471 executed, 2 accepted conditional skips, 0 failed, 0 flaky across 52 files; main routed sweep 420 passed |
+| Scoped browser counts              | Hamburger 35, Club Operations 37, mobile fit 100, Table Management 10, customization realtime 1, gameplay customization 1, Leaderboard 3; each scoped file had zero skips                        |
+| Fixture cleanup                    | Client and live-table logs confirm reserved accounts hard-deleted and absence verified; no fixtures created by this closeout                                                                     |
+| Redundant focused tooling          | Retired with its dedicated source-contract test; its preflight-only failure `37477219786` is superseded by the stronger maintained certificate                                                   |
+| Closeout source delivery           | Retirement/documentation follow-up on `agent/menu-closeout-20261008`; protected checks, merge and retained-runtime publication remain pending until provider evidence is recorded                |
 
-Production success must not be inferred from this source audit. The remaining
-delivery is the final correction's protected merge, successful
-`publish-club-arena.yml`, both public `build-info.json` endpoints,
-authenticated post-deploy browser checks, and isolated-fixture cleanup.
+The completed work retained and validated the established black-first,
+machined chrome/gunmetal, restrained electric-blue treatment and approved art
+while correcting IA, authority, routing, responsive behavior and live data.
+It does not claim a new painted-chassis render for every retained page. A full
+art conversion remains a separate visual phase requiring approved master art.
+
+See `docs/changelog/2026-10-08-hamburger-pages-final-closeout.md` for evidence
+and the finite closeout boundary.
 
 ## Audit Basis
 

@@ -20,7 +20,7 @@
 --   "never pruned": a receipt is what turns a late resend of a hand into
 --   'replayed' instead of a second review row and a second horse_review_rollup
 --   contribution, and review rows are pruned at 30 days. Read from
---   production at 2026-10-08 04:08Z: 46,590 receipts written since
+--   production at 2026-10-08 04:58Z: 48,705 receipts written since
 --   2026-10-07 10:01Z, about 60,000 a day, and nothing ever removed them.
 --
 -- WHY A RECEIPT COULD NOT SIMPLY BE PRUNED
@@ -42,34 +42,49 @@
 --      body is patched in place from the exact installed definition (pinned
 --      md5 below) with one inserted block; every other line, its
 --      configuration and its privileges are unchanged.
---   2. sp_prune_horse_hand_reviews(), the existing owner of review retention
---      (called by the engine, HorseHandReview.ts; no cron, no new loop),
---      also deletes at most 50,000 receipts per call, oldest rollup_day
---      first, and only a receipt whose rollup_day is more than 32 UTC days
---      old AND whose review row no longer exists. rollup_day is the UTC day
---      of the same played_at, so a pruned receipt's hand was played more than
---      31 days ago and any later resend of it is refused by (1): a replay
---      after the prune is named and safe, never a second count. Its four
---      existing statements are byte-identical; the return value adds the
---      receipts removed.
+--   2. sp_prune_horse_hand_review_receipts() deletes at most 25,000 receipts
+--      per call, oldest rollup_day first, and only a receipt whose rollup_day
+--      is more than 32 UTC days old AND whose review row no longer exists.
+--      rollup_day is the UTC day of the same played_at, so a pruned
+--      receipt's hand was played more than 32 days ago and any later resend
+--      of it is refused by (1): a replay after the prune is named and safe,
+--      never a second count. horse_review_rollup is never touched.
 --   3. An index on rollup_day so the bounded delete reads only what it
 --      removes.
 --
---   Capacity: the engine calls the prune once per process, 10 minutes after
---   its first flagged hand; production engine releases ran 4 to 13 times a
---   day over 2026-10-03..07, so 50,000 per call clears ~60,000 a day with
---   room. The first receipts (rollup_day 2026-10-07) become eligible on
---   2026-11-09 UTC.
+-- WHY A FUNCTION OF ITS OWN, NOT A FIFTH STATEMENT IN sp_prune_horse_hand_reviews
 --
---   This is retention (CLAUDE.md 10.12, "the two things this does NOT ban"),
---   inside the owner that already prunes reviews. Nothing is backfilled,
---   reset or repaired; horse_review_rollup is never touched.
+--   sp_prune_horse_hand_reviews() is the existing review-retention owner; the
+--   engine calls it through PostgREST as service_role, whose statement_timeout
+--   is pinned at 8s (CLAUDE.md, production DDL policy). Read from production
+--   pg_stat_statements (2026-10-04..08): 43 calls, mean 5,177 ms, max
+--   6,840 ms. A receipt delete inside that one statement would spend the
+--   remaining margin, and a timeout there rolls back the review prune with
+--   it. So sp_prune_horse_hand_reviews() is left byte-identical, and the
+--   receipts get their own statement and their own budget. The engine calls
+--   it from the same once-per-process retention callback, right after the
+--   review prune (server/src/services/HorseHandReview.ts, a follow-up change
+--   once this function is installed, because the engine release gate refuses
+--   a build that calls a function production does not have). No cron, no
+--   loop, no new job.
+--
+--   Capacity and budget: 43 review-prune calls in 4.2 days (about 10 a day)
+--   against about 60,000 receipts a day; one call clears up to 25,000, so
+--   about 250,000 a day. Budget, read from production at 2026-10-08 05:04Z:
+--   the anti-join probe this delete makes took 1.9 s for all 48,996 receipts
+--   (0.04 ms a receipt), so a full 25,000 batch probes in about 1 s and
+--   deletes small rows, well inside 8 s. On a private PostgreSQL 17 with
+--   900,000 review rows, a 50,000 batch took 0.75 s cold. The first receipts
+--   (rollup_day 2026-10-07) become eligible on 2026-11-09 UTC.
+--
+--   This is retention (CLAUDE.md 10.12, "the two things this does NOT ban").
+--   Nothing is backfilled, reset or repaired.
 --
 -- Qualified by scripts/ci/test-horse-hand-review-atomic.py on a private
 -- PostgreSQL 17 cluster (CI: accounting_postgres, shard 4).
 --
--- @live-proof: (SELECT md5(prosrc) = 'ea26b896e3d95a70ed10ba86473c7e72' FROM pg_proc WHERE oid = to_regprocedure('public.sp_prune_horse_hand_reviews()'))
--- @live-proof: (SELECT md5(prosrc) = '315906962e9854aa3054b9ad4bc8ae79' FROM pg_proc WHERE oid = to_regprocedure('public.fn_hhr_record_atomic(jsonb)'))
+-- @live-proof: (SELECT md5(prosrc) = '65138afe0f0886cd066cfca6c3c60fe9' FROM pg_proc WHERE oid = to_regprocedure('public.sp_prune_horse_hand_review_receipts()'))
+-- @live-proof: (SELECT md5(prosrc) = '2401c9fb36c18448ab5f4bbad862443a' FROM pg_proc WHERE oid = to_regprocedure('public.fn_hhr_record_atomic(jsonb)'))
 -- ═══════════════════════════════════════════════════════════════════════════
 
 BEGIN;
@@ -85,8 +100,15 @@ BEGIN
   IF pg_catalog.to_regclass('public.horse_hand_review_receipts') IS NULL THEN
     RAISE EXCEPTION 'hhr_retention preimage: public.horse_hand_review_receipts is missing';
   END IF;
+  IF pg_catalog.to_regclass('public.horse_hand_reviews') IS NULL THEN
+    RAISE EXCEPTION 'hhr_retention preimage: public.horse_hand_reviews is missing';
+  END IF;
   IF pg_catalog.to_regclass('public.horse_hand_review_receipts_rollup_day_idx') IS NOT NULL THEN
     RAISE EXCEPTION 'hhr_retention preimage: public.horse_hand_review_receipts_rollup_day_idx already exists';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_catalog.pg_proc
+              WHERE proname = 'sp_prune_horse_hand_review_receipts' AND pronamespace = 'public'::regnamespace) THEN
+    RAISE EXCEPTION 'hhr_retention preimage: public.sp_prune_horse_hand_review_receipts already exists';
   END IF;
   IF (SELECT pg_catalog.count(*) FROM pg_catalog.pg_proc
        WHERE proname = 'fn_hhr_record_atomic' AND pronamespace = 'public'::regnamespace) <> 1 THEN
@@ -96,15 +118,6 @@ BEGIN
        WHERE oid = pg_catalog.to_regprocedure('public.fn_hhr_record_atomic(jsonb)'))
      IS DISTINCT FROM '161e5883ca636e898463e3957b1b6f45' THEN
     RAISE EXCEPTION 'hhr_retention preimage: public.fn_hhr_record_atomic(jsonb) is not the 20261007020953 body';
-  END IF;
-  IF (SELECT pg_catalog.count(*) FROM pg_catalog.pg_proc
-       WHERE proname = 'sp_prune_horse_hand_reviews' AND pronamespace = 'public'::regnamespace) <> 1 THEN
-    RAISE EXCEPTION 'hhr_retention preimage: expected exactly one public.sp_prune_horse_hand_reviews';
-  END IF;
-  IF (SELECT pg_catalog.md5(prosrc) FROM pg_catalog.pg_proc
-       WHERE oid = pg_catalog.to_regprocedure('public.sp_prune_horse_hand_reviews()'))
-     IS DISTINCT FROM 'd3972fedf8264f57f0ad39737faba044' THEN
-    RAISE EXCEPTION 'hhr_retention preimage: public.sp_prune_horse_hand_reviews() is not the 20260905204620 body';
   END IF;
 END
 $preimage$;
@@ -125,9 +138,9 @@ DECLARE
   c_block  constant text := E'      IF v_review_id IS NOT NULL THEN\n'
     || E'        -- PUBLICATION HORIZON (20261008041150). This row is about to be\n'
     || E'        -- applied for the first time. A hand played more than 30 days ago is\n'
-    || E'        -- refused instead: sp_prune_horse_hand_reviews may already have pruned\n'
-    || E'        -- its receipt (rollup_day over 32 UTC days old, review row gone), so\n'
-    || E'        -- applying it could count it twice. A receipt that still exists has\n'
+    || E'        -- refused instead: sp_prune_horse_hand_review_receipts may already have\n'
+    || E'        -- pruned its receipt (rollup_day over 32 UTC days old, review row gone),\n'
+    || E'        -- so applying it could count it twice. A receipt that still exists has\n'
     || E'        -- answered above whatever the hand''s age, and a legacy review row\n'
     || E'        -- still answers historical_unknown below. Raising rolls back this\n'
     || E'        -- review insert and every earlier row of the call.\n'
@@ -154,46 +167,39 @@ COMMENT ON FUNCTION public.fn_hhr_record_atomic(jsonb) IS
   'Atomic horse hand-review publication for one hand (1..10 horse rows carrying exactly the HorseReviewRow keys). One transaction: review row inserted once, horse_review_rollup arithmetic applied once (identical to fn_hhr_rollup_add), replay receipt kept. Returns {version:1, hand_id, rows:[{horse_user_id, status: applied|replayed|historical_unknown}]} in canonical horse order. Refuses with P0001 hhr_* on any invalid row or identity conflict, writing nothing; refuses hhr_publication_expired to apply a row played more than 30 days ago (its receipt may have been pruned). service_role only.';
 
 -- ─────────────────────────────────────────────────────────────────────────
--- 3. The existing review-retention owner also bounds the receipts. Its four
---    existing statements are unchanged.
+-- 3. The receipts' own bounded prune, in its own statement budget.
 -- ─────────────────────────────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION public.sp_prune_horse_hand_reviews() RETURNS int
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
-declare n int; m int; k int; j int; q int;
-begin
-  delete from horse_hand_reviews where created_at < now() - interval '30 days';
-  get diagnostics n = row_count;
-  delete from horse_daily_nets where day < current_date - 180;
-  get diagnostics m = row_count;
-  delete from horse_daily_play where day < current_date - 180;
-  get diagnostics k = row_count;
-  delete from horse_tournament_daily where day < current_date - 180;
-  get diagnostics j = row_count;
-  -- Receipts (20261008041150): at most 50,000 per call, oldest first, and
-  -- only once the receipt's UTC rollup_day is more than 32 days old AND its
-  -- review row is gone. fn_hhr_record_atomic refuses to apply a hand played
-  -- more than 30 days ago, so no resend can ever need a receipt removed here.
-  delete from public.horse_hand_review_receipts r
-   using (select c.hand_id, c.horse_user_id
-            from public.horse_hand_review_receipts c
-           where c.rollup_day < (pg_catalog.now() at time zone 'UTC')::date - 32
-             and not exists (select 1 from public.horse_hand_reviews v
-                              where v.hand_id = c.hand_id
-                                and v.horse_user_id = c.horse_user_id)
-           order by c.rollup_day
-           limit 50000) old
-   where r.hand_id = old.hand_id and r.horse_user_id = old.horse_user_id;
-  get diagnostics q = row_count;
-  return n + m + k + j + q;
-end $$;
+CREATE FUNCTION public.sp_prune_horse_hand_review_receipts() RETURNS integer
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
+DECLARE
+  v_n integer;
+BEGIN
+  -- At most 25,000 per call, oldest first, and only once the receipt's UTC
+  -- rollup_day is more than 32 days old AND its review row is gone.
+  -- fn_hhr_record_atomic refuses to apply a hand played more than 30 days
+  -- ago, so no resend can ever need a receipt removed here.
+  DELETE FROM public.horse_hand_review_receipts r
+   USING (SELECT c.hand_id, c.horse_user_id
+            FROM public.horse_hand_review_receipts c
+           WHERE c.rollup_day < (pg_catalog.now() AT TIME ZONE 'UTC')::date - 32
+             AND NOT EXISTS (SELECT 1 FROM public.horse_hand_reviews v
+                              WHERE v.hand_id = c.hand_id
+                                AND v.horse_user_id = c.horse_user_id)
+           ORDER BY c.rollup_day
+           LIMIT 25000) old
+   WHERE r.hand_id = old.hand_id AND r.horse_user_id = old.horse_user_id;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  RETURN v_n;
+END $$;
 
--- Daemon only, exactly as 20260905202805 left it (CREATE OR REPLACE keeps the
--- grant; restated so the definer-authorization check reads it here).
-REVOKE ALL ON FUNCTION public.sp_prune_horse_hand_reviews() FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.sp_prune_horse_hand_reviews() TO service_role;
+REVOKE ALL ON FUNCTION public.sp_prune_horse_hand_review_receipts() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.sp_prune_horse_hand_review_receipts() TO service_role;
+
+COMMENT ON FUNCTION public.sp_prune_horse_hand_review_receipts() IS
+  'Bounded retention for public.horse_hand_review_receipts: deletes at most 25,000 receipts per call, oldest rollup_day first, only where rollup_day is more than 32 UTC days old and the review row is gone. Returns the number deleted. Called by the engine right after sp_prune_horse_hand_reviews, in its own statement. service_role only.';
 
 COMMENT ON TABLE public.horse_hand_review_receipts IS
-  'Replay receipt for public.fn_hhr_record_atomic: one row per (hand, horse) whose review row and horse_review_rollup contribution were committed together. No foreign key. Kept while its review row exists and until its UTC rollup_day is more than 32 days old, then pruned by sp_prune_horse_hand_reviews (at most 50,000 per call, oldest first); fn_hhr_record_atomic refuses to apply any hand played more than 30 days ago, so a resend after the prune is refused (hhr_publication_expired), never counted twice. identity_digest is the sha256 of the typed immutable review values. Written only by fn_hhr_record_atomic.';
+  'Replay receipt for public.fn_hhr_record_atomic: one row per (hand, horse) whose review row and horse_review_rollup contribution were committed together. No foreign key. Kept while its review row exists and until its UTC rollup_day is more than 32 days old, then pruned by sp_prune_horse_hand_review_receipts (at most 25,000 per call, oldest first); fn_hhr_record_atomic refuses to apply any hand played more than 30 days ago, so a resend after the prune is refused (hhr_publication_expired), never counted twice. identity_digest is the sha256 of the typed immutable review values. Written only by fn_hhr_record_atomic.';
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- Postimage: exact bodies, unchanged configuration and privileges.
@@ -212,7 +218,7 @@ BEGIN
   END IF;
 
   SELECT * INTO v_p FROM pg_catalog.pg_proc WHERE oid = 'public.fn_hhr_record_atomic(jsonb)'::regprocedure;
-  IF pg_catalog.md5(v_p.prosrc) <> '315906962e9854aa3054b9ad4bc8ae79'
+  IF pg_catalog.md5(v_p.prosrc) <> '2401c9fb36c18448ab5f4bbad862443a'
      OR NOT v_p.prosecdef
      OR v_p.proconfig::text IS DISTINCT FROM '{"search_path=pg_catalog, pg_temp",lock_timeout=5s,statement_timeout=15s}'
      OR v_p.proacl::text IS DISTINCT FROM '{postgres=X/postgres,service_role=X/postgres}' THEN
@@ -220,12 +226,12 @@ BEGIN
       pg_catalog.md5(v_p.prosrc), v_p.proconfig, v_p.proacl;
   END IF;
 
-  SELECT * INTO v_p FROM pg_catalog.pg_proc WHERE oid = 'public.sp_prune_horse_hand_reviews()'::regprocedure;
-  IF pg_catalog.md5(v_p.prosrc) <> 'ea26b896e3d95a70ed10ba86473c7e72'
+  SELECT * INTO v_p FROM pg_catalog.pg_proc WHERE oid = 'public.sp_prune_horse_hand_review_receipts()'::regprocedure;
+  IF pg_catalog.md5(v_p.prosrc) <> '65138afe0f0886cd066cfca6c3c60fe9'
      OR NOT v_p.prosecdef
-     OR v_p.proconfig::text IS DISTINCT FROM '{search_path=public}'
+     OR v_p.proconfig::text IS DISTINCT FROM '{"search_path=pg_catalog, pg_temp"}'
      OR v_p.proacl::text IS DISTINCT FROM '{postgres=X/postgres,service_role=X/postgres}' THEN
-    RAISE EXCEPTION 'hhr_retention postimage: sp_prune_horse_hand_reviews is not the expected definition (md5 %, config %, acl %)',
+    RAISE EXCEPTION 'hhr_retention postimage: sp_prune_horse_hand_review_receipts is not the expected definition (md5 %, config %, acl %)',
       pg_catalog.md5(v_p.prosrc), v_p.proconfig, v_p.proacl;
   END IF;
 END

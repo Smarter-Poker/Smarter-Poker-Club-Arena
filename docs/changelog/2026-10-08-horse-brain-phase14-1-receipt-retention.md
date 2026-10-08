@@ -3,7 +3,7 @@
 **The open limit.** `public.horse_hand_review_receipts`, the replay receipt that
 `fn_hhr_record_atomic` keeps for every published (hand, horse) review, was
 created "never pruned" (migration `20261007020953`, PR #6352). Production read
-at 2026-10-08 04:08Z: 46,590 receipts since 2026-10-07 10:01Z, about 60,000 a
+at 2026-10-08 04:58Z: 48,705 receipts since 2026-10-07 10:01Z, about 60,000 a
 day, and nothing removed them.
 
 **Why it could not simply be pruned.** `fn_hhr_record_atomic` accepted a hand
@@ -22,42 +22,55 @@ thing that kept a late resend `replayed`.
   published seconds after they settle, so no live hand is refused. The body is
   patched in place from the exact installed definition (preimage md5
   `161e5883ca636e898463e3957b1b6f45`, postimage
-  `315906962e9854aa3054b9ad4bc8ae79`); configuration and privileges are
+  `2401c9fb36c18448ab5f4bbad862443a`); configuration and privileges are
   unchanged.
-- `sp_prune_horse_hand_reviews()`, the existing owner of review retention that
-  the engine already calls (`HorseHandReview.ts`, once per process), also
-  deletes at most 50,000 receipts per call, oldest `rollup_day` first, and only
-  a receipt whose UTC `rollup_day` is more than 32 days old **and** whose review
-  row is gone. Because `rollup_day` is the UTC day of the same `played_at`, a
-  pruned receipt's hand was played more than 31 days ago, so any later resend
-  is refused by the horizon above: never a second count. Its four existing
-  statements are unchanged; its return value adds the receipts removed
-  (preimage md5 `d3972fedf8264f57f0ad39737faba044`, postimage
-  `ea26b896e3d95a70ed10ba86473c7e72`).
+- `sp_prune_horse_hand_review_receipts()` (new, `service_role` only, postimage
+  md5 `65138afe0f0886cd066cfca6c3c60fe9`) deletes at most 25,000 receipts per
+  call, oldest `rollup_day` first, and only a receipt whose UTC `rollup_day` is
+  more than 32 days old **and** whose review row is gone. Because `rollup_day`
+  is the UTC day of the same `played_at`, a pruned receipt's hand was played
+  more than 32 days ago, so any later resend is refused by the horizon above:
+  never a second count. `horse_review_rollup` is never touched.
 - An index on `rollup_day` so the bounded delete reads only what it removes.
 
-No cron, no loop, no new job: retention rides the owner that already prunes
+**Why its own function.** `sp_prune_horse_hand_reviews()` is the existing
+review-retention owner, and the engine calls it through PostgREST as
+`service_role`, whose `statement_timeout` is pinned at 8 s. Production
+`pg_stat_statements` (2026-10-04 to 10-08): 43 calls, mean 5,177 ms, max
+6,840 ms. A receipt delete added inside that one statement would spend the
+remaining margin, and a timeout there would roll back the review prune too.
+So `sp_prune_horse_hand_reviews()` stays byte-identical and the receipts get
+their own statement and their own budget. The engine calls the new function
+from the same once-per-process retention callback in `HorseHandReview.ts`,
+right after the review prune. That call ships as a separate engine change once
+the function is installed, because the engine release gate ("Prove The Exact
+Engine Has Every Production Door") refuses a build that calls a function
+production does not have.
+
+No cron, no loop, no new job: retention rides the callback that already prunes
 reviews (CLAUDE.md 10.12 names retention pruning as allowed). Nothing is
-backfilled or reset and `horse_review_rollup` is never touched. Engine releases
-ran 4 to 13 times a day from 2026-10-03 to 10-07, and each process calls the
-prune once, so 50,000 per call clears about 60,000 a day with room. The first
-receipts (rollup day 2026-10-07) become eligible on 2026-11-09 UTC; until then
-the table keeps growing as before and the prune removes nothing, by design.
+backfilled or reset. Capacity: about 10 prune calls a day, 25,000 each, against
+about 60,000 receipts a day. Budget: in production the anti-join probe this
+delete makes took 1.9 s for all 48,996 receipts (0.04 ms each); on a private
+PostgreSQL 17 with 900,000 review rows a 50,000 batch took 0.75 s cold. The
+first receipts (rollup day 2026-10-07) become eligible on 2026-11-09 UTC; until
+then the prune removes nothing, by design.
 
 **Verification.** `scripts/ci/test-horse-hand-review-atomic.py` (PostgreSQL 17,
-CI `accounting_postgres` shard 4) now applies the retention migration
-unchanged after its 19 P14.1 cases and adds 13: receipts for hands played 45
-and 40 days ago published through the old door; the preimage refusing a
-changed prune and rolling back; reapply refused; unchanged definer,
-configuration and privileges, with the atomic body gaining exactly the horizon
-block; the horizon (29 days 23 hours applies, 30 days 1 minute and a mixed
-multi-horse call refused with nothing persisted); a 45-day-old receipt still
-replaying and a legacy row still `historical_unknown`; a receipt kept while its
-review exists; a receipt kept inside 32 days after its review is gone, its
-resend `replayed`; the review leaving retention and its receipt pruned in the
-same call, the resend refused with nothing re-inserted and the aggregate
+CI `accounting_postgres` shard 4) applies the retention migration unchanged
+after its 19 P14.1 cases and adds 13: receipts for hands played 45 and 40 days
+ago published through the old door; the preimage refusing an existing receipt
+prune and a drifted `fn_hhr_record_atomic`, rolling back; reapply refused;
+`fn_hhr_record_atomic` keeping definer, configuration and privileges and
+gaining exactly the horizon block, `sp_prune_horse_hand_reviews` byte-identical,
+the new prune `service_role` only; the horizon (29 days 23 hours applies,
+30 days 1 minute and a mixed multi-horse call refused with nothing persisted);
+a 45-day-old receipt still replaying and a legacy row still
+`historical_unknown`; a receipt kept while its review exists; a receipt kept
+inside 32 days after its review is gone, its resend `replayed`; the receipt
+prune keeping a receipt until the review prune removes its review, then
+removing it, the resend refused with nothing re-inserted and the aggregate
 unchanged, a second prune a no-op; the UTC day boundary (32 kept, 33 pruned, in
-UTC+14 and UTC-11 sessions); the 50,000 bound, oldest first, draining to zero;
-and the prune's existing review and day-table retention unchanged. 32 of 32
-pass. Eight deliberately broken copies of the migration each fail at least one
-case.
+UTC+14 and UTC-11 sessions); the 25,000 bound, oldest first, draining to zero;
+and the review prune unchanged and touching no receipt. 32 of 32 pass. Ten
+deliberately broken copies of the migration each fail at least one case.

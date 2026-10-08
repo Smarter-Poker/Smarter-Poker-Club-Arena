@@ -10,7 +10,8 @@ migrations that installed them), then proves the publication contract by reading
 raw review row, the rollup aggregate and the receipt together after every call, and
 the receipt retention contract (a receipt is kept while its review row exists and
 until it is past the 30-day publication horizon; a resend after the prune is refused
-by name; pruning is bounded and idempotent; nothing else the prune owns changes).
+by name; pruning is bounded and idempotent; sp_prune_horse_hand_reviews is left
+byte-identical and the rollup is never touched).
 
 No DSN, host, credentials, production fixtures, or existing cluster are accepted.
 PG_BIN (or argv[1]) selects the PostgreSQL 17 binaries. TMPDIR/RUNNER_TEMP selects
@@ -40,6 +41,7 @@ FN = 'public.fn_hhr_record_atomic'
 SIGNATURE = 'public.fn_hhr_record_atomic(jsonb)'
 OLD_SIGNATURE = 'public.fn_hhr_rollup_add(uuid,date,text,boolean,numeric,text[])'
 PRUNE = 'public.sp_prune_horse_hand_reviews()'
+RECEIPT_PRUNE = 'public.sp_prune_horse_hand_review_receipts()'
 
 
 def u(seed):
@@ -524,7 +526,14 @@ def main():
                                AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"');""")
 
             def prune(prefix=''):
-                return int(sql(f'{prefix}SET ROLE service_role; SELECT {PRUNE};').splitlines()[-1])
+                # The receipts' own prune, called as the engine calls it: service_role.
+                return int(sql(f'{prefix}SET ROLE service_role; SELECT {RECEIPT_PRUNE};').splitlines()[-1])
+
+            def prune_reviews():
+                return int(sql(f'SET ROLE service_role; SELECT {PRUNE};').splitlines()[-1])
+
+            def receipt_count():
+                return int(sql('SELECT count(*) FROM public.horse_hand_review_receipts;'))
 
             def receipts_for(hand):
                 return json.loads(sql(f"""SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY r.horse_user_id), '[]')
@@ -566,19 +575,30 @@ def main():
             prune_src_before, atomic_src_before = prosrc(PRUNE), prosrc(SIGNATURE)
 
             def retention_preimage_refuses():
-                original = sql(f"SELECT pg_get_functiondef('{PRUNE}'::regprocedure);")
-                sql(original.replace("interval '30 days'", "interval '31 days'") + ';')
+                sql(f"""CREATE FUNCTION {RECEIPT_PRUNE} RETURNS integer LANGUAGE sql AS 'SELECT 0';""")
                 try:
                     err = sql(retention_sql, succeeds=False)
-                    assert ('hhr_retention preimage: public.sp_prune_horse_hand_reviews() is not the '
-                            '20260905204620 body') in err, err
+                    assert ('hhr_retention preimage: public.sp_prune_horse_hand_review_receipts already exists'
+                            in err), err
                     assert sql("SELECT to_regclass('public.horse_hand_review_receipts_rollup_day_idx') IS NULL;") == 't'
                     assert proc_identity(SIGNATURE) == atomic_before
                 finally:
+                    sql(f'DROP FUNCTION {RECEIPT_PRUNE};')
+                original = sql(f"SELECT pg_get_functiondef('{SIGNATURE}'::regprocedure);")
+                sql(original.replace('v_status := \'applied\';', 'v_status := \'applied\'; -- drift', 1) + ';')
+                try:
+                    assert proc_identity(SIGNATURE) != atomic_before
+                    err = sql(retention_sql, succeeds=False)
+                    assert ('hhr_retention preimage: public.fn_hhr_record_atomic(jsonb) is not the '
+                            '20261007020953 body') in err, err
+                    assert sql("SELECT to_regclass('public.horse_hand_review_receipts_rollup_day_idx') IS NULL;") == 't'
+                    assert sql(f"SELECT to_regprocedure('{RECEIPT_PRUNE}') IS NULL;") == 't'
+                finally:
                     sql(original + ';')
+                assert proc_identity(SIGNATURE) == atomic_before
                 assert proc_identity(PRUNE) == prune_before
-            case('R1 retention preimage refuses a changed sp_prune_horse_hand_reviews and rolls back',
-                 retention_preimage_refuses)
+            case('R1 retention preimage refuses an existing receipt prune or a drifted fn_hhr_record_atomic and '
+                 'rolls back', retention_preimage_refuses)
 
             sql(retention_sql)
             passed.append('retention migration applies unchanged in one transaction')
@@ -589,10 +609,9 @@ def main():
             case('R2 reapplying the retention migration is refused by its preimage', retention_reapply_refused)
 
             def retention_definitions():
-                for sig, before in ((SIGNATURE, atomic_before), (PRUNE, prune_before)):
-                    now_md5, now_rest = proc_identity(sig).split(' ', 1)
-                    old_md5, old_rest = before.split(' ', 1)
-                    assert now_md5 != old_md5 and now_rest == old_rest, (sig, now_rest, old_rest)
+                now_md5, now_rest = proc_identity(SIGNATURE).split(' ', 1)
+                old_md5, old_rest = atomic_before.split(' ', 1)
+                assert now_md5 != old_md5 and now_rest == old_rest, (now_rest, old_rest)
                 # fn_hhr_record_atomic: the old body plus exactly one inserted block.
                 old_lines, new_lines = atomic_src_before.splitlines(), prosrc(SIGNATURE).splitlines()
                 ops = [op for op in difflib.SequenceMatcher(a=old_lines, b=new_lines, autojunk=False).get_opcodes()
@@ -601,19 +620,21 @@ def main():
                 block = '\n'.join(new_lines[ops[0][3]:ops[0][4]])
                 assert 'hhr_publication_expired' in block and "'30 days'" in block, block
                 assert new_lines[ops[0][3] - 1].strip() == 'IF v_review_id IS NOT NULL THEN', new_lines[ops[0][3] - 1]
-                # sp_prune_horse_hand_reviews: every existing statement kept, in order.
-                kept = [x.strip() for x in prune_src_before.splitlines()
-                        if x.strip().startswith(('delete from', 'get diagnostics'))]
-                new_prune = [x.strip() for x in prosrc(PRUNE).splitlines()]
-                assert kept == [x for x in new_prune if x in kept][:len(kept)] and len(kept) == 8, kept
-                assert sql(f"""SELECT has_function_privilege('anon', '{PRUNE}', 'EXECUTE')::text || ',' ||
-                    has_function_privilege('authenticated', '{PRUNE}', 'EXECUTE')::text || ',' ||
-                    has_function_privilege('service_role', '{PRUNE}', 'EXECUTE')::text;""") == 'false,false,true'
+                # sp_prune_horse_hand_reviews: byte-identical, same configuration and privileges.
+                assert proc_identity(PRUNE) == prune_before and prosrc(PRUNE) == prune_src_before
+                # The receipts' own prune: definer, pinned search_path, service_role only.
+                assert sql(f"""SELECT prosecdef::text || ' ' || proconfig::text FROM pg_proc
+                               WHERE oid = '{RECEIPT_PRUNE}'::regprocedure;""") == 'true {"search_path=pg_catalog, pg_temp"}'
+                for sig in (SIGNATURE, PRUNE, RECEIPT_PRUNE):
+                    assert sql(f"""SELECT has_function_privilege('anon', '{sig}', 'EXECUTE')::text || ',' ||
+                        has_function_privilege('authenticated', '{sig}', 'EXECUTE')::text || ',' ||
+                        has_function_privilege('service_role', '{sig}', 'EXECUTE')::text;""") == 'false,false,true', sig
                 assert sql("""SELECT indisvalid FROM pg_index
                               WHERE indexrelid = 'public.horse_hand_review_receipts_rollup_day_idx'::regclass;""") == 't'
                 receipts_closed()
-            case('R3 both functions keep definer, configuration and privileges; atomic body gains only the horizon '
-                 'block; prune keeps its four retention statements', retention_definitions)
+            case('R3 fn_hhr_record_atomic keeps definer, configuration and privileges and gains only the horizon '
+                 'block; sp_prune_horse_hand_reviews is byte-identical; the receipt prune is service_role only',
+                 retention_definitions)
 
             def publication_horizon():
                 fresh_hand, fresh = u('ret-fresh-hand'), u('ret-fresh')
@@ -649,6 +670,7 @@ def main():
 
             def kept_while_review_exists():
                 before = snapshot()
+                assert prune_reviews() == 0
                 assert prune() == 0
                 assert snapshot() == before
                 assert len(receipts_for(hand_old)) == 2 and len(receipts_for(hand_old_b)) == 1
@@ -671,7 +693,13 @@ def main():
                 rollup_before = rollup_all()
                 sql(f"""UPDATE public.horse_hand_reviews SET created_at = now() - interval '31 days'
                         WHERE hand_id IN ('{hand_old}', '{hand_old_b}');""")
-                assert prune() == 6  # three review rows, then their three receipts, in one call
+                # The receipt prune first: the review rows still exist, so nothing goes.
+                n_receipts = receipt_count()
+                assert prune() == 0 and receipt_count() == n_receipts
+                # The review prune removes the three review rows and never a receipt.
+                assert prune_reviews() == 3 and receipt_count() == n_receipts
+                # Then, in its own statement as the engine sends it, the receipts follow.
+                assert prune() == 3
                 snap = snapshot()
                 assert not receipts_for(hand_old) and not receipts_for(hand_old_b)
                 assert not [x for x in snap['reviews'] if x['hand_id'] in (hand_old, hand_old_b)]
@@ -705,7 +733,7 @@ def main():
                 sql(f"""INSERT INTO public.horse_hand_review_receipts
                         (hand_id, horse_user_id, identity_digest, review_id, rollup_day, game_variant)
                         SELECT gen_random_uuid(), '{bulk}', repeat('d', 64), g,
-                               (now() AT TIME ZONE 'UTC')::date - 60, 'nlh' FROM generate_series(1, 50000) g;
+                               (now() AT TIME ZONE 'UTC')::date - 60, 'nlh' FROM generate_series(1, 25000) g;
                         INSERT INTO public.horse_hand_review_receipts
                         (hand_id, horse_user_id, identity_digest, review_id, rollup_day, game_variant)
                         SELECT gen_random_uuid(), '{tail}', repeat('e', 64), g,
@@ -724,14 +752,14 @@ def main():
                          "count(*) FILTER (WHERE horse_user_id = '%s') || ',' || "
                          "count(*) FILTER (WHERE identity_digest = repeat('f', 64)) "
                          "FROM public.horse_hand_review_receipts;") % (bulk, tail)
-                assert sql(count) == '50000,10,3'
-                assert prune() == 50000
+                assert sql(count) == '25000,10,3'
+                assert prune() == 25000
                 assert sql(count) == '0,10,3', sql(count)  # the oldest went first
                 assert prune() == 10
                 assert sql(count) == '0,0,3'
                 assert prune() == 0 and sql(count) == '0,0,3'
                 assert rollup_all() == rollup_before
-            case('R10 one call removes at most 50,000 receipts, oldest rollup_day first; receipts whose review exists '
+            case('R10 one call removes at most 25,000 receipts, oldest rollup_day first; receipts whose review exists '
                  'stay; repeated calls drain to zero and then change nothing', bounded_and_idempotent)
 
             def other_retention_unchanged():
@@ -749,7 +777,11 @@ def main():
                         INSERT INTO public.horse_tournament_daily (horse_user_id, day)
                         VALUES ('{horse}', current_date - 181), ('{horse}', current_date - 180);""")
                 rollup_before = rollup_all()
-                assert prune() == 4
+                receipts_before = sql("""SELECT md5(coalesce(jsonb_agg(to_jsonb(r) ORDER BY r.hand_id, r.horse_user_id),
+                                         '[]')::text) FROM public.horse_hand_review_receipts r;""")
+                assert prune_reviews() == 4
+                assert sql("""SELECT md5(coalesce(jsonb_agg(to_jsonb(r) ORDER BY r.hand_id, r.horse_user_id),
+                              '[]')::text) FROM public.horse_hand_review_receipts r;""") == receipts_before
                 got = sql(f"""SELECT (SELECT string_agg(hand_id::text, ',') FROM public.horse_hand_reviews
                                        WHERE horse_user_id = '{horse}') || ' ' ||
                                      (SELECT string_agg((current_date - day)::text, ',') FROM public.horse_daily_nets
@@ -760,7 +792,8 @@ def main():
                                        WHERE horse_user_id = '{horse}');""")
                 assert got == f"{u('ret-rv-new')} 180 180 180", got
                 assert rollup_all() == rollup_before
-            case('R11 the prune\'s existing retention is unchanged: reviews at 30 days, day tables at 180 days, '
+            case('R11 sp_prune_horse_hand_reviews is unchanged: reviews at 30 days, day tables at 180 days, '
+                 'no receipt touched, '
                  'rollup untouched', other_retention_unchanged)
 
             case('fn_hhr_rollup_add still byte-identical after every case', old_function_unchanged)

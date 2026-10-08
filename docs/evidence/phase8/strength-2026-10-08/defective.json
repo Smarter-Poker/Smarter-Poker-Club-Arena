@@ -1,0 +1,7 @@
+{
+  "sng-8102203": {
+    "status": "defective",
+    "reason": "job 113396569526 reached the workflow 355-minute job limit (GitHub-hosted jobs stop at 360) at 2026-10-08T21:34:39Z after starting 15:39:19Z, before the league wrote a result; GitHub cancelled it. The same seed finished in 4 h 55 min on 2026-10-02. No result exists to keep; the run was not rerun because the whole-matrix verdict does not depend on it (12 of the 18 runs have no eligible decision and cannot promote).",
+    "logTail": "[GtoChartLoader] 240 solver charts loaded (240 rows, 240 canonical policies)\n[GtoPostflopLoader] 7747 solver open-node cells loaded (7747 in the store)\n[GtoPostflopV31Loader] 0 certified solver cells loaded (0 in the store)\n[GtoChartLoader] 240 solver charts loaded (240 rows, 240 canonical policies)\n[GtoPostflopLoader] 7747 solver open-node cells loaded (7747 in the store)"
+  }
+}

@@ -1,0 +1,368 @@
+{
+  "schema": "horse-phase8-strength-hosts-v1",
+  "assignment": "One league run per GitHub-hosted ubuntu-24.04 runner (.github/workflows/horse-phase8-strength-league.yml, workflow run 37802068859), the 18-job matrix fixed by the workflow before any result; Node 22 (the engine image Node), a clean checkout of the evaluated source with npm ci in server/, league children at nice 19 under the qualified Linux launcher.",
+  "hosts": {
+    "gh-runner-mtt-8101101": {
+      "label": "mtt-8101101",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "AMD EPYC 7763 64-Core Processor",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000265234",
+      "imageVersion": "20261004.327.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37802068859",
+      "sourceSha": "e687427d202e11266b3713038ecd4a66f788cf26",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-mtt-8102203": {
+      "label": "mtt-8102203",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "AMD EPYC 9V45 96-Core Processor",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000265188",
+      "imageVersion": "20261004.327.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37802068859",
+      "sourceSha": "e687427d202e11266b3713038ecd4a66f788cf26",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-mtt-8103307": {
+      "label": "mtt-8103307",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000265281",
+      "imageVersion": "20261004.327.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37802068859",
+      "sourceSha": "e687427d202e11266b3713038ecd4a66f788cf26",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-mystery-8101101": {
+      "label": "mystery-8101101",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "AMD EPYC 7763 64-Core Processor",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000265288",
+      "imageVersion": "20261004.327.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37802068859",
+      "sourceSha": "e687427d202e11266b3713038ecd4a66f788cf26",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-mystery-8102203": {
+      "label": "mystery-8102203",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "AMD EPYC 9V74 80-Core Processor",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000265226",
+      "imageVersion": "20261004.327.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37802068859",
+      "sourceSha": "e687427d202e11266b3713038ecd4a66f788cf26",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-mystery-8103307": {
+      "label": "mystery-8103307",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "INTEL(R) XEON(R) PLATINUM 8573C",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000265259",
+      "imageVersion": "20261004.327.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37802068859",
+      "sourceSha": "e687427d202e11266b3713038ecd4a66f788cf26",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-pko-8101101": {
+      "label": "pko-8101101",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000265263",
+      "imageVersion": "20261004.327.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37802068859",
+      "sourceSha": "e687427d202e11266b3713038ecd4a66f788cf26",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-pko-8102203": {
+      "label": "pko-8102203",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "AMD EPYC 9V45 96-Core Processor",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000265227",
+      "imageVersion": "20261004.327.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37802068859",
+      "sourceSha": "e687427d202e11266b3713038ecd4a66f788cf26",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-pko-8103307": {
+      "label": "pko-8103307",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "AMD EPYC 7763 64-Core Processor",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000265205",
+      "imageVersion": "20261004.327.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37802068859",
+      "sourceSha": "e687427d202e11266b3713038ecd4a66f788cf26",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-satellite-8101101": {
+      "label": "satellite-8101101",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "AMD EPYC 7763 64-Core Processor",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000265282",
+      "imageVersion": "20261004.327.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37802068859",
+      "sourceSha": "e687427d202e11266b3713038ecd4a66f788cf26",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-satellite-8102203": {
+      "label": "satellite-8102203",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "AMD EPYC 7763 64-Core Processor",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000265242",
+      "imageVersion": "20261004.327.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37802068859",
+      "sourceSha": "e687427d202e11266b3713038ecd4a66f788cf26",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-satellite-8103307": {
+      "label": "satellite-8103307",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "AMD EPYC 9V45 96-Core Processor",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000265273",
+      "imageVersion": "20261004.327.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37802068859",
+      "sourceSha": "e687427d202e11266b3713038ecd4a66f788cf26",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-sng-8101101": {
+      "label": "sng-8101101",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "AMD EPYC 7763 64-Core Processor",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000265231",
+      "imageVersion": "20261004.327.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37802068859",
+      "sourceSha": "e687427d202e11266b3713038ecd4a66f788cf26",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-sng-8102203": {
+      "label": "sng-8102203",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "AMD EPYC 7763 64-Core Processor",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000265220",
+      "imageVersion": "20261004.327.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37802068859",
+      "sourceSha": "e687427d202e11266b3713038ecd4a66f788cf26",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-sng-8103307": {
+      "label": "sng-8103307",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "AMD EPYC 9V74 80-Core Processor",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000265275",
+      "imageVersion": "20261004.327.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37802068859",
+      "sourceSha": "e687427d202e11266b3713038ecd4a66f788cf26",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-spin-8101101": {
+      "label": "spin-8101101",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "AMD EPYC 9V74 80-Core Processor",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000265278",
+      "imageVersion": "20261004.327.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37802068859",
+      "sourceSha": "e687427d202e11266b3713038ecd4a66f788cf26",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-spin-8102203": {
+      "label": "spin-8102203",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "AMD EPYC 7763 64-Core Processor",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000265268",
+      "imageVersion": "20261004.327.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37802068859",
+      "sourceSha": "e687427d202e11266b3713038ecd4a66f788cf26",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-spin-8103307": {
+      "label": "spin-8103307",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "AMD EPYC 7763 64-Core Processor",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000265230",
+      "imageVersion": "20261004.327.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37802068859",
+      "sourceSha": "e687427d202e11266b3713038ecd4a66f788cf26",
+      "concurrency": "one league run on this runner"
+    }
+  },
+  "runs": {
+    "mtt-8101101": {
+      "host": "gh-runner-mtt-8101101",
+      "exitCode": 1
+    },
+    "mtt-8102203": {
+      "host": "gh-runner-mtt-8102203",
+      "exitCode": 1
+    },
+    "mtt-8103307": {
+      "host": "gh-runner-mtt-8103307",
+      "exitCode": 1
+    },
+    "mystery-8101101": {
+      "host": "gh-runner-mystery-8101101",
+      "exitCode": 1
+    },
+    "mystery-8102203": {
+      "host": "gh-runner-mystery-8102203",
+      "exitCode": 1
+    },
+    "mystery-8103307": {
+      "host": "gh-runner-mystery-8103307",
+      "exitCode": 1
+    },
+    "pko-8101101": {
+      "host": "gh-runner-pko-8101101",
+      "exitCode": 1
+    },
+    "pko-8102203": {
+      "host": "gh-runner-pko-8102203",
+      "exitCode": 1
+    },
+    "pko-8103307": {
+      "host": "gh-runner-pko-8103307",
+      "exitCode": 1
+    },
+    "satellite-8101101": {
+      "host": "gh-runner-satellite-8101101",
+      "exitCode": 1
+    },
+    "satellite-8102203": {
+      "host": "gh-runner-satellite-8102203",
+      "exitCode": 1
+    },
+    "satellite-8103307": {
+      "host": "gh-runner-satellite-8103307",
+      "exitCode": 1
+    },
+    "sng-8101101": {
+      "host": "gh-runner-sng-8101101",
+      "exitCode": 0
+    },
+    "sng-8102203": {
+      "host": "gh-runner-sng-8102203",
+      "exitCode": null
+    },
+    "sng-8103307": {
+      "host": "gh-runner-sng-8103307",
+      "exitCode": 0
+    },
+    "spin-8101101": {
+      "host": "gh-runner-spin-8101101",
+      "exitCode": 1
+    },
+    "spin-8102203": {
+      "host": "gh-runner-spin-8102203",
+      "exitCode": 0
+    },
+    "spin-8103307": {
+      "host": "gh-runner-spin-8103307",
+      "exitCode": 0
+    }
+  }
+}

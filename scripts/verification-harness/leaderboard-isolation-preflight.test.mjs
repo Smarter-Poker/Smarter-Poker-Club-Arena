@@ -736,7 +736,12 @@ test('cleanup must finish before the verdict and source entrypoints cannot initi
   );
   assert.match(source, /docker run --name "\$source_container" --rm/);
   assert.match(source, /--entrypoint \/bin\/sh/);
-  assert.match(source, /"\/usr\/lib\/postgresql\/bin\/\$client" --dbname="\$PGDATABASE"/);
+  assert.match(source, /psql\) \/usr\/lib\/postgresql\/bin\/psql --dbname="\$PGDATABASE"/);
+  assert.match(source, /pg_dump\) \/opt\/lb-native\/bin\/pg_dump --dbname="\$PGDATABASE"/);
+  assert.match(
+    source,
+    /\[\[ "\$client" != pg_dump \]\] \|\| source_image="\$LEADERBOARD_NATIVE_BATCH_IMAGE"/
+  );
   assert.match(source, /docker container ls --all --format/);
   assert.match(source, /docker network ls --format/);
   assert.doesNotMatch(source, /docker (rm|network rm).*\|\| true/);
@@ -795,7 +800,9 @@ test('actual source-client connection wrapper expands URI instead of local socke
   assert.ok(wrapper);
   // Synthetic unreachable loopback endpoint only: no source data or credentials.
   // Use installed clients with exactly the maintained argument construction.
-  const executable = wrapper.replaceAll('/usr/lib/postgresql/bin/', '');
+  const executable = wrapper
+    .replaceAll('/usr/lib/postgresql/bin/', '')
+    .replaceAll('/opt/lb-native/bin/', '');
   const success = spawnSync(
     'sh',
     [

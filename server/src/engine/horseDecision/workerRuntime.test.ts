@@ -3375,7 +3375,7 @@ describe('P10.3 worker-owned PLO4 authority (the Phase 8 path, reused)', () => {
       expect(receipt.finalAction).toBe(live.decision.action);
       expect(live.result.phase10Authority).toMatchObject({
         state: 'unselected',
-        continuationVersion: 'plo4-policy-round3-v1',
+        continuationVersion: 'plo4-policy-round3-v2',
       });
       expect(horseDecisionReceiptIsValid(structuredClone(live.decision), 'plo4')).toBe(true);
     }
@@ -3843,7 +3843,7 @@ describe('P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused 
             continuationVersion: OMAHA_VARIANT_PACKS[otherPack].version,
           }),
         (r: any) =>
-          (r.authority = { ...r.authority, continuationVersion: 'plo4-policy-round3-v1' }),
+          (r.authority = { ...r.authority, continuationVersion: 'plo4-policy-round3-v2' }),
         (r: any) => (r.utilityOwner = 'phase7_evaluated'),
         (r: any) => (r.selection = 'controller_accepted'),
         (r: any) => (r.authorityVerdict = 'usable'),

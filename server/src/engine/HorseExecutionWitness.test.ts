@@ -376,7 +376,7 @@ describe('private execution witness', () => {
       { requestId: 1, lane: 'fast', computeMs: 1, governorScale: 1 }
     );
     const expected = {
-      continuationVersion: 'plo4-policy-round3-v1',
+      continuationVersion: 'plo4-policy-round3-v2',
       mode: 'shadow',
       selection: receipt.selection,
       authority: null,

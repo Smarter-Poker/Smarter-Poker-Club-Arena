@@ -276,9 +276,9 @@ describe('P10.3 selection is null unless the P10.2 file qualifies for the exact 
       schema: 'horse-qualified-authority-v1',
       phase: 'phase10',
       sourceSha: P10_TEST_SOURCE_SHA,
-      continuationVersion: 'plo4-policy-round3-v1',
+      continuationVersion: 'plo4-policy-round3-v2',
       policyDigest: P10_TEST_POLICY_DIGEST,
-      packId: 'plo4-policy-round3-v1',
+      packId: 'plo4-policy-round3-v2',
       domain: HORSE_PHASE10_DOMAIN,
       evidencePath: P10_TEST_QUALIFICATION_PATH,
       evidenceSha256: createHash('sha256').update(qualification).digest('hex'),
@@ -308,7 +308,7 @@ describe('P10.3 reuses the Phase 8 holder, gate and verdicts', () => {
     const receipt = plo4.receipt();
     expect(receipt).toMatchObject({
       state: 'usable',
-      continuationVersion: 'plo4-policy-round3-v1',
+      continuationVersion: 'plo4-policy-round3-v2',
       approvalGeneration: 1,
     });
     expect(plo4.verdict(receipt, P10_TEST_NOW)).toBe('usable');

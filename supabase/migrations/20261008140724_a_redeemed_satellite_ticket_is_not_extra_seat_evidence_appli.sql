@@ -1,4 +1,4 @@
--- 20261008140724_a_redeemed_satellite_ticket_is_not_extra_seat_evidence_applied.sql
+-- 20261008140724_a_redeemed_satellite_ticket_is_not_extra_seat_evidence_appli.sql
 --
 -- The edit 20261008140504 describes, with a guard that cannot mistake the
 -- receipts' existing ticket clause for its own: skip only when

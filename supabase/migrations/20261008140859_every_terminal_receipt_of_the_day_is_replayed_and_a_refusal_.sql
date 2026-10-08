@@ -1,4 +1,4 @@
--- 20261008140859_every_terminal_receipt_of_the_day_is_replayed_and_a_refusal_is_paged.sql
+-- 20261008140859_every_terminal_receipt_of_the_day_is_replayed_and_a_refusal_.sql
 --
 -- Version is the one production recorded when the Supabase MCP applied it
 -- (14:08:59 UTC); a migration file matches what production ran.

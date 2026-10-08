@@ -1305,6 +1305,13 @@ export class HandController {
 
     // AUDIT V6: snap chips + the recorded amount to exact cents (Bible V8 §2.6)
     this.snapChips();
+    // A seat whose last chip went in is all-in, decided on the SNAPPED stack.
+    // A whole-stack call priced from two cent values (toCall = 180.88 - 41.77
+    // = 139.10999999999999 against a stack of 139.11) leaves a 1e-14 residue
+    // that the `stack === 0` checks above miss; snapChips then rounds it to 0,
+    // and the hand used to ask a seat with no chips and no all-in flag to act
+    // again on the next street (canAct false, so the hand stalled).
+    if (player.stack === 0 && !player.is_folded) player.is_all_in = true;
     actualAmount = Math.round(actualAmount * 100) / 100;
 
     const record: Readonly<ActionRecord> = Object.freeze({

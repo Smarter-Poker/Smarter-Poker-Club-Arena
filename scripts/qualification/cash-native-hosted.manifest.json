@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 193949,
-      "sha256": "0f64530125003e993c5e12ffc948f66a145c0ed73ef63751621e69f1b74ee8e2"
+      "bytes": 194264,
+      "sha256": "27a6a3ee37674ee526565f25dc88ea1aeb1c0ceedbb4f33650588bebf2e8641f"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1794,5 +1794,10 @@
       "bytes": 193493,
       "sha256": "2d4d815a02258d735977ec1aa478443781981f19f52f69b517d870d069c5123e"
     }
+  },
+  "operatorPauseCurrent527dMainIntegration20261008": {
+    "reason": "Preserve all current protected-main native qualification steps and the candidate operator-hold accounting step. Only combined workflow source fingerprint is refreshed; no native financial or Full-B verdict is claimed.",
+    "protectedMain": "527d7229490fdc9e54d75b3e005518bde7c72b98",
+    "originalPredecessor": "f59e0a36a08b756d23b47976cd31ecca8f8d28a3"
   }
 }

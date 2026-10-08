@@ -36,6 +36,7 @@ import {
   type LightningLease,
 } from './LightningHandHost.js';
 import type { LightningHandBackend } from './LightningHandBackend.js';
+import type { LightningAutoRebuyReport } from './LightningAutoRebuy.js';
 import type { LightningConfig } from './LightningConfig.js';
 import { lightningMetrics, type LightningMetrics } from './LightningMetrics.js';
 
@@ -542,6 +543,13 @@ export interface LightningHostingDeps {
   hub: LightningHub;
   leaseFor(hostTableId: string): LightningLease | null;
   metrics?: LightningMetrics;
+  /**
+   * LIGHTNING PHASE 10: asked once per settled hand, between hands only,
+   * about the players that boundary releases (LightningAutoRebuy). Null (the
+   * default) asks nothing; the boot wiring passes the real executor. The
+   * database does all money movement and validation - the engine only asks.
+   */
+  autoRebuy?: LightningAutoRebuyReport | null;
   /** Injected for tests. */
   hostOptions?: Partial<Pick<LightningHandHostDeps, 'timer' | 'sleep' | 'now' | 'logger'>>;
 }
@@ -641,6 +649,15 @@ export class LightningHosting {
         else registry.clearDecision(playerId, host.currentHandId, reason ?? 'cleared');
       },
       onClusterFrozen: (clusterId) => onClusterFrozen?.(clusterId),
+      // LIGHTNING PHASE 10: the settled boundary reaches the auto-rebuy
+      // executor with this hand's Cluster and the config the pass ran on.
+      // Config off is a no-op inside the executor; absent executor, nothing.
+      onHandSettled: (settled) =>
+        this.deps.autoRebuy?.onHandSettled({
+          clusterId: hand.clusterId,
+          config: config.autoRebuy,
+          ...settled,
+        }),
       onFinished: (h) => {
         registry.unregister(h);
         this.noteOutcome(h.clusterId, h.lifecycle);

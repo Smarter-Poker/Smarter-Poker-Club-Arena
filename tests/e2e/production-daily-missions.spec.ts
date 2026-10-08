@@ -1,4 +1,4 @@
-import { observeMissionQuietWindow } from './support/missionQuietWindow';
+import { MissionCursorLifecycle } from './support/missionCursorLifecycle';
 import { remountConcurrentMissionReceipts } from './support/missionRerollRemount';
 import { finalizeMissionCleanupWithEvidence } from './support/missionReloadObservation';
 import {
@@ -348,6 +348,27 @@ test.describe('production Daily Missions certification', () => {
       let blockAllRealtimeFrames = false;
       const observedRealtimeFrames = new Set<string>();
       let interceptedRealtimeSockets = 0;
+      const cursorLifecycle = new MissionCursorLifecycle(
+        `realtime:daily-mission-revision:${account.id}`
+      );
+      let activeMissionPage: Page | null = null;
+      await desktopContext.exposeBinding('observeMissionCursorResume', ({ page }, event) => {
+        if (page !== activeMissionPage || (event !== 'focus' && event !== 'visible')) return;
+        cursorLifecycle.resume(event);
+      });
+      await desktopContext.addInitScript(() => {
+        const record = (event: 'focus' | 'visible') => {
+          if (document.visibilityState !== 'visible') return;
+          const binding = (
+            window as unknown as {
+              observeMissionCursorResume: (event: string) => Promise<void>;
+            }
+          ).observeMissionCursorResume;
+          void binding(event);
+        };
+        window.addEventListener('focus', () => record('focus'));
+        document.addEventListener('visibilitychange', () => record('visible'));
+      });
       // Every routed realtime socket keeps its server-side handle. Closing that
       // side is how a step interrupts the live connection the way a realtime
       // restart would: Playwright forwards the closure to the page's WebSocket
@@ -355,9 +376,15 @@ test.describe('production Daily Missions certification', () => {
       const routedRealtimeServers: WebSocketRoute[] = [];
       await desktopContext.routeWebSocket(/\/realtime\/v1\/websocket/, (socket) => {
         interceptedRealtimeSockets += 1;
+        const socketGeneration = interceptedRealtimeSockets;
         const server = socket.connectToServer();
+        socket.onMessage((message) => {
+          cursorLifecycle.clientMessage(socketGeneration, message);
+          server.send(message);
+        });
         routedRealtimeServers.push(server);
         server.onMessage((message) => {
+          cursorLifecycle.serverMessage(socketGeneration, message);
           if (observedRealtimeFrames.size < 30) {
             observedRealtimeFrames.add(realtimeFrameDescriptor(message));
           }
@@ -374,6 +401,7 @@ test.describe('production Daily Missions certification', () => {
       });
       const missions = await signInContext(desktopContext, baseURL, account);
       const { page } = missions;
+      activeMissionPage = page;
 
       await test.step('one-request cold load stays inside the production budget', async () => {
         await page.addInitScript(installMissionArtObservation);
@@ -1585,7 +1613,10 @@ test.describe('production Daily Missions certification', () => {
         // for one bounded read.
         let cursorReads = 0;
         const onCursorRead = (request: Request) => {
-          if (new URL(request.url()).pathname.endsWith(REVISION_CURSOR_PATH)) cursorReads += 1;
+          if (new URL(request.url()).pathname.endsWith(REVISION_CURSOR_PATH)) {
+            cursorReads += 1;
+            cursorLifecycle.cursorRead();
+          }
         };
         page.on('request', onCursorRead);
         // Realtime has no backlog. Prove the browser has joined through an
@@ -1652,6 +1683,8 @@ test.describe('production Daily Missions certification', () => {
           );
         }
         blockedRevisionFrames = 0;
+        const socketsAtBlock = interceptedRealtimeSockets;
+        cursorLifecycle.begin();
         blockRevisionFrames = true;
         try {
           await completeEveryAssignedMission(environment, account!);
@@ -1680,23 +1713,28 @@ test.describe('production Daily Missions certification', () => {
               { cause: error }
             );
           }
-          // A provider can naturally replace the socket during this window.
-          // That is a real lifecycle event, which legitimately reads the cursor.
-          // Require a full uninterrupted window before asserting no polling;
-          // bounded observation fails if the provider never stays connected.
-          const quietWindow = await observeMissionQuietWindow({
-            snapshot: () => ({ sockets: interceptedRealtimeSockets, cursorReads }),
-            waitUntilLive: () =>
-              expect(page.getByText('Live Now')).toBeVisible({
-                timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
-              }),
-            waitWindow: () => page.waitForTimeout(NO_POLL_QUIET_WINDOW_MS),
-          });
+          // Suppress completion frames for longer than the retired repair
+          // interval. Observe actual private joins and tab resumes throughout:
+          // the provider may reconnect naturally while this step is waiting.
+          // Every cursor read must be owned by one of those lifecycle events.
+          await page.waitForTimeout(NO_POLL_QUIET_WINDOW_MS);
+          const quietLifecycle = cursorLifecycle.receipt();
+          // A provider can replace the socket during this interval. A new socket
+          // alone proves no mission rejoin: only its correlated successful private
+          // phx_join reply or an observed tab resume owes a cursor read. Preserve
+          // zero unexplained reads, including when the provider remains healthy.
           expect(
-            quietWindow.cursorReads,
-            'a stable socket must never poll the revision cursor'
+            quietLifecycle.unexplainedReads,
+            'revision cursor reads lacked a mission rejoin or tab resume ' +
+              `(routed sockets at block: ${socketsAtBlock}, now: ${interceptedRealtimeSockets}; ` +
+              `lifecycle: ${JSON.stringify(quietLifecycle)})`
           ).toBe(0);
-          report.noPollQuietWindow = quietWindow;
+          if (quietLifecycle.joins === 0 && quietLifecycle.resumes === 0) {
+            expect(quietLifecycle.reads, 'a healthy lifecycle must issue zero cursor reads').toBe(
+              0
+            );
+          }
+          report.quietCursorLifecycle = quietLifecycle;
 
           // Interrupt the live connection from the server side of every routed
           // socket, the way a realtime restart would. The client must observe a
@@ -1752,10 +1790,18 @@ test.describe('production Daily Missions certification', () => {
             catchUpReads,
             'the rejoin must not turn the revision cursor into a poll'
           ).toBeLessThanOrEqual(2);
+          expect(
+            cursorLifecycle.receipt().unexplainedReads,
+            'the forced rejoin must not authorize unrelated cursor reads'
+          ).toBe(0);
           report.reconnectCursorReads = catchUpReads;
         } finally {
           blockRevisionFrames = false;
           page.off('request', onCursorRead);
+          await test.info().attach('daily-missions-cursor-lifecycle.json', {
+            body: JSON.stringify(cursorLifecycle.receipt()),
+            contentType: 'application/json',
+          });
         }
         expect(navigations).toBe(0);
         report.interceptedRealtimeSockets = interceptedRealtimeSockets;

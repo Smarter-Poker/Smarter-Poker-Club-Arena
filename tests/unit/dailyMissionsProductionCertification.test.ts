@@ -50,6 +50,13 @@ describe('Daily Missions production certification', () => {
     expect(spec).toContain('cleanupTemporaryCustomizationAccount(environment, account)');
     expect(spec).toContain('blockRevisionFrames = true');
     expect(spec).toContain('interceptedRealtimeSockets');
+    expect(spec).toContain('new MissionCursorLifecycle(');
+    expect(spec).toContain('cursorLifecycle.clientMessage(socketGeneration, message)');
+    expect(spec).toContain('cursorLifecycle.serverMessage(socketGeneration, message)');
+    expect(spec).toContain('cursorLifecycle.cursorRead()');
+    expect(spec).toContain('quietLifecycle.unexplainedReads');
+    expect(spec).toContain('quietLifecycle.joins === 0 && quietLifecycle.resumes === 0');
+    expect(spec).toContain('daily-missions-cursor-lifecycle.json');
     expect(spec).toContain('isDailyMissionRevisionFrame');
     expect(spec).toContain('observedRevisionFrames');
     expect(spec).toContain('never mints chips');
@@ -71,11 +78,9 @@ describe('Daily Missions production certification', () => {
     expect(spec).toContain(
       "const REVISION_CURSOR_PATH = '/rest/v1/daily_challenge_dashboard_revisions';"
     );
-    expect(spec).toContain('observeMissionQuietWindow({');
-    expect(spec).toContain(
-      'snapshot: () => ({ sockets: interceptedRealtimeSockets, cursorReads })'
-    );
-    expect(spec).toMatch(/expect\(\s*quietWindow\.cursorReads,[\s\S]*?\)\.toBe\(0\)/);
+    // Socket counts cannot explain a read or erase an earlier failed interval.
+    expect(spec).not.toContain('observeMissionQuietWindow({');
+    expect(spec.match(/await page\.waitForTimeout\(NO_POLL_QUIET_WINDOW_MS\)/g)).toHaveLength(1);
     expect(spec).toContain('routedRealtimeServers.push(server)');
     expect(spec).toContain('routedRealtimeServers.splice(0)');
     expect(spec).toContain(

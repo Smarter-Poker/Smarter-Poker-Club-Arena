@@ -10435,8 +10435,9 @@ export class GameServer {
    *
    * Never touches: a manager this process does not hold (the resume lane
    * owns it), a quarantined manager (its own retry schedule owns it), a
-   * manager admitted inside the dark window (it has not had its chance), a
-   * manager on its own break, or a manager whose every open table is parked
+   * manager admitted inside the dark window (it has not had its chance), an
+   * event on a break shorter than thirty minutes (the candidate read excludes
+   * it), or a manager whose every open table is parked
    * on purpose for less than MAX_HEALTHY_PAUSE_MS (hand-for-hand, a final
    * table deal, a Spin reveal). A pause past that is never healthy, which is
    * the zombie reaper's own rule.
@@ -10468,11 +10469,13 @@ export class GameServer {
       ) {
         continue;
       }
-      try {
-        if (manager.isOnBreak()) continue;
-      } catch {
-        /* a manager that cannot say is not protected by a break it cannot name */
-      }
+      /* NO BREAK SKIP HERE, ON PURPOSE (2026-10-08). The candidate read
+         already excludes every healthy break: a RUNNING event is a candidate
+         while on_break only once that break has run thirty minutes
+         (20261008145619), against five plus a last-hand grace for a real one.
+         Trusting the manager's own in-memory flag would protect exactly the
+         break that never ended, which a rebuild cures: a resumed manager
+         clears an expired break and deals. */
       const tableIds = manager.getTableIds();
       let openEngines = 0;
       let healthyParks = 0;

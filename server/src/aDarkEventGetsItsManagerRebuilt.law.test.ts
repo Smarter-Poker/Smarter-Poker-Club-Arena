@@ -94,18 +94,13 @@ describe('a dark event gets its manager rebuilt', () => {
     expect(alerts.raise).not.toHaveBeenCalled();
   });
 
-  it('leaves an unowned event to the resume lane, and a break, a fresh admission or a healthy park alone', async () => {
+  it('leaves an unowned event to the resume lane, and a fresh admission or a healthy park alone', async () => {
     const s = server();
     db.rows = [{ tournament_id: EVENT, name: 'x', alive: 2, live_minutes: 16 }];
     await s.rebuildManagersOfDarkTournaments();
     expect(s.retireTournamentManagerInDiscovery).not.toHaveBeenCalled();
 
-    const onBreak = manager({ onBreak: true });
-    s.tournamentEngines.set(EVENT, onBreak);
     s.tableEngines.set(TABLE, engine());
-    await s.rebuildManagersOfDarkTournaments();
-    expect(s.retireTournamentManagerInDiscovery).not.toHaveBeenCalled();
-
     const fresh = manager();
     s.tournamentEngines.set(EVENT, fresh);
     s.tournamentManagerAdmittedAtMs.set(fresh, Date.now());
@@ -125,6 +120,23 @@ describe('a dark event gets its manager rebuilt', () => {
     );
     await s.rebuildManagersOfDarkTournaments();
     expect(s.retireTournamentManagerInDiscovery).toHaveBeenCalledTimes(1);
+  });
+
+  it('rebuilds an event the database names as dark even when its manager believes it is on break (a break that never ended)', async () => {
+    const s = server();
+    const stuck = manager({ onBreak: true });
+    s.tournamentEngines.set(EVENT, stuck);
+    s.tableEngines.set(
+      TABLE,
+      engine({ parked: true, pausedMs: GameServer.MAX_HEALTHY_PAUSE_MS + 1 })
+    );
+    db.rows = [{ tournament_id: EVENT, name: 'Stuck Break', alive: 4, live_minutes: 41 }];
+    await s.rebuildManagersOfDarkTournaments();
+    expect(s.retireTournamentManagerInDiscovery).toHaveBeenCalledWith(
+      EVENT,
+      stuck,
+      'GameServer.dark_tournament_manager_rebuild'
+    );
   });
 
   it('does nothing inside a maintenance freeze or on an unreadable board', async () => {

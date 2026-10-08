@@ -70,8 +70,10 @@ describe('Phase 11 independent high/low references', () => {
     expect(r.livePolicy.features).toEqual(
       expect.arrayContaining(['nut_high', 'nut_low', 'quarter_risk'])
     );
-    expect(r.selected.action).toBe('call');
-    expect(r.reason).toBe('split_price_call');
+    // Round 3: the quartered-pot features are recorded; facing the bet the
+    // pack retains the reference action rather than pricing it.
+    expect(r.selected).toEqual(s.baseline);
+    expect(r.livePolicy.reason).toBe('reference_retained');
   });
   it.each(omahaVariantReferenceSpots())('$name', async ({ input, expectedShare, name }) => {
     const r = await evaluateOmahaVariantProgram(input);
@@ -80,9 +82,10 @@ describe('Phase 11 independent high/low references', () => {
     expect(r.equity!.highEquity + r.equity!.lowEquity).toBeCloseTo(r.equity!.equity, 10);
     expect(r.equity!.maxConservationError).toBe(0);
     expect(r.livePolicy.equity?.provenance).toBe('independent_offline_oracle');
-    if (expectedShare === 0 || name.includes('expensive') || name.includes('sixthed'))
-      expect(r.selected.action).toBe('fold');
-    if (expectedShare === 1) expect(r.selected.action).toBe('raise');
+    // Round 3: every reference spot faces a bet, where the pack retains the
+    // reference action; the independent equity above is unchanged.
+    expect(r.selected).toEqual(input.baseline);
+    expect(r.livePolicy.reason).toBe('reference_retained');
     if (name.includes('side')) {
       expect(r.equity!.perPot.map((p) => [p.amount, p.equity])).toEqual([
         [150, 0],

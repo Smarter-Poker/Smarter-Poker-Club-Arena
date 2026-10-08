@@ -24,7 +24,7 @@ vi.mock('./OmahaVariantLivePolicy.js', async (importOriginal) => {
   };
 });
 
-import { omahaVariantSpot } from '../../benchmark/OmahaVariantPolicyEvidence.js';
+import { omahaVariantSpot, variantCards } from '../../benchmark/OmahaVariantPolicyEvidence.js';
 import { HorseLogic } from '../HorseLogic.js';
 import { seedFastRandom } from '../HorseEval.js';
 import { calculatePots } from '../PokerEngine.js';
@@ -87,7 +87,37 @@ const act = (d: { action: string; amount?: number }) => ({
   amount: d.amount ?? null,
 });
 
-// Spots where the pack's proposal differs from the reference (checked below).
+// Round 3: the packs deviate only heads-up, from a reference fold or check.
+// A hand the reference folds on the button, or checks behind on the turn,
+// is where the pack's proposal differs from the reference (checked below).
+const TRASH: Record<OmahaPolicyVariant, string> = {
+  plo5: '2c 7d 3h 8s Jc',
+  plo6: '2c 7d 3h 8s Jc 4d',
+  plo8: 'Kc 7d 9h 9s',
+};
+const changedSpot = (
+  variant: OmahaPolicyVariant,
+  street: 'preflop' | 'turn',
+  mode: 'cash' | 'tournament'
+) => {
+  const input = omahaVariantSpot(variant, street, 2, mode);
+  input.hero.cards = variantCards(TRASH[variant]);
+  if (street === 'turn') {
+    // Checked to on the button: nobody has bet the turn.
+    input.state.players[1].bet = 0;
+    Object.assign(input.state, {
+      currentBet: 0,
+      toCall: 0,
+      minRaise: 2,
+      lastRaise: 0,
+      minRaiseTo: 2,
+      maxRaiseTo: input.state.pot,
+      legalActions: ['check', 'bet'],
+      actionHistory: [],
+    });
+  }
+  return mode === 'tournament' ? tournament(input) : input;
+};
 const CHANGED_TOURNAMENT_SPOTS = [
   ['plo5', 'preflop'],
   ['plo5', 'turn'],
@@ -108,7 +138,7 @@ describe('P11.3 Phase 7 keeps tournament objective ownership', () => {
         verdict: 'usable',
       });
       expect(mode).toBe('shadow');
-      const spot = () => tournament(omahaVariantSpot(variant, street, 2, 'tournament'));
+      const spot = () => changedSpot(variant, street, 'tournament');
       const reference = decide(spot(), 'off');
       const admitted = decide(spot(), mode);
       expect(reference.tournamentUtility).toBeDefined();
@@ -136,10 +166,7 @@ describe('P11.3 Phase 7 keeps tournament objective ownership', () => {
     'even the offline candidate control cannot carry a %s %s tournament selection across the worker boundary',
     (variant, street) => {
       // The live worker never passes this; it is the defence behind the worker rule.
-      const candidate = decide(
-        tournament(omahaVariantSpot(variant, street, 2, 'tournament')),
-        'candidate'
-      );
+      const candidate = decide(changedSpot(variant, street, 'tournament'), 'candidate');
       const receipt = candidate.omahaVariantPolicy!;
       expect(receipt.utilityOwner).toBe('phase7_evaluated');
       // Phase 7 ran last and chose the executed action.
@@ -198,7 +225,7 @@ describe('P11.3 illegal candidate retention', () => {
   it.each(['plo5', 'plo6', 'plo8'] as const)(
     'an applied %s candidate the legalizer would rewrite is not selected; the reference is executed',
     (variant) => {
-      const spot = () => omahaVariantSpot(variant, 'preflop', 2, 'cash');
+      const spot = () => changedSpot(variant, 'preflop', 'cash');
       const honest = decide(spot(), 'candidate');
       expect(honest.omahaVariantPolicy).toMatchObject({ applied: true, selection: 'selected' });
       const reference = decide(spot(), 'off');

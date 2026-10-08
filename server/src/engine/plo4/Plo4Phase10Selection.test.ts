@@ -23,7 +23,7 @@ vi.mock('./Plo4LivePolicy.js', async (importOriginal) => {
   };
 });
 
-import { plo4ReferenceSpot } from '../../benchmark/Plo4PolicyEvidence.js';
+import { plo4Cards, plo4ReferenceSpot } from '../../benchmark/Plo4PolicyEvidence.js';
 import { HorseLogic } from '../HorseLogic.js';
 import { seedFastRandom } from '../HorseEval.js';
 import { calculatePots } from '../PokerEngine.js';
@@ -138,7 +138,7 @@ describe('P10.3 Phase 7 keeps tournament objective ownership', () => {
         generation: 1,
         state: 'usable',
         reason: 'admitted',
-        continuationVersion: 'plo4-policy-round1-v3',
+        continuationVersion: 'plo4-policy-round3-v1',
         approvalGeneration: 1,
         authorityKey: 'k',
         evidenceSha256: null,
@@ -155,14 +155,23 @@ describe('P10.3 Phase 7 keeps tournament objective ownership', () => {
   });
 });
 
+/** Round 3: the heads-up button with a hand the reference folds, which the
+ * pack opens at the minimum raise (a real applied candidate). */
+const trashOpen = () => {
+  const input = plo4ReferenceSpot('premium_open');
+  input.hero.cards = plo4Cards('2c 7d 3h 8s');
+  input.state.players[0] = { ...input.hero, cards: [] };
+  return input;
+};
+
 describe('P10.3 illegal candidate retention', () => {
   it('an applied candidate the legalizer would rewrite is not selected; the reference is executed', () => {
-    const honest = decide(plo4ReferenceSpot('premium_open'), 'candidate');
+    const honest = decide(trashOpen(), 'candidate');
     expect(honest.plo4Policy).toMatchObject({ applied: true, selection: 'selected' });
-    const reference = decide(plo4ReferenceSpot('premium_open'), 'off');
+    const reference = decide(trashOpen(), 'off');
     forge.amountDelta = 0.004;
     try {
-      const forged = decide(plo4ReferenceSpot('premium_open'), 'candidate');
+      const forged = decide(trashOpen(), 'candidate');
       expect({ action: forged.action, amount: forged.amount }).toEqual({
         action: reference.action,
         amount: reference.amount,

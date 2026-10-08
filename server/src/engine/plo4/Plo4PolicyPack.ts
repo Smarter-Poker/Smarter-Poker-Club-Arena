@@ -32,10 +32,39 @@ export type Plo4NodeRole =
   | (typeof PLO4_PREFLOP_ROLES)[number]
   | (typeof PLO4_POSTFLOP_ROLES)[number];
 
-/** A deliberately labeled heuristic baseline pack. No solver distillation or
- * calibrated win probability is claimed by its hand-quality score. */
+/**
+ * Round 3 (2026-10-08): the reference-anchored deviations every Omaha pack
+ * (PLO4 here, PLO5, PLO6 and PLO8 in OmahaVariantPolicyPack.ts) applies on top
+ * of the reference action. Everywhere else the pack retains the reference.
+ *
+ * Why: development-seed one-step counterfactuals of the reference brain
+ * (docs/horse-brain-phase11-round3-2026-10-08.md) found the reference close to
+ * locally optimal at six-max and four-handed, and the round 1 rules (an own
+ * preflop entry atlas and postflop calls priced against an unconditioned range
+ * sample) the cause of every measured loss: they fold heads-up hands the
+ * reference plays profitably, open smaller than the reference, and call or
+ * raise where the sampled equity overstates the hand against a betting range.
+ * The only actions that beat the reference on every Omaha variant are
+ * heads-up ones, and each is standard heads-up practice: open the button
+ * instead of folding it, three-bet the big blind instead of folding it, and
+ * bet in position when checked to on the turn or river instead of checking
+ * behind.
+ */
+export const OMAHA_REFERENCE_DEVIATIONS = Object.freeze({
+  version: 'omaha-reference-deviations-v1',
+  headsUpButtonOpen: true,
+  headsUpBigBlindThreeBet: true,
+  headsUpPositionStab: Object.freeze(['turn', 'river'] as const),
+});
+export type OmahaReferenceDeviationRules = typeof OMAHA_REFERENCE_DEVIATIONS;
+
+/** A deliberately labeled heuristic pack. No solver distillation or
+ * calibrated win probability is claimed by its hand-quality score. Since
+ * round 3 the live policy no longer consults its preflop atlas below: decisions
+ * are the reference's, with OMAHA_REFERENCE_DEVIATIONS applied. */
 export const PLO4_POLICY_PACK = Object.freeze({
-  version: 'plo4-policy-round1-v3',
+  version: 'plo4-policy-round3-v1',
+  deviations: OMAHA_REFERENCE_DEVIATIONS,
   source: 'explicit_heuristic_baseline' as const,
   calibratedConfidence: null,
   defaultMode: 'shadow' as const,

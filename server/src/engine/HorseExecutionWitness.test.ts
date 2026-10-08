@@ -16,7 +16,7 @@ import { encodeHorseDecisionReads } from './HorseDecisionReadFrame.js';
 import { saveFastRandom, restoreFastRandom, seedFastRandom } from './HorseEval.js';
 import { jointPolicyFixture } from './multiway/JointRangeFixture.test-support.js';
 import { jointInputBindingSha256 } from './multiway/JointLivePolicy.js';
-import { omahaVariantSpot } from '../benchmark/OmahaVariantPolicyEvidence.js';
+import { omahaVariantSpot, variantCards } from '../benchmark/OmahaVariantPolicyEvidence.js';
 import { remainingVariantSpot } from '../benchmark/RemainingVariantPolicyEvidence.js';
 import { createHash } from 'node:crypto';
 import { horseJournalJson } from '../services/horseDecisionJournal/record.js';
@@ -372,7 +372,7 @@ describe('private execution witness', () => {
       { requestId: 1, lane: 'fast', computeMs: 1, governorScale: 1 }
     );
     const expected = {
-      continuationVersion: 'plo4-policy-round1-v3',
+      continuationVersion: 'plo4-policy-round3-v1',
       mode: 'shadow',
       selection: receipt.selection,
       authority: null,
@@ -417,6 +417,11 @@ describe('private execution witness', () => {
     'P11.3 binds the %s selection: selected proposal, shadow baseline and the accepted action',
     (variant) => {
       const spot = omahaVariantSpot(variant, 'preflop', 2);
+      // Round 3: a heads-up button hand the reference folds, which the pack
+      // opens (a real shadow change).
+      spot.hero.cards = variantCards(
+        { plo5: '2c 7d 3h 8s Jc', plo6: '2c 2d 7h 7s Kc 4d', plo8: 'Kc 7d 9h 9s' }[variant]
+      );
       const rng = saveFastRandom();
       let decision: HorseDecision;
       try {

@@ -86,10 +86,9 @@ const usableAuthority = (continuationVersion: string) => ({
   mainGeneration: null,
 });
 
-// Round 3 changes the reference only in its declared spots (the no-limit
-// flop checked to the hero, the fixed-limit heads-up button first in); these
-// are found over fixed holdings where the shadow proposal differs from the
-// reference (checked below). Pineapple is refused in tournaments before any
+// Round 3 changes the reference only in its declared preflop spots (here the
+// heads-up button first in); these are found over fixed holdings where the
+// shadow proposal differs from the reference (checked below). Pineapple is refused in tournaments before any
 // proposal.
 const TOURNAMENT_VARIANTS = ['short_deck', 'flh', 'flo8'] as const;
 const changedSpot = (variant: RemainingPolicyVariant, mode: 'cash' | 'tournament') =>

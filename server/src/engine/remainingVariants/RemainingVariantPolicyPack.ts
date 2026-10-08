@@ -25,36 +25,35 @@ export type RemainingPolicyVariant = 'short_deck' | 'pineapple' | 'flh' | 'flo8'
  *  3. Postflop value bets the reference does not make lost for the same
  *     reason: the equity they rest on is measured against the wrong range.
  *
- * And it had one consistent gain: first-in opens the reference makes from
- * early, middle, cutoff and (three or more dealt) button positions with a
- * hand below the pack's own open bar lose against this population, which
- * defends and continues too widely for a loose open to profit; folding them
- * wins in every pack's position cells. In no limit the reference's flop
- * stab when checked to also loses to checking.
- *
  * So round 3 is a delta on the reference, not a replacement of it. The pack
  * keeps the reference action everywhere it was measured to be worse, which
  * removes causes 1 to 3 at their source (no price-blind defence bar, no
  * line-blind sampled call, raise or value bet is ever substituted for the
- * reference), and it changes the decision only in these declared spots:
+ * reference), and changes the decision only in declared preflop spots that
+ * won on development seeds against BOTH the horse population and the
+ * human-calibrated population (`human-calibrated-v1-20261008`), because the
+ * money horses play for is the human players':
  *
- *  - `openTighten`: first in (`rfi`) from a listed position with at least
- *    `openTightenMinDealt` dealt, when the reference opens and the hand's
- *    pack quality is below the pack's open bar: fold.
- *  - `flopCheckBelow` (no limit only): checked to on the flop, when the
- *    reference bets and the sampled equity is below this value: check.
- *  - `headsUpOpenBelowBar` (fixed limit only): heads-up, first in on the
- *    button, when the reference does not open and the hand's quality is at
- *    least the open bar minus this value: open. Folding a heads-up button
- *    loses the posted small blind, and the population defends a fixed-limit
- *    open too passively to punish a wider one.
+ *  - `openTighten` (fixed limit only): first in (`rfi`) from a listed position
+ *    with at least `openTightenMinDealt` dealt, when the reference opens and
+ *    the hand's pack quality is below the pack's open bar: fold.
+ *  - `headsUpOpenBelowBar`: heads-up, first in on the button, when the
+ *    reference does not open and the hand's quality is at least the open bar
+ *    minus this value: open. Folding a heads-up button loses the posted small
+ *    blind.
  *  - `smallBlindStealBelowBar` (fixed limit only): folded to the small blind
  *    with three or more dealt, when the reference does not open and the
  *    hand's quality is at least the open bar minus this value: open.
- *  - `bigBlindDefendBelowCallBar` (fixed limit only): the big blind facing a
- *    single raise, when the reference folds and the hand's quality is at
- *    least the pack's call bar minus this value: call. A fixed-limit big
- *    blind closes the action at three to one or better.
+ *  - `bigBlindDefendBelowCallBar`: the big blind facing a single raise, when
+ *    the reference folds and the hand's quality is at least the pack's call
+ *    bar minus this value: call; the big blind closes the action at a price.
+ *
+ * Measured and NOT kept: no-limit open tightening and a no-limit flop check
+ * below 0.95 sampled equity beat the reference against horses, which defend
+ * and continue too widely, but lost to it against the human-calibrated
+ * population (Short Deck -69.5, Crazy Pineapple -54.6 bb/100 on development
+ * seeds), so they are exploits of horse-versus-horse play, not upgrades; the
+ * no-limit small blind steal lost against horses on both seeds tried.
  *
  * These are heuristic choices measured on development seeds, not solver
  * frequencies, and nothing here is calibrated (`calibratedConfidence: null`).
@@ -62,23 +61,20 @@ export type RemainingPolicyVariant = 'short_deck' | 'pineapple' | 'flh' | 'flo8'
 export interface RemainingVariantRound3Rules {
   readonly openTighten: readonly ('early' | 'middle' | 'cutoff' | 'button')[];
   readonly openTightenMinDealt: number;
-  readonly flopCheckBelow: number | null;
   readonly headsUpOpenBelowBar: number | null;
   readonly smallBlindStealBelowBar: number | null;
   readonly bigBlindDefendBelowCallBar: number | null;
 }
 const REMAINING_VARIANT_NO_LIMIT_ROUND3: RemainingVariantRound3Rules = Object.freeze({
-  openTighten: Object.freeze(['early', 'middle', 'cutoff', 'button'] as const),
+  openTighten: Object.freeze([] as const),
   openTightenMinDealt: 3,
-  flopCheckBelow: 0.95,
-  headsUpOpenBelowBar: null,
+  headsUpOpenBelowBar: 0.15,
   smallBlindStealBelowBar: null,
-  bigBlindDefendBelowCallBar: null,
+  bigBlindDefendBelowCallBar: 0.15,
 });
 const REMAINING_VARIANT_FIXED_LIMIT_ROUND3: RemainingVariantRound3Rules = Object.freeze({
   openTighten: Object.freeze(['middle', 'cutoff', 'button'] as const),
   openTightenMinDealt: 3,
-  flopCheckBelow: null,
   headsUpOpenBelowBar: 0.15,
   smallBlindStealBelowBar: 0.2,
   bigBlindDefendBelowCallBar: 0.15,

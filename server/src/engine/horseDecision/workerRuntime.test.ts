@@ -8,7 +8,51 @@ import {
   round3SpotFactories,
   type Round3Spot,
 } from '../remainingVariants/RemainingVariantRound3Spots.test-support.js';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
+
+/** Phase 13's earlier-phase law needs an applied Phase 12 change on a postflop
+ * multiway spot. Round 3 changes only declared preflop spots, so the one test
+ * that needs it turns this on: an eligible postflop Phase 12 proposal becomes
+ * the other legal passive action (a fold against a bet, a check instead of a
+ * bet), as a pack that changed that decision would. Off everywhere else. */
+const p12PostflopChange = vi.hoisted(() => ({ on: false }));
+vi.mock('../remainingVariants/RemainingVariantLivePolicy.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../remainingVariants/RemainingVariantLivePolicy.js')>();
+  return {
+    ...actual,
+    evaluateRemainingVariantPolicy: (
+      ...args: Parameters<typeof actual.evaluateRemainingVariantPolicy>
+    ) => {
+      const result = actual.evaluateRemainingVariantPolicy(...args);
+      const [hero, state, baseline, , mode] = args;
+      if (!p12PostflopChange.on || !result.receipt.fired || state.stage === 'preflop')
+        return result;
+      const owed = Math.max(0, state.currentBet - hero.bet);
+      const alternative =
+        owed > 0 && baseline.action !== 'fold' && state.legalActions?.includes('fold')
+          ? { action: 'fold' as const, thinkTime: baseline.thinkTime }
+          : owed === 0 &&
+              (baseline.action === 'bet' || baseline.action === 'all_in') &&
+              state.legalActions?.includes('check')
+            ? { action: 'check' as const, thinkTime: baseline.thinkTime }
+            : null;
+      if (!alternative) return result;
+      const applied = mode === 'candidate';
+      return {
+        ...result,
+        proposal: alternative,
+        decision: applied ? alternative : result.decision,
+        receipt: Object.assign(result.receipt, {
+          proposalAction: alternative.action,
+          proposalAmount: null,
+          changed: true,
+          applied,
+        }),
+      };
+    },
+  };
+});
 import { performance } from 'node:perf_hooks';
 
 import type { HorseDecideOpts } from '../HorseLogic.js';
@@ -4078,8 +4122,8 @@ describe('P12.3 worker-owned Short Deck/Pineapple/FLH/FLO8 authority (the Phase 
     ['flo8', 'cash', 'river', 3, 10_301_204, true, false, { action: 'call', amount: 4 }],
     ['flo8', 'tournament', 'turn', 2, 4040, true, false, { action: 'raise', amount: 8 }],
   ] as const;
-  /** Round 3 changes the reference only in its declared spots (the no-limit
-   * flop checked to the hero, the fixed-limit heads-up button first in). The
+  /** Round 3 changes the reference only in its declared preflop spots (here
+   * the heads-up button first in, where the pack opens). The
    * changed spot of each pack is the first fixed holding where this same
    * worker path, on this seed, makes a shadow proposal that differs from the
    * reference. */
@@ -4855,13 +4899,13 @@ describe('P13.3 worker-owned joint multiway authority (the Phase 8 path, reused 
   it('a usable Phase 13 candidate is never applied on top of an applied Phase 12 candidate (earlier_phase_applied)', async () => {
     // Natural Short Deck controller spots through the live worker with usable
     // Phase 12 and Phase 13 Short Deck authority both admitted. Round 3
-    // applies a change only in its declared spots (a first-in open folded, a
-    // flop bet checked), so the natural search reaches further than round 1.
+    // changes only declared preflop spots, where no joint decision exists, so
+    // a postflop Phase 12 change is made here (p12PostflopChange above).
     const found: Array<{ decision: any }> = [];
     let requestId = 900;
     const spots: Array<{ hero: any; state: any }> = [];
-    forEachJointControllerSpot('short_deck', 'cash', 160, 0x13e1 + 10, (spot) => {
-      if (spots.length < 900)
+    forEachJointControllerSpot('short_deck', 'cash', 30, 0x13e1 + 10, (spot) => {
+      if (spots.length < 120)
         spots.push({
           hero: spot.hero,
           // The worker's canonical snapshot also requires the cap fields the
@@ -4878,6 +4922,10 @@ describe('P13.3 worker-owned joint multiway authority (the Phase 8 path, reused 
       v === 'short_deck'
         ? qualifiedPhase12TestAdmission('short_deck')
         : { status: 'refused', reason: 'unselected', transient: false };
+    p12PostflopChange.on = true;
+    onTestFinished(() => {
+      p12PostflopChange.on = false;
+    });
     for (const spot of spots) {
       if (found.length >= 1) break;
       const r = rekey({

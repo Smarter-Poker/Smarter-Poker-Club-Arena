@@ -67,9 +67,9 @@ const act = (d: { action: string; amount?: number }) => ({
   amount: d.amount ?? null,
 });
 
-// Round 3 changes the reference only in its declared spots: the no-limit
-// flop checked to the hero (the pack checks a reference bet) and the
-// fixed-limit heads-up button first in (the pack opens a reference fold).
+// Round 3 changes the reference only in its declared preflop spots; the
+// heads-up button first in (the pack opens where the reference does not) is
+// one of them in every pack.
 const VARIANTS = ['short_deck', 'pineapple', 'flh', 'flo8'] as const;
 const changedSpot = (variant: RemainingPolicyVariant) =>
   round3ChangedSpot(variant, 'cash', (spot) => {
@@ -111,8 +111,10 @@ describe('P12.2 illegal candidate retention', () => {
 
 describe('P12.2 the shard runner counts guard refusals beside changed', () => {
   it('counts no natural refusal (P12.1 legal form), and a forged illegal size moves decisions from changed to illegalCandidates', async () => {
+    // Heads-up: round 3's no-limit changes are a heads-up button open and a
+    // big blind defence, so a heads-up shard carries natural changes.
     const request = {
-      profileId: 'p12c-short_deck-6max-4dealt-100bb',
+      profileId: 'p12c-short_deck-6max-2dealt-100bb',
       seed: 12101101,
       shard: 0,
       mode: 'development' as const,

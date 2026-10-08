@@ -1742,7 +1742,6 @@ export function evaluateRemainingVariantPolicy(
     receipt.fired = false;
     return finish('invalid_equity_ceiling');
   }
-  const equity = Math.min(e.equity, ceiling);
   // Receipt features only: round 3 decides nothing from them (see the pack).
   if (variant === 'flo8') {
     const facts = splitFacts!;
@@ -1773,16 +1772,7 @@ export function evaluateRemainingVariantPolicy(
     if (dominated) receipt.features.push('higher_flush_available');
   }
   if (e.perPot.length > 1) receipt.features.push('separate_pot_eligibility');
-  // Round 3: postflop the reference keeps every decision except, in no
-  // limit, a flop bet into a checked pot below the declared equity.
-  const checkBelow = pack.round3.flopCheckBelow;
-  if (
-    !callCost &&
-    checkBelow !== null &&
-    s.stage === 'flop' &&
-    ['bet', 'raise', 'all_in'].includes(baseline.action) &&
-    equity < checkBelow
-  )
-    return finishPriced('round3_flop_bet_checked', passive());
+  // Round 3 keeps every postflop reference decision: the sampled equity above
+  // is bound, recorded and priced (P12-B), and decides nothing here.
   return finishPriced('round3_reference_retained', retained());
 }

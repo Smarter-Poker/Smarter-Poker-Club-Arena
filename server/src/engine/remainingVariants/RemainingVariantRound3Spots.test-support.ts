@@ -2,19 +2,14 @@
  * Round 3 test support (docs/horse-brain-phase12-round3-2026-10-08.md): a
  * decision state where the round-3 pack's proposal differs from the reference
  * at the HorseLogic owner. The round-3 pack keeps the reference everywhere
- * except its declared spots, so a test that needs a real change builds one of
- * them and tries a fixed list of hero holdings until the pack-off reference
- * and the shadow proposal differ. The reference is read from the pack-off
- * run, never from the code under test.
- *
- * - No limit (Short Deck, Crazy Pineapple): the flop checked to the hero,
- *   where the reference bets and the pack checks below its flop equity.
- * - Fixed limit (FLH, FLO8): heads-up first in on the button, where the
- *   reference does not open and the pack opens.
+ * except its declared preflop spots, so a test that needs a real change
+ * builds the heads-up button first in (where the pack opens a hand the
+ * reference does not) and tries a fixed list of hero holdings until the
+ * pack-off reference and the proposal differ. The reference is read from the
+ * pack-off run, never from the code under test.
  */
-import type { Card, HorseDecision } from '../../types.js';
+import type { Card } from '../../types.js';
 import { remainingVariantSpot } from '../../benchmark/RemainingVariantPolicyEvidence.js';
-import { calculateContestablePot, calculatePots } from '../PokerEngine.js';
 import type { RemainingPolicyVariant } from './RemainingVariantPolicyPack.js';
 
 export type Round3Spot = ReturnType<typeof remainingVariantSpot>;
@@ -28,11 +23,32 @@ const RANK_SUIT: Record<string, Card['suit']> = {
 const cards = (text: string): Card[] =>
   text.split(' ').map((c) => ({ rank: c[0] as Card['rank'], suit: RANK_SUIT[c[1]] }));
 
-/** Holdings tried in order. None collides with its variant's board or the
- * Pineapple spot's known discard (Qc). */
+/** Holdings tried in order (preflop: no board or discard to collide with). */
 const HOLDINGS: Record<RemainingPolicyVariant, readonly string[]> = {
-  short_deck: ['Ac Ah', 'Jc Th', 'Kh Td', 'Qh Jd', 'Ah Kd', 'Tc Th', 'Jh Jd', 'Ad Tc'],
-  pineapple: ['Ac Ah', 'Kc Kd', 'Kd Qd', 'Jc Th', 'Ah Kc', '9c 9h', 'Tc 9c', 'Ad 7c'],
+  short_deck: [
+    'Kc 6d',
+    'Qc 7d',
+    'Jc 6h',
+    'Tc 7h',
+    'Kh 7c',
+    'Qh 6c',
+    'Jd 8c',
+    '9c 6d',
+    'Ah 6c',
+    'Kd 8h',
+  ],
+  pineapple: [
+    'Kc 7d 2h',
+    'Qc 8d 3h',
+    'Jc 7d 2s',
+    'Kh 6c 3d',
+    'Qh 5c 2d',
+    'Tc 8d 3s',
+    'Ah 7c 2d',
+    'Jd 9c 2h',
+    'Kd 4h 2c',
+    '9c 7d 3h',
+  ],
   flh: ['Qc 4d', 'Jc 3d', 'Tc 5d', '9c 6d', 'Kc 2d', 'Qh 3c', 'Jh 5c', 'Th 6c', '8c 7d'],
   flo8: [
     'Kc Kd 3h 2s',
@@ -50,47 +66,14 @@ const HOLDINGS: Record<RemainingPolicyVariant, readonly string[]> = {
   ],
 };
 
-/** No limit: the hero is checked to on the flop of the evidence spot. */
-function checkedToFlop(variant: RemainingPolicyVariant, mode: 'cash' | 'tournament') {
-  const spot = remainingVariantSpot(variant, 'flop', 2, mode);
-  for (const p of spot.state.players) {
-    p.bet = 0;
-    p.totalInvested = 20;
-  }
-  spot.hero.bet = 0;
-  spot.hero.totalInvested = 20;
-  const s = spot.state;
-  s.pot = 40;
-  s.currentBet = 0;
-  s.toCall = 0;
-  s.minRaise = s.bigBlind;
-  s.lastRaise = 0;
-  // The controller's menu always offers fold, as the live worker requires.
-  s.legalActions = ['fold', 'check', 'bet'];
-  s.minRaiseTo = s.bigBlind;
-  s.maxRaiseTo = spot.hero.stack;
-  s.actionHistory = (s.actionHistory ?? []).filter((a) => a.action === 'discard');
-  s.contestablePot = calculateContestablePot(s.players, 'hero', 0);
-  s.pots = calculatePots(s.players);
-  if (s.tournament) {
-    s.tournament.stacks = s.players.map((p) => p.stack + p.totalInvested);
-    s.tournament.stackByUser = Object.fromEntries(
-      s.players.map((p) => [p.user_id, p.stack + p.totalInvested])
-    );
-  }
-  spot.baseline = { action: 'check', thinkTime: 0 } as HorseDecision;
-  return spot;
-}
-
+/** The declared spot: heads-up, first in on the button of the evidence spot. */
 function round3Base(variant: RemainingPolicyVariant, mode: 'cash' | 'tournament') {
-  return variant === 'flh' || variant === 'flo8'
-    ? remainingVariantSpot(variant, 'preflop', 2, mode)
-    : checkedToFlop(variant, mode);
+  return remainingVariantSpot(variant, 'preflop', 2, mode);
 }
 
-/** The street of the declared spot for `variant`. */
-export function round3ChangedStreet(variant: RemainingPolicyVariant) {
-  return variant === 'flh' || variant === 'flo8' ? ('preflop' as const) : ('flop' as const);
+/** The street of the declared spot. */
+export function round3ChangedStreet(_variant: RemainingPolicyVariant) {
+  return 'preflop' as const;
 }
 
 /** One factory per fixed holding, in order, each making a fresh copy of the

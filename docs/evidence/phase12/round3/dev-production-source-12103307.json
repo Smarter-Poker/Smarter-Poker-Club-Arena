@@ -2,92 +2,92 @@
   "short_deck": {
     "seeds": [12103307],
     "pairs": 38880,
-    "meanBbPer100": 14.653,
-    "confidence99BbPer100": [3.061, 26.244],
+    "meanBbPer100": 1.396,
+    "confidence99BbPer100": [-1.294, 4.086],
     "profiles": {
       "p12c-short_deck-6max-100bb": {
         "pairs": 6480,
-        "meanBbPer100": 22.789
+        "meanBbPer100": 0.377
       },
       "p12c-short_deck-6max-200bb": {
         "pairs": 6480,
-        "meanBbPer100": 28.84
+        "meanBbPer100": 0.368
       },
       "p12c-short_deck-6max-2dealt-100bb": {
         "pairs": 6480,
-        "meanBbPer100": 5.785
+        "meanBbPer100": 8.97
       },
       "p12c-short_deck-6max-40bb": {
         "pairs": 6480,
-        "meanBbPer100": 7.821
+        "meanBbPer100": 0.023
       },
       "p12c-short_deck-6max-4dealt-100bb": {
         "pairs": 6480,
-        "meanBbPer100": 16.356
+        "meanBbPer100": -1.364
       },
       "p12c-short_deck-9max-100bb": {
         "pairs": 6480,
-        "meanBbPer100": 6.326
+        "meanBbPer100": 0.0
       }
     },
     "attribution": [
       {
-        "key": "round3_open_tightened",
-        "n": 2448,
-        "contributionBbPer100": 5.03,
-        "halfWidth99BbPer100": 7.685
+        "key": "round3_big_blind_defended",
+        "n": 251,
+        "contributionBbPer100": 0.508,
+        "halfWidth99BbPer100": 1.604
       },
       {
-        "key": "round3_flop_bet_checked",
-        "n": 2206,
-        "contributionBbPer100": 9.623,
-        "halfWidth99BbPer100": 8.661
+        "key": "round3_heads_up_open",
+        "n": 799,
+        "contributionBbPer100": 0.888,
+        "halfWidth99BbPer100": 2.156
       }
     ]
   },
   "pineapple": {
     "seeds": [12103307],
     "pairs": 38880,
-    "meanBbPer100": 12.357,
-    "confidence99BbPer100": [-1.74, 26.453],
+    "meanBbPer100": 1.768,
+    "confidence99BbPer100": [-2.409, 5.946],
     "profiles": {
       "p12c-pineapple-6max-100bb": {
         "pairs": 6480,
-        "meanBbPer100": 12.89
+        "meanBbPer100": 0.099
       },
       "p12c-pineapple-6max-200bb": {
         "pairs": 6480,
-        "meanBbPer100": 6.034
+        "meanBbPer100": 0.0
       },
       "p12c-pineapple-6max-2dealt-100bb": {
         "pairs": 6480,
-        "meanBbPer100": 19.398
+        "meanBbPer100": 10.176
       },
       "p12c-pineapple-6max-40bb": {
         "pairs": 6480,
-        "meanBbPer100": 1.014
+        "meanBbPer100": -0.143
       },
       "p12c-pineapple-6max-4dealt-100bb": {
         "pairs": 6480,
-        "meanBbPer100": 22.255
+        "meanBbPer100": 0.478
       },
       "p12c-pineapple-9max-100bb": {
         "pairs": 6480,
-        "meanBbPer100": 12.55
+        "meanBbPer100": 0.0
       }
     },
     "attribution": [
       {
-        "key": "round3_open_tightened",
-        "n": 2189,
-        "contributionBbPer100": -0.885,
-        "halfWidth99BbPer100": 9.83
+        "key": "round3_big_blind_defended",
+        "n": 299,
+        "contributionBbPer100": 0.394,
+        "halfWidth99BbPer100": 2.366
       },
       {
-        "key": "round3_flop_bet_checked",
-        "n": 1849,
-        "contributionBbPer100": 13.242,
-        "halfWidth99BbPer100": 10.074
+        "key": "round3_heads_up_open",
+        "n": 1259,
+        "contributionBbPer100": 1.374,
+        "halfWidth99BbPer100": 3.441
       }
     ]
   },

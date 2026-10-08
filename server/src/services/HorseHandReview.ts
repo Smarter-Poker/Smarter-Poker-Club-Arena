@@ -20,9 +20,11 @@
  * into a raise, a dominated pair calling down, a blown-off big bluff.
  *
  * Fire-and-forget, never throws, and deliberately NOT awaited by settlement.
- * The rows, their permanent receipts and the per-horse/day rollup are
- * written together by ONE call to fn_hhr_record_atomic (P14.1); raw rows are
- * pruned at 30 days by sp_prune_horse_hand_reviews().
+ * The rows, their replay receipts and the per-horse/day rollup are written
+ * together by ONE call to fn_hhr_record_atomic (P14.1); raw rows are pruned
+ * at 30 days by sp_prune_horse_hand_reviews(), and a receipt whose review is
+ * gone and whose hand is past the 30-day publication horizon by
+ * sp_prune_horse_hand_review_receipts() (20261008041150).
  */
 
 import { supabase } from './supabase/client.js';
@@ -1451,7 +1453,20 @@ export async function recordHorseHandReviews(input: HorseReviewInput): Promise<v
           void (async () => {
             const { error: perr } = await supabase.rpc('sp_prune_horse_hand_reviews');
             if (perr) reportError(new Error(perr.message), 'HorseHandReview.prune');
-          })().catch((err: unknown) => reportError(err, 'HorseHandReview.prune'));
+          })()
+            .catch((err: unknown) => reportError(err, 'HorseHandReview.prune'))
+            // RECEIPT RETENTION (20261008041150). The replay receipts are
+            // pruned after the reviews, in their own statement: the review
+            // prune already spends most of service_role's 8 s statement
+            // timeout, and a receipt delete inside it could roll it back.
+            // The receipt prune removes at most 25,000 receipts whose review
+            // row is gone and whose hand is past the 30-day publication
+            // horizon, so it runs whether or not the review prune succeeded.
+            .then(async () => {
+              const { error: rerr } = await supabase.rpc('sp_prune_horse_hand_review_receipts');
+              if (rerr) reportError(new Error(rerr.message), 'HorseHandReview.prune_receipts');
+            })
+            .catch((err: unknown) => reportError(err, 'HorseHandReview.prune_receipts'));
         }),
         10 * 60 * 1000
       );

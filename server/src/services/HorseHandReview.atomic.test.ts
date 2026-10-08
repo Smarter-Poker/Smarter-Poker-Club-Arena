@@ -144,9 +144,11 @@ describe('recordHorseHandReviews publishes one hand in one atomic call', () => {
     expect(db.from).not.toHaveBeenCalled();
     const names = db.rpc.mock.calls.map(([name]) => name);
     expect(names).not.toContain('fn_hhr_rollup_add');
-    expect(names.filter((n) => n !== 'sp_prune_horse_hand_reviews')).toEqual([
-      'fn_hhr_record_atomic',
-    ]);
+    expect(
+      names.filter(
+        (n) => n !== 'sp_prune_horse_hand_reviews' && n !== 'sp_prune_horse_hand_review_receipts'
+      )
+    ).toEqual(['fn_hhr_record_atomic']);
   });
 
   it('sends every row with exactly the 17 HorseReviewRow keys and no undefined value', async () => {

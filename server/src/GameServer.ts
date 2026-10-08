@@ -89,6 +89,10 @@ import { LightningSupervisor } from './lightning/LightningSupervisor.js';
 import type { PresenceTableReport } from './lightning/LightningPresence.js';
 import { LightningHosting, LightningRegistry } from './lightning/LightningRegistry.js';
 import { LightningPresenceReporter } from './lightning/LightningPresenceReporter.js';
+import {
+  LIGHTNING_PRESENCE_RECONCILE_DELAY_MS,
+  reconcileLightningPresence,
+} from './lightning/LightningPresenceReconciliation.js';
 import { createSupabaseLightningHandBackend } from './lightning/LightningHandBackend.js';
 import { lightningAnchorSeat } from './services/supabase/lightningAnchor.js';
 import type { LightningLease } from './lightning/LightningHandHost.js';
@@ -3370,10 +3374,15 @@ export class GameServer {
    * worker_mode defaults to 'off'.
    */
   // Lightning Phase 9: presence TRANSITIONS are reported to the database
-  // (fn_lightning_presence_report), batched per Cluster, never per pass.
+  // (fn_lightning_presence_report), batched per Cluster, never per pass. The
+  // reporter is held here so shutdown can flush and stop it, and so the boot
+  // reconciliation pass can feed it (Phase 9 remediation).
+  private readonly lightningPresenceReporter = new LightningPresenceReporter();
   readonly lightningRooms = new LightningRegistry({
-    presenceReport: new LightningPresenceReporter(),
+    presenceReport: this.lightningPresenceReporter,
   });
+  /** The one post-boot presence reconciliation pass (Phase 9 remediation). */
+  private lightningPresenceReconcileTimer: ReturnType<typeof setTimeout> | null = null;
   private lightningHosting = new LightningHosting({
     registry: this.lightningRooms,
     backend: createSupabaseLightningHandBackend(),
@@ -4007,6 +4016,22 @@ export class GameServer {
       // Lightning 2.0: the shadow matcher workers, beside the Cluster
       // controller, behind the same leader gate. Dark until a Cluster qualifies.
       this.lightningSupervisor.start();
+      // Lightning Phase 9 remediation: a restart loses the registry's socket
+      // counts, so a player who left BEFORE the restart would never be
+      // reported disconnected and their open pool session would sit until
+      // the anchor-seat backstop. One pass, shortly after boot (returning
+      // sockets land first), reports every open session whose player holds
+      // no socket here through the ordinary reporter path. The presence door
+      // is idempotent, so over-reporting an already-stamped player is free.
+      this.lightningPresenceReconcileTimer = setTimeout(() => {
+        this.lightningPresenceReconcileTimer = null;
+        void reconcileLightningPresence({
+          isConnected: (clusterId, playerId) =>
+            this.lightningRooms.hasClusterSocket(clusterId, playerId),
+          report: this.lightningPresenceReporter,
+        });
+      }, LIGHTNING_PRESENCE_RECONCILE_DELAY_MS);
+      (this.lightningPresenceReconcileTimer as { unref?: () => void }).unref?.();
 
       // Step 3: Start tournament recurring service (creates MTTs, SNGs, Spins)
       this.tournamentRecurring.start();
@@ -4212,6 +4237,19 @@ export class GameServer {
         ['HorseFleetManager', () => this.horseFleet.stop()],
         ['ClusterController', () => this.clusterController.stop()],
         ['LightningSupervisor', () => this.lightningSupervisor.stop()],
+        // Phase 9 remediation: the presence reporter is flushed and stopped
+        // with the other producers, and a reconciliation pass that has not
+        // run yet never runs into a shutdown.
+        [
+          'LightningPresenceReporter',
+          () => {
+            if (this.lightningPresenceReconcileTimer) {
+              clearTimeout(this.lightningPresenceReconcileTimer);
+              this.lightningPresenceReconcileTimer = null;
+            }
+            return this.lightningPresenceReporter.stop();
+          },
+        ],
         ['TournamentRecurringService', () => this.tournamentRecurring.stop()],
         ['ScheduledTournamentService', () => this.scheduledTournaments.stop()],
         ['HorseLifecycleManager', () => this.lifecycle.stop()],

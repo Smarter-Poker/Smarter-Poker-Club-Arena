@@ -333,6 +333,19 @@ export class LightningRegistry {
     return !!info && info.userId === playerId && info.sockets > 0;
   }
 
+  /**
+   * Does this player hold at least one live socket in any of this Cluster's
+   * rooms here? The boot reconciliation pass (Lightning Phase 9 remediation)
+   * asks this to find the open pool sessions the restarted engine will never
+   * see a socket drop for.
+   */
+  hasClusterSocket(clusterId: string, playerId: string): boolean {
+    for (const info of this.rooms.values()) {
+      if (info.clusterId === clusterId && info.userId === playerId && info.sockets > 0) return true;
+    }
+    return false;
+  }
+
   private pruneRoom(roomId: string): void {
     const info = this.rooms.get(roomId);
     if (info && info.sockets === 0 && !this.hostByRoom.has(roomId)) {

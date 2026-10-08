@@ -14,6 +14,7 @@
  *     room still holding sockets is closed by the sweep.
  */
 import { describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 vi.mock('../services/supabase/client.js', () => ({
   supabase: {
     from: vi.fn(() => {
@@ -30,7 +31,9 @@ const {
   LightningPresenceReporter,
   LIGHTNING_PRESENCE_REPORT_DEBOUNCE_MS,
   LIGHTNING_PRESENCE_REPORT_RETRY_MS,
+  LIGHTNING_PRESENCE_RECONNECT_RETRY_MAX,
 } = await import('./LightningPresenceReporter.js');
+const { reconcileLightningPresence } = await import('./LightningPresenceReconciliation.js');
 const { LightningRegistry, LIGHTNING_SESSION_ENDED_REASON } =
   await import('./LightningRegistry.js');
 const kit = await import('../testing/lightningHostTestKit.js');
@@ -310,5 +313,170 @@ describe('a watcher who drops, and an expired session', () => {
     // which sends it to fn_lightning_reconnect_state for the summary.
     const verdict = await reg.authorize(ROOM, P1);
     expect(verdict).toMatchObject({ allowed: false, reason: 'table_not_found' });
+  });
+});
+
+describe('a failed batch retries its RECONNECTS only (Phase 9 remediation)', () => {
+  function retryKit(answers: Array<{ data: unknown; error: unknown }>) {
+    const calls: Array<[string, Record<string, unknown>]> = [];
+    const rpc = async (fn: string, args: Record<string, unknown>) => {
+      calls.push([fn, args]);
+      return answers[Math.min(calls.length - 1, answers.length - 1)];
+    };
+    const r = new LightningPresenceReporter({
+      rpc,
+      logger: { log: () => undefined, warn: () => undefined, error: () => undefined },
+      random: () => 0,
+    });
+    return { r, calls };
+  }
+  const OK = { data: null, error: null };
+  const FAIL = { data: null, error: { code: '57014', message: 'canceled' } };
+  const GONE = { data: null, error: { code: 'PGRST202', message: 'Could not find the function' } };
+
+  it('re-enqueues the reconnects of a failed flush and sends them again, backed off', async () => {
+    vi.useFakeTimers();
+    try {
+      const { r, calls } = retryKit([FAIL, OK]);
+      r.disconnected(CLUSTER, P2);
+      r.reconnected(CLUSTER, P1);
+      await r.flush(CLUSTER);
+      expect(calls).toHaveLength(1);
+      // Only the reconnect went back in the queue; the disconnect is dropped
+      // by design (its next transition states the same fact).
+      expect(r.pendingCount()).toBe(1);
+      await vi.advanceTimersByTimeAsync(LIGHTNING_PRESENCE_REPORT_DEBOUNCE_MS + 300);
+      expect(calls).toHaveLength(2);
+      expect(calls[1][1].p_reconnected).toEqual([P1]);
+      expect(calls[1][1].p_disconnected).toEqual([]);
+      expect(r.pendingCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a failed flush holding only disconnects retries nothing', async () => {
+    vi.useFakeTimers();
+    try {
+      const { r, calls } = retryKit([FAIL, OK]);
+      r.disconnected(CLUSTER, P1);
+      r.disconnected(CLUSTER, P2);
+      await r.flush(CLUSTER);
+      expect(calls).toHaveLength(1);
+      expect(r.pendingCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(10 * LIGHTNING_PRESENCE_REPORT_DEBOUNCE_MS);
+      expect(calls).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a player who disconnects again mid-retry supersedes the queued reconnect', async () => {
+    vi.useFakeTimers();
+    try {
+      const { r, calls } = retryKit([FAIL, OK]);
+      r.reconnected(CLUSTER, P1);
+      await r.flush(CLUSTER); // fails: the reconnect is queued for retry
+      expect(r.pendingCount()).toBe(1);
+      r.disconnected(CLUSTER, P1); // the NEWER fact, before the retry fires
+      expect(r.pendingCount()).toBe(1);
+      await vi.advanceTimersByTimeAsync(LIGHTNING_PRESENCE_REPORT_DEBOUNCE_MS + 300);
+      expect(calls).toHaveLength(2);
+      expect(calls[1][1].p_disconnected).toEqual([P1]);
+      expect(calls[1][1].p_reconnected).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('the retry is bounded: after the cap the reconnect is abandoned, no storm', async () => {
+    vi.useFakeTimers();
+    try {
+      const { r, calls } = retryKit([FAIL]);
+      r.reconnected(CLUSTER, P1);
+      await r.flush(CLUSTER);
+      // Each retry doubles its backoff; walk far enough to drain them all.
+      for (let i = 0; i < 8; i++) {
+        await vi.advanceTimersByTimeAsync(20 * LIGHTNING_PRESENCE_REPORT_DEBOUNCE_MS);
+      }
+      expect(calls).toHaveLength(1 + LIGHTNING_PRESENCE_RECONNECT_RETRY_MAX);
+      expect(r.pendingCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('the RPC going unavailable mid-retry abandons the queue quietly', async () => {
+    vi.useFakeTimers();
+    try {
+      const { r, calls } = retryKit([FAIL, GONE]);
+      r.reconnected(CLUSTER, P1);
+      await r.flush(CLUSTER); // fails: queued for retry
+      await vi.advanceTimersByTimeAsync(LIGHTNING_PRESENCE_REPORT_DEBOUNCE_MS + 300);
+      expect(calls).toHaveLength(2); // the retry met the deploy window
+      expect(r.pendingCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(20 * LIGHTNING_PRESENCE_REPORT_DEBOUNCE_MS);
+      expect(calls).toHaveLength(2); // and nothing stormed after it
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('boot reconciliation (the restarted engine converges the DB view)', () => {
+  it('reports as disconnected every open session without a socket here, through the ordinary reporter', async () => {
+    const report = { disconnected: vi.fn(), reconnected: vi.fn() };
+    const n = await reconcileLightningPresence({
+      openSessions: async () => [
+        { clusterId: CLUSTER, playerId: P1 },
+        { clusterId: CLUSTER, playerId: P2 },
+      ],
+      isConnected: (_clusterId: string, playerId: string) => playerId === P2,
+      report,
+    });
+    expect(n).toBe(1);
+    expect(report.disconnected.mock.calls).toEqual([[CLUSTER, P1]]);
+    expect(report.reconnected).not.toHaveBeenCalled();
+  });
+
+  it('a read that fails reconciles nothing, warns once and never throws', async () => {
+    const warns: string[] = [];
+    const report = { disconnected: vi.fn(), reconnected: vi.fn() };
+    const n = await reconcileLightningPresence({
+      openSessions: async () => {
+        throw new Error('relation "lightning_pool_session" does not exist');
+      },
+      isConnected: () => false,
+      report,
+      logger: { warn: (m: string) => warns.push(m) },
+    });
+    expect(n).toBe(0);
+    expect(report.disconnected).not.toHaveBeenCalled();
+    expect(warns).toHaveLength(1);
+  });
+
+  it('hasClusterSocket is the socket truth the pass compares against', async () => {
+    const reg = new LightningRegistry({
+      viewAccess: async () => true,
+      roomOwner: async () => ({ playerId: P1, clusterId: CLUSTER }),
+    });
+    await reg.authorize(ROOM, P1);
+    expect(reg.hasClusterSocket(CLUSTER, P1)).toBe(false);
+    reg.connect(ROOM, P1);
+    expect(reg.hasClusterSocket(CLUSTER, P1)).toBe(true);
+    expect(reg.hasClusterSocket(CLUSTER, P2)).toBe(false);
+    reg.disconnect(ROOM, P1);
+    expect(reg.hasClusterSocket(CLUSTER, P1)).toBe(false);
+  });
+
+  it('GameServer holds the reporter, stops it at shutdown, and schedules the one pass', () => {
+    const SRC = readFileSync(new URL('../GameServer.ts', import.meta.url), 'utf8');
+    expect(SRC).toContain(
+      'private readonly lightningPresenceReporter = new LightningPresenceReporter()'
+    );
+    expect(SRC).toContain('presenceReport: this.lightningPresenceReporter');
+    expect(SRC).toMatch(/\[\s*'LightningPresenceReporter',/);
+    expect(SRC).toContain('reconcileLightningPresence({');
+    expect(SRC).toContain('LIGHTNING_PRESENCE_RECONCILE_DELAY_MS');
   });
 });

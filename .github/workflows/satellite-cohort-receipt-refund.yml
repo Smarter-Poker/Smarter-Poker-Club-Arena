@@ -1,0 +1,69 @@
+name: Satellite cohort receipt admits a settled pre-start refund
+
+# fn_ca_satellite_cohort_receipt (migration 20261008050135). Runs
+# scripts/ci/test-satellite-cohort-receipt-refund.py against a throwaway
+# PostgreSQL 17 cluster, never production: the exact production text of the
+# cohort receipt captured 2026-10-08 (pg_get_functiondef md5 equal to the live
+# function) must count a settled pre-start unregistration refund, and the
+# migration must stop exactly that, keep counting every other obligation,
+# count identically to the single-winner rule of 20261003023500 and
+# reproduce production's derived postimage md5.
+# Kept in its own file so the change does not edit ci.yml. No timer
+# (CLAUDE.md 10.85): pull_request only, scoped to the paths it proves.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - supabase/migrations/20261008050135_a_pre_start_unregistration_refund_does_not_block_a_cohort_sa.sql
+      - scripts/ci/fixtures/satellite-cohort-receipt-refund/**
+      - supabase/migrations/20261003023500_a_pre_start_unregistration_refund_does_not_block_a_satellite.sql
+      - scripts/ci/test-satellite-cohort-receipt-refund.py
+      - .github/workflows/satellite-cohort-receipt-refund.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: satellite-cohort-receipt-refund-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  satellite-cohort-receipt-refund:
+    name: Satellite cohort receipt admits a settled pre-start refund
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      # Runs as the runner user (non-root), exactly as the ci.yml step would.
+      - name: Satellite cohort receipt admits a settled pre-start refund
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-satellite-cohort-receipt-refund.py --output artifacts/satellite-cohort-receipt-refund
+      - name: Retain the regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: satellite-cohort-receipt-refund-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/satellite-cohort-receipt-refund/RESULTS.json
+          retention-days: 7
+          if-no-files-found: warn

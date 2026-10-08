@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-const preflightHash = '8bba11e9dbe920ec73db05de9175ce836544ea6d7cb1b7e88f4d14b29d4b7ff4';
+const preflightHash = '4bbc1ccd4f5df4fefecafd3a0cac068cc59c112febe0ab68e1387558de57973d';
 const auth = 'leaderboard-isolated-authorization-draft.sql';
 const capture = 'leaderboard-capture-basis-candidate.sql';
 const ranking = 'leaderboard-complete-ranking-candidate.mjs';
@@ -42,7 +42,7 @@ const reviewed = Object.freeze({
   [compatibility]: 'a1654508e9a44b849d6ccd67afed6173fe50300488b232e8c028c82ff8f06e6e',
   [openingFixture]: '40ec7d17deda73f27cad1706f44f212288d7781767eabb1c2d05258c3e622047',
   [workerFixture]: '2dada967cdb8bff98c8f8904f3b4d99e0a64eb67eba76a0ff4787236a92d4163',
-  [historicalFixture]: '2233452e0892ce60dde786578a82366fecc545b4fe5a32cae00c8ca447cdf75f',
+  [historicalFixture]: '686ceb495005478eb6b44efdabee0e3f666c1fc7d23b45cc04f1d84d0ed688ab',
   [concurrencyFixture]: 'c2057bbbbb9b08c860ac82cf02e98171ff9188ab36694dcb672f1abd3f37ed41',
   [completeFixtureAdapter]: 'a34d0e22319530580af03e45c3c22dbd0879d95ea7d00a44948cdb1bd5805b38',
   [concurrencyAdapter]: '7774fefd0ae702fdb597d29163a8f3f63d97d44db61d4a4d7db44c8bcc6cfef5',

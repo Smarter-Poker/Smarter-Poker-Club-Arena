@@ -2838,6 +2838,10 @@ export class HorseLogic {
       (gs.communityCards3?.length ?? 0) > 0 ||
       (gs.boardCount ?? 1) > 1;
 
+    // Reachability 2026-10-08: the refusal is part of the decision receipt, not
+    // only a FAST-lane telemetry counter, so every in-domain tournament decision
+    // without a utility ledger names its cause in the private journal.
+    let phase7Refusal: string | null = null;
     const arbitration = graph.run('tournament_utility', decision, () => {
       let phase8UtilityInput: TournamentUtilityInput | null = null;
       let phase8ReuseUtility: TournamentContinuationRunner | undefined;
@@ -2893,6 +2897,7 @@ export class HorseLogic {
           }
         }
         if (!tournament) {
+          phase7Refusal = 'context_incomplete';
           if (tele) noteFire('phase7_utility_skip_incomplete');
         } else if (
           gs.stateSchemaVersion === 1 &&
@@ -2963,6 +2968,7 @@ export class HorseLogic {
                 // A utility receipt may never be relabeled as a different legal
                 // action. Keep the already-legal baseline if this invariant is
                 // ever violated and make the skipped arbiter observable.
+                phase7Refusal = 'legalizer_mismatch';
                 if (tele) {
                   noteFire('phase7_utility_unavailable');
                   noteFire('phase7_unavailable_legalizer_mismatch');
@@ -2979,34 +2985,39 @@ export class HorseLogic {
                   if (result.ledger.objective === 'pko') noteFire('phase7_bounty_utility');
                 }
               }
-            } else if (tele) {
-              noteFire('phase7_utility_unavailable');
-              noteFire(
-                `phase7_unavailable_${jointExpired ? 'work_budget' : (evaluation.unavailableReason ?? 'unknown')}`
-              );
+            } else {
+              phase7Refusal = jointExpired
+                ? 'work_budget'
+                : (evaluation.unavailableReason ?? 'unknown');
+              if (tele) {
+                noteFire('phase7_utility_unavailable');
+                noteFire(`phase7_unavailable_${phase7Refusal}`);
+              }
             }
           } catch (error) {
             reportError(error, 'HorseLogic.phase7_tournament_utility');
+            phase7Refusal = 'exception';
             if (variantPolicy) variantPolicy.receipt.utilityUnavailableReason = 'exception';
             if (tele) {
               noteFire('phase7_utility_unavailable');
               noteFire('phase7_unavailable_exception');
             }
           }
-        } else if (tele && gs.legalActions?.some((action) => action !== 'discard')) {
-          noteFire('phase7_utility_unavailable');
+        } else if (gs.legalActions?.some((action) => action !== 'discard')) {
           const multiBoardUnavailable =
             (Array.isArray(gs.communityCards2) && gs.communityCards2.length > 0) ||
             (Array.isArray(gs.communityCards3) && gs.communityCards3.length > 0) ||
             (gs.boardCount ?? 1) > 1;
-          noteFire(
-            multiBoardUnavailable
-              ? 'phase7_unavailable_multi_board'
-              : evidence7
-                ? 'phase7_unavailable_state_contract'
-                : 'phase7_unavailable_equity_evidence'
-          );
-          if (jointUnavailable) noteFire(`phase7_unavailable_joint_${jointUnavailable}`);
+          phase7Refusal = multiBoardUnavailable
+            ? 'multi_board'
+            : evidence7
+              ? 'state_contract'
+              : 'equity_evidence';
+          if (tele) {
+            noteFire('phase7_utility_unavailable');
+            noteFire(`phase7_unavailable_${phase7Refusal}`);
+            if (jointUnavailable) noteFire(`phase7_unavailable_joint_${jointUnavailable}`);
+          }
         }
       }
       return { decision, phase8UtilityInput, phase8ReuseUtility };
@@ -3403,6 +3414,8 @@ export class HorseLogic {
     // Preserve reference attribution through later policy owners without claiming
     // that this lookup caused the final action or survived their arbitration.
     if (phase6Attribution) decision.tournamentPreflopAttribution = phase6Attribution;
+    if (phase7Refusal !== null && decision.tournamentUtility === undefined)
+      decision.tournamentUtilityRefusal = phase7Refusal;
     return graph.finish(decision);
   }
 

@@ -646,6 +646,15 @@ export function horseDecisionReceiptIsValid(
       value.policyGraph !== undefined ||
       value.policyOwnership !== undefined ||
       value.tournamentPreflopAttribution !== undefined ||
+      value.tournamentUtility !== undefined ||
+      value.tournamentUtilityRefusal !== undefined)
+  )
+    return false;
+  // A Phase 7 refusal is a finite name, never beside the ledger it says is absent.
+  if (
+    value.tournamentUtilityRefusal !== undefined &&
+    (typeof value.tournamentUtilityRefusal !== 'string' ||
+      !/^[a-z0-9_]{1,64}$/.test(value.tournamentUtilityRefusal) ||
       value.tournamentUtility !== undefined)
   )
     return false;

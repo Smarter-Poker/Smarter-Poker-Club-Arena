@@ -4414,6 +4414,83 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   } | null = null;
   static readonly SATELLITE_CONTINUATION_REUSE_MS = 5 * 60_000;
 
+  /**
+   * A SETTLEMENT THAT IS REFUSED THE SAME WAY EVERY SWEEP IS A FINANCIAL
+   * INCIDENT, NOT A LOG LINE (2026-10-08).
+   *
+   * The qualifier settlement is asked once per elimination sweep, and a
+   * refusal (P0404 / 55000: the database could not prove its own receipt)
+   * answers 'pending', which holds the qualifier boundary - every table
+   * parked, no hand dealt - and asks again on the next sweep. That is the
+   * right answer for a refusal that can change (a seat write racing a table
+   * break, a target still activating). It is the wrong SILENCE for one that
+   * cannot: satellite 32190e8c "Sunday Deep Stack Satellite $25" was refused
+   * with `has missing or extra obligation evidence` ~500 times between
+   * 2026-10-07 17:38Z and 2026-10-08 11:05Z, three qualifiers unpaid, its
+   * one table killed and rebuilt as a zombie every ten minutes, and nothing
+   * but an error-reporter line per sweep said so. The receipt replay had a
+   * defect (migration 20261008113442); the manager's job is to make sure a
+   * defect like it is SEEN within minutes, not found by a human reading the
+   * engine log the next morning.
+   *
+   * So a refusal is counted here. The first repeat raises a CRITICAL
+   * financial alert (dedupe-keyed on the tournament so it is one incident,
+   * not one per sweep) and the alert is refreshed every
+   * SATELLITE_REFUSAL_ALERT_EVERY_MS for as long as the refusals continue.
+   * A settlement that goes through clears the count. Nothing about the
+   * retry itself changes: the boundary stays held and the next sweep asks
+   * the door again, exactly as before.
+   */
+  private satelliteRefusals: {
+    count: number;
+    firstAt: number;
+    lastAlertAt: number;
+    message: string;
+  } | null = null;
+  static readonly SATELLITE_REFUSAL_ALERT_EVERY_MS = 10 * 60_000;
+
+  private async recordSatelliteSettlementRefusal(
+    error: SatelliteSettlementRefusedError,
+    qualifierCount: number
+  ): Promise<void> {
+    const now = Date.now();
+    const prior = this.satelliteRefusals;
+    const refusals =
+      prior && prior.message === error.message
+        ? { ...prior, count: prior.count + 1 }
+        : { count: 1, firstAt: now, lastAlertAt: 0, message: error.message };
+    this.satelliteRefusals = refusals;
+    if (refusals.count < 2) return;
+    if (
+      refusals.lastAlertAt > 0 &&
+      now - refusals.lastAlertAt < TournamentManagerEliminations.SATELLITE_REFUSAL_ALERT_EVERY_MS
+    )
+      return;
+    refusals.lastAlertAt = now;
+    try {
+      await raiseFinancialAlert(
+        'critical',
+        'Tournament.satellite_qualifiers_refused_repeatedly',
+        `Satellite qualifier settlement refused ${refusals.count} times over ${Math.round(
+          (now - refusals.firstAt) / 60_000
+        )} min; the event is held at its qualifier boundary and cannot finish until the refusal is fixed`,
+        {
+          tournament_id: this.tournamentId,
+          qualifier_count: qualifierCount,
+          refusal_count: refusals.count,
+          first_refused_at: new Date(refusals.firstAt).toISOString(),
+          refusal: error.message,
+        },
+        `satellite-qualifiers-refused:${this.tournamentId}`,
+        this.tournamentId
+      );
+    } catch (alertError) {
+      reportError(alertError, 'Tournament.satellite_qualifiers_refused_alert_failed', {
+        tournamentId: this.tournamentId,
+      });
+    }
+  }
+
   /** The frozen full-ticket plan, not cash-remainder depth, owns this finish. */
   private async checkSatelliteQualifierCompletion(): Promise<
     'legacy' | 'continue' | 'pending' | 'complete'
@@ -4506,6 +4583,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               this.tournamentId,
               state.qualifierIds
             );
+            this.satelliteRefusals = null;
             await this.cleanupCommittedSatelliteQualifiers(receipt);
             return 'complete';
           } catch (error) {
@@ -4515,6 +4593,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                 tournamentId: this.tournamentId,
                 qualifierCount: state.qualifierIds.length,
               });
+              await this.recordSatelliteSettlementRefusal(error, state.qualifierIds.length);
               /*
                * A TABLE BREAK THAT EXCLUDES A SOURCE IS FINISHED, NOT WAITED
                * ON (2026-09-28).

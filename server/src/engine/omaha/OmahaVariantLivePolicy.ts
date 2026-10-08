@@ -954,7 +954,11 @@ export function evaluateOmahaVariantPolicy(
   );
   const deepestOpponentCover = Math.max(...active.map((p) => p.stack + p.bet));
   const depth = Math.min(hero.stack + hero.bet, deepestOpponentCover) / s.bigBlind;
-  receipt.depthBB = depth;
+  // Reachability 2026-10-08: with every live opponent away (sitting out, not
+  // all-in) no seat can cover, the depth is -Infinity and the pack refuses it
+  // below. The receipt records that as an unavailable depth: a non-finite
+  // number cannot be journaled, and the whole decision record was lost.
+  receipt.depthBB = Number.isFinite(depth) ? depth : null;
   if (
     !Number.isFinite(depth) ||
     depth <= 0 ||

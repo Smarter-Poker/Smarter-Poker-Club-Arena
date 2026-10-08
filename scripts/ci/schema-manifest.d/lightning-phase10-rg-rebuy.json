@@ -1,0 +1,12 @@
+{
+  "_owner": "agent/claude-lightning-p10/lightning/rg-rebuy-rng-db - migration 20261008111425_lightning_phase_10_responsible_gaming_stop_playing_auto_rebu",
+  "_comment": "Lightning Phase 10 (spec Phases 16 and 17, database side). NOT YET APPLIED: every name below is a promise until the owner installs 20261008111425 after Phase 9's disconnect file (20261008050805). Responsible gaming reuses responsible_gaming_limits / fn_rg_require_not_excluded: fn_lightning_pool_enter now refuses an excluded or cooling-off player at the pool door and fn_lightning_player_legality already refused RG_EXCLUDED / RESTRICTED at the matcher. fn_lightning_stop_playing(cluster) (authenticated, auth.uid() scoped, idempotent) marks lightning_pool_session.stop_requested_at so the legality chain answers STOP_REQUESTED, exits an idle session at once (exit_reason stop_playing) and leaves an in-hand one to fn_lightning_reap_expired_disconnects, which is widened to finish stop requests without counting them as player_expired; fn_lightning_reconnect_state gains the stop_requested key. fn_lightning_auto_rebuy(cluster, player, now) (service_role) is the engine's between-hands top-up door behind seven new fn_lightning_config keys (auto_rebuy_enabled default false, trigger zero | below_bb | below_pct, thresholds, target initial | max, max_count, session_cap), executing only through public.atomic_table_rebuy with a deterministic purchase key and recording auto_rebuys / auto_rebuy_total on the session plus one auto_rebuy event. The RNG / hidden information review found no leak; its pins ride as live proofs.",
+  "tables": [],
+  "functions": [
+    "fn_lightning_stop_playing",
+    "fn_lightning_auto_rebuy"
+  ],
+  "columns": {
+    "lightning_pool_session": ["stop_requested_at", "auto_rebuys", "auto_rebuy_total"]
+  }
+}

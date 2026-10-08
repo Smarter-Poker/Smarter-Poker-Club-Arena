@@ -1030,6 +1030,12 @@ export interface HorseDecision {
   thinkTime: number;
   /** Present on complete-context tournament decisions after Phase 7. */
   tournamentUtility?: HorseTournamentUtilityLedger;
+  /** Reachability 2026-10-08: why a tournament decision inside Phase 7's
+   * domain carries no utility ledger (the telemetry suffix of the same
+   * refusal). Recorded on every lane, so a second look that runs without
+   * telemetry still names its refusal in the private journal. Never present
+   * together with `tournamentUtility`. */
+  tournamentUtilityRefusal?: string;
 }
 
 /** @deprecated Use HorseDecision */

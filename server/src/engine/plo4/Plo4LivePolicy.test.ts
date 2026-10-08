@@ -20,6 +20,7 @@ import { deadButtonPositions } from '../deadButton.js';
 import type { HorseGameStateV2 } from '../HorseLogic.js';
 import type { Plo4LiveReceipt } from './Plo4LivePolicy.js';
 import type { Card, HandConfig, HorseDecision, SeatPlayer } from '../../types.js';
+import { horseJournalJson } from '../../services/horseDecisionJournal/record.js';
 
 const evidence = { equity: 0.68, samples: 200, standardError: 0.025 };
 const tournament = (input: ReturnType<typeof plo4ReferenceSpot>) => {
@@ -790,6 +791,24 @@ describe('P10.1 binds the facts the PLO4 proposal consumed', () => {
     expect(
       horsePolicyOwnership('plo4', { action: 'call', thinkTime: 0, plo4Policy: receipt }, true)
     ).toMatchObject({ outcome: 'outside_domain', reason: 'depth_or_ante_outside_pack' });
+  });
+
+  it('names an unavailable depth when every live opponent is away, and the decision stays journal-safe', () => {
+    // Reachability 2026-10-08: the only unfolded opponent sat out mid-hand (not
+    // all-in). No seat can cover, the depth is undefined and the pack refuses
+    // it; the receipt used to carry -Infinity, which the private journal
+    // cannot represent, so the whole decision record was lost.
+    const input = plo4ReferenceSpot('premium_open');
+    input.state.players[1].is_sitting_out = true;
+    const { receipt } = run(input);
+    expect(receipt.reason).toBe('depth_or_ante_outside_pack');
+    expect(receipt.depthBB).toBeNull();
+    expect(() => horseJournalJson(receipt)).not.toThrow();
+    const decision = HorseLogic.decide(input.hero, input.state, 'balanced', {}, { mind: false });
+    expect(decision.policyFallback).toBeUndefined();
+    expect(decision.plo4Policy?.reason).toBe('depth_or_ante_outside_pack');
+    expect(decision.plo4Policy?.depthBB).toBeNull();
+    expect(() => horseJournalJson(decision)).not.toThrow();
   });
 
   it('accepts an ante of exactly 1 BB and the table straddle, and refuses a larger ante by name', () => {

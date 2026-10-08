@@ -21,16 +21,16 @@ R=importlib.util.module_from_spec(SPEC);SPEC.loader.exec_module(R)
 REQUEST=dict(releaseSha='a'*40,imageId='sha256:'+'b'*64,serverTree='c'*40)
 
 
-def layer_bytes(names):
+def layer_bytes(names, format=tarfile.USTAR_FORMAT):
     layer=io.BytesIO()
-    with tarfile.open(fileobj=layer,mode='w',format=tarfile.USTAR_FORMAT) as t:
+    with tarfile.open(fileobj=layer,mode='w',format=format) as t:
         for name in names:
             m=tarfile.TarInfo(name);m.size=8
             t.addfile(m,io.BytesIO(b'opaque!!'))
     return layer.getvalue()
 
-def archive(names, oci=False):
-    layer=layer_bytes(names)
+def archive(names, oci=False, format=tarfile.USTAR_FORMAT):
+    layer=layer_bytes(names, format)
     layer_id='sha256:'+hashlib.sha256(layer).hexdigest()
     out=io.BytesIO()
     with tarfile.open(fileobj=out,mode='w',format=tarfile.USTAR_FORMAT) as t:
@@ -41,6 +41,15 @@ def archive(names, oci=False):
             data=json.dumps(value).encode();name='blobs/sha256/'+hashlib.sha256(data).hexdigest()
             m=tarfile.TarInfo(name);m.size=len(data);t.addfile(m,io.BytesIO(data))
     return out.getvalue(),layer_id
+
+
+class RawReader:
+    def __init__(self,raw):self.stream=io.BytesIO(raw)
+    def exact(self,size):
+        result=self.stream.read(size)
+        R.require(len(result)==size,'Fixture truncated')
+        return result
+    def skip(self,size):self.exact(size)
 
 
 class ReaderTests(unittest.TestCase):
@@ -74,6 +83,34 @@ class ReaderTests(unittest.TestCase):
     def test_oci_descriptor_is_not_mistaken_for_a_layer(self):
         result=self.scan(archive(['app/dist/index.js'],oci=True))
         self.assertEqual(result['layers'],1)
+
+    def test_bounded_inner_pax_and_gnu_long_names(self):
+        for format in [tarfile.PAX_FORMAT, tarfile.GNU_FORMAT]:
+            safe='app/node_modules/'+('safe-package/'*12)+'index.js'
+            with self.subTest(format=format):
+                result=self.scan(archive([safe],format=format))
+                self.assertEqual(result['layers'],1)
+                with self.assertRaises(RuntimeError):
+                    self.scan(archive([safe+'/../.env'],format=format))
+                with self.assertRaises(RuntimeError):
+                    self.scan(archive([safe+'/.env.production'],format=format))
+
+    def test_long_link_resolved_credential_path_refused(self):
+        for format in [tarfile.PAX_FORMAT,tarfile.GNU_FORMAT]:
+            layer=io.BytesIO()
+            with tarfile.open(fileobj=layer,mode='w',format=format) as t:
+                m=tarfile.TarInfo('app/safe-link');m.type=tarfile.SYMTYPE
+                m.linkname=('long-directory/'*12)+'.env';t.addfile(m)
+            with self.assertRaises(RuntimeError):R.scan_layer(RawReader(layer.getvalue()),len(layer.getvalue()))
+
+    def test_pax_metadata_is_bounded_and_typed(self):
+        for raw in [b'999 path=short\n', b'19 unknown=opaque\n', b'0 path=short\n', b'16 path=bad\x00name\n']:
+            with self.subTest(raw=raw),self.assertRaises((RuntimeError,UnicodeError)):
+                R.path_metadata(raw)
+        m=tarfile.TarInfo('pax');m.type=tarfile.XHDTYPE;m.size=8193
+        with self.assertRaises(RuntimeError):R.scan_layer(RawReader(m.tobuf()+bytes(9216)),9728)
+        m.type=tarfile.XGLTYPE;m.size=0
+        with self.assertRaises(RuntimeError):R.scan_layer(RawReader(m.tobuf()+bytes(1024)),1536)
 
     def test_foreign_or_secret_shaped_oci_metadata_refused(self):
         for value in [{'schemaVersion':2,'Env':['SECRET=never-export']}, {'schemaVersion':2,'manifests':[]}]:

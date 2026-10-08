@@ -90,7 +90,16 @@ def forbidden_layer_path(name):
 
 
 def inspect_layer_headers(path):
-    """Read tar names/headers only. Never read an env/credential file body."""
+    """Inspect resolved tar names; file values are never decoded or followed."""
+    class FileReader:
+        def __init__(self, stream): self.stream = stream
+        def exact(self, size):
+            raw = self.stream.read(size)
+            require(len(raw) == size, 'Layer truncated')
+            return raw
+        def skip(self, size):
+            while size:
+                n = min(size, 65536); self.exact(n); size -= n
     with tarfile.open(path, 'r:') as outer:
         manifest = json.load(outer.extractfile('manifest.json'))
         require(isinstance(manifest, list) and len(manifest) == 1, 'One image required')
@@ -98,25 +107,8 @@ def inspect_layer_headers(path):
         for name in manifest[0]['Layers']:
             stream = outer.extractfile(name)
             require(stream is not None, 'Layer unavailable')
-            # Bound parser extension headers before they can allocate payloads.
-            size = outer.getmember(name).size
-            position = 0
-            while position + 512 <= size:
-                stream.seek(position)
-                raw = stream.read(512)
-                require(len(raw) == 512, 'Layer truncated')
-                if raw == bytes(512):
-                    break
-                member = tarfile.TarInfo.frombuf(raw, 'utf-8', 'strict')
-                require(member.type not in {tarfile.XHDTYPE, tarfile.XGLTYPE,
-                        tarfile.GNUTYPE_LONGNAME, tarfile.GNUTYPE_LONGLINK},
-                        'Extended layer header refused')
-                require(not forbidden_layer_path(member.name), 'Baked credential path refused')
-                require(0 <= member.size <= LIMIT, 'Layer member size refused')
-                position += 512 + ((member.size + 511) // 512) * 512
-                require(position <= size, 'Layer member truncated')
-                total += 1
-                require(total <= 1000000, 'Layer member count refused')
+            total += scan_layer(FileReader(stream), outer.getmember(name).size)
+            require(total <= 1000000, 'Layer member count refused')
     return total
 
 
@@ -220,16 +212,96 @@ class BoundedArchiveReader:
         self.selector.close()
 
 
-def header(raw):
+def header(raw, *, inner=False):
     try:
         member = tarfile.TarInfo.frombuf(raw, 'utf-8', 'strict')
     except (tarfile.HeaderError, UnicodeError, ValueError) as error:
         raise RuntimeError('Archive header refused') from error
-    require(member.type not in {tarfile.XHDTYPE, tarfile.XGLTYPE,
-            tarfile.GNUTYPE_LONGNAME, tarfile.GNUTYPE_LONGLINK}, 'Extended header refused')
+    extended = {tarfile.XHDTYPE, tarfile.XGLTYPE,
+                tarfile.GNUTYPE_LONGNAME, tarfile.GNUTYPE_LONGLINK}
+    require(inner or member.type not in extended, 'Extended outer header refused')
     require(not forbidden_layer_path(member.name), 'Baked credential path refused')
     require(0 <= member.size <= LIMIT, 'Member size refused')
     return member
+
+
+def path_metadata(raw):
+    """Bounded local PAX fields only, never arbitrary attributes/file values."""
+    result, position = {}, 0
+    while position < len(raw):
+        space = raw.find(b' ', position, position+12)
+        require(space > position and raw[position:space].isdigit(), 'PAX length refused')
+        length = int(raw[position:space])
+        end = position+length
+        require(space+1 < end <= len(raw) and raw[end-1:end] == b'\n', 'PAX record refused')
+        record = raw[space+1:end-1]
+        key, separator, value = record.partition(b'=')
+        require(separator and key in {b'path', b'linkpath', b'size', b'uid', b'gid',
+                b'mtime', b'atime', b'ctime', b'uname', b'gname'} and key not in result,
+                'PAX field refused')
+        require(value and b'\0' not in value, 'PAX value refused')
+        if key in {b'path', b'linkpath'}:
+            text = value.decode('utf-8', 'strict')
+            require(not any(ord(x) < 32 or ord(x) == 127 for x in text), 'Path control refused')
+            result[key] = text
+        elif key == b'size':
+            require(value.isdigit() and int(value) <= LIMIT, 'PAX size refused')
+            result[key] = int(value)
+        else:
+            # Ordinary ownership/timestamp metadata cannot carry arbitrary strings.
+            pattern = rb'-?[0-9]+(?:\.[0-9]+)?' if key in {b'mtime', b'atime', b'ctime'} else rb'[0-9]+'
+            if key in {b'uname', b'gname'}: pattern = rb'[A-Za-z0-9_.-]{1,64}'
+            require(re.fullmatch(pattern, value) is not None, 'PAX metadata refused')
+            result[key] = None
+        position = end
+    return {k:v for k,v in result.items() if k in {b'path', b'linkpath', b'size'}}
+
+
+def scan_layer(reader, size):
+    """Scan all names including bounded PAX/GNU overrides; payloads stay opaque."""
+    left, count, pending, extensions = size, 0, {}, 0
+    while left >= 512:
+        raw = reader.exact(512); left -= 512
+        if raw == bytes(512):
+            require(not pending and extensions == 0, 'Orphan path metadata refused')
+            while left:
+                n = min(left, 65536)
+                require(not any(reader.exact(n)), 'Layer trailing data refused'); left -= n
+            return count
+        entry = header(raw, inner=True)
+        count += 1
+        require(count <= 1000000, 'Layer header count refused')
+        require(entry.type != tarfile.XGLTYPE, 'Global PAX metadata refused')
+        if entry.type in {tarfile.XHDTYPE, tarfile.GNUTYPE_LONGNAME, tarfile.GNUTYPE_LONGLINK}:
+            extensions += 1
+            require(extensions <= 3 and 0 < entry.size <= 8192, 'Path metadata bounds refused')
+            padded = ((entry.size+511)//512)*512
+            require(padded <= left, 'Path metadata truncated')
+            metadata = reader.exact(entry.size)
+            reader.skip(padded-entry.size); left -= padded
+            if entry.type == tarfile.XHDTYPE:
+                values = path_metadata(metadata)
+            else:
+                require(metadata.endswith(b'\0') and b'\0' not in metadata[:-1], 'GNU path metadata refused')
+                value = metadata[:-1].decode('utf-8', 'strict')
+                require(value and not any(ord(x) < 32 or ord(x) == 127 for x in value), 'GNU path control refused')
+                values = {b'path' if entry.type == tarfile.GNUTYPE_LONGNAME else b'linkpath': value}
+            require(not set(values).intersection(pending), 'Duplicate path metadata refused')
+            pending.update(values)
+            continue
+        name = pending.get(b'path', entry.name)
+        link = pending.get(b'linkpath', entry.linkname)
+        payload_size = pending.get(b'size', entry.size)
+        require(not forbidden_layer_path(name), 'Baked credential path refused')
+        if entry.issym() or entry.islnk():
+            require(not any(forbidden_layer_path(p) for p in link.split('/') if p not in {'', '.', '..'}), 'Credential link refused')
+        else:
+            require(b'linkpath' not in pending, 'Non-link path override refused')
+        pending, extensions = {}, 0
+        payload = ((payload_size+511)//512)*512
+        require(payload <= left, 'Layer truncated')
+        reader.skip(payload); left -= payload
+    raise RuntimeError('Layer end markers refused')
 
 
 def graph_descriptor(raw, image_id, layer_ids):
@@ -281,27 +353,8 @@ def scan_host_archive(reader, image_id, layer_ids):
             layers += 1
             require(layers <= 128, 'Layer count refused')
             reader.layer_digest = hashlib.sha256()
-            left = member.size
-            ended = False
-            while left >= 512:
-                raw = reader.exact(512); left -= 512
-                if raw == bytes(512):
-                    ended = True
-                    while left:
-                        n = min(left, 65536)
-                        require(not any(reader.exact(n)), 'Layer trailing data refused')
-                        left -= n
-                    break
-                entry = header(raw)
-                count += 1
-                require(count <= 1000000, 'Layer header count refused')
-                # Link targets can also name credential paths; never follow them.
-                if entry.issym() or entry.islnk():
-                    require(not any(p == '.env' or p.startswith('.env.') or p in {'id_rsa','id_ed25519','id_ecdsa','id_dsa','credentials','service-account.json','.npmrc','.pypirc','.netrc','.git-credentials','application_default_credentials.json'} for p in entry.linkname.split('/')), 'Credential link refused')
-                payload = ((entry.size+511)//512)*512
-                require(payload <= left, 'Layer truncated')
-                reader.skip(payload); left -= payload
-            require(ended and left == 0, 'Layer end markers refused')
+            count += scan_layer(reader, member.size)
+            require(count <= 1000000, 'Layer header count refused')
             digest='sha256:'+reader.layer_digest.hexdigest()
             reader.layer_digest=None
             require(digest in layer_ids and digest not in scanned, 'Layer digest graph differs')

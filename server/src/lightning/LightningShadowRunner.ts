@@ -205,7 +205,10 @@ class SideWindow {
       },
       instance_occupancy: {
         avg_size: this.groups === 0 ? null : round4(this.sizeSum / this.groups),
-        utilization: this.groups === 0 ? null : round4(this.sizeSum / this.groups / instanceMax),
+        // 0..1 (the DB refuses more): a live group can only exceed the
+        // configured maximum if the config changed under it.
+        utilization:
+          this.groups === 0 ? null : round4(Math.min(1, this.sizeSum / this.groups / instanceMax)),
       },
     };
   }

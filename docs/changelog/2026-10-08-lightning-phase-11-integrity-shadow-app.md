@@ -140,7 +140,7 @@ recommendation to switch.
 
 ## Tests And Checks
 
-- `LightningPhase11IntegrityShadowApp.test.ts` (20): the same seeded
+- `LightningPhase11IntegrityShadowApp.test.ts` (21): the same seeded
   scenario with the shadow on and off makes the same live calls and deals
   the same hands, and the shadow calls no writer; a throwing candidate is
   contained; one record per closed window with both versions, and one more on
@@ -152,6 +152,12 @@ recommendation to switch.
   horse and a human with the same timing produce the same signals; the
   matcher reads nothing the telemetry produces; no Phase 11 file reads
   `is_horse`; scoring and config parsing.
+- The DB contract (`20261008161509` on the DB branch, re-read before
+  merge): every payload is checked against its validation (no key naming a
+  card, hole, deck or seed at any depth, counts and members non-negative,
+  rates and utilisation within 0..1, both version names valid and distinct,
+  windows ordered and not ahead of `p_now`, at most 500 players and 200
+  pairs, pairs canonical).
 - `LightningMatcherSim.test.ts` (4): a 2,000 hand smoke for both versions,
   determinism per seed, the table and the command line.
 - The whole `server/src/lightning` suite, `tsc --noEmit` (server), and the

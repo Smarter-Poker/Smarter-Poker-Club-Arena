@@ -330,6 +330,76 @@ describe('one record per Cluster per window', () => {
     expect(s.calls.filter((c) => c.fn === 'fn_lightning_shadow_record')).toHaveLength(5);
   });
 
+  it('every payload passes the DB contract (20261008161509): keys, ranges, windows', async () => {
+    const s = scenario(16, ON);
+    const feed = async (passes: number) => {
+      for (let i = 0; i < passes; i++) {
+        const hand = uid(6500 + i);
+        s.telemetry.handDealt(CLUSTER, hand, POP.slice(0, 4), s.now());
+        for (const p of POP.slice(0, 4)) s.telemetry.decision(CLUSTER, hand, p, 300 + i, s.now());
+        s.telemetry.handEnded(CLUSTER, hand, s.now());
+        s.metrics.observeLatency('fold_ack', 20 + i, CLUSTER);
+        await s.worker.pass();
+        s.advance(2_000);
+      }
+      await s.runner.settled();
+    };
+    await feed(70);
+    const keysDeep = (v: unknown, out: string[] = []): string[] => {
+      if (v && typeof v === 'object')
+        for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+          if (!Array.isArray(v)) out.push(k);
+          keysDeep(x, out);
+        }
+      return out;
+    };
+    const rec = s.calls.find((c) => c.fn === 'fn_lightning_shadow_record')!.args;
+    const rep = s.calls.find((c) => c.fn === 'fn_lightning_integrity_report')!.args;
+    for (const payload of [rec.p_live, rec.p_shadow, rep.p_signals]) {
+      for (const k of keysDeep(payload)) expect(k).not.toMatch(/card|hole|deck|seed/i);
+      expect(JSON.stringify(payload).length).toBeLessThan(16_384);
+    }
+    for (const side of [rec.p_live, rec.p_shadow] as Array<Record<string, any>>) {
+      expect(Number.isInteger(side.passes)).toBe(true);
+      for (const k of ['quorum_passes', 'failed_passes', 'groups', 'seated'])
+        expect(Number.isInteger(side[k]) && side[k] >= 0).toBe(true);
+      for (const k of ['formation_success_rate', 'failure_rate'])
+        if (side[k] !== null) expect(side[k] >= 0 && side[k] <= 1).toBe(true);
+      for (const o of [
+        'wait_ms',
+        'bb_fairness',
+        'position_fairness',
+        'opponent_diversity',
+        'instance_occupancy',
+      ])
+        for (const v of Object.values(side[o] as Record<string, unknown>))
+          if (v !== null) expect(typeof v === 'number' && v >= 0).toBe(true);
+      for (const v of [
+        side.opponent_diversity.repeat_pair_rate,
+        side.instance_occupancy.utilization,
+      ])
+        if (v !== null) expect(v).toBeLessThanOrEqual(1);
+    }
+    expect(rec.p_live_version).toMatch(/^[A-Za-z0-9._:-]{1,32}$/);
+    expect(rec.p_shadow_version).toMatch(/^[A-Za-z0-9._:-]{1,32}$/);
+    expect(rec.p_live_version).not.toBe(rec.p_shadow_version);
+    expect(Date.parse(rec.p_window_to as string)).toBeGreaterThan(
+      Date.parse(rec.p_window_from as string)
+    );
+    const sig = rep.p_signals as Record<string, any>;
+    expect(Date.parse(sig.window_to)).toBeGreaterThan(Date.parse(sig.window_from));
+    expect(Date.parse(sig.window_to)).toBeLessThanOrEqual(
+      Date.parse(rep.p_now as string) + 5 * 60_000
+    );
+    for (const k of ['hands', 'decisions', 'fast_ms', 'dropped_players', 'dropped_pairs'])
+      expect(typeof sig[k]).toBe('number');
+    expect(sig.players.length).toBeLessThanOrEqual(500);
+    expect(sig.pairs.length).toBeLessThanOrEqual(200);
+    for (const p of sig.pairs) expect(p.player_a < p.player_b).toBe(true);
+    for (const p of sig.players)
+      expect(p.fast_share === null || (p.fast_share >= 0 && p.fast_share <= 1)).toBe(true);
+  });
+
   it('a candidate named the same as the live matcher sends no record (the DB refuses SAME_VERSION)', async () => {
     const s = scenario(15, { ...ON, shadow_matcher_version: 'm1' });
     await drive(s, 100);

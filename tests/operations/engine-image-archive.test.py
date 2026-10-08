@@ -119,11 +119,12 @@ class ArchiveTests(unittest.TestCase):
         entries[0] = ('manifest.json',json.dumps(manifest).encode())
         return entries
 
-    def native_manifest_fixture(self):
+    def native_manifest_fixture(self, annotations=None):
         entries=self.compressed_fixture();raw=entries[1][1];config_id='sha256:'+digest(raw)
         native={'schemaVersion':2,'mediaType':'application/vnd.oci.image.manifest.v1+json','config':{'mediaType':'application/vnd.oci.image.config.v1+json','digest':config_id,'size':len(raw)},'layers':[{'mediaType':'application/vnd.oci.image.layer.v1.tar+gzip','digest':'sha256:'+name.split('/')[-1],'size':len(data)} for name,data in entries[2:]]}
         native_raw=json.dumps(native).encode();image='sha256:'+digest(native_raw)
         index={'schemaVersion':2,'mediaType':'application/vnd.oci.image.index.v1+json','manifests':[{'mediaType':'application/vnd.oci.image.manifest.v1+json','digest':image,'size':len(native_raw)}]}
+        if annotations is not None:index['manifests'][0]['annotations']=annotations
         entries += [('blobs/sha256/'+image[7:],native_raw),('index.json',json.dumps(index).encode()),('oci-layout',b'{"imageLayoutVersion":"1.0.0"}')]
         return entries,image
 
@@ -135,6 +136,19 @@ class ArchiveTests(unittest.TestCase):
             self.assertEqual(set(tar.getnames()),set(original))
             for name in tar.getnames():self.assertEqual(tar.extractfile(name).read(),original[name])
             self.assertEqual('sha256:'+digest(tar.extractfile('blobs/sha256/'+self.image[7:]).read()),self.image)
+
+    def test_bound_native_index_annotations_preserve_bytes(self):
+        annotations={'io.containerd.image.name':'docker.io/library/club-arena-engine:'+SHA,
+                     'org.opencontainers.image.ref.name':SHA,
+                     'org.opencontainers.image.created':'2026-10-08T07:40:49.123Z'}
+        self.entries,self.image=self.native_manifest_fixture(annotations);write_tar(self.source,self.entries)
+        self.normalize()
+        with tarfile.open(self.output) as tar:
+            self.assertEqual(tar.extractfile('index.json').read(),dict(self.entries)['index.json'])
+        self.output.unlink()
+        for key,value in [('io.containerd.image.name','foreign:tag'),('org.opencontainers.image.ref.name','f'*40),('org.opencontainers.image.created','2026-02-30T00:00:00Z'),('org.opencontainers.image.created',7),('unknown.annotation','opaque')]:
+            self.entries,self.image=self.native_manifest_fixture({**annotations,key:value});write_tar(self.source,self.entries)
+            with self.subTest(key=key,value=value),self.assertRaises(ValueError):self.normalize()
 
     def test_native_oci_foreign_index_and_graph_refuse(self):
         for name in ['index.json','blobs/sha256/native']:

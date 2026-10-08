@@ -392,6 +392,26 @@ def metadata_json(raw):
     return json.loads(raw,object_pairs_hook=unique)
 
 
+def index_annotations(annotations, expected_tag, source_sha):
+    """Names are index metadata; tag/ref bind identity, creation remains metadata."""
+    require(isinstance(annotations,dict) and set(annotations) <= {
+        'io.containerd.image.name','org.opencontainers.image.ref.name',
+        'org.opencontainers.image.created'}, 'OCI annotations refused')
+    if 'io.containerd.image.name' in annotations:
+        require(annotations['io.containerd.image.name'] == 'docker.io/library/'+expected_tag,
+                'OCI annotations refused')
+    if 'org.opencontainers.image.ref.name' in annotations:
+        require(annotations['org.opencontainers.image.ref.name'] == source_sha,
+                'OCI annotations refused')
+    if 'org.opencontainers.image.created' in annotations:
+        created=annotations['org.opencontainers.image.created']
+        require(isinstance(created,str) and len(created)<=64 and re.fullmatch(
+            r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?(?:Z|[+-][0-9]{2}:[0-9]{2})',created),
+            'OCI annotations refused')
+        try: datetime.datetime.fromisoformat(created.replace('Z','+00:00'))
+        except ValueError: require(False,'OCI annotations refused')
+
+
 def graph_descriptor(raw, image_id, layer_ids, layer_blobs=None):
     """Only bounded OCI graph metadata, never a config or layer file payload."""
     value=metadata_json(raw)
@@ -405,8 +425,9 @@ def graph_descriptor(raw, image_id, layer_ids, layer_blobs=None):
                 and type(item['size']) is int and 0 < item['size'] <= LIMIT, 'OCI descriptor identity refused')
         if 'platform' in item:require(item['platform'] == {'architecture':'amd64','os':'linux'}, 'OCI platform refused')
         if 'annotations' in item:
-            require(isinstance(item['annotations'],dict) and set(item['annotations']) <= {'org.opencontainers.image.ref.name'}
-                    and all(isinstance(x,str) and re.fullmatch('[A-Za-z0-9_:/.-]{1,200}',x) for x in item['annotations'].values()), 'OCI annotations refused')
+            require('config' not in value and isinstance(item['annotations'],dict)
+                    and set(item['annotations']) <= {'org.opencontainers.image.ref.name','io.containerd.image.name','org.opencontainers.image.created'}
+                    and all(isinstance(x,str) and re.fullmatch('[A-Za-z0-9_:/+.-]{1,200}',x) for x in item['annotations'].values()), 'OCI annotations refused')
     if 'config' in value:
         require(set(value) <= {'schemaVersion','mediaType','config','layers'} and isinstance(value.get('layers'),list), 'OCI manifest refused')
         descriptor(value['config'])
@@ -461,6 +482,7 @@ def validate_oci_manifest_identity(objects, image_id, layer_ids, layer_blobs, bl
     index=metadata_json(objects.get('index.json',b'null'))
     graph_descriptor(objects.get('index.json',b'null'), image_id, layer_ids, layer_blobs)
     descriptor=index['manifests'][0]
+    if 'annotations' in descriptor:index_annotations(descriptor['annotations'],expected_tag,source_sha)
     require(index.get('mediaType')=='application/vnd.oci.image.index.v1+json'
             and descriptor['mediaType']=='application/vnd.oci.image.manifest.v1+json'
             and descriptor['digest']==image_id and descriptor['size']==len(raw), 'OCI native index differs')

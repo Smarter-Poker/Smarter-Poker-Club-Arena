@@ -4,6 +4,7 @@
 This binds bytes to independently supplied image/source identities. It does not
 authenticate the producer, qualify host import memory, or authorize deployment.
 """
+import datetime
 import hashlib
 import json
 import io
@@ -23,6 +24,26 @@ MEMBER_COUNT_LIMIT = 512
 LAYER_COUNT_LIMIT = 64
 CONTRACT = 'clean-server-archive-v1'
 ENV_NAMES = {'PATH','NODE_VERSION','YARN_VERSION','NODE_ENV','ENGINE_ALERT_JOURNAL_DIR','NODE_OPTIONS','GIT_COMMIT_SHA'}
+
+
+def index_annotations(annotations, expected_tag, source_sha):
+    """Names are index metadata; tag/ref bind identity, creation remains metadata."""
+    require(isinstance(annotations,dict) and set(annotations) <= {
+        'io.containerd.image.name','org.opencontainers.image.ref.name',
+        'org.opencontainers.image.created'}, 'OCI_INDEX_ANNOTATIONS')
+    if 'io.containerd.image.name' in annotations:
+        require(annotations['io.containerd.image.name'] == 'docker.io/library/'+expected_tag,
+                'OCI_INDEX_ANNOTATIONS')
+    if 'org.opencontainers.image.ref.name' in annotations:
+        require(annotations['org.opencontainers.image.ref.name'] == source_sha,
+                'OCI_INDEX_ANNOTATIONS')
+    if 'org.opencontainers.image.created' in annotations:
+        created=annotations['org.opencontainers.image.created']
+        require(isinstance(created,str) and len(created)<=64 and re.fullmatch(
+            r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?(?:Z|[+-][0-9]{2}:[0-9]{2})',created),
+            'OCI_INDEX_ANNOTATIONS')
+        try: datetime.datetime.fromisoformat(created.replace('Z','+00:00'))
+        except ValueError: require(False,'OCI_INDEX_ANNOTATIONS')
 
 
 def require(condition, reason):
@@ -163,8 +184,7 @@ def normalize_engine_archive(source, destination, *, source_sha, server_tree, im
                         and selected.get('digest')==image_id and selected.get('size')==len(native_bytes),'OCI_INDEX_IDENTITY')
                 require('platform' not in selected or selected['platform']=={'architecture':'amd64','os':'linux'},'OCI_INDEX_PLATFORM')
                 if 'annotations' in selected:
-                    require(isinstance(selected['annotations'],dict) and set(selected['annotations'])<= {'org.opencontainers.image.ref.name'}
-                            and all(isinstance(x,str) and re.fullmatch('[A-Za-z0-9_:/.-]{1,200}',x) for x in selected['annotations'].values()),'OCI_INDEX_ANNOTATIONS')
+                    index_annotations(selected['annotations'],expected_tag,source_sha)
                 layout_bytes=metadata('oci-layout')
                 require(decode(layout_bytes)=={'imageLayoutVersion':'1.0.0'},'OCI_LAYOUT')
                 oci_metadata=[('oci-layout',layout_bytes),('index.json',index_bytes),(native_name,native_bytes)]

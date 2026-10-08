@@ -63,7 +63,7 @@ def gzip_archive(names, *, bad_diff=False, bad_blob=False, truncated=False, conc
             m=tarfile.TarInfo(name);m.size=len(data);t.addfile(m,io.BytesIO(data))
     return out.getvalue(), ('sha256:'+'d'*64 if bad_diff else diff)
 
-def manifest_identity_fixture(*, wrong_index=False, wrong_source=False, foreign_env=False):
+def manifest_identity_fixture(*, wrong_index=False, wrong_source=False, foreign_env=False, annotations=None):
     layer=layer_bytes(['app/dist/index.js']);diff='sha256:'+hashlib.sha256(layer).hexdigest()
     packed=gzip.compress(layer,mtime=0);blob='sha256:'+hashlib.sha256(packed).hexdigest()
     config={'architecture':'amd64','os':'linux','created':'fixed','history':[],
@@ -75,6 +75,7 @@ def manifest_identity_fixture(*, wrong_index=False, wrong_source=False, foreign_
     native={'schemaVersion':2,'mediaType':'application/vnd.oci.image.manifest.v1+json','config':{'mediaType':'application/vnd.oci.image.config.v1+json','digest':config_id,'size':len(raw)},'layers':[{'mediaType':'application/vnd.oci.image.layer.v1.tar+gzip','digest':blob,'size':len(packed)}]}
     native_raw=json.dumps(native).encode();image_id='sha256:'+hashlib.sha256(native_raw).hexdigest()
     index={'schemaVersion':2,'mediaType':'application/vnd.oci.image.index.v1+json','manifests':[{'mediaType':'application/vnd.oci.image.manifest.v1+json','digest':'sha256:'+'e'*64 if wrong_index else image_id,'size':len(native_raw)}]}
+    if annotations is not None:index['manifests'][0]['annotations']=annotations
     config_name='blobs/sha256/'+config_id[7:];layer_name='blobs/sha256/'+blob[7:]
     docker=[{'Config':config_name,'RepoTags':['club-arena-engine:'+REQUEST['releaseSha']],'Layers':[layer_name]}]
     out=io.BytesIO()
@@ -146,6 +147,17 @@ class ReaderTests(unittest.TestCase):
         for opts in [dict(wrong_index=True),dict(wrong_source=True),dict(foreign_env=True)]:
             fixture,image=manifest_identity_fixture(**opts)
             with self.subTest(opts=opts),self.assertRaises(RuntimeError):
+                self.scan(fixture,image_id=image,expected_tag='club-arena-engine:'+REQUEST['releaseSha'],source_sha=REQUEST['releaseSha'],server_tree=REQUEST['serverTree'])
+
+    def test_bound_native_index_annotations(self):
+        annotations={'io.containerd.image.name':'docker.io/library/club-arena-engine:'+REQUEST['releaseSha'],
+                     'org.opencontainers.image.ref.name':REQUEST['releaseSha'],
+                     'org.opencontainers.image.created':'2026-10-08T07:40:49.123Z'}
+        fixture,image=manifest_identity_fixture(annotations=annotations)
+        self.scan(fixture,image_id=image,expected_tag='club-arena-engine:'+REQUEST['releaseSha'],source_sha=REQUEST['releaseSha'],server_tree=REQUEST['serverTree'])
+        for key,value in [('io.containerd.image.name','foreign:tag'),('org.opencontainers.image.ref.name','f'*40),('org.opencontainers.image.created','2026-02-30T00:00:00Z'),('org.opencontainers.image.created',7),('unknown.annotation','opaque')]:
+            bad={**annotations,key:value};fixture,image=manifest_identity_fixture(annotations=bad)
+            with self.subTest(key=key,value=value),self.assertRaises(RuntimeError):
                 self.scan(fixture,image_id=image,expected_tag='club-arena-engine:'+REQUEST['releaseSha'],source_sha=REQUEST['releaseSha'],server_tree=REQUEST['serverTree'])
 
     def test_manifest_identity_normalizer_to_local_header_scan(self):

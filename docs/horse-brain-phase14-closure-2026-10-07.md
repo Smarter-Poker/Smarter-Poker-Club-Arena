@@ -100,7 +100,7 @@ Read-only audit of everything Phase 14 built, against `origin/main` at `761aeb8b
 
 ### Findings and fixes
 
-- **Wiring (fixed).** The worker's authority admission counters for Phases 8 to 13 were taken before telemetry was armed and never reached `horse_brain_telemetry`; the same PR removes the unused destructured binding at the P14.2 worker boundary that `eslint` reported on every run. [#6439](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/6439), merged `71ab03df` (2026-10-07T22:42:43Z). Publication: Engine Release run [37697966313](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37697966313) succeeded and the engine `/health` serves `71ab03df` (container started 2026-10-07T22:55:30Z). Verified now in production: at 22:56:31Z `horse_brain_telemetry` recorded all 18 `phaseN_authority_worker_*_unselected` counters for the first time, 2 each (one per decision worker), and no other state.
+- **Wiring (fixed).** The worker's authority admission counters for Phases 8 to 13 were taken before telemetry was armed and never reached `horse_brain_telemetry`; the same PR removes the unused destructured binding at the P14.2 worker boundary that `eslint` reported on every run. [#6439](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/6439), merged `71ab03df` (2026-10-07T22:42:43Z). Publication: Engine Release run [37697966313](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37697966313) succeeded and the engine `/health`serves`71ab03df`(container started 2026-10-07T22:55:30Z). Verified now in production: at 22:56:31Z`horse*brain_telemetry`recorded all 18`phaseN_authority_worker*\*\_unselected` counters for the first time, 2 each (one per decision worker), and no other state.
 - **Documentation (fixed in this record's PR).** The P14.4 record still said its work was not committed, pushed, merged or released; it now carries a dated delivery note naming #6408.
 - **Superseded limit.** "The daily audit cannot keep pace with production volume" (Remaining limits) is fixed by [#6432](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/6432) (`6b1af5c5`, the serving release): the audit runs on its own clock. Measured today: 613,363 hands scanned in the 4.3 hours since the container started (about 3.4 million a day against about 1.3 to 1.8 million accepted), and 2026-10-04 finished. Verified now.
 - No defect, drift, stub, regression or unpublished change was found in the roster producer, the atomic publication, the selection receipts or the inactive admission path.
@@ -111,6 +111,45 @@ Read-only audit of everything Phase 14 built, against `origin/main` at `761aeb8b
 - A natural replay of an accepted roster (a retried settlement returning the stored capsule) has not been observed in production: implemented but unverified (source and PostgreSQL tests verify it).
 - `horse_hand_review_receipts` is never pruned, by the P14.1 design (a resend after the 30-day review prune must still answer `replayed`); it grows with volume, about 57,000 rows a day at today's rate. Not applicable with reason: a retention bound would change the replay contract and needs its own decision.
 - The roster signer, the profile-based audit classification, late arrival proven only against the previous pass, a retained hand finished at table start, historical split-writer rows, and every P14-D external input (qualified reference producer, independent signer, corrective applier) stay exactly as listed above: unavailable external input or implemented but unverified as stated there.
+
+## Audit Identity Basis (October 8, 2026)
+
+Closes the limit "The daily audit still classifies by current profile until it adopts the P14-A roster."
+
+### Delivery
+
+- [#6470](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/6470), head `b8d17e56`, squash-merged `4dbbd067` at 2026-10-08T05:20:17Z by the autopilot. Record: `docs/changelog/2026-10-08-horse-brain-audit-accepted-roster-identity.md`.
+- Migration `20261008041707_horse_commitment_audit_accepted_roster_identity.sql`, installed through Apply Merged Migration run [37731991443](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37731991443) at 05:23:39Z, one transaction. Its preimage guard held the live bodies read back from production before merge: step `418ef5b18e2470629130e5074790878e`, selection reader `24ac066dc355f768b16adb6078a80fd9`, review page `769ff23dd4d9473a772a78585b12349b`.
+
+### What the audit now does
+
+- `horse_commitment_roster_epoch` names the first accepted roster ever captured (2026-10-07T12:20:42.398511Z). A hand created before it was accepted before the roster existed and is the only hand classified by the current profile.
+- From the epoch, a hand is classified only by its own accepted roster, bound by table, hand number, hand id and accepted payload hash. An unavailable, malformed, missing or mismatched roster is named (`accepted_roster_unavailable`, `_invalid`, `_legacy_missing`, `_mismatch`), classifies no horse, and is never replaced by the current profile.
+- Day rows, P14.3 pass receipts and both readers name the basis: `current_profile_is_horse`, `accepted_roster` or `current_profile_then_accepted_roster` (a mixed day). Four counters (`roster_identity_hands`, `profile_identity_hands`, `roster_unavailable_hands`, `roster_missing_hands`) sum to the hands scanned, enforced by a CHECK.
+- Guards, cursor, receipts, prune, batch 256, `lock_timeout` 2 s and `statement_timeout` 5 s are unchanged.
+
+### Database read back (production, read-only, 05:24Z)
+
+- Step md5 `0f09e8b00b60a88a81452163fe76d097`, definer, owner `postgres`, ACL `{postgres=X/postgres,service_role=X/postgres}`, config `search_path=pg_catalog, public, pg_temp`, `lock_timeout=2s`, `statement_timeout=5s`. Selection reader `705109c742385d8889886b6580343e5f`, review page `fda55f4218c93e1ecc1f87ca79e77ac8`. Epoch row present (table `72453d90...`, hand number 27115089), RLS on. Ledger row `20261008041707` present. Verified now.
+- Readers called as `service_role` inside a read-only transaction: `identityBasis` is `current_profile_is_horse` for 2026-10-05 and 2026-10-06 and `current_profile_then_accepted_roster` for 2026-10-07 (the epoch day), from both `fn_horse_commitment_selection_receipt` and `fn_horse_commitment_review_page`. Verified now.
+
+### Natural evidence (production, read-only)
+
+- Day 2026-10-05's pass, begun under the profile-only body, finished at 05:29:58Z on the new body (1,296,015 hands). Its identity counters stay NULL and its basis is `current_profile_is_horse`, as designed for a pass under way at install. Verified now.
+- Day 2026-10-06's pass is the first counted from its start: at 05:32:09Z, 3,328 hands scanned, `profile_identity_hands` 3,328, the three roster counters 0, basis `current_profile_is_horse` (the whole day precedes the epoch). Verified now.
+- Step duration (`pg_stat_statements`, the PostgREST call of the step): 72 calls between 05:24:23Z and 05:32:14Z, all on the new body, mean 230 ms against the previous body's 251 ms over 23,862 calls; the cumulative maximum stayed 2,432.8 ms, so no call on the new body exceeded it. Inside the 5 s budget with the same margin. Verified now.
+- Roster path read-only preview over 2026-10-07 18:00Z to 18:10Z: 9,112 accepted hands, each joins a `captured` roster bound to its hand id and payload hash, 0 missing, 0 mismatched, 0 unavailable, 0 `unknown` seats, and the roster's horse count equals the current profile's in all 9,112. The batch read with the roster join (256 hands, cold) took 198 ms by primary key. Verified now.
+- The step classifying production hands by the roster: implemented but unverified. The audit works the oldest unfinished day first at about 2,700 hands a minute; it reaches the rostered part of 2026-10-07 after 2026-10-06 completes (expected later on October 8 UTC), and day 2026-10-08, wholly after the epoch, is created as `accepted_roster` at 00:00Z on October 9. The first pass receipt with identity counters is written when 2026-10-06's pass completes.
+
+### Tests
+
+- `python3 -B scripts/ci/test-horse-commitment-audit.py` (PostgreSQL 17.11): 7 jobs pass, including the new `roster-basis.sql` (40 checks: roster-classified hand, profile changed after acceptance follows the roster, pre-roster hand falls back and is named, unavailable roster named, mixed day) and the retained 85, 24 and 58 controls on the new bodies, with refusals on no roster, header drift, body drift, reader drift and repeat. Run on the PR in the accounting PostgreSQL 17 shard 3 of CI run [37728982261](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37728982261), successful. Verified now.
+- Server vitest `src/testing/horseRegression/daily src/services/horseDailyCorrectiveReview`: 8 files, 224 passed. Root `tests/unit/horseCi.test.ts tests/horse-accepted-roster-at-settlement.guard.test.ts`: 2 files, 61 passed. `tsc --noEmit` clean. Verified now.
+
+### Remaining open
+
+- Production classification by the accepted roster and the first identity-counted pass receipt: implemented but unverified, for the reason and times above.
+- Every other limit listed in this record is unchanged.
 
 ## Receipt Retention (October 8, 2026)
 

@@ -21,6 +21,18 @@ export const DAILY_LIMITS = Object.freeze({
    * serialized raw row at 1 MiB, plus the reply envelope. */
   sourceRowWireBytes: 1024 * 1024 + 8192,
 });
+/** How the daily commitment audit classified horse seats for a day or pass
+ * (20261008041707): today's profile only (hands accepted before the first
+ * accepted roster), the accepted roster only, or both. A label, never an
+ * authority. */
+export const DAILY_IDENTITY_BASES = Object.freeze([
+  'current_profile_is_horse',
+  'accepted_roster',
+  'current_profile_then_accepted_roster',
+] as const);
+export type DailyIdentityBasis = (typeof DAILY_IDENTITY_BASES)[number];
+export const isDailyIdentityBasis = (v: unknown): v is DailyIdentityBasis =>
+  typeof v === 'string' && (DAILY_IDENTITY_BASES as readonly string[]).includes(v);
 export interface DailyCursor {
   playedAt: string;
   handId: string;
@@ -54,7 +66,7 @@ export interface DailyPage {
   next: DailyCursor | null;
   dayObservation: 'present' | 'missing';
   sourceCoverage: 'not_established';
-  identityBasis: 'current_profile_is_horse';
+  identityBasis: DailyIdentityBasis;
   gtoVerified: false;
   activationAllowed: false;
 }
@@ -131,7 +143,7 @@ export interface DailySelectionPass {
   startedAt: string;
   finishedAt: string;
   sourceCoverage: 'not_established';
-  identityBasis: 'current_profile_is_horse';
+  identityBasis: DailyIdentityBasis;
 }
 export interface DailySelectionGap {
   handId: string;
@@ -152,7 +164,7 @@ export interface DailySelectionReceipt {
   hasMore: boolean;
   next: DailySelectionCursor | null;
   sourceCoverage: 'not_established';
-  identityBasis: 'current_profile_is_horse';
+  identityBasis: DailyIdentityBasis;
   gtoVerified: false;
   activationAllowed: false;
 }

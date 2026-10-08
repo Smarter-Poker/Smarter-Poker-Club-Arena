@@ -17,6 +17,7 @@
 import { supabase } from '../lib/supabase';
 import { isUUID } from '../utils/clubIdResolver';
 import type { LightningPoolStatus } from './lightningLobby';
+import type { LightningMultiTableLimits } from './lightningCapabilities';
 
 function num(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
@@ -190,12 +191,33 @@ export async function fetchLightningSessionSummary(
 // ─── fn_lightning_pool_status ──────────────────────────────────────────────
 
 export interface LightningPoolHealth {
-  clusterMode: string | null;
   players: number | null;
   status: LightningPoolStatus;
+  /**
+   * The database's own door verdict. The migrated fn_lightning_pool_status
+   * answers {players, status, joinable, multi_table_limit} and drops
+   * cluster_mode; an old payload (cluster_mode present, these absent) reads
+   * as null - unknown, never a refusal.
+   */
+  joinable: boolean | null;
+  /** The Cluster's configured per-device limits; null when the payload has none. */
+  multiTableLimit: LightningMultiTableLimits | null;
 }
 
 const POOL_STATUSES: readonly LightningPoolStatus[] = ['BUILDING', 'ACTIVE', 'HOT', 'THIN'];
+
+const LIMIT_DEVICES = ['desktop', 'tablet', 'mobile'] as const;
+
+function parseMultiTableLimit(raw: unknown): LightningMultiTableLimits | null {
+  const row = objectOf(raw);
+  if (!row) return null;
+  const out: LightningMultiTableLimits = {};
+  for (const device of LIMIT_DEVICES) {
+    const n = num(row[device]);
+    if (n !== null && Number.isInteger(n) && n >= 1) out[device] = n;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
 
 export function parseLightningPoolHealth(raw: unknown): LightningPoolHealth | null {
   const row = objectOf(raw);
@@ -204,9 +226,10 @@ export function parseLightningPoolHealth(raw: unknown): LightningPoolHealth | nu
   if (!status || !(POOL_STATUSES as readonly string[]).includes(status)) return null;
   const players = num(row.players);
   return {
-    clusterMode: text(row.cluster_mode),
     players: players === null ? null : Math.max(0, Math.round(players)),
     status: status as LightningPoolStatus,
+    joinable: typeof row.joinable === 'boolean' ? row.joinable : null,
+    multiTableLimit: parseMultiTableLimit(row.multi_table_limit),
   };
 }
 

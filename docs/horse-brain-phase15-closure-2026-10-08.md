@@ -1,0 +1,62 @@
+# Horse Brain Phase 15: Closure Record, October 8, 2026
+
+Horse Brain only. This record closes Phase 15 (P15-A, durable accepted plan application, recovery and exact historical replay, of the [completion plan](horse-brain-phases6-15-completion-plan-2026-09-17.md#phase-15--p15-a--durable-accepted-plan-application-recovery-and-exact-historical-replay)) against production. It uses the maintained gate vocabulary: verified now, historical only, implemented but unverified, defective, unavailable external input, not applicable with reason. Nothing is averaged into a percentage.
+
+**Outcome.** Phase 15 is delivered and closed. Every accepted horse plan effect now carries a durable receipt that survives an engine restart, the private journal reader distinguishes issued, accepted, durable, applied, failed and unknown, and natural production decisions replay exactly in a fresh process on the runtime that made them. No horse decision changed: every strategy selection is still `null` and every optional owner runs in shadow.
+
+## Packages And Records
+
+| Plan step                                                                  | Record                                                                                                                       | Delivery                                                                                                                                                                                                                                                                                                                                                       |
+| -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Durable accepted-effect identity and receipt; acknowledgement semantics | [P15.1 contract](horse-brain-phase15-1-durable-effects-contract-2026-10-07.md)                                               | [#6437](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/6437), merged `23848a2e`                                                                                                                                                                                                                                                                |
+| 2. Durable commit boundary and fresh-process recovery                      | [P15.1 record](horse-brain-phase15-1-durable-effects-2026-10-07.md)                                                          | [#6445](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/6445), merged `d48eeead`                                                                                                                                                                                                                                                                |
+| 3. Authoritative receipt in the private journal and its reader             | [P15.1 record](horse-brain-phase15-1-durable-effects-2026-10-07.md)                                                          | [#6452](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/6452), merged `a4dbbed1`; [#6457](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/6457) record                                                                                                                                                                           |
+| Exact accepted-wager check on the Lightning commit                         | [P15.1 record, Lightning section](horse-brain-phase15-1-durable-effects-2026-10-07.md#lightning-exact-acceptance-2026-10-07) | [#6459](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/6459), merged `a29a591d`; [#6461](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/6461) record                                                                                                                                                                           |
+| 4. Exact historical replay                                                 | [P15.2 record](horse-brain-phase15-2-historical-replay-2026-10-07.md)                                                        | [#6442](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/6442) `4ad5b676`, [#6455](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/6455) `30ef59ad`, [#6458](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/6458) `f5d140d5`, [#6460](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/6460) record |
+
+The engine serving production at closure is `a29a591da2efa8acb1a67cbb93f5e67af11cfc1f`, which contains every Phase 15 merge above.
+
+## Natural Evidence (Production, Read-Only)
+
+- **Receipts.** Over the whole 22:55Z to 23:55Z process on October 7: issued 13,661, accepted 13,659 (2 retired unaccepted), durable 13,659, applied 13,659, failed 0, unknown 0. Every accepted batch had its durable receipt before the process shut down.
+- **Restart.** After the natural 23:55Z restart, the new process read 80 horse cash hands dealt by the old one: 68 batches issued, accepted, durable and applied, 0 failed, 0 unknown, every hand with batches `applicationVerified`, every hand still reconciled by the existing journal review. Receipts survived the restart instead of being cleared.
+- **Exact replay.** Two batches declared in writing before their windows opened, on release `f5d140d5`, each record in its own fresh process on the engine's own runtime (Node v22.23.2, x64): 1,169 `replayed_exact` (`replayVerified`), 0 `replayed_mismatch`, 31 second looks named `non_replayable:retained_fast_read_view`. Every durable `applied` receipt covered exactly the batch the replay reproduced; all 1,200 execution witnesses joined with the selected action equal to the decision; 65 format, variant and street cells across cash, MTT, heads-up Sit and Go and Spin. A different runtime is refused by name, and a perturbed recorded input is a named mismatch.
+- **Main engine after the shared exact-wager owner.** On `a29a591d` between 01:57:54Z and 02:06:50Z: plans issued 1,663, applied 1,639, durable receipts 1,638, coerced executions 2, unchanged behaviour.
+
+## Defects Found And Fixed During Phase 15
+
+- The replay re-encoded the read frame from its own process instead of the record, and the Phase 8 sentinel was not captured (fixed in #6442).
+- The replay did not record or check the runtime that made a decision; one MTT decision differed in the last bit of its win probabilities on another Node and CPU (fixed in #6458; a different runtime is now refused as `original_runtime`).
+- Lightning applied plan effects for a wager it had reshaped, and never closed out decisions it did not apply, which could have exhausted the worker's 128 reservations for every table on the process (fixed in #6459 through the shared `horsePlanWagerAcceptedExactly` owner). Both were latent: Lightning has played no hand in production and issues no plan identity.
+
+## Audit Of Phases 11 To 14 Before Phase 15
+
+Recorded in each closure record's `Audit Of October 7, 2026` section ([11](horse-brain-phase11-closure-2026-10-05.md), [12](horse-brain-phase12-closure-2026-10-05.md), [13](horse-brain-phase13-closure-2026-10-06.md), [14](horse-brain-phase14-closure-2026-10-07.md)). Findings fixed and published: the missing P11-A river net-chip economics for PLO5, PLO6 and PLO8 (#6444), the unguarded Phase 11 policy digest file list (#6440), and the worker authority counters for Phases 8 to 13 that were counted before telemetry started (#6439). The daily commitment audit now keeps pace with accepted hands (#6432): October 4 finished at 21:06Z on October 7 at a capacity of about 3.4 million hands a day.
+
+## Gate Ledger
+
+| Gate               | Status                                                                                                                                                                                                                 |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G1 Domain          | verified now: every variant and format reaches the one engine commit gate and the Lightning commit; replay observed 65 cells                                                                                           |
+| G2 Inputs          | verified now: receipts bind the issued digest, issued action, accepted wager and witness; replay rebuilds every input from the record alone, including runtime identity                                                |
+| G3 Calculation     | verified now: 1,169 natural records reproduced field for field; no calculation or distribution changed                                                                                                                 |
+| G4 Authority       | verified now for replay identity checks; implemented but unverified for withdrawal refusing recovery in production, because no candidate is selected and the recorded authority list is empty                          |
+| G5 Actual use      | verified now: Turns and Lightning to client, worker, journal and reader in production                                                                                                                                  |
+| G6 Outcomes        | verified now: issued = accepted + retired; durable = applied; failed 0; unknown 0; every replay ends in a named outcome                                                                                                |
+| G7 Correctness     | verified now: crash, lost acknowledgement, conflict, partial application, stale hand, policy withdrawal, forged receipt, exact-wager and replay regressions, all in the maintained selection and green in protected CI |
+| G8 Work and replay | verified now: receipts survive a natural restart; 1,169 natural records `replayVerified`                                                                                                                               |
+| G9 Promotion       | not applicable with reason: Phase 15 promotes nothing; every selection stays `null`                                                                                                                                    |
+| G10 Publication    | verified now: every merge served by `a29a591d`                                                                                                                                                                         |
+
+## Remaining Limits (Kept Open, Not Closed By This Record)
+
+- Recovery writes no plan state after a restart by design, because a restarted engine abandons every in-progress hand under a new lease. If resuming in-progress hands is ever built, it must call `recoverPlanReceipts` for that hand.
+- Natural coverage is two scoped windows and one restart sample, not a full population. Records written before `f5d140d5` stay `non_replayable` by name.
+- Second looks are always `non_replayable` because they are admitted only against an in-memory read view.
+- The journal reader still reports `replayVerified: false` per hand; per-record replay results stay in the private evidence archive because writing them back to production is not allowed.
+- The Lightning exact-acceptance path has not run on a natural hand: Lightning has played no hand in production.
+- `horse_hand_review_receipts` is never pruned by the P14.1 design and grows about 57,000 rows a day.
+
+## Statement
+
+Phase 15 is complete and closed. Accepted horse plan effects are durable, recoverable and reconciled across restarts, and natural decisions replay exactly. With Phase 15 closed, Phases 6 through 15 of the Horse Brain completion plan are each closed on their own G1 to G10 record. Horses play exactly as before.

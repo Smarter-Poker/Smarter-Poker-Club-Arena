@@ -1,3 +1,4 @@
+import { observeMissionQuietWindow } from './support/missionQuietWindow';
 import { remountConcurrentMissionReceipts } from './support/missionRerollRemount';
 import { finalizeMissionCleanupWithEvidence } from './support/missionReloadObservation';
 import {
@@ -1651,8 +1652,6 @@ test.describe('production Daily Missions certification', () => {
           );
         }
         blockedRevisionFrames = 0;
-        const socketsAtBlock = interceptedRealtimeSockets;
-        const cursorReadsAtBlock = cursorReads;
         blockRevisionFrames = true;
         try {
           await completeEveryAssignedMission(environment, account!);
@@ -1681,16 +1680,23 @@ test.describe('production Daily Missions certification', () => {
               { cause: error }
             );
           }
-          // The completion frame is gone and the socket, join and heartbeat
-          // are all healthy, so no lifecycle event has happened. Hold that
-          // state for longer than the repair interval this page used to run
-          // and prove the durable cursor is not being polled.
-          await page.waitForTimeout(NO_POLL_QUIET_WINDOW_MS);
+          // A provider can naturally replace the socket during this window.
+          // That is a real lifecycle event, which legitimately reads the cursor.
+          // Require a full uninterrupted window before asserting no polling;
+          // bounded observation fails if the provider never stays connected.
+          const quietWindow = await observeMissionQuietWindow({
+            snapshot: () => ({ sockets: interceptedRealtimeSockets, cursorReads }),
+            waitUntilLive: () =>
+              expect(page.getByText('Live Now')).toBeVisible({
+                timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
+              }),
+            waitWindow: () => page.waitForTimeout(NO_POLL_QUIET_WINDOW_MS),
+          });
           expect(
-            cursorReads - cursorReadsAtBlock,
-            'revision cursor reads were issued while the routed socket stayed healthy ' +
-              `(routed sockets at block: ${socketsAtBlock}, now: ${interceptedRealtimeSockets})`
+            quietWindow.cursorReads,
+            'a stable socket must never poll the revision cursor'
           ).toBe(0);
+          report.noPollQuietWindow = quietWindow;
 
           // Interrupt the live connection from the server side of every routed
           // socket, the way a realtime restart would. The client must observe a

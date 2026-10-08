@@ -291,6 +291,12 @@ interface WeightedMoment {
 interface CandidateEvaluationSuccess {
   ledger: HorseTournamentUtilityCandidateLedger;
   icmError: number;
+  /** Largest ICM and option estimate error of any sample, without the
+   * blind-level envelope (the conservative bound already prices that). */
+  estimateError: number;
+  /** Utility of each outcome sample, index-aligned with the sample weights
+   * (0 where the weight is 0). Phase 8 pairs candidates on these. */
+  sampleUtility: number[];
   methods: Set<IcmMethod>;
   unavailableReason: null;
 }
@@ -1449,6 +1455,8 @@ function evaluateCandidate(args: {
   let sidePotCount = 0;
   let conservationError = 0;
   let icmError = 0;
+  let estimateError = 0;
+  const sampleUtility: number[] = new Array<number>(args.input.showdownSamples.length).fill(0);
   let shortStackCollision = 0;
   let coveredStacks = 0;
   let noFullBlindRaise = 0;
@@ -1656,6 +1664,8 @@ function evaluateCandidate(args: {
     sidePotCount = Math.max(sidePotCount, branch.sidePotCount);
     conservationError = Math.max(conservationError, branch.conservationError);
     icmError = Math.max(icmError, icm.error + option.error + futureError);
+    estimateError = Math.max(estimateError, icm.error + option.error);
+    sampleUtility[index] = utility;
     methods.add(icm.method);
     vectors.add(icm.vectorKey);
   }
@@ -1703,7 +1713,58 @@ function evaluateCandidate(args: {
         }
       : {}),
   };
-  return { ledger, icmError, methods, unavailableReason: null };
+  return { ledger, icmError, estimateError, sampleUtility, methods, unavailableReason: null };
+}
+
+/**
+ * Phase 8's change test. Every Phase 8 candidate is valued on the same
+ * outcome samples, the same synthetic future-hand draws and the same ICM
+ * trials (common random numbers), so the question "is the chosen action
+ * better than the baseline?" is answered by their per-sample difference.
+ * Comparing two separate intervals, as Phase 7 does for terminal actions,
+ * counts every shared sampling error twice: on the production engine host on
+ * 2026-10-08 the continuation preferred another action on 3,053 of 3,663
+ * fired decisions and the separate intervals retained the baseline on all of
+ * them (median utility gap 2.65, median summed half-width 43.7). The paired
+ * test keeps the same 99.9% level, the equity sampling error whenever exactly
+ * one side folds (a fold carries none), and both sides' ICM/option estimate
+ * error in full. The blind-level envelope is not added again: each sample
+ * already uses its conservative level bound.
+ */
+export interface PairedContinuationSide {
+  ledger: { action: HorseTournamentUtilityCandidateLedger['action'] };
+  sampleUtility: number[];
+  estimateError: number;
+}
+export function continuationSeparatesFromBaseline(
+  input: Pick<TournamentUtilityInput, 'equityStandardError'>,
+  chosen: PairedContinuationSide,
+  kept: PairedContinuationSide,
+  calibrated: { weights: number[]; effectiveSamples: number },
+  payoutWeight: number
+): boolean {
+  let mean = 0;
+  for (let i = 0; i < calibrated.weights.length; i++) {
+    const weight = calibrated.weights[i] ?? 0;
+    if (weight > 0) mean += weight * (chosen.sampleUtility[i] - kept.sampleUtility[i]);
+  }
+  let variance = 0;
+  for (let i = 0; i < calibrated.weights.length; i++) {
+    const weight = calibrated.weights[i] ?? 0;
+    if (weight > 0)
+      variance += weight * (chosen.sampleUtility[i] - kept.sampleUtility[i] - mean) ** 2;
+  }
+  const standardError = Math.sqrt(variance / Math.max(1, calibrated.effectiveSamples));
+  const equityUncertainty =
+    (chosen.ledger.action === 'fold') !== (kept.ledger.action === 'fold')
+      ? Math.max(0, input.equityStandardError) * 100 * payoutWeight
+      : 0;
+  const lower =
+    mean -
+    CONFIDENCE_Z_999 * Math.max(standardError, equityUncertainty) -
+    chosen.estimateError -
+    kept.estimateError;
+  return Number.isFinite(lower) && lower > 0;
 }
 
 function strongestMethod(methods: Set<IcmMethod>): IcmMethod {
@@ -1935,6 +1996,13 @@ function evaluateWithWorkspace(
   if (!sameDecision(selected, input.baseline) && !selected.terminalForHero && !input.continuation) {
     selected = baselineCandidate;
     baselineRetainedForContinuation = true;
+  } else if (!sameDecision(selected, input.baseline) && input.continuation) {
+    const chosen = evaluated.find((result) => result.ledger.id === selected.id)!;
+    const kept = evaluated.find((result) => result.ledger.id === baselineCandidate.id)!;
+    if (!continuationSeparatesFromBaseline(input, chosen, kept, calibrated, payoutWeight)) {
+      selected = baselineCandidate;
+      baselineRetainedForUncertainty = true;
+    }
   } else if (!sameDecision(selected, input.baseline)) {
     const selectedLower = selected.combinedUtility - selected.utilityConfidenceHalfWidth;
     const strongestAlternativeUpper = Math.max(

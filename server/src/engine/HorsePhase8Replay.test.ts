@@ -14,10 +14,26 @@ import {
   type LiveHorseDecisionSnapshot,
 } from './horseDecision/protocol.js';
 import { horsePlanBatchBindingFromRequest } from './HorsePlanHandIdentity.js';
+import { PHASE8_POLICY } from './HorseTournamentPostflop.js';
 
 const hands: CapturedPhase8Hand[] = JSON.parse(
   readFileSync(new URL('./fixtures/phase8-production-hands.json', import.meta.url), 'utf8')
 );
+
+/**
+ * The same public line with only the seats still contesting the pot at hero's
+ * captured decision. The captured lines were dealt at full tournament tables,
+ * where Phase 8 now refuses by name before eligibility because its next-hand
+ * continuation cannot finish inside the 4 ms work budget there
+ * (`PHASE8_POLICY.maxFutureHandSeats`). This derived heads-up line is a test
+ * construction, not a production replay: it keeps the real cards, board and
+ * betting between the two contestants and drops everyone who folded.
+ */
+function contestedLine(hand: CapturedPhase8Hand): CapturedPhase8Hand {
+  const folded = new Set(hand.actions.filter((a) => a.action === 'fold').map((a) => a.seat));
+  return { ...hand, actions: hand.actions.filter((a) => !folded.has(a.seat)) };
+}
+const contested = hands.map(contestedLine);
 
 describe('Phase 8 captured public-line reconstruction', () => {
   it.each(hands)('review $reviewId remains legal and private', (hand) => {
@@ -57,7 +73,16 @@ describe('Phase 8 captured public-line reconstruction', () => {
     // decision `call`; the chips it puts in are identical.
     if (hand.reviewId === 400340) expect(baseline.action).toBe('call');
     else expect(['all_in', 'bet', 'raise']).toContain(baseline.action);
-    expect(candidate.action).toBe(hand.reviewId === 400615 ? 'check' : 'fold');
+    // A full table is outside the continuation's work scope: refused by
+    // name before eligibility, the baseline action stands.
+    expect(gs.players.length).toBeGreaterThan(PHASE8_POLICY.maxFutureHandSeats);
+    expect(candidate.tournamentPostflop).toMatchObject({
+      reason: 'future_hand_seats_outside_work_budget',
+      eligible: false,
+      fired: false,
+      changed: false,
+    });
+    expect(candidate.action).toBe(baseline.action);
     console.info(
       JSON.stringify({
         reviewId: hand.reviewId,
@@ -72,6 +97,40 @@ describe('Phase 8 captured public-line reconstruction', () => {
         latency: 'measured_separately_in_league',
       })
     );
+  });
+
+  it.each(contested)('contested line $reviewId computes and guards the commitment', (hand) => {
+    const { hero, gs } = reconstructPhase8Hand(hand);
+    expect(gs.players.length).toBeLessThanOrEqual(PHASE8_POLICY.maxFutureHandSeats);
+    seedFastRandom(hand.reviewId);
+    const baseline = HorseLogic.decide(
+      hero,
+      gs,
+      'balanced',
+      {},
+      { phase8Postflop: 'off', mind: false, decisionTimeMs: 0 }
+    );
+    seedFastRandom(hand.reviewId);
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+    let candidate: ReturnType<typeof HorseLogic.decide>;
+    try {
+      candidate = HorseLogic.decide(
+        hero,
+        gs,
+        'balanced',
+        {},
+        { phase8Postflop: 'candidate', mind: false, decisionTimeMs: 0 }
+      );
+    } finally {
+      clock.mockRestore();
+    }
+    expect(gs.players.every((p) => p.cards.length === 0)).toBe(true);
+    expect(gs.legalActions).toContain(baseline.action);
+    expect(gs.legalActions).toContain(candidate.action);
+    expect(candidate.tournamentPostflop).toMatchObject({ eligible: true, fired: true });
+    expect(candidate.action).toBe(hand.reviewId === 400615 ? 'check' : 'fold');
+    if (hand.reviewId === 400615) expect(baseline.action).toBe('check');
+    else expect(candidate.action).not.toBe(baseline.action);
   });
 });
 
@@ -93,7 +152,9 @@ describe('Phase 8.3 qualified authority on the actual candidate receipt', () => 
     }
   }
 
-  it.each(hands)(
+  // Heads-up, 400615's baseline already checks the river, so only the three
+  // lines whose guard changes play can carry a selected candidate.
+  it.each(contested.filter((hand) => hand.reviewId !== 400615))(
     'review $reviewId: a selected candidate is a valid live receipt only with usable authority',
     (hand) => {
       const worker = new HorseQualifiedAuthorityHolder('worker');
@@ -148,7 +209,7 @@ describe('Phase 8.3 qualified authority on the actual candidate receipt', () => 
   it.each(['matches', 'mismatches'] as const)(
     'the client admits a play-changing candidate only when its receipt %s its request',
     async (mode) => {
-      const hand = hands[0];
+      const hand = contested[0];
       const { hero, gs } = reconstructPhase8Hand(hand);
       const candidate = decideAt(hand, 'candidate');
       expect(candidate.action).not.toBe(candidate.tournamentPostflop?.baselineAction);

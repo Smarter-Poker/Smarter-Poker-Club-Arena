@@ -322,6 +322,20 @@ export interface LightningHandHostDeps {
    * one a queue entry: they have no browser.
    */
   onDecision?(playerId: string, decision: LightningDecision | null, reason?: string): void;
+  /**
+   * LIGHTNING PHASE 10: the hand has SETTLED (the money is committed) and
+   * these players are about to be handed back to the matcher - the one legal
+   * auto-rebuy moment. Only the players this boundary releases are named: a
+   * LIGHTNING fold or a normal fold released its player mid-hand, and they
+   * may already be in another live hand. Awaited before `finish()`, so the
+   * ask is in flight before anyone is matched again; the executor behind it
+   * never throws and never retries.
+   */
+  onHandSettled?(settled: {
+    handId: string;
+    bigBlind: number;
+    players: Array<{ playerId: string; stackAfter: number }>;
+  }): Promise<void> | void;
   now?: () => number;
   /** The live horse decision lane (injected for tests; the process lane otherwise). */
   horseLane?: () => LiveHorseDecisionLane;
@@ -1905,6 +1919,8 @@ export class LightningHandHost {
         // Captured before finish() clears who is watching: the jackpot is
         // every participant's, folded or not (the table share is the dealt-in).
         const jackpotHand = this.jackpotHand(state);
+        // LIGHTNING PHASE 10: the settled boundary, before anyone is released.
+        await this.reportSettledBoundary(results);
         this.finish('hand_end');
         await settleLightningJackpot(jackpotHand, {
           emit: (room, payload) => this.deps.hub.emitEvent(room, payload),
@@ -2005,6 +2021,30 @@ export class LightningHandHost {
       )
     );
     return false;
+  }
+
+  /**
+   * LIGHTNING PHASE 10: tell the auto-rebuy executor which players this
+   * settled boundary releases, with the stack settlement left them. Players
+   * a 'fast' or 'normal' fold already freed are not this boundary's: their
+   * next boundary is whichever hand they are in next. Never throws; a rebuy
+   * that cannot be asked must not disturb a settlement that committed.
+   */
+  private async reportSettledBoundary(results: LightningSettleResult[]): Promise<void> {
+    if (!this.deps.onHandSettled || !this.rules) return;
+    const players = results
+      .filter((r) => r.foldType !== 'fast' && r.foldType !== 'normal')
+      .map((r) => ({ playerId: r.playerId, stackAfter: r.stackAfter }));
+    if (players.length === 0) return;
+    try {
+      await this.deps.onHandSettled({
+        handId: this.handId,
+        bigBlind: Number(this.rules.big_blind) || 0,
+        players,
+      });
+    } catch (err) {
+      this.logger.error(`[LightningHost:${this.instanceId}] settled boundary report failed`, err);
+    }
   }
 
   /** What the jackpot check reads: the settled hand's facts, every participant's room. */

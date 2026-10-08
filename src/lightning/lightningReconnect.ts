@@ -32,13 +32,27 @@ import { reportError } from '../utils/errorReporter';
 export const LIGHTNING_TIMED_OUT_TITLE = 'Your Lightning Session Timed Out';
 /** Any other ending that is not the MUST MOVE reversion. */
 export const LIGHTNING_SESSION_OVER_TEXT = 'Your Lightning Session Has Ended';
+/**
+ * LIGHTNING PHASE 10: the ending the player asked for. The database records
+ * `exit_reason` 'stop_playing' when fn_lightning_stop_playing ended the
+ * session; a database that does not send the field yet keeps the ordinary
+ * words.
+ */
+export const LIGHTNING_STOPPED_TITLE = 'You Stopped Playing';
+export const LIGHTNING_STOP_PLAYING_EXIT_REASON = 'stop_playing';
 
 /** The ended notice's line: how it ended, and where the player's seat is. */
 export function lightningSessionEndText(end: {
   timedOut: boolean;
   seatTableId: string | null;
+  /** The player stopped on purpose (exit_reason stop_playing). */
+  stopped?: boolean;
 }): string {
-  const lead = end.timedOut ? `${LIGHTNING_TIMED_OUT_TITLE}.` : `${LIGHTNING_SESSION_OVER_TEXT}.`;
+  const lead = end.stopped
+    ? `${LIGHTNING_STOPPED_TITLE}.`
+    : end.timedOut
+      ? `${LIGHTNING_TIMED_OUT_TITLE}.`
+      : `${LIGHTNING_SESSION_OVER_TEXT}.`;
   return end.seatTableId ? `${lead} Your Seat Is Ready At Your Table.` : lead;
 }
 
@@ -53,6 +67,12 @@ export interface LightningReconnectState {
   seatNumber: number | null;
   stack: number | null;
   joinable: boolean;
+  /**
+   * LIGHTNING PHASE 10: why the session ended ('stop_playing' when the
+   * player used STOP PLAYING). Null while open, and on a database that does
+   * not send the field yet.
+   */
+  exitReason: string | null;
 }
 
 /** Pool session states that mean the session is over (lightningSession.ts agrees). */
@@ -82,6 +102,7 @@ export function parseLightningReconnectState(raw: unknown): LightningReconnectSt
       seatNumber: null,
       stack: null,
       joinable: false,
+      exitReason: null,
     };
   }
   const id = text(row.pool_session_id);
@@ -97,6 +118,7 @@ export function parseLightningReconnectState(raw: unknown): LightningReconnectSt
     seatNumber: seat !== null && Number.isInteger(seat) && seat >= 1 ? seat : null,
     stack: num(row.stack),
     joinable: row.joinable === true,
+    exitReason: text(row.exit_reason),
   };
 }
 
@@ -129,8 +151,11 @@ export async function fetchLightningReconnectState(
 export type LightningReconnectVerdict =
   /** The pool session lives: keep reconnecting to the SAME room. */
   | { kind: 'open'; poolSessionId: string }
-  /** It is over. `timedOut` when the disconnect reaper exited it. */
-  | { kind: 'ended'; timedOut: boolean; seatTableId: string | null }
+  /**
+   * It is over. `timedOut` when the disconnect reaper exited it; `stopped`
+   * when the player's own STOP PLAYING did (exit_reason, Lightning Phase 10).
+   */
+  | { kind: 'ended'; timedOut: boolean; stopped: boolean; seatTableId: string | null }
   /** Nothing to say (another room's session, or nothing readable). */
   | { kind: 'unknown' };
 
@@ -150,11 +175,12 @@ export function lightningReconnectVerdict(
   if (!state.state && !state.poolSessionId && !state.seatTableId) {
     // The database knows nothing of a session here: the ordinary ended case
     // (the row is gone entirely once reaped and cleaned).
-    return { kind: 'ended', timedOut: false, seatTableId: null };
+    return { kind: 'ended', timedOut: false, stopped: false, seatTableId: null };
   }
   return {
     kind: 'ended',
     timedOut: String(state.state ?? '').toLowerCase() === 'expired',
+    stopped: String(state.exitReason ?? '').toLowerCase() === LIGHTNING_STOP_PLAYING_EXIT_REASON,
     seatTableId: state.seatTableId,
   };
 }
@@ -162,6 +188,8 @@ export function lightningReconnectVerdict(
 export interface LightningSessionEnd {
   /** The reaper timed the disconnect out: the title is the timeout's. */
   timedOut: boolean;
+  /** The player's own STOP PLAYING ended it: the title is theirs. */
+  stopped: boolean;
   /** The seat the player still holds, when one remains. */
   seatTableId: string | null;
 }
@@ -217,7 +245,11 @@ export function useLightningSessionEnd(input: {
         }
         if (verdict.kind === 'ended' && !concludedRef.current) {
           concludedRef.current = true;
-          setEnded({ timedOut: verdict.timedOut, seatTableId: verdict.seatTableId });
+          setEnded({
+            timedOut: verdict.timedOut,
+            stopped: verdict.stopped,
+            seatTableId: verdict.seatTableId,
+          });
         }
       } catch (err) {
         reportError(err, 'lightning.reconnect_state_read_failed', { clusterId });

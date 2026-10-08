@@ -80,6 +80,7 @@ describe('fn_lightning_reconnect_state, read defensively', () => {
       seatNumber: 4,
       stack: 182.5,
       joinable: true,
+      exitReason: null,
     });
     const bad = parseLightningReconnectState({
       pool_session_id: 'not-a-uuid',
@@ -138,6 +139,7 @@ describe('the verdict', () => {
     expect(lightningReconnectVerdict(POOL, parseLightningReconnectState(EXPIRED_ROW))).toEqual({
       kind: 'ended',
       timedOut: true,
+      stopped: false,
       seatTableId: SEAT_TABLE,
     });
     expect(
@@ -145,11 +147,12 @@ describe('the verdict', () => {
         POOL,
         parseLightningReconnectState({ ...EXPIRED_ROW, state: 'cashed_out', seat_table_id: null })
       )
-    ).toEqual({ kind: 'ended', timedOut: false, seatTableId: null });
+    ).toEqual({ kind: 'ended', timedOut: false, stopped: false, seatTableId: null });
     // The row is gone entirely (reaped and cleaned): the ordinary ending.
     expect(lightningReconnectVerdict(POOL, parseLightningReconnectState({}))).toEqual({
       kind: 'ended',
       timedOut: false,
+      stopped: false,
       seatTableId: null,
     });
   });

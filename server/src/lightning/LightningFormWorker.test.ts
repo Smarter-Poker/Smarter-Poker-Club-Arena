@@ -24,7 +24,7 @@ const { LightningMetrics } = await import('./LightningMetrics.js');
 const { LightningRegistry, LightningHosting } = await import('./LightningRegistry.js');
 const { mulberry32 } = await import('../engine/HandFuzzer.js');
 const kit = await import('../testing/lightningHostTestKit.js');
-import type { LightningConfig } from './LightningConfig.js';
+import { LIGHTNING_AUTO_REBUY_DEFAULTS, type LightningConfig } from './LightningConfig.js';
 import type { LightningFormedHand } from './LightningHandHost.js';
 
 const { uid, formedHand, fakeBackend, RecordingHub, flush, playOut } = kit;
@@ -36,6 +36,7 @@ const form: LightningConfig = {
   keepaliveIntervalMs: 5_000,
   maxHandsPerPass: 7,
   dealWindowMs: 600_000,
+  autoRebuy: LIGHTNING_AUTO_REBUY_DEFAULTS,
 };
 const quiet = { log: () => {}, warn: () => {}, error: () => {} };
 

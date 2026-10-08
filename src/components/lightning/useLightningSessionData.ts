@@ -9,8 +9,10 @@
  */
 import { useEffect, useState } from 'react';
 import {
+  fetchLightningAutoRebuyStatus,
   fetchLightningPoolHealth,
   fetchLightningSessionStats,
+  type LightningAutoRebuyStatus,
   type LightningPoolHealth,
   type LightningSessionStats,
 } from '../../lightning/lightningSessionApi';
@@ -72,4 +74,28 @@ export function useLightningPoolHealth(
     };
   }, [clusterId, active]);
   return health;
+}
+
+/**
+ * LIGHTNING PHASE 10: the Cluster's auto-rebuy status, read once when the
+ * Session panel opens (never a poll). `null` means it cannot be said - the
+ * function absent (deploy window), not granted, or unreadable - and the
+ * status line is simply not shown.
+ */
+export function useLightningAutoRebuyStatus(
+  clusterId: string | null,
+  enabled: boolean
+): LightningAutoRebuyStatus | null {
+  const [status, setStatus] = useState<LightningAutoRebuyStatus | null>(null);
+  useEffect(() => {
+    if (!enabled || !clusterId) return;
+    let live = true;
+    fetchLightningAutoRebuyStatus(clusterId).then((s) => {
+      if (live) setStatus(s);
+    });
+    return () => {
+      live = false;
+    };
+  }, [clusterId, enabled]);
+  return status;
 }

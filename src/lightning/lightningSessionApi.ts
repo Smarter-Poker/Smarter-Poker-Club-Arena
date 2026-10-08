@@ -10,9 +10,17 @@
  *   fn_lightning_pool_status(p_cluster_id)         BUILDING / ACTIVE / HOT / THIN
  *   fn_lightning_recent_hands(p_limit, p_pool_session_id)  the last hands
  *
+ * LIGHTNING PHASE 10 adds two more:
+ *
+ *   fn_lightning_stop_playing(p_cluster_id)  the responsible-gaming door: the
+ *     caller stops after the current hand; the database ends the session
+ *   fn_lightning_config(p_cluster_id)        read here only for the
+ *     auto-rebuy keys the operator configured (a read-only status line)
+ *
  * Every answer is parsed defensively here: a field that is missing or not a
  * number is "not known" (null), never a guess and never a zero that would
- * print as a real result. Nothing in this file moves money.
+ * print as a real result. Nothing in this file moves money: STOP PLAYING
+ * asks the database to stop dealing, and the database does the rest.
  */
 import { supabase } from '../lib/supabase';
 import { isUUID } from '../utils/clubIdResolver';
@@ -313,6 +321,132 @@ export async function fetchLightningRecentHands(
   });
   if (error) throw error;
   return parseLightningRecentHands(data);
+}
+
+// ─── fn_lightning_stop_playing (LIGHTNING PHASE 10) ────────────────────────
+
+/**
+ * PostgREST's "no such function": the Phase 10 migration has not landed yet.
+ * A deploy window, never a fault.
+ */
+export function isLightningRpcMissing(err: unknown): boolean {
+  const e = err as { code?: unknown; message?: unknown } | null;
+  if (!e || typeof e !== 'object') return false;
+  if (e.code === 'PGRST202' || e.code === '42883') return true;
+  const m = typeof e.message === 'string' ? e.message : '';
+  return /could not find the function|does not exist/i.test(m) && /fn_lightning_/i.test(m);
+}
+
+export interface LightningStopPlayingResult {
+  ok: boolean;
+  /** The session is stopping: no new hand will be dealt. */
+  stopping: boolean;
+  /** A hand is still live; the session ends when it settles. */
+  inHand: boolean;
+  reason: string | null;
+}
+
+export function parseLightningStopPlaying(raw: unknown): LightningStopPlayingResult {
+  const row = objectOf(raw);
+  if (!row) return { ok: false, stopping: false, inHand: false, reason: null };
+  return {
+    ok: row.ok === true,
+    stopping: row.stopping === true || row.ok === true,
+    inHand: row.in_hand === true,
+    reason: text(row.reason),
+  };
+}
+
+/**
+ * Ask the database to stop dealing the caller in this Cluster. `null` means
+ * the function is not deployed yet (the control says it is not available);
+ * a read failure throws. Nothing here ends the session itself: the database
+ * refuses new hands at once and exits the session when the live hand (if
+ * any) settles - the room then closes and the Phase 9 ended flow takes over.
+ */
+export async function stopLightningPlaying(
+  clusterId: string
+): Promise<LightningStopPlayingResult | null> {
+  const { data, error } = await supabase.rpc('fn_lightning_stop_playing', {
+    p_cluster_id: clusterId,
+  });
+  if (error) {
+    if (isLightningRpcMissing(error)) return null;
+    throw error;
+  }
+  return parseLightningStopPlaying(data);
+}
+
+/** The control's words. Title Case, no em dashes. */
+export const LIGHTNING_STOP_PLAYING_LABEL = 'Stop Playing';
+export const LIGHTNING_STOP_FINISHING_TEXT = 'Finishing Current Hand...';
+export const LIGHTNING_STOP_STOPPING_TEXT = 'Stopping...';
+export const LIGHTNING_STOP_UNAVAILABLE_TEXT = 'Stop Playing Is Not Available Right Now.';
+
+// ─── The auto-rebuy status (fn_lightning_config, read-only) ────────────────
+
+export interface LightningAutoRebuyStatus {
+  enabled: boolean;
+  trigger: 'bb' | 'pct';
+  thresholdBb: number | null;
+  thresholdPct: number | null;
+  targetBb: number | null;
+  maxCount: number | null;
+}
+
+export function parseLightningAutoRebuyStatus(raw: unknown): LightningAutoRebuyStatus | null {
+  const row = objectOf(raw);
+  if (!row) return null;
+  const trigger =
+    typeof row.auto_rebuy_trigger === 'string' &&
+    row.auto_rebuy_trigger.trim().toLowerCase() === 'pct'
+      ? ('pct' as const)
+      : ('bb' as const);
+  const positive = (v: unknown) => {
+    const n = num(v);
+    return n !== null && n > 0 ? n : null;
+  };
+  return {
+    enabled: row.auto_rebuy_enabled === true,
+    trigger,
+    thresholdBb: positive(row.auto_rebuy_threshold_bb),
+    thresholdPct: positive(row.auto_rebuy_threshold_pct),
+    targetBb: positive(row.auto_rebuy_target),
+    maxCount: positive(row.auto_rebuy_max_count),
+  };
+}
+
+/**
+ * The Cluster's auto-rebuy configuration, for the read-only status line.
+ * `null` means it cannot be said right now (function absent, not granted, or
+ * unreadable) and the line is simply not shown; this read never throws.
+ */
+export async function fetchLightningAutoRebuyStatus(
+  clusterId: string
+): Promise<LightningAutoRebuyStatus | null> {
+  try {
+    const { data, error } = await supabase.rpc('fn_lightning_config', {
+      p_cluster_id: clusterId,
+    });
+    if (error) return null;
+    return parseLightningAutoRebuyStatus(data);
+  } catch {
+    return null;
+  }
+}
+
+/** "Auto-Rebuy: Off", or the trigger and target in the player's own units. */
+export function lightningAutoRebuyText(status: LightningAutoRebuyStatus): string {
+  if (!status.enabled) return 'Auto-Rebuy: Off';
+  const target = status.targetBb !== null ? `${Number(status.targetBb)} BB` : null;
+  let below: string | null = null;
+  if (status.trigger === 'pct' && status.thresholdPct !== null) {
+    below = `Below ${Number(status.thresholdPct)}%`;
+  } else if (status.thresholdBb !== null) {
+    below = `Below ${Number(status.thresholdBb)} BB`;
+  }
+  const detail = below && target ? ` (${below} → ${target})` : below ? ` (${below})` : '';
+  return `Auto-Rebuy: On${detail}`;
 }
 
 // ─── Words and numbers the panels print ────────────────────────────────────

@@ -1,13 +1,13 @@
 {
   "kind": "operator_hold_predecessor_v1",
-  "releaseSha": "aab0f1e59275489204ea2a141b66f41902177258",
-  "imageId": "sha256:f62b1dc8e868925c3da1672333335acdd1cc148ed918ec51bed3ce9bd53a2be0",
+  "releaseSha": "f59e0a36a08b756d23b47976cd31ecca8f8d28a3",
+  "imageId": "sha256:c41d0aaaeb47cd855392de3194c214608791091a755c2881bfcdefd1538ae883",
   "runtimeNode": "v22.23.2",
   "compiled": [
     {
       "path": "/app/dist/GameServer.js",
-      "bytes": 597028,
-      "sha256": "5ccf918731237b6ad813217a67f46b2833aaf3dd0c68feace79c632644683c90"
+      "bytes": 597317,
+      "sha256": "49bb0f228bc0c7f5b5616029bab4369d82e1c0eadfe73ef2a2342d92c089972b"
     },
     {
       "path": "/app/dist/engine/ServerTableEngineBase.js",
@@ -77,8 +77,8 @@
   ],
   "provenance": {
     "schema": "operator-hold-runtime-provenance/v1",
-    "observedAt": "2026-10-08T14:07:47.038499+00:00",
-    "sourceSha256": "a70efd44c96da69106b1b08cf92bfa9bba294da38f03b73bafe79ede3c5ba6b0",
-    "scope": "exact14_current_aab_runtime_pins;not_boot_or_handoff_qualification"
+    "observedAt": "2026-10-08T15:20:16.276932+00:00",
+    "sourceSha256": "b4439781767d043f584a1b758ffecf8efaa034e7fd8ff68c0f83d2f87fdf4e86",
+    "scope": "exact14_current_f59_runtime_pins;not_boot_or_handoff_qualification"
   }
 }

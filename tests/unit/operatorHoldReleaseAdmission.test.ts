@@ -103,7 +103,7 @@ echo ADMITTED
 describe('operator authority predecessor compatibility admission', () => {
   it('admits only the specifically qualified pre-store predecessor', () => {
     expect(
-      predecessorAdmission('aab0f1e59275489204ea2a141b66f41902177258', '<no value>').status
+      predecessorAdmission('f59e0a36a08b756d23b47976cd31ecca8f8d28a3', '<no value>').status
     ).toBe(0);
   });
   it('keeps historical evidence separate from the active native-qualified profile', () => {
@@ -113,12 +113,12 @@ describe('operator authority predecessor compatibility admission', () => {
     const historical = JSON.parse(
       readFileSync(`${root}/server/scripts/operator-hold-predecessor-a29-profile.json`, 'utf8')
     );
-    expect(current.releaseSha).toBe('aab0f1e59275489204ea2a141b66f41902177258');
+    expect(current.releaseSha).toBe('f59e0a36a08b756d23b47976cd31ecca8f8d28a3');
     expect(current.imageId).toBe(
-      'sha256:f62b1dc8e868925c3da1672333335acdd1cc148ed918ec51bed3ce9bd53a2be0'
+      'sha256:c41d0aaaeb47cd855392de3194c214608791091a755c2881bfcdefd1538ae883'
     );
     expect(current.provenance.sourceSha256).toBe(
-      'a70efd44c96da69106b1b08cf92bfa9bba294da38f03b73bafe79ede3c5ba6b0'
+      'b4439781767d043f584a1b758ffecf8efaa034e7fd8ff68c0f83d2f87fdf4e86'
     );
     expect(current.runtimeNode).toBe('v22.23.2');
     const gameServer = current.compiled.find(
@@ -126,8 +126,8 @@ describe('operator authority predecessor compatibility admission', () => {
     );
     expect(gameServer).toEqual({
       path: '/app/dist/GameServer.js',
-      bytes: 597028,
-      sha256: '5ccf918731237b6ad813217a67f46b2833aaf3dd0c68feace79c632644683c90',
+      bytes: 597317,
+      sha256: '49bb0f228bc0c7f5b5616029bab4369d82e1c0eadfe73ef2a2342d92c089972b',
     });
     expect(
       current.compiled.filter((row: { path: string }) => row.path !== '/app/dist/GameServer.js')
@@ -143,6 +143,9 @@ describe('operator authority predecessor compatibility admission', () => {
     expect(current.provenance.scope).toContain('not_boot_or_handoff_qualification');
   });
   it('refuses historical pre-store identities instead of broadening the active profile', () => {
+    expect(
+      predecessorAdmission('aab0f1e59275489204ea2a141b66f41902177258', '<no value>').status
+    ).not.toBe(0);
     expect(
       predecessorAdmission('4fadb520bbf0dc1dbe346dd3447bb5ca72ab8efe', '<no value>').status
     ).not.toBe(0);

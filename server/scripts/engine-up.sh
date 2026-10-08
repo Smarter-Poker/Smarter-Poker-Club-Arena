@@ -180,7 +180,7 @@ docker image inspect "$AUTHORIZED_IMAGE_ID" >/dev/null 2>&1 \
 OPERATOR_HOLD_ROOT=/var/lib/club-arena/operator-hold
 OPERATOR_BOOT_ARGS=()
 OPERATOR_BOOT_COMMAND=()
-if [ "$AUTHORIZED_SHA" = aab0f1e59275489204ea2a141b66f41902177258 ] && { [ -e "$OPERATOR_HOLD_ROOT" ] || [ -L "$OPERATOR_HOLD_ROOT" ] || [ -e /var/lib/club-arena/operator-hold-required ] || [ -L /var/lib/club-arena/operator-hold-required ]; }; then
+if [ "$AUTHORIZED_SHA" = f59e0a36a08b756d23b47976cd31ecca8f8d28a3 ] && { [ -e "$OPERATOR_HOLD_ROOT" ] || [ -L "$OPERATOR_HOLD_ROOT" ] || [ -e /var/lib/club-arena/operator-hold-required ] || [ -L /var/lib/club-arena/operator-hold-required ]; }; then
   python3 - "$OPERATOR_HOLD_ROOT" "$AUTHORIZED_IMAGE_ID" "$AUTHORIZED_SHA" "$CONTROL_DIR" <<'OPERATOR_BOOT_PREFLIGHT'
 import json,os,pathlib,stat,sys
 root=pathlib.Path(sys.argv[1]); image=sys.argv[2]; source=sys.argv[3]; control=pathlib.Path(sys.argv[4])
@@ -195,7 +195,7 @@ for name in ['intent','handoff.json','restart-fence.json','operator-hold-predece
 h=json.loads((root/'handoff.json').read_text());p=json.loads((root/'operator-hold-predecessor-profile.json').read_text())
 r=json.loads((root/'restart-fence.json').read_text())
 if r.get('kind')!='operator_restart_fence_v1' or r.get('handoffId')!=required.get('handoffId') or r.get('container')!=required.get('container') or r.get('source')!=required.get('source') or r.get('autohealPolicy') not in ['always','unless-stopped','no']: raise SystemExit('original restart fence identity mismatch')
-expected='aab0f1e59275489204ea2a141b66f41902177258'
+expected='f59e0a36a08b756d23b47976cd31ecca8f8d28a3'
 paths=['GameServer.js','engine/ServerTableEngineBase.js','engine/ServerTableEngineSeating.js','engine/ServerTableEngineDealing.js','handlers/admin.js','tournament/TournamentManagerBase.js','services/tableLease.js','services/supabase/client.js','releaseIdentity.js','http/createEngineHttpServer.js','engine/ServerTableEngine.js','maintenance/MaintenanceBreak.js','maintenance/freezeState.js','services/supabase/dataActorContext.js']
 import re
 if source!=expected or h.get('sourceRelease')!=expected or p.get('releaseSha')!=expected or p.get('kind')!='operator_hold_predecessor_v1' or p.get('imageId')!=image or not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+',p.get('runtimeNode','')) or not isinstance(p.get('compiled'),list) or len(p['compiled'])!=len(paths) or any(not isinstance(row,dict) or row.get('path')!='/app/dist/'+paths[index] or not re.fullmatch(r'[0-9a-f]{64}',row.get('sha256','')) for index,row in enumerate(p['compiled'])): raise SystemExit('operator predecessor profile incomplete or not authorized')

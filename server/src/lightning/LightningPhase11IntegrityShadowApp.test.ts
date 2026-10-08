@@ -38,8 +38,12 @@ const { LightningMetrics } = await import('./LightningMetrics.js');
 const { LightningTelemetry } = await import('./LightningTelemetry.js');
 const { LightningIntegrityWindow, LIGHTNING_INTEGRITY_FAST_MS } =
   await import('./LightningIntegrity.js');
-const { LightningShadowRunner, LIGHTNING_SHADOW_RPC_RETRY_MS, scoreLightningDecision } =
-  await import('./LightningShadowRunner.js');
+const {
+  LightningShadowRunner,
+  LIGHTNING_SHADOW_IN_HAND_MAX_MS,
+  LIGHTNING_SHADOW_RPC_RETRY_MS,
+  scoreLightningDecision,
+} = await import('./LightningShadowRunner.js');
 const {
   LIGHTNING_MATCHER_MODELS,
   LIGHTNING_MATCHER_PARAM_DEFAULTS,
@@ -640,6 +644,30 @@ describe('scoring and config', () => {
     expect(score.btnCounts).toEqual([2]);
     expect(score.pairs).toBe(6);
     expect(score.repeatPairs).toBe(1);
+  });
+
+  it('the pool model: a formed player leaves the pool until released, or until a release was surely missed', () => {
+    const r = new LightningShadowRunner(CLUSTER, {
+      rpc: vi.fn(),
+      telemetry: new LightningTelemetry(),
+      logger: quiet,
+      now: () => new Date(0),
+    });
+    r.configure(parseLightningShadowConfig(ON));
+    const pass = (nowMs: number, groups: Array<{ players: string[]; bb: string }> = []) => ({
+      nowMs,
+      presence: { connected: POP.slice(0, 4), disconnected: [] },
+      kind: 'form' as const,
+      ok: true,
+      matcherVersion: 'm1',
+      groups,
+    });
+    r.observe(pass(1_000, [{ players: POP.slice(0, 2), bb: POP[0] }]));
+    const ids = (nowMs: number) => r.buildSnapshot(pass(nowMs)).players.map((p) => p.playerId);
+    expect(ids(2_000)).toEqual(POP.slice(2, 4));
+    r.idle(POP[0], 3_000);
+    expect(ids(4_000)).toEqual([POP[0], ...POP.slice(2, 4)]);
+    expect(ids(1_000 + LIGHTNING_SHADOW_IN_HAND_MAX_MS)).toEqual(POP.slice(0, 4));
   });
 
   it('parses the Phase 11 keys off by default and clamps them', () => {

@@ -96,6 +96,12 @@ export const LIGHTNING_SHADOW_MODEL_MAX_PLAYERS = 10_000;
 export const LIGHTNING_SHADOW_MODEL_FORGET_MS = 30 * 60_000;
 /** Recent hands the pool model keeps (P5's window is at most this). */
 export const LIGHTNING_SHADOW_MODEL_MAX_HANDS = 500;
+/**
+ * A player the model has in a hand for longer than this is taken to be free
+ * again: a release this process never heard about must not hide them from
+ * the shadow's population for good.
+ */
+export const LIGHTNING_SHADOW_IN_HAND_MAX_MS = 10 * 60_000;
 /** Samples per window per measure (waits, latency legs). */
 export const LIGHTNING_SHADOW_SAMPLE_CAP = 2_048;
 
@@ -143,6 +149,7 @@ interface ModelPlayer {
   handsSinceBb: number | null;
   positions: { btn: number; co: number; hj: number; utg: number };
   inHand: boolean;
+  inHandSinceMs: number;
   seenInHand: boolean;
   lastSeenMs: number;
 }
@@ -480,6 +487,7 @@ export class LightningShadowRunner implements LightningClusterTelemetrySink {
           handsSinceBb: null,
           positions: { btn: 0, co: 0, hj: 0, utg: 0 },
           inHand: false,
+          inHandSinceMs: 0,
           seenInHand: false,
           lastSeenMs: nowMs,
         };
@@ -487,7 +495,11 @@ export class LightningShadowRunner implements LightningClusterTelemetrySink {
       }
       m.lastSeenMs = nowMs;
       // A player this process has in a hand is not in the open pool.
-      if (m.inHand) return;
+      if (m.inHand && nowMs - m.inHandSinceMs < LIGHTNING_SHADOW_IN_HAND_MAX_MS) return;
+      if (m.inHand) {
+        m.inHand = false;
+        m.idleSinceMs = nowMs;
+      }
       players.push({
         playerId: id,
         legal: connected,
@@ -592,12 +604,14 @@ export class LightningShadowRunner implements LightningClusterTelemetrySink {
             handsSinceBb: null,
             positions: { btn: 0, co: 0, hj: 0, utg: 0 },
             inHand: false,
+            inHandSinceMs: 0,
             seenInHand: false,
             lastSeenMs: pass.nowMs,
           };
           this.model.set(id, m);
         }
         m.inHand = true;
+        m.inHandSinceMs = pass.nowMs;
         m.seenInHand = true;
         if (id === g.bb) {
           m.lastBbAtMs = pass.nowMs;

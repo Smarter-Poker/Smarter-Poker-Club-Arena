@@ -60,6 +60,10 @@ production, and both new flags default to off.
    not planned; a shadow pass over `shadow_pass_budget_ms` (50 ms by default)
    skips the next passes in proportion, at most ten.
 
+   The pool model forgets a player it has had in a hand for over ten
+   minutes (a release it never heard of must not hide them for good), and
+   players unseen for thirty minutes.
+
 5. **Integrity telemetry, engine half** (`LightningIntegrity`,
    `LightningTelemetry`, new). The hand host reports, per Cluster, the time
    from a turn being offered to the action that answered it (a pre-action
@@ -136,7 +140,7 @@ recommendation to switch.
 
 ## Tests And Checks
 
-- `LightningPhase11IntegrityShadowApp.test.ts` (19): the same seeded
+- `LightningPhase11IntegrityShadowApp.test.ts` (20): the same seeded
   scenario with the shadow on and off makes the same live calls and deals
   the same hands, and the shadow calls no writer; a throwing candidate is
   contained; one record per closed window with both versions, and one more on

@@ -33,6 +33,35 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  scoped_operator_hold_image:
+    name: Explicit private immutable engine image read
+    # Never selected by the existing scheduled read-only audit.
+    if: github.event_name == 'repository_dispatch' && github.event.action == 'audit-production-integrity' && github.event.repository.private == true && github.event.client_payload.operator_hold_image != null
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Qualify fixed export admission and refusal boundaries
+        run: python3 tests/operations/operator-image-read.test.py
+      - name: Read only the explicitly selected immutable image
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          HETZNER_HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}
+        run: python3 scripts/ci/read-scoped-operator-image.py
+      - name: Retain qualified image in this private repository briefly
+        uses: actions/upload-artifact@v4
+        with:
+          name: operator-hold-image-${{ github.run_id }}
+          path: artifacts/operator-hold-image/
+          retention-days: 1
+          if-no-files-found: error
+
   scoped_operator_hold_provenance:
     name: Explicit operator-hold runtime provenance
     # Deliberate read only; scheduled observations cannot open host transport.

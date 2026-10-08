@@ -118,7 +118,11 @@ describe('LAW: a Diamond top-up takes the table before the wallet', () => {
   });
 
   it('the engine holds a top-up while the finished hand is still settling', () => {
-    expect(ENGINE).toContain('midHand || this.hasSettlementInFlight(),');
+    // 2026-10-08: the between-hands decision is re-read once the seat boundary
+    // is owned (ADiamondSeatCreditWaitsForTheHandBeingPrepared.test.ts), so the
+    // settlement window is asked both before and after the wait.
+    expect(ENGINE).toContain('if (midHand || this.hasSettlementInFlight()) {');
+    expect(ENGINE).toContain('!!this.handController || this.hasSettlementInFlight(),');
     expect(ENGINE).toContain('if (this.handController || this.hasSettlementInFlight()) return;');
   });
 });

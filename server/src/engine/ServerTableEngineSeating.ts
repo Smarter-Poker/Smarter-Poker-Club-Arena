@@ -486,51 +486,46 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     }
     try {
       if (this.handController || this.hasSettlementInFlight()) return;
-      await this.landDiamondTopUpIntents(players);
+      const maxBuyIn = Math.floor(this.getMaxBuyIn());
+      for (const [requestId, intent] of [...this.diamondTopUpIntents]) {
+        const player = players.find((p) => p.user_id === intent.userId);
+        const stack = Number(player?.stack ?? 0);
+        if (!player || !Number.isSafeInteger(stack) || stack < 0) {
+          this.diamondTopUpIntents.delete(requestId);
+          continue;
+        }
+        const applied = Math.min(intent.amount, Math.max(0, maxBuyIn - stack));
+        if (applied < 1) {
+          this.diamondTopUpIntents.delete(requestId);
+          continue;
+        }
+        const { data, error } = await supabase.rpc('fn_poker_diamond_top_up', {
+          p_user_id: intent.userId,
+          p_table_id: this.tableId,
+          p_amount: applied,
+          p_expected_stack: stack,
+          p_request_id: requestId,
+        });
+        /* LIGHTNING (2026-09-25): the player's Diamonds are in a live Lightning
+           hand. Nothing was taken and the intent is still good, so it is KEPT
+           and landed on a later pass - the one refusal here that is a "not
+           now" rather than an intent that can no longer be honoured. */
+        if (error && isLightningHandInProgress(error)) continue;
+        this.diamondTopUpIntents.delete(requestId);
+        if (error) {
+          reportError(error, `ServerTableEngine.${this.tableId}.diamond_intent_failed`, {
+            userId: intent.userId,
+            amount: applied,
+            requestId,
+          });
+          continue;
+        }
+        const written = Number((data as { stack?: number } | null)?.stack);
+        player.stack = Number.isSafeInteger(written) ? written : stack + applied;
+        this.broadcastCurrentState();
+      }
     } finally {
       releaseSeatBoundary();
-    }
-  }
-
-  /** Land the queued Diamond intents; the caller owns the seat boundary. */
-  private async landDiamondTopUpIntents(players: SeatedPlayer[]): Promise<void> {
-    const maxBuyIn = Math.floor(this.getMaxBuyIn());
-    for (const [requestId, intent] of [...this.diamondTopUpIntents]) {
-      const player = players.find((p) => p.user_id === intent.userId);
-      const stack = Number(player?.stack ?? 0);
-      if (!player || !Number.isSafeInteger(stack) || stack < 0) {
-        this.diamondTopUpIntents.delete(requestId);
-        continue;
-      }
-      const applied = Math.min(intent.amount, Math.max(0, maxBuyIn - stack));
-      if (applied < 1) {
-        this.diamondTopUpIntents.delete(requestId);
-        continue;
-      }
-      const { data, error } = await supabase.rpc('fn_poker_diamond_top_up', {
-        p_user_id: intent.userId,
-        p_table_id: this.tableId,
-        p_amount: applied,
-        p_expected_stack: stack,
-        p_request_id: requestId,
-      });
-      /* LIGHTNING (2026-09-25): the player's Diamonds are in a live Lightning
-         hand. Nothing was taken and the intent is still good, so it is KEPT
-         and landed on a later pass - the one refusal here that is a "not
-         now" rather than an intent that can no longer be honoured. */
-      if (error && isLightningHandInProgress(error)) continue;
-      this.diamondTopUpIntents.delete(requestId);
-      if (error) {
-        reportError(error, `ServerTableEngine.${this.tableId}.diamond_intent_failed`, {
-          userId: intent.userId,
-          amount: applied,
-          requestId,
-        });
-        continue;
-      }
-      const written = Number((data as { stack?: number } | null)?.stack);
-      player.stack = Number.isSafeInteger(written) ? written : stack + applied;
-      this.broadcastCurrentState();
     }
   }
 

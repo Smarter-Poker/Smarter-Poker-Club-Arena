@@ -1,0 +1,142 @@
+{
+  "flh": {
+    "seeds": [12102203],
+    "pairs": 45360,
+    "meanBbPer100": 0.538,
+    "confidence99BbPer100": [-0.982, 2.058],
+    "profiles": {
+      "p12c-flh-6max-1000bb": {
+        "pairs": 6480,
+        "meanBbPer100": -0.12
+      },
+      "p12c-flh-6max-100bb": {
+        "pairs": 6480,
+        "meanBbPer100": -0.409
+      },
+      "p12c-flh-6max-200bb": {
+        "pairs": 6480,
+        "meanBbPer100": -0.202
+      },
+      "p12c-flh-6max-2dealt-100bb": {
+        "pairs": 6480,
+        "meanBbPer100": 7.354
+      },
+      "p12c-flh-6max-40bb": {
+        "pairs": 6480,
+        "meanBbPer100": -0.018
+      },
+      "p12c-flh-6max-4dealt-100bb": {
+        "pairs": 6480,
+        "meanBbPer100": -2.859
+      },
+      "p12c-flh-9max-100bb": {
+        "pairs": 6480,
+        "meanBbPer100": 0.017
+      }
+    },
+    "attribution": [
+      {
+        "key": "round3_open_wider",
+        "n": 3935,
+        "contributionBbPer100": -0.684,
+        "halfWidth99BbPer100": 1.263
+      },
+      {
+        "key": "round3_defend_wider",
+        "n": 93,
+        "contributionBbPer100": 0.056,
+        "halfWidth99BbPer100": 0.179
+      },
+      {
+        "key": "round3_open_tightened",
+        "n": 1257,
+        "contributionBbPer100": 1.166,
+        "halfWidth99BbPer100": 0.822
+      }
+    ]
+  },
+  "flo8": {
+    "seeds": [12102203],
+    "pairs": 20160,
+    "meanBbPer100": 0.956,
+    "confidence99BbPer100": [-0.498, 2.41],
+    "profiles": {
+      "p12c-flo8-6max-1000bb": {
+        "pairs": 2880,
+        "meanBbPer100": 0.172
+      },
+      "p12c-flo8-6max-100bb": {
+        "pairs": 2880,
+        "meanBbPer100": 0.626
+      },
+      "p12c-flo8-6max-200bb": {
+        "pairs": 2880,
+        "meanBbPer100": 0.224
+      },
+      "p12c-flo8-6max-2dealt-100bb": {
+        "pairs": 2880,
+        "meanBbPer100": 2.349
+      },
+      "p12c-flo8-6max-40bb": {
+        "pairs": 2880,
+        "meanBbPer100": 1.701
+      },
+      "p12c-flo8-6max-4dealt-100bb": {
+        "pairs": 2880,
+        "meanBbPer100": 1.681
+      },
+      "p12c-flo8-8max-100bb": {
+        "pairs": 2880,
+        "meanBbPer100": -0.062
+      }
+    },
+    "attribution": [
+      {
+        "key": "round3_open_tightened",
+        "n": 451,
+        "contributionBbPer100": 0.028,
+        "halfWidth99BbPer100": 1.174
+      },
+      {
+        "key": "round3_defend_wider",
+        "n": 6,
+        "contributionBbPer100": 0.043,
+        "halfWidth99BbPer100": 0.03
+      },
+      {
+        "key": "round3_open_wider",
+        "n": 389,
+        "contributionBbPer100": 0.886,
+        "halfWidth99BbPer100": 0.848
+      }
+    ]
+  },
+  "config": {
+    "flh": {
+      "tighten": {
+        "cutoff": 0
+      },
+      "tightenMinDealt": 3,
+      "defendWider": {
+        "offset": -0.15
+      },
+      "openWider": {
+        "positions": ["button", "cutoff", "small_blind"],
+        "offset": -0.2
+      }
+    },
+    "flo8": {
+      "tighten": {
+        "cutoff": 0
+      },
+      "tightenMinDealt": 3,
+      "defendWider": {
+        "offset": -0.15
+      },
+      "openWider": {
+        "positions": ["button", "cutoff", "small_blind"],
+        "offset": -0.2
+      }
+    }
+  }
+}

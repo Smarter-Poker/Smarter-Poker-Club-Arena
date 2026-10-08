@@ -74,6 +74,13 @@ export function jointCallProbability(input: {
   );
 }
 
+/** A bet, a raise or a full all-in, as the controller records a street's
+ * wagers (an all-in that only calls carries no isFullRaise). */
+export const isJointWager = (a: { action: string; isFullRaise?: boolean }) =>
+  a.action === 'bet' ||
+  a.action === 'raise' ||
+  (a.action === 'all_in' && a.isFullRaise !== undefined);
+
 /** Deterministic per-sample response draw. Local to the analysis; the
  * baseline strategy's random stream is never read or advanced. */
 export function jointResponseDraw(index: number, id: string) {

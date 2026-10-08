@@ -44,16 +44,21 @@ export type Plo4NodeRole =
  * sample) the cause of every measured loss: they fold heads-up hands the
  * reference plays profitably, open smaller than the reference, and call or
  * raise where the sampled equity overstates the hand against a betting range.
- * The only actions that beat the reference on every Omaha variant are
- * heads-up ones, and each is standard heads-up practice: open the button
- * instead of folding it, three-bet the big blind instead of folding it, and
- * bet in position when checked to on the turn or river instead of checking
- * behind.
+ * The actions that beat the reference on every Omaha variant, against the
+ * horse population AND the human-calibrated table
+ * (docs/horse-brain-winning-contract-2026-10-08.md), are heads-up and standard
+ * practice: open the button instead of folding it, and bet in position when
+ * checked to on the turn or river instead of checking behind.
+ *
+ * v2 removed v1's big-blind three-bet of a reference fold. It won only
+ * because the reference horse over-folds to three-bets; at the human-calibrated
+ * table it lost 5.1 to 6.1 BB every time it fired, on every variant
+ * (development seeds, 99% intervals below zero). A rule that wins only against
+ * other horses wins nothing a horse can be paid.
  */
 export const OMAHA_REFERENCE_DEVIATIONS = Object.freeze({
-  version: 'omaha-reference-deviations-v1',
+  version: 'omaha-reference-deviations-v2',
   headsUpButtonOpen: true,
-  headsUpBigBlindThreeBet: true,
   headsUpPositionStab: Object.freeze(['turn', 'river'] as const),
 });
 export type OmahaReferenceDeviationRules = typeof OMAHA_REFERENCE_DEVIATIONS;
@@ -63,7 +68,7 @@ export type OmahaReferenceDeviationRules = typeof OMAHA_REFERENCE_DEVIATIONS;
  * round 3 the live policy no longer consults its preflop atlas below: decisions
  * are the reference's, with OMAHA_REFERENCE_DEVIATIONS applied. */
 export const PLO4_POLICY_PACK = Object.freeze({
-  version: 'plo4-policy-round3-v1',
+  version: 'plo4-policy-round3-v2',
   deviations: OMAHA_REFERENCE_DEVIATIONS,
   source: 'explicit_heuristic_baseline' as const,
   calibratedConfidence: null,

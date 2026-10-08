@@ -121,6 +121,7 @@ import type {
   LightningSettleResult,
 } from './LightningHandBackend.js';
 import { lightningMetrics, type LightningMetrics } from './LightningMetrics.js';
+import { lightningTelemetry, type LightningTelemetry } from './LightningTelemetry.js';
 import type { LightningDecision } from './LightningRegistry.js';
 import type { LightningWorkerLogger } from './LightningClusterWorker.js';
 import { settleLightningJackpot, type LightningJackpotDeps } from './LightningJackpot.js';
@@ -301,6 +302,12 @@ export interface LightningHandHostDeps {
   dealWindowMs: number;
   timeBanks: LightningTimeBankLedger;
   metrics?: LightningMetrics;
+  /**
+   * LIGHTNING PHASE 11: decision timing for the integrity telemetry (the
+   * process-wide intake otherwise; it records nothing for a Cluster whose
+   * telemetry is off). Timing only - never a card, an amount or an action.
+   */
+  telemetry?: LightningTelemetry;
   logger?: LightningWorkerLogger;
   /** Injected for tests; one per host otherwise. */
   timer?: PreciseActionTimer;
@@ -433,6 +440,7 @@ export class LightningHandHost {
   /** Pre-actions, bound to THIS hand: a new hand is a new host, with none. */
   private readonly preActions = new PreActionEngine();
   private readonly metrics: LightningMetrics;
+  private readonly telemetry: LightningTelemetry;
   private readonly logger: LightningWorkerLogger;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly now: () => number;
@@ -452,6 +460,7 @@ export class LightningHandHost {
     this.timeBank = new TimeBankEngine(this.timer, (e) => this.onTimeBankEvent(e));
     this.disconnect = new DisconnectEngine(this.timer);
     this.metrics = deps.metrics ?? lightningMetrics;
+    this.telemetry = deps.telemetry ?? lightningTelemetry;
     this.logger = deps.logger ?? defaultLogger;
     this.now = deps.now ?? Date.now;
     this.sleep =
@@ -557,11 +566,21 @@ export class LightningHandHost {
       this.state = 'dealing';
       this.deps.onDealing?.(this);
       this.startedAtMs = this.now();
-      this.metrics.observeLatency('match_to_hand', this.startedAtMs - this.formed.formedAtMs);
+      this.metrics.observeLatency(
+        'match_to_hand',
+        this.startedAtMs - this.formed.formedAtMs,
+        this.clusterId
+      );
       this.keepaliveTimer = setInterval(() => void this.keepalive(), this.deps.keepaliveIntervalMs);
       (this.keepaliveTimer as { unref?: () => void }).unref?.();
       this.hc.start();
-      this.metrics.noteDealt([...this.participants.keys()], this.now());
+      this.metrics.noteDealt([...this.participants.keys()], this.now(), this.clusterId);
+      this.telemetry.handDealt(
+        this.clusterId,
+        this.handId,
+        [...this.participants.keys()],
+        this.now()
+      );
       // Hole cards went to their owners synchronously at CARDS_DEALT; the
       // durable row the client re-reads goes in one batch, as the engine does.
       const rows = [...this.holeCards].map(([userId, h]) => ({
@@ -1290,6 +1309,7 @@ export class LightningHandHost {
     if (this.decisionOpenFor === userId) this.retractDecision('timed_out');
     const auth = this.hc.getAuthoritativeActionState(userId);
     this.disconnect.recordConnectedTimeout(this.timerKey, userId);
+    this.telemetry.timeout(this.clusterId, this.handId, userId, this.now());
     if (auth?.legalActions.includes('check'))
       this.applyAction(userId, 'check', undefined, 'unknown');
     else this.applyAction(userId, 'fold', undefined, 'unknown', 'normal');
@@ -1534,7 +1554,8 @@ export class LightningHandHost {
     const normalized = String(action ?? '').toLowerCase();
     if (normalized === 'fast_fold' || normalized === 'fold_watch') {
       const out = this.requestFold(userId, normalized === 'fast_fold' ? 'fast' : 'fold_watch');
-      if (out.success) this.metrics.observeLatency('fold_ack', this.now() - receivedAt);
+      if (out.success)
+        this.metrics.observeLatency('fold_ack', this.now() - receivedAt, this.clusterId);
       return out;
     }
     if (!this.watching.has(userId)) return { success: false, error: 'You have left this hand' };
@@ -1618,6 +1639,17 @@ export class LightningHandHost {
     }
     if (a === 'call') amount = toCall;
     if (a === 'fold' && foldType) this.foldTypes.set(userId, foldType);
+    // LIGHTNING PHASE 11: the decision's latency, read before the action can
+    // move the turn. A pre-action is queued ahead (no decision time) and a
+    // timeout is recorded as one (timeoutAct); every other actor - human or
+    // horse alike, never asked which - is timed the same way.
+    const decisionMs =
+      origin !== 'pre_action' &&
+      origin !== 'unknown' &&
+      this.turnUser === userId &&
+      this.turnStartMs > 0
+        ? this.now() - this.turnStartMs
+        : null;
     this.actionLock = true;
     let ok = false;
     try {
@@ -1642,6 +1674,8 @@ export class LightningHandHost {
       }
       return { success: false, error: 'Action rejected by engine', code: 'INVALID_ACTION' };
     }
+    if (decisionMs !== null)
+      this.telemetry.decision(this.clusterId, this.handId, userId, decisionMs, this.now());
     if (this.decisionOpenFor === userId) this.retractDecision(a === 'fold' ? 'folded' : 'acted');
     return { success: true };
   }
@@ -1685,8 +1719,8 @@ export class LightningHandHost {
         if (!out?.ok) return;
         this.metrics.recordFold(type);
         if (type !== 'fold_watch') {
-          this.metrics.observeLatency('ack_to_idle_pool', this.now() - ackAt);
-          this.metrics.noteIdle(userId, this.now(), type);
+          this.metrics.observeLatency('ack_to_idle_pool', this.now() - ackAt, this.clusterId);
+          this.metrics.noteIdle(userId, this.now(), type, this.clusterId);
           this.deps.onPlayerReleased?.(userId, type);
         }
       })
@@ -2123,11 +2157,13 @@ export class LightningHandHost {
       this.metrics.noteIdle(
         p.playerId,
         this.now(),
-        type === 'fold_watch' ? 'fold_watch' : 'hand_end'
+        type === 'fold_watch' ? 'fold_watch' : 'hand_end',
+        this.clusterId
       );
       this.deps.onPlayerReleased?.(p.playerId, why);
     }
     this.watching.clear();
+    this.telemetry.handEnded(this.clusterId, this.handId, this.now());
     this.resolveFinished();
     this.deps.onFinished?.(this);
   }

@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 194113,
-      "sha256": "e1271bf30e6da219cda3f9e13201db3715b1739443f8394a0eda392cd486b2b7"
+      "bytes": 194365,
+      "sha256": "90bc176749bbd10e532b62eab1561a84aaf676ec1a403b37d0f5cdaca7ca4628"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1763,6 +1763,28 @@
     "previousWorkflowPin": {
       "bytes": 191463,
       "sha256": "e0e545fb9a0426b0645e42ff1bfd1c6fd10fb1816215686627e4b69f4b0a1d09"
+    }
+  },
+  "leaderboardNativeRoutineBatch20261008": {
+    "reason": "Add actual pinned native stock-parity and full-catalog fixture to required Accounting4 before source access. All cash inputs, assertions, historical pins and SOURCE_ONLY_UNRUN status remain unchanged. Fingerprint refresh is not runtime financial qualification.",
+    "previousWorkflowPin": {
+      "bytes": 193493,
+      "sha256": "2d4d815a02258d735977ec1aa478443781981f19f52f69b517d870d069c5123e"
+    }
+  },
+  "leaderboardNativeRoutineBatchMainIntegration20261008": {
+    "reason": "Preserve both the reviewed native metadata fixture on shard4 and protected-main Lightning phase9 remediation on shard1. Resolve only the combined CI source fingerprint; all financial inputs, assertions and SOURCE_ONLY_UNRUN status preserved. This is source integrity, not runtime financial qualification.",
+    "previousBranchWorkflowPin": {
+      "bytes": 193745,
+      "sha256": "1c6485e9c11199c4d0bb454551a9fd5bbe95c004f63f8151e860cd51d19f18e0"
+    },
+    "protectedMainWorkflowPin": {
+      "bytes": 193808,
+      "sha256": "78a89d9ae242fbffa6c0d28fde75b470234680c15917b317b0233748e5d6b5db"
+    },
+    "combinedWorkflowPin": {
+      "bytes": 194060,
+      "sha256": "e83e7c74448545adca5677a5f2646df3a956ae43651d1feb948c35dcdab3c592"
     }
   }
 }

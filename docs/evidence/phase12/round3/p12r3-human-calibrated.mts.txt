@@ -1,0 +1,113 @@
+/**
+ * Phase 12 round 3 diagnostic (development seeds only, never committed as a
+ * gate). Plays the P12.2 paired league for one development (profile, seed,
+ * pair range) and attributes each pair's candidate-minus-reference net to the
+ * hero's FIRST applied candidate decision (the divergence node): street,
+ * position, role, reason and reference -> candidate action.
+ *
+ *   node --import tsx diag.ts --variant=V --profile=P --seed=S --first=N --pairs=N --out=FILE
+ */
+process.env.EQUITY_GOVERNOR = 'off';
+process.env.SUPABASE_URL = 'https://supabase.invalid';
+process.env.SUPABASE_SERVICE_ROLE_KEY = 'phase12-diagnostic-offline-placeholder';
+const { writeFileSync } = await import('node:fs');
+(globalThis as Record<string, unknown>).__p12r3 = JSON.parse(process.env.P12R3 ?? '{}');
+const { HorseLogic } = await import('./src/engine/HorseLogic.js');
+const { playPlo4PolicyHand, plo4LeagueSeating, withHumanCalibratedOpponents } = await import(
+  './src/benchmark/Plo4PolicyLeague.js'
+);
+const { isHumanCalibratedHoldoutSeed } = await import('./src/benchmark/HumanCalibratedPopulation.js');
+const { remainingVariantStrengthLeagueProfile } = await import(
+  './src/benchmark/RemainingVariantStrengthLeague.js'
+);
+const { isRemainingVariantHoldoutSeed } = await import(
+  './src/benchmark/RemainingVariantStrengthContract.js'
+);
+const { isOmahaVariantHoldoutSeed } = await import(
+  './src/benchmark/OmahaVariantStrengthContract.js'
+);
+const { isPlo4HoldoutSeed } = await import('./src/benchmark/Plo4StrengthContract.js');
+const { isJointHoldoutSeed } = await import('./src/benchmark/JointStrengthContract.js');
+
+const arg = (k: string) => process.argv.find((a) => a.startsWith(`--${k}=`))?.split('=')[1];
+const variant = arg('variant') as 'short_deck' | 'pineapple' | 'flh' | 'flo8';
+const profileId = arg('profile')!;
+const seed = Number(arg('seed'));
+const first = Number(arg('first') ?? 0);
+const pairs = Number(arg('pairs') ?? 1000);
+const out = arg('out')!;
+if (
+  isRemainingVariantHoldoutSeed(seed) ||
+  isOmahaVariantHoldoutSeed(seed) ||
+  isPlo4HoldoutSeed(seed) ||
+  isJointHoldoutSeed(seed) ||
+  isHumanCalibratedHoldoutSeed(seed)
+)
+  throw new Error('development seeds only');
+const base = remainingVariantStrengthLeagueProfile(variant, profileId);
+const profile = process.env.HC === '0' ? base : withHumanCalibratedOpponents(base);
+
+type Node = Record<string, unknown> | null;
+let capture: { first: Node; all: number } = { first: null, all: 0 };
+const original = HorseLogic.decide.bind(HorseLogic);
+(HorseLogic as unknown as { decide: typeof HorseLogic.decide }).decide = (
+  player,
+  gs,
+  style,
+  mods,
+  opts
+) => {
+  const d = original(player, gs, style, mods, opts);
+  const r = (d as { remainingVariantPolicy?: Record<string, unknown> }).remainingVariantPolicy;
+  if (opts?.phase12Remaining === 'candidate' && r?.applied) {
+    capture.all++;
+    if (!capture.first) {
+      const eq = r.equity as { equity?: number } | null;
+      capture.first = {
+        street: r.street,
+        position: r.position,
+        role: r.role,
+        reason: r.reason,
+        ref: `${r.baselineAction}${r.baselineAmount != null ? ':' + r.baselineAmount : ''}`,
+        cand: `${r.proposalAction}${r.proposalAmount != null ? ':' + r.proposalAmount : ''}`,
+        equity: eq?.equity ?? null,
+        price: r.callPrice ?? null,
+        depthBB: r.depthBB,
+        quality:
+          (r.inputs as { approximation?: { handShape?: { score?: number } } } | null)?.approximation
+            ?.handShape?.score ?? null,
+        opps: (r.inputs as { census?: { contestingOpponentSeats?: number[] } } | null)?.census
+          ?.contestingOpponentSeats?.length,
+        cards: player.cards.map((c) => c.rank + c.suit[0]).join(''),
+        board: gs.communityCards.map((c) => c.rank + c.suit[0]).join(''),
+        toCall: Math.max(0, gs.currentBet - player.bet),
+        pot: gs.pot,
+      };
+    }
+  }
+  return d;
+};
+
+const rows: unknown[] = [];
+let total = 0;
+let cand = 0, candSq = 0, ref = 0, refSq = 0;
+for (let k = 0; k < pairs; k++) {
+  const i = first + k;
+  const dealSeed = (seed ^ Math.imul(i + 1, 2654435761)) >>> 0 || 1;
+  const { heroSeat, button, relativePosition } = plo4LeagueSeating(i, profile.seats);
+  capture = { first: null, all: 0 };
+  const c = await playPlo4PolicyHand(profile, dealSeed, button, heroSeat, 'candidate', () => true, true);
+  const node = capture.first;
+  const applied = capture.all;
+  const r = await playPlo4PolicyHand(profile, dealSeed, button, heroSeat, 'off', () => true, true);
+  if (!c.complete || !r.complete) throw new Error('incomplete hand');
+  const diff = Math.round(c.net[heroSeat - 1] * 100) - Math.round(r.net[heroSeat - 1] * 100);
+  total += diff;
+  const cc = Math.round(c.net[heroSeat - 1] * 100), rc = Math.round(r.net[heroSeat - 1] * 100);
+  cand += cc; candSq += cc * cc; ref += rc; refSq += rc * rc;
+  if (node || diff !== 0) rows.push({ i, rel: relativePosition, diff, applied, node, refNet: r.net[heroSeat - 1] });
+}
+writeFileSync(out, JSON.stringify({ population: profile.opponentPopulation, variant, profileId, seed, first, pairs, totalCents: total, candidateCents: cand, candidateSqCents: candSq, referenceCents: ref, referenceSqCents: refSq, rows }));
+console.log(JSON.stringify({ variant, profileId, seed, pairs, bbPer100: (total / 100 / 2 / pairs) * 100 }));
+
+process.exit(0);

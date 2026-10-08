@@ -8,7 +8,7 @@ describe.each(['flh', 'flo8'] as const)(
   '%s policy consumes actual completion bounds',
   (variant) => {
     it.each([1, 5, 9.99, 10, 15, 19.99])(
-      'prices and executes a raise after a short opening %s',
+      'binds the completion after a short opening %s and its retained raise executes',
       (short) => {
         const spot = remainingVariantSpot(variant, 'flop', 3);
         const players = spot.state.players.map((p, i) => ({
@@ -66,10 +66,17 @@ describe.each(['flh', 'flo8'] as const)(
           })),
         })!;
         evidence.analysisMs = 0;
+        // Round 3 keeps the reference's postflop decision, so the reference
+        // here raises to the controller's own canonical amount: the opening
+        // completed to one bet when it was below half a bet, else raised by a
+        // full bet. The pack must bind exactly that geometry and its retained
+        // proposal must be the action the controller accepts.
+        const canonical = short < 10 ? 20 : short + 20;
+        expect(bounds.minRaiseTo).toBeCloseTo(canonical, 2);
         const result = evaluateRemainingVariantPolicy(
           hero,
           state,
-          { action: 'call', thinkTime: 0 },
+          { action: 'raise', amount: bounds.minRaiseTo!, thinkTime: 0 },
           evidence,
           'candidate',
           () => 0,
@@ -77,8 +84,13 @@ describe.each(['flh', 'flo8'] as const)(
           false
         );
         expect(result.receipt.fired, result.receipt.reason).toBe(true);
+        expect(result.receipt.reason).toBe('round3_reference_retained');
+        const fixed = result.receipt.inputs!.geometry.fixedLimit!;
+        expect(fixed.canonicalWagerTo).toBeCloseTo(canonical, 2);
+        expect(fixed.completionIncrement).toBeCloseTo(canonical - state.currentBet, 2);
+        expect(fixed.completion).toBe(short < 10);
         expect(result.proposal.action).toBe('raise');
-        expect(result.proposal.amount).toBeCloseTo(short < 10 ? 20 : short + 20, 2);
+        expect(result.proposal.amount).toBeCloseTo(canonical, 2);
         expect(hc.performAction(3, result.proposal.action, result.proposal.amount)).toBe(true);
       }
     );

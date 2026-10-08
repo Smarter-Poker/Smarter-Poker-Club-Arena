@@ -24,6 +24,17 @@ const STALE_ACCOUNT_LIMIT = 20;
 const FRESH_SCHEDULE_CLAIM_RETRY_DELAYS_MS = Object.freeze([
   2_000, 4_000, 8_000, 16_000, 30_000, 60_000, 120_000, 90_000,
 ]);
+/**
+ * A brand-new fixture is still being seeded for this long after its club row
+ * is written: the daily MTT schedule spawns three days ahead and the Spin and
+ * Sit & Go board opens its first games. A lineage refusal inside that window
+ * is the door seeing a spawn mid-write, and it is retried on the same bounded
+ * schedule as a fresh claim. Production run 37791369175: refused at 14:20:51
+ * with the third spawn materialized at 14:20:50.78; by the time the claim was
+ * re-read every spawn had a tournament, so the refusal was taken as final and
+ * the fixture leaked. Thirty minutes later the same door retired it pristine.
+ */
+export const FIXTURE_SEEDING_WINDOW_MS = 10 * 60_000;
 // The exact names the guarded certification-retirement coordinator accepts.
 // re-checks them, but this side refuses first so an unrecognized club is never
 // even offered to it.
@@ -679,6 +690,16 @@ export async function retireCertificationClubWithRetry({
       )
     );
   };
+  const fixtureIsStillSeeding = async () => {
+    const rows = await serviceRequest(
+      configuration,
+      `/rest/v1/clubs?id=eq.${encodeURIComponent(clubId)}&select=created_at&limit=1`,
+      {},
+      fetchImpl
+    );
+    const createdAt = Array.isArray(rows) ? Date.parse(rows[0]?.created_at ?? '') : NaN;
+    return Number.isFinite(createdAt) && Date.now() - createdAt < FIXTURE_SEEDING_WINDOW_MS;
+  };
   let result;
   let freshClaimAttempt = 0;
   try {
@@ -697,7 +718,7 @@ export async function retireCertificationClubWithRetry({
         if (
           !freshClaimRefusal ||
           retryDelay === undefined ||
-          !(await hasFreshUnmaterializedScheduleClaim())
+          !((await hasFreshUnmaterializedScheduleClaim()) || (await fixtureIsStillSeeding()))
         ) {
           throw error;
         }

@@ -47,6 +47,26 @@ const act = (d: { action: string; amount?: number | null }) => ({
   amount: d.amount ?? null,
 });
 
+/** Round 3 changes a decision only where a wager's paired edge clears its
+ * lower bound, so each variant's wiring spot is one where the candidate
+ * acts: the street, board count and decision seed offset, found by sweeping
+ * the fixture (street river, turn, flop; one to three boards; offsets 0 to
+ * 39) for the first applied candidate. */
+const SELECTED_SPOT: Record<
+  (typeof HORSE_PHASE13_VARIANTS)[number],
+  { street: 'flop' | 'turn' | 'river'; boards: number; k: number }
+> = {
+  nlh: { street: 'turn', boards: 1, k: 2 },
+  plo4: { street: 'river', boards: 2, k: 0 },
+  plo5: { street: 'turn', boards: 2, k: 1 },
+  plo6: { street: 'turn', boards: 2, k: 6 },
+  plo8: { street: 'river', boards: 1, k: 1 },
+  flo8: { street: 'river', boards: 1, k: 4 },
+  flh: { street: 'turn', boards: 1, k: 12 },
+  pineapple: { street: 'river', boards: 1, k: 2 },
+  short_deck: { street: 'river', boards: 2, k: 10 },
+};
+
 /** One live cash decision: the real policy clock is held at 0 (wiring, not
  * latency; the live budget is tested by the policy suites), every earlier
  * phase at its live shadow default. */
@@ -54,8 +74,9 @@ function decide(
   variant: (typeof HORSE_PHASE13_VARIANTS)[number],
   phase13Joint: JointPolicyMode
 ): HorseDecision {
-  const s = jointPolicyFixture(variant, 1, 'cash', 'river');
-  seedFastRandom(10_301_204);
+  const spot = SELECTED_SPOT[variant];
+  const s = jointPolicyFixture(variant, spot.boards, 'cash', spot.street);
+  seedFastRandom(10_301_204 + spot.k);
   return structuredClone(
     HorseLogic.decide(
       s.hero,
@@ -208,7 +229,13 @@ describe('P13.3 a live joint selection at the worker boundary', () => {
       ].entries())
         expect(valid(forged), `forgery ${i}`).toBe(false);
       // The action that leaves the worker must be the selection.
-      expect(valid(backed, { ...decision, action: receipt.baselineAction })).toBe(false);
+      expect(
+        valid(backed, {
+          ...decision,
+          action: receipt.baselineAction,
+          amount: receipt.baselineAmount ?? undefined,
+        })
+      ).toBe(false);
 
       // Never on top of an applied Phase 10/11/12 candidate.
       for (const prior of ['plo4Policy', 'omahaVariantPolicy', 'remainingVariantPolicy'])

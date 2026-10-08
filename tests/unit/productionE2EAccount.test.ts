@@ -1069,6 +1069,94 @@ describe('certification-club retirement transport contract', () => {
       expect.stringContaining('reserved fixture graph diagnostic')
     );
   });
+
+  it('retries a lineage refusal while the fixture is still inside its seeding window, even with every spawn materialized (run 37791369175)', async () => {
+    const createdAt = Date.parse('2026-10-08T14:20:38.660Z');
+    vi.spyOn(Date, 'now').mockReturnValue(createdAt + 13_000);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const result = { success: true, chips_retired: 100000 };
+    const refusal = Object.assign(new Error('WELCOME_CERTIFICATION_TOURNAMENT_LINEAGE_REFUSED'), {
+      code: '55000',
+    });
+    const client = (failure?: Error) => ({
+      connect: vi.fn().mockResolvedValue(undefined),
+      query: vi.fn(async (sql: string) => {
+        if (sql.includes('fn_ca_retire_welcome_certification_club')) {
+          if (failure) throw failure;
+          return { rows: [{ result }] };
+        }
+        return { rows: [] };
+      }),
+      end: vi.fn().mockResolvedValue(undefined),
+    });
+    const databaseClientFactory = vi
+      .fn()
+      .mockResolvedValueOnce(client(refusal))
+      .mockResolvedValueOnce(client());
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes('/club_welcome_package_items?')) {
+        return Response.json([{ entity_id: 'schedule-1' }]);
+      }
+      if (url.includes('/tournament_schedule_spawns?')) return Response.json([]);
+      if (url.includes('/rest/v1/clubs?') && url.includes('select=created_at')) {
+        return Response.json([{ created_at: new Date(createdAt).toISOString() }]);
+      }
+      return new Response('unexpected request', { status: 500 });
+    });
+    const wait = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      retireCertificationClubWithRetry({
+        configuration,
+        clubId,
+        reason,
+        environment: { DATABASE_URL: 'postgresql://certification.invalid/club_arena' },
+        databaseClientFactory,
+        fetchImpl: fetchMock,
+        wait,
+      })
+    ).resolves.toEqual(result);
+    expect(databaseClientFactory).toHaveBeenCalledTimes(2);
+    expect(wait.mock.calls).toEqual([[2_000]]);
+  });
+
+  it('takes a lineage refusal as final once the fixture is past its seeding window', async () => {
+    const createdAt = Date.parse('2026-10-08T14:20:38.660Z');
+    vi.spyOn(Date, 'now').mockReturnValue(createdAt + 11 * 60_000);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const refusal = Object.assign(new Error('WELCOME_CERTIFICATION_TOURNAMENT_LINEAGE_REFUSED'), {
+      code: '55000',
+    });
+    const databaseClientFactory = vi.fn().mockResolvedValue({
+      connect: vi.fn().mockResolvedValue(undefined),
+      query: vi.fn(async (sql: string) => {
+        if (sql.includes('fn_ca_retire_welcome_certification_club')) throw refusal;
+        return { rows: [] };
+      }),
+      end: vi.fn().mockResolvedValue(undefined),
+    });
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes('/rest/v1/clubs?') && url.includes('select=created_at')) {
+        return Response.json([{ created_at: new Date(createdAt).toISOString() }]);
+      }
+      return Response.json([]);
+    });
+    const wait = vi.fn();
+    await expect(
+      retireCertificationClubWithRetry({
+        configuration,
+        clubId,
+        reason,
+        environment: { DATABASE_URL: 'postgresql://certification.invalid/club_arena' },
+        databaseClientFactory,
+        fetchImpl: fetchMock,
+        wait,
+      })
+    ).rejects.toBe(refusal);
+    expect(wait).not.toHaveBeenCalled();
+  });
 });
 
 describe('a certification fixture that leaked must not wedge the next certificate (2026-09-28)', () => {

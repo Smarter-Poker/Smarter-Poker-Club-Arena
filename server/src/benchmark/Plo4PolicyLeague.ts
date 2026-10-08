@@ -5,7 +5,22 @@ import {
   remainingVariantSeatCap,
   type RemainingPolicyVariant,
 } from '../engine/remainingVariants/RemainingVariantPolicyPack.js';
-import type { Card, HandConfig, HandEvent, HorseStyle, SeatPlayer } from '../types.js';
+import type {
+  Card,
+  HandConfig,
+  HandEvent,
+  HorseDecision,
+  HorseStyle,
+  SeatPlayer,
+} from '../types.js';
+import {
+  HUMAN_CALIBRATED_POPULATION_ID,
+  HUMAN_CALIBRATED_STRENGTH_BINS,
+  humanCalibratedDecide,
+  humanCalibratedFamily,
+  type HumanCalibratedProfile,
+  type HumanCalibratedSpot,
+} from './HumanCalibratedPopulation.js';
 import { HandController } from '../engine/HandController.js';
 import { HorseLogic, type HorseGameStateV2 } from '../engine/HorseLogic.js';
 import { HorseMind } from '../engine/HorseMind.js';
@@ -87,6 +102,13 @@ export interface Plo4LeagueProfile {
    * decision clock omahaVariantMoodClockMs(dealSeed). Absent (every PLO4 and
    * earlier profile): mood off at decisionTimeMs 0, exactly as before. */
   moodClock?: 'deal_seed_time_of_day';
+  /** WIN-POP 2026-10-08: every non-hero seat plays the human-calibrated
+   * population (HumanCalibratedPopulation.ts) instead of HorseLogic. Absent on
+   * every existing profile, which keeps the production horse population. */
+  opponentPopulation?: typeof HUMAN_CALIBRATED_POPULATION_ID;
+  /** Development fitting only (server/src/scripts/humanCalibratedFit.ts): the
+   * human-calibrated profiles to play instead of the committed ones. */
+  humanCalibratedProfiles?: readonly Readonly<HumanCalibratedProfile>[];
   bombBoards?: 1 | 2 | 3;
   asset?: 'chips' | 'diamonds';
   bbj?: boolean;
@@ -229,6 +251,13 @@ export interface Plo4HandReceipt {
   /** P13.2, joint profiles only: hero candidate proposals refused as
    * `earlier_phase_applied` (a Phase 13 candidate on an applied earlier one). */
   earlierPhaseRefusals?: number;
+  /** WIN-POP, human-calibrated profiles only: the human seats' actions by
+   * decision node (preflop/unopened, flop/facing_bet, ...), so a run can
+   * report how closely the table played the measured frequencies. */
+  humanCalibrated?: Record<string, Record<string, number>>;
+  /** WIN-POP: the human seats' strength percentiles by node, in
+   * HUMAN_CALIBRATED_STRENGTH_BINS equal bins (fitting and fidelity only). */
+  humanCalibratedStrength?: Record<string, number[]>;
 }
 export async function playPlo4PolicyHand(
   profile: Plo4LeagueProfile,
@@ -274,6 +303,7 @@ export async function playPlo4PolicyHand(
     ...(profile.jointPolicy && contractChecks
       ? { illegalCandidates: 0, earlierPhaseRefusals: 0 }
       : {}),
+    ...(profile.opponentPopulation ? { humanCalibrated: {}, humanCalibratedStrength: {} } : {}),
   };
   const players: SeatPlayer[] = Array.from({ length: profile.seats }, (_, index) => ({
     seat: index + 1,
@@ -491,38 +521,45 @@ export async function playPlo4PolicyHand(
         (seed ^ Math.imul(step + 1, 104729) ^ Math.imul(hero.seat, 1009)) >>> 0 || 1;
       seedFastRandom(actionSeed);
       assertFixedBudget();
-      const baseline = HorseMind.runInSandbox(sandbox, () =>
-        HorseLogic.decide(
-          hero,
-          gs,
-          profile.productionStyles
-            ? plo4StrengthSeatStyle(seed, hero.seat)
-            : hero.seat === heroSeat
-              ? 'balanced'
-              : profile.opponentStyle,
-          {},
-          {
-            mind: true,
-            telemetry: false,
-            decisionTimeMs: profile.moodClock ? omahaVariantMoodClockMs(seed) : 0,
-            v9Mood: Boolean(profile.moodClock),
-            phase8Postflop: 'off',
-            phase10Plo4:
-              !profile.jointPolicy && !profile.variant && hero.seat === heroSeat ? mode : 'off',
-            phase10EvidenceMode: true,
-            phase11Omaha:
-              !profile.jointPolicy && profile.variant && !remainingVariant && hero.seat === heroSeat
-                ? mode
-                : 'off',
-            phase11EvidenceMode: true,
-            phase12Remaining:
-              !profile.jointPolicy && remainingVariant && hero.seat === heroSeat ? mode : 'off',
-            phase12EvidenceMode: true,
-            phase13Joint: profile.jointPolicy && hero.seat === heroSeat ? mode : 'off',
-            phase13EvidenceMode: true,
-          }
-        )
-      );
+      const humanSeat =
+        profile.opponentPopulation === HUMAN_CALIBRATED_POPULATION_ID && hero.seat !== heroSeat;
+      const baseline: HorseDecision = humanSeat
+        ? humanCalibratedSeatDecision(hero, state, menu, variant, profile, receipt)
+        : HorseMind.runInSandbox(sandbox, () =>
+            HorseLogic.decide(
+              hero,
+              gs,
+              profile.productionStyles
+                ? plo4StrengthSeatStyle(seed, hero.seat)
+                : hero.seat === heroSeat
+                  ? 'balanced'
+                  : profile.opponentStyle,
+              {},
+              {
+                mind: true,
+                telemetry: false,
+                decisionTimeMs: profile.moodClock ? omahaVariantMoodClockMs(seed) : 0,
+                v9Mood: Boolean(profile.moodClock),
+                phase8Postflop: 'off',
+                phase10Plo4:
+                  !profile.jointPolicy && !profile.variant && hero.seat === heroSeat ? mode : 'off',
+                phase10EvidenceMode: true,
+                phase11Omaha:
+                  !profile.jointPolicy &&
+                  profile.variant &&
+                  !remainingVariant &&
+                  hero.seat === heroSeat
+                    ? mode
+                    : 'off',
+                phase11EvidenceMode: true,
+                phase12Remaining:
+                  !profile.jointPolicy && remainingVariant && hero.seat === heroSeat ? mode : 'off',
+                phase12EvidenceMode: true,
+                phase13Joint: profile.jointPolicy && hero.seat === heroSeat ? mode : 'off',
+                phase13EvidenceMode: true,
+              }
+            )
+          );
       const selected = baseline;
       if (gs.stage !== 'preflop') {
         const work = String(equitySampleSizeOfLastCall());
@@ -941,6 +978,70 @@ export function plo4DivergenceStreet(
     return stage as Plo4DivergenceStreet;
   }
   return 'none';
+}
+
+/** A non-hero seat's decision under the human-calibrated population, read from
+ * the same authoritative menu and public state the hero's request uses. */
+function humanCalibratedSeatDecision(
+  seat: SeatPlayer,
+  state: ReturnType<HandController['getState']>,
+  menu: NonNullable<ReturnType<HandController['getAuthoritativeActionState']>>,
+  variant: string,
+  profile: Plo4LeagueProfile,
+  receipt: Plo4HandReceipt
+): HorseDecision {
+  const spot: HumanCalibratedSpot = {
+    variant,
+    stage: state.stage,
+    cards: seat.cards,
+    board: state.communityCards,
+    pot: state.pot,
+    toCall: menu.toCall,
+    currentBet: state.currentBet,
+    aggressionThisStreet: state.actionHistory.some(
+      (a) =>
+        a.stage === state.stage &&
+        (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')
+    ),
+    legalActions: menu.legalActions,
+    minRaiseTo: menu.minRaiseTo,
+    maxRaiseTo: menu.maxRaiseTo,
+    wholeChips: profile.tournament || profile.asset === 'diamonds',
+  };
+  const override = profile.humanCalibratedProfiles?.find(
+    (p) => p.family === humanCalibratedFamily(variant)
+  );
+  const d = override ? humanCalibratedDecide(spot, override) : humanCalibratedDecide(spot);
+  const nodes = (receipt.humanCalibrated ??= {});
+  const tally = (nodes[d.node] ??= {});
+  tally[d.action] = (tally[d.action] ?? 0) + 1;
+  const bins = ((receipt.humanCalibratedStrength ??= {})[d.node] ??= Array<number>(
+    HUMAN_CALIBRATED_STRENGTH_BINS
+  ).fill(0));
+  bins[
+    Math.min(
+      HUMAN_CALIBRATED_STRENGTH_BINS - 1,
+      Math.floor(d.strength * HUMAN_CALIBRATED_STRENGTH_BINS)
+    )
+  ]++;
+  return {
+    action: d.action,
+    ...(d.amount !== undefined ? { amount: d.amount } : {}),
+    thinkTime: 0,
+  };
+}
+
+/** A league profile whose non-hero seats play the human-calibrated population.
+ * A new profile with its own id; the source profile is not changed. */
+export function withHumanCalibratedOpponents(
+  profile: Readonly<Plo4LeagueProfile>
+): Readonly<Plo4LeagueProfile> {
+  if (profile.opponentPopulation) throw new Error('Profile already names its opponent population');
+  return Object.freeze({
+    ...profile,
+    id: `${profile.id}--${HUMAN_CALIBRATED_POPULATION_ID}`,
+    opponentPopulation: HUMAN_CALIBRATED_POPULATION_ID,
+  });
 }
 
 /** A contract profile as a league profile: published pricing, production styles. */

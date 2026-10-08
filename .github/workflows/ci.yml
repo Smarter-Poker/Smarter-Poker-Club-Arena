@@ -1715,6 +1715,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase10-rg-rebuy.sh
+      - name: Lightning Phase 9 remediation answers the ended session, clamps the reaper, skips the frozen cluster and self-heals presence at the action doors
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-lightning-phase9r-remediation.sh
       - name: Credit invoices bill only uninvoiced drawn debt
         if: matrix.shard == 1
         env:

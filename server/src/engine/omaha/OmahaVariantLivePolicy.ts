@@ -22,7 +22,7 @@ import {
   plo4ButtonOffset,
   plo4CanonicalPosition,
   plo4DealerSeatIsValid,
-  plo4PreflopChoice,
+  plo4ReferenceDeviation,
   plo4Role,
   plo4SelectionOf,
   type Plo4BlindSeats,
@@ -34,7 +34,6 @@ import {
   OMAHA_VARIANT_PACKS,
   OMAHA_VARIANT_DOMAIN,
   omahaVariantHandShape,
-  omahaVariantEntryBars,
   omahaVariantSeatCap,
   type OmahaPolicyPosition,
   type OmahaPolicyRole,
@@ -1141,10 +1140,6 @@ export function evaluateOmahaVariantPolicy(
       }),
       range,
     } satisfies OmahaVariantInputBinding);
-  const passive = (): HorseDecision => ({
-    action: callCost > 0 ? 'fold' : 'check',
-    thinkTime: baseline.thinkTime,
-  });
   const call = (): HorseDecision => ({
     action: callCost > 0 ? 'call' : 'check',
     ...(callCost ? { amount: callCost } : {}),
@@ -1234,33 +1229,34 @@ export function evaluateOmahaVariantPolicy(
     if (economics.unavailable === null) out.receipt.features.push('net_action_economics');
     return out;
   };
-  if (s.stage === 'preflop') {
-    const bars = omahaVariantEntryBars(variant, {
-      position: receipt.position,
-      aggressorPosition: receipt.aggressorPosition,
-      role: receipt.role,
-      seats: seats.length,
-      depthBB: depth,
-      rakePercent: rake.percent,
-      anteBB: (s.ante ?? 0) / s.bigBlind,
-      straddle: Boolean(s.straddleActive),
-    });
-    const choice = plo4PreflopChoice(
-      shape.quality,
-      bars,
-      receipt.role,
-      callCost / s.bigBlind,
-      hero.stack / s.bigBlind
+  /** Round 3: the reference-anchored deviation (plo4ReferenceDeviation, the
+   * shared kernel) or the reference itself. A deviation is a wager or
+   * nothing: a wager the legal menu cannot hold retains the reference. */
+  const deviation = () =>
+    plo4ReferenceDeviation(
+      {
+        street: s.stage,
+        dealtSeats: seats.length,
+        liveOpponents: active.length,
+        role: receipt.role,
+        position: receipt.position,
+        baseline,
+        callCost,
+      },
+      pack.deviations
     );
-    return finish(
-      choice.reason,
-      choice.action === 'wager'
-        ? wager(choice.fraction)
-        : choice.action === 'call'
-          ? call()
-          : passive()
+  const decide = (done: typeof finish) => {
+    const chosen = deviation();
+    if (!chosen) return done('reference_retained');
+    const proposal = wager(chosen.fraction);
+    return done(
+      chosen.reason,
+      proposal.action === 'bet' || proposal.action === 'raise' || proposal.action === 'all_in'
+        ? proposal
+        : baseline
     );
-  }
+  };
+  if (s.stage === 'preflop') return decide(finish);
 
   if (!evidence && sampleWhenMissing) {
     evidence = sampleOmahaVariantEquity(
@@ -1356,20 +1352,11 @@ export function evaluateOmahaVariantPolicy(
         decisionEquityCeiling: e.decisionEquityCeiling ?? null,
         provenance: e.range ?? null,
       });
-  const ceiling = e?.decisionEquityCeiling == null ? 1 : e.decisionEquityCeiling;
-  const usableCeiling = Number.isFinite(ceiling) && ceiling >= 0 && ceiling <= 1 ? ceiling : 0;
-  const equity = e ? Math.min(e.equity, usableCeiling) : null;
-  const lower = e ? Math.min(e.confidence99[0], usableCeiling) : null;
-  const upper = e ? Math.min(e.confidence99[1], usableCeiling) : null;
   const quarterRisk = pack.splitPot && !!e && e.quarterOrLessProbability >= 0.2;
   const sixthRisk = pack.splitPot && !!e && e.sixthOrLessProbability >= 0.1;
   const lowOnly =
     pack.splitPot && facts.nutLow && !highNuts && !highStrong && (!e || e.highEquity < 0.15);
   const counterfeit = facts.counterfeitTransitions.some((t) => t.nutLowAfter === false);
-  const scoopStructure = highNuts && (!lowPossible || facts.nutLow) && !quarterRisk && !sixthRisk;
-  const pressure =
-    Math.max(0, active.length - 1) * pack.multiwayAdjustment +
-    Number(receipt.role === 'facing_raise') * pack.raiseFacingAdjustment;
   receipt.features = [
     highNuts && 'nut_high',
     highStrong && 'strong_high',
@@ -1392,64 +1379,5 @@ export function evaluateOmahaVariantPolicy(
     active.length > 1 && 'multiway',
     receipt.role === 'facing_raise' && 'raise_facing',
   ].filter(Boolean) as string[];
-  if (!callCost) {
-    if (
-      scoopStructure ||
-      (lower !== null && lower > pack.valueEquity + pressure) ||
-      (highStrong && !lowPossible && equity !== null && equity > pack.protectionEquity + pressure)
-    )
-      return finishPriced('variant_value_bet', wager(spr < 2 ? 1 : 0.66));
-    if (
-      !lowOnly &&
-      !quarterRisk &&
-      !sixthRisk &&
-      active.length === 1 &&
-      receipt.position === 'button' &&
-      (nutDraw || nutWrap) &&
-      (!pack.splitPot || shape.backupLow)
-    )
-      return finishPriced('variant_draw_pressure', wager(0.5));
-    return finishPriced(
-      lowOnly ? 'low_only_protected_check' : 'variant_protected_check',
-      passive()
-    );
-  }
-  if (upper !== null && upper < price + pressure)
-    return finishPriced('variant_price_fold', passive());
-  if (scoopStructure && (s.stage === 'river' || spr <= 2))
-    return finishPriced('variant_scoop_raise', wager(1));
-  // Low-only strength must not turn a quarter/sixth into an expensive raise.
-  // The actual combined, per-pot distribution still decides whether to call.
-  if (quarterRisk || sixthRisk || lowOnly) {
-    if (equity !== null)
-      return finishPriced(
-        equity >= price + pressure ? 'split_price_call' : 'split_price_fold',
-        equity >= price + pressure ? call() : passive()
-      );
-    if (facts.nutLow && !counterfeit && price <= 0.125 && receipt.role !== 'facing_raise')
-      return finishPriced('unmeasured_nut_low_small_call', call());
-    return finishPriced('split_equity_unavailable', passive());
-  }
-  if (
-    dominatedDraw &&
-    !highNuts &&
-    !highStrong &&
-    spr > 3 &&
-    price > 0.2 &&
-    (lower === null || lower < price + 0.08)
-  )
-    return finishPriced('variant_dominated_draw_fold', passive());
-  if (
-    lower !== null &&
-    lower > Math.max(price + pressure, pack.valueEquity + pressure) &&
-    receipt.role !== 'call_off'
-  )
-    return finishPriced('variant_value_raise', wager(0.66));
-  if (
-    (equity !== null && equity >= price + pressure) ||
-    (highNuts && !lowPossible) ||
-    (!e && !lowPossible && price <= 0.2 && (highStrong || nutDraw || nutWrap))
-  )
-    return finishPriced('variant_price_call', call());
-  return finishPriced(e ? 'variant_bluff_catcher_fold' : 'variant_uncalibrated_texture', passive());
+  return decide(finishPriced);
 }

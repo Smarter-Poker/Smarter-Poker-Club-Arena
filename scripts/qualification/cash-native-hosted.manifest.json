@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 193745,
-      "sha256": "1c6485e9c11199c4d0bb454551a9fd5bbe95c004f63f8151e860cd51d19f18e0"
+      "bytes": 194060,
+      "sha256": "e83e7c74448545adca5677a5f2646df3a956ae43651d1feb948c35dcdab3c592"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1770,6 +1770,21 @@
     "previousWorkflowPin": {
       "bytes": 193493,
       "sha256": "2d4d815a02258d735977ec1aa478443781981f19f52f69b517d870d069c5123e"
+    }
+  },
+  "leaderboardNativeRoutineBatchMainIntegration20261008": {
+    "reason": "Preserve both the reviewed native metadata fixture on shard4 and protected-main Lightning phase9 remediation on shard1. Resolve only the combined CI source fingerprint; all financial inputs, assertions and SOURCE_ONLY_UNRUN status preserved. This is source integrity, not runtime financial qualification.",
+    "previousBranchWorkflowPin": {
+      "bytes": 193745,
+      "sha256": "1c6485e9c11199c4d0bb454551a9fd5bbe95c004f63f8151e860cd51d19f18e0"
+    },
+    "protectedMainWorkflowPin": {
+      "bytes": 193808,
+      "sha256": "78a89d9ae242fbffa6c0d28fde75b470234680c15917b317b0233748e5d6b5db"
+    },
+    "combinedWorkflowPin": {
+      "bytes": 194060,
+      "sha256": "e83e7c74448545adca5677a5f2646df3a956ae43651d1feb948c35dcdab3c592"
     }
   }
 }

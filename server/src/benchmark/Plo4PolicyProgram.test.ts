@@ -17,11 +17,16 @@ function withoutClock(result: Awaited<ReturnType<typeof evaluatePlo4Policy>>) {
 describe('Phase 10 basic PLO4 policy', () => {
   it('executes independent losing-flush, royal, dominated-draw and premium-open reference spots', async () => {
     const spots = await runPlo4ReferenceSpots();
-    expect(spots.map((s) => s.receipt.selected.action)).toEqual(['fold', 'raise', 'call', 'raise']);
+    // Round 3: every spot's decision is its reference (the fixture baseline);
+    // the independent oracle still prices the losing flush at 0 and the royal
+    // at 1, and the pack still fires on every spot.
+    expect(spots.map((s) => s.receipt.selected)).toEqual(spots.map((s) => s.request.baseline));
+    expect(spots.map((s) => s.receipt.livePolicy?.reason)).toEqual(
+      Array(4).fill('reference_retained')
+    );
     expect(spots[0].receipt.equity?.confidence99).toEqual([0, 0]);
     expect(spots[1].receipt.equity?.confidence99).toEqual([1, 1]);
-    expect(spots[2].receipt.livePolicy?.fired).toBe(true);
-    expect(spots[3].receipt.proposal.amount).toBe(5);
+    expect(spots.every((s) => s.receipt.livePolicy?.fired)).toBe(true);
   });
   it('defaults to shadow, reports a proposal and preserves detached baseline values', async () => {
     const input = plo4ReferenceSpot('non_nut_flush');
@@ -29,7 +34,7 @@ describe('Phase 10 basic PLO4 policy', () => {
     const before = JSON.stringify(input);
     const result = await evaluatePlo4Policy(input);
     expect(result.mode).toBe('shadow');
-    expect(result.proposal.action).toBe('fold');
+    expect(result.proposal).toEqual(input.baseline);
     expect(result.selected).toEqual(input.baseline);
     expect(result.selected).not.toBe(input.baseline);
     expect(result.applied).toBe(false);
@@ -48,7 +53,8 @@ describe('Phase 10 basic PLO4 policy', () => {
     expect(result.equity?.refunds.opponent).toBe(10);
     expect(result.equity?.eligiblePot).toBe(60);
     expect(result.callEvInterval?.[0]).toBe(47);
-    expect(result.selected.action).toBe('call');
+    // Round 3: facing a bet the pack retains the reference action.
+    expect(result.selected).toEqual(input.baseline);
   });
   it('reflects the configured rake in terminal call value', async () => {
     const input = plo4ReferenceSpot('royal_flush');
@@ -77,7 +83,7 @@ describe('Phase 10 basic PLO4 policy', () => {
     const result = await evaluatePlo4Policy(input);
     expect(result.equity?.complete).toBe(true);
     expect(result.livePolicy?.features).toContain('multiway');
-    expect(result.selected.action).toBe('fold');
+    expect(result.selected).toEqual(input.baseline);
   });
   it.each(['preflop', 'flop', 'turn', 'river'] as const)(
     'preserves tournament utility ownership on %s',
@@ -136,10 +142,18 @@ describe('Phase 10 basic PLO4 policy', () => {
     const early = await at(4),
       button = await at(1);
     expect(early.position).toBe('early');
-    expect(early.selected.action).toBe('fold');
     expect(button.position).toBe('button');
-    expect(button.selected.action).toBe('raise');
-    expect(button.selected.amount).toBeLessThanOrEqual(7);
+    // Round 3: six-handed, the reference action is retained at every seat.
+    expect(early.selected).toEqual(early.livePolicy && plo4ReferenceSpot('premium_open').baseline);
+    expect(button.selected).toEqual(early.selected);
+    // Heads-up, a reference fold on the button opens at the minimum raise,
+    // inside the actual legal ceiling.
+    const hu = plo4ReferenceSpot('premium_open');
+    hu.hero.cards = plo4Cards('Ks Qs Jh Th');
+    hu.baseline = { action: 'fold', thinkTime: 0 };
+    hu.state.maxRaiseTo = 4;
+    const open = await evaluatePlo4Policy(hu);
+    expect(open.selected).toMatchObject({ action: 'raise', amount: 4 });
   });
   it('retains the baseline on malformed, unsupported or incomplete inputs', async () => {
     for (const [change, reason] of [
@@ -213,7 +227,8 @@ describe('Phase 10 basic PLO4 policy', () => {
     river.samples = 1;
     const price = await evaluatePlo4Policy(river);
     expect(price.equity?.guaranteedShare).toBeNull();
-    expect(price.selected.action).toBe('raise'); // exact own-card royal, independent of sampled confidence
+    // Round 3: facing a bet the reference action stands, whatever the sample.
+    expect(price.selected).toEqual(river.baseline);
     const open = plo4ReferenceSpot('premium_open');
     open.state.legalActions = ['fold', 'call'];
     open.state.minRaiseTo = open.state.maxRaiseTo = null;

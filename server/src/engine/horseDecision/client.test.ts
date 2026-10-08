@@ -18,8 +18,8 @@ import { HorsePolicyGraph, HORSE_POLICY_ORDER } from '../HorsePolicyGraph.js';
 import { HorseLogic } from '../HorseLogic.js';
 import { seedFastRandom } from '../HorseEval.js';
 import { drainFires, enableBrainTelemetry } from '../BrainTelemetry.js';
-import { plo4ReferenceSpot } from '../../benchmark/Plo4PolicyEvidence.js';
-import { omahaVariantSpot } from '../../benchmark/OmahaVariantPolicyEvidence.js';
+import { plo4Cards, plo4ReferenceSpot } from '../../benchmark/Plo4PolicyEvidence.js';
+import { omahaVariantSpot, variantCards } from '../../benchmark/OmahaVariantPolicyEvidence.js';
 import { remainingVariantSpot } from '../../benchmark/RemainingVariantPolicyEvidence.js';
 import { horseDecisionReceiptIsValid } from './responseValidation.js';
 import { jointPolicyFixture } from '../multiway/JointRangeFixture.test-support.js';
@@ -2534,7 +2534,7 @@ describe('Phase 8.3 qualified authority at the client boundary', () => {
     return { worker, client, workerAuthority };
   }
   const candidateLedger = (authority: unknown) => ({
-    version: 'horse-tournament-postflop-round1-v4',
+    version: 'horse-tournament-postflop-round2-v1',
     mode: 'candidate',
     eligible: true,
     fired: true,
@@ -2578,10 +2578,10 @@ describe('Phase 8.3 qualified authority at the client boundary', () => {
       state: 'usable',
       generation: workerAuthority.currentGeneration(),
       mainGeneration: liveHorsePhase8Authority.mainGeneration(),
-      continuationVersion: 'horse-tournament-postflop-round1-v4',
+      continuationVersion: 'horse-tournament-postflop-round2-v1',
     });
     expect(result.decision.executionWitness?.phase8Authority).toMatchObject({
-      continuationVersion: 'horse-tournament-postflop-round1-v4',
+      continuationVersion: 'horse-tournament-postflop-round2-v1',
       mode: 'candidate',
       selection: 'selected',
       verdict: null,
@@ -2645,8 +2645,10 @@ describe('Phase 8.3 qualified authority at the client boundary', () => {
 describe('P11.1: a PLO5/PLO6/PLO8 receipt whose input binding fails validation', () => {
   /** A real Phase 11 cash decision from the brain, with its frozen input binding. */
   const variantDecision = (mode: 'shadow' | 'candidate') => {
-    // A premium PLO8 open: the candidate raises where the reference calls.
+    // Round 3: a heads-up button hand the reference folds; the candidate
+    // opens it at the minimum raise.
     const spot = omahaVariantSpot('plo8', 'preflop', 2);
+    spot.hero.cards = variantCards('Kc 7d 9h 9s');
     seedFastRandom(100104);
     return structuredClone(
       HorseLogic.decide(
@@ -2753,9 +2755,11 @@ describe('P11.3 per-pack authority at the client boundary', () => {
     });
     return { worker, client, holders, receipts };
   }
-  /** A real PLO8 cash candidate (the premium open the worker would select). */
+  /** A real PLO8 cash candidate (the heads-up button open the worker would
+   * select; the reference folds the hand). */
   const selectedPlo8 = (authority: unknown) => {
     const spot = omahaVariantSpot('plo8', 'preflop', 2);
+    spot.hero.cards = variantCards('Kc 7d 9h 9s');
     seedFastRandom(100104);
     const decision = structuredClone(
       HorseLogic.decide(
@@ -3145,6 +3149,8 @@ describe('P10 audit F8: a PLO4 receipt whose input binding fails validation', ()
   /** A real PLO4 cash decision from the brain, with its frozen input binding. */
   const plo4Decision = (spot: 'non_nut_flush' | 'premium_open', mode: 'shadow' | 'candidate') => {
     const input = plo4ReferenceSpot(spot);
+    // Round 3: the heads-up button opens a hand the reference folds.
+    if (spot === 'premium_open') input.hero.cards = plo4Cards('2c 7d 3h 8s');
     seedFastRandom(100101);
     return structuredClone(
       HorseLogic.decide(

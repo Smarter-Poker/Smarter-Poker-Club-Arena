@@ -276,9 +276,9 @@ describe('P10.3 selection is null unless the P10.2 file qualifies for the exact 
       schema: 'horse-qualified-authority-v1',
       phase: 'phase10',
       sourceSha: P10_TEST_SOURCE_SHA,
-      continuationVersion: 'plo4-policy-round1-v3',
+      continuationVersion: 'plo4-policy-round3-v1',
       policyDigest: P10_TEST_POLICY_DIGEST,
-      packId: 'plo4-policy-round1-v3',
+      packId: 'plo4-policy-round3-v1',
       domain: HORSE_PHASE10_DOMAIN,
       evidencePath: P10_TEST_QUALIFICATION_PATH,
       evidenceSha256: createHash('sha256').update(qualification).digest('hex'),
@@ -308,7 +308,7 @@ describe('P10.3 reuses the Phase 8 holder, gate and verdicts', () => {
     const receipt = plo4.receipt();
     expect(receipt).toMatchObject({
       state: 'usable',
-      continuationVersion: 'plo4-policy-round1-v3',
+      continuationVersion: 'plo4-policy-round3-v1',
       approvalGeneration: 1,
     });
     expect(plo4.verdict(receipt, P10_TEST_NOW)).toBe('usable');
@@ -457,7 +457,13 @@ describe('P10 audit F1: Phase 10 authority is bound to the running code', () => 
     const qualificationPath = 'docs/evidence/phase10/phase10-qualification-2026-10-03.json';
     const committed = readFileSync(repo(qualificationPath));
     const file = JSON.parse(committed.toString('utf8'));
-    expect(file).toMatchObject({ qualified: false, contractDigest: P10_TEST_CONTRACT_DIGEST });
+    // Measured under the round 1 contract digest; round 3 moved the digest
+    // through the pack version, so the file is historical twice over.
+    expect(file).toMatchObject({
+      qualified: false,
+      contractDigest: 'ebdbdbb48336c0425df735fa073a4a28ef4884c199a69006e27909a6bc2b6384',
+    });
+    expect(file.contractDigest).not.toBe(P10_TEST_CONTRACT_DIGEST);
     expect(file).not.toHaveProperty('policyDigestDefinition');
     const strength = readFileSync(repo(file.evidencePath));
     const selectionFor = (bytes: Buffer) =>
@@ -473,7 +479,8 @@ describe('P10 audit F1: Phase 10 authority is bound to the running code', () => 
         memoryReader({ [qualificationPath]: bytes, [file.evidencePath]: strength })
       );
     expect(admitOver(committed)).toMatchObject({ status: 'refused', reason: 'not_qualified' });
-    // Shape-only relabel, in memory: its v1 digest is not the running code's.
+    // Shape-only relabel, in memory: its contract and policy are not the
+    // running code's.
     const relabelled = Buffer.from(
       JSON.stringify({
         ...file,
@@ -483,7 +490,7 @@ describe('P10 audit F1: Phase 10 authority is bound to the running code', () => 
     );
     expect(admitOver(relabelled)).toEqual({
       status: 'refused',
-      reason: 'policy_digest_mismatch',
+      reason: 'contract_digest_mismatch',
       transient: false,
     });
   });

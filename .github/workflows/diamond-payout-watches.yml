@@ -1,0 +1,71 @@
+name: Diamond payout watches read the ledger
+
+# fn_payout_guarantee_check and fn_ca_tournament_settlement_mismatch
+# (migration 20261008045808). Runs scripts/ci/test-diamond-payout-watches.py
+# against a throwaway PostgreSQL 17 cluster, never production: the exact
+# production definitions (pg_get_functiondef md5 equal to the live functions)
+# must read a Diamond event paid in full through poker_diamond_tournament_ledger
+# as unpaid, and the migration must stop that, keep a real Diamond shortfall
+# alarming, leave chip events exactly as they were, and reproduce production's
+# derived postimage md5. The same command ci.yml would run, kept in its own
+# file so the change does not edit ci.yml. No timer (CLAUDE.md 10.85):
+# pull_request only, scoped to the paths it proves. ci.yml has no push
+# trigger, so neither does this.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - supabase/migrations/20261008045808_the_payout_watches_read_a_diamond_event_s_own_ledger.sql
+      - supabase/migrations/20260907163820_a_pool_that_is_fully_paid_has_nobody_left_to_pay.sql
+      - supabase/migrations/20260914111709_a_diamond_bounty_is_paid_from_its_own_bank.sql
+      - supabase/migrations/20260902010204_a_guarantee_is_a_promise_and_settlement_is_measured_both_ways.sql
+      - scripts/ci/test-diamond-payout-watches.py
+      - .github/workflows/diamond-payout-watches.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diamond-payout-watches-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  diamond-payout-watches:
+    name: Diamond payout watches read the ledger, chip events unchanged
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      # Runs as the runner user (non-root), exactly as the ci.yml step would.
+      - name: Diamond payout watches read the ledger, chip events unchanged
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-diamond-payout-watches.py --output artifacts/diamond-payout-watches
+      - name: Retain the regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diamond-payout-watches-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/diamond-payout-watches/RESULTS.json
+          retention-days: 7
+          if-no-files-found: warn

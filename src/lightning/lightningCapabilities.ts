@@ -172,10 +172,26 @@ export function lightningDeviceClass(signals: LightningPlatformSignals): Lightni
   return Math.min(...sides) >= LIGHTNING_TABLET_MIN_SHORT_SIDE ? 'tablet' : 'mobile';
 }
 
-/** The Cluster limit for a device class (the defaults; unknown reads as the phone's). */
-export function lightningMultiTableLimit(device: LightningDeviceClass | string): number {
-  return (
-    (LIGHTNING_MULTI_TABLE_LIMIT_DEFAULTS as Record<string, number>)[device] ??
-    LIGHTNING_MULTI_TABLE_LIMIT_DEFAULTS.mobile
-  );
+/**
+ * The Cluster's configured per-device limits, as fn_lightning_pool_status
+ * now carries them (`multi_table_limit`). Partial: a device the payload did
+ * not name falls back to the 4/3/2 default.
+ */
+export type LightningMultiTableLimits = Partial<Record<LightningDeviceClass, number>>;
+
+/**
+ * The Cluster limit for a device class: the Cluster's configured limit when
+ * one is known, the 4/3/2 default otherwise (unknown devices read as the
+ * phone's). The database enforces the real number in the matcher; this only
+ * decides what the door says before a join.
+ */
+export function lightningMultiTableLimit(
+  device: LightningDeviceClass | string,
+  configured?: LightningMultiTableLimits | null
+): number {
+  const key: LightningDeviceClass =
+    device in LIGHTNING_MULTI_TABLE_LIMIT_DEFAULTS ? (device as LightningDeviceClass) : 'mobile';
+  const set = configured?.[key];
+  if (typeof set === 'number' && Number.isInteger(set) && set >= 1) return set;
+  return LIGHTNING_MULTI_TABLE_LIMIT_DEFAULTS[key];
 }

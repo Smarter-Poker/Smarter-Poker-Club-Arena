@@ -46,6 +46,18 @@ const ticketScalar = read('scripts/ci/fixtures/backed-payout-scan/ticket-funding
 const conservationPath = JSON.parse(
   read('scripts/ci/fixtures/backed-payout-scan/conservation-set-expectations.json')
 ).migration;
+// A Diamond event is conserved by its Diamond custody (2026-10-08). A
+// pinned-preimage substitution of the scalar AND the one-pass set function
+// together (no CREATE, so the maintained declaration above is unchanged), with
+// its own native qualification proving the set function still equals the
+// scalar for every event and that every chip event reads exactly as before.
+// fn_pay_backed_payout_shortfalls is deliberately NOT edited by it: its inline
+// arithmetic only selects candidates (delta > 0.01) for a report-only run, and
+// teaching it the Diamond rule is a separate reviewed money-path change.
+const diamondPath =
+  'supabase/migrations/20261008044146_a_diamond_event_is_conserved_by_its_diamond_custody.sql';
+const diamondMigration = read(diamondPath);
+const diamondNative = read('scripts/ci/test-diamond-event-conservation.py');
 let declaredFunctions: (sql: string) => { name: string; header: string; body: string }[];
 let stripComments: (sql: string) => string;
 beforeAll(async () => {
@@ -350,13 +362,46 @@ describe('backed payout discovery is the same accounting question in a batch', (
     const laterDynamic = migrationCorpus().filter(
       ({ name: file, sql }) =>
         file > latest.file &&
-        ![migrationPath, successorPath, inlinePath, incomePath, ticketPath, conservationPath].some(
-          (path) => file === path.split('/').at(-1)
-        ) &&
+        ![
+          migrationPath,
+          successorPath,
+          inlinePath,
+          incomePath,
+          ticketPath,
+          conservationPath,
+          diamondPath,
+        ].some((path) => file === path.split('/').at(-1)) &&
         /pg_get_functiondef[\s\S]{0,180}fn_tournament_conservation_delta/.test(sql) &&
         /\bEXECUTE\b/i.test(stripComments(sql))
     );
     expect(laterDynamic.map(({ name: file }) => file)).toEqual([]);
+  });
+
+  it('qualifies the Diamond custody successor on the scalar and the set function together', () => {
+    // It patches the exact maintained scalar and the exact one-pass set
+    // function, never declares either, and never touches the payout payer.
+    expect(diamondMigration).toContain(ticketPins.scalarDefinitionMD5);
+    const setPins = JSON.parse(
+      read('scripts/ci/fixtures/backed-payout-scan/conservation-set-expectations.json')
+    );
+    expect(diamondMigration).toContain(setPins.deltasDefinitionMD5);
+    expect(declaredFunctions(diamondMigration).map((fn) => fn.name)).not.toContain(name);
+    expect(stripComments(diamondMigration)).not.toContain('fn_pay_backed_payout_shortfalls');
+    expect(stripComments(diamondMigration)).not.toMatch(/\b(?:GRANT|REVOKE|DROP|CREATE INDEX)\b/i);
+    expect(diamondMigration.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(diamondMigration.match(/^COMMIT;$/gm)).toHaveLength(1);
+    // Its native qualification proves the set function equals the scalar for
+    // every event before and after, and that every chip event is unchanged.
+    for (const proof of [
+      'baseline-set-equals-scalar',
+      'candidate-set-equals-scalar',
+      'candidate-reproduces-production-derived-postimage',
+      'migration-refuses-a-second-run',
+      'C_UNFUNDED',
+      'C_KEPT',
+      'C_SAT',
+    ])
+      expect(diamondNative).toContain(proof);
   });
 
   it('reads a ticket from its payout row and a house correction as funding, on both paths', () => {

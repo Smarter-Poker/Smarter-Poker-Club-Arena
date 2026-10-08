@@ -31,11 +31,16 @@ function means the feature is quietly unavailable, never a crash loop.
      asks. Wired at boot in `GameServer` (`lightningHosting.autoRebuy`).
 
 2. **The auto-rebuy config keys** (`LightningConfig`): `auto_rebuy_enabled`,
-   `auto_rebuy_trigger` (`bb` or `pct`), `auto_rebuy_threshold_bb`,
-   `auto_rebuy_threshold_pct`, `auto_rebuy_target`, `auto_rebuy_max_count`
+   `auto_rebuy_trigger` (`zero`, `below_bb` or `below_pct`),
+   `auto_rebuy_threshold_bb`, `auto_rebuy_threshold_pct`,
+   `auto_rebuy_target` (`initial` or `max` buy-in), `auto_rebuy_max_count`
    and `auto_rebuy_session_cap` are parsed beside the worker's own keys,
-   bounded, failing closed to "off, asking nothing". Each formed hand
-   carries the config its forming pass ran on.
+   bounded with the migration's own clamps, failing closed to "off, asking
+   nothing". The engine's trigger is a COST FILTER only - the database
+   re-evaluates it and refuses `NOT_TRIGGERED` - so `below_pct` (whose
+   target the database prices from the buy-in) asks about every released
+   player and lets the database answer. Each formed hand carries the config
+   its forming pass ran on.
 
 3. **Stop playing is honored by construction**: the database refuses new
    hands for a stopping or RG-blocked session, the matcher stops naming the
@@ -76,7 +81,7 @@ function means the feature is quietly unavailable, never a crash loop.
 
 6. **The auto-rebuy status line**. Auto-rebuy is operator-level
    configuration, so the Session panel shows it read-only: "Auto-Rebuy:
-   Off", or "Auto-Rebuy: On (Below 20 BB → 100 BB)", from one
+   Off", or "Auto-Rebuy: On (Below 20 BB → Max Buy-In)", from one
    `fn_lightning_config` read when the panel opens. Unreadable (function
    absent, not granted) shows nothing at all.
 

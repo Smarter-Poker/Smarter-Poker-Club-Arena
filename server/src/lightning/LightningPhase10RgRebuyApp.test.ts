@@ -60,8 +60,8 @@ const quiet = { log: () => undefined, warn: () => undefined, error: () => undefi
 const ON = {
   ...LIGHTNING_AUTO_REBUY_DEFAULTS,
   enabled: true,
+  trigger: 'below_bb' as const,
   thresholdBb: 20,
-  targetBb: 100,
 };
 
 function executor(opts: {
@@ -86,40 +86,46 @@ describe('the auto-rebuy config (fn_lightning_config keys)', () => {
     expect(parseLightningAutoRebuyConfig({})).toEqual(LIGHTNING_AUTO_REBUY_DEFAULTS);
     const full = parseLightningAutoRebuyConfig({
       auto_rebuy_enabled: true,
-      auto_rebuy_trigger: ' PCT ',
+      auto_rebuy_trigger: ' BELOW_PCT ',
       auto_rebuy_threshold_bb: '25',
       auto_rebuy_threshold_pct: 40,
-      auto_rebuy_target: 100,
+      auto_rebuy_target: 'max',
       auto_rebuy_max_count: 3,
       auto_rebuy_session_cap: 500,
     });
     expect(full).toEqual({
       enabled: true,
-      trigger: 'pct',
+      trigger: 'below_pct',
       thresholdBb: 25,
       thresholdPct: 40,
-      targetBb: 100,
+      target: 'max',
       maxCount: 3,
       sessionCap: 500,
     });
-    // 'yes' is not true; a zero or negative threshold is no threshold.
+    // 'yes' is not true; a zero or negative threshold is no threshold; an
+    // unknown trigger or target falls to the narrowest ('zero', 'initial').
     expect(parseLightningAutoRebuyConfig({ auto_rebuy_enabled: 'yes' }).enabled).toBe(false);
     expect(parseLightningAutoRebuyConfig({ auto_rebuy_threshold_bb: 0 }).thresholdBb).toBeNull();
-    expect(parseLightningAutoRebuyConfig({ auto_rebuy_trigger: 'turbo' }).trigger).toBe('bb');
+    expect(parseLightningAutoRebuyConfig({ auto_rebuy_trigger: 'turbo' }).trigger).toBe('zero');
+    expect(parseLightningAutoRebuyConfig({ auto_rebuy_target: 7 }).target).toBe('initial');
     // The worker's parse carries it, so every formed hand knows its rules.
     expect(parseLightningConfig({ auto_rebuy_enabled: true }).autoRebuy.enabled).toBe(true);
     expect(parseLightningConfig(null).autoRebuy).toEqual(LIGHTNING_AUTO_REBUY_DEFAULTS);
   });
 
-  it('the trigger stack: bb and pct both compute, anything unreadable is null', () => {
+  it('the trigger stack mirrors the migration: zero, below_bb, below_pct', () => {
     expect(lightningAutoRebuyTriggerStack(ON, 2)).toBe(40);
+    // 'zero' asks only about a stack that is gone, whatever the blind says.
+    expect(lightningAutoRebuyTriggerStack({ ...ON, trigger: 'zero' }, 0)).toBe(0);
+    // 'below_pct' prices the target ('initial' | 'max') in the database, so
+    // every released player is asked and NOT_TRIGGERED answers the rest.
     expect(
-      lightningAutoRebuyTriggerStack({ ...ON, trigger: 'pct', thresholdPct: 40, targetBb: 100 }, 2)
-    ).toBe(80);
+      lightningAutoRebuyTriggerStack({ ...ON, trigger: 'below_pct', thresholdPct: 25 }, 2)
+    ).toBe(Number.POSITIVE_INFINITY);
     expect(lightningAutoRebuyTriggerStack({ ...ON, enabled: false }, 2)).toBeNull();
     expect(lightningAutoRebuyTriggerStack({ ...ON, thresholdBb: null }, 2)).toBeNull();
     expect(
-      lightningAutoRebuyTriggerStack({ ...ON, trigger: 'pct', thresholdPct: null }, 2)
+      lightningAutoRebuyTriggerStack({ ...ON, trigger: 'below_pct', thresholdPct: null }, 2)
     ).toBeNull();
     expect(lightningAutoRebuyTriggerStack(ON, 0)).toBeNull();
   });

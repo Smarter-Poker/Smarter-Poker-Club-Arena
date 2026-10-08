@@ -50,26 +50,32 @@ export const LIGHTNING_AUTO_REBUY_RETRY_MS = 10 * 60_000;
 const ATTEMPTED_MAX = 4096;
 
 /**
- * The stack at or under which a player is asked about, in chips, or null when
- * the config does not add up to a number (fail closed: no call).
+ * The stack at or under which a player is asked about, in chips, or null
+ * when the config does not add up (fail closed: no call). This is a COST
+ * FILTER only: `fn_lightning_auto_rebuy` re-evaluates the trigger itself
+ * and refuses NOT_TRIGGERED, so being a little loose here costs one cheap
+ * refusal, while being tight would silently disable the feature.
  *
- *   - trigger 'bb':  threshold_bb big blinds;
- *   - trigger 'pct': threshold_pct percent of the target stack, where the
- *     target is auto_rebuy_target big blinds (the stack a rebuy refills to).
+ *   - trigger 'zero':      the stack is gone (<= 0);
+ *   - trigger 'below_bb':  under threshold_bb big blinds;
+ *   - trigger 'below_pct': under threshold_pct percent of the target
+ *     buy-in. The target ('initial' | 'max') is the database's to price,
+ *     so every released player is asked and the database answers.
  */
 export function lightningAutoRebuyTriggerStack(
   config: LightningAutoRebuyConfig,
   bigBlind: number
 ): number | null {
-  if (!config.enabled || !Number.isFinite(bigBlind) || bigBlind <= 0) return null;
-  if (config.trigger === 'bb') {
+  if (!config.enabled) return null;
+  if (config.trigger === 'zero') return 0;
+  if (!Number.isFinite(bigBlind) || bigBlind <= 0) return null;
+  if (config.trigger === 'below_bb') {
     if (config.thresholdBb === null || config.thresholdBb <= 0) return null;
     return config.thresholdBb * bigBlind;
   }
-  if (config.trigger === 'pct') {
+  if (config.trigger === 'below_pct') {
     if (config.thresholdPct === null || config.thresholdPct <= 0) return null;
-    if (config.targetBb === null || config.targetBb <= 0) return null;
-    return (config.thresholdPct / 100) * config.targetBb * bigBlind;
+    return Number.POSITIVE_INFINITY;
   }
   return null;
 }

@@ -80,20 +80,31 @@ afterEach(cleanup);
 // ─── 1. The Stop Playing door ──────────────────────────────────────────────
 
 describe('fn_lightning_stop_playing, read defensively', () => {
-  it('parses the answer; a malformed one refuses, never a guess', () => {
-    expect(parseLightningStopPlaying({ ok: true, stopping: true, in_hand: true })).toEqual({
+  it('parses the migration’s answer; a malformed one refuses, never a guess', () => {
+    // In a live hand: the stop is standing, the exit waits for the settle.
+    expect(
+      parseLightningStopPlaying({
+        ok: true,
+        pool_session_id: POOL,
+        exited: false,
+        in_hand: true,
+        stop_requested_at: '2026-10-08T12:00:00Z',
+      })
+    ).toEqual({ ok: true, stopping: true, exited: false, inHand: true, reason: null });
+    // Idle: exited at once (exit_reason stop_playing lands in the summary).
+    expect(parseLightningStopPlaying({ ok: true, exited: true, in_hand: false })).toEqual({
       ok: true,
       stopping: true,
-      inHand: true,
+      exited: true,
+      inHand: false,
       reason: null,
     });
-    // ok alone means stopping: the database accepted the stop.
-    expect(parseLightningStopPlaying({ ok: true }).stopping).toBe(true);
-    expect(parseLightningStopPlaying({ ok: false, reason: 'no_open_session' })).toEqual({
+    expect(parseLightningStopPlaying({ ok: false, reason: 'NO_SESSION' })).toEqual({
       ok: false,
       stopping: false,
+      exited: false,
       inHand: false,
-      reason: 'no_open_session',
+      reason: 'NO_SESSION',
     });
     expect(parseLightningStopPlaying(null).ok).toBe(false);
   });
@@ -122,7 +133,7 @@ describe('the Stop Playing control', () => {
   it('one tap asks the database, and a live hand shows "Finishing Current Hand..."', async () => {
     quietRpc({
       fn_lightning_stop_playing: () => ({
-        data: { ok: true, stopping: true, in_hand: true },
+        data: { ok: true, pool_session_id: POOL, exited: false, in_hand: true },
         error: null,
       }),
     });
@@ -287,19 +298,28 @@ describe('the auto-rebuy status (read-only, from the operator’s config)', () =
     expect(parseLightningAutoRebuyStatus(null)).toBeNull();
     const off = parseLightningAutoRebuyStatus({ auto_rebuy_enabled: false })!;
     expect(lightningAutoRebuyText(off)).toBe('Auto-Rebuy: Off');
-    const on = parseLightningAutoRebuyStatus({
+    const zero = parseLightningAutoRebuyStatus({
       auto_rebuy_enabled: true,
-      auto_rebuy_threshold_bb: 20,
-      auto_rebuy_target: 100,
+      auto_rebuy_trigger: 'zero',
+      auto_rebuy_target: 'initial',
     })!;
-    expect(lightningAutoRebuyText(on)).toBe('Auto-Rebuy: On (Below 20 BB → 100 BB)');
+    expect(lightningAutoRebuyText(zero)).toBe(
+      'Auto-Rebuy: On (When Out Of Chips → Initial Buy-In)'
+    );
+    const bb = parseLightningAutoRebuyStatus({
+      auto_rebuy_enabled: true,
+      auto_rebuy_trigger: 'below_bb',
+      auto_rebuy_threshold_bb: 20,
+      auto_rebuy_target: 'max',
+    })!;
+    expect(lightningAutoRebuyText(bb)).toBe('Auto-Rebuy: On (Below 20 BB → Max Buy-In)');
     const pct = parseLightningAutoRebuyStatus({
       auto_rebuy_enabled: true,
-      auto_rebuy_trigger: 'pct',
-      auto_rebuy_threshold_pct: 40,
-      auto_rebuy_target: 100,
+      auto_rebuy_trigger: 'below_pct',
+      auto_rebuy_threshold_pct: 25,
+      auto_rebuy_target: 'initial',
     })!;
-    expect(lightningAutoRebuyText(pct)).toBe('Auto-Rebuy: On (Below 40% → 100 BB)');
+    expect(lightningAutoRebuyText(pct)).toBe('Auto-Rebuy: On (Below 25% → Initial Buy-In)');
   });
 
   it('an unreadable config says nothing at all (deploy window, not granted)', async () => {

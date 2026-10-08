@@ -339,19 +339,28 @@ export function isLightningRpcMissing(err: unknown): boolean {
 
 export interface LightningStopPlayingResult {
   ok: boolean;
-  /** The session is stopping: no new hand will be dealt. */
+  /** The stop is standing: no new hand will be dealt (`ok` answers it). */
   stopping: boolean;
+  /** The session already exited (no live hand stood in the way). */
+  exited: boolean;
   /** A hand is still live; the session ends when it settles. */
   inHand: boolean;
   reason: string | null;
 }
 
+/**
+ * The migration's answer: `{ok, pool_session_id, exited, in_hand,
+ * stop_requested_at}`, or `{ok:false, reason:'NO_SESSION'}`. An accepted
+ * call always means the stop is standing (idempotent; a repeat answers the
+ * same), so `stopping` is `ok` itself.
+ */
 export function parseLightningStopPlaying(raw: unknown): LightningStopPlayingResult {
   const row = objectOf(raw);
-  if (!row) return { ok: false, stopping: false, inHand: false, reason: null };
+  if (!row) return { ok: false, stopping: false, exited: false, inHand: false, reason: null };
   return {
     ok: row.ok === true,
-    stopping: row.stopping === true || row.ok === true,
+    stopping: row.ok === true,
+    exited: row.exited === true,
     inHand: row.in_hand === true,
     reason: text(row.reason),
   };
@@ -387,21 +396,29 @@ export const LIGHTNING_STOP_UNAVAILABLE_TEXT = 'Stop Playing Is Not Available Ri
 
 export interface LightningAutoRebuyStatus {
   enabled: boolean;
-  trigger: 'bb' | 'pct';
+  /** The migration's enum: when the stack is gone, under N BB, or under N%. */
+  trigger: 'zero' | 'below_bb' | 'below_pct';
   thresholdBb: number | null;
   thresholdPct: number | null;
-  targetBb: number | null;
+  /** Refill to the initial buy-in, or to the table maximum. */
+  target: 'initial' | 'max';
   maxCount: number | null;
 }
 
 export function parseLightningAutoRebuyStatus(raw: unknown): LightningAutoRebuyStatus | null {
   const row = objectOf(raw);
   if (!row) return null;
+  const rawTrigger =
+    typeof row.auto_rebuy_trigger === 'string' ? row.auto_rebuy_trigger.trim().toLowerCase() : '';
   const trigger =
-    typeof row.auto_rebuy_trigger === 'string' &&
-    row.auto_rebuy_trigger.trim().toLowerCase() === 'pct'
-      ? ('pct' as const)
-      : ('bb' as const);
+    rawTrigger === 'below_bb' || rawTrigger === 'below_pct'
+      ? (rawTrigger as 'below_bb' | 'below_pct')
+      : ('zero' as const);
+  const target =
+    typeof row.auto_rebuy_target === 'string' &&
+    row.auto_rebuy_target.trim().toLowerCase() === 'max'
+      ? ('max' as const)
+      : ('initial' as const);
   const positive = (v: unknown) => {
     const n = num(v);
     return n !== null && n > 0 ? n : null;
@@ -411,7 +428,7 @@ export function parseLightningAutoRebuyStatus(raw: unknown): LightningAutoRebuyS
     trigger,
     thresholdBb: positive(row.auto_rebuy_threshold_bb),
     thresholdPct: positive(row.auto_rebuy_threshold_pct),
-    targetBb: positive(row.auto_rebuy_target),
+    target,
     maxCount: positive(row.auto_rebuy_max_count),
   };
 }
@@ -435,17 +452,19 @@ export async function fetchLightningAutoRebuyStatus(
   }
 }
 
-/** "Auto-Rebuy: Off", or the trigger and target in the player's own units. */
+/** "Auto-Rebuy: Off", or the trigger and target in the player's own words. */
 export function lightningAutoRebuyText(status: LightningAutoRebuyStatus): string {
   if (!status.enabled) return 'Auto-Rebuy: Off';
-  const target = status.targetBb !== null ? `${Number(status.targetBb)} BB` : null;
-  let below: string | null = null;
-  if (status.trigger === 'pct' && status.thresholdPct !== null) {
-    below = `Below ${Number(status.thresholdPct)}%`;
-  } else if (status.thresholdBb !== null) {
-    below = `Below ${Number(status.thresholdBb)} BB`;
+  const target = status.target === 'max' ? 'Max Buy-In' : 'Initial Buy-In';
+  let when: string | null = null;
+  if (status.trigger === 'below_pct' && status.thresholdPct !== null) {
+    when = `Below ${Number(status.thresholdPct)}%`;
+  } else if (status.trigger === 'below_bb' && status.thresholdBb !== null) {
+    when = `Below ${Number(status.thresholdBb)} BB`;
+  } else if (status.trigger === 'zero') {
+    when = 'When Out Of Chips';
   }
-  const detail = below && target ? ` (${below} → ${target})` : below ? ` (${below})` : '';
+  const detail = when ? ` (${when} → ${target})` : '';
   return `Auto-Rebuy: On${detail}`;
 }
 

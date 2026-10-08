@@ -1122,7 +1122,14 @@ export default function LeaderboardPage() {
     }
   };
 
-  const renderChangeBadge = (change: number) => {
+  const renderChangeBadge = (change: number | null) => {
+    if (change == null) {
+      return (
+        <span className="change" aria-label="Rank Movement Unknown">
+          Movement Unknown
+        </span>
+      );
+    }
     if (!change) return null;
     return (
       <span className={`change rank-change-anim ${change > 0 ? 'up' : 'down'}`}>
@@ -1701,7 +1708,7 @@ export default function LeaderboardPage() {
                       <span className="entry-name">
                         {leaderboardDisplayName(entry.username)}
                         {entry.isVIP && <span className="entry-vip-tag">VIP</span>}
-                        {(entry.change || 0) >= 3 && (
+                        {entry.change != null && entry.change >= 3 && (
                           <span className="hot-streak-badge" title="Hot Streak: Climbing Fast">
                             Rising
                           </span>

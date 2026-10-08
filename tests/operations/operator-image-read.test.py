@@ -162,6 +162,32 @@ class ReaderTests(unittest.TestCase):
         for name in ['app/.env','app/.env.production','root/.aws/credentials','root/id_ed25519','root/.npmrc','root/.git-credentials']:
             with self.subTest(name=name),self.assertRaises(RuntimeError):self.scan(archive([name]))
 
+    def test_empty_regular_npmrc_only(self):
+        def one(name, *, size=0, kind=tarfile.REGTYPE, pax=None, link=''):
+            out=io.BytesIO()
+            with tarfile.open(fileobj=out,mode='w',format=tarfile.PAX_FORMAT) as t:
+                m=tarfile.TarInfo(name);m.type=kind;m.size=size;m.linkname=link
+                if pax:m.pax_headers=pax
+                t.addfile(m,io.BytesIO(b'x'*size))
+            return out.getvalue()
+        for name in ['root/.npmrc','app/.npmrc']:
+            raw=one(name)
+            self.assertEqual(R.scan_layer(RawReader(raw),len(raw)),1)
+        for raw in [one('root/.npmrc',size=1),
+                    one('root/.npmrc',kind=tarfile.DIRTYPE),
+                    one('root/.npmrc',kind=tarfile.SYMTYPE,link='safe'),
+                    one('root/.npmrc',kind=tarfile.LNKTYPE,link='safe'),
+                    one('root/.env'),one('root/.netrc'),
+                    one('root/credentials/.npmrc'),
+                    one('root/.npmrc/safe'),
+                    one('root/.npmrc',pax={'size':'1'}),
+                    one('safe',pax={'path':'root/.npmrc','size':'1'}),
+                    one('root/.npmrc',pax={'path':'root/.env'})]:
+            with self.subTest(length=len(raw)),self.assertRaises(RuntimeError):
+                R.scan_layer(RawReader(raw),len(raw))
+        raw=one('safe',pax={'path':'root/.npmrc'})
+        self.assertEqual(R.scan_layer(RawReader(raw),len(raw)),2)
+
     def test_deleted_env_whiteout_refused(self):
         with self.assertRaises(RuntimeError):self.scan(archive(['app/.wh..env']))
 

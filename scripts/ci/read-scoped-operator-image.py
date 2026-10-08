@@ -93,6 +93,16 @@ def forbidden_layer_path(name):
                {'id_rsa','id_ed25519','id_ecdsa','id_dsa','credentials','service-account.json','.npmrc','.pypirc','.netrc','.git-credentials','application_default_credentials.json'} for x in parts)
 
 
+def admitted_layer_path(name, kind, size):
+    if not forbidden_layer_path(name):
+        return True
+    # A resolved ordinary empty .npmrc has no payload or executable/link behavior.
+    parts = name.rstrip('/').removeprefix('./').split('/')
+    return (kind == tarfile.REGTYPE and size == 0 and parts[-1] == '.npmrc'
+            and not forbidden_layer_path('/'.join(
+                'empty-npmrc' if part == '.npmrc' else part for part in parts)))
+
+
 def inspect_layer_headers(path):
     """Inspect resolved tar names; file values are never decoded or followed."""
     class FileReader:
@@ -224,7 +234,8 @@ def header(raw, *, inner=False):
     extended = {tarfile.XHDTYPE, tarfile.XGLTYPE,
                 tarfile.GNUTYPE_LONGNAME, tarfile.GNUTYPE_LONGLINK}
     require(inner or member.type not in extended, 'Extended outer header refused')
-    require(not forbidden_layer_path(member.name), 'Baked credential path refused')
+    require(admitted_layer_path(member.name, member.type, member.size) if inner else
+            not forbidden_layer_path(member.name), 'Baked credential path refused')
     require(0 <= member.size <= LIMIT, 'Member size refused')
     return member
 
@@ -347,7 +358,7 @@ def scan_layer(reader, size):
         name = pending.get(b'path', entry.name)
         link = pending.get(b'linkpath', entry.linkname)
         payload_size = pending.get(b'size', entry.size)
-        require(not forbidden_layer_path(name), 'Baked credential path refused')
+        require(admitted_layer_path(name, entry.type, payload_size), 'Baked credential path refused')
         if entry.issym() or entry.islnk():
             require(not any(forbidden_layer_path(p) for p in link.split('/') if p not in {'', '.', '..'}), 'Credential link refused')
         else:

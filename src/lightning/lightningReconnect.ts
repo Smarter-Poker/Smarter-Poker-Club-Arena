@@ -7,11 +7,12 @@
  *   - the pool session is STILL OPEN (an engine restart adopting its fleet,
  *     a blip): the room exists again moments later, so the right move is to
  *     keep the reconnect ladder running at the SAME pool_session_id;
- *   - the session ENDED while the player was away - the DB reaper timed the
- *     disconnect out (`expired`), or a queued leave / cash-out finished: the
- *     room will never deal again, and the player is owed the session summary
- *     and their way back (their seat when one remains, else the Cluster's
- *     entry);
+ *   - the session ENDED while the player was away: the DB reaper timed the
+ *     disconnect out (`exit_reason` 'disconnect_expired'), the player's own
+ *     STOP PLAYING finished ('stop_playing'), or a queued leave / cash-out
+ *     did. The room will never deal again, and the player is owed the
+ *     ending's words, the session summary and their way back (their anchor
+ *     seat when one remains, else the Cluster's entry);
  *   - the Cluster went back to MUST MOVE: Lightning Phase 7's notice already
  *     owns that ending (useLightningReversion), and it wins over this one.
  *
@@ -19,9 +20,16 @@
  * reason with a code), so each close asks the database:
  * `fn_lightning_reconnect_state(p_cluster_id)` -> { pool_session_id, state,
  * in_hand, hand_id, disconnected_at, seat_table_id, seat_number, stack,
- * joinable }. A database that does not have the function yet (deploy window)
- * answers nothing, and this hook quietly does nothing: Phase 7's
- * fn_lightning_my_session path keeps working exactly as before.
+ * joinable, exit_reason }. HOW AN ENDING IS NAMED (Phase 9 remediation): a
+ * closed pool session's row never carries a state `expired` - the reaper
+ * closes with state 'closed' and `exit_reason` 'disconnect_expired' - so the
+ * VERDICT keys on `exit_reason`, never on a state value the database cannot
+ * produce. A database still on the older function answers all nulls for an
+ * ended session (or no `exit_reason` field at all), and that degrades to the
+ * generic "Your Lightning Session Has Ended". A database that does not have
+ * the function yet (deploy window) answers nothing, and this hook quietly
+ * does nothing: Phase 7's fn_lightning_my_session path keeps working exactly
+ * as before.
  */
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
@@ -32,13 +40,26 @@ import { reportError } from '../utils/errorReporter';
 export const LIGHTNING_TIMED_OUT_TITLE = 'Your Lightning Session Timed Out';
 /** Any other ending that is not the MUST MOVE reversion. */
 export const LIGHTNING_SESSION_OVER_TEXT = 'Your Lightning Session Has Ended';
+/** The ending the player asked for (exit_reason 'stop_playing'). */
+export const LIGHTNING_STOPPED_TITLE = 'You Stopped Playing';
+
+/** The reaper's exit_reason: the disconnect outlived disconnect_timeout_ms. */
+export const LIGHTNING_DISCONNECT_EXPIRED_EXIT_REASON = 'disconnect_expired';
+/** The player's own STOP PLAYING ended the session. */
+export const LIGHTNING_STOP_PLAYING_EXIT_REASON = 'stop_playing';
 
 /** The ended notice's line: how it ended, and where the player's seat is. */
 export function lightningSessionEndText(end: {
   timedOut: boolean;
   seatTableId: string | null;
+  /** The player stopped on purpose (exit_reason stop_playing). */
+  stopped?: boolean;
 }): string {
-  const lead = end.timedOut ? `${LIGHTNING_TIMED_OUT_TITLE}.` : `${LIGHTNING_SESSION_OVER_TEXT}.`;
+  const lead = end.stopped
+    ? `${LIGHTNING_STOPPED_TITLE}.`
+    : end.timedOut
+      ? `${LIGHTNING_TIMED_OUT_TITLE}.`
+      : `${LIGHTNING_SESSION_OVER_TEXT}.`;
   return end.seatTableId ? `${lead} Your Seat Is Ready At Your Table.` : lead;
 }
 
@@ -53,10 +74,20 @@ export interface LightningReconnectState {
   seatNumber: number | null;
   stack: number | null;
   joinable: boolean;
+  /**
+   * Why the session ended ('disconnect_expired' when the reaper exited it,
+   * 'stop_playing' when the player did). Null while open, and on a database
+   * that does not send the field yet.
+   */
+  exitReason: string | null;
 }
 
-/** Pool session states that mean the session is over (lightningSession.ts agrees). */
-const ENDED_STATES = new Set(['closed', 'ended', 'left', 'cashed_out', 'expired']);
+/**
+ * Pool session states that mean the session is over (lightningSession.ts
+ * agrees). Never `expired`: no such state exists in lightning_pool_session -
+ * the reaper closes with state 'closed' and exit_reason 'disconnect_expired'.
+ */
+const ENDED_STATES = new Set(['closed', 'ended', 'left', 'cashed_out']);
 
 function text(value: unknown): string | null {
   return typeof value === 'string' && value.trim() !== '' ? value : null;
@@ -82,6 +113,7 @@ export function parseLightningReconnectState(raw: unknown): LightningReconnectSt
       seatNumber: null,
       stack: null,
       joinable: false,
+      exitReason: null,
     };
   }
   const id = text(row.pool_session_id);
@@ -97,6 +129,7 @@ export function parseLightningReconnectState(raw: unknown): LightningReconnectSt
     seatNumber: seat !== null && Number.isInteger(seat) && seat >= 1 ? seat : null,
     stack: num(row.stack),
     joinable: row.joinable === true,
+    exitReason: text(row.exit_reason),
   };
 }
 
@@ -129,10 +162,22 @@ export async function fetchLightningReconnectState(
 export type LightningReconnectVerdict =
   /** The pool session lives: keep reconnecting to the SAME room. */
   | { kind: 'open'; poolSessionId: string }
-  /** It is over. `timedOut` when the disconnect reaper exited it. */
-  | { kind: 'ended'; timedOut: boolean; seatTableId: string | null }
-  /** Nothing to say (another room's session, or nothing readable). */
+  /**
+   * It is over. `timedOut` when the disconnect reaper exited it
+   * (exit_reason 'disconnect_expired'); `stopped` when the player's own
+   * STOP PLAYING did ('stop_playing').
+   */
+  | { kind: 'ended'; timedOut: boolean; stopped: boolean; seatTableId: string | null }
+  /** Nothing to say (nothing readable). */
   | { kind: 'unknown' };
+
+/** The generic ending: over, with no special words and no seat to point at. */
+const ENDED_PLAINLY: LightningReconnectVerdict = {
+  kind: 'ended',
+  timedOut: false,
+  stopped: false,
+  seatTableId: null,
+};
 
 /** What one answer means for ONE room. Never a guess: unknown stays unknown. */
 export function lightningReconnectVerdict(
@@ -140,21 +185,29 @@ export function lightningReconnectVerdict(
   state: LightningReconnectState | null | undefined
 ): LightningReconnectVerdict {
   if (!state) return { kind: 'unknown' };
+  if (state.poolSessionId && state.poolSessionId !== roomId) {
+    // The answer names ANOTHER pool session: the player was reaped here and
+    // re-entered from another tab or seat. For THIS tab the session is over,
+    // and the new session belongs to the tab that opened it - never joined
+    // from here (CLAUDE.md 10.6), and never described with the other
+    // session's reason or seat.
+    return ENDED_PLAINLY;
+  }
   const ended = ENDED_STATES.has(String(state.state ?? '').toLowerCase());
   if (state.poolSessionId && !ended) {
-    // An open session that is NOT this room says nothing about this room.
-    return state.poolSessionId === roomId
-      ? { kind: 'open', poolSessionId: state.poolSessionId }
-      : { kind: 'unknown' };
+    return { kind: 'open', poolSessionId: state.poolSessionId };
   }
   if (!state.state && !state.poolSessionId && !state.seatTableId) {
     // The database knows nothing of a session here: the ordinary ended case
-    // (the row is gone entirely once reaped and cleaned).
-    return { kind: 'ended', timedOut: false, seatTableId: null };
+    // (the row is gone entirely once reaped and cleaned, or the function
+    // predates the remediation and answers all nulls for an ended session).
+    return ENDED_PLAINLY;
   }
+  const reason = String(state.exitReason ?? '').toLowerCase();
   return {
     kind: 'ended',
-    timedOut: String(state.state ?? '').toLowerCase() === 'expired',
+    timedOut: reason === LIGHTNING_DISCONNECT_EXPIRED_EXIT_REASON,
+    stopped: reason === LIGHTNING_STOP_PLAYING_EXIT_REASON,
     seatTableId: state.seatTableId,
   };
 }
@@ -162,6 +215,8 @@ export function lightningReconnectVerdict(
 export interface LightningSessionEnd {
   /** The reaper timed the disconnect out: the title is the timeout's. */
   timedOut: boolean;
+  /** The player's own STOP PLAYING ended it: the title is theirs. */
+  stopped: boolean;
   /** The seat the player still holds, when one remains. */
   seatTableId: string | null;
 }
@@ -171,6 +226,8 @@ export interface LightningSessionEnd {
  * caller nudges the reconnect ladder; the room id never changes). Over ->
  * `ended`, once, for the notice with the summary. The MUST MOVE reversion
  * (useLightningReversion) runs beside this and takes precedence in the view.
+ * `pendingRef` is true while a question is in flight, so the 4404 toast can
+ * stand down for an answer that is already on its way.
  */
 export function useLightningSessionEnd(input: {
   clusterId: string | null;
@@ -178,7 +235,7 @@ export function useLightningSessionEnd(input: {
   /** The latest "this room is gone" signal (a 4404 close), or null. */
   roomClosed: unknown;
   onStillOpen?: () => void;
-}): { ended: LightningSessionEnd | null } {
+}): { ended: LightningSessionEnd | null; pendingRef: { readonly current: boolean } } {
   const { clusterId, roomId, roomClosed, onStillOpen } = input;
   const [ended, setEnded] = useState<LightningSessionEnd | null>(null);
   const concludedRef = useRef(false);
@@ -217,7 +274,11 @@ export function useLightningSessionEnd(input: {
         }
         if (verdict.kind === 'ended' && !concludedRef.current) {
           concludedRef.current = true;
-          setEnded({ timedOut: verdict.timedOut, seatTableId: verdict.seatTableId });
+          setEnded({
+            timedOut: verdict.timedOut,
+            stopped: verdict.stopped,
+            seatTableId: verdict.seatTableId,
+          });
         }
       } catch (err) {
         reportError(err, 'lightning.reconnect_state_read_failed', { clusterId });
@@ -227,5 +288,5 @@ export function useLightningSessionEnd(input: {
     })();
   }, [clusterId, roomId, roomClosed]);
 
-  return { ended };
+  return { ended, pendingRef: askingRef };
 }

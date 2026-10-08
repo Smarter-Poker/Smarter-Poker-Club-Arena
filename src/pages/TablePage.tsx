@@ -3994,6 +3994,10 @@ function LiveTablePage({
   });
   const lightningEndedRef = useRef(lightningSessionEnd.ended);
   lightningEndedRef.current = lightningSessionEnd.ended;
+  /* True while a fn_lightning_reconnect_state question is in flight: the
+     ending is about to be named properly, so the generic 4404 toast stands
+     down rather than speak first and be repeated by the notice. */
+  const lightningEndPendingRef = lightningSessionEnd.pendingRef;
   useEffect(() => {
     if (!engineLastError) return;
     if (engineLastError.code === 4404) {
@@ -4066,6 +4070,14 @@ function LiveTablePage({
             /* The MUST MOVE notice (Phase 7) or the ended notice (Phase 9)
                already says what ended and where the seat is: a second message
                would only repeat it. */
+            if (lightningEndPendingRef.current) {
+              /* The reconnect-state answer is on its way and will name this
+                 ending itself (the notice, or the ladder's nudge). Release
+                 the slot so a close whose question never gets an answer can
+                 still be announced by a later 4404. */
+              tableClosedToastShownRef.current = false;
+              return;
+            }
             if (!lightningReturnRef.current && !lightningEndedRef.current) {
               heartbeatToastRef.current?.info?.('Your Lightning Session Has Ended');
             }

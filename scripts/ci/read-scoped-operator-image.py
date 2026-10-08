@@ -106,8 +106,9 @@ def admitted_layer_path(name, kind, size):
 def inspect_layer_headers(path):
     """Inspect resolved tar names; file values are never decoded or followed."""
     class FileReader:
-        def __init__(self, stream): self.stream = stream
+        def __init__(self, stream, deadline): self.stream,self.deadline = stream,deadline
         def exact(self, size):
+            require(time.monotonic()<self.deadline,'Local layer deadline exceeded')
             raw = self.stream.read(size)
             require(len(raw) == size, 'Layer truncated')
             return raw
@@ -117,11 +118,21 @@ def inspect_layer_headers(path):
     with tarfile.open(path, 'r:') as outer:
         manifest = json.load(outer.extractfile('manifest.json'))
         require(isinstance(manifest, list) and len(manifest) == 1, 'One image required')
-        total = 0
+        total, decoded_total = 0, 0
+        deadline=time.monotonic()+STREAM_SECONDS
         for name in manifest[0]['Layers']:
             stream = outer.extractfile(name)
             require(stream is not None, 'Layer unavailable')
-            total += scan_layer(FileReader(stream), outer.getmember(name).size)
+            size=outer.getmember(name).size
+            require(2 <= size <= LIMIT and time.monotonic()<deadline,'Local layer bound refused')
+            prefix=stream.read(2);stream.seek(0)
+            if prefix==b'\x1f\x8b':
+                stream.read(2)
+                decoded=GzipLayerReader(FileReader(stream,deadline),size,prefix,deadline)
+                total += scan_layer(decoded,None);decoded_total += decoded.count
+            else:
+                total += scan_layer(FileReader(stream,deadline),size);decoded_total += size
+            require(decoded_total<=LIMIT,'Local decoded archive size refused')
             require(total <= 1000000, 'Layer member count refused')
     return total
 
@@ -371,9 +382,19 @@ def scan_layer(reader, size):
     raise RuntimeError('Layer end markers refused')
 
 
+def metadata_json(raw):
+    def unique(pairs):
+        result={}
+        for key,value in pairs:
+            require(key not in result,'Duplicate OCI metadata key refused')
+            result[key]=value
+        return result
+    return json.loads(raw,object_pairs_hook=unique)
+
+
 def graph_descriptor(raw, image_id, layer_ids, layer_blobs=None):
     """Only bounded OCI graph metadata, never a config or layer file payload."""
-    value=json.loads(raw)
+    value=metadata_json(raw)
     require(isinstance(value,dict) and value.get('schemaVersion') == 2,
             'Unknown OCI metadata refused')
     def descriptor(item):
@@ -398,17 +419,74 @@ def graph_descriptor(raw, image_id, layer_ids, layer_blobs=None):
         descriptor(value['manifests'][0])
 
 
-def scan_host_archive(reader, image_id, layer_ids):
+def validate_oci_manifest_identity(objects, image_id, layer_ids, layer_blobs, blob_sizes,
+                                   *, expected_tag, source_sha, server_tree):
+    """Native containerd identity is the original manifest digest, not config SHA."""
+    native_name='blobs/sha256/'+image_id[7:]
+    raw=objects[native_name]
+    require('sha256:'+hashlib.sha256(raw).hexdigest()==image_id, 'OCI native manifest digest differs')
+    manifest=metadata_json(raw)
+    require(isinstance(manifest,dict) and set(manifest)=={'schemaVersion','mediaType','config','layers'}
+            and manifest['schemaVersion']==2 and manifest['mediaType']=='application/vnd.oci.image.manifest.v1+json', 'OCI native manifest refused')
+    config_descriptor=manifest['config']
+    require(isinstance(config_descriptor,dict) and set(config_descriptor)=={'mediaType','digest','size'}
+            and config_descriptor['mediaType']=='application/vnd.oci.image.config.v1+json'
+            and isinstance(config_descriptor['digest'],str) and re.fullmatch('sha256:[0-9a-f]{64}',config_descriptor['digest']), 'OCI native config descriptor refused')
+    config_name='blobs/sha256/'+config_descriptor['digest'][7:]
+    require(config_name in objects and len(objects[config_name])==config_descriptor['size']
+            and 'sha256:'+hashlib.sha256(objects[config_name]).hexdigest()==config_descriptor['digest'], 'OCI native config binding differs')
+    config=metadata_json(objects[config_name])
+    require(isinstance(config,dict) and set(config)=={'architecture','config','created','history','os','rootfs'}
+            and config['architecture']=='amd64' and config['os']=='linux', 'OCI native config shape refused')
+    require(config['rootfs']=={'type':'layers','diff_ids':layer_ids}, 'OCI native config RootFS differs')
+    runtime=config['config'];require(isinstance(runtime,dict) and set(runtime) <= {'ArgsEscaped','Cmd','Entrypoint','Env','ExposedPorts','Healthcheck','Labels','WorkingDir'}, 'OCI runtime refused')
+    env=runtime.get('Env')
+    require(isinstance(env,list) and all(isinstance(x,str) and '=' in x for x in env), 'OCI environment names refused')
+    names=[x.partition('=')[0] for x in env]
+    require(names and len(names)==len(set(names)) and set(names)<=ENV_NAMES, 'OCI environment names refused')
+    labels=runtime.get('Labels')
+    require(isinstance(labels,dict) and labels.get('org.opencontainers.image.revision')==source_sha
+            and labels.get('com.smarterpoker.engine.source-tree')==server_tree
+            and labels.get('com.smarterpoker.engine.build-contract')=='clean-server-archive-v1', 'OCI native source binding differs')
+    graph_descriptor(raw, config_descriptor['digest'], layer_ids, layer_blobs)
+    layer_names=[]
+    for descriptor in manifest['layers']:
+        require(blob_sizes.get(descriptor['digest'])==descriptor['size'], 'OCI native layer size differs')
+        layer_names.append('blobs/sha256/'+descriptor['digest'][7:])
+    docker=metadata_json(objects.get('manifest.json',b'null'))
+    require(isinstance(expected_tag,str) and isinstance(docker,list) and len(docker)==1
+            and isinstance(docker[0],dict) and set(docker[0]) <= {'Config','RepoTags','Layers','LayerSources'}
+            and docker[0].get('Config')==config_name and docker[0].get('RepoTags')==[expected_tag]
+            and docker[0].get('Layers')==layer_names, 'OCI Docker identity binding differs')
+    index=metadata_json(objects.get('index.json',b'null'))
+    graph_descriptor(objects.get('index.json',b'null'), image_id, layer_ids, layer_blobs)
+    descriptor=index['manifests'][0]
+    require(index.get('mediaType')=='application/vnd.oci.image.index.v1+json'
+            and descriptor['mediaType']=='application/vnd.oci.image.manifest.v1+json'
+            and descriptor['digest']==image_id and descriptor['size']==len(raw), 'OCI native index differs')
+    require(metadata_json(objects.get('oci-layout',b'null'))=={'imageLayoutVersion':'1.0.0'}, 'OCI layout refused')
+    require(set(objects) <= {'manifest.json','index.json','oci-layout',native_name,config_name}, 'Foreign OCI metadata refused')
+    return config_descriptor['digest']
+
+
+def scan_host_archive(reader, image_id, layer_ids, *, expected_tag=None, source_sha=None, server_tree=None):
     """Complete first save stays on host; all historical layer headers checked."""
     count, layers, seen, scanned = 0, 0, set(), set()
     descriptors, layer_blobs, decoded_total = [], {}, 0
+    objects, blob_sizes = {}, {}
     while True:
         raw = reader.exact(512)
         if raw == bytes(512):
             require(reader.exact(512) == bytes(512), 'Outer end markers refused')
             digest = reader.finish()
             require(scanned == set(layer_ids), 'Incomplete historical layer graph')
-            for raw in descriptors: graph_descriptor(raw, image_id, layer_ids, layer_blobs)
+            native_raw=objects.get('blobs/sha256/'+image_id[7:])
+            native_value=metadata_json(native_raw) if native_raw else None
+            if isinstance(native_value,dict) and native_value.get('schemaVersion')==2:
+                validate_oci_manifest_identity(objects,image_id,layer_ids,layer_blobs,blob_sizes,
+                    expected_tag=expected_tag,source_sha=source_sha,server_tree=server_tree)
+            else:
+                for raw in descriptors: graph_descriptor(raw, image_id, layer_ids, layer_blobs)
             return {'sha256': digest, 'bytes': reader.count, 'layerHeaderCount': count,
                     'layers': layers, 'credentialHeadersRefused': True}
         member = header(raw)
@@ -418,6 +496,7 @@ def scan_host_archive(reader, image_id, layer_ids):
         require(member.type in {tarfile.REGTYPE, tarfile.AREGTYPE, tarfile.DIRTYPE}, 'Outer type refused')
         is_config = name in {image_id[7:]+'.json', 'blobs/sha256/'+image_id[7:]}
         is_blob = re.fullmatch('blobs/sha256/[0-9a-f]{64}',name) is not None
+        if is_blob: blob_sizes['sha256:'+name.split('/')[-1]]=member.size
         is_layer = name.endswith('/layer.tar') or (is_blob and 'sha256:'+name.split('/')[-1] in layer_ids)
         if is_layer:
             layers += 1
@@ -448,14 +527,18 @@ def scan_host_archive(reader, image_id, layer_ids):
                 layer_blobs['sha256:'+name.split('/')[-1]] = diff_id
             else:
                 require(member.size <= 65536 and len(descriptors) < 128, 'OCI metadata size/count refused')
-                descriptors.append(prefix+reader.exact(member.size-2))
+                metadata_raw=prefix+reader.exact(member.size-2)
+                descriptors.append(metadata_raw);objects[name]=metadata_raw
             require(reader.layer_digest.hexdigest() == name.split('/')[-1], 'OCI blob digest differs')
             reader.layer_digest = None
         else:
             require(member.isdir() and member.size == 0 or
                     (is_config or name in {'manifest.json','repositories','index.json','oci-layout'})
                     and member.size <= 1048576, 'Unsupported image archive format')
-            reader.skip(member.size)
+            if is_config or name in {'manifest.json','index.json','oci-layout'}:
+                objects[name]=reader.exact(member.size)
+            else:
+                reader.skip(member.size)
         reader.skip((-member.size) % 512)
 
 
@@ -466,7 +549,8 @@ def host_preflight(request):
                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     reader = BoundedArchiveReader(process.stdout, deadline)
     try:
-        receipt = scan_host_archive(reader, request['imageId'], before['layerDiffIds'])
+        receipt = scan_host_archive(reader, request['imageId'], before['layerDiffIds'],
+            expected_tag=before['tag'],source_sha=request['releaseSha'],server_tree=request['serverTree'])
         require(process.wait(timeout=max(.01,deadline-time.monotonic())) == 0, 'Host scan failed')
         validate_transition(before, identity(request), request)
         return {'identity': before, 'scan': receipt}

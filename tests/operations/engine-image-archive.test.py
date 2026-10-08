@@ -119,6 +119,32 @@ class ArchiveTests(unittest.TestCase):
         entries[0] = ('manifest.json',json.dumps(manifest).encode())
         return entries
 
+    def native_manifest_fixture(self):
+        entries=self.compressed_fixture();raw=entries[1][1];config_id='sha256:'+digest(raw)
+        native={'schemaVersion':2,'mediaType':'application/vnd.oci.image.manifest.v1+json','config':{'mediaType':'application/vnd.oci.image.config.v1+json','digest':config_id,'size':len(raw)},'layers':[{'mediaType':'application/vnd.oci.image.layer.v1.tar+gzip','digest':'sha256:'+name.split('/')[-1],'size':len(data)} for name,data in entries[2:]]}
+        native_raw=json.dumps(native).encode();image='sha256:'+digest(native_raw)
+        index={'schemaVersion':2,'mediaType':'application/vnd.oci.image.index.v1+json','manifests':[{'mediaType':'application/vnd.oci.image.manifest.v1+json','digest':image,'size':len(native_raw)}]}
+        entries += [('blobs/sha256/'+image[7:],native_raw),('index.json',json.dumps(index).encode()),('oci-layout',b'{"imageLayoutVersion":"1.0.0"}')]
+        return entries,image
+
+    def test_native_oci_manifest_identity_preserves_all_immutable_bytes(self):
+        self.entries,self.image=self.native_manifest_fixture();write_tar(self.source,self.entries)
+        actual=self.normalize();self.assertEqual(actual['image_id'],self.image)
+        original=dict(self.entries)
+        with tarfile.open(self.output) as tar:
+            self.assertEqual(set(tar.getnames()),set(original))
+            for name in tar.getnames():self.assertEqual(tar.extractfile(name).read(),original[name])
+            self.assertEqual('sha256:'+digest(tar.extractfile('blobs/sha256/'+self.image[7:]).read()),self.image)
+
+    def test_native_oci_foreign_index_and_graph_refuse(self):
+        for name in ['index.json','blobs/sha256/native']:
+            entries,self.image=self.native_manifest_fixture()
+            index=next(i for i,(n,_) in enumerate(entries) if n==('index.json' if name=='index.json' else 'blobs/sha256/'+self.image[7:]))
+            n,raw=entries[index];value=json.loads(raw)
+            if name=='index.json':value['manifests'][0]['digest']='sha256:'+'f'*64
+            else:value['config']['size']+=1
+            entries[index]=(n,json.dumps(value).encode());write_tar(self.source,entries);self.refused('OCI_')
+
     def test_oci_gzip_preserves_config_and_writes_exact_rootfs(self):
         write_tar(self.source,self.entries)
         plain = self.normalize()['archive_sha256']; self.output.unlink()

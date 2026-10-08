@@ -1,0 +1,320 @@
+diff --git a/docs/changelog/2026-10-08-a-diamond-seat-credit-waits-for-the-hand-being-prepared.md b/docs/changelog/2026-10-08-a-diamond-seat-credit-waits-for-the-hand-being-prepared.md
+new file mode 100644
+index 000000000..b8978221f
+--- /dev/null
++++ b/docs/changelog/2026-10-08-a-diamond-seat-credit-waits-for-the-hand-being-prepared.md
+@@ -0,0 +1,55 @@
++# A Diamond Seat Credit Waits For The Hand Being Prepared
++
++Date: 2026-10-08. Lane: Production Alerts fleet (PRIMARY-CHAT).
++
++## What Happened
++
++On 2026-10-07 three Diamond cash hands (04:35, 08:44 and 15:24 UTC) were
++refused by `fn_poker_diamond_settle_cash_hand` with `diamond_hand_stale_seat`.
++Each refusal raised `ServerTableEngine.authoritative_hand_semantic_refusal` and
++`postHandTasks.hand_history_failed`, the engine generation for the table was
++terminated, and the table stopped dealing until its seats were released.
++
++Read from production: every refused hand had exactly one horse top-up through
++`fn_poker_diamond_top_up` committed 2 to 4 seconds after the previous hand's
++receipt in `poker_diamond_hand_receipts` (amounts 289, 103 and 1991, each with
++`expected_stack` equal to the stack the refused hand later reported as its
++opening stack). No seat joined or left in those windows.
++
++## Root Cause
++
++`addChips` reads `handController === null` as "between hands". `dealHand()`
++snapshots every stack under the seat boundary and only then sets
++`handController`. The chip lane has taken that boundary before deciding seat
++versus queue since 2026-09-28, but the Diamond branch returned above it, so a
++direct Diamond top-up that arrived while the next hand was being prepared
++raised `table_seats.stack` under a roster that still held the old stack. The
++settler then compared the seat row with the hand's `stack_before`, found them
++different, and refused the whole hand.
++
++Horse Diamond reloads began with #6309 (2026-10-06), which is why the class
++appeared on 2026-10-07.
++
++## Fix
++
++- A between-hands Diamond top-up takes the seat boundary and decides only once
++  it owns it: either it lands before the roster is snapshotted, so the dealt
++  stack includes it, or the hand has started and it becomes an intent that
++  lands after settlement.
++- The intent sweep that lands queued Diamond top-ups also holds the seat
++  boundary. It runs under the dealing loop's step budget, which stops waiting
++  without cancelling the RPC, so a landing still in flight could otherwise
++  commit after the roster was snapshotted.
++
++## Hardening
++
++1. Regression: `server/src/engine/ADiamondSeatCreditWaitsForTheHandBeingPrepared.test.ts`
++   fails on the previous code (the custody RPC fires while preparation holds the
++   boundary) and passes with the fix.
++2. Invariant: the settler's `diamond_hand_stale_seat` refusal is unchanged and
++   remains the database-side proof that a hand's opening stacks are the seat rows.
++3. Detection: a recurrence still raises
++   `ServerTableEngine.authoritative_hand_semantic_refusal` into
++   `financial_alerts`, which the intake mirrors into `operational_alert_events`.
++4. CI: the server job in `ci.yml` runs every server test on pull requests that
++   touch `server/`.
+diff --git a/server/src/engine/ADiamondSeatCreditWaitsForTheHandBeingPrepared.test.ts b/server/src/engine/ADiamondSeatCreditWaitsForTheHandBeingPrepared.test.ts
+new file mode 100644
+index 000000000..f8b88fe34
+--- /dev/null
++++ b/server/src/engine/ADiamondSeatCreditWaitsForTheHandBeingPrepared.test.ts
+@@ -0,0 +1,151 @@
++/**
++ * A DIAMOND SEAT CREDIT WAITS FOR THE HAND BEING PREPARED (2026-10-08).
++ *
++ * Production 2026-10-07: three Diamond cash hands (04:35, 08:44 and 15:24 UTC)
++ * were refused by fn_poker_diamond_settle_cash_hand with
++ * diamond_hand_stale_seat, and each table stopped dealing. Every one had
++ * exactly one horse top-up through fn_poker_diamond_top_up committed 2-4 s
++ * after the previous hand's receipt: addChips read `handController === null`
++ * while dealHand() was preparing the next hand under the seat boundary, so the
++ * Diamonds landed on table_seats.stack after the roster's stacks had been
++ * snapshotted, and the settler found the seat disagreeing with stack_before.
++ *
++ * The chip lane has waited on the seat boundary since 2026-09-28
++ * (ASeatCreditWaitsForTheHandBeingPrepared.test.ts); the Diamond branch
++ * returned above it. These pins fail on the pre-fix addChips (the custody RPC
++ * fires at once while the boundary is held) and pass once a Diamond seat
++ * credit, and the intent sweep that lands queued top-ups, take the boundary
++ * before deciding.
++ */
++import { afterEach, describe, expect, it, vi } from 'vitest';
++import { ServerTableEngine } from './ServerTableEngine.js';
++import { supabase } from '../services/supabase/client.js';
++
++const TABLE = '00000000-0000-0000-0000-00000000d1a7';
++const diamondTable = {
++  id: TABLE,
++  club_id: 'arena',
++  union_id: null,
++  arena: { id: 'arena', asset: 'diamonds', is_platform: true, union_id: null },
++  game_variant: 'nlh',
++  tournament_id: null,
++  cluster_id: null,
++  status: 'waiting',
++  small_blind: 1,
++  big_blind: 2,
++  min_buy_in: 20,
++  max_buy_in: 200,
++};
++
++afterEach(() => {
++  vi.restoreAllMocks();
++});
++
++function engineWith(stack: number) {
++  const engine = new ServerTableEngine(TABLE) as any;
++  engine.tableInfo = { ...diamondTable };
++  engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack, is_horse: true }];
++  engine.getMaxBuyIn = () => 200;
++  engine.handController = null;
++  engine.lifecycleCanMutate = () => true;
++  engine.broadcastCurrentState = vi.fn();
++  return engine;
++}
++
++const flush = async () => {
++  for (let i = 0; i < 10; i++) await Promise.resolve();
++};
++
++describe('a between-hands Diamond top-up cannot land under a roster already snapshotted', () => {
++  it('waits while a hand is being prepared, then becomes an intent once the hand has started', async () => {
++    const engine = engineWith(40);
++    const rpc = vi
++      .spyOn(supabase, 'rpc')
++      .mockResolvedValue({ data: { stack: 140 }, error: null } as any);
++
++    // dealHand() owns the seat boundary and has snapshotted stack 40.
++    const releasePreparation = await engine.acquireSeatBoundary();
++    const pending = engine.addChips('hero', 100, 'op-race');
++    await flush();
++    // Pre-fix: fn_poker_diamond_top_up already ran here and raised the seat.
++    expect(rpc, 'a Diamond top-up landed under a prepared roster').not.toHaveBeenCalled();
++
++    // The hand starts (controller set) and preparation releases the boundary.
++    engine.handController = {};
++    releasePreparation();
++    const res = await pending;
++
++    expect(res).toEqual({ success: true, queued: true, applied: 100 });
++    expect(rpc).not.toHaveBeenCalled();
++    // The dealt stack is untouched; the intent lands after settlement.
++    expect(engine.seatedPlayers[0].stack).toBe(40);
++    expect([...engine.diamondTopUpIntents.values()]).toEqual([{ userId: 'hero', amount: 100 }]);
++  });
++
++  it('lands on the seat when the prepared hand was abandoned before it started', async () => {
++    const engine = engineWith(40);
++    const rpc = vi
++      .spyOn(supabase, 'rpc')
++      .mockResolvedValue({ data: { stack: 140 }, error: null } as any);
++    const releasePreparation = await engine.acquireSeatBoundary();
++    const pending = engine.addChips('hero', 100, 'op-abandoned');
++    await flush();
++    expect(rpc).not.toHaveBeenCalled();
++    releasePreparation(); // no controller: still between hands
++    await expect(pending).resolves.toEqual({ success: true, applied: 100 });
++    expect(rpc).toHaveBeenCalledTimes(1);
++    expect(rpc.mock.calls[0][0]).toBe('fn_poker_diamond_top_up');
++    expect(rpc.mock.calls[0][1]).toMatchObject({ p_amount: 100, p_expected_stack: 40 });
++    expect(engine.seatedPlayers[0].stack).toBe(140);
++  });
++
++  it('hand preparation waits for an in-flight Diamond top-up, so the dealt stack includes it', async () => {
++    const engine = engineWith(40);
++    let finishRpc!: (v: unknown) => void;
++    vi.spyOn(supabase, 'rpc').mockReturnValue(
++      new Promise((resolve) => {
++        finishRpc = resolve;
++      }) as any
++    );
++    const topUp = engine.addChips('hero', 100, 'op-inflight');
++    await flush();
++
++    let prepared = false;
++    const preparation = engine.acquireSeatBoundary().then((release: () => void) => {
++      prepared = true;
++      return release;
++    });
++    await flush();
++    // Pre-fix: preparation got the boundary at once and snapshotted 40.
++    expect(prepared).toBe(false);
++
++    finishRpc({ data: { stack: 140 }, error: null });
++    await topUp;
++    const release = await preparation;
++    expect(prepared).toBe(true);
++    expect(engine.seatedPlayers[0].stack).toBe(140);
++    release();
++  });
++
++  it('the intent sweep does not land a queued top-up while a hand is being prepared', async () => {
++    const engine = engineWith(40);
++    engine.handController = {};
++    await engine.addChips('hero', 100, 'op-queued');
++    engine.handController = null;
++    const rpc = vi
++      .spyOn(supabase, 'rpc')
++      .mockResolvedValue({ data: { stack: 140 }, error: null } as any);
++
++    const releasePreparation = await engine.acquireSeatBoundary();
++    const sweep = engine.processPendingAddOns(engine.seatedPlayers);
++    await flush();
++    expect(rpc, 'an intent landed under a prepared roster').not.toHaveBeenCalled();
++
++    // The prepared hand starts: the intent waits for its settlement.
++    engine.handController = {};
++    releasePreparation();
++    await sweep;
++    expect(rpc).not.toHaveBeenCalled();
++    expect(engine.diamondTopUpIntents.size, 'the intent was dropped').toBe(1);
++  });
++});
+diff --git a/server/src/engine/ServerTableEngineSeating.ts b/server/src/engine/ServerTableEngineSeating.ts
+index da79b9ad2..5ea1929cc 100644
+--- a/server/src/engine/ServerTableEngineSeating.ts
++++ b/server/src/engine/ServerTableEngineSeating.ts
+@@ -107,14 +107,44 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
+          longer matched the seat, which it refuses. Until the settlement lands
+          the top-up is an intent, exactly as mid hand, and it is applied after
+          the settlement and before the next deal. */
+-      return this.addDiamonds(
+-        userId,
+-        amount,
+-        maxBuyIn,
+-        midHand || this.hasSettlementInFlight(),
+-        player,
+-        opId
+-      );
++      if (midHand || this.hasSettlementInFlight()) {
++        return this.addDiamonds(userId, amount, maxBuyIn, true, player, opId);
++      }
++      /* A DIAMOND SEAT CREDIT WAITS FOR THE HAND BEING PREPARED (2026-10-08).
++         The chip lane below has taken the seat boundary since 2026-09-28; this
++         branch returned above it and never did. dealHand() snapshots every
++         stack under that boundary and only then sets `handController`, so a
++         direct top-up that read "between hands" while the next hand was being
++         prepared raised table_seats.stack under a roster that still held the
++         old stack. fn_poker_diamond_settle_cash_hand then found the seat
++         disagreeing with the hand's stack_before and refused the whole hand
++         with diamond_hand_stale_seat. Production 2026-10-07: three Diamond
++         cash hands (04:35, 08:44, 15:24 UTC), each with exactly one horse
++         top-up committed 2-4 s after the previous hand's receipt, and each
++         table stopped dealing. The decision is taken only once the boundary
++         is owned: either it lands before the roster is snapshotted (and the
++         dealt stack includes it), or the hand has started and it is an
++         intent. */
++      let releaseSeatBoundary: () => void;
++      try {
++        releaseSeatBoundary = await this.acquireSeatBoundary();
++      } catch {
++        return { success: false, error: 'Diamond Top Up Failed' };
++      }
++      try {
++        const seated = this.seatedPlayers.find((p) => p.user_id === userId);
++        if (!seated) return { success: false, error: 'Player not seated' };
++        return await this.addDiamonds(
++          userId,
++          amount,
++          this.getMaxBuyIn(),
++          !!this.handController || this.hasSettlementInFlight(),
++          seated,
++          opId
++        );
++      } finally {
++        releaseSeatBoundary();
++      }
+     }
+ 
+     /* A SEAT CREDIT WAITS FOR THE HAND BEING PREPARED (2026-09-28).
+@@ -443,6 +473,27 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
+     // the settler checks the seat's opening stack, and a top-up landing under it
+     // would make that stack wrong. The next sweep lands it.
+     if (this.handController || this.hasSettlementInFlight()) return;
++    /* And not while the next hand is being prepared (2026-10-08): the sweep
++       runs under the dealing loop's step budget, which stops waiting without
++       cancelling the RPC, so a landing still in flight could commit after
++       dealHand() snapshotted the roster. Holding the seat boundary makes hand
++       preparation wait for every landing, exactly as a direct top-up does. */
++    let releaseSeatBoundary: () => void;
++    try {
++      releaseSeatBoundary = await this.acquireSeatBoundary();
++    } catch {
++      return;
++    }
++    try {
++      if (this.handController || this.hasSettlementInFlight()) return;
++      await this.landDiamondTopUpIntents(players);
++    } finally {
++      releaseSeatBoundary();
++    }
++  }
++
++  /** Land the queued Diamond intents; the caller owns the seat boundary. */
++  private async landDiamondTopUpIntents(players: SeatedPlayer[]): Promise<void> {
+     const maxBuyIn = Math.floor(this.getMaxBuyIn());
+     for (const [requestId, intent] of [...this.diamondTopUpIntents]) {
+       const player = players.find((p) => p.user_id === intent.userId);
+diff --git a/tests/a-diamond-top-up-takes-the-table-before-the-wallet.law.test.ts b/tests/a-diamond-top-up-takes-the-table-before-the-wallet.law.test.ts
+index c1ac4525a..38a0401e8 100644
+--- a/tests/a-diamond-top-up-takes-the-table-before-the-wallet.law.test.ts
++++ b/tests/a-diamond-top-up-takes-the-table-before-the-wallet.law.test.ts
+@@ -118,7 +118,11 @@ describe('LAW: a Diamond top-up takes the table before the wallet', () => {
+   });
+ 
+   it('the engine holds a top-up while the finished hand is still settling', () => {
+-    expect(ENGINE).toContain('midHand || this.hasSettlementInFlight(),');
++    // 2026-10-08: the between-hands decision is re-read once the seat boundary
++    // is owned (ADiamondSeatCreditWaitsForTheHandBeingPrepared.test.ts), so the
++    // settlement window is asked both before and after the wait.
++    expect(ENGINE).toContain('if (midHand || this.hasSettlementInFlight()) {');
++    expect(ENGINE).toContain('!!this.handController || this.hasSettlementInFlight(),');
+     expect(ENGINE).toContain('if (this.handController || this.hasSettlementInFlight()) return;');
+   });
+ });

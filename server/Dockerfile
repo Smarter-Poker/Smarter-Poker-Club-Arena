@@ -21,9 +21,11 @@ COPY src/ ./src/
 # Resource CI compares every emitted runtime file to the full checked build.
 # The runtime project omits unit-test entrypoints and unused declarations.
 # Full test compilation and execution remain in the exact-source CI preflight.
-# The 512 MiB V8 heap leaves native/compiler and BuildKit room inside the
-# canonical 640 MiB no-swap builder. Resource CI proves exact runtime output.
-RUN ulimit -c 0 && node --max-old-space-size=512 ./node_modules/typescript/bin/tsc --project tsconfig.emit.json
+# Bound both V8 generations: the old-generation ceiling alone does not bound
+# compiler RSS. A 4 MiB semi-space caps the young generation at 12 MiB
+# independently of detected cgroup memory. The builder stays at 640 MiB with
+# no swap; resource CI still proves every checked runtime output.
+RUN ulimit -c 0 && node --max-old-space-size=512 --max-semi-space-size=4 ./node_modules/typescript/bin/tsc --project tsconfig.emit.json
 
 # Remove dev dependencies
 RUN npm prune --omit=dev --no-audit --no-fund

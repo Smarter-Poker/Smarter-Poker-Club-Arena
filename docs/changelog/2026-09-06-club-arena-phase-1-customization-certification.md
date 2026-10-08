@@ -306,3 +306,42 @@ after the compatible client and engine are proven live.
   authenticated production proof, durable seal, bounded helper completion,
   exact finalizer installation/readback, and terminal live verification remain
   required before Phase 1 may be called complete.
+
+## Table Theme Final Closeout — 2026-10-08
+
+- Scope: finish remaining Table Studio work; no new engine or database change.
+- Owner: branch `agent/table-theme-closeout-20261008`, task-owned SSD checkout
+  `/Volumes/SmarterWork/agent-work/table-theme-final-20261008-01a11b38/source`.
+- Current policies reread after resumption at `2026-10-08T11:29:49.259Z`,
+  version 2.9, manifest
+  `a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`.
+  All four canonical file hashes match the receipt already recorded above.
+  Repository instructions, publishing, deployment paths, storage, and existing
+  checkpoint were read. Base: `743ae1a1c158e828321b07d151a27fa9f9d32de0`.
+- Production baseline is served client `e16d38f3e6693f55348fd3b7a470098bbc9a51dc`
+  at both required endpoints, publisher `37744571669`. Authenticated run
+  `37754904430` passed the three customization journeys on first attempts,
+  all four live-table cases, fixture deletion, and durable seal. The exact
+  prerequisite, helper and finalizer are installed and read back; historical
+  false-stamped `20261005111523` remains untouched.
+- Remaining defect reproduced: Vite development rewrites React named imports
+  to const bindings at their source position, so the earlier Lightning lazy
+  declaration throws before Table Studio mounts. Production bundling already
+  passed. Move the React import before that declaration without changing lazy
+  chunking. The maintained entry-shell regression fails before the correction.
+- Acceptance: corrected development startup; real-component mobile selection,
+  durable persistence, two-tab fanout, single-charge purchase/auto-apply,
+  accessibility; required local and protected checks; client publication and
+  both live identities plus affected authenticated behavior. No active-player
+  money or processor payment is used for this client correction.
+- Evidence archive:
+  `/Volumes/SmarterArchives/agent-evidence/table-theme-final-20261008-01a11b38`.
+  Publication and final verification remain pending.
+
+- Corrected local candidate: client TypeScript passed; 49/49 focused tests
+  passed, including successful/cancelled checkout-return recovery and stale
+  account refusal. Real Vite-development Table Studio browser journeys passed
+  3/3 with persistence, two-tab fanout, purchase/auto-apply and accessibility.
+  ESLint reports zero errors and two existing App warnings; policy canonical
+  comparison and whitespace validation passed. The new regression changed
+  from one reproducible failure to passing without changing its assertion.

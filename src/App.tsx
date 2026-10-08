@@ -8,6 +8,7 @@ import { DIAMOND_GAME_TITLES } from './utils/diamondGameTitles';
  * Root application with routing, auth guards, and global providers
  */
 
+import { Suspense, lazy, useState, useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { SessionSummaryHost } from './components/session/SessionSummaryHost';
 // LIGHTNING PHASE 8: lazy, so the Lightning component tree stays out of the
@@ -20,7 +21,6 @@ const LightningSessionSummaryHost = lazy(() =>
 import TournamentRankingHost from './components/tournament/TournamentRankingHost';
 import TournamentAutoSeat from './components/tournament/TournamentAutoSeat';
 import { MEDIA_BASE } from './utils/mediaBase';
-import { Suspense, lazy, useState, useEffect } from 'react';
 import { supabase } from './lib/supabase';
 import { realtimeChannelService } from './services/RealtimeChannelService';
 import { OfflineQueueService } from './services/OfflineQueueService';

@@ -29,6 +29,19 @@ const ROOT = join(__dirname, '..', '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
 
 describe('the eager app shell stays free of lazy-only code', () => {
+  it('initializes React lazy before module-level loaders in the Vite dev shell', () => {
+    // Vite's CommonJS interop emits React named imports as const bindings at
+    // their source position. ES module import hoisting does not protect a
+    // loader evaluated before those bindings, even when the production build works.
+    const app = read('src/App.tsx');
+    const reactImport = app.match(/import\s*\{[^}]*\blazy\b[^}]*\}\s*from\s*['"]react['"]/);
+    expect(reactImport).not.toBeNull();
+    const loader = app.indexOf('const LightningSessionSummaryHost = lazy(');
+    expect(loader).toBeGreaterThan(-1);
+    expect(reactImport!.index).toBeLessThan(loader);
+    expect(app).toContain("import('./components/lightning/LightningSessionSummary')");
+  });
+
   it('the ranking host loads persisted format routing only inside Play Again', () => {
     const host = read('src/components/tournament/TournamentRankingHost.tsx');
     expect(host).not.toMatch(/\bfrom\s+['"][^'"]*tournamentPresentation['"]/);

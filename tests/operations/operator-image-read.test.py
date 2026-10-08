@@ -2,6 +2,7 @@
 """Fixed-source security checks. No Docker, host or provider calls."""
 import base64
 import hashlib
+import gzip
 import importlib.util
 import io
 import json
@@ -43,6 +44,47 @@ def archive(names, oci=False, format=tarfile.USTAR_FORMAT):
     return out.getvalue(),layer_id
 
 
+def gzip_archive(names, *, bad_diff=False, bad_blob=False, truncated=False, concatenated=False, descriptor_first=False):
+    layer = layer_bytes(names)
+    diff = 'sha256:'+hashlib.sha256(layer).hexdigest()
+    packed = gzip.compress(layer, mtime=0)
+    if truncated: packed = packed[:-1]
+    if concatenated: packed += gzip.compress(b'opaque', mtime=0)
+    digest = 'sha256:'+hashlib.sha256(packed).hexdigest()
+    blob = 'blobs/sha256/'+('c'*64 if bad_blob else digest[7:])
+    graph = {'schemaVersion':2,'mediaType':'application/vnd.oci.image.manifest.v1+json','config':{'mediaType':'application/vnd.oci.image.config.v1+json','digest':REQUEST['imageId'],'size':2},'layers':[{'mediaType':'application/vnd.oci.image.layer.v1.tar+gzip','digest':digest,'size':len(packed)}]}
+    metadata = json.dumps(graph).encode()
+    pair = ('blobs/sha256/'+hashlib.sha256(metadata).hexdigest(), metadata)
+    out = io.BytesIO()
+    with tarfile.open(fileobj=out, mode='w', format=tarfile.USTAR_FORMAT) as t:
+        entries = [('manifest.json',b'[]'),('b'*64+'.json',b'{}')]
+        entries += [pair,(blob,packed)] if descriptor_first else [(blob,packed),pair]
+        for name,data in entries:
+            m=tarfile.TarInfo(name);m.size=len(data);t.addfile(m,io.BytesIO(data))
+    return out.getvalue(), ('sha256:'+'d'*64 if bad_diff else diff)
+
+def manifest_identity_fixture(*, wrong_index=False, wrong_source=False, foreign_env=False, annotations=None):
+    layer=layer_bytes(['app/dist/index.js']);diff='sha256:'+hashlib.sha256(layer).hexdigest()
+    packed=gzip.compress(layer,mtime=0);blob='sha256:'+hashlib.sha256(packed).hexdigest()
+    config={'architecture':'amd64','os':'linux','created':'fixed','history':[],
+        'rootfs':{'type':'layers','diff_ids':[diff]},'config':{'Env':['PATH=/usr/bin','GIT_COMMIT_SHA='+REQUEST['releaseSha']]+(['SECRET=opaque'] if foreign_env else []),
+        'Labels':{'org.opencontainers.image.revision':'d'*40 if wrong_source else REQUEST['releaseSha'],
+                  'com.smarterpoker.engine.source-tree':REQUEST['serverTree'],
+                  'com.smarterpoker.engine.build-contract':'clean-server-archive-v1'}}}
+    raw=json.dumps(config).encode();config_id='sha256:'+hashlib.sha256(raw).hexdigest()
+    native={'schemaVersion':2,'mediaType':'application/vnd.oci.image.manifest.v1+json','config':{'mediaType':'application/vnd.oci.image.config.v1+json','digest':config_id,'size':len(raw)},'layers':[{'mediaType':'application/vnd.oci.image.layer.v1.tar+gzip','digest':blob,'size':len(packed)}]}
+    native_raw=json.dumps(native).encode();image_id='sha256:'+hashlib.sha256(native_raw).hexdigest()
+    index={'schemaVersion':2,'mediaType':'application/vnd.oci.image.index.v1+json','manifests':[{'mediaType':'application/vnd.oci.image.manifest.v1+json','digest':'sha256:'+'e'*64 if wrong_index else image_id,'size':len(native_raw)}]}
+    if annotations is not None:index['manifests'][0]['annotations']=annotations
+    config_name='blobs/sha256/'+config_id[7:];layer_name='blobs/sha256/'+blob[7:]
+    docker=[{'Config':config_name,'RepoTags':['club-arena-engine:'+REQUEST['releaseSha']],'Layers':[layer_name]}]
+    out=io.BytesIO()
+    with tarfile.open(fileobj=out,mode='w',format=tarfile.USTAR_FORMAT) as tar:
+        for name,data in [('manifest.json',json.dumps(docker).encode()),('index.json',json.dumps(index).encode()),('oci-layout',b'{"imageLayoutVersion":"1.0.0"}'),('blobs/sha256/'+image_id[7:],native_raw),(config_name,raw),(layer_name,packed)]:
+            entry=tarfile.TarInfo(name);entry.size=len(data);tar.addfile(entry,io.BytesIO(data))
+    return (out.getvalue(),diff),image_id
+
+
 class RawReader:
     def __init__(self,raw):self.stream=io.BytesIO(raw)
     def exact(self,size):
@@ -63,11 +105,18 @@ class ReaderTests(unittest.TestCase):
         for names in [b'SUPABASE_SERVICE_ROLE_KEY\n',b'PATH\nPATH\n',b'']:
             with self.assertRaises(RuntimeError):R.environment_names(names)
 
-    def scan(self,fixture):
+    def test_docker_format_single_extra_terminal_newline(self):
+        names = b'PATH\nNODE_VERSION\nYARN_VERSION\nNODE_ENV\nENGINE_ALERT_JOURNAL_DIR\nNODE_OPTIONS\nGIT_COMMIT_SHA\n'
+        self.assertEqual(R.environment_names(names + b'\n'), sorted(names.decode().splitlines()))
+        for bad in [names + b'\n\n', b'PATH\n\nNODE_ENV\n\n', b'PATH\nPATH\n\n', b'UNKNOWN\n\n', b'\n\n']:
+            with self.subTest(raw=bad), self.assertRaises(RuntimeError):
+                R.environment_names(bad)
+
+    def scan(self,fixture, *, image_id=None, **kwargs):
         data,layer_id=fixture
         child=subprocess.Popen([sys.executable,'-c',"import sys,base64;sys.stdout.buffer.write(base64.b64decode(sys.argv[1]))",base64.b64encode(data).decode()],stdout=subprocess.PIPE)
         reader=R.BoundedArchiveReader(child.stdout,time.monotonic()+3)
-        try:return R.scan_host_archive(reader,REQUEST['imageId'],[layer_id])
+        try:return R.scan_host_archive(reader,image_id or REQUEST['imageId'],[layer_id],**kwargs)
         finally:
             reader.close();child.stdout.close()
             if child.poll() is None:child.kill()
@@ -83,6 +132,50 @@ class ReaderTests(unittest.TestCase):
     def test_oci_descriptor_is_not_mistaken_for_a_layer(self):
         result=self.scan(archive(['app/dist/index.js'],oci=True))
         self.assertEqual(result['layers'],1)
+
+    def test_actual_oci_gzip_layer_is_scanned_and_graph_bound(self):
+        for first in [False,True]:
+            with self.subTest(descriptor_first=first):
+                result = self.scan(gzip_archive(['app/dist/index.js'],descriptor_first=first))
+                self.assertEqual(result['layers'],1)
+                self.assertEqual(result['layerHeaderCount'],1)
+
+    def test_native_manifest_identity_has_one_bound_config_graph(self):
+        fixture,image=manifest_identity_fixture()
+        result=self.scan(fixture,image_id=image,expected_tag='club-arena-engine:'+REQUEST['releaseSha'],source_sha=REQUEST['releaseSha'],server_tree=REQUEST['serverTree'])
+        self.assertEqual(result['layers'],1)
+        for opts in [dict(wrong_index=True),dict(wrong_source=True),dict(foreign_env=True)]:
+            fixture,image=manifest_identity_fixture(**opts)
+            with self.subTest(opts=opts),self.assertRaises(RuntimeError):
+                self.scan(fixture,image_id=image,expected_tag='club-arena-engine:'+REQUEST['releaseSha'],source_sha=REQUEST['releaseSha'],server_tree=REQUEST['serverTree'])
+
+    def test_bound_native_index_annotations(self):
+        annotations={'io.containerd.image.name':'docker.io/library/club-arena-engine:'+REQUEST['releaseSha'],
+                     'org.opencontainers.image.ref.name':REQUEST['releaseSha'],
+                     'org.opencontainers.image.created':'2026-10-08T07:40:49.123Z'}
+        fixture,image=manifest_identity_fixture(annotations=annotations)
+        self.scan(fixture,image_id=image,expected_tag='club-arena-engine:'+REQUEST['releaseSha'],source_sha=REQUEST['releaseSha'],server_tree=REQUEST['serverTree'])
+        for key,value in [('io.containerd.image.name','foreign:tag'),('org.opencontainers.image.ref.name','f'*40),('org.opencontainers.image.created','2026-02-30T00:00:00Z'),('org.opencontainers.image.created','2026-10-08T07:40:49+00:99'),('org.opencontainers.image.created',7),('unknown.annotation','opaque')]:
+            bad={**annotations,key:value};fixture,image=manifest_identity_fixture(annotations=bad)
+            with self.subTest(key=key,value=value),self.assertRaises(RuntimeError):
+                self.scan(fixture,image_id=image,expected_tag='club-arena-engine:'+REQUEST['releaseSha'],source_sha=REQUEST['releaseSha'],server_tree=REQUEST['serverTree'])
+
+    def test_manifest_identity_normalizer_to_local_header_scan(self):
+        spec=importlib.util.spec_from_file_location('normalizer',ROOT/'server/scripts/engine-image-archive.py')
+        normalizer=importlib.util.module_from_spec(spec);spec.loader.exec_module(normalizer)
+        fixture,image=manifest_identity_fixture()
+        with tempfile.TemporaryDirectory() as directory:
+            source=Path(directory)/'source.tar';output=Path(directory)/'normalized.tar'
+            source.write_bytes(fixture[0])
+            normalizer.normalize_engine_archive(source,output,source_sha=REQUEST['releaseSha'],server_tree=REQUEST['serverTree'],image_id=image)
+            self.assertEqual(R.inspect_layer_headers(output),1)
+
+    def test_gzip_historical_credentials_graph_and_partial_refuse(self):
+        for names,opts in [(['app/.env'],{}),(['app/safe'],{'bad_diff':True}),(['app/safe'],{'bad_blob':True}),(['app/safe'],{'truncated':True}),(['app/safe'],{'concatenated':True})]:
+            with self.subTest(opts=opts,names=names), self.assertRaises(RuntimeError):
+                self.scan(gzip_archive(names,**opts))
+        with patch.object(R,'LIMIT',1000), self.assertRaises(RuntimeError):
+            self.scan(gzip_archive(['app/safe']))
 
     def test_bounded_inner_pax_and_gnu_long_names(self):
         for format in [tarfile.PAX_FORMAT, tarfile.GNU_FORMAT]:
@@ -119,6 +212,32 @@ class ReaderTests(unittest.TestCase):
     def test_all_historical_layer_headers_refused(self):
         for name in ['app/.env','app/.env.production','root/.aws/credentials','root/id_ed25519','root/.npmrc','root/.git-credentials']:
             with self.subTest(name=name),self.assertRaises(RuntimeError):self.scan(archive([name]))
+
+    def test_empty_regular_npmrc_only(self):
+        def one(name, *, size=0, kind=tarfile.REGTYPE, pax=None, link=''):
+            out=io.BytesIO()
+            with tarfile.open(fileobj=out,mode='w',format=tarfile.PAX_FORMAT) as t:
+                m=tarfile.TarInfo(name);m.type=kind;m.size=size;m.linkname=link
+                if pax:m.pax_headers=pax
+                t.addfile(m,io.BytesIO(b'x'*size))
+            return out.getvalue()
+        for name in ['root/.npmrc','app/.npmrc']:
+            raw=one(name)
+            self.assertEqual(R.scan_layer(RawReader(raw),len(raw)),1)
+        for raw in [one('root/.npmrc',size=1),
+                    one('root/.npmrc',kind=tarfile.DIRTYPE),
+                    one('root/.npmrc',kind=tarfile.SYMTYPE,link='safe'),
+                    one('root/.npmrc',kind=tarfile.LNKTYPE,link='safe'),
+                    one('root/.env'),one('root/.netrc'),
+                    one('root/credentials/.npmrc'),
+                    one('root/.npmrc/safe'),
+                    one('root/.npmrc',pax={'size':'1'}),
+                    one('safe',pax={'path':'root/.npmrc','size':'1'}),
+                    one('root/.npmrc',pax={'path':'root/.env'})]:
+            with self.subTest(length=len(raw)),self.assertRaises(RuntimeError):
+                R.scan_layer(RawReader(raw),len(raw))
+        raw=one('safe',pax={'path':'root/.npmrc'})
+        self.assertEqual(R.scan_layer(RawReader(raw),len(raw)),2)
 
     def test_deleted_env_whiteout_refused(self):
         with self.assertRaises(RuntimeError):self.scan(archive(['app/.wh..env']))

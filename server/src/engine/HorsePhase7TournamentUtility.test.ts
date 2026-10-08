@@ -1759,6 +1759,42 @@ describe('Phase 7 live action-clock wiring', () => {
     expect(new Set(drainFires().map((receipt) => receipt.feature))).toContain(
       'phase7_utility_skip_incomplete'
     );
+    expect(decision.tournamentUtilityRefusal).toBeUndefined();
+    expect(fallback.tournamentUtilityRefusal).toBe('context_incomplete');
+  });
+
+  it('names its Phase 7 refusal in the decision receipt on a lane without telemetry', () => {
+    // Reachability 2026-10-08: a second look runs without telemetry, so a
+    // refusal that lived only in a counter left its journal record without a
+    // cause. The receipt now names it on every lane.
+    const incomplete = decisionState('incomplete');
+    const decision = HorseLogic.decide(
+      incomplete.hero,
+      incomplete.state,
+      'balanced',
+      {},
+      { telemetry: false, mind: false, v27GtoCharts: false }
+    );
+    expect(decision.tournamentUtility).toBeUndefined();
+    expect(decision.tournamentUtilityRefusal).toBe('context_incomplete');
+    expect(horseDecisionReceiptIsValid(decision)).toBe(true);
+    const complete = decisionState('complete');
+    const evaluated = HorseLogic.decide(
+      complete.hero,
+      complete.state,
+      'balanced',
+      {},
+      { telemetry: false, mind: false, v27GtoCharts: false }
+    );
+    expect(evaluated.tournamentUtility).toBeDefined();
+    expect(evaluated.tournamentUtilityRefusal).toBeUndefined();
+    // A refusal is never valid beside the ledger it says is absent.
+    expect(horseDecisionReceiptIsValid({ ...evaluated, tournamentUtilityRefusal: 'unknown' })).toBe(
+      false
+    );
+    expect(
+      horseDecisionReceiptIsValid({ ...decision, tournamentUtilityRefusal: 'Not A Name' })
+    ).toBe(false);
   });
 
   it.each([
@@ -1837,6 +1873,7 @@ describe('Phase 7 live action-clock wiring', () => {
     const features = new Set(drainFires().map((receipt) => receipt.feature));
     expect(features).toContain('phase7_utility_unavailable');
     expect(features).toContain('phase7_unavailable_multi_board');
+    expect(decision.tournamentUtilityRefusal).toBe('multi_board');
   });
 
   function jointRiverState(boardCount: number, dealerSeat: number) {
@@ -1956,6 +1993,7 @@ describe('Phase 7 live action-clock wiring', () => {
       expect(utility).toHaveBeenCalledTimes(1);
       expect(decision.tournamentUtility).toBeUndefined();
       expect(drainFires().map((row) => row.feature)).toContain('phase7_unavailable_work_budget');
+      expect(decision.tournamentUtilityRefusal).toBe('work_budget');
     } finally {
       utility.mockRestore();
       clock.mockRestore();

@@ -1,0 +1,335 @@
+/**
+ * LIGHTNING PHASE 8: THE PLAYER'S OWN LIGHTNING NUMBERS, READ FROM THE DATABASE.
+ *
+ * Five browser RPCs (granted to `authenticated`, each answering for the
+ * caller only):
+ *
+ *   fn_lightning_my_sessions()                    every open pool session
+ *   fn_lightning_session_stats(p_pool_session_id)  the running session
+ *   fn_lightning_session_summary(p_pool_session_id) the same, plus how it ended
+ *   fn_lightning_pool_status(p_cluster_id)         BUILDING / ACTIVE / HOT / THIN
+ *   fn_lightning_recent_hands(p_limit, p_pool_session_id)  the last hands
+ *
+ * Every answer is parsed defensively here: a field that is missing or not a
+ * number is "not known" (null), never a guess and never a zero that would
+ * print as a real result. Nothing in this file moves money.
+ */
+import { supabase } from '../lib/supabase';
+import { isUUID } from '../utils/clubIdResolver';
+import type { LightningPoolStatus } from './lightningLobby';
+
+function num(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function text(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() !== '' ? value : null;
+}
+
+function rowsOf(raw: unknown): Record<string, unknown>[] {
+  const list = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === 'object' && Array.isArray((raw as { rows?: unknown }).rows)
+      ? (raw as { rows: unknown[] }).rows
+      : [];
+  return list.filter((r): r is Record<string, unknown> => !!r && typeof r === 'object');
+}
+
+function objectOf(raw: unknown): Record<string, unknown> | null {
+  const row = Array.isArray(raw) ? raw[0] : raw;
+  return row && typeof row === 'object' && !Array.isArray(row)
+    ? (row as Record<string, unknown>)
+    : null;
+}
+
+// ─── fn_lightning_my_sessions ──────────────────────────────────────────────
+
+export interface LightningMySessionRow {
+  poolSessionId: string;
+  clusterId: string;
+  name: string;
+  /** "1/2" when the blinds are known, otherwise null. */
+  stakes: string | null;
+  bigBlind: number | null;
+  variant: string | null;
+  stack: number | null;
+  inHand: boolean;
+}
+
+function stakesText(row: Record<string, unknown>): { stakes: string | null; bb: number | null } {
+  /* The database sends `stakes: {sb, bb}` (Phase 8 migration); flat
+     small_blind / big_blind or a "1/2" string are read too. */
+  const nested =
+    row.stakes && typeof row.stakes === 'object' && !Array.isArray(row.stakes)
+      ? (row.stakes as Record<string, unknown>)
+      : null;
+  const sb = num(row.small_blind ?? row.sb ?? nested?.sb ?? nested?.small_blind);
+  const bb = num(row.big_blind ?? row.bb ?? nested?.bb ?? nested?.big_blind);
+  if (sb !== null && bb !== null && sb > 0 && bb > 0) return { stakes: `${sb}/${bb}`, bb };
+  const s = text(row.stakes);
+  const m = s ? /^\s*([\d.]+)\s*\/\s*([\d.]+)\s*$/.exec(s) : null;
+  return { stakes: s, bb: m ? Number(m[2]) : bb };
+}
+
+export function parseLightningMySessions(raw: unknown): LightningMySessionRow[] {
+  const out: LightningMySessionRow[] = [];
+  const seen = new Set<string>();
+  for (const row of rowsOf(raw)) {
+    const id = text(row.pool_session_id);
+    const cluster = text(row.cluster_id);
+    if (!id || !cluster || !isUUID(id) || !isUUID(cluster) || seen.has(id)) continue;
+    seen.add(id);
+    const { stakes, bb } = stakesText(row);
+    out.push({
+      poolSessionId: id,
+      clusterId: cluster,
+      name: text(row.name) ?? 'Lightning',
+      stakes,
+      bigBlind: bb,
+      variant: text(row.variant),
+      stack: num(row.stack),
+      inHand: row.in_hand === true,
+    });
+  }
+  return out;
+}
+
+export async function fetchLightningMySessions(): Promise<LightningMySessionRow[]> {
+  const { data, error } = await supabase.rpc('fn_lightning_my_sessions');
+  if (error) throw error;
+  return parseLightningMySessions(data);
+}
+
+// ─── fn_lightning_session_stats / _summary ─────────────────────────────────
+
+export interface LightningSessionStats {
+  hands: number;
+  handsPerHour: number | null;
+  durationS: number | null;
+  startingStack: number | null;
+  currentStack: number | null;
+  net: number | null;
+  bbPer100: number | null;
+  /** Percent, when the database can say. */
+  vpip: number | null;
+  pfr: number | null;
+  avgPot: number | null;
+  showdowns: number | null;
+  fastFolds: number | null;
+  normalFolds: number | null;
+  foldAndWatch: number | null;
+  avgWaitMs: number | null;
+  p95WaitMs: number | null;
+  p99WaitMs: number | null;
+  startedAt: string | null;
+  endedAt: string | null;
+}
+
+export interface LightningSessionSummary extends LightningSessionStats {
+  ended: boolean;
+  exitReason: string | null;
+}
+
+export function parseLightningSessionStats(raw: unknown): LightningSessionStats | null {
+  const row = objectOf(raw);
+  if (!row) return null;
+  const hands = num(row.hands);
+  if (hands === null) return null;
+  return {
+    hands: Math.max(0, Math.round(hands)),
+    handsPerHour: num(row.hands_per_hour),
+    durationS: num(row.duration_s),
+    startingStack: num(row.starting_stack),
+    currentStack: num(row.current_stack),
+    net: num(row.net),
+    bbPer100: num(row.bb_per_100),
+    vpip: num(row.vpip),
+    pfr: num(row.pfr),
+    avgPot: num(row.avg_pot),
+    showdowns: num(row.showdowns),
+    fastFolds: num(row.fast_folds),
+    normalFolds: num(row.normal_folds),
+    foldAndWatch: num(row.fold_and_watch),
+    avgWaitMs: num(row.avg_wait_ms),
+    p95WaitMs: num(row.p95_wait_ms),
+    p99WaitMs: num(row.p99_wait_ms),
+    startedAt: text(row.started_at),
+    endedAt: text(row.ended_at),
+  };
+}
+
+export function parseLightningSessionSummary(raw: unknown): LightningSessionSummary | null {
+  const stats = parseLightningSessionStats(raw);
+  if (!stats) return null;
+  const row = objectOf(raw)!;
+  return { ...stats, ended: row.ended === true, exitReason: text(row.exit_reason) };
+}
+
+export async function fetchLightningSessionStats(
+  poolSessionId: string
+): Promise<LightningSessionStats | null> {
+  const { data, error } = await supabase.rpc('fn_lightning_session_stats', {
+    p_pool_session_id: poolSessionId,
+  });
+  if (error) throw error;
+  return parseLightningSessionStats(data);
+}
+
+export async function fetchLightningSessionSummary(
+  poolSessionId: string
+): Promise<LightningSessionSummary | null> {
+  const { data, error } = await supabase.rpc('fn_lightning_session_summary', {
+    p_pool_session_id: poolSessionId,
+  });
+  if (error) throw error;
+  return parseLightningSessionSummary(data);
+}
+
+// ─── fn_lightning_pool_status ──────────────────────────────────────────────
+
+export interface LightningPoolHealth {
+  clusterMode: string | null;
+  players: number | null;
+  status: LightningPoolStatus;
+}
+
+const POOL_STATUSES: readonly LightningPoolStatus[] = ['BUILDING', 'ACTIVE', 'HOT', 'THIN'];
+
+export function parseLightningPoolHealth(raw: unknown): LightningPoolHealth | null {
+  const row = objectOf(raw);
+  if (!row) return null;
+  const status = text(row.status)?.toUpperCase() ?? null;
+  if (!status || !(POOL_STATUSES as readonly string[]).includes(status)) return null;
+  const players = num(row.players);
+  return {
+    clusterMode: text(row.cluster_mode),
+    players: players === null ? null : Math.max(0, Math.round(players)),
+    status: status as LightningPoolStatus,
+  };
+}
+
+export async function fetchLightningPoolHealth(
+  clusterId: string
+): Promise<LightningPoolHealth | null> {
+  const { data, error } = await supabase.rpc('fn_lightning_pool_status', {
+    p_cluster_id: clusterId,
+  });
+  if (error) throw error;
+  return parseLightningPoolHealth(data);
+}
+
+// ─── fn_lightning_recent_hands ─────────────────────────────────────────────
+
+export type LightningFoldKindPlayed = 'fast' | 'normal' | 'fold_watch' | null;
+
+export interface LightningRecentHand {
+  handId: string;
+  /** The hand_histories row the existing replay opens; null when not written yet. */
+  handHistoryId: string | null;
+  handNumber: number | null;
+  playedAt: string | null;
+  clusterId: string | null;
+  smallBlind: number | null;
+  bigBlind: number | null;
+  position: string | null;
+  stackBefore: number | null;
+  stackAfter: number | null;
+  net: number | null;
+  pot: number | null;
+  foldType: LightningFoldKindPlayed;
+  showdown: boolean;
+  result: string | null;
+}
+
+/** The panel's page size, and the RPC's default. */
+export const LIGHTNING_RECENT_HANDS_LIMIT = 50;
+
+function foldTypeOf(value: unknown): LightningFoldKindPlayed {
+  return value === 'fast' || value === 'normal' || value === 'fold_watch' ? value : null;
+}
+
+export function parseLightningRecentHands(raw: unknown): LightningRecentHand[] {
+  const out: LightningRecentHand[] = [];
+  const seen = new Set<string>();
+  for (const row of rowsOf(raw)) {
+    const handId = text(row.hand_id);
+    if (!handId || seen.has(handId)) continue;
+    seen.add(handId);
+    const hh = text(row.hand_history_id);
+    const handNumber = num(row.hand_number);
+    out.push({
+      handId,
+      handHistoryId: hh && isUUID(hh) ? hh : null,
+      handNumber: handNumber === null ? null : Math.round(handNumber),
+      playedAt: text(row.played_at),
+      clusterId: text(row.cluster_id),
+      smallBlind: num(row.small_blind),
+      bigBlind: num(row.big_blind),
+      position: text(row.position),
+      stackBefore: num(row.stack_before),
+      stackAfter: num(row.stack_after),
+      net: num(row.net),
+      pot: num(row.pot),
+      foldType: foldTypeOf(row.fold_type),
+      showdown: row.showdown === true,
+      result: text(row.result),
+    });
+  }
+  return out;
+}
+
+export async function fetchLightningRecentHands(
+  opts: { limit?: number; poolSessionId?: string | null } = {}
+): Promise<LightningRecentHand[]> {
+  const limit = Math.max(1, Math.min(LIGHTNING_RECENT_HANDS_LIMIT, opts.limit ?? 50));
+  const { data, error } = await supabase.rpc('fn_lightning_recent_hands', {
+    p_limit: limit,
+    p_pool_session_id: opts.poolSessionId ?? null,
+  });
+  if (error) throw error;
+  return parseLightningRecentHands(data);
+}
+
+// ─── Words and numbers the panels print ────────────────────────────────────
+
+/** "1h 05m", "12m", "45s"; a dash when unknown. */
+export function lightningDurationText(seconds: number | null): string {
+  if (seconds === null || !Number.isFinite(seconds) || seconds < 0) return '-';
+  const s = Math.floor(seconds);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h > 0) return `${h}h ${m < 10 ? '0' : ''}${m.toLocaleString()}m`;
+  if (m > 0) return `${m}m`;
+  return `${s}s`;
+}
+
+/** A chip figure; signed when asked; a dash when unknown. */
+export function lightningChipsText(n: number | null, signed = false): string {
+  if (n === null) return '-';
+  const v = Math.round(n * 100) / 100;
+  const body = Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  if (!signed) return v < 0 ? `-${body}` : body;
+  return v > 0 ? `+${body}` : v < 0 ? `-${body}` : '0';
+}
+
+export function lightningRateText(n: number | null, digits = 1, suffix = ''): string {
+  if (n === null) return '-';
+  return `${n.toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: 0 })}${suffix}`;
+}
+
+/** Wait time in seconds, from milliseconds. */
+export function lightningWaitText(ms: number | null): string {
+  if (ms === null || ms < 0) return '-';
+  return `${(ms / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })}s`;
+}
+
+/** The hand's result word for the list. */
+export function lightningHandResultText(h: LightningRecentHand): string {
+  if (h.foldType === 'fast') return 'LIGHTNING FOLD';
+  if (h.foldType === 'fold_watch') return 'FOLD & WATCH';
+  if (h.result) return h.result.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  if (h.net !== null) return h.net > 0 ? 'Won' : h.net < 0 ? 'Lost' : 'Even';
+  return '-';
+}

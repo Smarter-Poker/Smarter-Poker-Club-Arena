@@ -98,3 +98,7 @@ Merged with the P13-A response tree on `agent/claude-horse-brain/phase13-2026100
 **Binding.** The response limits are a consumed input, so the binding gains `response` (`model`, chosen by street; `raisesPerTree`, `maxRaiseBranchOpponents`, `maxTerminalBranchesPerCandidate`, `riverRounds`), validated against the pack.
 
 **Reasons and ledger.** The named response refusals (`joint_response_branch_unavailable`, `joint_response_street_unavailable`, `joint_response_street_not_modeled`, `joint_response_illegal_simulated_action`, `joint_response_branch_mass`) pass the worker boundary with their binding and no response model. The new `responseCounts` fields (`raiseProbability`, `meanRaiseShare`, `facedRaise`, `calledRaise`) pass unchanged. A telemetry family `phase13_response_*` (`phase13_response_model_<model>`, `phase13_response_refused_<reason>`) is registered.
+
+## Audit Of October 7, 2026
+
+Delivery note: the branch named above was delivered to main in [#6280](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/6280), merged `886cc965` on 2026-10-06, and is served by the engine release `6b1af5c5` (checked with `git merge-base --is-ancestor`). The branch statement above is historical. Status now: see the [Phase 13 closure record](horse-brain-phase13-closure-2026-10-06.md) and its audit section.

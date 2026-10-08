@@ -1,6 +1,17 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { retireHorseExecutionWitness } from '../../../engine/HorseExecutionWitness.js';
+import {
+  retireHorseExecutionWitness,
+  settleHorseExecutionWitness,
+  type HorseAcceptedAction,
+} from '../../../engine/HorseExecutionWitness.js';
+import {
+  horsePlanAcceptanceFromController,
+  horsePlanWagerAcceptedExactly,
+  type HorsePlanEffectReceipt,
+} from '../../../engine/HorsePlanEffectReceipt.js';
+import type { HorseDecisionWorkerDependencies } from '../../../engine/horseDecision/workerRuntime.js';
+import { shapeLightningHorseAction } from '../../../lightning/LightningHorse.js';
 import { HorseMind } from '../../../engine/HorseMind.js';
 import { HandController } from '../../../engine/HandController.js';
 import {
@@ -17,14 +28,17 @@ import { horsePlanHandKey } from '../../../engine/HorseDecisionEffects.js';
 import { captureHorseHandJournalContext } from '../../../engine/HorseDecisionHandBinding.js';
 import { seedFastRandom } from '../../../engine/HorseEval.js';
 import type { ActionRecord } from '../../../types.js';
-import { workerHarness, requestAt, tableId, heroId, wager } from './fixture.js';
+import { workerHarness, requestAt, tableId, heroId, wager, acceptanceOf } from './fixture.js';
 
 class LocalTransport extends EventEmitter implements WorkerLike {
   readonly sent: HorseDecisionWorkerRequest[] = [];
   readonly harness: ReturnType<typeof workerHarness>;
-  constructor(transform?: (message: HorseDecisionWorkerResponse) => HorseDecisionWorkerResponse) {
+  constructor(
+    transform?: (message: HorseDecisionWorkerResponse) => HorseDecisionWorkerResponse,
+    overrides: Partial<HorseDecisionWorkerDependencies> = {}
+  ) {
     super();
-    this.harness = workerHarness({}, (message) => {
+    this.harness = workerHarness(overrides, (message) => {
       const cloned = structuredClone(message);
       queueMicrotask(() => this.emit('message', transform ? transform(cloned) : cloned));
     });
@@ -139,7 +153,7 @@ describe('actual local client/worker and controller acceptance composition', () 
         expect(transport.sent.filter((m) => m.type === 'OBSERVE_EXECUTION')).toHaveLength(
           journal ? 1 : 0
         );
-        await expect(client.commitDecisionEffects(fast)).rejects.toThrow(
+        await expect(client.commitDecisionEffects(fast, acceptanceOf(fast))).rejects.toThrow(
           'no available client ownership'
         );
         expect(transport.harness.applied()).toBe(0);
@@ -160,13 +174,13 @@ describe('actual local client/worker and controller acceptance composition', () 
       const fast = await client.decideFast(requestAt(), abort.signal);
       abort.abort();
       const commit = client.runWithDispatchBarrier(() => {
-        const pending = client.commitDecisionEffects(fast);
+        const pending = client.commitDecisionEffects(fast, acceptanceOf(fast));
         retireHorseExecutionWitness(fast.decision.executionWitness, 'turn_abandoned');
         return pending;
       });
       await expect(commit).resolves.toMatchObject({ planDisposition: 'applied_volatile' });
       expect(transport.sent.filter((m) => m.type === 'RETIRE_DECISION_EFFECTS')).toHaveLength(0);
-      await expect(client.commitDecisionEffects(fast)).resolves.toMatchObject({
+      await expect(client.commitDecisionEffects(fast, acceptanceOf(fast))).resolves.toMatchObject({
         planDisposition: 'already_applied_volatile',
       });
       expect(transport.harness.applied()).toBe(1);
@@ -231,7 +245,9 @@ describe('actual local client/worker and controller acceptance composition', () 
         });
         expect(HorseMind.getPlan(key, heroId)).toBeUndefined();
         await expect(
-          client.runWithDispatchBarrier(() => client.commitDecisionEffects(fast))
+          client.runWithDispatchBarrier(() =>
+            client.commitDecisionEffects(fast, acceptanceOf(fast))
+          )
         ).resolves.toMatchObject({ type: 'ACK', operation: 'COMMIT_DECISION_EFFECTS' });
         expect(transport.harness.applied()).toBe(1);
         expect(HorseMind.getPlan(key, heroId)).toBe(true);
@@ -282,7 +298,9 @@ describe('actual local client/worker and controller acceptance composition', () 
         // This is an explicit fixture composition of the accepted-record gate.
         // Actual Turns invocation remains covered by its separately migrated suite.
         if (exact) {
-          const commit = client.runWithDispatchBarrier(() => client.commitDecisionEffects(fast));
+          const commit = client.runWithDispatchBarrier(() =>
+            client.commitDecisionEffects(fast, acceptanceOf(fast))
+          );
           if (mode === 'mutated_batch') await expect(commit).rejects.toThrow('effects_mismatch');
           else
             await expect(commit).resolves.toMatchObject({
@@ -324,6 +342,123 @@ describe('actual local client/worker and controller acceptance composition', () 
         await expect(client.decideFast(requestAt())).rejects.toThrow('invalid decision effects');
         expect(client.status().phase).toBe('failed');
         expect(transport.harness.applied()).toBe(0);
+      } finally {
+        await client.stop();
+        await transport.harness.close();
+      }
+    }
+  );
+  it.each(['exact', 'lifted_to_minimum', 'aliased'] as const)(
+    'a Lightning-shaped %s wager reaches the worker with the physical engine disposition and receipt',
+    async (mode) => {
+      const { hc, request } = dealtFlop();
+      const receipts: HorsePlanEffectReceipt[] = [];
+      const transport = new LocalTransport(undefined, {
+        journalPlanReceipt: (_request, receipt) => {
+          receipts.push(receipt);
+        },
+      });
+      const issuedWager =
+        mode === 'exact'
+          ? wager('bet', 6)
+          : mode === 'lifted_to_minimum'
+            ? wager('bet', 1)
+            : wager('raise', 6);
+      transport.harness.deps.decide = (player, gs, _s, _m, opts) => {
+        const key = horsePlanHandKey(gs.actionHistory, opts?.mindPlanContext);
+        HorseMind.notePlan(key, player.user_id, true);
+        return issuedWager;
+      };
+      const client = new LiveHorseDecisionWorkerClient({
+        workerFactory: () => transport,
+        jobTimeoutMs: 5000,
+      });
+      try {
+        await transport.harness.runtime.start();
+        await client.ready();
+        const fast = await client.decideFast(request);
+        expect(fast.planIssueDisposition).toBe('issued');
+        const key = fast.effects[0]!.handKey;
+        // The Lightning host's own reshaping, then its action door.
+        const shaped = shapeLightningHorseAction(hc, heroId, fast.decision, false);
+        const acceptedActions: HorseAcceptedAction[] = [];
+        const applied = client.runWithDispatchBarrier(() => {
+          const ok = hc.performAction(1, shaped.action, shaped.amount, 'horse_policy', (record) =>
+            acceptedActions.push({ record, intended: true })
+          );
+          const submitted = { action: shaped.action, amount: shaped.amount ?? null };
+          if (
+            horsePlanWagerAcceptedExactly({
+              issued: fast.decision,
+              submitted,
+              acceptedActions,
+              witness: fast.decision.executionWitness,
+            })
+          )
+            void client.commitDecisionEffects(
+              fast,
+              horsePlanAcceptanceFromController(
+                acceptedActions[0]!.record,
+                submitted,
+                fast.decision.executionWitness!.identity
+              )
+            );
+          settleHorseExecutionWitness(fast.decision.executionWitness, {
+            applied: ok,
+            acceptedActions,
+          });
+          return ok;
+        });
+        await transport.harness.runtime.drain();
+        await new Promise((resolve) => setImmediate(resolve));
+        await transport.harness.runtime.drain();
+        expect(applied).toBe(true);
+        const acks = transport.harness.messages.filter(
+          (m): m is Extract<typeof m, { type: 'ACK' }> =>
+            m.type === 'ACK' &&
+            (m.operation === 'COMMIT_DECISION_EFFECTS' || m.operation === 'RETIRE_DECISION_EFFECTS')
+        );
+        if (mode === 'exact') {
+          expect(acks).toEqual([
+            expect.objectContaining({
+              operation: 'COMMIT_DECISION_EFFECTS',
+              planDisposition: 'applied_volatile',
+            }),
+          ]);
+          expect(transport.harness.applied()).toBe(1);
+          expect(HorseMind.getPlan(key, heroId)).toBe(true);
+          // The durable receipt: issued and accepted are the same wager.
+          expect(receipts).toHaveLength(1);
+          expect(receipts[0]!.disposition).toBe('applied');
+          expect(receipts[0]!.issuedAction).toEqual({ action: 'bet', amount: 6 });
+          expect(receipts[0]!.acceptance).toMatchObject({ action: 'bet', amount: 6 });
+        } else {
+          // Reshaped: no commit, and the witness finalizer retires the batch
+          // exactly as it does for a coerced physical-engine wager.
+          expect(acks).toEqual([
+            expect.objectContaining({
+              operation: 'RETIRE_DECISION_EFFECTS',
+              planDisposition: 'retired',
+            }),
+          ]);
+          expect(transport.sent.filter((m) => m.type === 'COMMIT_DECISION_EFFECTS')).toEqual([]);
+          expect(transport.harness.applied()).toBe(0);
+          expect(HorseMind.getPlan(key, heroId)).toBeUndefined();
+          expect(receipts).toEqual([]);
+          const witness = fast.decision.executionWitness!;
+          expect(witness.executionStatus).toBe('coerced');
+          expect(witness.selected).toEqual({
+            action: issuedWager.action,
+            amount: issuedWager.amount,
+          });
+          expect([witness.executedAction, witness.executedAmount]).toEqual(
+            mode === 'aliased' ? ['bet', 6] : ['bet', 2]
+          );
+          // A late commit of the retired batch is refused at the client.
+          await expect(client.commitDecisionEffects(fast, acceptanceOf(fast))).rejects.toThrow(
+            'no available client ownership'
+          );
+        }
       } finally {
         await client.stop();
         await transport.harness.close();

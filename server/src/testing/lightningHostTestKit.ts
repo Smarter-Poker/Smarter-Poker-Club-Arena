@@ -61,6 +61,7 @@ export function fakeHorseLane(opts: { fail?: boolean } = {}) {
       committed.push(r);
       return { ok: true } as never;
     }),
+    runWithDispatchBarrier: vi.fn(<T>(fn: () => T): T => fn()),
   };
   return { lane: lane as unknown as LiveHorseDecisionLane, calls, committed, raw: lane };
 }

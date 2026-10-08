@@ -59,9 +59,10 @@ p6=$M/20260926080332_lightning_phase_6_and_7_the_matcher_explains_every_idle_pla
 s6=$M/20261001154813_lightning_phase_6_settlement_the_hand_settles_onto_its_ancho.sql
 s6r=$M/20261001201216_lightning_phase_6_remediation_a_frozen_cluster_settles_nothi.sql
 mine=${LIGHTNING_P7_MIGRATION:-$M/20261001222856_lightning_phase_7_the_pool_reverts_to_must_move_and_the_tick.sql}
+rem=${LIGHTNING_P7R_MIGRATION:-$M/20261007222717_lightning_phase_7_remediation_the_reversion_review_findings_.sql}
 for f in "$base_fixture" "$pop_fixture" "$p5_fixture" "$p9_fixture" "$r2_fixture" "$p6_fixture" "$s6_fixture" \
          "$phase1" "$phase1r" "$phase2" "$phase2r" "$phase3" "$phase3r" "$phase4" "$phase4r" \
-         "$phase5" "$phase5r" "$phase9" "$phase9r" "$r2a" "$r2b" "$r2c" "$r2d" "$p6" "$s6" "$s6r" "$mine"; do
+         "$phase5" "$phase5r" "$phase9" "$phase9r" "$r2a" "$r2b" "$r2c" "$r2d" "$p6" "$s6" "$s6r" "$mine" "$rem"; do
   [ -f "$f" ] || { echo "FAIL: missing input $f"; exit 1; }
 done
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/lightning-p7-test.XXXXXX")
@@ -1139,9 +1140,526 @@ END $$;
 \echo '  ok  16 RE-APPLIABLE  applied a second time the file leaves every fn_lightning_ and fn_cash_cluster body, acl and comment, six row counts, every Cluster mode and epoch and every seat stack exactly as they were'
 ASSERT
 
+# ===========================================================================
+# THE REMEDIATION (20261007222717): the review findings, each proven broken
+# on the Phase 7 code, then fixed by the file, then re-applied.
+# ===========================================================================
+cat > "$fixture/rem-ground.sql" <<'ASSERT'
+-- 17 THE REMEDIATION GROUND: THE DEFECTS ARE REAL ON THE PHASE 7 CODE ------------
+-- The blind-ledger rows of a set of players, every counter and debt column,
+-- absent rows read as zeros: the remediation's own witness.
+CREATE FUNCTION harness.bl(p_game uuid, p_players uuid[]) RETURNS jsonb LANGUAGE sql STABLE AS $f$
+  SELECT jsonb_object_agg(x::text, jsonb_build_object(
+           'bb', coalesce(bl.bb_count, 0), 'sb', coalesce(bl.sb_count, 0),
+           'btn', coalesce(bl.btn_count, 0), 'utg', coalesce(bl.utg_count, 0),
+           'hj', coalesce(bl.hj_count, 0), 'co', coalesce(bl.co_count, 0),
+           'bb_debt', coalesce(bl.missed_bb_debt, 0), 'sb_debt', coalesce(bl.missed_sb_debt, 0),
+           'bb_owed', coalesce(bl.bb_owed, 0), 'sb_owed', coalesce(bl.sb_owed, 0)))
+    FROM unnest(p_players) x
+    LEFT JOIN public.lightning_blind_ledger bl ON bl.cluster_id = p_game AND bl.player_id = x;
+$f$;
+DO $$
+DECLARE v_g uuid; v jsonb; v_row jsonb; v_op uuid := gen_random_uuid(); v_p uuid[]; v_pre jsonb; v_inst uuid; v_r jsonb;
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'
+              AND table_name = 'cash_games' AND column_name = 'lightning_off_condition_since')
+     OR pg_get_functiondef('public.fn_cash_cluster_unfreeze(uuid,uuid,text)'::regprocedure) ~ 'abort_reason = ''cluster_unfrozen'''
+     OR pg_get_functiondef('public.fn_cash_cluster_reap_stuck_conversions(interval,timestamp with time zone,integer)'::regprocedure) ~ 'orphaned_by_'
+     OR pg_get_functiondef('public.fn_cash_cluster_begin_pending_on(uuid,uuid)'::regprocedure) ~ 'conversion_already_open'
+     OR pg_get_functiondef('public.fn_lightning_instance_releases_its_reservations()'::regprocedure) ~ 'GREATEST\(bl\.bb_count'
+     OR pg_get_functiondef('public.fn_lightning_config(uuid)'::regprocedure) ~ 'pending_off_dwell_ms' THEN
+    RAISE EXCEPTION 'FAIL 17: an object of the remediation exists before it is applied';
+  END IF;
+  -- (1) The unfreeze orphans its conversion and keeps the acknowledgements.
+  v_g := harness.c7('REMU', 6, 7, 2, 7, 2);
+  v := harness.drive(v_g); v := harness.drive(v_g);
+  IF harness.mode(v_g) <> 'lightning' THEN RAISE EXCEPTION 'FIXTURE: REMU did not convert: %', v; END IF;
+  PERFORM public.fx9_pool(v_g);
+  PERFORM public.fn_cash_table_observe_dealing_halt(public.fn_cash_cluster_front_table(v_g));
+  PERFORM public.fn_cash_table_observe_dealing_halt(harness.feeder(v_g));
+  PERFORM harness.to(v_g, 12);
+  v := harness.drive(v_g);
+  IF harness.mode(v_g) <> 'pending_off' THEN RAISE EXCEPTION 'FIXTURE: REMU did not open PENDING_OFF: %', v; END IF;
+  v := public.fn_lightning_settlement_freeze(v_g, harness.epoch(v_g), gen_random_uuid(), gen_random_uuid(),
+         gen_random_uuid(), 'REM GROUND: frozen mid-drain', '{}'::jsonb);
+  IF harness.mode(v_g) <> 'frozen' OR (v ->> 'frozen')::boolean IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FIXTURE: REMU did not freeze from pending_off: %', v;
+  END IF;
+  v := public.fn_cash_cluster_unfreeze(v_g, v_op, 'REM GROUND: the operator unfreezes');
+  IF (v ->> 'unfrozen')::boolean IS DISTINCT FROM true OR harness.mode(v_g) <> 'must_move' THEN
+    RAISE EXCEPTION 'FAIL 17: the unfreeze did not return REMU to must_move: %', v;
+  END IF;
+  IF (SELECT count(*) FROM public.cash_cluster_conversion WHERE cluster_id = v_g AND status = 'pending') <> 1
+     OR (SELECT count(*) FROM public.tables WHERE cluster_id = v_g AND dealing_halt_observed_at IS NOT NULL) = 0 THEN
+    RAISE EXCEPTION 'FAIL 17: the unfreeze defect is not real: no orphaned conversion or no stale acknowledgement survived';
+  END IF;
+  PERFORM harness.to(v_g, 18);
+  v := public.fn_cash_cluster_lightning_drive(v_g);
+  IF (v ->> 'ok')::boolean IS DISTINCT FROM false OR v ->> 'action' <> 'begin_pending_on'
+     OR v -> 'error' ->> 'sqlstate' <> '23505'
+     OR (SELECT count(*) FROM public.cash_cluster_events WHERE game_id = v_g AND kind = 'lightning_drive_error') <> 1 THEN
+    RAISE EXCEPTION 'FAIL 17: the drive does not yet die on the one-open-per-cluster index: %', v;
+  END IF;
+  v := public.fn_cash_cluster_reap_stuck_conversions(interval '1 minute', clock_timestamp() + interval '20 minutes', 50);
+  SELECT x INTO v_row FROM jsonb_array_elements(v -> 'conversions') x WHERE (x ->> 'cluster_id')::uuid = v_g;
+  IF (v_row ->> 'reaped')::boolean IS DISTINCT FROM false
+     OR v_row ->> 'reason' <> 'not_a_pending_on_lightning_conversion'
+     OR (SELECT count(*) FROM public.cash_cluster_conversion WHERE cluster_id = v_g AND status = 'pending') <> 1 THEN
+    RAISE EXCEPTION 'FAIL 17: the reaper does not yet skip the orphan for ever: %', v_row;
+  END IF;
+  INSERT INTO harness.p7 (k, game) VALUES ('remu', v_g);
+  -- (2) A voided formation keeps its blind credit, and (3) the drain opens on
+  -- the first sighting with no dwell.
+  v_g := harness.c7('REML', 6, 7, 2, 7, 2);
+  v := harness.drive(v_g); v := harness.drive(v_g);
+  PERFORM public.fx9_pool(v_g);
+  v_p := harness.idle(v_g, false, 2) || harness.idle(v_g, true, 1);
+  v_pre := harness.bl(v_g, v_p);
+  v_r := harness.form(v_g, v_p); v_inst := (v_r ->> 'instance_id')::uuid;
+  PERFORM public.fn_lightning_instance_abandon(v_inst, 'REM GROUND: voided before dealing', clock_timestamp());
+  IF (SELECT state FROM public.lightning_instance WHERE id = v_inst) <> 'abandoned'
+     OR harness.bl(v_g, v_p) IS NOT DISTINCT FROM v_pre THEN
+    RAISE EXCEPTION 'FAIL 17: the ledger defect is not real: the voided formation''s credit was already reversed';
+  END IF;
+  PERFORM harness.to(v_g, 12);
+  v := harness.drive(v_g);
+  IF harness.mode(v_g) <> 'pending_off' THEN
+    RAISE EXCEPTION 'FAIL 17: the dwell defect is not real: the first sighting did not open PENDING_OFF: %', v;
+  END IF;
+END $$;
+\echo '  ok  17 THE REMEDIATION GROUND  before the remediation none of its objects exists; a Cluster frozen mid-drain and unfrozen keeps its pending conversion and its stale halt acknowledgements, the next drive pass dies on the one-open-per-cluster index as lightning_drive_error, and the reaper skips the orphan as not_a_pending_on_lightning_conversion; a formation voided before dealing keeps its blind-ledger credit; and the first OFF sighting opens PENDING_OFF with no dwell'
+ASSERT
+
+cat > "$fixture/rem-assertions.sql" <<'ASSERT'
+-- 18 THE UNFREEZE CLOSES ITS CONVERSION -------------------------------------------
+DO $$
+DECLARE v_g uuid; v jsonb; v_op uuid := gen_random_uuid(); v_conv record;
+BEGIN
+  v_g := harness.c7('REMU2', 6, 7, 2, 7, 2);
+  v := harness.drive(v_g); v := harness.drive(v_g);
+  PERFORM public.fx9_pool(v_g);
+  PERFORM public.fn_cash_table_observe_dealing_halt(public.fn_cash_cluster_front_table(v_g));
+  PERFORM public.fn_cash_table_observe_dealing_halt(harness.feeder(v_g));
+  PERFORM harness.to(v_g, 12);
+  v := harness.drive(v_g);
+  IF v -> 'result' ->> 'reason' <> 'off_condition_dwell' THEN RAISE EXCEPTION 'FIXTURE: REMU2 skipped the dwell: %', v; END IF;
+  v := harness.drive(v_g);
+  IF harness.mode(v_g) <> 'pending_off' THEN RAISE EXCEPTION 'FIXTURE: REMU2 did not open PENDING_OFF: %', v; END IF;
+  PERFORM public.fn_lightning_settlement_freeze(v_g, harness.epoch(v_g), gen_random_uuid(), gen_random_uuid(),
+    gen_random_uuid(), 'REM: frozen mid-drain', '{}'::jsonb);
+  v := public.fn_cash_cluster_unfreeze(v_g, v_op, 'REM: the unfreeze closes the conversion');
+  IF (v ->> 'unfrozen')::boolean IS DISTINCT FROM true OR (v ->> 'conversions_aborted')::integer <> 1
+     OR harness.mode(v_g) <> 'must_move' THEN
+    RAISE EXCEPTION 'FAIL 18: the unfreeze did not close exactly one conversion: %', v;
+  END IF;
+  SELECT * INTO v_conv FROM public.cash_cluster_conversion WHERE cluster_id = v_g ORDER BY opened_at DESC LIMIT 1;
+  IF v_conv.status <> 'aborted' OR v_conv.abort_reason <> 'cluster_unfrozen' OR v_conv.closed_at IS NULL THEN
+    RAISE EXCEPTION 'FAIL 18: the conversion was not aborted as cluster_unfrozen: %', to_jsonb(v_conv);
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.tables WHERE cluster_id = v_g
+              AND (dealing_halted_at IS NOT NULL OR dealing_halted_reason IS NOT NULL OR dealing_halt_observed_at IS NOT NULL)) THEN
+    RAISE EXCEPTION 'FAIL 18: a halt or a stale engine acknowledgement survived the unfreeze';
+  END IF;
+  PERFORM harness.to(v_g, 18);
+  v := harness.drive(v_g);
+  IF (v ->> 'ok')::boolean IS DISTINCT FROM true OR v ->> 'action' <> 'begin_pending_on'
+     OR harness.mode(v_g) <> 'pending_on'
+     OR EXISTS (SELECT 1 FROM public.cash_cluster_events WHERE game_id = v_g AND kind = 'lightning_drive_error') THEN
+    RAISE EXCEPTION 'FAIL 18: after the unfreeze the drive did not open PENDING_ON cleanly: %', v;
+  END IF;
+  v := harness.drive(v_g);
+  IF harness.mode(v_g) <> 'lightning' THEN RAISE EXCEPTION 'FAIL 18: the unfrozen Cluster did not convert again: %', v; END IF;
+END $$;
+\echo '  ok  18 THE UNFREEZE CLOSES ITS CONVERSION  a Cluster frozen mid-drain and unfrozen aborts its pending conversion (cluster_unfrozen, closed_at set, conversions_aborted 1), clears every halt and every engine acknowledgement, and the next cycle drives back to PENDING_ON and LIGHTNING with not one lightning_drive_error'
+
+-- 19 THE ORPHAN IS AN ANSWER, AND THEN A REAP ---------------------------------------
+DO $$
+DECLARE v_g uuid; v jsonb; v_row jsonb; v_conv record; v_n integer;
+BEGIN
+  SELECT game INTO v_g FROM harness.p7 WHERE k = 'remu';
+  v_n := (SELECT count(*) FROM public.cash_cluster_events WHERE game_id = v_g AND kind = 'lightning_drive_error');
+  v := public.fn_cash_cluster_lightning_drive(v_g);
+  IF (v ->> 'ok')::boolean IS DISTINCT FROM true OR v ->> 'action' <> 'begin_pending_on'
+     OR v -> 'result' ->> 'reason' <> 'conversion_already_open'
+     OR (v -> 'result' ->> 'pending')::boolean IS DISTINCT FROM true
+     OR (SELECT count(*) FROM public.cash_cluster_events WHERE game_id = v_g AND kind = 'lightning_drive_error') <> v_n THEN
+    RAISE EXCEPTION 'FAIL 19: the orphan is not a structured answer: %', v;
+  END IF;
+  IF public.fn_cash_cluster_begin_pending_on(v_g, gen_random_uuid()) ->> 'reason' <> 'conversion_already_open' THEN
+    RAISE EXCEPTION 'FAIL 19: a fresh request is not told conversion_already_open';
+  END IF;
+  v := public.fn_cash_cluster_reap_stuck_conversions(interval '1 minute', clock_timestamp() + interval '20 minutes', 50);
+  SELECT x INTO v_row FROM jsonb_array_elements(v -> 'conversions') x WHERE (x ->> 'cluster_id')::uuid = v_g;
+  IF (v_row ->> 'reaped')::boolean IS DISTINCT FROM true OR v_row ->> 'reason' <> 'orphaned_by_must_move' THEN
+    RAISE EXCEPTION 'FAIL 19: the reaper did not abort the orphan: %', v_row;
+  END IF;
+  SELECT * INTO v_conv FROM public.cash_cluster_conversion WHERE cluster_id = v_g AND abort_reason = 'orphaned_by_must_move';
+  IF NOT FOUND OR v_conv.status <> 'aborted' OR v_conv.closed_at IS NULL
+     OR (SELECT count(*) FROM public.cash_cluster_events WHERE game_id = v_g AND kind = 'lightning_conversion_orphan_reaped') <> 1 THEN
+    RAISE EXCEPTION 'FAIL 19: the orphan''s abort is not recorded: %', to_jsonb(v_conv);
+  END IF;
+  v := harness.drive(v_g);
+  IF harness.mode(v_g) <> 'pending_on' OR (v -> 'result' ->> 'ok')::boolean IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 19: with the orphan gone the drive did not open a fresh conversion: %', v;
+  END IF;
+  v := harness.drive(v_g);
+  IF harness.mode(v_g) <> 'lightning'
+     OR (SELECT count(*) FROM public.cash_cluster_events WHERE game_id = v_g AND kind = 'lightning_drive_error') <> v_n THEN
+    RAISE EXCEPTION 'FAIL 19: the healed Cluster did not convert, or the drive errored again: %', v;
+  END IF;
+END $$;
+\echo '  ok  19 THE ORPHAN  the production wreckage itself is healed: the drive answers conversion_already_open (structurally, no new lightning_drive_error), a fresh request is told the same, the reaper aborts the orphan as orphaned_by_must_move with its event, and the next two passes convert the Cluster cleanly'
+
+-- 20 THE VOID HAND GIVES BACK ITS BLINDS --------------------------------------------
+DO $$
+DECLARE v_g uuid; v jsonb; v_r jsonb; v_p uuid[]; v_q uuid[]; v_s uuid[]; v_t uuid[];
+        v_pre jsonb; v_mid jsonb; v_post jsonb; v_pre3 jsonb; v_pre4 jsonb; v_inst uuid; v_inst2 uuid; v_inst3 uuid; v_inst4 uuid;
+BEGIN
+  v_g := harness.c7('REMB', 6, 7, 2, 7, 2);
+  v := harness.drive(v_g); v := harness.drive(v_g);
+  PERFORM public.fx9_pool(v_g);
+  -- A never-dealt void through fn_lightning_instance_abandon restores the ledger.
+  v_p := harness.idle(v_g, false, 2) || harness.idle(v_g, true, 1);
+  v_pre := harness.bl(v_g, v_p);
+  v_r := harness.form(v_g, v_p); v_inst := (v_r ->> 'instance_id')::uuid;
+  IF harness.bl(v_g, v_p) IS NOT DISTINCT FROM v_pre THEN
+    RAISE EXCEPTION 'FIXTURE: the formation credited nothing, so the reversal would be vacuous';
+  END IF;
+  PERFORM public.fn_lightning_instance_abandon(v_inst, 'REM: voided before dealing', clock_timestamp());
+  IF harness.bl(v_g, v_p) IS DISTINCT FROM v_pre THEN
+    RAISE EXCEPTION 'FAIL 20: the never-dealt void did not restore the ledger to exactly pre-formation: % vs %',
+      harness.bl(v_g, v_p), v_pre;
+  END IF;
+  v := public.fn_lightning_instance_abandon(v_inst, 'again', clock_timestamp());
+  IF v ->> 'reason' <> 'already_terminal' OR harness.bl(v_g, v_p) IS DISTINCT FROM v_pre THEN
+    RAISE EXCEPTION 'FAIL 20: a second abandon reversed a second time: %', v;
+  END IF;
+  -- A DEALT hand keeps its counts: its blinds were posted at the felt.
+  PERFORM public.fxr_lease(public.fn_cash_cluster_front_table(v_g), true);
+  v_q := harness.idle(v_g, false, 2) || harness.idle(v_g, true, 1);
+  v_mid := harness.bl(v_g, v_q);
+  v_r := harness.form(v_g, v_q); v_inst2 := (v_r ->> 'instance_id')::uuid;
+  PERFORM harness.deal(v_inst2);
+  v_post := harness.bl(v_g, v_q);
+  PERFORM public.fn_lightning_instance_abandon(v_inst2, 'REM: voided after dealing', clock_timestamp());
+  IF harness.bl(v_g, v_q) IS DISTINCT FROM v_post OR harness.bl(v_g, v_q) IS NOT DISTINCT FROM v_mid THEN
+    RAISE EXCEPTION 'FAIL 20: a dealt hand''s credit moved on abandon: % / %', harness.bl(v_g, v_q), v_post;
+  END IF;
+  -- The reaper's road reverses too.
+  v_s := harness.idle(v_g, false, 3);
+  v_pre3 := harness.bl(v_g, v_s);
+  -- Formed through the real barrier with an old clock and a five-second
+  -- window, so it is genuinely past its deadline rather than edited to look
+  -- it (the CHECK forbids backdating a live instance).
+  v_r := public.fn_lightning_form_hand(v_g, v_s,
+           p_target_size => 3::smallint, p_max_size => 3::smallint,
+           p_form_window => interval '5 seconds',
+           p_now => clock_timestamp() - interval '10 minutes',
+           p_matcher_version => 'p7-matcher', p_request_id => gen_random_uuid());
+  IF (v_r ->> 'formed')::boolean IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FIXTURE: the stale formation did not form: %', v_r;
+  END IF;
+  v_inst3 := (v_r ->> 'instance_id')::uuid;
+  PERFORM public.fn_lightning_reap_formations(clock_timestamp(), 200, v_g);
+  IF (SELECT state FROM public.lightning_instance WHERE id = v_inst3) <> 'abandoned'
+     OR harness.bl(v_g, v_s) IS DISTINCT FROM v_pre3 THEN
+    RAISE EXCEPTION 'FAIL 20: the reaped formation kept its credit: % vs %', harness.bl(v_g, v_s), v_pre3;
+  END IF;
+  -- And the drain's own void reverses, humans and horses alike.
+  v_t := harness.idle(v_g, false, 2) || harness.idle(v_g, true, 1);
+  v_pre4 := harness.bl(v_g, v_t);
+  v_r := harness.form(v_g, v_t); v_inst4 := (v_r ->> 'instance_id')::uuid;
+  PERFORM harness.to(v_g, 12);
+  v := public.fn_cash_cluster_begin_pending_off(v_g, gen_random_uuid());
+  IF v ->> 'reason' <> 'off_condition_dwell' THEN RAISE EXCEPTION 'FIXTURE: REMB skipped the dwell: %', v; END IF;
+  v := public.fn_cash_cluster_begin_pending_off(v_g, gen_random_uuid());
+  IF (v ->> 'ok')::boolean IS DISTINCT FROM true OR (v ->> 'instances_voided')::integer <> 1 THEN
+    RAISE EXCEPTION 'FAIL 20: the drain did not void the reserved hand: %', v;
+  END IF;
+  IF (SELECT state FROM public.lightning_instance WHERE id = v_inst4) <> 'abandoned'
+     OR harness.bl(v_g, v_t) IS DISTINCT FROM v_pre4 THEN
+    RAISE EXCEPTION 'FAIL 20: the drain''s void kept its credit: % vs %', harness.bl(v_g, v_t), v_pre4;
+  END IF;
+END $$;
+\echo '  ok  20 THE VOID HAND  a formation abandoned before dealing (two humans and a horse) restores every blind-ledger counter to exactly pre-formation, idempotently; a hand that dealt keeps its counts; the formation reaper''s road and the drain''s own void reverse identically'
+
+-- 21 THE OFF CONDITION DWELLS ----------------------------------------------------------
+DO $$
+DECLARE v_g uuid; v_h uuid; v jsonb; v_r jsonb; v_p uuid[]; v_inst uuid;
+BEGIN
+  v_g := harness.c7('REMD', 6, 7, 2, 7, 2);
+  IF (public.fn_lightning_config(v_g) ->> 'pending_off_dwell_ms')::integer <> 10000 THEN
+    RAISE EXCEPTION 'FAIL 21: the default dwell is not 10000ms: %', public.fn_lightning_config(v_g) ->> 'pending_off_dwell_ms';
+  END IF;
+  v := harness.drive(v_g); v := harness.drive(v_g);
+  PERFORM public.fx9_pool(v_g);
+  v_p := harness.idle(v_g, false, 2) || harness.idle(v_g, true, 1);
+  v_r := harness.form(v_g, v_p); v_inst := (v_r ->> 'instance_id')::uuid;
+  PERFORM harness.to(v_g, 12);
+  v := harness.drive(v_g);
+  IF v ->> 'action' <> 'begin_pending_off' OR v -> 'result' ->> 'reason' <> 'off_condition_dwell'
+     OR (v -> 'result' ->> 'dwell_ms')::integer <> 10000
+     OR harness.mode(v_g) <> 'lightning'
+     OR (SELECT lightning_off_condition_since FROM public.cash_games WHERE id = v_g) IS NULL
+     OR (SELECT state FROM public.lightning_instance WHERE id = v_inst) <> 'reserved'
+     OR EXISTS (SELECT 1 FROM public.cash_cluster_conversion WHERE cluster_id = v_g AND to_mode = 'must_move') THEN
+    RAISE EXCEPTION 'FAIL 21: the first sighting did not hold, record itself and void nothing: %', v;
+  END IF;
+  PERFORM harness.to(v_g, 13);
+  v := harness.drive(v_g);
+  IF v ->> 'action' <> 'hold'
+     OR (SELECT lightning_off_condition_since FROM public.cash_games WHERE id = v_g) IS NOT NULL
+     OR (SELECT state FROM public.lightning_instance WHERE id = v_inst) <> 'reserved' THEN
+    RAISE EXCEPTION 'FAIL 21: the pass at 13 did not clear the sighting, or something was voided: %', v;
+  END IF;
+  PERFORM harness.to(v_g, 12);
+  v := harness.drive(v_g);
+  IF v -> 'result' ->> 'reason' <> 'off_condition_dwell'
+     OR (SELECT state FROM public.lightning_instance WHERE id = v_inst) <> 'reserved' THEN
+    RAISE EXCEPTION 'FAIL 21: after the flap the sighting did not start over: %', v;
+  END IF;
+  v := harness.drive(v_g);
+  IF harness.mode(v_g) <> 'pending_off' OR (v -> 'result' ->> 'instances_voided')::integer <> 1
+     OR (SELECT lightning_off_condition_since FROM public.cash_games WHERE id = v_g) IS NOT NULL
+     OR (SELECT count(*) FROM public.cash_cluster_conversion WHERE cluster_id = v_g AND to_mode = 'must_move') <> 1 THEN
+    RAISE EXCEPTION 'FAIL 21: the second consecutive sighting did not open exactly one PENDING_OFF: %', v;
+  END IF;
+  v := harness.drive(v_g);
+  IF harness.mode(v_g) <> 'must_move' THEN RAISE EXCEPTION 'FAIL 21: REMD did not revert: %', v; END IF;
+  -- pending_off_dwell_ms 0 disables the dwell.
+  v_h := harness.c7('REMD0', 6, 7, 2, 7, 2);
+  UPDATE public.cash_games
+     SET ruleset_snapshot = coalesce(ruleset_snapshot, '{}'::jsonb)
+         || jsonb_build_object('lightning',
+              coalesce(ruleset_snapshot -> 'lightning', '{}'::jsonb) || '{"pending_off_dwell_ms": 0}'::jsonb)
+   WHERE id = v_h;
+  IF (public.fn_lightning_config(v_h) ->> 'pending_off_dwell_ms')::integer <> 0 THEN
+    RAISE EXCEPTION 'FAIL 21: the configured dwell did not read back as 0';
+  END IF;
+  v := harness.drive(v_h); v := harness.drive(v_h);
+  PERFORM public.fx9_pool(v_h);
+  PERFORM harness.to(v_h, 12);
+  v := harness.drive(v_h);
+  IF harness.mode(v_h) <> 'pending_off' THEN
+    RAISE EXCEPTION 'FAIL 21: dwell 0 did not open PENDING_OFF on the first sighting: %', v;
+  END IF;
+END $$;
+\echo '  ok  21 THE DWELL  the first OFF sighting holds LIGHTNING, records itself durably and voids nothing; a flap to 13 clears it through the drive and still voids nothing; back at 12 the sighting starts over and the second consecutive pass opens exactly one PENDING_OFF, clears the marker and only then voids the reserved hand; pending_off_dwell_ms is a validated config key whose 0 disables the dwell'
+
+-- 22 THE DIGEST IS LIVE ROWS UNDER LOCKS -----------------------------------------------
+DO $$
+DECLARE v_g uuid; v jsonb; v_req uuid; v_seat uuid;
+BEGIN
+  v_g := harness.c7('REMM', 6, 7, 2, 7, 2);
+  v := harness.drive(v_g); v := harness.drive(v_g);
+  PERFORM public.fx9_pool(v_g);
+  PERFORM harness.to(v_g, 12);
+  v := harness.drive(v_g); v := harness.drive(v_g);
+  IF harness.mode(v_g) <> 'pending_off' THEN RAISE EXCEPTION 'FIXTURE: REMM did not open PENDING_OFF: %', v; END IF;
+  SELECT conversion_request_id INTO v_req FROM public.cash_cluster_conversion WHERE cluster_id = v_g AND status = 'pending';
+  SELECT ts.id INTO v_seat FROM public.table_seats ts JOIN public.tables tb ON tb.id = ts.table_id
+   WHERE tb.cluster_id = v_g AND ts.left_at IS NULL ORDER BY ts.id LIMIT 1;
+  INSERT INTO harness.p7 (k, game, a, b) VALUES ('remm', v_g, v_seat, v_req);
+END $$;
+DO $$
+DECLARE v_g uuid; v_req uuid; v_seat uuid; v_b text; v_busy integer;
+BEGIN
+  SELECT game, a, b INTO v_g, v_seat, v_req FROM harness.p7 WHERE k = 'remm';
+  PERFORM harness.connect('p7a'); PERFORM harness.connect('p7b');
+  PERFORM harness.dblink_exec('p7a', 'BEGIN');
+  PERFORM harness.ask('p7a', format('UPDATE public.table_seats SET is_sitting_out = true WHERE id = %L RETURNING 1::text', v_seat));
+  PERFORM harness.dblink_send_query('p7b', format('SELECT public.fn_cash_cluster_commit_must_move(%L, %L)::text', v_g, v_req));
+  PERFORM pg_sleep(0.3);
+  v_busy := harness.dblink_is_busy('p7b');
+  PERFORM harness.dblink_exec('p7a', 'COMMIT');
+  SELECT t.a INTO v_b FROM harness.dblink_get_result('p7b') AS t(a text);
+  PERFORM * FROM harness.dblink_get_result('p7b') AS t(a text);
+  PERFORM harness.dblink_disconnect('p7a'); PERFORM harness.dblink_disconnect('p7b');
+  IF v_busy <> 1 OR (v_b::jsonb ->> 'reverted')::boolean IS DISTINCT FROM true
+     OR harness.mode(v_g) <> 'must_move'
+     OR (SELECT is_sitting_out FROM public.table_seats WHERE id = v_seat) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 22: the commit did not wait on the live seat lock and then revert without a false alarm (busy %): %', v_busy, v_b;
+  END IF;
+END $$;
+\echo '  ok  22 THE DIGEST  a concurrent engine write to a live seat (is_sitting_out) makes the commit WAIT on its FOR SHARE (the backend is busy), and once the writer commits the reversion reads one consistent world: reverted true, no false LIGHTNING_REVERSION_MOVED_MONEY, and the engine''s write survives'
+
+-- 23 A DISABLED GAME KEEPS ITS HALTS -----------------------------------------------------
+DO $$
+DECLARE v_g uuid; v jsonb;
+BEGIN
+  v_g := harness.c7('REMG2', 6, 7, 2, 7, 2);
+  v := harness.drive(v_g); v := harness.drive(v_g);
+  PERFORM public.fx9_pool(v_g);
+  UPDATE public.cash_games SET enabled = false WHERE id = v_g;
+  v := harness.drive(v_g);
+  IF harness.mode(v_g) <> 'pending_off' OR v -> 'result' ->> 'why' <> 'game_disabled' THEN
+    RAISE EXCEPTION 'FAIL 23: a disabled game at 18 did not begin its drain at once (no dwell): %', v;
+  END IF;
+  v := harness.drive(v_g);
+  IF harness.mode(v_g) <> 'must_move' OR (v -> 'result' ->> 'reverted')::boolean IS DISTINCT FROM true
+     OR (v -> 'result' ->> 'halts_kept_game_disabled')::boolean IS DISTINCT FROM true
+     OR (v -> 'result' ->> 'tables_released')::integer <> 0
+     OR (v -> 'result' ->> 'tables_still_halted')::integer <> 2 THEN
+    RAISE EXCEPTION 'FAIL 23: the reversion of a disabled game did not keep the halts and say so: %', v;
+  END IF;
+  IF (SELECT count(*) FROM public.tables WHERE cluster_id = v_g
+       AND dealing_halted_at IS NOT NULL AND dealing_halted_reason = 'lightning') <> 2
+     OR EXISTS (SELECT 1 FROM public.lightning_pool_session WHERE cluster_id = v_g AND exited_at IS NULL)
+     OR (SELECT (payload ->> 'halts_kept_game_disabled')::boolean FROM public.cash_cluster_events
+          WHERE game_id = v_g AND kind = 'lightning_off') IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 23: a disabled game''s table deals again, a pool session survived, or the event does not say the halts were kept';
+  END IF;
+  -- The game-close path owns a disabled game's halted tables. This estate
+  -- re-enables the game instead, and the next full cycle lifts them: ON at
+  -- 18, then Lightning switched off with the game ENABLED, whose reversion
+  -- releases the halts exactly as before.
+  UPDATE public.cash_games SET enabled = true WHERE id = v_g;
+  v := harness.drive(v_g); v := harness.drive(v_g);
+  IF harness.mode(v_g) <> 'lightning' THEN RAISE EXCEPTION 'FAIL 23: the re-enabled game did not convert: %', v; END IF;
+  UPDATE public.cash_games SET lightning_enabled = false WHERE id = v_g;
+  v := harness.drive(v_g); v := harness.drive(v_g);
+  IF harness.mode(v_g) <> 'must_move'
+     OR EXISTS (SELECT 1 FROM public.tables WHERE cluster_id = v_g AND dealing_halted_at IS NOT NULL) THEN
+    RAISE EXCEPTION 'FAIL 23: with the game enabled again the reversion did not lift the halts: %', v;
+  END IF;
+END $$;
+\echo '  ok  23 A DISABLED GAME  switching the game off drains at once (game_disabled, no dwell) and the reversion commits, exits every pool session and keeps both member tables halted, saying so in the result and the lightning_off event: a reversion is a seating transition, not a licence to deal'
+
+-- 24 THE POLL TAKES NO LOCK ---------------------------------------------------------------
+DO $$
+DECLARE v_g uuid; v_h uuid; v jsonb; v_r jsonb; v_p uuid[]; v_inst uuid; v_req uuid; v_req2 uuid;
+BEGIN
+  v_g := harness.c7('REMP', 6, 7, 2, 7, 2);
+  v := harness.drive(v_g); v := harness.drive(v_g);
+  PERFORM public.fx9_pool(v_g);
+  PERFORM public.fxr_lease(public.fn_cash_cluster_front_table(v_g), true);
+  v_p := harness.idle(v_g, false, 2) || harness.idle(v_g, true, 1);
+  v_r := harness.form(v_g, v_p); v_inst := (v_r ->> 'instance_id')::uuid;
+  PERFORM harness.deal(v_inst);
+  PERFORM harness.to(v_g, 12);
+  v := harness.drive(v_g); v := harness.drive(v_g);
+  IF harness.mode(v_g) <> 'pending_off' THEN RAISE EXCEPTION 'FIXTURE: REMP did not open PENDING_OFF: %', v; END IF;
+  SELECT conversion_request_id INTO v_req FROM public.cash_cluster_conversion WHERE cluster_id = v_g AND status = 'pending';
+  INSERT INTO harness.p7 (k, game, b) VALUES ('remp', v_g, v_req);
+  v_h := harness.c7('REMP2', 6, 7, 2, 7, 2);
+  v := harness.drive(v_h);
+  IF harness.mode(v_h) <> 'pending_on' THEN RAISE EXCEPTION 'FIXTURE: REMP2 did not open PENDING_ON: %', v; END IF;
+  PERFORM public.fxr_snapshot(public.fn_cash_cluster_front_table(v_h), false);
+  SELECT conversion_request_id INTO v_req2 FROM public.cash_cluster_conversion WHERE cluster_id = v_h AND status = 'pending';
+  INSERT INTO harness.p7 (k, game, b) VALUES ('remp2', v_h, v_req2);
+END $$;
+DO $$
+DECLARE v_g uuid; v_h uuid; v_req uuid; v_req2 uuid; v_b text;
+BEGIN
+  SELECT game, b INTO v_g, v_req FROM harness.p7 WHERE k = 'remp';
+  SELECT game, b INTO v_h, v_req2 FROM harness.p7 WHERE k = 'remp2';
+  PERFORM harness.connect('p7a'); PERFORM harness.connect('p7b');
+  PERFORM harness.dblink_exec('p7a', 'BEGIN');
+  PERFORM harness.ask('p7a', format('SELECT id::text FROM public.cash_games WHERE id = %L FOR UPDATE', v_g));
+  v_b := harness.ask('p7b', format('SELECT public.fn_cash_cluster_commit_must_move(%L, %L)::text', v_g, v_req));
+  IF v_b::jsonb ->> 'reason' <> 'instances_in_flight' OR (v_b::jsonb ->> 'ready')::boolean IS DISTINCT FROM false
+     OR (v_b::jsonb ->> 'instances_in_flight')::integer <> 1 THEN
+    RAISE EXCEPTION 'FAIL 24: the drain poll did not answer instances_in_flight while another backend held the Cluster row: %', v_b;
+  END IF;
+  PERFORM harness.dblink_exec('p7a', 'COMMIT');
+  -- And the ON commit's hand-boundary poll.
+  PERFORM harness.dblink_exec('p7a', 'BEGIN');
+  PERFORM harness.ask('p7a', format('SELECT id::text FROM public.cash_games WHERE id = %L FOR UPDATE', v_h));
+  v_b := harness.ask('p7b', format('SELECT public.fn_cash_cluster_commit_lightning(%L, %L)::text', v_h, v_req2));
+  IF v_b::jsonb ->> 'reason' <> 'hands_in_flight' OR (v_b::jsonb ->> 'hands_in_flight')::integer <> 1 THEN
+    RAISE EXCEPTION 'FAIL 24: the hand-boundary poll did not answer hands_in_flight while another backend held the Cluster row: %', v_b;
+  END IF;
+  PERFORM harness.dblink_exec('p7a', 'COMMIT');
+  PERFORM harness.dblink_disconnect('p7a'); PERFORM harness.dblink_disconnect('p7b');
+  -- The physical hand ends, and the held-up conversion commits.
+  UPDATE public.hand_state_snapshots SET is_complete = true
+   WHERE table_id = public.fn_cash_cluster_front_table(v_h) AND is_complete = false;
+  v_b := public.fn_cash_cluster_commit_lightning(v_h, v_req2)::text;
+  IF (v_b::jsonb ->> 'converted')::boolean IS DISTINCT FROM true OR harness.mode(v_h) <> 'lightning' THEN
+    RAISE EXCEPTION 'FAIL 24: with the hand complete the held-up conversion did not commit: %', v_b;
+  END IF;
+END $$;
+\echo '  ok  24 THE POLL TAKES NO LOCK  with another backend holding the Cluster row FOR UPDATE, commit_must_move answers instances_in_flight and commit_lightning answers hands_in_flight immediately (neither queues behind the row they used to take first), and each count is exact'
+ASSERT
+
+cat > "$fixture/rem-proofs-check.sql" <<'ASSERT'
+-- 25 NOTHING EARLIER IS FALSIFIED, AND THE FILE'S OWN PROOFS HOLD -------------------------
+DO $$
+DECLARE v_bad text; v_n integer;
+BEGIN
+  SELECT string_agg(b.src || '#' || b.n, ', ' ORDER BY b.src, b.n) INTO v_bad
+    FROM harness.lp7 b JOIN harness.lp7 r ON r.src = b.src AND r.n = b.n AND r.phase = 'rem'
+   WHERE b.phase = 'after' AND b.ok IS TRUE AND r.ok IS NOT TRUE;
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL 25: predecessor proofs falsified by the remediation: %', v_bad;
+  END IF;
+  SELECT string_agg(b.src || '#' || b.n, ', ' ORDER BY b.src, b.n) INTO v_bad
+    FROM harness.lp7 b JOIN harness.lp7 r ON r.src = b.src AND r.n = b.n AND r.phase = 'remp7'
+   WHERE b.phase = 'own' AND b.ok IS TRUE AND r.ok IS NOT TRUE;
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL 25: Phase 7''s own proofs falsified by the remediation: %', v_bad;
+  END IF;
+  SELECT count(*) INTO v_n FROM harness.lp7 WHERE phase = 'rem' AND ok IS TRUE;
+  IF v_n < 100 THEN
+    RAISE EXCEPTION 'FAIL 25: only % predecessor proofs read true after the remediation, so this proves too little', v_n;
+  END IF;
+  IF (SELECT count(*) FROM harness.lp7 WHERE phase = 'remown') <> 10
+     OR EXISTS (SELECT 1 FROM harness.lp7 WHERE phase = 'remown' AND ok IS NOT TRUE) THEN
+    RAISE EXCEPTION 'FAIL 25: the remediation''s own proofs: %',
+      (SELECT string_agg(n || '=' || coalesce(ok::text, 'error'), ', ') FROM harness.lp7 WHERE phase = 'remown');
+  END IF;
+END $$;
+\echo '  ok  25 NOTHING EARLIER IS FALSIFIED  every predecessor @live-proof that held after Phase 7 holds after the remediation, all six of Phase 7''s own proofs still hold, and all ten of the remediation''s own proofs evaluate true against this catalogue'
+ASSERT
+
+cat > "$fixture/rem-precapture.sql" <<'ASSERT'
+CREATE TABLE harness.rcap2 AS
+SELECT 'fn:' || p.oid::regprocedure::text AS what, md5(pg_get_functiondef(p.oid) || coalesce(p.proacl::text, '') || coalesce(obj_description(p.oid, 'pg_proc'), '')) AS v
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+ WHERE n.nspname = 'public' AND (p.proname LIKE 'fn_lightning_%' OR p.proname LIKE 'fn_cash_cluster%')
+UNION ALL
+SELECT 'rows:' || x.t, (xpath('/row/n/text()', query_to_xml(format('SELECT count(*) AS n FROM public.%I', x.t), false, true, '')))[1]::text
+  FROM unnest(ARRAY['cash_cluster_conversion', 'cash_cluster_events', 'lightning_pool_session', 'lightning_pool_slot', 'lightning_instance', 'cash_cluster_epoch', 'lightning_blind_ledger']) x(t)
+UNION ALL
+SELECT 'modes', md5(string_agg(id::text || ':' || cluster_mode || ':' || cluster_epoch || ':' || coalesce(lightning_off_condition_since::text, '-'), '|' ORDER BY id)) FROM public.cash_games
+UNION ALL
+SELECT 'stacks', md5(string_agg(id::text || ':' || coalesce(stack::text, ''), '|' ORDER BY id)) FROM public.table_seats;
+ASSERT
+
+cat > "$fixture/rem-reapply.sql" <<'ASSERT'
+-- 26 THE REMEDIATION IS RE-APPLIABLE -------------------------------------------------------
+DO $$
+DECLARE v_bad text;
+BEGIN
+  SELECT string_agg(a.what, ', ') INTO v_bad
+    FROM harness.rcap2 a
+    FULL JOIN (
+      SELECT 'fn:' || p.oid::regprocedure::text AS what, md5(pg_get_functiondef(p.oid) || coalesce(p.proacl::text, '') || coalesce(obj_description(p.oid, 'pg_proc'), '')) AS v
+        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'public' AND (p.proname LIKE 'fn_lightning_%' OR p.proname LIKE 'fn_cash_cluster%')
+      UNION ALL
+      SELECT 'rows:' || x.t, (xpath('/row/n/text()', query_to_xml(format('SELECT count(*) AS n FROM public.%I', x.t), false, true, '')))[1]::text
+        FROM unnest(ARRAY['cash_cluster_conversion', 'cash_cluster_events', 'lightning_pool_session', 'lightning_pool_slot', 'lightning_instance', 'cash_cluster_epoch', 'lightning_blind_ledger']) x(t)
+      UNION ALL
+      SELECT 'modes', md5(string_agg(id::text || ':' || cluster_mode || ':' || cluster_epoch || ':' || coalesce(lightning_off_condition_since::text, '-'), '|' ORDER BY id)) FROM public.cash_games
+      UNION ALL
+      SELECT 'stacks', md5(string_agg(id::text || ':' || coalesce(stack::text, ''), '|' ORDER BY id)) FROM public.table_seats
+    ) b ON b.what = a.what
+   WHERE a.v IS DISTINCT FROM b.v;
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL 26: the second application of the remediation changed: %', v_bad;
+  END IF;
+  IF (SELECT count(*) FROM harness.rcap2 WHERE what LIKE 'fn:%') < 60 THEN
+    RAISE EXCEPTION 'FAIL 26: the capture is too small to prove anything';
+  END IF;
+END $$;
+\echo '  ok  26 RE-APPLIABLE  applied a second time the remediation leaves every fn_lightning_ and fn_cash_cluster body, acl and comment, seven row counts, every Cluster mode, epoch and dwell sighting and every seat stack exactly as they were'
+ASSERT
+
 { predecessor_proofs before; } > "$fixture/proofs-before.sql"
 { predecessor_proofs after; } > "$fixture/proofs-after.sql"
 { gen_proofs own mine "$mine"; } > "$fixture/own-proofs-eval.sql"
+{ predecessor_proofs rem; gen_proofs remp7 mine "$mine"; gen_proofs remown remfile "$rem"; } > "$fixture/rem-proofs-eval.sql"
 
 # ===========================================================================
 # THE RUN.
@@ -1161,7 +1679,15 @@ set +e
   -f "$fixture/own-proofs.sql" \
   -f "$fixture/precapture.sql" \
   -f "$mine" \
-  -f "$fixture/reapply.sql" 2>&1 | grep -v -E '^psql:.*: (NOTICE|WARNING):' | tee "$fixture/psql.out"
+  -f "$fixture/reapply.sql" \
+  -f "$fixture/rem-ground.sql" \
+  -f "$rem" \
+  -f "$fixture/rem-assertions.sql" \
+  -f "$fixture/rem-proofs-eval.sql" \
+  -f "$fixture/rem-proofs-check.sql" \
+  -f "$fixture/rem-precapture.sql" \
+  -f "$rem" \
+  -f "$fixture/rem-reapply.sql" 2>&1 | grep -v -E '^psql:.*: (NOTICE|WARNING):' | tee "$fixture/psql.out"
 status=${PIPESTATUS[0]}
 set -e
 if [ "$status" != 0 ]; then
@@ -1169,10 +1695,10 @@ if [ "$status" != 0 ]; then
   exit 1
 fi
 
-# SEVENTEEN SECTIONS REPORTED, counted rather than eyeballed.
+# TWENTY-SEVEN SECTIONS REPORTED, counted rather than eyeballed.
 oks=$(grep -c -E '^  ok  [0-9]{2} ' "$fixture/psql.out" || true)
-if [ "$oks" != 17 ]; then
-  echo "FAIL: $oks of the 17 sections reported, so this run proved less than this file claims"
+if [ "$oks" != 27 ]; then
+  echo "FAIL: $oks of the 27 sections reported, so this run proved less than this file claims"
   exit 1
 fi
-echo "PASS: Lightning Phase 7 (spec Phase 10), 18 sections: before the file three real tick passes neither revert a Lightning Cluster at 11 nor convert a must-move Cluster at 18; after it no earlier proof is falsified; six-max 17 holds, 18 converts, 17/16/13 hold, 12 drains and reverts, 11 holds and the climb back to 17 converts nothing; nine-max 26 holds, 27 converts, 26/19 hold, 18 reverts, 17 holds; the reversion writes no seat, cash session or blind ledger row (an xmin census of every table) and keeps every stack, baseline, stay clock, rejoin window and join time of humans and horses; Lightning halts and their acknowledgements lift and the tick plans must-move moves again; on four partly filled tables the tick plans the feeder oldest first onto the shortest Main and breaks it without writing a seat; no exited pool session sees a Lightning hand; a dealt hand settles in PENDING_OFF before the revert while an undealt one is void; a population back above OFF cancels the drain; two backends open one PENDING_OFF and revert once; Lightning switched off drains and never strands; a stuck PENDING_OFF is reaped with its hand void; two full cycles with live engines keep every anchor and stack; the tick pass drives both directions and never touches a Cluster with Lightning disabled; my_session names the seat of a player with no pool session; service_role alone may call; every @live-proof holds and the file is re-appliable"
+echo "PASS: Lightning Phase 7 (spec Phase 10), 18 sections: before the file three real tick passes neither revert a Lightning Cluster at 11 nor convert a must-move Cluster at 18; after it no earlier proof is falsified; six-max 17 holds, 18 converts, 17/16/13 hold, 12 drains and reverts, 11 holds and the climb back to 17 converts nothing; nine-max 26 holds, 27 converts, 26/19 hold, 18 reverts, 17 holds; the reversion writes no seat, cash session or blind ledger row (an xmin census of every table) and keeps every stack, baseline, stay clock, rejoin window and join time of humans and horses; Lightning halts and their acknowledgements lift and the tick plans must-move moves again; on four partly filled tables the tick plans the feeder oldest first onto the shortest Main and breaks it without writing a seat; no exited pool session sees a Lightning hand; a dealt hand settles in PENDING_OFF before the revert while an undealt one is void; a population back above OFF cancels the drain; two backends open one PENDING_OFF and revert once; Lightning switched off drains and never strands; a stuck PENDING_OFF is reaped with its hand void; two full cycles with live engines keep every anchor and stack; the tick pass drives both directions and never touches a Cluster with Lightning disabled; my_session names the seat of a player with no pool session; service_role alone may call; every @live-proof holds and the file is re-appliable; then the remediation (20261007222717), its defects first proven real on the Phase 7 code: an unfreeze aborts the conversion it would orphan and clears the engine acknowledgements, the reaper aborts an orphaned conversion as orphaned_by_<mode>, both begins answer conversion_already_open structurally and the healed production wreckage converts cleanly with no lightning_drive_error; a formation voided before dealing gives back its exact blind-ledger credit on every abandon road while a dealt hand keeps its posted blinds; the OFF condition dwells (two consecutive sightings or pending_off_dwell_ms, default 10s, 0 disables) so a 12/13 flap voids nothing; the no-money digest covers live rows under FOR SHARE so a concurrent engine seat write waits instead of false-alarming; a disabled game's reversion keeps its halts and says so; both commits poll their in-flight counts without the Cluster row; no earlier proof is falsified and the remediation is re-appliable"

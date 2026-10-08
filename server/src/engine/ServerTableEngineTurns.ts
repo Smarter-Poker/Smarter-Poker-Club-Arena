@@ -11,6 +11,10 @@
 import { HandController } from './HandController.js';
 import { captureHorseHandJournalContext } from './HorseDecisionHandBinding.js';
 import {
+  horsePlanAcceptanceFromController,
+  horsePlanWagerAcceptedExactly,
+} from './HorsePlanEffectReceipt.js';
+import {
   isPotLimitVariant,
   isFixedLimitVariant,
   fixedLimitBetSize,
@@ -4140,13 +4144,14 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               executedAmount = normalizedAmount;
             }
             const acceptedWager = acceptedActions.length === 1 ? acceptedActions[0] : null;
-            const exactWagerAccepted =
-              !decision.executionWitness ||
-              (acceptedWager?.intended === true &&
-                acceptedWager.record.action === action &&
-                acceptedWager.record.amount === normalizedAmount &&
-                acceptedWager.record.action === decision.executionWitness.selected.action &&
-                acceptedWager.record.amount === decision.executionWitness.selected.amount);
+            // The Phase 15 preserved boundary has one owner, shared with the
+            // Lightning hand host: the exact accepted action, or no commit.
+            const exactWagerAccepted = horsePlanWagerAcceptedExactly({
+              issued: fastResult.decision,
+              submitted: { action, amount: normalizedAmount },
+              acceptedActions,
+              witness: decision.executionWitness,
+            });
             if (
               intendedApplied &&
               decision === fastResult.decision &&
@@ -4164,12 +4169,22 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               } else if (fastResult.planIssueDisposition !== 'issued') {
                 noteFire(`phase15_plan_accepted_${fastResult.planIssueDisposition}`);
               } else
-                void worker.commitDecisionEffects(fastResult).catch((error) => {
-                  reportError(
-                    error,
-                    'ServerTableEngine.' + this.tableId + '.horse_decision_effect_commit_failed'
-                  );
-                });
+                void worker
+                  .commitDecisionEffects(
+                    fastResult,
+                    // Phase 15.1: the exact accepted wager joins the durable receipt.
+                    horsePlanAcceptanceFromController(
+                      acceptedWager?.record,
+                      { action, amount: normalizedAmount },
+                      decision.executionWitness?.identity
+                    )
+                  )
+                  .catch((error) => {
+                    reportError(
+                      error,
+                      'ServerTableEngine.' + this.tableId + '.horse_decision_effect_commit_failed'
+                    );
+                  });
             }
             if (!applied) {
               attemptingFallback = true;

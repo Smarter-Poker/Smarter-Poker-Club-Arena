@@ -53,9 +53,10 @@ import {
   lightningMatchAndForm,
   summarizeLightningMatch,
   type LightningDiagnosisSummary,
+  type LightningPlatformsDelivery,
   type LightningRpcClient,
 } from './LightningRpc.js';
-import type { LightningPresence } from './LightningPresence.js';
+import type { LightningDevicePlatform, LightningPresence } from './LightningPresence.js';
 import {
   lightningMetrics,
   type LightningMetrics,
@@ -63,6 +64,9 @@ import {
 } from './LightningMetrics.js';
 import { RateLimitedLog } from './RateLimitedLog.js';
 import type { LightningFormedHand } from './LightningHandHost.js';
+
+/** After the old matcher signature refuses p_player_platforms, ask again this much later. */
+export const LIGHTNING_PLATFORMS_RETRY_MS = 10 * 60_000;
 
 export interface LightningWorkerLogger {
   log(message: string): void;
@@ -113,6 +117,8 @@ export class LightningClusterWorker {
   private running = false;
   private stopped = false;
   private inFlight: Promise<LightningWorkerPassResult> | null = null;
+  /** Epoch ms before which p_player_platforms is not sent (the old signature refused it). */
+  private platformsRetryAtMs = 0;
   /** Who the last validated diagnosis named: the presence feed's memory of the pool. */
   private knownPoolPlayers: string[] = [];
   private lastSummaryKey: string | null = null;
@@ -294,11 +300,11 @@ export class LightningClusterWorker {
     if (this.frozen()) return { outcome: 'frozen' };
 
     let disconnected: string[];
+    let platforms: Record<string, LightningDevicePlatform>;
     try {
-      disconnected = this.deps.presence.snapshot(
-        this.clusterId,
-        this.knownPoolPlayers
-      ).pDisconnected;
+      const snap = this.deps.presence.snapshot(this.clusterId, this.knownPoolPlayers);
+      disconnected = snap.pDisconnected;
+      platforms = snap.platforms ?? {};
     } catch (err) {
       // A presence feed that cannot answer must not be read as "everyone is here".
       if (this.failureLog.shouldLog('presence')) {
@@ -312,7 +318,9 @@ export class LightningClusterWorker {
       now: this.now(),
       disconnected,
       matcherVersion: this.config.matcherVersion,
+      playerPlatforms: this.platformsToSend(platforms),
     });
+    this.notePlatformsDelivery(out.platforms);
 
     if (out.status === 'unavailable') {
       if (this.failureLog.shouldLog('unavailable')) {
@@ -343,6 +351,32 @@ export class LightningClusterWorker {
     this.metrics.recordSummary(this.clusterId, summary);
     this.maybeLogSummary(summary, disconnected.length);
     return { outcome: 'matched', summary, disconnected: disconnected.length };
+  }
+
+  /**
+   * LIGHTNING PHASE 8: p_player_platforms, unless the database refused the
+   * argument recently (old signature still live). Then nothing is sent until
+   * the retry time, so a pass costs one call rather than two.
+   */
+  private platformsToSend(
+    platforms: Record<string, LightningDevicePlatform>
+  ): Record<string, LightningDevicePlatform> | null {
+    if (this.now().getTime() < this.platformsRetryAtMs) return null;
+    return Object.keys(platforms).length > 0 ? platforms : null;
+  }
+
+  private notePlatformsDelivery(delivery: LightningPlatformsDelivery): void {
+    if (delivery === 'dropped') {
+      this.platformsRetryAtMs = this.now().getTime() + LIGHTNING_PLATFORMS_RETRY_MS;
+      if (this.failureLog.shouldLog('platforms_dropped')) {
+        this.logger.warn(
+          `[Lightning:${this.clusterId}] the matcher does not take p_player_platforms yet; ` +
+            'calling without it (per-platform Cluster limits wait for the migration)'
+        );
+      }
+    } else if (delivery === 'sent') {
+      this.platformsRetryAtMs = 0;
+    }
   }
 
   /**
@@ -381,11 +415,11 @@ export class LightningClusterWorker {
       if (!held) return { outcome: 'skipped', reason: 'front_table_lease_not_held' };
     }
     let disconnected: string[];
+    let platforms: Record<string, LightningDevicePlatform>;
     try {
-      disconnected = this.deps.presence.snapshot(
-        this.clusterId,
-        this.knownPoolPlayers
-      ).pDisconnected;
+      const snap = this.deps.presence.snapshot(this.clusterId, this.knownPoolPlayers);
+      disconnected = snap.pDisconnected;
+      platforms = snap.platforms ?? {};
     } catch (err) {
       if (this.failureLog.shouldLog('presence')) {
         this.logger.error(`[Lightning:${this.clusterId}] presence feed failed; pass skipped`, err);
@@ -400,7 +434,9 @@ export class LightningClusterWorker {
       disconnected,
       maxHands: this.config.maxHandsPerPass,
       requestId,
+      playerPlatforms: this.platformsToSend(platforms),
     });
+    this.notePlatformsDelivery(out.platforms);
     if (out.status === 'error') {
       // Unknown outcome: the next pass asks again under the same id.
       if (this.failureLog.shouldLog('form_error')) {

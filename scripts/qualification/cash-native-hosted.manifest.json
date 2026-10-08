@@ -49,8 +49,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 192956,
-      "sha256": "65e578ea1f5e92b5c6582c118fd4146a457b7b80015ad3e5befca583a38014bd"
+      "bytes": 193251,
+      "sha256": "fc2e199e2cc91fe73a99949f3f417f5679d80c738a03dccc52be207d752fefe3"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1763,6 +1763,17 @@
     "previousWorkflowPin": {
       "bytes": 192539,
       "sha256": "1d9cdf018f8f964600e844038b36e07375eb584ab282d7c6fc9980c2374184cd"
+    }
+  },
+  "operatorPauseProtectedMainIntegration20261008": {
+    "reason": "Preserve protected main's existing Lightning Phase 8 accounting step and the candidate's native operator-hold Accounting2 qualification. Only the combined workflow source fingerprint changes; financial inputs, assertions, historical qualification and SOURCE_ONLY_UNRUN status are unchanged.",
+    "previousProtectedMainWorkflowPin": {
+      "bytes": 192834,
+      "sha256": "ab88e09bba733b4c642831d3bb8e8467d16de882cf7e4f8aa8f51fa21b12a4bc"
+    },
+    "previousOperatorPauseWorkflowPin": {
+      "bytes": 192956,
+      "sha256": "65e578ea1f5e92b5c6582c118fd4146a457b7b80015ad3e5befca583a38014bd"
     }
   }
 }

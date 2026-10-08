@@ -39,6 +39,12 @@
   color: rgba(255, 255, 255, 0.78);
 }
 
+.lightning-fold-bar__btn--quiet[data-preferred='true'] {
+  color: #fff;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
 .lightning-fold-bar__btn:disabled {
   opacity: 0;
   cursor: default;

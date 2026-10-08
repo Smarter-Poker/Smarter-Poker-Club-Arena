@@ -8,13 +8,14 @@
  * leader gate in GameServer.start() (a standby returns before either), and
  * stopped with it on leadership loss or shutdown.
  *
- * A Cluster QUALIFIES when all three hold:
- *   - `cash_games.cluster_mode = 'lightning'`,
- *   - `cash_games.lightning_enabled = true`,
+ * A Cluster HOLDS A WORKER when both hold:
+ *   - `cash_games.cluster_mode` is `lightning` or `pending_off`,
  *   - its `fn_lightning_config` says `worker_mode <> 'off'`.
+ * It FORMS only when it is in `lightning` with `lightning_enabled = true`;
+ * otherwise its worker is DRAINING (see below).
  *
- * ONE CHEAP QUERY PER INTERVAL. The first two are a single select of `id`
- * over `cash_games` with two equality filters, every
+ * ONE CHEAP QUERY PER INTERVAL. The first is a single select of
+ * `id, cluster_mode, lightning_enabled` over `cash_games`, every
  * LIGHTNING_DISCOVERY_INTERVAL_MS. Only a Cluster that passes it costs a
  * second call (`fn_lightning_config`), and today none does: every Cluster is
  * must_move with Lightning disabled, so this ships dark and costs one tiny
@@ -28,13 +29,24 @@
  * ON THE WAY OUT (Lightning Phase 7, 2026-10-02). LIGHTNING -> MUST_MOVE
  * passes through `pending_off`: the database refuses to form a new hand and
  * still settles the ones in the air. Discovery therefore finds `pending_off`
- * Clusters as well, and their worker is DRAINING: it calls no matcher and
+ * Clusters as well (whatever `lightning_enabled` says), and their worker is
+ * DRAINING: it calls no matcher and
  * forms nothing, while every hand already dealt plays on to settlement under
  * its own host (keepalives included) - a Cluster that merely stopped
  * qualifying would instead have its hands abandoned. When the commit sets
  * `must_move` the Cluster leaves discovery, its worker stops, and the
  * ended-room sweep is run at once so every room it held closes with
  * "Lightning Has Ended" instead of up to a sweep interval later.
+ *
+ * SWITCHED OFF (Lightning Phase 7 review, 2026-10-07). An operator turning
+ * `lightning_enabled` off on a Cluster still in `lightning` starts that same
+ * drain: the database's tick moves it to `pending_off` and promises the hands
+ * in the air finish. Until the tick does, the Cluster is discovered as
+ * DRAINING too - no new hand forms, every host keeps running - instead of
+ * dropping out of discovery, which would stop its worker and void the hands
+ * being dealt. A worker stops (and its unsettled hands are abandoned) only
+ * when its Cluster is MUST MOVE or gone, frozen, its config `off`, or the
+ * leader steps down.
  */
 import { supabase } from '../services/supabase.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
@@ -58,7 +70,8 @@ export interface LightningSupervisorDeps {
   /**
    * Clusters passing the cash_games filter. Defaults to the one select. A
    * bare id is a Cluster in `lightning`; `{ draining: true }` is one in
-   * `pending_off`, on its way back to MUST MOVE.
+   * `pending_off` (or in `lightning` with Lightning switched off), on its way
+   * back to MUST MOVE.
    */
   discover?: () => Promise<Array<string | LightningDiscoveredCluster>>;
   rpc?: LightningRpcClient;
@@ -86,7 +99,10 @@ export interface LightningSupervisorDeps {
 /** One Cluster discovery found, and whether it is on its way out of Lightning. */
 export interface LightningDiscoveredCluster {
   clusterId: string;
-  /** `pending_off`: no new hand forms; the hands in the air settle. */
+  /**
+   * `pending_off`, or `lightning` with `lightning_enabled` off: no new hand
+   * forms; the hands in the air settle.
+   */
   draining: boolean;
 }
 
@@ -100,26 +116,33 @@ const FRONT_TABLE_TTL_MS = 30_000;
 
 /**
  * The one discovery read: Clusters in Lightning mode, or draining out of it
- * (`pending_off`), with Lightning enabled.
+ * (`pending_off`), whatever `lightning_enabled` says - a Cluster switched off
+ * mid-hand drains rather than disappears.
  */
 export async function discoverLightningClusters(): Promise<LightningDiscoveredCluster[]> {
   const { data, error } = await supabase
     .from('cash_games')
-    .select('id, cluster_mode')
-    .in('cluster_mode', [...LIGHTNING_WORKER_CLUSTER_MODES])
-    .eq('lightning_enabled', true);
+    .select('id, cluster_mode, lightning_enabled')
+    .in('cluster_mode', [...LIGHTNING_WORKER_CLUSTER_MODES]);
   if (error) throw error;
   return parseDiscoveredClusters(data);
 }
 
-/** The discovery rows, read defensively: an unknown mode is no Cluster at all. */
+/**
+ * The discovery rows, read defensively: an unknown mode is no Cluster at all,
+ * and a `lightning` Cluster forms only with `lightning_enabled` exactly true
+ * (switched off, or unreadable, it drains).
+ */
 export function parseDiscoveredClusters(rows: unknown): LightningDiscoveredCluster[] {
   const out: LightningDiscoveredCluster[] = [];
   for (const row of Array.isArray(rows) ? rows : []) {
-    const r = row as { id?: unknown; cluster_mode?: unknown } | null;
+    const r = row as { id?: unknown; cluster_mode?: unknown; lightning_enabled?: unknown } | null;
     if (!r || !isUuid(r.id)) continue;
     if (r.cluster_mode !== 'lightning' && r.cluster_mode !== 'pending_off') continue;
-    out.push({ clusterId: r.id, draining: r.cluster_mode === 'pending_off' });
+    out.push({
+      clusterId: r.id,
+      draining: r.cluster_mode === 'pending_off' || r.lightning_enabled !== true,
+    });
   }
   return out;
 }
@@ -317,8 +340,9 @@ export class LightningSupervisor {
       );
       await worker.stop();
       // After LIGHTNING -> MUST_MOVE nothing is left to abandon: the commit
-      // waited for every hand to settle. Anything else that ends a worker
-      // (Lightning disabled, config off) voids what has not settled.
+      // waited for every hand to settle. Lightning switched off never lands
+      // here (it drains above); anything else that ends a worker (the Cluster
+      // gone, config off) voids what has not settled.
       await this.deps.hosting?.abortCluster(clusterId, 'worker_stopped');
     }
     if (!this.running || generation !== this.generation) return;

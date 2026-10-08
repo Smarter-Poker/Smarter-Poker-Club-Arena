@@ -254,11 +254,23 @@ export const omahaSamplerScoring = Object.freeze({
  * heuristic sequential prior, not an independent solver-range posterior.
  * Folded dealt seats still consume unknown cards from the one physical deck.
  */
+/** The terminal showdowns a sample consisted of, handed to an optional
+ * retention callback (P11-A, audit 2026-10-07) so the river net-action pass
+ * can settle the same showdowns the policy priced. No extra sample, card,
+ * deck draw or iteration is taken to supply it, and the evidence returned is
+ * identical whether or not retention is asked for. */
+export interface OmahaVariantTerminalShowdowns {
+  samples: HorseEquityOutcomeSample[];
+  /** The contesting roster, in the samples' opponent index order. */
+  opponentIds: string[];
+}
+
 export function sampleOmahaVariantEquity(
   variant: OmahaPolicyVariant,
   hero: SeatPlayer,
   state: HorseGameStateV2,
-  withinBudget: () => boolean
+  withinBudget: () => boolean,
+  retain?: (showdowns: OmahaVariantTerminalShowdowns) => void
 ) {
   const started = performance.now();
   const pack = OMAHA_VARIANT_PACKS[variant];
@@ -423,6 +435,7 @@ export function sampleOmahaVariantEquity(
       ),
     });
   }
+  retain?.({ samples, opponentIds: active.map((p) => p.user_id) });
   const evidence = omahaVariantEquityFromShowdowns({
     variant,
     players: state.players,

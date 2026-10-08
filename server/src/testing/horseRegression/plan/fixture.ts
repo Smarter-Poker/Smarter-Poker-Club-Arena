@@ -16,6 +16,10 @@ import {
   type CommitDecisionEffectsRequest,
 } from '../../../engine/horseDecision/protocol.js';
 import type { ActionRecord, SeatPlayer, HorseDecision } from '../../../types.js';
+import {
+  horsePlanAcceptanceFromController,
+  type HorsePlanAcceptance,
+} from '../../../engine/HorsePlanEffectReceipt.js';
 export const heroId = '11111111-1111-4111-8111-111111111111';
 export const opponentId = '22222222-2222-4222-8222-222222222222';
 export const tableId = '33333333-3333-4333-8333-333333333333';
@@ -233,5 +237,14 @@ export function commitOf(
     fence: result.fence,
     planBinding: structuredClone(result.planBinding),
     effects: structuredClone(result.effects),
+    acceptance: acceptanceOf(result),
   };
+}
+/** The exact wager a controller accepting this FAST decision records. */
+export function acceptanceOf(result: FastHorseDecisionResult): HorsePlanAcceptance {
+  return horsePlanAcceptanceFromController(
+    null,
+    { action: result.decision.action, amount: result.decision.amount ?? null },
+    { requestId: result.requestId, decisionKey: result.planBinding.decisionKey }
+  );
 }

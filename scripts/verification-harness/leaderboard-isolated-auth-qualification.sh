@@ -307,8 +307,10 @@ source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
 chmod 600 "$scratch/definitions-before.sql"
 # Keep all authoritative metadata reads on PRIMARY. Only the long schema-only
 # dump may use an explicitly reviewed dedicated physical read replica. Its
-# catalog, version, startup settings, recovery and WAL fence must match; no
-# source setting is changed and feedback-on is refused, never worked around.
+# catalog, PG17 major, startup settings, recovery and WAL fence must match; no
+# minor-version change during export is admitted. The disposable database stays
+# on the PRIMARY image; native pg_dump supports different PG17 minor versions.
+# No source setting is changed and feedback-on is refused, never worked around.
 if [[ -n "${LEADERBOARD_SCHEMA_REPLICA_DESCRIPTOR:-}" ]]; then
   source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 \
     -c "SELECT jsonb_build_object('version_num', current_setting('server_version_num'), 'current_wal_lsn', pg_current_wal_lsn()::text);" \
@@ -337,6 +339,7 @@ if [[ -n "${LEADERBOARD_SCHEMA_REPLICA_DESCRIPTOR:-}" ]]; then
   source_client 30 psql -XAtq --no-password -v ON_ERROR_STOP=1 -c "$replica_query" \
     >"$scratch/replica-admission-after.json" 2>"$scratch/source-error.log" || source_failure 'replica admission recheck unavailable' "$scratch/source-error.log" "$?"
   node "$replica_helper" verify "$scratch/primary-fence.json" "$scratch/replica-admission-after.json" || failure 'replica recovery, feedback, version or WAL fence changed during export'
+  node "$replica_helper" stable-version "$scratch/replica-admission-before.json" "$scratch/replica-admission-after.json" || failure 'replica version changed during export'
   PGDATABASE="$DATABASE_URL"
 fi
 source_client 180 pg_dumpall --roles-only --no-role-passwords --no-password \

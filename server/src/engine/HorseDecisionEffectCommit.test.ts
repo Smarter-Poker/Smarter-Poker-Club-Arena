@@ -1099,6 +1099,12 @@ describe('authoritative horse action effect commit', () => {
         fence: expect.any(String),
         planBinding: expect.objectContaining({ version: 'horse-plan-batch-v1' }),
         effects: [expect.objectContaining({ type: 'raise_plan', handKey: 'table:hand' })],
+      }),
+      // Phase 15.1: the exact controller-accepted wager, for the durable receipt.
+      expect.objectContaining({
+        version: 'horse-plan-acceptance-v1',
+        action: 'bet',
+        amount: 20,
       })
     );
   });

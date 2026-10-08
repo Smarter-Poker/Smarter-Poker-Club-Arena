@@ -75,3 +75,7 @@ From `server/`:
 ## Limits stated plainly
 
 No real reference, signer, holdout evaluation, qualification or applier exists, and none was created. Synthetic fixtures prove the binding and refusal logic only. They are not poker EV, GTO or holdout evidence.
+
+## Audit Of October 7, 2026
+
+Delivery note: this work was delivered to main in [#6408](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/6408), merged `de0b8a51` on 2026-10-07, and is served by the engine release `6b1af5c5`; no live caller imports `HorsePhase14Authority.ts`, by design. The worktree statement under Delivery and exact source is historical. Status now: see the [Phase 14 closure record](horse-brain-phase14-closure-2026-10-07.md) and its audit section.

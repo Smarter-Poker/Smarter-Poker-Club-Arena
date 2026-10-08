@@ -27,7 +27,7 @@ import {
 } from './omaha/OmahaVariantPolicyPack.js';
 
 /** Bump whenever the file list or the hashing below changes. */
-export const HORSE_PHASE11_POLICY_DIGEST_DEFINITION = 'horse-phase11-policy-digest-v3';
+export const HORSE_PHASE11_POLICY_DIGEST_DEFINITION = 'horse-phase11-policy-digest-v4';
 
 /**
  * The code that determines Phase 11 candidate behaviour, as server-relative
@@ -46,7 +46,11 @@ export const HORSE_PHASE11_POLICY_DIGEST_DEFINITION = 'horse-phase11-policy-dige
  * policy reads positions from (config/tableSeating.ts). v3 (audit 2026-10-05)
  * adds the betting-structure rules (BettingStructure.ts) that decide whether
  * HorseLogic legalizes a proposal as pot limit, which the candidate's legal form
- * and the `illegal_candidate` guard depend on.
+ * and the `illegal_candidate` guard depend on. v4 (audit 2026-10-07) adds the
+ * P11-A river net-action economics (omaha/OmahaVariantActionEconomics.ts):
+ * priced after the decision and read by nothing that decides, but its
+ * validator gates the receipt at the worker boundary, where an invalid
+ * applied receipt fails closed.
  */
 export const HORSE_PHASE11_POLICY_SOURCE_FILES: readonly string[] = Object.freeze([
   'src/engine/omaha/OmahaVariantPolicyPack.ts',
@@ -70,7 +74,43 @@ export const HORSE_PHASE11_POLICY_SOURCE_FILES: readonly string[] = Object.freez
   'src/config/rakeSpec.ts',
   'src/config/tableSeating.ts',
   'src/engine/BettingStructure.ts',
+  'src/engine/omaha/OmahaVariantActionEconomics.ts',
 ]);
+
+/**
+ * Hashed files whose own imports the closure check does not follow: the P11-A
+ * economics compose the settlement owners (JointPotDistribution,
+ * JointDeductions) AFTER the decision is fixed, so those owners cannot change
+ * a Phase 11 candidate decision or its legal form. The same boundary Phase 12
+ * draws around its P12-B economics.
+ */
+export const HORSE_PHASE11_POLICY_DIAGNOSTIC_BOUNDARY: readonly string[] = Object.freeze([
+  'src/engine/omaha/OmahaVariantActionEconomics.ts',
+]);
+
+/**
+ * Runtime import-closure files of the live policy, the sampler and the packs
+ * that are deliberately NOT hashed, each with the reason it cannot change a
+ * Phase 11 candidate decision or its legal form (audit 2026-10-07). The list
+ * is checked against the actual closure in HorsePhase11PolicyDigest.test.ts,
+ * so a new runtime import fails there until it is hashed or named here: the
+ * file list can no longer drift from the code it is meant to bind.
+ */
+export const HORSE_PHASE11_POLICY_EXCLUDED_CLOSURE_FILES: Readonly<Record<string, string>> =
+  Object.freeze({
+    'src/engine/CryptoRandom.ts':
+      'the physical deck shuffle of a live hand (PokerEngine.Deck); no policy or sampler call reads it, the sampler uses the HorseEval fast random stream',
+    'src/engine/HorseTournamentContinuation.ts':
+      'imported by HorseEval for the Phase 8 tournament continuation capture (captureContinuation), which no Phase 11 policy or sampler call requests',
+    'src/engine/HorseDecisionEffects.ts':
+      'HorseMind decision-effect bookkeeping; it holds no value a Phase 11 decision reads',
+    'src/engine/HorseMindHandIdentity.ts':
+      'HorseMind hand-identity binding; it holds no value a Phase 11 decision reads',
+    'src/engine/HorsePlanHandIdentity.ts':
+      'HorseMind plan hand-identity binding; it holds no value a Phase 11 decision reads',
+    'src/engine/HorseDecisionHandBinding.ts':
+      'hand-binding records under the identities above; it holds no value a Phase 11 decision reads',
+  });
 
 /** Reads a server-relative source path. Throws on failure. */
 export type HorsePhase11PolicySourceReader = (serverRelativePath: string) => Buffer;

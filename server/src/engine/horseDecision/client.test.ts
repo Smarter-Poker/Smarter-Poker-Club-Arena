@@ -3,6 +3,7 @@ import {
   horsePlanContextFromDecision,
 } from '../HorsePlanHandIdentity.js';
 import { describe, expect, it, vi } from 'vitest';
+import { horsePlanAcceptanceFromController } from '../HorsePlanEffectReceipt.js';
 
 import type {
   FastHorseDecisionResult,
@@ -58,6 +59,16 @@ import { doorRosterTransport } from '../../services/horseAcceptedRoster/fixture.
 // The process-wide main gate admits only the committed release selection,
 // which is null today. These tests replace that one export with a gate whose
 // admission they control; every other test keeps the unselected default.
+
+/** The exact wager a controller accepting this FAST decision records. */
+function acceptanceOf(result: FastHorseDecisionResult) {
+  return horsePlanAcceptanceFromController(
+    null,
+    { action: result.decision.action, amount: result.decision.amount ?? null },
+    { requestId: result.requestId, decisionKey: result.planBinding.decisionKey }
+  );
+}
+
 const phase8Main = vi.hoisted(() => ({ admission: null as unknown }));
 vi.mock('../HorseQualifiedAuthority.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../HorseQualifiedAuthority.js')>();
@@ -1521,6 +1532,56 @@ describe('LiveHorseDecisionWorkerClient', () => {
     expect(onFatal).toHaveBeenCalledTimes(1);
   });
 
+  it('posts the exact accepted wager with the commit and refuses a missing or unbound acceptance before post', async () => {
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    try {
+      worker.emitMessage(ready);
+      const owned = await transportOnlyCommitFixture(client, worker);
+      const exactAcceptance = acceptanceOf(owned);
+      const forged = [
+        undefined,
+        { ...exactAcceptance, action: 'call' },
+        { ...exactAcceptance, amount: Number.NaN },
+        {
+          ...exactAcceptance,
+          witness: { requestId: owned.requestId + 1, decisionKey: owned.planBinding.decisionKey },
+        },
+        { ...exactAcceptance, witness: { requestId: owned.requestId, decisionKey: 'other' } },
+        { ...exactAcceptance, extra: true },
+      ];
+      for (const acceptance of forged)
+        await expect(client.commitDecisionEffects(owned, acceptance as never)).rejects.toThrow(
+          'exact acceptance'
+        );
+      expect(worker.sent.filter((m: any) => m.type === 'COMMIT_DECISION_EFFECTS')).toHaveLength(0);
+      const commit = client.commitDecisionEffects(owned, exactAcceptance);
+      expect(worker.sent.at(-1)).toMatchObject({
+        type: 'COMMIT_DECISION_EFFECTS',
+        planBinding: owned.planBinding,
+        acceptance: {
+          version: 'horse-plan-acceptance-v1',
+          action: 'bet',
+          amount: 10,
+          witness: { requestId: owned.requestId, decisionKey: owned.planBinding.decisionKey },
+        },
+      });
+      worker.emitMessage({
+        type: 'ACK',
+        requestId: (worker.sent.at(-1) as any).requestId,
+        generation: owned.generation,
+        fence: owned.fence,
+        operation: 'COMMIT_DECISION_EFFECTS',
+        planDisposition: 'applied_volatile',
+      });
+      await expect(commit).resolves.toMatchObject({ planDisposition: 'applied_volatile' });
+    } finally {
+      const stopping = client.stop();
+      worker.emitMessage({ type: 'STOPPED' });
+      await stopping;
+    }
+  });
+
   it('keeps an expired commit unknown and retires only after its late exact ACK, without replay', async () => {
     vi.useFakeTimers();
     const worker = new FakeWorker();
@@ -1532,7 +1593,7 @@ describe('LiveHorseDecisionWorkerClient', () => {
     try {
       worker.emitMessage(ready);
       const owned = await transportOnlyCommitFixture(client, worker);
-      const commit = client.commitDecisionEffects(owned);
+      const commit = client.commitDecisionEffects(owned, acceptanceOf(owned));
       const rejected = expect(commit).rejects.toBeInstanceOf(HorseDecisionExpiredError);
       vi.advanceTimersByTime(10);
       await rejected;
@@ -1559,7 +1620,7 @@ describe('LiveHorseDecisionWorkerClient', () => {
         operation: 'RETIRE_DECISION_EFFECTS',
         planDisposition: 'already_applied_volatile',
       });
-      await expect(client.commitDecisionEffects(owned)).rejects.toThrow(
+      await expect(client.commitDecisionEffects(owned, acceptanceOf(owned))).rejects.toThrow(
         'no available client ownership'
       );
       expect(client.status().phase).toBe('ready');
@@ -1587,7 +1648,7 @@ describe('LiveHorseDecisionWorkerClient', () => {
 
     client.runWithDispatchBarrier(() => {
       successor = client.decideFast(snapshot('successor'));
-      committed = client.commitDecisionEffects(owned);
+      committed = client.commitDecisionEffects(owned, acceptanceOf(owned));
     });
 
     worker.emitMessage(fastResult(2, 'active'));
@@ -1690,7 +1751,7 @@ describe('LiveHorseDecisionWorkerClient', () => {
       client.runWithDispatchBarrier(() => {
         successor = client.decideFast(snapshot('order-successor')); // 4
         void enqueue({ type: 'OBSERVE_EXECUTION', requestId: 101, generation: 7, fence: 'x' });
-        committed = client.commitDecisionEffects(owned); // 5
+        committed = client.commitDecisionEffects(owned, acceptanceOf(owned)); // 5
       });
       const queued = ((client as any).queue as Array<{ request: { requestId: number } }>).map(
         (job) => job.request.requestId
@@ -2299,7 +2360,7 @@ describe('LiveHorseDecisionWorkerClient pipelined lane', () => {
 
     client.runWithDispatchBarrier(() => {
       successor = client.decideFast(snapshot('successor'));
-      committed = client.commitDecisionEffects(owned);
+      committed = client.commitDecisionEffects(owned, acceptanceOf(owned));
     });
     expect(requestIds(worker)).toEqual([1, 2, 3]);
 
@@ -2801,7 +2862,7 @@ describe('P11.3 per-pack authority at the client boundary', () => {
       };
       enableBrainTelemetry();
       drainFires();
-      await expect(client.commitDecisionEffects(owned)).rejects.toThrow(
+      await expect(client.commitDecisionEffects(owned, acceptanceOf(owned))).rejects.toThrow(
         `Horse plan commit refused: Phase 11 authority ${verdict}`
       );
       expect(worker.sent.filter((m: any) => m.type === 'COMMIT_DECISION_EFFECTS')).toHaveLength(0);
@@ -3342,7 +3403,7 @@ describe('P12.3 per-pack authority at the client boundary', () => {
       };
       enableBrainTelemetry();
       drainFires();
-      await expect(client.commitDecisionEffects(owned)).rejects.toThrow(
+      await expect(client.commitDecisionEffects(owned, acceptanceOf(owned))).rejects.toThrow(
         `Horse plan commit refused: Phase 12 authority ${verdict}`
       );
       expect(worker.sent.filter((m: any) => m.type === 'COMMIT_DECISION_EFFECTS')).toHaveLength(0);
@@ -3519,7 +3580,7 @@ describe('P13.3 per-variant joint authority at the client boundary', () => {
       };
       enableBrainTelemetry();
       drainFires();
-      await expect(client.commitDecisionEffects(owned)).rejects.toThrow(
+      await expect(client.commitDecisionEffects(owned, acceptanceOf(owned))).rejects.toThrow(
         `Horse plan commit refused: Phase 13 authority ${verdict}`
       );
       expect(worker.sent.filter((m: any) => m.type === 'COMMIT_DECISION_EFFECTS')).toHaveLength(0);

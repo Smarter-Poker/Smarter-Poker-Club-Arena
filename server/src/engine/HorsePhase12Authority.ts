@@ -375,10 +375,12 @@ export interface HorsePhase12AuthoritySelection {
 /**
  * THE PROTECTED RELEASE SELECTIONS, one per pack. All null: no qualified
  * Phase 12 authority exists, so every live Short Deck, Crazy Pineapple, FLH
- * and FLO8 decision stays in shadow, as before P12.3. P12.2 has not run any
- * pack's held-out matrix and no qualification or completion record exists.
- * Selecting a pack requires its qualification file, the strength record it
- * names and its natural completion record committed under
+ * and FLO8 decision stays in shadow, as before P12.3. Every P12.2 held-out
+ * matrix returned `qualified: false` on October 5 and every committed
+ * completion record is below the floor; see
+ * docs/horse-brain-phase12-closure-2026-10-05.md. Selecting a pack requires
+ * its qualification file, the strength record it names and its natural
+ * completion record committed under
  * docs/evidence/phase12/ and shipped in the engine image, their sha256 here,
  * and the protected merge and engine release of that change.
  */

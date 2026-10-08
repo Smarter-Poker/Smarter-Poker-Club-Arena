@@ -55,6 +55,16 @@
 import { createHash } from 'node:crypto';
 import { HandController } from '../engine/HandController.js';
 import { PreciseActionTimer } from '../engine/PreciseActionTimer.js';
+import {
+  horsePlanAcceptanceFromController,
+  horsePlanWagerAcceptedExactly,
+} from '../engine/HorsePlanEffectReceipt.js';
+import {
+  retireHorseExecutionWitness,
+  settleHorseExecutionWitness,
+  type HorseAcceptedAction,
+} from '../engine/HorseExecutionWitness.js';
+import { noteFire } from '../engine/BrainTelemetry.js';
 import { TimeBankEngine, type TimeBankEvent } from '../engine/TimeBankEngine.js';
 import { DisconnectEngine } from '../engine/DisconnectEngine.js';
 import { playerActionContext } from '../engine/PlayerActionContext.js';
@@ -93,6 +103,7 @@ import {
   type WinnerRecord,
 } from '../engine/presentation/handEventFrames.js';
 import type {
+  ActionRecord,
   ActionType,
   Card,
   GameState,
@@ -110,6 +121,7 @@ import type {
   LightningSettleResult,
 } from './LightningHandBackend.js';
 import { lightningMetrics, type LightningMetrics } from './LightningMetrics.js';
+import type { LightningDecision } from './LightningRegistry.js';
 import type { LightningWorkerLogger } from './LightningClusterWorker.js';
 import { settleLightningJackpot, type LightningJackpotDeps } from './LightningJackpot.js';
 import {
@@ -117,6 +129,7 @@ import {
   LIGHTNING_HORSE_MAX_BANK_BURN_MS,
   lightningHorseThinkTimeMs,
   shapeLightningHorseAction,
+  type LightningHorseDecision,
 } from './LightningHorse.js';
 
 /** One hand as fn_lightning_match_and_form returned it. */
@@ -303,6 +316,12 @@ export interface LightningHandHostDeps {
   onFinished?(host: LightningHandHost): void;
   /** Settlement found a conservation disagreement and FROZE the Cluster. */
   onClusterFrozen?(clusterId: string): void;
+  /**
+   * LIGHTNING PHASE 8: a human player owes a decision in this hand (with the
+   * engine's deadline), or no longer does (`null`, with why). Horses owe no
+   * one a queue entry: they have no browser.
+   */
+  onDecision?(playerId: string, decision: LightningDecision | null, reason?: string): void;
   now?: () => number;
   /** The live horse decision lane (injected for tests; the process lane otherwise). */
   horseLane?: () => LiveHorseDecisionLane;
@@ -380,6 +399,8 @@ export class LightningHandHost {
   private turnStartMs = 0;
   private turnDurationSec = 0;
   private turnUser: string | null = null;
+  /** The player whose owed decision was announced (Lightning Phase 8), until retracted. */
+  private decisionOpenFor: string | null = null;
   private timeBankActive = false;
   private lastStreetAtMs = 0;
   private handStartAtMs = 0;
@@ -870,7 +891,7 @@ export class LightningHandHost {
     if (structure !== 'fixed_limit') return { betting_structure: structure };
     const stage = state.stage ?? 'preflop';
     const streetBet = fixedLimitBetSize(
-      this.hc?.getFixedLimitSmallBet?.() ?? Number(this.rules?.big_blind) ?? 2,
+      this.hc?.getFixedLimitSmallBet?.() ?? (Number(this.rules?.big_blind) || 2),
       stage
     );
     return {
@@ -1085,7 +1106,37 @@ export class LightningHandHost {
 
   // ─── TURNS, CLOCKS AND HORSES ───────────────────────────────────────────
 
+  /** Announce the decision the turn's player owes, with the engine's clock. */
+  private announceDecision(userId: string): void {
+    const p = this.participants.get(userId);
+    if (!p || p.isHorse || !this.deps.onDecision || this.turnUser !== userId) return;
+    try {
+      this.deps.onDecision(userId, {
+        poolSessionId: p.poolSessionId,
+        handId: this.handId,
+        street: this.hc?.getState().stage ?? 'preflop',
+        deadlineAt: this.turnStartMs + this.turnDurationSec * 1000,
+      });
+      this.decisionOpenFor = userId;
+    } catch (err) {
+      this.logger.error(`[LightningHost:${this.instanceId}] decision announce failed`, err);
+    }
+  }
+
+  /** The announced decision is no longer owed: retract it, once. */
+  private retractDecision(reason: string): void {
+    const userId = this.decisionOpenFor;
+    if (!userId) return;
+    this.decisionOpenFor = null;
+    try {
+      this.deps.onDecision?.(userId, null, reason);
+    } catch (err) {
+      this.logger.error(`[LightningHost:${this.instanceId}] decision retract failed`, err);
+    }
+  }
+
   private clearTurn(): void {
+    this.retractDecision('turn_moved');
     if (this.turnUser) {
       this.timer.cancelTimer(this.timerKey, this.turnUser);
       this.timeBank.disarm(this.timerKey, this.turnUser);
@@ -1150,6 +1201,7 @@ export class LightningHandHost {
       })
     );
     if (this.participants.get(userId)?.isHorse) this.scheduleHorse(userId, contextAtTurn);
+    else this.announceDecision(userId);
   }
 
   /** Execute a queued pre-action now; true when it landed. */
@@ -1221,6 +1273,7 @@ export class LightningHandHost {
 
   private timeoutAct(userId: string, context: string | null): void {
     if (this.isTerminal() || !this.hc || playerActionContext(this.hc) !== context) return;
+    if (this.decisionOpenFor === userId) this.retractDecision('timed_out');
     const auth = this.hc.getAuthoritativeActionState(userId);
     this.disconnect.recordConnectedTimeout(this.timerKey, userId);
     if (auth?.legalActions.includes('check'))
@@ -1234,6 +1287,8 @@ export class LightningHandHost {
       const secs = Number(e.secondsGranted) || 0;
       this.turnDurationSec += secs;
       this.publishState();
+      // The decision's deadline moved: every room hears the new one.
+      if (this.decisionOpenFor === e.playerId) this.announceDecision(e.playerId);
     }
     const room = this.watching.get(e.playerId);
     if (!room) return;
@@ -1307,7 +1362,17 @@ export class LightningHandHost {
         this.logger.error(`[LightningHost:${this.instanceId}] horse decision worker failed`, err)
     )
       .then((decision) => {
-        if (!current()) return;
+        const witness = decision.fast?.decision.executionWitness;
+        // The physical engine's response fence: an answer for a turn that
+        // moved on never acts, and its receipts are retired, not left pending.
+        if (!current()) {
+          retireHorseExecutionWitness(witness, 'response_fence');
+          return;
+        }
+        // The turn owns the receipts until cancellation or until the executor
+        // takes them below (ServerTableEngineTurns.markPendingUtilityNotExecuted).
+        const abandon = () => retireHorseExecutionWitness(witness, 'turn_abandoned');
+        abort.signal.addEventListener('abort', abandon, { once: true });
         const actionTimeMs = (Number(rules.action_time_seconds) || 15) * 1000;
         const bankSeconds = this.timeBank.getRemainingSeconds(this.timerKey, userId);
         const bankUses = this.timeBank.getUsesRemaining(this.timerKey, userId);
@@ -1325,45 +1390,114 @@ export class LightningHandHost {
         if (this.horseTimer) clearTimeout(this.horseTimer);
         this.horseTimer = setTimeout(() => {
           this.horseTimer = null;
-          if (!current() || !this.hc) return;
-          const shaped = shapeLightningHorseAction(this.hc, userId, decision, allInOrFold);
-          const r = this.applyAction(
-            userId,
-            shaped.action,
-            shaped.amount,
-            decision.workerFallback ? 'horse_fallback' : 'horse_policy'
-          );
-          const fast = decision.fast;
-          if (
-            r.success &&
-            fast &&
-            fast.planBinding !== null &&
-            fast.planIssueDisposition === 'issued' &&
-            fast.effects.length > 0 &&
-            (shaped.action === 'bet' || shaped.action === 'raise')
-          ) {
-            void lane()
-              .commitDecisionEffects(fast)
-              .catch((err) =>
-                this.logger.error(
-                  `[LightningHost:${this.instanceId}] horse decision effects not committed`,
-                  err
-                )
-              );
+          if (!current() || !this.hc) {
+            abandon();
+            return;
           }
-          if (!r.success && this.hc) {
-            const auth = this.hc.getAuthoritativeActionState(userId);
-            this.applyAction(
-              userId,
-              auth?.legalActions.includes('check') ? 'check' : 'fold',
-              undefined,
-              'horse_fallback'
-            );
-          }
+          // The action is now authoritative: the executor owns the receipts.
+          abort.signal.removeEventListener('abort', abandon);
+          const execute = () => this.executeHorseDecision(userId, decision, allInOrFold, lane);
+          // As at a physical table, the plan commit enters the lane behind its
+          // older work and ahead of any decision the next turn enqueues.
+          if (decision.fast) lane().runWithDispatchBarrier(execute);
+          else execute();
         }, delay);
         (this.horseTimer as { unref?: () => void }).unref?.();
       })
       .catch(() => undefined /* aborted: the turn moved on */);
+  }
+
+  /**
+   * Execute a horse's answer through the action door, then settle its
+   * receipts exactly as the physical engine does
+   * (ServerTableEngineTurns.scheduleHorseAction).
+   *
+   * Phase 15 preserved boundary: the decision's plan effects are committed
+   * only when the controller accepted exactly the wager the decision issued
+   * (horsePlanWagerAcceptedExactly, the one owner both hosts call). Lightning
+   * reshapes a wager for its table (shapeLightningHorseAction and the action
+   * door: bet/raise aliasing, a lift to the minimum, the fixed-limit size, a
+   * whole-stack all-in, a capped street's call or check, the all-in-or-fold
+   * menu) and the controller can refuse it (the check/fold degradation). In
+   * every such case no commit is posted, and settling the execution witness
+   * retires the issued batch unapplied through the client's witness finalizer,
+   * the physical engine's own retirement. The chips, the pot and the action
+   * taken are decided before this gate and are not changed by it.
+   */
+  private executeHorseDecision(
+    userId: string,
+    decision: LightningHorseDecision,
+    allInOrFold: boolean,
+    lane: () => LiveHorseDecisionLane
+  ): void {
+    const hc = this.hc!;
+    const shaped = shapeLightningHorseAction(hc, userId, decision, allInOrFold);
+    const fast = decision.fast;
+    const acceptedActions: HorseAcceptedAction[] = [];
+    let intended = true;
+    // Always observed: the controller record, not the submission or the
+    // boolean, says what landed.
+    const observe = (record: Readonly<ActionRecord>) => acceptedActions.push({ record, intended });
+    const r = this.applyAction(
+      userId,
+      shaped.action,
+      shaped.amount,
+      decision.workerFallback ? 'horse_fallback' : 'horse_policy',
+      undefined,
+      observe
+    );
+    if (
+      r.success &&
+      fast &&
+      fast.planBinding !== null &&
+      fast.planIssueDisposition === 'issued' &&
+      fast.effects.length > 0
+    ) {
+      const submitted = { action: shaped.action, amount: shaped.amount ?? null };
+      const exact =
+        (shaped.action === 'bet' || shaped.action === 'raise') &&
+        horsePlanWagerAcceptedExactly({
+          issued: fast.decision,
+          submitted,
+          acceptedActions,
+          witness: fast.decision.executionWitness,
+        });
+      if (exact) {
+        noteFire('lightning_phase15_plan_accepted_exact');
+        void lane()
+          .commitDecisionEffects(
+            fast,
+            // Phase 15.1: the exact accepted wager joins the durable receipt.
+            horsePlanAcceptanceFromController(
+              acceptedActions[0]?.record,
+              submitted,
+              fast.decision.executionWitness?.identity
+            )
+          )
+          .catch((err) =>
+            this.logger.error(
+              `[LightningHost:${this.instanceId}] horse decision effects not committed`,
+              err
+            )
+          );
+      } else noteFire('lightning_phase15_plan_retired_inexact');
+    }
+    let applied = r.success;
+    if (!r.success && this.hc) {
+      intended = false;
+      const auth = this.hc.getAuthoritativeActionState(userId);
+      applied = this.applyAction(
+        userId,
+        auth?.legalActions.includes('check') ? 'check' : 'fold',
+        undefined,
+        'horse_fallback',
+        undefined,
+        observe
+      ).success;
+    }
+    // After the commit decision, so an accepted batch is already committing
+    // and only a non-exact one is retired by the finalizer.
+    settleHorseExecutionWitness(fast?.decision.executionWitness, { applied, acceptedActions });
   }
 
   // ─── ACTIONS ────────────────────────────────────────────────────────────
@@ -1440,7 +1574,8 @@ export class LightningHandHost {
     action: string,
     amount: number | undefined,
     origin: 'player' | 'pre_action' | 'horse_policy' | 'horse_fallback' | 'unknown',
-    foldType?: LightningFoldType
+    foldType?: LightningFoldType,
+    onAccepted?: (record: Readonly<ActionRecord>) => void
   ): { success: boolean; error?: string; code?: string } {
     const hc = this.hc;
     if (!hc || this.state !== 'dealing') return { success: false, error: 'No active hand' };
@@ -1477,7 +1612,7 @@ export class LightningHandHost {
         this.timeBank.playerActed(this.timerKey, userId);
       }
       this.timer.cancelTimer(this.timerKey, userId);
-      ok = hc.performAction(player.seat, a as ActionType, amount, origin);
+      ok = hc.performAction(player.seat, a as ActionType, amount, origin, onAccepted);
     } finally {
       this.actionLock = false;
     }
@@ -1493,6 +1628,7 @@ export class LightningHandHost {
       }
       return { success: false, error: 'Action rejected by engine', code: 'INVALID_ACTION' };
     }
+    if (this.decisionOpenFor === userId) this.retractDecision(a === 'fold' ? 'folded' : 'acted');
     return { success: true };
   }
 

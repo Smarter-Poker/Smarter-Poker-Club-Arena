@@ -93,6 +93,22 @@ describe('private Horse journal review command', () => {
       expect(readdirSync(directory)).toEqual(files);
     }
   );
+  it('reads one hand plan-effect ledger read-only and refuses malformed arguments', () => {
+    expect(runHorseJournalReview(['--plan-effects', 'relative', 'a'.repeat(64)]).code).toBe(64);
+    expect(runHorseJournalReview(['--plan-effects', '/abs', 'not-a-hash']).code).toBe(64);
+    const result = runHorseJournalReview([
+      '--plan-effects',
+      '/no-such-private-horse-journal',
+      'a'.repeat(64),
+    ]);
+    expect(result.code).toBe(3);
+    expect(JSON.parse(result.output)).toMatchObject({
+      applicationVerified: false,
+      replayVerified: false,
+      gaps: ['invalid_records'],
+    });
+    expect(result.output).not.toContain('/no-such');
+  });
   it('does not turn missing storage into an empty successful resource report', () => {
     const result = runHorseJournalReview(['--storage-status', '/no-such-private-horse-journal']);
     expect(result.code).toBe(3);

@@ -7,7 +7,9 @@ export type HorseJournalKind =
   | 'execution'
   | 'accepted_hand'
   | 'discard_decision'
-  | 'discard_execution';
+  | 'discard_execution'
+  /** Phase 15.1 durable accepted-effect receipt (engine/HorsePlanEffectReceipt.ts). */
+  | 'plan_receipt';
 export interface HorseJournalRecord {
   version: 1;
   producerId: string;
@@ -114,6 +116,7 @@ export function validateHorseJournalRecord(raw: unknown): asserts raw is HorseJo
       'discard_decision',
       'discard_execution',
       'request_lifecycle',
+      'plan_receipt',
     ].includes(r.kind) ||
     !sha.test(r.handKey) ||
     !sha.test(r.turnKey) ||

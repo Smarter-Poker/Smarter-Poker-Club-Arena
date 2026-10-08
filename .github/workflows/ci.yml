@@ -1402,6 +1402,7 @@ jobs:
           scripts/verification-harness/leaderboard-isolation-definition-portability.test.mjs
           scripts/verification-harness/leaderboard-isolation-acl-bootstrap.test.mjs
           scripts/verification-harness/leaderboard-isolation-definition-bootstrap.test.mjs
+          scripts/verification-harness/leaderboard-plain-schema-partition.test.mjs
       - name: Data console native PostgreSQL contracts
         if: matrix.shard == 2
         env:

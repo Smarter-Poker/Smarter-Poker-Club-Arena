@@ -6,6 +6,8 @@
  * establishes source coverage, a complete population or any authority. */
 import {
   DAILY_LIMITS,
+  isDailyIdentityBasis,
+  type DailyIdentityBasis,
   type DailySelectionCursor,
   type DailySelectionPass,
   type DailySelectionReceipt,
@@ -190,7 +192,7 @@ function parsePass(v: unknown): DailySelectionPass {
     !utcTime(v.finishedAt) ||
     v.startedAt > v.finishedAt ||
     v.sourceCoverage !== 'not_established' ||
-    v.identityBasis !== 'current_profile_is_horse' ||
+    !isDailyIdentityBasis(v.identityBasis) ||
     (v.maxScannedCreatedAt !== null &&
       (v.maxScannedCreatedAt < v.windowStart || v.maxScannedCreatedAt >= v.windowEnd)) ||
     // horse_commitment_audit_passes CHECKs, restated: the max scanned clock IS
@@ -228,7 +230,7 @@ function parsePass(v: unknown): DailySelectionPass {
     startedAt: v.startedAt,
     finishedAt: v.finishedAt,
     sourceCoverage: 'not_established',
-    identityBasis: 'current_profile_is_horse',
+    identityBasis: v.identityBasis as DailyIdentityBasis,
   });
 }
 /** Detach exactly the bounded receipt before any asynchronous consumer sees it. */
@@ -280,7 +282,7 @@ export function parseSelectionReceipt(
     p.gaps.length > DAILY_LIMITS.pageRows ||
     typeof p.hasMore !== 'boolean' ||
     p.sourceCoverage !== 'not_established' ||
-    p.identityBasis !== 'current_profile_is_horse' ||
+    !isDailyIdentityBasis(p.identityBasis) ||
     p.gtoVerified !== false ||
     p.activationAllowed !== false
   )
@@ -352,7 +354,7 @@ export function parseSelectionReceipt(
     hasMore: p.hasMore,
     next: next ? Object.freeze(next) : null,
     sourceCoverage: 'not_established',
-    identityBasis: 'current_profile_is_horse',
+    identityBasis: p.identityBasis as DailyIdentityBasis,
     gtoVerified: false,
     activationAllowed: false,
   });

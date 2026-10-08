@@ -88,10 +88,15 @@ export interface LightningPresenceSnapshot {
   /** Anchor tables of this Cluster that an engine here reported on. */
   anchorTables: number;
   /**
-   * Player id -> reported device class, for this Cluster's players that some
-   * report named a platform for. Reports from every Cluster are read (the
-   * limit is per player, across Clusters, and the narrowest report wins). A
-   * player with none is left out, and the SQL applies its default.
+   * Player id -> reported device class, for EVERY connected player some
+   * report named a platform for - this Cluster's and others' alike. Reports
+   * from every Cluster are read (the limit is per player, across Clusters,
+   * and the narrowest report wins), and nothing is filtered to the players
+   * seen here: a worker's first pass has no knownPoolPlayers yet, and
+   * narrowing to them would throw away cross-Cluster platform knowledge the
+   * matcher needs. A player with no report is left out, and the SQL applies
+   * its default (the narrowest, mobile). An entry the matcher does not need
+   * is simply unread.
    */
   platforms: Record<string, LightningDevicePlatform>;
 }
@@ -145,9 +150,7 @@ export class LightningPresence {
       pDisconnected: [...new Set([...disconnected, ...unknown])].sort(),
       anchorTables,
       platforms: Object.fromEntries(
-        [...platforms]
-          .filter(([userId]) => seen.has(userId))
-          .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        [...platforms].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
       ),
     };
   }

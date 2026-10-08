@@ -465,3 +465,133 @@ describe('the proof around it', () => {
     }
   });
 });
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * THE REVIEW MIGRATION (20261008043021): a static reading of the migration
+ * that closes the Phase 7/8 adversarial-review findings. This file reads the
+ * Phase 8 findings (the cross-Cluster multi-table recount, the winners-record
+ * classification, the pool-status client contract, and the mobile default);
+ * the Phase 7 findings and the shared transaction shape are read by
+ * tests/lightning-phase-7-reversion.test.ts.
+ *
+ * LIGHTNING_P78R_MIGRATION overrides the file under test, for mutation
+ * testing.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+const FIX_FILE = '20261008043021_lightning_phase_7_and_8_review_fixes_the_dwell_is_a_duration.sql';
+const FIX_MIGRATION =
+  process.env.LIGHTNING_P78R_MIGRATION ?? path.join(ROOT, 'supabase', 'migrations', FIX_FILE);
+const FIX = fs.readFileSync(FIX_MIGRATION, 'utf8');
+const FIXLOG = read('docs', 'changelog', '2026-10-08-lightning-phase-7-8-review-fixes.md');
+const NEW_BARRIER =
+  'public.fn_lightning_form_hand(uuid,uuid[],smallint,smallint,uuid,interval,interval,timestamp with time zone,text,uuid,jsonb)';
+
+describe('the review migration: the limit holds across Clusters', () => {
+  it('the barrier gains p_player_platforms and the old signature is dropped with grants carried', () => {
+    expect(FIX).toContain(NEW_BARRIER);
+    expect(FIX).toContain(
+      'p_matcher_version text DEFAULT NULL::text, p_request_id uuid DEFAULT NULL::uuid, p_player_platforms jsonb DEFAULT NULL::jsonb)'
+    );
+    // the rewriter drops the old signature and re-grants semantically
+    expect(FIX).toContain("EXECUTE format('DROP FUNCTION %s', p_old)");
+    expect(FIX).toContain('has_function_privilege');
+    // the barrier's own version literal names the signature it now is
+    expect(FIX).toContain("timestamp with time zone,text,uuid,jsonb)'::regprocedure");
+  });
+  it('the recount runs after the committed reservations, under sorted per-player advisory locks, and refuses as a retryable 40001', () => {
+    const b = FIX.indexOf("SET state = 'committed', resolved_at = p_now");
+    expect(b).toBeGreaterThan(0);
+    const lock = FIX.indexOf('pg_advisory_xact_lock(hashtextextended', b);
+    const refuse = FIX.indexOf('LIGHTNING_MULTI_TABLE_LIMIT', b);
+    expect(lock).toBeGreaterThan(b);
+    expect(refuse).toBeGreaterThan(lock);
+    expect(FIX).toContain(
+      "SELECT DISTINCT (x ->> 'player_id')::uuid FROM jsonb_array_elements(v_seats) x ORDER BY 1"
+    );
+    expect(FIX).toContain("USING ERRCODE = '40001'");
+    expect(FIX).toContain('count(DISTINCT r.cluster_id)');
+    expect(FIX).toContain("i.state IN ('forming', 'reserved', 'dealing', 'settling')");
+    // the lock-order argument is written down where the locks are taken
+    expect(FIX).toMatch(/LOCK ORDER, AND WHY THIS CANNOT DEADLOCK/);
+  });
+  it('the matcher passes its platform map through to the barrier', () => {
+    expect(FIX).toContain('v_req,\n        p_player_platforms);');
+  });
+  it('the recount and the legality lookup both default an unreported platform to mobile', () => {
+    expect(count(FIX, /ELSE 'mobile' END AS platform/g)).toBe(2);
+    expect(FIX).toContain("ELSE 'mobile' END)::integer");
+    expect(FIX).toContain('2) AS multi_table_limit');
+    // the anchor it replaces is the desktop default Phase 8 shipped
+    expect(FIX).toContain("ELSE 'desktop' END AS platform");
+    expect(FIX).toContain('4) AS multi_table_limit');
+  });
+});
+
+describe('the review migration: recent hands and pool status', () => {
+  it('an absent winners record classifies on the net alone, and userId is normalised', () => {
+    expect(FIX).toContain('AS available');
+    expect(FIX).toContain('WHEN NOT w.available THEN');
+    expect(FIX).toContain("lower(btrim(y ->> 'userId'))");
+    expect(FIX).toContain("lower(btrim(e ->> 'userId'))");
+    expect(FIX).toContain('lower(hp.player_id::text)');
+    // in the replacement CASE the availability branch sits right after the
+    // fold branch, so a fold is still a fold whatever the record says
+    expect(FIX).toContain(
+      "WHEN hp.fold_type <> 'none' THEN 'folded'\n                 -- 20261008043021: NO WINNERS RECORD"
+    );
+  });
+  it('pool status is {players, status, joinable, multi_table_limit} and never the raw mode', () => {
+    expect(FIX).toContain("RETURN jsonb_build_object('players', v_live, 'status', v_status,");
+    expect(FIX).toContain(
+      "'joinable', (g.cluster_mode = 'lightning' AND coalesce(g.lightning_enabled, false) AND g.enabled IS TRUE)"
+    );
+    expect(FIX).toContain("'multi_table_limit', v_cfg -> 'multi_table_limit');");
+    // the anchor it replaces is the raw-mode payload Phase 8 shipped
+    expect(FIX).toContain(
+      "RETURN jsonb_build_object('cluster_mode', g.cluster_mode, 'players', v_live, 'status', v_status);"
+    );
+    // and the comment states the new contract
+    expect(FIX).toContain('COMMENT ON FUNCTION public.fn_lightning_pool_status(uuid)');
+    expect(FIX).toContain('{players, status, joinable, multi_table_limit}');
+  });
+});
+
+describe('the proof around the review migration (Phase 8 side)', () => {
+  it('the harness grounds the defects on the Phase 8 code, applies the Phase 7 remediation then the file twice, races two real backends and reports sections 13 to 19', () => {
+    expect(HARNESS).toContain(FIX_FILE);
+    expect(HARNESS).toContain('LIGHTNING_P78R_MIGRATION');
+    expect(HARNESS).toContain(
+      '20261007222717_lightning_phase_7_remediation_the_reversion_review_findings_.sql'
+    );
+    expect(count(HARNESS, /-f "\$fix"/g)).toBe(2);
+    for (const n of ['13', '14', '15', '16', '17', '18', '19'])
+      expect(HARNESS, n).toMatch(new RegExp(`\\\\echo '  ok  ${n} `));
+    const ground = HARNESS.indexOf('fix-ground.sql');
+    const p7r = HARNESS.indexOf('-f "$p7r"');
+    const fix = HARNESS.indexOf('-f "$fix"');
+    expect(ground).toBeGreaterThan(0);
+    expect(p7r).toBeGreaterThan(0);
+    expect(fix).toBeGreaterThan(p7r);
+    // two real backends: the race runs over dblink with a busy probe
+    expect(HARNESS).toContain("harness.dblink_send_query('p8b'");
+    expect(HARNESS).toContain("harness.dblink_is_busy('p8b')");
+    expect(HARNESS).toContain('LIGHTNING_MULTI_TABLE_LIMIT');
+    expect(HARNESS.indexOf('FAIL 13')).toBeLessThan(HARNESS.indexOf('FAIL 14'));
+  });
+  it('the review changelog names the Phase 8 findings, title case, no em dash', () => {
+    for (const p of [
+      FIX_FILE,
+      'fn_lightning_form_hand',
+      'fn_lightning_match_and_form',
+      'fn_lightning_player_legality',
+      'fn_lightning_recent_hands',
+      'fn_lightning_pool_status',
+      'p_player_platforms',
+      'multi_table_limit',
+      'joinable',
+    ])
+      expect(FIXLOG, p).toContain(p);
+    expect(FIXLOG).not.toContain('—');
+  });
+});

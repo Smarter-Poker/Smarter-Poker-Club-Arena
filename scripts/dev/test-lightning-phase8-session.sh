@@ -65,9 +65,11 @@ s6=$M/20261001154813_lightning_phase_6_settlement_the_hand_settles_onto_its_anch
 s6r=$M/20261001201216_lightning_phase_6_remediation_a_frozen_cluster_settles_nothi.sql
 p7=$M/20261001222856_lightning_phase_7_the_pool_reverts_to_must_move_and_the_tick.sql
 mine=${LIGHTNING_P8_MIGRATION:-$M/20261007212735_lightning_phase_8_multi_table_limits_session_statistics_pool.sql}
+p7r=$M/20261007222717_lightning_phase_7_remediation_the_reversion_review_findings_.sql
+fix=${LIGHTNING_P78R_MIGRATION:-$M/20261008043021_lightning_phase_7_and_8_review_fixes_the_dwell_is_a_duration.sql}
 for f in "$base_fixture" "$pop_fixture" "$p5_fixture" "$p9_fixture" "$r2_fixture" "$p6_fixture" "$s6_fixture" \
          "$phase1" "$phase1r" "$phase2" "$phase2r" "$phase3" "$phase3r" "$phase4" "$phase4r" \
-         "$phase5" "$phase5r" "$phase9" "$phase9r" "$r2a" "$r2b" "$r2c" "$r2d" "$p6" "$s6" "$s6r" "$p7" "$mine"; do
+         "$phase5" "$phase5r" "$phase9" "$phase9r" "$r2a" "$r2b" "$r2c" "$r2d" "$p6" "$s6" "$s6r" "$p7" "$mine" "$p7r" "$fix"; do
   [ -f "$f" ] || { echo "FAIL: missing input $f"; exit 1; }
 done
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/lightning-p8-test.XXXXXX")
@@ -1158,9 +1160,377 @@ END $$;
 \echo '  ok  12 RE-APPLIABLE  applied a second time the file leaves every fn_lightning_ and fn_cash_cluster body, ACL and comment, the hand, participant, pool session, instance and history row counts, every participant row, and the participant table''s triggers and constraints exactly as they were'
 ASSERT
 
+# ===========================================================================
+# THE REVIEW MIGRATION (20261008043021): the Phase 7/8 adversarial-review
+# findings, each proven real on the Phase 8 code, then fixed by the file,
+# then re-applied. The Phase 7 remediation (20261007222717) is applied first,
+# exactly as production carries it, because the review file substitutes into
+# the dwell it introduced.
+# ===========================================================================
+cat > "$fixture/fix-ground.sql" <<'ASSERT'
+-- THE SECOND AND THIRD BACKEND, for the cross-Cluster race (dblink lives in
+-- schema harness since the remediation-two fixture).
+CREATE FUNCTION harness.connect(p_name text) RETURNS void LANGUAGE plpgsql AS $f$
+BEGIN
+  IF coalesce(p_name = ANY (harness.dblink_get_connections()), false) THEN
+    PERFORM harness.dblink_disconnect(p_name);
+  END IF;
+  PERFORM harness.dblink_connect(p_name,
+    'host=' || current_setting('unix_socket_directories') || ' port=' || current_setting('port')
+    || ' dbname=' || current_database() || ' user=' || current_user);
+  PERFORM harness.dblink_exec(p_name, 'SET lock_timeout = ''10s''');
+END $f$;
+CREATE FUNCTION harness.ask(p_name text, p_sql text) RETURNS text LANGUAGE sql AS $f$
+  SELECT t.a FROM harness.dblink(p_name, p_sql) AS t(a text);
+$f$;
+
+-- 13 THE REVIEW GROUND: THE DEFECTS ARE REAL ON THE PHASE 8 CODE ----------------
+DO $$
+DECLARE v_a uuid; v_b uuid; v_c uuid; v_q uuid := gen_random_uuid(); v_h uuid := gen_random_uuid(); r jsonb;
+        v_f uuid; v_g uuid; v_p1 uuid; v_p2 uuid; v_h1 uuid; v_h2 uuid; v_hh uuid; s jsonb;
+BEGIN
+  IF to_regprocedure('public.fn_lightning_form_hand(uuid,uuid[],smallint,smallint,uuid,interval,interval,timestamp with time zone,text,uuid,jsonb)') IS NOT NULL
+     OR pg_get_functiondef('public.fn_cash_cluster_begin_pending_off(uuid,uuid,text)'::regprocedure) ~ 'make_interval\(secs => v_dwell'
+     OR pg_get_functiondef('public.fn_lightning_pool_status(uuid)'::regprocedure) ~ '''joinable''' THEN
+    RAISE EXCEPTION 'FAIL 13: an object of the review migration exists before it is applied';
+  END IF;
+  -- FINDINGS 6 AND 3, THE GROUND: a human and a horse in three Clusters with
+  -- live hands in two. On the Phase 8 code an unreported or unknown platform
+  -- reads desktop (limit 4), so the third Cluster still answers LEGAL.
+  v_a := harness.lc('RVA'); v_b := harness.lc('RVB'); v_c := harness.lc('RVC');
+  PERFORM harness.seat(v_a, v_q, false); PERFORM harness.seat(v_a, v_h, true);
+  PERFORM harness.seat(v_b, v_q, false); PERFORM harness.seat(v_b, v_h, true);
+  PERFORM harness.seat(v_c, v_q, false); PERFORM harness.seat(v_c, v_h, true);
+  r := harness.form(v_a, ARRAY[v_q, v_h] || harness.idle(v_a, false, 1, ARRAY[v_q]));
+  r := harness.form(v_b, ARRAY[v_q, v_h] || harness.idle(v_b, false, 1, ARRAY[v_q]));
+  IF harness.reason(v_c, v_q, NULL) <> 'LEGAL'
+     OR harness.reason(v_c, v_q, jsonb_build_object(v_q::text, 'watch')) <> 'LEGAL'
+     OR harness.reason(v_c, v_h, NULL) <> 'LEGAL'
+     OR harness.reason(v_c, v_q, jsonb_build_object(v_q::text, 'mobile')) <> 'MULTI_TABLE_LIMIT' THEN
+    RAISE EXCEPTION 'FAIL 13: the desktop-default defect is not real on the Phase 8 code';
+  END IF;
+  INSERT INTO harness.p8 (k, game, a, b, c, j) VALUES ('rvmt', v_a, v_b, v_c, v_q, jsonb_build_object('horse', v_h));
+
+  -- FINDING 4, THE GROUND: a 0-net chop whose recorded userIds are uppercase
+  -- reads 'lost', and the same chop with its hand_history row pruned reads
+  -- 'split'.
+  v_g := harness.lc('RVRH');
+  v_p1 := (harness.idle(v_g, false, 1))[1];
+  v_p2 := (harness.idle(v_g, true, 1))[1];
+  v_h1 := harness.play(v_g, ARRAY[v_p1, v_p2], jsonb_build_object(
+            v_p1::text, jsonb_build_object('d', 0, 'c', 2, 's', true),
+            v_p2::text, jsonb_build_object('d', 0, 'c', 2, 's', true)), 4, ARRAY[v_p1, v_p2]);
+  SELECT lh.hand_history_id INTO v_hh FROM public.lightning_hand lh WHERE lh.hand_id = v_h1;
+  UPDATE public.hand_history
+     SET winners = (SELECT jsonb_agg(jsonb_set(w, '{userId}', to_jsonb(upper(w ->> 'userId')))) FROM jsonb_array_elements(winners) w)
+   WHERE id = v_hh;
+  v_h2 := harness.play(v_g, ARRAY[v_p1, v_p2], jsonb_build_object(
+            v_p1::text, jsonb_build_object('d', 0, 'c', 3, 's', true),
+            v_p2::text, jsonb_build_object('d', 0, 'c', 3, 's', true)), 6, ARRAY[v_p1, v_p2]);
+  SELECT lh.hand_history_id INTO v_hh FROM public.lightning_hand lh WHERE lh.hand_id = v_h2;
+  DELETE FROM public.hand_history WHERE id = v_hh;
+  PERFORM harness.as_user(v_p1);
+  IF (SELECT x ->> 'result' FROM jsonb_array_elements(public.fn_lightning_recent_hands()) x WHERE (x ->> 'hand_id')::uuid = v_h1) <> 'lost'
+     OR (SELECT x ->> 'result' FROM jsonb_array_elements(public.fn_lightning_recent_hands()) x WHERE (x ->> 'hand_id')::uuid = v_h2) <> 'split' THEN
+    RAISE EXCEPTION 'FAIL 13: the winners-record defects are not real on the Phase 8 code';
+  END IF;
+  PERFORM harness.as_user(NULL, NULL);
+  INSERT INTO harness.p8 (k, game, a, b, j) VALUES ('rvrh', v_g, v_p1, v_p2, jsonb_build_object('h1', v_h1, 'h2', v_h2));
+
+  -- FINDING 5, THE GROUND: pool status leaks the raw cluster_mode.
+  v_f := harness.lc('RVF');
+  UPDATE public.cash_games SET cluster_mode = 'frozen' WHERE id = v_f;
+  PERFORM harness.as_user(gen_random_uuid());
+  s := public.fn_lightning_pool_status(v_f);
+  IF s ->> 'cluster_mode' <> 'frozen' THEN
+    RAISE EXCEPTION 'FAIL 13: the raw-mode leak is not real on the Phase 8 code: %', s;
+  END IF;
+  PERFORM harness.as_user(NULL, NULL);
+  INSERT INTO harness.p8 (k, game) VALUES ('rvf', v_f);
+END $$;
+\echo '  ok  13 THE REVIEW GROUND  before the review migration none of its objects exists, and each defect is real on the Phase 8 code: with two live hands an unreported or unknown platform still answers LEGAL (desktop) for a human and a horse; a 0-net chop with uppercase recorded userIds reads lost and the same chop with its hand_history row pruned reads split; and a frozen Cluster''s raw cluster_mode reaches a player through pool status'
+ASSERT
+
+cat > "$fixture/fix-assertions.sql" <<'ASSERT'
+-- 14 AN UNREPORTED PLATFORM IS THE NARROWEST LIMIT ---------------------------------
+DO $$
+DECLARE v_a uuid; v_b uuid; v_c uuid; v_q uuid; v_h uuid; d jsonb; r jsonb;
+BEGIN
+  SELECT game, a, b, c, (j ->> 'horse')::uuid INTO v_a, v_b, v_c, v_q, v_h FROM harness.p8 WHERE k = 'rvmt';
+  IF harness.reason(v_c, v_q, NULL) <> 'MULTI_TABLE_LIMIT'
+     OR harness.reason(v_c, v_q, '{}') <> 'MULTI_TABLE_LIMIT'
+     OR harness.reason(v_c, v_q, jsonb_build_object(v_q::text, 'watch')) <> 'MULTI_TABLE_LIMIT'
+     OR harness.reason(v_c, v_h, NULL) <> 'MULTI_TABLE_LIMIT'
+     OR harness.reason(v_c, v_q, jsonb_build_object(v_q::text, 'tablet')) <> 'LEGAL'
+     OR harness.reason(v_c, v_q, jsonb_build_object(v_q::text, 'desktop')) <> 'LEGAL' THEN
+    RAISE EXCEPTION 'FAIL 14: an unreported or unknown platform is not held to the mobile limit';
+  END IF;
+  d := harness.detail(v_c, v_q, NULL);
+  IF (d ->> 'multi_table_limit')::integer <> 2 OR d ->> 'platform' <> 'mobile' OR (d ->> 'live_hands_elsewhere')::integer <> 2 THEN
+    RAISE EXCEPTION 'FAIL 14: the refusal does not name mobile, 2 and the two hands: %', d;
+  END IF;
+  IF (SELECT coalesce(l.reason_code, 'LEGAL') FROM public.fn_lightning_player_legality(v_c, clock_timestamp(), NULL) l WHERE l.player_id = v_q) <> 'MULTI_TABLE_LIMIT' THEN
+    RAISE EXCEPTION 'FAIL 14: the old P0 argument list does not answer mobile';
+  END IF;
+  r := public.fn_lightning_match(v_c, clock_timestamp(), NULL, 'm1');
+  IF (SELECT x ->> 'reason_code' FROM jsonb_array_elements(r -> 'diagnosis') x WHERE x ->> 'player_id' = v_q::text) <> 'MULTI_TABLE_LIMIT'
+     OR EXISTS (SELECT 1 FROM jsonb_array_elements(r -> 'groups') gr WHERE gr -> 'players' ? v_q::text OR gr -> 'players' ? v_h::text) THEN
+    RAISE EXCEPTION 'FAIL 14: the old matcher argument list still plans a player at the mobile limit: %', r -> 'diagnosis';
+  END IF;
+  PERFORM public.fx6_set(v_c, '{"multi_table_limit": {"mobile": 3}}');
+  IF harness.reason(v_c, v_q, NULL) <> 'LEGAL' THEN RAISE EXCEPTION 'FAIL 14: a configured mobile limit of 3 still refused'; END IF;
+  PERFORM public.fx6_reset(v_c, '{}');
+END $$;
+\echo '  ok  14 MOBILE IS THE FLOOR  with two live hands elsewhere an unreported, empty-map or unknown platform now answers MULTI_TABLE_LIMIT at the mobile limit (2) for the human and the horse alike, the refusal names mobile, its limit and the two hands, tablet and desktop stay legal, the old P0 and matcher argument lists answer mobile too, and the Cluster''s own configuration still moves the number'
+
+-- 15 RECENT HANDS CLASSIFY AN ABSENT RECORD ON NET -----------------------------------
+DO $$
+DECLARE v_g uuid; v_p1 uuid; v_p2 uuid; v_h1 uuid; v_h2 uuid; v_h3 uuid; v_h4 uuid; v_h5 uuid; v_hh uuid; r jsonb;
+BEGIN
+  SELECT game, a, b, (j ->> 'h1')::uuid, (j ->> 'h2')::uuid INTO v_g, v_p1, v_p2, v_h1, v_h2 FROM harness.p8 WHERE k = 'rvrh';
+  PERFORM harness.as_user(v_p1);
+  r := public.fn_lightning_recent_hands();
+  IF (SELECT x ->> 'result' FROM jsonb_array_elements(r) x WHERE (x ->> 'hand_id')::uuid = v_h1) <> 'split'
+     OR (SELECT x ->> 'result' FROM jsonb_array_elements(r) x WHERE (x ->> 'hand_id')::uuid = v_h2) <> 'won' THEN
+    RAISE EXCEPTION 'FAIL 15: the uppercase chop is not split or the pruned level hand is not won: %', r;
+  END IF;
+  PERFORM harness.as_user(v_p2);
+  IF (SELECT x ->> 'result' FROM jsonb_array_elements(public.fn_lightning_recent_hands()) x WHERE (x ->> 'hand_id')::uuid = v_h1) <> 'split' THEN
+    RAISE EXCEPTION 'FAIL 15: the horse''s uppercase chop is not split';
+  END IF;
+  -- A pruned loss is lost, a pruned win is won, a pruned fold is folded, and
+  -- winners NULL on a standing row is the same absence as a pruned row.
+  v_h3 := harness.play(v_g, ARRAY[v_p1, v_p2], jsonb_build_object(
+            v_p1::text, jsonb_build_object('d', -2, 'c', 2, 's', true),
+            v_p2::text, jsonb_build_object('d', 2, 'c', 2, 's', true)), 4, ARRAY[v_p2]);
+  SELECT lh.hand_history_id INTO v_hh FROM public.lightning_hand lh WHERE lh.hand_id = v_h3;
+  DELETE FROM public.hand_history WHERE id = v_hh;
+  v_h4 := harness.play(v_g, ARRAY[v_p1, v_p2], jsonb_build_object(
+            v_p1::text, jsonb_build_object('d', 0, 'c', 0, 's', true),
+            v_p2::text, jsonb_build_object('d', 0, 'c', 0, 's', true)), 0, ARRAY[v_p1]);
+  SELECT lh.hand_history_id INTO v_hh FROM public.lightning_hand lh WHERE lh.hand_id = v_h4;
+  UPDATE public.hand_history SET winners = NULL WHERE id = v_hh;
+  v_h5 := harness.play(v_g, ARRAY[v_p1, v_p2], jsonb_build_object(
+            v_p1::text, jsonb_build_object('d', -1, 'c', 1, 'f', 'fast'),
+            v_p2::text, jsonb_build_object('d', 1, 'c', 1, 's', true)), 2, ARRAY[v_p2]);
+  SELECT lh.hand_history_id INTO v_hh FROM public.lightning_hand lh WHERE lh.hand_id = v_h5;
+  DELETE FROM public.hand_history WHERE id = v_hh;
+  PERFORM harness.as_user(v_p1);
+  r := public.fn_lightning_recent_hands();
+  IF (SELECT x ->> 'result' FROM jsonb_array_elements(r) x WHERE (x ->> 'hand_id')::uuid = v_h3) <> 'lost'
+     OR (SELECT x ->> 'result' FROM jsonb_array_elements(r) x WHERE (x ->> 'hand_id')::uuid = v_h4) <> 'won'
+     OR (SELECT x ->> 'result' FROM jsonb_array_elements(r) x WHERE (x ->> 'hand_id')::uuid = v_h5) <> 'folded' THEN
+    RAISE EXCEPTION 'FAIL 15: pruned loss, absent-winners level hand and pruned fold are not lost, won, folded: %', r;
+  END IF;
+  PERFORM harness.as_user(v_p2);
+  r := public.fn_lightning_recent_hands();
+  IF (SELECT x ->> 'result' FROM jsonb_array_elements(r) x WHERE (x ->> 'hand_id')::uuid = v_h3) <> 'won' THEN
+    RAISE EXCEPTION 'FAIL 15: the horse''s pruned win is not won';
+  END IF;
+  PERFORM harness.as_user(NULL, NULL);
+END $$;
+\echo '  ok  15 RECENT HANDS  with the winners record normalised the uppercase chop reads split for the human and the horse; with no record at all the result is the net alone: a level hand won, a loss lost, a win won, a fold folded, and winners NULL on a standing history row is the same absence as a pruned row'
+
+-- 16 POOL STATUS IS THE CLIENT CONTRACT ----------------------------------------------
+DO $$
+DECLARE v_m uuid; v_t uuid; v_f uuid; s jsonb;
+BEGIN
+  v_m := harness.c8('RVPS', 6, 7, 2, 6, 2);
+  PERFORM harness.as_user(gen_random_uuid());
+  s := public.fn_lightning_pool_status(v_m);
+  IF s IS DISTINCT FROM jsonb_build_object('players', 17, 'status', 'BUILDING', 'joinable', false,
+       'multi_table_limit', '{"desktop": 4, "tablet": 3, "mobile": 2}'::jsonb) THEN
+    RAISE EXCEPTION 'FAIL 16: a must-move Cluster is not {players, status, joinable, multi_table_limit}: %', s;
+  END IF;
+  v_t := harness.lc('RVPS2');
+  s := public.fn_lightning_pool_status(v_t);
+  IF (s ->> 'joinable')::boolean IS DISTINCT FROM true OR s ->> 'status' <> 'ACTIVE' OR (s ->> 'players')::integer <> 18
+     OR (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(s) k) IS DISTINCT FROM ARRAY['joinable', 'multi_table_limit', 'players', 'status'] THEN
+    RAISE EXCEPTION 'FAIL 16: a Lightning Cluster is not joinable ACTIVE with exactly the four keys: %', s;
+  END IF;
+  PERFORM public.fx6_set(v_t, '{"multi_table_limit": {"mobile": 5}}');
+  s := public.fn_lightning_pool_status(v_t);
+  IF s -> 'multi_table_limit' IS DISTINCT FROM '{"desktop": 4, "tablet": 3, "mobile": 5}'::jsonb THEN
+    RAISE EXCEPTION 'FAIL 16: the configured limit does not reach the payload: %', s;
+  END IF;
+  PERFORM public.fx6_reset(v_t, '{}');
+  UPDATE public.cash_games SET lightning_enabled = false WHERE id = v_t;
+  s := public.fn_lightning_pool_status(v_t);
+  IF (s ->> 'joinable')::boolean IS DISTINCT FROM false THEN
+    RAISE EXCEPTION 'FAIL 16: a Lightning-disabled Cluster still reads joinable: %', s;
+  END IF;
+  UPDATE public.cash_games SET lightning_enabled = true WHERE id = v_t;
+  SELECT game INTO v_f FROM harness.p8 WHERE k = 'rvf';
+  s := public.fn_lightning_pool_status(v_f);
+  IF s ? 'cluster_mode' OR (s ->> 'joinable')::boolean IS DISTINCT FROM false OR s ->> 'status' <> 'BUILDING' THEN
+    RAISE EXCEPTION 'FAIL 16: a frozen Cluster leaks: %', s;
+  END IF;
+  UPDATE public.cash_games SET cluster_mode = 'paused' WHERE id = v_f;
+  s := public.fn_lightning_pool_status(v_f);
+  IF s ? 'cluster_mode' OR (s ->> 'joinable')::boolean IS DISTINCT FROM false OR s ->> 'status' <> 'BUILDING' THEN
+    RAISE EXCEPTION 'FAIL 16: a paused Cluster leaks: %', s;
+  END IF;
+  UPDATE public.cash_games SET cluster_mode = 'pending_off' WHERE id = v_f;
+  s := public.fn_lightning_pool_status(v_f);
+  IF s ? 'cluster_mode' OR (s ->> 'joinable')::boolean IS DISTINCT FROM false OR s ->> 'status' <> 'THIN' THEN
+    RAISE EXCEPTION 'FAIL 16: pending_off is not THIN and not joinable: %', s;
+  END IF;
+  UPDATE public.cash_games SET cluster_mode = 'must_move' WHERE id = v_f;
+  PERFORM harness.as_user(NULL, NULL);
+  IF public.fn_lightning_pool_status(v_m) IS NOT NULL OR public.fn_lightning_pool_status(gen_random_uuid()) IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL 16: no caller, or an unknown Cluster, answered';
+  END IF;
+END $$;
+\echo '  ok  16 POOL STATUS  the payload is exactly {players, status, joinable, multi_table_limit}: must-move BUILDING and not joinable with the default 4/3/2 limits, Lightning ACTIVE and joinable, the configured limit reaching the same payload, Lightning-disabled not joinable, and frozen, paused and pending_off never named (BUILDING, BUILDING, THIN, none joinable); no caller and an unknown Cluster still get NULL'
+
+-- 17 TWO BACKENDS, ONE LIMIT ---------------------------------------------------------
+DO $$
+DECLARE v_x uuid; v_y uuid; v_z uuid; v_q uuid := gen_random_uuid(); r jsonb; v_px uuid; v_py uuid; v_pz uuid;
+BEGIN
+  v_x := harness.lc('RVX'); v_y := harness.lc('RVY'); v_z := harness.lc('RVZ');
+  PERFORM harness.seat(v_x, v_q, false); PERFORM harness.seat(v_y, v_q, false); PERFORM harness.seat(v_z, v_q, false);
+  v_pz := (harness.idle(v_z, false, 1, ARRAY[v_q]))[1];
+  r := harness.form(v_z, ARRAY[v_q, v_pz]);
+  v_px := (harness.idle(v_x, false, 1, ARRAY[v_q]))[1];
+  v_py := (harness.idle(v_y, false, 1, ARRAY[v_q]))[1];
+  INSERT INTO harness.p8 (k, game, a, b, c, j) VALUES ('rvcc', v_x, v_y, v_z, v_q, jsonb_build_object('px', v_px, 'py', v_py));
+END $$;
+DO $$
+DECLARE v_x uuid; v_y uuid; v_z uuid; v_q uuid; v_px uuid; v_py uuid; v_a text; v_b text; v_busy integer; v_live integer;
+BEGIN
+  SELECT game, a, b, c, (j ->> 'px')::uuid, (j ->> 'py')::uuid INTO v_x, v_y, v_z, v_q, v_px, v_py FROM harness.p8 WHERE k = 'rvcc';
+  PERFORM harness.connect('p8a'); PERFORM harness.connect('p8b');
+  PERFORM harness.dblink_exec('p8a', 'BEGIN');
+  v_a := harness.ask('p8a', format(
+    'SELECT public.fn_lightning_form_hand(%L, ARRAY[%L, %L]::uuid[], 2::smallint, 2::smallint, NULL, ''20 seconds'', ''45 seconds'', clock_timestamp(), ''rv-matcher'', %L, %L::jsonb)::text',
+    v_x, v_q, v_px, gen_random_uuid(), jsonb_build_object(v_q::text, 'mobile')::text));
+  IF (v_a::jsonb ->> 'formed')::boolean IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 17: the first backend did not form: %', v_a;
+  END IF;
+  PERFORM harness.dblink_send_query('p8b', format(
+    'SELECT public.fn_lightning_form_hand(%L, ARRAY[%L, %L]::uuid[], 2::smallint, 2::smallint, NULL, ''20 seconds'', ''45 seconds'', clock_timestamp(), ''rv-matcher'', %L, %L::jsonb)::text',
+    v_y, v_q, v_py, gen_random_uuid(), jsonb_build_object(v_q::text, 'mobile')::text));
+  PERFORM pg_sleep(0.3);
+  v_busy := harness.dblink_is_busy('p8b');
+  PERFORM harness.dblink_exec('p8a', 'COMMIT');
+  SELECT t.a INTO v_b FROM harness.dblink_get_result('p8b') AS t(a text);
+  PERFORM * FROM harness.dblink_get_result('p8b') AS t(a text);
+  PERFORM harness.dblink_disconnect('p8a'); PERFORM harness.dblink_disconnect('p8b');
+  IF v_busy <> 1 THEN
+    RAISE EXCEPTION 'FAIL 17: the second backend did not wait on the player''s advisory lock (busy %): %', v_busy, v_b;
+  END IF;
+  IF (v_b::jsonb ->> 'formed')::boolean IS DISTINCT FROM false
+     OR (v_b::jsonb ->> 'retry')::boolean IS DISTINCT FROM true
+     OR v_b::jsonb ->> 'reason' <> 'formation_refused'
+     OR v_b::jsonb ->> 'sqlstate' <> '40001'
+     OR (v_b::jsonb ->> 'message') !~ 'LIGHTNING_MULTI_TABLE_LIMIT' THEN
+    RAISE EXCEPTION 'FAIL 17: the loser was not refused as a retryable limit refusal: %', v_b;
+  END IF;
+  SELECT count(DISTINCT r2.cluster_id) INTO v_live
+    FROM public.lightning_reservation r2
+    JOIN public.lightning_instance i ON i.id = r2.lightning_instance_id
+   WHERE r2.player_id = v_q AND r2.state = 'committed' AND i.state IN ('forming', 'reserved', 'dealing', 'settling');
+  IF v_live <> 2
+     OR EXISTS (SELECT 1 FROM public.lightning_reservation r2 WHERE r2.cluster_id = v_y AND r2.player_id = v_q AND r2.state IN ('pending', 'committed'))
+     OR EXISTS (SELECT 1 FROM public.lightning_instance i WHERE i.cluster_id = v_y AND i.state IN ('forming', 'reserved'))
+     OR harness.reason(v_y, v_q, jsonb_build_object(v_q::text, 'mobile')) <> 'MULTI_TABLE_LIMIT'
+     OR harness.reason(v_y, v_py, NULL) <> 'LEGAL' THEN
+    RAISE EXCEPTION 'FAIL 17: exactly one formation should hold the player (live %), with the loser''s reservations and instance released', v_live;
+  END IF;
+END $$;
+\echo '  ok  17 TWO BACKENDS, ONE LIMIT  a mobile player with one live hand raced by two real backends forming in two other Clusters: the second backend WAITS on the player''s advisory lock while the first holds it, and once the first commits the second is refused as a retryable formation_refused (40001, LIGHTNING_MULTI_TABLE_LIMIT) with its instance and reservations rolled back whole - exactly one formation holds the player, and P0 then refuses the loser''s Cluster as MULTI_TABLE_LIMIT while its partner is legal again'
+ASSERT
+
+cat > "$fixture/fix-proofs-check.sql" <<'ASSERT'
+-- 18 NOTHING EARLIER IS FALSIFIED, AND EVERY PROOF OF ALL THREE FILES HOLDS -----------
+DO $$
+DECLARE v_bad text; v_n integer;
+BEGIN
+  SELECT string_agg(b.src || '#' || b.n, ', ' ORDER BY b.src, b.n) INTO v_bad
+    FROM harness.lp8 b JOIN harness.lp8 f ON f.src = b.src AND f.n = b.n AND f.phase = 'fix'
+   WHERE b.phase = 'after' AND b.ok IS TRUE AND f.ok IS NOT TRUE;
+  -- EXACTLY the three proofs that state empty-estate facts (no pool session
+  -- exists, every Cluster is must_move, no halted table in must_move): they
+  -- were read at 'after' against a virgin estate, and the sections since have
+  -- built real Lightning Clusters, open pool sessions and a manually frozen
+  -- Cluster whose halts stand. The Phase 7 harness reads the same three as
+  -- already-false at its own baseline for the same reason. Fixture data, not
+  -- the file; every catalogue-shaped proof must still hold.
+  IF v_bad IS DISTINCT FROM 'p2#13, p4#24, p5#2' THEN
+    RAISE EXCEPTION 'FAIL 18: predecessor proofs falsified by the review migration beyond the three estate-state proofs: %', v_bad;
+  END IF;
+  SELECT string_agg(b.src || '#' || b.n, ', ' ORDER BY b.src, b.n) INTO v_bad
+    FROM harness.lp8 b JOIN harness.lp8 f ON f.src = b.src AND f.n = b.n AND f.phase = 'fixp8'
+   WHERE b.phase = 'own' AND b.ok IS TRUE AND f.ok IS NOT TRUE;
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL 18: Phase 8''s own proofs falsified by the review migration: %', v_bad;
+  END IF;
+  SELECT count(*) INTO v_n FROM harness.lp8 WHERE phase = 'fix' AND ok IS TRUE;
+  IF v_n < 100 THEN
+    RAISE EXCEPTION 'FAIL 18: only % predecessor proofs read true after the review migration, so this proves too little', v_n;
+  END IF;
+  IF (SELECT count(*) FROM harness.lp8 WHERE phase = 'fixrem') <> 10
+     OR EXISTS (SELECT 1 FROM harness.lp8 WHERE phase = 'fixrem' AND ok IS NOT TRUE) THEN
+    RAISE EXCEPTION 'FAIL 18: the Phase 7 remediation''s proofs do not all hold here: %',
+      (SELECT string_agg(n || '=' || coalesce(ok::text, 'error'), ', ') FROM harness.lp8 WHERE phase = 'fixrem');
+  END IF;
+  IF (SELECT count(*) FROM harness.lp8 WHERE phase = 'fixown') <> 10
+     OR EXISTS (SELECT 1 FROM harness.lp8 WHERE phase = 'fixown' AND ok IS NOT TRUE) THEN
+    RAISE EXCEPTION 'FAIL 18: the review migration''s own proofs: %',
+      (SELECT string_agg(n || '=' || coalesce(ok::text, 'error'), ', ') FROM harness.lp8 WHERE phase = 'fixown');
+  END IF;
+END $$;
+\echo '  ok  18 THE PROOFS  not one predecessor or Phase 8 proof that held before the review migration is falsified by it, all ten of the Phase 7 remediation''s proofs hold on this catalogue, and all ten of the review migration''s own proofs evaluate true'
+ASSERT
+
+cat > "$fixture/fix-precapture.sql" <<'ASSERT'
+CREATE TABLE harness.rcap3 AS
+SELECT 'fn:' || p.oid::regprocedure::text AS what, md5(pg_get_functiondef(p.oid) || coalesce(p.proacl::text, '') || coalesce(obj_description(p.oid, 'pg_proc'), '')) AS v
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+ WHERE n.nspname = 'public' AND (p.proname LIKE 'fn_lightning_%' OR p.proname LIKE 'fn_cash_cluster%')
+UNION ALL
+SELECT 'rows:' || x.t, (xpath('/row/n/text()', query_to_xml(format('SELECT count(*) AS n FROM public.%I', x.t), false, true, '')))[1]::text
+  FROM unnest(ARRAY['lightning_hand', 'lightning_hand_player', 'lightning_pool_session', 'lightning_instance', 'lightning_reservation', 'hand_history']) x(t)
+UNION ALL
+SELECT 'hp', md5(string_agg(to_jsonb(hp)::text, '|' ORDER BY hp.hand_id, hp.player_id)) FROM public.lightning_hand_player hp
+UNION ALL
+SELECT 'modes', md5(string_agg(id::text || ':' || cluster_mode || ':' || cluster_epoch || ':' || coalesce(lightning_off_condition_since::text, '-'), '|' ORDER BY id)) FROM public.cash_games;
+ASSERT
+
+cat > "$fixture/fix-reapply.sql" <<'ASSERT'
+-- 19 THE REVIEW MIGRATION IS RE-APPLIABLE ---------------------------------------------
+DO $$
+DECLARE v_bad text;
+BEGIN
+  SELECT string_agg(coalesce(a.what, b.what), ', ') INTO v_bad
+    FROM harness.rcap3 a
+    FULL JOIN (
+      SELECT 'fn:' || p.oid::regprocedure::text AS what, md5(pg_get_functiondef(p.oid) || coalesce(p.proacl::text, '') || coalesce(obj_description(p.oid, 'pg_proc'), '')) AS v
+        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'public' AND (p.proname LIKE 'fn_lightning_%' OR p.proname LIKE 'fn_cash_cluster%')
+      UNION ALL
+      SELECT 'rows:' || x.t, (xpath('/row/n/text()', query_to_xml(format('SELECT count(*) AS n FROM public.%I', x.t), false, true, '')))[1]::text
+        FROM unnest(ARRAY['lightning_hand', 'lightning_hand_player', 'lightning_pool_session', 'lightning_instance', 'lightning_reservation', 'hand_history']) x(t)
+      UNION ALL
+      SELECT 'hp', md5(string_agg(to_jsonb(hp)::text, '|' ORDER BY hp.hand_id, hp.player_id)) FROM public.lightning_hand_player hp
+      UNION ALL
+      SELECT 'modes', md5(string_agg(id::text || ':' || cluster_mode || ':' || cluster_epoch || ':' || coalesce(lightning_off_condition_since::text, '-'), '|' ORDER BY id)) FROM public.cash_games
+    ) b ON b.what = a.what
+   WHERE a.v IS DISTINCT FROM b.v;
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL 19: the second application of the review migration changed: %', v_bad;
+  END IF;
+  IF (SELECT count(*) FROM harness.rcap3 WHERE what LIKE 'fn:%') < 60 THEN
+    RAISE EXCEPTION 'FAIL 19: the capture is too small to prove anything';
+  END IF;
+END $$;
+\echo '  ok  19 RE-APPLIABLE  applied a second time the review migration leaves every fn_lightning_ and fn_cash_cluster body, ACL and comment, six row counts, every participant row and every Cluster mode, epoch and dwell sighting exactly as they were'
+ASSERT
+
 { predecessor_proofs before; } > "$fixture/proofs-before.sql"
 { predecessor_proofs after; } > "$fixture/proofs-after.sql"
 { gen_proofs own mine "$mine"; } > "$fixture/own-proofs-eval.sql"
+{ predecessor_proofs fix; gen_proofs fixrem p7r "$p7r"; gen_proofs fixp8 mine "$mine"; gen_proofs fixown fixfile "$fix"; } > "$fixture/fix-proofs-eval.sql"
 
 # ===========================================================================
 # THE RUN.
@@ -1180,7 +1550,16 @@ set +e
   -f "$fixture/own-proofs.sql" \
   -f "$fixture/precapture.sql" \
   -f "$mine" \
-  -f "$fixture/reapply.sql" 2>&1 | grep -v -E '^psql:.*: (NOTICE|WARNING):' | grep -v -E '^ lp8_rewrite|^-+$|^ *$|^\(1 row\)$' | tee "$fixture/psql.out"
+  -f "$fixture/reapply.sql" \
+  -f "$fixture/fix-ground.sql" \
+  -f "$p7r" \
+  -f "$fix" \
+  -f "$fixture/fix-assertions.sql" \
+  -f "$fixture/fix-proofs-eval.sql" \
+  -f "$fixture/fix-proofs-check.sql" \
+  -f "$fixture/fix-precapture.sql" \
+  -f "$fix" \
+  -f "$fixture/fix-reapply.sql" 2>&1 | grep -v -E '^psql:.*: (NOTICE|WARNING):' | grep -v -E '^ lp7?8_rewrite|^-+$|^ *$|^\(1 row\)$' | tee "$fixture/psql.out"
 status=${PIPESTATUS[0]}
 set -e
 if [ "$status" != 0 ]; then
@@ -1188,10 +1567,10 @@ if [ "$status" != 0 ]; then
   exit 1
 fi
 
-# THIRTEEN SECTIONS REPORTED, counted rather than eyeballed.
+# TWENTY SECTIONS REPORTED, counted rather than eyeballed.
 oks=$(grep -c -E '^  ok  [0-9]{2} ' "$fixture/psql.out" || true)
-if [ "$oks" != 13 ]; then
-  echo "FAIL: $oks of the 13 sections reported, so this run proved less than this file claims"
+if [ "$oks" != 20 ]; then
+  echo "FAIL: $oks of the 20 sections reported, so this run proved less than this file claims"
   exit 1
 fi
-echo "PASS: Lightning Phase 8 (spec Phases 11, 12 and 13), 13 sections, under production's default function ACLs and its live autorevoke event trigger: before the file none of it exists; after it no earlier proof is falsified but the seven that name the replaced argument lists; the multi-table limit is {desktop 4, tablet 3, mobile 2}, the old scalar still read, bad values reported; across three Clusters a human and a horse with two live hands are refused on mobile and legal on tablet and desktop, the old matcher signatures answer desktop and match_and_form honours the map; each formation records the real wait and the settlement the showdown, both final; session statistics from six real settled hands equal the settlement's counters with VPIP and PFR from ca_hand_facts and nearest-rank wait percentiles; recent hands are the player's own newest fifty with results, filtered by session; pool status maps BUILDING, ACTIVE, HOT and THIN and follows the lobby policy; my sessions lists three Clusters; the summary survives the reversion with every hand_history row; only the owner (or service_role) reads anything; every @live-proof holds and the file is re-appliable"
+echo "PASS: Lightning Phase 8 (spec Phases 11, 12 and 13), 20 sections, under production's default function ACLs and its live autorevoke event trigger: before the file none of it exists; after it no earlier proof is falsified but the seven that name the replaced argument lists; the multi-table limit is {desktop 4, tablet 3, mobile 2}, the old scalar still read, bad values reported; across three Clusters a human and a horse with two live hands are refused on mobile and legal on tablet and desktop, the old matcher signatures answer desktop and match_and_form honours the map; each formation records the real wait and the settlement the showdown, both final; session statistics from six real settled hands equal the settlement's counters with VPIP and PFR from ca_hand_facts and nearest-rank wait percentiles; recent hands are the player's own newest fifty with results, filtered by session; pool status maps BUILDING, ACTIVE, HOT and THIN and follows the lobby policy; my sessions lists three Clusters; the summary survives the reversion with every hand_history row; only the owner (or service_role) reads anything; every @live-proof holds and the file is re-appliable; then the Phase 7 remediation and the review migration (20261008043021), its defects first proven real on the Phase 8 code: an unreported or unknown platform is held to the narrowest (mobile) limit for humans and horses alike; recent hands with no winners record classify on the net alone and compare recorded userIds case- and type-normalised; pool status is exactly {players, status, joinable, multi_table_limit} and never names frozen, paused or a pending mode; and two real backends forming in two Clusters for one mobile player with one live hand serialise on the player advisory lock so exactly one succeeds, the loser refused 40001 LIGHTNING_MULTI_TABLE_LIMIT with its formation rolled back; no earlier proof is falsified and the review migration is re-appliable"

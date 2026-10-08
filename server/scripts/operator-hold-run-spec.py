@@ -6,7 +6,7 @@ from pathlib import Path
 import stat
 import sys
 
-SOURCE = '4dbbd0672dd46d86116140cde77da1bd143c6b8f'
+SOURCE = 'e16d38f3e6693f55348fd3b7a470098bbc9a51dc'
 ROOT = Path('/var/lib/club-arena/operator-hold')
 MARKER = ROOT.parent / 'operator-hold-required'
 COMMAND = ['node', '--import', '/run/club-arena/operator-hold/operator-hold-rollback-bootstrap.mjs', 'dist/index.js']

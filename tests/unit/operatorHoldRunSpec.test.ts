@@ -97,7 +97,7 @@ code=source.split("<<'OPERATOR_BOOT_PREFLIGHT'\\n",1)[1].split('\\nOPERATOR_BOOT
 with tempfile.TemporaryDirectory(dir=sys.argv[2]) as tmp:
  root=pathlib.Path(tmp)/'operator-hold';root.mkdir(mode=0o700)
  control=pathlib.Path(tmp)/'control';control.mkdir()
- sha='4dbbd0672dd46d86116140cde77da1bd143c6b8f'
+ sha='e16d38f3e6693f55348fd3b7a470098bbc9a51dc'
  paths=['GameServer.js','engine/ServerTableEngineBase.js','engine/ServerTableEngineSeating.js','engine/ServerTableEngineDealing.js','handlers/admin.js','tournament/TournamentManagerBase.js','services/tableLease.js','services/supabase/client.js','releaseIdentity.js','http/createEngineHttpServer.js','engine/ServerTableEngine.js','maintenance/MaintenanceBreak.js','maintenance/freezeState.js','services/supabase/dataActorContext.js']
  p={'kind':'operator_hold_predecessor_v1','releaseSha':sha,'imageId':'image','runtimeNode':'v22.23.2','compiled':[{'path':'/app/dist/'+x,'sha256':'a'*64} for x in paths]}
  h={'kind':'operator_hold_handoff_v1','handoffId':'original','sourceRelease':sha,'sourceInstance':'1-a'}
@@ -128,6 +128,7 @@ describe('operator rollback preflight before stopping the live owner', () => {
   it.each([
     "h['sourceRelease']='b'*40;p['releaseSha']='b'*40",
     "h['sourceRelease']='a29a591da2efa8acb1a67cbb93f5e67af11cfc1f';p['releaseSha']=h['sourceRelease']",
+    "h['sourceRelease']='4dbbd0672dd46d86116140cde77da1bd143c6b8f';p['releaseSha']=h['sourceRelease']",
     "p['kind']='other'",
     "p['runtimeNode']='unknown'",
     "p['compiled'].pop()",

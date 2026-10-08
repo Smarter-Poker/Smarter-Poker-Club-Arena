@@ -103,7 +103,7 @@ echo ADMITTED
 describe('operator authority predecessor compatibility admission', () => {
   it('admits only the specifically qualified pre-store predecessor', () => {
     expect(
-      predecessorAdmission('4dbbd0672dd46d86116140cde77da1bd143c6b8f', '<no value>').status
+      predecessorAdmission('e16d38f3e6693f55348fd3b7a470098bbc9a51dc', '<no value>').status
     ).toBe(0);
   });
   it('keeps historical evidence separate from the active native-qualified profile', () => {
@@ -113,21 +113,41 @@ describe('operator authority predecessor compatibility admission', () => {
     const historical = JSON.parse(
       readFileSync(`${root}/server/scripts/operator-hold-predecessor-a29-profile.json`, 'utf8')
     );
-    expect(current.releaseSha).toBe('4dbbd0672dd46d86116140cde77da1bd143c6b8f');
+    expect(current.releaseSha).toBe('e16d38f3e6693f55348fd3b7a470098bbc9a51dc');
     expect(current.imageId).toBe(
-      'sha256:fe7b7d681b9514ed3227ca66d39658aad8ba1eea0eb8c893ae149619216d771d'
+      'sha256:63b0f20ed2c81884fca9998fae4110440ed5318139a103edfe120d607646059f'
     );
     expect(current.provenance.sourceSha256).toBe(
-      '49d484d3ee962182f9c4be5a1dba216a16b3627a9b694fc75450d777867f03d4'
+      '31c316e56ad8f323bb9dd6c895008a2ca9dd6db5a75ba41b9d72473343b847c5'
     );
     expect(current.runtimeNode).toBe('v22.23.2');
-    expect(current.compiled).toEqual(historical.compiled);
+    const gameServer = current.compiled.find(
+      (row: { path: string }) => row.path === '/app/dist/GameServer.js'
+    );
+    expect(gameServer).toEqual({
+      path: '/app/dist/GameServer.js',
+      bytes: 594816,
+      sha256: '02dac19f81f50591d664fbc3e3c2ae8fdc69387562c7d7acf93d6be1a1724307',
+    });
+    expect(
+      current.compiled.filter((row: { path: string }) => row.path !== '/app/dist/GameServer.js')
+    ).toEqual(
+      historical.compiled.filter((row: { path: string }) => row.path !== '/app/dist/GameServer.js')
+    );
+    const previous = JSON.parse(
+      readFileSync(`${root}/server/scripts/operator-hold-predecessor-4dbb-profile.json`, 'utf8')
+    );
+    expect(previous.releaseSha).toBe('4dbbd0672dd46d86116140cde77da1bd143c6b8f');
+    expect(previous.compiled).toEqual(historical.compiled);
     expect(historical.releaseSha).toBe('a29a591da2efa8acb1a67cbb93f5e67af11cfc1f');
     expect(current.provenance.scope).toContain('not_boot_or_handoff_qualification');
   });
   it('refuses historical pre-store identities instead of broadening the active profile', () => {
     expect(
       predecessorAdmission('a29a591da2efa8acb1a67cbb93f5e67af11cfc1f', '<no value>').status
+    ).not.toBe(0);
+    expect(
+      predecessorAdmission('4dbbd0672dd46d86116140cde77da1bd143c6b8f', '<no value>').status
     ).not.toBe(0);
     expect(
       predecessorAdmission('6b1af5c5fb11b158c3c8871b93360df566ad7a49', '<no value>').status

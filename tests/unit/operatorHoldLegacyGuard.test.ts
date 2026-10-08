@@ -9,7 +9,7 @@ import {
 const table = '10000000-0000-0000-0000-000000000001';
 const generation = '20000000-0000-0000-0000-000000000001';
 const handoff = '30000000-0000-0000-0000-000000000001';
-const release = '4dbbd0672dd46d86116140cde77da1bd143c6b8f';
+const release = 'e16d38f3e6693f55348fd3b7a470098bbc9a51dc';
 
 function fixture(mode = 'first-upgrade') {
   class Base {

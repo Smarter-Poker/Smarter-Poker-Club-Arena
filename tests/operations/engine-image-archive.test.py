@@ -1,6 +1,7 @@
 """Exercise real tar bytes and atomic output; no Docker or host import."""
 import copy
 import hashlib
+import gzip
 import importlib.util
 import io
 import json
@@ -104,6 +105,34 @@ class ArchiveTests(unittest.TestCase):
                 digests.append(receipt['archive_sha256'])
                 self.output.unlink()
         self.assertEqual(digests[0], digests[1])
+
+    def compressed_fixture(self, *, truncate=False, concatenate=False, foreign_digest=False):
+        manifest = json.loads(self.entries[0][1])
+        entries = self.entries[:2]
+        for i,(name,raw) in enumerate(self.entries[2:4]):
+            packed = gzip.compress(raw,mtime=0)
+            if truncate and i == 0: packed = packed[:-1]
+            if concatenate and i == 0: packed += gzip.compress(b'opaque',mtime=0)
+            blob = 'blobs/sha256/'+('f'*64 if foreign_digest and i == 0 else digest(packed))
+            manifest[0]['Layers'][i] = blob
+            entries.append((blob,packed))
+        entries[0] = ('manifest.json',json.dumps(manifest).encode())
+        return entries
+
+    def test_oci_gzip_preserves_config_and_writes_exact_rootfs(self):
+        write_tar(self.source,self.entries)
+        plain = self.normalize()['archive_sha256']; self.output.unlink()
+        write_tar(self.source,self.compressed_fixture())
+        actual = self.normalize()
+        self.assertEqual(actual['image_id'],self.image)
+        self.assertEqual(actual['archive_sha256'],plain)
+
+    def test_oci_gzip_partial_digest_expansion_and_multimember_refuse(self):
+        for opts in [dict(truncate=True),dict(concatenate=True),dict(foreign_digest=True)]:
+            with self.subTest(opts=opts):
+                write_tar(self.source,self.compressed_fixture(**opts)); self.refused()
+        write_tar(self.source,self.compressed_fixture())
+        with patch.object(m,'MEMBER_LIMIT',1000): self.refused('DECODED_LAYER_SIZE')
 
     def test_directories_are_accepted_but_not_copied(self):
         directory = tarfile.TarInfo('blobs/')

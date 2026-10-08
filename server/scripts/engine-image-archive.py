@@ -13,6 +13,8 @@ import re
 import stat
 import tarfile
 import tempfile
+import zlib
+import time
 
 ARCHIVE_LIMIT = 2 * 1024 * 1024 * 1024
 MEMBER_LIMIT = 1024 * 1024 * 1024
@@ -75,6 +77,7 @@ def normalize_engine_archive(source, destination, *, source_sha, server_tree, im
     require(all(isinstance(value, str) and re.fullmatch('[0-9a-f]{40}', value)
                 for value in (source_sha, server_tree)), 'SOURCE_IDENTITY')
     require(isinstance(image_id, str) and re.fullmatch('sha256:[0-9a-f]{64}', image_id), 'IMAGE_IDENTITY')
+    normalization_deadline = time.monotonic()+120
     source, destination = Path(source), Path(destination)
     require(source.is_absolute() and destination.is_absolute(), 'ABSOLUTE_PATHS')
     require(not destination.exists() and not destination.is_symlink(), 'DESTINATION_EXISTS')
@@ -177,12 +180,44 @@ def normalize_engine_archive(source, destination, *, source_sha, server_tree, im
                         normalized.addfile(member, io.BytesIO(raw))
                     for name, output_name, expected_digest in zip(layers, output_names, diff_ids):
                         member = tarfile.TarInfo(output_name)
-                        member.size, member.mode, member.mtime = members[name].size, 0o444, 0
+                        member.mode, member.mtime = 0o444, 0
                         source_stream.seek(members[name].offset_data)
-                        reader = DigestReader(source_stream, member.size)
-                        normalized.addfile(member, reader)
-                        require(reader.remaining == 0 and 'sha256:' + reader.digest.hexdigest() == expected_digest,
-                                'LAYER_DIGEST')
+                        prefix = source_stream.read(2)
+                        source_stream.seek(members[name].offset_data)
+                        if prefix == b'\x1f\x8b':
+                            # OCI gzip blob hashes bind compressed bytes; RootFS binds decoded tar.
+                            require(re.fullmatch('blobs/sha256/[0-9a-f]{64}', name), 'COMPRESSED_LAYER_NAME')
+                            deadline = normalization_deadline
+                            compressed = DigestReader(source_stream, members[name].size)
+                            decoder, digest, size = zlib.decompressobj(31), hashlib.sha256(), 0
+                            with tempfile.TemporaryFile(dir=destination.parent) as decoded:
+                                while compressed.remaining:
+                                    require(time.monotonic() < deadline, 'LAYER_DECODE_DEADLINE')
+                                    pending = compressed.read(65536)
+                                    require(pending, 'COMPRESSED_LAYER_TRUNCATED')
+                                    while pending:
+                                        require(time.monotonic() < deadline, 'LAYER_DECODE_DEADLINE')
+                                        try:
+                                            chunk = decoder.decompress(pending,65536)
+                                        except zlib.error as error:
+                                            raise ValueError('ENGINE_IMAGE_ARCHIVE_COMPRESSED_LAYER') from error
+                                        pending = decoder.unconsumed_tail
+                                        size += len(chunk)
+                                        require(size <= MEMBER_LIMIT and output.tell()+size+10240 <= ARCHIVE_LIMIT,
+                                                'DECODED_LAYER_SIZE')
+                                        digest.update(chunk); decoded.write(chunk)
+                                        require(not decoder.unused_data, 'COMPRESSED_TRAILING_DATA')
+                                require(decoder.eof and not decoder.unconsumed_tail, 'COMPRESSED_LAYER_TRUNCATED')
+                                require(compressed.digest.hexdigest() == name.split('/')[-1], 'COMPRESSED_LAYER_DIGEST')
+                                require('sha256:'+digest.hexdigest() == expected_digest, 'LAYER_DIGEST')
+                                member.size = size
+                                decoded.seek(0); normalized.addfile(member,decoded)
+                        else:
+                            member.size = members[name].size
+                            reader = DigestReader(source_stream, member.size)
+                            normalized.addfile(member, reader)
+                            require(reader.remaining == 0 and 'sha256:' + reader.digest.hexdigest() == expected_digest,
+                                    'LAYER_DIGEST')
                 output.flush()
                 os.fsync(output.fileno())
                 require(output.tell() <= ARCHIVE_LIMIT, 'OUTPUT_SIZE')

@@ -19,6 +19,7 @@ import tarfile
 import tempfile
 import time
 import types
+import zlib
 
 LIMIT = 2 * 1024 * 1024 * 1024
 STREAM_SECONDS = 120
@@ -260,13 +261,63 @@ def path_metadata(raw):
     return {k:v for k,v in result.items() if k in {b'path', b'linkpath', b'size'}}
 
 
+class GzipLayerReader:
+    """One bounded gzip member; hash decoded bytes without inspecting file values."""
+    def __init__(self, reader, size, prefix, deadline):
+        self.reader, self.left, self.pending = reader, size-len(prefix), prefix
+        self.decoder = zlib.decompressobj(31)
+        self.deadline, self.count, self.digest = deadline, 0, hashlib.sha256()
+        self.done = False
+
+    def read(self, size):
+        require(0 < size <= 65536, 'Decoded read size refused')
+        result = bytearray()
+        while len(result) < size and not self.done:
+            require(time.monotonic() < self.deadline, 'Layer decode deadline exceeded')
+            if not self.pending:
+                require(self.left > 0, 'Compressed layer truncated')
+                n = min(self.left, 65536)
+                self.pending = self.reader.exact(n); self.left -= n
+            try:
+                chunk = self.decoder.decompress(self.pending, size-len(result))
+            except zlib.error as error:
+                raise RuntimeError('Compressed layer refused') from error
+            self.pending = self.decoder.unconsumed_tail
+            self.count += len(chunk)
+            require(self.count <= LIMIT, 'Decoded layer size exceeded')
+            self.digest.update(chunk); result.extend(chunk)
+            if self.decoder.eof:
+                require(not self.decoder.unused_data and not self.pending and self.left == 0,
+                        'Compressed trailing/member data refused')
+                self.done = True
+        return bytes(result)
+
+    def exact(self, size):
+        raw = self.read(size)
+        require(len(raw) == size, 'Decoded layer truncated')
+        return raw
+
+    def skip(self, size):
+        while size:
+            n = min(size, 65536); self.exact(n); size -= n
+
+    def finish_padding(self):
+        while not self.done:
+            require(not any(self.read(65536)), 'Decoded layer trailing data refused')
+        return self.count
+
+
 def scan_layer(reader, size):
     """Scan all names including bounded PAX/GNU overrides; payloads stay opaque."""
     left, count, pending, extensions = size, 0, {}, 0
-    while left >= 512:
-        raw = reader.exact(512); left -= 512
+    while left is None or left >= 512:
+        raw = reader.exact(512)
+        if left is not None: left -= 512
         if raw == bytes(512):
             require(not pending and extensions == 0, 'Orphan path metadata refused')
+            if left is None:
+                reader.finish_padding()
+                return count
             while left:
                 n = min(left, 65536)
                 require(not any(reader.exact(n)), 'Layer trailing data refused'); left -= n
@@ -279,9 +330,10 @@ def scan_layer(reader, size):
             extensions += 1
             require(extensions <= 3 and 0 < entry.size <= 8192, 'Path metadata bounds refused')
             padded = ((entry.size+511)//512)*512
-            require(padded <= left, 'Path metadata truncated')
+            require(left is None or padded <= left, 'Path metadata truncated')
             metadata = reader.exact(entry.size)
-            reader.skip(padded-entry.size); left -= padded
+            reader.skip(padded-entry.size)
+            if left is not None: left -= padded
             if entry.type == tarfile.XHDTYPE:
                 values = path_metadata(metadata)
             else:
@@ -302,12 +354,13 @@ def scan_layer(reader, size):
             require(b'linkpath' not in pending, 'Non-link path override refused')
         pending, extensions = {}, 0
         payload = ((payload_size+511)//512)*512
-        require(payload <= left, 'Layer truncated')
-        reader.skip(payload); left -= payload
+        require(left is None or payload <= left, 'Layer truncated')
+        reader.skip(payload)
+        if left is not None: left -= payload
     raise RuntimeError('Layer end markers refused')
 
 
-def graph_descriptor(raw, image_id, layer_ids):
+def graph_descriptor(raw, image_id, layer_ids, layer_blobs=None):
     """Only bounded OCI graph metadata, never a config or layer file payload."""
     value=json.loads(raw)
     require(isinstance(value,dict) and value.get('schemaVersion') == 2,
@@ -315,7 +368,7 @@ def graph_descriptor(raw, image_id, layer_ids):
     def descriptor(item):
         require(isinstance(item,dict) and set(item) <= {'mediaType','digest','size','platform','annotations'}
                 and {'mediaType','digest','size'} <= set(item), 'OCI descriptor refused')
-        require(item['mediaType'] in {'application/vnd.oci.image.manifest.v1+json','application/vnd.oci.image.config.v1+json','application/vnd.oci.image.layer.v1.tar'}
+        require(item['mediaType'] in {'application/vnd.oci.image.manifest.v1+json','application/vnd.oci.image.config.v1+json','application/vnd.oci.image.layer.v1.tar','application/vnd.oci.image.layer.v1.tar+gzip'}
                 and re.fullmatch('sha256:[0-9a-f]{64}',item['digest'])
                 and type(item['size']) is int and 0 < item['size'] <= LIMIT, 'OCI descriptor identity refused')
         if 'platform' in item:require(item['platform'] == {'architecture':'amd64','os':'linux'}, 'OCI platform refused')
@@ -327,7 +380,8 @@ def graph_descriptor(raw, image_id, layer_ids):
         descriptor(value['config'])
         require(value['config']['digest']==image_id, 'Foreign OCI config refused')
         for item in value['layers']:descriptor(item)
-        require([x['digest'] for x in value['layers']] == layer_ids, 'OCI layer graph differs')
+        require([((layer_blobs or {}).get(x['digest']) or x['digest']) for x in value['layers']] == layer_ids, 'OCI layer graph differs')
+        require(all(x['mediaType'] == ('application/vnd.oci.image.layer.v1.tar+gzip' if x['digest'] != ((layer_blobs or {}).get(x['digest']) or x['digest']) else 'application/vnd.oci.image.layer.v1.tar') for x in value['layers']), 'OCI layer encoding differs')
     else:
         require(set(value) <= {'schemaVersion','mediaType','manifests'} and isinstance(value.get('manifests'),list) and len(value['manifests']) == 1, 'OCI index refused')
         descriptor(value['manifests'][0])
@@ -336,12 +390,14 @@ def graph_descriptor(raw, image_id, layer_ids):
 def scan_host_archive(reader, image_id, layer_ids):
     """Complete first save stays on host; all historical layer headers checked."""
     count, layers, seen, scanned = 0, 0, set(), set()
+    descriptors, layer_blobs, decoded_total = [], {}, 0
     while True:
         raw = reader.exact(512)
         if raw == bytes(512):
             require(reader.exact(512) == bytes(512), 'Outer end markers refused')
             digest = reader.finish()
             require(scanned == set(layer_ids), 'Incomplete historical layer graph')
+            for raw in descriptors: graph_descriptor(raw, image_id, layer_ids, layer_blobs)
             return {'sha256': digest, 'bytes': reader.count, 'layerHeaderCount': count,
                     'layers': layers, 'credentialHeadersRefused': True}
         member = header(raw)
@@ -357,16 +413,33 @@ def scan_host_archive(reader, image_id, layer_ids):
             require(layers <= 128, 'Layer count refused')
             reader.layer_digest = hashlib.sha256()
             count += scan_layer(reader, member.size)
+            decoded_total += member.size
+            require(decoded_total <= LIMIT, 'Decoded archive size exceeded')
             require(count <= 1000000, 'Layer header count refused')
             digest='sha256:'+reader.layer_digest.hexdigest()
             reader.layer_digest=None
             require(digest in layer_ids and digest not in scanned, 'Layer digest graph differs')
             scanned.add(digest)
         elif is_blob and not is_config:
-            require(0 < member.size <= 65536, 'OCI metadata size refused')
-            raw=reader.exact(member.size)
-            require(hashlib.sha256(raw).hexdigest() == name.split('/')[-1], 'OCI metadata digest differs')
-            graph_descriptor(raw,image_id,layer_ids)
+            require(member.size >= 2, 'OCI blob size refused')
+            reader.layer_digest = hashlib.sha256()
+            prefix = reader.exact(2)
+            if prefix == b'\x1f\x8b':
+                layers += 1
+                require(layers <= 128, 'Layer count refused')
+                decoded = GzipLayerReader(reader, member.size, prefix, reader.deadline)
+                count += scan_layer(decoded, None)
+                decoded_total += decoded.count
+                require(decoded_total <= LIMIT and count <= 1000000, 'Decoded archive size/count exceeded')
+                diff_id = 'sha256:'+decoded.digest.hexdigest()
+                require(diff_id in layer_ids and diff_id not in scanned, 'Layer digest graph differs')
+                scanned.add(diff_id)
+                layer_blobs['sha256:'+name.split('/')[-1]] = diff_id
+            else:
+                require(member.size <= 65536 and len(descriptors) < 128, 'OCI metadata size/count refused')
+                descriptors.append(prefix+reader.exact(member.size-2))
+            require(reader.layer_digest.hexdigest() == name.split('/')[-1], 'OCI blob digest differs')
+            reader.layer_digest = None
         else:
             require(member.isdir() and member.size == 0 or
                     (is_config or name in {'manifest.json','repositories','index.json','oci-layout'})

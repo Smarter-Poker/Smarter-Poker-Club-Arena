@@ -2,6 +2,7 @@
 """Fixed-source security checks. No Docker, host or provider calls."""
 import base64
 import hashlib
+import gzip
 import importlib.util
 import io
 import json
@@ -41,6 +42,26 @@ def archive(names, oci=False, format=tarfile.USTAR_FORMAT):
             data=json.dumps(value).encode();name='blobs/sha256/'+hashlib.sha256(data).hexdigest()
             m=tarfile.TarInfo(name);m.size=len(data);t.addfile(m,io.BytesIO(data))
     return out.getvalue(),layer_id
+
+
+def gzip_archive(names, *, bad_diff=False, bad_blob=False, truncated=False, concatenated=False, descriptor_first=False):
+    layer = layer_bytes(names)
+    diff = 'sha256:'+hashlib.sha256(layer).hexdigest()
+    packed = gzip.compress(layer, mtime=0)
+    if truncated: packed = packed[:-1]
+    if concatenated: packed += gzip.compress(b'opaque', mtime=0)
+    digest = 'sha256:'+hashlib.sha256(packed).hexdigest()
+    blob = 'blobs/sha256/'+('c'*64 if bad_blob else digest[7:])
+    graph = {'schemaVersion':2,'mediaType':'application/vnd.oci.image.manifest.v1+json','config':{'mediaType':'application/vnd.oci.image.config.v1+json','digest':REQUEST['imageId'],'size':2},'layers':[{'mediaType':'application/vnd.oci.image.layer.v1.tar+gzip','digest':digest,'size':len(packed)}]}
+    metadata = json.dumps(graph).encode()
+    pair = ('blobs/sha256/'+hashlib.sha256(metadata).hexdigest(), metadata)
+    out = io.BytesIO()
+    with tarfile.open(fileobj=out, mode='w', format=tarfile.USTAR_FORMAT) as t:
+        entries = [('manifest.json',b'[]'),('b'*64+'.json',b'{}')]
+        entries += [pair,(blob,packed)] if descriptor_first else [(blob,packed),pair]
+        for name,data in entries:
+            m=tarfile.TarInfo(name);m.size=len(data);t.addfile(m,io.BytesIO(data))
+    return out.getvalue(), ('sha256:'+'d'*64 if bad_diff else diff)
 
 
 class RawReader:
@@ -90,6 +111,20 @@ class ReaderTests(unittest.TestCase):
     def test_oci_descriptor_is_not_mistaken_for_a_layer(self):
         result=self.scan(archive(['app/dist/index.js'],oci=True))
         self.assertEqual(result['layers'],1)
+
+    def test_actual_oci_gzip_layer_is_scanned_and_graph_bound(self):
+        for first in [False,True]:
+            with self.subTest(descriptor_first=first):
+                result = self.scan(gzip_archive(['app/dist/index.js'],descriptor_first=first))
+                self.assertEqual(result['layers'],1)
+                self.assertEqual(result['layerHeaderCount'],1)
+
+    def test_gzip_historical_credentials_graph_and_partial_refuse(self):
+        for names,opts in [(['app/.env'],{}),(['app/safe'],{'bad_diff':True}),(['app/safe'],{'bad_blob':True}),(['app/safe'],{'truncated':True}),(['app/safe'],{'concatenated':True})]:
+            with self.subTest(opts=opts,names=names), self.assertRaises(RuntimeError):
+                self.scan(gzip_archive(names,**opts))
+        with patch.object(R,'LIMIT',1000), self.assertRaises(RuntimeError):
+            self.scan(gzip_archive(['app/safe']))
 
     def test_bounded_inner_pax_and_gnu_long_names(self):
         for format in [tarfile.PAX_FORMAT, tarfile.GNU_FORMAT]:

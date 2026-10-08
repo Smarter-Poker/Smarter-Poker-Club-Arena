@@ -1,0 +1,68 @@
+name: A Diamond event is conserved by its custody
+
+# fn_tournament_conservation_delta() and fn_tournament_conservation_deltas()
+# (migration 20261008044146). Runs scripts/ci/test-diamond-event-conservation.py
+# against a throwaway PostgreSQL 17 cluster, never production: the exact
+# production definitions (their repo bodies hash to production's md5) must
+# misread a Diamond satellite and its Diamond target, and the migration must
+# read both by their remaining Diamond entry custody, leave every chip event
+# exactly as it was, keep the set function equal to the scalar and reproduce
+# production's derived postimage md5s. No timer (CLAUDE.md 10.85):
+# pull_request only, scoped to the paths it proves.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - supabase/migrations/20261008044146_a_diamond_event_is_conserved_by_its_diamond_custody.sql
+      - supabase/migrations/20261003034305_a_tournament_book_reads_its_tickets_and_its_house_funding.sql
+      - supabase/migrations/20261003095111_the_money_conservation_scan_reads_every_event_in_one_pass.sql
+      - scripts/ci/test-diamond-event-conservation.py
+      - .github/workflows/diamond-event-conservation.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diamond-event-conservation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  diamond-event-conservation:
+    name: A Diamond event is conserved by its Diamond custody
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      # Runs as the runner user (non-root), exactly as the ci.yml step would.
+      - name: A Diamond event is conserved by its Diamond custody
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-diamond-event-conservation.py --output artifacts/diamond-event-conservation
+      - name: Retain the regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diamond-event-conservation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/diamond-event-conservation/RESULTS.json
+          retention-days: 7
+          if-no-files-found: warn

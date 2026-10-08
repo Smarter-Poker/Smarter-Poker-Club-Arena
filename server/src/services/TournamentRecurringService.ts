@@ -4449,9 +4449,19 @@ export class TournamentRecurringService {
       // finalization (fn_apply_prize_guarantee, host club treasury), never
       // written for free at creation. The lobby already displays
       // max(prize_pool, guaranteed_prize) client-side.
+      //
+      // THE DOOR ALONE COUNTS THE FIELD (2026-10-08). current_players is
+      // published by the registration door in the transaction that admits the
+      // entrant, and by trg_sync_tournament_current_players before the start.
+      // This update used to carry `current_players: registered` - this pass's
+      // own tally - and a concurrent fill pass on the same event is routine,
+      // so it wrote 11 over a committed 25. Every later door call then met
+      // "Tournament roster cache diverged before horse registration" and was
+      // refused, horse and person alike. See
+      // docs/changelog/2026-10-08-the-door-alone-counts-the-field.md.
       const { error: updateErr } = await supabase
         .from('tournaments')
-        .update({ current_players: registered, status: 'REGISTERING' })
+        .update({ status: 'REGISTERING' })
         .eq('id', tournament.id);
       if (updateErr)
         reportError(
@@ -4690,9 +4700,19 @@ export class TournamentRecurringService {
       // finalization (fn_apply_prize_guarantee, host club treasury), never
       // written for free at creation. The lobby already displays
       // max(prize_pool, guaranteed_prize) client-side.
+      //
+      // THE DOOR ALONE COUNTS THE FIELD (2026-10-08). current_players is
+      // published by the registration door in the transaction that admits the
+      // entrant, and by trg_sync_tournament_current_players before the start.
+      // This update used to carry `current_players: registered` - this pass's
+      // own tally - and a concurrent fill pass on the same event is routine,
+      // so it wrote 11 over a committed 25. Every later door call then met
+      // "Tournament roster cache diverged before horse registration" and was
+      // refused, horse and person alike. See
+      // docs/changelog/2026-10-08-the-door-alone-counts-the-field.md.
       const { error: updateErr } = await supabase
         .from('tournaments')
-        .update({ current_players: registered, status: 'REGISTERING' })
+        .update({ status: 'REGISTERING' })
         .eq('id', tournament.id);
       if (updateErr)
         reportError(
@@ -4838,9 +4858,9 @@ export class TournamentRecurringService {
        * A seat-first SNG goes down the atomic creator path above, which
        * seats its horse without registering anybody, so `registered` is still
        * 0 here - and writing that zero erased the seat-derived count the
-       * trigger had just set. A field SNG (6-max, 9-max) really does keep the
-       * registration model, and for those the count is correct and must still
-       * be written.
+       * trigger had just set. A field SNG (6-max, 9-max) keeps the
+       * registration model, and its count is already published by the door
+       * that admitted each entrant, so nothing is written here for either.
        */
       // POOL TRUTH 2026-08-27: prize_pool was written here as
       // config.buyIn x registered — 0 for a seat-first game, OVERWRITING the
@@ -4854,7 +4874,9 @@ export class TournamentRecurringService {
       const sngStateUpdate: Record<string, unknown> = {
         status: 'REGISTERING',
       };
-      if (!seatFirstSng) sngStateUpdate.current_players = registered;
+      // A field SNG's count is published by the door that registered each
+      // entrant (2026-10-08, the door alone counts the field): writing this
+      // pass's tally here raced every concurrent registration.
 
       const { error: sngUpdateErr } = await supabase
         .from('tournaments')
@@ -6580,56 +6602,34 @@ export class TournamentRecurringService {
         if (added > 0) pass?.forget();
 
         /**
-         * Dan 2026-08-23: "spins can never ever start until 3 players have sat
-         * down, and paid for there seat."
+         * THE DOOR ALONE COUNTS THE FIELD (2026-10-08).
          *
-         * A seat-first game counts SEATS, not rows in tournament_players. Those
-         * two disagree constantly - a registration is never removed when a
-         * player leaves or busts, so writing the registration count back into
-         * current_players re-introduced the drift that had live spins reading
-         * 3/3 with two seats sold (which then refuses every further sit-down
-         * with 'tournament_full') and 0/3 with three sold (which never starts).
-         * Derive it from the seat rows for seat-first, and keep the registration
-         * count for MTTs, where a registration IS the entry.
+         * This used to finish an MTT pass by re-reading the roster and writing
+         * that number into current_players. It was a read and a write in two
+         * statements outside the door's transaction: a door call that
+         * committed between them was overwritten with the count from before
+         * it. Measured live: Midnight Bounty (NLH) fb8931b5 on 2026-10-08 at
+         * 02:30:51 UTC, a concurrent pass (already_registered x6) left the
+         * count at 10 after the eleventh entry had committed 11, and the next
+         * registration was refused with "Tournament roster cache diverged
+         * before horse registration (cached 10, actual 11)". Over 2026-10-04
+         * 22:00 to 2026-10-08 02:30 UTC that class refused 170 horse
+         * registrations in 25 fill passes; the person's door holds the same
+         * check, so a person registering in such a window is refused too.
          *
-         * ── RESTORED 2026-08-23. This branch was written, reviewed and lost. ──
+         * Every door publishes the count itself, in the transaction that
+         * admits the entrant: fn_register_horse_for_tournament,
+         * fn_register_for_tournament and the ticket door write
+         * current_players = before + 1 only when the row still holds the
+         * value they expect, trg_sync_tournament_current_players recounts
+         * before the start and on every bust, and a seat-first format is
+         * counted from its seats by trg_seat_change_syncs_seat_first_count.
+         * So this pass writes no count for any format.
          *
-         * The paragraph above still described it exactly, but the code under it
-         * had been flattened to the MTT half alone, so every seat-first game had
-         * its REGISTRATION count written into current_players. Horses seated by
-         * fn_seat_horse_in_seat_first_game hold seats, not registrations, so that
-         * number is zero: 16 open Spins were advertising "0/3" while holding 32
-         * paid seats between them, two of three sold and one seat from dealing.
-         *
-         * The original lives on five branches under five different SHAs and on
-         * none of them is it an ancestor of main - it merged as prose and not as
-         * code, which is the "merge resolved by taking a stale side" failure
-         * .agent/protected-commits.json exists to catch. It is pinned there now.
-         *
-         * 2026-08-23, THIS MERGE: main (#582) and the spins branch had both
-         * arrived at this same fix independently, so git conflicted on the two
-         * write-ups while auto-merging identical code underneath. Both are kept.
-         * The quote is the requirement; the restoration note is why it went
-         * missing twice. Six duplicate PRs (#566, #570, #572, #575, #581, #583)
-         * were opened against a stale base and every one sat DIRTY on this one
-         * comment - nothing else across 27 files conflicted at all.
+         * Dan 2026-08-23 ("spins can never ever start until 3 players have
+         * sat down"): a seat-first game counts SEATS, never registrations, and
+         * that owner is untouched.
          */
-        if (!seatFirst) {
-          // Re-read rather than trusting `liveCount + added`: a human may have
-          // registered while we were seating horses.
-          const { count: finalCount } = await supabase
-            .from('tournament_players')
-            .select('id', { count: 'exact', head: true })
-            .eq('tournament_id', tournamentId)
-            .in('status', ['registered', 'playing']);
-
-          if (typeof finalCount === 'number') {
-            await supabase
-              .from('tournaments')
-              .update({ current_players: finalCount })
-              .eq('id', tournamentId);
-          }
-        }
 
         return added;
       } catch {

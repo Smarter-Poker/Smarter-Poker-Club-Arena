@@ -89,4 +89,32 @@ In `docs/evidence/phase12/round3/`: the harnesses (`p12r3-diagnose.mts.txt`, `p1
 
 ## Results
 
-Pending: recorded by the results PR with run links, verdicts, cells and the selection decision.
+### Condition (b): Human-Calibrated Population On The Held-Out Human Seeds
+
+Run once on the merge commit `022e1e4f8172de48eb4f81dca6c69bc2b0b0b2b1` (#6517) with `server/src/scripts/phase12HumanCalibratedCheck.ts`, committed before the run. Opponent population `human-calibrated-v1-20261008` in every non-hero seat; rake: the published rake of each profile (1/2 cash rows, the cap ladder and BBJ drop), net after rake; held-out seeds 19201101, 19202203 and 19203307, each dealt here for the first time; every Phase 12 cash contract profile, 3,888 hands per seed (3,456 for FLO8); statistic: equal-weight stratified mean of the hero's after-rake net in bb/100 with its two-sided 99% Wald interval. Every run complete; 0 illegal candidates, illegal actions, conservation errors, card errors, incomplete or truncated hands. Driver, job list, the 78 run files and the four summaries: `docs/evidence/phase12/round3/condition-b-2026-10-08/`.
+
+| Pack       | Hands  | Round-3 pack after rake (the (b) statistic) | Current brain after rake, same deals | Pack minus current brain | (b) interval gate | (b) status                 |
+| ---------- | ------ | ------------------------------------------- | ------------------------------------ | ------------------------ | ----------------- | -------------------------- |
+| Short Deck | 69,984 | +293.96 [+252.55, +335.37]                  | +290.65 [+249.39, +331.91]           | +3.31 [-0.25, +6.86]     | lower bound > 0   | unavailable external input |
+| Pineapple  | 69,984 | +615.64 [+551.48, +679.80]                  | +605.44 [+541.52, +669.36]           | +10.21 [+4.55, +15.87]   | lower bound > 0   | unavailable external input |
+| FLH        | 81,648 | +8.58 [+4.17, +12.99]                       | +8.54 [+4.05, +13.04]                | +0.04 [-0.91, +0.98]     | lower bound > 0   | unavailable external input |
+| FLO8       | 72,576 | -4.56 [-8.01, -1.10]                        | -4.83 [-8.35, -1.32]                 | +0.27 [-0.37, +0.92]     | fails             | unavailable external input |
+
+- **Status of the measurement:** verified now as a measurement against this population. Condition (b) itself is **unavailable external input** for every pack: the calibration fails all three adequacy minimums (85 human seat-hands in the variants' family against 10,000, 5 accounts against 20, the most active account 68.5% against 25%), so no interval here can qualify a pack.
+- **FLO8 loses after rake against the human-calibrated population with either brain.** Its upper bound is below zero for the pack and for the current brain; with an adequate calibration of this shape FLO8 would fail (b) on the interval as well. The round-3 FLO8 rules change too few hands to move it (+0.27, interval includes zero).
+- **No-limit sizes are the population's, not a market forecast.** The no-limit win rates measure how loosely the fitted profile plays (it is fitted to five accounts), so they are evidence that the packs do not lose to this table, not an estimate of what a real player pool would pay.
+- **Against the current brain at human-calibrated tables:** Pineapple's pack beats the current brain with the 99% lower bound above zero (+10.21 [+4.55, +15.87]); Short Deck (+3.31), FLH (+0.04) and FLO8 (+0.27) are positive point estimates whose intervals include zero.
+
+### Condition (a): The Locked P12.2 Matrices
+
+Dispatched on the same merge commit at 2026-10-08T18:27Z (recorded on #6517), unchanged contract `remaining-variant-strength-contract-v1`: [Short Deck](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37824401791) (120 shards), [Pineapple](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37824406390) (195), [FLH](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37824410929) (42), [FLO8](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37824415220) (102). Status at this commit: implemented but unverified; the assembled strength records, verdicts and qualification files are recorded by the follow-up results PR, kept whatever they show.
+
+### Selection
+
+Every `PHASE12_PROTECTED_RELEASE_SELECTIONS` entry stays `null`: condition (b) is unavailable external input for every pack, and FLO8 also fails the (b) interval. No qualification file is shipped for selection and no protected-release step is taken, so natural accepted use and withdrawal are not applicable with reason (nothing is selected).
+
+### Next Root Causes
+
+- **No limit (Short Deck, Pineapple):** the remaining edge is preflop only. A population-agnostic postflop edge needs the sampler's range model to condition on board contact (cause 2); until then the packs keep every reference postflop decision.
+- **FLO8:** the reference itself loses after rake to the human-calibrated table, so a FLO8 pack that wins against humans needs its own measured diagnosis of where the reference loses at that table (the round-3 diagnosis measured only the pack-versus-reference difference), not a narrower delta on the reference.
+- **Condition (b) for every pack:** an adequate human calibration (at least 20 accounts, 10,000 seat-hands per family, no account above 25%), which only real human play in production can supply.

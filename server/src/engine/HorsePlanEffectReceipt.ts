@@ -8,6 +8,7 @@ import {
   type HorsePlanBatchBinding,
 } from './HorsePlanHandIdentity.js';
 import type { HorseMindDecisionEffect } from './HorseMind.js';
+import type { HorseAcceptedAction, HorseExecutionWitness } from './HorseExecutionWitness.js';
 import type { HorseDecision } from '../types.js';
 
 /**
@@ -176,6 +177,44 @@ export function horsePlanAcceptanceFromController(
       ? Object.freeze({ requestId: witness.requestId, decisionKey: witness.decisionKey })
       : null,
   });
+}
+
+/**
+ * The Phase 15 preserved boundary, owned once for every host that executes a
+ * horse decision (the physical engine's Turns and the Lightning hand host): an
+ * issued plan batch applies only for the exact accepted action.
+ *
+ * True only when the controller accepted exactly one action, it was the
+ * intended submission (not the check/fold degradation), and its action and
+ * amount equal the wager submitted, the decision as issued, and the FAST
+ * witness's selection when the decision carries one. A host that reshaped the
+ * wager (an alias, a minimum lift, a fixed-limit size, a whole-stack all-in, a
+ * capped-street call) or whose controller recorded a different wager gets
+ * false: the caller posts no commit and the witness finalizer retires the
+ * batch unapplied. Without any observed controller record the answer stands
+ * only for a decision with no witness whose submission is the issued wager
+ * (the controller-less harness); a witnessed decision always needs its record.
+ * Pure; it never changes what was submitted or accepted.
+ */
+export function horsePlanWagerAcceptedExactly(input: {
+  readonly issued: Readonly<{ action: string; amount?: number | null }>;
+  readonly submitted: Readonly<{ action: string; amount: number | null }>;
+  readonly acceptedActions: readonly HorseAcceptedAction[];
+  readonly witness: Pick<HorseExecutionWitness, 'selected'> | null | undefined;
+}): boolean {
+  const issued = { action: input.issued.action, amount: input.issued.amount ?? null };
+  const same = (
+    a: Readonly<{ action: string; amount?: number | null }>,
+    b: Readonly<{ action: string; amount: number | null }>
+  ) => a.action === b.action && (a.amount ?? null) === b.amount;
+  if (input.acceptedActions.length === 0) return !input.witness && same(input.submitted, issued);
+  const accepted = input.acceptedActions.length === 1 ? input.acceptedActions[0] : null;
+  return (
+    accepted?.intended === true &&
+    same(accepted.record, input.submitted) &&
+    same(accepted.record, issued) &&
+    (!input.witness || same(accepted.record, input.witness.selected))
+  );
 }
 
 function issuedActionIsValid(value: unknown): boolean {

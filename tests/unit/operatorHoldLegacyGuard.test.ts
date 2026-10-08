@@ -9,7 +9,7 @@ import {
 const table = '10000000-0000-0000-0000-000000000001';
 const generation = '20000000-0000-0000-0000-000000000001';
 const handoff = '30000000-0000-0000-0000-000000000001';
-const release = 'a29a591da2efa8acb1a67cbb93f5e67af11cfc1f';
+const release = '4dbbd0672dd46d86116140cde77da1bd143c6b8f';
 
 function fixture(mode = 'first-upgrade') {
   class Base {
@@ -182,6 +182,13 @@ function fixture(mode = 'first-upgrade') {
 }
 
 describe('original operator hold checkpoint guard', () => {
+  it('refuses the historical a29 profile before fencing or native import', async () => {
+    const f = fixture();
+    f.options.expectedReleaseSha = 'a29a591da2efa8acb1a67cbb93f5e67af11cfc1f';
+    await expect(f.run()).rejects.toThrow('identity');
+    expect(f.calls).toHaveLength(0);
+    expect(f.http.listeners('request')).toEqual([f.originalListener]);
+  });
   it('refuses insufficient untouched rollback reserve before fencing or native import', async () => {
     const f = fixture();
     f.gs.maintenanceBreak.snapshot = () => ({ remainingMs: 244999 });

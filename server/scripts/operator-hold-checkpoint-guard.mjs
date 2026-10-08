@@ -19,7 +19,7 @@ export async function operatorHoldCheckpointGuard(options, servers, modules, htt
   // This is a single first-upgrade/rollback profile, not a generic inspector gate.
   demand(
     uuid(options.handoffId) &&
-      options.expectedReleaseSha === 'a29a591da2efa8acb1a67cbb93f5e67af11cfc1f' &&
+      options.expectedReleaseSha === '4dbbd0672dd46d86116140cde77da1bd143c6b8f' &&
       options.expectedPid === process.pid &&
       options.expectedInstanceId === modules?.tableLease?.INSTANCE_ID &&
       modules?.releaseIdentity?.ENGINE_RELEASE_IDENTITY?.releaseSha === options.expectedReleaseSha,

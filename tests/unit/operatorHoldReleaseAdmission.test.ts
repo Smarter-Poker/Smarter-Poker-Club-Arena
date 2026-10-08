@@ -103,10 +103,32 @@ echo ADMITTED
 describe('operator authority predecessor compatibility admission', () => {
   it('admits only the specifically qualified pre-store predecessor', () => {
     expect(
-      predecessorAdmission('a29a591da2efa8acb1a67cbb93f5e67af11cfc1f', '<no value>').status
+      predecessorAdmission('4dbbd0672dd46d86116140cde77da1bd143c6b8f', '<no value>').status
     ).toBe(0);
   });
-  it('refuses the superseded pre-store identity instead of broadening the profile', () => {
+  it('keeps historical evidence separate from the active native-qualified profile', () => {
+    const current = JSON.parse(
+      readFileSync(`${root}/server/scripts/operator-hold-predecessor-profile.json`, 'utf8')
+    );
+    const historical = JSON.parse(
+      readFileSync(`${root}/server/scripts/operator-hold-predecessor-a29-profile.json`, 'utf8')
+    );
+    expect(current.releaseSha).toBe('4dbbd0672dd46d86116140cde77da1bd143c6b8f');
+    expect(current.imageId).toBe(
+      'sha256:fe7b7d681b9514ed3227ca66d39658aad8ba1eea0eb8c893ae149619216d771d'
+    );
+    expect(current.provenance.sourceSha256).toBe(
+      '49d484d3ee962182f9c4be5a1dba216a16b3627a9b694fc75450d777867f03d4'
+    );
+    expect(current.runtimeNode).toBe('v22.23.2');
+    expect(current.compiled).toEqual(historical.compiled);
+    expect(historical.releaseSha).toBe('a29a591da2efa8acb1a67cbb93f5e67af11cfc1f');
+    expect(current.provenance.scope).toContain('not_boot_or_handoff_qualification');
+  });
+  it('refuses historical pre-store identities instead of broadening the active profile', () => {
+    expect(
+      predecessorAdmission('a29a591da2efa8acb1a67cbb93f5e67af11cfc1f', '<no value>').status
+    ).not.toBe(0);
     expect(
       predecessorAdmission('6b1af5c5fb11b158c3c8871b93360df566ad7a49', '<no value>').status
     ).not.toBe(0);

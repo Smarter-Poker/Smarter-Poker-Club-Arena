@@ -21,7 +21,7 @@ import type { GameVariant, HorseDecision, SeatPlayer } from '../../types.js';
 import { HorseLogic, type HorseDecideOpts, type HorseGameStateV2 } from '../HorseLogic.js';
 import { seedFastRandom, variantInfo, type VariantInfo } from '../HorseEval.js';
 import { controllerSpotRandom } from '../remainingVariants/RemainingVariantControllerSpots.test-support.js';
-import { jointReceiptBindingIsValid } from './JointLivePolicy.js';
+import { jointReceiptBindingIsValid, jointSelectedRow } from './JointLivePolicy.js';
 import {
   JOINT_SPOT_VARIANTS,
   forEachJointControllerSpot,
@@ -165,14 +165,7 @@ describe('P13.1 every Phase 13 candidate is in the legalizer form', () => {
         // The ranked winner is the action recorded and executed (cash: the
         // joint model is the objective; tournaments hand it to Phase 7).
         if (receipt.reason === 'joint_cash_action_distribution') {
-          const top = receipt.actionModel.candidates
-            .slice()
-            .sort(
-              (a, b) =>
-                b.expectedNetChips -
-                  0.5 * b.standardError -
-                  (a.expectedNetChips - 0.5 * a.standardError) || a.investment - b.investment
-            )[0];
+          const top = jointSelectedRow(receipt.actionModel, spot.hero, spot.state)!;
           const ranked: Row = {
             action: top.action,
             amount: top.action === 'bet' || top.action === 'raise' ? top.amount : null,

@@ -334,14 +334,14 @@ describe('P13.1 over P13-A: the response identity, limits and tree summary', () 
     ).receipt;
   };
 
-  it('records the round-2 tree on the river and the one-response model on the flop', () => {
+  it('records the bounded tree on the river and on the flop (round 3)', () => {
     const r = river();
     expect(r.fired).toBe(true);
     expect(r).toMatchObject({
       responseVersion: JOINT_ACTION_PACK.version,
       responseModel: 'bounded_raise_tree',
       responseLimits: {
-        raiseStreets: ['turn', 'river'],
+        raiseStreets: ['flop', 'turn', 'river'],
         raisesPerTree: 1,
         maxRaiseBranchOpponents: 1,
         maxTerminalBranchesPerCandidate: 32,
@@ -364,8 +364,11 @@ describe('P13.1 over P13-A: the response identity, limits and tree summary', () 
     expect(r.inputs!.response.model).toBe('bounded_raise_tree');
     expect(jointReceiptBindingIsValid(clone(r))).toBe(true);
     const flop = shadow('nlh').receipt;
-    expect(flop).toMatchObject({ responseModel: 'one_response_then_showdown', responseTree: null });
-    expect(flop.inputs!.response.model).toBe('one_response_then_showdown');
+    expect(flop).toMatchObject({ responseModel: 'bounded_raise_tree' });
+    // Only a turn tree plays the river continuation round.
+    expect(flop.responseTree!.riverRoundProbability).toBeNull();
+    expect(flop.responseTree!.riverBetProbability).toBeNull();
+    expect(flop.inputs!.response.model).toBe('bounded_raise_tree');
     expect(jointReceiptBindingIsValid(clone(flop))).toBe(true);
   });
 

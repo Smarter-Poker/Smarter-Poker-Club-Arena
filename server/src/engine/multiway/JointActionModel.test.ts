@@ -52,11 +52,11 @@ function fixture(
 describe('joint action-specific rollout', () => {
   it('versions the bounded response tree and keeps the one-response comparison identity', () => {
     expect(JOINT_ACTION_PACK).toMatchObject({
-      version: 'joint-action-response-round2-v1',
+      version: 'joint-action-response-round3-v1',
       calibratedConfidence: null,
       futureRaises: 'one_bounded_raise_then_calls',
       continuation: 'turn_to_river_one_round',
-      raiseStreets: ['turn', 'river'],
+      raiseStreets: ['flop', 'turn', 'river'],
       limits: { raisesPerTree: 1, maxRaiseBranchOpponents: 1, maxTerminalBranchesPerCandidate: 32 },
     });
     expect(JOINT_ACTION_PACK_ROUND1).toEqual({
@@ -204,7 +204,7 @@ describe('joint action-specific rollout', () => {
     expect(new Set(result.candidates.map((c) => c.expectedNetChips)).size).toBeGreaterThan(1);
     expect(result.candidates.some((c) => c.resultingStackVectors > 1)).toBe(true);
   });
-  it('does not let future showdown ranks decide whether opponents call', () => {
+  it('round 2 does not let future showdown ranks decide whether opponents call', () => {
     const { hero, state, evidence, baseline } = fixture();
     const modified = structuredClone(evidence);
     modified.samples.forEach((s) =>
@@ -213,11 +213,35 @@ describe('joint action-specific rollout', () => {
         b.opponentHigh = b.opponentHigh.map(() => 0);
       })
     );
-    const a = evaluateJointActions(hero, state, baseline, evidence, () => true)!;
-    const b = evaluateJointActions(hero, state, baseline, modified, () => true)!;
+    const round2 = { responseModel: 'round2' } as const;
+    const a = evaluateJointActions(hero, state, baseline, evidence, () => true, round2)!;
+    const b = evaluateJointActions(hero, state, baseline, modified, () => true, round2)!;
     expect(a.candidates.map((c) => c.responseCounts)).toEqual(
       b.candidates.map((c) => c.responseCounts)
     );
+    expect(a.candidates.map((c) => c.expectedNetChips)).not.toEqual(
+      b.candidates.map((c) => c.expectedNetChips)
+    );
+  });
+  it('round 3 lets runout strength decide which sampled hands continue, never how often', () => {
+    const { hero, state, evidence, baseline } = fixture('nlh', 'preflop', 1);
+    const modified = structuredClone(evidence);
+    modified.samples.forEach((s, i) =>
+      s.boards.forEach((b) => {
+        b.opponentHigh = b.opponentHigh.map((h) => (i % 2 ? h + 100000000 : 0));
+      })
+    );
+    const a = evaluateJointActions(hero, state, baseline, evidence, () => true)!;
+    const b = evaluateJointActions(hero, state, baseline, modified, () => true)!;
+    for (const [i, row] of a.candidates.entries()) {
+      // The first responder faces the same price, pot and table in every
+      // sample: the same measured frequency, so the same number continue.
+      const first = row.responseCounts.p1,
+        other = b.candidates[i].responseCounts.p1;
+      expect(other.responded).toBe(first.responded);
+      expect(other.called).toBe(first.called);
+      expect(other.meanCallProbability).toBe(first.meanCallProbability);
+    }
     expect(a.candidates.map((c) => c.expectedNetChips)).not.toEqual(
       b.candidates.map((c) => c.expectedNetChips)
     );

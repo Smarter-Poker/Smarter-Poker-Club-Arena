@@ -226,6 +226,35 @@ export function jointLegalCandidates(
   return { candidates: out, legal };
 }
 
+/**
+ * Round 3 selection (JOINT_ACTION_PACK.selection): the baseline row stands
+ * unless, with nothing to call, another row's paired edge over it on the same
+ * joint samples clears `z` paired standard errors by more than
+ * `minEdgeBigBlinds` big blinds; the row with the highest such lower bound
+ * wins. Null when the baseline decision was not among the priced rows.
+ */
+export function jointSelectedRow(
+  model: ActionModel,
+  hero: SeatPlayer,
+  s: HorseGameStateV2
+): ActionModel['candidates'][number] | null {
+  const rule = JOINT_ACTION_PACK.selection;
+  const rows = model.candidates;
+  let selected = rows.find((r) => r.id === model.baselineCandidateId) ?? null;
+  if (!selected) return null;
+  let best = rule.minEdgeBigBlinds * s.bigBlind;
+  const owes = Math.min(hero.stack, Math.max(0, s.currentBet - hero.bet)) > 1e-9;
+  for (const row of owes ? [] : rows) {
+    if (row === selected || row.pairedEdge === null || row.pairedStandardError === null) continue;
+    const lower = row.pairedEdge - rule.z * row.pairedStandardError;
+    if (lower > best) {
+      best = lower;
+      selected = row;
+    }
+  }
+  return selected;
+}
+
 /** Complete bounded proposal wrapper. Candidate mode is for offline control;
  * the worker must reject live candidate/evidence-clock options. This function
  * returns an internal joint sample bridge separately from the serializable
@@ -382,8 +411,18 @@ export function evaluateJointLivePolicy(
   if (acquired.status !== 'acquired') return finish(acquired.reason);
   jointEvidence = acquired.evidence;
   const unit = s.chipUnit!;
+  const call = Math.min(hero.stack, Math.max(0, s.currentBet - hero.bet));
+  // Round 3 keeps the baseline whenever something is owed
+  // (JOINT_SELECTION_RULE.actsWhen), so a cash decision facing a wager is
+  // decided without pricing a candidate: the work the rule cannot use is not
+  // done inside the four-millisecond budget. The samples are still acquired
+  // and bound above. A tournament decision is priced for Phase 7 as before.
+  if (s.gameMode !== 'tournament' && call > 1e-9) {
+    receipt.confidence = 'explicit_joint_heuristic';
+    receipt.fired = true;
+    return finish('joint_cash_facing_wager_baseline');
+  }
   try {
-    const call = Math.min(hero.stack, Math.max(0, s.currentBet - hero.bet));
     const called = s.players.map((p) =>
       p.user_id === hero.user_id
         ? { ...p, stack: p.stack - call, bet: p.bet + call, totalInvested: p.totalInvested + call }
@@ -415,15 +454,8 @@ export function evaluateJointLivePolicy(
       }
     );
     if (!receipt.actionModel) return finish('work_budget');
-    const ranked = receipt.actionModel.candidates
-      .slice()
-      .sort(
-        (a, b) =>
-          b.expectedNetChips -
-            0.5 * b.standardError -
-            (a.expectedNetChips - 0.5 * a.standardError) || a.investment - b.investment
-      );
-    const selected = ranked[0];
+    const selected = jointSelectedRow(receipt.actionModel, hero, s);
+    if (!selected) return finish('joint_baseline_not_priced');
     receipt.responseVersion = receipt.actionModel.version;
     receipt.responseModel = receipt.actionModel.responseModel;
     const tree = selected.responseTree;
@@ -555,7 +587,8 @@ function jointResponseFieldsAreValid(receipt: Record<string, unknown>): boolean 
     'riverBetProbability',
   ];
   const limits = JOINT_ACTION_PACK.limits;
-  const river = receipt.street === 'river';
+  // Only a turn tree plays the river continuation round.
+  const turn = receipt.street === 'turn';
   return (
     !!tree &&
     typeof tree === 'object' &&
@@ -574,8 +607,8 @@ function jointResponseFieldsAreValid(receipt: Record<string, unknown>): boolean 
     ) &&
     (tree.heroCallsRaiseProbability as number) + (tree.heroFoldsToRaiseProbability as number) <=
       (tree.raiseProbability as number) + 1e-9 &&
-    (river
-      ? tree.riverRoundProbability === null && tree.riverBetProbability === null
-      : unitInterval(tree.riverRoundProbability) && unitInterval(tree.riverBetProbability))
+    (turn
+      ? unitInterval(tree.riverRoundProbability) && unitInterval(tree.riverBetProbability)
+      : tree.riverRoundProbability === null && tree.riverBetProbability === null)
   );
 }

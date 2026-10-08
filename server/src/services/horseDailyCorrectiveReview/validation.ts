@@ -1,6 +1,7 @@
 import { isAbsolute } from 'node:path';
 import {
   DAILY_LIMITS,
+  isDailyIdentityBasis,
   type DailyCursor,
   type DailyManifest,
   type DailyPage,
@@ -88,7 +89,7 @@ export function parseDailyPage(raw: unknown, request: DailyRequest): DailyPage {
     typeof p.dayObservation !== 'string' ||
     !['present', 'missing'].includes(p.dayObservation) ||
     p.sourceCoverage !== 'not_established' ||
-    p.identityBasis !== 'current_profile_is_horse' ||
+    !isDailyIdentityBasis(p.identityBasis) ||
     p.gtoVerified !== false ||
     p.activationAllowed !== false
   )
@@ -160,7 +161,7 @@ export function parseDailyPage(raw: unknown, request: DailyRequest): DailyPage {
     next: next ? Object.freeze(next) : null,
     dayObservation: p.dayObservation as DailyPage['dayObservation'],
     sourceCoverage: 'not_established',
-    identityBasis: 'current_profile_is_horse',
+    identityBasis: p.identityBasis as DailyPage['identityBasis'],
     gtoVerified: false,
     activationAllowed: false,
   });

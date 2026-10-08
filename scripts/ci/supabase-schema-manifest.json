@@ -2945,6 +2945,8 @@
     "fn_ca_tournament_chip_supply",
     "fn_ca_tournament_conservation_confirm",
     "fn_ca_tournament_counts",
+    "fn_ca_tournament_dark_open_alert",
+    "fn_ca_tournament_dark_while_running",
     "fn_ca_tournament_deal_hand_revision",
     "fn_ca_tournament_deal_proposals_active",
     "fn_ca_tournament_deal_review_result",

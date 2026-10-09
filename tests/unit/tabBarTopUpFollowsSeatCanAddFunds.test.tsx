@@ -76,7 +76,7 @@ describe('TableTabBar', () => {
 
   it('omits both items at a seat that reported it cannot add funds', () => {
     const menu = open([tab({ canAddFunds: false })]);
-    expect(menu.textContent).toContain('Sit Out Next Hand');
+    expect(menu.textContent).toContain('Sit Out');
     expect(menu.textContent).not.toContain('Top Up');
   });
 

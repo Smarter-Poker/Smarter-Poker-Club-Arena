@@ -110,13 +110,6 @@ interface TournamentSnapshotOwner {
 /** Stable identity for "this event has no tables", so tab props do not churn. */
 const NO_TABLES: TournamentTable[] = [];
 
-/** Ordinal suffix helper (1st, 2nd, 3rd...) */
-function getOrdinal(n: number): string {
-  const s = ['th', 'st', 'nd', 'rd'];
-  const v = n % 100;
-  return s[(v - 20) % 10] || s[v] || s[0];
-}
-
 /**
  * Dan 2026-08-19: `tournamentIdOverride` lets this page render OUTSIDE its own
  * route - MultiTablePage embeds it in a lobby tab so a seated player can
@@ -813,11 +806,7 @@ export default function TournamentDetails({
               : e
           )
         );
-        // BUG FIX: guard against undefined position - getOrdinal(undefined) would
-        // produce "undefinedth" which reads as a broken toast message.
-        const pos = event.payload.position;
-        const posText = pos != null ? `${pos}${getOrdinal(pos)} place` : 'eliminated';
-        toast.info(`${event.payload.username} ${posText}`);
+        // Busts update the roster and field count, without a per-player toast.
       },
       300
     );
@@ -1571,7 +1560,25 @@ export default function TournamentDetails({
     };
     // Keyed on what decides eligibility, not on the row object's identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tournament?.id, tournament?.status, tournament?.current_level, user?.id, myEntryStatus]);
+  }, [
+    tournament?.id,
+    tournament?.status,
+    tournament?.current_level,
+    tournament?.prize_pool_finalized,
+    tournament?.is_rebuy,
+    tournament?.is_reentry,
+    tournament?.rebuy_levels,
+    tournament?.late_reg_levels,
+    tournament?.late_reg_mins,
+    tournament?.started_at,
+    tournament?.max_rebuys,
+    tournament?.max_reentries,
+    tournament?.add_on_available,
+    tournament?.addon_period_started_at,
+    tournament?.addon_period_ends_at,
+    user?.id,
+    myEntryStatus,
+  ]);
 
   const handleReEnter = async () => {
     if (!tournament || !user || isReEntering) return;
@@ -1582,7 +1589,11 @@ export default function TournamentDetails({
       await tournamentService.processRebuy(tournament.id, user.id, token);
       reEntryTokenRef.current = null;
       setReEntryOffer(null);
-      toast.success('Re-Entry Confirmed. Your New Seat Is Ready.');
+      toast.success(
+        tournament.is_rebuy
+          ? 'Rebuy Confirmed. Your New Seat Is Ready.'
+          : 'Re-Entry Confirmed. Your New Seat Is Ready.'
+      );
       void loadTournament(undefined, { quiet: true });
     } catch (error) {
       reportError(error, 'TournamentDetails.reentry_failed');
@@ -2052,7 +2063,7 @@ export default function TournamentDetails({
                       >
                         {isReEntering
                           ? 'Processing...'
-                          : `Re-Enter (${chipsCompact(reEntryOffer.cost)})`}
+                          : `${tournament.is_rebuy ? 'Rebuy' : 'Re-Enter'} (${chipsCompact(reEntryOffer.cost)})`}
                       </button>
                       {watchBtn}
                     </>

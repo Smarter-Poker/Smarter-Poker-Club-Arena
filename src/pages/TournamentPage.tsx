@@ -855,9 +855,7 @@ export default function TournamentPage() {
                 reportError(error, 'TournamentPage.Failed_to_refresh_tournament_on_player_e');
               }
             })();
-            if (data?.playerName) {
-              toast.info(`${data.playerName} has been eliminated`);
-            }
+            // The field refresh is the notification; no per-bust toast.
             break;
 
           case 'tournament_break':

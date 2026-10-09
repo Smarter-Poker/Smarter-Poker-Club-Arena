@@ -510,6 +510,8 @@ import {
   subscribeTournamentDock,
   toggleTournamentDockCollapsed,
   tournamentDockCollapsed as readTournamentDockCollapsed,
+  tournamentDockClosed as readTournamentDockClosed,
+  setTournamentDockClosed,
 } from '../lib/tournamentDockStore';
 import { PreviousHandCard } from '../components/table/PreviousHandCard';
 import { HandDetailModal } from '../components/table/HandDetailModal';
@@ -5072,6 +5074,9 @@ function LiveTablePage({
     if (event.tableId !== tableId) return;
 
     switch (event.action) {
+      case 'SHOW_TOURNAMENT_DOCK':
+        setTournamentDockClosed(false);
+        break;
       case 'SIT_OUT':
         void handleSitOut();
         break;
@@ -12537,6 +12542,11 @@ function LiveTablePage({
     readTournamentDockCollapsed
   );
   const toggleTournamentDock = toggleTournamentDockCollapsed;
+  const tournamentDockClosed = useSyncExternalStore(
+    subscribeTournamentDock,
+    readTournamentDockClosed,
+    readTournamentDockClosed
+  );
   /* THE MUST MOVE LOBBY (Dan 2026-09-05): the cash counterpart, opened from
      the Must Move box in the upper-right corner or the SEAT CHANGE button.
      The refresh key is bumped by every seat-move event so the box re-reads
@@ -23854,9 +23864,11 @@ function LiveTablePage({
          collapsing the dock never resizes the table. */
       data-tdock={
         tableState.isTournament && tableState.tournamentId
-          ? tournamentDockCollapsed
-            ? 'collapsed'
-            : 'expanded'
+          ? tournamentDockClosed
+            ? 'closed'
+            : tournamentDockCollapsed
+              ? 'collapsed'
+              : 'expanded'
           : undefined
       }
       /* THE MINI ROW UNDER THE JACKPOT PLATE (Dan 2026-09-11). "1" exactly
@@ -26493,7 +26505,7 @@ function LiveTablePage({
           bottom rows pad themselves by its height (TournamentHUD.css). On
           every MTT, Spin and heads-up match alike (isTournament covers all
           three). Never render it on the felt again. */}
-      {tableState.isTournament && tableState.tournamentId && (
+      {tableState.isTournament && tableState.tournamentId && !tournamentDockClosed && (
         <TournamentHUD
           tournamentId={tableState.tournamentId}
           spinPrizePool={tournamentFormat === 'spin' ? tableState.spinPrizePool : undefined}
@@ -26502,6 +26514,7 @@ function LiveTablePage({
           hidden={!isVisible}
           collapsed={tournamentDockCollapsed}
           onToggleCollapsed={toggleTournamentDock}
+          onClose={() => setTournamentDockClosed(true)}
         />
       )}
       <div className="action-panel-wrapper">

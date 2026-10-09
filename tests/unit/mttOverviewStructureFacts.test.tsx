@@ -140,6 +140,32 @@ describe('live tournament tabs share the committed blind amounts', () => {
     };
   }
 
+  it('counts down late registration rather than the current blind level', async () => {
+    const input = running({ index: 0, small_blind: 100, big_blind: 200, ante: 0 }, 0);
+    render(
+      <DetailOverviewTab
+        {...input}
+        tournament={{
+          ...input.tournament,
+          late_reg_levels: 0,
+          rebuy_levels: 0,
+          late_reg_mins: 2,
+          started_at: new Date(epoch).toISOString(),
+        }}
+      />
+    );
+    expect(screen.getByText('Late Reg Ends In')).toBeInTheDocument();
+    expect(document.querySelector('.dov-hero__time')?.textContent).toBe('2:00');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(document.querySelector('.dov-hero__time')?.textContent).toBe('1:59');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(119000);
+    });
+    expect(screen.getByText('Late Reg Closed')).toBeInTheDocument();
+  });
+
   const views = [
     { name: 'Overview', Component: DetailOverviewTab },
     { name: 'Blinds', Component: BlindsTab },
@@ -150,7 +176,7 @@ describe('live tournament tabs share the committed blind amounts', () => {
   function expectAmounts(name: string, container: HTMLElement, known: boolean) {
     if (name === 'Overview') {
       const hero = container.querySelector('.dov-hero')!;
-      expect(within(hero as HTMLElement).getByText('Level 370 Ends In')).toBeInTheDocument();
+      expect(within(hero as HTMLElement).getByText('Late Reg Closed')).toBeInTheDocument();
       /* 52,500 prints as 52.5K: chipsCompact is compactChips (src/utils/format.ts),
          the one compact formatter, which never rounds a figure UP to a number
          the player does not have (#ClubArenaConsole, 2026-09-04). */
@@ -246,7 +272,7 @@ describe('live tournament tabs share the committed blind amounts', () => {
       await vi.advanceTimersByTimeAsync(90_000);
     });
     expect(screen.getByText('Waiting For Resume')).toBeInTheDocument();
-    expect(screen.queryByText('Level 370 Ends In')).toBeNull();
+    expect(screen.queryByText('Late Reg Closed')).toBeNull();
     const clearOnly = {
       ...paused,
       tournament: { ...paused.tournament, on_break: false, break_ends_at: null },
@@ -263,12 +289,12 @@ describe('live tournament tabs share the committed blind amounts', () => {
         }}
       />
     );
-    expect(screen.getByText('Level 370 Ends In')).toBeInTheDocument();
-    expect(rendered.container.querySelector('.dov-hero__time')?.textContent).toBe('7:00');
+    expect(screen.getByText('Late Reg Closed')).toBeInTheDocument();
+    expect(rendered.container.querySelector('.dov-hero__time')?.textContent).toBe('-');
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
-    expect(rendered.container.querySelector('.dov-hero__time')?.textContent).toBe('6:59');
+    expect(rendered.container.querySelector('.dov-hero__time')?.textContent).toBe('-');
   });
 
   it.each([null, 'not-a-time', new Date(epoch - 1000).toISOString()])(
@@ -292,7 +318,7 @@ describe('live tournament tabs share the committed blind amounts', () => {
         await vi.advanceTimersByTimeAsync(60_000);
       });
       expect(blindClock().textContent).toContain('Paused');
-      expect(screen.queryByText('Level 370 Ends In')).toBeNull();
+      expect(screen.queryByText('Late Reg Closed')).toBeNull();
     }
   );
 
@@ -362,8 +388,8 @@ describe('live tournament tabs share the committed blind amounts', () => {
           }}
         />
       );
-      expect(screen.getByText('Level 370 Ends In')).toBeInTheDocument();
-      expect(rendered.container.querySelector('.dov-hero__time')?.textContent).toBe('7:00');
+      expect(screen.getByText('Late Reg Closed')).toBeInTheDocument();
+      expect(rendered.container.querySelector('.dov-hero__time')?.textContent).toBe('-');
       expect(rendered.container.querySelector('.dov-blind__value')?.textContent).toBe(
         '52.5K / 105K'
       );
@@ -382,8 +408,8 @@ describe('live tournament tabs share the committed blind amounts', () => {
         tournament={{ ...input.tournament, id: 'another-event', on_break: false }}
       />
     );
-    expect(screen.getByText('Level 370 Ends In')).toBeInTheDocument();
-    expect(rendered.container.querySelector('.dov-hero__time')?.textContent).toBe('7:00');
+    expect(screen.getByText('Late Reg Closed')).toBeInTheDocument();
+    expect(rendered.container.querySelector('.dov-hero__time')?.textContent).toBe('-');
     rendered.rerender(<DetailOverviewTab {...paused} />);
     expect(blindClock().textContent).toContain('Paused');
     rendered.rerender(
@@ -406,11 +432,11 @@ describe('live tournament tabs share the committed blind amounts', () => {
     expect(
       screen.getByText('Maintenance Break Starting. Tables Are Finishing Their Current Hand.')
     ).toBeInTheDocument();
-    expect(screen.getByText('Level 370 Ends In')).toBeInTheDocument();
+    expect(screen.getByText('Late Reg Closed')).toBeInTheDocument();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
-    expect(rendered.container.querySelector('.dov-hero__time')?.textContent).toBe('6:59');
+    expect(rendered.container.querySelector('.dov-hero__time')?.textContent).toBe('-');
   });
 
   it('refreshes ranking BBs when a receipt changes without a level-index change', () => {

@@ -270,3 +270,27 @@
 .tournament-dock--loading .tournament-dock__status {
   opacity: 0.6;
 }
+
+.table-page--tournament[data-tdock='closed'] {
+  --sp-tdock-now: 0px;
+}
+
+.tournament-dock__close {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 32px;
+  height: var(--sp-tdock-line-h);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.tournament-dock__line {
+  padding-right: 34px;
+  padding-left: 34px;
+}

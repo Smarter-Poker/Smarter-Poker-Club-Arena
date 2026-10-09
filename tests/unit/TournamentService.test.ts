@@ -746,6 +746,51 @@ describe('TournamentService', () => {
   });
 });
 
+describe('Lobby Rebuy Eligibility', () => {
+  afterEach(() => vi.restoreAllMocks());
+  const event = {
+    id: 't-lobby',
+    status: 'RUNNING',
+    is_rebuy: true,
+    current_level: 0,
+    rebuy_levels: 5,
+    starting_chips: 1000,
+    max_rebuys: 2,
+  };
+  const eliminated = {
+    chips: 0,
+    status: 'eliminated',
+    prize: 0,
+    rebuys: 0,
+    rebuy_prompt_until: new Date(0).toISOString(),
+  };
+  async function check(player = eliminated, changes = {}) {
+    vi.spyOn(tournamentService, 'getTournament').mockResolvedValue({
+      ...event,
+      ...changes,
+    } as never);
+    mockTournamentRead.mockResolvedValue({ data: player as never, error: null });
+    return tournamentService.canRebuy('t-lobby', 'u-1');
+  }
+  it('offers an unpaid eliminated entry a rebuy after its prompt expired', async () => {
+    expect(await check()).toEqual({ allowed: true });
+  });
+  it.each([
+    { ...eliminated, status: 'playing' },
+    { ...eliminated, chips: 100 },
+    { ...eliminated, prize: 10 },
+    { ...eliminated, rebuys: 2 },
+  ])('refuses an ineligible player %#', async (player) => {
+    expect((await check(player)).allowed).toBe(false);
+  });
+  it.each([{ current_level: 5 }, { prize_pool_finalized: true }, { status: 'COMPLETED' }])(
+    'refuses a closed event %#',
+    async (changes) => {
+      expect((await check(eliminated, changes)).allowed).toBe(false);
+    }
+  );
+});
+
 describe('Tournament Purchase Confirmation', () => {
   beforeEach(() => {
     localStorage.clear();

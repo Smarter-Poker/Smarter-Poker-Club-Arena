@@ -117,6 +117,7 @@ export interface TableMenuProps {
 export function createDefaultMenuSections(
   handlers: {
     onSitOut?: () => void;
+    onShowTournamentDock?: () => void;
     onStandUpBB?: () => void;
     onRebuy?: () => void;
     onAutoTopUp?: () => void;
@@ -161,7 +162,7 @@ export function createDefaultMenuSections(
       actions: [
         {
           id: 'sitout',
-          label: 'Sit Out Next Hand',
+          label: 'Sit Out',
           icon: <SitOutIcon />,
           onClick: handlers.onSitOut || (() => {}),
         },
@@ -203,6 +204,16 @@ export function createDefaultMenuSections(
     {
       title: 'Table Info',
       actions: [
+        ...(handlers.onShowTournamentDock
+          ? [
+              {
+                id: 'tournament-info',
+                label: 'Show Tournament Info',
+                icon: <SessionStatsIcon />,
+                onClick: handlers.onShowTournamentDock,
+              },
+            ]
+          : []),
         {
           id: 'history',
           label: 'Hand History',

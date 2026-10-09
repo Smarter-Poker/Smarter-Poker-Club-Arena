@@ -99,6 +99,9 @@ export function getArenaSectionNavigation(
 ): ArenaSectionNavigation | null {
   const current = cleanPath(pathname);
 
+  // A tournament lobby owns its own tabs; Play Records belongs to history.
+  if (current.startsWith('/tournaments/')) return null;
+
   if (
     isWithin(current, [
       '/play',

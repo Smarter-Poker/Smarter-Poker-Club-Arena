@@ -341,7 +341,7 @@ export function SettingsPanel({
                 switched back on. Do not reintroduce. */}
 
             <SettingToggle
-              label="Sit Out Next Hand"
+              label="Sit Out"
               description="Automatically Sit Out After This Hand"
               checked={settings.sitOutNextHand}
               onChange={() => handleToggle('sitOutNextHand')}

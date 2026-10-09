@@ -111,6 +111,7 @@ interface TournamentHUDProps {
   collapsed?: boolean;
   /** Tapping the dock asks the page to flip `collapsed`. */
   onToggleCollapsed?: () => void;
+  onClose?: () => void;
 }
 
 /**
@@ -717,6 +718,7 @@ export function TournamentHUD({
   hidden = false,
   collapsed = false,
   onToggleCollapsed,
+  onClose,
 }: TournamentHUDProps) {
   const { user } = useAuthUser();
   const userId = user?.id;
@@ -848,6 +850,16 @@ export function TournamentHUD({
         role="group"
         aria-label="Tournament Info"
       >
+        {onClose && (
+          <button
+            type="button"
+            className="tournament-dock__close"
+            aria-label="Close Tournament Info"
+            onClick={onClose}
+          >
+            <span aria-hidden="true">×</span>
+          </button>
+        )}
         <div className="tournament-dock__line">
           <span className="tournament-dock__status">Tournament Info</span>
         </div>
@@ -940,6 +952,19 @@ export function TournamentHUD({
       aria-label="Tournament Info"
       onClick={toggle}
     >
+      {onClose && (
+        <button
+          type="button"
+          className="tournament-dock__close"
+          aria-label="Close Tournament Info"
+          onClick={(event) => {
+            event.stopPropagation();
+            onClose();
+          }}
+        >
+          <span aria-hidden="true">×</span>
+        </button>
+      )}
       {toggle ? (
         <button
           type="button"

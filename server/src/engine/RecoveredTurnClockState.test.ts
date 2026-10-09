@@ -147,30 +147,43 @@ describe('a recovered turn clock carries its actual turn state', () => {
     }
   );
 
-  it('sits out a player whose browser spends a bank on every unanswered turn', async () => {
-    // The browser posts /timebank when its own ring reaches zero, so an idle
-    // player with the app open never reaches the automatic bank. Three such
-    // turns in a row are three timeouts.
-    const h = harness();
-    h.strikes.mockRestore();
-    h.engine.disconnectEngine.registerPlayer(TABLE, PLAYER);
-    h.engine.timeBankEngine.initializePlayer(TABLE, PLAYER, {
-      remainingSeconds: 2400,
-      usesRemaining: 120,
-    });
-    for (let turn = 0; turn < 3; turn++) {
-      h.engine.timeBankActivatedThisTurn = false;
-      h.engine.timeBankEngine.resetStreetActivations(TABLE);
+  it.each(['manual', 'automatic'])(
+    'one accepted %s bank forced fold sits out until explicit return',
+    async (path) => {
+      const h = harness();
+      h.strikes.mockRestore();
+      h.engine.disconnectEngine.registerPlayer(TABLE, PLAYER);
       h.engine.startTurnTimer(PLAYER, 2, 15);
-      h.now.mockReturnValue(Date.now() + 15_000);
-      expect(await h.engine.activateTimeBank(PLAYER)).toMatchObject({ success: true });
+      if (path === 'manual') {
+        h.now.mockReturnValue(Date.now() + 15_000);
+        expect(await h.engine.activateTimeBank(PLAYER)).toMatchObject({ success: true });
+      } else {
+        h.expire();
+      }
       h.expire(`timebank:${PLAYER}`);
+      expect(h.engine.forceResolveSeat).toHaveBeenCalledWith(2, false);
+      expect(h.engine.disconnectEngine.getState(TABLE, PLAYER)).toMatchObject({
+        consecutiveTimeouts: 1,
+        isSittingOut: true,
+        sitOutReason: 'forced',
+      });
+      h.engine.disconnectEngine.heartbeat(TABLE, PLAYER);
+      expect(h.engine.disconnectEngine.getState(TABLE, PLAYER).isSittingOut).toBe(true);
+      h.engine.disconnectEngine.sitBack(TABLE, PLAYER);
+      expect(h.engine.disconnectEngine.getState(TABLE, PLAYER).isSittingOut).toBe(false);
     }
-    expect(h.engine.disconnectEngine.getState(TABLE, PLAYER)).toMatchObject({
-      consecutiveTimeouts: 3,
-      isSittingOut: true,
-      sitOutReason: 'forced',
-    });
+  );
+
+  it('a free auto-check after a bank expiry does not force a first-strike sit-out', async () => {
+    const h = harness();
+    h.state.currentBet = 0;
+    h.engine.disconnectEngine.registerPlayer(TABLE, PLAYER);
+    h.engine.startTurnTimer(PLAYER, 2, 15);
+    h.now.mockReturnValue(Date.now() + 15_000);
+    expect(await h.engine.activateTimeBank(PLAYER)).toMatchObject({ success: true });
+    h.expire(`timebank:${PLAYER}`);
+    expect(h.engine.forceResolveSeat).toHaveBeenCalledWith(2, true);
+    expect(h.engine.disconnectEngine.getState(TABLE, PLAYER).isSittingOut).toBe(false);
   });
 
   it('does not force an already running primary clock through a recovery state', () => {

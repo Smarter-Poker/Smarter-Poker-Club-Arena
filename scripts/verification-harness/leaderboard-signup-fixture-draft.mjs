@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const source = new URL('./leaderboard-isolated-authorization-draft.sql', import.meta.url);
 const start = 'DO $mint_policy$';
 const end = 'DO $matrix$';
-const pinned = '935d38c90b75468e4b62ba7dfc9d6256249154c3f6717dfee868b7035106d009';
+const pinned = 'e0287b013e1e43497f03bdfe0c5ea79ecac9fa43c32405d3d0e82de515078e45';
 export function generateFixture(ids, template = readFileSync(source, 'utf8')) {
   assert.ok(Array.isArray(ids) && ids.length === 5);
   ids = ids.map((id) => {

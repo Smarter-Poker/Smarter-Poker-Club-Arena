@@ -1106,16 +1106,23 @@ describe('P12.3 natural completion share: what a record counts', () => {
         expect(horsePhase12CompletionOutcome(variant, cut), street).toBe(
           'sampler_budget_exhausted'
         );
-        // Under load the governor halves the request; every requested sample
-        // completes, and it is still not the measured policy.
+        // Under load the live sampler still prices the measured policy's full
+        // sample (2026-10-09): the governor no longer scales it, so a loaded
+        // engine does not make the decision governor-reduced.
         const governor = vi.spyOn(equityGovernor, 'current').mockReturnValue(0.5);
-        const reduced = live(variant, street, () => 0);
+        const loaded = live(variant, street, () => 0);
         governor.mockRestore();
-        expect(reduced.inputs.range.provenance.work, street).toEqual({
-          requestedSamples: 16,
-          completedSamples: 16,
+        expect(loaded.inputs.range.provenance.work, street).toEqual({
+          requestedSamples: HORSE_PHASE12_FULL_SAMPLES,
+          completedSamples: HORSE_PHASE12_FULL_SAMPLES,
           budgetExhausted: false,
         });
+        expect(horsePhase12CompletionOutcome(variant, loaded), street).toBe('completed');
+        // A journaled receipt from an earlier release that requested fewer is
+        // still governor-reduced, never completed.
+        const reduced = structuredClone(loaded);
+        reduced.inputs.range.provenance.work.requestedSamples = 16;
+        reduced.inputs.range.provenance.work.completedSamples = 16;
         expect(horsePhase12CompletionOutcome(variant, reduced), street).toBe('governor_reduced');
         seen.push(none, cut, reduced);
       }

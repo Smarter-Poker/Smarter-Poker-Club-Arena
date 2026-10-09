@@ -2,7 +2,6 @@ import type { Card, SeatPlayer } from '../../types.js';
 import type { HorseGameStateV2 } from '../HorseLogic.js';
 import { RANKS, RANK_VALUES, SUITS } from '../PokerEngine.js';
 import { saveFastRandom, type HorseEquityOutcomeSample } from '../HorseEval.js';
-import { equityGovernor } from '../EquityLoadGovernor.js';
 import { horsePolicyDealtPlayers } from '../multiway/DealtSeatCensus.js';
 import {
   omahaVariantEquityFromShowdowns,
@@ -321,10 +320,14 @@ export function sampleOmahaVariantEquity(
       ];
     })
   );
-  const requested = Math.max(
-    4,
-    Math.floor(32 * Math.min(1, Math.max(0, equityGovernor.current())))
-  );
+  // The measured policy's sample, always (2026-10-09). The P11.2 matrix priced
+  // every proposal on the full 32 samples (governor off), and the P11.3
+  // completion floor admits a pack only when its live decisions price that
+  // same sample. Scaling the request by the equity governor made about 4% of
+  // natural postflop decisions governor-reduced on release c1deef24, so no
+  // qualified pack could meet the floor. Load is still bounded: the sampler
+  // stops starting work at its own deadline (counted as budget exhausted).
+  const requested = 32;
   const board3 = state.communityCards;
   const codes = new Map<Card, number>();
   for (const card of [...deck, ...hero.cards, ...board3]) codes.set(card, codeOf(card));

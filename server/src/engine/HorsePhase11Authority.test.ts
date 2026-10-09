@@ -881,12 +881,24 @@ describe('P11.3 natural completion share: what a record counts', () => {
         () => 0
       ).receipt;
     try {
+      // Since 2026-10-09 the live sampler prices the measured policy's full
+      // sample whatever the governor says, so a loaded engine no longer makes
+      // a decision governor-reduced.
       equityGovernor.__setScaleForTest(0.5);
-      const reduced = decide();
+      const loaded = decide();
+      const loadedWork = (
+        loaded.inputs?.range as unknown as { provenance: { work: Record<string, unknown> } }
+      ).provenance.work;
+      expect(loadedWork).toMatchObject({ requestedSamples: 32, completedSamples: 32 });
+      expect(horsePhase11CompletionOutcome('plo5', loaded)).toBe('completed');
+      // A journaled receipt from an earlier release that did request fewer is
+      // still counted as governor-reduced, never as completed.
+      const reduced = structuredClone(loaded);
       const work = (
         reduced.inputs?.range as unknown as { provenance: { work: Record<string, unknown> } }
       ).provenance.work;
-      expect(work).toMatchObject({ requestedSamples: 16, completedSamples: 16 });
+      work.requestedSamples = 16;
+      work.completedSamples = 16;
       expect(work.budgetExhausted).toBe(false);
       expect(horsePhase11CompletionOutcome('plo5', reduced)).toBe('governor_reduced');
       expect(horsePhase11CompletionCounts('plo5', [reduced]).river).toEqual({

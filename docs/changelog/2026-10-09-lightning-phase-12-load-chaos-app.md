@@ -105,13 +105,15 @@ max_count, session_cap, used_count, used_total}`) and is shown only while auto-r
 ## The Load, Stress And Chaos Suite
 
 `server/src/lightning/LightningPhase12LoadChaos.test.ts`, with
-`server/src/testing/lightningLoadChaosKit.ts` (an in-memory world that models the
+`server/src/lightning/__tests__/lightningLoadChaosKit.ts` (an in-memory world that models the
 database contract: the per-Cluster pass lock, request-id replay, reservations,
 `begin_dealing` / bind / abandon states, fold and settlement idempotency with
 `IDEMPOTENCY_CONFLICT`, chip conservation that freezes, the latency report's key, and
-the formation reaper) and `server/src/testing/lightningLoadEngine.ts` (the real
+the formation reaper) and `server/src/lightning/__tests__/lightningLoadEngine.ts` (the real
 supervisor, workers, hosting, hosts and registry, simulated clients that acknowledge
-renders, and a crowd that plays every hand). Horses sit at every table (one in ten).
+renders, and a crowd that plays every hand). Horses sit at every table (one in ten). Both
+kits live under `__tests__`, which `tsconfig.runtime.json` excludes, so the engine image
+never compiles them: the image build's 512 MB compiler heap has no room for them.
 
 Every scenario ends on the spec's required outcome: chips plus rake conserved to the
 cent, never a player in two instances, every instance settled exactly once or

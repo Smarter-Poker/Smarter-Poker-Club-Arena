@@ -39,10 +39,10 @@ import type {
   LightningHandBackend,
   LightningParticipant,
   LightningSettleArgs,
-} from '../lightning/LightningHandBackend.js';
-import type { LightningHub } from '../lightning/LightningHandHost.js';
-import type { PresenceTableReport } from '../lightning/LightningPresence.js';
-import type { LightningRpcClient } from '../lightning/LightningRpc.js';
+} from '../LightningHandBackend.js';
+import type { LightningHub } from '../LightningHandHost.js';
+import type { PresenceTableReport } from '../LightningPresence.js';
+import type { LightningRpcClient } from '../LightningRpc.js';
 
 export const uidN = (prefix: number, n: number): string =>
   `${String(prefix).padStart(8, '0')}-0000-4000-8000-${String(n).padStart(12, '0')}`;

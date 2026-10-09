@@ -2,17 +2,18 @@
  * LIGHTNING PHASE 12: one engine process (supervisor, workers, hosting,
  * hosts, registry) wired against a FakeLightningWorld, plus the simulated
  * clients and the table driver that plays every hand like a crowd would.
- * See lightningLoadChaosKit.ts for the world itself.
+ * See lightningLoadChaosKit.ts for the world itself. Both live under
+ * __tests__ so the engine image never compiles them (tsconfig.runtime.json).
  */
-import { LightningSupervisor } from '../lightning/LightningSupervisor.js';
-import { LightningHosting, LightningRegistry } from '../lightning/LightningRegistry.js';
-import { LightningClusterWorker } from '../lightning/LightningClusterWorker.js';
-import { LightningMetrics, type LightningLatencySegment } from '../lightning/LightningMetrics.js';
-import { LightningFormationGate } from '../lightning/LightningFormationGate.js';
-import type { LightningHandHost } from '../lightning/LightningHandHost.js';
-import { MetricsRegistry } from '../observability/Metrics.js';
+import { LightningSupervisor } from '../LightningSupervisor.js';
+import { LightningHosting, LightningRegistry } from '../LightningRegistry.js';
+import { LightningClusterWorker } from '../LightningClusterWorker.js';
+import { LightningMetrics, type LightningLatencySegment } from '../LightningMetrics.js';
+import { LightningFormationGate } from '../LightningFormationGate.js';
+import type { LightningHandHost } from '../LightningHandHost.js';
+import { MetricsRegistry } from '../../observability/Metrics.js';
 import { FakeLightningWorld, LoadHub } from './lightningLoadChaosKit.js';
-import { fakeHorseLane } from './lightningHostTestKit.js';
+import { fakeHorseLane } from '../../testing/lightningHostTestKit.js';
 
 export const quietLogger = {
   log: () => undefined,

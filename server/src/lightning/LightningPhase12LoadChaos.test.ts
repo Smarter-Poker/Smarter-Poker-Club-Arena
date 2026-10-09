@@ -47,9 +47,9 @@ vi.mock('../services/financialAlerts.js', () => ({
 }));
 
 const { mulberry32 } = await import('../engine/HandFuzzer.js');
-const { FakeLightningWorld, quantiles } = await import('../testing/lightningLoadChaosKit.js');
+const { FakeLightningWorld, quantiles } = await import('./__tests__/lightningLoadChaosKit.js');
 const { LoadEngine, TableDriver, instrumentWorkerPasses, waitFor, waitMs } =
-  await import('../testing/lightningLoadEngine.js');
+  await import('./__tests__/lightningLoadEngine.js');
 const {
   LightningLatencyLedger,
   LIGHTNING_LATENCY_LEG_KEYS,

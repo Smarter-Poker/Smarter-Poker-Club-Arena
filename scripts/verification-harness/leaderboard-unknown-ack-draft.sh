@@ -149,6 +149,7 @@ BEGIN
   PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}',true);
   PERFORM set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000001',true);
   PERFORM set_config('request.jwt.claim.role','service_role',true);
+  PERFORM set_config('app.ledger_correlation',gen_random_uuid()::text,true);
   SET LOCAL ROLE service_role;
   SELECT public.fn_payout_leaderboard('92000000-0000-4000-8000-000000000002','weekly','profit',start_date::timestamp AT TIME ZONE 'UTC',end_date::timestamp AT TIME ZONE 'UTC') INTO response FROM public.fn_leaderboard_period_window('weekly',-1);
   IF (response->>'success')::boolean IS DISTINCT FROM true OR (response->>'already_settled')::boolean IS DISTINCT FROM false THEN RAISE EXCEPTION 'Initial actual payout refused'; END IF;

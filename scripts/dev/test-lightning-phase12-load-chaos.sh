@@ -9,7 +9,8 @@
 # settlement.
 #
 # THE CHAIN IS THE REAL ONE: every Lightning migration from 20260920172736
-# through Phase 11 (20261008161509), in order, exactly as
+# through Phase 11 (20261008161509) and this phase's responsible-gaming
+# file (20261009143757), in order, exactly as
 # test-lightning-phase11-integrity-shadow.sh builds them, on that harness's
 # own ground (read from it, so the two can never drift): its helpers,
 # production's default function privileges and its live
@@ -99,13 +100,14 @@ p9d=$M/20261008050805_lightning_phase_9_disconnect_reconnect_and_the_forensic_le
 p10=$M/20261008111425_lightning_phase_10_responsible_gaming_stop_playing_auto_rebu.sql
 p9r2=$M/20261008142857_lightning_phase_9_remediation_the_ended_session_answers_the_.sql
 p11=$M/20261008161509_lightning_phase_11_integrity_telemetry_and_the_shadow_matche.sql
+p12rg=$M/20261009143757_lightning_phase_12_responsible_gaming_limits_and_auto_rebuy_.sql
 # Any later Lightning file this phase ships (a fix found by this harness)
 # is applied after the chain, twice; LIGHTNING_P12_EXTRA overrides the list.
 extra=${LIGHTNING_P12_EXTRA-$(find "$M" -maxdepth 1 -name '*_lightning_phase_12_load_chaos_*.sql' | sort | tr '\n' ' ')}
 for f in "$base_fixture" "$pop_fixture" "$p5_fixture" "$p9_fixture" "$r2_fixture" "$p6_fixture" "$s6_fixture" \
          "$phase2" "$phase2r" "$phase3" "$phase3r" "$phase4" "$phase4r" \
          "$phase5" "$phase5r" "$phase9" "$phase9r" "$r2a" "$r2b" "$r2c" "$r2d" "$p6" "$s6" "$s6r" "$p7" \
-         "$phase8" "$p7r" "$fix" "$p9d" "$p10" "$p9r2" "$p11" "$p11_harness" $extra; do
+         "$phase8" "$p7r" "$fix" "$p9d" "$p10" "$p9r2" "$p11" "$p12rg" "$p11_harness" $extra; do
   [ -f "$f" ] || { echo "FAIL: missing input $f"; exit 1; }
 done
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/lightning-p12-test.XXXXXX")
@@ -1203,7 +1205,7 @@ chain=(-f "$base_fixture" -f "$pop_fixture" -f "$p5_fixture"
   -f "$p9_fixture" -f "$phase9" -f "$phase9r" -f "$r2_fixture"
   -f "$r2a" -f "$r2b" -f "$r2c" -f "$r2d" -f "$p6_fixture" -f "$p6" -f "$s6_fixture" -f "$s6" -f "$s6r" -f "$p7"
   -f "$phase8" -f "$p7r" -f "$fix" -f "$p9d" -f "$p10" -f "$p9r2"
-  -f "$fixture/p11-ground.sql" -f "$p11")
+  -f "$fixture/p11-ground.sql" -f "$p11" -f "$p12rg")
 # EVERY @live-proof OF EVERY LIGHTNING FILE, evaluated as code by fxr_eval
 # (NULL when it no longer evaluates, never false), before and after this
 # phase's own files; theirs must all hold and no predecessor's may fall.
@@ -1219,7 +1221,7 @@ proofs() { # tag file...
   done
 }
 lightning_files=("$phase2" "$phase2r" "$phase3" "$phase3r" "$phase4" "$phase4r" "$phase5" "$phase5r" "$phase9" "$phase9r"
-                 "$r2a" "$r2b" "$r2c" "$r2d" "$p6" "$s6" "$s6r" "$p7" "$phase8" "$p7r" "$fix" "$p9d" "$p10" "$p9r2" "$p11")
+                 "$r2a" "$r2b" "$r2c" "$r2d" "$p6" "$s6" "$s6r" "$p7" "$phase8" "$p7r" "$fix" "$p9d" "$p10" "$p9r2" "$p11" "$p12rg")
 { echo "CREATE TABLE lc_proofs (tag text, file text, n integer, ok boolean);"; proofs before "${lightning_files[@]}"; } > "$fixture/proofs-before.sql"
 proofs after "${lightning_files[@]}" > "$fixture/proofs-after.sql"
 proofs own $extra > "$fixture/proofs-own.sql"
@@ -1247,7 +1249,7 @@ if [ -n "$extra" ] && [ "$ownn" = 0 ]; then echo "FAIL: this phase's files carry
 for op in match match_replay form deal fold settle settle_replay presence rebuy tick drive ack join leave stop wave; do
   for i in $(seq 1 40); do echo "SELECT lc.op_$op();"; echo "SELECT lc.nap('$op');"; done > "$fixture/ops/$op.sql"
 done
-echo "  ok  00 THE BUILD  the real Lightning chain through Phase 11 on the Phase 11 ground (production default ACLs and autorevoke live)${extra:+, the Phase 12 files applied twice ($ownn own live proofs true, none of the $predn true predecessor proofs falsified)}, the load rig installed; profile $profile, populations $pops"
+echo "  ok  00 THE BUILD  the real Lightning chain through Phase 11 and 20261009143757 on the Phase 11 ground (production default ACLs and autorevoke live)${extra:+, the Phase 12 files applied twice ($ownn own live proofs true, none of the $predn true predecessor proofs falsified)}, the load rig installed; profile $profile, populations $pops"
 
 # LIGHTNING_P12_ONLY (a space-separated list of scenario ids: L, S1, C2 ...)
 # runs a subset while developing; a subset never prints PASS.
@@ -1555,4 +1557,4 @@ if [ "$sections" != "$expected" ] || [ "$ran" != "$expected" ]; then
   echo "FAIL: $sections of the $expected scenarios reported, so this run proved less than this file claims"
   exit 1
 fi
-echo "PASS: Lightning Phase 12 (DB) load, stress and chaos, profile $profile: $sections scenarios, $total invariant checks, all PASS, over the real chain through Phase 11 under production's default function ACLs and its live autorevoke event trigger: populations $pops loaded with the whole engine loop on real concurrent backends; mass joins, leaves and Stop Playing, a reconnect storm and a conversion storm over ten Clusters of two sizes, four stakes and three variants; statement and lock timeouts, cancels and terminations mid transaction, killed formations recovered by the reaper alone, settlements retried after a terminated connection to exactly one settlement, failed conversions and a server restart; no duplicate money, no lost money, no duplicate player, hand or blind, no orphan reservation, no ambiguous settlement, no unwarranted freeze"
+echo "PASS: Lightning Phase 12 (DB) load, stress and chaos, profile $profile: $sections scenarios, $total invariant checks, all PASS, over the real chain through Phase 11 and 20261009143757 under production's default function ACLs and its live autorevoke event trigger: populations $pops loaded with the whole engine loop on real concurrent backends; mass joins, leaves and Stop Playing, a reconnect storm and a conversion storm over ten Clusters of two sizes, four stakes and three variants; statement and lock timeouts, cancels and terminations mid transaction, killed formations recovered by the reaper alone, settlements retried after a terminated connection to exactly one settlement, failed conversions and a server restart; no duplicate money, no lost money, no duplicate player, hand or blind, no orphan reservation, no ambiguous settlement, no unwarranted freeze"

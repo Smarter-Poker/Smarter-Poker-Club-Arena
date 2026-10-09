@@ -343,7 +343,7 @@ BEGIN
                  WHERE batch_id=(response->>'batch_id')::uuid) IS DISTINCT FROM expected_total
            OR (SELECT count(*) FROM public.leaderboard_payouts
                  WHERE batch_id=(response->>'batch_id')::uuid)
-             <> CASE WHEN expected_total=0 THEN 0 ELSE 1 END THEN
+             <> (CASE WHEN expected_total=0 THEN 0 ELSE 1 END) THEN
           RAISE EXCEPTION 'Funding debit, player credits and actual receipts do not reconcile';
         END IF;
         IF expected_total>0 AND NOT EXISTS(SELECT 1 FROM public.leaderboard_payouts
@@ -359,21 +359,21 @@ BEGIN
            IS DISTINCT FROM 2*expected_total
            OR (SELECT count(*) FROM public.chip_ledger
               WHERE correlation_id=settlement_correlation)
-              <> CASE WHEN expected_total=0 THEN 0 ELSE 2 END
+              <> (CASE WHEN expected_total=0 THEN 0 ELSE 2 END)
            OR (SELECT count(*) FROM public.chip_ledger
               WHERE correlation_id=settlement_correlation AND category='leaderboard_payout'
                 AND from_type='promo_wallet' AND from_entity_id=club
                 AND to_type='leaderboard_round' AND to_entity_id=club
                 AND amount=expected_total AND pre_from_balance=20
                 AND post_from_balance=20-expected_total)
-              <> CASE WHEN expected_total=0 THEN 0 ELSE 1 END
+              <> (CASE WHEN expected_total=0 THEN 0 ELSE 1 END)
            OR (SELECT count(*) FROM public.chip_ledger
               WHERE correlation_id=settlement_correlation AND category='leaderboard_payout'
                 AND from_type='leaderboard_round' AND from_entity_id=club
                 AND to_type='player_wallet' AND to_entity_id=player_a
                 AND amount=expected_total
                 AND post_to_balance-pre_to_balance=expected_total)
-              <> CASE WHEN expected_total=0 THEN 0 ELSE 1 END
+              <> (CASE WHEN expected_total=0 THEN 0 ELSE 1 END)
            OR (expected_total>0 AND NOT EXISTS (
               SELECT 1 FROM public.wallet_credit_idempotency
               WHERE key=format('leaderboard:%s:weekly:%s:%s',club,starts,player_a)
@@ -381,7 +381,7 @@ BEGIN
            OR (SELECT count(*) FROM public.wallet_transactions
               WHERE related_entity_id=program_id AND category='leaderboard_payout'
                 AND user_id=player_a AND amount=expected_total AND type='credit')
-              <> CASE WHEN expected_total=0 THEN 0 ELSE 1 END THEN
+              <> (CASE WHEN expected_total=0 THEN 0 ELSE 1 END) THEN
           RAISE EXCEPTION 'Correlated journal legs or recipient credit evidence differ';
         END IF;
         after_digest := pg_temp.lb_financial_digest();

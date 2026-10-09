@@ -13,7 +13,7 @@ export const baselineFixture = new URL(
 export function buildCapturePayoutFixture(source = readFileSync(baselineFixture, 'utf8')) {
   assert.equal(
     createHash('sha256').update(source).digest('hex'),
-    '7ba2b11d291baa8aed69d8b0330a5e1ba77c5d0d58037f0651e2826f4c6a2395'
+    'a0b05846b457dd22cd2db7200f1f192f1ded1d0a501a901f499c9ab7d057d9f1'
   );
   function replaceOnce(before, after) {
     assert.equal(source.split(before).length, 2, 'Reviewed payout fixture anchor changed');

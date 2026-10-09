@@ -93,6 +93,7 @@ test.describe('Production Create A Club Certificate', () => {
       new RegExp(`/clubs/${escapeRegExp(createdClubRef)}(?:[/?#]|$)`, 'i'),
       { timeout: 60_000 }
     );
+    const createdClubUrl = page.url();
     await expect(page.getByText(clubName, { exact: false }).first()).toBeVisible({
       timeout: 60_000,
     });
@@ -166,8 +167,100 @@ test.describe('Production Create A Club Certificate', () => {
     // "Not Now Record The Decision Without Funding". Target the stable
     // decision prefix while preserving the semantic disabled-state proof.
     await expect(wizard.getByRole('button', { name: /^Not Now\b/i })).toBeDisabled();
+    // Inspect the changed funding flow without committing opening setup. The
+    // existing cleanup requires the welcome club to remain pristine.
+    const forbiddenSetupRequests: string[] = [];
+    await page.route(
+      /\/rest\/v1\/rpc\/(?:fn_complete_club_opening_setup|fn_save_leaderboard_reward_setup)(?:\?|$)/,
+      async (route) => {
+        forbiddenSetupRequests.push(new URL(route.request().url()).pathname);
+        await route.abort('blockedbyclient');
+      }
+    );
+    await wizard.getByRole('button', { name: 'Continue Opening Setup', exact: true }).click();
+    await expect(wizard.getByText(/Already Opened The Spin And Heads-Up Boards/i)).toBeVisible();
+    await wizard.getByRole('button', { name: 'Continue Opening Setup', exact: true }).click();
+    await wizard.getByRole('button', { name: /^Not Now\b/i }).click();
+    await wizard.getByRole('button', { name: 'Continue Opening Setup', exact: true }).click();
+    await expect(wizard.getByRole('button', { name: /^Display Only\b/i })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    await wizard.getByRole('button', { name: /^Pay Weekly Prizes\b/i }).click();
+    await wizard
+      .getByLabel('Suggested Leaderboard Prize Budgets', { exact: true })
+      .getByRole('button', { name: '500 Chips', exact: true })
+      .click();
+    const transfer = wizard.getByRole('checkbox', {
+      name: 'Transfer Exactly 500 Chips From The Club Bank Into The Club Promo Wallet For Leaderboard Prizes',
+      exact: true,
+    });
+    await expect(transfer).toHaveAttribute('aria-checked', 'false');
+    await expect(
+      wizard.getByRole('button', { name: 'Continue Opening Setup', exact: true })
+    ).toBeDisabled();
+    await transfer.click();
+    await wizard.getByRole('button', { name: 'Continue Opening Setup', exact: true }).click();
+    await expect(
+      wizard.getByText('500 Chips / Week, Promo Wallet Funded', { exact: true })
+    ).toBeVisible();
+    await expect(
+      wizard.getByText('Unpaid Until The Promo Wallet Is Funded', { exact: true })
+    ).toBeVisible();
+    await expect(
+      wizard.getByRole('button', { name: 'Open Club And Complete Opening Setup', exact: true })
+    ).toBeEnabled();
+    await page.screenshot({
+      path: 'test-results/create-club-leaderboard-review-mobile.png',
+      fullPage: true,
+    });
     await wizard.getByRole('button', { name: 'Close Opening Wizard', exact: true }).click();
     await page.screenshot({ path: 'test-results/create-club-opened-mobile.png', fullPage: true });
+
+    // Follow the actual hamburger owner door, not a manually constructed URL.
+    await page.getByRole('button', { name: 'Open Menu', exact: true }).first().click();
+    await page.getByRole('button', { name: /^Leaderboard Prize Setup\b/ }).click();
+    const prizeWizard = page.getByRole('dialog', { name: 'Leaderboard Prize Setup', exact: true });
+    await expect(prizeWizard).toBeVisible({ timeout: 30_000 });
+    await expect(page).toHaveURL(/\/leaderboard\?[^#]*club=/);
+    await prizeWizard.getByRole('button', { name: /^No Prizes Right Now\b/ }).click();
+    await prizeWizard.getByRole('button', { name: 'Review Disabled Plan', exact: true }).click();
+    await expect(
+      prizeWizard.getByRole('button', { name: 'Publish Prize Program', exact: true })
+    ).toBeEnabled();
+    await prizeWizard.getByRole('button', { name: 'Back', exact: true }).click();
+    await prizeWizard.getByRole('button', { name: /^Yes, Show Prizes\b/ }).click();
+    await prizeWizard.getByRole('button', { name: 'Continue', exact: true }).click();
+    await expect(
+      prizeWizard.getByRole('heading', { name: 'Funding Source Confirmed', exact: true })
+    ).toBeVisible();
+    await expect(prizeWizard.getByText(`${clubName} Promo Wallet`, { exact: true })).toBeVisible();
+    await expect(prizeWizard.getByRole('switch')).toHaveCount(0);
+    await prizeWizard.getByRole('button', { name: 'Continue', exact: true }).click();
+    await expect(
+      prizeWizard.getByRole('group', { name: 'Suggested Prize Splits', exact: true })
+    ).toBeVisible();
+    await prizeWizard.getByRole('button', { name: /^Custom\b/ }).click();
+    await prizeWizard.getByLabel('Weekly Prize For Rank 1', { exact: true }).fill('1');
+    // This untouched welcome club has no Promo funds. A positive custom plan
+    // must remain blocked even though its Club Bank holds opening capital.
+    await expect(prizeWizard.getByRole('button', { name: 'Continue', exact: true })).toBeDisabled();
+    await page.screenshot({
+      path: 'test-results/create-club-prize-setup-mobile.png',
+      fullPage: true,
+    });
+    await prizeWizard.getByRole('button', { name: 'Close Prize Setup', exact: true }).click();
+    await expect(prizeWizard).toBeHidden();
+    expect(
+      forbiddenSetupRequests,
+      'read-only wizard review must not submit setup or prize publication'
+    ).toEqual([]);
+
+    // Restore the observed club route after the hamburger's leaderboard trip.
+    await page.goto(createdClubUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    await expect(page.getByText('New Club Opening Checklist', { exact: true })).toBeVisible({
+      timeout: 60_000,
+    });
 
     // Prove the owner-facing lifecycle all the way through the published UI.
     // A pristine welcome club deliberately owns preloaded games and 100K of

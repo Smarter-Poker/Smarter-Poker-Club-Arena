@@ -13,7 +13,7 @@ export const baselineFixture = new URL(
 export function buildCapturePayoutFixture(source = readFileSync(baselineFixture, 'utf8')) {
   assert.equal(
     createHash('sha256').update(source).digest('hex'),
-    'c9de63e5dad19460da2df2aead2c1c072acf8ef0ae6f8b801e198c683eae01fc'
+    '7ba2b11d291baa8aed69d8b0330a5e1ba77c5d0d58037f0651e2826f4c6a2395'
   );
   function replaceOnce(before, after) {
     assert.equal(source.split(before).length, 2, 'Reviewed payout fixture anchor changed');
@@ -163,8 +163,8 @@ BEGIN
       SELECT end_date INTO weekly_next FROM public.fn_leaderboard_period_window('weekly',0);
       SELECT end_date INTO monthly_next FROM public.fn_leaderboard_period_window('monthly',0);
       IF funding_union IS NOT NULL THEN
-        PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);
-        PERFORM set_config('request.jwt.claim.sub','',true);
+        PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}',true);
+        PERFORM set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000001',true);
         PERFORM set_config('request.jwt.claim.role','service_role',true);
         SET LOCAL ROLE service_role;
         response:=public.fn_ca_mint('chips','union',union_id,100,'Disposable extended payout fixture','lb_extended_union_mint','seeded');
@@ -243,8 +243,8 @@ BEGIN
       stage:='actual_settlement'; rejected:=false;
       correlation:=gen_random_uuid();
       PERFORM set_config('app.ledger_correlation',correlation::text,true);
-      PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);
-      PERFORM set_config('request.jwt.claim.sub','',true);
+      PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}',true);
+      PERFORM set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000001',true);
       PERFORM set_config('request.jwt.claim.role','service_role',true);
       BEGIN
         SET LOCAL ROLE service_role;

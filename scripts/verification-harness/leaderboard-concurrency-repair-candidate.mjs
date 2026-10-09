@@ -9,7 +9,7 @@ const hash = (input) => createHash('sha256').update(input).digest('hex');
 export function buildConcurrencyRepairCandidate(
   source = read('leaderboard-isolated-concurrency-draft.sh')
 ) {
-  assert.equal(hash(source), 'bc53be816d77e89d04c25602e3d8dc12fe6cecfe853d02f08f5663ccda0b2192');
+  assert.equal(hash(source), 'c734ab9c039bd926a4b854177ea76729d825a57df45506b11ac67a59b57723ea');
   assert.equal(
     hash(read('leaderboard-promo-payout-candidate.mjs')),
     '18ffcc9db372bc49d83e37cb42a812ddc919532807af1444678524d7cb4ba8df'

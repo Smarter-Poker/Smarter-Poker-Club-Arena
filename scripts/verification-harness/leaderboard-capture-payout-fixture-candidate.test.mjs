@@ -13,7 +13,7 @@ const sql = buildCapturePayoutFixture(baseline);
 test('extended fixture preserves baseline identity, original six cases and single rollback boundary', () => {
   assert.equal(
     createHash('sha256').update(baseline).digest('hex'),
-    'c9de63e5dad19460da2df2aead2c1c072acf8ef0ae6f8b801e198c683eae01fc'
+    '7ba2b11d291baa8aed69d8b0330a5e1ba77c5d0d58037f0651e2826f4c6a2395'
   );
   for (const name of [
     'new_player_zero_baseline_pays',

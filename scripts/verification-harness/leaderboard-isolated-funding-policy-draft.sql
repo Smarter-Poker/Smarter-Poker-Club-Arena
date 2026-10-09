@@ -73,8 +73,8 @@ BEGIN
       funding_union:=CASE WHEN club=affiliate THEN fixture_union ELSE NULL END;
       IF club=affiliate THEN
         stage:='union_mint';
-        PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);
-        PERFORM set_config('request.jwt.claim.sub','',true);
+        PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}',true);
+        PERFORM set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000001',true);
         PERFORM set_config('request.jwt.claim.role','service_role',true);
         SET LOCAL ROLE service_role;
         response:=public.fn_ca_mint('chips','union',fixture_union,100,
@@ -222,8 +222,8 @@ BEGIN
             stage:='actual_settlement';
             correlation:=gen_random_uuid();
             PERFORM set_config('app.ledger_correlation',correlation::text,true);
-            PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);
-            PERFORM set_config('request.jwt.claim.sub','',true);
+            PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}',true);
+            PERFORM set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000001',true);
             PERFORM set_config('request.jwt.claim.role','service_role',true);
             SET LOCAL ROLE service_role;
             response:=public.fn_payout_leaderboard(club,'weekly','profit',starts::timestamp AT TIME ZONE 'UTC',ends::timestamp AT TIME ZONE 'UTC');
@@ -265,8 +265,8 @@ BEGIN
             END IF;
             after_state:=pg_temp.lb_funding_digest();
             stage:='settlement_replay';
-            PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);
-            PERFORM set_config('request.jwt.claim.sub','',true);
+            PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}',true);
+            PERFORM set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000001',true);
             PERFORM set_config('request.jwt.claim.role','service_role',true);
             SET LOCAL ROLE service_role;
             replay:=public.fn_payout_leaderboard(club,'weekly','profit',starts::timestamp AT TIME ZONE 'UTC',ends::timestamp AT TIME ZONE 'UTC');

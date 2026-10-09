@@ -144,8 +144,8 @@ request() {
   cat <<'SQL'
 SET LOCAL statement_timeout='60s';
 SET LOCAL lock_timeout='30s';
-SELECT set_config('request.jwt.claims','{"role":"service_role"}',true);
-SELECT set_config('request.jwt.claim.sub','',true);
+SELECT set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}',true);
+SELECT set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000001',true);
 SELECT set_config('request.jwt.claim.role','service_role',true);
 SET LOCAL ROLE service_role;
 DO $result$
@@ -236,8 +236,8 @@ BEGIN
     'keys',(SELECT jsonb_agg(to_jsonb(t) ORDER BY key) FROM public.wallet_credit_idempotency t),
     'history',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.wallet_transactions t)
   )::text) INTO before_state;
-  PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);
-  PERFORM set_config('request.jwt.claim.sub','',true);
+  PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}',true);
+  PERFORM set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000001',true);
   PERFORM set_config('request.jwt.claim.role','service_role',true);
   SET LOCAL ROLE service_role;
   SELECT public.fn_payout_leaderboard('92000000-0000-4000-8000-000000000002','weekly','profit',
@@ -278,8 +278,8 @@ done
 [[ "$ready" == true ]] || exit 1
 sql >"$scratch/concurrency-worker-lock.log" 2>&1 <<'SQL'
 BEGIN;
-SELECT set_config('request.jwt.claims','{"role":"service_role"}',true);
-SELECT set_config('request.jwt.claim.sub','',true);
+SELECT set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}',true);
+SELECT set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000001',true);
 SELECT set_config('request.jwt.claim.role','service_role',true);
 SET LOCAL ROLE service_role;
 DO $worker$
@@ -301,8 +301,8 @@ await_child "$holder_pid"
 diagnostic_stage='worker_settlement'
 sql >"$scratch/concurrency-worker-settlement.log" 2>&1 <<'SQL'
 BEGIN;
-SELECT set_config('request.jwt.claims','{"role":"service_role"}',true);
-SELECT set_config('request.jwt.claim.sub','',true);
+SELECT set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}',true);
+SELECT set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000001',true);
 SELECT set_config('request.jwt.claim.role','service_role',true);
 SET LOCAL ROLE service_role;
 DO $worker$

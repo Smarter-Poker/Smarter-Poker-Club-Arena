@@ -222,3 +222,43 @@ test('payout verdicts never store arbitrary exception messages; driver receipts 
     assert.match(driver, /diagnostic_stage='own_cleanup'/);
   }
 });
+
+test('financial fixture service writers retain an existing synthetic journal actor in every session', () => {
+  for (const name of [
+    'leaderboard-isolated-funding-policy-draft.sql',
+    'leaderboard-capture-payout-fixture-candidate.mjs',
+    'leaderboard-isolated-payout-regression-draft.sql',
+    'leaderboard-isolated-historical-replay-candidate.sql',
+    'leaderboard-isolated-worker-regression-candidate.sql',
+    'leaderboard-isolated-concurrency-draft.sh',
+    'leaderboard-unknown-ack-draft.sh',
+  ]) {
+    const input = readFinancialDraft(name);
+    const writers = [
+      ...input.matchAll(
+        /(?:PERFORM|SELECT) set_config\('request.jwt.claims','([^']+)',true\);\n\s*(?:PERFORM|SELECT) set_config\('request.jwt.claim.sub','([^']*)',true\);\n\s*(?:PERFORM|SELECT) set_config\('request.jwt.claim.role','service_role',true\);/g
+      ),
+    ];
+    assert.ok(writers.length > 0, `No service writer checked: ${name}`);
+    for (const writer of writers) {
+      assert.deepEqual(
+        JSON.parse(writer[1]),
+        {
+          sub: '90000000-0000-4000-8000-000000000001',
+          role: 'service_role',
+        },
+        name
+      );
+      assert.equal(writer[2], '90000000-0000-4000-8000-000000000001', name);
+    }
+    assert.doesNotMatch(
+      input,
+      /set_config\('request.jwt.claims','\{"role":"service_role"\}',true\)/,
+      name
+    );
+  }
+  assert.match(
+    readFinancialDraft('leaderboard-isolated-funding-policy-draft.sql'),
+    /set_config\('request.jwt.claims','\{"role":"anon"\}',true\);\n\s*PERFORM set_config\('request.jwt.claim.sub','',true\)/
+  );
+});

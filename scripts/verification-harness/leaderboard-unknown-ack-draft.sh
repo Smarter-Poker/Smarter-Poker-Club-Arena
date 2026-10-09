@@ -138,8 +138,8 @@ DO $ack_payout$
 DECLARE response jsonb;
 BEGIN
   IF session_user<>'leaderboard_qualification_bootstrap' OR inet_server_addr() IS NOT NULL THEN RAISE EXCEPTION 'Socket bootstrap required'; END IF;
-  PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);
-  PERFORM set_config('request.jwt.claim.sub','',true);
+  PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}',true);
+  PERFORM set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000001',true);
   PERFORM set_config('request.jwt.claim.role','service_role',true);
   SET LOCAL ROLE service_role;
   SELECT public.fn_payout_leaderboard('92000000-0000-4000-8000-000000000002','weekly','profit',start_date::timestamp AT TIME ZONE 'UTC',end_date::timestamp AT TIME ZONE 'UTC') INTO response FROM public.fn_leaderboard_period_window('weekly',-1);
@@ -231,8 +231,8 @@ BEGIN
     (SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.chip_ledger t),
     (SELECT jsonb_agg(to_jsonb(t) ORDER BY key) FROM public.wallet_credit_idempotency t),
     (SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.wallet_transactions t))::text) INTO before_digest;
-  PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);
-  PERFORM set_config('request.jwt.claim.sub','',true);
+  PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}',true);
+  PERFORM set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000001',true);
   PERFORM set_config('request.jwt.claim.role','service_role',true);
   SET LOCAL ROLE service_role;
   SELECT public.fn_payout_leaderboard('92000000-0000-4000-8000-000000000002','weekly','profit',start_date::timestamp AT TIME ZONE 'UTC',end_date::timestamp AT TIME ZONE 'UTC') INTO response FROM public.fn_leaderboard_period_window('weekly',-1);

@@ -293,8 +293,8 @@ BEGIN
       before_digest := pg_temp.lb_financial_digest();
       SELECT COALESCE(sum(chip_balance),0) INTO before_players
         FROM public.club_members WHERE user_id IN (player_a,player_b);
-      PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);
-      PERFORM set_config('request.jwt.claim.sub','',true);
+      PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}',true);
+      PERFORM set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000001',true);
       PERFORM set_config('request.jwt.claim.role','service_role',true);
       SET LOCAL ROLE service_role;
       -- Test-owned correlation identifies every journal leg of this call;

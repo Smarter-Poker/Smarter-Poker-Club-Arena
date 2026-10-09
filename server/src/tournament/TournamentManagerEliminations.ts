@@ -124,6 +124,31 @@ interface CandidateBackedKnockoutEvidence extends PersistedKnockoutEvidence {
  * event's tables as its source (`f06_source_guard`). Only the balance stage
  * can finish that break, so the refusal must not keep the sweep from it.
  */
+/** How long after a rebuy deadline the next elimination pass is asked for. */
+export const REBUY_DEADLINE_MARGIN_MS = 250;
+
+/**
+ * The open rebuy deadline of every row fn_open_tournament_rebuy_decisions
+ * returned, in epoch ms. A row with no deadline, an unreadable one, or one
+ * whose decision is closed is left out.
+ */
+export function rebuyDecisionDeadlines(rows: unknown): Map<string, number> {
+  const out = new Map<string, number>();
+  if (!Array.isArray(rows)) return out;
+  for (const raw of rows) {
+    const row = (raw ?? {}) as {
+      user_id?: unknown;
+      decision_open?: unknown;
+      rebuy_prompt_until?: unknown;
+    };
+    if (row.decision_open !== true || typeof row.user_id !== 'string') continue;
+    const ms =
+      typeof row.rebuy_prompt_until === 'string' ? Date.parse(row.rebuy_prompt_until) : NaN;
+    if (Number.isFinite(ms)) out.set(row.user_id, ms);
+  }
+  return out;
+}
+
 export function isTableBreakExclusion(error: unknown): boolean {
   return error instanceof Error && /\bF06_SOURCE_EXCLUDED\b/.test(error.message);
 }
@@ -823,9 +848,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             bustBatchHasMore = true;
           }
 
-          const { rebought, answered } = await this.tryTournamentRebuys(
-            busted.map((b) => b.user_id)
-          );
+          const { rebought } = await this.tryTournamentRebuys(busted.map((b) => b.user_id));
           if (sweepStopped()) return;
           if (rebought.size > 0) {
             busted = busted.filter((b) => !rebought.has(b.user_id));
@@ -887,14 +910,33 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                 row.decision_open === true,
               ])
             );
+            /* A DECLINE DOES NOT CLOSE THE WINDOW, SO IT WAITS IT OUT
+               (2026-10-09). This let an `answered` horse through to the knockout
+               door the moment it declined. The door refuses any bust whose
+               knockout generation still has an open rebuy deadline
+               (`rebuy_decision_open`), and nothing here closes that deadline,
+               so every declining horse was refused on every pass for the rest
+               of its 30 seconds: 345 refusals in three hours on two Free Buy
+               events, each one reported as Tournament.elimination_write_failed,
+               counted toward the bust-refusal streak, and ending the assignment
+               pass for everybody busted after it. A player whose decision is
+               still open, human or horse, is now left for the pass that runs
+               when the deadline it was given has passed. */
+            const openUntilMs = rebuyDecisionDeadlines(decisionsRaw);
+            const nowMs = Date.now();
             busted = busted.filter((b) => {
-              if (answered.has(b.user_id)) return true;
               // Omitted means the locked row was no longer a playing zero -
               // most commonly a concurrent rebuy. Never eliminate from the
               // stale snapshot captured before that transaction committed.
               if (!decisions.has(b.user_id)) return false;
               return decisions.get(b.user_id) !== true;
             });
+            const nextDeadline = [...openUntilMs.values()].filter((ms) => ms > nowMs);
+            if (nextDeadline.length > 0) {
+              this.requestUrgentEliminationSweepAfter(
+                Math.min(...nextDeadline) - nowMs + REBUY_DEADLINE_MARGIN_MS
+              );
+            }
             if (busted.length === 0) return;
           }
 

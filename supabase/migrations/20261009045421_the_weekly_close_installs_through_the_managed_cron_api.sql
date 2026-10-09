@@ -1,6 +1,10 @@
--- SUPERSEDED BY 20261009045421
--- Never installed: managed cron.job permits SELECT but not SELECT FOR UPDATE.
--- Version reserved by scripts/new-migration.mjs: 20261009005558.
+-- Version reserved by scripts/new-migration.mjs: 20261009045421.
+-- Replaces never-installed 20261009005558: managed postgres can read cron.job
+-- but cannot SELECT FOR UPDATE. The supported cron.alter_job API owns writes.
+-- A repeatable-read snapshot makes any intervening row update fail with 40001,
+-- rather than overwrite another editor's command or metadata. Its native UPDATE
+-- then holds the row lock through the exact whole-row postimage check and commit.
+-- No grants, ownership, schedule, budgets, coordinator or payer changes.
 -- Job 272 already wakes every five minutes, but its conditional skipped an
 -- ordinary, ungated Monday close until 04:40 America/Chicago. Admit the due
 -- week's first 40 minutes as well, so 04:00 and a thawed 04:05 tick both reach
@@ -9,6 +13,7 @@
 -- Only this exact job's command changes; no second scheduler or payer.
 -- @live-proof: (SELECT jobid=272 AND active AND schedule='*/5 * * * *' AND md5(command)='a532167f5019f181dd10e48102e40cfc' FROM cron.job WHERE jobname='union-weekly-rakeback-close')
 BEGIN;
+SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
 SET LOCAL lock_timeout = '3s';
 SET LOCAL statement_timeout = '60s';
 
@@ -21,7 +26,7 @@ DECLARE
   replacement text := $replacement$WHEN extract(minute FROM now()) BETWEEN 40 AND 44 OR (now() >= public.fn_union_accounting_run_at(public.fn_union_week_start(now())) AND now() < public.fn_union_accounting_run_at(public.fn_union_week_start(now())) + interval '40 minutes')$replacement$;
 BEGIN
   SELECT * INTO STRICT before_job FROM cron.job
-    WHERE jobname='union-weekly-rakeback-close' FOR UPDATE;
+    WHERE jobname='union-weekly-rakeback-close';
   IF before_job.jobid<>272 OR before_job.active IS DISTINCT FROM true
     OR before_job.schedule<>'*/5 * * * *'
     OR md5(before_job.command)<>'3d27a473c11051deb6fe00ceffd4e409' THEN

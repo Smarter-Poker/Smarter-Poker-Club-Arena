@@ -9,13 +9,16 @@ This proves admission and refusal, not payment execution or wall-clock cron.
 import hashlib
 import json
 import re
+import select
+import subprocess
 
 
-def exercise(run, check, one, fixtures):
+def exercise(run, check, one, fixtures, psql, env):
     captured = json.loads((fixtures / 'weekly-close-job.live-20261009.json').read_text())
     command_before = captured['job']['command']
     scope = (fixtures / 'fn_process_weekly_accounting_scope.live-20261009.sql').read_text()
-    migration = one('*_the_weekly_close_starts_at_four_in_chicago.sql').read_text()
+    historical = one('*_the_weekly_close_starts_at_four_in_chicago.sql').read_text()
+    migration = one('*_the_weekly_close_installs_through_the_managed_cron_api.sql').read_text()
     scope_sig = 'public.fn_process_weekly_accounting_scope(uuid,uuid)'
     quote = lambda s: "'" + s.replace("'", "''") + "'"
     controlled = lambda s: s.replace('clock_timestamp()', 'public.ca_test_clock()').replace('now()', 'public.ca_test_clock()')
@@ -61,6 +64,35 @@ def exercise(run, check, one, fixtures):
       UPDATE cron.job SET jobid=272 WHERE jobname='union-weekly-rakeback-close';
       SELECT cron.schedule('fixture-unrelated','7 * * * *','SELECT 1');
     """)
+    # Match managed production privileges without granting UPDATE or using a
+    # superuser as the migration caller. The actual pg_cron C API owns writes.
+    manager = 'ca_test_managed_postgres'
+    run(f"""
+      CREATE ROLE {manager} NOSUPERUSER NOBYPASSRLS;
+      GRANT USAGE ON SCHEMA cron TO {manager};
+      GRANT SELECT ON cron.job TO {manager};
+      GRANT EXECUTE ON FUNCTION cron.alter_job(bigint,text,text,text,text,boolean) TO {manager};
+      UPDATE cron.job SET username='{manager}' WHERE jobid=272;
+    """)
+    managed = lambda sql: run(f'SET ROLE {manager};\n' + sql)
+    privileges = json.loads(managed("""SELECT jsonb_build_object(
+      'superuser',(SELECT rolsuper FROM pg_roles WHERE rolname=current_user),
+      'select',has_table_privilege(current_user,'cron.job','SELECT'),
+      'update',has_table_privilege(current_user,'cron.job','UPDATE'),
+      'api',has_function_privilege(current_user,
+        'cron.alter_job(bigint,text,text,text,text,boolean)','EXECUTE'))"""))
+    check('managed-cron-caller-has-production-privilege-boundary',
+          privileges == {'superuser':False,'select':True,'update':False,'api':True}, privileges)
+    before_failure = run('SELECT to_jsonb(j) FROM cron.job j WHERE jobid=272')
+    try:
+        managed(historical)
+    except RuntimeError as error:
+        check('historical-installer-reproduces-managed-permission-failure',
+              'permission denied for table job' in str(error), str(error)[-300:])
+    else:
+        check('historical-installer-reproduces-managed-permission-failure', False)
+    check('historical-permission-failure-leaves-job-unchanged',
+          run('SELECT to_jsonb(j) FROM cron.job j WHERE jobid=272') == before_failure)
     check('cron-launcher-disabled', run('SHOW cron.launch_active_jobs') == 'off')
     all_before = json.loads(run('SELECT jsonb_agg(to_jsonb(j) ORDER BY jobid) FROM cron.job j'))
     check('cron-preimage-is-live-command',
@@ -122,7 +154,7 @@ def exercise(run, check, one, fixtures):
         check('baseline-' + name, receipt['calls'] == baseline, receipt)
     check('scheduler-migration-is-one-transaction',
           len(re.findall(r'^BEGIN;', migration, re.M)) == 1 and len(re.findall(r'^COMMIT;', migration, re.M)) == 1)
-    run(migration)
+    managed(migration)
     command_after = run('SELECT command FROM cron.job WHERE jobid=272')
     check('scheduler-postimage-is-exact', hashlib.md5(command_after.encode()).hexdigest() == captured['candidate_md5'])
     expected_jobs = all_before
@@ -153,9 +185,46 @@ def exercise(run, check, one, fixtures):
     check('carry-forward-maintenance-window-still-refuses',
           receipt['receipts'][0].get('reason')=='maintenance_window', receipt)
     try:
-        run(migration)
+        managed(migration)
     except RuntimeError as error:
         check('scheduler-migration-refuses-replay', 'not the pinned preimage' in str(error), str(error)[-250:])
     else:
         check('scheduler-migration-refuses-replay', False)
     check('replay-leaves-exact-job-postimage', run('SELECT command FROM cron.job WHERE jobid=272') == command_after)
+
+    # Pause a real session after its repeatable-read snapshot, before the exact
+    # candidate DO body. A second session uses the real API to commit another
+    # editor's change. The candidate must refuse, not undo that committed edit.
+    prefix, marker, body = migration.partition('DO $migration$')
+    check('managed-installer-sets-snapshot-before-preimage',
+          bool(marker) and 'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;' in prefix)
+    for field, changed in [('command', 'SELECT 42 /* concurrent editor */'), ('active', False)]:
+        run(f"UPDATE cron.job SET command={quote(command_before)},active=true WHERE jobid=272")
+        process = subprocess.Popen(list(map(str, psql)) + ['-v','VERBOSITY=verbose'],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, env=env)
+        try:
+            process.stdin.write(f'SET ROLE {manager};\n' + prefix +
+                "SELECT jobid FROM cron.job WHERE jobid=272\n\\gset\n\\echo snapshot_ready\n")
+            process.stdin.flush()
+            ready, _, _ = select.select([process.stdout], [], [], 10)
+            if not ready or process.stdout.readline().strip() != 'snapshot_ready':
+                raise RuntimeError('concurrent fixture did not establish its snapshot')
+            value = quote(changed) if field == 'command' else 'false'
+            managed(f'SELECT cron.alter_job(272,{field}:={value})')
+            winner = run('SELECT to_jsonb(j) FROM cron.job j WHERE jobid=272')
+            _, error = process.communicate(marker + body, timeout=10)
+            check('concurrent-' + field + '-edit-causes-serialization-refusal',
+                  process.returncode != 0 and '40001' in error, error[-350:])
+            check('concurrent-' + field + '-edit-is-preserved-whole',
+                  run('SELECT to_jsonb(j) FROM cron.job j WHERE jobid=272') == winner)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.communicate(timeout=5)
+    run(f"UPDATE cron.job SET command={quote(command_before)},active=true WHERE jobid=272")
+    managed(migration)
+    check('managed-installer-still-applies-after-independent-conflict-recovery',
+          run('SELECT command FROM cron.job WHERE jobid=272') == command_after)
+    check('managed-installer-never-grants-direct-update',
+          managed("SELECT has_table_privilege(current_user,'cron.job','UPDATE')") == 'f')

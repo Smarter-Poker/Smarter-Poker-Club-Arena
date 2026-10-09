@@ -320,8 +320,8 @@ BEGIN
            OR (SELECT count(*) FROM public.chip_ledger WHERE correlation_id=shortage_op AND category='promo_send'
              AND from_type='union_wallet' AND from_entity_id=funding_union AND from_label='union_wallets.promo_wallet'
              AND to_type='promo_wallet' AND to_entity_id=club AND to_label='clubs.promo_balance' AND amount=20)<>1
-           OR (SELECT count(*) FROM public.union_wallet_transactions WHERE period_id=shortage_op AND union_id=funding_union
-             AND club_id=club AND wallet='promo_wallet' AND direction='debit' AND amount=20 AND balance_after=0 AND tx_type='promo_to_club')<>1 THEN
+           OR (SELECT count(*) FROM public.union_wallet_transactions t WHERE t.period_id=shortage_op AND t.union_id=funding_union
+             AND t.club_id=club AND t.wallet='promo_wallet' AND t.direction='debit' AND t.amount=20 AND t.balance_after=0 AND t.tx_type='promo_to_club')<>1 THEN
           RAISE EXCEPTION 'Conserving union shortage receipt differs'; END IF;
       END IF;
       before_state:=pg_temp.lb_financial_digest();

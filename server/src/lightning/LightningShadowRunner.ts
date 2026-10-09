@@ -52,6 +52,30 @@
  * telemetry intake, holds no state, and `observe` returns at its first line.
  *
  * HORSES ARE PLAYERS (CLAUDE.md 10.5): nothing here knows who is one.
+ *
+ * PHASE 11 REMEDIATION (2026-10-09), so the comparison is not biased toward
+ * either side:
+ *
+ *   - A PASS WHOSE LIVE CALL FAILED IS NOT SCORED on either side (a database
+ *     outage is not the live matcher's failure, and the shadow is not
+ *     credited for planning through it); it is counted as
+ *     `skipped.live_failed`.
+ *   - A PASS THE SHADOW SKIPS (size cap, overrun, unknown version) is not
+ *     scored on the live side either: both sides are scored on exactly the
+ *     same passes. The size cap is checked on the presence BEFORE any
+ *     snapshot is built, so an oversized pool costs nothing.
+ *   - `bb_fairness.order_violations` is sent as null on BOTH sides: the
+ *     shadow's big blinds are the top of its own order by construction, the
+ *     live side's come from the database's P2 ranks this snapshot does not
+ *     carry, so the count could only ever charge the live side. It returns
+ *     when the snapshot carries the database's P2 ranks.
+ *   - The live outcome enters the model as the barrier wrote it: each group
+ *     of a pass its own microsecond (`v_now + (ordinal - 1) us`) for the big
+ *     blind's last_bb_at and the hand's formed_at, the heads-up small blind
+ *     on the button, and each hand under its id and epoch.
+ *   - P5's band reads the database's legal count for the pass when the live
+ *     answer gave one; in worker 'shadow' mode the diagnosis gives every
+ *     player's legality exactly.
  */
 import {
   lightningMatcherModel,
@@ -111,6 +135,8 @@ export interface LightningDecidedGroup {
   bb: string;
   sb?: string | null;
   btn?: string | null;
+  /** The formed hand's id (live 'form' passes): P5's window tie-break. */
+  handId?: string | null;
 }
 
 /** What one live pass saw and decided, as the worker hands it over. */
@@ -130,6 +156,16 @@ export interface LightningLivePassObservation {
   /** The live matcher's version as the database reported it, when it did. */
   matcherVersion: string | null;
   groups: readonly LightningDecidedGroup[];
+  /** The Cluster epoch the live answer named (match_and_form's cluster_epoch), when it did. */
+  epoch?: number | null;
+  /** The database's legal count for the pass (the live answer's legal_count), when it gave one. */
+  legalCount?: number | null;
+  /**
+   * Worker 'shadow' mode: fn_lightning_match's diagnosis, by player - null
+   * for a legal player, else the reason code. A presence player it does not
+   * name is not in the database's open pool.
+   */
+  legality?: ReadonlyMap<string, string | null> | null;
 }
 
 export interface LightningShadowRunnerDeps {
@@ -192,7 +228,9 @@ class SideWindow {
         avg_hands_since_bb: gaps.avg,
         p95_hands_since_bb: gaps.p95,
         max_hands_since_bb: this.bbGapMax,
-        order_violations: this.bbOrderViolations,
+        // Null on BOTH sides until the snapshot carries the database's P2
+        // ranks (see the header): a count only the live side can incur.
+        order_violations: null,
       },
       position_fairness: {
         btn_n: this.btnN,
@@ -245,9 +283,13 @@ export function scoreLightningDecision(
   for (const g of groups) for (const p of g.players) seatedIds.add(p);
   const { encounters } = encounterMemory(recentWindow(snapshot, params), seatedIds);
   const topBbs = new Set(legal.slice(0, groups.length).map((p) => p.playerId));
+  const legalCount =
+    typeof snapshot.legalCount === 'number' && Number.isFinite(snapshot.legalCount)
+      ? snapshot.legalCount
+      : legal.length;
   const out: LightningDecisionScore = {
-    legal: legal.length,
-    quorum: legal.length >= params.instanceMin,
+    legal: legalCount,
+    quorum: legalCount >= params.instanceMin,
     groups: groups.length,
     seated: 0,
     sizes: [],
@@ -282,6 +324,19 @@ export function scoreLightningDecision(
       }
   }
   return out;
+}
+
+/** A recent hand, copied (the shadow plans on its own copy). */
+function copyHand(h: LightningRecentHand): LightningRecentHand {
+  return { ...h, players: [...h.players] };
+}
+
+/**
+ * The barrier's stamp for group `ordinal` (0-based) of a pass at `nowMs`:
+ * one microsecond per group (fn_lightning_match_and_form's v_group_now).
+ */
+export function lightningGroupStampMs(nowMs: number, ordinal: number): number {
+  return nowMs + ordinal / 1000;
 }
 
 function addScore(side: SideWindow, s: LightningDecisionScore, ok: boolean): void {
@@ -337,6 +392,7 @@ export class LightningShadowRunner implements LightningClusterTelemetrySink {
   private skipSize = 0;
   private skipOverrun = 0;
   private skipUnknownVersion = 0;
+  private skipLiveFailed = 0;
   private shadowMsTotal = 0;
   private shadowRuns = 0;
   private skipNext = 0;
@@ -407,9 +463,19 @@ export class LightningShadowRunner implements LightningClusterTelemetrySink {
     }
   }
 
-  /** Stop: unregister, flush the open window once (bounded by the worker's drain). */
+  /**
+   * Stop: unregister, flush the open window once (bounded by the worker's
+   * drain). A flush already in flight is awaited FIRST: closing the final
+   * window while it ran would drop that window (one flush in flight).
+   * A restart inside an aligned window reports [start, stop) here and the
+   * next process reports [start, end): two rows that overlap, keyed apart by
+   * window_to - accepted, and documented in the changelog.
+   */
   async stop(): Promise<void> {
     if (this.stopped) return;
+    // No pass is observed from here on; the telemetry sink may still add.
+    this.stopped = true;
+    if (this.flushing) await this.flushing.catch(() => undefined);
     const cfg = this.config;
     if (cfg && this.windowStartMs !== null) {
       try {
@@ -422,7 +488,6 @@ export class LightningShadowRunner implements LightningClusterTelemetrySink {
         // nothing to flush
       }
     }
-    this.stopped = true;
     if (this.registered) this.telemetry.unregister(this.clusterId, this);
     this.registered = false;
     if (this.flushing) await this.flushing.catch(() => undefined);
@@ -478,6 +543,7 @@ export class LightningShadowRunner implements LightningClusterTelemetrySink {
     const nowMs = pass.nowMs;
     const players: LightningPoolPlayer[] = [];
     const seen = new Set<string>();
+    const diagnosed = pass.legality ?? null;
     const add = (id: string, connected: boolean): void => {
       if (!id || seen.has(id)) return;
       seen.add(id);
@@ -503,12 +569,29 @@ export class LightningShadowRunner implements LightningClusterTelemetrySink {
         m.inHand = false;
         m.idleSinceMs = nowMs;
       }
+      // Legality: the database's own answer when the pass carried one
+      // (worker 'shadow' mode), else connected and not in a hand here.
+      let legal = connected;
+      let reasonCode: string | null = connected ? null : 'DISCONNECTED';
+      if (diagnosed) {
+        if (diagnosed.has(id)) {
+          reasonCode = diagnosed.get(id) ?? null;
+          legal = reasonCode === null;
+        } else {
+          legal = false;
+          reasonCode = 'NOT_IN_POOL';
+        }
+      }
       players.push({
         playerId: id,
-        legal: connected,
-        reasonCode: connected ? null : 'DISCONNECTED',
+        legal,
+        reasonCode,
         idleSinceMs: m.idleSinceMs,
         enteredAtMs: m.enteredAtMs,
+        // The engine sees one moment per player (its first sighting) for the
+        // pool entry, the slot's opening and the Cluster join alike.
+        joinedAtMs: m.enteredAtMs,
+        slotOpenedAtMs: m.enteredAtMs,
         lastBbAtMs: m.lastBbAtMs,
         bbUnresolved: false,
         debtSinceMs: m.enteredAtMs,
@@ -523,21 +606,29 @@ export class LightningShadowRunner implements LightningClusterTelemetrySink {
     return {
       nowMs,
       players,
-      recentHands: this.recentHands.map((h) => ({
-        players: [...h.players],
-        formedAtMs: h.formedAtMs,
-      })),
+      recentHands: this.recentHands.map(copyHand),
+      ...(typeof pass.epoch === 'number' ? { epoch: pass.epoch } : {}),
+      ...(typeof pass.legalCount === 'number' && !diagnosed ? { legalCount: pass.legalCount } : {}),
     };
   }
 
   private shadowPass(pass: LightningLivePassObservation, cfg: LightningShadowConfig): void {
-    const snapshot = this.buildSnapshot(pass);
-    const params = cfg.params;
-    const liveScore = scoreLightningDecision(snapshot, params, pass.groups);
-    addScore(this.live, liveScore, pass.ok);
+    // A FAILED LIVE CALL SCORES NEITHER SIDE (and teaches the model nothing).
+    if (!pass.ok) {
+      this.skipLiveFailed++;
+      this.forgetStale(pass.nowMs);
+      return;
+    }
     if (pass.matcherVersion) this.live.lastVersion = pass.matcherVersion;
-
+    const params = cfg.params;
     const model = lightningMatcherModel(cfg.version);
+    // A PASS THE SHADOW SKIPS IS NOT SCORED ON THE LIVE SIDE EITHER, and is
+    // decided before any snapshot is built (the size cap reads the presence).
+    const presenceSize =
+      pass.presence.connected.length +
+      pass.presence.disconnected.length +
+      (pass.presence.unknown?.length ?? 0);
+    let skipped = true;
     if (!model) {
       this.skipUnknownVersion++;
       if (this.failureLog.shouldLog('unknown_version')) {
@@ -545,20 +636,22 @@ export class LightningShadowRunner implements LightningClusterTelemetrySink {
           `[LightningShadow:${this.clusterId}] shadow_matcher_version '${cfg.version}' is not a matcher this engine models; shadow side idle`
         );
       }
-    } else if (snapshot.players.length > cfg.maxPlayers) {
+    } else if (presenceSize > cfg.maxPlayers) {
       this.skipSize++;
     } else if (this.skipNext > 0) {
       this.skipNext--;
       this.skipOverrun++;
     } else {
+      skipped = false;
+    }
+    if (model && !skipped) {
+      const snapshot = this.buildSnapshot(pass);
+      addScore(this.live, scoreLightningDecision(snapshot, params, pass.groups), true);
       // The shadow plans on its OWN copy: nothing it does can reach the model.
       const copy: LightningPoolSnapshot = {
-        nowMs: snapshot.nowMs,
+        ...snapshot,
         players: snapshot.players.map((p) => ({ ...p, positions: { ...p.positions } })),
-        recentHands: snapshot.recentHands.map((h) => ({
-          players: [...h.players],
-          formedAtMs: h.formedAtMs,
-        })),
+        recentHands: snapshot.recentHands.map(copyHand),
       };
       const started = this.clock();
       let ok = true;
@@ -588,14 +681,24 @@ export class LightningShadowRunner implements LightningClusterTelemetrySink {
     }
 
     // Only now does the LIVE outcome enter the model: hands formed are history.
-    if (pass.kind === 'form' && pass.ok) this.applyLive(pass);
+    if (pass.kind === 'form') this.applyLive(pass);
     this.forgetStale(pass.nowMs);
   }
 
+  /**
+   * The live outcome, as the barrier wrote it: group k of the pass (0-based,
+   * in the order the database formed them) is stamped `now + k us` - its big
+   * blind's last_bb_at and the hand's formed_at - exactly as
+   * fn_lightning_match_and_form stamps `v_now + (ordinal - 1) * 1 microsecond`.
+   * (The database counts a group it attempted and could not form; the engine
+   * sees only the formed ones, which keeps their order and so the order P2
+   * reads.)
+   */
   private applyLive(pass: LightningLivePassObservation): void {
-    for (const g of pass.groups) {
+    for (const [ordinal, g] of pass.groups.entries()) {
       const members = [...g.players];
       const size = members.length;
+      const stampMs = lightningGroupStampMs(pass.nowMs, ordinal);
       for (let i = 0; i < size; i++) {
         const id = members[i];
         let m = this.model.get(id);
@@ -617,20 +720,27 @@ export class LightningShadowRunner implements LightningClusterTelemetrySink {
         m.inHandSinceMs = pass.nowMs;
         m.seenInHand = true;
         if (id === g.bb) {
-          m.lastBbAtMs = pass.nowMs;
+          m.lastBbAtMs = stampMs;
           m.handsSinceBb = 0;
         } else if (m.handsSinceBb !== null) {
           m.handsSinceBb++;
         }
-        // The matcher order: bb, sb, seat 3 (utg) onward, the button last.
-        if (size > 2) {
-          if (i === size - 1) m.positions.btn++;
-          else if (i === size - 2 && size >= 4) m.positions.co++;
-          else if (i === size - 3 && size >= 5) m.positions.hj++;
-          else if (i === 2) m.positions.utg++;
-        }
+        // The matcher order: bb, sb, seat 3 (utg) onward, the button last -
+        // the barrier's own position names (heads-up, the small blind is the
+        // button and its btn_count moves).
+        if (size === 2) {
+          if (i === 1) m.positions.btn++;
+        } else if (i === size - 1) m.positions.btn++;
+        else if (i === size - 2 && size >= 4) m.positions.co++;
+        else if (i === size - 3 && size >= 5) m.positions.hj++;
+        else if (i === 2) m.positions.utg++;
       }
-      this.recentHands.push({ players: members, formedAtMs: pass.nowMs });
+      this.recentHands.push({
+        players: members,
+        formedAtMs: stampMs,
+        ...(typeof g.handId === 'string' ? { handId: g.handId } : {}),
+        ...(typeof pass.epoch === 'number' ? { epoch: pass.epoch } : {}),
+      });
     }
     if (this.recentHands.length > LIGHTNING_SHADOW_MODEL_MAX_HANDS) {
       this.recentHands.splice(0, this.recentHands.length - LIGHTNING_SHADOW_MODEL_MAX_HANDS);
@@ -665,7 +775,13 @@ export class LightningShadowRunner implements LightningClusterTelemetrySink {
 
   /** Build the window's payloads, reset the accumulators, send off the pass's path. */
   private closeWindow(fromMs: number, toMs: number, cfg: LightningShadowConfig): void {
-    const shadowPayload = cfg.enabled && this.live.passes > 0 ? this.shadowPayloads(cfg) : null;
+    // A window is recorded when anything was observed: scored passes, or
+    // passes skipped (the skip counters are the evidence the shadow idled).
+    const observed =
+      this.live.passes > 0 ||
+      this.shadow.passes > 0 ||
+      this.skipSize + this.skipOverrun + this.skipUnknownVersion + this.skipLiveFailed > 0;
+    const shadowPayload = cfg.enabled && observed ? this.shadowPayloads(cfg) : null;
     const signals =
       cfg.integrityEnabled && !this.integrity.isEmpty
         ? {
@@ -725,6 +841,7 @@ export class LightningShadowRunner implements LightningClusterTelemetrySink {
           size_cap: this.skipSize,
           overrun: this.skipOverrun,
           unknown_version: this.skipUnknownVersion,
+          live_failed: this.skipLiveFailed,
         },
         avg_pass_ms: this.shadowRuns === 0 ? null : round1(this.shadowMsTotal / this.shadowRuns),
         dropped_windows: this.droppedWindows,
@@ -811,6 +928,7 @@ export class LightningShadowRunner implements LightningClusterTelemetrySink {
     this.skipSize = 0;
     this.skipOverrun = 0;
     this.skipUnknownVersion = 0;
+    this.skipLiveFailed = 0;
     this.shadowMsTotal = 0;
     this.shadowRuns = 0;
     this.droppedWindows = 0;

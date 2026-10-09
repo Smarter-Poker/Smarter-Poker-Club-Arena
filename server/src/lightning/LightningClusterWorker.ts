@@ -477,7 +477,11 @@ export class LightningClusterWorker {
     const summary = summarizeLightningMatch(result);
     this.metrics.recordSummary(this.clusterId, summary);
     this.maybeLogSummary(summary, disconnected.length);
-    this.observeShadow(passNow, snap, 'match', true, result.matcherVersion, result.groups);
+    // The diagnosis is the database's own legality for every pool player.
+    this.observeShadow(passNow, snap, 'match', true, result.matcherVersion, result.groups, {
+      legalCount: result.legalCount,
+      legality: new Map(result.diagnosis.map((d) => [d.playerId, d.reasonCode])),
+    });
     return { outcome: 'matched', summary, disconnected: disconnected.length };
   }
 
@@ -491,11 +495,17 @@ export class LightningClusterWorker {
     kind: 'form' | 'match',
     ok: boolean,
     matcherVersion: string | null,
-    groups: readonly LightningDecidedGroup[]
+    groups: readonly LightningDecidedGroup[],
+    answer: {
+      epoch?: number | null;
+      legalCount?: number | null;
+      legality?: ReadonlyMap<string, string | null> | null;
+    } = {}
   ): void {
     if (!this.shadow.active) return;
     try {
       this.shadow.observe({
+        ...answer,
         nowMs: passNow.getTime(),
         presence: {
           connected: snap.connected,
@@ -671,7 +681,7 @@ export class LightningClusterWorker {
       }
       if (this.deps.hasInstance?.(h.instance_id)) continue; // a replay naming a hand already dealt
       this.metrics.noteMatched(players, formedAtMs, this.clusterId);
-      decided.push({ players, bb: h.bb, sb: h.sb, btn: h.btn });
+      decided.push({ players, bb: h.bb, sb: h.sb, btn: h.btn, handId: h.hand_id });
       for (const p of players)
         if (!this.knownPoolPlayers.includes(p)) this.knownPoolPlayers.push(p);
       this.deps.startHand!({
@@ -692,7 +702,11 @@ export class LightningClusterWorker {
       'form',
       result.ok === true && result.frozen !== true,
       typeof result.matcher_version === 'string' ? result.matcher_version : null,
-      decided
+      decided,
+      {
+        epoch: typeof result.cluster_epoch === 'number' ? result.cluster_epoch : null,
+        legalCount: typeof result.legal_count === 'number' ? result.legal_count : null,
+      }
     );
     if (result.frozen === true || result.stopped_reason === 'frozen') {
       this.logger.error(

@@ -33,8 +33,18 @@ export const LIGHTNING_INTEGRITY_MAX_PAIRS = 20_000;
 export const LIGHTNING_INTEGRITY_MAX_OPEN_HANDS = 1_000;
 /** Latency samples kept per player for the quantiles. */
 export const LIGHTNING_INTEGRITY_SAMPLES_PER_PLAYER = 256;
-/** A pair is reported once it shared at least this many hands in the window. */
+/** A pair's latency correlation is computed once it has at least this many shared decisions. */
 export const LIGHTNING_INTEGRITY_PAIR_MIN_HANDS = 3;
+/**
+ * A pair is REPORTED once it shared a single hand in the window (Phase 11
+ * remediation, 2026-10-09). The database stores each window's evidence and
+ * decides the pair patterns over the rolling 24 hours of stored windows
+ * (20261009181945), so the evidence below any one window's threshold is
+ * exactly what it needs: at 25 to 50 players a pair shares one or two hands
+ * per five minutes, and a per-window floor of three meant no pair was ever
+ * reported. The busiest pairs still go first, up to the report's cap.
+ */
+export const LIGHTNING_INTEGRITY_REPORT_PAIR_MIN_HANDS = 1;
 /** At most this many players / pairs go into one report (the busiest first). */
 export const LIGHTNING_INTEGRITY_REPORT_MAX_PLAYERS = 500;
 export const LIGHTNING_INTEGRITY_REPORT_MAX_PAIRS = 200;
@@ -212,7 +222,7 @@ export class LightningIntegrityWindow {
         };
       });
     const pairs: LightningIntegrityPairSignal[] = [...this.pairs.entries()]
-      .filter(([, p]) => p.hands >= LIGHTNING_INTEGRITY_PAIR_MIN_HANDS)
+      .filter(([, p]) => p.hands >= LIGHTNING_INTEGRITY_REPORT_PAIR_MIN_HANDS)
       .sort((x, y) => y[1].hands - x[1].hands || (x[0] < y[0] ? -1 : 1))
       .slice(0, LIGHTNING_INTEGRITY_REPORT_MAX_PAIRS)
       .map(([key, p]) => {

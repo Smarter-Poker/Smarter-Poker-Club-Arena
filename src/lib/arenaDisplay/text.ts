@@ -1,6 +1,6 @@
 /** Owner rule, 2026-10-09: no dollar signs in either arena's displayed copy. */
 export function arenaDisplayText(text: string): string {
-  return text.replace(/[$＄﹩]/g, '');
+  return text.replace(/[$＄﹩\u{1F4B2}\u{1F4B0}\u{1F4B5}]/gu, '');
 }
 
 function displayChildren(value: unknown): unknown {

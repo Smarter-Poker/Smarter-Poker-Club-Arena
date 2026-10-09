@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 import { execFileSync } from 'node:child_process';
 import { arenaDisplayText } from '../src/lib/arenaDisplay/text';
 import { formatGameTitle } from '../src/utils/formatGameTitle';
@@ -15,6 +16,7 @@ describe('dollar signs never reach arena display copy', () => {
     expect(formatGameTitle('Sunday Deep Stack Satellite $2')).toBe('Sunday Deep Stack Satellite 2');
     expect(formatGameTitle('Sunday Deep Stack Satellite $5')).toBe('Sunday Deep Stack Satellite 5');
     expect(arenaDisplayText('$1,250.50 / ＄5 / ﹩2')).toBe('1,250.50 / 5 / 2');
+    expect(arenaDisplayText('\u{1F4B2}5 / \u{1F4B0}$25 / \u{1F4B5}54')).toBe('5 / 25 / 54');
     expect(titleCase('win $25')).toBe('Win 25');
     expect(formatPopupText('paid you $49.95')).toBe('Paid You 49.95');
   });
@@ -37,6 +39,35 @@ describe('dollar signs never reach arena display copy', () => {
     expect(html).toContain('value="$id"');
     expect(html.replace('value="$id"', '')).not.toContain('$');
     expect(name).toContain('$5');
+  });
+
+  it('normalizes standalone worker notifications before display, preserving event identity', async () => {
+    const handlers: Array<(event: unknown) => void> = [];
+    const displayed: Array<{ title: string; options: { body: string; tag: string } }> = [];
+    const self = {
+      addEventListener: (type: string, handler: (event: unknown) => void) => {
+        if (type === 'message') handlers.push(handler);
+      },
+      clients: { matchAll: async () => [] },
+      registration: {
+        showNotification: (title: string, options: { body: string; tag: string }) =>
+          displayed.push({ title, options }),
+      },
+    };
+    runInNewContext(readFileSync('public/sw-bus.js', 'utf8'), { self });
+    const event = {
+      data: {
+        type: 'BUS_EVENT',
+        event: { type: 'CLUB_JOINED', payload: { clubName: 'Satellite $5' } },
+      },
+    };
+    handlers.forEach((handler) => handler(event));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(displayed).toHaveLength(1);
+    expect(displayed[0].options.body).toBe('Satellite 5');
+    expect(displayed[0].options.tag).toBe('bus-CLUB_JOINED');
+    expect(event.data.event.payload.clubName).toBe('Satellite $5');
   });
 
   it('keeps machine identifiers, passwords, callbacks and component model data intact', () => {

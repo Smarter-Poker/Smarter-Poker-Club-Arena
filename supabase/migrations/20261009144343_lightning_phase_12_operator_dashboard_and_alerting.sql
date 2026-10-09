@@ -183,6 +183,17 @@
 --     nothing. Answer {ok:true, idempotent, id, cluster_id, window_from,
 --     window_to, legs:<count>}. Stored in lightning_latency_window.
 --
+-- THE HELPERS (service_role only; the doors call them as their owner):
+--   fn_lightning_operator_redact(jsonb)            the redactor (IMMUTABLE)
+--   fn_lightning_operator_may(uuid)                the gate (STABLE)
+--   fn_lightning_operator_cluster_row(uuid, timestamptz)
+--                                                  one dashboard row (DEFINER)
+--   fn_lightning_alert_raise(text, uuid, text, text, text, jsonb)
+--                                                  one page; answers open,
+--                                                  raised or rate_limited
+--   fn_lightning_latency_regression(uuid, text, jsonb, timestamptz)
+--                                                  one leg's regression or NULL
+--
 -- THE SWEEP (SECURITY DEFINER, service_role only, scheduled every minute by
 -- the managed cron API as lightning-alert-sweep-1m; NOT in the tick):
 --   fn_lightning_alert_sweep(p_now timestamptz DEFAULT now()) -> jsonb

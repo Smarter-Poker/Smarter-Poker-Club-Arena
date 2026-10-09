@@ -692,8 +692,11 @@ describe('P11.3 one pack never admits another', () => {
           P11_TEST_CONTRACT_DIGEST
         )
       ).toMatchObject({ status: 'refused', reason: 'continuation_mismatch' });
-    // The release path for another pack still reads its own null selection.
-    expect(admitHorsePhase11ReleaseAuthority('plo6', P11_TEST_NOW)).toMatchObject({
+    // The release path for another pack reads only its own selection: with
+    // that selection null, the PLO5 files do not admit it.
+    expect(
+      admitHorsePhase11ReleaseAuthority('plo6', P11_TEST_NOW, null, p11Reader('plo5'))
+    ).toMatchObject({
       reason: 'unselected',
     });
   });

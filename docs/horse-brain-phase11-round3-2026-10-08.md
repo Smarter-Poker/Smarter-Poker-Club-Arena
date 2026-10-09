@@ -169,10 +169,10 @@ Every cash PLO4 decision ran in candidate mode on usable authority. `horse_brain
 
 The first predeclared natural window (release `c1deef24`, 15:02 to 15:50Z; records in `docs/evidence/phase11/c1deef24/` and `docs/evidence/phase12/c1deef24/`) put every pack below the 0.95 floor, mostly through governor-reduced samples (about 4% of postflop decisions). #6592 (merge `1235b47a`) makes the Omaha and remaining-variant samplers always request the full 32 samples (owner decision, October 9). The locked matrices were re-run unchanged on `1235b47a` and the second predeclared window (`declaration-completion-2026-10-09-full-samples.txt`, release `1235b47a`, 19:02 to 19:50Z, unchanged before and after) was read:
 
-| Pack | Condition (a) on `1235b47a`                                                       | Completion lower bounds (preflop, flop, turn, river) | Status                               |
-| ---- | --------------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------ |
-| PLO8 | +7.84 [+6.84, +8.84] bb/100, 1,116,288 pairs, 114/114 shards                      | 0.995, 0.988, 0.984, 0.982                           | **selected** (approval generation 1) |
-| PLO5 | matrix running on `1235b47a`; on `c8bfc617` +5.37 [+4.25, +6.49]                  | 0.999, 0.993, 0.993, 0.987                           | selected once its re-run qualifies   |
-| PLO6 | matrix running on `1235b47a`; on `c8bfc617` +3.68 [+2.89, +4.47], 2,519,424 pairs | 0.998, 0.990, 0.990, 0.989                           | selected once its re-run qualifies   |
+| Pack | Condition (a) on `1235b47a`                                  | Completion lower bounds (preflop, flop, turn, river) | Status                               |
+| ---- | ------------------------------------------------------------ | ---------------------------------------------------- | ------------------------------------ |
+| PLO8 | +7.84 [+6.84, +8.84] bb/100, 1,116,288 pairs, 114/114 shards | 0.995, 0.988, 0.984, 0.982                           | **selected** (approval generation 1) |
+| PLO5 | +5.37 [+4.25, +6.49] bb/100, 2,379,456 pairs, 243 shards     | 0.999, 0.993, 0.993, 0.987                           | **selected** (approval generation 1) |
+| PLO6 | +3.68 [+2.89, +4.47] bb/100, 2,519,424 pairs                 | 0.998, 0.990, 0.990, 0.989                           | **selected** (approval generation 1) |
 
 The completion record writers now refuse a window spelled in any form other than the canonical `toISOString` form admission reads (the first records used `...:00Z`, which `isoMs` refuses as `completion_window_invalid`); the records used for selection carry `...:00.000Z`.

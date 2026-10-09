@@ -1,0 +1,9 @@
+{
+  "schema": "horse-phase11-strength-attempt-v1",
+  "runAttempt": 1,
+  "job": "league",
+  "variant": "plo5",
+  "startedAt": "2026-10-09T20:22:55Z",
+  "finishedAt": "2026-10-09T20:31:36Z",
+  "exitCode": 0
+}

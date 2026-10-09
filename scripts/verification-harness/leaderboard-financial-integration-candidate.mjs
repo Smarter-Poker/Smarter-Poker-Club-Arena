@@ -22,7 +22,7 @@ const reviewed = Object.freeze({
   [concurrency]: 'c734ab9c039bd926a4b854177ea76729d825a57df45506b11ac67a59b57723ea',
   [unknown]: 'fb59461082c8fbb0ebf86c032854d92a88b51c19106ffa13381c91ce287a1514',
   [proxy]: 'd94d01708225596d90d2ee892d2634d995078cc1d6f7ac604fae9e56ac8227b5',
-  [diagnostics]: '8f6bf9322d2ca12cf4a28e14d60d25e3ee3dcf0637a5051db4af319caaccc3a9',
+  [diagnostics]: 'cf3f612198e91879949cd45b2fda1d1525fef0085f3f71fc758e5b216b73d847',
 });
 const modes = Object.freeze({
   payout: [auth, payout, diagnostics],
@@ -111,7 +111,7 @@ failure '${message}'; }`;
 sed '$d' "$here/${auth}" >"$scratch/financial-${mode}-authorization.sql" || failure 'authorization SQL preparation failed'
 cat "$scratch/financial-${mode}-authorization.sql" "$here/${selected}" >"$scratch/financial-${mode}-complete.sql" || failure 'complete financial SQL preparation failed'
 chmod 600 "$scratch/financial-${mode}-authorization.sql" "$scratch/financial-${mode}-complete.sql" || failure 'private financial SQL permissions unavailable'
-timeout 180 docker exec -i "$container" psql -h /tmp -XAtq -U "$bootstrap" -d postgres -v ON_ERROR_STOP=1 <"$scratch/financial-${mode}-complete.sql" >"$scratch/financial-${mode}-fixture.log" 2>&1 || ${reportFailure(`financial-${mode}-fixture.log`, `isolated ${mode} SQL assertions failed`)}`;
+timeout 180 docker exec -i "$container" psql -h /tmp -XAtq -U "$bootstrap" -d postgres -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate --file=- <"$scratch/financial-${mode}-complete.sql" >"$scratch/financial-${mode}-fixture.log" 2>&1 || ${reportFailure(`financial-${mode}-fixture.log`, `isolated ${mode} SQL assertions failed`)}`;
   const invocation =
     mode === 'payout' || mode === 'funding'
       ? sqlStream(mode === 'payout' ? payout : funding)

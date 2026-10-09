@@ -68,6 +68,11 @@ export function financialDiagnostics(mode, input) {
   assert.equal(typeof input, 'string');
   assert.ok(Buffer.byteLength(input) <= maximum);
   const rows = [];
+  // psql sqlstate verbosity omits messages, values, SQL and context. A
+  // pre-verdict error remains a failure; this receipt only locates its input.
+  const errors = [
+    ...input.matchAll(/^psql:<stdin>:(\d{1,6}): (?:ERROR|FATAL|PANIC):\s+([0-9A-Z]{5})\s*$/gm),
+  ];
   for (const line of input.split('\n')) {
     if (!line.includes('|')) continue; // Raw errors/notices remain private.
     const parts = line.split('|');
@@ -83,6 +88,11 @@ export function financialDiagnostics(mode, input) {
       if (mode === 'payout' || mode === 'funding') assert.notEqual(state, '');
     }
     rows.push({ name, passed, state, stage });
+  }
+  if (rows.length === 0 && errors.length === 1) {
+    const [, line, state] = errors[0];
+    assert.ok(Number(line) > 0 && state !== '00000');
+    return `Financial Diagnostic: mode=${mode} verdicts=unavailable input_line=${line} SQLSTATE=${state}`;
   }
   assert.equal(rows.length, cases[mode].length);
   return rows

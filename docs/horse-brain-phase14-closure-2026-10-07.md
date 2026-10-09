@@ -151,6 +151,16 @@ Closes the limit "The daily audit still classifies by current profile until it a
 - Production classification by the accepted roster and the first identity-counted pass receipt: implemented but unverified, for the reason and times above.
 - Every other limit listed in this record is unchanged.
 
+### Verified October 9, 2026
+
+Production, read-only, 2026-10-09T01:58:16Z (`horse_commitment_audit_days`, `horse_commitment_audit_passes`).
+
+- The first P14.3 pass receipt with identity counters exists: day 2026-10-07, pass 1, finished 2026-10-08T21:18:32Z, 1,157,394 hands, identity basis `current_profile_then_accepted_roster`, roster identity 557,977, profile identity 599,417, roster unavailable 0, roster missing 0 (the four counters sum to the hands scanned), hands without commit 0, missing source 0, late arrivals 0. Verified now.
+- Day 2026-10-06 finished at 2026-10-08T13:49:53Z (1,229,255 hands, all profile identity, basis `current_profile_is_horse`) and, as designed, wrote no receipt: its pass began at 2026-10-07T00:00:05Z, before the P14.3 selection counters existed, so its selection counters are NULL. The expectation above that 2026-10-06's completion would write the first identity-counted receipt was therefore wrong; the first one is 2026-10-07's. Verified now.
+- Day 2026-10-08, wholly after the roster epoch, was created at 2026-10-09T00:00:00Z with basis `accepted_roster`. Pass 1 is in progress: 281,088 hands scanned, every one classified by its own accepted roster (roster identity 281,088, profile identity 0, roster unavailable 0, roster missing 0). Verified now.
+- The audit is current. Within its working window (today minus three to today minus one: 2026-10-06 to 2026-10-08) the oldest unfinished day is 2026-10-08, today minus one. Rows for 2026-09-15 to 2026-09-30 that aged out of the window unfinished are outside the step's reach and leave through the 35-day prune. Historical only.
+- This closes the remaining-open entry above: production classification by the accepted roster and the first identity-counted pass receipt are verified now.
+
 ## Receipt Retention (October 8, 2026)
 
 This section supersedes the remaining-open entry "`horse_hand_review_receipts` is never pruned" above and the matching limit in the [Phase 15 closure](horse-brain-phase15-closure-2026-10-08.md). Record: [changelog](changelog/2026-10-08-horse-brain-phase14-1-receipt-retention.md).

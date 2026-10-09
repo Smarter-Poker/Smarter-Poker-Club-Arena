@@ -58,7 +58,7 @@ describe('dollar signs never reach arena display copy', () => {
     expect(
       jsxDEV('span', { children: '$5' }, undefined, false, undefined, undefined).props.children
     ).toBe('5');
-    for (const config of ['vite.config.ts', 'vitest.config.ts']) {
+    for (const config of ['vite.config.ts', 'vite.prerender.config.ts', 'vitest.config.ts']) {
       expect(readFileSync(config, 'utf8')).toContain("jsxImportSource: '@arena-display'");
     }
     expect(

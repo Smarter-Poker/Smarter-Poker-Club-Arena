@@ -604,6 +604,8 @@ describe('Union Statements painted-console contract', () => {
               union_id: args.p_union_id,
               club_id: args.p_club_id,
               duplicate: true,
+              invoice_id: 'ab000000-0000-4000-8000-000000000002',
+              received_at: '2026-10-09T02:00:00Z',
             },
             error: null,
           });

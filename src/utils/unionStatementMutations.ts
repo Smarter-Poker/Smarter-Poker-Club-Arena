@@ -15,6 +15,8 @@ export type UnionPresettlementReceipt = {
   union_id: string;
   club_id: string;
   duplicate: boolean;
+  invoice_id: string;
+  received_at: string;
 };
 
 export type UnionStatementPaidReceipt = {
@@ -81,6 +83,10 @@ export function parseUnionPresettlementReceipt(
     typeof row.duplicate !== 'boolean'
   )
     throw new Error('Presettlement receipt does not match the payment identity');
+  const invoiceId = textValue(row.invoice_id, 'Presettlement invoice identity');
+  const receivedAt = textValue(row.received_at, 'Presettlement received time');
+  if (!UUID.test(invoiceId) || !Number.isFinite(Date.parse(receivedAt)))
+    throw new Error('Presettlement invoice receipt is invalid');
   return {
     success: true,
     presettlement_id: id,
@@ -89,6 +95,8 @@ export function parseUnionPresettlementReceipt(
     union_id: expected.unionId,
     club_id: expected.clubId,
     duplicate: row.duplicate,
+    invoice_id: invoiceId,
+    received_at: receivedAt,
   };
 }
 

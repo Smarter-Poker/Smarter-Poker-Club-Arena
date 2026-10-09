@@ -18,6 +18,8 @@ const binding = {
   union_id: expected.unionId,
   club_id: expected.clubId,
   duplicate: false,
+  invoice_id: 'ab000000-0000-4000-8000-000000000002',
+  received_at: '2026-10-09T02:00:00Z',
 };
 
 describe('union statement mutation receipts', () => {
@@ -158,4 +160,17 @@ describe('union statement mutation receipts', () => {
     expect(() => acknowledgeUnionPresettlement(first)).toThrow(/Could Not Be Cleared/);
     expect(readPendingUnionPresettlement('actor-a', 'union-a', 'club-a')).toEqual(next);
   });
+
+  it.each([{ invoice_id: null }, { invoice_id: 'missing-invoice' }, { received_at: 'not-a-date' }])(
+    'does not acknowledge a payment without its issued invoice receipt: %o',
+    (invalid) => {
+      expect(() =>
+        parseUnionPresettlementReceipt(
+          { success: true, presettlement_id: receiptId, amount: 15.25, ...binding, ...invalid },
+          15.25,
+          expected
+        )
+      ).toThrow(/invoice|time/);
+    }
+  );
 });

@@ -203,8 +203,8 @@ describe('the matcher model (pluggable by version)', () => {
     expect(lightningGroupSizes(7, 3, 3, 3)).toEqual([3, 3]); // no split seats all: full groups
   });
 
-  it('knows m1 (the SQL port) and m2 (the candidate); an unknown version is none', () => {
-    expect([...LIGHTNING_MATCHER_MODELS.keys()]).toEqual(['m1', 'm2']);
+  it('knows m1 (the SQL port), m1-port (the same, for A/A) and m2 (the candidate); an unknown version is none', () => {
+    expect([...LIGHTNING_MATCHER_MODELS.keys()]).toEqual(['m1', 'm1-port', 'm2']);
     expect(lightningMatcherModel('m1')?.version).toBe('m1');
     expect(lightningMatcherModel('m9')).toBeNull();
   });
@@ -469,7 +469,8 @@ describe('one record per Cluster per window', () => {
     const shadow = rec.args.p_shadow as Record<string, any>;
     const live = rec.args.p_live as Record<string, any>;
     expect(shadow.skipped.size_cap).toBeGreaterThan(0);
-    expect(shadow.passes + shadow.skipped.size_cap).toBe(live.passes);
+    // Phase 11 remediation: a skipped pass is scored on neither side.
+    expect(live.passes).toBe(shadow.passes);
 
     let clock = 0;
     const telemetry = new LightningTelemetry();

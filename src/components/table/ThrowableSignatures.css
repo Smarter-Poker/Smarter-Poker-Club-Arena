@@ -1532,7 +1532,7 @@
     calc(150ms * var(--animation-speed, 1)) both;
 }
 .throw-animation[data-throwable='cash_stack'] .throw-animation__fxi::before {
-  content: '$';
+  content: 'C';
 }
 
 /* =================================================================================

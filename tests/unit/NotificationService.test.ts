@@ -35,9 +35,39 @@ vi.mock('../../src/core/MasterBus', () => ({
   masterBus: { emit: vi.fn(), subscribe: vi.fn(() => vi.fn()) },
 }));
 
+vi.mock('../../src/services/MessagingService', () => ({
+  messagingService: { isNotificationTypeMuted: vi.fn(() => false) },
+}));
+
 import { notificationService } from '../../src/services/NotificationService';
 
 describe('NotificationService', () => {
+  it('removes dollar signs only from browser notification display', async () => {
+    const constructor = Object.assign(
+      vi.fn(function () {}),
+      { permission: 'granted' }
+    );
+    vi.stubGlobal('Notification', constructor);
+    const notification = {
+      id: '$identity',
+      type: 'waitlist_ready',
+      title: 'Satellite $5',
+      message: 'Prize ＄54 / ﹩25',
+    };
+    try {
+      await (
+        notificationService as unknown as { showBrowserNotification(n: unknown): Promise<void> }
+      ).showBrowserNotification(notification);
+      expect(constructor).toHaveBeenCalledWith('Satellite 5', {
+        body: 'Prize 54 / 25',
+        icon: '/favicon.ico',
+        tag: '$identity',
+      });
+      expect(notification.title).toBe('Satellite $5');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
   it('should export a singleton instance', () => {
     expect(notificationService).toBeDefined();
   });

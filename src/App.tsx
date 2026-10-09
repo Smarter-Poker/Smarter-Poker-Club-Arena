@@ -239,6 +239,11 @@ const SessionHistoryPage = lazyWithRetry(() => import('./pages/SessionHistoryPag
 
 // Q4: New Backported Pages (Hub → Club Arena)
 const AntiCheatPage = lazyWithRetry(() => import('./pages/AntiCheatPage'));
+/* LIGHTNING PHASE 12: the operator dashboard. Lazy, so neither the page nor
+   its read hooks ever reach the entry chunk. */
+const ClubLightningOperationsPage = lazyWithRetry(
+  () => import('./pages/club/ClubLightningOperationsPage')
+);
 const XMTTPage = lazyWithRetry(() => import('./pages/XMTTPage'));
 const MarketplacePage = lazyWithRetry(() => import('./pages/MarketplacePage'));
 // One marketplace (Dan, 2026-09-21): the route hands the web to the World Hub
@@ -2203,6 +2208,18 @@ function FullApp() {
                       <ClubMemberGuard>
                         <PageErrorBoundary pageName="Anti-Cheat">
                           <AntiCheatPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/lightning"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Lightning Operations">
+                          <ClubLightningOperationsPage />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
                     </AuthGuard>

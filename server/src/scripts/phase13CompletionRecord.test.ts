@@ -187,6 +187,8 @@ describe('P13.3 completion reader, stage 2: the record admission reads', () => {
     ['unknown_variant', { variant: 'stud' }],
     ['invalid_release', { release: 'main' }],
     ['invalid_window', { from: TO, to: FROM }],
+    ['invalid_window', { from: FROM.replace('.000Z', 'Z') }],
+    ['invalid_window', { to: TO.replace('.000Z', 'Z') }],
     ['release_unchanged_not_proven', { releaseUnchanged: 'false' }],
     [
       'release_sources_unavailable',
@@ -522,15 +524,22 @@ describe('P13.3 completion reader, stage 1: the host extractor', () => {
     const toMs = Date.parse(to);
     expect(printed).toEqual(times.filter((t) => t >= fromMs && t < toMs));
     expect(printed).toEqual([AT + 500, AT + 1249]);
-    // Stage 2 reads the same window from the same arguments: no row is outside it.
-    const out = phase13CompletionRecordFrom({
+    // Stage 2 writes only the canonical spelling admission can read (isoMs,
+    // 2026-10-09): these spellings are refused by name, and the canonical
+    // spelling of the same instants reads the same window: no row is outside it.
+    const input = {
       variant: 'nlh',
       release: RELEASE,
-      from,
-      to,
       releaseUnchanged: 'true',
       lines: run.stdout.trim().split('\n'),
       readReleaseFile: running,
+    };
+    const loose = phase13CompletionRecordFrom({ ...input, from, to });
+    expect('refused' in loose ? loose.refused : null).toBe('invalid_window');
+    const out = phase13CompletionRecordFrom({
+      ...input,
+      from: new Date(fromMs).toISOString(),
+      to: new Date(toMs).toISOString(),
     });
     expect('refused' in out ? out.refused : null).toBeNull();
     // Other offsets convert to UTC as Date.parse does; a bound without an

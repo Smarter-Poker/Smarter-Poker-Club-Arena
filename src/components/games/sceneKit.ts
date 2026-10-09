@@ -1,3 +1,4 @@
+import { arenaDisplayText } from '../../lib/arenaDisplay/text';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
@@ -216,6 +217,7 @@ export function gameRenderer(canvas: HTMLCanvasElement, width: number, height: n
 }
 
 export function inscription(text: string, color = '#ffffff') {
+  text = arenaDisplayText(text);
   const canvas = document.createElement('canvas');
   canvas.width = 256;
   canvas.height = 96;

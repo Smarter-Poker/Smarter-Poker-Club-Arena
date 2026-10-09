@@ -3,8 +3,7 @@
  *
  * A Diamond chest holds whole Diamonds (`a_diamond_mystery_chest_holds_whole_
  * diamonds`), and the reveal is the moment the Diamond Arena exists for, so its
- * figure must say what was won. A chip chest prints exactly what it printed
- * before, currency mark included. An unread arena prints no figure at all.
+ * figure must say what was won. A chip chest retains its amount while the display removes dollar signs. An unread arena prints no figure at all.
  */
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -80,8 +79,8 @@ const splitFigures = (container: HTMLElement) =>
   [...container.querySelectorAll('.mbc__split-amount')].map((el) => el.textContent);
 
 describe('the mystery chest reveals its prize at the event unit', () => {
-  it('a chip chest prints exactly what it printed before, currency mark and all', () => {
-    expect(figure(reveal({ ...CHEST, currency: '$' }, CHIP_UNIT_CENTS))).toBe('$500');
+  it('a chip chest retains its amount without a dollar sign', () => {
+    expect(figure(reveal({ ...CHEST, currency: '$' }, CHIP_UNIT_CENTS))).toBe('500');
     cleanup();
     expect(figure(reveal(CHEST, CHIP_UNIT_CENTS))).toBe('500');
   });

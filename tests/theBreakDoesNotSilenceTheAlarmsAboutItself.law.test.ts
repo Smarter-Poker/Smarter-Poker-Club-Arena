@@ -134,6 +134,16 @@ describe('3. the break flag has a reader of its own', () => {
 });
 
 describe('4. promtool proves the timing in CI', () => {
+  it('uses the identical immutable image from the official registry in both offline evaluations', () => {
+    for (const file of ['test-slo-stall-duration.sh', 'test-fleet-throughput.sh']) {
+      const script = readFileSync(join(ROOT, 'scripts/ci', file), 'utf8');
+      expect(script).toContain(
+        'quay.io/prometheus/prometheus@sha256:2659f4c2ebb718e7695cb9b25ffa7d6be64db013daba13e05c875451cf51b0d3'
+      );
+      expect(script).toContain('--network none --read-only');
+      expect(script).toContain('--entrypoint /bin/promtool');
+    }
+  });
   it('the test file is run by the CI script', () => {
     const script = readFileSync(join(ROOT, 'scripts/ci/test-fleet-throughput.sh'), 'utf8');
     expect(script).toContain('break-does-not-silence-its-own-alarms.test.yml');

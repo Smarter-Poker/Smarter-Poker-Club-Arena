@@ -71,6 +71,11 @@ const ENTRY_POINTS = new Set([
   'src/App.tsx',
   'src/vite-env.d.ts',
   'src/diamond-test.tsx',
+  // Generated JSX imports from jsxImportSource in Vite/TypeScript, rather
+  // than literal imports in src/. Exact runtime aliases are declared in
+  // vite.config.ts and pinned by arena-dollar-signs.law.test.tsx.
+  'src/lib/arenaDisplay/jsx-runtime.ts',
+  'src/lib/arenaDisplay/jsx-dev-runtime.ts',
 ]);
 
 function walk(dir, out = []) {

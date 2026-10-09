@@ -357,7 +357,7 @@ export function BBJCelebration({
         ctx.rotate(p.rotation);
 
         if (p.type === 'chip') {
-          // Gold chip with dollar sign
+          // Gold chip with chip initial
           ctx.beginPath();
           ctx.arc(0, 0, p.size, 0, Math.PI * 2);
           ctx.fillStyle = p.color;
@@ -370,7 +370,7 @@ export function BBJCelebration({
           ctx.font = `bold ${p.size}px sans-serif`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText('$', 0, 0);
+          ctx.fillText('C', 0, 0);
         } else if (p.type === 'spark') {
           // Glowing spark
           ctx.shadowColor = p.color;

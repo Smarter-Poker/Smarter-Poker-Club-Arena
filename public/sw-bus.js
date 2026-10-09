@@ -415,8 +415,11 @@ sw.addEventListener('fetch', (event) => {
 //  MASTER BUS NOTIFICATIONS — Background push for critical events
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// This worker is standalone; normalize notification display without changing event identity.
+const arenaDisplayText = text => String(text ?? '').replace(/[$＄﹩\u{1F4B2}\u{1F4B0}\u{1F4B5}]/gu, '');
+
 const EVENT_LABELS = {
-    BALANCE_UPDATED: '💰 Balance Updated',
+    BALANCE_UPDATED: 'Balance Updated',
     CLUB_JOINED: '♠️ Club Joined',
     CLUB_LEFT: '🚪 Left Club',
     TABLE_SEATED: '🎯 Seated at Table',
@@ -445,8 +448,8 @@ sw.addEventListener('message', (event) => {
             body = `Table: ${payload?.tableId || ''}`;
         }
 
-        sw.registration.showNotification(title, {
-            body,
+        sw.registration.showNotification(arenaDisplayText(title), {
+            body: arenaDisplayText(body),
             icon: '/favicon.ico',
             badge: '/favicon.ico',
             tag: `bus-${eventType}`,

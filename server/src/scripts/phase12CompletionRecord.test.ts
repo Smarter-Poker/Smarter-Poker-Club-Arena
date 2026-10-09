@@ -160,6 +160,8 @@ describe('P12.3 completion reader, stage 2: the record admission reads', () => {
     ['unknown_variant', { variant: 'plo8' }],
     ['invalid_release', { release: 'main' }],
     ['invalid_window', { from: TO, to: FROM }],
+    ['invalid_window', { from: FROM.replace('.000Z', 'Z') }],
+    ['invalid_window', { to: TO.replace('.000Z', 'Z') }],
     ['release_unchanged_not_proven', { releaseUnchanged: 'false' }],
     [
       'release_sources_unavailable',

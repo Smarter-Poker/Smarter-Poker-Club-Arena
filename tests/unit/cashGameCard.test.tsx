@@ -40,12 +40,12 @@ describe('the card paints the changing parts', () => {
 
   it('shows stakes, variant, status, mode, the four rows and the rules line', () => {
     mount();
-    expect(screen.getByText('$1 / $2')).toBeTruthy();
+    expect(screen.getByText('1 / 2')).toBeTruthy();
     expect(screen.getByText("NO LIMIT HOLD'EM")).toBeTruthy();
     expect(screen.getByText('RUNNING')).toBeTruthy();
     expect(screen.getByText('MUST MOVE')).toBeTruthy();
     expect(screen.getByText('CLASSIC')).toBeTruthy();
-    expect(screen.getByText('$1/$2')).toBeTruthy();
+    expect(screen.getByText('1/2')).toBeTruthy();
     expect(screen.getByText('57')).toBeTruthy();
     expect(screen.getByText('10')).toBeTruthy();
     expect(screen.getByText(/6-9 HANDED/)).toBeTruthy();
@@ -93,7 +93,7 @@ describe('the card paints the changing parts', () => {
 
   it('a long stakes label shrinks rather than overflowing the zone', () => {
     mount({ stakesLabel: '$0.05 / $0.10' });
-    const el = screen.getByText('$0.05 / $0.10') as HTMLElement;
+    const el = screen.getByText('0.05 / 0.10') as HTMLElement;
     expect(Number(el.style.getPropertyValue('--cgc-fit'))).toBeLessThan(1);
     expect(Number(el.style.getPropertyValue('--cgc-fit'))).toBeGreaterThan(0);
   });

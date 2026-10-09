@@ -122,6 +122,6 @@ it('a cash rebuy amount remains editable before its minimum is applied on blur',
   expect(amount.value).toBe('1');
   fireEvent.change(amount, { target: { value: '137.50' } });
   fireEvent.blur(amount);
-  expect(amount.value).toBe('137.5');
+  expect(amount.valueAsNumber).toBe(137.5);
   expect(screen.getByRole('button', { name: 'Rebuy 137.50' })).toBeTruthy();
 });

@@ -86,10 +86,17 @@ test.describe('tournament scroll gestures', () => {
             await page.mouse.move(x, box!.y + box!.height / 2);
             const before = await panel.evaluate((el) => el.scrollTop);
             await page.mouse.wheel(0, 300);
-            await expect.poll(() => panel.evaluate((el) => el.scrollTop)).toBeGreaterThan(before);
+            // WebKit animates wheel input. Reading its first changed pixel
+            // and immediately reversing races the rest of the downward gesture.
+            // Wait for the requested distance before testing the reverse gesture.
+            await expect
+              .poll(() => panel.evaluate((el) => el.scrollTop))
+              .toBeGreaterThanOrEqual(before + 299);
             const after = await panel.evaluate((el) => el.scrollTop);
             await page.mouse.wheel(0, -250);
-            await expect.poll(() => panel.evaluate((el) => el.scrollTop)).toBeLessThan(after);
+            await expect
+              .poll(() => panel.evaluate((el) => el.scrollTop))
+              .toBeLessThanOrEqual(Math.max(0, after - 250) + 1);
           }
           expect(await page.locator('.details-footer').boundingBox()).toEqual(footer);
           expect(await panel.evaluate((el) => getComputedStyle(el).overscrollBehaviorY)).toBe(

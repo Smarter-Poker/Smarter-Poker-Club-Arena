@@ -2,7 +2,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { authFailureDiagnostic } from './leaderboard-real-auth-launcher-draft.mjs';
+import {
+  authCommandFailure,
+  authFailureDiagnostic,
+} from './leaderboard-real-auth-launcher-draft.mjs';
 import { assertExpiredCredential } from './leaderboard-real-auth-draft.mjs';
 
 test('expiry oracle requires the pinned claims error and exact expiry reason', () => {
@@ -93,4 +96,14 @@ test('Auth failure diagnostics expose only closed phase and failure categories',
   assert.ok(!out.includes('password') && !out.includes('private-host'));
   assert.match(launcher, /console\.error\(authFailureDiagnostic\(phase, failureKind\)\)/);
   assert.ok(!launcher.includes('console.error(result.stderr)'));
+});
+
+test('Auth process result refuses timeout even after a zero process exit', () => {
+  assert.equal(authCommandFailure({ status: 0 }), null);
+  assert.equal(authCommandFailure({ status: 1 }), 'docker-exit');
+  assert.equal(authCommandFailure({ status: null }), 'docker-exit');
+  assert.equal(authCommandFailure({ status: 0, error: { code: 'ETIMEDOUT' } }), 'docker-timeout');
+  assert.equal(authCommandFailure({ status: 0, error: { code: 'EIO' } }), 'docker-exit');
+  assert.match(launcher, /'pg_ctl',[\s\S]*?'-l',\s*'\/tmp\/postgres\.log'/);
+  assert.match(launcher, /const failed = authCommandFailure\(result\)/);
 });

@@ -61,6 +61,11 @@ export function authFailureDiagnostic(stage, kind) {
     : 'unknown';
   return `Isolated Auth Failure: phase=${safeStage}; kind=${safeKind}`;
 }
+export function authCommandFailure(result) {
+  if (result.error?.code === 'ETIMEDOUT') return 'docker-timeout';
+  if (result.error || result.status !== 0) return 'docker-exit';
+  return null;
+}
 function stage(name) {
   assert.ok(phases.has(name));
   phase = name;
@@ -83,10 +88,9 @@ function command(args, input = '', timeout = 90000) {
     maxBuffer: 8 * 1024 * 1024,
     env: process.env,
   });
-  if (result.status !== 0) {
-    failureKind = result.error?.code === 'ETIMEDOUT' ? 'docker-timeout' : 'docker-exit';
-  }
-  assert.equal(result.status, 0, 'Isolated Docker stage failed');
+  const failed = authCommandFailure(result);
+  if (failed) failureKind = failed;
+  assert.equal(failed, null, 'Isolated Docker stage failed');
   return result.stdout.trim();
 }
 let cfg;
@@ -287,6 +291,9 @@ async function main() {
     'exec',
     cfg.container,
     'pg_ctl',
+    // Restart must redirect postgres descendants; otherwise captured pipes stay open.
+    '-l',
+    '/tmp/postgres.log',
     '-D',
     '/tmp/leaderboard-qualification-db',
     '-o',

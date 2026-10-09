@@ -262,3 +262,24 @@ test('financial fixture service writers retain an existing synthetic journal act
     /set_config\('request.jwt.claims','\{"role":"anon"\}',true\);\n\s*PERFORM set_config\('request.jwt.claim.sub','',true\)/
   );
 });
+
+test('authorization is validated before companion doors regain deferred transaction checks', () => {
+  const auth = readFileSync(
+    new URL('./leaderboard-isolated-authorization-draft.sql', import.meta.url),
+    'utf8'
+  );
+  assert.match(
+    auth,
+    /SET CONSTRAINTS ALL IMMEDIATE;[\s\S]*SET CONSTRAINTS ALL DEFERRED;\nROLLBACK;\n$/
+  );
+  assert.equal(auth.match(/^SET CONSTRAINTS ALL DEFERRED;$/gm)?.length, 1);
+  for (const name of [
+    'leaderboard-isolated-payout-regression-draft.sql',
+    'leaderboard-isolated-funding-policy-draft.sql',
+    'leaderboard-isolated-concurrency-fixture-draft.sql',
+    'leaderboard-isolated-opening-policy-draft.sql',
+  ]) {
+    const companion = readFileSync(new URL(`./${name}`, import.meta.url), 'utf8');
+    assert.match(companion, /SET CONSTRAINTS ALL IMMEDIATE;\n(?:ROLLBACK|COMMIT);\n$/);
+  }
+});

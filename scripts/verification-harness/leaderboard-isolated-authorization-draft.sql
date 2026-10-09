@@ -292,4 +292,8 @@ $matrix$;
 
 -- No success verdict until real execution and deferred constraint validation.
 SET CONSTRAINTS ALL IMMEDIATE;
+-- Companion financial doors need the normal deferred transaction boundary.
+-- Validate authorization first, then let the companion validate its complete
+-- balance/journal write before its own final IMMEDIATE check or COMMIT.
+SET CONSTRAINTS ALL DEFERRED;
 ROLLBACK;

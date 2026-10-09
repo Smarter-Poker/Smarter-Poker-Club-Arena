@@ -126,7 +126,15 @@ test('union shortage conserves funds and SQL role refusals precede service settl
   assert.match(sql, /fn_union_promo_send\(funding_union,20,'club',club,shortage_op,owner/);
   assert.match(sql, /from_label='union_wallets.promo_wallet'/);
   assert.match(sql, /to_label='clubs.promo_balance' AND amount=20/);
-  assert.match(sql, /balance_after=0 AND tx_type='promo_to_club'/);
+  assert.match(sql, /t\.balance_after=0 AND t\.tx_type='promo_to_club'/);
+  assert.match(
+    sql,
+    /FROM public\.union_wallet_transactions t WHERE t\.period_id=shortage_op AND t\.union_id=funding_union/
+  );
+  assert.doesNotMatch(
+    sql,
+    /FROM public\.union_wallet_transactions WHERE period_id=shortage_op AND union_id=funding_union/
+  );
   assert.match(sql, /IS DISTINCT FROM players_before/);
   assert.match(sql, /failure_state IS DISTINCT FROM '42501'/);
   assert.match(

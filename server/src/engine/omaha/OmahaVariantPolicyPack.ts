@@ -1,5 +1,9 @@
 import type { Card } from '../../types.js';
-import type { Plo4NodeRole, Plo4Position } from '../plo4/Plo4PolicyPack.js';
+import {
+  OMAHA_REFERENCE_DEVIATIONS,
+  type Plo4NodeRole,
+  type Plo4Position,
+} from '../plo4/Plo4PolicyPack.js';
 import { maxSeatsFor } from '../VariantRules.js';
 import { maxSeatsForVariant } from '../../config/tableSeating.js';
 
@@ -12,7 +16,8 @@ export type OmahaPolicyRole = Plo4NodeRole;
  * belong to the variant with which they were calculated. */
 export const OMAHA_VARIANT_PACKS = Object.freeze({
   plo5: Object.freeze({
-    version: 'plo5-high-round1-v2',
+    version: 'plo5-high-round3-v2',
+    deviations: OMAHA_REFERENCE_DEVIATIONS,
     variant: 'plo5' as const,
     holes: 5,
     splitPot: false,
@@ -34,7 +39,8 @@ export const OMAHA_VARIANT_PACKS = Object.freeze({
     protectionEquity: 0.56,
   }),
   plo6: Object.freeze({
-    version: 'plo6-high-round1-v2',
+    version: 'plo6-high-round3-v2',
+    deviations: OMAHA_REFERENCE_DEVIATIONS,
     variant: 'plo6' as const,
     holes: 6,
     splitPot: false,
@@ -56,7 +62,8 @@ export const OMAHA_VARIANT_PACKS = Object.freeze({
     protectionEquity: 0.59,
   }),
   plo8: Object.freeze({
-    version: 'plo8-split-round1-v2',
+    version: 'plo8-split-round3-v2',
+    deviations: OMAHA_REFERENCE_DEVIATIONS,
     variant: 'plo8' as const,
     holes: 4,
     splitPot: true,

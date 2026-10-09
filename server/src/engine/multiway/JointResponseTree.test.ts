@@ -10,8 +10,8 @@ import {
   jointCallProbability,
   jointRaiseShare,
   jointResponseDraw,
-  JOINT_ACTION_PACK,
   JOINT_ACTION_PACK_ROUND1,
+  JOINT_ACTION_PACK_ROUND2,
   type JointActionRow,
 } from './JointActionModel.js';
 import type { JointResponseCount } from './JointResponseTree.js';
@@ -111,8 +111,12 @@ const STRAIGHT = 5 * 0x100000,
   PAIR = 2 * 0x100000,
   TRIPS = 4 * 0x100000;
 const baseline = { action: 'check' as const, thinkTime: 0 };
+/** These hand-built settlements check the tree's mechanics under the
+ * retained round-2 responses, whose raise branches they construct; the
+ * round-3 responses are covered in JointResponseCalibration.test.ts. */
+const ROUND2 = { responseModel: 'round2' } as const;
 const run = (x: ReturnType<typeof spot>, budget: () => boolean = () => true) =>
-  evaluateJointActions(x.hero, x.state, baseline, x.evidence, budget)!;
+  evaluateJointActions(x.hero, x.state, baseline, x.evidence, budget, ROUND2)!;
 const row = (result: ReturnType<typeof run>, id: string) => {
   const found = result.candidates.find((c) => c.id === id);
   if (!found) throw new Error('missing ' + id + ' in ' + result.candidates.map((c) => c.id));
@@ -361,7 +365,14 @@ describe('P13-A split games, side pots and every variant', () => {
                 b.opponentDecisionStrength = b.opponentDecisionStrength.map(() => 0.96);
               })
             );
-            const result = evaluateJointActions(hero, state, baseline, evidence, () => true)!;
+            const result = evaluateJointActions(
+              hero,
+              state,
+              baseline,
+              evidence,
+              () => true,
+              ROUND2
+            )!;
             expect(result.responseModel).toBe('bounded_raise_tree');
             for (const c of result.candidates) {
               expect(c.maxConservationError).toBeLessThan(1e-6);
@@ -599,12 +610,12 @@ describe('P13-A joint downside, laws and limits', () => {
     expect(complete.candidates.some((c) => c.responseTree!.raiseBranches > 0)).toBe(true);
     // Every possible interruption point, including inside raise branches.
     let calls = 0;
-    evaluateJointActions(x.hero, x.state, baseline, x.evidence, () => (calls++, true));
+    evaluateJointActions(x.hero, x.state, baseline, x.evidence, () => (calls++, true), ROUND2);
     expect(calls).toBeGreaterThan(branches);
     for (let stop = 1; stop < calls; stop += 3) {
       let k = 0;
       expect(
-        evaluateJointActions(x.hero, x.state, baseline, x.evidence, () => ++k < stop)
+        evaluateJointActions(x.hero, x.state, baseline, x.evidence, () => ++k < stop, ROUND2)
       ).toBeNull();
     }
   });
@@ -631,7 +642,7 @@ describe('P13-A joint downside, laws and limits', () => {
       seedFastRandom(1310061);
       const before = saveFastRandom();
       const a = run(x);
-      const b = evaluateJointActions(x.hero, x.state, baseline, changed, () => true)!;
+      const b = evaluateJointActions(x.hero, x.state, baseline, changed, () => true, ROUND2)!;
       expect(saveFastRandom()).toBe(before);
       const opponentReads = (r: typeof a) =>
         r.candidates.map((c) =>
@@ -678,11 +689,11 @@ describe('P13-A joint downside, laws and limits', () => {
     }));
     const bet = row(run(x), 'bet:45');
     expect(bet.responseTree!.raiseBranches).toBeLessThanOrEqual(
-      8 * JOINT_ACTION_PACK.limits.maxRaiseBranchOpponents
+      8 * JOINT_ACTION_PACK_ROUND2.limits.maxRaiseBranchOpponents
     );
     expect(bet.responseTree!.raiseLimitedResponders).toBeGreaterThan(0);
     expect(bet.responseTree!.terminalBranches).toBeLessThanOrEqual(
-      JOINT_ACTION_PACK.limits.maxTerminalBranchesPerCandidate
+      JOINT_ACTION_PACK_ROUND2.limits.maxTerminalBranchesPerCandidate
     );
     const big = spot('nlh', seats, {
       dealer: 9,
@@ -744,7 +755,7 @@ describe('P13-A turn to river continuation', () => {
     expect(check(b).expectedNetChips).toBeCloseTo(20 + 20 * 2, 9);
   });
 
-  it('keeps preflop and flop on the one-response comparison model', () => {
+  it('round 2 keeps preflop and flop on the one-response comparison model', () => {
     for (const stage of ['preflop', 'flop'] as const) {
       const { hero, state } = jointFixture('nlh', stage, 1, 4);
       Object.assign(state, {
@@ -764,11 +775,11 @@ describe('P13-A turn to river continuation', () => {
         samples: 8,
         withinBudget: () => true,
       })!;
-      const a = evaluateJointActions(hero, state, baseline, evidence, () => true)!;
+      const a = evaluateJointActions(hero, state, baseline, evidence, () => true, ROUND2)!;
       const b = evaluateJointActions(hero, state, baseline, evidence, () => true, {
         responseModel: 'round1',
       })!;
-      expect(a.version).toBe(JOINT_ACTION_PACK.version);
+      expect(a.version).toBe(JOINT_ACTION_PACK_ROUND2.version);
       expect(b.version).toBe(JOINT_ACTION_PACK_ROUND1.version);
       expect(a.responseModel).toBe('one_response_then_showdown');
       expect(a.candidates).toEqual(b.candidates);

@@ -16,12 +16,57 @@
  * HandController for every joint variant, in both objectives, through the
  * real HorseLogic joint node.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+
+/** Phase 13's earlier-phase law needs an applied Phase 12 change on a spot
+ * where the joint policy fires. Round 3 changes Short Deck and FLO8 only in
+ * declared preflop spots, so the test that needs it turns this on: an eligible
+ * postflop Phase 12 proposal becomes the other legal passive action (a fold
+ * against a bet, a check instead of a bet), as a pack that changed that
+ * decision would. Off everywhere else. */
+const p12PostflopChange = vi.hoisted(() => ({ on: false }));
+vi.mock('../remainingVariants/RemainingVariantLivePolicy.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../remainingVariants/RemainingVariantLivePolicy.js')>();
+  return {
+    ...actual,
+    evaluateRemainingVariantPolicy: (
+      ...args: Parameters<typeof actual.evaluateRemainingVariantPolicy>
+    ) => {
+      const result = actual.evaluateRemainingVariantPolicy(...args);
+      const [hero, state, baseline, , mode] = args;
+      if (!p12PostflopChange.on || !result.receipt.fired || state.stage === 'preflop')
+        return result;
+      const owed = Math.max(0, state.currentBet - hero.bet);
+      const alternative =
+        owed > 0 && baseline.action !== 'fold' && state.legalActions?.includes('fold')
+          ? { action: 'fold' as const, thinkTime: baseline.thinkTime }
+          : owed === 0 &&
+              (baseline.action === 'bet' || baseline.action === 'all_in') &&
+              state.legalActions?.includes('check')
+            ? { action: 'check' as const, thinkTime: baseline.thinkTime }
+            : null;
+      if (!alternative) return result;
+      const applied = mode === 'candidate';
+      return {
+        ...result,
+        proposal: alternative,
+        decision: applied ? alternative : result.decision,
+        receipt: Object.assign(result.receipt, {
+          proposalAction: alternative.action,
+          proposalAmount: null,
+          changed: true,
+          applied,
+        }),
+      };
+    },
+  };
+});
 import type { GameVariant, HorseDecision, SeatPlayer } from '../../types.js';
 import { HorseLogic, type HorseDecideOpts, type HorseGameStateV2 } from '../HorseLogic.js';
 import { seedFastRandom, variantInfo, type VariantInfo } from '../HorseEval.js';
 import { controllerSpotRandom } from '../remainingVariants/RemainingVariantControllerSpots.test-support.js';
-import { jointReceiptBindingIsValid } from './JointLivePolicy.js';
+import { jointReceiptBindingIsValid, jointSelectedRow } from './JointLivePolicy.js';
 import {
   JOINT_SPOT_VARIANTS,
   forEachJointControllerSpot,
@@ -165,14 +210,7 @@ describe('P13.1 every Phase 13 candidate is in the legalizer form', () => {
         // The ranked winner is the action recorded and executed (cash: the
         // joint model is the objective; tournaments hand it to Phase 7).
         if (receipt.reason === 'joint_cash_action_distribution') {
-          const top = receipt.actionModel.candidates
-            .slice()
-            .sort(
-              (a, b) =>
-                b.expectedNetChips -
-                  0.5 * b.standardError -
-                  (a.expectedNetChips - 0.5 * a.standardError) || a.investment - b.investment
-            )[0];
+          const top = jointSelectedRow(receipt.actionModel, spot.hero, spot.state)!;
           const ranked: Row = {
             action: top.action,
             amount: top.action === 'bet' || top.action === 'raise' ? top.amount : null,
@@ -227,6 +265,15 @@ describe('P13.1 a Phase 13 candidate never acts on top of an applied earlier-pha
     (variant) => {
       pinDeckEntropy(0x13e00000 ^ variant.length);
       let refused = 0;
+      // Round 3 changes Short Deck and FLO8 only in declared preflop spots.
+      // In these spots no such change meets a firing joint decision with a
+      // different proposal (FLO8 found none in 20 hands once #6517 merged,
+      // which turned this test red on main), so the applied Phase 12 change
+      // is made on postflop spots here for both (p12PostflopChange above).
+      p12PostflopChange.on = true;
+      onTestFinished(() => {
+        p12PostflopChange.on = false;
+      });
       forEachJointControllerSpot(variant, 'cash', 20, 0x13e1 + variant.length, (spot) => {
         seedFastRandom(0x13e2);
         const phase12Only = HorseLogic.decide(

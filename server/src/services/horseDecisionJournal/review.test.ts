@@ -1089,7 +1089,7 @@ describe('private retained-hand journal consumer', () => {
       const worker = new HorseQualifiedAuthorityHolder('review-worker');
       worker.apply(qualifiedTestAdmission(1));
       const ledger = (authority: unknown) => ({
-        version: 'horse-tournament-postflop-round1-v4',
+        version: 'horse-tournament-postflop-round2-v1',
         mode: 'candidate',
         changed: true,
         applied: true,
@@ -1144,7 +1144,7 @@ describe('private retained-hand journal consumer', () => {
   describe('P10.3 PLO4 selection reconciliation', () => {
     /** A P10.3 cash receipt as the worker returns it, bound to its authority. */
     const plo4Receipt = (authority: unknown, selected: boolean) => ({
-      version: 'plo4-policy-round1-v3',
+      version: 'plo4-policy-round3-v2',
       mode: selected ? 'candidate' : 'shadow',
       eligible: true,
       fired: true,
@@ -1172,13 +1172,13 @@ describe('private retained-hand journal consumer', () => {
       const s = f.d.snapshot;
       const worker = new HorseQualifiedAuthorityHolder(
         'review-p10-worker',
-        'plo4-policy-round1-v3'
+        'plo4-policy-round3-v2'
       );
       worker.apply(qualifiedPhase10TestAdmission(1));
       const gate = new HorsePhase8AuthorityGate(
         () => qualifiedPhase10TestAdmission(1),
         'review-p10-main',
-        'plo4-policy-round1-v3'
+        'plo4-policy-round3-v2'
       );
       gate.refresh();
       const journaled = selected ? worker.receipt() : null;

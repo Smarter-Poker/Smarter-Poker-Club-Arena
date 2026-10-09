@@ -21,6 +21,7 @@ import {
   PLO4_POSTFLOP_ROLES,
   PLO4_PREFLOP_ROLES,
   plo4HandShape,
+  type OmahaReferenceDeviationRules,
   type Plo4Position,
   type Plo4NodeRole,
 } from './Plo4PolicyPack.js';
@@ -479,6 +480,44 @@ export function plo4PreflopChoice(
     action: quality >= (callBB > stackBB * 0.35 ? bars.callOff : bars.call) ? 'call' : 'passive',
     reason: 'preflop_defense',
   };
+}
+
+/**
+ * Round 3 (2026-10-08): the shared reference-anchored deviation kernel of the
+ * Omaha packs (PLO4, PLO5, PLO6, PLO8). Given the reference action and the
+ * public node, it names the one deviation the pack's rules make, or null when
+ * the reference action is retained. Every deviation turns a reference fold or
+ * check into a wager, and only heads-up: at a table dealt exactly two seats,
+ * with one live opponent. The caller applies the authoritative legal wager
+ * cap; a fraction of 0 is the controller's minimum raise.
+ */
+export function plo4ReferenceDeviation(
+  node: {
+    street: string;
+    dealtSeats: number;
+    liveOpponents: number;
+    role: Plo4NodeRole | null;
+    position: Plo4Position | null;
+    baseline: HorseDecision;
+    callCost: number;
+  },
+  rules: OmahaReferenceDeviationRules
+): { reason: string; fraction: number } | null {
+  if (node.dealtSeats !== 2 || node.liveOpponents !== 1) return null;
+  if (node.baseline.action !== 'fold' && node.baseline.action !== 'check') return null;
+  if (node.street === 'preflop') {
+    if (rules.headsUpButtonOpen && node.role === 'rfi' && node.position === 'button')
+      return { reason: 'heads_up_button_open', fraction: 0 };
+    return null;
+  }
+  if (
+    (rules.headsUpPositionStab as readonly string[]).includes(node.street) &&
+    node.role === 'checked_to' &&
+    node.position === 'button' &&
+    node.callCost === 0
+  )
+    return { reason: 'heads_up_position_stab', fraction: 1 };
+  return null;
 }
 
 const same = (a: HorseDecision, b: HorseDecision) =>
@@ -1346,10 +1385,6 @@ export function evaluatePlo4LivePolicy(
       }),
       range,
     } satisfies Plo4InputBinding);
-  const passive = (): HorseDecision => ({
-    action: callCost > 0 ? 'fold' : 'check',
-    thinkTime: baseline.thinkTime,
-  });
   const call = (): HorseDecision => ({
     action: callCost > 0 ? 'call' : 'check',
     ...(callCost ? { amount: callCost } : {}),
@@ -1372,32 +1407,33 @@ export function evaluatePlo4LivePolicy(
     if (amount < s.minRaiseTo) return call();
     return { action, amount: Math.round(amount * 100) / 100, thinkTime: baseline.thinkTime };
   };
-  if (s.stage === 'preflop') {
-    const bars = plo4EntryBars({
-      position: receipt.position,
-      aggressorPosition: receipt.aggressorPosition,
-      role: receipt.role,
-      seats: seats.length,
-      depthBB: depth,
-      rakePercent: rake.percent,
-      anteBB: (s.ante ?? 0) / s.bigBlind,
-      straddle: Boolean(s.straddleActive),
-    });
-    const choice = plo4PreflopChoice(
-      shape.quality,
-      bars,
-      receipt.role,
-      callCost / s.bigBlind,
-      hero.stack / s.bigBlind
-    );
+  /** Round 3: a deviation is a wager or nothing; a wager the legal menu
+   * cannot hold retains the reference instead of becoming a call. */
+  const deviate = (reason: string, fraction: number) => {
+    const proposal = wager(fraction);
     return finish(
-      choice.reason,
-      choice.action === 'wager'
-        ? wager(choice.fraction)
-        : choice.action === 'call'
-          ? call()
-          : passive()
+      reason,
+      proposal.action === 'bet' || proposal.action === 'raise' || proposal.action === 'all_in'
+        ? proposal
+        : baseline
     );
+  };
+  const deviation = () =>
+    plo4ReferenceDeviation(
+      {
+        street: s.stage,
+        dealtSeats: seats.length,
+        liveOpponents: active.length,
+        role: receipt.role,
+        position: receipt.position,
+        baseline,
+        callCost,
+      },
+      PLO4_POLICY_PACK.deviations
+    );
+  if (s.stage === 'preflop') {
+    const chosen = deviation();
+    return chosen ? deviate(chosen.reason, chosen.fraction) : finish('reference_retained');
   }
 
   const nuts = omahaNutStatus(hero.cards, s.communityCards);
@@ -1406,13 +1442,6 @@ export function evaluatePlo4LivePolicy(
     (suit) => s.communityCards.filter((c) => c.suit === suit).length >= 3
   );
   boardFacts = { paired, flushBoard };
-  const isNut =
-    facts.nutStraightFlush ||
-    (!paired &&
-      ((nuts.category === 6 &&
-        facts.opponentStraightFlushHigh === 0 &&
-        facts.flushes.some((f) => f.made && !f.higherFlushPossible)) ||
-        (nuts.category === 5 && facts.nutStraight && !flushBoard)));
   const contestable = calculateContestablePot(s.players, hero.user_id, callCost);
   const chargedRake = calculateRake(s.pot + callCost, true, rake, seats.length);
   const eligibleAfterCall = contestable + callCost;
@@ -1426,7 +1455,6 @@ export function evaluatePlo4LivePolicy(
   const nutWrap = facts.nutStraightOutCards.length >= 8;
   const dominatedDraw = facts.flushes.some((f) => f.draw && f.higherFlushPossible);
   const set = facts.setRanks.length > 0;
-  const strongMade = nuts.category >= 7;
   receipt.features = [
     nutWrap && 'nut_wrap',
     facts.wrapOutCount > 0 && 'straight_redraw',
@@ -1489,41 +1517,6 @@ export function evaluatePlo4LivePolicy(
     provenance: e && provenance !== undefined ? freezeProvenance(provenance) : null,
   });
   if (e) receipt.confidence = 'range_sample';
-  const lower = e ? Math.max(0, e.equity - 2.576 * e.standardError) : null;
-  const upper = e ? Math.min(1, e.equity + 2.576 * e.standardError) : null;
-  const pressure = (active.length - 1) * 0.025 + Number(receipt.role === 'facing_raise') * 0.04;
-  if (!callCost) {
-    if (
-      isNut ||
-      ((set || strongMade) && (!e || e.equity > 0.55)) ||
-      (lower !== null && lower > 0.58 + pressure)
-    )
-      return finish('postflop_value', wager(spr < 2 ? 1 : 0.66));
-    if ((nutDraw || nutWrap) && active.length === 1 && receipt.position === 'button')
-      return finish('postflop_nut_draw_pressure', wager(0.5));
-    return finish('postflop_protected_check', passive());
-  }
-  if (isNut && (s.stage === 'river' || spr <= 2 || nutDraw))
-    return finish('postflop_nut_raise', wager(1));
-  if (upper !== null && upper < price + pressure) return finish('postflop_price_fold', passive());
-  if (
-    dominatedDraw &&
-    !strongMade &&
-    !set &&
-    !facts.nutStraight &&
-    spr > 3 &&
-    price > 0.2 &&
-    (lower === null || lower < price + 0.08)
-  )
-    return finish('postflop_dominated_draw_fold', passive());
-  if (
-    lower !== null &&
-    lower > Math.max(price + pressure, 0.6 + pressure) &&
-    receipt.role !== 'call_off'
-  )
-    return finish('postflop_value_raise', wager(0.66));
-  if (isNut || strongMade || set || nutDraw || nutWrap || (e && e.equity >= price + pressure))
-    return finish('postflop_price_call', call());
-  // No equity available is explicit; bounded own-card texture still owns the node.
-  return finish(e ? 'postflop_bluff_catcher_fold' : 'postflop_uncalibrated_texture', passive());
+  const chosen = deviation();
+  return chosen ? deviate(chosen.reason, chosen.fraction) : finish('reference_retained');
 }

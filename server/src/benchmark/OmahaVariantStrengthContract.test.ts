@@ -172,15 +172,17 @@ describe('P11.2 Phase 11 strength contract object', () => {
     // A deliberate contract change must update this pin and say why. Anything
     // the contract reads (pack versions, the published rake rows, the buy-in
     // band, the seat law) moves it too, which fails closed: evidence made
-    // under the old digest is then refused by name.
+    // under the old digest is then refused by name. Round 3 (2026-10-08)
+    // moved it only through the three pack versions (round3-v2); every term
+    // of the locked matrices is unchanged (was 0e58a56a...0326).
     expect(omahaVariantStrengthContractDigest()).toBe(
-      '0e58a56ab8d123e32d474f23f154e4026a9a2f1a6119b06e449b2a3039c10326'
+      '5b93ae20962ff79798b998f437ed43d2bd224a64995d86e34ed63d7bb22057fc'
     );
   });
 
   it('leaves the Phase 10 contract and its pinned digest untouched', () => {
     expect(plo4StrengthContractDigest()).toBe(
-      'ebdbdbb48336c0425df735fa073a4a28ef4884c199a69006e27909a6bc2b6384'
+      '83ab185b2a2df72876b73d61ece6ea8c2f03f364ce252deecbfcde392ae5f838'
     );
   });
 

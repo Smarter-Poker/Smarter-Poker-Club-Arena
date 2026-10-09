@@ -184,17 +184,21 @@ describe('P12.2 Phase 12 strength contract object', () => {
     // the contract reads (pack versions, the published rake rows, the buy-in
     // band, the seat law, the pack domain) moves it too, which fails closed:
     // evidence made under the old digest is then refused by name.
+    // Round 3 (docs/horse-brain-phase12-round3-2026-10-08.md): moved only by
+    // the four pack versions (round1 to round3); every profile, seed, pair
+    // count, margin and threshold is the locked round-1 value. The round-1
+    // digest was d85d7569c31a1cd583a2397c2f598e448859ff66b417ba8e549ba00bcc6e19f1.
     expect(remainingVariantStrengthContractDigest()).toBe(
-      'd85d7569c31a1cd583a2397c2f598e448859ff66b417ba8e549ba00bcc6e19f1'
+      'fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0'
     );
   });
 
   it('leaves the Phase 10 and Phase 11 contracts and their pinned digests untouched', () => {
     expect(plo4StrengthContractDigest()).toBe(
-      'ebdbdbb48336c0425df735fa073a4a28ef4884c199a69006e27909a6bc2b6384'
+      '83ab185b2a2df72876b73d61ece6ea8c2f03f364ce252deecbfcde392ae5f838'
     );
     expect(omahaVariantStrengthContractDigest()).toBe(
-      '0e58a56ab8d123e32d474f23f154e4026a9a2f1a6119b06e449b2a3039c10326'
+      '5b93ae20962ff79798b998f437ed43d2bd224a64995d86e34ed63d7bb22057fc'
     );
   });
 

@@ -205,7 +205,7 @@ describe('Phase 10 complete bounded PLO4 baseline', () => {
     expect(result.receipt.reason).toBe('invalid_wager_geometry');
     expect(result.decision).toBe(input.baseline);
   });
-  it('does not mistake the best flush for the nuts on a straight-flush board', () => {
+  it('retains the reference facing a river bet, whatever the sampled equity (round 3)', () => {
     const input = plo4ReferenceSpot('non_nut_flush');
     input.hero.cards = plo4Cards('As 2s Kc Qd');
     input.state.communityCards = plo4Cards('Js Ts 9s 2d 3h');
@@ -217,8 +217,12 @@ describe('Phase 10 complete bounded PLO4 baseline', () => {
       'candidate',
       () => 0
     );
-    expect(result.receipt.reason).toBe('postflop_price_fold');
-    expect(result.decision.action).toBe('fold');
+    // Round 3: a bet faced is never re-priced against the unconditioned
+    // range sample; the reference action is the decision.
+    expect(result.receipt.fired).toBe(true);
+    expect(result.receipt.equity).toMatchObject({ equity: 0 });
+    expect(result.receipt.reason).toBe('reference_retained');
+    expect(result.decision).toBe(input.baseline);
   });
   it('charges rake to the complete eligible pot, including the new call', () => {
     const input = plo4ReferenceSpot('non_nut_flush');
@@ -232,7 +236,7 @@ describe('Phase 10 complete bounded PLO4 baseline', () => {
     );
     // Heads-up ceiling is 5%: 60 existing + 20 call - 4 rake = 76.
     expect(receipt.receipt.callPrice).toBeCloseTo(20 / 76, 12);
-    expect(receipt.decision.action).toBe('fold');
+    expect(receipt.decision).toBe(input.baseline);
     input.state.rakeConfig!.cap = 2;
     expect(
       evaluatePlo4LivePolicy(input.hero, input.state, input.baseline, null, 'shadow', () => 0)
@@ -280,16 +284,25 @@ describe('Phase 10 complete bounded PLO4 baseline', () => {
         () => 0
       );
       expect(facing.receipt.features).toContain(feature);
-      expect(facing.decision.action).toBe('call');
+      // Round 3: the features are recorded; facing a bet the reference acts.
+      expect(facing.receipt.reason).toBe('reference_retained');
+      expect(facing.decision).toBe(input.baseline);
       input.state.currentBet = input.state.toCall = input.state.players[1].bet = 0;
       input.state.legalActions = ['check', 'bet'];
       input.state.minRaiseTo = 2;
       input.state.maxRaiseTo = 60;
       input.baseline = { action: 'check', thinkTime: 0 };
-      expect(
-        evaluatePlo4LivePolicy(input.hero, input.state, input.baseline, null, 'candidate', () => 0)
-          .decision.action
-      ).toBe('bet');
+      // Checked to on the river heads-up on the button: the position stab.
+      const checked = evaluatePlo4LivePolicy(
+        input.hero,
+        input.state,
+        input.baseline,
+        null,
+        'candidate',
+        () => 0
+      );
+      expect(checked.receipt.reason).toBe('heads_up_position_stab');
+      expect(checked.decision).toMatchObject({ action: 'bet', amount: 60 });
     }
   );
   it('distinguishes all-in calls from short raises using the controller flag', () => {
@@ -410,50 +423,102 @@ describe('Phase 10 complete bounded PLO4 baseline', () => {
       () => 0
     );
     expect(result.receipt.fired).toBe(true);
-    expect(result.decision.action).toBe('all_in');
+    // Round 3: eight dealt seats are never a heads-up deviation.
+    expect(result.receipt.reason).toBe('reference_retained');
+    expect(result.decision).toBe(input.baseline);
   });
-  it('supports a protected check, value bet, raise-facing fold and bounded call-off', () => {
+  it('round 3: deviates only heads-up, from a reference fold or check, and retains it elsewhere', () => {
     const input = plo4ReferenceSpot('royal_flush');
     input.state.currentBet = input.state.toCall = input.state.players[1].bet = 0;
     input.state.legalActions = ['check', 'bet'];
     input.state.minRaiseTo = 2;
     input.state.maxRaiseTo = 60;
+    input.state.actionHistory = [];
     input.baseline = { action: 'check', thinkTime: 0 };
-    const value = evaluatePlo4LivePolicy(
-      input.hero,
-      input.state,
-      input.baseline,
-      evidence,
-      'candidate',
-      () => 0
-    );
-    expect(value.decision.action).toBe('bet');
+    // Heads-up, hero on the button, checked to on the river: a pot bet,
+    // whatever the hand (the rule reads no hand strength).
+    const strong = run(input, evidence);
+    expect(strong.receipt.reason).toBe('heads_up_position_stab');
+    expect(strong.decision).toMatchObject({ action: 'bet', amount: 60 });
     input.hero.cards = plo4Cards('2c 3c 4h 5h');
-    const weak = evaluatePlo4LivePolicy(
+    const weak = run(input, { equity: 0.05, samples: 200, standardError: 0.01 });
+    expect(weak.decision).toMatchObject({ action: 'bet', amount: 60 });
+    // The reference already bets: retained, size included.
+    const betting = { action: 'bet', amount: 20, thinkTime: 0 } as HorseDecision;
+    const kept = evaluatePlo4LivePolicy(
       input.hero,
       input.state,
-      input.baseline,
-      { equity: 0.05, samples: 200, standardError: 0.01 },
+      betting,
+      null,
       'candidate',
       () => 0
     );
-    expect(weak.decision.action).toBe('check');
+    expect(kept.receipt.reason).toBe('reference_retained');
+    expect(kept.decision).toBe(betting);
+    // The flop is not a stab street.
+    const flop = plo4ReferenceSpot('royal_flush');
+    Object.assign(flop.state, {
+      stage: 'flop',
+      communityCards: plo4Cards('As Ks Ts'),
+      currentBet: 0,
+      toCall: 0,
+      legalActions: ['check', 'bet'],
+      minRaiseTo: 2,
+      maxRaiseTo: 60,
+      actionHistory: [],
+    });
+    flop.state.players[1].bet = 0;
+    flop.baseline = { action: 'check', thinkTime: 0 };
+    expect(run(flop).receipt.reason).toBe('reference_retained');
+    // Three dealt seats: never a heads-up deviation.
+    const three = plo4ReferenceSpot('royal_flush');
+    Object.assign(three.state, {
+      currentBet: 0,
+      toCall: 0,
+      legalActions: ['check', 'bet'],
+      minRaiseTo: 2,
+      maxRaiseTo: 60,
+      actionHistory: [],
+    });
+    three.state.players[1].bet = 0;
+    three.state.players.push({
+      ...three.state.players[1],
+      user_id: 'third',
+      seat: 3,
+      is_folded: true,
+      totalInvested: 0,
+    });
+    three.state.blindSeats = { smallBlind: 2, bigBlind: 3 };
+    three.baseline = { action: 'check', thinkTime: 0 };
+    const multi = run(three);
+    expect(multi.receipt.reason).toBe('reference_retained');
+    expect(multi.decision).toBe(three.baseline);
+    // Facing a raise: the reference's answer stands.
     const losing = plo4ReferenceSpot('non_nut_flush');
     losing.state.actionHistory!.push({
       ...losing.state.actionHistory![0],
       action: 'raise',
       timestamp: 2,
     });
-    const fold = evaluatePlo4LivePolicy(
-      losing.hero,
-      losing.state,
-      losing.baseline,
-      { equity: 0, samples: 200, standardError: 0 },
-      'candidate',
-      () => 0
-    );
-    expect(fold.receipt.role).toBe('facing_raise');
-    expect(fold.decision.action).toBe('fold');
+    const facing = run(losing, { equity: 0, samples: 200, standardError: 0 });
+    expect(facing.receipt.role).toBe('facing_raise');
+    expect(facing.receipt.reason).toBe('reference_retained');
+    expect(facing.decision).toBe(losing.baseline);
+  });
+  it('round 3: opens the heads-up button the reference folds, at the minimum raise', () => {
+    const input = plo4ReferenceSpot('premium_open');
+    input.hero.cards = plo4Cards('2c 7d 9h Ks');
+    input.baseline = { action: 'fold', thinkTime: 0 };
+    const open = run(input);
+    expect(open.receipt.role).toBe('rfi');
+    expect(open.receipt.position).toBe('button');
+    expect(open.receipt.reason).toBe('heads_up_button_open');
+    expect(open.decision).toMatchObject({ action: 'raise', amount: 4 });
+    // A reference limp or raise is retained.
+    const limp = { action: 'call', amount: 1, thinkTime: 0 } as HorseDecision;
+    expect(
+      evaluatePlo4LivePolicy(input.hero, input.state, limp, null, 'candidate', () => 0).decision
+    ).toBe(limp);
   });
   it('runs in HorseLogic and keeps Phase 7 the tournament utility owner', () => {
     const input = tournament(plo4ReferenceSpot('royal_flush'));
@@ -529,6 +594,39 @@ const setHero = (input: Spot, patch: Partial<Spot['hero']>) => {
   Object.assign(input.hero, patch);
   input.state.players[0] = { ...input.hero, cards: [] };
 };
+/** Heads-up preflop: the opponent on the button raised to 6, hero in the big
+ * blind with 2 in, pot 8, and the reference folds. */
+function bigBlindDefenseSpot() {
+  const input = plo4ReferenceSpot('premium_open');
+  input.hero.cards = plo4Cards('2c 7d 9h Ks');
+  setHero(input, { bet: 2, totalInvested: 2 });
+  Object.assign(input.state.players[1], { bet: 6, totalInvested: 6 });
+  Object.assign(input.state, {
+    dealerSeat: 2,
+    blindSeats: { smallBlind: 2, bigBlind: 1 },
+    pot: 8,
+    currentBet: 6,
+    minRaise: 4,
+    lastRaise: 4,
+    toCall: 4,
+    minRaiseTo: 10,
+    maxRaiseTo: 18,
+    legalActions: ['fold', 'call', 'raise'],
+    actionHistory: [
+      {
+        userId: 'opponent',
+        seat: 2,
+        action: 'raise',
+        amount: 6,
+        stage: 'preflop',
+        timestamp: 1,
+        isFullRaise: true,
+      },
+    ],
+  });
+  input.baseline = { action: 'fold', thinkTime: 0 };
+  return input;
+}
 /** River, hero on the button facing a 20 bet. Seat 3 folded with a deep
  * stack, seat 4 is away but all-in, seat 5 is away and folded, seat 6 was
  * never dealt. Hero covers everyone. */
@@ -684,60 +782,71 @@ describe('P10.1 binds the facts the PLO4 proposal consumed', () => {
     expect(live.plo4InputBindingIsValid(inputs)).toBe(true);
   });
 
-  it('enforces the exact pot-limit raise-to and records the geometry it used', () => {
-    // River royal flush facing 20 into 60: call 20, then raise the pot of
-    // 60 + 20 + 20 = 100, so the pot-limit raise-to is 20 + 80 = 100.
-    const input = plo4ReferenceSpot('royal_flush');
+  it("records the exact pot-limit raise-to geometry, and retains the big blind's reference fold", () => {
+    // Heads-up preflop, hero in the big blind facing a raise to 6 (pot 8):
+    // call 4, then raise the pot of 8 + 4 = 12, so the pot-limit raise-to is
+    // 6 + 12 = 18. Round 3 v2 never three-bets the big blind (it won only
+    // against horses that over-fold), so the reference fold is the decision.
+    const input = bigBlindDefenseSpot();
     setHero(input, { stack: 400 });
     input.state.players[1].stack = 400;
     input.state.maxRaiseTo = 400; // a looser engine bound must not lift the pot limit
     const loose = run(input);
-    expect(loose.receipt.reason).toBe('postflop_nut_raise');
-    expect(loose.decision).toMatchObject({ action: 'raise', amount: 100 });
+    expect(loose.receipt.role).toBe('defense');
+    expect(loose.receipt.reason).toBe('reference_retained');
+    expect(loose.decision).toBe(input.baseline);
     expect(loose.receipt.inputs!.geometry).toMatchObject({
-      potLimitRaiseTo: 100,
-      stackRaiseTo: 400,
-      wagerCap: 100,
-      callCost: 20,
+      potLimitRaiseTo: 18,
+      stackRaiseTo: 402,
+      wagerCap: 18,
+      callCost: 4,
       chipUnit: 0.01,
     });
-    // A 70 stack caps the raise at the stack, still inside the pot limit.
-    setHero(input, { stack: 70 });
-    input.state.maxRaiseTo = 70;
-    const short = run(input);
-    expect(short.decision).toMatchObject({ action: 'raise', amount: 70 });
-    expect(short.receipt.inputs!.geometry).toMatchObject({ stackRaiseTo: 70, wagerCap: 70 });
+    // A tighter engine bound is the cap, inside the pot limit.
+    input.state.maxRaiseTo = 16;
+    expect(run(input).receipt.inputs!.geometry).toMatchObject({ stackRaiseTo: 402, wagerCap: 16 });
+    // The heads-up button open is the controller's minimum raise, inside the cap.
+    const open = plo4ReferenceSpot('premium_open');
+    open.hero.cards = plo4Cards('2c 7d 9h Ks');
+    open.baseline = { action: 'fold', thinkTime: 0 };
+    const opened = run(open);
+    expect(opened.receipt.reason).toBe('heads_up_button_open');
+    expect(opened.decision).toMatchObject({ action: 'raise', amount: 4 });
+    expect(opened.receipt.inputs!.geometry).toMatchObject({ potLimitRaiseTo: 6, wagerCap: 6 });
   });
 
   it.each([
-    ['cash', 40.26],
-    ['tournament', 40],
-  ] as const)('sizes a two-thirds pot bet in %s units exactly', (mode, amount) => {
-    // Checked to on the river with 61 in the pot: 0.66 x 61 = 40.26. Cash
-    // keeps cents; tournament chips floor to whole chips.
-    const input = plo4ReferenceSpot('royal_flush');
-    setHero(input, { stack: 400, totalInvested: 21 });
-    Object.assign(input.state.players[1], { stack: 400, bet: 0 });
-    Object.assign(input.state, {
-      pot: 61,
-      currentBet: 0,
-      toCall: 0,
-      legalActions: ['check', 'bet'],
-      minRaiseTo: 2,
-      maxRaiseTo: 61,
-    });
-    input.state.actionHistory = [];
-    input.baseline = { action: 'check', thinkTime: 0 };
-    if (mode === 'tournament') tournament(input);
-    const result = run(input);
-    expect(result.receipt.reason).toBe('postflop_value');
-    expect(result.decision).toMatchObject({ action: 'bet', amount });
-    expect(result.receipt.inputs!.geometry).toMatchObject({
-      potLimitRaiseTo: 61,
-      wagerCap: 61,
-      chipUnit: mode === 'tournament' ? 1 : 0.01,
-    });
-  });
+    ['cash', 61.5],
+    ['tournament', 61],
+  ] as const)(
+    'sizes the heads-up position stab (a pot bet) in %s units exactly',
+    (mode, amount) => {
+      // Checked to on the river with 61.5 in the pot. Cash keeps cents;
+      // tournament chips floor to whole chips.
+      const input = plo4ReferenceSpot('royal_flush');
+      setHero(input, { stack: 400, totalInvested: 21.5 });
+      Object.assign(input.state.players[1], { stack: 400, bet: 0 });
+      Object.assign(input.state, {
+        pot: 61.5,
+        currentBet: 0,
+        toCall: 0,
+        legalActions: ['check', 'bet'],
+        minRaiseTo: 2,
+        maxRaiseTo: 61.5,
+      });
+      input.state.actionHistory = [];
+      input.baseline = { action: 'check', thinkTime: 0 };
+      if (mode === 'tournament') tournament(input);
+      const result = run(input);
+      expect(result.receipt.reason).toBe('heads_up_position_stab');
+      expect(result.decision).toMatchObject({ action: 'bet', amount });
+      expect(result.receipt.inputs!.geometry).toMatchObject({
+        potLimitRaiseTo: 61.5,
+        wagerCap: 61.5,
+        chipUnit: mode === 'tournament' ? 1 : 0.01,
+      });
+    }
+  );
 
   it('records the side-pot eligible price that the proposal consumed', () => {
     // Hero has 20 behind and 10 in; two opponents are in for 50 with 30 bet.

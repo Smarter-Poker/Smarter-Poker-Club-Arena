@@ -16,8 +16,12 @@ import { encodeHorseDecisionReads } from './HorseDecisionReadFrame.js';
 import { saveFastRandom, restoreFastRandom, seedFastRandom } from './HorseEval.js';
 import { jointPolicyFixture } from './multiway/JointRangeFixture.test-support.js';
 import { jointInputBindingSha256 } from './multiway/JointLivePolicy.js';
-import { omahaVariantSpot } from '../benchmark/OmahaVariantPolicyEvidence.js';
+import { omahaVariantSpot, variantCards } from '../benchmark/OmahaVariantPolicyEvidence.js';
 import { remainingVariantSpot } from '../benchmark/RemainingVariantPolicyEvidence.js';
+import {
+  round3ChangedSpot,
+  type Round3Spot,
+} from './remainingVariants/RemainingVariantRound3Spots.test-support.js';
 import { createHash } from 'node:crypto';
 import { horseJournalJson } from '../services/horseDecisionJournal/record.js';
 
@@ -372,7 +376,7 @@ describe('private execution witness', () => {
       { requestId: 1, lane: 'fast', computeMs: 1, governorScale: 1 }
     );
     const expected = {
-      continuationVersion: 'plo4-policy-round1-v3',
+      continuationVersion: 'plo4-policy-round3-v2',
       mode: 'shadow',
       selection: receipt.selection,
       authority: null,
@@ -417,6 +421,11 @@ describe('private execution witness', () => {
     'P11.3 binds the %s selection: selected proposal, shadow baseline and the accepted action',
     (variant) => {
       const spot = omahaVariantSpot(variant, 'preflop', 2);
+      // Round 3: a heads-up button hand the reference folds, which the pack
+      // opens (a real shadow change).
+      spot.hero.cards = variantCards(
+        { plo5: '2c 7d 3h 8s Jc', plo6: '2c 2d 7h 7s Kc 4d', plo8: 'Kc 7d 9h 9s' }[variant]
+      );
       const rng = saveFastRandom();
       let decision: HorseDecision;
       try {
@@ -484,29 +493,31 @@ describe('private execution witness', () => {
     }
   );
 
-  it.each([
-    ['short_deck', 'preflop'],
-    ['pineapple', 'preflop'],
-    ['flh', 'turn'],
-    ['flo8', 'flop'],
-  ] as const)(
-    'P12.3 binds the %s %s selection: selected proposal, shadow baseline and the accepted action',
-    (variant, street) => {
-      const spot = remainingVariantSpot(variant, street, 2);
-      const rng = saveFastRandom();
-      let decision: HorseDecision;
-      try {
-        seedFastRandom(100101);
-        decision = HorseLogic.decide(
-          spot.hero,
-          spot.state,
-          'balanced',
-          {},
-          { telemetry: false, mind: false, decisionTimeMs: 0, phase12EvidenceMode: true }
-        );
-      } finally {
-        restoreFastRandom(rng);
-      }
+  it.each(['short_deck', 'pineapple', 'flh', 'flo8'] as const)(
+    'P12.3 binds the %s selection: selected proposal, shadow baseline and the accepted action',
+    (variant) => {
+      const shadowDecision = (spot: Round3Spot): HorseDecision => {
+        const rng = saveFastRandom();
+        try {
+          seedFastRandom(100101);
+          return HorseLogic.decide(
+            spot.hero,
+            spot.state,
+            'balanced',
+            {},
+            { telemetry: false, mind: false, decisionTimeMs: 0, phase12EvidenceMode: true }
+          );
+        } finally {
+          restoreFastRandom(rng);
+        }
+      };
+      // Round 3 changes the reference only in its declared spots.
+      const spot = round3ChangedSpot(
+        variant,
+        'cash',
+        (s) => shadowDecision(s).remainingVariantPolicy?.changed === true
+      )();
+      const decision = shadowDecision(spot);
       const receipt = decision.remainingVariantPolicy!;
       expect(receipt).toMatchObject({ mode: 'shadow', changed: true, selection: 'shadow_change' });
       const snapshot = { ...input, player: spot.hero, gameState: spot.state };
@@ -542,7 +553,7 @@ describe('private execution witness', () => {
               seat: spot.hero.seat,
               action: decision.action,
               amount: decision.amount ?? 0,
-              stage: street,
+              stage: spot.state.stage,
             },
             intended: true,
           },
@@ -561,19 +572,22 @@ describe('private execution witness', () => {
     }
   );
 
+  // Spots and seeds at which the round-3 shadow proposal differs from the
+  // baseline (round 3 keeps the baseline unless a wager's paired edge clears
+  // its lower bound).
   it.each([
-    ['nlh', 2, 'flop'],
-    ['plo4', 1, 'turn'],
-    ['flo8', 1, 'river'],
-    ['short_deck', 2, 'flop'],
+    ['nlh', 2, 'flop', 10_301_216],
+    ['plo4', 2, 'flop', 10_301_215],
+    ['flo8', 1, 'river', 10_301_208],
+    ['short_deck', 2, 'flop', 10_301_208],
   ] as const)(
-    'P13.3 binds the %s joint selection (%i boards, %s): proposal, shadow baseline and the accepted action',
-    (variant, boards, street) => {
+    'P13.3 binds the %s joint selection (%i boards, %s, seed %i): proposal, shadow baseline and the accepted action',
+    (variant, boards, street, seed) => {
       const spot = jointPolicyFixture(variant, boards, 'cash', street);
       const rng = saveFastRandom();
       let decision: HorseDecision;
       try {
-        seedFastRandom(10_301_204);
+        seedFastRandom(seed);
         decision = HorseLogic.decide(
           spot.hero,
           spot.state,

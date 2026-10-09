@@ -14,6 +14,7 @@
     "fix:esbuild": "node scripts/fix-vitest-esbuild.mjs",
     "pretest": "node scripts/fix-vitest-esbuild.mjs",
     "soak": "tsx sim/soak-conservation.ts",
+    "lightning:matcher-sim": "node --import tsx src/scripts/lightningMatcherSim.ts",
     "horses:tag": "tsx src/scripts/horsesTag.ts",
     "freebuy:verify": "tsx --env-file=.env src/scripts/freeBuyVerify.ts",
     "horse:gto-v31-evaluate": "tsx --env-file=.env src/scripts/gtoV31Evaluate.ts",

@@ -183,6 +183,10 @@ fi
 for command in docker timeout sha256sum cmp node; do
   command -v "$command" >/dev/null || { echo "Required tool unavailable: $command" >&2; exit 1; }
 done
+# Only the owning job's pinned-source, actual-parity-tested client is admitted.
+: "${LEADERBOARD_NATIVE_BATCH_IMAGE:?Actual native batch client fixture must pass in this job.}"
+[[ "$LEADERBOARD_NATIVE_BATCH_IMAGE" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Exact Native Client Image Required.' >&2; exit 1; }
+[[ "$(docker image inspect --format '{{ index .Config.Labels "io.smarter.leaderboard.native-source" }}' "$LEADERBOARD_NATIVE_BATCH_IMAGE")" == '8576b36741608e0a956b51e98e1b41b76877a95eb9091300b66c2eaa0faf78f8' ]] || { echo 'Native Client Source Pin Refused.' >&2; exit 1; }
 scratch="$(mktemp -d "$LEADERBOARD_ISOLATION_SCRATCH_PARENT/leaderboard-isolation.XXXXXX")"
 chmod 700 "$scratch"
 container="leaderboard-isolation-${GITHUB_RUN_ID:-manual}-${scratch##*.}"
@@ -256,10 +260,13 @@ destination_failure() {
   failure "$stage (client-status=$status;$category;stdin-line=$line;toc-entry=$toc;object-kind=$kind)"
 }
 docker pull "$image" >"$scratch/image.log" 2>&1 || failure 'required Supabase PostgreSQL image unavailable'
-# Use the same pg_dump build on source and destination. Source credentials are
+# Source uses pinned native PG17.11 with batched function metadata. The
+# destination uses its unchanged official PG17 server. Source credentials are
 # process environment only; dumps and errors stay private and are never uploaded.
 source_client() {
   local seconds="$1" client="$2"
+  local source_image="$image"
+  [[ "$client" != pg_dump ]] || source_image="$LEADERBOARD_NATIVE_BATCH_IMAGE"
   shift 2
   [[ "$client" == psql || "$client" == pg_dump || "$client" == pg_dumpall ]] || failure 'unsupported source client'
   printf '%s\n' "$SECONDS" >"$scratch/source-client-started"
@@ -268,8 +275,8 @@ source_client() {
   # Expansion must happen inside the source container.
   # shellcheck disable=SC2016
   timeout --kill-after=10s "$seconds" docker run --name "$source_container" --rm -i --network host -e PGDATABASE -e PGOPTIONS \
-    --entrypoint /bin/sh "$image" -c \
-    'client=$1; shift; printf "LB_SOURCE_CLIENT_START:%s\n" "$client" >&2; case "$client" in psql|pg_dump) "/usr/lib/postgresql/bin/$client" --dbname="$PGDATABASE" "$@";; pg_dumpall) /usr/lib/postgresql/bin/pg_dumpall --database="$PGDATABASE" "$@";; *) exit 1;; esac; status=$?; printf "LB_SOURCE_CLIENT_COMPLETE:%s:%s\n" "$client" "$status" >&2; exit "$status"' \
+    --entrypoint /bin/sh "$source_image" -c \
+    'client=$1; shift; printf "LB_SOURCE_CLIENT_START:%s\n" "$client" >&2; case "$client" in psql) /usr/lib/postgresql/bin/psql --dbname="$PGDATABASE" "$@";; pg_dump) /opt/lb-native/bin/pg_dump --dbname="$PGDATABASE" "$@";; pg_dumpall) /usr/lib/postgresql/bin/pg_dumpall --database="$PGDATABASE" "$@";; *) exit 1;; esac; status=$?; printf "LB_SOURCE_CLIENT_COMPLETE:%s:%s\n" "$client" "$status" >&2; exit "$status"' \
     source-client "$client" "$@"
 }
 source_catalog() { source_client 180 psql -XAtq --no-password -v ON_ERROR_STOP=1 < "$catalog"; }

@@ -37,6 +37,8 @@ jobs:
           node --check scripts/verification-harness/leaderboard-schema-replica.mjs
           node --test scripts/verification-harness/leaderboard-schema-replica.test.mjs
           node --test scripts/verification-harness/leaderboard-isolation-preflight.test.mjs
+      - name: Build And Qualify Pinned Native Metadata Client
+        run: bash scripts/verification-harness/leaderboard-native-function-batch-build.sh "${{ runner.temp }}"
       - name: Export metadata and verify isolated catalog coverage
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

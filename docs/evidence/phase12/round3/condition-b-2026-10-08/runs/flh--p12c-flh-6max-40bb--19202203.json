@@ -1,0 +1,41 @@
+{
+  "schema": "horse-human-calibrated-check-v1",
+  "phase": "phase12",
+  "variant": "flh",
+  "packVersion": "fixed-limit-holdem-round3-v1",
+  "contractDigest": "fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0",
+  "population": "human-calibrated-v1-20261008",
+  "profileId": "p12c-flh-6max-40bb",
+  "leagueProfileId": "p12c-flh-6max-40bb--human-calibrated-v1-20261008",
+  "evidenceMode": "contract",
+  "seed": 19202203,
+  "firstHand": 0,
+  "requestedHands": 3888,
+  "hands": 3888,
+  "complete": true,
+  "candidate": {
+    "sum": 86572,
+    "sumSq": 4003219328
+  },
+  "reference": {
+    "sum": 97082,
+    "sumSq": 4118461028
+  },
+  "difference": {
+    "sum": -10510,
+    "sumSq": 119481700
+  },
+  "changedHands": 58,
+  "decisions": 70795,
+  "changed": 58,
+  "illegalCandidates": 0,
+  "illegalActions": 0,
+  "conservationErrors": 0,
+  "cardErrors": 0,
+  "incompleteHands": 0,
+  "truncatedHands": 0,
+  "candidateRake": 12449.000000000004,
+  "referenceRake": 12516.300000000005,
+  "sourceSha": "022e1e4f8172de48eb4f81dca6c69bc2b0b0b2b1",
+  "durationMs": 28634
+}

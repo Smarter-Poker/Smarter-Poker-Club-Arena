@@ -46,6 +46,8 @@ jobs:
           node --test scripts/verification-harness/leaderboard-isolation-catalog-diagnostic.test.mjs
           node --test --test-name-pattern='native schema restore compares' scripts/verification-harness/leaderboard-isolation-preflight.test.mjs
           node --test scripts/verification-harness/leaderboard-real-auth-launcher-draft.test.mjs scripts/verification-harness/leaderboard-delegated-role-matrix.test.mjs scripts/verification-harness/leaderboard-signup-fixture-draft.test.mjs scripts/verification-harness/leaderboard-auth-integration-candidate.test.mjs scripts/verification-harness/leaderboard-isolation-startup-profile.test.mjs
+      - name: Build And Qualify Pinned Native Metadata Client
+        run: bash scripts/verification-harness/leaderboard-native-function-batch-build.sh "${{ runner.temp }}"
       - name: Qualify actual Auth in a faithfully restored disposable database
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

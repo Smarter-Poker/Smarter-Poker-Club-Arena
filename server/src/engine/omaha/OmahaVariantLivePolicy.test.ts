@@ -10,6 +10,7 @@ import { evaluateOmahaVariantPolicy } from './OmahaVariantLivePolicy.js';
 import { omahaVariantSeatCap } from './OmahaVariantPolicyPack.js';
 import { sampleOmahaVariantEquity } from './OmahaVariantSampler.js';
 import { horseJournalJson } from '../../services/horseDecisionJournal/record.js';
+import type { HorseDecision } from '../../types.js';
 
 const variants = ['plo5', 'plo6', 'plo8'] as const;
 describe('Phase 11 real variant policy', () => {
@@ -243,5 +244,135 @@ describe('Phase 11 real variant policy', () => {
     expect(exhausted.receipt.reason).toBe('work_budget');
     expect(exhausted.receipt.fired).toBe(false);
     expect(exhausted.decision).toBe(s.baseline);
+  });
+});
+
+describe('Round 3: the reference-anchored packs deviate only heads-up', () => {
+  type Spot = ReturnType<typeof omahaVariantSpot>;
+  const run = (s: Spot, baseline: HorseDecision) =>
+    evaluateOmahaVariantPolicy(s.hero, s.state, baseline, null, 'candidate', () => 0);
+  const fold: HorseDecision = { action: 'fold', thinkTime: 0 };
+  const check: HorseDecision = { action: 'check', thinkTime: 0 };
+  const checkedTo = (s: Spot) => {
+    for (const p of s.state.players) p.bet = 0;
+    s.hero.bet = 0;
+    Object.assign(s.state, {
+      currentBet: 0,
+      toCall: 0,
+      minRaise: 2,
+      lastRaise: 0,
+      minRaiseTo: 2,
+      maxRaiseTo: s.state.pot,
+      legalActions: ['check', 'bet'],
+      actionHistory: [],
+    });
+    return s;
+  };
+
+  it.each(variants)(
+    '%s opens the heads-up button the reference folds, at the minimum raise',
+    (variant) => {
+      const s = omahaVariantSpot(variant, 'preflop', 2);
+      const open = run(s, fold);
+      expect(open.receipt).toMatchObject({
+        reason: 'heads_up_button_open',
+        role: 'rfi',
+        position: 'button',
+        applied: true,
+      });
+      expect(open.decision).toMatchObject({ action: 'raise', amount: s.state.minRaiseTo });
+      // A reference limp or raise is the decision.
+      const limp: HorseDecision = { action: 'call', amount: 1, thinkTime: 0 };
+      expect(run(s, limp)).toMatchObject({
+        decision: limp,
+        receipt: { reason: 'reference_retained' },
+      });
+    }
+  );
+
+  it.each(variants)(
+    "%s retains the heads-up big blind's reference fold (no three-bet since v2)",
+    (variant) => {
+      const s = omahaVariantSpot(variant, 'preflop', 2);
+      // The opponent on the button raised to 6; hero has the big blind in.
+      s.hero.bet = s.hero.totalInvested = 2;
+      s.state.players[0] = { ...s.hero, cards: [] };
+      Object.assign(s.state.players[1], { bet: 6, totalInvested: 6 });
+      Object.assign(s.state, {
+        dealerSeat: 2,
+        blindSeats: { smallBlind: 2, bigBlind: 1 },
+        pot: 8,
+        currentBet: 6,
+        minRaise: 4,
+        lastRaise: 4,
+        toCall: 4,
+        minRaiseTo: 10,
+        maxRaiseTo: 18,
+        actionHistory: [
+          {
+            userId: 'v2',
+            seat: 2,
+            action: 'raise',
+            amount: 6,
+            stage: 'preflop',
+            timestamp: 1,
+            isFullRaise: true,
+          },
+        ],
+      });
+      // v2: the big blind three-bet won only against horses that over-fold;
+      // at the human-calibrated table it lost on every variant. The fold stands.
+      const kept = run(s, fold);
+      expect(kept.receipt).toMatchObject({
+        reason: 'reference_retained',
+        role: 'defense',
+        position: 'big_blind',
+        applied: false,
+      });
+      expect(kept.decision).toBe(fold);
+      // The pot-limit raise-to is still recorded: 6 + (8 + 4) = 18.
+      expect(kept.receipt.inputs!.geometry).toMatchObject({ potLimitRaiseTo: 18 });
+    }
+  );
+
+  it.each(variants)(
+    '%s bets the pot in position when checked to on the turn and river',
+    (variant) => {
+      for (const street of ['turn', 'river'] as const) {
+        const s = checkedTo(omahaVariantSpot(variant, street, 2));
+        const stab = run(s, check);
+        expect(stab.receipt).toMatchObject({
+          reason: 'heads_up_position_stab',
+          role: 'checked_to',
+          position: 'button',
+        });
+        expect(stab.decision).toMatchObject({ action: 'bet', amount: s.state.pot });
+      }
+      // The flop is not a stab street.
+      expect(run(checkedTo(omahaVariantSpot(variant, 'flop', 2)), check).decision).toEqual(check);
+    }
+  );
+
+  it.each(variants)('%s retains the reference everywhere else', (variant) => {
+    // Three dealt seats: never a heads-up deviation.
+    const ring = checkedTo(omahaVariantSpot(variant, 'turn', 3));
+    expect(run(ring, check)).toMatchObject({
+      decision: check,
+      receipt: { reason: 'reference_retained', applied: false },
+    });
+    // Out of position heads-up (hero in the big blind) on the turn.
+    const oop = checkedTo(omahaVariantSpot(variant, 'turn', 2));
+    Object.assign(oop.state, { dealerSeat: 2, blindSeats: { smallBlind: 2, bigBlind: 1 } });
+    expect(run(oop, check).receipt).toMatchObject({ reason: 'reference_retained' });
+    // Facing a bet: the reference answers it, whatever the sampled equity.
+    const facing = omahaVariantSpot(variant, 'river', 2);
+    for (const baseline of [fold, { action: 'call', amount: 20, thinkTime: 0 } as HorseDecision])
+      expect(run(facing, baseline)).toMatchObject({
+        decision: baseline,
+        receipt: { reason: 'reference_retained', fired: true },
+      });
+    // A reference wager is never resized.
+    const bet: HorseDecision = { action: 'bet', amount: 7, thinkTime: 0 };
+    expect(run(checkedTo(omahaVariantSpot(variant, 'river', 2)), bet).decision).toBe(bet);
   });
 });

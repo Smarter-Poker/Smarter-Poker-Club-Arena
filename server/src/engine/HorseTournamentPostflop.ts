@@ -17,7 +17,7 @@ import { FUTURE_HAND_POLICY } from './HorseTournamentFutureHand.js';
 import type { HorseAuthorityReceipt, HorseAuthorityVerdict } from './HorseQualifiedAuthority.js';
 
 export const PHASE8_POLICY = {
-  version: 'horse-tournament-postflop-round1-v4',
+  version: 'horse-tournament-postflop-round2-v1',
   defaultMode: 'shadow',
   deepStackBB: 200,
   deepCommitFraction: 0.25,
@@ -29,6 +29,18 @@ export const PHASE8_POLICY = {
   policyBudgetMs: 2,
   budgetMs: 5,
   workBudgetMs: 4,
+  /**
+   * The largest table the continuation's future hand is dealt to (seats still
+   * holding chips) for which the full computation fits the 4 ms work budget on
+   * the production engine host. Measured there on 2026-10-08 (two journal
+   * windows, 6,579 eligible NLH tournament postflop decisions): 2 seats
+   * completed 2,753 of 2,920 and 3 seats 801 of 890, while 5 to 9 seats
+   * completed 108 of 2,769, each stopping a third of the way through its work.
+   * A larger table is refused by name before eligibility, so it neither spends
+   * the budget for nothing nor counts as an eligible decision that stayed
+   * silent; the work budget itself is unchanged.
+   */
+  maxFutureHandSeats: 3,
 } as const;
 export type Phase8Mode = 'off' | 'shadow' | 'candidate';
 /**
@@ -145,6 +157,19 @@ export function hasTournamentNutBlocker(hero: SeatPlayer, gs: HorseGameStateV2):
   return hero.cards.some(
     (h) => h.rank === 'A' && gs.communityCards.filter((c) => c.suit === h.suit).length >= 3
   );
+}
+
+/**
+ * Seats the continuation's next hand can deal to: every seat at this table
+ * with chips behind (in or out of the current hand, sitting out included,
+ * since a tournament deals it in), plus every unfolded seat with chips in the
+ * pot that it may still win. A folded seat with nothing behind is out. It is
+ * an upper bound fixed before any work, read only from public seat state.
+ */
+export function futureHandSeats(gs: HorseGameStateV2): number {
+  let seats = 0;
+  for (const p of gs.players) if (p.stack > 0 || (!p.is_folded && p.totalInvested > 0)) seats++;
+  return seats;
 }
 
 /** No persistent state and no I/O. A clock is supplied by the worker boundary. */
@@ -270,6 +295,8 @@ export function evaluateTournamentPostflop(
   // never turns an already-certified terminal utility action into a heuristic.
   if (previous.overrodeBaseline) return finish('phase7_choice_retained');
   if (!Number.isInteger(gs.dealerSeat) || !(gs.bigBlind > 0)) return finish('position_unavailable');
+  if (futureHandSeats(gs) > PHASE8_POLICY.maxFutureHandSeats)
+    return finish('future_hand_seats_outside_work_budget');
   ledger.eligible = true;
   const simulationStart = now();
   let continuation: ReturnType<typeof evaluateTournamentUtilityDetailed>;

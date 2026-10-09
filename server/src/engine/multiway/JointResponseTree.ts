@@ -6,11 +6,17 @@ import { horseVariantRulesFor } from '../VariantRules.js';
 import type { JointOpponentRange, JointRangeSamples } from './JointRangeSampler.js';
 import {
   clamp,
+  isJointWager,
   jointCallProbability,
   jointResponseDraw,
   prepareJointActionInput,
   settleJointTerminal,
 } from './JointActionShared.js';
+import {
+  jointCalibratedResponse,
+  jointResponseFrequencies,
+  jointStrengthPercentiles,
+} from './JointResponseCalibration.js';
 import {
   applyJointAction,
   clampJointAllIn,
@@ -31,7 +37,11 @@ import {
  * branches than the limit makes the whole ranking unavailable.
  */
 export const JOINT_RESPONSE_LIMITS = Object.freeze({
-  raiseStreets: Object.freeze(['turn', 'river'] as const),
+  /** Round 3 adds the flop: its responses carry the same raise risk as the
+   * turn and river, and it is where round 2 applied most of its wagers. The
+   * retained round-2 pack keeps the turn and river
+   * (JOINT_RESPONSE_LIMITS_ROUND2). */
+  raiseStreets: Object.freeze(['flop', 'turn', 'river'] as const),
   raisesPerTree: 1,
   /** Measured October 6 (shared container, nine-seat NLH river, every
    * responder raise-eligible): every raise branch adds one full settlement
@@ -43,6 +53,13 @@ export const JOINT_RESPONSE_LIMITS = Object.freeze({
   /** 16 live samples x (1 no-raise path + 1 raise branch). */
   maxTerminalBranchesPerCandidate: 32,
   riverRounds: 1,
+});
+
+/** The retained round-2 comparison identity's limits: the tree on the turn
+ * and river only. */
+export const JOINT_RESPONSE_LIMITS_ROUND2 = Object.freeze({
+  ...JOINT_RESPONSE_LIMITS,
+  raiseStreets: Object.freeze(['turn', 'river'] as const),
 });
 
 /** Declared, uncalibrated decision thresholds of the bounded tree. */
@@ -171,7 +188,13 @@ export function evaluateJointResponseTree(
   baseline: HorseDecision,
   evidence: JointRangeSamples,
   withinBudget: () => boolean,
-  pack: { version: string; source: string; maxSamples: number },
+  pack: {
+    version: string;
+    source: string;
+    maxSamples: number;
+    limits: { raiseStreets: readonly string[] };
+    responses?: string;
+  },
   candidateForm?: Parameters<typeof prepareJointActionInput>[5]
 ) {
   const { dealt, behind, candidates } = prepareJointActionInput(
@@ -182,8 +205,48 @@ export function evaluateJointResponseTree(
     pack.maxSamples,
     candidateForm
   );
-  if (!JOINT_RESPONSE_LIMITS.raiseStreets.includes(state.stage as 'turn' | 'river'))
+  if (!pack.limits.raiseStreets.includes(state.stage))
     throw new Error('joint_response_street_not_modeled');
+  // A pack naming a response calibration answers with the measured
+  // population responses; one without it keeps the round-2 heuristic.
+  const calibrated = typeof pack.responses === 'string';
+  const percentiles = new Map<string, number[]>();
+  const percentileOf = (id: string) => {
+    let p = percentiles.get(id);
+    if (!p)
+      percentiles.set(
+        id,
+        (p = jointStrengthPercentiles(
+          evidence.samples,
+          evidence.opponentIds.indexOf(id),
+          (k) => jointResponseDraw(k, id),
+          horseVariantRulesFor(state.gameVariant).splitLow8OrBetter
+        ))
+      );
+    return p;
+  };
+  const calibratedResponse = (
+    index: number,
+    p: SeatPlayer,
+    street: JointStreet,
+    seats: SeatPlayer[],
+    price: number,
+    pot: number
+  ) =>
+    jointCalibratedResponse(
+      percentileOf(p.user_id)[index],
+      jointResponseFrequencies({
+        variant: state.gameVariant,
+        street: state.stage,
+        price,
+        pot,
+        active: seats.filter((o) => !o.is_folded && o.user_id !== p.user_id).length,
+        streetWagers: street.history.filter(isJointWager).length,
+        ownRaises: rangeOf.get(p.user_id)!.raises,
+        bomb: Boolean(state.bombPot),
+        allInForCall: p.stack <= price + 1e-9,
+      })
+    );
   const splitLow = horseVariantRulesFor(state.gameVariant).splitLow8OrBetter;
   const n = evidence.samples.length;
   const limit = JOINT_RESPONSE_LIMITS.maxTerminalBranchesPerCandidate;
@@ -357,20 +420,27 @@ export function evaluateJointResponseTree(
         const range = rangeOf.get(opponent.user_id)!;
         const strengths = strengthsOf(sample, opponent.user_id);
         const pot = calculateContestablePot(seats, opponent.user_id, price);
-        const probability = jointCallProbability({
-          strengths,
-          range,
-          price,
-          pot,
-          activeOpponents: active(seats, opponent.user_id),
-          coversHero: coversHero(opponent),
-        });
+        let probability: number, share: number;
+        if (calibrated) {
+          const response = calibratedResponse(index, opponent, street, seats, price, pot);
+          probability = response === 'fold' ? 0 : 1;
+          share = response === 'raise' ? 1 : 0;
+        } else {
+          probability = jointCallProbability({
+            strengths,
+            range,
+            price,
+            pot,
+            activeOpponents: active(seats, opponent.user_id),
+            coversHero: coversHero(opponent),
+          });
+          share = jointRaiseShare({ strengths, range, price, pot });
+        }
         // Raise slots go, in response order, to the first responders with a
         // positive raise probability AND a legal bounded raise. The menu and
         // builder are consulted only for those (they are the costly part).
         let raise = 0;
         let option: ReturnType<typeof jointOneWager> = null;
-        const share = jointRaiseShare({ strengths, range, price, pot });
         entry.meanRaiseShare! += share;
         // A folded hero's result cannot depend on a later raise.
         if (share > 0 && probability > 0 && !mine.is_folded) {
@@ -455,16 +525,20 @@ export function evaluateJointResponseTree(
           continue;
         }
         const entry = counts[p.user_id];
-        const probability = jointCallProbability({
-          strengths: strengthsOf(sample, p.user_id),
-          range: rangeOf.get(p.user_id)!,
-          price: owe,
-          pot,
-          activeOpponents: active(seats, p.user_id),
-          coversHero: coversHero(p),
-        });
+        // Nobody raises again: a calibrated raise answers as a call.
+        const continues = calibrated
+          ? calibratedResponse(point.index, p, street, seats, owe, pot) !== 'fold'
+          : jointResponseDraw(point.index, p.user_id + '|raise') <
+            jointCallProbability({
+              strengths: strengthsOf(sample, p.user_id),
+              range: rangeOf.get(p.user_id)!,
+              price: owe,
+              pot,
+              activeOpponents: active(seats, p.user_id),
+              coversHero: coversHero(p),
+            });
         entry.facedRaise += point.weight;
-        if (jointResponseDraw(point.index, p.user_id + '|raise') < probability) {
+        if (continues) {
           passive(street, p, 'call');
           entry.calledRaise += point.weight;
         } else passive(street, p, 'fold');
@@ -549,6 +623,7 @@ export function evaluateJointResponseTree(
       },
       samples: n,
       rollout: pack.source,
+      sampleNets: sampleMeans,
     });
   }
   return { playersBehind: [...behind], candidates: rows };

@@ -22,7 +22,7 @@
  * this object. What differs from Phase 12, and why:
  *
  *  (a) the candidate is the joint owner (`phase13Joint: 'candidate'`, domain
- *      joint-multiway-round1-v4, response pack joint-action-response-round2-v1,
+ *      joint-multiway-round1-v4, response pack joint-action-response-round3-v1,
  *      range pack joint-public-range-round1-v1) at the hero seat, and the
  *      reference is the same hand with `phase13Joint: 'off'`;
  *  (b) the profiles are cash populations where the joint owner is eligible:
@@ -108,7 +108,7 @@ const LEGACY_FIXED_LIMIT_BB = JOINT_LIVE_DOMAIN.fixedLimitMaxStackBB;
  * JOINT_ACTION_PACK.version, a shard whose version differs is refused by name
  * (pack_version_mismatch), and a test requires these to equal the running
  * constants. */
-const RESPONSE_PACK_VERSION = 'joint-action-response-round2-v1';
+const RESPONSE_PACK_VERSION = 'joint-action-response-round3-v1';
 const COMPARISON_RESPONSE_PACK_VERSION = 'joint-action-response-round1-v2';
 /** The bomb ante the engine posts when a table leaves the default
  * (`bomb_pot_ante_multiplier ?? 2`, ServerTableEngineDealing). */

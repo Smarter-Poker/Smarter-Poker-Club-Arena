@@ -12,7 +12,7 @@ export function buildCompleteConcurrencyFixture(
   assert.equal(hash(source), 'c2057bbbbb9b08c860ac82cf02e98171ff9188ab36694dcb672f1abd3f37ed41');
   assert.equal(
     hash(captureFixture),
-    '2dada967cdb8bff98c8f8904f3b4d99e0a64eb67eba76a0ff4787236a92d4163'
+    'd5cb172e483c218aa9948617cb8e34e0ce1a58ee86bb0551d5afa9e5c927f0c6'
   );
   const marker = '  -- Synthetic historical complete captures are not historical producer proof.\n';
   assert.equal(captureFixture.split(marker).length, 2);

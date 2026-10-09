@@ -290,8 +290,8 @@ BEGIN
       RAISE EXCEPTION 'Independently expected unpaid legacy board or original terms differ';
     END IF;
     correlation:=gen_random_uuid(); PERFORM set_config('app.ledger_correlation',correlation::text,true);
-    PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);
-    PERFORM set_config('request.jwt.claim.sub','',true);
+    PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}',true);
+    PERFORM set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000001',true);
     PERFORM set_config('request.jwt.claim.role','service_role',true);
     SET LOCAL ROLE service_role;
     response:=public.fn_payout_leaderboard(club,'monthly','profit',

@@ -152,3 +152,13 @@ test('PLpgSQL IF predicates parenthesize CASE values so their THEN is not the IF
   assert.match(regression, /IF SQLERRM IS DISTINCT FROM \(CASE WHEN/);
   assert.match(regression, /ELSE 'LEADERBOARD_CAPTURE_UNAVAILABLE' END\) THEN RAISE/);
 });
+
+test('new capture Union house explicitly avoids the ordinary opening Treasury default', () => {
+  assert.ok(
+    regression.includes(
+      'INSERT INTO public.clubs(id,name,owner_id,is_union,union_id,chip_treasury)'
+    )
+  );
+  assert.ok(regression.includes("'90000000-0000-4000-8000-000000000001',true,NULL,0)"));
+  assert.ok(regression.includes('is_union AND chip_treasury=0 AND promo_balance=0'));
+});

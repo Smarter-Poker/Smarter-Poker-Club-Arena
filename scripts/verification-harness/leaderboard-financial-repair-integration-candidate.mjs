@@ -41,7 +41,7 @@ const reviewed = Object.freeze({
   [repairDiagnostics]: 'b0b9f284830b07c1c88c3976d47d12a1dbeee9ec5a2d2c55212e419c09e5f7a9',
   [consolidated]: '3142633c836966b32234cb7606d4e5c8d79f11b18fa75017e6d1ef80843e9807',
   [postimage]: '0212896886873d10c9dc073865f13e544f496e8d38a5e924ab1d3f41e7277f1c',
-  [compatibility]: 'd759d40c2e047f03c156c892089066aa04dd5ca11644fb8c0f692a260c1e03f9',
+  [compatibility]: 'a99e7349bc874a638e5b770ed476401afae7681c6486c94f16b3f35798f627c8',
   [openingFixture]: '40ec7d17deda73f27cad1706f44f212288d7781767eabb1c2d05258c3e622047',
   [workerFixture]: 'd5cb172e483c218aa9948617cb8e34e0ce1a58ee86bb0551d5afa9e5c927f0c6',
   [historicalFixture]: 'eb92ec8dc5d242e1157df877d8ce04a91b661e038aa477e0f7c6d489f3585998',
@@ -341,8 +341,8 @@ ${checks}
 ${preparation}
 chmod 600 "$scratch"/repair-*.sql || failure 'private candidate input permissions unavailable'
 repair_sql() {
-  local stage="$1" input="$2" status state='unknown' line
-  if timeout 180 docker exec -i "$container" psql -h /tmp -XAtq -U "$bootstrap" -d postgres -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate <"$input" >"$scratch/repair-$stage.log" 2>&1; then
+  local stage="$1" input="$2" status state='unknown' input_line='unknown' line error_pattern='^psql:<stdin>:([0-9]{1,6}):[[:space:]](ERROR|FATAL|PANIC):[[:space:]]+([0-9A-Z]{5})[[:space:]]*$'
+  if timeout 180 docker exec -i "$container" psql -h /tmp -XAtq -U "$bootstrap" -d postgres -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate --file=- <"$input" >"$scratch/repair-$stage.log" 2>&1; then
 ${
   mode === 'v2-payout' || mode === 'opening'
     ? `    if [[ "$stage" == fixture ]]; then
@@ -362,9 +362,13 @@ ${
 }
     # Bounded private read; never expose arbitrary SQL, identifiers or values.
     while IFS= read -r line; do
-      if [[ "$line" =~ ^(ERROR|FATAL|PANIC):[[:space:]]+([0-9A-Z]{5})[[:space:]]*$ ]]; then state="\${BASH_REMATCH[2]}"; break; fi
+      if [[ "$line" =~ $error_pattern ]]; then
+        input_line="\${BASH_REMATCH[1]}"; state="\${BASH_REMATCH[3]}"; break
+      elif [[ "$line" =~ ^(ERROR|FATAL|PANIC):[[:space:]]+([0-9A-Z]{5})[[:space:]]*$ ]]; then
+        state="\${BASH_REMATCH[2]}"; break
+      fi
     done < <(head -c 65536 "$scratch/repair-$stage.log")
-    printf 'Isolated Candidate Failure: Mode=%s Stage=%s SQLSTATE=%s Exit=%s\\n' '${mode}' "$stage" "$state" "$status" >&2
+    printf 'Isolated Candidate Failure: Mode=%s Stage=%s SQLSTATE=%s InputLine=%s Exit=%s\\n' '${mode}' "$stage" "$state" "$input_line" "$status" >&2
     failure 'isolated candidate assertions or installation failed'
   fi
 }

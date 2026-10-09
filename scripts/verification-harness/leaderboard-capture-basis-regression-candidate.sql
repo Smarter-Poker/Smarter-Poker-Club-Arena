@@ -133,9 +133,9 @@ END $producer$;
 INSERT INTO public.unions(id,name,owner_id,slug)
 VALUES('97000000-0000-4000-8000-000000000001','Isolated Capture Union',
   '90000000-0000-4000-8000-000000000001','isolated-capture-union');
-INSERT INTO public.clubs(id,name,owner_id,is_union,union_id)
+INSERT INTO public.clubs(id,name,owner_id,is_union,union_id,chip_treasury)
 VALUES('97000000-0000-4000-8000-000000000001','Isolated Capture House',
-  '90000000-0000-4000-8000-000000000001',true,NULL);
+  '90000000-0000-4000-8000-000000000001',true,NULL,0);
 DO $new_club$
 BEGIN
   IF EXISTS(SELECT 1 FROM public.leaderboard_basis_existing_clubs WHERE club_id='97000000-0000-4000-8000-000000000001')

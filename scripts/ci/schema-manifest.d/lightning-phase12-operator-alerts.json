@@ -1,0 +1,21 @@
+{
+  "_owner": "agent/claude-lightning-p12/lightning/operator-alerts-db - migration 20261009144343_lightning_phase_12_operator_dashboard_and_alerting",
+  "_comment": "Lightning Phase 12 (spec Phase 21, database side). NOT YET APPLIED: every name below is a promise until the owner installs 20261009144343 after Phase 11 (20261008161509). The operator doors (fn_lightning_operator_overview, _cluster, _hand_replay, _session_trail, _forensics, _signal_review; authenticated and service_role, never anon; gate service_role, fn_is_platform_admin or fn_ca_can_review_integrity of the Cluster's club; every answer redacted by fn_lightning_operator_redact) read the Lightning estate for an operator. fn_lightning_latency_report is the engine's action-latency door into lightning_latency_window (RLS on, no role holds a privilege). fn_lightning_alert_sweep (cron job lightning-alert-sweep-1m, every minute, not in the tick) pages through fn_raise_server_financial_alert source lightning_alerts: frozen Cluster, stuck conversion, drive errors, reaper failures, integrity spike, latency regression; it also runs fn_lightning_integrity_scan hourly for Clusters with integrity_telemetry, recording its cadence in lightning_alert_sweep_state (RLS on, no role holds a privilege). fn_lightning_operator_may, fn_lightning_operator_cluster_row, fn_lightning_alert_raise and fn_lightning_latency_regression are service_role-only helpers. fn_lightning_config gains latency_telemetry, latency_window_ms and the alert_ thresholds in a third object.",
+  "tables": ["lightning_latency_window", "lightning_alert_sweep_state"],
+  "functions": [
+    "fn_lightning_operator_redact",
+    "fn_lightning_operator_may",
+    "fn_lightning_alert_raise",
+    "fn_lightning_operator_cluster_row",
+    "fn_lightning_operator_overview",
+    "fn_lightning_operator_cluster",
+    "fn_lightning_operator_hand_replay",
+    "fn_lightning_operator_session_trail",
+    "fn_lightning_operator_forensics",
+    "fn_lightning_operator_signal_review",
+    "fn_lightning_latency_report",
+    "fn_lightning_latency_regression",
+    "fn_lightning_alert_sweep"
+  ],
+  "columns": {}
+}

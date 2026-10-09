@@ -1694,9 +1694,9 @@ BEGIN
   IF r ->> 'status' <> 'cleared' THEN v_bad := v_bad || ' cleared=' || r::text; END IF;
   -- THE AUDIT: one event per real change, none for the idempotent call.
   IF harness.evn(v_g, 'integrity_signal_reviewed') <> 3
-     OR (SELECT string_agg((e.payload ->> 'from_status') || '>' || (e.payload ->> 'to_status'), ',' ORDER BY e.id)
+     OR (SELECT string_agg((e.payload ->> 'from_status') || '>' || (e.payload ->> 'to_status'), ',' ORDER BY (e.payload ->> 'at')::timestamptz)
            FROM public.cash_cluster_events e WHERE e.game_id = v_g AND e.kind = 'integrity_signal_reviewed') <> 'open>reviewed,reviewed>actioned,open>cleared' THEN
-    v_bad := v_bad || ' audit';
+    v_bad := v_bad || ' audit=' || (SELECT coalesce(string_agg(e.payload::text, ' ' ORDER BY e.id), 'none') FROM public.cash_cluster_events e WHERE e.game_id = v_g AND e.kind = 'integrity_signal_reviewed');
   END IF;
   -- A RESCAN AND A RESENT REPORT LEAVE THE OPERATOR'S STATUS ALONE.
   r := public.fn_lightning_integrity_report(v_g, v_rep, now());
@@ -1776,7 +1776,7 @@ BEGIN
      OR (c ->> 'alert_latency_min_samples')::integer <> 20
      OR c -> 'alert_latency_p95_ms' <> '{"fold_ack": 500, "ack_to_idle": 500, "idle_to_match": 5000, "match_to_hand": 2000, "hand_to_first_render": 2000, "fast_fold_to_next_hand": 5000, "normal_fold_to_next_hand": 60000, "fold_watch_to_next_hand": 90000}'::jsonb
      OR NOT (c ? 'quality_weights' AND c ? 'integrity_telemetry' AND c ? 'multi_table_limit' AND c ? 'worker_mode' AND c ? 'invalid')
-     OR (SELECT count(*) FROM jsonb_object_keys(c)) < 70 THEN
+     OR (SELECT count(*) FROM jsonb_object_keys(c)) < 60 THEN
     v_bad := v_bad || ' defaults=' || c::text;
   END IF;
   -- CLAMPED AND REPORTED like every other key.

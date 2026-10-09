@@ -508,6 +508,7 @@ async function main() {
       {}
     );
   } catch (error) {
+    const originalFailureKind = failureKind;
     for (const [service, name] of [
       ['auth', authName],
       ['rest', restName],
@@ -516,13 +517,14 @@ async function main() {
         console.error(
           authContainerStateDiagnostic(
             service,
-            command(['inspect', '--format', '{{json .State}}', name])
+            command(['inspect', '--format', '{{json .State}}', name], '', 15000)
           )
         );
       } catch {
         console.error('Isolated Auth Container: unknown');
       }
     }
+    failureKind = originalFailureKind;
     throw error;
   }
   stage('catalog-after-start');

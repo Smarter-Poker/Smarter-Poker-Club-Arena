@@ -205,3 +205,14 @@ test('health and owned container diagnostics redact arbitrary values and preserv
   assert.match(launcher, /'inspect', '--format', '\{\{json \.State\}\}'/);
   assert.doesNotMatch(launcher, /console\.error\(result\.(?:stdout|stderr)\)/);
 });
+
+test('secondary service diagnostics preserve the original failure and have short bounded reads', () => {
+  assert.match(
+    launcher,
+    /const originalFailureKind = failureKind;[\s\S]*failureKind = originalFailureKind;\n\s*throw error/
+  );
+  assert.match(
+    launcher,
+    /command\(\['inspect', '--format', '\{\{json \.State\}\}', name\], '', 15000\)/
+  );
+});

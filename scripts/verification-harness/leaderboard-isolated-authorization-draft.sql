@@ -26,7 +26,7 @@ $guard$;
 
 INSERT INTO auth.users (id, email, raw_user_meta_data)
 SELECT ('90000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid,
-       'lb-isolated-' || n || '@example.invalid',
+       'lb-isolated-' || n || '@smarter-poker.invalid',
        jsonb_build_object('poker_alias', 'IsoLB' || n)
 FROM generate_series(1, 5) AS n;
 

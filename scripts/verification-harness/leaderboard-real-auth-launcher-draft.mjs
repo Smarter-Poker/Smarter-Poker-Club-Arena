@@ -66,6 +66,41 @@ export function authCommandFailure(result) {
   if (result.error || result.status !== 0) return 'docker-exit';
   return null;
 }
+const fixtureStages = new Set([
+  'identity-guard',
+  'mint-policy',
+  'union-create',
+  'club-create',
+  'opening-retirement',
+  'union-link',
+  'memberships',
+  'constraints',
+]);
+const sqlStates = new Set([
+  'P0001',
+  '23502',
+  '23503',
+  '23505',
+  '23514',
+  '42501',
+  '55000',
+  '42P01',
+  '42703',
+  '57014',
+  '08006',
+  'XX000',
+]);
+export function authSqlFailureDiagnostic(result) {
+  const stages = String(result.stdout || '')
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('ISOLATED_AUTH_FIXTURE_STAGE='))
+    .map((line) => line.slice('ISOLATED_AUTH_FIXTURE_STAGE='.length));
+  const candidate = stages.at(-1);
+  const safeStage = fixtureStages.has(candidate) ? candidate : 'unknown';
+  const match = String(result.stderr || '').match(/ERROR:\s+([0-9A-Z]{5})\s*(?:\r?\n|$)/);
+  const safeState = match && sqlStates.has(match[1]) ? match[1] : 'unknown';
+  return `Isolated Auth SQL Failure: fixture=${safeStage}; sqlstate=${safeState}`;
+}
 function stage(name) {
   assert.ok(phases.has(name));
   phase = name;
@@ -89,7 +124,10 @@ function command(args, input = '', timeout = 90000) {
     env: process.env,
   });
   const failed = authCommandFailure(result);
-  if (failed) failureKind = failed;
+  if (failed) {
+    failureKind = failed;
+    if (args.includes('psql')) console.error(authSqlFailureDiagnostic(result));
+  }
   assert.equal(failed, null, 'Isolated Docker stage failed');
   return result.stdout.trim();
 }
@@ -110,6 +148,8 @@ function sql(text) {
       'postgres',
       '-v',
       'ON_ERROR_STOP=1',
+      '-v',
+      'VERBOSITY=sqlstate',
     ],
     text
   );
@@ -374,7 +414,7 @@ async function main() {
   assert.equal(catalog(), expected);
   assert.deepEqual(versions(), cfg.authVersions);
   const accounts = Array.from({ length: 5 }, (_, i) => ({
-    email: `lb-real-auth-${i + 1}@example.invalid`,
+    email: `lb-real-auth-${i + 1}@smarter-poker.invalid`,
     password: randomBytes(32).toString('base64url'),
   }));
   const preflight = {

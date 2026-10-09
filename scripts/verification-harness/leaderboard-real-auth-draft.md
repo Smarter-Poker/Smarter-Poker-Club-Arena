@@ -44,7 +44,7 @@ issued-token refusal. It never accepts a configurable remote endpoint.
    values. Configure email signup/password auth and synthetic local autoconfirm,
    no external SMTP/OAuth/webhooks. This config is local, not production parity.
 7. Invoke signup mode with five generated >=20-character passwords and emails
-   `lb-real-auth-1@example.invalid` through `lb-real-auth-5@example.invalid`.
+   `lb-real-auth-1@smarter-poker.invalid` through `lb-real-auth-5@smarter-poker.invalid`.
    Signup triggers must genuinely create profiles; read back five users/profiles,
    no signup errors, and no unexpected fixture accounts. Issued UUIDs are emitted
    without credentials; preserve the same ephemeral passwords for matrix mode.

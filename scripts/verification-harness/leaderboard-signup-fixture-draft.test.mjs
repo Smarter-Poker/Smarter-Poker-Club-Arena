@@ -55,3 +55,35 @@ test('actual signup and all financial actors use the existing certification doma
   assert.match(sql, /SELECT count\(\*\) FROM public\.profiles\) <> 5/);
   assert.match(sql, /EXISTS \(SELECT 1 FROM public\.signup_errors\)/);
 });
+
+test('schema-only fixture restores authoritative journal policy before intact opening grants', () => {
+  const sql = generateFixture(ids);
+  const owner = readFileSync(
+    new URL(
+      '../../supabase/migrations/20260911161027_the_supply_meter_counts_the_tickets_it_issued.sql',
+      import.meta.url
+    ),
+    'utf8'
+  );
+  const start = owner.indexOf(
+    'INSERT INTO public.ca_chip_store_coverage (store, treatment, counted_by, notes) VALUES'
+  );
+  const end = owner.indexOf('ON CONFLICT (store) DO NOTHING;', start);
+  assert.ok(start >= 0 && end > start);
+  assert.ok(sql.includes(owner.slice(start, end).trim() + ';'));
+  assert.ok(
+    sql.indexOf('INSERT INTO public.ca_chip_store_coverage') <
+      sql.indexOf('INSERT INTO public.clubs')
+  );
+  assert.match(sql, /IF EXISTS \(SELECT 1 FROM public\.ca_chip_store_coverage\)/);
+  assert.match(sql, /count\(\*\) FROM public\.ca_chip_store_coverage\) <> 25/);
+  assert.match(sql, /40b1c33a12d5b5e84c69844054b7514d/);
+  assert.match(
+    sql,
+    /INSERT INTO public\.clubs \(id, name, owner_id, is_union, union_id, chip_treasury\)/
+  );
+  assert.equal((sql.match(/(?:true|false), NULL, 0\)/g) || []).length, 3);
+  assert.match(sql, /DO \$opening_balances\$/);
+  assert.match(sql, /chip_treasury=100000\) <> 2/);
+  assert.ok(!/DISABLE TRIGGER|ledger_autoskip|session_replication_role/i.test(sql));
+});

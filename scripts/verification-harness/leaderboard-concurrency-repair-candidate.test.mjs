@@ -153,6 +153,13 @@ test('unknown-ack recipient oracle reconciles actual wallet movement and exact j
     /count\(\*\) FROM public\.chip_ledger WHERE category='leaderboard_payout'\)<>2/
   );
   assert.match(durable, /count\(DISTINCT correlation_id\)/);
+  const payout = source.split('DO $ack_payout$')[1].split('$ack_payout$;')[0];
+  assert.match(payout, /set_config\('app\.ledger_correlation',gen_random_uuid\(\)::text,true\)/);
+  assert.ok(
+    payout.indexOf("set_config('app.ledger_correlation'") <
+      payout.indexOf('SELECT public.fn_payout_leaderboard')
+  );
+
   assert.match(
     durable,
     /from_type='promo_wallet' AND from_entity_id=club AND to_type='leaderboard_round' AND to_entity_id=club\s+AND club_id=club AND amount=10 AND pre_from_balance=20 AND post_from_balance=10/

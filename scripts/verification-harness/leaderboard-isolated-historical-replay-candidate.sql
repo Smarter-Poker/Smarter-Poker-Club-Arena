@@ -189,6 +189,20 @@ BEGIN
     OR EXISTS(SELECT 1 FROM public.leaderboard_payout_batches WHERE club_id=club AND period='monthly') THEN
     RAISE EXCEPTION 'Original unpaid monthly program selection differs';
   END IF;
+  -- Replay responses include CURRENT Promo capacity. Capture the original
+  -- comparison after the original payout and program preparation, before
+  -- installation, so both versions see the same real financial preimage.
+  PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000002","role":"service_role"}',true);
+  PERFORM set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000002',true);
+  PERFORM set_config('request.jwt.claim.role','service_role',true);
+  SET LOCAL ROLE service_role;
+  publication_replay:=public.fn_publish_leaderboard_reward_program(club,true,'profit',
+    '[{"rank":1,"amount":50.00},{"rank":2,"amount":30.00},{"rank":3,"amount":20.00}]','[]','balanced',
+    expected_version,publication_operation,true);
+  RESET ROLE;
+  IF (publication_replay->>'wallet_balance')::numeric IS DISTINCT FROM 90 THEN
+    RAISE EXCEPTION 'Original replay must witness post-payout Promo';
+  END IF;
   SET CONSTRAINTS ALL IMMEDIATE;
   INSERT INTO leaderboard_historical_fixture.proof VALUES(operation,publication_operation,opening_replay,publication_replay,payout_replay,starts,ends,
     monthly_program,monthly_version,md5(monthly_terms::text),monthly_start,monthly_end,monthly_board,
@@ -322,11 +336,11 @@ BEGIN
        <>current_setting('leaderboard_test.opening_body_md5')
     OR md5((SELECT prosrc FROM pg_proc WHERE oid='public.fn_publish_leaderboard_reward_program(uuid,boolean,text,jsonb,jsonb,text,integer,uuid,boolean)'::regprocedure))
        <>current_setting('leaderboard_test.publish_body_md5') THEN
-    RAISE EXCEPTION 'Exact disposable historical readback required';
+    RAISE EXCEPTION 'Exact disposable historical readback required' USING ERRCODE='P1001';
   END IF;
   SELECT * INTO STRICT proof FROM leaderboard_historical_fixture.proof;
   IF leaderboard_historical_fixture.digest() IS DISTINCT FROM proof.image THEN
-    RAISE EXCEPTION 'Candidate installation changed historical state';
+    RAISE EXCEPTION 'Candidate installation changed historical state' USING ERRCODE='P1002';
   END IF;
   SELECT version-1 INTO STRICT expected_version FROM public.leaderboard_reward_program_versions
     WHERE club_id=club AND operation_id=proof.publication_operation;
@@ -358,7 +372,7 @@ BEGIN
     OR publication_replay IS DISTINCT FROM proof.publication_replay
     OR payout_replay IS DISTINCT FROM proof.payout_replay
     OR leaderboard_historical_fixture.digest() IS DISTINCT FROM proof.image THEN
-    RAISE EXCEPTION 'Historical replay or atomic new-overlay refusal differs';
+    RAISE EXCEPTION 'Historical replay or atomic new-overlay refusal differs' USING ERRCODE='P1003';
   END IF;
   -- Existing-club inventory was captured by the EXACT candidate installation.
   -- Exercise both independent canonical cutoffs without time-warping immutable
@@ -372,13 +386,13 @@ BEGIN
     OR EXISTS(SELECT 1 FROM public.leaderboard_complete_captures)
     OR EXISTS(SELECT 1 FROM public.leaderboard_capture_counters)
     OR EXISTS(SELECT 1 FROM public.leaderboard_round_basis_receipts) THEN
-    RAISE EXCEPTION 'Exact existing-club legacy rollout fixture required';
+    RAISE EXCEPTION 'Exact existing-club legacy rollout fixture required' USING ERRCODE='P1004';
   END IF;
   IF public.fn_leaderboard_complete_round_basis(club,'weekly',proof.period_start,proof.period_end)
        IS DISTINCT FROM '{"basis_version":"legacy_v1","complete":false}'::jsonb
     OR public.fn_leaderboard_complete_round_basis(club,'monthly',proof.monthly_start,proof.monthly_end)
        IS DISTINCT FROM '{"basis_version":"legacy_v1","complete":false}'::jsonb THEN
-    RAISE EXCEPTION 'Existing weekly or monthly terms were misclassified as complete';
+    RAISE EXCEPTION 'Existing weekly or monthly terms were misclassified as complete' USING ERRCODE='P1005';
   END IF;
   SET CONSTRAINTS ALL DEFERRED;
   -- This new settlement and its replay self-abort even on PASS. The prior paid
@@ -399,11 +413,11 @@ BEGIN
       OR monthly_plan->>'program_hash' IS DISTINCT FROM proof.monthly_hash
       OR monthly_plan->'prizes' IS DISTINCT FROM '[{"rank":1,"amount":10}]'::jsonb
       OR (SELECT count(*) FROM public.leaderboard_payout_batches)<>1 THEN
-      RAISE EXCEPTION 'Independently expected unpaid legacy board or original terms differ';
+      RAISE EXCEPTION 'Independently expected unpaid legacy board or original terms differ' USING ERRCODE='P1006';
     END IF;
     IF public.fn_player_home_club('90000000-0000-4000-8000-000000000004',NULL) IS DISTINCT FROM club
       OR (SELECT chip_balance FROM public.club_members WHERE club_id=club AND user_id='90000000-0000-4000-8000-000000000004') IS DISTINCT FROM 10 THEN
-      RAISE EXCEPTION 'Unpaid legacy recipient wallet preimage differs';
+      RAISE EXCEPTION 'Unpaid legacy recipient wallet preimage differs' USING ERRCODE='P1007';
     END IF;
     correlation:=gen_random_uuid(); PERFORM set_config('app.ledger_correlation',correlation::text,true);
     PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}',true);
@@ -439,7 +453,7 @@ BEGIN
       OR (SELECT count(*) FROM public.wallet_transactions WHERE related_entity_id=proof.monthly_program
         AND category='leaderboard_payout' AND user_id='90000000-0000-4000-8000-000000000004'
         AND amount=10 AND type='credit')<>1 THEN
-      RAISE EXCEPTION 'New legacy settlement Promo-only conservation or durable receipts differ';
+      RAISE EXCEPTION 'New legacy settlement Promo-only conservation or durable receipts differ' USING ERRCODE='P1008';
     END IF;
     SELECT to_jsonb(r) INTO STRICT receipt FROM public.leaderboard_round_basis_receipts r
       WHERE r.club_id=club AND r.period='monthly' AND r.period_start=proof.monthly_start
@@ -463,7 +477,7 @@ BEGIN
         IS DISTINCT FROM original_batch
       OR (SELECT jsonb_agg(to_jsonb(p) ORDER BY p.id) FROM public.leaderboard_payouts p
         WHERE p.batch_id=(proof.payout_replay->>'batch_id')::uuid) IS DISTINCT FROM original_payouts THEN
-      RAISE EXCEPTION 'Legacy settlement journal or prior immutable paid history differs';
+      RAISE EXCEPTION 'Legacy settlement journal or prior immutable paid history differs' USING ERRCODE='P1009';
     END IF;
     paid_image:=leaderboard_historical_fixture.digest();
     SET LOCAL ROLE service_role;
@@ -475,7 +489,7 @@ BEGIN
       OR leaderboard_historical_fixture.digest() IS DISTINCT FROM paid_image
       OR (SELECT to_jsonb(r) FROM public.leaderboard_round_basis_receipts r WHERE r.club_id=club
         AND r.period='monthly' AND r.period_start=proof.monthly_start) IS DISTINCT FROM receipt THEN
-      RAISE EXCEPTION 'New legacy settlement replay changed money or immutable basis';
+      RAISE EXCEPTION 'New legacy settlement replay changed money or immutable basis' USING ERRCODE='P1010';
     END IF;
     SET CONSTRAINTS ALL IMMEDIATE;
     RAISE EXCEPTION USING ERRCODE='Q0004',MESSAGE='UnpaidLegacySettlementPassedAndRolledBack';
@@ -483,7 +497,7 @@ BEGIN
   END;
   IF NOT legacy_passed OR leaderboard_historical_fixture.digest() IS DISTINCT FROM proof.image
     OR EXISTS(SELECT 1 FROM public.leaderboard_round_basis_receipts) THEN
-    RAISE EXCEPTION 'Unpaid legacy settlement did not roll back to exact historical preimage';
+    RAISE EXCEPTION 'Unpaid legacy settlement did not roll back to exact historical preimage' USING ERRCODE='P1011';
   END IF;
 END $verify$;
 
@@ -503,11 +517,11 @@ BEGIN
     OR (SELECT chip_balance FROM public.club_members WHERE club_id=proof.club AND user_id=player) IS DISTINCT FROM 0
     OR (SELECT leaderboard_seed_remaining FROM public.club_opening_setups WHERE club_id=proof.club) IS DISTINCT FROM 100
     OR (SELECT jsonb_agg(to_jsonb(r) ORDER BY r.rank,r.user_id) FROM public.fn_club_leaderboard_by_dates(proof.club,'profit',proof.starts,proof.ends,1000000,0) r) IS DISTINCT FROM proof.board
-    OR public.fn_get_leaderboard_reward_plan(proof.club,'monthly',proof.starts)->>'program_id' IS DISTINCT FROM proof.program::text THEN RAISE EXCEPTION 'Positive seed exact installed legacy preimage differs'; END IF;
+    OR public.fn_get_leaderboard_reward_plan(proof.club,'monthly',proof.starts)->>'program_id' IS DISTINCT FROM proof.program::text THEN RAISE EXCEPTION 'Positive seed exact installed legacy preimage differs' USING ERRCODE='P1012'; END IF;
   home_club:=public.fn_player_home_club(player,NULL);
   IF home_club IS NULL OR home_club IS DISTINCT FROM (SELECT club_id FROM public.club_members
       WHERE user_id=player AND status IN('active','approved') ORDER BY joined_at ASC NULLS LAST,club_id LIMIT 1) THEN
-    RAISE EXCEPTION 'Positive seed recipient home wallet differs';
+    RAISE EXCEPTION 'Positive seed recipient home wallet differs' USING ERRCODE='P1013';
   END IF;
   SELECT chip_balance INTO STRICT wallet_before FROM public.club_members WHERE club_id=home_club AND user_id=player;
   SELECT jsonb_agg(jsonb_build_object('club_id',club_id,'user_id',user_id,
@@ -534,20 +548,20 @@ BEGIN
       OR (SELECT count(*) FROM public.leaderboard_payout_batches WHERE id=(response->>'batch_id')::uuid AND club_id=proof.club AND program_id=proof.program AND program_version=proof.version AND program_hash=proof.hash AND period='monthly' AND period_start=proof.starts AND period_end=proof.ends AND total_paid=10 AND promo_funded=10 AND seed_funded=0 AND overlay_funded=0 AND winner_count=1)<>1
       OR (SELECT count(*) FROM public.leaderboard_payouts WHERE batch_id=(response->>'batch_id')::uuid AND user_id=player AND payout_amount=10 AND rank=1)<>1
       OR (SELECT count(*) FROM public.wallet_credit_idempotency WHERE key=format('leaderboard:%s:monthly:%s:%s',proof.club,proof.starts,player) AND user_id=player AND amount=10)<>1
-      OR (SELECT count(*) FROM public.wallet_transactions WHERE related_entity_id=proof.program AND user_id=player AND category='leaderboard_payout' AND type='credit' AND amount=10)<>1 THEN RAISE EXCEPTION 'Positive seed was used released or prospective receipts differ'; END IF;
+      OR (SELECT count(*) FROM public.wallet_transactions WHERE related_entity_id=proof.program AND user_id=player AND category='leaderboard_payout' AND type='credit' AND amount=10)<>1 THEN RAISE EXCEPTION 'Positive seed was used released or prospective receipts differ' USING ERRCODE='P1014'; END IF;
     SELECT to_jsonb(r) INTO STRICT receipt FROM public.leaderboard_round_basis_receipts r WHERE club_id=proof.club AND period='monthly' AND period_start=proof.starts AND period_end=proof.ends AND metric='profit' AND program_id=proof.program AND program_version=proof.version AND program_hash=proof.hash AND basis_version='legacy_v1' AND basis='{"basis_version":"legacy_v1","complete":false}'::jsonb AND basis_hash=md5(basis::text) AND selected_board=proof.board AND selected_board_hash=md5(selected_board::text) AND winners=jsonb_build_array(jsonb_build_object('user_id',player,'rank',1,'amount',10)) AND winners_hash=md5(winners::text);
     IF (SELECT count(*) FROM public.chip_ledger WHERE correlation_id=correlation)<>2
       OR (SELECT count(*) FROM public.chip_ledger WHERE correlation_id=correlation AND category='leaderboard_payout' AND from_type='promo_wallet' AND from_entity_id=proof.club AND to_type='leaderboard_round' AND to_entity_id=proof.club AND club_id=proof.club AND amount=10 AND pre_from_balance=20 AND post_from_balance=10)<>1
-      OR (SELECT count(*) FROM public.chip_ledger WHERE correlation_id=correlation AND category='leaderboard_payout' AND from_type='leaderboard_round' AND from_entity_id=proof.club AND to_type='player_wallet' AND to_entity_id=player AND club_id=home_club AND amount=10)<>1 THEN RAISE EXCEPTION 'Positive seed settlement journal differs'; END IF;
+      OR (SELECT count(*) FROM public.chip_ledger WHERE correlation_id=correlation AND category='leaderboard_payout' AND from_type='leaderboard_round' AND from_entity_id=proof.club AND to_type='player_wallet' AND to_entity_id=player AND club_id=home_club AND amount=10)<>1 THEN RAISE EXCEPTION 'Positive seed settlement journal differs' USING ERRCODE='P1015'; END IF;
     paid_image:=leaderboard_historical_fixture.digest();
     SET LOCAL ROLE service_role;
     replay:=public.fn_payout_leaderboard(proof.club,'monthly','profit',proof.starts::timestamp AT TIME ZONE 'UTC',proof.ends::timestamp AT TIME ZONE 'UTC');
     RESET ROLE;
-    IF (replay->>'already_settled')::boolean IS DISTINCT FROM true OR replay->>'batch_id' IS DISTINCT FROM response->>'batch_id' OR leaderboard_historical_fixture.digest() IS DISTINCT FROM paid_image OR (SELECT to_jsonb(r) FROM public.leaderboard_round_basis_receipts r WHERE club_id=proof.club AND period='monthly' AND period_start=proof.starts) IS DISTINCT FROM receipt THEN RAISE EXCEPTION 'Positive seed replay changed history'; END IF;
+    IF (replay->>'already_settled')::boolean IS DISTINCT FROM true OR replay->>'batch_id' IS DISTINCT FROM response->>'batch_id' OR leaderboard_historical_fixture.digest() IS DISTINCT FROM paid_image OR (SELECT to_jsonb(r) FROM public.leaderboard_round_basis_receipts r WHERE club_id=proof.club AND period='monthly' AND period_start=proof.starts) IS DISTINCT FROM receipt THEN RAISE EXCEPTION 'Positive seed replay changed history' USING ERRCODE='P1016'; END IF;
     SET CONSTRAINTS ALL IMMEDIATE;
     RAISE EXCEPTION USING ERRCODE='Q0005',MESSAGE='PositiveHistoricalSeedPassedAndRolledBack';
   EXCEPTION WHEN SQLSTATE 'Q0005' THEN passed:=true; END;
-  IF NOT passed OR leaderboard_historical_fixture.digest() IS DISTINCT FROM image OR EXISTS(SELECT 1 FROM public.leaderboard_round_basis_receipts) THEN RAISE EXCEPTION 'Positive seed case did not restore exact preimage'; END IF;
+  IF NOT passed OR leaderboard_historical_fixture.digest() IS DISTINCT FROM image OR EXISTS(SELECT 1 FROM public.leaderboard_round_basis_receipts) THEN RAISE EXCEPTION 'Positive seed case did not restore exact preimage' USING ERRCODE='P1017'; END IF;
 END $positive_seed$;
 SELECT 'HISTORICAL_REPLAY|PASS';
 ROLLBACK;

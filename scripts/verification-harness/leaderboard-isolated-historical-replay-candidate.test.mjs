@@ -242,7 +242,7 @@ test('publication retries preserve original numeric scale and historical overlay
   assert.equal(
     sql.split('[{"rank":1,"amount":50.00},{"rank":2,"amount":30.00},{"rank":3,"amount":20.00}]')
       .length,
-    5
+    6
   );
   assert.doesNotMatch(sql, /\[\{"rank":1,"amount":50\}/);
   assert.match(source, /round\(v_leaderboard_budget \* 0\.50, 2\)/);
@@ -293,4 +293,21 @@ test('prospective historical settlements restore deferred timing after validated
   );
   assert.match(legacy, /SET CONSTRAINTS ALL IMMEDIATE;\s+RAISE EXCEPTION USING ERRCODE='Q0004'/);
   assert.match(after, /SET CONSTRAINTS ALL IMMEDIATE;\s+RAISE EXCEPTION USING ERRCODE='Q0005'/);
+});
+
+test('original replay witnesses final financial preimage before installation', () => {
+  const before = sql.split('\\else')[0];
+  const witness = before.lastIndexOf(
+    'publication_replay:=public.fn_publish_leaderboard_reward_program'
+  );
+  assert.ok(witness > before.indexOf('Original real paid historical evidence differs'));
+  assert.ok(witness > before.indexOf('Original unpaid monthly program selection differs'));
+  assert.ok(witness < before.indexOf('INSERT INTO leaderboard_historical_fixture.proof VALUES'));
+  assert.ok(
+    before.includes("(publication_replay->>'wallet_balance')::numeric IS DISTINCT FROM 90")
+  );
+  assert.match(
+    sql.split('\\else')[1],
+    /publication_replay IS DISTINCT FROM proof.publication_replay/
+  );
 });

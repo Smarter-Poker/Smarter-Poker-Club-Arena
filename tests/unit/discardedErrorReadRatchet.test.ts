@@ -137,7 +137,10 @@ const BASELINE = new Map<string, number>([
   ['src/pages/ClubRulesPage.tsx', 0],
   ['src/pages/CashierTradePage.tsx', 0],
   ['src/pages/AntiCheatPage.tsx', 3],
-  ['src/components/wallet/ChipMintModal.tsx', 2],
+  // 2 -> 0 on 2026-10-09 (Cashier launch audit S-07): the mint pre-flight
+  // reads the club through fn_club_money_panel and binds every error; the
+  // membership-role read binds and reports its error and falls to denied.
+  ['src/components/wallet/ChipMintModal.tsx', 0],
   // 3 -> 2 in phase 7: the sub-agent read that discarded its error is gone with
   // the dropped column it was reading, and its replacement binds the error.
   ['src/components/agent/AgentCommissionDashboard.tsx', 0],

@@ -68,8 +68,9 @@ export interface CashierModalProps {
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// EXACT precision — no abbreviations, no rounding
-function formatAmount(amount: number, currency: string = ''): string {
+// EXACT precision — no abbreviations, no rounding. `currency` is accepted for
+// the callers' sake (the unit prints beside the figure, never inside it).
+function formatAmount(amount: number, _currency: string = ''): string {
   if (Math.abs(amount - Math.round(amount)) < 0.005) {
     return Math.round(amount).toLocaleString('en-US');
   }
@@ -92,12 +93,22 @@ function clampToCents(raw: string | number, max: number, wholeUnits = false): nu
   return Math.round(Math.min(n, ceiling) * 100) / 100;
 }
 
-function formatTime(date: Date): string {
-  return date.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  });
+/**
+ * WHAT THE PLAYER TYPED, BEFORE THE CAP (launch audit D-22). The field used to
+ * clamp on every keystroke, so 500 against a 300 ceiling silently became 300
+ * with no sentence, and `aria-invalid` could never be true. The raw text is
+ * kept; it is read to the cent (or the whole unit), compared with the
+ * ceiling for validity, and clamped only when the field is left, with a
+ * sentence that says so. The spelling is digits and one point: an exponent
+ * or a sign is refused rather than parsed.
+ */
+const AMOUNT_SPELLING = /^\d*\.?\d*$/;
+function readAmount(text: string, wholeUnits: boolean): { amount: number; spelledOk: boolean } {
+  const trimmed = text.trim();
+  const spelledOk = trimmed === '' || AMOUNT_SPELLING.test(trimmed);
+  const n = parseFloat(trimmed);
+  if (!spelledOk || !Number.isFinite(n) || n <= 0) return { amount: 0, spelledOk };
+  return { amount: wholeUnits ? Math.floor(n) : Math.round(n * 100) / 100, spelledOk };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -112,18 +123,17 @@ export function CashierModal({
   accountBalance,
   maxBuyIn,
   maxStack,
-  transactions = [],
   currency = '',
   isProcessing = false,
   wholeUnits = false,
 }: CashierModalProps) {
-  const [amount, setAmount] = useState(0);
-  // The quick-amount buttons animate in. They used to start as [] — which
-  // renders every one of them at opacity: 0 — and only got seeded inside
-  // handleTabChange, so on first open 25/50/75/MAX were invisible (but still
-  // clickable) until you tapped a tab. Seed them true; the open effect replays
-  // the stagger.
-  const [visibleQuick] = useState<boolean[]>([true, true, true, true]);
+  const [amountText, setAmountText] = useState('');
+  const { amount, spelledOk } = readAmount(amountText, wholeUnits);
+  const setAmount = useCallback((value: number) => {
+    setAmountText(value > 0 ? String(value) : '');
+  }, []);
+  /** The sentence printed after the field was left over the ceiling. */
+  const [capNote, setCapNote] = useState<string | null>(null);
   // In-flight guard. `isProcessing` is an optional prop no caller passes, so it
   // was never able to stop a double tap on Confirm from firing two top-ups.
   const [busy, setBusy] = useState(false);
@@ -222,20 +232,38 @@ export function CashierModal({
       onClose();
     } catch (error) {
       reportError(error, 'CashierModal.Cashier_error');
+      /* A thrown transport failure is the one case where the request may
+         have committed and the response was lost, so this banner makes no
+         claim about what moved (launch audit D-10): the same sentence as the
+         refused branch, pointing at the figures that settle it. */
       setSubmitError(
-        safeErrorMessage(error, 'Something Went Wrong. Nothing Was Moved - Please Try Again.')
+        safeErrorMessage(
+          error,
+          'That Top-Up Did Not Complete. Check Your Stack And Balance Before Trying Again.'
+        )
       );
     } finally {
       busyRef.current = false;
       setBusy(false);
     }
-  }, [amount, isProcessing, onAddChips, onClose]);
+  }, [amount, isProcessing, onAddChips, onClose, setAmount]);
 
   // Validate amount
   const isValidAmount = useMemo(() => {
-    if (amount <= 0) return false;
+    if (!spelledOk || amount <= 0) return false;
     return amount <= canAddAmount;
-  }, [amount, canAddAmount]);
+  }, [amount, canAddAmount, spelledOk]);
+
+  /* Leaving the field clamps what was typed to the ceiling and says so; the
+     next keystroke clears the sentence. */
+  const clampOnBlur = useCallback(() => {
+    if (amount <= 0) return;
+    const clamped = clampToCents(amount, activeMax, wholeUnits);
+    if (clamped !== amount) {
+      setAmount(clamped);
+      setCapNote(`Capped At ${formatAmount(clamped)}`);
+    }
+  }, [amount, activeMax, wholeUnits, setAmount]);
 
   // ── Focus Trap: trap focus inside modal when open ──
   const handleFocusTrap = useCallback((e: KeyboardEvent) => {
@@ -274,10 +302,11 @@ export function CashierModal({
   useEffect(() => {
     if (!isOpen) return;
     setAmount(0);
+    setCapNote(null);
     setSubmitError(null);
     busyRef.current = false;
     setBusy(false);
-  }, [isOpen]);
+  }, [isOpen, setAmount]);
 
   useEffect(() => {
     if (isOpen) {
@@ -302,8 +331,7 @@ export function CashierModal({
   if (!isOpen) return null;
 
   const confirmDisabled = !isValidAmount || isProcessing || busy;
-  const confirmLabel =
-    isProcessing || busy ? 'Processing...' : `Add ${formatAmount(amount, currency)}`;
+  const confirmLabel = isProcessing || busy ? 'Processing...' : `Add ${formatAmount(amount)}`;
 
   // Existing exact-amount, idempotency, busy and focus logic owns the purchase.
   const closeTopUp = () => {
@@ -311,6 +339,25 @@ export function CashierModal({
   };
   const unit = currency || 'Chips';
   const balanceValue = balanceKnown ? formatAmount(accountBalance, currency) : 'Unavailable';
+  /* Everything the sheet has to say is printed INSIDE the painted frame
+     (launch audit R-05): the refusal, the cap sentence and the ceiling share
+     the status line under the amount, so nothing sits on bare black below
+     the art. */
+  const statusLine = submitError ? (
+    <span className="cashier-error" role="alert" aria-live="assertive">
+      {submitError}
+    </span>
+  ) : capNote ? (
+    <span role="status">
+      {capNote} {unit}
+    </span>
+  ) : !balanceKnown ? (
+    <span role="status">Balance Unavailable</span>
+  ) : (
+    <span>
+      Available To Add: {formatAmount(canAddAmount)} {unit}
+    </span>
+  );
   return (
     <div
       className="cashier-overlay addon-console__overlay"
@@ -327,39 +374,56 @@ export function CashierModal({
         <PurchaseConsole
           title="Add-On Available"
           titleId="table-cashier-title"
-          subtitle={`At Table: ${formatAmount(currentStack, currency)} ${unit}`}
+          subtitle={`At Table: ${formatAmount(currentStack)} ${unit}`}
           status={
             <>
               <input
                 type="number"
                 className="purchase-console__amount"
-                value={amount || ''}
-                onChange={(e) => setAmount(clampToCents(e.target.value, activeMax, wholeUnits))}
-                onBlur={() => setAmount((prev) => clampToCents(prev, activeMax, wholeUnits))}
+                value={amountText}
+                onChange={(e) => {
+                  setCapNote(null);
+                  setSubmitError(null);
+                  /* The ceiling and the whole-unit floor still apply as the
+                     figure is typed (an over-max amount is never on screen
+                     for a tap to send); what changed is that a clamp SAYS SO,
+                     and a spelling the field cannot read stays on screen
+                     marked invalid instead of vanishing into 0. */
+                  const typed = e.target.value;
+                  const n = parseFloat(typed);
+                  if (!AMOUNT_SPELLING.test(typed.trim()) || !Number.isFinite(n) || n <= 0) {
+                    setAmountText(typed);
+                    return;
+                  }
+                  const clamped = clampToCents(n, activeMax, wholeUnits);
+                  if (clamped < n && Number.isFinite(activeMax) && n > activeMax) {
+                    setCapNote(`Capped At ${formatAmount(clamped)}`);
+                  }
+                  setAmountText(clamped === n ? typed : String(clamped));
+                }}
+                onBlur={clampOnBlur}
                 placeholder="0"
                 min={0}
                 step={wholeUnits ? 1 : 0.01}
                 max={activeMax}
                 disabled={busy || isProcessing}
                 aria-label="Amount To Add"
-                aria-invalid={amount > 0 && !isValidAmount}
+                aria-invalid={amountText.trim() !== '' && !isValidAmount}
               />
-              <span>
-                Available To Add: {formatAmount(canAddAmount, currency)} {unit}
-              </span>
+              {statusLine}
             </>
           }
           rows={[
             <React.Fragment key="cost">
               <span>Add-On Cost</span>
               <strong>
-                <PurchaseText>{`${formatAmount(amount, currency)} ${unit}`}</PurchaseText>
+                <PurchaseText>{`${formatAmount(amount)} ${unit}`}</PurchaseText>
               </strong>
             </React.Fragment>,
             <React.Fragment key="stack">
               <span>New Stack</span>
               <strong>
-                <PurchaseText>{`${formatAmount(currentStack + amount, currency)} ${unit}`}</PurchaseText>
+                <PurchaseText>{`${formatAmount(currentStack + amount)} ${unit}`}</PurchaseText>
               </strong>
             </React.Fragment>,
             <React.Fragment key="balance">
@@ -382,41 +446,21 @@ export function CashierModal({
           closeDisabled={busy || isProcessing}
           amountControls={
             <>
-              {quickAmounts.map(({ label, value }, idx) => (
+              {quickAmounts.map(({ label, value }) => (
                 <button
                   key={label}
                   type="button"
                   onClick={() => {
                     setSubmitError(null);
+                    setCapNote(null);
                     setAmount(value);
                   }}
                   disabled={value <= 0 || busy || isProcessing}
                   aria-pressed={amount === value}
-                  style={{ opacity: visibleQuick[idx] ? 1 : 0 }}
                 >
                   {label}
                 </button>
               ))}
-            </>
-          }
-          messages={
-            <>
-              {submitError && (
-                <p className="cashier-error" role="alert" aria-live="assertive">
-                  {submitError}
-                </p>
-              )}
-              {transactions.length > 0 && (
-                <div className="cashier-recent">
-                  <span>Recent</span>
-                  {transactions.slice(0, 5).map((tx) => (
-                    <div key={tx.id}>
-                      {tx.type === 'add' ? '+' : '-'}
-                      {formatAmount(tx.amount, currency)} {formatTime(tx.timestamp)}
-                    </div>
-                  ))}
-                </div>
-              )}
             </>
           }
         />

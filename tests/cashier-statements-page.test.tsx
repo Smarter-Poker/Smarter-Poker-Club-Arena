@@ -152,6 +152,39 @@ beforeEach(() => {
 });
 
 describe('CashierStatementsPage', () => {
+  it('names the document and prints a movement category as the wallet spells it', async () => {
+    // Launch audit 2026-10-09, L-03 and R-11: the page kept the previous
+    // document title, and `buyin` printed as "Buyin".
+    const buyIn = {
+      ...ROWS[1],
+      id: 'eeeeeeee-0004-4000-8000-000000000004',
+      kind: 'buyin',
+      wallet: 'table',
+      direction: 'out',
+      amount: '200.00',
+      from: { type: 'player_wallet', id: USER, label: 'kingfish' },
+      to: { type: 'table', id: 'ffffffff-0005-4000-8000-000000000005', label: 'Main Table' },
+      reference: { ...ROWS[1].reference, id: 'eeeeeeee-0004-4000-8000-000000000004' },
+      balance_after: null,
+    };
+    rpc.mockImplementation(((name: string) =>
+      name === 'fn_cashier_statement_page'
+        ? ok({ ...PAGE, rows: [buyIn], next_cursor: null })
+        : name === 'fn_cashier_statement_totals'
+          ? ok(TOTALS)
+          : ok(null)) as never);
+    document.title = 'Poker Arena | Smarter Poker';
+    const { container } = renderPage();
+    expect(await screen.findByText('Your Entries And Your Downline')).toBeInTheDocument();
+    expect(document.title).toBe('Cashier Statement | Smarter Poker');
+    expect(container.textContent).toContain('Buy-In');
+    expect(container.textContent).not.toContain('Buyin');
+    fireEvent.click(screen.getByText('To Main Table'));
+    fireEvent.click(screen.getAllByRole('button', { name: /Copy Receipt/ })[0]);
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    expect(writeText.mock.calls[0][0]).toContain('Entry: Buy-In');
+  });
+
   it('prints the statement in Title Case with compact no-decimal figures and server totals', async () => {
     rpc.mockImplementation(byName as never);
     const { container } = renderPage();

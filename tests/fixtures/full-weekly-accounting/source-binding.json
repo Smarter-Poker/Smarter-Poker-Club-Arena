@@ -143,9 +143,9 @@
     "tests/unit/CreditRequestLegacyCaller.test.ts": "ef6f8458a54ce3b5e646d831c176f279456e8f59598616e20dbb3a9dbc7f2e7b",
     "tests/unit/CreditRequestService.test.ts": "47bc48d13b54901999a6a58b36a93edb79e4f2d057427a4a6d622ff009d7c0c3",
     "tests/components/agent-cashout-scope.test.tsx": "58f7be7a87a7f3f4d5f585ea0c297f7fe0fc9b64fc67a02d6edc2a81d36f9446",
-    "tests/unit/CashoutService.test.ts": "26461a6485532da8ea2cef4c69a47f5b1e4f8711da2eb44834a8eab88681f469",
-    "tests/config/roleScopedCashier.test.ts": "bca1a5a8308ebae743c1749a63441a5663685bc91aa62b609c55f224035af5aa",
-    "tests/cashout-escrow-flow.test.ts": "b74114ae26cc7499d9243d67ac9b9b41d0d1c64dcfb47d8d0140aad0dc536fd5",
+    "tests/unit/CashoutService.test.ts": "6f4cff8796499a4ea8e550d30da4aed45d067d4be18030688a17a2f4ca1e303d",
+    "tests/config/roleScopedCashier.test.ts": "a233e4072262ad4356b705c37db292d78f49dd613506e0d6c13b92fb787eb4d8",
+    "tests/cashout-escrow-flow.test.ts": "b466fd8beffb58c9ab0674db9a10a2ae6f9126def2e3c42a08401f9c5382d019",
     "tests/fixtures/cashier-document-authority/captured-legacy-route-catalog.json": "edef6d6318f142277069de1fead9cbfe8ea732cc5d774987d8f4894bdc06807f",
     "tests/fixtures/cashier-document-authority/captured-preimages.sql": "1219fa1b0c4ab26bf155f3c58d3f4c7f5fd108940c1780c5047f61d88727412a",
     "tests/unit/leaveClubReleasesEscrow.test.ts": "4faed6fab4a8eac765219b794e555edf9186064bc19b7ba02c8bc9f0572c1fca",
@@ -155,16 +155,16 @@
     "tests/helpers/cashoutV2Receipt.ts": "db760aae934fbae5c3b14c5e1bd5ca2011bf9a1dd7d0f294d90684e9ff18d20a",
     "tests/components/agent-dashboard-durable-transfers.test.tsx": "86a984352a74d27c8365270b20485d52e55873ee7bb900af71796b59da84c138",
     "tests/unit/CashoutRequestModal.test.tsx": "d78e002502721f22d4d0d53baec2147c2cf3a3b103d9015f5ab671784b36e84c",
-    "tests/fixtures/cashier-document-authority/README.md": "8ac8d0c76bd91cb91f7d010ff4f1db316921bb6e523954b10bc1c00819b8fe43",
+    "tests/fixtures/cashier-document-authority/README.md": "fe65d50c5ed2aa2507e0ed8cc1149c4c9dbcc12d55cca1822352c4aa05ec8580",
     "tests/fixtures/cashier-document-authority/captured-cashier-catalog.json": "4037cbccb52b206a4f1a1b158b055cb7cc8819cd14241d0becb74127819328c2",
-    "tests/unit/CashoutOperation.test.ts": "9fd374a5b9cc0b5443aa863dfc56713ca93b90fcbd2ab5b9c9360c0b8f1f4fd9",
+    "tests/unit/CashoutOperation.test.ts": "9bc670edbf3eec0132eb45d6d070ee20d8936225af7af0d06fdb76532bb50a7f",
     "tests/fixtures/correction-document-authority/README.md": "836d767a54efa8c0a1d21f940100c993ace55cc84053cf529db88ff0ec8d4054",
     "tests/fixtures/correction-document-authority/captured-dependencies.json": "a3f2ca823f8d17df8429aed4973a8258595b6ed4e5a2da8585dddac78795e3f5",
     "tests/fixtures/correction-document-authority/captured-preimages.sql": "cb9ace1e960450ac78fc2de96c785fe97856da1e8fcfd0a3244480d5bb08fa25",
     "tests/fixtures/correction-document-authority/captured-references.json": "60b794f91a5d726c9302856a220b193eae52fbd95dc1e15ad4b95b312b092479",
     "tests/fixtures/correction-document-authority/captured-union-party.json": "9bc97fef36c4e3e3ec2766cb3596764513bb20fd8bce78e5fa1ee87337bb86f7",
     "tests/fixtures/correction-document-authority/regression.sql": "f70b287534ee6024469629a18fd38cb4074f528e906808c5bf6ebdb1464091f1",
-    "tests/cashier-weekly-statements.test.tsx": "e4a318ff36071922a22a943a098c9e551172c6059a0c2c17b281e1b65dc106da",
+    "tests/cashier-weekly-statements.test.tsx": "f20219b5d79ec266603635c2be3ad3d30e12744956caf75dcac58ee75b22b2fd",
     "tests/helpers/clubWeeklyStatement.ts": "7061277bbc67933e1aba5bcd76ebd3cd4fec241ffe9545c39e0b0f10806b2d21",
     "tests/unit/ClubWeeklyAccountingReader.test.ts": "a014cdab643e4adb2612f49112a4d51947c33de71c23e16757cb432bd09d8c2e",
     "tests/unit/FinancialExportService.test.ts": "a3870a8c151e21c7917687b6953dcd3d51cf82cc03071c655674111ad9556c16",
@@ -185,10 +185,10 @@
     "tests/components/WeeklyAccountingWorkspace.test.tsx": "3fa2ec057866093383ec05539ac3a60de8cec52abfee780d2491ead8894f5be7",
     "tests/helpers/accountingObservation.ts": "9dba06d97c2f9cce2356fa8c6800ff9a07e4618ea2028370a278b4820b6199f6",
     "tests/components/FinancialAlertsExport.test.tsx": "8863dfb7e552fdf23d4e8e00eefce37b16f3cfbf1eb1858f9db9274b1f987d80",
-    "tests/components/cashier-cashout-generations.test.tsx": "c3d521a79889e716b7dd181ca94c595fca8bf22054240fee59cc61a6936b6afb",
+    "tests/components/cashier-cashout-generations.test.tsx": "18f5fadfadc7cba15d554d269e03b56bf7f99e01bbbf855d3dd2702bd7a21a39",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "51094ea1ec27a4e1e4c43f1e6fc919c84f41fd1f3a29326bb3508bd708566eb9",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "bd22bff065110764aaa53d0936764241d09dbd8499ad90371230443c0e04b5a2",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "0de76a50b30c1dd3b59a594fea6f2c5b2ebf4f7101446d4b48b629f1304584cb",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
@@ -3809,5 +3809,53 @@
       }
     ],
     "verification": "The exact additive test diff was reviewed. Its focused component suite passed in the original candidate; the complete source-binding verifier must pass after this targeted refresh. This refresh is not new native execution or production proof."
+  },
+  "cashier_launch_audit_rebinding_20261009": {
+    "base_commit": "3bfc46f8771a1cd9e6cdd523703387b55ed03b96",
+    "source_branch": "audit/cashier-launch-20261009",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/CashoutService.test.ts",
+        "previous_sha256": "26461a6485532da8ea2cef4c69a47f5b1e4f8711da2eb44834a8eab88681f469",
+        "sha256": "6f4cff8796499a4ea8e550d30da4aed45d067d4be18030688a17a2f4ca1e303d"
+      },
+      {
+        "path": "tests/cashout-escrow-flow.test.ts",
+        "previous_sha256": "b74114ae26cc7499d9243d67ac9b9b41d0d1c64dcfb47d8d0140aad0dc536fd5",
+        "sha256": "b466fd8beffb58c9ab0674db9a10a2ae6f9126def2e3c42a08401f9c5382d019"
+      },
+      {
+        "path": "tests/fixtures/cashier-document-authority/README.md",
+        "previous_sha256": "8ac8d0c76bd91cb91f7d010ff4f1db316921bb6e523954b10bc1c00819b8fe43",
+        "sha256": "fe65d50c5ed2aa2507e0ed8cc1149c4c9dbcc12d55cca1822352c4aa05ec8580"
+      },
+      {
+        "path": "tests/components/cashier-cashout-generations.test.tsx",
+        "previous_sha256": "c3d521a79889e716b7dd181ca94c595fca8bf22054240fee59cc61a6936b6afb",
+        "sha256": "18f5fadfadc7cba15d554d269e03b56bf7f99e01bbbf855d3dd2702bd7a21a39"
+      },
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "bd22bff065110764aaa53d0936764241d09dbd8499ad90371230443c0e04b5a2",
+        "sha256": "0de76a50b30c1dd3b59a594fea6f2c5b2ebf4f7101446d4b48b629f1304584cb"
+      },
+      {
+        "path": "tests/cashier-weekly-statements.test.tsx",
+        "previous_sha256": "e4a318ff36071922a22a943a098c9e551172c6059a0c2c17b281e1b65dc106da",
+        "sha256": "f20219b5d79ec266603635c2be3ad3d30e12744956caf75dcac58ee75b22b2fd"
+      },
+      {
+        "path": "tests/config/roleScopedCashier.test.ts",
+        "previous_sha256": "bca1a5a8308ebae743c1749a63441a5663685bc91aa62b609c55f224035af5aa",
+        "sha256": "a233e4072262ad4356b705c37db292d78f49dd613506e0d6c13b92fb787eb4d8"
+      },
+      {
+        "path": "tests/unit/CashoutOperation.test.ts",
+        "previous_sha256": "9fd374a5b9cc0b5443aa863dfc56713ca93b90fcbd2ab5b9c9360c0b8f1f4fd9",
+        "sha256": "9bc670edbf3eec0132eb45d6d070ee20d8936225af7af0d06fdb76532bb50a7f"
+      }
+    ],
+    "reason": "Club Arena Cashier launch audit, 2026-10-09 (docs/changelog/2026-10-09-cashier-launch-audit.md). Eight repository test and README bindings move; no accounting component, SQL, captured catalog fixture, limit or native assertion changed. tests/unit/CashoutService.test.ts: S-01 adds a describe that maps SQLSTATE 22023/23514/42501 refusals of fn_cashout_request_v2/approve_v2/release_v2 to the new definitive CashoutRefusedError and keeps 57014/40001/08xxx/unknown codes as CashoutOutcomeUnknownError; S-08/S-11 delete the cases for the removed dead wrappers (sendChipsToPlayer, claimBackSend, removeChipsFromPlayer, completeCashout, expireStale) and replace them with a case pinning that no such method exists; every other assertion is unchanged. tests/cashout-escrow-flow.test.ts: the same S-08/S-11 wrapper cases become absence pins (no service method, no rpc('fn_admin_remove_player_chips'|'fn_agent_wallet_claim_back'|'fn_agent_wallet_send') and no '|| newOpId()' in CashoutService.ts); the unused accept helper is removed; every hold/approval/decline/cancellation receipt assertion is unchanged. tests/fixtures/cashier-document-authority/README.md: S-02 corrects the title and adds a status note that component33 is installed on production (2026-09-14) and was verified live on 2026-10-09 by md5(pg_get_functiondef); the remaining UNRUN lines describe the authored regression cases, unchanged. tests/components/cashier-cashout-generations.test.tsx: P-06/P-15 classic cashier Title Case and tab fixes by the pages fixer: the default tab query moves from 'Buy-In' to 'Cash-Out' (the Buy-In dead end tab was removed), the amount label from 'AMOUNT:' to 'Amount' and the confirm button from 'CONFIRM SECURE CASHOUT' to 'Confirm Secure Cashout'; the generation, replay and receipt assertions are unchanged. tests/unit/discardedErrorReadRatchet.test.ts: S-07 lowers the src/components/wallet/ChipMintModal.tsx baseline from 2 to 0 because its mint pre-flight now reads the club through fn_club_money_panel and binds every error; a ratchet tightening, not a relaxation. tests/cashier-weekly-statements.test.tsx: P-09/R-08 by the pages fixer: the weekly statement rows now print whole chips rounded down ('Retained 40 Chips', 'Rake Funding 100 Chips', 'Paid By Club 60 Chips') instead of 40.05 / 100.25 / 60.20, and the not-present check widens to refuse the exact decimals as well; the reader still keeps the exact figures and every scope, stale-read and empty-state assertion is unchanged. tests/config/roleScopedCashier.test.ts: S-08: 'every cashout leg goes through its own RPC' keeps the four cashout RPC pins on CashoutService and moves the fn_agent_wallet_send / fn_agent_wallet_claim_back pins to WalletCashierModal, which calls them with a retained op id, while also asserting the service no longer names them; every other assertion is unchanged. tests/unit/CashoutOperation.test.ts (release integration, S-01 follow-through): one additive case, 'a definitive balance refusal acknowledges the generation so the next start mints a fresh id', pins that runCashoutOperation acknowledges the admitted generation when the service rejects with CashoutRefusedError (rpc resolves {data:null,error:{code:'23514',message:'cashier_wallet_balance_unverified'}}, the caller sees 'Not Enough Chips For That Cashout.', exactly one rpc call, generations[0].acknowledged and every start acknowledged); every existing generation, replay, storage-interruption and receipt assertion is unchanged.",
+    "verification": "Each sha256 is hashlib.sha256(path.read_bytes()).hexdigest() of the file on disk in the audit worktree at the moment of this restamp, after the repository's prettier formatting pass, no normalisation; each previous_sha256 is the value this binding held at base commit 3bfc46f877. The diffs were read in full before restamping. npx vitest run on tests/unit/CashoutService.test.ts, tests/unit/CashoutOperation.test.ts (43 passed after the additive case), tests/cashout-escrow-flow.test.ts, tests/components/cashier-cashout-generations.test.tsx, tests/unit/discardedErrorReadRatchet.test.ts tests/cashier-weekly-statements.test.tsx and tests/config/roleScopedCashier.test.ts passes on these bytes; python3 scripts/ci/verify-source-bindings.py, python3 -m unittest discover -s scripts/ci -p test_cash_native_pgcron.py and tests/every-pinned-source-stays-bound.law.test.ts are run after this restamp and their outputs are in the services fixer report. This file is not pinned by any other binding or by the cash native manifest, so nothing cascades. No native financial execution and no production installation is established by this refresh; no production object was read, created or changed by it."
   }
 }

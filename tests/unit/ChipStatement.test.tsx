@@ -221,6 +221,46 @@ describe('ChipStatement', () => {
     expect(rpc.mock.calls[0][0]).toBe('fn_ca_chip_statement_page');
   });
 
+  it('fills both riveted plates in every state, never leaving one empty (launch audit D-08)', async () => {
+    const plateLabels = () =>
+      Array.from(document.querySelectorAll('.sc__foot .sc-plate')).map((plate) => ({
+        label: plate.textContent?.trim(),
+        disabled: (plate as HTMLButtonElement).disabled,
+      }));
+
+    // Rows, with more to load: Refresh re-reads, the blue plate loads earlier.
+    rpc.mockResolvedValue({ data: statement(), error: null });
+    const view = render(<ChipStatement scope="player" />);
+    await waitFor(() => screen.getByText('Load Earlier Movements'));
+    expect(plateLabels()).toEqual([
+      { label: 'Refresh', disabled: false },
+      { label: 'Load Earlier Movements', disabled: false },
+    ]);
+    fireEvent.click(screen.getByText('Refresh'));
+    await waitFor(() => expect(rpc).toHaveBeenCalledTimes(2));
+    view.unmount();
+    rpc.mockReset();
+
+    // Every movement shown: the blue plate says so and is disabled.
+    rpc.mockResolvedValueOnce({
+      data: statement({ has_more: false, next_cursor: null }),
+      error: null,
+    });
+    const upToDate = render(<ChipStatement scope="player" />);
+    await waitFor(() => screen.getByText('Up To Date'));
+    expect(plateLabels()[1]).toEqual({ label: 'Up To Date', disabled: true });
+    expect(plateLabels().every((plate) => plate.label)).toBe(true);
+    upToDate.unmount();
+
+    // Failed: Try Again is the plate, nothing else is a lit word.
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'boom', code: 'XX000' } });
+    render(<ChipStatement scope="player" />);
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    expect(plateLabels()[0]).toEqual({ label: 'Try Again', disabled: false });
+    expect(plateLabels()[1].label).toBeTruthy();
+    expect(document.querySelector('.chip-statement__btn')).toBeNull();
+  });
+
   it('never reads an error as "no movements"', async () => {
     rpc.mockResolvedValueOnce({ data: null, error: { message: 'boom', code: 'XX000' } });
     render(<ChipStatement scope="player" />);

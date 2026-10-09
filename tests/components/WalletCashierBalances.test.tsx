@@ -8,7 +8,7 @@ const fixture = vi.hoisted(() => ({
   float: 15,
   failure: false,
   reads: [] as Array<{ table: string; fields: string; filters: Record<string, string> }>,
-  rpc: vi.fn().mockResolvedValue({ data: [], error: null }),
+  rpc: vi.fn(),
   channel: vi.fn(),
 }));
 vi.mock('../../src/hooks/useAuthUser', () => ({
@@ -40,22 +40,52 @@ vi.mock('../../src/lib/supabase', () => ({
             ? { data: null, error: { message: 'Permission denied' } }
             : {
                 error: null,
-                data:
-                  table === 'clubs'
-                    ? {
-                        id: request.filters.id,
-                        name: 'Test Club',
-                        union_id: null,
-                        chip_treasury: fixture.bank,
-                        promo_balance: fixture.pot,
-                      }
-                    : { agent_wallet_balance: fixture.agent, promo_wallet_balance: fixture.float },
+                data: { agent_wallet_balance: fixture.agent, promo_wallet_balance: fixture.float },
               };
         },
       };
       return builder;
     },
-    rpc: fixture.rpc,
+    /* The club figures come from fn_club_money_panel, the role-checked read
+       (S-07, launch audit 2026-10-09); clubs.chip_treasury is never selected.
+       The panel is a one-row rpc the service reads with .abortSignal(), and it
+       is recorded as a read of the 'clubs' money so the filter assertions below
+       still cover it. */
+    rpc: (name: string, args: Record<string, unknown>) => {
+      if (name !== 'fn_club_money_panel') {
+        fixture.rpc(name, args);
+        return Promise.resolve({ data: [], error: null });
+      }
+      const request = {
+        table: 'clubs',
+        fields: 'fn_club_money_panel',
+        filters: { id: args.p_club_id as string },
+      };
+      const answer = async () => {
+        fixture.reads.push(request);
+        return fixture.failure
+          ? { data: null, error: { message: 'Permission denied' } }
+          : {
+              error: null,
+              data: {
+                authorized: true,
+                scope: 'club',
+                club_id: args.p_club_id,
+                club_name: 'Test Club',
+                in_union: false,
+                union_id: null,
+                club_treasury: fixture.bank,
+                club_promo_wallet: fixture.pot,
+              },
+            };
+      };
+      const thenable = {
+        abortSignal: () => answer(),
+        then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
+          answer().then(resolve, reject),
+      };
+      return thenable;
+    },
     channel: (...args: unknown[]) => {
       fixture.channel(...args);
       const channel = { on: () => channel, subscribe: () => channel };
@@ -77,7 +107,7 @@ describe('the open cashier reads the balances that changed elsewhere', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     Object.assign(fixture, { bank: 100, pot: 25, agent: 40, float: 15, failure: false, reads: [] });
-    fixture.rpc.mockClear();
+    fixture.rpc.mockReset();
     fixture.channel.mockClear();
     vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
   });

@@ -72,6 +72,29 @@ const WALLET_WORD: Record<WalletFamily, string> = {
   other: 'Other',
 };
 
+/**
+ * The ledger's movement categories as a player reads them. `enumToTitleCase`
+ * turns `buyin` into "Buyin" and `addon` into "Addon"; the words the rest of
+ * the wallet prints are hyphenated (launch audit 2026-10-09, R-11). Anything
+ * not named here still falls through to the enum reading.
+ */
+const KIND_WORD: Record<string, string> = {
+  buyin: 'Buy-In',
+  cashout: 'Cash-Out',
+  addon: 'Add-On',
+  addon_refund: 'Add-On Refund',
+  rebuy: 'Rebuy',
+  tournament_buyin: 'Tournament Buy-In',
+  tournament_cashout: 'Tournament Cash-Out',
+  bbj: 'Bad Beat Jackpot',
+  bbj_promo_sweep: 'Bad Beat Jackpot Promo Sweep',
+  horse_refill: 'Auto Refill',
+};
+
+function kindWord(kind: string): string {
+  return KIND_WORD[kind] ?? enumToTitleCase(kind);
+}
+
 const DIRECTION_WORD: Record<EntryDirection, string> = {
   in: 'Incoming',
   out: 'Outgoing',
@@ -99,6 +122,8 @@ const PROBLEM_WORD: Record<StatementProblem, string> = {
   malformed: 'The Statement Came Back Incomplete, So None Of It Is Shown. Try Again.',
   too_large: `Narrow The Range. One Export Holds Up To ${STATEMENT_EXPORT_MAX_ROWS.toLocaleString('en-US')} Entries.`,
   expired: 'This Export Expired. Prepare It Again.',
+  busy: 'An Export Is Already Being Prepared. Try Again In A Moment.',
+  gone: 'This Export Is No Longer Available. Prepare A New Export.',
   download_failed: 'The File Could Not Be Handed Off. Try The Download Again.',
 };
 
@@ -201,7 +226,7 @@ function receiptText(entry: StatementEntry): string {
   const lines = [
     'Smarter Poker Cashier Statement Entry',
     `Recorded: ${entry.at}`,
-    `Entry: ${enumToTitleCase(entry.kind)}`,
+    `Entry: ${kindWord(entry.kind)}`,
     `Wallet: ${WALLET_WORD[entry.wallet]}`,
     `Direction: ${DIRECTION_WORD[entry.direction]}`,
     `Amount: ${signed(entry.direction)}${exactChips(entry.amount)} Chips`,
@@ -255,6 +280,9 @@ function StatementsContent({ clubParam, userId }: { clubParam: string; userId?: 
     return () => {
       mountedRef.current = false;
     };
+  }, []);
+  useEffect(() => {
+    document.title = 'Cashier Statement | Smarter Poker';
   }, []);
 
   useEffect(() => {
@@ -764,8 +792,8 @@ function StatementsContent({ clubParam, userId }: { clubParam: string; userId?: 
                                 {counterpartyWord(entry)}
                               </span>
                               <span className={styles.rowSub}>
-                                {enumToTitleCase(entry.kind)} &middot; {WALLET_WORD[entry.wallet]}{' '}
-                                &middot; {STATE_WORD[entry.state]} &middot; {recordedAt(entry.at)}
+                                {kindWord(entry.kind)} &middot; {WALLET_WORD[entry.wallet]} &middot;{' '}
+                                {STATE_WORD[entry.state]} &middot; {recordedAt(entry.at)}
                               </span>
                             </span>
                             <span
@@ -792,7 +820,7 @@ function StatementsContent({ clubParam, userId }: { clubParam: string; userId?: 
                             <dl className={styles.facts} id={factsId}>
                               <div>
                                 <dt className={styles.fieldLabel}>Entry</dt>
-                                <dd>{enumToTitleCase(entry.kind)}</dd>
+                                <dd>{kindWord(entry.kind)}</dd>
                               </div>
                               <div>
                                 <dt className={styles.fieldLabel}>Wallet</dt>

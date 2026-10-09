@@ -503,6 +503,16 @@ export default function DynamicWallet({
   );
   const [loading, setLoading] = useState(() => !boot.entry);
   const [fetchError, setFetchError] = useState(false);
+  /**
+   * WHETHER `data` HOLDS A FIGURE THAT WAS EVER READ (launch audit R-03).
+   * `INITIAL_WALLET_DATA` seeds zeros so the counters have somewhere to start,
+   * and a first read that FAILS used to leave them on screen under the red
+   * badge: Diamonds 0, Club Bank 0, Player Wallet 0. A zero nobody read is a
+   * fabricated balance. True once the device cache painted or a read landed;
+   * false again when the club changes. While it is false and the read has
+   * failed, every row prints "-", the same mark an unreadable figure uses.
+   */
+  const [everRead, setEverRead] = useState(() => Boolean(boot.entry));
   const [isClubInUnion, setIsClubInUnion] = useState(() => boot.entry?.isClubInUnion ?? false);
   const isMounted = useIsMounted();
   // Resolved UUID — DynamicWallet now handles resolution internally.
@@ -557,7 +567,7 @@ export default function DynamicWallet({
               if (!disposed) setResolvedId(uuid);
             })
             .catch((err) => {
-              console.warn('[DynamicWallet] Failed to resolve clubId:', err);
+              reportError(err, 'DynamicWallet.resolveClubId');
               if (!disposed) setResolvedId(clubId);
             });
         }
@@ -578,6 +588,7 @@ export default function DynamicWallet({
        which ROWS the next club shows before its own panel has answered. */
     setIsClubInUnion(false);
     setFetchError(false);
+    setEverRead(false);
     setCachedRole(null);
     paintedKeyRef.current = null;
     skipNextFetchRef.current = false;
@@ -600,6 +611,7 @@ export default function DynamicWallet({
       setCurrentUnionId(cached.unionId ?? null);
       if (cached.role) setCachedRole(normaliseRole(cached.role));
       paintedKeyRef.current = cacheKey;
+      setEverRead(true);
       // Same fresh-window rule as the synchronous boot: seconds-old data
       // needs no immediate resync when hopping between surfaces.
       skipNextFetchRef.current = hit !== null && Date.now() - hit.at < FRESH_WINDOW_MS;
@@ -621,7 +633,7 @@ export default function DynamicWallet({
         if (!disposed) setResolvedId(uuid);
       })
       .catch((err) => {
-        console.warn('[DynamicWallet] Failed to resolve clubId:', err);
+        reportError(err, 'DynamicWallet.resolveClubId');
         // Fallback: use raw clubId (it might already be a UUID)
         if (!disposed) setResolvedId(clubId);
       });
@@ -897,6 +909,7 @@ export default function DynamicWallet({
         setIsClubInUnion(panel.in_union !== undefined ? Boolean(panel.in_union) : unionId !== null);
       }
       setFetchError(false);
+      setEverRead(true);
       setLoading(false);
 
       // 3. Mark `data` as belonging to this cache key. The write-through
@@ -1083,7 +1096,6 @@ export default function DynamicWallet({
       label: 'BBJ Backup Wallet',
       icon: 'reserve',
       value: animBackupBBJ,
-      known: data.backupBBJ !== null,
       hint: 'Next Jackpot Seed',
       onOpen: () => onOpenUnionBackupBBJ?.(data.backupBBJ || 0),
     },
@@ -1203,7 +1215,12 @@ export default function DynamicWallet({
   const compactLabel = (row: WalletRow) =>
     compactLobby && row.key === 'club_bank' ? 'Club Balance' : row.label;
 
+  /* Nothing was ever read for this club and the read failed: the seeded zeros
+     are not balances, so every figure is unknown (launch audit R-03). */
+  const figuresUnknown = fetchError && !everRead;
+
   const settledRowValue = (key: string): number | null => {
+    if (figuresUnknown) return null;
     switch (key) {
       case 'player_wallet':
         return data.chipBalance;
@@ -1320,10 +1337,10 @@ export default function DynamicWallet({
           `data`. Before this the container carried aria-live="off" and a
           blind player was never told their balance had changed at all. */}
       <span className="dw__sr-live" aria-live="polite" aria-atomic="true">
-        {`Diamond Wallet ${formatDiamonds(data.diamonds)}. ${rows
+        {`Diamond Wallet ${figuresUnknown ? 'Unavailable' : formatDiamonds(data.diamonds)}. ${rows
           .map((row) => {
             const settled = settledRowValue(row.key);
-            return `${compactLabel(row)} ${settled === null ? 'unavailable' : formatBalance(settled)}`;
+            return `${compactLabel(row)} ${settled === null ? 'Unavailable' : formatBalance(settled)}`;
           })
           .join('. ')}.`}
       </span>
@@ -1353,7 +1370,9 @@ export default function DynamicWallet({
             <WalletIcon name="diamond" />
           </span>
           <span className="dw__row-label">{compactLobby ? 'Diamond Wallet' : 'Diamonds'}</span>
-          <span className="dw__row-value">{formatDiamonds(animDiamonds)}</span>
+          <span className="dw__row-value">
+            {figuresUnknown ? '-' : formatDiamonds(animDiamonds)}
+          </span>
           {onBuyDiamonds && !compactLobby && (
             <button
               className="dw__plus"
@@ -1406,7 +1425,7 @@ export default function DynamicWallet({
               {row.hint && <span className="dw__row-hint">{row.hint}</span>}
             </span>
             <span className="dw__row-value">
-              {row.known === false ? '-' : formatBalance(row.value)}
+              {row.known === false || figuresUnknown ? '-' : formatBalance(row.value)}
             </span>
             {row.onOpen && (
               <span className="dw__row-chevron" aria-hidden="true">
@@ -1447,7 +1466,7 @@ export default function DynamicWallet({
               <span className="dw__row-hint">Reserve · Reseeds Main After A Hit</span>
             </span>
             <span className="dw__row-value">
-              {data.backupBBJ === 0 ? '-' : formatBalance(animBackupBBJ)}
+              {data.backupBBJ === 0 || figuresUnknown ? '-' : formatBalance(animBackupBBJ)}
             </span>
           </div>
         )}

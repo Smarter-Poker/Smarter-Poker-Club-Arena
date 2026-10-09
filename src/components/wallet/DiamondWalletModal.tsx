@@ -49,9 +49,11 @@ interface DiamondTransaction {
 // TX TYPE CONFIG
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const TX_TYPES: Record<string, { icon: string; label: string; color: string }> = {
-  purchase: { icon: 'cart', label: 'Purchase', color: '#ef4444' },
-  feature_unlock: { icon: 'unlock', label: 'Feature Unlock', color: '#f97316' },
+/* Only the label is read; the icon and colour every entry used to carry were
+   never printed on the console (launch audit D-17). */
+const TX_TYPES: Record<string, { label: string }> = {
+  purchase: { label: 'Purchase' },
+  feature_unlock: { label: 'Feature Unlock' },
   /**
    * Dan 2026-08-23: "when you buy time banks, it actually deducts the diamonds
    * and adds the transaction inside your diamond wallet."
@@ -66,50 +68,50 @@ const TX_TYPES: Record<string, { icon: string; label: string; color: string }> =
    * showed up in their own wallet as a grey "Adjustment", indistinguishable
    * from an admin correction. That is what "no transaction in my wallet" was.
    */
-  feature_purchase: { icon: 'unlock', label: 'Feature Purchase', color: '#f97316' },
+  feature_purchase: { label: 'Feature Purchase' },
   /** Same gap, same writer: the diamond helpers also emit this type. */
-  chip_purchase: { icon: 'cart', label: 'Chip Purchase', color: '#ef4444' },
-  game_cost: { icon: 'gamepad', label: 'Game Entry', color: '#ef4444' },
-  arcade_entry: { icon: 'joystick', label: 'Arcade Entry', color: '#ef4444' },
-  bonus: { icon: 'gift', label: 'Bonus', color: '#38bdf8' },
-  signup_bonus: { icon: 'celebration', label: 'Welcome Bonus', color: '#38bdf8' },
-  daily_bonus: { icon: 'calendar', label: 'Daily Bonus', color: '#3b82f6' },
-  daily_login: { icon: 'calendar', label: 'Daily Login', color: '#3b82f6' },
-  daily_trivia: { icon: 'puzzle', label: 'Daily Trivia', color: '#38bdf8' },
-  streak_reward: { icon: 'flame', label: 'Streak Reward', color: '#ff6600' },
-  vip_reward: { icon: 'crown', label: 'VIP Reward', color: '#eab308' },
-  vip_stipend: { icon: 'crown', label: 'VIP Stipend', color: '#eab308' },
-  achievement: { icon: 'trophy', label: 'Achievement', color: '#f59e0b' },
-  challenge: { icon: 'lightning', label: 'Challenge', color: '#06b6d4' },
-  tournament_prize: { icon: 'gold_medal', label: 'Tournament Prize', color: '#eab308' },
-  tournament_refund: { icon: 'refresh', label: 'Tournament Refund', color: '#94a3b8' },
-  pvp_win: { icon: 'crossed_swords', label: 'PvP Win', color: '#38bdf8' },
-  pvp_refund: { icon: 'refresh', label: 'PvP Refund', color: '#94a3b8' },
-  game_reward: { icon: 'target', label: 'Game Reward', color: '#38bdf8' },
-  trivia_reward: { icon: 'brain', label: 'Trivia Reward', color: '#38bdf8' },
-  social_post: { icon: 'memo', label: 'Social Post', color: '#ec4899' },
-  follow: { icon: 'person', label: 'Follow Reward', color: '#06b6d4' },
-  reaction: { icon: 'heart', label: 'Reaction Reward', color: '#f43f5e' },
-  comment: { icon: 'comment', label: 'Comment Reward', color: '#06b6d4' },
-  share: { icon: 'link', label: 'Share Reward', color: '#3b82f6' },
-  referral: { icon: 'handshake', label: 'Referral Bonus', color: '#38bdf8' },
-  profile_complete: { icon: 'checkmark', label: 'Profile Bonus', color: '#38bdf8' },
-  profile_pic: { icon: 'camera', label: 'Profile Pic Bonus', color: '#06b6d4' },
-  video_watch: { icon: 'filmstrip', label: 'Video Watch', color: '#38bdf8' },
-  video_favorite: { icon: 'star', label: 'Video Favorite', color: '#eab308' },
-  hendonmob_link: { icon: 'link', label: 'HendonMob Link', color: '#38bdf8' },
-  venue_review: { icon: 'location', label: 'Venue Review', color: '#f59e0b' },
-  promo_code: { icon: 'ticket', label: 'Promo Code', color: '#38bdf8' },
-  refund: { icon: 'refresh', label: 'Refund', color: '#94a3b8' },
-  adjustment: { icon: 'settings', label: 'Adjustment', color: '#94a3b8' },
+  chip_purchase: { label: 'Chip Purchase' },
+  game_cost: { label: 'Game Entry' },
+  arcade_entry: { label: 'Arcade Entry' },
+  bonus: { label: 'Bonus' },
+  signup_bonus: { label: 'Welcome Bonus' },
+  daily_bonus: { label: 'Daily Bonus' },
+  daily_login: { label: 'Daily Login' },
+  daily_trivia: { label: 'Daily Trivia' },
+  streak_reward: { label: 'Streak Reward' },
+  vip_reward: { label: 'VIP Reward' },
+  vip_stipend: { label: 'VIP Stipend' },
+  achievement: { label: 'Achievement' },
+  challenge: { label: 'Challenge' },
+  tournament_prize: { label: 'Tournament Prize' },
+  tournament_refund: { label: 'Tournament Refund' },
+  pvp_win: { label: 'PvP Win' },
+  pvp_refund: { label: 'PvP Refund' },
+  game_reward: { label: 'Game Reward' },
+  trivia_reward: { label: 'Trivia Reward' },
+  social_post: { label: 'Social Post' },
+  follow: { label: 'Follow Reward' },
+  reaction: { label: 'Reaction Reward' },
+  comment: { label: 'Comment Reward' },
+  share: { label: 'Share Reward' },
+  referral: { label: 'Referral Bonus' },
+  profile_complete: { label: 'Profile Bonus' },
+  profile_pic: { label: 'Profile Pic Bonus' },
+  video_watch: { label: 'Video Watch' },
+  video_favorite: { label: 'Video Favorite' },
+  hendonmob_link: { label: 'HendonMob Link' },
+  venue_review: { label: 'Venue Review' },
+  promo_code: { label: 'Promo Code' },
+  refund: { label: 'Refund' },
+  adjustment: { label: 'Adjustment' },
   /* `mint` in THIS ledger is a diamond grant (a signup grant, a Lifetime VIP
      monthly benefit), never chips, and the Mint itself is internal (Dan,
      2026-09-05). It used to say "Chip Mint". 2026-10-07. */
-  mint: { icon: 'gift', label: 'Bonus Diamonds', color: '#38bdf8' },
-  diamond_purchase: { icon: 'gem', label: 'Diamond Purchase', color: '#00d4ff' },
-  diamond_deduction: { icon: 'gem', label: 'Diamond Spent', color: '#ef4444' },
-  diamond_reward: { icon: 'gem', label: 'Diamond Reward', color: '#38bdf8' },
-  diamond_refund: { icon: 'gem', label: 'Diamond Refund', color: '#94a3b8' },
+  mint: { label: 'Bonus Diamonds' },
+  diamond_purchase: { label: 'Diamond Purchase' },
+  diamond_deduction: { label: 'Diamond Spent' },
+  diamond_reward: { label: 'Diamond Reward' },
+  diamond_refund: { label: 'Diamond Refund' },
 
   /* ── ADDED 2026-09-13, read from the writers and the live ledger ──────────
      THE DIAMOND ARENA IS DIAMONDS ONLY. A buy-in moves diamonds into custody
@@ -118,17 +120,17 @@ const TX_TYPES: Record<string, { icon: string; label: string; color: string }> =
      The rest are the highest-volume kinds of the last 30 days that had no
      label and fell through to the humaniser (daily_challenge_claim alone is
      55,183 of the 57,000 rows written in that window). */
-  arena_deposit: { icon: 'gem', label: 'Diamond Arena Buy-In', color: '#00d4ff' },
-  arena_withdraw: { icon: 'gem', label: 'Diamond Arena Cash-Out', color: '#38bdf8' },
-  debt_settlement: { icon: 'settings', label: 'Owed Diamonds Settled', color: '#94a3b8' },
-  daily_challenge_claim: { icon: 'gem', label: 'Daily Challenge', color: '#38bdf8' },
-  daily_challenge_reroll: { icon: 'refresh', label: 'Challenge Reroll', color: '#ef4444' },
-  daily_mission_milestone: { icon: 'gem', label: 'Mission Milestone', color: '#38bdf8' },
-  plinko_drop: { icon: 'gem', label: 'Plinko Drop', color: '#ef4444' },
-  crash_bet: { icon: 'gem', label: 'Crash Bet', color: '#ef4444' },
-  wheel_spin: { icon: 'gem', label: 'Wheel Spin', color: '#ef4444' },
-  wheel_prize: { icon: 'gem', label: 'Wheel Prize', color: '#38bdf8' },
-  transfer: { icon: 'gem', label: 'Transfer', color: '#94a3b8' },
+  arena_deposit: { label: 'Diamond Arena Buy-In' },
+  arena_withdraw: { label: 'Diamond Arena Cash-Out' },
+  debt_settlement: { label: 'Owed Diamonds Settled' },
+  daily_challenge_claim: { label: 'Daily Challenge' },
+  daily_challenge_reroll: { label: 'Challenge Reroll' },
+  daily_mission_milestone: { label: 'Mission Milestone' },
+  plinko_drop: { label: 'Plinko Drop' },
+  crash_bet: { label: 'Crash Bet' },
+  wheel_spin: { label: 'Wheel Spin' },
+  wheel_prize: { label: 'Wheel Prize' },
+  transfer: { label: 'Transfer' },
 
   /* ── ADDED 2026-08-25, from the live `diamond_transactions` table ──────────
      Every type below occurs in production and had NO entry, so all of them fell
@@ -136,19 +138,19 @@ const TX_TYPES: Record<string, { icon: string; label: string; color: string }> =
      own `feature_purchase` comment was written about, still true for eleven
      more types. `reconciliation` alone is 557 rows: the single largest group in
      the table rendered as if an admin had corrected the player's balance. */
-  reconciliation: { icon: 'settings', label: 'Balance Reconciliation', color: '#94a3b8' },
-  live_gift_sent: { icon: 'gift', label: 'Gift Sent', color: '#ef4444' },
-  live_gift_received: { icon: 'gift', label: 'Gift Received', color: '#38bdf8' },
-  diamond_gift_sent: { icon: 'gift', label: 'Diamond Gift Sent', color: '#ef4444' },
-  diamond_gift_received: { icon: 'gift', label: 'Diamond Gift Received', color: '#38bdf8' },
-  diamond_gift_refund: { icon: 'refresh', label: 'Diamond Gift Refund', color: '#94a3b8' },
-  pvp_stake: { icon: 'crossed_swords', label: 'PvP Stake', color: '#ef4444' },
-  training_reward: { icon: 'target', label: 'Training Reward', color: '#38bdf8' },
-  easter_egg: { icon: 'gift', label: 'Easter Egg', color: '#38bdf8' },
-  chip_mint: { icon: 'coin', label: 'Chip Mint', color: '#38bdf8' },
-  trivia_arcade: { icon: 'puzzle', label: 'Trivia Arcade', color: '#38bdf8' },
-  trivia_run: { icon: 'puzzle', label: 'Trivia Run', color: '#38bdf8' },
-  credit: { icon: 'gem', label: 'Diamond Credit', color: '#38bdf8' },
+  reconciliation: { label: 'Balance Reconciliation' },
+  live_gift_sent: { label: 'Gift Sent' },
+  live_gift_received: { label: 'Gift Received' },
+  diamond_gift_sent: { label: 'Diamond Gift Sent' },
+  diamond_gift_received: { label: 'Diamond Gift Received' },
+  diamond_gift_refund: { label: 'Diamond Gift Refund' },
+  pvp_stake: { label: 'PvP Stake' },
+  training_reward: { label: 'Training Reward' },
+  easter_egg: { label: 'Easter Egg' },
+  chip_mint: { label: 'Chip Mint' },
+  trivia_arcade: { label: 'Trivia Arcade' },
+  trivia_run: { label: 'Trivia Run' },
+  credit: { label: 'Diamond Credit' },
 };
 
 /**
@@ -218,6 +220,23 @@ export default function DiamondWalletModal({
   const dialogRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  /**
+   * A TRANSFER IN FLIGHT HOLDS THE DOOR SHUT (launch audit D-13). The
+   * transfer's `busy` is lifted here so the backdrop, the corner X, the Close
+   * plate and Escape all refuse while send_wallet_diamond_transfer is
+   * travelling; the request is persisted and keyed, so nothing could double
+   * send, but a sheet that vanished mid-transfer lost the receipt on screen.
+   */
+  const [transferBusy, setTransferBusy] = useState(false);
+  const transferBusyRef = useRef(false);
+  const onTransferBusyChange = useCallback((busy: boolean) => {
+    transferBusyRef.current = busy;
+    setTransferBusy(busy);
+  }, []);
+  const closeIfIdle = useCallback(() => {
+    if (transferBusyRef.current) return;
+    onCloseRef.current();
+  }, []);
   const isMounted = useIsMounted();
 
   const fetchTransactions = useCallback(async () => {
@@ -325,7 +344,7 @@ export default function DiamondWalletModal({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
-        onCloseRef.current();
+        if (!transferBusyRef.current) onCloseRef.current();
         return;
       }
       if (event.key !== 'Tab') return;
@@ -387,7 +406,7 @@ export default function DiamondWalletModal({
      are the wallet's controls: Close on steel, Buy Diamonds on the blue
      glass. Nothing else is drawn. */
   return (
-    <div className="diamond-wallet-backdrop" onClick={onClose} role="presentation">
+    <div className="diamond-wallet-backdrop" onClick={closeIfIdle} role="presentation">
       <div
         ref={dialogRef}
         className="dwc"
@@ -398,19 +417,36 @@ export default function DiamondWalletModal({
         onClick={(e) => e.stopPropagation()}
       >
         <SpadeConsole
-          onClose={onClose}
+          /* The X is not rendered while a transfer travels (launch audit
+             D-13), as the cashout sheet and the mint already do. The flat
+             crest stays: it is the deliberate Marketplace dress (#4805,
+             pinned by tests/marketplace-console-visual-contract.test.ts), and
+             the Cashier console law carries the allowance for it. */
+          onClose={transferBusy ? undefined : closeIfIdle}
           crest="flat"
           eyebrow="Club Arena"
           title="Diamond Wallet"
           titleId="dwc-title"
-          pill={FILTER_OPTIONS.find((opt) => opt.value === filter)?.label ?? 'All'}
-          pillInk="blue"
+          pill={
+            transferBusy
+              ? 'Sending'
+              : (FILTER_OPTIONS.find((opt) => opt.value === filter)?.label ?? 'All')
+          }
+          pillInk={transferBusy ? 'gold' : 'blue'}
           plates={{
-            secondary: { label: 'Close', ink: 'silver', onClick: onClose, 'aria-label': 'Close' },
+            secondary: {
+              label: 'Close',
+              ink: 'silver',
+              onClick: closeIfIdle,
+              disabled: transferBusy,
+              'aria-label': 'Close',
+            },
             primary: {
               label: 'Buy Diamonds',
               ink: 'white',
+              disabled: transferBusy,
               onClick: () => {
+                if (transferBusyRef.current) return;
                 onClose();
                 onBuyClick?.();
               },
@@ -427,6 +463,7 @@ export default function DiamondWalletModal({
             <DiamondWalletTransfer
               key={user.id}
               userId={user.id}
+              onBusyChange={onTransferBusyChange}
               onComplete={() => {
                 setBalanceRevision((value) => value + 1);
                 void fetchTransactions();

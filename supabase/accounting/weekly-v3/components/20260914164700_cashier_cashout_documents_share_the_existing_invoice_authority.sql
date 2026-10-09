@@ -1,4 +1,14 @@
--- SOURCE ONLY / UNRUN. Additive component33 after the sealed 32-component authority.
+-- Additive component33 after the sealed 32-component authority.
+-- STATUS CORRECTED 2026-10-09 (Club Arena Cashier launch audit, S-02): this component is
+-- INSTALLED on production (applied 2026-09-14; the legacy fn_cashout_request/approve/release
+-- were retired to 'cashier_v2_intent_required' tombstones the same day, see migration
+-- 20260923031831). Verified live 2026-10-09 by md5(pg_get_functiondef): fn_cashout_request_v2
+-- 07cf5457edf315929b07316c07be313d, fn_cashout_approve_v2 6fecd34df575557d81966dc1166a2fc4,
+-- fn_cashout_release_v2 3122994e23d96770a2f50e4fe6a191a6, fn_cashout_operation_receipt_v2
+-- c9af51f246a9be79c7b79c49b760e9a9. By decision the supabase/migrations directory holds NO
+-- mirror of this file; scripts/verification-harness/cashier-release-contract.sql pins the three
+-- browser-callable writers by those hashes (the receipt reader lacks service_role EXECUTE and
+-- is listed there as not yet pinnable). The earlier 'SOURCE ONLY / UNRUN' label was wrong.
 BEGIN;
 SET LOCAL lock_timeout='3s';
 SET LOCAL statement_timeout='60s';

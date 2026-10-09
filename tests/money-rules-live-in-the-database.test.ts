@@ -201,8 +201,13 @@ describe('the client passes the keys the server now expects', () => {
     );
   });
 
-  it('the staff pull accepts a caller-supplied op id', () => {
-    expect(CASHOUT_SVC).toContain('p_op_id: opId || newOpId()');
-    expect(CASHOUT_SVC).toMatch(/adminRemovePlayerChips\([\s\S]{0,240}opId\?: string/);
+  it('the staff pull no longer has a service wrapper that mints its own op id', () => {
+    // 2026-10-09 (S-08): adminRemovePlayerChips was deleted from CashoutService.
+    // It accepted a caller op id but minted `opId || newOpId()` when one was
+    // omitted, which made the key decorative. No live caller existed.
+    expect(CASHOUT_SVC).not.toContain('|| newOpId()');
+    expect(CASHOUT_SVC).not.toMatch(
+      /async adminRemovePlayerChips|rpc\('fn_admin_remove_player_chips'/
+    );
   });
 });

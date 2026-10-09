@@ -1,6 +1,8 @@
 # Weekly accounting authority candidate
 
-**UNAPPLIED. Source review is continuing. No protected execution or release receipt exists for the final package.**
+**UNAPPLIED as a package. Source review is continuing. No protected execution or release receipt exists for the final package.**
+
+**Exception, corrected 2026-10-09 (Club Arena Cashier launch audit, S-02):** component33, `components/20260914164700_cashier_cashout_documents_share_the_existing_invoice_authority.sql`, IS installed on production (applied 2026-09-14) and was verified live on 2026-10-09 by `md5(pg_get_functiondef)`: `fn_cashout_request_v2` `07cf5457edf315929b07316c07be313d`, `fn_cashout_approve_v2` `6fecd34df575557d81966dc1166a2fc4`, `fn_cashout_release_v2` `3122994e23d96770a2f50e4fe6a191a6`, `fn_cashout_operation_receipt_v2` `c9af51f246a9be79c7b79c49b760e9a9`. By decision the `supabase/migrations` directory holds no mirror of that component; `scripts/verification-harness/cashier-release-contract.sql` pins the three browser-callable writers by those hashes and is the repo-side proof that the live cashout writers are the audited bodies. The paragraph below about installed mirrors does not apply to component33.
 
 The ordered forward components live outside `supabase/migrations` to prevent an ordinary migration scan from activating an incomplete financial cutover. Installed migration mirrors remain in the normal migration directory. There is one intended accounting coordinator, one source authority per earning instrument, one journaled weekly scope, and one invoice/notification route.
 

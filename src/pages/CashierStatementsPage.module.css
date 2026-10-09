@@ -471,8 +471,12 @@
   text-shadow: var(--ink-muted-shadow);
 }
 
+/* A lit word is still a thumb target: 44px wide as well as tall ("Copy"
+   measured 34px; launch audit 2026-10-09, R-12). */
 .copyWord {
   flex: 0 0 auto;
+  min-width: 44px;
+  padding-inline: 0.5cqw;
   font-size: 2.8cqw;
 }
 

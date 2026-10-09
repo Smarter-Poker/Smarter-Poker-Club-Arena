@@ -71,8 +71,10 @@ describe('the five recovered call sites guard on null', () => {
    * WalletService.readPlayerBalance and null-guard the result. The modal no
    * longer calls it, because reading the GLOBAL player wallet was itself the
    * larger bug: that is not the account either of its sends debits. It now
-   * reads clubs.chip_treasury for a bank role and agents.agent_wallet_balance
-   * for an agent, which is the account that actually moves.
+   * reads the club treasury for a bank role (through fn_club_money_panel, the
+   * role-checked read, since the 2026-10-09 launch audit) and
+   * agents.agent_wallet_balance for an agent, which is the account that
+   * actually moves.
    *
    * The RULE this pin exists for is unchanged and still enforced here: an
    * unreadable balance must stay UNKNOWN and must never harden into a zero
@@ -84,8 +86,11 @@ describe('the five recovered call sites guard on null', () => {
     const src = code(read('src/components/agent/ChipTransferModal.tsx'));
     // Unknown is representable, and is where it starts.
     expect(src).toMatch(/useState<number \| null>\(null\)/);
-    // Only a read that did NOT error may write a number.
-    expect(src).toMatch(/if \(!bankErr\) setSenderBalance\(/);
+    // Only a read that did NOT error may write a number. The treasury comes
+    // from the authorized money panel and an absent figure stays unknown.
+    expect(src).toMatch(/authorized === true/);
+    expect(src).toMatch(/setSenderBalance\(Number\.isFinite\(treasury\) \? treasury : null\)/);
+    expect(src).not.toMatch(/select\('chip_treasury'\)/);
     expect(src).toMatch(/if \(!floatErr\) setSenderBalance\(/);
     // And the send guard refuses only on a number it has.
     expect(src).toMatch(/senderBalance !== null && transferAmount > senderBalance/);

@@ -47,10 +47,30 @@ import { STATS_CACHE_PREFIX, clearStatsRangeMemo } from '../lib/statsCache';
 import { CLUB_WORKSPACE_CACHE_KEY } from '../lib/clubWorkspaceCache';
 /** Written by ClubHomePage; imported there so writer and purger cannot drift. */
 export const CLUB_HOME_CACHE_PREFIX = 'club_home_cache_';
-/** Financial retry journals live here so sign-out never eagerly loads their implementations. */
+/**
+ * Financial retry journals. Their prefixes are declared here, next to the
+ * purge, so the rule below is visible where it could be broken:
+ *
+ * THEY ARE NOT PURGED ON SIGN-OUT (2026-10-09, audit S-05). Each journal holds
+ * the op id of a money request whose server outcome is still unknown: a batch
+ * send, a chip request, a union-wallet intent whose response was lost after the
+ * server may have committed. Purging it on sign-out meant that the natural
+ * "sign out and back in to fix it" gesture minted a NEW op id for the SAME
+ * send, which the server's exact-intent replay cannot recognise: a double pay.
+ * The keys carry the user id and every reader re-validates the record against
+ * the signed-in user (CashierResilience.isValidRecovery, isValidChipRequestRecovery,
+ * UnionWalletRecovery.validRecordShape), so another account on the same device
+ * can never read or replay them. Only the server's answer retires them.
+ */
 export const CASHIER_RECOVERY_PREFIX = 'smarter-poker:cashier-transfer-recovery:v1';
 export const CASHIER_REQUEST_RECOVERY_PREFIX = 'smarter-poker:cashier-chip-request:v1';
 export const UNION_WALLET_RECOVERY_PREFIX = 'smarter-poker:union-wallet-intent:v2';
+/** The unresolved-money journals the purge must leave alone; pinned by tests/unit/clearUserCaches.test.ts. */
+export const UNRESOLVED_MONEY_JOURNAL_PREFIXES: readonly string[] = [
+  CASHIER_RECOVERY_PREFIX,
+  CASHIER_REQUEST_RECOVERY_PREFIX,
+  UNION_WALLET_RECOVERY_PREFIX,
+];
 
 type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS];
 
@@ -98,9 +118,10 @@ const USER_SCOPED_PREFIXES: string[] = [
   'dismissed_announcements_', // per-club dismissals
   'referral_', // per-club referral attribution
   STATS_CACHE_PREFIX, // PlayerStatsPage SWR payload: lifetime profit, sessions, hands
-  CASHIER_RECOVERY_PREFIX, // unresolved money intents, scoped by user + club
-  CASHIER_REQUEST_RECOVERY_PREFIX, // unresolved chip-request retry ids, scoped by intent
-  UNION_WALLET_RECOVERY_PREFIX, // unresolved union-wallet intents, scoped by user
+  // CASHIER_RECOVERY_PREFIX, CASHIER_REQUEST_RECOVERY_PREFIX and
+  // UNION_WALLET_RECOVERY_PREFIX are deliberately absent: see
+  // UNRESOLVED_MONEY_JOURNAL_PREFIXES above. A sign-out must not forget an op id
+  // the server may already have honoured.
 ];
 
 /**
@@ -122,6 +143,9 @@ function purgeLocal(): number {
   for (let i = localStorage.length - 1; i >= 0; i--) {
     const key = localStorage.key(i);
     if (!key) continue;
+    // Belt and braces: even if a journal prefix is ever added to the list
+    // above, an unresolved money journal is never removed by a sign-out.
+    if (UNRESOLVED_MONEY_JOURNAL_PREFIXES.some((p) => key.startsWith(p))) continue;
     if (USER_SCOPED_PREFIXES.some((p) => key.startsWith(p))) {
       localStorage.removeItem(key);
       removed++;

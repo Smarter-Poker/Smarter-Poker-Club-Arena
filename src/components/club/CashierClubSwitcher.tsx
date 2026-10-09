@@ -23,7 +23,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 import haptic from '../../services/HapticService';
 import { useAuthUser } from '../../hooks/useAuthUser';
@@ -50,8 +50,23 @@ interface CashierClubSwitcherProps {
   clubName?: string;
 }
 
+/**
+ * Switching clubs keeps the viewer on the cashier surface they are on (launch
+ * audit 2026-10-09, P-08). This always sent them to `/cashier`, the Trade
+ * grid, so an owner on the classic cashier's Mint or History tab who picked
+ * another club lost the classic page. The classic route is
+ * `clubs/:clubId/cashier-classic` and the statements route
+ * `clubs/:clubId/cashier/statements`; anything else is the Trade cashier.
+ */
+export function cashierDestination(pathname: string): string {
+  if (/\/cashier-classic\/?$/.test(pathname)) return 'cashier-classic';
+  if (/\/cashier\/statements\/?$/.test(pathname)) return 'cashier/statements';
+  return 'cashier';
+}
+
 export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwitcherProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuthUser();
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -192,9 +207,9 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
       closeMenu(false);
       if (club.id === currentClub?.id) return;
       haptic.light();
-      navigate(`/clubs/${club.slug || club.id}/cashier`);
+      navigate(`/clubs/${club.slug || club.id}/${cashierDestination(location.pathname)}`);
     },
-    [closeMenu, currentClub, navigate]
+    [closeMenu, currentClub, navigate, location.pathname]
   );
 
   const handleMenuKeyDown = useCallback(

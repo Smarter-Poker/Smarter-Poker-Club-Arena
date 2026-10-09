@@ -5,6 +5,7 @@ import {
   reserveAgentWalletOperation,
   completeAgentWalletOperation,
   confirmedAgentWalletReceipt,
+  runAgentWalletOperation,
 } from '../../src/services/AgentWalletIntent';
 
 const userId = '10000000-0000-4000-8000-000000000001';
@@ -155,6 +156,61 @@ describe('durable agent wallet intent', () => {
       );
     }
   });
+});
+
+describe('the reservation digest after the dead cashout branches were removed (S-11)', () => {
+  // 2026-10-09: reserveAgentWalletOperation and runAgentWalletOperation refuse
+  // every cashout_* kind before the digest is built, so the spread that added a
+  // trimmed note for cashout kinds was unreachable and is gone. The key schema
+  // for the live kinds must be byte-identical, or every unresolved reservation
+  // on a device would be orphaned under its old key.
+  const expectedKey = async (parts: unknown[]) => {
+    const digest = await webcrypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(JSON.stringify(parts))
+    );
+    const hash = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join(
+      ''
+    );
+    return 'smarter-poker:agent-wallet-operation:v1:' + hash;
+  };
+  it('keeps the established key schema for a player-wallet send', async () => {
+    const operation = await reserveAgentWalletOperation({ ...intent, note: 'ignored for the key' });
+    expect(operation.key).toBe(
+      await expectedKey([userId, clubId, targetId, 'agent_send', 'club_chips', '12.34'])
+    );
+  });
+  it('keeps the agent-wallet destination element and never a note element', async () => {
+    const operation = await reserveAgentWalletOperation({
+      ...intent,
+      kind: 'club_bank_send',
+      destination: 'agent_wallet',
+      note: 'still not part of the key',
+    });
+    expect(operation.key).toBe(
+      await expectedKey([
+        userId,
+        clubId,
+        targetId,
+        'club_bank_send',
+        'club_chips',
+        '12.34',
+        'agent_wallet',
+      ])
+    );
+  });
+  it.each(['cashout_request', 'cashout_approve', 'cashout_decline', 'cashout_cancel'] as const)(
+    'still refuses %s before any digest or storage write',
+    async (kind) => {
+      await expect(reserveAgentWalletOperation({ ...intent, kind })).rejects.toThrow(
+        /Prepare The Cashout/
+      );
+      expect(() => runAgentWalletOperation({ ...intent, kind }, async () => undefined)).toThrow(
+        /Prepare The Cashout/
+      );
+      expect(localStorage.length).toBe(0);
+    }
+  );
 });
 
 describe('cashier destination identity', () => {

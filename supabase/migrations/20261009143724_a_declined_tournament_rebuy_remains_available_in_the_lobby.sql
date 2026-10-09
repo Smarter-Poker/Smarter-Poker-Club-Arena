@@ -6,6 +6,7 @@
 -- candidate. The existing re-entry path already supports this same transition.
 -- No player rows, paid results, balances, receipts or prompt deadlines change.
 -- Version reserved by scripts/new-migration.mjs.
+-- @live-proof: EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid=to_regprocedure('public.process_tournament_rebuy(uuid,uuid,text,numeric,numeric,integer,text)') AND strpos(pg_get_functiondef(p.oid),$$OR (v_type='rebuy' AND v_candidate.state<>'pending')$$)=0 AND strpos(pg_get_functiondef(p.oid),'public.fn_ca_latest_committed_knockout_candidate(')>0 AND strpos(pg_get_functiondef(p.oid),'public.fn_record_entry_purchase_receipt(')>0)
 BEGIN;
 SET LOCAL lock_timeout = '250ms';
 SET LOCAL statement_timeout = '8s';

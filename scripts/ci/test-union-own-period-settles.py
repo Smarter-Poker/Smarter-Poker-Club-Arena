@@ -276,7 +276,7 @@ try:
     check('migration-refuses-a-second-run',
           replay.returncode != 0 and 'is not the pinned text' in replay.stderr, replay.stderr[-300:])
     check('second-run-left-the-postimage', md5_of(CASCADE_SIG) == POST_CASCADE_MD5)
-    runpy.run_path(str(FIXTURES / 'weekly-close-admission.py'))['exercise'](run, check, one, FIXTURES)
+    runpy.run_path(str(FIXTURES / 'weekly-close-admission.py'))['exercise'](run, check, one, FIXTURES, psql, env)
 finally:
     if (cluster / 'data' / 'postmaster.pid').exists():
         command(as_owner + [pg / 'pg_ctl', '-D', cluster / 'data', '-m', 'fast', '-w', 'stop'])

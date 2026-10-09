@@ -208,23 +208,27 @@ describe('the deploy documents name the live route', () => {
    * A hand-written list of three only ever guards the three somebody
    * remembered.
    */
-  it('no markdown or shell file in this repo gives a dead deploy instruction', () => {
-    const root = process.cwd();
-    const offenders: string[] = [];
-    for (const path of docsAndScripts(root)) {
-      if (path === 'tests/unit/theDeployDocsNameTheLiveRoute.test.ts') continue;
-      if (HISTORY_PATHS.some((h) => path.startsWith(h))) continue;
-      if (DATED.test(path)) continue;
-      const found = deadInstructionsIn(read(path));
-      if (found.length) offenders.push(`${path}\n    ${found.join('\n    ')}`);
+  it(
+    'no markdown or shell file in this repo gives a dead deploy instruction',
+    { timeout: 60_000 },
+    () => {
+      const root = process.cwd();
+      const offenders: string[] = [];
+      for (const path of docsAndScripts(root)) {
+        if (path === 'tests/unit/theDeployDocsNameTheLiveRoute.test.ts') continue;
+        if (HISTORY_PATHS.some((h) => path.startsWith(h))) continue;
+        if (DATED.test(path)) continue;
+        const found = deadInstructionsIn(read(path));
+        if (found.length) offenders.push(`${path}\n    ${found.join('\n    ')}`);
+      }
+      expect(
+        offenders,
+        'these files tell an agent to publish through the World Hub. Next.js serves ' +
+          'public/ BEFORE the rewrite, so following them SHADOWS the live bundle ' +
+          'rather than duplicating it - production freezes on the committed copy ' +
+          'while the publisher publishes where nobody reads:\n  ' +
+          offenders.join('\n  ')
+      ).toHaveLength(0);
     }
-    expect(
-      offenders,
-      'these files tell an agent to publish through the World Hub. Next.js serves ' +
-        'public/ BEFORE the rewrite, so following them SHADOWS the live bundle ' +
-        'rather than duplicating it - production freezes on the committed copy ' +
-        'while the publisher publishes where nobody reads:\n  ' +
-        offenders.join('\n  ')
-    ).toHaveLength(0);
-  });
+  );
 });

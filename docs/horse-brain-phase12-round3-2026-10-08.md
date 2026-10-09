@@ -135,3 +135,11 @@ Every `PHASE12_PROTECTED_RELEASE_SELECTIONS` entry stays `null`. A pack is selec
 - **FLO8:** the reference itself loses after rake to the human-calibrated table, so a FLO8 pack that wins against humans needs its own measured diagnosis of where the reference loses at that table (the round-3 diagnosis measured only the pack-versus-reference difference), not a narrower delta on the reference.
 - **Condition (a) for Short Deck and FLO8:** the trust check needs either more pairs in the refused cells (the coverage error falls as one over the square root of the pairs: about 28 times the planned pairs for Short Deck 6max-200bb, about 5 times for the FLO8 big blind) or a rule set that leaves those cells unchanged. Either is a new contract or pack round, committed before a run on fresh held-out seeds, because the cell results of these held-out seeds have now been read.
 - **Condition (b) for every pack:** an adequate human calibration (at least 20 accounts, 10,000 seat-hands per family, no account above 25%), which only real human play in production can supply.
+
+## Status Under The October 9 Amendment
+
+The owner amended the winning contract on October 9, 2026 ([amendment](horse-brain-winning-contract-2026-10-08.md#amendment-of-october-9-2026-owner-decision)): a pack qualifies on condition (a) alone, and condition (b) is post-launch monitoring that can only withdraw a selected pack.
+
+- **FLH:** the `022e1e4f` qualification no longer binds the running code (#6526 changed four Phase 12 policy files; FLH policy digest `a98910e0...` at `022e1e4f`, `1b3ca5c2...` running). The locked P12.2 FLH matrix was re-run unchanged on `c8bfc617`, whose FLH policy digest is the running one (run 37940882035, 42 of 42 shards): +1.11 [+0.70, +1.52] bb/100, 544,320 pairs, every gating cell trusted, verdict `qualified: true`, the same result as on `022e1e4f`. Selected through P12.3 once its natural completion record meets the floor.
+- **Pineapple:** run 37824406390 measured `022e1e4f`, which no longer binds the running code, so the locked matrix runs on `c8bfc617` instead.
+- **Short Deck and FLO8:** not qualified on (a); selections stay `null`.

@@ -167,14 +167,36 @@ export interface HorsePhase10AuthoritySelection {
 }
 
 /**
- * THE PROTECTED RELEASE SELECTION. Null: no qualified Phase 10 authority
- * exists, so every live PLO4 decision stays in shadow, as before P10.3. P10.2
- * has not run its matrix and no qualification file exists. Selecting requires
- * the assembler's qualification file (and the strength record it names)
- * committed under docs/evidence/phase10/ and shipped in the engine image, its
- * sha256 here, and the protected merge and engine release of that change.
+ * THE PROTECTED RELEASE SELECTION: the round-3 PLO4 pack
+ * (`plo4-policy-round3-v2`), approval generation 1.
+ *
+ * Qualified on condition (a) of the winning contract as amended by the owner
+ * on October 9, 2026 (docs/horse-brain-winning-contract-2026-10-08.md,
+ * "Amendment Of October 9, 2026"): the locked P10.2 matrix on `c8bfc617`
+ * (#6526), 111 of 111 shards, 2,557,440 pairs, cash after rake against the
+ * horse population, +6.94 [+6.25, +7.62] bb/100, assembler verdict
+ * `qualified: true`. Condition (b) is post-launch monitoring that can only
+ * withdraw. The qualification file and the strength record it names are
+ * committed under docs/evidence/phase10/ and shipped in the engine image under
+ * server/release-evidence/. Withdrawal is a reviewed change of `withdrawn`
+ * here to `{ at, reason }`; a withdrawn generation never returns.
  */
-export const PHASE10_PROTECTED_RELEASE_SELECTION: HorsePhase10AuthoritySelection | null = null;
+export const PHASE10_PROTECTED_RELEASE_SELECTION: HorsePhase10AuthoritySelection | null =
+  Object.freeze({
+    schema: 'horse-qualified-authority-selection-v1',
+    phase: 'phase10',
+    sourceSha: 'c8bfc6171ddfabdfa8d8ca55f4e13fc7e2466400',
+    packVersion: 'plo4-policy-round3-v2',
+    contractVersion: 'plo4-strength-contract-v1',
+    contractDigest: '83ab185b2a2df72876b73d61ece6ea8c2f03f364ce252deecbfcde392ae5f838',
+    domain: 'plo4-cash-single-board-after-rake-horse-population',
+    qualificationPath: 'docs/evidence/phase10/phase10-qualification-2026-10-09.json',
+    qualificationSha256: '3d88e47fcd8a526295f32bdf7688c72110ebc79b0a495740f2a2b0b6e2f4d3c0',
+    approvalGeneration: 1,
+    issuedAt: '2026-10-09T15:20:00.000Z',
+    expiresAt: null,
+    withdrawn: null,
+  } as const);
 
 const HEX40 = /^[0-9a-f]{40}$/;
 const HEX64 = /^[0-9a-f]{64}$/;

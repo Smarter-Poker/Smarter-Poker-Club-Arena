@@ -9,6 +9,7 @@
  */
 
 import { fork, type ChildProcess } from 'node:child_process';
+import { HUMAN_CALIBRATED_POPULATION_ID } from './HumanCalibratedPopulation.js';
 import { constants as osConstants, getPriority } from 'node:os';
 import { isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -679,7 +680,26 @@ export function horseLeagueComputeResponseIsValid(
           'completionRefusals',
           'completionDiagnostics',
           'completionDiagnosticsDropped',
+          ...('opponentPopulation' in r ? ['opponentPopulation', 'humanResponses'] : []),
         ])
+      )
+        return false;
+      // Condition (b) monitoring: a human-calibrated field reports its
+      // population and its response counts per node, counts only.
+      if (
+        'opponentPopulation' in r &&
+        (r.opponentPopulation !== HUMAN_CALIBRATED_POPULATION_ID ||
+          !isRecord(r.humanResponses) ||
+          Object.keys(r.humanResponses).length > 64 ||
+          !Object.values(r.humanResponses).every(
+            (node) =>
+              isRecord(node) &&
+              Object.entries(node).every(
+                ([action, n]) =>
+                  ['fold', 'check', 'call', 'bet', 'raise', 'all_in'].includes(action) &&
+                  isNonnegativeSafeInteger(n)
+              )
+          ))
       )
         return false;
       if (
@@ -1074,7 +1094,8 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
         message.result.objective !== request.objective ||
         message.result.requestedPairs !== request.pairs ||
         message.result.candidateMode !== (request.candidateMode ?? 'candidate') ||
-        message.result.evidenceMode !== (request.evidenceMode ?? 'fixture')
+        message.result.evidenceMode !== (request.evidenceMode ?? 'fixture') ||
+        message.result.opponentPopulation !== request.opponentPopulation
       ) {
         this.fail(new Error('Tournament result does not match the requested paired run'));
         return;

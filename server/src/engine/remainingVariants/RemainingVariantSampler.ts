@@ -8,7 +8,6 @@ import {
   scoreOmahaLow,
   type HorseEquityOutcomeSample,
 } from '../HorseEval.js';
-import { equityGovernor } from '../EquityLoadGovernor.js';
 import { horsePolicyDealtPlayers } from '../multiway/DealtSeatCensus.js';
 import {
   variantEquityFromShowdowns,
@@ -233,7 +232,12 @@ export function sampleRemainingVariantEquity(
       ];
     })
   );
-  const requested = remainingVariantRequestedSamples(equityGovernor.current());
+  // The measured policy's sample, always (2026-10-09): the P12.2 matrix priced
+  // every proposal at scale 1, and the P12.3 completion floor admits a pack
+  // only when its live decisions price that same sample. Governor scaling made
+  // about 4% of natural postflop decisions governor-reduced on release
+  // c1deef24. Load stays bounded by the sampler's own deadline.
+  const requested = remainingVariantRequestedSamples(1);
   const samples: HorseEquityOutcomeSample[] = [];
   // P12.1: what the prior actually did, recorded with the sample it produced.
   let seatDraws = 0;

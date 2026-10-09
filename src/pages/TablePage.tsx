@@ -359,6 +359,7 @@ import { useLightningAnchorHandoff } from '../lightning/useLightningAnchorHandof
 import LightningRoomTools from '../components/lightning/LightningRoomTools';
 import { openLightningSessionSummary } from '../lightning/lightningSummaryStore';
 import { readLightningPrefs, writeLightningPrefs } from '../lightning/lightningPrefs';
+import { scheduleLightningRenderAck } from '../lightning/lightningRenderAck';
 // The ShareHand COMPONENT is rendered by TableModalsLayer, not here — the
 // default import this line used to carry was unused. TablePage builds the
 // payload, so it needs the types.
@@ -510,6 +511,8 @@ import {
   subscribeTournamentDock,
   toggleTournamentDockCollapsed,
   tournamentDockCollapsed as readTournamentDockCollapsed,
+  tournamentDockClosed as readTournamentDockClosed,
+  setTournamentDockClosed,
 } from '../lib/tournamentDockStore';
 import { PreviousHandCard } from '../components/table/PreviousHandCard';
 import { HandDetailModal } from '../components/table/HandDetailModal';
@@ -2337,6 +2340,7 @@ function LiveTablePage({
     lastUserEvent: engineLastUserEvent,
     requestSnapshot: requestEngineSnapshot,
     probeLink: probeEngineLink,
+    sendRenderAck: sendEngineRenderAck,
     reconnectNow: reconnectEngineNow,
   } = useEngineTableState(tableId || undefined, {
     enabled: USE_ENGINE_WS,
@@ -5072,6 +5076,9 @@ function LiveTablePage({
     if (event.tableId !== tableId) return;
 
     switch (event.action) {
+      case 'SHOW_TOURNAMENT_DOCK':
+        setTournamentDockClosed(false);
+        break;
       case 'SIT_OUT':
         void handleSitOut();
         break;
@@ -12537,6 +12544,11 @@ function LiveTablePage({
     readTournamentDockCollapsed
   );
   const toggleTournamentDock = toggleTournamentDockCollapsed;
+  const tournamentDockClosed = useSyncExternalStore(
+    subscribeTournamentDock,
+    readTournamentDockClosed,
+    readTournamentDockClosed
+  );
   /* THE MUST MOVE LOBBY (Dan 2026-09-05): the cash counterpart, opened from
      the Must Move box in the upper-right corner or the SEAT CHANGE button.
      The refresh key is bumped by every seat-move event so the box re-reads
@@ -23018,6 +23030,12 @@ function LiveTablePage({
   // Keyboard Shortcuts — wired to table actions (Phase 8)
   // ONE keyboard system since 2026-08-28; TablePage's own duplicate listener is
   // deleted. See the gravestone above handleActionPanelAction.
+  /* LIGHTNING PHASE 12: the Lightning keys (Shift+F, Shift+V) reach the fold
+     strip's own handler through this ref, filled where that handler is made. */
+  const lightningHotkeysRef = useRef<{
+    fold: (() => void) | null;
+    watch: (() => void) | null;
+  }>({ fold: null, watch: null });
   useTableKeyboard({
     /* WHICH TABLE IS THE PLAYER LOOKING AT. Without this every mounted
        TablePage answered the keyboard, so hero with action on two tables folded
@@ -23074,6 +23092,10 @@ function LiveTablePage({
     /* P4 2026-09-05: B = Rabbit Hunt. The tile registers its handler only
        while an offer is up, so this is a no-op the rest of the time. */
     onRabbitHunt: () => rabbitHotkeyRef.current?.(),
+    /* LIGHTNING PHASE 12: present only in a Lightning room whose platform row
+       offers hotkeys (the ref is null everywhere else). */
+    onLightningFold: lightningRoom ? () => lightningHotkeysRef.current.fold?.() : undefined,
+    onLightningFoldWatch: lightningRoom ? () => lightningHotkeysRef.current.watch?.() : undefined,
     /* The SAME function the ALL IN button runs. Until 2026-08-28 this was
        `handleAllIn`, a second implementation that skipped VPIP/PFR counting and
        armed a legacy client-side RIT prompt the button never armed — so a shove
@@ -23502,13 +23524,50 @@ function LiveTablePage({
         const result = await sendLightningFold(tableId, userId, kind);
         if (!result.success) {
           toast.warning(result.error || 'That Action Could Not Be Confirmed');
+        } else if (
+          /* LIGHTNING PHASE 12 (spec SOUND SYSTEM): LIGHTNING FOLD accepted and
+             FOLD & WATCH get the fold cue, through the priority gate, on the
+             table in front only, so a multi-table session never stacks them. */
+          lightningCaps.sound &&
+          soundService.isEnabled() &&
+          (isActive || !isMultiTable)
+        ) {
+          soundService.playFold();
         }
       } finally {
         setLightningFoldBusy(false);
       }
     },
-    [tableId, userId, toast]
+    [tableId, userId, toast, isMultiTable, isActive, lightningCaps]
   );
+  /* LIGHTNING PHASE 12 (spec HOTKEYS): Shift+F and Shift+V run the strip's
+     own handler, only while the strip offers that fold and the platform row
+     offers hotkeys. The engine validates every fold. */
+  lightningHotkeysRef.current = lightningCaps.hotkeys
+    ? {
+        fold: lightningFold.fastFold ? () => void handleLightningFold('fast_fold') : null,
+        watch:
+          lightningCaps.fold_and_watch && lightningFold.foldWatch
+            ? () => void handleLightningFold('fold_watch')
+            : null,
+      }
+    : { fold: null, watch: null };
+
+  /* LIGHTNING PHASE 12 (spec ACTION LATENCY TELEMETRY): hand creation ->
+     first client render. Once per hand, after the hand is on the felt and
+     painted, the room tells the engine on its own socket (a hand id only,
+     never a card). The engine times it on its own clock. */
+  const lightningRenderHandId = lightningRoom
+    ? lightningHandId(engineSnapshot as LightningSnapshotFields)
+    : null;
+  const lightningRenderAckedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!lightningRenderHandId || lightningRenderAckedRef.current === lightningRenderHandId) return;
+    return scheduleLightningRenderAck(lightningRenderHandId, (handId, deltaMs) => {
+      lightningRenderAckedRef.current = handId;
+      sendEngineRenderAck(handId, deltaMs);
+    });
+  }, [lightningRenderHandId, sendEngineRenderAck]);
 
   /* JOIN LIGHTNING: the buy-in landed at the anchor table the player joined
      through, so this tab follows their chair into the pool-session room. */
@@ -23854,9 +23913,11 @@ function LiveTablePage({
          collapsing the dock never resizes the table. */
       data-tdock={
         tableState.isTournament && tableState.tournamentId
-          ? tournamentDockCollapsed
-            ? 'collapsed'
-            : 'expanded'
+          ? tournamentDockClosed
+            ? 'closed'
+            : tournamentDockCollapsed
+              ? 'collapsed'
+              : 'expanded'
           : undefined
       }
       /* THE MINI ROW UNDER THE JACKPOT PLATE (Dan 2026-09-11). "1" exactly
@@ -26493,7 +26554,7 @@ function LiveTablePage({
           bottom rows pad themselves by its height (TournamentHUD.css). On
           every MTT, Spin and heads-up match alike (isTournament covers all
           three). Never render it on the felt again. */}
-      {tableState.isTournament && tableState.tournamentId && (
+      {tableState.isTournament && tableState.tournamentId && !tournamentDockClosed && (
         <TournamentHUD
           tournamentId={tableState.tournamentId}
           spinPrizePool={tournamentFormat === 'spin' ? tableState.spinPrizePool : undefined}
@@ -26502,6 +26563,7 @@ function LiveTablePage({
           hidden={!isVisible}
           collapsed={tournamentDockCollapsed}
           onToggleCollapsed={toggleTournamentDock}
+          onClose={() => setTournamentDockClosed(true)}
         />
       )}
       <div className="action-panel-wrapper">

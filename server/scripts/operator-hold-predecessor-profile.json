@@ -1,18 +1,18 @@
 {
   "kind": "operator_hold_predecessor_v1",
-  "releaseSha": "94b2ae91c3c6742b5e05bca858c62580651ee180",
-  "imageId": "sha256:a7ec0217617a9851c021a4f5b2ad57f7168bf2c5d9c596a29426607f589cb28b",
+  "releaseSha": "a9e3ca8b3b6be522065476da2e9ab53e751ad132",
+  "imageId": "sha256:80d5fc79b13b4d795d866f2b4dc3ddcd0286a993931bbaae8889fd275714912c",
   "runtimeNode": "v22.23.2",
   "compiled": [
     {
       "path": "/app/dist/GameServer.js",
-      "bytes": 608831,
-      "sha256": "1e32144df88ff27bbec6693ac8491ec6ddc75e8d98632c507714d811abcb4f2a"
+      "bytes": 609433,
+      "sha256": "5981445074cbe7c9a9efc30daf0f9e44810a992b74973f6fbad15505637ea050"
     },
     {
       "path": "/app/dist/engine/ServerTableEngineBase.js",
-      "bytes": 530247,
-      "sha256": "56252b3fecef847f9ec28c90ba392e778295a2d57b7e5457a0875057f28a1456"
+      "bytes": 530863,
+      "sha256": "27072e1294c606c628940dd8478bafdd24cd929b3b9ea971a6be7cb1a029d92e"
     },
     {
       "path": "/app/dist/engine/ServerTableEngineSeating.js",
@@ -77,8 +77,8 @@
   ],
   "provenance": {
     "schema": "operator-hold-runtime-provenance/v1",
-    "observedAt": "2026-10-09T13:42:56.339658+00:00",
-    "sourceSha256": "b95ca200885e58f495fabd6551aaa767b7070cb5515165128f07d1393bf7f955",
-    "scope": "exact14_current_94b2_runtime_pins;not_boot_or_handoff_qualification"
+    "observedAt": "2026-10-09T18:32:47.600373+00:00",
+    "sourceSha256": "17fc5e5ea51e827e56b639e1302a1b38d7504454f7b2bbe25979a4fed6eb5e3e",
+    "scope": "exact14_current_a9_runtime_pins;not_boot_or_handoff_qualification"
   }
 }

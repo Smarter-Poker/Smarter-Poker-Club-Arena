@@ -117,16 +117,22 @@ describe('a busted player holds an open decision window, and the felt rolls on',
     expect(block).toMatch(/decision_open/);
   });
 
-  it('a horse that answered this pass is not deferred - its decision is final', () => {
-    // Horses decide inside tryTournamentRebuys (their input device); the
-    // window is identical for everyone, a horse simply replies immediately.
-    expect(ELIM).toMatch(/answered\.has\(b\.user_id\)/);
+  it('a horse that answered this pass waits out the deadline the door enforces', () => {
+    // Horses decide inside tryTournamentRebuys (their input device). This pin
+    // used to require that an answered horse skip the window, but the knockout
+    // door refuses any bust whose generation still holds an open deadline
+    // (`rebuy_decision_open`), so skipping it only produced 30 seconds of
+    // refusals per horse (2026-10-09). The window is identical for everyone,
+    // and everyone now waits it out; see aDeclinedRebuyWaitsOutItsWindow.
+    const block = sliceBetween(ELIM, 'THE REBUY DECISION WINDOW', 'bustedOrdered');
+    expect(block).not.toMatch(/answered\.has\(b\.user_id\)/);
+    expect(block).toContain('rebuyDecisionDeadlines(decisionsRaw)');
   });
 
   it('consumes the atomic rebuy result without a later manager reseat', () => {
     const block = sliceBetween(
       ELIM,
-      'const { rebought, answered } = await this.tryTournamentRebuys(',
+      'const { rebought } = await this.tryTournamentRebuys(',
       'THE REBUY DECISION WINDOW'
     );
     expect(block).toContain('The rebuy transaction owns its exact playable chair and stack.');

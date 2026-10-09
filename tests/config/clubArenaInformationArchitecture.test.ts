@@ -146,7 +146,7 @@ describe('Club Arena information architecture', () => {
   it('keeps sibling routes reachable through contextual section rails', () => {
     const rewards = getArenaSectionNavigation('/rakeback');
     const community = getArenaSectionNavigation('/community');
-    const play = getArenaSectionNavigation('/tournaments/event-1');
+    const play = getArenaSectionNavigation('/tournaments');
     const union = getArenaSectionNavigation('/unions/union-1/statements');
 
     expect(rewards?.label).toBe('Rewards Circuit');

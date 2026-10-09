@@ -52,11 +52,6 @@ const CASHIER_SURFACES: ReadonlyArray<{ tsx: string; css: string; consoles: numb
     consoles: 1,
   },
   {
-    tsx: 'src/components/table/CashierModal.tsx',
-    css: 'src/components/table/CashierModal.css',
-    consoles: 1,
-  },
-  {
     tsx: 'src/components/union/UnionWalletModal.tsx',
     css: 'src/components/union/UnionWalletModal.css',
     consoles: 1,
@@ -121,6 +116,16 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
       expect(consoleTags(source)).toHaveLength(consoles);
     }
   );
+
+  it('the table top-up uses the owner-supplied October 9 purchase master', () => {
+    const source = read('src/components/table/CashierModal.tsx');
+    expect(source).toContain('<PurchaseConsole');
+    expect(source).toContain('onClick: handleConfirm');
+    expect(source).toContain('disabled: confirmDisabled');
+    expect(read('src/components/table/PurchaseConsole.tsx')).toContain(
+      'assets/club-buttons/popups/add-on-v2/chassis.png'
+    );
+  });
 
   it('never reintroduces a second console framework, the vault picture or a flat close glyph', () => {
     for (const { tsx } of CASHIER_SURFACES) {

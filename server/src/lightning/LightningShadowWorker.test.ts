@@ -125,6 +125,8 @@ describe('LightningConfig', () => {
       autoRebuy: LIGHTNING_AUTO_REBUY_DEFAULTS,
       // Lightning Phase 11: the shadow matcher and integrity keys, off when absent.
       shadow: expect.objectContaining({ enabled: false, integrityEnabled: false }),
+      // Lightning Phase 12: the latency ledger, ON by default (inert without traffic).
+      latency: { enabled: true, windowMs: 60_000 },
     });
     expect(parseLightningConfig({ worker_mode: 'form', pass_interval_ms: 0 }).passIntervalMs).toBe(
       LIGHTNING_PASS_INTERVAL_MIN_MS

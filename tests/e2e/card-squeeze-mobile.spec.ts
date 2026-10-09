@@ -22,6 +22,7 @@
  */
 
 import { test, expect, devices, type Page } from '@playwright/test';
+import { readStylesheetBatches } from './lib/stylesheet-batches';
 
 const ARENA = process.env.ARENA_BASE_URL || 'https://smarter.poker/hub/club-arena';
 
@@ -43,13 +44,7 @@ async function loadLiveCss(page: Page) {
     for (const match of text.matchAll(/assets\/[A-Za-z0-9_.-]+\.css/g)) names.add(match[0]);
   }
   expect(names.size, 'the build must expose its stylesheets').toBeGreaterThan(0);
-  const styles = await Promise.all(
-    [...names].map(async (name) => {
-      const response = await page.request.get(`${ARENA}/${name}`);
-      expect(response.ok(), `stylesheet ${name} must load`).toBe(true);
-      return response.text();
-    })
-  );
+  const styles = await readStylesheetBatches(page.request, ARENA, [...names]);
   await page.goto('about:blank');
   await page.setContent(
     '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body></body></html>'

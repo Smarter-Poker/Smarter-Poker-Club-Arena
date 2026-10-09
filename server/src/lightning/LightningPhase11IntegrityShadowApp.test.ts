@@ -525,7 +525,8 @@ describe('action latency: each leg per window, p50/p95 on the live side', () => 
     expect(live.latency_ms.fold_ack).toEqual({ n: 100, p50: 50, p95: 95 });
     expect(live.latency_ms.match_to_hand).toEqual({ n: 20, p50: 1010, p95: 1019 });
     expect(live.latency_ms.idle_pool_to_match).toEqual({ n: 1, p50: 700, p95: 700 });
-    expect(live.first_render_measured).toBe(false);
+    // Lightning Phase 12: the client render ack exists; the leg is measured.
+    expect(live.first_render_measured).toBe(true);
     expect(live.wait_ms.n).toBeGreaterThan(0);
   });
 });

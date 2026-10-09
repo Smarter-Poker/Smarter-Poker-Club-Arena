@@ -193,15 +193,8 @@ const mttV2 = skin(
   'mtt',
   'shark-mtt-v2',
   'Shark MTT V2 - Premium Approved',
-  presentation('mtt', 'desktop', 'mtt/shell-desktop-v2.webp', '1085 / 1450', 360, 'v2'),
-  presentation(
-    'mtt',
-    'mobile',
-    'mtt/shell-mobile-v4-reference-clean.png',
-    '1088 / 1445',
-    280,
-    'v4'
-  ),
+  presentation('mtt', 'desktop', 'mtt/cash-style-v3/chassis.png', '1086 / 1448', 360, 'v2'),
+  presentation('mtt', 'mobile', 'mtt/cash-style-v3/chassis.png', '1086 / 1448', 280, 'v4'),
   'approved'
 );
 const nlhV1 = skin(

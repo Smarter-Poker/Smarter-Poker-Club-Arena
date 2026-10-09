@@ -657,6 +657,13 @@ export function TableTabBar({
         ? []
         : createDefaultMenuSections(
             {
+              onShowTournamentDock: tabs.find((t) => t.id === activeTabId)?.isTournament
+                ? () =>
+                    masterBus.emit('TABLE_MENU_ACTION', {
+                      tableId: activeTabId,
+                      action: 'SHOW_TOURNAMENT_DOCK',
+                    })
+                : undefined,
               onSitOut: () =>
                 masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'SIT_OUT' }),
               onStandUpBB: () =>

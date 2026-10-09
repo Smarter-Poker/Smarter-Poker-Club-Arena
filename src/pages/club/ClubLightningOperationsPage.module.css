@@ -1,0 +1,366 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   LIGHTNING OPERATIONS - on the spade and riveted consoles (#ClubArenaConsole)
+
+   PAINT WHAT NEVER CHANGES. PRINT WHAT DOES. The chassis is Dan's approved
+   master (components/console/SpadeConsole.css); this file lays the Lightning
+   readings on the black glass between the rails: every Cluster as a record
+   between engraved rules with its figures beneath, every table of the detail
+   as rows (label in lit blue, value in silver), choices as lit words. Nothing
+   is drawn but the underline of a text field and the latency chart's lines,
+   which the art does not paint. Sizes are cqw against the console. No :hover.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.page {
+  --lops-rule: 1px solid #000;
+  --lops-rule-lit: inset 0 1px 0 rgb(255 255 255 / 8%);
+  min-height: 100vh;
+  min-height: 100dvh;
+  width: 100%;
+  max-width: 100vw;
+  padding: 12px 8px max(70px, env(safe-area-inset-bottom));
+  overflow-x: hidden;
+  overflow-x: clip;
+  background: #020305;
+  color: #e6e9ee;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  color-scheme: dark;
+}
+
+.console {
+  --sc-max: 760px;
+  filter: drop-shadow(0 18px 34px rgb(0 0 0 / 85%));
+}
+
+.state {
+  margin: 0;
+  padding: 3cqw 0;
+}
+
+/* ── Lit words: choices, back-outs, actions ─────────────────────────────── */
+
+.words {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0 2cqw;
+}
+
+.word {
+  appearance: none;
+  min-height: 44px;
+  margin: 0;
+  padding: 1.2cqw 1.6cqw;
+  border: 0;
+  background: transparent;
+  font:
+    800 3.2cqw/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.word:active {
+  filter: brightness(1.25);
+}
+
+.word:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: 0.4cqw;
+}
+
+.word:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.freshness {
+  margin: 0;
+  padding: 0 0 2cqw;
+  font-size: 2.8cqw;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+/* ── Sections: rows on the glass ────────────────────────────────────────── */
+
+.section {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 2.4cqw 0 1.2cqw;
+  border-top: var(--lops-rule);
+  box-shadow: var(--lops-rule-lit);
+}
+
+.sectionTitle {
+  margin: 0 0 1cqw;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 3cqw;
+}
+
+.empty {
+  margin: 0;
+  padding: 1.6cqw 0;
+  font-size: 3cqw;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 3cqw;
+  min-height: 8cqw;
+  padding: 1.6cqw 0;
+}
+
+.row + .row {
+  border-top: var(--lops-rule);
+  box-shadow: var(--lops-rule-lit);
+}
+
+.rowLabel {
+  min-width: 0;
+  font-size: 2.9cqw;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.rowValue {
+  font-size: 3.8cqw;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+/* ── Records: a Cluster, a signal ───────────────────────────────────────── */
+
+.records {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.record {
+  display: grid;
+  gap: 1.4cqw;
+  padding: 2.4cqw 0;
+  border-top: var(--lops-rule);
+  box-shadow: var(--lops-rule-lit);
+}
+
+.recordHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2cqw;
+}
+
+.recordName {
+  min-width: 0;
+  font-size: 4cqw;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  overflow-wrap: anywhere;
+}
+
+.recordMeta {
+  font-size: 2.7cqw;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.mode {
+  flex: none;
+  font-size: 3.2cqw;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.warning {
+  margin: 0;
+  font-size: 3cqw;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.figures {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: end;
+  gap: 1.6cqw 2cqw;
+  margin: 0;
+}
+
+.figure {
+  display: grid;
+  gap: 0.4cqw;
+  min-width: 0;
+}
+
+.figureLabel {
+  font-size: 2.3cqw;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.figureValue {
+  margin: 0;
+  font-size: 3.5cqw;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* ── Grids: latency legs, reconcile, blind ledger, candidate components ─── */
+
+.grid {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gridRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) repeat(3, minmax(0, 1fr));
+  align-items: baseline;
+  gap: 2cqw;
+  padding: 1.4cqw 0;
+}
+
+.gridRow + .gridRow {
+  border-top: var(--lops-rule);
+  box-shadow: var(--lops-rule-lit);
+}
+
+.gridHead {
+  font-size: 2.4cqw;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.gridCell {
+  min-width: 0;
+  font-size: 3.2cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+/* A column head never breaks inside a word: it is one short word, sized to
+   fit its column at 393px ("Candidate", "Exposure"). Declared after
+   .gridCell so it wins where a head is also a cell. */
+.gridHead {
+  font-size: 2.1cqw;
+  letter-spacing: 0.06em;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.gridName {
+  min-width: 0;
+  font-size: 2.8cqw;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+/* A lit word inside a grid cell sits on its own line, flush left. */
+.cellWord {
+  display: block;
+  min-height: 36px;
+  padding-left: 0;
+  font-size: 2.8cqw;
+}
+
+/* ── Fields: the only thing drawn is an underline ───────────────────────── */
+
+.field {
+  display: grid;
+  gap: 0.8cqw;
+  padding: 1.6cqw 0;
+}
+
+.fieldInput {
+  width: 100%;
+  min-height: 40px;
+  padding: 0.3rem 0;
+  border: 0;
+  border-bottom: 1px solid #45adff;
+  background: transparent;
+  color: #e4e7ec;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 3.8cqw;
+  font-weight: 700;
+  box-shadow: 0 1px 0 rgb(0 0 0 / 80%);
+}
+
+.fieldInput:focus-visible {
+  outline: none;
+  border-bottom-color: #8fd4ff;
+}
+
+.review {
+  display: grid;
+  gap: 1cqw;
+  padding: 1cqw 0 0;
+}
+
+/* ── The latency chart ──────────────────────────────────────────────────── */
+
+.chart {
+  width: 100%;
+  height: 46cqw;
+  min-height: 160px;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0 4cqw;
+  margin: 0;
+  padding: 1cqw 0 2cqw;
+  font-size: 2.6cqw;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* ── Trails: transitions and session steps, one line each ───────────────── */
+
+.trail {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trailStep {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2cqw;
+  padding: 1.4cqw 0;
+  border-top: var(--lops-rule);
+  box-shadow: var(--lops-rule-lit);
+}

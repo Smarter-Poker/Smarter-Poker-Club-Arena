@@ -197,6 +197,13 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     receipt = {"source_sha": sha, "scope": "isolated-build-resource-containment",
                "production_certificate": False, "status": "failed"}
+    # Hosted runners may carry Docker Hub client authentication. Do not read
+    # it or reuse it: anonymous cache routing owns a separate client config.
+    previous_docker_config = os.environ.get("DOCKER_CONFIG")
+    isolated_docker_config = out / "docker-client"
+    isolated_docker_config.mkdir()
+    (isolated_docker_config / "config.json").write_text("{}")
+    os.environ["DOCKER_CONFIG"] = str(isolated_docker_config)
     before = None
     owned_tags = [tag, failed_tag]
     try:
@@ -318,6 +325,10 @@ def main():
                              "--filter", f"reference={image}*"], check=False)
             cleanup[image] = remaining.returncode == 0 and not remaining.stdout.strip()
         cleanup["daemon_configuration_restored"] = restore_disposable_daemon(out)
+        if previous_docker_config is None:
+            os.environ.pop("DOCKER_CONFIG", None)
+        else:
+            os.environ["DOCKER_CONFIG"] = previous_docker_config
         receipt["cleanup"] = cleanup
         if not all(cleanup.values()):
             receipt["status"] = "failed"

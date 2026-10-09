@@ -1,6 +1,6 @@
--- Permission-only declaration for the guarded leaderboard ranking replacement.
--- CREATE OR REPLACE preserves its authenticated/postgres/service-only ACL.
--- Reassert the already-denied PUBLIC and anon access for the source gate.
+-- Permission-only declarations for guarded leaderboard replacements.
+-- CREATE OR REPLACE preserves each exact existing ACL.
+-- Reassert already-denied browser access for the source gate.
 -- No grant, financial write or schema-cache reload is introduced. Both the
 -- original and exact qualified successor are accepted so normal version order
 -- and explicit companion-first installation preserve the same restrictions.
@@ -29,6 +29,42 @@ BEGIN
   SELECT to_jsonb(p) INTO STRICT after_image FROM pg_proc p WHERE p.oid=target;
   IF after_image IS DISTINCT FROM before_image THEN
     RAISE EXCEPTION 'Leaderboard ranking permission declaration changed the catalog preimage';
+  END IF;
+
+  target:=to_regprocedure('public.fn_snapshot_player_stats()');
+  SELECT string_agg(CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END||':'||a.privilege_type,
+    ',' ORDER BY CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END||':'||a.privilege_type)
+    INTO grants FROM pg_proc p CROSS JOIN LATERAL aclexplode(p.proacl) a WHERE p.oid=target;
+  IF current_user<>'postgres' OR target IS NULL OR grants IS DISTINCT FROM 'postgres:EXECUTE,service_role:EXECUTE'
+    OR NOT EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid=target
+      AND pg_get_userbyid(p.proowner)='postgres' AND p.prosecdef AND p.provolatile='v'
+      AND p.proconfig=ARRAY['search_path=public']::text[]
+      AND md5(p.prosrc) IN('958a10d01583508e525523fc17a6cda1','7911816236ac2b3a05dfde830eced607')) THEN
+    RAISE EXCEPTION 'Exact closed leaderboard snapshot predecessor or qualified successor required';
+  END IF;
+  SELECT to_jsonb(p) INTO STRICT before_image FROM pg_proc p WHERE p.oid=target;
+  REVOKE ALL ON FUNCTION public.fn_snapshot_player_stats() FROM PUBLIC, anon, authenticated;
+  SELECT to_jsonb(p) INTO STRICT after_image FROM pg_proc p WHERE p.oid=target;
+  IF after_image IS DISTINCT FROM before_image THEN
+    RAISE EXCEPTION 'Leaderboard snapshot permission declaration changed the catalog preimage';
+  END IF;
+
+  target:=to_regprocedure('public.fn_payout_leaderboard(uuid,text,text,timestamptz,timestamptz)');
+  SELECT string_agg(CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END||':'||a.privilege_type,
+    ',' ORDER BY CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END||':'||a.privilege_type)
+    INTO grants FROM pg_proc p CROSS JOIN LATERAL aclexplode(p.proacl) a WHERE p.oid=target;
+  IF current_user<>'postgres' OR target IS NULL OR grants IS DISTINCT FROM 'postgres:EXECUTE,service_role:EXECUTE'
+    OR NOT EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid=target
+      AND pg_get_userbyid(p.proowner)='postgres' AND p.prosecdef AND p.provolatile='v'
+      AND p.proconfig=ARRAY['search_path=public, pg_temp']::text[]
+      AND md5(p.prosrc) IN('2ba8db49240eac826b2f3efe0e262648','a16e33f315facd1141d69956edd53efc')) THEN
+    RAISE EXCEPTION 'Exact closed leaderboard payout predecessor or qualified successor required';
+  END IF;
+  SELECT to_jsonb(p) INTO STRICT before_image FROM pg_proc p WHERE p.oid=target;
+  REVOKE ALL ON FUNCTION public.fn_payout_leaderboard(uuid,text,text,timestamptz,timestamptz) FROM PUBLIC, anon, authenticated;
+  SELECT to_jsonb(p) INTO STRICT after_image FROM pg_proc p WHERE p.oid=target;
+  IF after_image IS DISTINCT FROM before_image THEN
+    RAISE EXCEPTION 'Leaderboard payout permission declaration changed the catalog preimage';
   END IF;
 END $preserve$;
 COMMIT;

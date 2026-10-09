@@ -10944,6 +10944,44 @@ export class GameServer {
    * filled is exactly the situation that must never be silent, whichever
    * trigger asked for it.
    */
+  /**
+   * A BOARD THE FILL JUST COMPLETED STARTS NOW (2026-10-09).
+   *
+   * Measured on production over 24 hours: all 17,636 Spins overran their own
+   * reveal window (lag p50 838 ms, p90 2,020 ms, p99 6,018 ms), and every one
+   * was a horse-filled board. The reveal is anchored to the last payment plus
+   * SPIN_REVEAL.LEAD_IN_MS (one second), and about 0.85 s of that is the start
+   * work itself. The rest was detection: the last seat is bought by this
+   * lane's fill job, and nothing told the start path, so the board waited for
+   * the next discoverSeatFirstStarts pass (one second of sleep plus about
+   * 0.37 s of reads, two passes when the read was stale; worst seen 3.1 s).
+   *
+   * So the fill that completes a board asks for its start itself, through the
+   * same front door the fast lane uses. ensureTournamentManagerAdmission is
+   * idempotent (one operation per id, an admitted manager is left alone) and
+   * carries every start gate (a parked launch, a top-up still in flight), so a
+   * pass that sees the same board a moment later does nothing.
+   */
+  private startFilledSeatFirstBoard(tournamentId: string, seats: number): void {
+    const generation = this.lifecycleGeneration;
+    if (!this.directAdmissionIsCurrent(generation)) return;
+    // THE FREEZE IS TOTAL (Dan 2026-09-03), exactly as in the fast lane.
+    if (isMaintenanceFrozen()) return;
+    if (spinLaunchParks.isParked(tournamentId)) return;
+    // A held manager, live or stale, is the fast lane's to judge.
+    if (this.tournamentEngines.has(tournamentId)) return;
+    this.launchDiscoveryJob(
+      this.ensureTournamentManagerAdmission(
+        tournamentId,
+        'start',
+        `Fast-starting seat-first game the fill just completed: ${tournamentId.slice(0, 8)} (${seats}/${seats} seats sold)`,
+        generation
+      ),
+      'GameServer.seat_first_fast_start_failed',
+      { tournamentId }
+    );
+  }
+
   private async topUpPartialSeatFirst(
     tournamentId: string,
     seats: number,
@@ -11001,6 +11039,8 @@ export class GameServer {
       this.seatFirstStuckReported.delete(tournamentId);
       this.seatFirstOccupancy.delete(tournamentId);
       this.tournamentRecurring.clearHumanSeatDemand(tournamentId);
+      // The board is full now: start it now, not on the next poll.
+      this.startFilledSeatFirstBoard(tournamentId, seats);
     } else
       this.seatFirstFillMisses.set(
         tournamentId,

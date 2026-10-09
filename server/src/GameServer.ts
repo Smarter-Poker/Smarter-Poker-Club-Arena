@@ -54,6 +54,7 @@ import {
 } from './observability/PublicTableLiveness.js';
 import { AsyncResource } from 'node:async_hooks';
 
+import { markRetainedHandHold, clearRetainedHandHold } from './engine/retainedHandHolds.js';
 import { ServerTableEngine } from './engine/ServerTableEngine.js';
 import { equityGovernor } from './engine/EquityLoadGovernor.js';
 import { stopBrainTelemetryFlush } from './services/BrainTelemetryFlush.js';
@@ -1726,6 +1727,8 @@ export class GameServer {
     const holds = (this.retainedHandHolds ??= new Map());
     const previous = holds.get(tableId);
     holds.set(tableId, { code, until: Date.now() + RETAINED_HAND_REFUSAL_RECHECK_MS });
+    // The horse fleet reads this before it seats anyone (retainedHandHolds.ts).
+    markRetainedHandHold(tableId);
     if (previous?.code === code) return;
     reportError(
       new Error(
@@ -1739,6 +1742,7 @@ export class GameServer {
 
   /** The table started: its hold ends, and if it had been reported, so does that. */
   private releaseRetainedHandHold(tableId: string): void {
+    clearRetainedHandHold(tableId);
     const previous = this.retainedHandHolds?.get(tableId);
     if (!previous) return;
     this.retainedHandHolds!.delete(tableId);

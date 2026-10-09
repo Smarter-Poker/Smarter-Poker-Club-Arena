@@ -14,10 +14,13 @@ export const repairCases = Object.freeze([
   'canonical_monthly_pays_once',
   'insufficient_promo_bank_available_refuses',
   'recipient_failure_rolls_back_then_retries',
+  'affiliate_union_underfunded_refuses',
+  'settlement_sql_roles_refuse',
 ]);
 const extendedStages = Object.freeze([
   'fixture',
   'actual_shortage',
+  'sql_role_refusal',
   'actual_settlement',
   'independent_readback',
 ]);

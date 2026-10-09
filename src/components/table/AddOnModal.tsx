@@ -52,10 +52,12 @@ interface AddOnModalProps {
   onPlayDiamonds?: (path: string) => void;
 }
 
-function secondsUntilAddOnDeadline(endsAtMs: number | null, fallbackSeconds: number): number {
-  return Number.isFinite(endsAtMs)
-    ? Math.max(0, Math.ceil(((endsAtMs as number) - Date.now()) / 1000))
-    : Math.max(0, Math.ceil(fallbackSeconds));
+function secondsUntilAddOnDeadline(endsAtMs: number): number {
+  return Number.isFinite(endsAtMs) ? Math.max(0, Math.ceil((endsAtMs - Date.now()) / 1000)) : 0;
+}
+
+function chipLabel(formattedAmount: string): string {
+  return `${formattedAmount} ${formattedAmount === '1' ? 'Chip' : 'Chips'}`;
 }
 
 function AddOnText({ children }: { children: string }) {
@@ -81,9 +83,28 @@ export default function AddOnModal({
   onPlayDiamonds,
 }: AddOnModalProps) {
   const dialogRef = useFocusTrap(isVisible, '#addon-title');
-  const [countdown, setCountdown] = useState(() =>
-    secondsUntilAddOnDeadline(endsAtMs, initialTime)
-  );
+  // Capture the relative fallback once per offer/presentation, not once per
+  // timer tick or wallet render. The persisted server deadline always wins.
+  const fallbackDeadlineRef = useRef<{
+    isVisible: boolean;
+    seconds: number;
+    endsAtMs: number;
+  } | null>(null);
+  if (
+    fallbackDeadlineRef.current === null ||
+    fallbackDeadlineRef.current.isVisible !== isVisible ||
+    !Object.is(fallbackDeadlineRef.current.seconds, initialTime)
+  ) {
+    fallbackDeadlineRef.current = {
+      isVisible,
+      seconds: initialTime,
+      endsAtMs: Date.now() + (Number.isFinite(initialTime) ? Math.max(0, initialTime) : 0) * 1000,
+    };
+  }
+  const deadlineMs = Number.isFinite(endsAtMs)
+    ? (endsAtMs as number)
+    : fallbackDeadlineRef.current.endsAtMs;
+  const [countdown, setCountdown] = useState(() => secondsUntilAddOnDeadline(deadlineMs));
   const [processing, setProcessing] = useState(false);
   const [decided, setDecided] = useState(false);
   const [result, setResult] = useState<'accepted' | 'declined' | 'unknown' | null>(null);
@@ -94,6 +115,7 @@ export default function AddOnModal({
   const onDeclineRef = useRef(onDecline);
   onDeclineRef.current = onDecline;
   const decidedRef = useRef(false);
+  const dismissedRef = useRef(false);
 
   // Add-ons are currently unraked, but preserve exact cents if a historical
   // row supplies a split. Adding before formatting prevents component-wise
@@ -103,14 +125,18 @@ export default function AddOnModal({
   // realtime broadcast that defaults it to 0 when the field is missing; a 0
   // price made canAfford unconditionally true and let players buy at a price
   // the modal never actually showed them.
-  const priceKnown = totalCost > 0;
-  const canAfford = priceKnown && walletBalance >= totalCost;
-  const canAccept = canAfford && countdown > 0;
+  const priceKnown =
+    Number.isFinite(totalCost) && totalCost > 0 && Number(addOnCost) >= 0 && Number(addOnFee) >= 0;
+  const walletKnown = Number.isFinite(walletBalance);
+  const chipsKnown = Number.isFinite(addOnChips) && addOnChips > 0;
+  const canAfford = priceKnown && walletKnown && walletBalance >= totalCost;
+  const canAccept = canAfford && chipsKnown && countdown > 0;
 
   useEffect(() => {
     if (!isVisible) {
       setDecided(false);
       decidedRef.current = false;
+      dismissedRef.current = false;
       setResult(null);
       setFailureMessage(null);
       processingRef.current = false;
@@ -120,7 +146,7 @@ export default function AddOnModal({
     }
 
     const tick = () => {
-      const remaining = secondsUntilAddOnDeadline(endsAtMs, initialTime);
+      const remaining = secondsUntilAddOnDeadline(deadlineMs);
       setCountdown(remaining);
       if (
         remaining > 0 ||
@@ -136,6 +162,7 @@ export default function AddOnModal({
       decidedRef.current = true;
       setDecided(true);
       setResult('declined');
+      dismissedRef.current = true;
       if (timerRef.current) clearInterval(timerRef.current);
       onDeclineRef.current();
     };
@@ -145,17 +172,18 @@ export default function AddOnModal({
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [isVisible, initialTime, endsAtMs]);
+  }, [isVisible, deadlineMs]);
 
   const handleAccept = async () => {
     const retrying = confirmationNeededRef.current;
     // The confirm sound used to fire BEFORE this guard, so a locked-out or
     // double tap still played "purchase confirmed" at the player.
     if (
+      dismissedRef.current ||
       processingRef.current ||
       processing ||
       (!retrying &&
-        (decided || !canAfford || secondsUntilAddOnDeadline(endsAtMs, initialTime) <= 0))
+        (decided || !canAfford || !chipsKnown || secondsUntilAddOnDeadline(deadlineMs) <= 0))
     )
       return;
     processingRef.current = true;
@@ -195,17 +223,17 @@ export default function AddOnModal({
   };
 
   const handleDecline = () => {
-    if (processingRef.current || processing || (decided && !confirmationNeededRef.current)) return;
+    if (processingRef.current || processing || dismissedRef.current) return;
+    dismissedRef.current = true;
+    decidedRef.current = true;
     haptic.light();
-    if (confirmationNeededRef.current) {
-      // Closing an unknown result is only presentation dismissal, not a
-      // refusal or proof that the original purchase did not complete.
-      onDecline();
-      return;
-    }
-    setDecided(true);
-    setResult('declined');
     if (timerRef.current) clearInterval(timerRef.current);
+    // Close dismisses accepted and unknown receipts too. It does not change
+    // their financial outcome or clear the parent's durable purchase intent.
+    if (!confirmationNeededRef.current && result !== 'accepted') {
+      setDecided(true);
+      setResult('declined');
+    }
     onDecline();
   };
 
@@ -257,13 +285,15 @@ export default function AddOnModal({
           <div className="addon-console__row addon-console__row--cost">
             <span>Add-On Cost</span>
             <strong>
-              <AddOnText>{`${money(totalCost)} Chips`}</AddOnText>
+              <AddOnText>{priceKnown ? chipLabel(money(totalCost)) : 'Unavailable'}</AddOnText>
             </strong>
           </div>
           <div className="addon-console__row addon-console__row--chips">
             <span>Chips Received</span>
             <strong>
-              <AddOnText>{`+${addOnChips.toLocaleString()} Chips`}</AddOnText>
+              <AddOnText>
+                {chipsKnown ? `+${chipLabel(addOnChips.toLocaleString())}` : 'Unavailable'}
+              </AddOnText>
             </strong>
           </div>
           <div
@@ -271,7 +301,7 @@ export default function AddOnModal({
           >
             <span>Your Balance</span>
             <strong>
-              <AddOnText>{`${money(walletBalance)} Chips`}</AddOnText>
+              <AddOnText>{walletKnown ? chipLabel(money(walletBalance)) : 'Unavailable'}</AddOnText>
             </strong>
           </div>
           <button
@@ -293,7 +323,7 @@ export default function AddOnModal({
         </div>
         <div className="addon-console__messages" aria-live="polite">
           {result === 'accepted' && (
-            <p>Add-On Accepted - +{addOnChips.toLocaleString()} Chips Added</p>
+            <p>Add-On Accepted - +{chipLabel(addOnChips.toLocaleString())} Added</p>
           )}
           {failureMessage && (
             <p role="alert">
@@ -304,10 +334,16 @@ export default function AddOnModal({
           {!decided && !priceKnown && (
             <p role="alert">Add-On Price Unavailable - Cannot Purchase Right Now</p>
           )}
-          {!decided && priceKnown && !canAfford && (
-            <p role="alert">Insufficient Balance - You Need {totalCost.toLocaleString()} Chips</p>
+          {!decided && !chipsKnown && (
+            <p role="alert">Add-On Chips Unavailable - Cannot Purchase Right Now</p>
           )}
-          {!decided && priceKnown && !canAfford && onPlayDiamonds && (
+          {!decided && !walletKnown && (
+            <p role="alert">Wallet Balance Unavailable - Cannot Purchase Right Now</p>
+          )}
+          {!decided && priceKnown && walletKnown && !canAfford && (
+            <p role="alert">Insufficient Balance - You Need {chipLabel(money(totalCost))}</p>
+          )}
+          {!decided && priceKnown && walletKnown && !canAfford && onPlayDiamonds && (
             <DiamondsToChipsButton
               clubId={diamondGamesClubId}
               enabled={isVisible}

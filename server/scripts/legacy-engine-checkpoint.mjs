@@ -518,7 +518,7 @@ export async function runLegacyEngineCheckpoint({
     throw refused('legacy checkpoint invocation identity refused');
   if (
     operatorHold !== null &&
-    (releaseSha !== '5adefba4ac868bf138bee41bda24ae4b1754e456' ||
+    (releaseSha !== '94b2ae91c3c6742b5e05bca858c62580651ee180' ||
       !['first-upgrade', 'resume-first-upgrade'].includes(operatorHold.mode) ||
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
         operatorHold.handoffId ?? ''
@@ -858,7 +858,7 @@ if (process.argv[1] === '-' && new URL(import.meta.url).pathname.endsWith('/[eva
       '758610f3f844406bbbaee2f5100ced36d84fb943',
       'a0ab287d902879280f0c915e44f5222c5db4d7df',
       '8825af51817f379c4261658ca29ecc9d8d81932d',
-      '5adefba4ac868bf138bee41bda24ae4b1754e456',
+      '94b2ae91c3c6742b5e05bca858c62580651ee180',
     ].includes(checkpointRelease)
   )
     throw refused('checkpoint predecessor profile refused');
@@ -870,7 +870,7 @@ if (process.argv[1] === '-' && new URL(import.meta.url).pathname.endsWith('/[eva
     "Promise.all([import('file:///app/dist/GameServer.js'), import('file:///app/dist/engine/ServerTableEngineBase.js'), import('file:///app/dist/releaseIdentity.js'), import('file:///app/dist/services/tableLease.js'), import('file:///app/dist/services/supabase/client.js'), import('node:fs'), import('node:crypto'), import('file:///app/dist/maintenance/MaintenanceBreak.js'), import('file:///app/dist/maintenance/freezeState.js'), import('file:///app/dist/services/supabase/dataActorContext.js')${mixedImports}]).then(([gameServer,base,releaseIdentity,tableLease,client,fs,crypto,maintenance,freezeState,dataActorContext,manager,managerBase,permit,retirement])=>({gameServer,base,releaseIdentity,tableLease,client,fs,crypto,maintenance,freezeState,dataActorContext,manager,managerBase,permit,retirement}))",
     { importModuleDynamically: process.getBuiltinModule('node:vm').constants.USE_MAIN_CONTEXT_DEFAULT_LOADER })`;
   const operatorIntent =
-    checkpointRelease === '5adefba4ac868bf138bee41bda24ae4b1754e456'
+    checkpointRelease === '94b2ae91c3c6742b5e05bca858c62580651ee180'
       ? JSON.parse(process.argv[4] ?? 'null')
       : null;
   const operatorModuleExpression = `process.getBuiltinModule('node:vm').runInThisContext(

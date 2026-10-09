@@ -734,10 +734,9 @@ export class LightningClusterWorker {
     const first = await Promise.race([call, timeout]);
     if (timer) clearTimeout(timer);
     if (first !== 'timeout') return first;
-    void call.then(
-      () => this.gate.close(this.clusterId, args.requestId, true, this.nowMs()),
-      () => this.gate.close(this.clusterId, args.requestId, true, this.nowMs())
-    );
+    void call
+      .then(() => this.gate.close(this.clusterId, args.requestId, true, this.nowMs()))
+      .catch(() => this.gate.close(this.clusterId, args.requestId, true, this.nowMs()));
     return {
       status: 'error',
       error: new Error(`fn_lightning_match_and_form unanswered after ${this.formTimeoutMs}ms`),

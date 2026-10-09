@@ -10,6 +10,43 @@ import {
 
 const baseline = readFileSync(baselineFixture, 'utf8');
 const sql = buildCapturePayoutFixture(baseline);
+test('original six cases report closed granular stages without changing financial SQL', () => {
+  const original = sql.split('CREATE TEMP TABLE lb_extended_payout_verdicts')[0];
+  const stages = [...original.matchAll(/stage:='([a-z_]+)'/g)].map((match) => match[1]);
+  assert.deepEqual(stages, [
+    'fixture',
+    'capture_fixture',
+    'ranking_assertion',
+    'payout_call',
+    'payout_result',
+    'money_readback',
+    'payout_result',
+    'money_readback',
+    'journal_readback',
+    'basis_readback',
+    'replay_call',
+    'replay_readback',
+    'deferred_constraints',
+  ]);
+  assert.match(original, /VALUES\(case_name,false,error_state,stage\)/);
+  assert.doesNotMatch(original, /VALUES\(case_name,false,error_state,'case_execution'\)/);
+  const failure = original.slice(original.indexOf('    EXCEPTION\n'));
+  assert.match(failure, /GET STACKED DIAGNOSTICS error_state=RETURNED_SQLSTATE/);
+  assert.doesNotMatch(failure, /MESSAGE_TEXT|SQLERRM/);
+  // This hash was read from the protected pre-instrumentation adapter output.
+  // Removing only diagnostics must recover every byte of those six cases.
+  const unchanged = original
+    .replace(/^\s*stage:='[a-z_]+';\n/gm, '')
+    .replace('membership_preimage jsonb; stage text;', 'membership_preimage jsonb;')
+    .replace(
+      'VALUES(case_name,false,error_state,stage);',
+      "VALUES(case_name,false,error_state,'case_execution');"
+    );
+  assert.equal(
+    createHash('sha256').update(unchanged).digest('hex'),
+    '305be7c60ec2bf50982e29dd84122450eacd83570c32b5f30ccc2f6ae162bfed'
+  );
+});
 test('extended fixture preserves baseline identity, original six cases and single rollback boundary', () => {
   assert.equal(
     createHash('sha256').update(baseline).digest('hex'),

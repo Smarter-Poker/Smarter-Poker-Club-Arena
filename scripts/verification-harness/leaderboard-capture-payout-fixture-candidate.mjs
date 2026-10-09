@@ -98,6 +98,68 @@ BEGIN
            OR (SELECT md5(jsonb_agg(to_jsonb(r) ORDER BY club_id,period,period_start)::text)
                FROM public.leaderboard_round_basis_receipts r) IS DISTINCT FROM before_digest THEN`
   );
+  // Closed diagnostic labels only. Keep every original financial assertion and
+  // self-aborting case boundary; never expose a database exception message.
+  replaceOnce(
+    '  membership_preimage jsonb;\nBEGIN',
+    '  membership_preimage jsonb; stage text;\nBEGIN'
+  );
+  replaceOnce(
+    '    BEGIN\n      SELECT COALESCE(max(version),0)+1',
+    "    BEGIN\n      stage:='fixture';\n      SELECT COALESCE(max(version),0)+1"
+  );
+  replaceOnce(
+    '      -- Explicit HISTORICAL SYNTHETIC captures, not producer/calendar proof.',
+    "      stage:='capture_fixture';\n      -- Explicit HISTORICAL SYNTHETIC captures, not producer/calendar proof."
+  );
+  replaceOnce(
+    "      IF case_name='new_player_zero_baseline_pays' AND (",
+    "      stage:='ranking_assertion';\n      IF case_name='new_player_zero_baseline_pays' AND ("
+  );
+  replaceOnce(
+    "      IF case_name IN ('missing_close_refuses_without_movement',",
+    "      stage:='payout_call';\n      IF case_name IN ('missing_close_refuses_without_movement',"
+  );
+  replaceOnce(
+    "        IF NOT rejected OR error_state IS DISTINCT FROM '55000'",
+    "        stage:='payout_result';\n        IF NOT rejected OR error_state IS DISTINCT FROM '55000'"
+  );
+  replaceOnce(
+    '        IF pg_temp.lb_financial_digest() IS DISTINCT FROM before_digest',
+    "        stage:='money_readback';\n        IF pg_temp.lb_financial_digest() IS DISTINCT FROM before_digest"
+  );
+  replaceOnce(
+    "        IF case_name='genuine_empty_close_is_distinct' THEN expected_total := 0; END IF;",
+    "        stage:='payout_result';\n        IF case_name='genuine_empty_close_is_distinct' THEN expected_total := 0; END IF;"
+  );
+  replaceOnce(
+    '        IF (SELECT promo_balance FROM public.clubs WHERE id=club)',
+    "        stage:='money_readback';\n        IF (SELECT promo_balance FROM public.clubs WHERE id=club)"
+  );
+  replaceOnce(
+    '        -- Independent conserved-flow oracle: one source debit and one actual',
+    "        stage:='journal_readback';\n        -- Independent conserved-flow oracle: one source debit and one actual"
+  );
+  replaceOnce(
+    '        IF (SELECT count(*) FROM public.leaderboard_round_basis_receipts)<>1',
+    "        stage:='basis_readback';\n        IF (SELECT count(*) FROM public.leaderboard_round_basis_receipts)<>1"
+  );
+  replaceOnce(
+    '        replay := public.fn_payout_leaderboard',
+    "        stage:='replay_call';\n        replay := public.fn_payout_leaderboard"
+  );
+  replaceOnce(
+    "        IF (replay->>'already_settled')::boolean IS DISTINCT FROM true",
+    "        stage:='replay_readback';\n        IF (replay->>'already_settled')::boolean IS DISTINCT FROM true"
+  );
+  replaceOnce(
+    '      SET CONSTRAINTS ALL IMMEDIATE;',
+    "      stage:='deferred_constraints';\n      SET CONSTRAINTS ALL IMMEDIATE;"
+  );
+  replaceOnce(
+    "INSERT INTO lb_payout_draft_verdicts VALUES(case_name,false,error_state,'case_execution');",
+    'INSERT INTO lb_payout_draft_verdicts VALUES(case_name,false,error_state,stage);'
+  );
   replaceOnce(
     'SET CONSTRAINTS ALL IMMEDIATE;\nROLLBACK;\n',
     `${extendedPayoutCases}\nSET CONSTRAINTS ALL IMMEDIATE;\nROLLBACK;\n`

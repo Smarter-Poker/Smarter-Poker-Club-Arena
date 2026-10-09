@@ -2320,22 +2320,22 @@ groups:
             a memory alert does not authorize a bare restart of live tables.
           runbook: 'docs/runbooks/engine-memory.md'
 
-      # Current on-host builder: 896 MiB memory limit + 256 MiB reserve.
+      # Current on-host builder: 2048 MiB memory limit + 256 MiB reserve.
       # The existing build gate evaluates available memory at its actual start;
       # this thirty-minute warning reports sustained pressure, not permission.
       - alert: EngineBuildHeadroomLost
         expr: |
-          node_memory_MemAvailable_bytes{host="engine-01"} < 1207959552
+          node_memory_MemAvailable_bytes{host="engine-01"} < 2415919104
         for: 30m
         labels:
           severity: warning
           component: engine
         annotations:
-          summary: 'engine-01 has {{ $value | humanize1024 }}B available - under the 1152 MiB the engine image build refuses below'
+          summary: 'engine-01 has {{ $value | humanize1024 }}B available - under the 2304 MiB the engine image build refuses below'
           description: |
-            Host MemAvailable has stayed below 1152 MiB for thirty minutes.
+            Host MemAvailable has stayed below 2304 MiB for thirty minutes.
             The restored GitHub/Hetzner engine publisher builds on this host;
-            server/scripts/build-engine-image.sh requires 1179648 KiB available
+            server/scripts/build-engine-image.sh requires 2359296 KiB available
             when its existing gate runs. This warning does not authorize a
             build, release or restart, or predict conditions at a later attempt.
             Compare engine RSS, worker activity and other resident processes.

@@ -1,3 +1,4 @@
+import { arenaDisplayText } from '../lib/arenaDisplay/text';
 import { useEffect, type RefObject } from 'react';
 import { IS_NATIVE_BUILD, isNativePlatform } from '../lib/appBase';
 
@@ -192,7 +193,7 @@ export function useTableEnvironment(
   useEffect(() => {
     if (!isActive) return;
     const name = displayName && displayName !== 'Loading...' ? displayName : tableId;
-    const ours = name ? `${name} | Smarter Poker` : 'Table | Smarter Poker';
+    const ours = name ? `${arenaDisplayText(name)} | Smarter Poker` : 'Table | Smarter Poker';
     const previous = document.title;
     document.title = ours;
     return () => {

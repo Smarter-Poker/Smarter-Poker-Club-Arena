@@ -212,8 +212,8 @@ describe('Find A Player locator', () => {
 
       expect(screen.getByText('Cash Game')).toBeInTheDocument();
       expect(screen.getByText('Tournament')).toBeInTheDocument();
-      expect(screen.getByText('NLH / $1/$2 / Midnight Club')).toBeInTheDocument();
-      expect(screen.getByText('MTT / $50 Buy-In / Ivory Room')).toBeInTheDocument();
+      expect(screen.getByText('NLH / 1/2 / Midnight Club')).toBeInTheDocument();
+      expect(screen.getByText('MTT / 50 Buy-In / Ivory Room')).toBeInTheDocument();
       expect(screen.getByText('Playing Now - 1 Cash Game And 1 Tournament')).toBeInTheDocument();
     });
 

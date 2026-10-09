@@ -66,7 +66,7 @@ describe('MysteryBountyChest authoritative amount delivery', () => {
     rerender(view({ ...pending, amount: 500, amountPending: false }));
     act(() => vi.advanceTimersByTime(3_000));
 
-    expect(container.querySelector('.mbc__amount')?.textContent).toBe('$500');
+    expect(container.querySelector('.mbc__amount')?.textContent).toBe('500');
     expect(onDone).not.toHaveBeenCalled();
     act(() => vi.advanceTimersByTime(4_000));
     expect(onDone).toHaveBeenCalledTimes(1);

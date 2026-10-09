@@ -28,9 +28,21 @@ const WEB_BASE = '/hub/club-arena/';
 
 export default defineConfig({
   base: WEB_BASE,
-  plugins: [react(), runtimeInputPlugin('prerender', __dirname)],
+  plugins: [
+    react({ jsxImportSource: '@arena-display' }),
+    runtimeInputPlugin('prerender', __dirname),
+  ],
   resolve: {
     alias: {
+      '@arena-display/jsx-runtime': path.resolve(
+        __dirname,
+        './src/lib/arenaDisplay/jsx-runtime.ts'
+      ),
+      '@arena-display/jsx-dev-runtime': path.resolve(
+        __dirname,
+        './src/lib/arenaDisplay/jsx-dev-runtime.ts'
+      ),
+      '@arena-display': path.resolve(__dirname, './src/lib/arenaDisplay/index.ts'),
       '@': path.resolve(__dirname, './src'),
       '@components': path.resolve(__dirname, './src/components'),
       '@lib': path.resolve(__dirname, './src/lib'),

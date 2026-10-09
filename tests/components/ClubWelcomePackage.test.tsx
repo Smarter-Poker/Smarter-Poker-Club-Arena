@@ -128,7 +128,7 @@ describe('ClubWelcomePackage', () => {
     expect(screen.getByText('Owner Acceptance Required')).toBeInTheDocument();
     expect(screen.queryByText('Diamond Spins Enabled')).not.toBeInTheDocument();
     expect(screen.getByText('1 Preloaded')).toBeInTheDocument();
-    expect(screen.getByText('Daily $25 Freezeout · 7 PM UTC')).toBeInTheDocument();
+    expect(screen.getByText('Daily 25 Freezeout · 7 PM UTC')).toBeInTheDocument();
   });
 
   it('is mounted for owners independently of the completed checklist', () => {

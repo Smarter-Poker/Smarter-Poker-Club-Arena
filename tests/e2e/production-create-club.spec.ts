@@ -114,9 +114,7 @@ test.describe('Production Create A Club Certificate', () => {
     await expect(welcome.getByText('Enabled', { exact: true })).toHaveCount(2);
     await expect(welcome.getByText('Owner Acceptance Required', { exact: true })).toBeVisible();
     await expect(welcome.getByText('9 Preloaded', { exact: true })).toBeVisible();
-    await expect(
-      welcome.getByText('Daily $25 Freezeout · 7 PM UTC', { exact: true })
-    ).toBeVisible();
+    await expect(welcome.getByText('Daily 25 Freezeout · 7 PM UTC', { exact: true })).toBeVisible();
     await expect(welcome.getByText('Preloaded', { exact: true })).toBeVisible();
     await expect(
       welcome.getByText('Acceptance Is Never Automatic', { exact: false })

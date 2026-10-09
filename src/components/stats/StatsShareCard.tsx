@@ -20,6 +20,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import './StatsShareCard.css';
 import { IS_NATIVE_BUILD, isNativePlatform } from '../../lib/appBase';
+import { arenaDisplayText } from '../../lib/arenaDisplay/text';
 import { compactChips } from '../../utils/format';
 
 /**
@@ -160,7 +161,9 @@ export default function StatsShareCard({
     // Measured, not counted: 23 wide glyphs at 54px can still reach the
     // right-aligned "smarter.poker" footer, which sits in the same band.
     const NAME_MAX_W = W - 64 - 260;
-    const safeDisplayName = privacyPresentationMode ? 'Private Player' : displayName;
+    const safeDisplayName = arenaDisplayText(
+      privacyPresentationMode ? 'Private Player' : displayName
+    );
     let name = safeDisplayName;
     while (name.length > 1 && ctx.measureText(`${name}...`).width > NAME_MAX_W) {
       name = name.slice(0, -1);
@@ -170,7 +173,7 @@ export default function StatsShareCard({
 
     // Style badge
     if (styleLabel && !privacyPresentationMode) {
-      const label = styleLabel.toUpperCase();
+      const label = arenaDisplayText(styleLabel).toUpperCase();
       ctx.font = `700 22px ${FONT}`;
       const tw = ctx.measureText(label).width;
       const bx = 64;
@@ -276,10 +279,12 @@ export default function StatsShareCard({
     // read for what it is.
     ctx.fillStyle = 'rgba(200,224,245,0.55)';
     ctx.font = `600 20px ${FONT}`;
-    const scope = privacyPresentationMode ? 'Presentation Safe' : scopeLabel || 'All Clubs';
+    const scope = privacyPresentationMode
+      ? 'Presentation Safe'
+      : arenaDisplayText(scopeLabel || 'All Clubs');
     ctx.fillText(
       !privacyPresentationMode && rangeLabel
-        ? `${scope} · ${rangeLabel} · Cash Games`
+        ? `${scope} · ${arenaDisplayText(rangeLabel)} · Cash Games`
         : `${scope} · Cash Games`,
       W - 64,
       104

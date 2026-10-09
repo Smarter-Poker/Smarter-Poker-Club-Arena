@@ -1,3 +1,4 @@
+import { arenaDisplayText } from '../lib/arenaDisplay/text';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  PUBLIC PROFILE PAGE — View Another Player's Profile
@@ -83,7 +84,7 @@ export default function PublicProfilePage() {
 
   useEffect(() => {
     document.title = profile
-      ? `${profile.displayName || 'Player'} | Smarter Poker`
+      ? `${arenaDisplayText(profile.displayName || 'Player')} | Smarter Poker`
       : 'Player Profile | Smarter Poker';
   }, [profile]);
 

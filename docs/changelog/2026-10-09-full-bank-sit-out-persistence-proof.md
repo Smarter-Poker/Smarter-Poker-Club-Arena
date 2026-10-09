@@ -37,3 +37,12 @@ digest, verified from the registry response and independently hashed bytes.
 Container isolation, rule fixtures and assertions are unchanged. Shell syntax and
 source review pass locally; Docker is unavailable on this Mac, so actual
 container execution remains a hosted prerequisite.
+
+The native accounting qualification client also encountered Docker Hub's download
+limit on its Node base image. Its two base images now use verified mirrors with
+pinned manifests: the same Node 22 Bookworm bytes on ECR Public and the same
+Supabase Postgres 17.6.1.063 bytes on Supabase's GHCR repository. Both manifest
+indexes and Linux AMD64 manifests match their original repositories. Only the
+image references change; native exporter source, build, stock-parity comparison
+and database qualification remain intact. Local maintained build syntax/source
+checks run; actual Docker build and fixture execution remain hosted requirements.

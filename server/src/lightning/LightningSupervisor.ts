@@ -58,7 +58,11 @@ import {
 } from './LightningConfig.js';
 import { isUuid, lightningConfig, type LightningRpcClient } from './LightningRpc.js';
 import { LightningPresence, type PresenceSource } from './LightningPresence.js';
-import { LightningClusterWorker, type LightningWorkerLogger } from './LightningClusterWorker.js';
+import {
+  LightningClusterWorker,
+  type LightningClusterWorkerDeps,
+  type LightningWorkerLogger,
+} from './LightningClusterWorker.js';
 import { lightningMetrics, type LightningMetrics } from './LightningMetrics.js';
 import { RateLimitedLog } from './RateLimitedLog.js';
 import type { LightningHosting } from './LightningRegistry.js';
@@ -94,6 +98,11 @@ export interface LightningSupervisorDeps {
   sweepRooms?: () => Promise<unknown>;
   /** The Cluster's front table (the host table every hand binds to). */
   frontTable?: (clusterId: string) => Promise<string | null>;
+  /**
+   * LIGHTNING PHASE 12: options handed to every worker this supervisor makes
+   * (the formation gate and the forming call's timeout; tests shorten it).
+   */
+  workerOptions?: Partial<Pick<LightningClusterWorkerDeps, 'formationGate' | 'formTimeoutMs'>>;
 }
 
 /** One Cluster discovery found, and whether it is on its way out of Lightning. */
@@ -207,6 +216,20 @@ export class LightningSupervisor {
 
   workerFor(clusterId: string): LightningClusterWorker | undefined {
     return this.workers.get(clusterId);
+  }
+
+  /**
+   * LIGHTNING PHASE 12: a player arrived in this Cluster's pool (their room's
+   * first socket). Its worker runs its next pass within the admission window.
+   * A Cluster with no worker here (a standby, or not Lightning) ignores it.
+   */
+  admit(clusterId: string): void {
+    if (!this.running) return;
+    try {
+      this.workers.get(clusterId)?.admit();
+    } catch {
+      /* an admission hint must never take the supervisor down */
+    }
   }
 
   /** Leader only: GameServer calls this beside the ClusterController's start. */
@@ -387,6 +410,7 @@ export class LightningSupervisor {
       void hosting?.abortCluster(id, 'cluster_frozen').catch(() => undefined);
     };
     const worker: LightningClusterWorker = new LightningClusterWorker(clusterId, config, {
+      ...(this.deps.workerOptions ?? {}),
       rpc: this.rpc,
       presence: this.presence,
       metrics: this.metrics,

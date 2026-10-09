@@ -138,6 +138,10 @@ const engineWs = new EngineWebSocketServer({
     gameServer.getTableEngine(tableId)?.notifyTransportDisconnect(userId);
     gameServer.lightningRooms.disconnect(tableId, userId);
   },
+  // Lightning Phase 12: the client rendered its room's hand (hand_to_first_render).
+  onRenderAck: (tableId, userId, handId) => {
+    gameServer.lightningRooms.renderAck(tableId, userId, handId);
+  },
 });
 
 // Lightning Phase 6 remediation: an ended pool session's room has its sockets closed.

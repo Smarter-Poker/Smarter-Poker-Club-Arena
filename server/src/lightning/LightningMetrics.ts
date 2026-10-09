@@ -40,14 +40,18 @@ export type LightningPassOutcome =
 /**
  * ACTION LATENCY TELEMETRY (spec): each leg measured on its own, so a slow
  * next hand can be traced to the leg that is slow. P50/P95/P99 come from the
- * histogram buckets. "Hand creation -> first client render" is measured by the
- * client, which is the only party that sees the render.
+ * histogram buckets. "Hand creation -> first client render" (LIGHTNING PHASE
+ * 12) is measured on the ENGINE's clock: from the host sending a room the
+ * hand's first frame to that room's socket acknowledging it rendered the hand
+ * (RENDER_ACK). The client's own clock is never trusted; a seat whose room
+ * has no socket (nobody watching) simply yields no sample.
  */
 export const LIGHTNING_LATENCY_SEGMENTS = [
   'fold_ack',
   'ack_to_idle_pool',
   'idle_pool_to_match',
   'match_to_hand',
+  'hand_to_first_render',
   'fast_fold_to_next_hand',
   'normal_fold_to_next_hand',
   'fold_watch_to_next_hand',
@@ -100,7 +104,7 @@ export class LightningMetrics {
     );
     this.latencyMs = registry.histogram(
       'poker_lightning_latency_ms',
-      'Lightning fold-to-next-hand latency by leg (fold_ack, ack_to_idle_pool, idle_pool_to_match, match_to_hand, *_to_next_hand)'
+      'Lightning fold-to-next-hand latency by leg (fold_ack, ack_to_idle_pool, idle_pool_to_match, match_to_hand, hand_to_first_render, *_to_next_hand)'
     );
     this.handsTotal = registry.counter(
       'poker_lightning_hands_total',

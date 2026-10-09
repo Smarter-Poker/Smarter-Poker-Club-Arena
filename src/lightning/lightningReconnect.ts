@@ -47,6 +47,14 @@ export const LIGHTNING_STOPPED_TITLE = 'You Stopped Playing';
 export const LIGHTNING_DISCONNECT_EXPIRED_EXIT_REASON = 'disconnect_expired';
 /** The player's own STOP PLAYING ended the session. */
 export const LIGHTNING_STOP_PLAYING_EXIT_REASON = 'stop_playing';
+/**
+ * LIGHTNING PHASE 12 (20261009143757): a responsible-gaming limit (a
+ * self-exclusion or cooling-off that began mid-session) ended it, after the
+ * hand in play, exactly like STOP PLAYING. The seat and the chips are kept.
+ */
+export const LIGHTNING_RG_LIMIT_EXIT_REASON = 'rg_limit';
+/** The responsible-gaming ending's words. Popup rules: Title Case, no em dashes. */
+export const LIGHTNING_RG_LIMIT_TITLE = 'Your Responsible Gaming Limit Ended This Session';
 
 /** The ended notice's line: how it ended, and where the player's seat is. */
 export function lightningSessionEndText(end: {
@@ -54,12 +62,16 @@ export function lightningSessionEndText(end: {
   seatTableId: string | null;
   /** The player stopped on purpose (exit_reason stop_playing). */
   stopped?: boolean;
+  /** LIGHTNING PHASE 12: a responsible-gaming limit ended it (exit_reason rg_limit). */
+  rgLimit?: boolean;
 }): string {
-  const lead = end.stopped
-    ? `${LIGHTNING_STOPPED_TITLE}.`
-    : end.timedOut
-      ? `${LIGHTNING_TIMED_OUT_TITLE}.`
-      : `${LIGHTNING_SESSION_OVER_TEXT}.`;
+  const lead = end.rgLimit
+    ? `${LIGHTNING_RG_LIMIT_TITLE}.`
+    : end.stopped
+      ? `${LIGHTNING_STOPPED_TITLE}.`
+      : end.timedOut
+        ? `${LIGHTNING_TIMED_OUT_TITLE}.`
+        : `${LIGHTNING_SESSION_OVER_TEXT}.`;
   return end.seatTableId ? `${lead} Your Seat Is Ready At Your Table.` : lead;
 }
 
@@ -167,7 +179,14 @@ export type LightningReconnectVerdict =
    * (exit_reason 'disconnect_expired'); `stopped` when the player's own
    * STOP PLAYING did ('stop_playing').
    */
-  | { kind: 'ended'; timedOut: boolean; stopped: boolean; seatTableId: string | null }
+  | {
+      kind: 'ended';
+      timedOut: boolean;
+      stopped: boolean;
+      /** LIGHTNING PHASE 12: a responsible-gaming limit ended it (exit_reason rg_limit). */
+      rgLimit: boolean;
+      seatTableId: string | null;
+    }
   /** Nothing to say (nothing readable). */
   | { kind: 'unknown' };
 
@@ -176,6 +195,7 @@ const ENDED_PLAINLY: LightningReconnectVerdict = {
   kind: 'ended',
   timedOut: false,
   stopped: false,
+  rgLimit: false,
   seatTableId: null,
 };
 
@@ -208,6 +228,7 @@ export function lightningReconnectVerdict(
     kind: 'ended',
     timedOut: reason === LIGHTNING_DISCONNECT_EXPIRED_EXIT_REASON,
     stopped: reason === LIGHTNING_STOP_PLAYING_EXIT_REASON,
+    rgLimit: reason === LIGHTNING_RG_LIMIT_EXIT_REASON,
     seatTableId: state.seatTableId,
   };
 }
@@ -217,6 +238,8 @@ export interface LightningSessionEnd {
   timedOut: boolean;
   /** The player's own STOP PLAYING ended it: the title is theirs. */
   stopped: boolean;
+  /** LIGHTNING PHASE 12: a responsible-gaming limit ended it (exit_reason rg_limit). */
+  rgLimit: boolean;
   /** The seat the player still holds, when one remains. */
   seatTableId: string | null;
 }
@@ -277,6 +300,7 @@ export function useLightningSessionEnd(input: {
           setEnded({
             timedOut: verdict.timedOut,
             stopped: verdict.stopped,
+            rgLimit: verdict.rgLimit,
             seatTableId: verdict.seatTableId,
           });
         }

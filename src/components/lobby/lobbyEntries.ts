@@ -1948,9 +1948,9 @@ export function mttPhaseText(entry: LobbyEntry, now: number): string | null {
     return 'Late Reg Open';
   }
   if (entry.status === 'running') {
-    const left = levelRemainingMs(entry.raw as LobbyTournamentRow, now);
-    if (left != null) return `Level Ends In ${formatClock(left)}`;
-    return 'Running';
+    const end = lateRegEndMs(entry.raw as LobbyTournamentRow);
+    if (end != null) return `Late Reg ${formatClock(Math.max(0, end - now))} Left`;
+    return 'Late Reg Closed';
   }
   if (entry.status === 'completed' || entry.status === 'closed') return entry.statusLabel;
   return null;

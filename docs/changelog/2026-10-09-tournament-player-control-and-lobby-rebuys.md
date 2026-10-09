@@ -1,0 +1,9 @@
+# Tournament Player Control And Lobby Rebuys
+
+A full time-bank expiry that accepts a forced fold now immediately sits out the seat, through the existing disconnect engine. Both automatic and manually activated banks use the same transition. Heartbeats do not resume that seat; explicit return does. Free checks and rejected expiry actions preserve their existing behavior.
+
+Tournament elimination events continue updating player entries and remaining counts without a per-player placement toast. Players can close the bottom tournament info dock, persist that screen preference, and restore it from the table menu. Collapse remains separate and the felt reserve stays constant. Table menus say Sit Out. Standalone tournament detail lobbies omit the Play Records rail; running list entries show late registration status rather than a blind-level countdown.
+
+An unpaid eliminated zero-stack entry can request a lobby rebuy during the event purchase window after declining or missing its prompt. The migration removes one pending-candidate-only clause from the installed atomic purchase function, asserts its preimage and exact postimage, and preserves current funding, knockout, payout, seat, idempotency, authorization and window checks. It changes no player balances or financial records at installation.
+
+Validation: focused client and engine regressions, both compilers, four UI copy gates, browser close/refresh/restore/collapse checks at 375/393/1280, and 18 isolated PostgreSQL purchase groups. Both first-bank regression cases fail against the original implementation and pass with the correction. PostgreSQL proof uses the maintained qualified purchase fixture rather than destructive production transactions. Source checks, merge, installation, publication and live behavior remain separate delivery evidence in the task checkpoint.

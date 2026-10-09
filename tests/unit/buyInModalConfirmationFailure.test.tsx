@@ -78,3 +78,50 @@ it.each([0, null])(
     await waitFor(() => expect(onConfirm).toHaveBeenCalledWith(100, false));
   }
 );
+
+it('the cash rebuy artwork preserves exact amount selection and the existing callback', async () => {
+  const onConfirm = vi.fn().mockResolvedValue(false);
+  render(<BuyInModal {...base} purchaseKind="rebuy" onConfirm={onConfirm} />);
+  fireEvent.change(screen.getByRole('spinbutton', { name: 'Buy-In Amount' }), {
+    target: { value: '137.50' },
+  });
+  expect(screen.getByText('Rebuy Cost').parentElement?.textContent).toBe('Rebuy Cost137.50 Chips');
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuy 137.50' }));
+  });
+  expect(onConfirm).toHaveBeenCalledWith(137.5, false);
+  expect(screen.getByRole('alert').textContent).toContain('Buy-In Not Yet Confirmed');
+});
+
+it('a cash rebuy already processing in the parent cannot be submitted or dismissed', () => {
+  const onConfirm = vi.fn(),
+    onClose = vi.fn();
+  render(
+    <BuyInModal
+      {...base}
+      purchaseKind="rebuy"
+      externalProcessing
+      onConfirm={onConfirm}
+      onClose={onClose}
+    />
+  );
+  expect(
+    (screen.getByRole('spinbutton', { name: 'Buy-In Amount' }) as HTMLInputElement).disabled
+  ).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Joining' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Close Buy-In' }));
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(onConfirm).not.toHaveBeenCalled();
+  expect(onClose).not.toHaveBeenCalled();
+});
+
+it('a cash rebuy amount remains editable before its minimum is applied on blur', () => {
+  render(<BuyInModal {...base} purchaseKind="rebuy" onConfirm={vi.fn()} />);
+  const amount = screen.getByRole('spinbutton', { name: 'Buy-In Amount' }) as HTMLInputElement;
+  fireEvent.change(amount, { target: { value: '1' } });
+  expect(amount.value).toBe('1');
+  fireEvent.change(amount, { target: { value: '137.50' } });
+  fireEvent.blur(amount);
+  expect(amount.valueAsNumber).toBe(137.5);
+  expect(screen.getByRole('button', { name: 'Rebuy 137.50' })).toBeTruthy();
+});

@@ -112,8 +112,12 @@ const ROSTER = join(ROOT, 'docs', 'attestation', 'cron-roster.tsv');
  * migration 20261005174041 without this file being moved, and
  * ca-ratchet-watch-hourly moved from :35 to :29 by applied migration
  * 20261004002936. The roster header names all three.
+ * 128 -> 129 active on 2026-10-09: lightning-alert-sweep-1m, scheduled by
+ * 20261009144343 lightning_phase_12_operator_dashboard_and_alerting through
+ * the managed cron API (Lightning operator alerting, Phase 21; argument in
+ * that migration's header).
  */
-const ACTIVE_JOBS = 128;
+const ACTIVE_JOBS = 129;
 const RETAINED_INACTIVE = 2;
 const TOTAL_JOBS = ACTIVE_JOBS + RETAINED_INACTIVE;
 
@@ -139,8 +143,8 @@ describe('the scheduled-work roster is pinned', () => {
     expect(Number(headerValue('retained-inactive'))).toBe(RETAINED_INACTIVE);
   });
 
-  it('130 total is 128 active plus the two rows cron.job keeps inactive', () => {
-    expect(TOTAL_JOBS).toBe(130);
+  it('131 total is 129 active plus the two rows cron.job keeps inactive', () => {
+    expect(TOTAL_JOBS).toBe(131);
     // The two bust sweeps 20260910073355 restored disabled are both of them
     // again: union-weekly-rakeback-close was the third until 20261003101805
     // re-armed jobid 272, and it is now an ACTIVE row of the body instead.

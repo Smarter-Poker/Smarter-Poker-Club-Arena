@@ -4,7 +4,7 @@
 # line to make a check pass: tests/the-scheduled-work-roster-is-pinned.law.test.ts
 # pins the count, and the count is supposed to be argued about.
 # observed_at: 2026-10-07T03:46:42Z
-# active: 128
+# active: 129
 # retained-inactive: 2	the two bust sweeps restored disabled by 20260910073355
 # 2026-09-20: 135 -> 132. union-seat-provenance-heal, ca-bbj-repair-unbanked-15m
 # and reconcile-club-table-counts-nightly were retired by migration
@@ -113,6 +113,13 @@
 #     20261007034146 the_diamond_cash_rake_is_swept_to_the_house_every_hour:
 #     design R4's periodic sweep, which carries accrued Diamond cash rake to
 #     the house (ruling 26). The argument is in that header.
+# 2026-10-09: 128 -> 129 active, retained-inactive unchanged at 2. ONE IS ADDED:
+#   lightning-alert-sweep-1m  * * * * *  scheduled by migration
+#     20261009144343 lightning_phase_12_operator_dashboard_and_alerting
+#     through the managed cron API: the Lightning operator alerting the
+#     specification's Phase 21 requires (freeze, stuck conversion, drive
+#     error, reaper failure, integrity spike, latency regression). It pages and
+#     repairs nothing. The argument is in that header.
 bbj-rollup-catchup	45 * * * *
 ca-alarm-drill-weekly	7 11 * * 1
 ca-bbj-threshold-notify-5m	*/5 * * * *
@@ -202,6 +209,7 @@ horse-stackoff-audit-20m	7,27,47 * * * *
 index-usage-snapshot-daily	41 */2 * * *
 index-usage-snapshot-prune-daily	17 5 * * *
 leaderboard-payout-waterfall-daily	20 0 * * *
+lightning-alert-sweep-1m	* * * * *
 managed-game-schedules-minute	* * * * *
 pgrst-reload-watchdog	6,21,36,51 * * * *
 pnm-locations-refresh	*/30 * * * *

@@ -1730,6 +1730,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase12-rg-limits.sh
+      - name: Lightning Phase 12 operator doors, alerts and latency ledger
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-lightning-phase12-operator-alerts.sh
       - name: Lightning Phase 12 keeps money and identity exact under load, stress and chaos (real concurrent backends, cancels, terminations and timeouts) and forms under surge
         if: matrix.shard == 1
         env:

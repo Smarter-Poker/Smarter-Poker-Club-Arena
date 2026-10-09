@@ -1,0 +1,279 @@
+.addon-console__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgb(0 0 0 / 75%);
+  overflow-y: auto;
+  display: flex;
+  align-items: safe center;
+  justify-content: center;
+  padding: 16px;
+}
+.addon-console {
+  width: min(480px, 100%);
+  container-type: inline-size;
+  color: #e4e7ec;
+  font-family: 'Inter', sans-serif;
+}
+.addon-console__canvas {
+  position: relative;
+  aspect-ratio: 1116 / 1409;
+}
+.addon-console__art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.addon-console__title,
+.addon-console__subtitle,
+.addon-console__timer,
+.addon-console__row,
+.addon-console__plate,
+.addon-console__close {
+  position: absolute;
+  margin: 0;
+}
+.addon-console__title {
+  left: 12%;
+  top: 16%;
+  width: 76%;
+  height: 7%;
+  display: grid;
+  place-items: center;
+  color: #4dc660;
+  font:
+    800 6.4cqw 'Roboto Condensed',
+    sans-serif;
+}
+.addon-console__subtitle {
+  left: 15%;
+  top: 23%;
+  width: 70%;
+  text-align: center;
+  font-size: 3.4cqw;
+}
+.addon-console__timer {
+  left: 30%;
+  top: 30%;
+  width: 52%;
+  height: 12%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #4dc660;
+}
+.addon-console__timer strong {
+  font:
+    800 10cqw 'Roboto Condensed',
+    sans-serif;
+  line-height: 1.15;
+}
+.addon-console__timer span {
+  font-size: 2.8cqw;
+}
+.addon-console__row {
+  left: 24%;
+  width: 65%;
+  height: 8%;
+  display: grid;
+  grid-template-columns: 1fr 1.1fr;
+  align-content: center;
+  align-items: center;
+  gap: 0.6cqw;
+  font-size: 3.4cqw;
+}
+.addon-console__row strong {
+  min-width: 0;
+  text-align: right;
+}
+.addon-console__row--cost {
+  top: 46.5%;
+}
+.addon-console__row--chips {
+  top: 56%;
+}
+.addon-console__row--balance {
+  top: 65.5%;
+}
+.addon-console__row--chips strong {
+  color: #4dc660;
+}
+.addon-console__row--balance strong {
+  color: #ffd700;
+}
+.addon-console .is-poor strong,
+.addon-console .is-expiring {
+  color: #ff5b6e;
+}
+.addon-console__fit {
+  display: block;
+  white-space: nowrap;
+  font-size: calc(1em * var(--fit, 1));
+}
+.addon-console__plate {
+  top: 78%;
+  height: 7%;
+  width: 33%;
+  display: grid;
+  place-items: center;
+  font:
+    800 4.4cqw 'Roboto Condensed',
+    sans-serif;
+  cursor: pointer;
+}
+.addon-console__plate--secondary {
+  left: 12%;
+}
+.addon-console__plate--primary {
+  left: 55%;
+  color: #4dc660;
+}
+.addon-console__close {
+  left: 84%;
+  top: 5%;
+  width: 10%;
+  height: 8%;
+  cursor: pointer;
+}
+[role='dialog'] .addon-console__plate.addon-console__plate,
+[role='dialog'] .addon-console__close.addon-console__close {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+  padding: 0 !important;
+}
+.addon-console button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.addon-console button:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: -3px;
+}
+.addon-console__messages {
+  padding: 0 9%;
+  text-align: center;
+  font-size: 14px;
+}
+.addon-console__messages:empty {
+  display: none;
+}
+.addon-console__messages [role='alert'] {
+  color: #ff5b6e;
+}
+
+.addon-console__title:focus {
+  outline: none !important;
+}
+.addon-console__plate--secondary .addon-console__fit {
+  color: #f4f7fb !important;
+}
+
+.purchase-console__amount {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #4dc660;
+  font:
+    800 10cqw 'Roboto Condensed',
+    sans-serif;
+  text-align: center;
+  appearance: textfield;
+}
+.purchase-console__amount::-webkit-inner-spin-button,
+.purchase-console__amount::-webkit-outer-spin-button {
+  appearance: none;
+}
+[role='dialog'] .purchase-console__amount.purchase-console__amount {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  color: #4dc660 !important;
+}
+.addon-console__timer strong .addon-console__fit {
+  font-size: calc(1em * var(--fit, 1));
+}
+.cashier-dialog.addon-console {
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  outline: 0 !important;
+}
+[role='dialog'] .purchase-console__amount.purchase-console__amount {
+  font:
+    800 10cqw 'Roboto Condensed',
+    sans-serif !important;
+  outline: none !important;
+}
+
+.purchase-console__cash {
+  aspect-ratio: 1024 / 1536;
+}
+.purchase-console__cash .addon-console__title {
+  top: 12.5%;
+  height: 7%;
+}
+.purchase-console__cash .addon-console__subtitle {
+  top: 19.5%;
+}
+.purchase-console__cash .addon-console__timer {
+  top: 24%;
+  left: 15%;
+  width: 70%;
+  height: 12%;
+}
+.purchase-console__cash .addon-console__row {
+  height: 7%;
+}
+.purchase-console__cash .addon-console__row--cost {
+  top: 39.5%;
+}
+.purchase-console__cash .addon-console__row--chips {
+  top: 47.3%;
+}
+.purchase-console__cash .addon-console__row--balance {
+  top: 55.2%;
+}
+.purchase-console__cash .addon-console__plate {
+  top: 79.3%;
+  height: 7.5%;
+}
+.purchase-console__presets {
+  position: absolute;
+  left: 10.7%;
+  top: 65.5%;
+  width: 78.3%;
+  height: 8.5%;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.1%;
+}
+[role='dialog'] .purchase-console__presets button {
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: #e4e7ec !important;
+  font:
+    800 4.4cqw 'Roboto Condensed',
+    sans-serif;
+  cursor: pointer;
+}
+[role='dialog'] .purchase-console__presets button[aria-pressed='true'] {
+  color: #45adff !important;
+}

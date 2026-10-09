@@ -202,7 +202,7 @@ describe('Arena game-card creation', () => {
       mtt: {
         id: 'shark-mtt-v2',
         version: 2,
-        mobileAsset: /mtt\/shell-mobile-v4-reference-clean\.png$/,
+        mobileAsset: /mtt\/cash-style-v3\/chassis\.png$/,
       },
       nlh: {
         id: 'spade-nlh-premium-v1',
@@ -234,7 +234,9 @@ describe('Arena game-card creation', () => {
       expect(resolved.skinId).toBe(approved.id);
       expect(resolved.skin.lifecycle).toBe('approved');
       expect(resolved.skin.version).toBe(approved.version);
-      expect(resolved.skin.desktop.asset).toMatch(/shell-desktop-v2\.webp$/);
+      expect(resolved.skin.desktop.asset).toMatch(
+        family === 'mtt' ? /cash-style-v3\/chassis\.png$/ : /shell-desktop-v2\.webp$/
+      );
       expect(resolved.skin.mobile.asset).toMatch(approved.mobileAsset);
       expect(Object.keys(resolved.template.zones).length).toBeGreaterThanOrEqual(5);
     }

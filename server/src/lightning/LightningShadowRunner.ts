@@ -714,8 +714,9 @@ export class LightningShadowRunner implements LightningClusterTelemetrySink {
         ...this.live.json(max),
         matcher_version: liveVersion,
         latency_ms: latency,
-        // Hand creation -> first client render: the client sends no render ack (not measured).
-        first_render_measured: false,
+        // Hand creation -> first client render (Lightning Phase 12): measured on
+        // the engine's clock, from the hand's first frame to the room's RENDER_ACK.
+        first_render_measured: true,
       },
       shadow: {
         ...this.shadow.json(max),

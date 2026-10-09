@@ -13,6 +13,7 @@
  * NOTE: "Horses" — NEVER call them anything else.
  */
 
+import { tableHeldByRetainedHand } from '../engine/retainedHandHolds.js';
 import { supabase, seedingSupabase } from './supabase.js';
 import { randomUUID } from 'node:crypto';
 import {
@@ -2794,6 +2795,17 @@ export class HorseFleetManager {
              a club can be paused without touching the rest of the floor.
              Asked here, before any seat arithmetic, so a withheld table costs
              nothing and says why. */
+          /* A TABLE THAT CANNOT DEAL GETS NO HORSES (2026-10-09). GameServer
+             holds a cash table whose retained hand the resume door refuses;
+             seating a horse there only parks its buy-in at a table that will
+             not deal. Withheld, not closed: the fleet seats it again the cycle
+             after the hold is released. */
+          if (tableHeldByRetainedHand(table.id)) {
+            beat.withheldTables++;
+            if (firstTableWithheld === null) firstTableWithheld = 'retained_hand_held';
+            if (diag) diag.withheld = 'retained_hand_held';
+            continue;
+          }
           const policy = policyFor(table.club_id);
           const tableWithheld = withheldReason(policy, {
             nowUTCHour: hourUTC,

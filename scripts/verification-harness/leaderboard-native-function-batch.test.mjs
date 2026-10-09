@@ -263,11 +263,11 @@ test('native qualification pulls identical pinned inputs through official public
   );
   assert.match(
     dockerfile,
-    /^FROM public\.ecr\.aws\/docker\/library\/node:22-bookworm@sha256:0e5f906573693feaa1e21057ebdcfdb5bd5021f050b2dc7c9deceb629c7da2a8 AS node_runtime$/m
+    /^FROM public\.ecr\.aws\/docker\/library\/node@sha256:0e5f906573693feaa1e21057ebdcfdb5bd5021f050b2dc7c9deceb629c7da2a8 AS node_runtime$/m
   );
   assert.match(
     dockerfile,
-    /^FROM public\.ecr\.aws\/supabase\/postgres:17\.6\.1\.063@sha256:178f0976b54a39237096bfa310c1a352dbc82fb1b08dda45cdb8acb5d40c1426$/m
+    /^FROM ghcr\.io\/supabase\/postgres@sha256:178f0976b54a39237096bfa310c1a352dbc82fb1b08dda45cdb8acb5d40c1426$/m
   );
   assert.match(dockerfile, /COPY --from=node_runtime \/usr\/local\/bin\/node/);
   assert.match(dockerfile, /dd27f2b3c59e73ed14aa3324901242bf69a032a6347805f274e6260322d42979/);

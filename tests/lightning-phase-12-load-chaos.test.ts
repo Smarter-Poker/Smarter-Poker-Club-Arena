@@ -133,6 +133,15 @@ describe('the harness asserts the outcome the specification requires', () => {
     expect(HARNESS).toContain("e.payload::text ~ 'MOVED_MONEY'");
     expect(HARNESS).toContain('ts.left_at IS NOT NULL OR ts.user_id IS DISTINCT FROM ps.player_id');
   });
+  it('distinguishes bounded formation retries from zero-attempt starvation through real matcher countercases', () => {
+    expect(HARNESS).toContain('IF lc.pass_starved(r) THEN');
+    expect(HARNESS).toContain("x ->> 'reason' = 'formation_contended'");
+    expect(HARNESS).toContain("x ->> 'sqlstate' IN ('55P03', '40P01', '40001')");
+    expect(HARNESS).toContain('SLOW_FIRST_PLAN response=% attempts=%');
+    expect(HARNESS).toContain('RETRY_BUDGET response=% attempts=%');
+    expect(HARNESS).toContain('ROLLBACK;\nBUDGET_CASES');
+    expect(HARNESS).toContain('zero-attempt starvation still fails');
+  });
   it('only retryable error classes are tolerated, and they are reported', () => {
     expect(HARNESS).toContain("p_allowed_states text[] DEFAULT ARRAY['40P01', '55P03', '40001']");
   });

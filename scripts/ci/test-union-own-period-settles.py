@@ -24,6 +24,7 @@ import json
 import os
 import pathlib
 import re
+import runpy
 import shutil
 import subprocess
 import tempfile
@@ -211,7 +212,8 @@ try:
     command(as_owner + [pg / 'initdb', '-D', cluster / 'data', '-U', 'postgres', '--auth-local=trust',
                         '--auth-host=reject', '--no-locale', '--encoding=UTF8'])
     command(as_owner + [pg / 'pg_ctl', '-D', cluster / 'data', '-l', cluster / 'server.log', '-o',
-                        f"-k {sock} -p {PORT} -c listen_addresses='' -c shared_buffers=16MB -c max_connections=10",
+                        f"-k {sock} -p {PORT} -c listen_addresses='' -c shared_buffers=16MB -c max_connections=10 "
+                        "-c shared_preload_libraries=pg_cron -c cron.database_name=postgres -c cron.launch_active_jobs=off",
                         '-w', 'start'])
     run(SCHEMA)
 
@@ -274,6 +276,7 @@ try:
     check('migration-refuses-a-second-run',
           replay.returncode != 0 and 'is not the pinned text' in replay.stderr, replay.stderr[-300:])
     check('second-run-left-the-postimage', md5_of(CASCADE_SIG) == POST_CASCADE_MD5)
+    runpy.run_path(str(FIXTURES / 'weekly-close-admission.py'))['exercise'](run, check, one, FIXTURES)
 finally:
     if (cluster / 'data' / 'postmaster.pid').exists():
         command(as_owner + [pg / 'pg_ctl', '-D', cluster / 'data', '-m', 'fast', '-w', 'stop'])

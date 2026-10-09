@@ -138,7 +138,7 @@ describe('P10.3 Phase 7 keeps tournament objective ownership', () => {
         generation: 1,
         state: 'usable',
         reason: 'admitted',
-        continuationVersion: 'plo4-policy-round3-v1',
+        continuationVersion: 'plo4-policy-round3-v2',
         approvalGeneration: 1,
         authorityKey: 'k',
         evidenceSha256: null,

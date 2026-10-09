@@ -1,0 +1,56 @@
+{
+  "promoted": false,
+  "reasons": [
+    "mtt:missing_or_duplicate_seed",
+    "sng:missing_or_duplicate_seed",
+    "spin:missing_or_duplicate_seed",
+    "satellite:missing_or_duplicate_seed",
+    "pko:missing_or_duplicate_seed",
+    "mystery:missing_or_duplicate_seed",
+    "incomplete_run_matrix"
+  ],
+  "buckets": [
+    {
+      "objective": "mtt",
+      "pairs": 0,
+      "meanDifference": 0,
+      "standardError": 0,
+      "confidence99": [-1, 1]
+    },
+    {
+      "objective": "sng",
+      "pairs": 0,
+      "meanDifference": 0,
+      "standardError": 0,
+      "confidence99": [-1, 1]
+    },
+    {
+      "objective": "spin",
+      "pairs": 1024,
+      "meanDifference": 0.0107421875,
+      "standardError": 0.003506719970824296,
+      "confidence99": [0.0016597827755650742, 0.019824592224434924]
+    },
+    {
+      "objective": "satellite",
+      "pairs": 0,
+      "meanDifference": 0,
+      "standardError": 0,
+      "confidence99": [-1, 1]
+    },
+    {
+      "objective": "pko",
+      "pairs": 0,
+      "meanDifference": 0,
+      "standardError": 0,
+      "confidence99": [-1, 1]
+    },
+    {
+      "objective": "mystery",
+      "pairs": 0,
+      "meanDifference": 0,
+      "standardError": 0,
+      "confidence99": [-1, 1]
+    }
+  ]
+}

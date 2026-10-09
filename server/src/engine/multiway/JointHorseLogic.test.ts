@@ -199,7 +199,7 @@ describe('Phase13 actual HorseLogic integration', () => {
           expect(saveFastRandom()).toBe(rng);
           const model = shadow.jointPolicy?.actionModel;
           expect(model?.version, JSON.stringify(shadow.jointPolicy?.reason)).toBe(
-            'joint-action-response-round2-v1'
+            'joint-action-response-round3-v1'
           );
           expect(model?.responseModel).toBe('bounded_raise_tree');
           for (const c of model!.candidates) {

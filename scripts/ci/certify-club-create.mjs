@@ -3,6 +3,7 @@
 import { createClient } from '@supabase/supabase-js';
 import {
   cleanupProductionE2EAccount,
+  cleanupStaleProductionE2EAccounts,
   retireCertificationClubWithRetry,
 } from './production-e2e-account.mjs';
 import { retryTransient } from './transient-retry.mjs';
@@ -1086,6 +1087,30 @@ try {
     } catch (error) {
       cleanupFailures.push(error);
     }
+  }
+  /*
+   * A FIXTURE ANOTHER RUN LEFT BEHIND IS RETIRED BY THE NEXT RUN (2026-10-08).
+   *
+   * The UI lane's reserved accounts (ca-customization-cert-postdeploy-<n>-...)
+   * own the Create Club fixtures its Playwright step makes, and when that run's
+   * own `retire-create-clubs` step fails the fixture stays: nothing else ever
+   * looked for one. cleanupResidualDirectCertificates above only matches the
+   * `-direct-` accounts, and cleanupStaleProductionE2EAccounts - built for
+   * exactly these, with a cutoff sized past every lane's job ceiling - had no
+   * caller. Production 2026-10-08: four fixtures from 06:18Z the day before
+   * onward, each with nine live cash tables, a Spin and Sit & Go board and a
+   * daily MTT schedule, sat on the live board (one MTT 20 hours past its
+   * start), against Dan's four-clubs rule.
+   *
+   * Run here, in the always-run cleanup, so a residue it cannot retire is a
+   * loud cleanup failure of this run and never a reason to skip certifying.
+   */
+  try {
+    await cleanupStaleProductionE2EAccounts({ environment: process.env });
+  } catch (error) {
+    cleanupFailures.push(
+      new Error(`Stale Create Club Fixture Recovery Failed: ${error?.message || error}`)
+    );
   }
   if (cleanupFailures.length) {
     throw new AggregateError(cleanupFailures, 'Club Create Certification Cleanup Was Incomplete.');

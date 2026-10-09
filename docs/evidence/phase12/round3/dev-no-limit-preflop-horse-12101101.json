@@ -1,0 +1,100 @@
+{
+  "short_deck": {
+    "population": "horse-population (HorseLogic, production styles)",
+    "seeds": [12101101],
+    "pairs": 38880,
+    "candidate": {
+      "meanBbPer100": -22.031,
+      "confidence99BbPer100": [-42.64, -1.422]
+    },
+    "reference": {
+      "meanBbPer100": -22.444,
+      "confidence99BbPer100": [-42.772, -2.116]
+    },
+    "pairedDifference": {
+      "meanBbPer100": 0.413,
+      "confidence99BbPer100": [-2.982, 3.808]
+    },
+    "profiles": {
+      "p12c-short_deck-6max-100bb": {
+        "pairs": 6480,
+        "candidateBbPer100": -19.674,
+        "referenceBbPer100": -18.934
+      },
+      "p12c-short_deck-6max-200bb": {
+        "pairs": 6480,
+        "candidateBbPer100": -29.762,
+        "referenceBbPer100": -28.193
+      },
+      "p12c-short_deck-6max-2dealt-100bb": {
+        "pairs": 6480,
+        "candidateBbPer100": -9.792,
+        "referenceBbPer100": -12.704
+      },
+      "p12c-short_deck-6max-40bb": {
+        "pairs": 6480,
+        "candidateBbPer100": -28.038,
+        "referenceBbPer100": -28.375
+      },
+      "p12c-short_deck-6max-4dealt-100bb": {
+        "pairs": 6480,
+        "candidateBbPer100": -41.239,
+        "referenceBbPer100": -42.807
+      },
+      "p12c-short_deck-9max-100bb": {
+        "pairs": 6480,
+        "candidateBbPer100": -3.682,
+        "referenceBbPer100": -3.651
+      }
+    }
+  },
+  "pineapple": {
+    "population": "horse-population (HorseLogic, production styles)",
+    "seeds": [12101101],
+    "pairs": 38880,
+    "candidate": {
+      "meanBbPer100": -9.446,
+      "confidence99BbPer100": [-34.334, 15.442]
+    },
+    "reference": {
+      "meanBbPer100": -13.277,
+      "confidence99BbPer100": [-37.724, 11.169]
+    },
+    "pairedDifference": {
+      "meanBbPer100": 3.831,
+      "confidence99BbPer100": [-1.031, 8.693]
+    },
+    "profiles": {
+      "p12c-pineapple-6max-100bb": {
+        "pairs": 6480,
+        "candidateBbPer100": -10.779,
+        "referenceBbPer100": -12.468
+      },
+      "p12c-pineapple-6max-200bb": {
+        "pairs": 6480,
+        "candidateBbPer100": -29.06,
+        "referenceBbPer100": -31.434
+      },
+      "p12c-pineapple-6max-2dealt-100bb": {
+        "pairs": 6480,
+        "candidateBbPer100": -7.026,
+        "referenceBbPer100": -18.985
+      },
+      "p12c-pineapple-6max-40bb": {
+        "pairs": 6480,
+        "candidateBbPer100": 2.72,
+        "referenceBbPer100": 0.976
+      },
+      "p12c-pineapple-6max-4dealt-100bb": {
+        "pairs": 6480,
+        "candidateBbPer100": -35.921,
+        "referenceBbPer100": -40.642
+      },
+      "p12c-pineapple-9max-100bb": {
+        "pairs": 6480,
+        "candidateBbPer100": 23.39,
+        "referenceBbPer100": 22.889
+      }
+    }
+  }
+}

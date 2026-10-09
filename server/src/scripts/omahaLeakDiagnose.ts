@@ -21,12 +21,18 @@ process.env.EQUITY_GOVERNOR = 'off';
 process.env.SUPABASE_URL = 'https://supabase.invalid';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'horse-brain-development-offline-placeholder';
 const { HorseLogic } = await import('../engine/HorseLogic.js');
-const { playPlo4PolicyHand, plo4LeagueSeating, plo4StrengthLeagueProfile } =
-  await import('../benchmark/Plo4PolicyLeague.js');
+const {
+  playPlo4PolicyHand,
+  plo4LeagueSeating,
+  plo4StrengthLeagueProfile,
+  withHumanCalibratedOpponents,
+} = await import('../benchmark/Plo4PolicyLeague.js');
 const { omahaVariantStrengthLeagueProfile } =
   await import('../benchmark/OmahaVariantStrengthLeague.js');
 const { isOmahaVariantHoldoutSeed } = await import('../benchmark/OmahaVariantStrengthContract.js');
 const { isPlo4HoldoutSeed } = await import('../benchmark/Plo4StrengthContract.js');
+const { HUMAN_CALIBRATED_HOLDOUT_SEEDS } =
+  await import('../benchmark/HumanCalibratedPopulation.js');
 
 const arg = (name: string, fallback?: string) => {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
@@ -42,10 +48,19 @@ const pairs = Number(arg('pairs', '1000'));
 const out = arg('out');
 if (isOmahaVariantHoldoutSeed(seed) || isPlo4HoldoutSeed(seed))
   throw new Error('development diagnosis never runs a held-out seed');
-const profile =
+const population = arg('population', 'horse');
+if (population !== 'horse' && population !== 'human')
+  throw new Error('--population is horse or human');
+if ((HUMAN_CALIBRATED_HOLDOUT_SEEDS as readonly number[]).includes(seed))
+  throw new Error('development diagnosis never runs a human-calibrated held-out seed');
+const contractProfile =
   variant === 'plo4'
     ? plo4StrengthLeagueProfile(profileId)
     : omahaVariantStrengthLeagueProfile(variant as 'plo5', profileId);
+// The WIN-POP human-calibrated table (docs/horse-brain-winning-contract-2026-10-08.md):
+// a development measurement here; qualifying runs use that contract's own seeds.
+const profile =
+  population === 'human' ? withHumanCalibratedOpponents(contractProfile) : contractProfile;
 const BB = 2;
 
 interface Captured {
@@ -149,6 +164,7 @@ writeFileSync(
   JSON.stringify({
     variant,
     profileId,
+    population,
     seed,
     from,
     pairs,
@@ -160,6 +176,6 @@ writeFileSync(
   })
 );
 console.log(
-  `${variant} ${profileId} seed=${seed} from=${from} pairs=${n} bb/100=${(mean * 100).toFixed(2)} +-${((2.5758 * sd * 100) / Math.sqrt(n)).toFixed(2)} illegal_candidates=${illegalCandidates} ms=${Date.now() - started}`
+  `${variant} ${profileId} ${population} seed=${seed} from=${from} pairs=${n} bb/100=${(mean * 100).toFixed(2)} +-${((2.5758 * sd * 100) / Math.sqrt(n)).toFixed(2)} illegal_candidates=${illegalCandidates} ms=${Date.now() - started}`
 );
 process.exit(0);

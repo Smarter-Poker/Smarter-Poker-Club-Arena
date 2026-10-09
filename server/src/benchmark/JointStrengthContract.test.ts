@@ -189,8 +189,12 @@ describe('P13.2 joint strength contract object', () => {
   });
 
   it('pins the contract digest, so a silent contract edit fails CI (Phase 10 audit F9)', () => {
+    // Round 3 (October 8, 2026): only the candidate response pack identity
+    // moved, to joint-action-response-round3-v1; the population, rake model,
+    // profiles, held-out seeds, matrix and thresholds are unchanged. The
+    // October 6 matrices measured a036e702e7659334a2c531f8bf90fb5e3a852686028fad47f182e486b57bb754.
     expect(jointStrengthContractDigest()).toBe(
-      'a036e702e7659334a2c531f8bf90fb5e3a852686028fad47f182e486b57bb754'
+      '1d0dd99be2fedd7ec50e502cf4241611818dd30aec794714808888616dc5dd96'
     );
   });
 
@@ -220,7 +224,7 @@ describe('P13.2 joint strength contract object', () => {
     (v) => {
       const pack = jointStrengthPack(v);
       expect(pack.candidate).toMatchObject({
-        packVersion: 'joint-action-response-round2-v1',
+        packVersion: 'joint-action-response-round3-v1',
         domainVersion: 'joint-multiway-round1-v4',
         rangePackVersion: 'joint-public-range-round1-v1',
         comparisonResponseVersion: 'joint-action-response-round1-v2',

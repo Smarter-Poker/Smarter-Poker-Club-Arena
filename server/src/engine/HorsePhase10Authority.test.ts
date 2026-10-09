@@ -63,14 +63,53 @@ function expectedKey(identity: Record<string, unknown>): string {
   return createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
 }
 
-describe('P10.3 null proof: no Phase 10 authority is selected today', () => {
-  it('the committed release selection is null and the running digest is the P10.2 contract digest', () => {
-    expect(PHASE10_PROTECTED_RELEASE_SELECTION).toBeNull();
+describe('P10.3 committed selection: the round-3 PLO4 pack, qualified on condition (a)', () => {
+  const committed = PHASE10_PROTECTED_RELEASE_SELECTION;
+
+  it('the committed selection names the c8bfc617 matrix and the running digest is the P10.2 contract digest', () => {
+    expect(committed).not.toBeNull();
+    expect(Object.isFrozen(committed)).toBe(true);
+    expect(committed).toMatchObject({
+      schema: 'horse-qualified-authority-selection-v1',
+      phase: 'phase10',
+      sourceSha: 'c8bfc6171ddfabdfa8d8ca55f4e13fc7e2466400',
+      packVersion: PLO4_POLICY_PACK.version,
+      contractDigest: PHASE10_RUNNING_CONTRACT_DIGEST,
+      domain: HORSE_PHASE10_DOMAIN,
+      qualificationPath: 'docs/evidence/phase10/phase10-qualification-2026-10-09.json',
+      approvalGeneration: 1,
+      expiresAt: null,
+      withdrawn: null,
+    });
     expect(PHASE10_RUNNING_CONTRACT_DIGEST).toBe(plo4StrengthContractDigest());
     expect(PHASE10_RUNNING_CONTRACT_DIGEST).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('the running code admits it: the committed file qualifies for this digest, source and policy', () => {
     const release = admitHorsePhase10ReleaseAuthority();
-    expect(release).toEqual({ status: 'refused', reason: 'unselected', transient: false });
-    expect(selectedHorsePhase10Authority(release)).toBeNull();
+    expect(release.status).toBe('admitted');
+    expect(selectedHorsePhase10Authority(release)).toMatchObject({
+      phase: 'phase10',
+      sourceSha: committed!.sourceSha,
+      continuationVersion: PLO4_POLICY_PACK.version,
+      policyDigest: horsePhase10PolicyDigest(),
+      domain: HORSE_PHASE10_DOMAIN,
+      evidencePath: committed!.qualificationPath,
+      evidenceSha256: committed!.qualificationSha256,
+      approvalGeneration: 1,
+    });
+    const file = JSON.parse(
+      readFileSync(
+        fileURLToPath(new URL(`../../../${committed!.qualificationPath}`, import.meta.url)),
+        'utf8'
+      )
+    ) as Record<string, unknown>;
+    expect(file).toMatchObject({
+      qualified: true,
+      mode: 'contract',
+      policyDigest: horsePhase10PolicyDigest(),
+      policyDigestDefinition: HORSE_PHASE10_POLICY_DIGEST_DEFINITION,
+    });
   });
 
   it('the running code refuses a well-formed qualified selection made under another contract', () => {
@@ -97,28 +136,41 @@ describe('P10.3 null proof: no Phase 10 authority is selected today', () => {
     expect(unwired).toMatchObject({ status: 'refused', reason: 'contract_unavailable' });
   });
 
-  it('the live main-scheduler gate is unselected and accepts no receipt', () => {
+  it('the live main-scheduler gate is usable under the committed selection', () => {
     liveHorsePhase10Authority.refresh();
-    expect(liveHorsePhase10Authority.mainState()).toBe('unselected');
-    const worker = new HorseQualifiedAuthorityHolder('p103-null-worker', PLO4_POLICY_PACK.version);
-    worker.apply(qualifiedPhase10TestAdmission(1));
-    liveHorsePhase10Authority.observeWorker(worker.receipt());
-    expect(liveHorsePhase10Authority.check(liveHorsePhase10Authority.stamp(worker.receipt()))).toBe(
-      'unselected'
-    );
-    liveHorsePhase10Authority.forgetWorker(worker.epoch);
+    expect(liveHorsePhase10Authority.mainState()).toBe('usable');
   });
 
-  it('while the selection is null, no committed Phase 10 qualification file says qualified:true', () => {
-    expect(PHASE10_PROTECTED_RELEASE_SELECTION).toBeNull();
+  it('withdrawal is a committed record: the same selection with withdrawn set is a withdrawal, never a selection', () => {
+    const withdrawn = {
+      ...committed!,
+      withdrawn: { at: '2026-10-10T00:00:00.000Z', reason: 'condition_b_lost_after_rake' },
+    };
+    const release = admitHorsePhase10ReleaseAuthority(Date.now(), withdrawn);
+    expect(release).toEqual({
+      status: 'withdrawn',
+      approvalGeneration: 1,
+      reason: 'release_condition_b_lost_after_rake',
+    });
+    expect(selectedHorsePhase10Authority(release)).toBeNull();
+    const gate = new HorsePhase8AuthorityGate(
+      () => admitHorsePhase10ReleaseAuthority(Date.now(), withdrawn),
+      undefined,
+      PLO4_POLICY_PACK.version
+    );
+    gate.refresh();
+    expect(gate.mainState()).toBe('withdrawn');
+  });
+
+  it('the only committed Phase 10 qualification file that says qualified:true is the selected one', () => {
     const dir = fileURLToPath(new URL('../../../docs/evidence/phase10/', import.meta.url));
     const files = existsSync(dir)
       ? readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.json'))
       : [];
     for (const file of files) {
       const parsed = JSON.parse(readFileSync(`${dir}${file}`, 'utf8')) as Record<string, unknown>;
-      if (parsed.schema === 'horse-phase10-qualification-v1')
-        expect(parsed.qualified, file).not.toBe(true);
+      if (parsed.schema === 'horse-phase10-qualification-v1' && parsed.qualified === true)
+        expect(`docs/evidence/phase10/${file}`).toBe(committed!.qualificationPath);
     }
   });
 });

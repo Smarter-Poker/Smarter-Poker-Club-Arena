@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LeaderboardSettings } from '../../src/services/LeaderboardService';
@@ -76,6 +76,41 @@ describe('LeaderboardPrizeWizard', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });
+
+  it.each(['success', 'refusal'] as const)(
+    'retires a pending publication on unmount: %s',
+    async (outcome) => {
+      const user = userEvent.setup();
+      const onSaved = vi.fn();
+      const onSaveError = vi.fn();
+      let resolve!: (value: LeaderboardSettings) => void;
+      let reject!: (error: Error) => void;
+      saveLeaderboardRewardSetup.mockReturnValue(
+        new Promise<LeaderboardSettings>((yes, no) => {
+          resolve = yes;
+          reject = no;
+        })
+      );
+      const view = render(
+        <LeaderboardPrizeWizard
+          isOpen
+          setup={setup}
+          onClose={vi.fn()}
+          onSaved={onSaved}
+          onSaveError={onSaveError}
+        />
+      );
+      await publishDefaultPlan(user);
+      view.unmount();
+      await act(async () => {
+        if (outcome === 'success') resolve({ ...setup, program_version: 1 });
+        else reject(new Error('Network Timeout'));
+      });
+      expect(saveLeaderboardRewardSetup).toHaveBeenCalledTimes(1);
+      expect(onSaved).not.toHaveBeenCalled();
+      expect(onSaveError).not.toHaveBeenCalled();
+    }
+  );
 
   it('portals the modal above persistent shell navigation instead of trapping it in the page layer', () => {
     const { container } = render(
@@ -352,6 +387,42 @@ describe('LeaderboardPrizeWizard', () => {
       expect(screen.getByText('Uncommitted After This Club')).toBeInTheDocument();
       expect(screen.queryByText('Uncommitted After Publication')).not.toBeInTheDocument();
     }
+
+    it.each(['read', 'write'] as const)(
+      'retires remaining template publications after unmount during %s',
+      async (stage) => {
+        const user = userEvent.setup();
+        const onSaved = vi.fn();
+        let resolve!: (value: LeaderboardSettings) => void;
+        const pending = new Promise<LeaderboardSettings>((yes) => {
+          resolve = yes;
+        });
+        if (stage === 'read') getLeaderboardRewardSetup.mockReturnValueOnce(pending);
+        else
+          saveLeaderboardRewardSetup
+            .mockImplementationOnce(async () => ({ ...setup, program_version: 1 }))
+            .mockReturnValueOnce(pending);
+        const view = render(
+          <LeaderboardPrizeWizard
+            isOpen
+            setup={setup}
+            onClose={vi.fn()}
+            onSaved={onSaved}
+            templateClubs={templateClubs}
+          />
+        );
+        await reviewWithTemplate(user);
+        await user.click(screen.getByRole('button', { name: 'Publish Prize Program' }));
+        await waitFor(() => expect(getLeaderboardRewardSetup).toHaveBeenCalledWith('club-2'));
+        if (stage === 'write')
+          await waitFor(() => expect(saveLeaderboardRewardSetup).toHaveBeenCalledTimes(2));
+        view.unmount();
+        await act(async () => resolve({ ...setup, club_id: 'club-2', program_version: 5 }));
+        expect(getLeaderboardRewardSetup).toHaveBeenCalledTimes(1);
+        expect(saveLeaderboardRewardSetup).toHaveBeenCalledTimes(stage === 'read' ? 1 : 2);
+        expect(onSaved).not.toHaveBeenCalled();
+      }
+    );
 
     it("publishes the same plan to each chosen union club as that club's own next version", async () => {
       const user = userEvent.setup();

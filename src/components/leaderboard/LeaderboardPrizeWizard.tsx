@@ -224,6 +224,8 @@ export function LeaderboardPrizeWizard({
     wholeChips(totalPrizePlan(setup.monthly_prizes))
   );
   const [saving, setSaving] = useState(false);
+  // Leaving this editor retires UI work, never the already submitted transaction.
+  const lifecycleRef = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const [templateTargets, setTemplateTargets] = useState<string[]>([]);
   const [templateResults, setTemplateResults] = useState<LeaderboardTemplateResult[] | null>(null);
@@ -233,6 +235,7 @@ export function LeaderboardPrizeWizard({
   const showingResults = templateResults !== null;
 
   useEffect(() => {
+    lifecycleRef.current += 1;
     if (!isOpen) return;
     const suggested = suggestedPrizeBudgets(setup.available_balance);
     const initialKey = setup.setup_complete ? setup.suggestion_key : 'balanced';
@@ -257,6 +260,9 @@ export function LeaderboardPrizeWizard({
     setTemplateTargets([]);
     setTemplateResults(null);
     setPublishedSetup(null);
+    return () => {
+      lifecycleRef.current += 1;
+    };
   }, [isOpen, setup]);
 
   // Once the edited club is published, leaving the dialog by any route hands
@@ -383,11 +389,14 @@ export function LeaderboardPrizeWizard({
      authority on funding, version and permission; a refusal is reported, not
      retried here. */
   const publishToTemplateClub = async (
-    club: LeaderboardTemplateClub
-  ): Promise<LeaderboardTemplateResult> => {
+    club: LeaderboardTemplateClub,
+    isCurrent: () => boolean
+  ): Promise<LeaderboardTemplateResult | null> => {
     const target = { club_id: club.club_id, club_name: club.club_name };
     try {
+      if (!isCurrent()) return null;
       const current = await LeaderboardService.getLeaderboardRewardSetup(club.club_id);
+      if (!isCurrent()) return null;
       if (!current.can_manage) {
         return { ...target, ok: false, message: 'You No Longer Manage Prizes For This Club.' };
       }
@@ -398,8 +407,10 @@ export function LeaderboardPrizeWizard({
         ...planPayload(),
         program_version: current.program_version,
       });
+      if (!isCurrent()) return null;
       return { ...target, ok: true, message: `Program V${saved.program_version} Published.` };
     } catch (targetError) {
+      if (!isCurrent()) return null;
       const failure =
         targetError instanceof Error ? targetError : new Error('Prize Setup Could Not Be Saved');
       return {
@@ -413,17 +424,23 @@ export function LeaderboardPrizeWizard({
   /* One club at a time, in the owner's order: each publication claims union
      wallet capacity, so the next club is checked against what is left. */
   const publishToTemplateClubs = async (
-    clubs: LeaderboardTemplateClub[]
+    clubs: LeaderboardTemplateClub[],
+    isCurrent: () => boolean
   ): Promise<LeaderboardTemplateResult[]> => {
     const results: LeaderboardTemplateResult[] = [];
     for (const club of clubs) {
-      results.push(await publishToTemplateClub(club));
+      if (!isCurrent()) break;
+      const result = await publishToTemplateClub(club, isCurrent);
+      if (!result) break;
+      results.push(result);
     }
     return results;
   };
 
   const save = async () => {
     if (saving || (enabled && (!hasPrizes || exceedsAvailable))) return;
+    const lifecycle = lifecycleRef.current;
+    const isCurrent = () => lifecycleRef.current === lifecycle;
     setSaving(true);
     setError(null);
     let saved: LeaderboardSettings;
@@ -433,6 +450,7 @@ export function LeaderboardPrizeWizard({
         program_version: setup.program_version,
       });
     } catch (saveError) {
+      if (!isCurrent()) return;
       const failure =
         saveError instanceof Error ? saveError : new Error('Prize Setup Could Not Be Saved');
       setError(describeSaveError(failure, setup.funding_label));
@@ -441,13 +459,15 @@ export function LeaderboardPrizeWizard({
       return;
     }
 
+    if (!isCurrent()) return;
     const targets = templateClubs.filter((club) => templateTargets.includes(club.club_id));
     if (targets.length === 0) {
       setSaving(false);
       onSaved(saved);
       return;
     }
-    const results = await publishToTemplateClubs(targets);
+    const results = await publishToTemplateClubs(targets, isCurrent);
+    if (!isCurrent()) return;
     setSaving(false);
     if (results.every((result) => result.ok)) {
       onSaved(saved, results);
@@ -459,8 +479,14 @@ export function LeaderboardPrizeWizard({
 
   const retryRefused = async () => {
     if (saving || !templateResults) return;
+    const lifecycle = lifecycleRef.current;
+    const isCurrent = () => lifecycleRef.current === lifecycle;
     setSaving(true);
-    const retried = await publishToTemplateClubs(templateResults.filter((result) => !result.ok));
+    const retried = await publishToTemplateClubs(
+      templateResults.filter((result) => !result.ok),
+      isCurrent
+    );
+    if (!isCurrent()) return;
     const byClub = new Map(retried.map((result) => [result.club_id, result]));
     setTemplateResults(templateResults.map((result) => byClub.get(result.club_id) ?? result));
     setSaving(false);

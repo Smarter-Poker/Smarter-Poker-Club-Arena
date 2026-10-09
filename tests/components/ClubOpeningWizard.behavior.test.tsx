@@ -107,6 +107,35 @@ beforeEach(() => {
 });
 
 describe('no silent chip movement', () => {
+  it.each(['success', 'refusal'] as const)(
+    'retires a pending opening submission on unmount: %s',
+    async (outcome) => {
+      let resolve!: (value: ReturnType<typeof okReceipt>) => void;
+      let reject!: (error: Error) => void;
+      mocks.rpc.mockReturnValue(
+        new Promise<ReturnType<typeof okReceipt>>((yes, no) => {
+          resolve = yes;
+          reject = no;
+        })
+      );
+      const view = mount();
+      walkToReview();
+      next();
+      expect(mocks.rpc).toHaveBeenCalledTimes(1);
+      const operationId = mocks.rpc.mock.calls[0][1].p_operation_id;
+      view.unmount();
+      await act(async () => {
+        if (outcome === 'success') resolve(okReceipt(operationId));
+        else reject(new Error('Network Timeout'));
+      });
+      expect(mocks.rpc).toHaveBeenCalledTimes(1);
+      expect(onComplete).not.toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
+      expect(mocks.toast.success).not.toHaveBeenCalled();
+      expect(mocks.toast.error).not.toHaveBeenCalled();
+    }
+  );
+
   it('reuses package-funded BBJ and Spins without a second debit or invalid Not Now path', async () => {
     mocks.rpc.mockImplementation((_name: string, args: { p_operation_id: string }) =>
       Promise.resolve(okReceipt(args.p_operation_id, { club_bank_after: 99700 }))

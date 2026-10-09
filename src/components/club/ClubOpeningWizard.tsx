@@ -169,6 +169,14 @@ export default function ClubOpeningWizard({
   /* In-flight protection that does not wait for a render: a double tap on the
      painted plate lands before `saving` has re-rendered it disabled. */
   const savingRef = useRef(false);
+  // An old receipt cannot update the next club after this wizard has left.
+  const lifecycleRef = useRef(0);
+  useEffect(() => {
+    lifecycleRef.current += 1;
+    return () => {
+      lifecycleRef.current += 1;
+    };
+  }, [clubId]);
   /* ONE KEY PER SUBMISSION, HELD ACROSS RETRIES. The key used to be minted
      inside the service on every call, so a setup that committed while its
      response was lost could not be told apart from somebody else's earlier
@@ -362,8 +370,11 @@ export default function ClubOpeningWizard({
     const operationId = requestKeyRef.current.key;
     savingRef.current = true;
     setSaving(true);
+    const lifecycle = lifecycleRef.current;
+    const isCurrent = () => lifecycleRef.current === lifecycle;
     try {
       const result = await clubOpeningSetupService.complete(input, operationId);
+      if (!isCurrent()) return;
       requestKeyRef.current = null;
       if (result.already_completed && result.operation_id !== operationId) {
         /* A DIFFERENT, EARLIER SETUP OWNS THIS CLUB. Nothing typed here was
@@ -375,6 +386,7 @@ export default function ClubOpeningWizard({
         } catch (readError) {
           reportError(readError, 'ClubOpeningWizard.appliedState');
         }
+        if (!isCurrent()) return;
         if (applied) {
           toast.info(
             'Opening Setup Was Already Completed For This Club. Your New Answers Were Not Applied'
@@ -403,13 +415,16 @@ export default function ClubOpeningWizard({
       });
     } catch (error) {
       reportError(error, 'ClubOpeningWizard.complete');
+      if (!isCurrent()) return;
       if (isDefinitiveOpeningSetupRefusal(error)) requestKeyRef.current = null;
       toast.error(
         error instanceof Error ? error.message : 'Club Opening Setup Could Not Be Completed'
       );
     } finally {
-      savingRef.current = false;
-      setSaving(false);
+      if (isCurrent()) {
+        savingRef.current = false;
+        setSaving(false);
+      }
     }
   };
 

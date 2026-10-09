@@ -350,6 +350,20 @@ const DEFINITIONS: OperationDefinition[] = [
     access: 'control',
   },
   {
+    /* LIGHTNING PHASE 12 (2026-10-09): the operator dashboard for every
+       Lightning-capable Cluster of the club (mode, thresholds, pool health,
+       holds, blind ledger, stack reconcile, candidate matcher, integrity
+       signals, alerts and latency). Control access: the doors are gated in
+       the database on fn_ca_can_review_integrity, which admits the owner,
+       co-owner and admin, the same three roles 'control' names. */
+    id: 'lightning',
+    label: 'Lightning',
+    description: 'Lightning Clusters, Conversion, Pool Health, And Integrity',
+    suffix: 'lightning',
+    group: 'control',
+    access: 'control',
+  },
+  {
     id: 'rules',
     label: 'Club Rules',
     description: 'Publish The Rules Players See Before They Join',
@@ -469,6 +483,7 @@ const OPERATION_SUFFIXES = new Set([
   'insurance-report',
   'bomb-pot-report',
   'table-management',
+  'lightning',
   'announcements',
   'promotions',
   'promo-vault',
@@ -495,6 +510,7 @@ const CONTROL_SUFFIXES = new Set([
   'bomb-pot-report',
   'table-management',
   'anti-cheat',
+  'lightning',
 ]);
 
 // These routes combine a member-facing read/buy experience with controls that

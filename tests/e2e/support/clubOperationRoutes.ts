@@ -91,6 +91,7 @@ export const ADMIN_CLUB_OPERATION_ROUTES = [
     suffix: 'table-management',
     marker: 'Table Management',
   },
+  { id: 'lightning', label: 'Lightning', suffix: 'lightning', marker: 'Lightning' },
   { id: 'rules', label: 'Club Rules', suffix: 'rules', marker: 'Club Rules' },
   { id: 'settings', label: 'Settings', suffix: 'settings', marker: 'Share Club' },
 ] as const;

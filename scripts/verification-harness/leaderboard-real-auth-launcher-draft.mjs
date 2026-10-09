@@ -101,6 +101,99 @@ export function authSqlFailureDiagnostic(result) {
   const safeState = match && sqlStates.has(match[1]) ? match[1] : 'unknown';
   return `Isolated Auth SQL Failure: fixture=${safeStage}; sqlstate=${safeState}`;
 }
+export async function probeAuthServices(fetcher, pause) {
+  const names = ['auth', 'rest'];
+  const endpoints = ['http://leaderboard-auth:9999/health', 'http://leaderboard-rest:3000/'];
+  let observations;
+  for (let attempt = 0; attempt < 50; attempt++) {
+    observations = [];
+    // Preserve sequential request bounds; one failure never suppresses the other service.
+    for (const [i, service] of names.entries()) {
+      try {
+        const response = await fetcher(endpoints[i], { signal: AbortSignal.timeout(1000) });
+        observations.push({
+          service,
+          outcome: response.ok ? 'ok' : 'http',
+          status: response.status,
+        });
+      } catch (error) {
+        const code = error?.cause?.code;
+        const outcome =
+          error?.name === 'TimeoutError'
+            ? 'timeout'
+            : ['ECONNREFUSED', 'ECONNRESET'].includes(code)
+              ? 'connect'
+              : ['ENOTFOUND', 'EAI_AGAIN'].includes(code)
+                ? 'dns'
+                : 'unknown';
+        observations.push({ service, outcome, status: null });
+      }
+    }
+    if (observations.every((item) => item.outcome === 'ok')) return { ready: true, observations };
+    await pause(100);
+  }
+  return { ready: false, observations };
+}
+export function authHealthFailureDiagnostic(output) {
+  let value;
+  try {
+    value = JSON.parse(String(output).trim());
+  } catch {
+    return 'Isolated Auth Health: unknown';
+  }
+  if (
+    value?.ready !== false ||
+    !Array.isArray(value.observations) ||
+    value.observations.length !== 2
+  )
+    return 'Isolated Auth Health: unknown';
+  const states = value.observations.map((item, i) => {
+    if (
+      item?.service !== ['auth', 'rest'][i] ||
+      !['ok', 'http', 'timeout', 'connect', 'dns', 'unknown'].includes(item.outcome)
+    )
+      return null;
+    if (['ok', 'http'].includes(item.outcome)) {
+      if (!Number.isInteger(item.status) || item.status < 100 || item.status > 599) return null;
+    } else if (item.status !== null) return null;
+    return item.service + '=' + item.outcome + (item.status === null ? '' : '/' + item.status);
+  });
+  return states.every(Boolean)
+    ? 'Isolated Auth Health: ' + states.join('; ')
+    : 'Isolated Auth Health: unknown';
+}
+export function authContainerStateDiagnostic(service, output) {
+  if (!['auth', 'rest'].includes(service)) return 'Isolated Auth Container: unknown';
+  let value;
+  try {
+    value = JSON.parse(String(output).trim());
+  } catch {
+    return 'Isolated Auth Container: unknown';
+  }
+  if (
+    !['created', 'running', 'paused', 'restarting', 'removing', 'exited', 'dead'].includes(
+      value?.Status
+    ) ||
+    typeof value.Running !== 'boolean' ||
+    typeof value.OOMKilled !== 'boolean' ||
+    !Number.isInteger(value.ExitCode) ||
+    value.ExitCode < 0 ||
+    value.ExitCode > 255
+  )
+    return 'Isolated Auth Container: unknown';
+  return (
+    'Isolated Auth Container: ' +
+    service +
+    '=' +
+    value.Status +
+    '; running=' +
+    value.Running +
+    '; exit=' +
+    value.ExitCode +
+    '; oom=' +
+    value.OOMKilled
+  );
+}
 function stage(name) {
   assert.ok(phases.has(name));
   phase = name;
@@ -127,6 +220,7 @@ function command(args, input = '', timeout = 90000) {
   if (failed) {
     failureKind = failed;
     if (args.includes('psql')) console.error(authSqlFailureDiagnostic(result));
+    if (phase === 'service-health') console.error(authHealthFailureDiagnostic(result.stdout));
   }
   assert.equal(failed, null, 'Isolated Docker stage failed');
   return result.stdout.trim();
@@ -406,10 +500,33 @@ async function main() {
   stage('service-start');
   command(['start', authName, restName]);
   stage('service-health');
-  inline(
-    "for(let i=0;i<50;i++){try{let a=await fetch('http://leaderboard-auth:9999/health',{signal:AbortSignal.timeout(1000)}),b=await fetch('http://leaderboard-rest:3000/',{signal:AbortSignal.timeout(1000)});if(a.ok&&b.ok)process.exit(0);}catch{}await new Promise(r=>setTimeout(r,100));}process.exit(1);",
-    {}
-  );
+  try {
+    inline(
+      '(' +
+        probeAuthServices.toString() +
+        ')(globalThis.fetch, ms => new Promise(resolve => setTimeout(resolve, ms))).then(result => { console.log(JSON.stringify(result)); process.exit(result.ready ? 0 : 1); });',
+      {}
+    );
+  } catch (error) {
+    const originalFailureKind = failureKind;
+    for (const [service, name] of [
+      ['auth', authName],
+      ['rest', restName],
+    ]) {
+      try {
+        console.error(
+          authContainerStateDiagnostic(
+            service,
+            command(['inspect', '--format', '{{json .State}}', name], '', 15000)
+          )
+        );
+      } catch {
+        console.error('Isolated Auth Container: unknown');
+      }
+    }
+    failureKind = originalFailureKind;
+    throw error;
+  }
   stage('catalog-after-start');
   assert.equal(catalog(), expected);
   assert.deepEqual(versions(), cfg.authVersions);

@@ -168,8 +168,8 @@ BEGIN
           basis:=public.fn_leaderboard_complete_round_basis(new_club,'weekly',starts,
             CASE WHEN case_name='canonical_closed_window_refuses' THEN ends-1 ELSE ends END);
         EXCEPTION WHEN SQLSTATE '55000' OR SQLSTATE '22023' THEN
-          IF SQLERRM IS DISTINCT FROM CASE WHEN case_name='canonical_closed_window_refuses'
-             THEN 'LEADERBOARD_BASIS_WINDOW_INVALID' ELSE 'LEADERBOARD_CAPTURE_UNAVAILABLE' END THEN RAISE; END IF;
+          IF SQLERRM IS DISTINCT FROM (CASE WHEN case_name='canonical_closed_window_refuses'
+             THEN 'LEADERBOARD_BASIS_WINDOW_INVALID' ELSE 'LEADERBOARD_CAPTURE_UNAVAILABLE' END) THEN RAISE; END IF;
           rejected:=true;
         END;
         IF NOT rejected OR EXISTS(SELECT 1 FROM public.leaderboard_round_basis_receipts)

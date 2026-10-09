@@ -142,3 +142,13 @@ test('actual payout source proposal locks before replay and freezes positive fin
   assert.match(payout, /'seed_funded', v_existing\.seed_funded/);
   assert.doesNotMatch(payout, /UPDATE public\.leaderboard_round_basis_receipts|ON CONFLICT/);
 });
+
+test('PLpgSQL IF predicates parenthesize CASE values so their THEN is not the IF delimiter', () => {
+  assert.doesNotMatch(baseline, /<>\s+CASE WHEN/);
+  assert.equal(
+    baseline.match(/<> \(CASE WHEN expected_total=0 THEN 0 ELSE [12] END\)/g)?.length,
+    5
+  );
+  assert.match(regression, /IF SQLERRM IS DISTINCT FROM \(CASE WHEN/);
+  assert.match(regression, /ELSE 'LEADERBOARD_CAPTURE_UNAVAILABLE' END\) THEN RAISE/);
+});

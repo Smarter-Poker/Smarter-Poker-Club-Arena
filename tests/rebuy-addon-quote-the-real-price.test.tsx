@@ -181,6 +181,15 @@ describe('AddOnModal charges what it advertises', () => {
     timeRemaining: 60,
   };
 
+  it('prints the fee-inclusive cost once in the cost row', () => {
+    render(<AddOnModal {...base} walletBalance={5000} onAccept={vi.fn()} onDecline={vi.fn()} />);
+    const row = screen.getByText('Add-On Cost').closest('.addon-console__row');
+    expect(row?.textContent).toBe('Add-On Cost110 Chips');
+    expect(screen.queryByText(/House Fee/)).toBeNull();
+    expect(screen.queryByText(/Total Charged/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Accept For 110' })).toBeEnabled();
+  });
+
   it('gates on the fee-inclusive total', () => {
     render(<AddOnModal {...base} walletBalance={105} onAccept={vi.fn()} onDecline={vi.fn()} />);
     const accept = screen.getByRole('button', { name: /Accept For 110/ }) as HTMLButtonElement;

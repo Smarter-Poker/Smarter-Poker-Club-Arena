@@ -88,12 +88,6 @@
   min-width: 0;
   text-align: right;
 }
-.addon-console__row small {
-  grid-column: 1 / -1;
-  font-size: 2.5cqw;
-  color: #9aa5b3;
-  text-align: right;
-}
 .addon-console__row--cost {
   top: 46.5%;
 }

@@ -15,7 +15,7 @@ import './AddOnModal.css';
 import { haptic, soundService } from '../../services/SoundService';
 
 // Whole-number tournament money (Dan 2026-08-20).
-import { money, moneyExact } from '../../utils/buyIn';
+import { money } from '../../utils/buyIn';
 import DiamondsToChipsButton from '../games/DiamondsToChipsButton';
 import { TournamentPurchaseNotSubmittedError } from '../../services/TournamentPurchaseIntent';
 
@@ -257,10 +257,8 @@ export default function AddOnModal({
           <div className="addon-console__row addon-console__row--cost">
             <span>Add-On Cost</span>
             <strong>
-              <AddOnText>{`${moneyExact(addOnCost)} Chips`}</AddOnText>
+              <AddOnText>{`${money(totalCost)} Chips`}</AddOnText>
             </strong>
-            {addOnFee > 0 && <small>House Fee: {moneyExact(addOnFee)} Chips</small>}
-            <small>Total Charged: {money(totalCost)} Chips</small>
           </div>
           <div className="addon-console__row addon-console__row--chips">
             <span>Chips Received</span>

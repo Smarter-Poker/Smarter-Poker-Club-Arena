@@ -19,7 +19,9 @@ diagnostic_stage='precondition'
 owned_failure=false
 node_source_id=''
 node_source_attempted=false
-readonly node_image='node@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402'
+# Official Node 22 Bookworm Slim uses glibc, matching the Ubuntu PG image.
+# Alpine executables require a musl loader absent from the owning container.
+readonly node_image='node@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392'
 readonly node_source_name="$container-unknownack-node-$BASHPID"
 readonly isolated_node="/tmp/leaderboard-unknown-ack-node-$BASHPID"
 cleanup_node_source() {

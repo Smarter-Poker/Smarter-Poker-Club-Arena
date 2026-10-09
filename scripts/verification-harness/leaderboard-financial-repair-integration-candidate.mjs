@@ -44,7 +44,7 @@ const reviewed = Object.freeze({
   [compatibility]: 'a99e7349bc874a638e5b770ed476401afae7681c6486c94f16b3f35798f627c8',
   [openingFixture]: '40ec7d17deda73f27cad1706f44f212288d7781767eabb1c2d05258c3e622047',
   [workerFixture]: 'd5cb172e483c218aa9948617cb8e34e0ce1a58ee86bb0551d5afa9e5c927f0c6',
-  [historicalFixture]: '3761920b25d8e06f58dc6ff33a1aebe6fe0d4e96ece9afd8f9bd4b791c196154',
+  [historicalFixture]: '328041783ef2cc2f3683aa9d058f6b65484198559c9c90649d2d69015bca5313',
   [concurrencyFixture]: 'c2057bbbbb9b08c860ac82cf02e98171ff9188ab36694dcb672f1abd3f37ed41',
   [completeFixtureAdapter]: '7e8e9b3c7aa82b0633c1b8333aafe5e89262ca9a70cdeb38935e99d43e55b94f',
   [concurrencyAdapter]: '6a77e9fcda3ff48e82dcced76ca8c72be0417cd201b5d06b5ce50291d30bf173',

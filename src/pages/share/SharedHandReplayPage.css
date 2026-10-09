@@ -23,6 +23,23 @@
   color: #fff;
 }
 
+/* The clip camera is a 4:5 portrait frame. Keep the arena's real replayer at
+   its native page width and centre that one unchanged subject in the frame;
+   ordinary shared links retain the page flow above. */
+.shared-replay--clip {
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding-block: 16px;
+  display: grid;
+  align-items: center;
+}
+
+/* `HandReplay` normally fills a page-height parent. In the camera frame that
+   would stretch its black ground to 100%, defeating the centred composition. */
+.shared-replay--clip > .hand-replay {
+  min-height: 0;
+}
+
 .shared-replay--empty {
   max-width: 520px;
   padding-top: 48px;

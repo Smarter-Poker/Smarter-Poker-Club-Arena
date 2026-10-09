@@ -131,12 +131,43 @@ Against the human-calibrated tables both brains win after rake in several varian
 
 Dispatched on 2026-10-08 at 16:38Z for the merge commit `5adefba4ac868bf138bee41bda24ae4b1754e456` (#6520), one run per variant, through `.github/workflows/horse-phase13-strength-league.yml` with the unchanged contract above: NLH [37810344257](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810344257), Short Deck [37810347912](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810347912), FLH [37810351762](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810351762), Crazy Pineapple [37810355657](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810355657), PLO4 [37810359405](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810359405), PLO5 [37810363332](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810363332), PLO6 [37810367050](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810367050), PLO8 [37810370548](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810370548), FLO8 [37810374138](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810374138). The contract's hosted estimate is about 504 runner-hours for the nine variants (2.2 to 3 wall hours each at twenty concurrent jobs); the organization's shared runner pool was carrying 69 queued runs and the Phase 8 strength league at dispatch. A round-3 shard costs about 1.1 times a round-2 shard on the same machine (PLO8 three-board bomb, 100 development pairs: 37.3 s against 33.7 s), inside the 120-minute job limit. Each variant is assembled with `server/scripts/phase13-strength-assemble.mjs` on a clean checkout of `5adefba4` and recorded in a dated section appended here, favorable or not. Whatever condition (a) returns, no variant is selected while condition (b) is unavailable external input.
 
+## 7. Held-Out Matrix Results (October 9, 2026)
+
+Assembled with `server/scripts/phase13-strength-assemble.mjs` (real contract, no `--development`) on a clean detached checkout of `5adefba4ac868bf138bee41bda24ae4b1754e456`, from every attempt `gh run download` returned. Output dated 2026-10-08, the dispatch date. Cash after the published rake, horse population, paired candidate minus reference, equal weight per profile, 99% interval. Condition (b) is unavailable external input for every variant (section 5 and `docs/horse-brain-winning-contract-2026-10-08.md`). Every `PHASE13_PROTECTED_RELEASE_SELECTIONS` entry stays `null`.
+
+### FLH: Assembled
+
+| Variant | Run                                                                                               | Pairs     | Primary, cash after rake (bb/100, 99%) | Seed blocks (point)                            | Worst gating cell 99% lower bound                            | Condition (a) |
+| ------- | ------------------------------------------------------------------------------------------------- | --------- | -------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------ | ------------- |
+| FLH     | [37810351762](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810351762) | 2,079,108 | +0.03 [-0.03, +0.10]                   | 13231151 -0.04, 13232299 +0.15, 13233373 -0.01 | -1.64 `profile:p13c-flh-bomb1-6max-100bb` (0 of 22 below -4) | not qualified |
+
+- FLH: shards 69, attempts 69, defective 0, changed 50,403, illegal candidates 0, earlier-phase refusals 0, work-budget refusals 0; evidence sha256 `29b72d0e92303c2a35d77b0fddf7b0aae230892031170a359f2767eb85c0f77d`; reasons: `cash:primary:lower_bound_not_above_zero`, `cash:seed:13231151:point_estimate_not_above_zero`, `cash:seed:13233373:point_estimate_not_above_zero`.
+
+FLH, condition (a): not qualified. The primary interval contains zero and two of the three seed blocks are not above zero; non-regression held in every gating cell (worst 99% lower bound -1.64 bb/100 against the -4 margin). Condition (b): unavailable external input. Selection: `null`. Evidence: `docs/evidence/phase13/strength-2026-10-08-flh/strength.json` and `docs/evidence/phase13/phase13-qualification-2026-10-08-flh.json`. Verified now.
+
+### The Other Eight Variants: Cancelled Before Completion
+
+The eight other runs were cancelled between 2026-10-09T03:37:40Z and 03:39:03Z by an actor outside the Horse Brain closeout lane, with most of their remaining shards still queued for runners. Shards with a complete result at cancellation (attempt 1):
+
+| Variant         | Run                                                                                               | Shards complete | Shards cancelled |
+| --------------- | ------------------------------------------------------------------------------------------------- | --------------- | ---------------- |
+| NLH             | [37810344257](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810344257) | 93 of 105       | 12               |
+| Short Deck      | [37810347912](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810347912) | 100 of 120      | 20               |
+| Crazy Pineapple | [37810355657](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810355657) | 99 of 132       | 33               |
+| PLO4            | [37810359405](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810359405) | 100 of 153      | 53               |
+| PLO5            | [37810363332](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810363332) | 99 of 159       | 60               |
+| PLO6            | [37810367050](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810367050) | 89 of 141       | 52               |
+| PLO8            | [37810370548](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810370548) | 84 of 138       | 54               |
+| FLO8            | [37810374138](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810374138) | 80 of 192       | 112              |
+
+A second attempt of each (`gh run rerun --failed`, same seeds) was started at 03:57Z and cancelled by this lane at 04:20Z on the program coordinator's instruction to leave the runs cancelled; it completed no shard. None of the eight is assembled: the assembler refuses a variant with a required shard that has no complete result, and no partial matrix is reported as a result. Condition (a) for these eight: historical only (cancelled before completion, not assembled). Condition (b): unavailable external input. Selection: `null`.
+
 ## Gate status
 
 - Round-2 response model: defective (uncalibrated; measured above as the cause of the loss on every variant).
 - Round-3 responses: verified now on development seeds (frequencies agree within a few points per street; JointResponseCalibration.test.ts pins coverage, monotone price response, the ranked responder order and the measured share).
 - Selection rule (paired edge, nothing to call): verified now (JointResponseCalibration.test.ts, JointLegalForm.test.ts, the worker and client boundary suites).
-- Strength, condition (a): implemented but unverified until the held-out matrix (section 6) is assembled.
+- Strength, condition (a): FLH not qualified (verified now, section 7); the other eight variants historical only (their held-out runs were cancelled before completion and are not assembled, section 7).
 - Human population, condition (b): unavailable external input (calibration inadequate on every family); development measurement above: round 3 not distinguishable from the current brain against the human-calibrated tables.
 - Selection: every `PHASE13_PROTECTED_RELEASE_SELECTIONS` entry stays `null`.
 

@@ -14,6 +14,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { ClipRow } from '@/lib/clipMode';
 import { encodeHand } from '@/components/table/ShareHand';
 import { shareableFromModel } from '@/lib/shareHandModel';
@@ -26,6 +28,8 @@ vi.mock('@/services/SoundService', () => ({
 vi.mock('@/hooks/useAuthUser', () => ({ useAuthUser: () => ({ user: null }) }));
 const getHand = vi.fn();
 vi.mock('@/services/HandHistoryService', () => ({ handHistoryService: { getHand } }));
+
+const pageCss = readFileSync(resolve(__dirname, '../../src/pages/share/SharedHandReplayPage.css'), 'utf8');
 
 const HERO = 'hero-uuid';
 const VILLAIN = 'villain-uuid';
@@ -79,6 +83,16 @@ afterEach(() => {
 });
 
 describe('/replay?clip=1 with the injected payload', () => {
+  it('centres only the unchanged arena replayer in the portrait camera frame', () => {
+    expect(pageCss).toMatch(
+      /\.shared-replay--clip\s*\{[^}]*min-height:\s*100dvh;[^}]*padding-block:\s*16px;[^}]*display:\s*grid;[^}]*align-items:\s*center;/s
+    );
+    expect(pageCss).toMatch(
+      /\.shared-replay--clip\s*>\s*\.hand-replay\s*\{[^}]*min-height:\s*0;/s
+    );
+    expect(pageCss).not.toMatch(/\.hand-replay--clip/);
+  });
+
   it("renders the arena's replayer from the payload: every screen name, the table name and hand number in the header, no footer, no h=, no database read", async () => {
     inject({
       v: 1,
@@ -95,12 +109,12 @@ describe('/replay?clip=1 with the injected payload', () => {
     await waitFor(() =>
       expect(document.querySelector('.hand-replay')?.getAttribute('data-clip-state')).toBe('ready')
     );
-    /* The column the arena's by-id page holds the replayer in (the same frame
-       as `.hand-replayer-page`), not a clip frame of its own. */
+    /* The column the arena's by-id page holds the replayer in, centred only
+       for the 4:5 camera without changing the replayer itself. */
     expect(document.querySelector('.shared-replay')).not.toBeNull();
     expect(document.querySelector('.shared-replay')?.children).toHaveLength(1);
     expect(document.querySelector('.shared-replay > .hand-replay')).not.toBeNull();
-    expect(document.querySelector('.shared-replay--clip')).toBeNull();
+    expect(document.querySelector('.shared-replay--clip')).not.toBeNull();
     expect(document.querySelector('.hand-replay--clip')).toBeNull();
     expect(document.querySelector('.hand-replay__clip-eyebrow')).toBeNull();
     /* The header the arena prints: the table name, the blinds, the hand number. */
@@ -148,6 +162,7 @@ describe('without the payload, the page is what it is today', () => {
     await openPage(`?h=${encodeHand(hand)}`);
     await screen.findByText('Hand #77');
     expect(document.querySelector('.shared-replay > .hand-replay')).not.toBeNull();
+    expect(document.querySelector('.shared-replay--clip')).toBeNull();
     expect(document.querySelector('.shared-replay__footer')?.textContent).toBe(
       "Shared From kingfish's Hand History · Smarter Poker"
     );

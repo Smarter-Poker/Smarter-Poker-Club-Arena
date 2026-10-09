@@ -74,7 +74,9 @@ BEGIN
   END IF;
   SELECT version-1 INTO STRICT expected_version FROM public.leaderboard_reward_program_versions
     WHERE club_id=club AND operation_id=operation;
-  SET LOCAL ROLE authenticated;
+  PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000002","role":"service_role"}',true);
+  PERFORM set_config('request.jwt.claim.role','service_role',true);
+  SET LOCAL ROLE service_role;
   publication_replay:=public.fn_publish_leaderboard_reward_program(club,true,'profit',
     '[{"rank":1,"amount":50},{"rank":2,"amount":30},{"rank":3,"amount":20}]','[]','balanced',
     expected_version,operation,true);
@@ -128,8 +130,12 @@ BEGIN
     total_winnings,total_losses,total_rake,tournaments_played,tournaments_won)
   VALUES('90000000-0000-4000-8000-000000000004',club,starts,0,0,0,0,0,0,0,0),
     ('90000000-0000-4000-8000-000000000004',club,ends,20,20,40,100,0,0,0,0);
+  PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000002","role":"service_role"}',true);
+  PERFORM set_config('request.jwt.claim.role','service_role',true);
+  SET LOCAL ROLE service_role;
   response:=public.fn_payout_leaderboard(club,'weekly','profit',starts::timestamp AT TIME ZONE 'UTC',ends::timestamp AT TIME ZONE 'UTC');
   payout_replay:=public.fn_payout_leaderboard(club,'weekly','profit',starts::timestamp AT TIME ZONE 'UTC',ends::timestamp AT TIME ZONE 'UTC');
+  RESET ROLE;
   IF (response->>'success')::boolean IS DISTINCT FROM true OR (response->>'already_settled')::boolean IS DISTINCT FROM false
     OR (response->>'total_paid')::numeric IS DISTINCT FROM 10 OR (response->>'seed_funded')::numeric IS DISTINCT FROM 10
     OR (response->>'promo_funded')::numeric IS DISTINCT FROM 0 OR (response->>'overlay_funded')::numeric IS DISTINCT FROM 0
@@ -297,6 +303,10 @@ BEGIN
   SET LOCAL ROLE authenticated;
   opening_replay:=public.fn_complete_club_opening_setup(club,proof.operation,'Historical Recovery',-1,-1,
     false,0,false,0,1,false,'leaderboard','Historical Promotion','',0,true,'profit',100,true);
+  RESET ROLE;
+  PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000002","role":"service_role"}',true);
+  PERFORM set_config('request.jwt.claim.role','service_role',true);
+  SET LOCAL ROLE service_role;
   publication_replay:=public.fn_publish_leaderboard_reward_program(club,true,'profit',
     '[{"rank":1,"amount":50},{"rank":2,"amount":30},{"rank":3,"amount":20}]','[]','balanced',
     expected_version,proof.operation,true);
@@ -308,8 +318,8 @@ BEGIN
     IF SQLERRM<>'LEADERBOARD_PROMO_ONLY|Club Bank Overlay Is Not Allowed For Leaderboard Prizes' THEN RAISE; END IF;
     rejected:=true;
   END;
-  RESET ROLE;
   payout_replay:=public.fn_payout_leaderboard(club,'weekly','profit',proof.period_start::timestamp AT TIME ZONE 'UTC',proof.period_end::timestamp AT TIME ZONE 'UTC');
+  RESET ROLE;
   SET CONSTRAINTS ALL IMMEDIATE;
   IF NOT rejected OR opening_replay IS DISTINCT FROM proof.opening_replay
     OR publication_replay IS DISTINCT FROM proof.publication_replay

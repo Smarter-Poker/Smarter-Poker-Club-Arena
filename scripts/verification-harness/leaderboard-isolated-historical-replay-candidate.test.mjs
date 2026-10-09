@@ -218,3 +218,21 @@ test('validated original history restores deferred checks before the next financ
   assert.ok(sql.indexOf('SET CONSTRAINTS ALL DEFERRED;') > sql.indexOf('END $prepare$;'));
   assert.ok(sql.indexOf('SET CONSTRAINTS ALL DEFERRED;') < sql.indexOf('DO $seed_prepare$'));
 });
+
+test('original and prospective publication replay keep owner identity behind the service-only door', () => {
+  const [before, after] = sql.split('\\else');
+  for (const part of [before, after]) {
+    assert.match(
+      part,
+      /request\.jwt\.claims','\{"sub":"90000000-0000-4000-8000-000000000002","role":"service_role"\}'/
+    );
+    assert.match(
+      part,
+      /SET LOCAL ROLE service_role;\s+publication_replay:=public\.fn_publish_leaderboard_reward_program/
+    );
+    assert.doesNotMatch(part, /SET LOCAL ROLE authenticated;\s+publication_replay:=/);
+    assert.match(part, /request\.jwt\.claim\.sub','90000000-0000-4000-8000-000000000002'/);
+  }
+  assert.match(before, /SET LOCAL ROLE service_role;\s+response:=public\.fn_payout_leaderboard/);
+  assert.doesNotMatch(sql, /GRANT .*fn_publish_leaderboard_reward_program|ALTER FUNCTION/);
+});

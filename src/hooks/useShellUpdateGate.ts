@@ -56,6 +56,7 @@
  * before this file existed: they are on the old bundle and nothing loops.
  */
 import { useEffect } from 'react';
+import { isShellReloadBlocked } from '../lib/shellReloadBlocker';
 import { masterBus } from '../core/MasterBus';
 import { readDeployedShell } from '../lib/readDeployedShell';
 
@@ -243,6 +244,7 @@ export function useShellUpdateGate(): void {
 
     let pending = false;
     let armed = true;
+    let handingOver = false;
     let timer = 0;
 
     const readLastReload = (): number | null => {
@@ -259,7 +261,7 @@ export function useShellUpdateGate(): void {
     };
 
     const attempt = () => {
-      if (!pending || !armed) return;
+      if (!pending || !armed || handingOver || isShellReloadBlocked()) return;
       const ok = mayReloadForShell({
         pathname: window.location.pathname,
         visible: document.visibilityState === 'visible',
@@ -274,7 +276,7 @@ export function useShellUpdateGate(): void {
       // asynchronously and still re-checks every condition.
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
-        if (!pending || !armed) return;
+        if (!pending || !armed || handingOver || isShellReloadBlocked()) return;
         if (
           !mayReloadForShell({
             pathname: window.location.pathname,
@@ -285,22 +287,38 @@ export function useShellUpdateGate(): void {
         ) {
           return;
         }
-        armed = false;
-        try {
-          sessionStorage.setItem(RELOAD_KEY, String(Date.now()));
-        } catch {
-          /* storage blocked - the disarm above is the real guard */
-        }
-        /* 2026-08-29 telemetry: every shell reload is counted, with the page
+        handingOver = true;
+        void handOverToWaitingWorker(navigator.serviceWorker).then(() => {
+          handingOver = false;
+          if (
+            !pending ||
+            !armed ||
+            isShellReloadBlocked() ||
+            !mayReloadForShell({
+              pathname: window.location.pathname,
+              visible: document.visibilityState === 'visible',
+              lastReloadAt: readLastReload(),
+              now: Date.now(),
+            })
+          )
+            return;
+          armed = false;
+          try {
+            sessionStorage.setItem(RELOAD_KEY, String(Date.now()));
+          } catch {
+            /* storage blocked - the disarm above is the real guard */
+          }
+          /* 2026-08-29 telemetry: every shell reload is counted, with the page
            age at the moment it fired. A reload inside the startup window is
            the fix working (adopt before the player settles in); one long
            after paint is the glitch Dan reported — the rate of the latter is
            what must stay at zero. */
-        /* The new worker waits for this tab (public/sw-bus.js, install): hand
+          /* The new worker waits for this tab (public/sw-bus.js, install): hand
            over to it first, then reload onto it, so its activation never
            overlaps a navigation. */
-        masterBus.emit('SHELL_RELOADED', { pageAgeMs: Math.round(performance.now()) });
-        void handOverToWaitingWorker(navigator.serviceWorker).then(() => window.location.reload());
+          masterBus.emit('SHELL_RELOADED', { pageAgeMs: Math.round(performance.now()) });
+          window.location.reload();
+        });
       }, settleDelayMs(performance.now()));
     };
 

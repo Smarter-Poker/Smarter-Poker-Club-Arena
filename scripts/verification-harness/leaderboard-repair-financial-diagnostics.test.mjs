@@ -7,9 +7,12 @@ import test from 'node:test';
 import {
   boundedRepairRead,
   repairCases,
+  payoutStages,
   openingCases,
   repairFinancialDiagnostics,
 } from './leaderboard-repair-financial-diagnostics.mjs';
+
+import { buildCapturePayoutFixture } from './leaderboard-capture-payout-fixture-candidate.mjs';
 
 const fixture = repairCases.map((name) => `${name}|t||`).join('\n');
 test('opening exact eight-case inventory and fixed stages, never partial or alternate modes', () => {
@@ -56,7 +59,7 @@ test('complete original failure reports safely without falsely passing unexecute
     repairFinancialDiagnostics('v2-payout', original.split('\n').slice(1).join('\n'))
   );
 });
-test('exact ten source cases and fixed stages agree with actual verdict producers', () => {
+test('exact twelve source cases and fixed stages agree with actual verdict producers', () => {
   const baseline = readFileSync(
     new URL('./leaderboard-isolated-payout-regression-draft.sql', import.meta.url),
     'utf8'
@@ -72,7 +75,25 @@ test('exact ten source cases and fixed stages agree with actual verdict producer
         .matchAll(/'([^']+)'/g),
     ].map((m) => m[1]);
   assert.deepEqual([...names(baseline), ...names(adapter)], repairCases);
-  for (const stage of [...adapter.matchAll(/stage:='([^']+)'/g)].map((m) => m[1])) {
+  const generated = buildCapturePayoutFixture();
+  const originalBody = generated.split('DO $cases$')[1].split('$cases$;')[0];
+  const extendedBody = generated.split('DO $extended$')[1].split('$extended$;')[0];
+  for (const stage of [...originalBody.matchAll(/stage\s*:=\s*'([^']+)'/g)].map((m) => m[1])) {
+    assert.ok(payoutStages.includes(stage));
+    const input = fixture.replace(`${repairCases[2]}|t||`, `${repairCases[2]}|f|P0001|${stage}`);
+    assert.match(
+      repairFinancialDiagnostics('v2-payout', input),
+      new RegExp(`stage=${stage} SQLSTATE=P0001`)
+    );
+    if (stage !== 'fixture')
+      assert.throws(() =>
+        repairFinancialDiagnostics(
+          'v2-payout',
+          fixture.replace(`${repairCases[6]}|t||`, `${repairCases[6]}|f|P0001|${stage}`)
+        )
+      );
+  }
+  for (const stage of [...extendedBody.matchAll(/stage\s*:=\s*'([^']+)'/g)].map((m) => m[1])) {
     const input = fixture.replace(`${repairCases[6]}|t||`, `${repairCases[6]}|f|ZLF01|${stage}`);
     assert.match(
       repairFinancialDiagnostics('v2-payout', input),
@@ -83,7 +104,7 @@ test('exact ten source cases and fixed stages agree with actual verdict producer
     'v2-payout',
     `SECRET_PRIVATE_TOKEN\nERROR: arbitrary statement\n${fixture}`
   );
-  assert.equal(output.split('\n').length, 10);
+  assert.equal(output.split('\n').length, 12);
   assert.doesNotMatch(output, /SECRET|arbitrary|ERROR:/);
 });
 test('partial, duplicate, unknown, malformed or secret-bearing verdict fields fail closed', () => {

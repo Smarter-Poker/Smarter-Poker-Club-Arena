@@ -1,3 +1,5 @@
+-- SUPERSEDED BY 20261009045421
+-- Never installed: managed cron.job permits SELECT but not SELECT FOR UPDATE.
 -- Version reserved by scripts/new-migration.mjs: 20261009005558.
 -- Job 272 already wakes every five minutes, but its conditional skipped an
 -- ordinary, ungated Monday close until 04:40 America/Chicago. Admit the due

@@ -116,3 +116,60 @@ false || ${arm}`,
     }
   }
 });
+
+test('pre-verdict psql failure locates only stdin line and SQLSTATE without accepting a verdict', () => {
+  const result = financialDiagnostics(
+    'payout',
+    'SECRET_PASSWORD\npsql:<stdin>:245: ERROR:  P0001\n'
+  );
+  assert.equal(
+    result,
+    'Financial Diagnostic: mode=payout verdicts=unavailable input_line=245 SQLSTATE=P0001'
+  );
+  assert.doesNotMatch(result, /SECRET|PASSWORD|pass=t/);
+  for (const input of [
+    'psql:<stdin>:0: ERROR: P0001',
+    'psql:<stdin>:245: ERROR: 00000',
+    'psql:<stdin>:245: ERROR: P0001 SECRET',
+    'psql:SECRET:245: ERROR: P0001',
+    'psql:<stdin>:245: ERROR: P0001\npsql:<stdin>:246: ERROR: P0001',
+    'missing_close_refuses_without_movement|f|P0001|case_execution\npsql:<stdin>:245: ERROR: P0001',
+  ])
+    assert.throws(() => financialDiagnostics('payout', input));
+  const here = dirname(fileURLToPath(import.meta.url));
+  const generated = buildFinancialCandidate(
+    readFileSync(join(here, 'leaderboard-isolation-preflight.sh'), 'utf8'),
+    'payout'
+  );
+  assert.match(generated, /-v VERBOSITY=sqlstate --file=-/);
+});
+
+test('unknown-ack EXIT preserves original failure and separately reports owned cleanup failure', () => {
+  const driver = readFileSync(
+    new URL('./leaderboard-unknown-ack-draft.sh', import.meta.url),
+    'utf8'
+  );
+  const cleanup = driver.slice(
+    driver.indexOf('cleanup() {'),
+    driver.indexOf('trap cleanup EXIT') + 'trap cleanup EXIT'.length
+  );
+  for (const original of [0, 9]) {
+    const result = spawnSync(
+      'bash',
+      [
+        '-c',
+        `set -euo pipefail\nstarts=()\ndiagnostic_stage='quarantine'\ncleanup_node_source(){ return 1; }\n${cleanup}\nexit ${original}\n`,
+      ],
+      { encoding: 'utf8', timeout: 3000 }
+    );
+    assert.equal(result.status, original || 1, result.stderr);
+    const receipt = financialDiagnostics('unknown-ack', result.stdout + result.stderr);
+    assert.match(receipt, original ? /stage=quarantine/ : /stage=own_cleanup/);
+    assert.match(receipt, /mode=unknown-ack owned_cleanup=failed/);
+  }
+  const secret = financialDiagnostics(
+    'unknown-ack',
+    'FINANCIAL_DRIVER|f||quarantine\nUNKNOWN_ACK_OWN_CLEANUP_FAILED SECRET_TOKEN\n'
+  );
+  assert.doesNotMatch(secret, /owned_cleanup|SECRET_TOKEN/);
+});

@@ -37,7 +37,7 @@ test('two-stage historical recovery uses the pinned original real opening and du
 test('original payout creates paid historical evidence and candidate replays exact immutable response', () => {
   assert.match(sql, /Exact original unpaid historical fixture required/);
   assert.ok(sql.includes("<>'2ba8db49240eac826b2f3efe0e262648'"));
-  assert.equal(sql.match(/:=public\.fn_payout_leaderboard\(/g).length, 5);
+  assert.equal(sql.match(/:=public\.fn_payout_leaderboard\(/g).length, 7);
   assert.match(sql, /program_id=historical_program/);
   assert.match(sql, /payout_amount=10/);
   assert.match(sql, /seed_funded'\)::numeric IS DISTINCT FROM 10/);
@@ -118,7 +118,11 @@ test('candidate executes new legacy settlement with independent board, exact cen
     /(?:selected_board_hash=md5\(proof\.monthly_board|winners_hash=md5\(legacy_verify\.winners)/
   );
   assert.match(after, /pre_from_balance=90 AND post_from_balance=80/);
-  assert.match(after, /pre_to_balance=10 AND post_to_balance=20/);
+  assert.doesNotMatch(after, /pre_to_balance|post_to_balance/);
+  assert.match(after, /Unpaid legacy recipient wallet preimage differs/);
+  assert.match(after, /user_id='90000000-0000-4000-8000-000000000004'\) IS DISTINCT FROM 10/);
+  assert.match(after, /user_id='90000000-0000-4000-8000-000000000004'\) IS DISTINCT FROM 20/);
+  assert.match(after, /to_type='player_wallet'[\s\S]*?AND club_id=club AND amount=10\)<>1/);
   for (const table of [
     'wallet_credit_idempotency',
     'wallet_transactions',
@@ -171,4 +175,46 @@ test('candidate identities and exact new-overlay refusal cannot silently reuse p
   assert.ok(
     sql.includes('LEADERBOARD_PROMO_ONLY|Club Bank Overlay Is Not Allowed For Leaderboard Prizes')
   );
+});
+
+test('original fourth standalone preserves a real positive seed through prospective Promo settlement', () => {
+  const [before, after] = sql.split('\\else');
+  assert.match(
+    before,
+    /INSERT INTO public\.clubs\(id,name,owner_id,is_union,union_id,chip_treasury\)/
+  );
+  assert.match(before, /VALUES\(club,'Isolated Historical Seed Standalone',owner,false,NULL,0\)/);
+  assert.match(
+    before,
+    /result:=public\.fn_complete_club_opening_setup\(club,operation,'Historical Seed Preservation'/
+  );
+  assert.match(
+    before,
+    /fn_diamond_game_fund_promo\(club,20,'historical-positive-seed-promo-fund'\)/
+  );
+  assert.match(before, /seed_proof VALUES/);
+  assert.doesNotMatch(before.split('DO $seed_prepare$')[1], /fn_payout_leaderboard/);
+  assert.match(after, /leaderboard_seed_remaining[^\n]*IS DISTINCT FROM 100/);
+  assert.match(after, /IS DISTINCT FROM proof\.setup/);
+  assert.match(after, /IS DISTINCT FROM proof\.funding/);
+  assert.match(after, /pre_from_balance=20 AND post_from_balance=10/);
+  assert.doesNotMatch(after, /pre_to_balance|post_to_balance/);
+  assert.match(after, /club_id=proof\.club AND user_id=player\) IS DISTINCT FROM 0/);
+  assert.match(after, /club_id=home_club AND user_id=player\) IS DISTINCT FROM wallet_before\+10/);
+  assert.match(after, /home_club:=public\.fn_player_home_club\(player,NULL\)/);
+  assert.match(after, /ORDER BY joined_at ASC NULLS LAST,club_id LIMIT 1/);
+  assert.match(after, /CASE WHEN club_id=home_club AND user_id=player THEN 10 ELSE 0 END/);
+  assert.match(after, /IS DISTINCT FROM expected_wallets/);
+  assert.match(
+    after,
+    /to_type='player_wallet' AND to_entity_id=player AND club_id=home_club AND amount=10\)<>1/
+  );
+  assert.match(after, /Q0005.*PositiveHistoricalSeedPassedAndRolledBack/);
+  assert.match(after, /Positive seed case did not restore exact preimage/);
+});
+
+test('validated original history restores deferred checks before the next financial setup', () => {
+  assert.ok(sql.includes('END $prepare$;'));
+  assert.ok(sql.indexOf('SET CONSTRAINTS ALL DEFERRED;') > sql.indexOf('END $prepare$;'));
+  assert.ok(sql.indexOf('SET CONSTRAINTS ALL DEFERRED;') < sql.indexOf('DO $seed_prepare$'));
 });

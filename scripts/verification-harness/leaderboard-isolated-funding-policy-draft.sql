@@ -58,6 +58,7 @@ DECLARE
   before_state text; after_state text; refused boolean; actor text;
   bank_before numeric; club_bank_before numeric; club_promo_before numeric;
   seed_before numeric; player_before numeric; correlation uuid; batch uuid;
+  shortage_op uuid; shortage_bank numeric; shortage_player numeric;
   stage text; error_state text; member_preimage jsonb; club_preimage jsonb; changed integer;
 BEGIN
   SELECT start_date,end_date INTO starts,ends FROM public.fn_leaderboard_period_window('weekly',-1);
@@ -73,8 +74,8 @@ BEGIN
       funding_union:=CASE WHEN club=affiliate THEN fixture_union ELSE NULL END;
       IF club=affiliate THEN
         stage:='union_mint';
-        PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);
-        PERFORM set_config('request.jwt.claim.sub','',true);
+        PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}',true);
+        PERFORM set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000001',true);
         PERFORM set_config('request.jwt.claim.role','service_role',true);
         SET LOCAL ROLE service_role;
         response:=public.fn_ca_mint('chips','union',fixture_union,100,
@@ -171,13 +172,42 @@ BEGIN
         IF case_name IN ('union_underfunded_refuses','standalone_bank_never_falls_back') THEN
           stage:='actual_shortage_transition';
           -- Publication must first pass its real funded-program constraint.
-          -- Create the shortage afterward through actual owner disbursement,
-          -- never by forging wallet balances or suppressing funding triggers.
-          SET LOCAL ROLE authenticated;
-          response:=public.fn_promo_disburse(CASE WHEN funding_union IS NULL THEN 'club' ELSE 'union' END,
-            COALESCE(funding_union,club),'player',player,20,
-            'Disposable policy shortage fixture',club,gen_random_uuid());
-          RESET ROLE;
+          -- Create the shortage through a supported conserving transfer.
+          -- Union Promo goes to affiliate Promo, so a positive club float must
+          -- still never substitute for the program's empty union funding owner.
+          IF funding_union IS NOT NULL THEN
+            shortage_op:=gen_random_uuid();
+            SELECT chip_balance INTO shortage_bank FROM public.union_wallets WHERE union_id=funding_union;
+            SELECT chip_balance INTO shortage_player FROM public.club_members WHERE club_id=club AND user_id=player;
+            SELECT chip_treasury,promo_balance INTO club_bank_before,club_promo_before FROM public.clubs WHERE id=club;
+            PERFORM set_config('request.jwt.claims',jsonb_build_object('sub',owner,'role','service_role')::text,true);
+            PERFORM set_config('request.jwt.claim.role','service_role',true);
+            SET LOCAL ROLE service_role;
+            response:=public.fn_union_promo_send(funding_union,20,'club',club,shortage_op,owner,
+              'Disposable policy shortage fixture');
+            RESET ROLE;
+            IF response->>'destination' IS DISTINCT FROM 'club'
+               OR (response->>'promo_after')::numeric IS DISTINCT FROM 0
+               OR (response->>'club_promo_after')::numeric IS DISTINCT FROM club_promo_before+20
+               OR (SELECT promo_balance FROM public.clubs WHERE id=club) IS DISTINCT FROM club_promo_before+20
+               OR (SELECT chip_treasury FROM public.clubs WHERE id=club) IS DISTINCT FROM club_bank_before
+               OR (SELECT chip_balance FROM public.union_wallets WHERE union_id=funding_union) IS DISTINCT FROM shortage_bank
+               OR (SELECT chip_balance FROM public.club_members WHERE club_id=club AND user_id=player) IS DISTINCT FROM shortage_player
+               OR (SELECT count(*) FROM public.chip_ledger WHERE correlation_id=shortage_op
+                 AND category='promo_send' AND from_type='union_wallet' AND from_entity_id=funding_union
+                 AND from_label='union_wallets.promo_wallet' AND to_type='promo_wallet'
+                 AND to_entity_id=club AND to_label='clubs.promo_balance' AND amount=20)<>1
+               OR (SELECT count(*) FROM public.union_wallet_transactions WHERE period_id=shortage_op
+                 AND union_id=funding_union AND club_id=club AND wallet='promo_wallet'
+                 AND direction='debit' AND amount=20 AND balance_after=0 AND tx_type='promo_to_club')<>1 THEN
+              RAISE EXCEPTION 'Union shortage transfer did not conserve custody';
+            END IF;
+          ELSE
+            SET LOCAL ROLE authenticated;
+            response:=public.fn_promo_disburse('club',club,'player',player,20,
+              'Disposable policy shortage fixture',club,gen_random_uuid());
+            RESET ROLE;
+          END IF;
           IF (response->>'success')::boolean IS DISTINCT FROM true
              OR (funding_union IS NULL AND (SELECT promo_balance FROM public.clubs WHERE id=club) IS DISTINCT FROM 0)
              OR (funding_union IS NOT NULL AND (SELECT promo_wallet FROM public.union_wallets WHERE union_wallets.union_id=funding_union) IS DISTINCT FROM 0) THEN
@@ -222,8 +252,8 @@ BEGIN
             stage:='actual_settlement';
             correlation:=gen_random_uuid();
             PERFORM set_config('app.ledger_correlation',correlation::text,true);
-            PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);
-            PERFORM set_config('request.jwt.claim.sub','',true);
+            PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}',true);
+            PERFORM set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000001',true);
             PERFORM set_config('request.jwt.claim.role','service_role',true);
             SET LOCAL ROLE service_role;
             response:=public.fn_payout_leaderboard(club,'weekly','profit',starts::timestamp AT TIME ZONE 'UTC',ends::timestamp AT TIME ZONE 'UTC');
@@ -265,8 +295,8 @@ BEGIN
             END IF;
             after_state:=pg_temp.lb_funding_digest();
             stage:='settlement_replay';
-            PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);
-            PERFORM set_config('request.jwt.claim.sub','',true);
+            PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}',true);
+            PERFORM set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000001',true);
             PERFORM set_config('request.jwt.claim.role','service_role',true);
             SET LOCAL ROLE service_role;
             replay:=public.fn_payout_leaderboard(club,'weekly','profit',starts::timestamp AT TIME ZONE 'UTC',ends::timestamp AT TIME ZONE 'UTC');

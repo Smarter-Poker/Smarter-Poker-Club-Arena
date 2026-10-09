@@ -19,7 +19,9 @@ diagnostic_stage='precondition'
 owned_failure=false
 node_source_id=''
 node_source_attempted=false
-readonly node_image='node@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402'
+# Official Node 22 Bookworm Slim uses glibc, matching the Ubuntu PG image.
+# Alpine executables require a musl loader absent from the owning container.
+readonly node_image='node@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392'
 readonly node_source_name="$container-unknownack-node-$BASHPID"
 readonly isolated_node="/tmp/leaderboard-unknown-ack-node-$BASHPID"
 cleanup_node_source() {
@@ -77,7 +79,9 @@ cleanup() {
   done
   cleanup_node_source || failed=true
   if [[ "$failed" == true ]]; then
-    diagnostic_stage='own_cleanup'
+    # Preserve the actual failed stage; cleanup is a separate fixed receipt.
+    printf '%s\n' 'UNKNOWN_ACK_OWN_CLEANUP_FAILED'
+    [[ "$code" != 0 ]] || diagnostic_stage='own_cleanup'
     echo 'Owned unknown-ack client cleanup failed; whole container cleanup required' >&2
     [[ "$code" != 0 ]] || code=1
   fi
@@ -95,6 +99,10 @@ BEGIN
      OR (SELECT count(*) FROM public.clubs)<>3
      OR EXISTS(SELECT 1 FROM public.leaderboard_payout_batches)
      OR EXISTS(SELECT 1 FROM public.leaderboard_payouts)
+     OR public.fn_player_home_club('90000000-0000-4000-8000-000000000004',NULL) IS DISTINCT FROM '92000000-0000-4000-8000-000000000002'::uuid
+     OR EXISTS(SELECT 1 FROM public.club_members WHERE chip_balance IS DISTINCT FROM 0)
+     OR (SELECT sum(chip_balance) FROM public.club_members) IS DISTINCT FROM 0
+     OR (SELECT chip_balance FROM public.club_members WHERE club_id='92000000-0000-4000-8000-000000000002' AND user_id='90000000-0000-4000-8000-000000000004') IS DISTINCT FROM 0
      OR (SELECT promo_balance FROM public.clubs WHERE id='92000000-0000-4000-8000-000000000002') IS DISTINCT FROM 20 THEN
     RAISE EXCEPTION 'Exact isolated unknown-ack preimage required';
   END IF;
@@ -138,8 +146,8 @@ DO $ack_payout$
 DECLARE response jsonb;
 BEGIN
   IF session_user<>'leaderboard_qualification_bootstrap' OR inet_server_addr() IS NOT NULL THEN RAISE EXCEPTION 'Socket bootstrap required'; END IF;
-  PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);
-  PERFORM set_config('request.jwt.claim.sub','',true);
+  PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}',true);
+  PERFORM set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000001',true);
   PERFORM set_config('request.jwt.claim.role','service_role',true);
   SET LOCAL ROLE service_role;
   SELECT public.fn_payout_leaderboard('92000000-0000-4000-8000-000000000002','weekly','profit',start_date::timestamp AT TIME ZONE 'UTC',end_date::timestamp AT TIME ZONE 'UTC') INTO response FROM public.fn_leaderboard_period_window('weekly',-1);
@@ -188,6 +196,7 @@ BEGIN
        WHERE key=format('leaderboard:%s:weekly:%s:%s',club,starts,winner) AND user_id=winner AND amount=10)
      OR (SELECT promo_balance FROM public.clubs WHERE id=club) IS DISTINCT FROM 10
      OR (SELECT chip_treasury FROM public.clubs WHERE id=club) IS DISTINCT FROM 99980
+     OR EXISTS(SELECT 1 FROM public.club_members WHERE NOT(club_id=club AND user_id=winner) AND chip_balance IS DISTINCT FROM 0)
      OR (SELECT sum(chip_balance) FROM public.club_members) IS DISTINCT FROM 10
      OR (SELECT chip_balance FROM public.club_members WHERE club_id=club AND user_id=winner) IS DISTINCT FROM 10
      OR (SELECT count(*) FROM public.wallet_transactions WHERE related_entity_id=program
@@ -197,10 +206,10 @@ BEGIN
      OR (SELECT count(DISTINCT correlation_id) FROM public.chip_ledger WHERE category='leaderboard_payout')<>1
      OR (SELECT count(*) FROM public.chip_ledger WHERE category='leaderboard_payout'
        AND from_type='promo_wallet' AND from_entity_id=club AND to_type='leaderboard_round' AND to_entity_id=club
-       AND amount=10 AND pre_from_balance=20 AND post_from_balance=10)<>1
+       AND club_id=club AND amount=10 AND pre_from_balance=20 AND post_from_balance=10)<>1
      OR (SELECT count(*) FROM public.chip_ledger WHERE category='leaderboard_payout'
        AND from_type='leaderboard_round' AND from_entity_id=club AND to_type='player_wallet' AND to_entity_id=winner
-       AND amount=10 AND pre_to_balance=0 AND post_to_balance=10)<>1
+       AND club_id=club AND amount=10)<>1
      OR (SELECT sum(amount) FROM public.chip_ledger WHERE category='leaderboard_payout' AND to_type='leaderboard_round') IS DISTINCT FROM 10
      OR (SELECT sum(amount) FROM public.chip_ledger WHERE category='leaderboard_payout' AND from_type='leaderboard_round') IS DISTINCT FROM 10 THEN RAISE EXCEPTION 'Unknown-ack durable reconciliation failed'; END IF;
 END;
@@ -231,8 +240,8 @@ BEGIN
     (SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.chip_ledger t),
     (SELECT jsonb_agg(to_jsonb(t) ORDER BY key) FROM public.wallet_credit_idempotency t),
     (SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.wallet_transactions t))::text) INTO before_digest;
-  PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);
-  PERFORM set_config('request.jwt.claim.sub','',true);
+  PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}',true);
+  PERFORM set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000001',true);
   PERFORM set_config('request.jwt.claim.role','service_role',true);
   SET LOCAL ROLE service_role;
   SELECT public.fn_payout_leaderboard('92000000-0000-4000-8000-000000000002','weekly','profit',start_date::timestamp AT TIME ZONE 'UTC',end_date::timestamp AT TIME ZONE 'UTC') INTO response FROM public.fn_leaderboard_period_window('weekly',-1);

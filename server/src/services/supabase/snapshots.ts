@@ -17,6 +17,30 @@ import { bindToProcessRoot } from './dataActorContext.js';
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * A DIAMOND HAND'S SNAPSHOT IS WRITTEN TOO (2026-10-09).
+ *
+ * A Diamond cash hand carries its rake schedule as exact decimals whose units
+ * are BigInt (domain/diamondCashRakeSchedule.ts), and the snapshot config
+ * records that schedule. JSON has no BigInt, so every snapshot write on a
+ * Diamond table threw "Do not know how to serialize a BigInt" before it left
+ * the engine: measured 2026-10-09 05:13 UTC, 86 refusals in 20 minutes and
+ * four live Diamond tables (95 hands) that had never had a crash-recovery
+ * snapshot at all. A BigInt is written as its exact decimal string, which no
+ * reader turns back into arithmetic (config_json is recorded, never replayed),
+ * and every chip and tournament hand still writes the identical object it
+ * always did, with no extra serialization pass.
+ */
+export function jsonSafeSnapshotValue<T>(value: T): T {
+  return JSON.parse(
+    JSON.stringify(value, (_key, v) => (typeof v === 'bigint' ? v.toString() : v))
+  ) as T;
+}
+
+function carriesDiamondSchedule(config: Record<string, unknown>): boolean {
+  return config.diamondRakeSchedule !== undefined && config.diamondRakeSchedule !== null;
+}
+
+/**
  * Save or update the hand state snapshot after every action.
  * Uses UPSERT — one active snapshot per table at a time.
  */
@@ -40,11 +64,12 @@ export async function saveHandStateSnapshot(params: {
   disconnectStates?: Record<string, DisconnectStateEntry>;
 }): Promise<void> {
   try {
+    const diamond = carriesDiamondSchedule(params.configJson);
     const { error } = await supabase.rpc('save_hand_state_snapshot', {
       p_table_id: params.tableId,
       p_hand_number: params.handNumber,
-      p_state_json: params.stateJson,
-      p_config_json: params.configJson,
+      p_state_json: diamond ? jsonSafeSnapshotValue(params.stateJson) : params.stateJson,
+      p_config_json: diamond ? jsonSafeSnapshotValue(params.configJson) : params.configJson,
       p_dealer_seat: params.dealerSeat,
       p_players_json: params.playersJson,
       p_stage: params.stage,

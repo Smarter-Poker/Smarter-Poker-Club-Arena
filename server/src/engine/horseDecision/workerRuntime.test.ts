@@ -161,6 +161,7 @@ import {
 import type { JointVariant } from '../multiway/JointInputBinding.js';
 import { JOINT_LIVE_DOMAIN } from '../multiway/JointLivePolicy.js';
 import { forEachJointControllerSpot } from '../multiway/JointControllerSpots.test-support.js';
+import { controllerSpotRandom } from '../remainingVariants/RemainingVariantControllerSpots.test-support.js';
 
 const snapshot: LiveHorseDecisionSnapshot = {
   generation: 4,
@@ -5024,21 +5025,38 @@ describe('P13.3 worker-owned joint multiway authority (the Phase 8 path, reused 
     let requestId = 900;
     const spots: Array<{ hero: any; state: any }> = [];
     // Round 3 applies a joint candidate only where a wager's paired edge
-    // clears its lower bound, so more natural spots are swept.
-    forEachJointControllerSpot('short_deck', 'cash', 120, 0x13e1 + 10, (spot) => {
-      if (spots.length < 600)
-        spots.push({
-          hero: spot.hero,
-          // The worker's canonical snapshot also requires the cap fields the
-          // live builder always sets.
-          state: {
-            ...spot.state,
-            wagersCapped: spot.state.wagersCapped ?? false,
-            commitmentCapRemaining: spot.state.commitmentCapRemaining ?? null,
-            fixedBetSize: spot.state.fixedBetSize ?? null,
-          },
-        });
-    });
+    // clears its lower bound, so more natural spots are swept. The controller
+    // shuffles from crypto.getRandomValues, so its entropy is pinned while the
+    // spots are dealt (as JointLegalForm.test.ts pins it): unpinned, every run
+    // dealt different cards and the search found the spot on some runs and
+    // none on others (the shard 1/4 failure on PR #6539).
+    const deckRandom = controllerSpotRandom(0x13e00000 ^ 'short_deck'.length);
+    const deckEntropy = vi
+      .spyOn(globalThis.crypto, 'getRandomValues')
+      .mockImplementation(<T extends ArrayBufferView | null>(target: T): T => {
+        const words = target as unknown as Uint32Array;
+        for (let i = 0; i < words.length; i++)
+          words[i] = Math.floor(deckRandom() * 0x100000000) >>> 0;
+        return target;
+      });
+    try {
+      forEachJointControllerSpot('short_deck', 'cash', 120, 0x13e1 + 10, (spot) => {
+        if (spots.length < 600)
+          spots.push({
+            hero: spot.hero,
+            // The worker's canonical snapshot also requires the cap fields the
+            // live builder always sets.
+            state: {
+              ...spot.state,
+              wagersCapped: spot.state.wagersCapped ?? false,
+              commitmentCapRemaining: spot.state.commitmentCapRemaining ?? null,
+              fixedBetSize: spot.state.fixedBetSize ?? null,
+            },
+          });
+      });
+    } finally {
+      deckEntropy.mockRestore();
+    }
     const p12Only = (v: RemainingPolicyVariant): HorseAuthorityAdmission =>
       v === 'short_deck'
         ? qualifiedPhase12TestAdmission('short_deck')

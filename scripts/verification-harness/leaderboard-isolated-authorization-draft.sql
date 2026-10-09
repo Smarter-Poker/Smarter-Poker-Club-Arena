@@ -49,6 +49,46 @@ $accounts$;
 -- issuance fit below 300000. Diamonds remain unused with positive caps.
 DO $mint_policy$
 BEGIN
+  -- A schema-only restore deliberately has no configuration data. Restore
+  -- this small authoritative policy inventory, never player balances, before
+  -- the intact journal guard handles an opening grant or financial fixture.
+  IF EXISTS (SELECT 1 FROM public.ca_chip_store_coverage) THEN
+    RAISE EXCEPTION 'Synthetic journal store policy requires empty isolated configuration';
+  END IF;
+INSERT INTO public.ca_chip_store_coverage (store, treatment, counted_by, notes) VALUES
+  ('player_wallet',       'counted', 'member_wallets + member_promo', 'club_members chip_balance and promo_balance'),
+  ('club_treasury',       'counted', 'treasuries',                    'clubs chip_treasury'),
+  ('union_bank',          'counted', 'union_wallets',                 'union_wallets chip_balance'),
+  ('agent_wallet',        'counted', 'agent_wallets',                 'agents agent_wallet_balance and promo_wallet_balance'),
+  ('table_stack',         'counted', 'felt',                          'table_seats stack on cash tables. Tournament felt is deliberately excluded and carried by tournament_liability instead'),
+  ('promo_wallet',        'counted', 'club_promo + agent_promo + union promo_wallet', 'the promo floats, brought inside the total on 2026-09-03'),
+  ('club_wallet',         'counted', 'club_wallets',                  'club_wallets chip_balance'),
+  ('union_wallet',        'counted', 'union_wallets',                 'the union rake, bbj, promo, insurance and spin reserve wallets'),
+  ('bbj_pool',            'counted', 'bbj_pools',                     'main, backup and promo'),
+  ('spin_reserve',        'counted', 'spin_pools + union spin_reserve_wallet', 'spin_bonus_pools balance'),
+  ('insurance_bank',      'counted', 'club_insurance + union insurance_wallet', 'clubs insurance_balance'),
+  ('escrow',              'counted', 'ticket_escrow',                 'Outstanding tournament tickets. ADDED 2026-09-11: it was in no list at all, which is the whole of the five supply incidents of that morning'),
+  ('prize_liability',     'counted', 'tournament_liability',          'tournament_escrow prize_balance, or the counters where an event has no escrow row yet'),
+  ('bounty_liability',    'counted', 'tournament_liability',          'tournament_escrow bounty_balance'),
+  ('opening_setup',       'counted', 'leaderboard_liability',         'club_opening_setups leaderboard_seed_remaining'),
+  ('leaderboard_round',   'counted', 'leaderboard_liability',         'the same seed, while a round is being settled'),
+  ('system_mint',         'noncirculating', NULL, 'issuance. A move out of it is a mint'),
+  ('system_burn',         'noncirculating', NULL, 'retirement. A move into it is a burn'),
+  ('issuance_reserve',    'noncirculating', NULL, 'issuance held before it enters circulation'),
+  ('chip_retirement',     'noncirculating', NULL, 'retirement holding'),
+  ('settlement_suspense', 'uncounted', NULL,
+   'NOT in the basis and NOT verified as a routing label. It holds a large historical net and has not moved in the sixty hours to 2026-09-11 15:00, so it is not implicated in the incidents this migration fixes. Declared uncounted deliberately rather than guessed into the total, where a wrong guess would double count. Any movement now raises a finding, which is the point'),
+  ('rakeback_payable',    'uncounted', NULL, 'never used in the journal to date. Movement raises a finding so its treatment is decided before it carries money'),
+  ('refund_payable',      'uncounted', NULL, 'never used in the journal to date. Movement raises a finding so its treatment is decided before it carries money'),
+  ('credit_facility',     'uncounted', NULL, 'never used in the journal to date. Movement raises a finding so its treatment is decided before it carries money'),
+  ('credit_receivable',   'uncounted', NULL, 'never used in the journal to date. Movement raises a finding so its treatment is decided before it carries money');
+  IF (SELECT count(*) FROM public.ca_chip_store_coverage) <> 25
+     OR (SELECT md5(string_agg(store || '|' || treatment || '|' || COALESCE(counted_by,''), E'\n' ORDER BY store))
+           FROM public.ca_chip_store_coverage) IS DISTINCT FROM '40b1c33a12d5b5e84c69844054b7514d'
+     OR EXISTS (SELECT 1 FROM public.ca_chip_store_coverage
+       WHERE added_at IS DISTINCT FROM transaction_timestamp()) THEN
+    RAISE EXCEPTION 'Synthetic journal store policy exact configuration differs';
+  END IF;
   IF EXISTS (SELECT 1 FROM public.ca_mint_policy) THEN
     RAISE EXCEPTION 'Synthetic Mint policy requires empty isolated configuration';
   END IF;
@@ -67,19 +107,38 @@ BEGIN
 END;
 $mint_policy$;
 
+-- The intact journal FK must name an actual synthetic signup actor, never
+-- the production service fallback absent from this empty disposable DB.
+SELECT set_config('request.jwt.claims', '{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}', true);
+SELECT set_config('request.jwt.claim.sub', '90000000-0000-4000-8000-000000000001', true);
+SELECT set_config('request.jwt.claim.role', 'service_role', true);
 INSERT INTO public.union_creators (user_id, note)
 VALUES ('90000000-0000-4000-8000-000000000001', 'Isolated authorization fixture');
 INSERT INTO public.unions (id, name, owner_id, slug)
 VALUES ('91000000-0000-4000-8000-000000000001', 'Isolated Leaderboard Union',
         '90000000-0000-4000-8000-000000000001', 'isolated-leaderboard-union');
-INSERT INTO public.clubs (id, name, owner_id, is_union, union_id)
-VALUES
- ('91000000-0000-4000-8000-000000000001', 'Isolated Union House',
-  '90000000-0000-4000-8000-000000000001', true, NULL),
- ('92000000-0000-4000-8000-000000000001', 'Isolated Affiliate',
-  '90000000-0000-4000-8000-000000000003', false, NULL),
- ('92000000-0000-4000-8000-000000000002', 'Isolated Standalone',
-  '90000000-0000-4000-8000-000000000002', false, NULL);
+-- Create each club in its own statement: the intact BEFORE seeder declares
+-- one consume-once journal key, which its AFTER autoledger must use before
+-- another club's seeder can replace it. Keep all three in this transaction.
+INSERT INTO public.clubs (id, name, owner_id, is_union, union_id, chip_treasury)
+VALUES ('91000000-0000-4000-8000-000000000001', 'Isolated Union House',
+        '90000000-0000-4000-8000-000000000001', true, NULL, 0);
+INSERT INTO public.clubs (id, name, owner_id, is_union, union_id, chip_treasury)
+VALUES ('92000000-0000-4000-8000-000000000001', 'Isolated Affiliate',
+        '90000000-0000-4000-8000-000000000003', false, NULL, 0);
+INSERT INTO public.clubs (id, name, owner_id, is_union, union_id, chip_treasury)
+VALUES ('92000000-0000-4000-8000-000000000002', 'Isolated Standalone',
+        '90000000-0000-4000-8000-000000000002', false, NULL, 0);
+DO $opening_balances$
+BEGIN
+  IF (SELECT chip_treasury FROM public.clubs WHERE id='91000000-0000-4000-8000-000000000001') IS DISTINCT FROM 0
+     OR (SELECT count(*) FROM public.clubs WHERE id IN
+       ('92000000-0000-4000-8000-000000000001','92000000-0000-4000-8000-000000000002')
+       AND chip_treasury=100000) <> 2 THEN
+    RAISE EXCEPTION 'Synthetic union house is zero and ordinary opening grants must remain intact';
+  END IF;
+END;
+$opening_balances$;
 -- Ordinary chip clubs receive the maintained opening grant. Retire ONLY this
 -- synthetic affiliate's grant through the service-only Mint RPC, preserving
 -- its journal, supply registry, operation claim and financial guards.
@@ -90,8 +149,8 @@ BEGIN
       WHERE id = '92000000-0000-4000-8000-000000000001') IS DISTINCT FROM 100000 THEN
     RAISE EXCEPTION 'Synthetic affiliate opening-grant preimage changed';
   END IF;
-  PERFORM set_config('request.jwt.claims', '{"role":"service_role"}', true);
-  PERFORM set_config('request.jwt.claim.sub', '', true);
+  PERFORM set_config('request.jwt.claims', '{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}', true);
+  PERFORM set_config('request.jwt.claim.sub', '90000000-0000-4000-8000-000000000001', true);
   PERFORM set_config('request.jwt.claim.role', 'service_role', true);
   SET LOCAL ROLE service_role;
   result := public.fn_ca_burn('chips', 'club',
@@ -233,4 +292,8 @@ $matrix$;
 
 -- No success verdict until real execution and deferred constraint validation.
 SET CONSTRAINTS ALL IMMEDIATE;
+-- Companion financial doors need the normal deferred transaction boundary.
+-- Validate authorization first, then let the companion validate its complete
+-- balance/journal write before its own final IMMEDIATE check or COMMIT.
+SET CONSTRAINTS ALL DEFERRED;
 ROLLBACK;

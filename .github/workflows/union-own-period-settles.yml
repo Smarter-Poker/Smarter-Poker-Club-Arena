@@ -19,6 +19,7 @@ on:
     paths:
       - supabase/migrations/20261008050208_the_union_s_own_square_up_period_settles_with_its_week.sql
       - supabase/migrations/20261009005558_the_weekly_close_starts_at_four_in_chicago.sql
+      - supabase/migrations/20261009045421_the_weekly_close_installs_through_the_managed_cron_api.sql
       - scripts/ci/fixtures/union-own-period-settles/**
       - scripts/ci/test-union-own-period-settles.py
       - supabase/migrations/20261009023044_a_union_payment_has_one_receipt_and_each_invoice_has_its_con.sql

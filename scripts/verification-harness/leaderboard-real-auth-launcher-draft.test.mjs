@@ -4,6 +4,9 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   authCommandFailure,
+  probeAuthServices,
+  authHealthFailureDiagnostic,
+  authContainerStateDiagnostic,
   authFailureDiagnostic,
   authSqlFailureDiagnostic,
 } from './leaderboard-real-auth-launcher-draft.mjs';
@@ -124,4 +127,114 @@ test('SQL diagnostics redact arbitrary output and reveal only closed fixture sta
   });
   assert.equal(out, 'Isolated Auth SQL Failure: fixture=unknown; sqlstate=unknown');
   assert.match(launcher, /'VERBOSITY=sqlstate'/);
+});
+
+test('health probe observes both services even when one transport refuses within the existing bounds', async () => {
+  const calls = { auth: 0, rest: 0 };
+  const pauses = [];
+  const result = await probeAuthServices(
+    async (url) => {
+      if (url.includes('leaderboard-auth')) {
+        calls.auth++;
+        throw Object.assign(new Error('private marker'), { cause: { code: 'ECONNREFUSED' } });
+      }
+      calls.rest++;
+      return { ok: true, status: 200 };
+    },
+    async (ms) => pauses.push(ms)
+  );
+  assert.deepEqual(calls, { auth: 50, rest: 50 });
+  assert.deepEqual(pauses, Array(50).fill(100));
+  assert.equal(result.ready, false);
+  assert.equal(
+    authHealthFailureDiagnostic(JSON.stringify(result)),
+    'Isolated Auth Health: auth=connect; rest=ok/200'
+  );
+  let count = 0;
+  const ready = await probeAuthServices(
+    async () => {
+      count++;
+      return { ok: true, status: 200 };
+    },
+    async () => assert.fail('Ready services must not wait')
+  );
+  assert.equal(ready.ready, true);
+  assert.equal(count, 2);
+});
+
+test('health and owned container diagnostics redact arbitrary values and preserve failed observations', () => {
+  const marker = 'postgres://private-user:private-password@private-host';
+  for (const output of [
+    marker,
+    '{}',
+    JSON.stringify({
+      ready: false,
+      observations: [
+        { service: marker, outcome: 'ok', status: 200 },
+        { service: 'rest', outcome: 'http', status: 503 },
+      ],
+    }),
+  ]) {
+    assert.equal(authHealthFailureDiagnostic(output), 'Isolated Auth Health: unknown');
+  }
+  assert.equal(
+    authHealthFailureDiagnostic(
+      JSON.stringify({
+        ready: false,
+        observations: [
+          { service: 'auth', outcome: 'timeout', status: null },
+          { service: 'rest', outcome: 'http', status: 503 },
+        ],
+      })
+    ),
+    'Isolated Auth Health: auth=timeout; rest=http/503'
+  );
+  const state = JSON.stringify({
+    Status: 'exited',
+    Running: false,
+    ExitCode: 1,
+    OOMKilled: false,
+    Error: marker,
+  });
+  assert.equal(
+    authContainerStateDiagnostic('auth', state),
+    'Isolated Auth Container: auth=exited; running=false; exit=1; oom=false'
+  );
+  assert.equal(authContainerStateDiagnostic(marker, state), 'Isolated Auth Container: unknown');
+  assert.equal(authContainerStateDiagnostic('rest', marker), 'Isolated Auth Container: unknown');
+  assert.match(launcher, /'inspect', '--format', '\{\{json \.State\}\}'/);
+  assert.doesNotMatch(launcher, /console\.error\(result\.(?:stdout|stderr)\)/);
+});
+
+test('secondary service diagnostics preserve the original failure and have short bounded reads', () => {
+  assert.match(
+    launcher,
+    /const originalFailureKind = failureKind;[\s\S]*failureKind = originalFailureKind;\n\s*throw error/
+  );
+  assert.match(
+    launcher,
+    /command\(\['inspect', '--format', '\{\{json \.State\}\}', name\], '', 15000\)/
+  );
+});
+
+test('REST startup requires the pinned internal readiness endpoint and refuses an unloaded cache', async () => {
+  let restCalls = 0;
+  let pauses = 0;
+  const result = await probeAuthServices(
+    async (url) => {
+      if (url.includes('leaderboard-auth')) return { ok: true, status: 200 };
+      assert.equal(url, 'http://leaderboard-rest:3001/ready');
+      restCalls++;
+      return restCalls === 1 ? { ok: false, status: 503 } : { ok: true, status: 200 };
+    },
+    async (ms) => {
+      assert.equal(ms, 100);
+      pauses++;
+    }
+  );
+  assert.equal(result.ready, true);
+  assert.equal(restCalls, 2);
+  assert.equal(pauses, 1);
+  assert.match(launcher, /'PGRST_ADMIN_SERVER_PORT=3001'/);
+  assert.doesNotMatch(probeAuthServices.toString(), /leaderboard-rest:3000\//);
 });

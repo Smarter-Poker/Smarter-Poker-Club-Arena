@@ -5,3 +5,5 @@ The original Seed-funded payout removes Seed without its matching journal debit 
 Create genuine paid history through the original Promo opening allocation and publication door. Opening and paid publication retain separate durable operation identities; paid Seed funding is zero, Promo funding is ten, and the historical Bank and Promo balances remain independently asserted. The fourth club retains its genuine original positive Seed unchanged through candidate installation and prospective Promo-only settlement.
 
 The exact frozen financial migration is unchanged. Actual historical qualification remains required after protected source integration.
+
+The prospective replay validates constraints immediately, then restores normal deferred accounting timing before new legacy settlements. Both settlement cases still force immediate validation before their self-aborting rollback and compare the complete historical preimage. The regression contract fails on the prior fixture and passes after this timing correction.

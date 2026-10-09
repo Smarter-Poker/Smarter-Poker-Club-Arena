@@ -380,6 +380,7 @@ BEGIN
        IS DISTINCT FROM '{"basis_version":"legacy_v1","complete":false}'::jsonb THEN
     RAISE EXCEPTION 'Existing weekly or monthly terms were misclassified as complete';
   END IF;
+  SET CONSTRAINTS ALL DEFERRED;
   -- This new settlement and its replay self-abort even on PASS. The prior paid
   -- history remains untouched, and the final outer ROLLBACK still owns cleanup.
   BEGIN

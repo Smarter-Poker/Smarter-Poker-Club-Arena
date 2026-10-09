@@ -282,3 +282,15 @@ test('genuine original paid history uses supported Promo funding and distinct pu
     /INSERT INTO public.chip_ledger|DISABLE TRIGGER|ca_ledger_invariant_store_mode/
   );
 });
+
+test('prospective historical settlements restore deferred timing after validated replay', () => {
+  const after = sql.split('\\else')[1];
+  assert.match(after, /SET CONSTRAINTS ALL DEFERRED;\s+-- This new settlement/);
+  const legacy = after.split('DO $positive_seed$')[0];
+  assert.ok(
+    legacy.indexOf('SET CONSTRAINTS ALL DEFERRED;') <
+      legacy.indexOf('BEGIN\n    SELECT to_jsonb(b)')
+  );
+  assert.match(legacy, /SET CONSTRAINTS ALL IMMEDIATE;\s+RAISE EXCEPTION USING ERRCODE='Q0004'/);
+  assert.match(after, /SET CONSTRAINTS ALL IMMEDIATE;\s+RAISE EXCEPTION USING ERRCODE='Q0005'/);
+});

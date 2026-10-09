@@ -346,17 +346,7 @@ export interface TableModalsLayerProps {
   // Bust Rebuy
   bustRebuyOpen: boolean;
   bustWalletBalance: number | null;
-  /**
-   * Audit 2026-08-25: also unread here, but for a different reason than the
-   * three above — this one has real work to do and nowhere to do it. The bust
-   * rebuy renders through BuyInModal, and BuyInModal has no `isProcessing`
-   * prop at all (RebuyModal does, and gets one). So the confirm button on a
-   * bust rebuy stays live while the buy-in is in flight and can be pressed
-   * twice. The server's `atomic_table_buyin` is the guard that actually stops
-   * a double buy-in; what the player loses is the feedback, not the chips.
-   * Fixing it means adding `isProcessing` to BuyInModal, which is another
-   * agent's file this pass — carried in the report instead.
-   */
+  /** External purchase activity also disables the cash rebuy controls. */
   bustRebuyProcessing: boolean;
   onCancelBustRebuy: () => void;
   onRetryBustBalance: () => void;
@@ -657,6 +647,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     // Bust Rebuy
     bustRebuyOpen,
     bustWalletBalance,
+    bustRebuyProcessing,
     onCancelBustRebuy,
     onRetryBustBalance,
     onConfirmBustRebuy,
@@ -1162,6 +1153,8 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
            `fn_poker_diamond_top_up`, so the prompt is no longer chip-only.
            `currency` is what makes the slider, the cap and the balance read in
            whole Diamonds, exactly as the ordinary buy-in sheet does. */
+        purchaseKind="rebuy"
+        externalProcessing={bustRebuyProcessing}
         isOpen={bustRebuyOpen && (arenaAsset === 'chips' || arenaAsset === 'diamonds')}
         currency={arenaAsset === 'diamonds' ? 'diamonds' : ''}
         onClose={onCancelBustRebuy}

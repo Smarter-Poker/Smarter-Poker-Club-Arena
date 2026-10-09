@@ -47,7 +47,9 @@ describe('fractional tournament fee and bounty rails stay exact end to end', () 
     expect(service).toContain("import { DEFAULT_RAKE_RATE, splitBuyIn } from '../utils/buyIn'");
     expect(service).toContain('return splitBuyIn(baseCost, rate).fee');
     expect(modal).toContain('Math.round((Number(rebuyCost) + Number(rebuyFee)) * 100) / 100');
-    expect(modal).toContain('moneyExact(rebuyCost)');
-    expect(modal).toContain('moneyExact(rebuyFee)');
+    expect(modal).toContain('money(totalCost)');
+    expect(modal).toContain('>= totalCost');
+    expect(modal).not.toContain('moneyExact(rebuyCost)');
+    expect(modal).not.toContain('moneyExact(rebuyFee)');
   });
 });

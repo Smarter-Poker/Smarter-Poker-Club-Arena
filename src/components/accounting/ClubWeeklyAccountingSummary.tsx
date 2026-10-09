@@ -29,8 +29,12 @@ export function ClubWeeklyAccountingSummary({ clubId }: { clubId: string }) {
   const sequence = useRef(0);
   const exportSequence = useRef(0);
   const [observation, setObservation] = useState<Observation | null>(null);
-  const [exporting, setExporting] = useState(false);
-  const [exportNotice, setExportNotice] = useState<{
+  const [exportingFor, setExportingFor] = useState<{ scope: () => boolean; read: number } | null>(
+    null
+  );
+  const [noticeFor, setExportNotice] = useState<{
+    scope: () => boolean;
+    read: number;
     tone: 'ready' | 'unavailable';
     message: string;
   } | null>(null);
@@ -68,7 +72,7 @@ export function ClubWeeklyAccountingSummary({ clubId }: { clubId: string }) {
     const read = ++exportSequence.current;
     const current = () => scope() && exportSequence.current === read;
     if (!user?.id || isHydrating || !clubId || !current()) return;
-    setExporting(true);
+    setExportingFor({ scope, read });
     setExportNotice(null);
     try {
       const result = await FinancialExportService.exportCSV({
@@ -82,21 +86,29 @@ export function ClubWeeklyAccountingSummary({ clubId }: { clubId: string }) {
       if (!current()) return;
       setExportNotice(
         result.success
-          ? { tone: 'ready', message: 'Weekly Summary Export Prepared.' }
-          : { tone: 'unavailable', message: 'Weekly Summary Export Is Unavailable.' }
+          ? { scope, read, tone: 'ready', message: 'Weekly Summary Export Prepared.' }
+          : { scope, read, tone: 'unavailable', message: 'Weekly Summary Export Is Unavailable.' }
       );
     } catch (error) {
       if (!current()) return;
       reportError(error, 'ClubWeeklyAccountingSummary.export');
       setExportNotice({
+        scope,
+        read,
         tone: 'unavailable',
         message: 'Weekly Summary Export Is Unavailable.',
       });
     } finally {
-      if (current()) setExporting(false);
+      if (current()) setExportingFor(null);
     }
   }, [clubId, user?.id, isHydrating, scope]);
 
+  const exporting =
+    scope() && exportingFor?.scope === scope && exportingFor.read === exportSequence.current;
+  const exportNotice =
+    scope() && noticeFor?.scope === scope && noticeFor.read === exportSequence.current
+      ? noticeFor
+      : null;
   const current =
     scope() && observation?.scope === scope && observation.read === sequence.current
       ? observation

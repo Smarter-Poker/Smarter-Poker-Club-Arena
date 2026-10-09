@@ -1,18 +1,4 @@
-/**
- * THE CLUB BANK OVERLAY IS THE OWNER'S OWN SWITCH IN THE PRIZE WIZARD
- * (integration I1, 2026-09-23; migration 20260923143157).
- *
- * The database keeps a per-program opt-in, OFF unless chosen, that lets a paid
- * standalone club's own Club Bank pay only the missing chips of a round the
- * seed and the Promo Wallet cannot cover. Before this change the wizard never
- * sent it, so ANY republish from the wizard silently turned an owner's
- * opening opt-in off, and the step still printed "If Promo Falls Short: Round
- * Waits Unpaid" as the only behaviour there was. Every case below failed
- * against that wizard.
- *
- * The settlement card names an overlay-funded round's Club Bank leg; with no
- * overlay its two pinned labels are unchanged.
- */
+/** New programs use Promo only; historical settlement funding stays readable. */
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -97,11 +83,6 @@ const reviewRow = (label: string) => {
   return term.parentElement?.querySelector('dd')?.textContent;
 };
 
-const overlaySwitch = () =>
-  within(screen.getByRole('group', { name: 'Shortfall Rule' })).getByRole('switch', {
-    name: 'Club Bank Covers Shortfalls',
-  });
-
 async function toFunding(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: 'Continue' }));
 }
@@ -117,103 +98,59 @@ async function publish(user: ReturnType<typeof userEvent.setup>) {
   return saveLeaderboardRewardSetup.mock.calls[0][1];
 }
 
-describe('a paid standalone program asks the owner about the Club Bank overlay', () => {
+describe('standalone publications use Promo only', () => {
   beforeEach(() => {
     saveLeaderboardRewardSetup.mockReset();
     getLeaderboardRewardSetup.mockReset();
-    saveLeaderboardRewardSetup.mockImplementation(async (clubId: string, payload: object) => ({
-      ...standalonePaid,
-      ...payload,
-      club_id: clubId,
-    }));
+    saveLeaderboardRewardSetup.mockResolvedValue({ ...standalonePaid, program_version: 4 });
   });
 
-  it('keeps an owner who opted in On when the plan is republished from the wizard', async () => {
+  it.each([false, true])(
+    'always sends overlay false from historical setting %s',
+    async (historicalOverlay) => {
+      const user = userEvent.setup();
+      open({ ...standalonePaid, overlay_enabled: historicalOverlay });
+      await toFunding(user);
+      expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+      const rule = screen.getByLabelText('Shortfall Rule');
+      expect(within(rule).getByText('If Promo Falls Short')).toBeInTheDocument();
+      expect(within(rule).getByText('Round Waits Unpaid')).toBeInTheDocument();
+      expect(screen.getByText(/No Winner Is Paid/)).toHaveTextContent(
+        'The Club Bank And Historical Opening Prize Seed Are Never Used.'
+      );
+      await fundingToReview(user);
+      expect(reviewRow('If Promo Falls Short')).toBe('Round Waits Unpaid');
+      expect(screen.getByText(/From The Club Promo Wallet Alone/)).toBeInTheDocument();
+      const submitted = await publish(user);
+      expect(submitted).toMatchObject({ overlay_enabled: false, program_version: 3 });
+    }
+  );
+
+  it('publishes disabled rewards without an overlay', async () => {
     const user = userEvent.setup();
-    open({ ...standalonePaid, overlay_enabled: true } as LeaderboardSettings);
-    await toFunding(user);
-    expect(overlaySwitch()).toBeChecked();
-
-    await fundingToReview(user);
-    expect(reviewRow('Club Bank Covers Shortfalls')).toBe('On');
-    const submitted = await publish(user);
-    // The silent switch-off this fixes: the republish carries the answer.
-    expect(submitted).toMatchObject({ overlay_enabled: true, program_version: 3 });
-  });
-
-  it('is Off unless chosen, says no bank is used, and publishes Off', async () => {
-    const user = userEvent.setup();
-    open(standalonePaid);
-    await toFunding(user);
-    const overlay = overlaySwitch();
-    expect(overlay).not.toBeChecked();
-    expect(
-      within(screen.getByRole('group', { name: 'Shortfall Rule' })).getByText('Off')
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        'A Closed Round Is Paid In Full Or Not At All. If Any Leftover Opening Prize Seed And The Promo Wallet Together Hold Less Than The Prizes, No Winner Is Paid, The Round Stays Unpaid, And The Daily Settlement Run Retries It Until They Cover It. The Club Bank Is Never Used.'
-      )
-    ).toBeInTheDocument();
-
-    await fundingToReview(user);
-    expect(reviewRow('Club Bank Covers Shortfalls')).toBe('Off');
-    const submitted = await publish(user);
-    expect(submitted.overlay_enabled).toBe(false);
-  });
-
-  it('turned On, says the Club Bank pays only the missing chips and publishes On', async () => {
-    const user = userEvent.setup();
-    open(standalonePaid);
-    await toFunding(user);
-    await user.click(overlaySwitch());
-    expect(overlaySwitch()).toBeChecked();
-    expect(
-      within(screen.getByRole('group', { name: 'Shortfall Rule' })).getByText('On')
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        'A Closed Round Is Paid In Full Or Not At All. Any Leftover Opening Prize Seed Pays First, Then The Promo Wallet. If They Together Hold Less Than The Prizes, The Club Bank Pays Only The Missing Chips, As A Separate Overlay Entry. If The Club Bank Cannot Cover All Of Them Either, No Winner Is Paid, The Round Stays Unpaid, And The Daily Settlement Run Retries It.'
-      )
-    ).toBeInTheDocument();
-    expect(screen.queryByText(/The Club Bank Is Never Used/)).not.toBeInTheDocument();
-
-    await fundingToReview(user);
-    expect(reviewRow('Club Bank Covers Shortfalls')).toBe('On');
-    // Publication is still checked against the Promo Wallet alone.
-    expect(screen.getByText(/The Club Bank Never Counts Toward That Check\./)).toBeInTheDocument();
-    expect(
-      screen.getByText(/Then The Club Bank For Only The Missing Chips, And Writes Immutable/)
-    ).toBeInTheDocument();
-    const submitted = await publish(user);
-    expect(submitted.overlay_enabled).toBe(true);
-  });
-
-  it('never sends the opt-in with a plan that pays no prizes', async () => {
-    const user = userEvent.setup();
-    open({ ...standalonePaid, overlay_enabled: true } as LeaderboardSettings);
-    await toFunding(user);
-    expect(overlaySwitch()).toBeChecked();
-    await user.click(screen.getByRole('button', { name: 'Back' }));
+    open({ ...standalonePaid, overlay_enabled: true });
     await user.click(screen.getByRole('button', { name: /No Prizes Right Now/i }));
     await user.click(screen.getByRole('button', { name: 'Review Disabled Plan' }));
-    expect(screen.queryByText('Club Bank Covers Shortfalls')).not.toBeInTheDocument();
-    const submitted = await publish(user);
-    expect(submitted).toMatchObject({ rewards_enabled: false, overlay_enabled: false });
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+    expect(await publish(user)).toMatchObject({ rewards_enabled: false, overlay_enabled: false });
   });
 
-  it('starts again from the program the wizard is reopened with', async () => {
+  it('keeps the fixed Promo-only rule when reopened with historical overlay', async () => {
     const user = userEvent.setup();
-    const props = { setup: standalonePaid, onClose: vi.fn(), onSaved: vi.fn() };
+    const props = {
+      setup: { ...standalonePaid, overlay_enabled: true },
+      onClose: vi.fn(),
+      onSaved: vi.fn(),
+    };
     const { rerender } = render(<LeaderboardPrizeWizard isOpen {...props} />);
     await toFunding(user);
-    await user.click(overlaySwitch());
-    expect(overlaySwitch()).toBeChecked();
-
     rerender(<LeaderboardPrizeWizard isOpen={false} {...props} />);
     rerender(<LeaderboardPrizeWizard isOpen {...props} />);
     await toFunding(user);
-    expect(overlaySwitch()).not.toBeChecked();
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText('Shortfall Rule')).getByText('Round Waits Unpaid')
+    ).toBeInTheDocument();
   });
 });
 

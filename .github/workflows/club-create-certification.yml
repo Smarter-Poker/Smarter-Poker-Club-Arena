@@ -137,6 +137,8 @@ jobs:
           path: |
             test-results/create-club-ready-mobile.png
             test-results/create-club-opened-mobile.png
+            test-results/create-club-leaderboard-review-mobile.png
+            test-results/create-club-prize-setup-mobile.png
             test-results/create-club-retire-ready-mobile.png
             playwright-report/
           if-no-files-found: warn

@@ -116,3 +116,11 @@ entries an hour against 2,570). Read-only at 06:52:08 UTC, 0 of 113 pre-start
 events held a count that disagreed with its roster. One served hour is short
 against a 0.76-an-hour baseline, so the engine-log command above remains the
 measure on every later engine.
+
+## Verified October 9, 2026
+
+On engine `5adefba4` (`releaseSha` `5adefba4ac868bf138bee41bda24ae4b1754e456`, container started 2026-10-08T19:55:25Z), read-only at 2026-10-09T01:57:32Z:
+
+    docker logs --since 2026-10-08T19:55:25Z club-arena-engine 2>&1 | grep 'Horse registration:' | grep -c 'roster cache diverged'
+
+returns 0 among 63 `Horse registration:` lines. About 6.0 served hours against the 0.76-an-hour baseline (about 4.6 lines expected without the fix). Verified now.

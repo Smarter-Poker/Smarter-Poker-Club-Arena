@@ -137,7 +137,7 @@ DECLARE
   program_id uuid; version_number integer; terms jsonb; response jsonb; replay jsonb;
   preimage jsonb; changed integer; before_state text; after_state text; basis_before text;
   club_bank numeric; club_promo numeric; union_bank numeric; promo_before numeric; players_before numeric;
-  correlation uuid; rejected boolean; failure_state text; failure_message text; stage text;
+  correlation uuid; shortage_op uuid; actor text; rejected boolean; failure_state text; failure_message text; stage text;
 BEGIN
   IF session_user<>'leaderboard_qualification_bootstrap' OR current_user<>session_user
      OR current_database()<>'postgres' OR inet_server_addr() IS NOT NULL
@@ -150,13 +150,14 @@ BEGIN
     RAISE EXCEPTION 'Extended payout requires exact empty disposable authorization/baseline fixture';
   END IF;
   FOREACH case_name IN ARRAY ARRAY['affiliate_union_promo_pays_once','canonical_monthly_pays_once',
-    'insufficient_promo_bank_available_refuses','recipient_failure_rolls_back_then_retries'] LOOP
+    'insufficient_promo_bank_available_refuses','recipient_failure_rolls_back_then_retries',
+    'affiliate_union_underfunded_refuses','settlement_sql_roles_refuse'] LOOP
     BEGIN
       stage:='fixture';
       period_name:=CASE WHEN case_name='canonical_monthly_pays_once' THEN 'monthly' ELSE 'weekly' END;
-      club:=CASE WHEN case_name='affiliate_union_promo_pays_once' THEN '92000000-0000-4000-8000-000000000001'::uuid
+      club:=CASE WHEN case_name IN ('affiliate_union_promo_pays_once','affiliate_union_underfunded_refuses') THEN '92000000-0000-4000-8000-000000000001'::uuid
         ELSE '92000000-0000-4000-8000-000000000002'::uuid END;
-      funding_union:=CASE WHEN case_name='affiliate_union_promo_pays_once' THEN union_id ELSE NULL END;
+      funding_union:=CASE WHEN case_name IN ('affiliate_union_promo_pays_once','affiliate_union_underfunded_refuses') THEN union_id ELSE NULL END;
       owner:=CASE WHEN funding_union IS NULL THEN '90000000-0000-4000-8000-000000000002'::uuid
         ELSE '90000000-0000-4000-8000-000000000001'::uuid END;
       SELECT start_date,end_date INTO starts,ends FROM public.fn_leaderboard_period_window(period_name,-1);
@@ -234,8 +235,59 @@ BEGIN
       SELECT chip_balance INTO STRICT union_bank FROM public.union_wallets WHERE union_wallets.union_id=extended_cases.union_id;
       promo_before:=CASE WHEN funding_union IS NULL THEN club_promo ELSE (SELECT promo_wallet FROM public.union_wallets WHERE union_wallets.union_id=funding_union) END;
       SELECT COALESCE(sum(chip_balance),0) INTO players_before FROM public.club_members WHERE user_id=player;
+      IF case_name='affiliate_union_underfunded_refuses' THEN
+        stage:='actual_shortage'; shortage_op:=gen_random_uuid();
+        PERFORM set_config('request.jwt.claims',jsonb_build_object('sub',owner,'role','service_role')::text,true);
+        PERFORM set_config('request.jwt.claim.sub',owner::text,true);
+        PERFORM set_config('request.jwt.claim.role','service_role',true);
+        SET LOCAL ROLE service_role;
+        response:=public.fn_union_promo_send(funding_union,20,'club',club,shortage_op,owner,'Disposable union shortage fixture');
+        RESET ROLE;
+        IF (response->>'success')::boolean IS DISTINCT FROM true OR response->>'destination' IS DISTINCT FROM 'club'
+           OR (response->>'promo_after')::numeric IS DISTINCT FROM 0
+           OR (response->>'club_promo_after')::numeric IS DISTINCT FROM club_promo+20
+           OR (SELECT promo_wallet FROM public.union_wallets WHERE union_wallets.union_id=funding_union) IS DISTINCT FROM 0
+           OR (SELECT promo_balance FROM public.clubs WHERE id=club) IS DISTINCT FROM club_promo+20
+           OR (SELECT chip_treasury FROM public.clubs WHERE id=club) IS DISTINCT FROM club_bank
+           OR (SELECT chip_balance FROM public.union_wallets WHERE union_wallets.union_id=funding_union) IS DISTINCT FROM union_bank
+           OR (SELECT COALESCE(sum(chip_balance),0) FROM public.club_members WHERE user_id=player) IS DISTINCT FROM players_before
+           OR (SELECT count(*) FROM public.chip_ledger WHERE correlation_id=shortage_op)<>1
+           OR (SELECT count(*) FROM public.chip_ledger WHERE correlation_id=shortage_op AND category='promo_send'
+             AND from_type='union_wallet' AND from_entity_id=funding_union AND from_label='union_wallets.promo_wallet'
+             AND to_type='promo_wallet' AND to_entity_id=club AND to_label='clubs.promo_balance' AND amount=20)<>1
+           OR (SELECT count(*) FROM public.union_wallet_transactions WHERE period_id=shortage_op AND union_id=funding_union
+             AND club_id=club AND wallet='promo_wallet' AND direction='debit' AND amount=20 AND balance_after=0 AND tx_type='promo_to_club')<>1 THEN
+          RAISE EXCEPTION 'Conserving union shortage receipt differs'; END IF;
+      END IF;
       before_state:=pg_temp.lb_financial_digest();
       basis_before:=(SELECT md5(COALESCE(jsonb_agg(to_jsonb(r) ORDER BY club_id,period,period_start)::text,'null')) FROM public.leaderboard_round_basis_receipts r);
+      IF case_name='settlement_sql_roles_refuse' THEN
+        stage:='sql_role_refusal';
+        FOREACH actor IN ARRAY ARRAY[owner::text,player::text,'90000000-0000-4000-8000-000000000005','anon'] LOOP
+          rejected:=false;
+          BEGIN
+            IF actor='anon' THEN
+              PERFORM set_config('request.jwt.claims','{"role":"anon"}',true);
+              PERFORM set_config('request.jwt.claim.sub','',true);
+              PERFORM set_config('request.jwt.claim.role','anon',true);
+              SET LOCAL ROLE anon;
+            ELSE
+              PERFORM set_config('request.jwt.claims',jsonb_build_object('sub',actor,'role','authenticated')::text,true);
+              PERFORM set_config('request.jwt.claim.sub',actor,true);
+              PERFORM set_config('request.jwt.claim.role','authenticated',true);
+              SET LOCAL ROLE authenticated;
+            END IF;
+            PERFORM public.fn_payout_leaderboard(club,period_name,'profit',starts::timestamp AT TIME ZONE 'UTC',ends::timestamp AT TIME ZONE 'UTC');
+            RESET ROLE;
+          EXCEPTION WHEN insufficient_privilege THEN
+            RESET ROLE; rejected:=true; GET STACKED DIAGNOSTICS failure_state=RETURNED_SQLSTATE;
+          END;
+          IF NOT rejected OR failure_state IS DISTINCT FROM '42501'
+             OR pg_temp.lb_financial_digest() IS DISTINCT FROM before_state
+             OR (SELECT md5(COALESCE(jsonb_agg(to_jsonb(r) ORDER BY club_id,period,period_start)::text,'null')) FROM public.leaderboard_round_basis_receipts r) IS DISTINCT FROM basis_before THEN
+            RAISE EXCEPTION 'SQL role refusal changed money or basis'; END IF;
+        END LOOP;
+      END IF;
       IF case_name='recipient_failure_rolls_back_then_retries' THEN
         IF EXISTS(SELECT 1 FROM pg_trigger WHERE tgname='lb_isolated_recipient_failure') THEN RAISE EXCEPTION 'Fault trigger already exists'; END IF;
         CREATE TRIGGER lb_isolated_recipient_failure BEFORE INSERT ON public.wallet_transactions FOR EACH ROW EXECUTE FUNCTION pg_temp.lb_fail_recipient_receipt();
@@ -253,8 +305,8 @@ BEGIN
       EXCEPTION WHEN OTHERS THEN
         RESET ROLE; rejected:=true; GET STACKED DIAGNOSTICS failure_state=RETURNED_SQLSTATE,failure_message=MESSAGE_TEXT;
       END;
-      IF case_name IN ('insufficient_promo_bank_available_refuses','recipient_failure_rolls_back_then_retries') THEN
-        IF NOT rejected OR (case_name='insufficient_promo_bank_available_refuses' AND
+      IF case_name IN ('insufficient_promo_bank_available_refuses','affiliate_union_underfunded_refuses','recipient_failure_rolls_back_then_retries') THEN
+        IF NOT rejected OR (case_name IN ('insufficient_promo_bank_available_refuses','affiliate_union_underfunded_refuses') AND
             (failure_state IS DISTINCT FROM 'P0001' OR failure_message IS DISTINCT FROM 'LEADERBOARD_PROMO_UNDERFUNDED|Leaderboard Requires 10.00 Promo Chips But The Recorded Promo Wallet Holds 0.00'))
            OR (case_name='recipient_failure_rolls_back_then_retries' AND (failure_state IS DISTINCT FROM 'ZLF01' OR failure_message IS DISTINCT FROM 'ISOLATED_RECIPIENT_RECEIPT_FAILURE'))
            OR pg_temp.lb_financial_digest() IS DISTINCT FROM before_state
@@ -267,7 +319,7 @@ BEGIN
           RESET ROLE; rejected:=false;
         END IF;
       END IF;
-      IF case_name<>'insufficient_promo_bank_available_refuses' THEN
+      IF case_name NOT IN ('insufficient_promo_bank_available_refuses','affiliate_union_underfunded_refuses') THEN
         stage:='independent_readback';
         IF rejected OR (response->>'success')::boolean IS DISTINCT FROM true OR (response->>'already_settled')::boolean IS DISTINCT FROM false
            OR (response->>'total_paid')::numeric IS DISTINCT FROM 10 OR (response->>'promo_funded')::numeric IS DISTINCT FROM 10
@@ -316,7 +368,7 @@ $extended$;
 TABLE lb_extended_payout_verdicts;
 DO $extended_verdict$
 BEGIN
-  IF (SELECT count(*) FROM lb_extended_payout_verdicts)<>4 OR EXISTS(SELECT 1 FROM lb_extended_payout_verdicts WHERE NOT passed) THEN
+  IF (SELECT count(*) FROM lb_extended_payout_verdicts)<>6 OR EXISTS(SELECT 1 FROM lb_extended_payout_verdicts WHERE NOT passed) THEN
     RAISE EXCEPTION 'Extended payout cases remain unqualified'; END IF;
 END;
 $extended_verdict$;

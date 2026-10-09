@@ -74,8 +74,9 @@ export default function LightningRoomTools({
   /* LIGHTNING PHASE 10: hand volume always on screen - the session's hands,
      clock and rate, ticked locally and reconciled by the panel's own read. */
   const volume = useLightningHandVolume(poolSessionId, handKey, visible, stats);
-  /* The operator's auto-rebuy configuration, read-only, read when the panel
-     opens. Unreadable (deploy window, not granted) shows nothing. */
+  /* The operator's auto-rebuy configuration and the player's own use of it,
+     read-only, from fn_lightning_pool_status when the panel opens (Lightning
+     Phase 12). Shown only while auto-rebuy is ON; unreadable shows nothing. */
   const autoRebuy = useLightningAutoRebuyStatus(clusterId, statsOpen && visible);
   /* STOP PLAYING (spec Phase 16): one tap asks fn_lightning_stop_playing;
      the database refuses new hands at once and ends the session when the
@@ -191,7 +192,7 @@ export default function LightningRoomTools({
               {failed ? 'We Could Not Load Your Session Right Now.' : 'One Moment...'}
             </p>
           )}
-          {autoRebuy ? (
+          {autoRebuy?.enabled ? (
             <p className="lightning-panel__note" data-testid="lightning-auto-rebuy-status">
               {lightningAutoRebuyText(autoRebuy)}
             </p>

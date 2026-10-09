@@ -2181,13 +2181,11 @@ class TournamentService {
     if (
       Number(player.chips ?? 0) !== 0 ||
       Number(player.prize ?? 0) > 0 ||
-      (purchaseType === 'rebuy'
-        ? playerStatus !== 'playing'
-        : !['playing', 'eliminated'].includes(playerStatus))
+      !['playing', 'eliminated'].includes(playerStatus)
     ) {
       return { allowed: false, reason: 'Only An Unpaid Zero-Stack Entry Can Rebuy' };
     }
-    if (purchaseType === 'rebuy') {
+    if (purchaseType === 'rebuy' && playerStatus === 'playing') {
       const promptUntil = Date.parse(String(player.rebuy_prompt_until ?? ''));
       if (!Number.isFinite(promptUntil) || promptUntil <= Date.now()) {
         return { allowed: false, reason: 'The Rebuy Decision Window Has Closed' };

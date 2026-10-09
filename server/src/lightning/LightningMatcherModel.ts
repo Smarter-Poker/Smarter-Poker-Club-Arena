@@ -15,7 +15,8 @@
  *     lightningMatcherSim.ts): a synthetic population, thousands of hands.
  *
  * PLUGGABLE BY VERSION. `LIGHTNING_MATCHER_MODELS` maps a matcher_version to
- * a pure `plan(snapshot, params)`. Two exist:
+ * a pure `plan(snapshot, params)`. Two plans exist (and `m1-port`, below,
+ * is m1 under a second name):
  *
  *   - `m1`, a line-for-line port of the live SQL plan (P1 group sizes from
  *     the legal count, P2 big blinds by the barrier's blind order, the
@@ -35,6 +36,23 @@
  * same change in the SQL plan under a new matcher_version). A version this
  * map does not know makes the shadow side quietly unavailable.
  *
+ * `m1-port` IS `m1` UNDER ITS OWN NAME (Phase 11 remediation, 2026-10-09):
+ * the same pure plan, registered so the shadow can run it beside the live
+ * SQL `m1` and record an A/A calibration (live m1 against shadow m1-port).
+ * The database refuses a comparison of a version with itself; it accepts
+ * these two names, and any gap between their scores is the measurement's
+ * own bias, not a matcher difference. scripts/dev/test-lightning-matcher-
+ * parity.sh proves the port against the real fn_lightning_match_plan on
+ * PostgreSQL 17: identical groups, blinds and positions on the same
+ * snapshot.
+ *
+ * TIME IS IN MILLISECONDS WITH MICROSECOND FRACTIONS. PostgreSQL stamps in
+ * microseconds and the barrier stamps each group of a pass its own
+ * microsecond (`v_now + (ordinal - 1) * 1 microsecond`), so a snapshot taken
+ * from the database carries `epoch_us / 1000`: a double holds every
+ * microsecond of this century distinctly and in order, which is all the
+ * plan's comparisons need.
+ *
  * NOTHING HERE READS A RISK SCORE. The snapshot carries the queue keys the
  * SQL plan reads and nothing else: the integrity telemetry
  * (LightningTelemetry) is never an input, so a risk signal can never move a
@@ -49,15 +67,27 @@ export interface LightningPoolPlayer {
   legal: boolean;
   /** Why not, when not legal (e.g. DISCONNECTED). */
   reasonCode: string | null;
-  /** P4: when the player last became free to be matched. */
+  /** P4's first key: when the player last became free to be matched (sl.idle_since). */
   idleSinceMs: number;
-  /** P4/P2 tie-break: when the player entered the pool. */
+  /** P4's second key: when the player's pool session entered (ps.entered_at). */
   enteredAtMs: number;
+  /**
+   * P4's third key: when the player joined the Cluster (the cash session's
+   * opened_at, cps.opened_at). Absent or null sorts last, as the SQL's
+   * NULLS LAST does; absent everywhere, the next key (player_id) decides.
+   */
+  joinedAtMs?: number | null;
+  /**
+   * P2's fourth key, and the debt age's fallback: when the player's pool
+   * SLOT opened (sl.opened_at), which is not the pool session's entry. Absent
+   * = enteredAtMs (a model that never saw the two apart).
+   */
+  slotOpenedAtMs?: number;
   /** P2: when the player last paid a big blind; null = never (outranks everyone). */
   lastBbAtMs: number | null;
   /** P2: an unresolved BB obligation (missed BB debt or BB owed). */
   bbUnresolved: boolean;
-  /** P2: the age of the player's blind debt. */
+  /** P2: the age of the player's blind debt, coalesce(bl.debt_since, sl.opened_at). */
   debtSinceMs: number;
   /** Hands the player has been dealt since their last big blind (null = none yet). */
   handsSinceBb: number | null;
@@ -71,6 +101,10 @@ export interface LightningPoolPlayer {
 export interface LightningRecentHand {
   players: string[];
   formedAtMs: number;
+  /** The hand's id: the SQL window's tie-break among hands formed at one instant. */
+  handId?: string;
+  /** The Cluster epoch the hand was formed in; P5 reads only the current one. */
+  epoch?: number;
 }
 
 export interface LightningPoolSnapshot {
@@ -78,6 +112,18 @@ export interface LightningPoolSnapshot {
   players: LightningPoolPlayer[];
   /** Most recent first is not required; the model orders them. */
   recentHands: LightningRecentHand[];
+  /**
+   * The Cluster's current epoch, when known: P5's window holds only the
+   * hands of this epoch (h.cluster_epoch = v_epoch). Absent = no filter.
+   */
+  epoch?: number;
+  /**
+   * The database's legal count for this pass (fn_lightning_player_legality's
+   * answer, as the live pass reported it), when the snapshot's own legality
+   * is only an estimate: P5's band is read from it, as the SQL reads its band
+   * from the legal count. Absent = the snapshot's own legal players.
+   */
+  legalCount?: number | null;
 }
 
 /** The fn_lightning_config keys the plan reads, with the SQL's defaults. */
@@ -190,7 +236,14 @@ export function lightningGroupSizes(
 
 const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
-/** P2, the barrier's blind order (fn_lightning_blind_order). */
+/** The pool slot's opening (P2's fourth key), or the pool entry when the model never saw it apart. */
+const slotOpened = (p: LightningPoolPlayer): number => p.slotOpenedAtMs ?? p.enteredAtMs;
+
+/**
+ * P2, the barrier's blind order (fn_lightning_blind_order): an unresolved
+ * obligation first, then last_bb_at NULLS FIRST, then the debt age, then the
+ * SLOT's opening (sl.opened_at), then player_id.
+ */
 export function compareBlindOrder(a: LightningPoolPlayer, b: LightningPoolPlayer): number {
   if (a.bbUnresolved !== b.bbUnresolved) return a.bbUnresolved ? -1 : 1;
   if (a.lastBbAtMs !== b.lastBbAtMs) {
@@ -199,29 +252,60 @@ export function compareBlindOrder(a: LightningPoolPlayer, b: LightningPoolPlayer
     return a.lastBbAtMs - b.lastBbAtMs;
   }
   if (a.debtSinceMs !== b.debtSinceMs) return a.debtSinceMs - b.debtSinceMs;
-  if (a.enteredAtMs !== b.enteredAtMs) return a.enteredAtMs - b.enteredAtMs;
+  const sa = slotOpened(a);
+  const sb = slotOpened(b);
+  if (sa !== sb) return sa - sb;
   return cmp(a.playerId, b.playerId);
 }
 
-/** P4, the queue: idle_since, pool entry, player_id. */
+/**
+ * P4, the queue (fn_lightning_match_plan's row_number): ORDER BY
+ * sl.idle_since, ps.entered_at, cps.opened_at, player_id - the Cluster join
+ * with NULLS LAST, as PostgreSQL sorts an absent one ascending.
+ */
 export function compareQueueOrder(a: LightningPoolPlayer, b: LightningPoolPlayer): number {
   if (a.idleSinceMs !== b.idleSinceMs) return a.idleSinceMs - b.idleSinceMs;
   if (a.enteredAtMs !== b.enteredAtMs) return a.enteredAtMs - b.enteredAtMs;
+  const ja = a.joinedAtMs ?? null;
+  const jb = b.joinedAtMs ?? null;
+  if (ja !== jb) {
+    if (ja === null) return 1;
+    if (jb === null) return -1;
+    return ja - jb;
+  }
   return cmp(a.playerId, b.playerId);
 }
 
 const pairKey = (a: string, b: string): string => (a < b ? `${a}/${b}` : `${b}/${a}`);
 const setKey = (ids: readonly string[]): string => [...ids].sort(cmp).join(',');
 
-/** P5's memory: the window of recent hands, most recent first. */
+/**
+ * P5's memory: the window of recent hands, most recent first - the SQL's
+ * `WHERE h.cluster_epoch = v_epoch AND h.formed_at <= v_now AND h.formed_at
+ * > v_now - window ORDER BY h.formed_at DESC, h.hand_id LIMIT hands`. A hand
+ * of another epoch is outside it (when both epochs are known), and hands
+ * formed at one instant are taken in hand_id order.
+ */
 export function recentWindow(
   snapshot: LightningPoolSnapshot,
   params: LightningMatcherParams
 ): LightningRecentHand[] {
   const since = snapshot.nowMs - params.recentWindowSeconds * 1000;
+  const epoch = snapshot.epoch;
   return snapshot.recentHands
-    .filter((h) => h.formedAtMs <= snapshot.nowMs && h.formedAtMs > since)
-    .sort((a, b) => b.formedAtMs - a.formedAtMs)
+    .filter(
+      (h) =>
+        h.formedAtMs <= snapshot.nowMs &&
+        h.formedAtMs > since &&
+        (epoch === undefined || h.epoch === undefined || h.epoch === epoch)
+    )
+    .sort((a, b) =>
+      b.formedAtMs !== a.formedAtMs
+        ? b.formedAtMs - a.formedAtMs
+        : a.handId !== undefined && b.handId !== undefined
+          ? cmp(a.handId, b.handId)
+          : 0
+    )
     .slice(0, Math.max(0, params.recentWindowHands));
 }
 
@@ -311,7 +395,13 @@ function planWith(
   const byId = new Map(snapshot.players.map((p) => [p.playerId, p]));
   const legal = snapshot.players.filter((p) => p.legal).sort(compareBlindOrder);
   const n = legal.length;
-  const weight = knobs.weight(bandOf(n, params), params);
+  // P5's band by the legal count: the database's, when the snapshot only
+  // estimates legality (the shadow runner's engine-side pool).
+  const bandCount =
+    typeof snapshot.legalCount === 'number' && Number.isFinite(snapshot.legalCount)
+      ? snapshot.legalCount
+      : n;
+  const weight = knobs.weight(bandOf(bandCount, params), params);
   const cap = Math.max(0, Math.floor(params.maxGroups));
 
   let seatable = legal;
@@ -433,25 +523,27 @@ function planWith(
   };
 }
 
+/** The SQL plan's own knobs: CASE band WHEN large THEN weight_large WHEN medium THEN weight_medium ELSE 0. */
+const M1_KNOBS: PlanKnobs = {
+  weight: (band, p) =>
+    band === 'large' ? p.diversityWeightLarge : band === 'medium' ? p.diversityWeightMedium : 0,
+  p3TieTakesNewest: true,
+};
+
 const M1: LightningMatcherModel = {
   version: 'm1',
   note: 'The live SQL plan (fn_lightning_match_plan m1), ported line for line',
-  plan: (snapshot, params) =>
-    planWith(
-      'm1',
-      {
-        // The SQL: CASE band WHEN large THEN weight_large WHEN medium THEN weight_medium ELSE 0.
-        weight: (band, p) =>
-          band === 'large'
-            ? p.diversityWeightLarge
-            : band === 'medium'
-              ? p.diversityWeightMedium
-              : 0,
-        p3TieTakesNewest: true,
-      },
-      snapshot,
-      params
-    ),
+  plan: (snapshot, params) => planWith('m1', M1_KNOBS, snapshot, params),
+};
+
+/**
+ * m1 under its own name, for the A/A calibration: the shadow runs the port
+ * beside the live SQL m1 and the comparison records `m1` against `m1-port`.
+ */
+const M1_PORT: LightningMatcherModel = {
+  version: 'm1-port',
+  note: 'The live SQL plan m1, the same TypeScript port, named apart for an A/A calibration against live m1',
+  plan: (snapshot, params) => planWith('m1-port', M1_KNOBS, snapshot, params),
 };
 
 function knob(v: number | null | undefined, fallback: number): number {
@@ -487,7 +579,7 @@ const M2: LightningMatcherModel = {
 
 /** Every matcher version the engine can model, by matcher_version. */
 export const LIGHTNING_MATCHER_MODELS: ReadonlyMap<string, LightningMatcherModel> = new Map(
-  [M1, M2].map((m) => [m.version, m])
+  [M1, M1_PORT, M2].map((m) => [m.version, m])
 );
 
 /** The version the shadow side runs when the config names none: the newest candidate. */

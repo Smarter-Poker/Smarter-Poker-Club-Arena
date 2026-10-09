@@ -3354,30 +3354,32 @@ describe('P10.3 worker-owned PLO4 authority (the Phase 8 path, reused)', () => {
   ] as const;
 
   it.each(LIVE_STATES)(
-    'live behaviour is unchanged today: %s executes the same action as current main',
+    'live behaviour under the committed selection: %s',
     async (_name, format, cards, changed, mainAction) => {
       const request = format === 'cash' ? plo4Cash(601, cards) : plo4Tournament(601, cards);
       const live = await decideThrough(request, () => admitHorsePhase10ReleaseAuthority());
       const reference = await decideThrough(request, undefined, true);
-      expect(live.h.decisionOpts[0].phase10Plo4).toBe('shadow');
-      expect(act(live.decision)).toEqual(mainAction);
       expect(act(reference.decision)).toEqual(mainAction);
       expect(reference.decision.plo4Policy).toBeUndefined();
       const receipt = live.decision.plo4Policy!;
-      expect(receipt).toMatchObject({
-        mode: 'shadow',
-        applied: false,
-        authorityVerdict: null,
-        selectionRefusal: null,
-        authority: { state: 'unselected', reason: 'unselected', authorityKey: null },
-      });
       expect(receipt.changed).toBe(changed);
-      expect(receipt.selection).toBe(receipt.changed ? 'shadow_change' : 'none');
       expect(receipt.finalAction).toBe(live.decision.action);
       expect(live.result.phase10Authority).toMatchObject({
-        state: 'unselected',
+        state: 'usable',
         continuationVersion: 'plo4-policy-round3-v2',
       });
+      expect(receipt.authority).toMatchObject({ state: 'usable' });
+      if (format === 'tournament') {
+        // A tournament decision never admits candidate mode: Phase 7 keeps it.
+        expect(live.h.decisionOpts[0].phase10Plo4).toBe('shadow');
+        expect(receipt).toMatchObject({ mode: 'shadow', applied: false });
+        expect(act(live.decision)).toEqual(mainAction);
+      } else {
+        expect(live.h.decisionOpts[0].phase10Plo4).toBe('candidate');
+        expect(receipt).toMatchObject({ mode: 'candidate', applied: changed });
+        if (changed) expect(live.decision.action).not.toBe(mainAction.action);
+        else expect(act(live.decision)).toEqual(mainAction);
+      }
       expect(horseDecisionReceiptIsValid(structuredClone(live.decision), 'plo4')).toBe(true);
     }
   );

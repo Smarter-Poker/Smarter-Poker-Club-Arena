@@ -959,6 +959,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             // grinding at four stale tables at once). A time-bank expiry is a
             // timeout too — count it toward the auto-sit-out cap.
             this.disconnectEngine.recordConnectedTimeout(this.tableId, userId);
+            if (!tbCanCheck) this.disconnectEngine.sitOut(this.tableId, userId, 'forced');
             this.noteHorseTurnTimeout(userId, 'timebank');
             this.notePlayerTurnTimeout(userId, 'timebank');
 
@@ -1323,6 +1324,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
            aHorseActionReleasesItsClocks pins that counter to the two expiry
            sites a horse can reach. */
         this.disconnectEngine.recordConnectedTimeout(this.tableId, userId);
+        if (!tbCanCheck) this.disconnectEngine.sitOut(this.tableId, userId, 'forced');
         this.notePlayerTurnTimeout(userId, 'timebank');
 
         // FIX 149: Wire telemetry — manual time bank expiry

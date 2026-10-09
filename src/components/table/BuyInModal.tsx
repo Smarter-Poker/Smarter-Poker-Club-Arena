@@ -24,6 +24,8 @@ import {
 import { useFitText } from '../lobby/game-cards/useFitText';
 import { moneyExact } from '../../utils/buyIn';
 import './BuyInModal.css';
+import { PurchaseConsole, PurchaseText } from './PurchaseConsole';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { reportError } from '../../utils/errorReporter';
 import DiamondsToChipsButton from '../games/DiamondsToChipsButton';
 
@@ -33,6 +35,9 @@ import DiamondsToChipsButton from '../games/DiamondsToChipsButton';
 
 export interface BuyInModalProps {
   isOpen: boolean;
+  /** Cash bust rebuys share the owner-approved purchase artwork. */
+  purchaseKind?: 'rebuy';
+  externalProcessing?: boolean;
   recovery?: { amount: number; seat: number } | null;
   onClose: () => void;
   onConfirm: (amount: number, autoRebuy: boolean) => boolean | void | Promise<boolean | void>;
@@ -88,6 +93,8 @@ function formatAmount(amount: number, currency: string = ''): string {
 
 export function BuyInModal({
   isOpen,
+  purchaseKind,
+  externalProcessing = false,
   recovery,
   onClose,
   onConfirm,
@@ -105,6 +112,7 @@ export function BuyInModal({
   onPlayDiamonds,
   onRetryBalance,
 }: BuyInModalProps) {
+  const rebuyDialogRef = useFocusTrap(isOpen && purchaseKind === 'rebuy', '#buy-in-modal-title');
   // State
   const wholeDiamonds = currency === 'diamonds';
   const balanceKnown = accountBalance !== null;
@@ -121,7 +129,8 @@ export function BuyInModal({
   const autoRebuy = false;
   const [displayAmount, setDisplayAmount] = useState(effectiveDefault);
   const [isConfirmPulsing, setIsConfirmPulsing] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [internalProcessing, setIsProcessing] = useState(false);
+  const isProcessing = internalProcessing || externalProcessing;
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const confirmInFlightRef = useRef(false);
 
@@ -322,6 +331,156 @@ export function BuyInModal({
         : balanceKnown
           ? 'Insufficient Balance'
           : 'Balance Unavailable';
+
+  if (purchaseKind === 'rebuy') {
+    const unit = wholeDiamonds ? 'Diamonds' : 'Chips';
+    const closeRebuy = () => {
+      if (!confirmInFlightRef.current) onClose();
+    };
+    return (
+      <div className="buy-in-modal__overlay addon-console__overlay" onClick={closeRebuy}>
+        <div
+          className="addon-console"
+          ref={rebuyDialogRef}
+          onClick={(e) => e.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="buy-in-modal-title"
+        >
+          <PurchaseConsole
+            title="Rebuy Available"
+            titleId="buy-in-modal-title"
+            subtitle="Choose Your Rebuy Amount"
+            status={
+              <>
+                <input
+                  type="number"
+                  className="purchase-console__amount"
+                  aria-label="Buy-In Amount"
+                  min={effectiveMinBuyIn}
+                  max={maxBuyIn}
+                  step={wholeDiamonds ? 1 : 0.01}
+                  value={buyInAmount}
+                  onBlur={() => setBuyInAmount(clampedBuyIn)}
+                  disabled={isProcessing || !!recovery}
+                  onChange={(e) => setBuyInAmount(Number(e.target.value))}
+                />
+                <span>{unit}</span>
+              </>
+            }
+            rows={[
+              <React.Fragment key="cost">
+                <span>Rebuy Cost</span>
+                <strong>
+                  <PurchaseText>{`${formatAmount(clampedBuyIn, currency)} ${unit}`}</PurchaseText>
+                </strong>
+              </React.Fragment>,
+              <React.Fragment key="range">
+                <span>Allowed Range</span>
+                <strong>
+                  <PurchaseText>{`${formatAmount(effectiveMinBuyIn, currency)} - ${formatAmount(maxBuyIn, currency)}`}</PurchaseText>
+                </strong>
+              </React.Fragment>,
+              <React.Fragment key="balance">
+                <span>Your Balance</span>
+                <strong>
+                  <PurchaseText>
+                    {balanceKnown
+                      ? `${formatAmount(accountBalance, currency)} ${unit}`
+                      : 'Unavailable'}
+                  </PurchaseText>
+                </strong>
+              </React.Fragment>,
+            ]}
+            secondary={{
+              label: 'Close',
+              'aria-label': 'Close Buy-In',
+              onClick: closeRebuy,
+              disabled: isProcessing,
+            }}
+            primary={{
+              label: isProcessing
+                ? 'Joining'
+                : canConfirm
+                  ? `Rebuy ${formatAmount(clampedBuyIn, currency)}`
+                  : primaryLabel,
+              onClick: handleConfirm,
+              disabled: !canConfirm || isProcessing,
+            }}
+            onClose={closeRebuy}
+            closeDisabled={isProcessing}
+            amountControls={
+              <>
+                <button
+                  type="button"
+                  aria-label="Buy In For The Minimum"
+                  disabled={isProcessing || !!recovery}
+                  onClick={() => setBuyInAmount(effectiveMinBuyIn)}
+                >
+                  Min
+                </button>
+                <button
+                  type="button"
+                  disabled={isProcessing || !!recovery}
+                  onClick={() =>
+                    setBuyInAmount(effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.33)
+                  }
+                >
+                  33%
+                </button>
+                <button
+                  type="button"
+                  disabled={isProcessing || !!recovery}
+                  onClick={() =>
+                    setBuyInAmount(effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.66)
+                  }
+                >
+                  66%
+                </button>
+                <button
+                  type="button"
+                  aria-label="Buy In For The Maximum"
+                  disabled={isProcessing || !!recovery}
+                  onClick={() => setBuyInAmount(maxBuyIn)}
+                >
+                  Max
+                </button>
+              </>
+            }
+            messages={
+              <>
+                {countdown !== undefined && <p>{countdown}s Remaining</p>}
+                {confirmError && <p role="alert">{confirmError}</p>}
+                {!balanceKnown && onRetryBalance && (
+                  <button type="button" onClick={onRetryBalance}>
+                    Retry
+                  </button>
+                )}
+                {!recovery && !hasEnoughBalance && balanceKnown && onTopUp && (
+                  <button
+                    type="button"
+                    onClick={onTopUp}
+                    disabled={isProcessing}
+                    aria-label="Top Up Account"
+                  >
+                    Top Up
+                  </button>
+                )}
+                {!recovery && !hasEnoughBalance && balanceKnown && onPlayDiamonds && (
+                  <DiamondsToChipsButton
+                    clubId={diamondGamesClubId}
+                    enabled={isOpen && !isProcessing}
+                    size="compact"
+                    onGo={onPlayDiamonds}
+                  />
+                )}
+              </>
+            }
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     /**

@@ -319,6 +319,13 @@ export interface LightningHandHostDeps {
   onPlayerReleased?(playerId: string, foldType: LightningFoldType | 'hand_end'): void;
   /** The participants and rooms are known and the deal is about to start. */
   onDealing?(host: LightningHandHost): void;
+  /**
+   * LIGHTNING PHASE 12: the hand's first frame was sent to this player's room
+   * at `atMs` (engine clock). The registry closes it on that room's RENDER_ACK
+   * (hand_to_first_render). Every seat is reported alike; a room with no
+   * socket simply never acks.
+   */
+  onFirstFrame?(playerId: string, roomId: string, handId: string, atMs: number): void;
   /** The host is done, whatever the outcome. */
   onFinished?(host: LightningHandHost): void;
   /** Settlement found a conservation disagreement and FROZE the Cluster. */
@@ -507,6 +514,17 @@ export class LightningHandHost {
     if (this.state !== 'created') return;
     this.state = 'starting';
     try {
+      // FIRST-HAND PATH (Lightning Phase 12): the reads that do not depend on
+      // each other go out together. The hand number and the formation's
+      // participants (written by the barrier) are asked for alongside
+      // begin_dealing, the host rules and the time banks alongside each
+      // other once the bind names the host table: three round trips where
+      // there were six. Refusals are still judged in the same order, and
+      // nothing is written before begin_dealing has answered.
+      const handNumberP = this.deps.backend.nextHandNumber();
+      const participantsP = this.deps.backend.loadParticipants(this.handId);
+      handNumberP.catch(() => undefined);
+      participantsP.catch(() => undefined);
       const begun = await this.deps.backend.beginDealing(
         this.instanceId,
         this.deps.dealWindowMs,
@@ -516,7 +534,7 @@ export class LightningHandHost {
       if (begun.value.handId && begun.value.handId !== this.handId)
         return void (await this.abandon('begin_dealing_hand_mismatch'));
 
-      this.handNumber = await this.deps.backend.nextHandNumber();
+      this.handNumber = await handNumberP;
       const bound = await this.deps.backend.bindHandNumber(this.instanceId, this.handNumber);
       if (!bound.ok) return void (await this.abandon(`bind_refused:${bound.reason}`));
       if (bound.value.handId !== this.handId)
@@ -525,17 +543,21 @@ export class LightningHandHost {
       if (!this.deps.leaseFor(this.hostTableId))
         return void (await this.abandon('host_lease_not_held'));
 
-      const participants = await this.deps.backend.loadParticipants(this.handId);
+      const rulesP = this.deps.backend.loadHostRules(this.hostTableId);
+      rulesP.catch(() => undefined);
+      const participants = await participantsP;
       const refusal = this.checkFormation(participants);
       if (refusal) return void (await this.abandon(refusal));
       for (const p of participants) {
         this.participants.set(p.playerId, p);
         this.watching.set(p.playerId, p.poolSessionId);
       }
-      this.rules = await this.deps.backend.loadHostRules(this.hostTableId);
+      const banksP = this.deps.timeBanks.ensure([...this.participants.keys()]);
+      banksP.catch(() => undefined);
+      this.rules = await rulesP;
       const variantRefusal = this.checkVariant(this.rules);
       if (variantRefusal) return void (await this.abandon(variantRefusal));
-      await this.deps.timeBanks.ensure([...this.participants.keys()]);
+      await banksP;
       if (this.state !== 'starting') return; // aborted while reading
 
       this.configureClocks(this.rules);
@@ -970,6 +992,15 @@ export class LightningHandHost {
     switch (event.type) {
       case 'HAND_START':
         this.handStartAtMs = now;
+        // LIGHTNING PHASE 12: the hand's first frame goes to every room now -
+        // the hand_to_first_render leg starts here, on the engine's clock.
+        for (const [playerId, room] of this.rooms()) {
+          try {
+            this.deps.onFirstFrame?.(playerId, room, this.handId, now);
+          } catch {
+            // Telemetry never reaches back into a hand.
+          }
+        }
         this.emitAll(
           handStartedFrame({
             tableId: '',
@@ -1553,9 +1584,12 @@ export class LightningHandHost {
       return { success: false, error: 'Player not found at this table' };
     const normalized = String(action ?? '').toLowerCase();
     if (normalized === 'fast_fold' || normalized === 'fold_watch') {
+      const had = this.foldRequestedAt.has(userId);
+      if (!had) this.foldRequestedAt.set(userId, receivedAt);
       const out = this.requestFold(userId, normalized === 'fast_fold' ? 'fast' : 'fold_watch');
       if (out.success)
         this.metrics.observeLatency('fold_ack', this.now() - receivedAt, this.clusterId);
+      else if (!had) this.foldRequestedAt.delete(userId);
       return out;
     }
     if (!this.watching.has(userId)) return { success: false, error: 'You have left this hand' };
@@ -1572,13 +1606,17 @@ export class LightningHandHost {
             : 'The turn has changed. Review the table before acting again.',
       };
     }
-    return this.applyAction(
+    const marks = normalized === 'fold' && !this.foldRequestedAt.has(userId);
+    if (marks) this.foldRequestedAt.set(userId, receivedAt);
+    const out = this.applyAction(
       userId,
       normalized,
       amount,
       'player',
       normalized === 'fold' ? 'normal' : undefined
     );
+    if (marks && !out.success) this.foldRequestedAt.delete(userId);
+    return out;
   }
 
   /** FAST FOLD / FOLD & WATCH (spec FAST FOLD): validate, fold, free the player. */
@@ -1700,6 +1738,12 @@ export class LightningHandHost {
       this.watching.delete(userId);
     }
     const ackAt = this.now();
+    // The fold REQUEST's moment: the player's own request when one came
+    // through the action door, else this fold itself (a turn fold, a horse's
+    // decision or a timeout - each happens here). Every *_to_next_hand leg
+    // starts here (Phase 11 remediation), not at the idle after the ack.
+    const foldAt = this.foldRequestedAt.get(userId) ?? ackAt;
+    this.foldRequestedAt.set(userId, foldAt);
     // What the folder has put in the pot: no more can follow a fold.
     const committed = cents(
       this.hc?.getState().players.find((p) => p.user_id === userId)?.totalInvested ?? 0
@@ -1720,7 +1764,7 @@ export class LightningHandHost {
         this.metrics.recordFold(type);
         if (type !== 'fold_watch') {
           this.metrics.observeLatency('ack_to_idle_pool', this.now() - ackAt, this.clusterId);
-          this.metrics.noteIdle(userId, this.now(), type, this.clusterId);
+          this.metrics.noteIdle(userId, this.now(), type, this.clusterId, foldAt);
           this.deps.onPlayerReleased?.(userId, type);
         }
       })
@@ -1732,6 +1776,8 @@ export class LightningHandHost {
       );
   }
   private releasedOrRecorded = new Set<string>();
+  /** When each player asked to fold this hand (engine clock): the fold-to-next-hand legs start here. */
+  private foldRequestedAt = new Map<string, number>();
 
   // ─── RUNOUT, COMPLETION AND SETTLEMENT ──────────────────────────────────
 
@@ -2158,7 +2204,8 @@ export class LightningHandHost {
         p.playerId,
         this.now(),
         type === 'fold_watch' ? 'fold_watch' : 'hand_end',
-        this.clusterId
+        this.clusterId,
+        type === 'fold_watch' ? this.foldRequestedAt.get(p.playerId) : null
       );
       this.deps.onPlayerReleased?.(p.playerId, why);
     }

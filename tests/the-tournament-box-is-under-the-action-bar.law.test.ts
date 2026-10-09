@@ -84,7 +84,7 @@ describe('it is collapsible, and collapsing it never resizes the felt', () => {
     );
     expect(read('src/lib/tournamentDockStore.ts')).toMatch(/localStorage\.setItem\(KEY/);
     expect(PAGE).toMatch(
-      /data-tdock=\{\s*tableState\.isTournament && tableState\.tournamentId\s*\? tournamentDockCollapsed\s*\? 'collapsed'\s*: 'expanded'\s*: undefined\s*\}/
+      /data-tdock=\{\s*tableState\.isTournament && tableState\.tournamentId\s*\? tournamentDockClosed\s*\? 'closed'\s*: tournamentDockCollapsed\s*\? 'collapsed'\s*: 'expanded'\s*: undefined\s*\}/
     );
   });
 

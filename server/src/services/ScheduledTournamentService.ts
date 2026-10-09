@@ -84,6 +84,10 @@ export const MISSED_OCCURRENCE_PAGE_WITHIN_MS = 60 * 60_000;
 export const MISSED_OCCURRENCE_SOURCE = 'ScheduledTournaments.occurrence_not_created';
 
 /** A refusal pages only when the occurrence is due within the hour or overdue. */
+export function occurrenceKey(scheduleId: string, startTime: Date): string {
+  return `${scheduleId}:${startTime.toISOString()}`;
+}
+
 export function missedOccurrenceIsPageable(startTime: Date, now: Date): boolean {
   return startTime.getTime() - now.getTime() <= MISSED_OCCURRENCE_PAGE_WITHIN_MS;
 }
@@ -903,6 +907,11 @@ export class ScheduledTournamentService {
     // instead of being burned forever.
     const row = await this.buildInsertRow(schedule, cfg, startTime);
     if (!row) {
+      // A satellite whose target event does not exist yet is not a missed
+      // event: a daily satellite feeding a weekly target only runs once that
+      // target is on the board, by design. Everything else that refuses the
+      // row is a configuration the schedule can never spawn.
+      if (this.waitingForSatelliteTarget.delete(occurrenceKey(schedule.id, startTime))) return;
       await this.pageMissedOccurrence(
         schedule,
         startTime,
@@ -1175,6 +1184,12 @@ export class ScheduledTournamentService {
       schedule.id
     );
   }
+
+  /**
+   * Occurrences buildInsertRow skipped only because no satellite target exists
+   * yet. Keyed per occurrence, so concurrent spawns cannot read each other's.
+   */
+  private readonly waitingForSatelliteTarget = new Set<string>();
 
   /** Housekeeping only: it never throws, so it can never cost a spawn. */
   private async clearMissedOccurrencePage(scheduleId: string): Promise<void> {
@@ -1650,6 +1665,7 @@ export class ScheduledTournamentService {
         console.log(
           `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)}: no pre-start satellite target matching "${targetName}" - skipping this spawn`
         );
+        this.waitingForSatelliteTarget.add(occurrenceKey(schedule.id, startTime));
         return null;
       }
       satelliteTargetId = target;

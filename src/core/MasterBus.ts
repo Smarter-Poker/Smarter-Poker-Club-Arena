@@ -1186,6 +1186,7 @@ export interface BusPayloadMap {
   TABLE_MENU_ACTION: {
     tableId: string;
     action:
+      | 'SHOW_TOURNAMENT_DOCK'
       | 'SIT_OUT'
       | 'STAND_UP_BB'
       | 'AUTO_TOP_UP'

@@ -18,6 +18,9 @@
  * S→C:     ERROR    { type, code, message }
  * C→S:     RESYNC   { type }
  * C→S:     PONG     { type, ts }
+ * C→S:     RENDER_ACK { type, hand_id, d? }  Lightning Phase 12: the client
+ *          rendered this room's hand (a hand id only - never a card). The
+ *          engine times it on its own clock; `d` is ignored.
  *
  * Close codes (custom)
  *   4400 bad request (malformed upgrade)
@@ -281,6 +284,12 @@ export interface EngineWebSocketServerOptions {
    * is proof of a socket, not of a player; DisconnectEngine.heartbeat).
    */
   onAlive?: (tableId: string, userId: string) => void;
+  /**
+   * LIGHTNING PHASE 12: a RENDER_ACK on an admitted socket - the client
+   * painted the hand `handId` in room `tableId`. Telemetry only: it changes
+   * no state, and a malformed or unexpected ack is ignored.
+   */
+  onRenderAck?: (tableId: string, userId: string, handId: string) => void;
 }
 
 interface ConnectionState {
@@ -466,6 +475,7 @@ export class EngineWebSocketServer {
     platform?: ClientDevicePlatform | null
   ) => void;
   private readonly onAlive?: (tableId: string, userId: string) => void;
+  private readonly onRenderAck?: (tableId: string, userId: string, handId: string) => void;
   private readonly onDisconnect?: (tableId: string, userId: string) => void;
   private accessStarts = new Map<symbol, number>();
   private accessCompleted = 0;
@@ -502,6 +512,7 @@ export class EngineWebSocketServer {
     this.onResync = opts.onResync;
     this.onConnect = opts.onConnect;
     this.onAlive = opts.onAlive;
+    this.onRenderAck = opts.onRenderAck;
     this.onDisconnect = opts.onDisconnect;
     this.wss = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME_PAYLOAD_BYTES });
   }
@@ -1024,6 +1035,16 @@ export class EngineWebSocketServer {
     }
   }
 
+  /** LIGHTNING PHASE 12: a render acknowledgement (telemetry only; never throws). */
+  private renderAck(tableId: string, userId: string, handId: unknown): void {
+    if (!tableId || !userId || typeof handId !== 'string' || handId.length > 64) return;
+    try {
+      this.onRenderAck?.(tableId, userId, handId);
+    } catch (error) {
+      reportError(error, 'EngineWS.render_ack');
+    }
+  }
+
   private resyncPlayer(tableId: string, userId: string): void {
     try {
       this.onResync?.(tableId, userId);
@@ -1288,7 +1309,7 @@ export class EngineWebSocketServer {
 
   private handleMuxMessage(
     conn: ConnectionState,
-    msg: { type?: string; tableId?: unknown; platform?: unknown }
+    msg: { type?: string; tableId?: unknown; platform?: unknown; hand_id?: unknown }
   ): void {
     const tableId = typeof msg.tableId === 'string' ? msg.tableId : '';
     switch (msg.type) {
@@ -1323,6 +1344,13 @@ export class EngineWebSocketServer {
             this.resyncPlayer(tableId, conn.userId);
           }
         }
+        return;
+      }
+      case 'RENDER_ACK': {
+        // Only for a table this socket is actually subscribed to.
+        if (!tableId || !conn.subs) return;
+        const sub = conn.subs.get(tableId);
+        if (sub && typeof sub !== 'symbol') this.renderAck(tableId, conn.userId, msg.hand_id);
         return;
       }
       default:
@@ -1372,7 +1400,10 @@ export class EngineWebSocketServer {
     if (!msg || typeof msg.type !== 'string') return;
 
     if (conn.isMux) {
-      this.handleMuxMessage(conn, msg as { type?: string; tableId?: unknown; platform?: unknown });
+      this.handleMuxMessage(
+        conn,
+        msg as { type?: string; tableId?: unknown; platform?: unknown; hand_id?: unknown }
+      );
       return;
     }
 
@@ -1393,6 +1424,9 @@ export class EngineWebSocketServer {
         }
         return;
       }
+      case 'RENDER_ACK':
+        this.renderAck(conn.tableId, conn.userId, (msg as { hand_id?: unknown }).hand_id);
+        return;
       default:
         // Client→server messages other than PONG / RESYNC are ignored. We
         // deliberately do NOT accept action submissions over WS — the REST

@@ -16,7 +16,7 @@ class OriginalBuildResourceEvidenceTests(unittest.TestCase):
         return f'{boundary if boundary is not None else self.boundary}\nENGINE_BUILD_MEMORY_PEAK_BYTES={peak}\n'
 
     def test_retains_raw_peak_including_documented_transient_excess(self):
-        for peak in (proof.LIMIT - 4096, proof.LIMIT, 671092736):
+        for peak in (proof.LIMIT - 4096, proof.LIMIT, proof.LIMIT + 4096):
             with self.subTest(peak=peak):
                 receipt = proof.verified_build_resources(self.output(peak))
                 self.assertEqual(receipt['engine_build_memory_peak'], peak)
@@ -45,7 +45,7 @@ class OriginalBuildResourceEvidenceTests(unittest.TestCase):
                 proof.verified_build_resources(self.output(proof.LIMIT, boundary))
 
     def test_refuses_missing_duplicate_or_unreadable_peak(self):
-        for peak in ('', '-1', '0', 'NaN', '671092736.0',
+        for peak in ('', '-1', '0', 'NaN', f'{proof.LIMIT + 4096}.0',
                      f'{proof.LIMIT}\nENGINE_BUILD_MEMORY_PEAK_BYTES={proof.LIMIT}'):
             with self.subTest(peak=peak), self.assertRaisesRegex(RuntimeError, 'memory peak'):
                 proof.verified_build_resources(self.output(peak))

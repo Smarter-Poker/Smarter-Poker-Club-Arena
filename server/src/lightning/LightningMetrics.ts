@@ -40,14 +40,18 @@ export type LightningPassOutcome =
 /**
  * ACTION LATENCY TELEMETRY (spec): each leg measured on its own, so a slow
  * next hand can be traced to the leg that is slow. P50/P95/P99 come from the
- * histogram buckets. "Hand creation -> first client render" is measured by the
- * client, which is the only party that sees the render.
+ * histogram buckets. "Hand creation -> first client render" (LIGHTNING PHASE
+ * 12) is measured on the ENGINE's clock: from the host sending a room the
+ * hand's first frame to that room's socket acknowledging it rendered the hand
+ * (RENDER_ACK). The client's own clock is never trusted; a seat whose room
+ * has no socket (nobody watching) simply yields no sample.
  */
 export const LIGHTNING_LATENCY_SEGMENTS = [
   'fold_ack',
   'ack_to_idle_pool',
   'idle_pool_to_match',
   'match_to_hand',
+  'hand_to_first_render',
   'fast_fold_to_next_hand',
   'normal_fold_to_next_hand',
   'fold_watch_to_next_hand',
@@ -68,7 +72,7 @@ export class LightningMetrics {
   readonly formedTotal: Counter;
   private readonly idle = new Map<
     string,
-    { at: number; kind: LightningIdleKind; clusterId: string | null }
+    { at: number; foldAt: number; kind: LightningIdleKind; clusterId: string | null }
   >();
   readonly passesTotal: Counter;
   readonly workers: Gauge;
@@ -100,7 +104,7 @@ export class LightningMetrics {
     );
     this.latencyMs = registry.histogram(
       'poker_lightning_latency_ms',
-      'Lightning fold-to-next-hand latency by leg (fold_ack, ack_to_idle_pool, idle_pool_to_match, match_to_hand, *_to_next_hand)'
+      'Lightning fold-to-next-hand latency by leg (fold_ack, ack_to_idle_pool, idle_pool_to_match, match_to_hand, hand_to_first_render, *_to_next_hand)'
     );
     this.handsTotal = registry.counter(
       'poker_lightning_hands_total',
@@ -134,15 +138,25 @@ export class LightningMetrics {
     this.foldsTotal.inc(1, { type });
   }
 
-  /** The player is back in the idle pool now. */
+  /**
+   * The player is back in the idle pool now. `foldAtMs` is when the player
+   * asked to fold (the fold REQUEST): every *_to_next_hand leg starts there,
+   * not at the idle moment after the database's acknowledgement (Phase 11
+   * remediation, 2026-10-09). Absent, the leg starts at `atMs`.
+   */
   noteIdle(
     playerId: string,
     atMs: number,
     kind: LightningIdleKind,
-    clusterId?: string | null
+    clusterId?: string | null,
+    foldAtMs?: number | null
   ): void {
     this.idle.delete(playerId);
-    this.idle.set(playerId, { at: atMs, kind, clusterId: clusterId ?? null });
+    const foldAt =
+      typeof foldAtMs === 'number' && Number.isFinite(foldAtMs) && foldAtMs <= atMs
+        ? foldAtMs
+        : atMs;
+    this.idle.set(playerId, { at: atMs, foldAt, kind, clusterId: clusterId ?? null });
     if (clusterId && this.tap) this.tap.idle(clusterId, playerId, atMs);
     if (this.idle.size > IDLE_MEMORY_MAX) {
       for (const [id, v] of this.idle) {
@@ -174,7 +188,8 @@ export class LightningMetrics {
           : v.kind === 'fast'
             ? 'fast_fold_to_next_hand'
             : 'normal_fold_to_next_hand';
-      this.observeLatency(segment, atMs - v.at, clusterId ?? v.clusterId);
+      // From the fold request, so the leg covers the fold's own round trip.
+      this.observeLatency(segment, atMs - v.foldAt, clusterId ?? v.clusterId);
     }
   }
 

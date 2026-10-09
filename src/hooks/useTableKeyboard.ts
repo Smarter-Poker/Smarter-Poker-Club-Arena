@@ -21,6 +21,13 @@
  *        a multi-tabler is a hotkey; ours runs the tile's own reveal, and
  *        does nothing when no offer is up)
  *    (FIX 199: H key for hand strength REMOVED — not allowed for live play)
+ *
+ *  LIGHTNING KEYS (Lightning Phase 12; only in a Lightning room, only when
+ *  the platform row offers hotkeys). Safe modifier combinations, never a
+ *  single letter (spec HOTKEYS): Shift+F = LIGHTNING FOLD, Shift+V = FOLD &
+ *  WATCH. Both run the fold strip's own handler, which the engine validates
+ *  (a fold that is not available is refused there, never guessed here); they
+ *  work before the player's turn too, exactly like the strip.
  *    Escape = Close any open panel or modal
  *
  * OPTIMIZATION: Uses refs for all callbacks and state to prevent
@@ -91,6 +98,13 @@ export interface UseTableKeyboardOptions {
    * whether a hunt is purchasable.
    */
   onRabbitHunt?: () => void;
+  /**
+   * LIGHTNING PHASE 12: Shift+F (LIGHTNING FOLD) and Shift+V (FOLD & WATCH).
+   * Passed only in a Lightning room whose platform offers hotkeys; absent,
+   * the keys do nothing and Shift+F stays an ordinary F.
+   */
+  onLightningFold?: () => void;
+  onLightningFoldWatch?: () => void;
 }
 
 /**
@@ -155,6 +169,25 @@ export function useTableKeyboard(options: UseTableKeyboardOptions): void {
       if (key === 'escape') {
         e.preventDefault();
         opts.onClosePanel?.();
+        return;
+      }
+
+      // ── Lightning keys: Shift+F / Shift+V, before the single-letter row ──
+      if (
+        !opts.isSpectator &&
+        !opts.isModalOpen &&
+        e.shiftKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        (key === 'f' || key === 'v') &&
+        (opts.onLightningFold || opts.onLightningFoldWatch)
+      ) {
+        const run = key === 'f' ? opts.onLightningFold : opts.onLightningFoldWatch;
+        if (run) {
+          e.preventDefault();
+          run();
+        }
         return;
       }
 

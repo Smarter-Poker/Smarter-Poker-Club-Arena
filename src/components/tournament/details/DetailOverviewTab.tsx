@@ -1,3 +1,6 @@
+import { lateRegEndMs } from '../../lobby/lateRegWindow';
+import type { LobbyTournamentRow } from '../../lobby/lobbyEntries';
+import { tournamentEntryWindowOpen } from '../../../utils/tournamentEntryWindow';
 import { useTournamentHandForHand } from '../../../hooks/useTournamentHandForHand';
 import {
   readTournamentFormat,
@@ -854,21 +857,32 @@ export default function DetailOverviewTab({
             ? 'Maintenance Complete. Tables Are Resuming.'
             : 'Maintenance Break In Progress. Seats And Chips Are Safe.';
 
+  const lateRegOpen = tournamentEntryWindowOpen(tournament, serverNow());
+  const lateRegDeadline = lateRegOpen
+    ? lateRegEndMs(tournament as unknown as LobbyTournamentRow)
+    : null;
+  const lateRegTime =
+    lateRegDeadline === null
+      ? lateRegOpen
+        ? '--:--'
+        : '-'
+      : clockText(Math.max(0, (lateRegDeadline - serverNow()) / 1000));
+
   const heroTime = clockPaused
     ? pauseLabel === 'Expected Resume In'
       ? clockText(resumeSeconds)
       : '-'
     : isRunning
-      ? clockText(level.remaining)
+      ? lateRegTime
       : isCompleted || isBagged || isCancelled
         ? '-'
         : untilText(secondsToStart);
   const heroEyebrow = clockPaused
     ? pauseLabel
     : isRunning
-      ? level.isBreak
-        ? 'Break Ends In'
-        : `Level ${level.index + 1} Ends In`
+      ? lateRegOpen
+        ? 'Late Reg Ends In'
+        : 'Late Reg Closed'
       : isBagged
         ? 'Day Complete'
         : isCancelled

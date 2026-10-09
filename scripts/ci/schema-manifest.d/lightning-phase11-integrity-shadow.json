@@ -1,0 +1,14 @@
+{
+  "_owner": "agent/claude-lightning-p11/lightning/integrity-shadow-db - migration 20261008161509_lightning_phase_11_integrity_telemetry_and_the_shadow_matche",
+  "_comment": "Lightning Phase 11 (spec Phases 18 and 19, database side). NOT YET APPLIED: every name below is a promise until the owner installs 20261008161509 after the Phase 9 remediation (20261008142857). lightning_integrity_signal is the Lightning integrity telemetry store (shaped on collusion_tracking, keyed per Cluster, pattern, window and subject; RLS on, no role holds a table privilege) written by fn_lightning_integrity_scan (persisted hands, pool sessions, user_sessions addresses and profiles.referred_by: PAIRING_CONCENTRATION, CHIP_FLOW, COORDINATED_JOIN_LEAVE, SESSION_LENGTH, DEVICE_OVERLAP, ACCOUNT_RELATIONSHIP; CHIP_FLOW also once into ca_collusion_signals with detail.signal lightning_chip_flow) and fn_lightning_integrity_report (the engine's decision-timing aggregates judged by the database: DECISION_LATENCY, TIMING_CORRELATION). lightning_matcher_shadow_comparison is the shadow matcher ledger written by fn_lightning_shadow_record and read by fn_lightning_shadow_report; fn_lightning_quality_components and fn_lightning_quality_score compute the internal Lightning Quality Score. fn_lightning_config gains lightning_shadow_matcher, shadow_matcher_version, shadow_window_ms, shadow_max_players, shadow_pass_budget_ms, integrity_telemetry and quality_weights. No seating path reads any of it.",
+  "tables": ["lightning_integrity_signal", "lightning_matcher_shadow_comparison"],
+  "functions": [
+    "fn_lightning_integrity_scan",
+    "fn_lightning_integrity_report",
+    "fn_lightning_quality_components",
+    "fn_lightning_quality_score",
+    "fn_lightning_shadow_record",
+    "fn_lightning_shadow_report"
+  ],
+  "columns": {}
+}

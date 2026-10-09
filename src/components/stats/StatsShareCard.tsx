@@ -161,9 +161,9 @@ export default function StatsShareCard({
     // Measured, not counted: 23 wide glyphs at 54px can still reach the
     // right-aligned "smarter.poker" footer, which sits in the same band.
     const NAME_MAX_W = W - 64 - 260;
-    const safeDisplayName = privacyPresentationMode
-      ? 'Private Player'
-      : arenaDisplayText(displayName);
+    const safeDisplayName = arenaDisplayText(
+      privacyPresentationMode ? 'Private Player' : displayName
+    );
     let name = safeDisplayName;
     while (name.length > 1 && ctx.measureText(`${name}...`).width > NAME_MAX_W) {
       name = name.slice(0, -1);

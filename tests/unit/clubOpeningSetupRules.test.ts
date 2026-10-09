@@ -412,7 +412,7 @@ describe('the review copy describes the live settlement SQL', () => {
     );
   });
 
-  it('prints the prospective Promo-only rule without changing the historical migration assertions above', () => {
+  it('prints the prospective Promo-only rule consistently with the current settlement', () => {
     // JSX copy wraps across source lines; compare it with whitespace folded.
     const copy = wizardSource.replace(/\s+/g, ' ');
     expect(copy).toContain(

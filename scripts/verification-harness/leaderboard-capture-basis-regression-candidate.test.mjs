@@ -99,7 +99,12 @@ test('separate payout variant retains six actual financial cases and refuses sta
   );
   assert.match(generated, /IS DISTINCT FROM before_digest THEN/);
   assert.match(generated, /fn_diamond_game_fund_promo/);
-  assert.match(generated, /post_to_balance-pre_to_balance=expected_total/);
+  assert.match(generated, /receiver_club := public\.fn_player_home_club\(player_a,NULL\)/);
+  assert.match(generated, /SELECT chip_balance INTO STRICT receiver_before/);
+  assert.match(generated, /IS DISTINCT FROM receiver_before\+expected_total/);
+  assert.match(generated, /user_id=player_b\) IS DISTINCT FROM other_player_before/);
+  assert.match(generated, /AND amount=expected_total\s+AND club_id=receiver_club/);
+  assert.doesNotMatch(generated, /post_to_balance-pre_to_balance/);
   assert.match(generated, /positive_awards_only_for_cent_tie/);
   assert.match(generated, /new_player_zero_baseline_pays/);
   assert.equal(generated.match(/^ROLLBACK;$/gm)?.length, 1);

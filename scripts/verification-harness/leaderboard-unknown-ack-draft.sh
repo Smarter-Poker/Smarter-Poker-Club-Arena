@@ -99,6 +99,10 @@ BEGIN
      OR (SELECT count(*) FROM public.clubs)<>3
      OR EXISTS(SELECT 1 FROM public.leaderboard_payout_batches)
      OR EXISTS(SELECT 1 FROM public.leaderboard_payouts)
+     OR public.fn_player_home_club('90000000-0000-4000-8000-000000000004',NULL) IS DISTINCT FROM '92000000-0000-4000-8000-000000000002'::uuid
+     OR EXISTS(SELECT 1 FROM public.club_members WHERE chip_balance IS DISTINCT FROM 0)
+     OR (SELECT sum(chip_balance) FROM public.club_members) IS DISTINCT FROM 0
+     OR (SELECT chip_balance FROM public.club_members WHERE club_id='92000000-0000-4000-8000-000000000002' AND user_id='90000000-0000-4000-8000-000000000004') IS DISTINCT FROM 0
      OR (SELECT promo_balance FROM public.clubs WHERE id='92000000-0000-4000-8000-000000000002') IS DISTINCT FROM 20 THEN
     RAISE EXCEPTION 'Exact isolated unknown-ack preimage required';
   END IF;
@@ -192,6 +196,7 @@ BEGIN
        WHERE key=format('leaderboard:%s:weekly:%s:%s',club,starts,winner) AND user_id=winner AND amount=10)
      OR (SELECT promo_balance FROM public.clubs WHERE id=club) IS DISTINCT FROM 10
      OR (SELECT chip_treasury FROM public.clubs WHERE id=club) IS DISTINCT FROM 99980
+     OR EXISTS(SELECT 1 FROM public.club_members WHERE NOT(club_id=club AND user_id=winner) AND chip_balance IS DISTINCT FROM 0)
      OR (SELECT sum(chip_balance) FROM public.club_members) IS DISTINCT FROM 10
      OR (SELECT chip_balance FROM public.club_members WHERE club_id=club AND user_id=winner) IS DISTINCT FROM 10
      OR (SELECT count(*) FROM public.wallet_transactions WHERE related_entity_id=program
@@ -201,10 +206,10 @@ BEGIN
      OR (SELECT count(DISTINCT correlation_id) FROM public.chip_ledger WHERE category='leaderboard_payout')<>1
      OR (SELECT count(*) FROM public.chip_ledger WHERE category='leaderboard_payout'
        AND from_type='promo_wallet' AND from_entity_id=club AND to_type='leaderboard_round' AND to_entity_id=club
-       AND amount=10 AND pre_from_balance=20 AND post_from_balance=10)<>1
+       AND club_id=club AND amount=10 AND pre_from_balance=20 AND post_from_balance=10)<>1
      OR (SELECT count(*) FROM public.chip_ledger WHERE category='leaderboard_payout'
        AND from_type='leaderboard_round' AND from_entity_id=club AND to_type='player_wallet' AND to_entity_id=winner
-       AND amount=10 AND pre_to_balance=0 AND post_to_balance=10)<>1
+       AND club_id=club AND amount=10)<>1
      OR (SELECT sum(amount) FROM public.chip_ledger WHERE category='leaderboard_payout' AND to_type='leaderboard_round') IS DISTINCT FROM 10
      OR (SELECT sum(amount) FROM public.chip_ledger WHERE category='leaderboard_payout' AND from_type='leaderboard_round') IS DISTINCT FROM 10 THEN RAISE EXCEPTION 'Unknown-ack durable reconciliation failed'; END IF;
 END;

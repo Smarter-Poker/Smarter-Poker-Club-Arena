@@ -13,7 +13,7 @@ export const baselineFixture = new URL(
 export function buildCapturePayoutFixture(source = readFileSync(baselineFixture, 'utf8')) {
   assert.equal(
     createHash('sha256').update(source).digest('hex'),
-    'a0b05846b457dd22cd2db7200f1f192f1ded1d0a501a901f499c9ab7d057d9f1'
+    '00008498b2498578dab08522202ed34078690f7dc6505caed402a822923663b6'
   );
   function replaceOnce(before, after) {
     assert.equal(source.split(before).length, 2, 'Reviewed payout fixture anchor changed');
@@ -199,6 +199,7 @@ DECLARE
   program_id uuid; version_number integer; terms jsonb; response jsonb; replay jsonb;
   preimage jsonb; changed integer; before_state text; after_state text; basis_before text;
   club_bank numeric; club_promo numeric; union_bank numeric; promo_before numeric; players_before numeric;
+  receiver_club uuid; receiver_before numeric;
   correlation uuid; shortage_op uuid; actor text; rejected boolean; failure_state text; failure_message text; stage text;
 BEGIN
   IF session_user<>'leaderboard_qualification_bootstrap' OR current_user<>session_user
@@ -297,6 +298,8 @@ BEGIN
       SELECT chip_balance INTO STRICT union_bank FROM public.union_wallets WHERE union_wallets.union_id=extended_cases.union_id;
       promo_before:=CASE WHEN funding_union IS NULL THEN club_promo ELSE (SELECT promo_wallet FROM public.union_wallets WHERE union_wallets.union_id=funding_union) END;
       SELECT COALESCE(sum(chip_balance),0) INTO players_before FROM public.club_members WHERE user_id=player;
+      receiver_club:=public.fn_player_home_club(player,NULL);
+      SELECT chip_balance INTO STRICT receiver_before FROM public.club_members WHERE user_id=player AND club_id=receiver_club;
       IF case_name='affiliate_union_underfunded_refuses' THEN
         stage:='actual_shortage'; shortage_op:=gen_random_uuid();
         PERFORM set_config('request.jwt.claims',jsonb_build_object('sub',owner,'role','service_role')::text,true);
@@ -389,6 +392,7 @@ BEGIN
            OR (SELECT chip_treasury FROM public.clubs WHERE id=club) IS DISTINCT FROM club_bank
            OR (SELECT chip_balance FROM public.union_wallets WHERE union_wallets.union_id=extended_cases.union_id) IS DISTINCT FROM union_bank
            OR (SELECT COALESCE(sum(chip_balance),0) FROM public.club_members WHERE user_id=player) IS DISTINCT FROM players_before+10
+           OR (SELECT chip_balance FROM public.club_members WHERE user_id=player AND club_id=receiver_club) IS DISTINCT FROM receiver_before+10
            OR (funding_union IS NULL AND (SELECT promo_balance FROM public.clubs WHERE id=club) IS DISTINCT FROM promo_before-10)
            OR (funding_union IS NOT NULL AND ((SELECT promo_wallet FROM public.union_wallets WHERE union_wallets.union_id=funding_union) IS DISTINCT FROM promo_before-10
              OR (SELECT promo_balance FROM public.clubs WHERE id=club) IS DISTINCT FROM club_promo)) THEN RAISE EXCEPTION 'Promo-only conservation differs'; END IF;
@@ -406,7 +410,7 @@ BEGIN
              AND from_entity_id=CASE WHEN funding_union IS NULL THEN club ELSE (SELECT id FROM public.union_wallets WHERE union_wallets.union_id=funding_union) END
              AND to_type='leaderboard_round' AND to_entity_id=club AND amount=10 AND pre_from_balance=20 AND post_from_balance=10)<>1
            OR (SELECT count(*) FROM public.chip_ledger WHERE correlation_id=correlation AND category='leaderboard_payout' AND from_type='leaderboard_round'
-             AND from_entity_id=club AND to_type='player_wallet' AND to_entity_id=player AND amount=10 AND post_to_balance-pre_to_balance=10)<>1 THEN
+             AND from_entity_id=club AND to_type='player_wallet' AND to_entity_id=player AND amount=10 AND club_id=receiver_club)<>1 THEN
           RAISE EXCEPTION 'Independent exact recipient and source journal legs differ'; END IF;
         after_state:=pg_temp.lb_financial_digest();
         basis_before:=(SELECT md5(jsonb_agg(to_jsonb(r) ORDER BY club_id,period,period_start)::text) FROM public.leaderboard_round_basis_receipts r);

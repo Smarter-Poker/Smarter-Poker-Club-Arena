@@ -125,3 +125,50 @@ test('proxy admits exactly the actual complete payout statement in both maintain
   }
   assert.match(proxy, /update\(query\)\.digest\('hex'\) !== payoutSHA256/);
 });
+
+// Actual recipient writer leaves nullable journal pre/post fields unset.
+test('unknown-ack recipient oracle reconciles actual wallet movement and exact journal identities', () => {
+  const source = read('leaderboard-unknown-ack-draft.sh');
+  const guard = source.split('DO $guard$')[1].split('$guard$;')[0];
+  const durable = source.split('DO $durable$')[1].split('$durable$;')[0];
+  assert.doesNotMatch(durable, /pre_to_balance|post_to_balance/);
+  assert.match(
+    guard,
+    /fn_player_home_club\('90000000-0000-4000-8000-000000000004',NULL\) IS DISTINCT FROM '92000000-0000-4000-8000-000000000002'::uuid/
+  );
+  assert.match(
+    guard,
+    /EXISTS\(SELECT 1 FROM public\.club_members WHERE chip_balance IS DISTINCT FROM 0\)/
+  );
+  assert.match(
+    durable,
+    /NOT\(club_id=club AND user_id=winner\) AND chip_balance IS DISTINCT FROM 0/
+  );
+  assert.match(guard, /sum\(chip_balance\)[^\n]*IS DISTINCT FROM 0/);
+  assert.match(guard, /user_id='90000000-0000-4000-8000-000000000004'\) IS DISTINCT FROM 0/);
+  assert.match(durable, /sum\(chip_balance\)[^\n]*IS DISTINCT FROM 10/);
+  assert.match(durable, /club_id=club AND user_id=winner\) IS DISTINCT FROM 10/);
+  assert.match(
+    durable,
+    /count\(\*\) FROM public\.chip_ledger WHERE category='leaderboard_payout'\)<>2/
+  );
+  assert.match(durable, /count\(DISTINCT correlation_id\)/);
+  assert.match(
+    durable,
+    /from_type='promo_wallet' AND from_entity_id=club AND to_type='leaderboard_round' AND to_entity_id=club\s+AND club_id=club AND amount=10 AND pre_from_balance=20 AND post_from_balance=10/
+  );
+  assert.match(
+    durable,
+    /from_type='leaderboard_round' AND from_entity_id=club AND to_type='player_wallet' AND to_entity_id=winner\s+AND club_id=club AND amount=10/
+  );
+  assert.match(
+    durable,
+    /WHERE key=format\('leaderboard:%s:weekly:%s:%s',club,starts,winner\) AND user_id=winner AND amount=10/
+  );
+  assert.match(
+    durable,
+    /related_entity_id=program\s+AND category='leaderboard_payout' AND user_id=winner AND amount=10 AND type='credit'/
+  );
+  assert.match(durable, /sum\(amount\)[^\n]*to_type='leaderboard_round'\) IS DISTINCT FROM 10/);
+  assert.match(durable, /sum\(amount\)[^\n]*from_type='leaderboard_round'\) IS DISTINCT FROM 10/);
+});

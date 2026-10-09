@@ -141,6 +141,7 @@ DECLARE
   version_number integer; program_id uuid; operation_id uuid;
   prizes jsonb; terms jsonb; response jsonb; replay jsonb;
   before_digest text; after_digest text; before_players numeric;
+  receiver_club uuid; receiver_before numeric; other_player_before numeric;
   rejected boolean; rejection text; error_state text;
   expected_total numeric;
   close_date date; settlement_correlation uuid;
@@ -293,6 +294,13 @@ BEGIN
       before_digest := pg_temp.lb_financial_digest();
       SELECT COALESCE(sum(chip_balance),0) INTO before_players
         FROM public.club_members WHERE user_id IN (player_a,player_b);
+      -- Resolve the real recipient home wallet before settlement; the journal
+      -- writer records this membership's club, not necessarily the payout club.
+      receiver_club := public.fn_player_home_club(player_a,NULL);
+      SELECT chip_balance INTO STRICT receiver_before FROM public.club_members
+        WHERE user_id=player_a AND club_id=receiver_club;
+      SELECT COALESCE(sum(chip_balance),0) INTO other_player_before
+        FROM public.club_members WHERE user_id=player_b;
       PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}',true);
       PERFORM set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000001',true);
       PERFORM set_config('request.jwt.claim.role','service_role',true);
@@ -339,6 +347,11 @@ BEGIN
            OR (SELECT COALESCE(sum(chip_balance),0) FROM public.club_members
                  WHERE user_id IN (player_a,player_b))
              IS DISTINCT FROM before_players+expected_total
+           OR (SELECT chip_balance FROM public.club_members
+                 WHERE user_id=player_a AND club_id=receiver_club)
+             IS DISTINCT FROM receiver_before+expected_total
+           OR (SELECT COALESCE(sum(chip_balance),0) FROM public.club_members
+                 WHERE user_id=player_b) IS DISTINCT FROM other_player_before
            OR (SELECT COALESCE(sum(payout_amount),0) FROM public.leaderboard_payouts
                  WHERE batch_id=(response->>'batch_id')::uuid) IS DISTINCT FROM expected_total
            OR (SELECT count(*) FROM public.leaderboard_payouts
@@ -372,7 +385,7 @@ BEGIN
                 AND from_type='leaderboard_round' AND from_entity_id=club
                 AND to_type='player_wallet' AND to_entity_id=player_a
                 AND amount=expected_total
-                AND post_to_balance-pre_to_balance=expected_total)
+                AND club_id=receiver_club)
               <> (CASE WHEN expected_total=0 THEN 0 ELSE 1 END)
            OR (expected_total>0 AND NOT EXISTS (
               SELECT 1 FROM public.wallet_credit_idempotency

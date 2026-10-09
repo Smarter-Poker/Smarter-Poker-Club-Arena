@@ -283,3 +283,30 @@ test('authorization is validated before companion doors regain deferred transact
     assert.match(companion, /SET CONSTRAINTS ALL IMMEDIATE;\n(?:ROLLBACK|COMMIT);\n$/);
   }
 });
+
+test('union shortage uses the maintained Promo transfer and reconciles independent stores', () => {
+  const funding = readFinancialDraft('leaderboard-isolated-funding-policy-draft.sql');
+  const begin = funding.indexOf("stage:='actual_shortage_transition';");
+  const end = funding.indexOf('before_state:=pg_temp.lb_funding_digest();', begin);
+  const shortage = funding.slice(begin, end);
+  assert.ok(
+    shortage.includes("fn_union_promo_send(funding_union,20,'club',club,shortage_op,owner,")
+  );
+  assert.ok(shortage.includes('SET LOCAL ROLE service_role;'));
+  assert.ok(shortage.includes("fn_promo_disburse('club',club,'player',player,20,"));
+  for (const evidence of [
+    'club_promo_before+20',
+    'club_bank_before',
+    'shortage_bank',
+    'shortage_player',
+    'correlation_id=shortage_op',
+    "from_label='union_wallets.promo_wallet'",
+    "to_label='clubs.promo_balance'",
+    'period_id=shortage_op',
+    'balance_after=0',
+    "tx_type='promo_to_club'",
+  ]) {
+    assert.ok(shortage.includes(evidence), evidence);
+  }
+  assert.doesNotMatch(shortage, /UPDATE|DELETE|DISABLE TRIGGER|SET CONSTRAINTS/);
+});

@@ -17,7 +17,7 @@ const diagnostics = 'leaderboard-financial-diagnostics.mjs';
 const reviewed = Object.freeze({
   [auth]: '93bfc3e5aea54a901f1861f2d450da4f5fe3d1d74c595d89ffb5de102ebd2ac5',
   [payout]: 'a0b05846b457dd22cd2db7200f1f192f1ded1d0a501a901f499c9ab7d057d9f1',
-  [funding]: '116f66d955bae3adfde904c8b131cf1a32d0d64b02337a18c239b4886b71fb49',
+  [funding]: 'd3b0d591994d0c8cc5a0c3b66b984d42241e921cf5c06668f29518c84b3eb756',
   [fixture]: 'c2057bbbbb9b08c860ac82cf02e98171ff9188ab36694dcb672f1abd3f37ed41',
   [concurrency]: 'c734ab9c039bd926a4b854177ea76729d825a57df45506b11ac67a59b57723ea',
   [unknown]: 'fb59461082c8fbb0ebf86c032854d92a88b51c19106ffa13381c91ce287a1514',

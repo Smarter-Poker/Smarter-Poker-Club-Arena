@@ -103,20 +103,47 @@ function expectedKey(identity: Record<string, unknown>): string {
   return createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
 }
 
-describe('P11.3 null proof: no Phase 11 authority is selected today', () => {
-  it('the committed release selections are all null and the running digest is the P11.2 contract digest', () => {
-    expect(PHASE11_PROTECTED_RELEASE_SELECTIONS).toEqual({ plo5: null, plo6: null, plo8: null });
+describe('P11.3 committed selections: every pack qualified on condition (a) whose completion record meets the floor', () => {
+  const selected = HORSE_PHASE11_VARIANTS.filter(
+    (v) => PHASE11_PROTECTED_RELEASE_SELECTIONS[v] !== null
+  );
+
+  it('the committed selections name their c8bfc617-or-later matrices and the running digest is the P11.2 contract digest', () => {
     expect(Object.isFrozen(PHASE11_PROTECTED_RELEASE_SELECTIONS)).toBe(true);
+    expect(selected.length).toBeGreaterThan(0);
     expect(PHASE11_RUNNING_CONTRACT_DIGEST).toBe(omahaVariantStrengthContractDigest());
     expect(PHASE11_RUNNING_CONTRACT_DIGEST).toMatch(/^[0-9a-f]{64}$/);
     for (const variant of HORSE_PHASE11_VARIANTS) {
+      const selection = PHASE11_PROTECTED_RELEASE_SELECTIONS[variant];
       const release = admitHorsePhase11ReleaseAuthority(variant);
-      expect(release, variant).toEqual({
-        status: 'refused',
-        reason: 'unselected',
-        transient: false,
+      if (selection === null) {
+        expect(release, variant).toEqual({
+          status: 'refused',
+          reason: 'unselected',
+          transient: false,
+        });
+        expect(selectedHorsePhase11Authority(variant, release)).toBeNull();
+        continue;
+      }
+      expect(selection, variant).toMatchObject({
+        schema: 'horse-qualified-authority-selection-v1',
+        phase: 'phase11',
+        variant,
+        packVersion: OMAHA_VARIANT_PACKS[variant].version,
+        contractDigest: PHASE11_RUNNING_CONTRACT_DIGEST,
+        approvalGeneration: 1,
+        expiresAt: null,
+        withdrawn: null,
       });
-      expect(selectedHorsePhase11Authority(variant, release)).toBeNull();
+      expect(release.status, variant).toBe('admitted');
+      expect(selectedHorsePhase11Authority(variant, release), variant).toMatchObject({
+        phase: 'phase11',
+        sourceSha: selection.sourceSha,
+        continuationVersion: OMAHA_VARIANT_PACKS[variant].version,
+        policyDigest: horsePhase11PolicyDigest(variant),
+        evidenceSha256: selection.qualificationSha256,
+        approvalGeneration: 1,
+      });
     }
   });
 
@@ -134,63 +161,56 @@ describe('P11.3 null proof: no Phase 11 authority is selected today', () => {
       reason: 'contract_digest_mismatch',
       transient: false,
     });
-    // Without a running digest nothing can be admitted at all.
     expect(
       admitHorsePhase11ReleaseAuthority(V, P11_TEST_NOW, p11Selection(V), p11Reader(V), null)
     ).toMatchObject({ status: 'refused', reason: 'contract_unavailable' });
   });
 
-  it('every live main-scheduler gate is unselected and accepts no receipt', () => {
+  it('each live main-scheduler gate is usable exactly when its pack is selected', () => {
     for (const variant of HORSE_PHASE11_VARIANTS) {
       const gate = liveHorsePhase11Authorities[variant];
       gate.refresh();
-      expect(gate.mainState(), variant).toBe('unselected');
-      const worker = new HorseQualifiedAuthorityHolder(
-        `p113-null-${variant}`,
-        OMAHA_VARIANT_PACKS[variant].version
+      expect(gate.mainState(), variant).toBe(
+        PHASE11_PROTECTED_RELEASE_SELECTIONS[variant] === null ? 'unselected' : 'usable'
       );
-      worker.apply(qualifiedPhase11TestAdmission(variant));
-      expect(worker.currentState()).toBe('usable');
-      gate.observeWorker(worker.receipt());
-      expect(gate.check(gate.stamp(worker.receipt())), variant).toBe('unselected');
-      gate.forgetWorker(worker.epoch);
     }
   });
 
-  // A MEASURED PACK IS NOT A PROMOTED PACK (2026-10-05).
-  //
-  // This case was written while Phase 11 had measured nothing, so it pinned the
-  // state of that moment: no qualification claiming qualified:true, and no
-  // completion record AT ALL. On 2026-10-05 Phase 11 finished measuring plo5,
-  // plo6 and plo8 and committed their completion records under
-  // docs/evidence/phase11/, exactly as Phase 10 left PLO4 bound and measured
-  // without promoting it. The final assertion then refused the evidence of the
-  // work it was meant to be waiting for, and main went red on it.
-  //
-  // The hazard was never a completion record existing. It is a pack being
-  // SELECTED without review, because a selection is what the admission path
-  // turns into a live authority. That is asserted here and still reads null for
-  // every variant, so every measured pack remains in shadow.
-  //
-  // So a completion record is admitted, and tied to the invariant that matters:
-  // a record may exist only while its OWN variant is unpromoted. Promote plo5
-  // and this case fails until somebody updates it deliberately, which is the
-  // point of a null proof.
-  it('while the selections are null, nothing is promoted: no qualification says qualified:true, and a completion record exists only for an unpromoted pack', () => {
-    expect(Object.values(PHASE11_PROTECTED_RELEASE_SELECTIONS).every((s) => s === null)).toBe(true);
+  it('withdrawal is a committed record: a selection with withdrawn set is a withdrawal, never a selection', () => {
+    for (const variant of selected) {
+      const withdrawn = {
+        ...PHASE11_PROTECTED_RELEASE_SELECTIONS[variant]!,
+        withdrawn: { at: '2026-10-10T00:00:00.000Z', reason: 'condition_b_lost_after_rake' },
+      };
+      const release = admitHorsePhase11ReleaseAuthority(variant, Date.now(), withdrawn);
+      expect(release, variant).toEqual({
+        status: 'withdrawn',
+        approvalGeneration: 1,
+        reason: 'release_condition_b_lost_after_rake',
+      });
+      expect(selectedHorsePhase11Authority(variant, release)).toBeNull();
+    }
+  });
+
+  // A MEASURED PACK IS NOT A PROMOTED PACK (2026-10-05), kept since the
+  // selections (2026-10-09): a committed qualification that says
+  // qualified:true is exactly the one its pack's selection names, and a
+  // completion record exists for a selected pack or an unpromoted one.
+  it('the only qualified:true qualification of each pack is the one its selection names', () => {
     const dir = fileURLToPath(new URL('../../../docs/evidence/phase11/', import.meta.url));
     const files = existsSync(dir)
       ? readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.json'))
       : [];
     for (const file of files) {
       const parsed = JSON.parse(readFileSync(`${dir}${file}`, 'utf8')) as Record<string, unknown>;
-      if (parsed.schema === HORSE_PHASE11_QUALIFICATION_SCHEMA)
-        expect(parsed.qualified, file).not.toBe(true);
-      if (parsed.schema === HORSE_PHASE11_COMPLETION_SCHEMA) {
-        const variant = parsed.variant as keyof typeof PHASE11_PROTECTED_RELEASE_SELECTIONS;
-        expect(HORSE_PHASE11_VARIANTS as readonly string[], file).toContain(variant);
-        expect(PHASE11_PROTECTED_RELEASE_SELECTIONS[variant] ?? null, file).toBeNull();
+      if (parsed.schema === HORSE_PHASE11_QUALIFICATION_SCHEMA && parsed.qualified === true) {
+        const variant = parsed.variant as OmahaPolicyVariant;
+        expect(PHASE11_PROTECTED_RELEASE_SELECTIONS[variant]?.qualificationPath, file).toBe(
+          `docs/evidence/phase11/${file}`
+        );
       }
+      if (parsed.schema === HORSE_PHASE11_COMPLETION_SCHEMA)
+        expect(HORSE_PHASE11_VARIANTS as readonly string[], file).toContain(parsed.variant);
     }
   });
 });

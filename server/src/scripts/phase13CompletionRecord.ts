@@ -97,7 +97,13 @@ export function phase13CompletionRecordFrom(
   const to = input.to ?? '';
   const fromMs = Date.parse(from);
   const toMs = Date.parse(to);
-  if (!(fromMs < toMs)) return { refused: 'invalid_window' };
+  // Admission reads the window with isoMs, which accepts only the canonical
+  // toISOString form (milliseconds included); any other spelling of the same
+  // instant would be refused completion_window_invalid there (2026-10-09).
+  const canonical = (iso: string, ms: number) =>
+    Number.isFinite(ms) && new Date(ms).toISOString() === iso;
+  if (!(canonical(from, fromMs) && canonical(to, toMs) && fromMs < toMs))
+    return { refused: 'invalid_window' };
   if (input.releaseUnchanged !== 'true') return { refused: 'release_unchanged_not_proven' };
   const policyDigest = horsePhase13PolicyDigestOf(
     variant,

@@ -152,3 +152,27 @@ The owner amended the winning contract on October 9, 2026 ([amendment](horse-bra
 | PLO6 | matrix finishing (run 37837895674)                                                                                                 | recorded when assembled                                                                                                                                                                                               |
 
 Natural accepted use and the withdrawal path for each selected pack are recorded in the follow-up records once its release serves.
+
+## PLO4 Natural Accepted Use (October 9, 2026)
+
+Release `fc7be6e7` (#6583, the PLO4 selection) served from 16:55:54Z. Predeclared read-only window (`/Volumes/SmarterArchives/agent-evidence/horse-brain-select-20261009/plo4-use/declaration-plo4-natural-use-2026-10-09.txt`, written 16:56Z), 17:02 to 17:50Z, release unchanged (StartedAt read before and after):
+
+| PLO4 DECIDE_FAST decisions in the window (journal, sourceRelease `fc7be6e7`)  | Count  |
+| ----------------------------------------------------------------------------- | ------ |
+| cash, candidate mode, authority usable, applied (the pack changed the action) | 202    |
+| cash, candidate mode, authority usable, unchanged (the pack kept the action)  | 4,752  |
+| tournament, shadow mode (Phase 7 keeps the tournament objective)              | 33,879 |
+
+Every cash PLO4 decision ran in candidate mode on usable authority. `horse_brain_telemetry` for 2026-10-09 went from 0 to 216 `phase10_selection_selected`, 216 `phase10_applied` and 218 `phase10_selection_controller_accepted` between 16:57Z and 17:52Z (controller acceptance counts the deep second looks too). Status: **verified now**. Withdrawal path: verified in source tests (`HorsePhase10Authority.test.ts`, the committed selection with `withdrawn` set is admitted as `withdrawn` and its gate reads `withdrawn`).
+
+## Full-Sample Samplers And The Completion Floor (October 9, 2026)
+
+The first predeclared natural window (release `c1deef24`, 15:02 to 15:50Z; records in `docs/evidence/phase11/c1deef24/` and `docs/evidence/phase12/c1deef24/`) put every pack below the 0.95 floor, mostly through governor-reduced samples (about 4% of postflop decisions). #6592 (merge `1235b47a`) makes the Omaha and remaining-variant samplers always request the full 32 samples (owner decision, October 9). The locked matrices were re-run unchanged on `1235b47a` and the second predeclared window (`declaration-completion-2026-10-09-full-samples.txt`, release `1235b47a`, 19:02 to 19:50Z, unchanged before and after) was read:
+
+| Pack | Condition (a) on `1235b47a`                                                       | Completion lower bounds (preflop, flop, turn, river) | Status                               |
+| ---- | --------------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------ |
+| PLO8 | +7.84 [+6.84, +8.84] bb/100, 1,116,288 pairs, 114/114 shards                      | 0.995, 0.988, 0.984, 0.982                           | **selected** (approval generation 1) |
+| PLO5 | matrix running on `1235b47a`; on `c8bfc617` +5.37 [+4.25, +6.49]                  | 0.999, 0.993, 0.993, 0.987                           | selected once its re-run qualifies   |
+| PLO6 | matrix running on `1235b47a`; on `c8bfc617` +3.68 [+2.89, +4.47], 2,519,424 pairs | 0.998, 0.990, 0.990, 0.989                           | selected once its re-run qualifies   |
+
+The completion record writers now refuse a window spelled in any form other than the canonical `toISOString` form admission reads (the first records used `...:00Z`, which `isoMs` refuses as `completion_window_invalid`); the records used for selection carry `...:00.000Z`.

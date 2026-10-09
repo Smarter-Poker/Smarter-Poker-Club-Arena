@@ -48,10 +48,11 @@
  * leaves the winner's stack short by the pot) under a footer the arena
  * never shows; by owner decision (Dan,
  * 2026-10-07) the reference is the hand replayer inside Club Arena, pixel
- * for pixel. The renderer sets a 4:5 portrait viewport, 1080x1350, and the
- * page does nothing special for it. Still no `h=` needed, still no database
- * read. A `clip=1` link WITHOUT the injected payload is an ordinary link and
- * still needs `h=`; a malformed payload is not a clip either.
+ * for pixel. The renderer sets a 4:5 portrait viewport, 1080x1350; the
+ * clip-only page frame centres that unchanged replayer vertically so the
+ * camera does not leave its whole lower third empty. Still no `h=` needed,
+ * still no database read. A `clip=1` link WITHOUT the injected payload is an
+ * ordinary link and still needs `h=`; a malformed payload is not a clip either.
  */
 
 import { useMemo } from 'react';
@@ -162,7 +163,7 @@ export default function SharedHandReplayPage() {
      contract (`clip`) is the only addition. */
   if (clipPayload) {
     return (
-      <div className="shared-replay">
+      <div className="shared-replay shared-replay--clip">
         <HandReplay source={source} clip={clipWindow} />
       </div>
     );

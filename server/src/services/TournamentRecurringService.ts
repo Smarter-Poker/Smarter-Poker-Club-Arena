@@ -4951,28 +4951,51 @@ export class TournamentRecurringService {
         : 0;
       const candidates = await this.pickFreeHorses(opening, false, tournament.id);
       let seated = 0;
-      for (const horse of candidates) {
-        // THE FREEZE IS TOTAL (Dan 2026-09-03): a ramp that began before :53
-        // seats nobody after it. `continue`, not `break`: the "one refusal
-        // must not halt the fill" pin forbids a break in this loop, and a
-        // continue costs nothing - no RPC is made for the rest of the list.
-        if (isMaintenanceFrozen()) continue;
-        const { data: res, error: seatRpcErr } = await supabase.rpc(
-          'fn_seat_horse_in_seat_first_game',
-          { p_tournament_id: tournament.id, p_user_id: horse }
-        );
-        // The capacity and four-table triggers RAISE rather than returning
-        // {ok:false}, so a discarded `error` here is a silent refusal.
-        if (seatRpcErr) {
-          reportError(
-            new Error(
-              `[TournamentRecurring] opening seat refused for ${tournament.name}: ${seatRpcErr.message}`
-            ),
-            'TournamentRecurring.opening_seat_rpc_failed'
+      const tried = new Set<string>();
+      // A REFUSED OPENER IS REPLACED, NOT LEFT EMPTY (2026-10-09). The busy
+      // set pickFreeHorses reads is never atomic with the claim, so a horse
+      // another tick took to four games is refused here with FOUR TABLE LIMIT
+      // (17 times in six hours of engine log). That refusal is the cap working,
+      // not a fault, so it is not reported; the seat it left open is offered
+      // to fresh candidates once, sized the way the seat-first fill sizes them.
+      for (let round = 0; round < 2; round++) {
+        const pool =
+          round === 0
+            ? candidates
+            : seated < opening && !isMaintenanceFrozen()
+              ? await this.pickFreeHorses(
+                  seatFirstCandidateCount(opening - seated) + tried.size,
+                  false,
+                  tournament.id
+                )
+              : [];
+        for (const horse of pool) {
+          // THE FREEZE IS TOTAL (Dan 2026-09-03): a ramp that began before :53
+          // seats nobody after it. `continue`, not `break`: the "one refusal
+          // must not halt the fill" pin forbids a break in this loop, and a
+          // continue costs nothing - no RPC is made for the rest of the list.
+          if (isMaintenanceFrozen()) continue;
+          if (seated >= opening || tried.has(horse)) continue;
+          tried.add(horse);
+          const { data: res, error: seatRpcErr } = await supabase.rpc(
+            'fn_seat_horse_in_seat_first_game',
+            { p_tournament_id: tournament.id, p_user_id: horse }
           );
-          continue;
+          // The capacity and four-table triggers RAISE rather than returning
+          // {ok:false}, so a discarded `error` here is a silent refusal.
+          if (seatRpcErr) {
+            if (!isExpectedSeatRefusal(seatRpcErr.message)) {
+              reportError(
+                new Error(
+                  `[TournamentRecurring] opening seat refused for ${tournament.name}: ${seatRpcErr.message}`
+                ),
+                'TournamentRecurring.opening_seat_rpc_failed'
+              );
+            }
+            continue;
+          }
+          if ((res as { ok?: boolean } | null)?.ok === true) seated++;
         }
-        if ((res as { ok?: boolean } | null)?.ok === true) seated++;
       }
       if (seated < opening) {
         console.warn(

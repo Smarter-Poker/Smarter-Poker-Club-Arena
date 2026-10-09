@@ -274,43 +274,59 @@ describe('P13.1 a Phase 13 candidate never acts on top of an applied earlier-pha
       onTestFinished(() => {
         p12PostflopChange.on = false;
       });
-      forEachJointControllerSpot(variant, 'cash', 20, 0x13e1 + variant.length, (spot) => {
-        seedFastRandom(0x13e2);
-        const phase12Only = HorseLogic.decide(
-          spot.hero,
-          spot.state,
-          'balanced',
-          {},
-          { ...opts, phase12EvidenceMode: true, phase12Remaining: 'candidate', phase13Joint: 'off' }
-        );
-        if (!phase12Only.remainingVariantPolicy?.applied) return;
-        seedFastRandom(0x13e2);
-        const both = HorseLogic.decide(
-          spot.hero,
-          spot.state,
-          'balanced',
-          {},
-          {
-            ...opts,
-            phase12EvidenceMode: true,
-            phase12Remaining: 'candidate',
-            phase13Joint: 'candidate',
+      // The spot search runs real floating-point policy code, so which hands
+      // carry a refusable spot differs by platform (Node and CPU). Walk a
+      // fixed, ordered list of deal seeds until the law has a case to check;
+      // every spot visited on the way is still checked in full.
+      for (let attempt = 0; attempt < 24 && refused === 0; attempt++)
+        forEachJointControllerSpot(
+          variant,
+          'cash',
+          20,
+          0x13e1 + variant.length + attempt * 0x101,
+          (spot) => {
+            seedFastRandom(0x13e2);
+            const phase12Only = HorseLogic.decide(
+              spot.hero,
+              spot.state,
+              'balanced',
+              {},
+              {
+                ...opts,
+                phase12EvidenceMode: true,
+                phase12Remaining: 'candidate',
+                phase13Joint: 'off',
+              }
+            );
+            if (!phase12Only.remainingVariantPolicy?.applied) return;
+            seedFastRandom(0x13e2);
+            const both = HorseLogic.decide(
+              spot.hero,
+              spot.state,
+              'balanced',
+              {},
+              {
+                ...opts,
+                phase12EvidenceMode: true,
+                phase12Remaining: 'candidate',
+                phase13Joint: 'candidate',
+              }
+            );
+            const r = both.jointPolicy;
+            if (!r?.fired) return;
+            expect(r.applied).toBe(false);
+            expect({ action: both.action, amount: both.amount ?? null }).toEqual({
+              action: phase12Only.action,
+              amount: phase12Only.amount ?? null,
+            });
+            if (r.selectionRefusal === 'earlier_phase_applied') {
+              refused++;
+              expect(r.changed).toBe(true);
+            } else expect(r.changed).toBe(false);
           }
         );
-        const r = both.jointPolicy;
-        if (!r?.fired) return;
-        expect(r.applied).toBe(false);
-        expect({ action: both.action, amount: both.amount ?? null }).toEqual({
-          action: phase12Only.action,
-          amount: phase12Only.amount ?? null,
-        });
-        if (r.selectionRefusal === 'earlier_phase_applied') {
-          refused++;
-          expect(r.changed).toBe(true);
-        } else expect(r.changed).toBe(false);
-      });
       expect(refused).toBeGreaterThan(0);
     },
-    120_000
+    600_000
   );
 });

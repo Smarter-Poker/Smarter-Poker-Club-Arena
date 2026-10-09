@@ -236,3 +236,20 @@ test('original and prospective publication replay keep owner identity behind the
   assert.match(before, /SET LOCAL ROLE service_role;\s+response:=public\.fn_payout_leaderboard/);
   assert.doesNotMatch(sql, /GRANT .*fn_publish_leaderboard_reward_program|ALTER FUNCTION/);
 });
+
+test('publication retries preserve original numeric scale and historical overlay terms', () => {
+  assert.equal(
+    sql.split('[{"rank":1,"amount":50.00},{"rank":2,"amount":30.00},{"rank":3,"amount":20.00}]')
+      .length,
+    4
+  );
+  assert.doesNotMatch(sql, /\[\{"rank":1,"amount":50\}/);
+  assert.match(source, /round\(v_leaderboard_budget \* 0\.50, 2\)/);
+  assert.match(source, /THEN jsonb_build_object\('overlay_enabled', true\) ELSE '\{\}'::jsonb END/);
+  const before = sql.split('\\else')[0];
+  assert.match(
+    before,
+    /terms:=jsonb_build_object[\s\S]*?'monthly_effective_from',monthly_next,\s+'overlay_enabled',true\);/
+  );
+  assert.match(before, /md5\(terms::text\),true\)/);
+});

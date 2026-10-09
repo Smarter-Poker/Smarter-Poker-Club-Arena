@@ -5735,6 +5735,7 @@
     "smarter_private.fn_renew_postgrest_pool",
     "smarter_private.fn_smarter_data_api_pre_request",
     "smarter_private.hand_submission_dispose_dealt_past",
+    "smarter_private.hand_submission_dispose_refused_vacated",
     "smarter_private.hand_submission_immutable",
     "smarter_private.hand_submission_retention_disposal",
     "smarter_private.hand_submission_snapshot_guard",

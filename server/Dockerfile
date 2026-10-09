@@ -13,6 +13,11 @@ RUN npm ci --include=dev --no-audit --no-fund
 # Copy source
 COPY tsconfig.json tsconfig.runtime.json tsconfig.emit.json ./
 COPY src/ ./src/
+# Committed admission evidence for the Horse Brain protected release selections
+# (qualification, strength and completion records). The image is built from the
+# server tree alone, so these are the only copies the running engine can read;
+# repositoryEvidenceReader reads /app/release-evidence/ first.
+COPY release-evidence/ ./release-evidence/
 
 # Exact-source release preflight performs the full typecheck and tests in CI.
 # Emit every runtime root here without loading dependency type declarations or

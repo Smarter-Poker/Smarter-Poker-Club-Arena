@@ -238,6 +238,24 @@ test(
   }
 );
 
+test('native stock and batched builds serialize overlapping recursive libraries', () => {
+  const dockerfile = readFileSync(
+    new URL('./leaderboard-native-function-batch.Dockerfile', import.meta.url),
+    'utf8'
+  );
+  const builds = [...dockerfile.matchAll(/make -C src\/bin\/pg_dump -j(\d+)/g)];
+  assert.equal(builds.length, 2);
+  assert.deepEqual(
+    builds.map((build) => build[1]),
+    ['1', '1']
+  );
+  assert.ok(dockerfile.indexOf(builds[0][0]) < dockerfile.indexOf('pg_dump-stock'));
+  assert.ok(
+    dockerfile.indexOf('cp /opt/native-build/pg_dump-batched.c') <
+      dockerfile.lastIndexOf(builds[1][0])
+  );
+});
+
 test('all qualification doors enforce the same real native fixture before source access', () => {
   const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
   const build = read('./leaderboard-native-function-batch-build.sh');

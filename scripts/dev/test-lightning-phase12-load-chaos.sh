@@ -324,6 +324,18 @@ END $f$;
 -- ===========================================================================
 
 -- THE MATCHER PASS (two workers race it on the same Cluster).
+-- A budget stop before any attempt is starvation. A documented lock race
+-- already attempted the barrier and must remain bounded by the same budget.
+CREATE FUNCTION lc.pass_starved(r jsonb) RETURNS boolean LANGUAGE sql IMMUTABLE AS $f$
+ SELECT (r ->> 'stopped_reason') = 'time_budget'
+    AND coalesce((r ->> 'formed')::integer, 0) = 0
+    AND NOT (coalesce((r ->> 'replans')::integer, 0) > 0
+      AND jsonb_array_length(coalesce(r -> 'retries', '[]'::jsonb)) > 0
+      AND coalesce((SELECT bool_and(coalesce(x ->> 'reason' = 'formation_contended'
+                            AND x ->> 'sqlstate' IN ('55P03', '40P01', '40001'), false))
+                      FROM jsonb_array_elements(coalesce(r -> 'retries', '[]'::jsonb)) x), false));
+$f$;
+
 CREATE FUNCTION lc.op_match() RETURNS void LANGUAGE plpgsql AS $f$
 DECLARE c uuid; t0 timestamptz; r jsonb; v_req uuid := gen_random_uuid();
 BEGIN
@@ -341,7 +353,7 @@ BEGIN
   IF coalesce((r ->> 'frozen')::boolean, false) THEN PERFORM lc.violate('matcher_froze', r); END IF;
   -- SURGE: a pass that ran out of budget having formed nothing starves the
   -- Cluster (it was the case from about 3,000 players before 20261009151825).
-  IF (r ->> 'stopped_reason') = 'time_budget' AND coalesce((r ->> 'formed')::integer, 0) = 0 THEN
+  IF lc.pass_starved(r) THEN
     PERFORM lc.violate('pass_starved_by_its_budget', r - 'hands' - 'states' - 'reasons');
   END IF;
   IF coalesce((r ->> 'formed')::integer, 0) > 0 THEN
@@ -1251,6 +1263,46 @@ for op in match match_replay form deal fold settle settle_replay presence rebuy 
 done
 echo "  ok  00 THE BUILD  the real Lightning chain through Phase 11 and 20261009143757 on the Phase 11 ground (production default ACLs and autorevoke live)${extra:+, the Phase 12 files applied twice ($ownn own live proofs true, none of the $predn true predecessor proofs falsified)}, the load rig installed; profile $profile, populations $pops"
 
+# Deterministic budget countercases use the real matcher and retain its budget.
+# Their plan/barrier fault wrappers and all synthetic rows are rolled back.
+cat > "$fixture/budget-countercases.sql" <<'BUDGET_CASES'
+BEGIN;
+CREATE TEMP TABLE diag_budget_attempts(mode text);
+DO $diag$
+DECLARE p record; v_source text; v_injection text;
+BEGIN
+ FOR p IN SELECT oid,proname FROM pg_proc WHERE proname IN ('fn_lightning_match_plan','fn_lightning_form_hand') AND pronamespace='public'::regnamespace LOOP
+  v_source := pg_get_functiondef(p.oid);
+  IF p.proname='fn_lightning_match_plan' THEN
+   v_injection := E'BEGIN\n  IF current_setting(''lc.diag_budget'', true)=''slow_plan'' THEN PERFORM pg_sleep(0.9); END IF;';
+  ELSE
+   v_injection := E'BEGIN\n  INSERT INTO pg_temp.diag_budget_attempts VALUES (current_setting(''lc.diag_budget'',true));\n  IF current_setting(''lc.diag_budget'', true)=''retry'' THEN PERFORM pg_sleep(0.9); RETURN jsonb_build_object(''ok'',false,''formed'',false,''retry'',true,''reason'',''formation_contended'',''sqlstate'',''55P03''); END IF;';
+  END IF;
+  v_source := overlay(v_source placing v_injection from strpos(v_source,E'BEGIN\n') for 5);
+  EXECUTE v_source;
+ END LOOP;
+END $diag$;
+DO $cases$
+DECLARE c uuid; r jsonb; n integer;
+BEGIN
+ c:=lc.build('D1','slowplan',6,18);
+ PERFORM set_config('lc.diag_budget','slow_plan',true);
+ r:=public.fn_lightning_match_and_form(c,clock_timestamp(),NULL,1,gen_random_uuid(),NULL);
+ SELECT count(*) INTO n FROM pg_temp.diag_budget_attempts WHERE mode='slow_plan';
+ RAISE NOTICE 'SLOW_FIRST_PLAN response=% attempts=%',r,n;
+ IF coalesce((r->>'formed')::integer,0)<>1 OR n<>1 OR jsonb_array_length(r->'retries')<>0 THEN RAISE EXCEPTION 'slow first plan failed'; END IF;
+ c:=lc.build('D2','retry',6,18);
+ PERFORM set_config('lc.diag_budget','retry',true);
+ r:=public.fn_lightning_match_and_form(c,clock_timestamp(),NULL,1,gen_random_uuid(),NULL);
+ SELECT count(*) INTO n FROM pg_temp.diag_budget_attempts WHERE mode='retry';
+ RAISE NOTICE 'RETRY_BUDGET response=% attempts=%',r,n;
+ IF lc.pass_starved(r) OR NOT lc.pass_starved(r || jsonb_build_object('retries',jsonb_build_array(jsonb_build_object('reason','unknown','sqlstate','55P03')))) OR NOT lc.pass_starved((r - 'retries' - 'replans') || jsonb_build_object('retries','[]'::jsonb,'replans',0)) OR r->>'stopped_reason'<>'time_budget' OR coalesce((r->>'formed')::integer,-1)<>0 OR n<>1 OR (r->>'replans')::integer<>1 OR jsonb_array_length(r->'retries')<>1 THEN RAISE EXCEPTION 'retry budget failed'; END IF;
+END $cases$;
+ROLLBACK;
+BUDGET_CASES
+"${PSQL[@]}" -f "$fixture/budget-countercases.sql"
+echo "  ok  THE BUDGET COUNTERCASES  slow first plan forms; a documented retry remains bounded; zero-attempt starvation still fails"
+
 # LIGHTNING_P12_ONLY (a space-separated list of scenario ids: L, S1, C2 ...)
 # runs a subset while developing; a subset never prints PASS.
 only=${LIGHTNING_P12_ONLY:-}
@@ -1548,6 +1600,12 @@ failed=$(Q "SELECT count(*) FROM lc.verdict WHERE ok IS NOT TRUE")
 sections=$(Q "SELECT count(DISTINCT scen) FROM lc.verdict")
 expected=$(( $(echo $pops | wc -w) + 7 ))
 if [ "$failed" != 0 ]; then
+  # Preserve the authoritative response that caused an invariant failure.
+  # Counts alone cannot distinguish first-attempt starvation from a bounded
+  # retry race; this diagnostic never changes the assertion or its exit code.
+  Q "SELECT jsonb_build_object('scenario', scen, 'violation', what,
+                              'response', detail, 'observed_at', at)::text
+       FROM lc.violation ORDER BY id" | tee "$fixture/violations.jsonl"
   Q "SELECT format('  FAIL %s %s: %s', scen, inv, detail) FROM lc.verdict WHERE ok IS NOT TRUE ORDER BY id"
   echo "FAIL: $failed of $total invariant checks failed"
   exit 1

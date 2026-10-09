@@ -1504,10 +1504,23 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // for the same reason.
         if (errMsg.includes('deal_step_timeout')) {
           this.markProgress();
-          reportError(err, 'ServerTableEngine.' + this.tableId + '.deal_step_timeout', {
-            phase: this.loopPhase,
-            handCount: this.handCount,
-          });
+          /* AN IDLE TABLE'S SLOW READ IS NOT AN ERROR (2026-10-09). A step
+             budget blown while the table waits on people (no hand in flight,
+             nothing owed to anyone, the loop retries in seconds) is a slow
+             database read, not a dealing failure: on 2026-10-09 every one of
+             the day's deal_step_timeout reports was idle_cluster_closed. It
+             still marks progress and is still logged; a budget blown while a
+             hand is being dealt is still reported. */
+          if (ServerTableEngineDealing.IDLE_LOOP_PHASES.has(this.loopPhase)) {
+            console.warn(
+              `[ServerTableEngine:${this.tableId}] idle step over budget (${this.loopPhase}): ${errMsg}`
+            );
+          } else {
+            reportError(err, 'ServerTableEngine.' + this.tableId + '.deal_step_timeout', {
+              phase: this.loopPhase,
+              handCount: this.handCount,
+            });
+          }
         }
 
         if (!isTransient) {

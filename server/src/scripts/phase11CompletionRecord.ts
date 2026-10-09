@@ -47,7 +47,16 @@ const release = arg('release') ?? '';
 if (!/^[0-9a-f]{40}$/.test(release)) refuse('invalid_release');
 const from = arg('from') ?? '';
 const to = arg('to') ?? '';
-if (!(Date.parse(from) < Date.parse(to))) refuse('invalid_window');
+// Admission reads the window with isoMs, which accepts only the canonical
+// toISOString form (milliseconds included). A record written with any other
+// spelling of the same instant is refused completion_window_invalid at
+// admission, so the writer refuses it here instead (2026-10-09).
+const canonicalIso = (iso: string) => {
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) && new Date(ms).toISOString() === iso;
+};
+if (!(canonicalIso(from) && canonicalIso(to) && Date.parse(from) < Date.parse(to)))
+  refuse('invalid_window');
 if (arg('release-unchanged') !== 'true') refuse('release_unchanged_not_proven');
 const source = arg('source') ?? 'journal archive segments';
 

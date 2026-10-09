@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ServerTableEngine } from './ServerTableEngine.js';
+import { supabase } from '../services/supabase/client.js';
 
 const TABLE = 'aaaaaaaa-1234-4321-9876-aaaaaaaaaaaa';
 const PLAYER = 'reconnecting-player';
@@ -37,6 +38,53 @@ function harness() {
     (call![3] as () => void)();
   };
   return { engine, state, now, clocks, expire, strikes, warnings };
+}
+
+/** Exercise the constructor's real persistence callback without a live database. */
+function isolatedSitOutSeats(engine: any) {
+  const occupancyId = 'bbbbbbbb-1234-4321-9876-bbbbbbbbbbbb';
+  engine.seatedPlayers[0].occupancy_id = occupancyId;
+  const current = {
+    table_id: TABLE,
+    user_id: PLAYER,
+    occupancy_id: occupancyId,
+    left_at: null as string | null,
+    is_sitting_out: false,
+  };
+  // These rows expose a missing table/user/occupancy/live-seat predicate.
+  const others = [
+    { ...current, table_id: 'another-table' },
+    { ...current, user_id: 'another-player' },
+    { ...current, occupancy_id: 'another-occupancy' },
+    { ...current, left_at: '2026-10-09T12:00:00Z' },
+  ];
+  const writes: Array<{ value: boolean; filters: Array<[string, unknown]> }> = [];
+  const from = vi.spyOn(supabase, 'from').mockImplementation(((relation: string) => {
+    expect(relation).toBe('table_seats');
+    return {
+      update: (patch: { is_sitting_out: boolean }) => {
+        expect(Object.keys(patch)).toEqual(['is_sitting_out']);
+        const filters: Array<[string, unknown]> = [];
+        const query = {
+          eq: (column: string, value: unknown) => {
+            filters.push([column, value]);
+            return query;
+          },
+          is: (column: string, value: null) => {
+            filters.push([column, value]);
+            writes.push({ value: patch.is_sitting_out, filters });
+            for (const row of [current, ...others]) {
+              if (filters.every(([key, value]) => row[key as keyof typeof row] === value))
+                row.is_sitting_out = patch.is_sitting_out;
+            }
+            return Promise.resolve({ error: null });
+          },
+        };
+        return query;
+      },
+    };
+  }) as any);
+  return { current, others, writes, from, occupancyId };
 }
 
 afterEach(() => {
@@ -152,6 +200,7 @@ describe('a recovered turn clock carries its actual turn state', () => {
     async (path) => {
       const h = harness();
       h.strikes.mockRestore();
+      const seats = isolatedSitOutSeats(h.engine);
       h.engine.disconnectEngine.registerPlayer(TABLE, PLAYER);
       h.engine.startTurnTimer(PLAYER, 2, 15);
       if (path === 'manual') {
@@ -167,10 +216,32 @@ describe('a recovered turn clock carries its actual turn state', () => {
         isSittingOut: true,
         sitOutReason: 'forced',
       });
+      expect(seats.current.is_sitting_out).toBe(true);
+      expect(seats.others.map((row) => row.is_sitting_out)).toEqual([false, false, false, false]);
+      expect(seats.writes).toEqual([
+        {
+          value: true,
+          filters: [
+            ['table_id', TABLE],
+            ['user_id', PLAYER],
+            ['occupancy_id', seats.occupancyId],
+            ['left_at', null],
+          ],
+        },
+      ]);
       h.engine.disconnectEngine.heartbeat(TABLE, PLAYER);
       expect(h.engine.disconnectEngine.getState(TABLE, PLAYER).isSittingOut).toBe(true);
+      expect(seats.current.is_sitting_out).toBe(true);
+      expect(seats.writes).toHaveLength(1);
       h.engine.disconnectEngine.sitBack(TABLE, PLAYER);
       expect(h.engine.disconnectEngine.getState(TABLE, PLAYER).isSittingOut).toBe(false);
+      expect(seats.current.is_sitting_out).toBe(false);
+      expect(seats.writes).toEqual([
+        seats.writes[0],
+        { ...seats.writes[0], value: false },
+      ]);
+      expect(seats.from).toHaveBeenCalledTimes(2);
+      expect(seats.others.map((row) => row.is_sitting_out)).toEqual([false, false, false, false]);
     }
   );
 

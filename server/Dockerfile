@@ -29,11 +29,12 @@ COPY release-evidence/ ./release-evidence/
 # Full test compilation and execution remain in the exact-source CI preflight.
 # Bound both V8 generations: the old-generation ceiling alone does not bound
 # compiler RSS. A 4 MiB semi-space caps the young generation at 12 MiB
-# independently of detected cgroup memory. The builder stays at 640 MiB with
-# no swap; resource CI still proves every checked runtime output.
+# independently of detected cgroup memory. Preserve the current canonical
+# 2048 MiB no-swap builder; resource CI proves every checked runtime output.
 # Release each bounded program before emitting the next: retaining every AST
 # together exhausted the same 512 MiB heap as the runtime source grew.
 RUN ulimit -c 0 && node --max-old-space-size=512 --max-semi-space-size=4 ./scripts/emit-runtime.mjs --project tsconfig.emit.json
+
 
 # Remove dev dependencies
 RUN npm prune --omit=dev --no-audit --no-fund

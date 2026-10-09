@@ -108,6 +108,7 @@ import { horseVariantRulesFor } from '../VariantRules.js';
 import {
   admitHorsePhase11QualifiedAuthority,
   admitHorsePhase11ReleaseAuthority,
+  PHASE11_PROTECTED_RELEASE_SELECTIONS,
 } from '../HorsePhase11Authority.js';
 import {
   P11_TEST_CONTRACT_DIGEST,
@@ -3691,37 +3692,35 @@ describe('P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused 
   ] as const;
 
   it.each(LIVE_STATES)(
-    'live behaviour is unchanged today: %s %s %s executes the same action as before P11.3',
+    'live behaviour under the committed selections: %s %s %s',
     async (variant, format, cards, changed, baseAction) => {
       const request =
         format === 'cash' ? omahaCash(611, variant, cards) : omahaTournament(611, variant, cards);
       const live = await decideThrough(request, (v) => admitHorsePhase11ReleaseAuthority(v));
       const reference = await decideThrough(request, undefined, true);
-      expect(live.h.decisionOpts[0].phase11Omaha).toBe('shadow');
-      expect(act(live.decision)).toEqual(baseAction);
       expect(act(reference.decision)).toEqual(baseAction);
       expect(reference.decision.omahaVariantPolicy).toBeUndefined();
+      const selected = PHASE11_PROTECTED_RELEASE_SELECTIONS[variant] !== null;
+      const candidate = selected && format === 'cash';
       const receipt = live.decision.omahaVariantPolicy!;
+      expect(live.h.decisionOpts[0].phase11Omaha).toBe(candidate ? 'candidate' : 'shadow');
       expect(receipt).toMatchObject({
         variant,
-        mode: 'shadow',
+        mode: candidate ? 'candidate' : 'shadow',
         eligible: true,
-        applied: false,
-        authorityVerdict: null,
-        selectionRefusal: null,
+        applied: candidate && changed,
         authority: {
-          state: 'unselected',
-          reason: 'unselected',
-          authorityKey: null,
+          state: selected ? 'usable' : 'unselected',
           continuationVersion: OMAHA_VARIANT_PACKS[variant].version,
         },
       });
       expect(receipt.changed).toBe(changed);
-      expect(receipt.selection).toBe(changed ? 'shadow_change' : 'none');
+      if (candidate && changed) expect(live.decision.action).not.toBe(baseAction.action);
+      else expect(act(live.decision)).toEqual(baseAction);
       expect(receipt.finalAction).toBe(live.decision.action);
       for (const pack of ['plo5', 'plo6', 'plo8'] as const)
         expect(live.result.phase11Authority?.[pack]).toMatchObject({
-          state: 'unselected',
+          state: PHASE11_PROTECTED_RELEASE_SELECTIONS[pack] === null ? 'unselected' : 'usable',
           continuationVersion: OMAHA_VARIANT_PACKS[pack].version,
         });
       expect(horseDecisionReceiptIsValid(structuredClone(live.decision), variant)).toBe(true);

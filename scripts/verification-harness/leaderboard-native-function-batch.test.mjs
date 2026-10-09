@@ -256,6 +256,23 @@ test('native stock and batched builds serialize overlapping recursive libraries'
   );
 });
 
+test('native qualification pulls identical pinned inputs through official public mirrors', () => {
+  const dockerfile = readFileSync(
+    new URL('./leaderboard-native-function-batch.Dockerfile', import.meta.url),
+    'utf8'
+  );
+  assert.match(
+    dockerfile,
+    /^FROM public\.ecr\.aws\/docker\/library\/node@sha256:0e5f906573693feaa1e21057ebdcfdb5bd5021f050b2dc7c9deceb629c7da2a8 AS node_runtime$/m
+  );
+  assert.match(
+    dockerfile,
+    /^FROM ghcr\.io\/supabase\/postgres@sha256:178f0976b54a39237096bfa310c1a352dbc82fb1b08dda45cdb8acb5d40c1426$/m
+  );
+  assert.match(dockerfile, /COPY --from=node_runtime \/usr\/local\/bin\/node/);
+  assert.match(dockerfile, /dd27f2b3c59e73ed14aa3324901242bf69a032a6347805f274e6260322d42979/);
+});
+
 test('all qualification doors enforce the same real native fixture before source access', () => {
   const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
   const build = read('./leaderboard-native-function-batch-build.sh');

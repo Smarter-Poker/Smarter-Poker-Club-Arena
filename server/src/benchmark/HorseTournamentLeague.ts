@@ -13,7 +13,12 @@ import {
   type Phase8Mode,
   type HorseTournamentPostflopLedger,
 } from '../engine/HorseTournamentPostflop.js';
-import type { Card, HandEvent, SeatPlayer, Winner, PerPotAward } from '../types.js';
+import type { Card, HandEvent, HorseDecision, SeatPlayer, Winner, PerPotAward } from '../types.js';
+import {
+  HUMAN_CALIBRATED_POPULATION_ID,
+  humanCalibratedDecide,
+  type HumanCalibratedSpot,
+} from './HumanCalibratedPopulation.js';
 
 export const TOURNAMENT_LEAGUE_OBJECTIVES = [
   'mtt',
@@ -90,6 +95,13 @@ export interface TournamentLeagueRequest {
   /** Test mirror; production promotion always compares candidate with off. */
   candidateMode?: Phase8Mode;
   evidenceMode?: 'fixture' | 'promotion';
+  /**
+   * Post-launch condition (b) monitoring (winning contract, Amendment Of
+   * October 9, 2026): every non-hero entrant plays the human-calibrated NLH
+   * profile instead of a `balanced` horse and is seated as a human
+   * (`is_horse: false`). Absent: the Phase 8 field, unchanged.
+   */
+  opponentPopulation?: typeof HUMAN_CALIBRATED_POPULATION_ID;
 }
 export const MAX_TOURNAMENT_COMPLETION_DIAGNOSTICS = 256;
 export interface TournamentCompletionDiagnostic {
@@ -143,6 +155,10 @@ export function recordTournamentCompletion(
 
 export interface TournamentLeagueResult extends TournamentCompletionCounts {
   version: typeof PHASE8_POLICY.version;
+  /** Present only for a human-calibrated field (absent: the Phase 8 horse field). */
+  opponentPopulation?: typeof HUMAN_CALIBRATED_POPULATION_ID;
+  /** Human-calibrated entrants only: response counts per decision node, both arms. */
+  humanResponses?: Record<string, Record<string, number>>;
   candidateMode: Phase8Mode;
   evidenceMode: 'fixture' | 'promotion';
   objective: TournamentLeagueObjective;
@@ -231,6 +247,42 @@ interface Receipt extends TournamentCompletionCounts {
   budget: number;
   regret: number;
   latency: number[];
+  humanResponses: Record<string, Record<string, number>>;
+}
+
+/** A human-calibrated entrant's decision from the authoritative menu and public state. */
+function humanCalibratedEntrantDecision(
+  seatPlayer: SeatPlayer,
+  state: ReturnType<HandController['getState']>,
+  menu: NonNullable<ReturnType<HandController['getAuthoritativeActionState']>>,
+  receipt: Receipt
+): HorseDecision {
+  const spot: HumanCalibratedSpot = {
+    variant: 'nlh',
+    stage: state.stage,
+    cards: seatPlayer.cards,
+    board: state.communityCards,
+    pot: state.pot,
+    toCall: menu.toCall,
+    currentBet: state.currentBet,
+    aggressionThisStreet: state.actionHistory.some(
+      (a) =>
+        a.stage === state.stage &&
+        (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')
+    ),
+    legalActions: menu.legalActions,
+    minRaiseTo: menu.minRaiseTo,
+    maxRaiseTo: menu.maxRaiseTo,
+    wholeChips: true,
+  };
+  const d = humanCalibratedDecide(spot);
+  const tally = (receipt.humanResponses[d.node] ??= {});
+  tally[d.action] = (tally[d.action] ?? 0) + 1;
+  return {
+    action: d.action,
+    ...(d.amount !== undefined ? { amount: d.amount } : {}),
+    thinkTime: 0,
+  };
 }
 
 async function playTournament(
@@ -238,11 +290,16 @@ async function playTournament(
   objective: TournamentLeagueObjective,
   heroSeat: number,
   mode: Phase8Mode,
-  shouldContinue: () => boolean
+  shouldContinue: () => boolean,
+  opponentPopulation: typeof HUMAN_CALIBRATED_POPULATION_ID | null = null
 ): Promise<Receipt> {
   const count = tournamentLeagueEntrants(objective);
   const startStack = 2000;
-  const players = Array.from({ length: count }, (_, i) => seat(i, startStack));
+  const players = Array.from({ length: count }, (_, i) =>
+    opponentPopulation && i !== heroSeat
+      ? { ...seat(i, startStack), username: `Human ${i + 1}`, is_horse: false }
+      : seat(i, startStack)
+  );
   const heroId = players[heroSeat].user_id;
   const originalIds = players.map((p) => p.user_id);
   const heads = new Map(players.map((p) => [p.user_id, 1000]));
@@ -275,6 +332,7 @@ async function playTournament(
     budget: 0,
     regret: 0,
     latency: [],
+    humanResponses: {},
   };
   let alive = players;
   const buttons = new Map<number, number>();
@@ -463,20 +521,23 @@ async function playTournament(
       seedFastRandom(
         (seed ^ Math.imul(hand + 1, 104729) ^ Math.imul(action + 1, 1009) ^ hero.seat) >>> 0
       );
-      const decision = HorseMind.runInSandbox(sandbox, () =>
-        HorseLogic.decide(
-          hero,
-          gs,
-          'balanced',
-          {},
-          {
-            phase8Postflop: hero.user_id === heroId ? mode : 'off',
-            mind: false,
-            telemetry: false,
-            decisionTimeMs: 0,
-          }
-        )
-      );
+      const decision: HorseDecision =
+        opponentPopulation !== null && hero.user_id !== heroId
+          ? humanCalibratedEntrantDecision(hero, state, menu, receipt)
+          : HorseMind.runInSandbox(sandbox, () =>
+              HorseLogic.decide(
+                hero,
+                gs,
+                'balanced',
+                {},
+                {
+                  phase8Postflop: hero.user_id === heroId ? mode : 'off',
+                  mind: false,
+                  telemetry: false,
+                  decisionTimeMs: 0,
+                }
+              )
+            );
       receipt.decisions++;
       const layer = decision.tournamentPostflop;
       if (layer) {
@@ -617,6 +678,9 @@ export async function runTournamentLeague(
   const result: TournamentLeagueResult = {
     ...emptyTournamentCompletionCounts(),
     version: PHASE8_POLICY.version,
+    ...(request.opponentPopulation
+      ? { opponentPopulation: request.opponentPopulation, humanResponses: {} }
+      : {}),
     candidateMode: request.candidateMode ?? 'candidate',
     evidenceMode: request.evidenceMode ?? 'fixture',
     objective: request.objective,
@@ -666,9 +730,23 @@ export async function runTournamentLeague(
         request.objective,
         hero,
         request.candidateMode ?? 'candidate',
-        shouldContinue
+        shouldContinue,
+        request.opponentPopulation ?? null
       );
-      const b = await playTournament(seed, request.objective, hero, 'off', shouldContinue);
+      const b = await playTournament(
+        seed,
+        request.objective,
+        hero,
+        'off',
+        shouldContinue,
+        request.opponentPopulation ?? null
+      );
+      for (const arm of [a, b])
+        for (const [node, counts] of Object.entries(arm.humanResponses))
+          for (const [act, n] of Object.entries(counts)) {
+            const into = ((result.humanResponses ??= {})[node] ??= {});
+            into[act] = (into[act] ?? 0) + n;
+          }
       result.illegalActions += a.illegal + b.illegal;
       result.conservationErrors += a.conservation + b.conservation;
       result.truncatedHands += a.truncated + b.truncated;

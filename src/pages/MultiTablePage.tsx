@@ -1,3 +1,4 @@
+import { arenaDisplayText } from '../lib/arenaDisplay/text';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  MULTI-TABLE PAGE — Premium-Style Multi-Table Container
@@ -2109,7 +2110,7 @@ export default function MultiTablePage() {
           originalIcon = iconLink?.href ?? originalIcon;
           badged = true;
         }
-        document.title = `YOUR TURN - ${urgent.name}`;
+        document.title = `YOUR TURN - ${arenaDisplayText(urgent.name)}`;
         if (iconLink) iconLink.href = BADGE_ICON;
         if (
           desktopAlertsRef.current &&
@@ -2121,7 +2122,7 @@ export default function MultiTablePage() {
           notifiedDeadlineRef.current.set(urgent.id, urgent.turnDeadlineMs);
           try {
             const n = new Notification('Your Turn', {
-              body: urgent.name,
+              body: arenaDisplayText(urgent.name),
               tag: `ca-turn-${urgent.id}`,
             });
             n.onclick = () => {

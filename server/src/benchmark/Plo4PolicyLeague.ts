@@ -316,7 +316,10 @@ export async function playPlo4PolicyHand(
     is_folded: false,
     is_all_in: false,
     is_sitting_out: false,
-    is_horse: true,
+    // Condition (b) monitoring: a human-calibrated seat is seated as a human.
+    is_horse: !(
+      profile.opponentPopulation === HUMAN_CALIBRATED_POPULATION_ID && index + 1 !== heroSeat
+    ),
   }));
   const config: HandConfig = {
     tableId: `${remainingVariant ? 'phase12' : profile.variant ? 'phase11' : 'phase10'}-offline-league`,

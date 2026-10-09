@@ -518,6 +518,15 @@
   overflow: visible;
 }
 
+/* Inner lists can still scroll when constrained, but must pass vertical
+   gestures to the tab panel at their edges (including when they fit entirely).
+   Containment on .tl-scroll trapped wheel/touch input over the centre of every
+   list while the panel's side gutters scrolled normally. The panel itself
+   retains containment so an embedded lobby does not scroll the table behind it. */
+.details-content .tl-scroll {
+  overscroll-behavior-y: auto;
+}
+
 .details-content::-webkit-scrollbar,
 .details-content > *::-webkit-scrollbar {
   width: 6px;

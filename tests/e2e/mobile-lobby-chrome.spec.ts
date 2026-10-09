@@ -33,6 +33,68 @@ import { dismissClubEntryMessage } from './global-setup';
 
 const css = (p: string) => readFileSync(p, 'utf8');
 
+// Real tournament styles, including the later shared .tl-scroll rule that
+// previously trapped gestures over lists even when their content fit.
+for (const width of [375, 1518]) {
+  test(`tournament tabs scroll from centre and sides at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 812 });
+    const sheets = [
+      'src/pages/tournament/TournamentDetails.css',
+      'src/styles/tournament-lobby-3d.css',
+      ...[
+        'DetailOverviewTab',
+        'BlindsTab',
+        'RankingTab',
+        'EntriesTab',
+        'UnionsTab',
+        'TablesTab',
+        'RewardsTab',
+      ].map((name) => `src/components/tournament/details/${name}.css`),
+    ]
+      .map(css)
+      .join('\n');
+    for (const [name, root, list] of [
+      ['Details', 'dov', 'dov-info dov-info--band tl-scroll'],
+      ['Blinds', 'blinds-tab', 'blinds-list'],
+      ['Ranking', 'tl-panel rk-panel', 'tl-list tl-scroll rk-list'],
+      ['Entries', 'tl-panel et-panel', 'tl-list tl-scroll et-scroll'],
+      ['Unions', 'tl-panel un-panel', 'tl-list tl-scroll un-clubs'],
+      ['Tables', 'tl-panel tt-panel', 'tl-list tl-scroll tt-list'],
+      ['Rewards', 'rw', 'rw-list'],
+    ]) {
+      await test.step(name, async () => {
+        await page.setContent(`<style>${sheets}</style>
+          <section class="tournament-details" style="--details-h:780px">
+            <header class="details-header"><h1 class="tournament-name">Tournament</h1></header>
+            <nav class="details-tabs"><button class="tab">${name}</button></nav>
+            <div class="details-content"><div class="${root}">
+              <ol class="${list}" style="margin:0;padding:0;list-style:none">
+                ${Array.from({ length: 40 }, (_, i) => `<li style="height:64px;flex-shrink:0">Row ${i + 1}</li>`).join('')}
+              </ol></div></div>
+            <footer class="details-footer"><button>Share</button></footer>
+          </section>`);
+        const panel = page.locator('.details-content');
+        const box = await panel.boundingBox();
+        expect(box).not.toBeNull();
+        const footer = await page.locator('.details-footer').boundingBox();
+        for (const x of [box!.x + box!.width / 2, box!.x + 8]) {
+          await page.mouse.move(x, box!.y + box!.height / 2);
+          const before = await panel.evaluate((el) => el.scrollTop);
+          await page.mouse.wheel(0, 300);
+          await expect.poll(() => panel.evaluate((el) => el.scrollTop)).toBeGreaterThan(before);
+          const after = await panel.evaluate((el) => el.scrollTop);
+          await page.mouse.wheel(0, -250);
+          await expect.poll(() => panel.evaluate((el) => el.scrollTop)).toBeLessThan(after);
+        }
+        expect(await page.locator('.details-footer').boundingBox()).toEqual(footer);
+        expect(await panel.evaluate((el) => getComputedStyle(el).overscrollBehaviorY)).toBe(
+          'contain'
+        );
+      });
+    }
+  });
+}
+
 test('production setup persists the club message through an eligible Diamond invitation', async ({
   page,
 }) => {

@@ -1159,6 +1159,7 @@ export class ScheduledTournamentService {
     reason: string
   ): Promise<void> {
     if (!missedOccurrenceIsPageable(startTime, new Date())) return;
+    // raiseFinancialAlert never throws; the page can never cost the retry.
     await raiseFinancialAlert(
       'warning',
       MISSED_OCCURRENCE_SOURCE,
@@ -1175,19 +1176,24 @@ export class ScheduledTournamentService {
     );
   }
 
+  /** Housekeeping only: it never throws, so it can never cost a spawn. */
   private async clearMissedOccurrencePage(scheduleId: string): Promise<void> {
-    const at = new Date().toISOString();
-    const { error } = await supabase
-      .from('financial_alerts')
-      .update({
-        resolved: true,
-        resolved_at: at,
-        resolution: `The schedule created its next occurrence at ${at}.`,
-      })
-      .eq('source', MISSED_OCCURRENCE_SOURCE)
-      .eq('context->>schedule_id', scheduleId)
-      .or('resolved.is.null,resolved.eq.false');
-    if (error) reportError(error, 'ScheduledTournaments.occurrence_page_clear_failed');
+    try {
+      const at = new Date().toISOString();
+      const { error } = await supabase
+        .from('financial_alerts')
+        .update({
+          resolved: true,
+          resolved_at: at,
+          resolution: `The schedule created its next occurrence at ${at}.`,
+        })
+        .eq('source', MISSED_OCCURRENCE_SOURCE)
+        .eq('context->>schedule_id', scheduleId)
+        .or('resolved.is.null,resolved.eq.false');
+      if (error) reportError(error, 'ScheduledTournaments.occurrence_page_clear_failed');
+    } catch (err) {
+      reportError(err, 'ScheduledTournaments.occurrence_page_clear_failed');
+    }
   }
 
   private async finishSpawn(

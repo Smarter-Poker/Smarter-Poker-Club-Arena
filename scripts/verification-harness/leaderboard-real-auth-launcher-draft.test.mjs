@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { authFailureDiagnostic } from './leaderboard-real-auth-launcher-draft.mjs';
 import { assertExpiredCredential } from './leaderboard-real-auth-draft.mjs';
 
 test('expiry oracle requires the pinned claims error and exact expiry reason', () => {
@@ -74,4 +75,22 @@ test('delegated actual-session proof retains an independent exact publication or
   assert.match(launcher, /p\.funding_union_id IS DISTINCT FROM e\.funding_union/);
   assert.match(launcher, /p\.weekly_prizes IS DISTINCT FROM '\[\]'::jsonb/);
   assert.match(launcher, /fresh actual sessions for the SAME/);
+});
+
+// Exercise redaction independently of Docker or any source credentials.
+test('Auth failure diagnostics expose only closed phase and failure categories', () => {
+  assert.equal(
+    authFailureDiagnostic('database-restart', 'docker-timeout'),
+    'Isolated Auth Failure: phase=database-restart; kind=docker-timeout'
+  );
+  assert.equal(
+    authFailureDiagnostic('service-health', 'docker-exit'),
+    'Isolated Auth Failure: phase=service-health; kind=docker-exit'
+  );
+  const secret = 'postgres://owner:synthetic-private-password@private-host';
+  const out = authFailureDiagnostic(secret, secret);
+  assert.equal(out, 'Isolated Auth Failure: phase=unknown; kind=unknown');
+  assert.ok(!out.includes('password') && !out.includes('private-host'));
+  assert.match(launcher, /console\.error\(authFailureDiagnostic\(phase, failureKind\)\)/);
+  assert.ok(!launcher.includes('console.error(result.stderr)'));
 });

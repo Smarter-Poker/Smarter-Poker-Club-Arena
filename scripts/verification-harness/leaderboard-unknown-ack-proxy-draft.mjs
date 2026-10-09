@@ -4,7 +4,7 @@ import net from 'node:net';
 import http from 'node:http';
 import { createHash } from 'node:crypto';
 
-const payoutSHA256 = 'f5756985646e19f44fa053733f624904075716fe63c1aa21cf0c84ce6cf2f563';
+const payoutSHA256 = '9f4603929a17d83be4a0bc1999dd743e49763a6c6a6c87f9004e6c29f2a7f5cb';
 
 const sockets = new Set();
 let gated = false;

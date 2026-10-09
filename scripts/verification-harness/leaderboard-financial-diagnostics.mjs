@@ -95,12 +95,17 @@ export function financialDiagnostics(mode, input) {
     return `Financial Diagnostic: mode=${mode} verdicts=unavailable input_line=${line} SQLSTATE=${state}`;
   }
   assert.equal(rows.length, cases[mode].length);
-  return rows
+  const receipt = rows
     .map(
       ({ name, passed, state, stage }) =>
         `Financial Diagnostic: mode=${mode} case=${name} pass=${passed} stage=${stage || 'none'} SQLSTATE=${state || 'unknown'}`
     )
     .join('\n');
+  if (mode === 'unknown-ack' && input.split('\n').includes('UNKNOWN_ACK_OWN_CLEANUP_FAILED')) {
+    assert.ok(rows.some((row) => row.passed === 'f'));
+    return receipt + '\nFinancial Diagnostic: mode=unknown-ack owned_cleanup=failed';
+  }
+  return receipt;
 }
 function boundedRead(path) {
   const fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW);

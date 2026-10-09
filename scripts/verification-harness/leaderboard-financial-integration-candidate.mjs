@@ -20,9 +20,9 @@ const reviewed = Object.freeze({
   [funding]: 'd3b0d591994d0c8cc5a0c3b66b984d42241e921cf5c06668f29518c84b3eb756',
   [fixture]: 'c2057bbbbb9b08c860ac82cf02e98171ff9188ab36694dcb672f1abd3f37ed41',
   [concurrency]: 'c734ab9c039bd926a4b854177ea76729d825a57df45506b11ac67a59b57723ea',
-  [unknown]: '43805e41e7b6e9d77da125d80273050fc4680390d0b16e7587b88322b6d130a8',
-  [proxy]: 'd94d01708225596d90d2ee892d2634d995078cc1d6f7ac604fae9e56ac8227b5',
-  [diagnostics]: 'cf3f612198e91879949cd45b2fda1d1525fef0085f3f71fc758e5b216b73d847',
+  [unknown]: 'dea167abd469e7b78f07e0a65d33a31409d75a86bec46aa32cf9662c770effc8',
+  [proxy]: 'ee690ad41a6790617215400ea6287847c18f553effe0cd7a32f94e0dee057381',
+  [diagnostics]: '3659a7e29421017046f4256bac1339b437c8bca5839e47ef3197c1dbe2e003e6',
 });
 const modes = Object.freeze({
   payout: [auth, payout, diagnostics],

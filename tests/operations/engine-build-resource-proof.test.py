@@ -15,6 +15,21 @@ class OriginalBuildResourceEvidenceTests(unittest.TestCase):
     def output(self, peak, boundary=None):
         return f'{boundary if boundary is not None else self.boundary}\nENGINE_BUILD_MEMORY_PEAK_BYTES={peak}\n'
 
+    def test_disposable_builder_retains_limits_and_source_refs(self):
+        from unittest.mock import patch
+        import tempfile
+        with tempfile.TemporaryDirectory() as temp, patch.object(proof, 'run') as run:
+            proof.prepare_cached_builder(Path(temp) / 'buildkitd.toml')
+            config = (Path(temp) / 'buildkitd.toml').read_text()
+            self.assertIn('[registry."docker.io"]\n  mirrors = ["mirror.gcr.io"]', config)
+            self.assertIn('max-parallelism = 1', config)
+            args = run.call_args_list[-1].args[0]
+            for value in (f'memory={proof.LIMIT}', f'memory-swap={proof.LIMIT}',
+                          'cpu-period=100000', 'cpu-quota=100000', 'restart-policy=no'):
+                self.assertIn(value, args)
+            self.assertIn('image=mirror.gcr.io/moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8', args)
+            self.assertEqual(proof.NODE, 'mirror.gcr.io/library/node:22-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5')
+
     def test_retains_raw_peak_including_documented_transient_excess(self):
         for peak in (proof.LIMIT - 4096, proof.LIMIT, proof.LIMIT + 4096):
             with self.subTest(peak=peak):

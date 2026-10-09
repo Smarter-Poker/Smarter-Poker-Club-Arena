@@ -15,7 +15,7 @@ import time
 ROOT = Path(__file__).resolve().parents[2]
 BUILDER = "club-arena-engine-bounded-v4"
 CONTAINER = f"buildx_buildkit_{BUILDER}0"
-NODE = "node:22-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5"
+NODE = "mirror.gcr.io/library/node:22-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5"
 LIMIT = 2147483648
 
 
@@ -141,6 +141,21 @@ def wrapper_fault(temp, out, mode, sentinel, before, owned_tags):
     return facts
 
 
+def prepare_cached_builder(config_path):
+    """Configure only this disposable runner; preserve production source and limits."""
+    # Google documents mirror.gcr.io as its public Docker Hub cache. Both pinned
+    # manifests were qualified byte-for-byte; a cache miss still fails normally.
+    config_path.write_text('[worker.oci]\n  max-parallelism = 1\n  gc = true\n'
+                           '  reservedSpace = "512MB"\n  maxUsedSpace = "2GB"\n'
+                           '  minFreeSpace = "2GB"\n'
+                           '[registry."docker.io"]\n  mirrors = ["mirror.gcr.io"]\n')
+    run(["docker", "buildx", "create", "--name", BUILDER, "--driver", "docker-container",
+         "--driver-opt", "image=mirror.gcr.io/moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8",
+         "--driver-opt", f"memory={LIMIT}", "--driver-opt", f"memory-swap={LIMIT}",
+         "--driver-opt", "cpu-period=100000", "--driver-opt", "cpu-quota=100000",
+         "--driver-opt", "restart-policy=no", "--buildkitd-config", str(config_path)])
+
+
 def main():
     if sys.platform != "linux" or os.environ.get("GITHUB_ACTIONS") != "true":
         raise RuntimeError("resource proof requires a disposable Linux Actions runner")
@@ -156,6 +171,7 @@ def main():
     before = None
     owned_tags = [tag, failed_tag]
     try:
+        prepare_cached_builder(out / "buildkitd.toml")
         run(["docker", "run", "--detach", "--name", sentinel, "--memory", "256m",
              "--memory-swap", "256m", NODE, "node", "-e", "setInterval(()=>{},1000)"], timeout=120)
         before = inspect(sentinel)

@@ -16,6 +16,13 @@
  * DETERMINISTIC. Every random draw comes from one seeded generator
  * (mulberry32), in a fixed order, so a seed reproduces a run exactly.
  *
+ * THE BARRIER'S BOOKKEEPING, AS THE BARRIER KEEPS IT (Phase 11 remediation,
+ * 2026-10-09): each group of a pass is stamped its own microsecond - the
+ * big blind's last_bb_at and the hand's formed_at are `now + k us` for the
+ * pass's k-th group, as fn_lightning_match_and_form stamps them - so P2's
+ * next pass serves the big blinds in the order they were chosen, rather
+ * than re-sorting a whole pass's batch by the next tie-break.
+ *
  * NOTHING HERE TOUCHES A DATABASE. The CLI is src/scripts/lightningMatcherSim.ts;
  * CI runs only a small smoke (LightningMatcherSim.test.ts).
  */
@@ -293,6 +300,10 @@ export function runLightningMatcherSim(partial: Partial<LightningSimOptions>): L
                 : 'DISCONNECTED',
           idleSinceMs: p.idleSinceMs,
           enteredAtMs: p.enteredAtMs,
+          // One session per synthetic player: the pool entry, the slot's
+          // opening and the Cluster join are the same moment.
+          joinedAtMs: p.enteredAtMs,
+          slotOpenedAtMs: p.enteredAtMs,
           lastBbAtMs: p.lastBbAtMs,
           bbUnresolved: false,
           debtSinceMs: p.enteredAtMs,
@@ -304,9 +315,10 @@ export function runLightningMatcherSim(partial: Partial<LightningSimOptions>): L
     }
     const plan = model.plan({ nowMs, players: pool, recentHands: recent }, params);
 
-    // 4. Deal what was planned.
-    for (const g of plan.groups) {
+    // 4. Deal what was planned, each group stamped its own microsecond.
+    for (const [ordinal, g] of plan.groups.entries()) {
       if (hands >= o.hands) break;
+      const stampMs = nowMs + ordinal / 1000;
       hands++;
       const members = g.players;
       const size = members.length;
@@ -341,7 +353,7 @@ export function runLightningMatcherSim(partial: Partial<LightningSimOptions>): L
         if (i === 0) {
           if (p.handsSinceBb !== null) bbGaps.push(p.handsSinceBb);
           p.bb++;
-          p.lastBbAtMs = nowMs;
+          p.lastBbAtMs = stampMs;
           p.handsSinceBb = 0;
         } else if (p.handsSinceBb !== null) p.handsSinceBb++;
         if (p.lastHand) {
@@ -356,7 +368,11 @@ export function runLightningMatcherSim(partial: Partial<LightningSimOptions>): L
         p.status = 'in_hand';
         p.untilMs = rand() < o.foldRate ? nowMs + uniform(1_500, 6_000) : handEnd;
       }
-      recent.push({ players: [...members], formedAtMs: nowMs });
+      recent.push({
+        players: [...members],
+        formedAtMs: stampMs,
+        handId: `h${String(hands).padStart(9, '0')}`,
+      });
       recentSets.push(key);
       if (recent.length > params.recentWindowHands) recent.shift();
       if (recentSets.length > params.recentWindowHands) recentSets.shift();

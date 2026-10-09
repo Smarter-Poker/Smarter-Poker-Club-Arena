@@ -72,7 +72,7 @@ export class LightningMetrics {
   readonly formedTotal: Counter;
   private readonly idle = new Map<
     string,
-    { at: number; kind: LightningIdleKind; clusterId: string | null }
+    { at: number; foldAt: number; kind: LightningIdleKind; clusterId: string | null }
   >();
   readonly passesTotal: Counter;
   readonly workers: Gauge;
@@ -138,15 +138,25 @@ export class LightningMetrics {
     this.foldsTotal.inc(1, { type });
   }
 
-  /** The player is back in the idle pool now. */
+  /**
+   * The player is back in the idle pool now. `foldAtMs` is when the player
+   * asked to fold (the fold REQUEST): every *_to_next_hand leg starts there,
+   * not at the idle moment after the database's acknowledgement (Phase 11
+   * remediation, 2026-10-09). Absent, the leg starts at `atMs`.
+   */
   noteIdle(
     playerId: string,
     atMs: number,
     kind: LightningIdleKind,
-    clusterId?: string | null
+    clusterId?: string | null,
+    foldAtMs?: number | null
   ): void {
     this.idle.delete(playerId);
-    this.idle.set(playerId, { at: atMs, kind, clusterId: clusterId ?? null });
+    const foldAt =
+      typeof foldAtMs === 'number' && Number.isFinite(foldAtMs) && foldAtMs <= atMs
+        ? foldAtMs
+        : atMs;
+    this.idle.set(playerId, { at: atMs, foldAt, kind, clusterId: clusterId ?? null });
     if (clusterId && this.tap) this.tap.idle(clusterId, playerId, atMs);
     if (this.idle.size > IDLE_MEMORY_MAX) {
       for (const [id, v] of this.idle) {
@@ -178,7 +188,8 @@ export class LightningMetrics {
           : v.kind === 'fast'
             ? 'fast_fold_to_next_hand'
             : 'normal_fold_to_next_hand';
-      this.observeLatency(segment, atMs - v.at, clusterId ?? v.clusterId);
+      // From the fold request, so the leg covers the fold's own round trip.
+      this.observeLatency(segment, atMs - v.foldAt, clusterId ?? v.clusterId);
     }
   }
 

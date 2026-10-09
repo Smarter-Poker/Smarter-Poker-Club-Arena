@@ -117,7 +117,7 @@ describe('Marketplace native payment safety hold', () => {
     pretendNative(true);
     const { refreshDiamonds, refreshMembership } = renderMarketplacePaymentSurfaces();
 
-    expect(screen.getByRole('button', { name: 'Buy 550 Diamonds For $3.99' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Buy 550 Diamonds For 3.99' })).toBeDisabled();
     expect(screen.getByText('App Store Checkout Paused')).toBeVisible();
     expect(
       screen.getByText(
@@ -140,7 +140,7 @@ describe('Marketplace native payment safety hold', () => {
     pretendNative(false);
     renderMarketplacePaymentSurfaces();
 
-    expect(screen.getByRole('button', { name: 'Buy 550 Diamonds For $3.99' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Buy 550 Diamonds For 3.99' })).toBeEnabled();
     expect(screen.getByText('Buy Securely')).toBeVisible();
     expect(
       screen.getByRole('button', { name: 'Subscribe To VIP Monthly With Card' })

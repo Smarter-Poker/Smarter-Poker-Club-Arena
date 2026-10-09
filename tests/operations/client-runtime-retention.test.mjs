@@ -40,6 +40,13 @@ const git = (cwd, ...args) =>
   execFileSync('git', ['-C', cwd, ...args])
     .toString()
     .trim();
+// The disposable repository must own all writes synchronously. Git may spawn
+// detached maintenance after a commit, which races the final fixture removal.
+const initFixture = (cwd) => {
+  git(cwd, 'init', '-q');
+  git(cwd, 'config', '--local', 'maintenance.auto', 'false');
+  git(cwd, 'config', '--local', 'gc.auto', '0');
+};
 const put = (cwd, path, text) => {
   mkdirSync(resolve(cwd, path, '..'), { recursive: true });
   writeFileSync(resolve(cwd, path), text);
@@ -64,7 +71,7 @@ const commit = (cwd) => {
 test('actual lazy shared-server module/watch graph excludes engine-only churn and includes all shared inputs', async () => {
   const cwd = temp();
   try {
-    git(cwd, 'init', '-q');
+    initFixture(cwd);
     put(cwd, '.gitignore', 'dist/\n.client-runtime-*.json\n');
     const realLock = JSON.parse(
       readFileSync(new URL('../../package-lock.json', import.meta.url), 'utf8')
@@ -368,7 +375,7 @@ test('unknown virtual producers and foreign node_modules cannot qualify an actua
   const cwd = temp();
   const foreign = temp();
   try {
-    git(cwd, 'init', '-q');
+    initFixture(cwd);
     put(cwd, '.gitignore', 'dist/\n.client-runtime-*.json\n');
     const realLock = JSON.parse(
       readFileSync(new URL('../../package-lock.json', import.meta.url), 'utf8')
@@ -505,7 +512,7 @@ test('sealed external font inputs require exact allowed URLs, request identity a
 test('locked Vite SSR aggregate CSS records real source inputs without inventing a source file', async () => {
   const cwd = temp();
   try {
-    git(cwd, 'init', '-q');
+    initFixture(cwd);
     put(cwd, '.gitignore', 'dist/\n.client-runtime-*.json\n');
     const lock = JSON.parse(
       readFileSync(new URL('../../package-lock.json', import.meta.url), 'utf8')

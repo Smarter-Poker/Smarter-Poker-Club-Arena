@@ -41,7 +41,7 @@
   height: 7%;
   display: grid;
   place-items: center;
-  color: #c8ffd2;
+  color: #4dc660;
   font:
     800 6.4cqw 'Roboto Condensed',
     sans-serif;
@@ -62,7 +62,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: #c8ffd2;
+  color: #4dc660;
 }
 .addon-console__timer strong {
   font:
@@ -104,7 +104,7 @@
   top: 65.5%;
 }
 .addon-console__row--chips strong {
-  color: #c8ffd2;
+  color: #4dc660;
 }
 .addon-console__row--balance strong {
   color: #ffd700;
@@ -134,7 +134,7 @@
 }
 .addon-console__plate--primary {
   left: 55%;
-  color: #c8ffd2;
+  color: #4dc660;
 }
 .addon-console__close {
   left: 84%;

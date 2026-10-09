@@ -1,0 +1,11 @@
+{
+  "migration": "supabase/migrations/20261009151510_a_diamond_tournament_is_conserved_by_its_own.sql",
+  "scalarBeforeMD5": "bfbb3e617d7c8290ac8916e21bf0c2a4",
+  "scalarDefinitionMD5": "17ae3dfd32d3cb1d2673a86c0d8d9426",
+  "setBeforeMD5": "365e9948c804059253d73cd35ed6e3d4",
+  "setAfterMD5": "118b1c0bbf6f959809efe6b385d92bf9",
+  "batchBeforeMD5": "10c5a2d39477380157d133a7b5bc113d",
+  "batchAfterMD5": "c9e67c9c7e42028543e39b18d29f02d3",
+  "escrowSource": "supabase/migrations/20261007000010_the_diamond_arena_spawns_the_midway_schedule.sql",
+  "predicateSource": "supabase/migrations/20260914024241_a_diamond_tournament_entry_is_custody.sql"
+}

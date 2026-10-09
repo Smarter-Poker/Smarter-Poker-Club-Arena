@@ -13,3 +13,5 @@ A separately reserved permission-only companion reasserts PUBLIC/anon denial on 
 The permission companion also reasserts the existing service-only snapshot and payout ACLs. Exact original or qualified successor body, owner, security, configuration and ACL checks precede each revoke; full catalog equality follows it. No permission or financial state changes are permitted.
 
 The permission companion declares three read-only live proofs for the unchanged closed function ACLs, owner, security configuration and exact original or qualified bodies. This resolves the demonstrated required migration-liveness gate; exact ledger and catalog readback remain separate installation requirements.
+
+The current-definition opening and payout source contracts now pin direct Promo allocation, zero new Seed, Promo-only Club/Union settlement, explicit underfunding refusal, immutable replay and the companion-preserved service ACL. Historical fixed-migration assertions remain intact; pending client-copy assertions stay with the separate client delivery.

@@ -79,27 +79,24 @@ const input: ClubOpeningSetupInput = {
 beforeEach(() => vi.resetAllMocks());
 
 describe('opening leaderboard funding gate, mirrored from the live SQL', () => {
-  it('pins the server condition this rule mirrors: the seed is written first and counted', () => {
-    // The RPC writes the setup row that holds the seed BEFORE it publishes.
+  it('allocates the prize budget to actual Promo before publishing, with zero new Seed', () => {
     const setupRow = openingSql.indexOf('INSERT INTO public.club_opening_setups (');
     const publish = openingSql.indexOf(
       'v_leaderboard_result := public.fn_publish_leaderboard_reward_program('
     );
-    expect(setupRow).toBeGreaterThan(-1);
-    expect(setupRow).toBeLessThan(publish);
-    // The seed is the whole weekly budget, and the plan sums exactly to it.
-    expect(openingSql).toMatch(
-      /v_leaderboard_budget,\s*v_leaderboard_budget,\s*p_operation_id\s*\);/
+    const allocation = openingSql.indexOf(
+      'promo_balance = COALESCE(promo_balance, 0) + v_promo_budget + v_leaderboard_budget,'
     );
-    // The gate counts the unreleased opening seed for the setup's own publication only.
+    expect(allocation).toBeGreaterThan(-1);
+    expect(allocation).toBeLessThan(setupRow);
+    expect(setupRow).toBeLessThan(publish);
+    expect(openingSql).toMatch(/v_leaderboard_budget,\s*0,\s*p_operation_id\s*\);/);
     expect(fundingGateSql).toContain('SELECT COALESCE(club.promo_balance, 0)');
-    expect(fundingGateSql).toContain('FROM public.club_opening_setups setup');
-    expect(fundingGateSql).toContain('AND setup.last_operation_id = NEW.operation_id');
-    expect(fundingGateSql).toContain('v_balance := v_balance + COALESCE(v_opening_seed, 0);');
+    expect(fundingGateSql).not.toContain('v_opening_seed');
+    expect(fundingGateSql).not.toContain('FROM public.club_opening_setups setup');
     expect(fundingGateSql).toContain(
       'IF v_requested_commitment + v_other_commitments > v_balance THEN'
     );
-    // What the server still refuses about the budget itself.
     expect(openingSql).toContain('IF v_leaderboard_budget < 100 THEN');
     expect(openingSql).toContain('A Prize Leaderboard Requires A Minimum 100-Chip Budget');
   });
@@ -358,36 +355,22 @@ describe('a server refusal, fit to print', () => {
 });
 
 describe('the review copy describes the live settlement SQL', () => {
-  it('pays from the seed, then the Promo Wallet, and the Club Bank only with the opt-in', () => {
-    // Seed first, then the Promo Wallet, and the unused seed is released into it.
-    expect(settlementSql).toContain('v_seed_debit := LEAST(v_total, v_seed_available);');
-    expect(settlementSql).toContain('v_promo_debit := v_total - v_seed_debit - v_overlay;');
-    expect(settlementSql).toContain(
-      'SET promo_balance = promo_balance - v_promo_debit + v_seed_release,'
-    );
-    // Without the opt-in an underfunded round is refused exactly as before and retried.
+  it('pays only the recorded Club or Union Promo wallet and leaves Seed and Bank untouched', () => {
+    expect(settlementSql).toContain('v_promo_debit := v_total;');
+    expect(settlementSql).toContain('SET promo_balance = promo_balance - v_promo_debit,');
+    expect(settlementSql).toContain('SET promo_wallet = promo_wallet - v_promo_debit,');
     expect(settlementSql).toMatch(
-      /IF NOT v_overlay_enabled THEN\s*RAISE EXCEPTION\s*'LEADERBOARD_PROMO_UNDERFUNDED\|Leaderboard Requires % Promo Chips But The Recorded Promo Wallet Holds %'/
+      /IF v_promo_available < v_total THEN\s*RAISE EXCEPTION\s*'LEADERBOARD_PROMO_UNDERFUNDED\|/
     );
-    // The opt-in is read from the round's own immutable program version.
-    expect(settlementSql).toContain('SELECT program.overlay_enabled');
-    expect(settlementSql).toContain("AND program.funding_owner_type = 'club';");
-    // Only the shortfall is an overlay, only a Club Bank that holds all of it pays it.
-    expect(settlementSql).toContain('v_overlay := v_total - v_seed_available - v_promo_available;');
-    expect(settlementSql).toMatch(
-      /IF v_bank_available < v_overlay THEN\s*RAISE EXCEPTION\s*'LEADERBOARD_PROMO_UNDERFUNDED\|/
+    expect(settlementSql).not.toContain('v_seed_debit');
+    expect(settlementSql).not.toContain('v_seed_release');
+    expect(settlementSql).not.toContain('chip_treasury =');
+    expect(settlementSql).not.toContain('leaderboard_seed_remaining =');
+    expect(settlementSql).toContain('v_total, 0, v_promo_debit, 0,');
+    expect(settlementSql).toContain("'overlay_funded', 0,");
+    expect(openingSql).toContain(
+      'promo_balance = COALESCE(promo_balance, 0) + v_promo_budget + v_leaderboard_budget,'
     );
-    // The overlay is its own journal leg under its own key, recorded on the batch.
-    const leg = settlementSql.slice(settlementSql.indexOf('IF v_overlay > 0 THEN'));
-    expect(leg).toMatch(
-      /set_config\('app\.ledger_category', 'overlay', true\);[\s\S]*leaderboard-overlay:%s:%s:%s[\s\S]*SET chip_treasury = chip_treasury - v_overlay,/
-    );
-    expect(settlementSql.match(/chip_treasury\s*=\s*chip_treasury\s*-/g)).toHaveLength(1);
-    expect(settlementSql).toContain('v_total, v_seed_debit, v_promo_debit, v_overlay,');
-    expect(settlementSql).toContain("'overlay_funded', v_overlay,");
-    // And the opening RPC still holds the seed outside the Promo Wallet.
-    expect(openingSql).toContain('leaderboard_seed_remaining,');
-    expect(openingSql).toContain('promo_balance = COALESCE(promo_balance, 0) + v_promo_budget,');
   });
 
   it('prints that behavior for either answer and never promises what the SQL does not do', () => {

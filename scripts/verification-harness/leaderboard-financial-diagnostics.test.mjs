@@ -116,3 +116,30 @@ false || ${arm}`,
     }
   }
 });
+
+test('pre-verdict psql failure locates only stdin line and SQLSTATE without accepting a verdict', () => {
+  const result = financialDiagnostics(
+    'payout',
+    'SECRET_PASSWORD\npsql:<stdin>:245: ERROR:  P0001\n'
+  );
+  assert.equal(
+    result,
+    'Financial Diagnostic: mode=payout verdicts=unavailable input_line=245 SQLSTATE=P0001'
+  );
+  assert.doesNotMatch(result, /SECRET|PASSWORD|pass=t/);
+  for (const input of [
+    'psql:<stdin>:0: ERROR: P0001',
+    'psql:<stdin>:245: ERROR: 00000',
+    'psql:<stdin>:245: ERROR: P0001 SECRET',
+    'psql:SECRET:245: ERROR: P0001',
+    'psql:<stdin>:245: ERROR: P0001\npsql:<stdin>:246: ERROR: P0001',
+    'missing_close_refuses_without_movement|f|P0001|case_execution\npsql:<stdin>:245: ERROR: P0001',
+  ])
+    assert.throws(() => financialDiagnostics('payout', input));
+  const here = dirname(fileURLToPath(import.meta.url));
+  const generated = buildFinancialCandidate(
+    readFileSync(join(here, 'leaderboard-isolation-preflight.sh'), 'utf8'),
+    'payout'
+  );
+  assert.match(generated, /-v VERBOSITY=sqlstate --file=-/);
+});

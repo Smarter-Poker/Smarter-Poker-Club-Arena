@@ -15,7 +15,7 @@ import time
 ROOT = Path(__file__).resolve().parents[2]
 BUILDER = "club-arena-engine-bounded-v4"
 CONTAINER = f"buildx_buildkit_{BUILDER}0"
-NODE = "node:22-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5"
+NODE = "mirror.gcr.io/library/node:22-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5"
 LIMIT = 2147483648
 
 
@@ -141,6 +141,50 @@ def wrapper_fault(temp, out, mode, sentinel, before, owned_tags):
     return facts
 
 
+def route_disposable_daemon(out):
+    if sys.platform != "linux" or os.environ.get("GITHUB_ACTIONS") != "true":
+        raise RuntimeError("daemon cache routing requires a disposable Linux Actions runner")
+    exists = run(["sudo", "test", "-f", "/etc/docker/daemon.json"], check=False).returncode == 0
+    original = run(["sudo", "cat", "/etc/docker/daemon.json"]).stdout if exists else None
+    settings = json.loads(original) if exists else {}
+    (out / "daemon-original.json").write_text(json.dumps({"existed": exists, "content": original}))
+    settings["registry-mirrors"] = ["https://mirror.gcr.io"]
+    candidate = out / "daemon-cache.json"
+    candidate.write_text(json.dumps(settings))
+    run(["sudo", "cp", str(candidate), "/etc/docker/daemon.json"])
+    run(["sudo", "systemctl", "restart", "docker"], timeout=120)
+
+
+def restore_disposable_daemon(out):
+    record = out / "daemon-original.json"
+    if not record.exists():
+        return True
+    original = json.loads(record.read_text())
+    if original["existed"]:
+        restored = out / "daemon-restore.json"
+        restored.write_text(original["content"])
+        run(["sudo", "cp", str(restored), "/etc/docker/daemon.json"])
+    else:
+        run(["sudo", "rm", "-f", "/etc/docker/daemon.json"])
+    run(["sudo", "systemctl", "restart", "docker"], timeout=120)
+    return True
+
+
+def prepare_cached_builder(config_path):
+    """Configure only this disposable runner; preserve production source and limits."""
+    # Google documents mirror.gcr.io as its public Docker Hub cache. Both pinned
+    # manifests were qualified byte-for-byte; a cache miss still fails normally.
+    config_path.write_text('[worker.oci]\n  max-parallelism = 1\n  gc = true\n'
+                           '  reservedSpace = "512MB"\n  maxUsedSpace = "2GB"\n'
+                           '  minFreeSpace = "2GB"\n'
+                           '[registry."docker.io"]\n  mirrors = ["mirror.gcr.io"]\n')
+    run(["docker", "buildx", "create", "--name", BUILDER, "--driver", "docker-container",
+         "--driver-opt", "image=moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8",
+         "--driver-opt", f"memory={LIMIT}", "--driver-opt", f"memory-swap={LIMIT}",
+         "--driver-opt", "cpu-period=100000", "--driver-opt", "cpu-quota=100000",
+         "--driver-opt", "restart-policy=no", "--buildkitd-config", str(config_path)])
+
+
 def main():
     if sys.platform != "linux" or os.environ.get("GITHUB_ACTIONS") != "true":
         raise RuntimeError("resource proof requires a disposable Linux Actions runner")
@@ -153,9 +197,18 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     receipt = {"source_sha": sha, "scope": "isolated-build-resource-containment",
                "production_certificate": False, "status": "failed"}
+    # Hosted runners may carry Docker Hub client authentication. Do not read
+    # it or reuse it: anonymous cache routing owns a separate client config.
+    previous_docker_config = os.environ.get("DOCKER_CONFIG")
+    isolated_docker_config = out / "docker-client"
+    isolated_docker_config.mkdir()
+    (isolated_docker_config / "config.json").write_text("{}")
+    os.environ["DOCKER_CONFIG"] = str(isolated_docker_config)
     before = None
     owned_tags = [tag, failed_tag]
     try:
+        route_disposable_daemon(out)
+        prepare_cached_builder(out / "buildkitd.toml")
         run(["docker", "run", "--detach", "--name", sentinel, "--memory", "256m",
              "--memory-swap", "256m", NODE, "node", "-e", "setInterval(()=>{},1000)"], timeout=120)
         before = inspect(sentinel)
@@ -271,6 +324,11 @@ def main():
             remaining = run(["docker", "image", "ls", "--format", "{{.Repository}}:{{.Tag}}",
                              "--filter", f"reference={image}*"], check=False)
             cleanup[image] = remaining.returncode == 0 and not remaining.stdout.strip()
+        cleanup["daemon_configuration_restored"] = restore_disposable_daemon(out)
+        if previous_docker_config is None:
+            os.environ.pop("DOCKER_CONFIG", None)
+        else:
+            os.environ["DOCKER_CONFIG"] = previous_docker_config
         receipt["cleanup"] = cleanup
         if not all(cleanup.values()):
             receipt["status"] = "failed"

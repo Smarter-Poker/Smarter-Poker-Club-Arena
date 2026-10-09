@@ -59,6 +59,14 @@ describe('dollar signs never reach arena display copy', () => {
     expect(report.orphans.length).toBeLessThanOrEqual(report.baseline);
     expect(report.orphans).not.toContain('src/lib/arenaDisplay/jsx-runtime.ts');
     expect(report.orphans).not.toContain('src/lib/arenaDisplay/jsx-dev-runtime.ts');
+    const entry = JSON.parse(
+      readFileSync('scripts/ci/entry-chunk.d/fix-arena-no-dollar-20261009.json', 'utf8')
+    );
+    expect(entry.modules).toEqual([
+      'src/lib/arenaDisplay/jsx-runtime.ts',
+      'src/lib/arenaDisplay/text.ts',
+    ]);
+    expect(entry._owner).toContain('before first paint');
     const config = readFileSync('vite.config.ts', 'utf8');
     for (const file of ['jsx-runtime.ts', 'jsx-dev-runtime.ts'])
       expect(config).toContain(`./src/lib/arenaDisplay/${file}`);

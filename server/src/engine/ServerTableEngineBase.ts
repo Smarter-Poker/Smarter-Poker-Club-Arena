@@ -9482,7 +9482,13 @@ export abstract class ServerTableEngineBase {
           // of the must-move audit). See the doc comment above for why: these
           // are no longer host settings that change twice a year, they are
           // rewritten by fn_cash_apply_ruleset on every cluster tick.
-          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_button_policy, bomb_pot_announce_seconds, bomb_pot_manual_pending, dealing_halted_at, dealing_halted_reason, ante_enabled, ante, big_blind_ante_enabled, nit_game, maintain_percent_min, maintain_hands, career_percent_min, run_it_mode, run_it_twice, allow_run_it_twice, run_it_twice_enabled, insurance_enabled, seven_deuce_enabled, seven_deuce_amount, straddle_enabled, auto_utg_straddle, voluntary_straddle, min_buy_in, max_buy_in, action_time_seconds'
+          // THE BOUNDARY READS WHAT IT CHECKS (2026-10-09). assertDiamondTable
+          // below judges the variant, kind, status, blinds and jackpot share;
+          // none of them were read here, so every refresh of every Diamond
+          // cash table was refused as 'Diamond Plain Cash Table Required'
+          // (about 800 times in six hours) and a permitted straddle or run it
+          // twice change never landed without a restart.
+          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_button_policy, bomb_pot_announce_seconds, bomb_pot_manual_pending, dealing_halted_at, dealing_halted_reason, ante_enabled, ante, big_blind_ante_enabled, nit_game, maintain_percent_min, maintain_hands, career_percent_min, run_it_mode, run_it_twice, allow_run_it_twice, run_it_twice_enabled, insurance_enabled, seven_deuce_enabled, seven_deuce_amount, straddle_enabled, auto_utg_straddle, voluntary_straddle, min_buy_in, max_buy_in, action_time_seconds, game_variant, game_type, tournament_id, cluster_id, status, is_template, all_in_or_fold, pineapple_holdem, cap_enabled, bbj_percent, small_blind, big_blind'
         )
         .eq('id', this.tableId)
         .maybeSingle();

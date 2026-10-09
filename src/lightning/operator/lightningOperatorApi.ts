@@ -214,6 +214,24 @@ export function verdictLabel(verdict: string | null): string {
   return SHADOW_VERDICT_LABELS[verdict] ?? enumLabel(verdict);
 }
 
+/** lightning_hand_player.fold_type ('none', 'normal', 'fast', 'fold_watch')
+ *  in the operator's words. 'none' (played on) has no label. */
+export function foldLabel(foldType: string | null): string | null {
+  switch (foldType) {
+    case 'fast':
+      return 'Lightning Fold';
+    case 'normal':
+      return 'Normal Fold';
+    case 'fold_watch':
+      return 'Fold & Watch';
+    case 'none':
+    case null:
+      return null;
+    default:
+      return enumLabel(foldType);
+  }
+}
+
 export const SIGNAL_REVIEW_STATUSES = ['reviewed', 'cleared', 'actioned'] as const;
 export type SignalReviewStatus = (typeof SIGNAL_REVIEW_STATUSES)[number];
 
@@ -866,8 +884,8 @@ export function parseTrailStep(raw: unknown): LightningTrailStep | null {
   const parts: string[] = [];
   const handNumber = num(r.hand_number);
   if (handNumber !== null) parts.push(`Hand ${handNumber}`);
-  const fold = text(r.fold_type);
-  if (fold) parts.push(enumLabel(fold));
+  const fold = foldLabel(text(r.fold_type));
+  if (fold) parts.push(fold);
   const why = text(r.exit_reason) ?? text(r.close_reason) ?? text(r.reason);
   if (why) parts.push(enumLabel(why));
   const seat = num(r.seat_number ?? r.seat);

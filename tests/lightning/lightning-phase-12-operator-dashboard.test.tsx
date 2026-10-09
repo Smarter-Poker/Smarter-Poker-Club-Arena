@@ -60,6 +60,7 @@ vi.mock('../../src/components/console/SpadeConsole', () => ({
 
 import {
   fetchLightningOverview,
+  foldLabel,
   interpretAnswer,
   interpretHandReplay,
   modeBadge,
@@ -238,6 +239,10 @@ describe('the operator doors are parsed from the shapes the database produces', 
     expect(bad.status === 'ok' && bad.data.consistent).toBe(false);
     expect(bad.status === 'ok' && bad.data.defects[0].code).toBe('conservation');
     expect(bad.status === 'ok' && bad.data.handNumber).toBe(1042);
+    expect(bad.status === 'ok' && bad.data.players.map((p) => foldLabel(p.foldType))).toEqual([
+      null,
+      'Lightning Fold',
+    ]);
     expect(bad.status === 'ok' && bad.data.players.map((p) => p.net)).toEqual([12, -13]);
     expect(interpretHandReplay(NOT_AUTHORIZED_ANSWER).status).toBe('denied');
     expect(interpretHandReplay(NOT_FOUND_ANSWER)).toEqual({ status: 'refused', code: 'NOT_FOUND' });

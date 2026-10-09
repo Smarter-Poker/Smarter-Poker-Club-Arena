@@ -34,6 +34,7 @@ import {
   fetchLightningCluster,
   fetchLightningHandReplay,
   fetchLightningSessionTrail,
+  foldLabel,
   modeBadge,
   reconcileGap,
   reviewLightningSignal,
@@ -326,7 +327,7 @@ function HandReplayCheck({ clusterId }: { clusterId: string }) {
                 <li className={styles.gridRow} key={p.playerId ?? i}>
                   <span className={`${styles.gridName} sc-ink--blue`}>
                     {`${p.seat ?? '-'}, ${shortId(p.playerId)}`}
-                    {p.foldType ? `, ${enumLabel(p.foldType)}` : ''}
+                    {foldLabel(p.foldType) ? `, ${foldLabel(p.foldType)}` : ''}
                   </span>
                   <span className={`${styles.gridCell} sc-ink--silver`}>
                     {p.stackBefore === null ? '-' : compactChips(p.stackBefore)}

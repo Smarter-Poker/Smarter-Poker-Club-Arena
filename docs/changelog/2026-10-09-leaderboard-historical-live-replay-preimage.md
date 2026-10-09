@@ -1,0 +1,7 @@
+# Historical Replay Financial Preimage
+
+The original publication replay includes current Promo funding values. Capturing it before the actual original payout saved a 100-chip wallet response, while the prospective replay correctly read the resulting 90-chip wallet. The fixture now recaptures the original replay after original payout and program preparation, immediately before retaining its pre-install proof. It independently requires the real 90-chip balance and preserves whole-response equality and the exact historical digest after installation.
+
+Fixed assertion messages carry distinct SQLSTATE values in the existing bounded diagnostic route, so any remaining assertion failure can be located without printing data. All assertion conditions, final immediate constraint checks, self-aborting settlements and owned cleanup remain intact. The frozen financial SQL is unchanged. Actual historical qualification is still required.
+
+Required migration CI separately failed while removing the private runtime-input test repository: ENOTEMPTY at its .git directory after synchronous test work. The fixture now locally disables automatic Git maintenance and garbage collection at initialization, preventing detached Git writers from racing its final removal. All seven real runtime-retention assertions and strict cleanup remain unchanged. This is fixture configuration only, with no production or shared Git change. The failure log does not identify the detached writer conclusively; required CI must verify the correction.

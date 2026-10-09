@@ -37,10 +37,10 @@ test('two-stage historical recovery uses the pinned original real opening and du
 test('original payout creates paid historical evidence and candidate replays exact immutable response', () => {
   assert.match(sql, /Exact original unpaid historical fixture required/);
   assert.ok(sql.includes("<>'2ba8db49240eac826b2f3efe0e262648'"));
-  assert.equal(sql.match(/:=public\.fn_payout_leaderboard\(/g).length, 7);
+  assert.equal(sql.match(/:=public\.fn_payout_leaderboard\(/g).length, 8);
   assert.match(sql, /program_id=historical_program/);
   assert.match(sql, /payout_amount=10/);
-  assert.match(sql, /seed_funded'\)::numeric IS DISTINCT FROM 10/);
+  assert.match(sql, /seed_funded'\)::numeric IS DISTINCT FROM 0/);
   assert.match(sql, /promo_balance[^\n]*IS DISTINCT FROM 90/);
   assert.match(sql, /payout_replay IS DISTINCT FROM proof\.payout_replay/);
   assert.ok(sql.includes(":'candidate_payout_body_md5'"));
@@ -193,7 +193,8 @@ test('original fourth standalone preserves a real positive seed through prospect
     /fn_diamond_game_fund_promo\(club,20,'historical-positive-seed-promo-fund'\)/
   );
   assert.match(before, /seed_proof VALUES/);
-  assert.doesNotMatch(before.split('DO $seed_prepare$')[1], /fn_payout_leaderboard/);
+  assert.match(before.split('DO $seed_prepare$')[1], /EXCEPTION WHEN SQLSTATE '23514'/);
+  assert.match(before, /Original seeded payout refusal did not restore exact historical preimage/);
   assert.match(after, /leaderboard_seed_remaining[^\n]*IS DISTINCT FROM 100/);
   assert.match(after, /IS DISTINCT FROM proof\.setup/);
   assert.match(after, /IS DISTINCT FROM proof\.funding/);
@@ -228,7 +229,7 @@ test('original and prospective publication replay keep owner identity behind the
     );
     assert.match(
       part,
-      /SET LOCAL ROLE service_role;\s+publication_replay:=public\.fn_publish_leaderboard_reward_program/
+      /SET LOCAL ROLE service_role;(?:(?!RESET ROLE;)[\s\S])*publication_replay:=public\.fn_publish_leaderboard_reward_program/
     );
     assert.doesNotMatch(part, /SET LOCAL ROLE authenticated;\s+publication_replay:=/);
     assert.match(part, /request\.jwt\.claim\.sub','90000000-0000-4000-8000-000000000002'/);
@@ -241,7 +242,7 @@ test('publication retries preserve original numeric scale and historical overlay
   assert.equal(
     sql.split('[{"rank":1,"amount":50.00},{"rank":2,"amount":30.00},{"rank":3,"amount":20.00}]')
       .length,
-    4
+    6
   );
   assert.doesNotMatch(sql, /\[\{"rank":1,"amount":50\}/);
   assert.match(source, /round\(v_leaderboard_budget \* 0\.50, 2\)/);
@@ -252,4 +253,61 @@ test('publication retries preserve original numeric scale and historical overlay
     /terms:=jsonb_build_object[\s\S]*?'monthly_effective_from',monthly_next,\s+'overlay_enabled',true\);/
   );
   assert.match(before, /md5\(terms::text\),true\)/);
+});
+
+test('genuine original paid history uses supported Promo funding and distinct publication identity', () => {
+  const [before, after] = sql.split('\\else');
+  assert.match(before, /publication_operation uuid NOT NULL/);
+  assert.match(before, /publication_operation uuid:=gen_random_uuid\(\)/);
+  assert.match(before, /100,false,'profit',0,false/);
+  assert.match(before, /leaderboard_seed_remaining[^\n]*IS DISTINCT FROM 0/);
+  assert.match(before, /promo_balance[^\n]*IS DISTINCT FROM 100/);
+  assert.match(before, /expected_version,publication_operation,true/);
+  assert.match(before, /'seed_funded'\)::numeric IS DISTINCT FROM 0/);
+  assert.match(before, /'promo_funded'\)::numeric IS DISTINCT FROM 10/);
+  assert.match(after, /operation_id=proof.publication_operation/);
+  assert.match(after, /expected_version,proof.publication_operation,true/);
+  assert.match(
+    before,
+    /SET CONSTRAINTS ALL IMMEDIATE;[\s\S]*?original_image:=leaderboard_historical_fixture.digest\(\);[\s\S]*?SET CONSTRAINTS ALL DEFERRED/
+  );
+  assert.match(before, /EXCEPTION WHEN SQLSTATE '23514'/);
+  assert.match(
+    before,
+    /IF SQLERRM NOT LIKE 'REFUSED: balance_moved_without_its_ledger_row account=opening_setup:/
+  );
+  assert.match(before, /IS DISTINCT FROM original_image/);
+  assert.doesNotMatch(
+    sql,
+    /INSERT INTO public.chip_ledger|DISABLE TRIGGER|ca_ledger_invariant_store_mode/
+  );
+});
+
+test('prospective historical settlements restore deferred timing after validated replay', () => {
+  const after = sql.split('\\else')[1];
+  assert.match(after, /SET CONSTRAINTS ALL DEFERRED;\s+-- This new settlement/);
+  const legacy = after.split('DO $positive_seed$')[0];
+  assert.ok(
+    legacy.indexOf('SET CONSTRAINTS ALL DEFERRED;') <
+      legacy.indexOf('BEGIN\n    SELECT to_jsonb(b)')
+  );
+  assert.match(legacy, /SET CONSTRAINTS ALL IMMEDIATE;\s+RAISE EXCEPTION USING ERRCODE='Q0004'/);
+  assert.match(after, /SET CONSTRAINTS ALL IMMEDIATE;\s+RAISE EXCEPTION USING ERRCODE='Q0005'/);
+});
+
+test('original replay witnesses final financial preimage before installation', () => {
+  const before = sql.split('\\else')[0];
+  const witness = before.lastIndexOf(
+    'publication_replay:=public.fn_publish_leaderboard_reward_program'
+  );
+  assert.ok(witness > before.indexOf('Original real paid historical evidence differs'));
+  assert.ok(witness > before.indexOf('Original unpaid monthly program selection differs'));
+  assert.ok(witness < before.indexOf('INSERT INTO leaderboard_historical_fixture.proof VALUES'));
+  assert.ok(
+    before.includes("(publication_replay->>'wallet_balance')::numeric IS DISTINCT FROM 90")
+  );
+  assert.match(
+    sql.split('\\else')[1],
+    /publication_replay IS DISTINCT FROM proof.publication_replay/
+  );
 });

@@ -111,7 +111,8 @@ describe('A0.1 - chips cannot leave a seat without the player', () => {
     expect(code).not.toContain('activeTab');
     expect(code).not.toContain('canWithdrawAmount');
     expect(code).not.toContain('table-cashier-tab-withdraw');
-    expect(code).toContain('Add Chips');
+    expect(code).toContain('Add-On Available');
+    expect(code).toContain('await onAddChips(amount, opIdRef.current)');
   });
 
   it('the occupancy protocol preserves stay-clock refusals without a browser cashout fallback', () => {

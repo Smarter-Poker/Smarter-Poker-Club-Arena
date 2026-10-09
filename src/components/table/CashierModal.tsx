@@ -310,6 +310,7 @@ export function CashierModal({
     if (!busyRef.current && !isProcessing) onClose();
   };
   const unit = currency || 'Chips';
+  const balanceValue = balanceKnown ? formatAmount(accountBalance, currency) : 'Unavailable';
   return (
     <div
       className="cashier-overlay addon-console__overlay"
@@ -365,9 +366,7 @@ export function CashierModal({
               <span>Your Balance</span>
               <strong>
                 <PurchaseText>
-                  {balanceKnown
-                    ? `${formatAmount(accountBalance, currency)} ${unit}`
-                    : 'Unavailable'}
+                  {balanceKnown ? `${balanceValue} ${unit}` : balanceValue}
                 </PurchaseText>
               </strong>
             </React.Fragment>,

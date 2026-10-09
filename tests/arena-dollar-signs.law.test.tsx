@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { execFileSync } from 'node:child_process';
+import { exportHandHistoryPDF, exportSettlementPDF } from '../src/lib/export';
 import { arenaDisplayText } from '../src/lib/arenaDisplay/text';
 import { formatGameTitle } from '../src/utils/formatGameTitle';
 import { formatPopupText } from '../src/utils/popupStyle';
@@ -68,6 +69,79 @@ describe('dollar signs never reach arena display copy', () => {
     expect(displayed[0].options.body).toBe('Satellite 5');
     expect(displayed[0].options.tag).toBe('bus-CLUB_JOINED');
     expect(event.data.event.payload.clubName).toBe('Satellite $5');
+  });
+
+  it('renders printable hand and settlement previews without changing original names or amounts', async () => {
+    vi.useFakeTimers();
+    const frames: HTMLIFrameElement[] = [];
+    try {
+      const hand = {
+        handId: '$hand',
+        tableName: 'Satellite $5 &#36;25',
+        stakes: '$2/$5',
+        date: 'Today',
+        players: [{ name: 'Player $25', position: 'BTN', stack: 54 }],
+        actions: [{ player: 'Player $25', action: 'Bet', amount: 5, street: 'Flop' }],
+        result: { winners: ['Player $25'], pot: 54 },
+        communityCards: ['As'],
+      };
+      const handResult = exportHandHistoryPDF(hand);
+      let frame = document.querySelector('iframe')!;
+      frames.push(frame);
+      expect(frame.contentDocument!.body.textContent).not.toContain('$');
+      expect(frame.contentDocument!.body.textContent).toContain('Satellite 5 &#36;25');
+      expect(frame.contentDocument!.body.textContent).toContain('wins 54');
+      Object.defineProperty(frame.contentWindow!, 'print', { value: vi.fn(), configurable: true });
+      await vi.advanceTimersByTimeAsync(500);
+      await handResult;
+      expect(hand.handId).toBe('$hand');
+      expect(hand.stakes).toBe('$2/$5');
+      expect(hand.result.pot).toBe(54);
+      const settlement = {
+        periodNumber: 1,
+        year: 2026,
+        startDate: 'Today',
+        endDate: 'Today',
+        totalRake: 25,
+        totalBBJ: 2,
+        clubWires: [
+          {
+            clubName: 'Club $5',
+            netPlayerPL: 54,
+            grossRake: 25,
+            unionTax: 2,
+            agentCommissions: 5,
+            finalWire: 54,
+            direction: 'PAY_TO_UNION',
+          },
+        ],
+        agentPayouts: [
+          {
+            agentName: 'Agent $25',
+            rakeGenerated: 25,
+            commissionRate: 0.2,
+            grossCommission: 5,
+            netPayout: 5,
+          },
+        ],
+      };
+      const settlementResult = exportSettlementPDF(settlement);
+      frame = document.querySelector('iframe')!;
+      frames.push(frame);
+      expect(frame.contentDocument!.body.textContent).not.toContain('$');
+      expect(frame.contentDocument!.body.textContent).toContain('Club 5');
+      expect(frame.contentDocument!.body.textContent).toContain('Agent 25');
+      Object.defineProperty(frame.contentWindow!, 'print', { value: vi.fn(), configurable: true });
+      await vi.advanceTimersByTimeAsync(500);
+      await settlementResult;
+      expect(settlement.clubWires[0].clubName).toBe('Club $5');
+      expect(settlement.clubWires[0].finalWire).toBe(54);
+      expect(document.querySelector('iframe')).toBeNull();
+    } finally {
+      frames.forEach((frame) => frame.remove());
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
   });
 
   it('keeps machine identifiers, passwords, callbacks and component model data intact', () => {

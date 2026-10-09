@@ -9,6 +9,8 @@ on:
       - server/package.json
       - server/package-lock.json
       - server/src/**
+      - server/scripts/emit-runtime.mjs
+      - tests/operations/emit-runtime.test.mjs
       - server/scripts/build-engine-image.sh
       - server/scripts/engine-image-archive.py
       - tests/operations/engine-image-archive.test.py
@@ -42,6 +44,7 @@ jobs:
         working-directory: server
         run: |
           npm ci --no-audit --no-fund
+          node --test ../tests/operations/emit-runtime.test.mjs
           npm run build -- --project tsconfig.runtime.json
       - name: Real bounded image build and neighboring process survival
         run: python3 tests/operations/engine-build-resource-proof.py

@@ -55,7 +55,7 @@ class OriginalBuildResourceEvidenceTests(unittest.TestCase):
 
 class CompilerHeapProfileTests(unittest.TestCase):
     command = ("RUN ulimit -c 0 && node --max-old-space-size=512 "
-               "--max-semi-space-size=4 ./node_modules/typescript/bin/tsc "
+               "--max-semi-space-size=4 ./scripts/emit-runtime.mjs "
                "--project tsconfig.emit.json")
 
     def test_actual_dockerfile_uses_the_qualified_compiler_profile(self):
@@ -71,6 +71,7 @@ class CompilerHeapProfileTests(unittest.TestCase):
         for command in (self.command.replace('size=512', 'size=768'),
                         self.command.replace('space-size=4 ', 'space-size=8 '),
                         self.command.replace('tsconfig.emit.json', 'tsconfig.json'),
+                        self.command.replace('./scripts/emit-runtime.mjs', './node_modules/typescript/bin/tsc'),
                         self.command + '\n' + self.command,
                         self.command + ' --max-semi-space-size=16',
                         '# ' + self.command):

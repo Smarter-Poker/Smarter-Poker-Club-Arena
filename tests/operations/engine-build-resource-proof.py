@@ -63,10 +63,10 @@ def verified_build_resources(output):
 def verified_compiler_profile(dockerfile):
     """Pin the compiler's explicit heap profile before the real bounded build."""
     commands = [line.strip() for line in dockerfile.splitlines()
-                if line.lstrip().startswith("RUN ") and "typescript/bin/tsc" in line]
+                if line.lstrip().startswith("RUN ") and ("emit-runtime.mjs" in line or "typescript/bin/tsc" in line)]
     expected = ["RUN", "ulimit", "-c", "0", "&&", "node",
                 "--max-old-space-size=512", "--max-semi-space-size=4",
-                "./node_modules/typescript/bin/tsc", "--project", "tsconfig.emit.json"]
+                "./scripts/emit-runtime.mjs", "--project", "tsconfig.emit.json"]
     if len(commands) != 1 or shlex.split(commands[0]) != expected:
         raise RuntimeError("canonical compiler must retain its explicit 512 MiB old / 4 MiB semi-space profile")
     return {"old_space_max_mib": 512, "semi_space_max_mib": 4,

@@ -13,6 +13,7 @@ RUN npm ci --include=dev --no-audit --no-fund
 # Copy source
 COPY tsconfig.json tsconfig.runtime.json tsconfig.emit.json ./
 COPY src/ ./src/
+COPY scripts/emit-runtime.mjs ./scripts/emit-runtime.mjs
 
 # Exact-source release preflight performs the full typecheck and tests in CI.
 # Emit every runtime root here without loading dependency type declarations or
@@ -25,7 +26,9 @@ COPY src/ ./src/
 # compiler RSS. A 4 MiB semi-space caps the young generation at 12 MiB
 # independently of detected cgroup memory. The builder stays at 640 MiB with
 # no swap; resource CI still proves every checked runtime output.
-RUN ulimit -c 0 && node --max-old-space-size=512 --max-semi-space-size=4 ./node_modules/typescript/bin/tsc --project tsconfig.emit.json
+# Release each bounded program before emitting the next: retaining every AST
+# together exhausted the same 512 MiB heap as the runtime source grew.
+RUN ulimit -c 0 && node --max-old-space-size=512 --max-semi-space-size=4 ./scripts/emit-runtime.mjs --project tsconfig.emit.json
 
 # Remove dev dependencies
 RUN npm prune --omit=dev --no-audit --no-fund

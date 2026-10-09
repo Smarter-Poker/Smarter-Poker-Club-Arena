@@ -16,11 +16,11 @@ const proxy = 'leaderboard-unknown-ack-proxy-draft.mjs';
 const diagnostics = 'leaderboard-financial-diagnostics.mjs';
 const reviewed = Object.freeze({
   [auth]: '93bfc3e5aea54a901f1861f2d450da4f5fe3d1d74c595d89ffb5de102ebd2ac5',
-  [payout]: 'a0b05846b457dd22cd2db7200f1f192f1ded1d0a501a901f499c9ab7d057d9f1',
+  [payout]: '00008498b2498578dab08522202ed34078690f7dc6505caed402a822923663b6',
   [funding]: 'd3b0d591994d0c8cc5a0c3b66b984d42241e921cf5c06668f29518c84b3eb756',
   [fixture]: 'c2057bbbbb9b08c860ac82cf02e98171ff9188ab36694dcb672f1abd3f37ed41',
   [concurrency]: 'c734ab9c039bd926a4b854177ea76729d825a57df45506b11ac67a59b57723ea',
-  [unknown]: 'dea167abd469e7b78f07e0a65d33a31409d75a86bec46aa32cf9662c770effc8',
+  [unknown]: '737aa48564e13962646a0ab7dee1e2f9e8ed5e22adafe212d6e971338253ca58',
   [proxy]: 'ee690ad41a6790617215400ea6287847c18f553effe0cd7a32f94e0dee057381',
   [diagnostics]: '3659a7e29421017046f4256bac1339b437c8bca5839e47ef3197c1dbe2e003e6',
 });

@@ -10,10 +10,48 @@ import {
 
 const baseline = readFileSync(baselineFixture, 'utf8');
 const sql = buildCapturePayoutFixture(baseline);
+test('original six cases report closed granular stages without changing financial SQL', () => {
+  const original = sql.split('CREATE TEMP TABLE lb_extended_payout_verdicts')[0];
+  const stages = [...original.matchAll(/stage:='([a-z_]+)'/g)].map((match) => match[1]);
+  assert.deepEqual(stages, [
+    'fixture',
+    'capture_fixture',
+    'ranking_assertion',
+    'payout_call',
+    'payout_result',
+    'money_readback',
+    'payout_result',
+    'money_readback',
+    'journal_readback',
+    'basis_readback',
+    'replay_call',
+    'replay_readback',
+    'deferred_constraints',
+  ]);
+  assert.match(original, /VALUES\(case_name,false,error_state,stage\)/);
+  assert.doesNotMatch(original, /VALUES\(case_name,false,error_state,'case_execution'\)/);
+  const failure = original.slice(original.indexOf('    EXCEPTION\n'));
+  assert.match(failure, /GET STACKED DIAGNOSTICS error_state=RETURNED_SQLSTATE/);
+  assert.doesNotMatch(failure, /MESSAGE_TEXT|SQLERRM/);
+  // Independent oracle: protected 892abeb pre-instrumentation adapter rendered
+  // with the reviewed recipient-wallet fixture correction and refreshed input SHA.
+  // Removing only diagnostics must recover every byte of those six cases.
+  const unchanged = original
+    .replace(/^\s*stage:='[a-z_]+';\n/gm, '')
+    .replace('membership_preimage jsonb; stage text;', 'membership_preimage jsonb;')
+    .replace(
+      'VALUES(case_name,false,error_state,stage);',
+      "VALUES(case_name,false,error_state,'case_execution');"
+    );
+  assert.equal(
+    createHash('sha256').update(unchanged).digest('hex'),
+    '42ab2de5cc19f6ff80a5fb14613d831fda20bd70f9eb0559016b10ed09def620'
+  );
+});
 test('extended fixture preserves baseline identity, original six cases and single rollback boundary', () => {
   assert.equal(
     createHash('sha256').update(baseline).digest('hex'),
-    'a0b05846b457dd22cd2db7200f1f192f1ded1d0a501a901f499c9ab7d057d9f1'
+    '00008498b2498578dab08522202ed34078690f7dc6505caed402a822923663b6'
   );
   for (const name of [
     'new_player_zero_baseline_pays',
@@ -49,7 +87,14 @@ test('real affiliated funding and monthly canonical branches reconcile both bank
     /from_type=CASE WHEN funding_union IS NULL THEN 'promo_wallet' ELSE 'union_wallet' END/
   );
   assert.match(sql, /pre_from_balance=20 AND post_from_balance=10/);
-  assert.match(sql, /to_type='player_wallet'.*post_to_balance-pre_to_balance=10/);
+  assert.match(sql, /to_type='player_wallet'.*amount=10 AND club_id=receiver_club/);
+  assert.match(sql, /receiver_club:=public\.fn_player_home_club\(player,NULL\)/);
+  assert.match(
+    sql,
+    /INTO STRICT receiver_before FROM public\.club_members WHERE user_id=player AND club_id=receiver_club/
+  );
+  assert.match(sql, /club_id=receiver_club\) IS DISTINCT FROM receiver_before\+10/);
+  assert.doesNotMatch(sql, /post_to_balance-pre_to_balance/);
   assert.match(sql, /key=format\('leaderboard:%s:%s:%s:%s',club,period_name,starts,player\)/);
 });
 test('actual shortage and downstream receipt fault prove whole-statement rollback before same-round retry', () => {

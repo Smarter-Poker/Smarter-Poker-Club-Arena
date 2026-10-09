@@ -8,7 +8,7 @@ export function buildUnknownAckRepairCandidate(
 ) {
   assert.equal(
     createHash('sha256').update(source).digest('hex'),
-    'dea167abd469e7b78f07e0a65d33a31409d75a86bec46aa32cf9662c770effc8'
+    '737aa48564e13962646a0ab7dee1e2f9e8ed5e22adafe212d6e971338253ca58'
   );
   const existing = '     OR EXISTS(SELECT 1 FROM public.leaderboard_payouts)';
   assert.equal(source.split(existing).length, 2);

@@ -118,7 +118,11 @@ test('candidate executes new legacy settlement with independent board, exact cen
     /(?:selected_board_hash=md5\(proof\.monthly_board|winners_hash=md5\(legacy_verify\.winners)/
   );
   assert.match(after, /pre_from_balance=90 AND post_from_balance=80/);
-  assert.match(after, /pre_to_balance=10 AND post_to_balance=20/);
+  assert.doesNotMatch(after, /pre_to_balance|post_to_balance/);
+  assert.match(after, /Unpaid legacy recipient wallet preimage differs/);
+  assert.match(after, /user_id='90000000-0000-4000-8000-000000000004'\) IS DISTINCT FROM 10/);
+  assert.match(after, /user_id='90000000-0000-4000-8000-000000000004'\) IS DISTINCT FROM 20/);
+  assert.match(after, /to_type='player_wallet'[\s\S]*?AND club_id=club AND amount=10\)<>1/);
   for (const table of [
     'wallet_credit_idempotency',
     'wallet_transactions',
@@ -194,7 +198,17 @@ test('original fourth standalone preserves a real positive seed through prospect
   assert.match(after, /IS DISTINCT FROM proof\.setup/);
   assert.match(after, /IS DISTINCT FROM proof\.funding/);
   assert.match(after, /pre_from_balance=20 AND post_from_balance=10/);
-  assert.match(after, /pre_to_balance=0 AND post_to_balance=10/);
+  assert.doesNotMatch(after, /pre_to_balance|post_to_balance/);
+  assert.match(after, /club_id=proof\.club AND user_id=player\) IS DISTINCT FROM 0/);
+  assert.match(after, /club_id=home_club AND user_id=player\) IS DISTINCT FROM wallet_before\+10/);
+  assert.match(after, /home_club:=public\.fn_player_home_club\(player,NULL\)/);
+  assert.match(after, /ORDER BY joined_at ASC NULLS LAST,club_id LIMIT 1/);
+  assert.match(after, /CASE WHEN club_id=home_club AND user_id=player THEN 10 ELSE 0 END/);
+  assert.match(after, /IS DISTINCT FROM expected_wallets/);
+  assert.match(
+    after,
+    /to_type='player_wallet' AND to_entity_id=player AND club_id=home_club AND amount=10\)<>1/
+  );
   assert.match(after, /Q0005.*PositiveHistoricalSeedPassedAndRolledBack/);
   assert.match(after, /Positive seed case did not restore exact preimage/);
 });

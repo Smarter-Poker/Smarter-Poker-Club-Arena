@@ -141,6 +141,35 @@ def wrapper_fault(temp, out, mode, sentinel, before, owned_tags):
     return facts
 
 
+def route_disposable_daemon(out):
+    if sys.platform != "linux" or os.environ.get("GITHUB_ACTIONS") != "true":
+        raise RuntimeError("daemon cache routing requires a disposable Linux Actions runner")
+    exists = run(["sudo", "test", "-f", "/etc/docker/daemon.json"], check=False).returncode == 0
+    original = run(["sudo", "cat", "/etc/docker/daemon.json"]).stdout if exists else None
+    settings = json.loads(original) if exists else {}
+    (out / "daemon-original.json").write_text(json.dumps({"existed": exists, "content": original}))
+    settings["registry-mirrors"] = ["https://mirror.gcr.io"]
+    candidate = out / "daemon-cache.json"
+    candidate.write_text(json.dumps(settings))
+    run(["sudo", "cp", str(candidate), "/etc/docker/daemon.json"])
+    run(["sudo", "systemctl", "restart", "docker"], timeout=120)
+
+
+def restore_disposable_daemon(out):
+    record = out / "daemon-original.json"
+    if not record.exists():
+        return True
+    original = json.loads(record.read_text())
+    if original["existed"]:
+        restored = out / "daemon-restore.json"
+        restored.write_text(original["content"])
+        run(["sudo", "cp", str(restored), "/etc/docker/daemon.json"])
+    else:
+        run(["sudo", "rm", "-f", "/etc/docker/daemon.json"])
+    run(["sudo", "systemctl", "restart", "docker"], timeout=120)
+    return True
+
+
 def prepare_cached_builder(config_path):
     """Configure only this disposable runner; preserve production source and limits."""
     # Google documents mirror.gcr.io as its public Docker Hub cache. Both pinned
@@ -150,7 +179,7 @@ def prepare_cached_builder(config_path):
                            '  minFreeSpace = "2GB"\n'
                            '[registry."docker.io"]\n  mirrors = ["mirror.gcr.io"]\n')
     run(["docker", "buildx", "create", "--name", BUILDER, "--driver", "docker-container",
-         "--driver-opt", "image=mirror.gcr.io/moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8",
+         "--driver-opt", "image=moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8",
          "--driver-opt", f"memory={LIMIT}", "--driver-opt", f"memory-swap={LIMIT}",
          "--driver-opt", "cpu-period=100000", "--driver-opt", "cpu-quota=100000",
          "--driver-opt", "restart-policy=no", "--buildkitd-config", str(config_path)])
@@ -171,6 +200,7 @@ def main():
     before = None
     owned_tags = [tag, failed_tag]
     try:
+        route_disposable_daemon(out)
         prepare_cached_builder(out / "buildkitd.toml")
         run(["docker", "run", "--detach", "--name", sentinel, "--memory", "256m",
              "--memory-swap", "256m", NODE, "node", "-e", "setInterval(()=>{},1000)"], timeout=120)
@@ -287,6 +317,7 @@ def main():
             remaining = run(["docker", "image", "ls", "--format", "{{.Repository}}:{{.Tag}}",
                              "--filter", f"reference={image}*"], check=False)
             cleanup[image] = remaining.returncode == 0 and not remaining.stdout.strip()
+        cleanup["daemon_configuration_restored"] = restore_disposable_daemon(out)
         receipt["cleanup"] = cleanup
         if not all(cleanup.values()):
             receipt["status"] = "failed"

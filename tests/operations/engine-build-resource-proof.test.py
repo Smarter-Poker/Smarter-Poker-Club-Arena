@@ -27,8 +27,29 @@ class OriginalBuildResourceEvidenceTests(unittest.TestCase):
             for value in (f'memory={proof.LIMIT}', f'memory-swap={proof.LIMIT}',
                           'cpu-period=100000', 'cpu-quota=100000', 'restart-policy=no'):
                 self.assertIn(value, args)
-            self.assertIn('image=mirror.gcr.io/moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8', args)
+            self.assertIn('image=moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8', args)
             self.assertEqual(proof.NODE, 'mirror.gcr.io/library/node:22-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5')
+
+    def test_daemon_route_refuses_local_execution(self):
+        from unittest.mock import patch
+        with patch.object(proof.sys, 'platform', 'darwin'), patch.object(proof, 'run') as run:
+            with self.assertRaisesRegex(RuntimeError, 'disposable Linux Actions'):
+                proof.route_disposable_daemon(Path('/unused'))
+            run.assert_not_called()
+
+    def test_daemon_route_preserves_and_restores_original_fields(self):
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        import tempfile
+        original = '{"log-driver":"json-file", "registry-mirrors":["https://original"]}'
+        def response(args, **kwargs):
+            return SimpleNamespace(returncode=0, stdout=original if 'cat' in args else '')
+        with tempfile.TemporaryDirectory() as temp, patch.object(proof.sys, 'platform', 'linux'), patch.dict(proof.os.environ, {'GITHUB_ACTIONS':'true'}), patch.object(proof, 'run', side_effect=response):
+            out = Path(temp)
+            proof.route_disposable_daemon(out)
+            self.assertEqual(proof.json.loads((out / 'daemon-cache.json').read_text())['log-driver'], 'json-file')
+            proof.restore_disposable_daemon(out)
+            self.assertEqual((out / 'daemon-restore.json').read_text(), original)
 
     def test_retains_raw_peak_including_documented_transient_excess(self):
         for peak in (proof.LIMIT - 4096, proof.LIMIT, proof.LIMIT + 4096):

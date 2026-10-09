@@ -1,0 +1,41 @@
+{
+  "schema": "horse-human-calibrated-check-v1",
+  "phase": "phase11",
+  "variant": "plo8",
+  "packVersion": "plo8-split-round3-v2",
+  "contractDigest": "5b93ae20962ff79798b998f437ed43d2bd224a64995d86e34ed63d7bb22057fc",
+  "population": "human-calibrated-v1-20261008",
+  "profileId": "p11c-plo8-6max-2dealt-100bb",
+  "leagueProfileId": "p11c-plo8-6max-2dealt-100bb--human-calibrated-v1-20261008",
+  "evidenceMode": "contract",
+  "seed": 19202203,
+  "firstHand": 0,
+  "requestedHands": 3456,
+  "hands": 3456,
+  "complete": true,
+  "candidate": {
+    "sum": 132259,
+    "sumSq": 10984007973
+  },
+  "reference": {
+    "sum": -59029,
+    "sumSq": 9401883811
+  },
+  "difference": {
+    "sum": 191288,
+    "sumSq": 1605191546
+  },
+  "changedHands": 820,
+  "decisions": 9868,
+  "changed": 899,
+  "illegalCandidates": 0,
+  "illegalActions": 0,
+  "conservationErrors": 0,
+  "cardErrors": 0,
+  "incompleteHands": 0,
+  "truncatedHands": 0,
+  "candidateRake": 758.0800000000033,
+  "referenceRake": 602.6800000000029,
+  "sourceSha": "91fd2864f1a74d8b97a153c8e0d5ebbbabc73e74",
+  "durationMs": 15675
+}

@@ -1,0 +1,7 @@
+{
+  "_owner": "agent/claude-lightning-p11r/lightning/integrity-shadow-remediation-db - migration 20261009181945_lightning_phase_11_remediation_integrity_signals_are_fair_an",
+  "_comment": "Lightning Phase 11 remediation (database half). NOT YET APPLIED: the one table below is a promise until the owner installs 20261009181945 after 20261009151825. lightning_integrity_engine_window keeps the engine's per-window integrity evidence (per player and per pair, as fn_lightning_integrity_report validated it) so DECISION_LATENCY and TIMING_CORRELATION are decided over the rolling 24 hours; RLS on, no role holds a privilege, kept 48 hours. No function is created: fn_lightning_integrity_scan, fn_lightning_integrity_report, fn_lightning_shadow_record, fn_lightning_shadow_report, fn_lightning_alert_sweep and fn_lightning_operator_cluster are changed by asserted substitution, keeping their signatures and grants. Indexes added: lightning_integrity_signal_by_subject and the partial unique ca_collusion_signals_one_per_lightning_finding. Proven by scripts/dev/test-lightning-phase11-remediation.sh.",
+  "tables": ["lightning_integrity_engine_window"],
+  "functions": [],
+  "columns": {}
+}

@@ -1746,6 +1746,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-matcher-parity.sh
+      - name: Lightning Phase 11 remediation keeps integrity signals fair, one finding per subject that extends, and the shadow like for like (every finding reproduced on the production bodies first)
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-lightning-phase11-remediation.sh
       - name: Credit invoices bill only uninvoiced drawn debt
         if: matrix.shard == 1
         env:

@@ -15,3 +15,4 @@ DROP TRIGGER IF EXISTS zz_a_real_alert_reaches_the_owner ON public.operational_a
 DROP TRIGGER IF EXISTS zz_owner_route_reader_silence ON public.operational_notification_destinations;
 
 COMMIT;
+-- @live-proof: (SELECT count(*) = 0 FROM pg_trigger WHERE tgname IN ('zz_a_real_alert_reaches_the_owner', 'zz_owner_route_reader_silence'))

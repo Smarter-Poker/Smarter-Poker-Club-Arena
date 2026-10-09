@@ -150,14 +150,53 @@ export function resumeCooldownMs(failures: number): number {
  * first step.
  */
 export class RunningResumeCooldowns {
-  private readonly streaks = new Map<string, { failures: number; untilMs: number }>();
+  private readonly streaks = new Map<
+    string,
+    { failures: number; untilMs: number; firstFailedAtMs: number }
+  >();
 
   /** A resume of this id settled and left no manager. Returns the cooldown applied. */
   recordFailure(tournamentId: string, nowMs: number): number {
-    const failures = (this.streaks.get(tournamentId)?.failures ?? 0) + 1;
+    const prior = this.streaks.get(tournamentId);
+    const failures = (prior?.failures ?? 0) + 1;
     const cooldownMs = resumeCooldownMs(failures);
-    this.streaks.set(tournamentId, { failures, untilMs: nowMs + cooldownMs });
+    this.streaks.set(tournamentId, {
+      failures,
+      untilMs: nowMs + cooldownMs,
+      firstFailedAtMs: prior?.firstFailedAtMs ?? nowMs,
+    });
     return cooldownMs;
+  }
+
+  /**
+   * A RESUME THAT KEEPS FAILING IS A FINANCIAL INCIDENT, NOT A HEALTH NUMBER
+   * (2026-10-08).
+   *
+   * On 2026-10-03 23:43Z sixteen Spins, Sit & Gos and a satellite lost their
+   * leases under database latency and every re-admission was refused
+   * (`f06_mixed_successor_custody_unproven`) for 14.4 hours. This map held
+   * all sixteen the whole time, /health said tournamentResumesFailing: 16,
+   * and nothing paged: the players sat at a dead felt with their buy-ins
+   * committed until a person read the log the next afternoon.
+   *
+   * The streaks that have been failing for at least `minAgeMs`, for the
+   * caller to raise one alert per tournament. Read-only.
+   */
+  longStreaks(
+    nowMs: number,
+    minAgeMs: number
+  ): Array<{ tournamentId: string; failures: number; firstFailedAtMs: number }> {
+    const out: Array<{ tournamentId: string; failures: number; firstFailedAtMs: number }> = [];
+    for (const [tournamentId, streak] of this.streaks) {
+      if (nowMs - streak.firstFailedAtMs >= minAgeMs) {
+        out.push({
+          tournamentId,
+          failures: streak.failures,
+          firstFailedAtMs: streak.firstFailedAtMs,
+        });
+      }
+    }
+    return out;
   }
 
   /** A resume of this id left a manager behind: the streak is over. */

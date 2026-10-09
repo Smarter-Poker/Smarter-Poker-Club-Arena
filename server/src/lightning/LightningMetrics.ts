@@ -16,6 +16,15 @@ import {
 } from '../observability/Metrics.js';
 import { alwaysOnRegistry } from '../observability/engineInstruments.js';
 import { LIGHTNING_PLAYER_STATES, type LightningDiagnosisSummary } from './LightningRpc.js';
+import { lightningTelemetry, type LightningTelemetry } from './LightningTelemetry.js';
+
+/**
+ * LIGHTNING PHASE 11: where a Cluster-attributed latency leg and an idle
+ * transition also go - the per-window aggregate the shadow record carries
+ * (LightningTelemetry; a Cluster nobody registered costs one Map lookup).
+ * The Prometheus series above stay exactly as they were.
+ */
+export type LightningMetricsTap = Pick<LightningTelemetry, 'latency' | 'idle'>;
 
 export type LightningPassOutcome =
   | 'matched'
@@ -57,7 +66,10 @@ export class LightningMetrics {
   readonly handsTotal: Counter;
   readonly foldsTotal: Counter;
   readonly formedTotal: Counter;
-  private readonly idle = new Map<string, { at: number; kind: LightningIdleKind }>();
+  private readonly idle = new Map<
+    string,
+    { at: number; kind: LightningIdleKind; clusterId: string | null }
+  >();
   readonly passesTotal: Counter;
   readonly workers: Gauge;
   readonly diagnosisPlayers: Gauge;
@@ -66,7 +78,10 @@ export class LightningMetrics {
 
   private readonly lastByCluster = new Map<string, LightningDiagnosisSummary>();
 
-  constructor(registry: MetricsRegistry = alwaysOnRegistry) {
+  constructor(
+    registry: MetricsRegistry = alwaysOnRegistry,
+    private readonly tap: LightningMetricsTap | null = lightningTelemetry
+  ) {
     this.passesTotal = registry.counter(
       'poker_lightning_worker_passes_total',
       'Lightning worker passes by outcome (matched, off, frozen, refused_form, unavailable, invalid, error)'
@@ -105,8 +120,10 @@ export class LightningMetrics {
     );
   }
 
-  observeLatency(segment: LightningLatencySegment, ms: number): void {
-    if (Number.isFinite(ms) && ms >= 0) this.latencyMs.observe(ms, { segment });
+  observeLatency(segment: LightningLatencySegment, ms: number, clusterId?: string | null): void {
+    if (!Number.isFinite(ms) || ms < 0) return;
+    this.latencyMs.observe(ms, { segment });
+    if (clusterId && this.tap) this.tap.latency(clusterId, segment, ms);
   }
 
   recordHand(outcome: 'settled' | 'abandoned' | 'settlement_unknown' | 'frozen'): void {
@@ -118,9 +135,15 @@ export class LightningMetrics {
   }
 
   /** The player is back in the idle pool now. */
-  noteIdle(playerId: string, atMs: number, kind: LightningIdleKind): void {
+  noteIdle(
+    playerId: string,
+    atMs: number,
+    kind: LightningIdleKind,
+    clusterId?: string | null
+  ): void {
     this.idle.delete(playerId);
-    this.idle.set(playerId, { at: atMs, kind });
+    this.idle.set(playerId, { at: atMs, kind, clusterId: clusterId ?? null });
+    if (clusterId && this.tap) this.tap.idle(clusterId, playerId, atMs);
     if (this.idle.size > IDLE_MEMORY_MAX) {
       for (const [id, v] of this.idle) {
         if (this.idle.size <= IDLE_MEMORY_MAX && atMs - v.at < IDLE_MEMORY_MS) break;
@@ -130,16 +153,17 @@ export class LightningMetrics {
   }
 
   /** The matcher formed a hand holding these players. */
-  noteMatched(playerIds: readonly string[], atMs: number): void {
+  noteMatched(playerIds: readonly string[], atMs: number, clusterId?: string | null): void {
     this.formedTotal.inc(1);
     for (const id of playerIds) {
       const v = this.idle.get(id);
-      if (v && atMs - v.at < IDLE_MEMORY_MS) this.observeLatency('idle_pool_to_match', atMs - v.at);
+      if (v && atMs - v.at < IDLE_MEMORY_MS)
+        this.observeLatency('idle_pool_to_match', atMs - v.at, clusterId ?? v.clusterId);
     }
   }
 
   /** The players' next hand was dealt: close each fold-to-next-hand leg. */
-  noteDealt(playerIds: readonly string[], atMs: number): void {
+  noteDealt(playerIds: readonly string[], atMs: number, clusterId?: string | null): void {
     for (const id of playerIds) {
       const v = this.idle.get(id);
       this.idle.delete(id);
@@ -150,7 +174,7 @@ export class LightningMetrics {
           : v.kind === 'fast'
             ? 'fast_fold_to_next_hand'
             : 'normal_fold_to_next_hand';
-      this.observeLatency(segment, atMs - v.at);
+      this.observeLatency(segment, atMs - v.at, clusterId ?? v.clusterId);
     }
   }
 

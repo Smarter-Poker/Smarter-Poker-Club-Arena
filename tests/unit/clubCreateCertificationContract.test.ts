@@ -436,3 +436,32 @@ describe('Create Club production certification contract', () => {
     );
   });
 });
+
+describe('a Create Club fixture another run left behind is retired by the next run (2026-10-08)', () => {
+  it('the certificate recovers stale UI-lane accounts in its always-run cleanup, as a loud cleanup failure', () => {
+    const certify = read('scripts/ci/certify-club-create.mjs');
+    expect(certify).toMatch(
+      /import \{[^}]*cleanupStaleProductionE2EAccounts[^}]*\} from '\.\/production-e2e-account\.mjs'/
+    );
+    const recovery = certify.indexOf(
+      'await cleanupStaleProductionE2EAccounts({ environment: process.env })'
+    );
+    const verdict = certify.lastIndexOf('if (cleanupFailures.length)');
+    expect(recovery).toBeGreaterThan(-1);
+    expect(verdict).toBeGreaterThan(recovery);
+    expect(certify.slice(recovery - 200, recovery)).toContain('try {');
+    expect(certify.slice(recovery, verdict)).toContain('cleanupFailures.push(');
+  });
+
+  it('the stale cutoff still clears every lane that shares the reserved namespace', () => {
+    const account = read('scripts/ci/production-e2e-account.mjs');
+    const cutoff = Number(/STALE_ACCOUNT_AGE_MS = (\d+) \* 60_000/.exec(account)?.[1]);
+    const ceilings = [
+      ...read('.github/workflows/club-create-certification.yml').matchAll(
+        /timeout-minutes: (\d+)/g
+      ),
+      ...read('.github/workflows/post-deploy-e2e.yml').matchAll(/timeout-minutes: (\d+)/g),
+    ].map((match) => Number(match[1]));
+    expect(cutoff).toBeGreaterThan(Math.max(...ceilings) + 5);
+  });
+});

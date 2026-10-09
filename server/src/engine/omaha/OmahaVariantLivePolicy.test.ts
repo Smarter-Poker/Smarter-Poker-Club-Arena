@@ -291,7 +291,7 @@ describe('Round 3: the reference-anchored packs deviate only heads-up', () => {
   );
 
   it.each(variants)(
-    '%s three-bets the pot from the heads-up big blind the reference folds',
+    "%s retains the heads-up big blind's reference fold (no three-bet since v2)",
     (variant) => {
       const s = omahaVariantSpot(variant, 'preflop', 2);
       // The opponent on the button raised to 6; hero has the big blind in.
@@ -320,14 +320,18 @@ describe('Round 3: the reference-anchored packs deviate only heads-up', () => {
           },
         ],
       });
-      const three = run(s, fold);
-      expect(three.receipt).toMatchObject({
-        reason: 'heads_up_big_blind_three_bet',
+      // v2: the big blind three-bet won only against horses that over-fold;
+      // at the human-calibrated table it lost on every variant. The fold stands.
+      const kept = run(s, fold);
+      expect(kept.receipt).toMatchObject({
+        reason: 'reference_retained',
         role: 'defense',
         position: 'big_blind',
+        applied: false,
       });
-      // Pot-limit raise-to: 6 + (8 + 4) = 18.
-      expect(three.decision).toMatchObject({ action: 'raise', amount: 18 });
+      expect(kept.decision).toBe(fold);
+      // The pot-limit raise-to is still recorded: 6 + (8 + 4) = 18.
+      expect(kept.receipt.inputs!.geometry).toMatchObject({ potLimitRaiseTo: 18 });
     }
   );
 

@@ -1,0 +1,7 @@
+# Recovery cash-manifest counts use covering keys
+
+The exact standby cash member timed out at the unchanged19s server/20s client boundary. Native metadata confirmed no index includes its funding-provenance flag; primary plan inspection showed the count/funding scan reads the large heap. A single-pass deduplicated-join proposal was discarded because its actual estimated cost increased.
+
+One reserved migration adds a nonunique B-tree on `(table_id, hand_number) INCLUDE (funding_provenance_complete)`, supporting the existing exact fourteen-member query without changing any financial row, projection, inclusion rule, ACL, routine or timeout. Existing unique indexes stay intact. The index build uses the maintained concurrent preamble, followed by a bounded sole transaction asserting exact target/owner/access method/definition, no predicate or expressions, key/include cardinality and valid/ready/live state. Same-name wrong or invalid leftovers refuse; they are never repaired automatically.
+
+Source qualification and protected integration do not install this migration. Root owns reviewed installation and exact native readback. Actual owned-standby cash/full aggregate performance must pass the original clock and snapshot contracts afterward; MVCC visibility can still cause heap visits, so index-only capability is not a guarantee. No production DDL, probes or index cycles were executed by this source task.

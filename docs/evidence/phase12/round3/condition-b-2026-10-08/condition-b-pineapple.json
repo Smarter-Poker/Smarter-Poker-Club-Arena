@@ -1,0 +1,161 @@
+{
+  "schema": "horse-human-calibrated-check-summary-v1",
+  "variant": "pineapple",
+  "population": "human-calibrated-v1-20261008",
+  "packVersion": "crazy-pineapple-round3-v1",
+  "sourceSha": "022e1e4f8172de48eb4f81dca6c69bc2b0b0b2b1",
+  "seeds": [19201101, 19202203, 19203307],
+  "handsPerSeed": 3888,
+  "runs": 18,
+  "hands": 69984,
+  "rakeModel": "published rake per profile (publishedRake, the cap ladder and BBJ drop), remaining-variant-strength-contract-v1",
+  "candidate": {
+    "bbPer100": 615.6438114426154,
+    "lower99": 551.4841083663762,
+    "upper99": 679.8035145188546,
+    "profiles": [
+      {
+        "profileId": "p12c-pineapple-6max-2dealt-100bb",
+        "hands": 11664,
+        "bbPer100": 185.89360425240054,
+        "sdBBPerHand": 23.956436470883133
+      },
+      {
+        "profileId": "p12c-pineapple-6max-4dealt-100bb",
+        "hands": 11664,
+        "bbPer100": 535.1469478737997,
+        "sdBBPerHand": 46.89832993101533
+      },
+      {
+        "profileId": "p12c-pineapple-6max-40bb",
+        "hands": 11664,
+        "bbPer100": 249.95276063100138,
+        "sdBBPerHand": 27.51410769542281
+      },
+      {
+        "profileId": "p12c-pineapple-6max-100bb",
+        "hands": 11664,
+        "bbPer100": 689.0344221536351,
+        "sdBBPerHand": 62.052142136284886
+      },
+      {
+        "profileId": "p12c-pineapple-6max-200bb",
+        "hands": 11664,
+        "bbPer100": 1313.2798353909466,
+        "sdBBPerHand": 113.00388950469299
+      },
+      {
+        "profileId": "p12c-pineapple-9max-100bb",
+        "hands": 11664,
+        "bbPer100": 720.5552983539095,
+        "sdBBPerHand": 76.81946845499343
+      }
+    ]
+  },
+  "reference": {
+    "bbPer100": 605.4366855281207,
+    "lower99": 541.5173229079703,
+    "upper99": 669.3560481482712,
+    "profiles": [
+      {
+        "profileId": "p12c-pineapple-6max-2dealt-100bb",
+        "hands": 11664,
+        "bbPer100": 143.0942644032922,
+        "sdBBPerHand": 21.585087640958466
+      },
+      {
+        "profileId": "p12c-pineapple-6max-4dealt-100bb",
+        "hands": 11664,
+        "bbPer100": 536.0868055555555,
+        "sdBBPerHand": 46.80170753448376
+      },
+      {
+        "profileId": "p12c-pineapple-6max-40bb",
+        "hands": 11664,
+        "bbPer100": 247.3462791495199,
+        "sdBBPerHand": 27.43241637922759
+      },
+      {
+        "profileId": "p12c-pineapple-6max-100bb",
+        "hands": 11664,
+        "bbPer100": 680.8753429355281,
+        "sdBBPerHand": 61.82856083442298
+      },
+      {
+        "profileId": "p12c-pineapple-6max-200bb",
+        "hands": 11664,
+        "bbPer100": 1304.6149691358025,
+        "sdBBPerHand": 112.80207525034237
+      },
+      {
+        "profileId": "p12c-pineapple-9max-100bb",
+        "hands": 11664,
+        "bbPer100": 720.602451989026,
+        "sdBBPerHand": 76.81940964074565
+      }
+    ]
+  },
+  "difference": {
+    "bbPer100": 10.207125914494743,
+    "lower99": 4.5473983835033716,
+    "upper99": 15.866853445486115,
+    "profiles": [
+      {
+        "profileId": "p12c-pineapple-6max-2dealt-100bb",
+        "hands": 11664,
+        "bbPer100": 42.79933984910837,
+        "sdBBPerHand": 10.589751325282007
+      },
+      {
+        "profileId": "p12c-pineapple-6max-4dealt-100bb",
+        "hands": 11664,
+        "bbPer100": -0.93985768175583,
+        "sdBBPerHand": 2.988970677200956
+      },
+      {
+        "profileId": "p12c-pineapple-6max-40bb",
+        "hands": 11664,
+        "bbPer100": 2.6064814814814814,
+        "sdBBPerHand": 2.1609580574496956
+      },
+      {
+        "profileId": "p12c-pineapple-6max-100bb",
+        "hands": 11664,
+        "bbPer100": 8.159079218106996,
+        "sdBBPerHand": 5.382542415770733
+      },
+      {
+        "profileId": "p12c-pineapple-6max-200bb",
+        "hands": 11664,
+        "bbPer100": 8.664866255144032,
+        "sdBBPerHand": 6.928580755274826
+      },
+      {
+        "profileId": "p12c-pineapple-9max-100bb",
+        "hands": 11664,
+        "bbPer100": -0.04715363511659808,
+        "sdBBPerHand": 0.03600852375353756
+      }
+    ]
+  },
+  "integrity": {
+    "illegalCandidates": 0,
+    "illegalActions": 0,
+    "conservationErrors": 0,
+    "cardErrors": 0,
+    "incompleteHands": 0,
+    "truncatedHands": 0
+  },
+  "adequacy": {
+    "family": "other",
+    "adequate": false,
+    "reasons": [
+      "seat_hands_85_below_10000",
+      "distinct_humans_5_below_20",
+      "top_human_share_0.685_above_0.25"
+    ]
+  },
+  "lowerBoundAboveZero": true,
+  "conditionB": "unavailable_external_input",
+  "reasons": []
+}

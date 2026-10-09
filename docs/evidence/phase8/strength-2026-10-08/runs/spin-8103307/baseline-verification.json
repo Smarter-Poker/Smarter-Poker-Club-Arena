@@ -1,0 +1,17 @@
+{
+  "version": "horse-tournament-postflop-round2-v1",
+  "complete": true,
+  "scope": "software_baseline_not_strength_promotion",
+  "sourceUnchanged": true,
+  "runs": [
+    {
+      "objective": "spin",
+      "seed": 8103307,
+      "verified": true,
+      "eligible": 21007,
+      "fired": 2736,
+      "budgetExhaustions": 18151,
+      "p99": 4.421451999805868
+    }
+  ]
+}

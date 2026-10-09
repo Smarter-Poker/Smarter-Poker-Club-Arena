@@ -1,0 +1,42 @@
+diff --git a/server/src/engine/remainingVariants/RemainingVariantLivePolicy.ts b/server/src/engine/remainingVariants/RemainingVariantLivePolicy.ts
+index a4bdc70d42..bb846a3b67 100644
+--- a/server/src/engine/remainingVariants/RemainingVariantLivePolicy.ts
++++ b/server/src/engine/remainingVariants/RemainingVariantLivePolicy.ts
+@@ -1605,7 +1605,8 @@ export function evaluateRemainingVariantPolicy(
+     });
+     // Round 3 (see REMAINING_VARIANT_PACKS[variant].round3): the reference
+     // keeps every preflop decision except the declared entry spots.
+-    const rules = pack.round3;
++    const XO = ((globalThis as Record<string, unknown>).__p12r3 ?? {}) as Record<string, any>;
++    const rules = { ...pack.round3, ...(XO[variant] ?? {}) } as any;
+     const baselineWagers = ['bet', 'raise', 'all_in'].includes(baseline.action);
+     if (
+       receipt.role === 'rfi' &&
+@@ -1775,14 +1776,26 @@ export function evaluateRemainingVariantPolicy(
+   if (e.perPot.length > 1) receipt.features.push('separate_pot_eligibility');
+   // Round 3: postflop the reference keeps every decision except, in no
+   // limit, a flop bet into a checked pot below the declared equity.
+-  const checkBelow = pack.round3.flopCheckBelow;
++  const XP = ((globalThis as Record<string, unknown>).__p12r3 ?? {}) as Record<string, any>;
++  const prules = { ...pack.round3, ...(XP[variant] ?? {}) } as any;
++  const checkBelow = prules.flopCheckBelow;
+   if (
+     !callCost &&
+     checkBelow !== null &&
+     s.stage === 'flop' &&
++    (!prules.flopCheckMinOpp || active.length >= prules.flopCheckMinOpp) &&
+     ['bet', 'raise', 'all_in'].includes(baseline.action) &&
+     equity < checkBelow
+   )
+     return finishPriced('round3_flop_bet_checked', passive());
++  const vb = prules.valueBet;
++  if (
++    vb &&
++    !callCost &&
++    vb.streets.includes(s.stage) &&
++    !['bet', 'raise', 'all_in'].includes(baseline.action) &&
++    Math.min(e.confidence99[0], ceiling) > vb.above
++  )
++    return finishPriced('round3_value_bet', wager(vb.fraction ?? 0.5));
+   return finishPriced('round3_reference_retained', retained());
+ }

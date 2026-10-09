@@ -1,0 +1,41 @@
+{
+  "schema": "horse-human-calibrated-check-v1",
+  "phase": "phase12",
+  "variant": "pineapple",
+  "packVersion": "crazy-pineapple-round3-v1",
+  "contractDigest": "fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0",
+  "population": "human-calibrated-v1-20261008",
+  "profileId": "p12c-pineapple-6max-2dealt-100bb",
+  "leagueProfileId": "p12c-pineapple-6max-2dealt-100bb--human-calibrated-v1-20261008",
+  "evidenceMode": "contract",
+  "seed": 19201101,
+  "firstHand": 0,
+  "requestedHands": 3888,
+  "hands": 3888,
+  "complete": true,
+  "candidate": {
+    "sum": 1097905,
+    "sumSq": 88800490817
+  },
+  "reference": {
+    "sum": 835140,
+    "sumSq": 71011791202
+  },
+  "difference": {
+    "sum": 262765,
+    "sumSq": 18467617609
+  },
+  "changedHands": 799,
+  "decisions": 19793,
+  "changed": 799,
+  "illegalCandidates": 0,
+  "illegalActions": 0,
+  "conservationErrors": 0,
+  "cardErrors": 0,
+  "incompleteHands": 0,
+  "truncatedHands": 0,
+  "candidateRake": 3079.719999999993,
+  "referenceRake": 2441.5300000000016,
+  "sourceSha": "022e1e4f8172de48eb4f81dca6c69bc2b0b0b2b1",
+  "durationMs": 25731
+}

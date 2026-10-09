@@ -18,6 +18,10 @@ import { jointPolicyFixture } from './multiway/JointRangeFixture.test-support.js
 import { jointInputBindingSha256 } from './multiway/JointLivePolicy.js';
 import { omahaVariantSpot, variantCards } from '../benchmark/OmahaVariantPolicyEvidence.js';
 import { remainingVariantSpot } from '../benchmark/RemainingVariantPolicyEvidence.js';
+import {
+  round3ChangedSpot,
+  type Round3Spot,
+} from './remainingVariants/RemainingVariantRound3Spots.test-support.js';
 import { createHash } from 'node:crypto';
 import { horseJournalJson } from '../services/horseDecisionJournal/record.js';
 
@@ -372,7 +376,7 @@ describe('private execution witness', () => {
       { requestId: 1, lane: 'fast', computeMs: 1, governorScale: 1 }
     );
     const expected = {
-      continuationVersion: 'plo4-policy-round3-v1',
+      continuationVersion: 'plo4-policy-round3-v2',
       mode: 'shadow',
       selection: receipt.selection,
       authority: null,
@@ -489,29 +493,31 @@ describe('private execution witness', () => {
     }
   );
 
-  it.each([
-    ['short_deck', 'preflop'],
-    ['pineapple', 'preflop'],
-    ['flh', 'turn'],
-    ['flo8', 'flop'],
-  ] as const)(
-    'P12.3 binds the %s %s selection: selected proposal, shadow baseline and the accepted action',
-    (variant, street) => {
-      const spot = remainingVariantSpot(variant, street, 2);
-      const rng = saveFastRandom();
-      let decision: HorseDecision;
-      try {
-        seedFastRandom(100101);
-        decision = HorseLogic.decide(
-          spot.hero,
-          spot.state,
-          'balanced',
-          {},
-          { telemetry: false, mind: false, decisionTimeMs: 0, phase12EvidenceMode: true }
-        );
-      } finally {
-        restoreFastRandom(rng);
-      }
+  it.each(['short_deck', 'pineapple', 'flh', 'flo8'] as const)(
+    'P12.3 binds the %s selection: selected proposal, shadow baseline and the accepted action',
+    (variant) => {
+      const shadowDecision = (spot: Round3Spot): HorseDecision => {
+        const rng = saveFastRandom();
+        try {
+          seedFastRandom(100101);
+          return HorseLogic.decide(
+            spot.hero,
+            spot.state,
+            'balanced',
+            {},
+            { telemetry: false, mind: false, decisionTimeMs: 0, phase12EvidenceMode: true }
+          );
+        } finally {
+          restoreFastRandom(rng);
+        }
+      };
+      // Round 3 changes the reference only in its declared spots.
+      const spot = round3ChangedSpot(
+        variant,
+        'cash',
+        (s) => shadowDecision(s).remainingVariantPolicy?.changed === true
+      )();
+      const decision = shadowDecision(spot);
       const receipt = decision.remainingVariantPolicy!;
       expect(receipt).toMatchObject({ mode: 'shadow', changed: true, selection: 'shadow_change' });
       const snapshot = { ...input, player: spot.hero, gameState: spot.state };
@@ -547,7 +553,7 @@ describe('private execution witness', () => {
               seat: spot.hero.seat,
               action: decision.action,
               amount: decision.amount ?? 0,
-              stage: street,
+              stage: spot.state.stage,
             },
             intended: true,
           },

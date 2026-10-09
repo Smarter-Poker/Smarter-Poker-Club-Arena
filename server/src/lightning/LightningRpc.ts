@@ -363,6 +363,56 @@ export async function lightningMatchAndForm(
   return { status: 'ok', value: { ...out.value }, platforms: out.platforms };
 }
 
+/**
+ * LIGHTNING PHASE 11: the shadow matcher's per-window comparison record.
+ * `fn_lightning_shadow_record(p_cluster_id, p_live_version, p_shadow_version,
+ * p_window_from, p_window_to, p_live, p_shadow)` - service_role, one call
+ * per Cluster per window (LightningShadowRunner). Unavailable while the
+ * migration is not deployed; the caller then sends nothing for a while.
+ */
+export interface LightningShadowRecordArgs {
+  clusterId: string;
+  liveVersion: string | null;
+  shadowVersion: string;
+  windowFrom: Date;
+  windowTo: Date;
+  live: Record<string, unknown>;
+  shadow: Record<string, unknown>;
+}
+
+export async function lightningShadowRecord(
+  rpc: LightningRpcClient,
+  args: LightningShadowRecordArgs
+): Promise<LightningRpcOutcome<unknown>> {
+  if (!isUuid(args.clusterId)) return { status: 'invalid', reason: 'cluster_id_invalid' };
+  return call(rpc, 'fn_lightning_shadow_record', {
+    p_cluster_id: args.clusterId,
+    p_live_version: args.liveVersion,
+    p_shadow_version: args.shadowVersion,
+    p_window_from: args.windowFrom.toISOString(),
+    p_window_to: args.windowTo.toISOString(),
+    p_live: args.live,
+    p_shadow: args.shadow,
+  });
+}
+
+/**
+ * LIGHTNING PHASE 11: the engine's integrity signals for one window.
+ * `fn_lightning_integrity_report(p_cluster_id, p_signals, p_now)` -
+ * service_role. Timing only: no card, board, amount or action type.
+ */
+export async function lightningIntegrityReport(
+  rpc: LightningRpcClient,
+  args: { clusterId: string; signals: Record<string, unknown>; now: Date }
+): Promise<LightningRpcOutcome<unknown>> {
+  if (!isUuid(args.clusterId)) return { status: 'invalid', reason: 'cluster_id_invalid' };
+  return call(rpc, 'fn_lightning_integrity_report', {
+    p_cluster_id: args.clusterId,
+    p_signals: args.signals,
+    p_now: args.now.toISOString(),
+  });
+}
+
 /** Counts by state and the most frequent block reasons: what a shadow pass records. */
 export interface LightningDiagnosisSummary {
   players: number;

@@ -109,15 +109,35 @@ Written and committed before any run it governs: the unchanged P13.2 contract (`
 
 ## 5. The human-population check
 
-The owner's target is beating the human players horses face for money. The human-calibrated population contract (`docs/horse-brain-human-population-2026-10-08.md`) is not merged on main as this record is written, so the human-population check is unavailable external input. No variant is selected on horse-population evidence alone.
+The owner's target is beating the human players horses face for money. The winning contract (`docs/horse-brain-winning-contract-2026-10-08.md`, merged in #6515 while round 3 was in review) adds condition (b): a pack qualifies only if its after-rake win rate against the human-calibrated population `human-calibrated-v1-20261008` has a 99% lower bound above zero on the contract's held-out seeds, **and** that population's calibration is adequate (at least 20 human accounts, no account above 25%, 10,000 human seat-hands per family). On the calibration committed today every family fails adequacy (5 accounts, the most active 68.5%, 1,718 / 608 / 85 seat-hands), so condition (b) is unavailable external input for every pack, Phase 13 included. No round-3 variant can qualify until production has an adequate human population and a new population is committed.
+
+Development measurement, not qualification (the contract allows development-seed runs to steer development). Harness `jointResponseCalibration.ts --human`: the same paired league with every non-hero seat on the human-calibrated profile of its family (`withHumanCalibratedOpponents`), the contract profiles and their published rake, development seed 13104409 (never a held-out seed of Phases 10 to 13 or of the human-calibrated contract), 600 pairs per profile, the round-3 source as merged. Hero net after rake, bb/100, equal weight per profile, 99% interval:
+
+| Variant         | Round 3 (candidate)         | Current brain (reference)   | Paired difference        |
+| --------------- | --------------------------- | --------------------------- | ------------------------ |
+| NLH             | +181.13 [+56.64, +305.61]   | +209.37 [+102.48, +316.26]  | -28.24 [-89.73, +33.25]  |
+| PLO4            | +30.75 [-104.47, +165.97]   | +44.82 [-88.85, +178.50]    | -14.08 [-42.95, +14.80]  |
+| PLO5            | +56.60 [-65.66, +178.86]    | +60.73 [-60.11, +181.57]    | -4.13 [-35.10, +26.84]   |
+| PLO6            | +50.18 [-63.19, +163.54]    | +42.46 [-67.39, +152.32]    | +7.71 [-28.12, +43.55]   |
+| PLO8            | +58.12 [-53.55, +169.79]    | +40.66 [-64.91, +146.23]    | +17.46 [-24.39, +59.31]  |
+| FLO8            | +15.51 [-3.86, +34.88]      | +13.80 [-5.54, +33.13]      | +1.72 [-0.00, +3.44]     |
+| FLH             | +35.01 [+12.62, +57.40]     | +34.00 [+11.53, +56.48]     | +1.01 [-0.43, +2.45]     |
+| Short Deck      | +449.26 [+243.95, +654.58]  | +425.59 [+242.94, +608.23]  | +23.67 [-76.96, +124.31] |
+| Crazy Pineapple | +856.92 [+586.19, +1127.66] | +870.33 [+599.62, +1141.05] | -13.41 [-88.16, +61.34]  |
+
+Against the human-calibrated tables both brains win after rake in several variants (the fitted population is loose and passive and easy to beat, as its own record says), and round 3 is not distinguishable from the current brain in any variant. Its development edge is specific to the horse population: it bets where horses fold, and the human-calibrated seats call. The next root cause for the human objective is therefore the response model's population, not its mechanics: a responder that is a human should answer with human frequencies (the human-calibrated fit), which needs both an adequate human calibration and a way for the league and the live state to tell a human seat from a horse seat (every league seat is `is_horse: true` today). Neither is available, so this is recorded and not built. Evidence: `round3-dev-human-calibrated-13104409.json`.
+
+## 6. Held-Out Matrix Dispatch
+
+Dispatched on 2026-10-08 at 16:38Z for the merge commit `5adefba4ac868bf138bee41bda24ae4b1754e456` (#6520), one run per variant, through `.github/workflows/horse-phase13-strength-league.yml` with the unchanged contract above: NLH [37810344257](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810344257), Short Deck [37810347912](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810347912), FLH [37810351762](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810351762), Crazy Pineapple [37810355657](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810355657), PLO4 [37810359405](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810359405), PLO5 [37810363332](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810363332), PLO6 [37810367050](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810367050), PLO8 [37810370548](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810370548), FLO8 [37810374138](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810374138). The contract's hosted estimate is about 504 runner-hours for the nine variants (2.2 to 3 wall hours each at twenty concurrent jobs); the organization's shared runner pool was carrying 69 queued runs and the Phase 8 strength league at dispatch. A round-3 shard costs about 1.1 times a round-2 shard on the same machine (PLO8 three-board bomb, 100 development pairs: 37.3 s against 33.7 s), inside the 120-minute job limit. Each variant is assembled with `server/scripts/phase13-strength-assemble.mjs` on a clean checkout of `5adefba4` and recorded in a dated section appended here, favorable or not. Whatever condition (a) returns, no variant is selected while condition (b) is unavailable external input.
 
 ## Gate status
 
 - Round-2 response model: defective (uncalibrated; measured above as the cause of the loss on every variant).
 - Round-3 responses: verified now on development seeds (frequencies agree within a few points per street; JointResponseCalibration.test.ts pins coverage, monotone price response, the ranked responder order and the measured share).
 - Selection rule (paired edge, nothing to call): verified now (JointResponseCalibration.test.ts, JointLegalForm.test.ts, the worker and client boundary suites).
-- Strength: implemented but unverified until the held-out matrix is assembled.
-- Human population: unavailable external input.
+- Strength, condition (a): implemented but unverified until the held-out matrix (section 6) is assembled.
+- Human population, condition (b): unavailable external input (calibration inadequate on every family); development measurement above: round 3 not distinguishable from the current brain against the human-calibrated tables.
 - Selection: every `PHASE13_PROTECTED_RELEASE_SELECTIONS` entry stays `null`.
 
-Evidence: `/Volumes/SmarterArchives/agent-evidence/horse-brain-finish-20261008/win-p13/` (`round2-dev-reproduction.json`, `round3-dev-evalD.json`, `round3-dev-evalE.json`, `round3-dev-evalF.json`, `response-fit.json`).
+Evidence: `/Volumes/SmarterArchives/agent-evidence/horse-brain-finish-20261008/win-p13/` (`round2-dev-reproduction.json`, `round3-dev-evalD.json`, `round3-dev-evalE.json`, `round3-dev-evalF.json`, `round3-dev-human-calibrated-13104409.json`, `response-fit.json`).

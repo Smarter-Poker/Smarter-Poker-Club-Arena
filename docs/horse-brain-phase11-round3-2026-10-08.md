@@ -15,7 +15,7 @@ Two development tools, committed with this round and refusing every held-out see
 - `server/src/scripts/omahaLeakDiagnose.ts`: plays the contract league's paired hands (the real `playPlo4PolicyHand`, the contract profile, production styles, published rake, mood clock) and attributes each pair's net difference to the hero's first applied change, where the arms diverge. It also counts HorseLogic's `illegal_candidate` refusals.
 - `server/src/scripts/omahaCounterfactual.ts`: a one-step counterfactual of the reference brain. For each pair it plays the reference arm (pack in shadow, receipt recorded), picks one eligible hero decision, then replays the identical deal once per alternative at that decision (fold or check, call, half-pot wager, pot wager) with the reference everywhere else. The difference is Q(state, alternative) minus Q(state, reference) for that one decision.
 
-Opponent population in every development run: the horse population as the locked contracts define it (every seat `HorseLogic.decide` with production styles, empty modifiers, fresh HorseMind, deterministic mood clock). Rake: the published 1/2 rows (`getFullRakeConfig`, player-count caps, BBJ drop where the variant has one). Development seeds: PLO4 10101101, 10102203, 10103307; PLO5, PLO6, PLO8 11101101, 11102203, 11103307. Evidence: `/Volumes/SmarterArchives/agent-evidence/horse-brain-finish-20261008/win-omaha/` (`diag1/`, `cf1/`, `cfhu/`, `cfpost/`, `v1/`, `v2hu/`, `v2ring/`, the analysis scripts `analyze2.py` and `acf.py`).
+Opponent population in every development run: the horse population as the locked contracts define it (every seat `HorseLogic.decide` with production styles, empty modifiers, fresh HorseMind, deterministic mood clock). Rake: the published 1/2 rows (`getFullRakeConfig`, player-count caps, BBJ drop where the variant has one). Development seeds: PLO4 10101101, 10102203, 10103307; PLO5, PLO6, PLO8 11101101, 11102203, 11103307. Evidence: `/Volumes/SmarterArchives/agent-evidence/horse-brain-finish-20261008/win-omaha/` (`diag1/`, `cf1/`, `cfhu/`, `cfpost/`, `v1/`, `v2hu/`, `v2ring/` for the first source; `hc1/` for its human-calibrated check; `v3-horse/`, `v3-ring/`, `v3-human/`, `v3-ring-human/` for the final source; the analysis scripts `analyze2.py` and `acf.py`).
 
 ## Where The Round 1 Packs Lost
 
@@ -26,7 +26,7 @@ First-divergence attribution, round 1 source, 10,080 pairs per profile per varia
 
 ## The Earlier Defect Class
 
-The 2026-10-05 audit defect (candidate sizes the legalizer rewrites, `illegal_candidate` playing the reference) is fully gone on the round 3 source: 0 `illegal_candidate` refusals over every development pair counted on the final source (63,360 pairs: 40,320 two-dealt and 23,040 four-dealt and six-max, `v2hu/` and `v2ring/`); `OmahaLegalFormCandidates.test.ts` pins it on real heads-up league hands for all four packs.
+The 2026-10-05 audit defect (candidate sizes the legalizer rewrites, `illegal_candidate` playing the reference) is fully gone: 0 `illegal_candidate` refusals on every development pair counted on the final source (176,256 pairs over both populations: 60,480 two-dealt and 23,040 four-dealt and six-max against horses, 60,480 two-dealt and 32,256 four-dealt and six-max at the human-calibrated table), and `OmahaLegalFormCandidates.test.ts` pins it on real heads-up league hands for all four packs.
 
 ## River Net-Chip Economics (#6444)
 
@@ -38,7 +38,7 @@ One-step counterfactuals at four-dealt and six-max (40, 100 and 200 BB), all var
 
 ## The Actions That Beat The Reference
 
-Heads-up, the same three actions beat the reference on every variant (counterfactual, seeds 1 and 2, two-dealt profile; BB per decision, 99% interval):
+Heads-up, three actions beat the reference against the horse population on every variant (counterfactual, seeds 1 and 2, two-dealt profile; BB per decision, 99% interval):
 
 | Spot (the reference folds or checks) | Alternative   | PLO4                                           | PLO5                       | PLO6                     | PLO8                     |
 | ------------------------------------ | ------------- | ---------------------------------------------- | -------------------------- | ------------------------ | ------------------------ |
@@ -47,38 +47,46 @@ Heads-up, the same three actions beat the reference on every variant (counterfac
 | Button checked to, river             | pot bet       | +4.92 +/- 3.50 (n = 158)                       | +3.21 +/- 2.52 (n = 188)   | (too few)                | (too few)                |
 | Button checked to, turn              | pot bet       | +4.59 +/- 3.10 (n = 121)                       | +1.79 +/- 2.30 (n = 141)   | (too few)                | (too few)                |
 
-Each is standard heads-up practice, not a read of the horse brain: open the button, defend the big blind by three-betting rather than folding, and bet in position when checked to late in the hand. The rule set is one shared kernel with the same rules for all four packs, so nothing is tuned per variant.
+## The Human-Calibrated Check Removed One Of Them
 
-## The Round 3 Packs
+The winning contract ([addendum](horse-brain-winning-contract-2026-10-08.md), #6515) adds a second condition: a pack must also win after rake at the human-calibrated table (`human-calibrated-v1-20261008`). Its qualifying form is unavailable external input today (calibration inadequate: 5 human accounts, 608 Omaha human seat-hands), but development runs at that table are allowed and were made here, on the same development seeds, through `omahaLeakDiagnose.ts --population=human`.
 
-`plo4ReferenceDeviation` (`server/src/engine/plo4/Plo4LivePolicy.ts`) with `OMAHA_REFERENCE_DEVIATIONS` (`omaha-reference-deviations-v1`, `server/src/engine/plo4/Plo4PolicyPack.ts`), used by `evaluatePlo4LivePolicy` and `evaluateOmahaVariantPolicy`. The decision is the reference's, except at a table dealt exactly two seats with one live opponent, where a reference fold or check becomes:
+The first round 3 source (#6513, `omaha-reference-deviations-v1`, all three actions) beat the reference heads-up against horses by +44 to +65 bb/100 and LOST to it at the human-calibrated table (seed 3, 5,040 pairs each: PLO4 -17.7 +/- 27.1, PLO5 -18.9 +/- 27.4, PLO6 -11.4 +/- 23.8, PLO8 -24.6 +/- 22.7). First-divergence attribution names the cause: the big-blind three-bet lost 5.1 to 6.1 BB every time it fired at the human-calibrated table, on every variant (PLO4 -5.06 +/- 2.59, n = 435; PLO5 -6.12 +/- 2.28, n = 420; PLO6 -6.03 +/- 2.63, n = 368; PLO8 -5.15 +/- 2.22, n = 429), while the button open (+0.64 to +1.33 BB per firing) and the turn stab (+2.0 to +5.7) still won there. The three-bet won against horses only because the reference horse over-folds to three-bets; that is a read of the horse brain, not a winning strategy, and it was removed at the root (`omaha-reference-deviations-v2`, pack versions `round3-v2`).
+
+## The Round 3 Packs (v2)
+
+`plo4ReferenceDeviation` (`server/src/engine/plo4/Plo4LivePolicy.ts`) with `OMAHA_REFERENCE_DEVIATIONS` (`omaha-reference-deviations-v2`, `server/src/engine/plo4/Plo4PolicyPack.ts`), used by `evaluatePlo4LivePolicy` and `evaluateOmahaVariantPolicy`. The decision is the reference's, except at a table dealt exactly two seats with one live opponent, where a reference fold or check becomes:
 
 - `heads_up_button_open`: button, first to act preflop, the controller's minimum raise;
-- `heads_up_big_blind_three_bet`: big blind facing one raise, a pot-sized three-bet;
 - `heads_up_position_stab`: button, checked to on the turn or river, a pot-sized bet.
 
-A wager the legal menu cannot hold retains the reference (never a call). Everything else is `reference_retained`. Every safety gate, refusal, input binding, the 4 ms budget, the sampler and the river economics are unchanged; the receipts still record the equity sample and features. Pack versions: `plo4-policy-round3-v1`, `plo5-high-round3-v1`, `plo6-high-round3-v1`, `plo8-split-round3-v1`; the policy digests move with them, and the contract digests move only through the pack versions they read (PLO4 `ffe57964...0cf1`, Phase 11 `586e4706...d72b`; every other term of both locked contracts is unchanged).
+A wager the legal menu cannot hold retains the reference (never a call). Everything else, the big blind included, is `reference_retained`. Every safety gate, refusal, input binding, the 4 ms budget, the sampler and the river economics are unchanged; the receipts still record the equity sample and features. The same rules apply to all four packs, so nothing is tuned per variant. Pack versions: `plo4-policy-round3-v2`, `plo5-high-round3-v2`, `plo6-high-round3-v2`, `plo8-split-round3-v2`. The policy digests move with them, and the contract digests move only through the pack versions they read (PLO4 `83ab185b...f838`, Phase 11 `5b93ae20...57fc`); every other term of both locked contracts is unchanged.
 
 ## Development Result On The Final Source
 
-Paired league, horse population, published 1/2 rake rows, bb/100 with 99% interval:
+Paired league, published 1/2 rake rows, bb/100 with 99% interval, 5,040 two-dealt pairs per seed (seed 3 was never probed by the counterfactual):
 
-| Pack | Two-dealt, learning seeds (5,040 pairs each, pairs 20,160 on) | Two-dealt, seed 3 (never probed; 10,080 pairs) | Four-dealt and six-max, seed 3 (1,440 pairs per profile) |
-| ---- | ------------------------------------------------------------- | ---------------------------------------------- | -------------------------------------------------------- |
-| PLO4 | +39.6 [+11.7, +67.4]; +43.5 [+14.5, +72.6]                    | +47.2 [+25.4, +69.0]                           | exactly 0 in all four profiles                           |
-| PLO5 | +41.3 [+7.1, +75.5]; +51.9 [+17.9, +85.9]                     | +61.7 [+39.5, +83.8]                           | exactly 0                                                |
-| PLO6 | +58.8 [+23.5, +94.1]; +60.8 [+25.6, +95.9]                    | +44.2 [+20.9, +67.6]                           | exactly 0                                                |
-| PLO8 | +62.7 [+34.1, +91.4]; +57.1 [+27.5, +86.7]                    | +65.0 [+44.3, +85.7]                           | exactly 0                                                |
+| Pack | Against the horse population, seeds 1, 2, 3    | Against the human-calibrated table, seeds 1, 2, 3 |
+| ---- | ---------------------------------------------- | ------------------------------------------------- |
+| PLO4 | +37.5 +/- 18.9; +40.3 +/- 17.1; +42.1 +/- 18.4 | +24.4 +/- 12.9; +30.5 +/- 16.6; +26.0 +/- 14.4    |
+| PLO5 | +32.8 +/- 17.9; +33.3 +/- 21.8; +30.6 +/- 18.9 | +27.9 +/- 13.9; +26.6 +/- 15.2; +32.1 +/- 18.7    |
+| PLO6 | +21.8 +/- 23.9; +10.7 +/- 19.7; +31.9 +/- 19.5 | +18.4 +/- 16.9; +19.1 +/- 12.9; +32.6 +/- 12.7    |
+| PLO8 | +37.9 +/- 18.4; +38.1 +/- 19.1; +40.5 +/- 15.3 | +29.8 +/- 13.7; +16.9 +/- 13.4; +19.3 +/- 11.3    |
 
-The contracts pool five profiles with equal weight, so the expected primary estimate is about one fifth of the two-dealt result: about +8 to +13 bb/100. First-divergence attribution on seed 3 puts every rule positive on every variant (BB per firing: button open +0.72 to +1.21, big blind three-bet +0.99 to +1.77, river stab +1.74 to +3.27, turn stab +0.57 to +3.13). The four-dealt and six-max arms are identical hand for hand, so those cells carry a zero difference with zero variance, which the contracts' interval treats as trusted (skewness 0); the two-dealt per-pair skewness (-2.6 to +1.5) keeps every pooled cell's Edgeworth term inside the 0.001 bound at the planned sizes.
+At four-dealt and six-max (seed 3, 1,440 pairs per profile against horses and 2,016 at the human-calibrated table) the arms are identical hand for hand: exactly 0. Attribution on the final source puts every rule positive in both populations (BB per firing; horses: button open +0.72 to +1.15, turn stab +1.28 to +3.16, river stab +1.57 to +4.77; human-calibrated: button open +0.74 to +1.07, turn stab +1.75 to +5.27, river stab +0.91 to +7.15 on 34 to 56 firings).
+
+Pooled with equal weight over the five contract profiles (seed 3), the candidate minus the reference at the human-calibrated table is PLO4 +5.2 [+2.3, +8.1], PLO5 +6.4 [+2.7, +10.2], PLO6 +6.5 [+4.0, +9.1], PLO8 +3.9 [+1.6, +6.1] bb/100. The absolute after-rake result of the candidate there, the contract's condition (b) statistic, is PLO4 +34.8 [-62.7, +132.2], PLO5 -2.6 [-83.0, +77.7], PLO6 +44.9 [-41.3, +131.1], PLO8 +30.8 [-41.7, +103.3]: a development measurement on a few thousand hands, far from the 10,000 hands per profile and the adequate calibration a qualifying claim needs.
+
+Against the horse population the expected primary estimate of each locked matrix is about one fifth of the two-dealt result (about +4 to +8 bb/100). At the matrix sizes the planned intervals and the interval trust checks hold: the two-dealt per-pair skewness is -0.4 to -5.1 (button offset -0.8 to -2.4), so every cell's Edgeworth term is at most 0.0005 against the 0.001 bound, and every cell without a deviation (the big blind, four-dealt, six-max) carries a zero difference with zero variance.
 
 ## Status
 
-| Item                                                          | Status                                                                                              |
-| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Diagnosis of the round 1 losses                               | verified now (development seeds, above)                                                             |
-| `illegal_candidate` defect class gone                         | verified now (0 refusals on 63,360 development pairs; pinned by test)                               |
-| River economics used to choose actions                        | not applicable with reason: recorded only; it inherits the uncalibrated sampler range               |
-| Round 3 packs beat the reference against the horse population | implemented but unverified until the locked Phase 10 and Phase 11 matrices run on the merged source |
-| Winning after rake against the human population               | implemented but unverified until the human-calibrated population check runs                         |
-| Selection                                                     | every selection stays `null` until both criteria pass under the committed contracts                 |
+| Item                                                         | Status                                                                                                                                                                            |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Diagnosis of the round 1 losses                              | verified now (development seeds, above)                                                                                                                                           |
+| `illegal_candidate` defect class gone                        | verified now (0 refusals on 176,256 development pairs; pinned by test)                                                                                                            |
+| River economics used to choose actions                       | not applicable with reason: recorded only; it inherits the uncalibrated sampler range                                                                                             |
+| Round 3 v2 beats the reference against the horse population  | implemented but unverified until the locked Phase 10 and Phase 11 matrices on the merged source are assembled                                                                     |
+| Round 3 v2 beats the reference at the human-calibrated table | verified now as a development measurement only (above); not a qualifying claim                                                                                                    |
+| Winning contract condition (b), qualifying                   | unavailable external input: the human calibration is inadequate (5 accounts, the most active 68.5% of human seat-hands, 608 Omaha human seat-hands), so no pack can qualify today |
+| Selection                                                    | every selection stays `null`: no pack can meet condition (b)                                                                                                                      |

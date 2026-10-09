@@ -35,6 +35,14 @@
  * alive on their own clock. A Cluster that turns back to `lightning` (the
  * conversion aborted) resumes forming on the next pass.
  *
+ * THE SHADOW MATCHER (Lightning Phase 11, 2026-10-08). After a matching or
+ * forming pass has RETURNED - its hands already with their hosts - the
+ * worker hands the pass's presence snapshot, its `now` and the live
+ * decision to its LightningShadowRunner, synchronously, inside a try/catch,
+ * and reads nothing back. The runner plans its candidate on its own copy of
+ * the population and records the comparison once per window. With
+ * `lightning_shadow_matcher` and `integrity_telemetry` off it does nothing.
+ *
  * TIMERS. One setTimeout at a time, armed only after the previous pass has
  * finished (no overlap, no pile-up behind a slow database), unref'd so it
  * never holds the process open, and cleared by stop(), which also waits for a
@@ -64,6 +72,8 @@ import {
 } from './LightningMetrics.js';
 import { RateLimitedLog } from './RateLimitedLog.js';
 import type { LightningFormedHand } from './LightningHandHost.js';
+import { LightningShadowRunner, type LightningDecidedGroup } from './LightningShadowRunner.js';
+import type { LightningPresenceSnapshot } from './LightningPresence.js';
 
 /** After the old matcher signature refuses p_player_platforms, ask again this much later. */
 export const LIGHTNING_PLATFORMS_RETRY_MS = 10 * 60_000;
@@ -99,6 +109,8 @@ export interface LightningClusterWorkerDeps {
    * be abandoned, so the worker does not form.
    */
   holdsFrontTableLease?: () => Promise<boolean>;
+  /** LIGHTNING PHASE 11: the shadow runner (one is made when absent). */
+  shadow?: LightningShadowRunner;
 }
 
 export type LightningWorkerPassResult =
@@ -135,6 +147,8 @@ export class LightningClusterWorker {
   /** `pending_off`: form nothing, call nothing; the hands in the air settle. */
   private draining = false;
   private lastDrainLogAtMs = 0;
+  /** LIGHTNING PHASE 11: observes each live pass after it returned; never consulted. */
+  private readonly shadow: LightningShadowRunner;
 
   constructor(
     readonly clusterId: string,
@@ -146,6 +160,19 @@ export class LightningClusterWorker {
     this.logger = deps.logger ?? consoleLogger;
     this.now = deps.now ?? (() => new Date());
     this.frozen = deps.frozen ?? (() => false);
+    this.shadow =
+      deps.shadow ??
+      new LightningShadowRunner(clusterId, {
+        rpc: deps.rpc,
+        logger: this.logger,
+        now: () => this.now(),
+      });
+    this.shadow.configure(this.config.shadow);
+  }
+
+  /** The shadow runner (tests and the operator view read it; the pass never does). */
+  get shadowRunner(): LightningShadowRunner {
+    return this.shadow;
   }
 
   get mode(): LightningConfig['workerMode'] {
@@ -199,6 +226,7 @@ export class LightningClusterWorker {
   updateConfig(config: LightningConfig): void {
     const modeChanged = config.workerMode !== this.config.workerMode;
     this.config = { ...config };
+    this.shadow.configure(this.config.shadow);
     if (modeChanged) {
       this.failureLog.forget('form');
       this.logger.log(`[Lightning:${this.clusterId}] worker mode is now ${config.workerMode}`);
@@ -219,12 +247,11 @@ export class LightningClusterWorker {
     }
     this.metrics.forgetCluster(this.clusterId);
     const inFlight = this.inFlight;
-    if (!inFlight) return;
     let drainTimer: ReturnType<typeof setTimeout> | null = null;
     await Promise.race([
-      inFlight.then(
-        () => undefined,
-        () => undefined
+      (inFlight ?? Promise.resolve()).then(
+        () => this.shadow.stop(),
+        () => this.shadow.stop()
       ),
       new Promise<void>((resolve) => {
         drainTimer = setTimeout(resolve, LIGHTNING_STOP_DRAIN_MS);
@@ -301,8 +328,9 @@ export class LightningClusterWorker {
 
     let disconnected: string[];
     let platforms: Record<string, LightningDevicePlatform>;
+    let snap: LightningPresenceSnapshot;
     try {
-      const snap = this.deps.presence.snapshot(this.clusterId, this.knownPoolPlayers);
+      snap = this.deps.presence.snapshot(this.clusterId, this.knownPoolPlayers);
       disconnected = snap.pDisconnected;
       platforms = snap.platforms ?? {};
     } catch (err) {
@@ -313,15 +341,17 @@ export class LightningClusterWorker {
       return { outcome: 'error', reason: 'presence_failed' };
     }
 
+    const passNow = this.now();
     const out = await lightningMatch(this.deps.rpc, {
       clusterId: this.clusterId,
-      now: this.now(),
+      now: passNow,
       disconnected,
       matcherVersion: this.config.matcherVersion,
       playerPlatforms: this.platformsToSend(platforms),
     });
     this.notePlatformsDelivery(out.platforms);
 
+    if (out.status !== 'ok') this.observeShadow(passNow, snap, 'match', false, null, []);
     if (out.status === 'unavailable') {
       if (this.failureLog.shouldLog('unavailable')) {
         this.logger.warn(
@@ -350,7 +380,44 @@ export class LightningClusterWorker {
     const summary = summarizeLightningMatch(result);
     this.metrics.recordSummary(this.clusterId, summary);
     this.maybeLogSummary(summary, disconnected.length);
+    this.observeShadow(passNow, snap, 'match', true, result.matcherVersion, result.groups);
     return { outcome: 'matched', summary, disconnected: disconnected.length };
+  }
+
+  /**
+   * LIGHTNING PHASE 11: hand the pass that just RETURNED to the shadow
+   * runner. Synchronous, guarded, and nothing is read back.
+   */
+  private observeShadow(
+    passNow: Date,
+    snap: LightningPresenceSnapshot,
+    kind: 'form' | 'match',
+    ok: boolean,
+    matcherVersion: string | null,
+    groups: readonly LightningDecidedGroup[]
+  ): void {
+    if (!this.shadow.active) return;
+    try {
+      this.shadow.observe({
+        nowMs: passNow.getTime(),
+        presence: {
+          connected: snap.connected,
+          disconnected: snap.disconnected,
+          unknown: snap.unknown,
+        },
+        kind,
+        ok,
+        matcherVersion,
+        groups,
+      });
+    } catch (err) {
+      if (this.failureLog.shouldLog('shadow')) {
+        this.logger.error(
+          `[Lightning:${this.clusterId}] shadow runner threw; live play unaffected`,
+          err
+        );
+      }
+    }
   }
 
   /**
@@ -416,8 +483,9 @@ export class LightningClusterWorker {
     }
     let disconnected: string[];
     let platforms: Record<string, LightningDevicePlatform>;
+    let snap: LightningPresenceSnapshot;
     try {
-      const snap = this.deps.presence.snapshot(this.clusterId, this.knownPoolPlayers);
+      snap = this.deps.presence.snapshot(this.clusterId, this.knownPoolPlayers);
       disconnected = snap.pDisconnected;
       platforms = snap.platforms ?? {};
     } catch (err) {
@@ -428,15 +496,17 @@ export class LightningClusterWorker {
     }
     const requestId = this.pendingRequestId ?? randomUUID();
     this.pendingRequestId = requestId;
+    const passNow = this.now();
     const out = await lightningMatchAndForm(this.deps.rpc, {
       clusterId: this.clusterId,
-      now: this.now(),
+      now: passNow,
       disconnected,
       maxHands: this.config.maxHandsPerPass,
       requestId,
       playerPlatforms: this.platformsToSend(platforms),
     });
     this.notePlatformsDelivery(out.platforms);
+    if (out.status !== 'ok') this.observeShadow(passNow, snap, 'form', false, null, []);
     if (out.status === 'error') {
       // Unknown outcome: the next pass asks again under the same id.
       if (this.failureLog.shouldLog('form_error')) {
@@ -465,6 +535,7 @@ export class LightningClusterWorker {
     const formedAtMs = this.now().getTime();
     const hands = Array.isArray(result.hands) ? result.hands : [];
     let started = 0;
+    const decided: LightningDecidedGroup[] = [];
     for (const raw of hands) {
       const h = raw as Record<string, unknown>;
       const players = Array.isArray(h.players) ? h.players.filter(isUuid) : [];
@@ -482,7 +553,8 @@ export class LightningClusterWorker {
         continue;
       }
       if (this.deps.hasInstance?.(h.instance_id)) continue; // a replay naming a hand already dealt
-      this.metrics.noteMatched(players, formedAtMs);
+      this.metrics.noteMatched(players, formedAtMs, this.clusterId);
+      decided.push({ players, bb: h.bb, sb: h.sb, btn: h.btn });
       for (const p of players)
         if (!this.knownPoolPlayers.includes(p)) this.knownPoolPlayers.push(p);
       this.deps.startHand!({
@@ -497,6 +569,14 @@ export class LightningClusterWorker {
       });
       started++;
     }
+    this.observeShadow(
+      passNow,
+      snap,
+      'form',
+      result.ok === true && result.frozen !== true,
+      typeof result.matcher_version === 'string' ? result.matcher_version : null,
+      decided
+    );
     if (result.frozen === true || result.stopped_reason === 'frozen') {
       this.logger.error(
         `[Lightning:${this.clusterId}] formation_invariant_failed: the barrier froze the Cluster; worker stopping`

@@ -14,10 +14,27 @@ export const repairCases = Object.freeze([
   'canonical_monthly_pays_once',
   'insufficient_promo_bank_available_refuses',
   'recipient_failure_rolls_back_then_retries',
+  'affiliate_union_underfunded_refuses',
+  'settlement_sql_roles_refuse',
+]);
+export const payoutStages = Object.freeze([
+  'case_execution',
+  'fixture',
+  'capture_fixture',
+  'ranking_assertion',
+  'payout_call',
+  'payout_result',
+  'money_readback',
+  'journal_readback',
+  'basis_readback',
+  'replay_call',
+  'replay_readback',
+  'deferred_constraints',
 ]);
 const extendedStages = Object.freeze([
   'fixture',
   'actual_shortage',
+  'sql_role_refusal',
   'actual_settlement',
   'independent_readback',
 ]);
@@ -59,7 +76,7 @@ export function repairFinancialDiagnostics(mode, input) {
         (mode === 'opening'
           ? openingStages
           : repairCases.indexOf(name) < 6
-            ? ['case_execution']
+            ? payoutStages
             : extendedStages
         ).includes(stage)
       );

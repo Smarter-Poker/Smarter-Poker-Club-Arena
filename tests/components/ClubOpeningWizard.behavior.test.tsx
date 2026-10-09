@@ -62,13 +62,12 @@ const alertText = () => screen.queryByRole('alert')?.textContent ?? '';
 
 /**
  * Walks to Review. `paid` funds every system; otherwise every answer is Not Now.
- * A paid leaderboard must also answer the Club Bank overlay question.
+ * A paid leaderboard confirms its Promo Wallet allocation, never a Bank overlay.
  */
 function walkToReview({
   paid = false,
   tagline = 'Where The River Always Pays',
-  overlay = /^Leave Unpaid Until Funded/,
-}: { paid?: boolean; tagline?: string; overlay?: RegExp } = {}) {
+}: { paid?: boolean; tagline?: string } = {}) {
   next(); // Opening Review -> Tag Line
   if (tagline) {
     fireEvent.change(screen.getByLabelText(/Club Tag Line/), { target: { value: tagline } });
@@ -84,7 +83,6 @@ function walkToReview({
   next(); // -> Leaderboards
   if (paid) {
     choose(/^Pay Weekly Prizes/);
-    choose(overlay);
     confirmTransfer();
   }
   next(); // -> Review
@@ -276,7 +274,7 @@ describe('no silent chip movement', () => {
   });
 });
 
-describe('paid leaderboards: the seed funds round one', () => {
+describe('paid leaderboards: the allocation funds the Promo Wallet', () => {
   function toLeaderboards(promo: 'create' | 'not_now') {
     mount();
     next();
@@ -301,11 +299,10 @@ describe('paid leaderboards: the seed funds round one', () => {
     const presets = screen.getByLabelText('Suggested Leaderboard Prize Budgets');
     for (const button of within(presets).getAllByRole('button')) expect(button).toBeEnabled();
     fireEvent.click(within(presets).getByRole('button', { name: '1K Chips' }));
-    choose(/^Leave Unpaid Until Funded/);
-    expect(alertText()).toBe('Confirm The Exact Leaderboard Prize Seed Transfer Before Continuing');
+    expect(alertText()).toBe('Confirm The Exact Leaderboard Promo Transfer Before Continuing');
     expect(
       screen.getByRole('checkbox', {
-        name: 'Transfer Exactly 1,000 Chips From The Club Bank Into The Leaderboard First-Round Prize Seed',
+        name: 'Transfer Exactly 1,000 Chips From The Club Bank Into The Club Promo Wallet For Leaderboard Prizes',
       })
     ).not.toBeChecked();
     confirmTransfer();
@@ -314,15 +311,14 @@ describe('paid leaderboards: the seed funds round one', () => {
     expect(document.body.textContent).not.toContain('Promotion Budget Of At Least');
   });
 
-  it('a budget larger than the promotion is fine: later rounds draw on the Promo Wallet', () => {
+  it('includes both opening allocations in the Promo Wallet for every round', () => {
     toLeaderboards('create');
     fireEvent.change(screen.getByLabelText(/Weekly Prize Budget/), { target: { value: '1000' } });
-    choose(/^Club Bank Covers Shortfalls/);
     confirmTransfer();
     expect(primary()).toBeEnabled();
     expect(
       screen.getByText(
-        'Round One Is Paid From This Seed, And Whatever It Does Not Pay Moves Into The Promo Wallet. Every Later Round Is Paid From The Promo Wallet, Which Holds 500 Chips After Setup.'
+        'Every Round Is Paid Only From The Promo Wallet, Which Holds 1.5K Chips After Setup.'
       )
     ).toBeInTheDocument();
   });
@@ -352,7 +348,7 @@ describe('paid leaderboards: the seed funds round one', () => {
   });
 });
 
-describe('the Club Bank overlay is an explicit answer', () => {
+describe('new opening leaderboards are Promo-only', () => {
   function toPaidLeaderboards() {
     mount();
     next();
@@ -367,62 +363,50 @@ describe('the Club Bank overlay is an explicit answer', () => {
     choose(/^Pay Weekly Prizes/);
   }
 
-  it('starts unanswered and blocks Continue until the owner answers', () => {
+  it('offers no Bank overlay and requires the actual Promo transfer confirmation', () => {
     toPaidLeaderboards();
-    const bank = screen.getByRole('button', { name: /^Club Bank Covers Shortfalls/ });
-    const unpaid = screen.getByRole('button', { name: /^Leave Unpaid Until Funded/ });
-    expect(bank).toHaveAttribute('aria-pressed', 'false');
-    expect(unpaid).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByRole('group', { name: 'Later-Round Shortfalls' })).toContainElement(bank);
-    expect(alertText()).toBe(
-      'Choose Club Bank Covers Shortfalls Or Leave Unpaid Until Funded Before Continuing'
-    );
+    expect(screen.queryByRole('button', { name: /^Club Bank Covers Shortfalls/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Leave Unpaid Until Funded/ })).toBeNull();
+    expect(alertText()).toBe('Confirm The Exact Leaderboard Promo Transfer Before Continuing');
     expect(primary()).toBeDisabled();
-    // The answer is asked even when the transfer is already ticked.
     confirmTransfer();
-    expect(primary()).toBeDisabled();
-    fireEvent.click(bank);
-    expect(bank).toHaveAttribute('aria-pressed', 'true');
-    expect(unpaid).toHaveAttribute('aria-pressed', 'false');
     expect(primary()).toBeEnabled();
   });
 
-  it('forgets the answer when leaderboards go back to Display Only', () => {
+  it('withdraws funding confirmation when leaderboards return to Display Only', () => {
     toPaidLeaderboards();
-    choose(/^Club Bank Covers Shortfalls/);
+    confirmTransfer();
     choose(/^Display Only/);
     expect(screen.queryByRole('button', { name: /^Club Bank Covers Shortfalls/ })).toBeNull();
     choose(/^Pay Weekly Prizes/);
-    expect(screen.getByRole('button', { name: /^Club Bank Covers Shortfalls/ })).toHaveAttribute(
-      'aria-pressed',
-      'false'
-    );
-    expect(alertText()).toBe(
-      'Choose Club Bank Covers Shortfalls Or Leave Unpaid Until Funded Before Continuing'
-    );
+    expect(screen.queryByRole('button', { name: /^Club Bank Covers Shortfalls/ })).toBeNull();
+    expect(screen.getByRole('checkbox')).not.toBeChecked();
+    expect(alertText()).toBe('Confirm The Exact Leaderboard Promo Transfer Before Continuing');
   });
 
-  it('sends the opt-in only when the owner chose the Club Bank', async () => {
+  it('always sends overlay false for new paid and display-only setups', async () => {
     mocks.rpc.mockImplementation((_name: string, args: { p_operation_id: string }) =>
       Promise.resolve(okReceipt(args.p_operation_id))
     );
     const first = mount();
-    walkToReview({ paid: true, overlay: /^Club Bank Covers Shortfalls/ });
+    walkToReview({ paid: true });
     await act(async () => next());
     await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
     expect(mocks.rpc.mock.calls[0][1]).toMatchObject({
       p_leaderboard_rewards_enabled: true,
       p_leaderboard_prize_budget: 500,
-      p_leaderboard_overlay_enabled: true,
+      p_leaderboard_overlay_enabled: false,
     });
     first.unmount();
 
     mount();
-    walkToReview({ paid: true, overlay: /^Leave Unpaid Until Funded/ });
+    walkToReview();
     await act(async () => next());
     await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(2));
-    expect(mocks.rpc.mock.calls[1][1]).toMatchObject({ p_leaderboard_rewards_enabled: true });
-    expect(mocks.rpc.mock.calls[1][1]).not.toHaveProperty('p_leaderboard_overlay_enabled');
+    expect(mocks.rpc.mock.calls[1][1]).toMatchObject({
+      p_leaderboard_rewards_enabled: false,
+      p_leaderboard_overlay_enabled: false,
+    });
   });
 });
 
@@ -454,38 +438,36 @@ describe('figures', () => {
 
   it('tells the truth about leaderboard funding when rounds wait for the Promo Wallet', () => {
     mount();
-    walkToReview({ paid: true, overlay: /^Leave Unpaid Until Funded/ });
+    walkToReview({ paid: true });
     const text = document.body.textContent ?? '';
     const ledger = document.querySelector('.club-setup-wizard__ledger');
-    expect(ledger).toHaveTextContent('Later-Round Shortfalls');
-    expect(ledger).toHaveTextContent('Leave Unpaid Until Funded');
-    expect(text).toContain('The First Round Is Paid From That Seed, Then From The Promo Wallet');
-    expect(text).toContain('That Round Stays Unpaid And Is Retried Automatically.');
-    expect(text).toContain('The Club Bank Never Pays A Round Of This Leaderboard.');
+    expect(ledger).toHaveTextContent('Round Shortfalls');
+    expect(ledger).toHaveTextContent('Unpaid Until The Promo Wallet Is Funded');
+    expect(text).toContain('Every Round Is Paid Only From The Promo Wallet.');
+    expect(text).toContain('Unpaid And Is Retried Automatically After Funding.');
+    expect(text).toContain('Leaderboard Shortfall.');
     expect(text).not.toContain('Recorded As A Separate Overlay.');
     expect(text).not.toContain('No Round Is Ever Paid From The Club Bank');
     expect(text).not.toContain('—');
   });
 
-  it('tells the truth about leaderboard funding when the Club Bank covers a shortfall', () => {
+  it('never describes a new leaderboard as seed-first or Bank-overlay funded', () => {
     mount();
-    walkToReview({ paid: true, overlay: /^Club Bank Covers Shortfalls/ });
+    walkToReview({ paid: true });
     const text = document.body.textContent ?? '';
     expect(document.querySelector('.club-setup-wizard__ledger')).toHaveTextContent(
-      'Club Bank Covers Shortfalls'
+      'Promo Wallet Funded'
     );
-    expect(text).toContain(
-      'The Club Bank Pays Only That Shortfall, Recorded As A Separate Overlay. If The Club Bank Cannot Cover It Either, That Round Stays Unpaid And Is Retried Automatically.'
-    );
-    expect(text).not.toContain('The Club Bank Never Pays A Round Of This Leaderboard.');
-    expect(text).not.toContain('No Round Is Ever Paid From The Club Bank');
+    expect(text).not.toContain('First-Round Seed');
+    expect(text).not.toContain('Recorded As A Separate Overlay');
+    expect(text).not.toContain('Club Bank Covers Shortfalls');
   });
 
   it('says nothing about leaderboard funding for Display Only', () => {
     mount();
     walkToReview();
     const text = document.body.textContent ?? '';
-    expect(text).not.toContain('Later-Round Shortfalls');
+    expect(text).not.toContain('Round Shortfalls');
     expect(text).not.toContain('First-Round Seed');
     expect(text).toContain(
       'If Any Treasury, Permission, Or Promotion Step Fails, Nothing Is Deducted.'

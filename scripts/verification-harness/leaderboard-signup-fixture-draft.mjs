@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const source = new URL('./leaderboard-isolated-authorization-draft.sql', import.meta.url);
 const start = 'DO $mint_policy$';
 const end = 'DO $matrix$';
-const pinned = 'e0287b013e1e43497f03bdfe0c5ea79ecac9fa43c32405d3d0e82de515078e45';
+const pinned = '41bc8d84b49fe4661acbde695cf17e74f5a51b9e087ae5f5634a54651965840c';
 export function generateFixture(ids, template = readFileSync(source, 'utf8')) {
   assert.ok(Array.isArray(ids) && ids.length === 5);
   ids = ids.map((id) => {
@@ -37,7 +37,7 @@ export function generateFixture(ids, template = readFileSync(source, 'utf8')) {
   for (const [anchor, stage] of [
     ['DO $mint_policy$', 'mint-policy'],
     ['INSERT INTO public.union_creators', 'union-create'],
-    ['INSERT INTO public.clubs', 'club-create'],
+    ['-- Create each club in its own statement:', 'club-create'],
     ['DO $retire$', 'opening-retirement'],
     ['INSERT INTO public.union_clubs', 'union-link'],
     ['DO $membership$', 'memberships'],

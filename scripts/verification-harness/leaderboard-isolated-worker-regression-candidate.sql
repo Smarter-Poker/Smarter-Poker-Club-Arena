@@ -47,8 +47,8 @@ DECLARE result jsonb; before_digest text; paid_digest text; starts date; ends da
 BEGIN
   SELECT start_date,end_date INTO starts,ends FROM public.fn_leaderboard_period_window('weekly',-1);
   before_digest:=pg_temp.worker_money_digest();
-  PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);
-  PERFORM set_config('request.jwt.claim.sub','',true);
+  PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}',true);
+  PERFORM set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000001',true);
   PERFORM set_config('request.jwt.claim.role','service_role',true);
   SET LOCAL ROLE service_role;
   result:=public.fn_settle_due_leaderboards();

@@ -17,11 +17,57 @@
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import ts from 'typescript';
 import { handOverToWaitingWorker, HANDOVER_TIMEOUT_MS } from '../../src/hooks/useShellUpdateGate';
 
 const root = (p: string) => path.resolve(__dirname, '../..', p);
 const sw = readFileSync(root('public/sw-bus.js'), 'utf8');
 const gate = readFileSync(root('src/hooks/useShellUpdateGate.ts'), 'utf8');
+
+/** Check control-flow ownership rather than the spelling of a one-line callback. */
+function reloadFollowsGuardedHandover(source: string): boolean {
+  const ast = ts.createSourceFile('gate.ts', source, ts.ScriptTarget.Latest, true);
+  const reloads: ts.CallExpression[] = [];
+  const visit = (node: ts.Node) => {
+    if (ts.isCallExpression(node) && node.expression.getText(ast) === 'window.location.reload')
+      reloads.push(node);
+    ts.forEachChild(node, visit);
+  };
+  visit(ast);
+  if (reloads.length !== 1) return false;
+  let owner: ts.Node | undefined = reloads[0].parent;
+  while (owner && !ts.isArrowFunction(owner)) owner = owner.parent;
+  if (!owner || !ts.isArrowFunction(owner) || !ts.isBlock(owner.body)) return false;
+  const then = owner.parent;
+  if (
+    !ts.isCallExpression(then) ||
+    !ts.isPropertyAccessExpression(then.expression) ||
+    then.expression.name.text !== 'then'
+  )
+    return false;
+  const handover = then.expression.expression;
+  if (
+    !ts.isCallExpression(handover) ||
+    handover.expression.getText(ast) !== 'handOverToWaitingWorker' ||
+    handover.arguments[0]?.getText(ast) !== 'navigator.serviceWorker'
+  )
+    return false;
+  return owner.body.statements.some((statement) => {
+    if (
+      !ts.isIfStatement(statement) ||
+      statement.end > reloads[0].pos ||
+      !ts.isReturnStatement(statement.thenStatement)
+    )
+      return false;
+    const condition = statement.expression.getText(ast);
+    return (
+      /!pending/.test(condition) &&
+      /!armed/.test(condition) &&
+      /isShellReloadBlocked\(\)/.test(condition) &&
+      /!mayReloadForShell\(/.test(condition)
+    );
+  });
+}
 
 function handler(event: string): string {
   const start = sw.indexOf(`sw.addEventListener('${event}'`);
@@ -44,10 +90,21 @@ describe('the worker never activates itself under an open tab', () => {
   });
 
   it('the gate hands over before it reloads, never the other way round', () => {
-    expect(gate).toMatch(
-      /handOverToWaitingWorker\(navigator\.serviceWorker\)\.then\(\(\) => window\.location\.reload\(\)\)/
+    expect(reloadFollowsGuardedHandover(gate)).toBe(true);
+    // Moving the single reload ahead of handover violates the invariant even
+    // though the worker call and its eligibility checks still occur later.
+    const earlyReload = gate
+      .replace('window.location.reload();', '')
+      .replace(
+        'void handOverToWaitingWorker(navigator.serviceWorker)',
+        'window.location.reload(); void handOverToWaitingWorker(navigator.serviceWorker)'
+      );
+    expect(reloadFollowsGuardedHandover(earlyReload)).toBe(false);
+    const unguarded = gate.replace(
+      /if\s*\(\s*!pending\s*\|\|\s*!armed\s*\|\|\s*isShellReloadBlocked\(\)[\s\S]*?\)\s*return;/,
+      ''
     );
-    expect(gate.match(/window\.location\.reload\(\)/g)).toHaveLength(1);
+    expect(reloadFollowsGuardedHandover(unguarded)).toBe(false);
   });
 });
 

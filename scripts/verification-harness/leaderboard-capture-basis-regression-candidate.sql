@@ -133,9 +133,9 @@ END $producer$;
 INSERT INTO public.unions(id,name,owner_id,slug)
 VALUES('97000000-0000-4000-8000-000000000001','Isolated Capture Union',
   '90000000-0000-4000-8000-000000000001','isolated-capture-union');
-INSERT INTO public.clubs(id,name,owner_id,is_union,union_id)
+INSERT INTO public.clubs(id,name,owner_id,is_union,union_id,chip_treasury)
 VALUES('97000000-0000-4000-8000-000000000001','Isolated Capture House',
-  '90000000-0000-4000-8000-000000000001',true,NULL);
+  '90000000-0000-4000-8000-000000000001',true,NULL,0);
 DO $new_club$
 BEGIN
   IF EXISTS(SELECT 1 FROM public.leaderboard_basis_existing_clubs WHERE club_id='97000000-0000-4000-8000-000000000001')
@@ -168,8 +168,8 @@ BEGIN
           basis:=public.fn_leaderboard_complete_round_basis(new_club,'weekly',starts,
             CASE WHEN case_name='canonical_closed_window_refuses' THEN ends-1 ELSE ends END);
         EXCEPTION WHEN SQLSTATE '55000' OR SQLSTATE '22023' THEN
-          IF SQLERRM IS DISTINCT FROM CASE WHEN case_name='canonical_closed_window_refuses'
-             THEN 'LEADERBOARD_BASIS_WINDOW_INVALID' ELSE 'LEADERBOARD_CAPTURE_UNAVAILABLE' END THEN RAISE; END IF;
+          IF SQLERRM IS DISTINCT FROM (CASE WHEN case_name='canonical_closed_window_refuses'
+             THEN 'LEADERBOARD_BASIS_WINDOW_INVALID' ELSE 'LEADERBOARD_CAPTURE_UNAVAILABLE' END) THEN RAISE; END IF;
           rejected:=true;
         END;
         IF NOT rejected OR EXISTS(SELECT 1 FROM public.leaderboard_round_basis_receipts)

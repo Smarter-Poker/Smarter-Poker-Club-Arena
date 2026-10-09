@@ -99,7 +99,12 @@ test('separate payout variant retains six actual financial cases and refuses sta
   );
   assert.match(generated, /IS DISTINCT FROM before_digest THEN/);
   assert.match(generated, /fn_diamond_game_fund_promo/);
-  assert.match(generated, /post_to_balance-pre_to_balance=expected_total/);
+  assert.match(generated, /receiver_club := public\.fn_player_home_club\(player_a,NULL\)/);
+  assert.match(generated, /SELECT chip_balance INTO STRICT receiver_before/);
+  assert.match(generated, /IS DISTINCT FROM receiver_before\+expected_total/);
+  assert.match(generated, /user_id=player_b\) IS DISTINCT FROM other_player_before/);
+  assert.match(generated, /AND amount=expected_total\s+AND club_id=receiver_club/);
+  assert.doesNotMatch(generated, /post_to_balance-pre_to_balance/);
   assert.match(generated, /positive_awards_only_for_cent_tie/);
   assert.match(generated, /new_player_zero_baseline_pays/);
   assert.equal(generated.match(/^ROLLBACK;$/gm)?.length, 1);
@@ -141,4 +146,24 @@ test('actual payout source proposal locks before replay and freezes positive fin
   assert.match(payout, /v_winners, md5\(v_winners::text\)/);
   assert.match(payout, /'seed_funded', v_existing\.seed_funded/);
   assert.doesNotMatch(payout, /UPDATE public\.leaderboard_round_basis_receipts|ON CONFLICT/);
+});
+
+test('PLpgSQL IF predicates parenthesize CASE values so their THEN is not the IF delimiter', () => {
+  assert.doesNotMatch(baseline, /<>\s+CASE WHEN/);
+  assert.equal(
+    baseline.match(/<> \(CASE WHEN expected_total=0 THEN 0 ELSE [12] END\)/g)?.length,
+    5
+  );
+  assert.match(regression, /IF SQLERRM IS DISTINCT FROM \(CASE WHEN/);
+  assert.match(regression, /ELSE 'LEADERBOARD_CAPTURE_UNAVAILABLE' END\) THEN RAISE/);
+});
+
+test('new capture Union house explicitly avoids the ordinary opening Treasury default', () => {
+  assert.ok(
+    regression.includes(
+      'INSERT INTO public.clubs(id,name,owner_id,is_union,union_id,chip_treasury)'
+    )
+  );
+  assert.ok(regression.includes("'90000000-0000-4000-8000-000000000001',true,NULL,0)"));
+  assert.ok(regression.includes('is_union AND chip_treasury=0 AND promo_balance=0'));
 });

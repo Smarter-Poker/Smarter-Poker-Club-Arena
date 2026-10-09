@@ -15,6 +15,7 @@ const opening = 'leaderboard-promo-opening-candidate.mjs';
 const adapter = 'leaderboard-capture-payout-fixture-candidate.mjs';
 const repairDiagnostics = 'leaderboard-repair-financial-diagnostics.mjs';
 const consolidated = 'leaderboard-consolidated-migration-candidate.mjs';
+const registryFixture = 'leaderboard-isolated-money-registry-candidate.sql';
 const postimage = 'leaderboard-consolidated-postimage-candidate.sql';
 const compatibility = 'leaderboard-capture-basis-regression-candidate.sql';
 const openingFixture = 'leaderboard-isolated-opening-policy-draft.sql';
@@ -29,27 +30,28 @@ const unknownAckBaseline = 'leaderboard-unknown-ack-draft.sh';
 const unknownAckProxy = 'leaderboard-unknown-ack-proxy-draft.mjs';
 // Freeze receipts are reviewed whole-input bytes, not runtime qualification.
 const reviewed = Object.freeze({
-  [auth]: 'c014b653863a6427dae7e97dfcac69a09aa903cff85bda114f8a37fcb7bbad92',
+  [registryFixture]: '29a49441ee210f1954a8f80231e69da40e4b7b0e7d7aa388bf8a03d29f97bbae',
+  [auth]: '93bfc3e5aea54a901f1861f2d450da4f5fe3d1d74c595d89ffb5de102ebd2ac5',
   [capture]: 'd942ae27470d77666f1209a82dd137fe630d2af431f1babc03d444462a9502bc',
   [ranking]: '63a92bb2e01298dab850ddd15f65ce71742bdcbe24084007beee213b579ba1dc',
   [payout]: '18ffcc9db372bc49d83e37cb42a812ddc919532807af1444678524d7cb4ba8df',
   [config]: '5c81d18b10cea37854d8bb84f0453cd76c00d9da082bf0f890abc33ab6d8f2bd',
   [opening]: 'ec53053f330856156395c4f0c95ee94e4950c34e8f6ea4047b35fe2fd7bb78b3',
-  [adapter]: 'c42b0620d6c05d69fc5589e3bd8c89f0305186e347a668f3ae9ae9f432812953',
-  [repairDiagnostics]: 'd449d4108207a44e665752369aee24bd1a7b0663078274b8a98a3c0e27e9912b',
+  [adapter]: 'd801fd7f384fd08af79d053b37dbc4213b95afac8e64ad77bc1575440ed1e52b',
+  [repairDiagnostics]: 'e7bd941f04b26e37aab707c21961380981e508444163ebe853cfd8c3ef730c4e',
   [consolidated]: '3142633c836966b32234cb7606d4e5c8d79f11b18fa75017e6d1ef80843e9807',
   [postimage]: '0212896886873d10c9dc073865f13e544f496e8d38a5e924ab1d3f41e7277f1c',
-  [compatibility]: 'a1654508e9a44b849d6ccd67afed6173fe50300488b232e8c028c82ff8f06e6e',
+  [compatibility]: 'a99e7349bc874a638e5b770ed476401afae7681c6486c94f16b3f35798f627c8',
   [openingFixture]: '40ec7d17deda73f27cad1706f44f212288d7781767eabb1c2d05258c3e622047',
-  [workerFixture]: '2dada967cdb8bff98c8f8904f3b4d99e0a64eb67eba76a0ff4787236a92d4163',
-  [historicalFixture]: '686ceb495005478eb6b44efdabee0e3f666c1fc7d23b45cc04f1d84d0ed688ab',
+  [workerFixture]: 'd5cb172e483c218aa9948617cb8e34e0ce1a58ee86bb0551d5afa9e5c927f0c6',
+  [historicalFixture]: '328041783ef2cc2f3683aa9d058f6b65484198559c9c90649d2d69015bca5313',
   [concurrencyFixture]: 'c2057bbbbb9b08c860ac82cf02e98171ff9188ab36694dcb672f1abd3f37ed41',
-  [completeFixtureAdapter]: 'a34d0e22319530580af03e45c3c22dbd0879d95ea7d00a44948cdb1bd5805b38',
-  [concurrencyAdapter]: '7774fefd0ae702fdb597d29163a8f3f63d97d44db61d4a4d7db44c8bcc6cfef5',
-  [unknownAckAdapter]: '21ae62940a2f2d1933179e47e5c21abf53e544c57514f83b2058273ea5fbf997',
-  [concurrencyBaseline]: 'bc53be816d77e89d04c25602e3d8dc12fe6cecfe853d02f08f5663ccda0b2192',
-  [unknownAckBaseline]: '9d9bbbf814dcf7f8badf68c5b6325782f304c06dcf38231e4035192b31684f9c',
-  [unknownAckProxy]: 'd94d01708225596d90d2ee892d2634d995078cc1d6f7ac604fae9e56ac8227b5',
+  [completeFixtureAdapter]: '7e8e9b3c7aa82b0633c1b8333aafe5e89262ca9a70cdeb38935e99d43e55b94f',
+  [concurrencyAdapter]: '6a77e9fcda3ff48e82dcced76ca8c72be0417cd201b5d06b5ce50291d30bf173',
+  [unknownAckAdapter]: '0a74d1b10c4b90fbe3fb85d9838ba48765fc93385d057fa47c8a30dda5675913',
+  [concurrencyBaseline]: 'c734ab9c039bd926a4b854177ea76729d825a57df45506b11ac67a59b57723ea',
+  [unknownAckBaseline]: 'd4184e26cb9ad08d63e49dabd8d1fac41d68974544ba88280d8766f37f1f3272',
+  [unknownAckProxy]: '9c50efe5eeb70066d66abfd6c3aedf13867763df6b2818aa76a173048bc1701c',
 });
 const modes = Object.freeze({
   'v2-payout': [
@@ -160,7 +162,7 @@ export function buildFinancialRepairCandidate(source, mode, readInput = readRepa
   assert.equal(hash(source), preflightHash, 'Reviewed maintained preflight changed');
   assert.ok(Object.hasOwn(modes, mode), 'Exactly one reviewed candidate mode required');
   const selectedInputs =
-    mode === 'capture-compatibility' ? modes[mode] : [...modes[mode], postimage];
+    mode === 'capture-compatibility' ? modes[mode] : [...modes[mode], postimage, registryFixture];
   for (const name of selectedInputs) {
     const input = readInput(name);
     assert.equal(hash(input), reviewed[name], `Reviewed candidate input changed: ${name}`);
@@ -172,7 +174,8 @@ export function buildFinancialRepairCandidate(source, mode, readInput = readRepa
       name === postimage
     )
       transaction(input, 'ROLLBACK');
-    if (name === capture || name === concurrencyFixture) transaction(input, 'COMMIT');
+    if (name === capture || name === concurrencyFixture || name === registryFixture)
+      transaction(input, 'COMMIT');
   }
   function once(anchor, replacement) {
     assert.equal(source.split(anchor).length, 2, 'Unique maintained boundary changed');
@@ -322,7 +325,9 @@ cat "$scratch/repair-authorization.sql" "$here/${openingFixture}" >"$scratch/rep
       splitInstall,
       [invoke('consolidated'), invoke('postimage')].join('\n')
     );
-    preparation += `\nprintf '%s\\n' 'SET ROLE postgres;' >"$scratch/repair-consolidated.sql" || failure 'consolidated owner preparation failed'
+    invocation = invoke('registry') + '\n' + invocation;
+    preparation += `\ncp "$here/${registryFixture}" "$scratch/repair-registry.sql" || failure 'registry private input preparation failed'
+printf '%s\\n' 'SET ROLE postgres;' >"$scratch/repair-consolidated.sql" || failure 'consolidated owner preparation failed'
 node "$here/${consolidated}" >>"$scratch/repair-consolidated.sql" || failure 'exact consolidated migration preparation refused'
 printf '%s\\n' 'RESET ROLE;' >>"$scratch/repair-consolidated.sql" || failure 'consolidated owner reset preparation failed'
 [[ "$(tail -n 1 "$here/${postimage}")" == 'ROLLBACK;' && "$(grep -c '^ROLLBACK;$' "$here/${postimage}")" == 1 ]] || failure 'postimage terminal boundary changed'
@@ -336,8 +341,8 @@ ${checks}
 ${preparation}
 chmod 600 "$scratch"/repair-*.sql || failure 'private candidate input permissions unavailable'
 repair_sql() {
-  local stage="$1" input="$2" status state='unknown' line
-  if timeout 180 docker exec -i "$container" psql -h /tmp -XAtq -U "$bootstrap" -d postgres -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate <"$input" >"$scratch/repair-$stage.log" 2>&1; then
+  local stage="$1" input="$2" status state='unknown' input_line='unknown' line error_pattern='^psql:<stdin>:([0-9]{1,6}):[[:space:]](ERROR|FATAL|PANIC):[[:space:]]+([0-9A-Z]{5})[[:space:]]*$'
+  if timeout 180 docker exec -i "$container" psql -h /tmp -XAtq -U "$bootstrap" -d postgres -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate --file=- <"$input" >"$scratch/repair-$stage.log" 2>&1; then
 ${
   mode === 'v2-payout' || mode === 'opening'
     ? `    if [[ "$stage" == fixture ]]; then
@@ -357,9 +362,13 @@ ${
 }
     # Bounded private read; never expose arbitrary SQL, identifiers or values.
     while IFS= read -r line; do
-      if [[ "$line" =~ ^(ERROR|FATAL|PANIC):[[:space:]]+([0-9A-Z]{5})[[:space:]]*$ ]]; then state="\${BASH_REMATCH[2]}"; break; fi
+      if [[ "$line" =~ $error_pattern ]]; then
+        input_line="\${BASH_REMATCH[1]}"; state="\${BASH_REMATCH[3]}"; break
+      elif [[ "$line" =~ ^(ERROR|FATAL|PANIC):[[:space:]]+([0-9A-Z]{5})[[:space:]]*$ ]]; then
+        state="\${BASH_REMATCH[2]}"; break
+      fi
     done < <(head -c 65536 "$scratch/repair-$stage.log")
-    printf 'Isolated Candidate Failure: Mode=%s Stage=%s SQLSTATE=%s Exit=%s\\n' '${mode}' "$stage" "$state" "$status" >&2
+    printf 'Isolated Candidate Failure: Mode=%s Stage=%s SQLSTATE=%s InputLine=%s Exit=%s\\n' '${mode}' "$stage" "$state" "$input_line" "$status" >&2
     failure 'isolated candidate assertions or installation failed'
   fi
 }

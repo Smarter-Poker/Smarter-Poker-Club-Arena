@@ -222,3 +222,91 @@ test('payout verdicts never store arbitrary exception messages; driver receipts 
     assert.match(driver, /diagnostic_stage='own_cleanup'/);
   }
 });
+
+test('financial fixture service writers retain an existing synthetic journal actor in every session', () => {
+  for (const name of [
+    'leaderboard-isolated-funding-policy-draft.sql',
+    'leaderboard-capture-payout-fixture-candidate.mjs',
+    'leaderboard-isolated-payout-regression-draft.sql',
+    'leaderboard-isolated-historical-replay-candidate.sql',
+    'leaderboard-isolated-worker-regression-candidate.sql',
+    'leaderboard-isolated-concurrency-draft.sh',
+    'leaderboard-unknown-ack-draft.sh',
+  ]) {
+    const input = readFinancialDraft(name);
+    const writers = [
+      ...input.matchAll(
+        /(?:PERFORM|SELECT) set_config\('request.jwt.claims','([^']+)',true\);\n\s*(?:PERFORM|SELECT) set_config\('request.jwt.claim.sub','([^']*)',true\);\n\s*(?:PERFORM|SELECT) set_config\('request.jwt.claim.role','service_role',true\);/g
+      ),
+    ];
+    assert.ok(writers.length > 0, `No service writer checked: ${name}`);
+    for (const writer of writers) {
+      assert.deepEqual(
+        JSON.parse(writer[1]),
+        {
+          sub: '90000000-0000-4000-8000-000000000001',
+          role: 'service_role',
+        },
+        name
+      );
+      assert.equal(writer[2], '90000000-0000-4000-8000-000000000001', name);
+    }
+    assert.doesNotMatch(
+      input,
+      /set_config\('request.jwt.claims','\{"role":"service_role"\}',true\)/,
+      name
+    );
+  }
+  assert.match(
+    readFinancialDraft('leaderboard-isolated-funding-policy-draft.sql'),
+    /set_config\('request.jwt.claims','\{"role":"anon"\}',true\);\n\s*PERFORM set_config\('request.jwt.claim.sub','',true\)/
+  );
+});
+
+test('authorization is validated before companion doors regain deferred transaction checks', () => {
+  const auth = readFileSync(
+    new URL('./leaderboard-isolated-authorization-draft.sql', import.meta.url),
+    'utf8'
+  );
+  assert.match(
+    auth,
+    /SET CONSTRAINTS ALL IMMEDIATE;[\s\S]*SET CONSTRAINTS ALL DEFERRED;\nROLLBACK;\n$/
+  );
+  assert.equal(auth.match(/^SET CONSTRAINTS ALL DEFERRED;$/gm)?.length, 1);
+  for (const name of [
+    'leaderboard-isolated-payout-regression-draft.sql',
+    'leaderboard-isolated-funding-policy-draft.sql',
+    'leaderboard-isolated-concurrency-fixture-draft.sql',
+    'leaderboard-isolated-opening-policy-draft.sql',
+  ]) {
+    const companion = readFileSync(new URL(`./${name}`, import.meta.url), 'utf8');
+    assert.match(companion, /SET CONSTRAINTS ALL IMMEDIATE;\n(?:ROLLBACK|COMMIT);\n$/);
+  }
+});
+
+test('union shortage uses the maintained Promo transfer and reconciles independent stores', () => {
+  const funding = readFinancialDraft('leaderboard-isolated-funding-policy-draft.sql');
+  const begin = funding.indexOf("stage:='actual_shortage_transition';");
+  const end = funding.indexOf('before_state:=pg_temp.lb_funding_digest();', begin);
+  const shortage = funding.slice(begin, end);
+  assert.ok(
+    shortage.includes("fn_union_promo_send(funding_union,20,'club',club,shortage_op,owner,")
+  );
+  assert.ok(shortage.includes('SET LOCAL ROLE service_role;'));
+  assert.ok(shortage.includes("fn_promo_disburse('club',club,'player',player,20,"));
+  for (const evidence of [
+    'club_promo_before+20',
+    'club_bank_before',
+    'shortage_bank',
+    'shortage_player',
+    'correlation_id=shortage_op',
+    "from_label='union_wallets.promo_wallet'",
+    "to_label='clubs.promo_balance'",
+    'period_id=shortage_op',
+    'balance_after=0',
+    "tx_type='promo_to_club'",
+  ]) {
+    assert.ok(shortage.includes(evidence), evidence);
+  }
+  assert.doesNotMatch(shortage, /UPDATE|DELETE|DISABLE TRIGGER|SET CONSTRAINTS/);
+});

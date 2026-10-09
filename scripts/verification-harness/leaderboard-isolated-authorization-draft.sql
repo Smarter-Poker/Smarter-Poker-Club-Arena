@@ -117,14 +117,18 @@ VALUES ('90000000-0000-4000-8000-000000000001', 'Isolated authorization fixture'
 INSERT INTO public.unions (id, name, owner_id, slug)
 VALUES ('91000000-0000-4000-8000-000000000001', 'Isolated Leaderboard Union',
         '90000000-0000-4000-8000-000000000001', 'isolated-leaderboard-union');
+-- Create each club in its own statement: the intact BEFORE seeder declares
+-- one consume-once journal key, which its AFTER autoledger must use before
+-- another club's seeder can replace it. Keep all three in this transaction.
 INSERT INTO public.clubs (id, name, owner_id, is_union, union_id, chip_treasury)
-VALUES
- ('91000000-0000-4000-8000-000000000001', 'Isolated Union House',
-  '90000000-0000-4000-8000-000000000001', true, NULL, 0),
- ('92000000-0000-4000-8000-000000000001', 'Isolated Affiliate',
-  '90000000-0000-4000-8000-000000000003', false, NULL, 0),
- ('92000000-0000-4000-8000-000000000002', 'Isolated Standalone',
-  '90000000-0000-4000-8000-000000000002', false, NULL, 0);
+VALUES ('91000000-0000-4000-8000-000000000001', 'Isolated Union House',
+        '90000000-0000-4000-8000-000000000001', true, NULL, 0);
+INSERT INTO public.clubs (id, name, owner_id, is_union, union_id, chip_treasury)
+VALUES ('92000000-0000-4000-8000-000000000001', 'Isolated Affiliate',
+        '90000000-0000-4000-8000-000000000003', false, NULL, 0);
+INSERT INTO public.clubs (id, name, owner_id, is_union, union_id, chip_treasury)
+VALUES ('92000000-0000-4000-8000-000000000002', 'Isolated Standalone',
+        '90000000-0000-4000-8000-000000000002', false, NULL, 0);
 DO $opening_balances$
 BEGIN
   IF (SELECT chip_treasury FROM public.clubs WHERE id='91000000-0000-4000-8000-000000000001') IS DISTINCT FROM 0
@@ -288,4 +292,8 @@ $matrix$;
 
 -- No success verdict until real execution and deferred constraint validation.
 SET CONSTRAINTS ALL IMMEDIATE;
+-- Companion financial doors need the normal deferred transaction boundary.
+-- Validate authorization first, then let the companion validate its complete
+-- balance/journal write before its own final IMMEDIATE check or COMMIT.
+SET CONSTRAINTS ALL DEFERRED;
 ROLLBACK;

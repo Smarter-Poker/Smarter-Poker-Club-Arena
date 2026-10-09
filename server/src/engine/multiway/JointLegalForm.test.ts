@@ -19,8 +19,8 @@
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 /** Phase 13's earlier-phase law needs an applied Phase 12 change on a spot
- * where the joint policy fires. Round 3 changes Short Deck only in declared
- * preflop spots, so the test that needs it turns this on: an eligible
+ * where the joint policy fires. Round 3 changes Short Deck and FLO8 only in
+ * declared preflop spots, so the test that needs it turns this on: an eligible
  * postflop Phase 12 proposal becomes the other legal passive action (a fold
  * against a bet, a check instead of a bet), as a pack that changed that
  * decision would. Off everywhere else. */
@@ -265,10 +265,12 @@ describe('P13.1 a Phase 13 candidate never acts on top of an applied earlier-pha
     (variant) => {
       pinDeckEntropy(0x13e00000 ^ variant.length);
       let refused = 0;
-      // Round 3 changes Short Deck only in declared preflop spots, where no
-      // Short Deck joint decision fires, so its applied Phase 12 change is
-      // made on postflop spots here (p12PostflopChange above).
-      p12PostflopChange.on = variant === 'short_deck';
+      // Round 3 changes Short Deck and FLO8 only in declared preflop spots.
+      // In these spots no such change meets a firing joint decision with a
+      // different proposal (FLO8 found none in 20 hands once #6517 merged,
+      // which turned this test red on main), so the applied Phase 12 change
+      // is made on postflop spots here for both (p12PostflopChange above).
+      p12PostflopChange.on = true;
       onTestFinished(() => {
         p12PostflopChange.on = false;
       });

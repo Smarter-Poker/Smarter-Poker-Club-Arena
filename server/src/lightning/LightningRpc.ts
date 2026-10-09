@@ -413,6 +413,27 @@ export async function lightningIntegrityReport(
   });
 }
 
+/**
+ * LIGHTNING PHASE 12: `fn_lightning_latency_report(p_cluster_id uuid,
+ * p_window_from timestamptz, p_window_to timestamptz, p_legs jsonb)`,
+ * service_role only. Idempotent per (cluster, window_from); the same body
+ * again replays, a different body answers IDEMPOTENCY_CONFLICT. The caller
+ * passes ONE frozen argument object and reuses it verbatim on every retry
+ * (LightningLatencyLedger), so a retry can only ever replay.
+ */
+export async function lightningLatencyReport(
+  rpc: LightningRpcClient,
+  args: {
+    readonly p_cluster_id: string;
+    readonly p_window_from: string;
+    readonly p_window_to: string;
+    readonly p_legs: Readonly<Record<string, unknown>>;
+  }
+): Promise<LightningRpcOutcome<unknown>> {
+  if (!isUuid(args.p_cluster_id)) return { status: 'invalid', reason: 'cluster_id_invalid' };
+  return call(rpc, 'fn_lightning_latency_report', args as unknown as Record<string, unknown>);
+}
+
 /** Counts by state and the most frequent block reasons: what a shadow pass records. */
 export interface LightningDiagnosisSummary {
   players: number;

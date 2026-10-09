@@ -78,9 +78,11 @@ export function useLightningPoolHealth(
 
 /**
  * LIGHTNING PHASE 10: the Cluster's auto-rebuy status, read once when the
- * Session panel opens (never a poll). `null` means it cannot be said - the
- * function absent (deploy window), not granted, or unreadable - and the
- * status line is simply not shown.
+ * Session panel opens (never a poll). LIGHTNING PHASE 12: it comes from
+ * fn_lightning_pool_status (`auto_rebuy`), the authenticated door - the
+ * browser never asks fn_lightning_config. `null` means it cannot be said -
+ * the function absent (deploy window), an older payload, or unreadable - and
+ * the status line is simply not shown.
  */
 export function useLightningAutoRebuyStatus(
   clusterId: string | null,

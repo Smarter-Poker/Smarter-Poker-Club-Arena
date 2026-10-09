@@ -14,8 +14,10 @@
  *
  *   fn_lightning_stop_playing(p_cluster_id)  the responsible-gaming door: the
  *     caller stops after the current hand; the database ends the session
- *   fn_lightning_config(p_cluster_id)        read here only for the
- *     auto-rebuy keys the operator configured (a read-only status line)
+ *   fn_lightning_pool_status(p_cluster_id).auto_rebuy  LIGHTNING PHASE 12:
+ *     the auto-rebuy status line (the operator's configuration and the
+ *     caller's own use of it). fn_lightning_config is service_role only and
+ *     is never read from the browser.
  *
  * Every answer is parsed defensively here: a field that is missing or not a
  * number is "not known" (null), never a guess and never a zero that would
@@ -210,6 +212,11 @@ export interface LightningPoolHealth {
   joinable: boolean | null;
   /** The Cluster's configured per-device limits; null when the payload has none. */
   multiTableLimit: LightningMultiTableLimits | null;
+  /**
+   * LIGHTNING PHASE 12: the `auto_rebuy` object (20261009143757); null when
+   * the payload predates it or carries none.
+   */
+  autoRebuy: LightningAutoRebuyStatus | null;
 }
 
 const POOL_STATUSES: readonly LightningPoolStatus[] = ['BUILDING', 'ACTIVE', 'HOT', 'THIN'];
@@ -238,6 +245,7 @@ export function parseLightningPoolHealth(raw: unknown): LightningPoolHealth | nu
     status: status as LightningPoolStatus,
     joinable: typeof row.joinable === 'boolean' ? row.joinable : null,
     multiTableLimit: parseMultiTableLimit(row.multi_table_limit),
+    autoRebuy: parseLightningAutoRebuyStatus(row.auto_rebuy),
   };
 }
 
@@ -392,8 +400,16 @@ export const LIGHTNING_STOP_FINISHING_TEXT = 'Finishing Current Hand...';
 export const LIGHTNING_STOP_STOPPING_TEXT = 'Stopping...';
 export const LIGHTNING_STOP_UNAVAILABLE_TEXT = 'Stop Playing Is Not Available Right Now.';
 
-// ─── The auto-rebuy status (fn_lightning_config, read-only) ────────────────
+// ─── The auto-rebuy status (fn_lightning_pool_status.auto_rebuy) ───────────
 
+/**
+ * LIGHTNING PHASE 12: the `auto_rebuy` object fn_lightning_pool_status
+ * answers (migration 20261009143757): `{enabled, trigger, threshold_bb,
+ * threshold_pct, target, max_count, session_cap, used_count, used_total}`.
+ * The configuration is the operator's, clamped by fn_lightning_config; the
+ * `used_*` pair is the caller's own open session in that Cluster (null when
+ * the caller has none).
+ */
 export interface LightningAutoRebuyStatus {
   enabled: boolean;
   /** The migration's enum: when the stack is gone, under N BB, or under N%. */
@@ -403,50 +419,61 @@ export interface LightningAutoRebuyStatus {
   /** Refill to the initial buy-in, or to the table maximum. */
   target: 'initial' | 'max';
   maxCount: number | null;
+  /** The per-session chip cap; null when uncapped (0). */
+  sessionCap: number | null;
+  /** The caller's own rebuys this session, and their total; null without a session. */
+  usedCount: number | null;
+  usedTotal: number | null;
 }
 
 export function parseLightningAutoRebuyStatus(raw: unknown): LightningAutoRebuyStatus | null {
   const row = objectOf(raw);
-  if (!row) return null;
-  const rawTrigger =
-    typeof row.auto_rebuy_trigger === 'string' ? row.auto_rebuy_trigger.trim().toLowerCase() : '';
+  if (!row || typeof row.enabled !== 'boolean') return null;
+  const rawTrigger = typeof row.trigger === 'string' ? row.trigger.trim().toLowerCase() : '';
   const trigger =
     rawTrigger === 'below_bb' || rawTrigger === 'below_pct'
       ? (rawTrigger as 'below_bb' | 'below_pct')
       : ('zero' as const);
   const target =
-    typeof row.auto_rebuy_target === 'string' &&
-    row.auto_rebuy_target.trim().toLowerCase() === 'max'
+    typeof row.target === 'string' && row.target.trim().toLowerCase() === 'max'
       ? ('max' as const)
       : ('initial' as const);
   const positive = (v: unknown) => {
     const n = num(v);
     return n !== null && n > 0 ? n : null;
   };
+  const count = (v: unknown) => {
+    const n = num(v);
+    return n !== null && n >= 0 ? n : null;
+  };
   return {
-    enabled: row.auto_rebuy_enabled === true,
+    enabled: row.enabled,
     trigger,
-    thresholdBb: positive(row.auto_rebuy_threshold_bb),
-    thresholdPct: positive(row.auto_rebuy_threshold_pct),
+    thresholdBb: positive(row.threshold_bb),
+    thresholdPct: positive(row.threshold_pct),
     target,
-    maxCount: positive(row.auto_rebuy_max_count),
+    maxCount: positive(row.max_count),
+    sessionCap: positive(row.session_cap),
+    usedCount: count(row.used_count),
+    usedTotal: count(row.used_total),
   };
 }
 
 /**
- * The Cluster's auto-rebuy configuration, for the read-only status line.
- * `null` means it cannot be said right now (function absent, not granted, or
- * unreadable) and the line is simply not shown; this read never throws.
+ * The Cluster's auto-rebuy status, for the read-only status line, from the
+ * authenticated pool-status door. `null` means it cannot be said right now
+ * (function absent, an older payload, or unreadable) and the line is simply
+ * not shown; this read never throws.
  */
 export async function fetchLightningAutoRebuyStatus(
   clusterId: string
 ): Promise<LightningAutoRebuyStatus | null> {
   try {
-    const { data, error } = await supabase.rpc('fn_lightning_config', {
+    const { data, error } = await supabase.rpc('fn_lightning_pool_status', {
       p_cluster_id: clusterId,
     });
     if (error) return null;
-    return parseLightningAutoRebuyStatus(data);
+    return parseLightningAutoRebuyStatus(objectOf(data)?.auto_rebuy);
   } catch {
     return null;
   }
@@ -465,7 +492,11 @@ export function lightningAutoRebuyText(status: LightningAutoRebuyStatus): string
     when = 'When Out Of Chips';
   }
   const detail = when ? ` (${when} → ${target})` : '';
-  return `Auto-Rebuy: On${detail}`;
+  const used =
+    status.usedCount !== null && status.maxCount !== null
+      ? `, ${Number(status.usedCount)} Of ${Number(status.maxCount)} Used`
+      : '';
+  return `Auto-Rebuy: On${detail}${used}`;
 }
 
 // ─── Words and numbers the panels print ────────────────────────────────────

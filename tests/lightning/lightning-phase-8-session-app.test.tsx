@@ -387,6 +387,8 @@ describe('parsing the Lightning session RPCs', () => {
       players: 12,
       joinable: null,
       multiTableLimit: null,
+      // Lightning Phase 12: no auto_rebuy object in an older payload.
+      autoRebuy: null,
     });
     // The migrated shape: the database's own verdict and configured limits.
     expect(
@@ -401,6 +403,7 @@ describe('parsing the Lightning session RPCs', () => {
       players: 7,
       joinable: true,
       multiTableLimit: { desktop: 6, tablet: 4 },
+      autoRebuy: null,
     });
     expect(parseLightningPoolHealth({ status: 'THIN', players: 1, joinable: false })).toMatchObject(
       { joinable: false, multiTableLimit: null }

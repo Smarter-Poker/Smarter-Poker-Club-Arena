@@ -57,6 +57,56 @@ export interface LightningConfig {
    * Absent (an older caller, a test) is off: nothing is computed or sent.
    */
   shadow?: LightningShadowConfig;
+  /**
+   * LIGHTNING PHASE 12: the action-latency ledger (fn_lightning_latency_report).
+   * Absent (an older caller, a test) is off: nothing is aggregated or sent.
+   */
+  latency?: LightningLatencyConfig;
+}
+
+/**
+ * LIGHTNING PHASE 12 (spec ACTION LATENCY TELEMETRY). `latency_telemetry`
+ * defaults ON, and is inert without Lightning traffic: a window with no
+ * sample sends nothing. The ledger only measures; nothing reads it back.
+ */
+export interface LightningLatencyConfig {
+  /** `latency_telemetry`: aggregate each leg per window and report it. */
+  enabled: boolean;
+  /** `latency_window_ms`: one report per Cluster per window (the DB's clamp, 10000..600000). */
+  windowMs: number;
+}
+
+export const LIGHTNING_LATENCY_WINDOW_DEFAULT_MS = 60_000;
+export const LIGHTNING_LATENCY_WINDOW_MIN_MS = 10_000;
+export const LIGHTNING_LATENCY_WINDOW_MAX_MS = 600_000;
+
+/**
+ * Parse the Phase 12 latency keys exactly as fn_lightning_config does: only a
+ * JSON boolean false turns the ledger off (anything else non-boolean is the
+ * default, on), and the window is an integer clamped to 10000..600000.
+ * Never throws.
+ */
+export function parseLightningLatencyConfig(raw: unknown): LightningLatencyConfig {
+  const row =
+    raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  return {
+    enabled: row.latency_telemetry !== false,
+    windowMs: readInteger(
+      row.latency_window_ms,
+      LIGHTNING_LATENCY_WINDOW_DEFAULT_MS,
+      LIGHTNING_LATENCY_WINDOW_MIN_MS,
+      LIGHTNING_LATENCY_WINDOW_MAX_MS
+    ),
+  };
+}
+
+export function sameLightningLatencyConfig(
+  a: LightningLatencyConfig | undefined,
+  b: LightningLatencyConfig | undefined
+): boolean {
+  return (
+    (a?.enabled ?? false) === (b?.enabled ?? false) && (a?.windowMs ?? 0) === (b?.windowMs ?? 0)
+  );
 }
 
 /**
@@ -330,6 +380,7 @@ export function parseLightningConfig(raw: unknown): LightningConfig {
     ),
     autoRebuy: parseLightningAutoRebuyConfig(raw),
     shadow: parseLightningShadowConfig(raw),
+    latency: parseLightningLatencyConfig(raw),
   };
 }
 
@@ -343,6 +394,7 @@ export function sameLightningConfig(a: LightningConfig, b: LightningConfig): boo
     a.maxHandsPerPass === b.maxHandsPerPass &&
     a.dealWindowMs === b.dealWindowMs &&
     sameLightningAutoRebuyConfig(a.autoRebuy, b.autoRebuy) &&
-    sameLightningShadowConfig(a.shadow, b.shadow)
+    sameLightningShadowConfig(a.shadow, b.shadow) &&
+    sameLightningLatencyConfig(a.latency, b.latency)
   );
 }

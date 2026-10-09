@@ -3410,6 +3410,12 @@ export class GameServer {
     // Ended pool sessions: their rooms' sockets are closed (every 5 s).
     sweepRooms: () => this.lightningRooms.sweepEndedRooms(),
   });
+  /* Lightning Phase 12 (surge protection): a room's first socket is a player
+     arriving in the pool, so their Cluster's worker forms within the admission
+     window instead of up to a pass interval later. */
+  private readonly lightningArrivalWired = this.lightningRooms.setArrivalListener((clusterId) =>
+    this.lightningSupervisor.admit(clusterId)
+  );
   private tournamentRecurring = new TournamentRecurringService();
   // Data-driven recurring schedules (tournament_schedules) - runs alongside the
   // hardcoded recurring blocks, acting only on rows written into the database.

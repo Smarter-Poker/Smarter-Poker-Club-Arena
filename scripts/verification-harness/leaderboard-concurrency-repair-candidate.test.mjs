@@ -72,3 +72,25 @@ test('unknown actual COMMIT quarantine, durable journal readback, client ownersh
     buildConcurrencyRepairCandidate(read('leaderboard-isolated-concurrency-draft.sh') + '\n')
   );
 });
+
+test('unknown-ack executable uses the reviewed glibc image and still checks actual target compatibility', () => {
+  const baseline = read('leaderboard-unknown-ack-draft.sh');
+  assert.ok(
+    baseline.includes(
+      'node@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392'
+    )
+  );
+  assert.doesNotMatch(baseline, /0a7108bf6c7bf5de/);
+  assert.ok(baseline.includes('"$isolated_node" --version'));
+  assert.ok(
+    baseline.indexOf('"$isolated_node" --version') <
+      baseline.indexOf("diagnostic_stage='quarantine'")
+  );
+  for (const marker of [
+    '--network none',
+    'leaderboard.unknownack.owner=',
+    'cleanup_node_source',
+    'false|none',
+  ])
+    assert.ok(baseline.includes(marker));
+});

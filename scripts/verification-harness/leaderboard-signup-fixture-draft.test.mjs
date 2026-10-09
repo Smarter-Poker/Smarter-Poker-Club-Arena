@@ -39,3 +39,19 @@ test('template boundary duplication or body drift refuses generation', () => {
   assert.throws(() => generateFixture(ids, source.replace('300000, 1, 1', '300001, 1, 1')));
   assert.throws(() => generateFixture(ids, source + '\nDO $matrix$'));
 });
+
+test('actual signup and all financial actors use the existing certification domain', () => {
+  const sql = generateFixture(ids);
+  for (let i = 1; i <= 5; i++) assert.ok(sql.includes(`lb-real-auth-${i}@smarter-poker.invalid`));
+  for (const file of [
+    'leaderboard-real-auth-launcher-draft.mjs',
+    'leaderboard-real-auth-draft.mjs',
+    'leaderboard-isolated-authorization-draft.sql',
+  ]) {
+    const text = readFileSync(new URL(`./${file}`, import.meta.url), 'utf8');
+    assert.ok(text.includes('@smarter-poker.invalid'), file);
+    assert.ok(!text.includes('@example.invalid'), file);
+  }
+  assert.match(sql, /SELECT count\(\*\) FROM public\.profiles\) <> 5/);
+  assert.match(sql, /EXISTS \(SELECT 1 FROM public\.signup_errors\)/);
+});

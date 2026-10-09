@@ -5,6 +5,7 @@ import test from 'node:test';
 import {
   authCommandFailure,
   authFailureDiagnostic,
+  authSqlFailureDiagnostic,
 } from './leaderboard-real-auth-launcher-draft.mjs';
 import { assertExpiredCredential } from './leaderboard-real-auth-draft.mjs';
 
@@ -106,4 +107,21 @@ test('Auth process result refuses timeout even after a zero process exit', () =>
   assert.equal(authCommandFailure({ status: 0, error: { code: 'EIO' } }), 'docker-exit');
   assert.match(launcher, /'pg_ctl',[\s\S]*?'-l',\s*'\/tmp\/postgres\.log'/);
   assert.match(launcher, /const failed = authCommandFailure\(result\)/);
+});
+
+test('SQL diagnostics redact arbitrary output and reveal only closed fixture stages and SQLSTATE', () => {
+  assert.equal(
+    authSqlFailureDiagnostic({
+      stdout: 'ISOLATED_AUTH_FIXTURE_STAGE=identity-guard\n',
+      stderr: 'ERROR:  P0001\n',
+    }),
+    'Isolated Auth SQL Failure: fixture=identity-guard; sqlstate=P0001'
+  );
+  const privateValue = 'postgres://private-user:private-password@private-host';
+  const out = authSqlFailureDiagnostic({
+    stdout: `ISOLATED_AUTH_FIXTURE_STAGE=${privateValue}\n`,
+    stderr: privateValue,
+  });
+  assert.equal(out, 'Isolated Auth SQL Failure: fixture=unknown; sqlstate=unknown');
+  assert.match(launcher, /'VERBOSITY=sqlstate'/);
 });

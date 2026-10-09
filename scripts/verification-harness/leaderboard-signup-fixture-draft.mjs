@@ -34,8 +34,19 @@ export function generateFixture(ids, template = readFileSync(source, 'utf8')) {
   assert.ok(!/90000000-0000-4000-8000-/.test(section));
   assert.ok(!/\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+auth\./i.test(section));
   assert.ok(!/fn_save_leaderboard|fn_publish_leaderboard|\$matrix\$/i.test(section));
+  for (const [anchor, stage] of [
+    ['DO $mint_policy$', 'mint-policy'],
+    ['INSERT INTO public.union_creators', 'union-create'],
+    ['INSERT INTO public.clubs', 'club-create'],
+    ['DO $retire$', 'opening-retirement'],
+    ['INSERT INTO public.union_clubs', 'union-link'],
+    ['DO $membership$', 'memberships'],
+  ]) {
+    assert.equal(section.split(anchor).length, 2);
+    section = section.replace(anchor, `\\echo ISOLATED_AUTH_FIXTURE_STAGE=${stage}\n${anchor}`);
+  }
   const values = ids
-    .map((id, index) => `('${id}'::uuid,'lb-real-auth-${index + 1}@example.invalid')`)
+    .map((id, index) => `('${id}'::uuid,'lb-real-auth-${index + 1}@smarter-poker.invalid')`)
     .join(',\n');
   return (
     `-- UNQUALIFIED SYNTHETIC FIXTURE. Never run against production.\n` +
@@ -45,6 +56,7 @@ SET LOCAL statement_timeout='30s';
 SET LOCAL lock_timeout='5s';
 CREATE TEMP TABLE signup_fixture_identity(id uuid PRIMARY KEY,email text UNIQUE);
 INSERT INTO signup_fixture_identity VALUES ${values};
+\\echo ISOLATED_AUTH_FIXTURE_STAGE=identity-guard
 DO $guard$
 BEGIN
  IF session_user <> 'leaderboard_qualification_bootstrap'
@@ -69,6 +81,7 @@ $guard$;
 ` +
     section +
     `
+\\echo ISOLATED_AUTH_FIXTURE_STAGE=constraints
 SET CONSTRAINTS ALL IMMEDIATE;
 -- Explicit committed SYNTHETIC state is needed across separate HTTP requests.
 -- Only an already-qualified owned disposable runtime may execute this file.

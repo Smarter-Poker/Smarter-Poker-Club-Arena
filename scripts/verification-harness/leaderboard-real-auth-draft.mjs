@@ -58,7 +58,7 @@ async function main() {
   assert.match(cfg.preflight.restImage, /^postgrest\/postgrest@sha256:[a-f0-9]{64}$/);
   assert.equal(cfg.accounts.length, 5);
   for (const [index, account] of cfg.accounts.entries()) {
-    assert.equal(account.email, `lb-real-auth-${index + 1}@example.invalid`);
+    assert.equal(account.email, `lb-real-auth-${index + 1}@smarter-poker.invalid`);
     assert.ok(account.password.length >= 20);
   }
   const auth = 'http://leaderboard-auth:9999';

@@ -21,6 +21,7 @@
  * image, a missing font - by returning null, and Share falls back to the text.
  */
 
+import { arenaDisplayText } from '../../lib/arenaDisplay/text';
 import { APP_BASE_URL } from '../../lib/appBase';
 import { TROPHY_PATHS, type ShareTier } from './rankingTrophy';
 
@@ -238,6 +239,25 @@ function paintMedal(ctx: Ctx, input: RankingShareInput, cx: number, cy: number) 
  */
 export async function paintRankingShareImage(input: RankingShareInput): Promise<Blob | null> {
   if (typeof document === 'undefined') return null;
+  // Canvas text bypasses JSX; normalize a local display copy before measuring or painting.
+  input = {
+    ...input,
+    eyebrow: arenaDisplayText(input.eyebrow),
+    title: arenaDisplayText(input.title),
+    subtitle: arenaDisplayText(input.subtitle),
+    pill: input.pill === null ? null : arenaDisplayText(input.pill),
+    placeTitle: arenaDisplayText(input.placeTitle),
+    place:
+      'word' in input.place
+        ? { word: arenaDisplayText(input.place.word) }
+        : { num: arenaDisplayText(input.place.num), suffix: arenaDisplayText(input.place.suffix) },
+    medal: input.medal.trophy
+      ? input.medal
+      : { trophy: false, text: arenaDisplayText(input.medal.text) },
+    payoutLabel: arenaDisplayText(input.payoutLabel),
+    payoutValue: arenaDisplayText(input.payoutValue),
+    username: input.username === null ? null : arenaDisplayText(input.username),
+  };
   let canvas: HTMLCanvasElement;
   let ctx: Ctx | null = null;
   try {

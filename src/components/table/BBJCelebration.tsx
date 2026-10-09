@@ -357,7 +357,7 @@ export function BBJCelebration({
         ctx.rotate(p.rotation);
 
         if (p.type === 'chip') {
-          // Gold chip with dollar sign
+          // Gold chip with chip initial
           ctx.beginPath();
           ctx.arc(0, 0, p.size, 0, Math.PI * 2);
           ctx.fillStyle = p.color;

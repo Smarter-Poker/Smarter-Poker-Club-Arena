@@ -80,6 +80,13 @@ describe('dollar signs never reach arena display copy', () => {
       JSON.parse(readFileSync('tsconfig.app.json', 'utf8').replace(/\/\*[\s\S]*?\*\//g, ''))
         .compilerOptions.jsxImportSource
     ).toBe('@arena-display');
+    for (const source of [
+      'src/components/tournament/rankingShareImage.ts',
+      'src/components/stats/StatsShareCard.tsx',
+      'src/components/games/sceneKit.ts',
+    ]) {
+      expect(readFileSync(source, 'utf8')).toContain('arenaDisplayText(');
+    }
     expect(readFileSync('src/components/table/ThrowableSignatures.css', 'utf8')).not.toContain(
       "content: '$'"
     );

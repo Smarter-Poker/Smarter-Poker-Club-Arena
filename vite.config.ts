@@ -170,7 +170,15 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      '@arena-display': path.resolve(__dirname, './src/lib/arenaDisplay'),
+      '@arena-display/jsx-runtime': path.resolve(
+        __dirname,
+        './src/lib/arenaDisplay/jsx-runtime.ts'
+      ),
+      '@arena-display/jsx-dev-runtime': path.resolve(
+        __dirname,
+        './src/lib/arenaDisplay/jsx-dev-runtime.ts'
+      ),
+      '@arena-display': path.resolve(__dirname, './src/lib/arenaDisplay/index.ts'),
       '@': path.resolve(__dirname, './src'),
       '@components': path.resolve(__dirname, './src/components'),
       '@lib': path.resolve(__dirname, './src/lib'),

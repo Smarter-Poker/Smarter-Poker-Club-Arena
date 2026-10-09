@@ -47,7 +47,7 @@ describe('a scheduled event that will not exist is paged', () => {
       'private async spawnInstance(',
       '\n  private async scheduleIsDiamondArena('
     );
-    expect(spawn).toMatch(/if \(!row\) \{\s*await this\.pageMissedOccurrence\(/);
+    expect(spawn).toMatch(/if \(!row\) \{[\s\S]{0,400}?await this\.pageMissedOccurrence\(/);
     expect(spawn).toMatch(
       /diamond_config_refused'\s*\);\s*await this\.pageMissedOccurrence\(schedule, startTime, mapped\.reason\);/
     );
@@ -57,6 +57,19 @@ describe('a scheduled event that will not exist is paged', () => {
     const diamond = between('private async spawnDiamondInstance(', '\n  /**');
     expect(diamond).toMatch(
       /'ScheduledTournaments\.diamond_spawn_refused'\s*\);\s*await this\.pageMissedOccurrence\(schedule, startTime, answer\.reason\);/
+    );
+  });
+
+  it('never pages a satellite that is only waiting for its target to exist', () => {
+    const spawn = between(
+      'private async spawnInstance(',
+      '\n  private async scheduleIsDiamondArena('
+    );
+    expect(spawn).toMatch(
+      /if \(this\.waitingForSatelliteTarget\.delete\(occurrenceKey\(schedule\.id, startTime\)\)\) return;\s*await this\.pageMissedOccurrence\(/
+    );
+    expect(src).toMatch(
+      /no pre-start satellite target matching[\s\S]{0,200}?this\.waitingForSatelliteTarget\.add\(occurrenceKey\(schedule\.id, startTime\)\);\s*return null;/
     );
   });
 

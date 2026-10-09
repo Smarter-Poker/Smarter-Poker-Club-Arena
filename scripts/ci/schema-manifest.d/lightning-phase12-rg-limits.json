@@ -1,0 +1,7 @@
+{
+  "_owner": "agent/claude-lightning-p12/lightning/rg-limits-db - migration 20261009143757_lightning_phase_12_responsible_gaming_limits_and_auto_rebuy_",
+  "_comment": "Lightning Phase 12 carry-forward (database side). NOT YET APPLIED: the shapes below are a promise until the owner installs 20261009143757 after Phase 11 (20261008161509). No table, column or new function: two existing bodies change by asserted substitution. fn_lightning_reap_expired_disconnects also exits an open pool session whose player fn_rg_require_not_excluded refuses (self-exclusion, cooling-off) once the player holds no live hand and no live reservation, exit_reason rg_limit (pool_player_left reason rg_limit, never counted into player_expired), never touching the anchor seat or the cash session. fn_lightning_pool_status(uuid) gains the read-only key auto_rebuy {enabled, trigger, threshold_bb, threshold_pct, target, max_count, session_cap, used_count, used_total}: the settings exactly as fn_lightning_config answers them (which stays service_role only) and the usage from the caller's own open pool session, null without one.",
+  "tables": [],
+  "functions": ["fn_lightning_reap_expired_disconnects", "fn_lightning_pool_status"],
+  "columns": {}
+}

@@ -63,7 +63,7 @@ test('prospective payout reads fixed case receipts on success and failure withou
   const output = buildFinancialRepairCandidate(source, 'v2-payout');
   const body = output.slice(
     output.indexOf('repair_sql() {'),
-    output.indexOf("repair_sql 'consolidated'")
+    output.indexOf("repair_sql 'registry'")
   );
   assert.equal(body.split('node "$here/leaderboard-repair-financial-diagnostics.mjs"').length, 3);
   assert.match(body, /prospective verdict evidence refused/);
@@ -214,6 +214,10 @@ function scratch() {
   writeFileSync(
     join(directory, 'leaderboard-consolidated-postimage-candidate.sql'),
     'BEGIN;\nSELECT 9;\nROLLBACK;\n'
+  );
+  writeFileSync(
+    join(directory, 'leaderboard-isolated-money-registry-candidate.sql'),
+    'BEGIN;\nCOMMIT;\n'
   );
   return directory;
 }
@@ -391,9 +395,11 @@ test('worker complete private inputs precede every client and missing companion 
     output.indexOf('# SET ROLE is scoped'),
     output.indexOf('repair_sql() {')
   );
-  for (const missing of ['none', 'authorization', 'companion', 'fixture']) {
+  for (const missing of ['none', 'authorization', 'companion', 'fixture', 'registry']) {
     const directory = scratch();
     try {
+      if (missing === 'registry')
+        unlinkSync(join(directory, 'leaderboard-isolated-money-registry-candidate.sql'));
       writeFileSync(
         join(directory, 'leaderboard-capture-basis-candidate.sql'),
         'BEGIN;\nSELECT 2;\nCOMMIT;\n'
@@ -446,7 +452,7 @@ test('failure diagnostics expose only fixed stage and strict SQLSTATE, preservin
   const output = buildFinancialRepairCandidate(source, 'opening');
   const body = output.slice(
     output.indexOf('repair_sql() {'),
-    output.indexOf("repair_sql 'consolidated'")
+    output.indexOf("repair_sql 'registry'")
   );
   for (const privateError of [
     'ERROR:  55000\nSECRET_SQL_TOKEN_NEVER_EMIT\n',
@@ -526,4 +532,56 @@ test('manual workflow enforces contracts and preserves main-only owned cleanup w
     workflow,
     /upload-artifact|continue-on-error|schedule:|pull_request:|push:|cat .*log/
   );
+});
+
+test('original money registry configuration precedes every consolidated mode without weakening the guard', () => {
+  const fixture = readRepairInput('leaderboard-isolated-money-registry-candidate.sql');
+  const original = readFileSync(
+    new URL(
+      '../../supabase/migrations/20260831233537_ca_alert_audit_round3_contained.sql',
+      import.meta.url
+    ),
+    'utf8'
+  );
+  const start = original.indexOf("FROM (VALUES\n  ('fn_complete_club_opening_setup'");
+  const stop = original.indexOf(') AS v(proname, notes)', start) + ') AS v(proname, notes)'.length;
+  const values = original.slice(start + 'FROM '.length, stop);
+  assert.equal(
+    fixture.split(values).length,
+    4,
+    'Insert and both independent exact readbacks retain original names and notes'
+  );
+  assert.match(fixture, /session_user <> 'leaderboard_qualification_bootstrap'/);
+  assert.match(fixture, /current_user <> 'leaderboard_qualification_bootstrap'/);
+  assert.match(fixture, /inet_server_addr\(\) IS NOT NULL/);
+  assert.match(fixture, /EXISTS \(SELECT 1 FROM public\.ca_money_rpc_registry\)/);
+  assert.match(fixture, /count\(\*\) FROM public\.ca_money_rpc_registry\) <> 2/);
+  assert.match(fixture, /added_at IS DISTINCT FROM transaction_timestamp\(\)/);
+  assert.equal((fixture.match(/\bEXCEPT\b/g) || []).length + 1, 3);
+  assert.doesNotMatch(
+    fixture,
+    /ON CONFLICT|WHERE NOT EXISTS|^DISABLE|override|^CREATE|^ALTER|^DELETE|^UPDATE/m
+  );
+  for (const mode of modes) {
+    const output = buildFinancialRepairCandidate(source, mode);
+    if (mode === 'capture-compatibility') {
+      assert.doesNotMatch(output, /repair-registry/);
+      continue;
+    }
+    assert.ok(output.indexOf(gate) < output.indexOf("repair_sql 'registry'"));
+    assert.ok(
+      output.indexOf("repair_sql 'registry'") < output.indexOf("repair_sql 'consolidated'")
+    );
+    if (mode === 'historical-replay')
+      assert.ok(
+        output.indexOf("repair_sql 'registry'") < output.indexOf("repair_sql 'historical-before'")
+      );
+    assert.throws(() =>
+      buildFinancialRepairCandidate(source, mode, (name) =>
+        name === 'leaderboard-isolated-money-registry-candidate.sql'
+          ? readRepairInput(name) + '\n'
+          : readRepairInput(name)
+      )
+    );
+  }
 });

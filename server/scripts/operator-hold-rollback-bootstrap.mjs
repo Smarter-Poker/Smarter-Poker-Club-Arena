@@ -8,7 +8,7 @@ import { installRollbackBootFence } from './operator-hold-checkpoint-guard.mjs';
 const root = '/run/club-arena/operator-hold';
 const profile = JSON.parse(readFileSync(`${root}/operator-hold-predecessor-profile.json`, 'utf8'));
 const handoff = JSON.parse(readFileSync(`${root}/handoff.json`, 'utf8'));
-const release = 'f59e0a36a08b756d23b47976cd31ecca8f8d28a3';
+const release = '5adefba4ac868bf138bee41bda24ae4b1754e456';
 const paths = [
   '/app/dist/GameServer.js',
   '/app/dist/engine/ServerTableEngineBase.js',

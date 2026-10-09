@@ -70,8 +70,8 @@ import {
   reconcileGap,
   shadowMetricLabel,
   verdictLabel,
-} from '../../src/lightning/operator/lightningOperatorApi';
-import { keepsPolling } from '../../src/lightning/operator/useLightningOperator';
+} from '../../src/lightning/lightningOperatorApi';
+import { keepsPolling } from '../../src/lightning/useLightningOperator';
 import ClubLightningOperationsPage from '../../src/pages/club/ClubLightningOperationsPage';
 import { getClubNavigationCapabilities } from '../../src/config/clubArenaNavigation';
 import {
@@ -115,8 +115,8 @@ function renderPage(search = '') {
 const ok = (data: unknown) => () => ({ data, error: null });
 
 const SOURCES = [
-  'src/lightning/operator/lightningOperatorApi.ts',
-  'src/lightning/operator/useLightningOperator.ts',
+  'src/lightning/lightningOperatorApi.ts',
+  'src/lightning/useLightningOperator.ts',
   'src/pages/club/ClubLightningOperationsPage.tsx',
   'src/pages/club/lightning/LightningClusterDetail.tsx',
   'src/pages/club/lightning/LightningLatencyChart.tsx',
@@ -211,6 +211,13 @@ describe('the operator doors are parsed from the shapes the database produces', 
       verdict: 'insufficient_evidence',
     });
     expect(d.shadow[0].components.map((m) => m.key)).toContain('component.bb_fairness');
+    expect(d.shadow[0]).toMatchObject({ windows: 14, aaCalibration: false });
+    // The A/A calibration pair (live against its own port) sorts after the candidate.
+    expect(d.shadow[1]).toMatchObject({
+      candidateVersion: 'm1-port',
+      aaCalibration: true,
+      verdict: 'calibrated',
+    });
     expect(d.signals[0]).toMatchObject({ id: '41', pattern: 'PAIRING_CONCENTRATION' });
     expect(d.alerts[0]).toMatchObject({ source: 'lightning_alerts', check: 'latency_regression' });
     expect(d.latencyWindows).toHaveLength(3);
@@ -284,6 +291,8 @@ describe('operator vocabulary', () => {
     expect(modeBadge('pending_off').detail).toBe('Reverting To Must Move');
     expect(modeBadge('frozen').tone).toBe('frozen');
     expect(verdictLabel('shadow_leads')).toBe('Candidate Leads');
+    expect(verdictLabel('calibrated')).toBe('Calibrated');
+    expect(verdictLabel('calibration_bias')).toBe('Calibration Bias');
     expect(shadowMetricLabel('component.bb_fairness')).toBe('BB Fairness');
   });
 
@@ -391,6 +400,8 @@ describe('the Cluster detail', () => {
     expect(rows[1].textContent).toContain('Off By 120');
     expect(screen.getByText('Candidate Matcher')).toBeTruthy();
     expect(screen.getByText('Insufficient Evidence')).toBeTruthy();
+    expect(screen.getByText('Calibration: Live m1 / Port m1-port')).toBeTruthy();
+    expect(screen.getByText('Calibrated')).toBeTruthy();
     expect(screen.getByText('Latency Regression')).toBeTruthy();
     expect(screen.getByText('Conversion, Must Move To Lightning, Committed')).toBeTruthy();
   });

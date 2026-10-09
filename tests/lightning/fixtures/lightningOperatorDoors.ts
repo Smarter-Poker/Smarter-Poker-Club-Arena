@@ -14,6 +14,9 @@
  *   fn_lightning_operator_signal_review    {ok, idempotent, signal_id, cluster_id, status, ...}
  *   refusals                               {ok:false, code, reason}
  *
+ * fn_lightning_shadow_report's version_pairs carry 'windows' and
+ * 'aa_calibration' since 20261009181945 (Phase 11 remediation).
+ *
  * Nothing here is a field the database cannot produce. Shared by the unit
  * tests and the #ClubArenaConsole render harness.
  */
@@ -267,6 +270,8 @@ export function clusterAnswer() {
           live_matcher_version: 'm1',
           shadow_matcher_version: 'm2',
           comparisons: 12,
+          windows: 14,
+          aa_calibration: false,
           clusters: 1,
           first_window_from: '2026-10-09T02:00:00.000Z',
           last_window_to: AT,
@@ -282,6 +287,26 @@ export function clusterAnswer() {
             'wait_ms.p95': { live: 640, shadow: 590, delta: -50 },
           },
           verdict: 'insufficient_evidence',
+        },
+        {
+          live_matcher_version: 'm1',
+          shadow_matcher_version: 'm1-port',
+          comparisons: 31,
+          windows: 31,
+          aa_calibration: true,
+          clusters: 1,
+          first_window_from: '2026-10-08T14:00:00.000Z',
+          last_window_to: AT,
+          live_quality_mean: 71.2,
+          shadow_quality_mean: 71.35,
+          quality_delta_mean: 0.15,
+          quality_delta_min: -0.4,
+          quality_delta_max: 0.6,
+          shadow_better_share: 0.5161,
+          metrics: {
+            'component.bb_fairness': { live: 0.92, shadow: 0.92, delta: 0 },
+          },
+          verdict: 'calibrated',
         },
       ],
     },

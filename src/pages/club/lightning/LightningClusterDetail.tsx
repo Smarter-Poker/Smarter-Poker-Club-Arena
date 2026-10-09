@@ -51,11 +51,8 @@ import {
   type LightningTransition,
   type OperatorAnswer,
   type SignalReviewStatus,
-} from '../../../lightning/operator/lightningOperatorApi';
-import {
-  CLUSTER_REFRESH_MS,
-  usePolledAnswer,
-} from '../../../lightning/operator/useLightningOperator';
+} from '../../../lightning/lightningOperatorApi';
+import { CLUSTER_REFRESH_MS, usePolledAnswer } from '../../../lightning/useLightningOperator';
 import { AnswerState, LatencyGrid, MODE_INK, count } from './lightningOperatorParts';
 import styles from '../ClubLightningOperationsPage.module.css';
 
@@ -749,17 +746,26 @@ export default function LightningClusterDetail({
               detail.shadow.map((p, i) => (
                 <div key={`${p.liveVersion}-${p.candidateVersion}-${i}`}>
                   <Row
-                    label={`Live ${p.liveVersion ?? '-'} / Candidate ${p.candidateVersion ?? '-'}`}
+                    label={
+                      p.aaCalibration
+                        ? `Calibration: Live ${p.liveVersion ?? '-'} / Port ${p.candidateVersion ?? '-'}`
+                        : `Live ${p.liveVersion ?? '-'} / Candidate ${p.candidateVersion ?? '-'}`
+                    }
                     value={verdictLabel(p.verdict)}
                     ink={
-                      p.verdict === 'shadow_leads'
+                      p.verdict === 'shadow_leads' || p.verdict === 'calibrated'
                         ? 'green'
-                        : p.verdict === 'live_leads'
-                          ? 'silver'
-                          : 'muted'
+                        : p.verdict === 'calibration_bias'
+                          ? 'red'
+                          : p.verdict === 'live_leads'
+                            ? 'silver'
+                            : 'muted'
                     }
                   />
-                  <Row label="Comparisons" value={count(p.comparisons)} />
+                  <Row
+                    label="Comparisons / Windows"
+                    value={`${count(p.comparisons)} / ${count(p.windows)}`}
+                  />
                   <Row
                     label="Live / Candidate Quality"
                     value={`${score(p.liveQualityMean)} / ${score(p.candidateQualityMean)}`}

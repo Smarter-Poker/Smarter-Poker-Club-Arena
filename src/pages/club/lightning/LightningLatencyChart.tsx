@@ -19,10 +19,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import type {
-  LatencyLeg,
-  LightningLatencyWindow,
-} from '../../../lightning/operator/lightningOperatorApi';
+import type { LatencyLeg, LightningLatencyWindow } from '../../../lightning/lightningOperatorApi';
 import styles from '../ClubLightningOperationsPage.module.css';
 
 const INK = { p50: '#e4e7ec', p95: '#45adff', p99: '#ff5b6e' } as const;

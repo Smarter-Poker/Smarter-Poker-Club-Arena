@@ -46,11 +46,8 @@ import {
   verdictLabel,
   type LightningOverview,
   type LightningOverviewCluster,
-} from '../../lightning/operator/lightningOperatorApi';
-import {
-  OVERVIEW_REFRESH_MS,
-  usePolledAnswer,
-} from '../../lightning/operator/useLightningOperator';
+} from '../../lightning/lightningOperatorApi';
+import { OVERVIEW_REFRESH_MS, usePolledAnswer } from '../../lightning/useLightningOperator';
 import LightningClusterDetail from './lightning/LightningClusterDetail';
 import {
   AnswerState,

@@ -26,11 +26,11 @@
  *   - Integrity, shadow and latency readings are for people. Nothing here
  *     feeds matchmaking; this module is imported by the operator page only.
  */
-import { supabase } from '../../lib/supabase';
-import { reportError } from '../../utils/errorReporter';
-import { isAuthzError } from '../../utils/clubDashboard';
-import { enumToTitleCase, titleCase } from '../../utils/titleCase';
-import { isLightningRpcMissing } from '../lightningSessionApi';
+import { supabase } from '../lib/supabase';
+import { reportError } from '../utils/errorReporter';
+import { isAuthzError } from '../utils/clubDashboard';
+import { enumToTitleCase, titleCase } from '../utils/titleCase';
+import { isLightningRpcMissing } from './lightningSessionApi';
 
 // ─── Small, honest readers ─────────────────────────────────────────────────
 
@@ -203,6 +203,9 @@ export const SHADOW_VERDICT_LABELS: Record<string, string> = {
   shadow_leads: 'Candidate Leads',
   live_leads: 'Live Leads',
   no_clear_winner: 'No Clear Winner',
+  // An A/A pair (live m1 against its own port m1-port), 20261009181945.
+  calibrated: 'Calibrated',
+  calibration_bias: 'Calibration Bias',
 };
 
 export function verdictLabel(verdict: string | null): string {
@@ -558,7 +561,12 @@ export function reconcileGap(row: LightningReconcileRow): number | null {
 export interface LightningShadowPair {
   liveVersion: string | null;
   candidateVersion: string | null;
+  /** Scored windows only (both scores present); the verdict needs 30. */
   comparisons: number | null;
+  /** Every recorded window, scored or not (20261009181945). */
+  windows: number | null;
+  /** Live against its own port (shadow = live + '-port'): calibration, never a candidate. */
+  aaCalibration: boolean;
   liveQualityMean: number | null;
   candidateQualityMean: number | null;
   deltaMean: number | null;
@@ -584,6 +592,8 @@ export function parseShadowReport(raw: unknown): LightningShadowPair[] {
       liveVersion: text(p.live_matcher_version),
       candidateVersion: text(p.shadow_matcher_version),
       comparisons: num(p.comparisons),
+      windows: num(p.windows),
+      aaCalibration: p.aa_calibration === true,
       liveQualityMean: num(p.live_quality_mean),
       candidateQualityMean: num(p.shadow_quality_mean),
       deltaMean: num(p.quality_delta_mean),
@@ -993,7 +1003,7 @@ export function agoLabel(iso: string | null, now: number = Date.now()): string {
   return `${Math.floor(hours / 24)}d Ago`;
 }
 
-/** "Oct 9, 14:32" in the viewer's zone. Never a raw ISO string. */
+/** "Oct 9, 14:32" in the viewer's local time. Never a raw ISO string. */
 export function stampLabel(iso: string | null): string {
   if (!iso) return 'Unknown';
   const d = new Date(iso);

@@ -13,7 +13,7 @@ import {
   type LatencyLegs,
   type LightningModeTone,
   type OperatorAnswer,
-} from '../../../lightning/operator/lightningOperatorApi';
+} from '../../../lightning/lightningOperatorApi';
 import styles from '../ClubLightningOperationsPage.module.css';
 
 export const MODE_INK: Record<LightningModeTone, ConsoleInk> = {

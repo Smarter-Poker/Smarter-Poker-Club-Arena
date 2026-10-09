@@ -92,16 +92,16 @@ Against the horse population the expected primary estimate of each locked matrix
 
 Opponent population: the horse population at the evaluated source (production style mix); rake: the published 1/2 cash rows (cap ladder, BBJ drop); statistic: candidate minus reference net per pair after rake, equal weight over the five contract profiles, 99% interval. Assembled by the real assemblers from every attempt the workflows uploaded; every shard complete on its first attempt, no shard declared defective, every validity counter 0 on every shard (illegal actions, conservation, card, truncation, settlement, deduction and paired-replay mismatches).
 
-| Pack | Shards                         | Pairs     | Primary, bb/100 (99% interval) | Assembler verdict | Changed pairs | Evidence                                                                                                                                           |
-| ---- | ------------------------------ | --------- | ------------------------------ | ----------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PLO4 | 111/111                        | 2,557,440 | +6.94 [+6.25, +7.62]           | qualified         | 36,601        | `docs/evidence/phase10/strength-2026-10-09/`, `docs/evidence/phase10/phase10-qualification-2026-10-09.json` (evidence `0b56fce6...5a31`)           |
-| PLO8 | 114/114                        | 1,116,288 | +7.84 [+6.84, +8.84]           | qualified         | 16,297        | `docs/evidence/phase11/strength-2026-10-09-plo8/`, `docs/evidence/phase11/phase11-qualification-2026-10-09-plo8.json` (evidence `6bca9b49...c719`) |
-| PLO5 | 100/243 at 03:05Z on October 9 |           |                                | pending           |               | run 37837891124, still queued or running on the shared hosted runners                                                                              |
-| PLO6 | 82/243 at 03:05Z on October 9  |           |                                | pending           |               | run 37837895674, still queued or running on the shared hosted runners                                                                              |
+| Pack | Shards                         | Pairs     | Primary, bb/100 (99% interval) | Assembler verdict | Changed pairs | Evidence                                                                              |
+| ---- | ------------------------------ | --------- | ------------------------------ | ----------------- | ------------- | ------------------------------------------------------------------------------------- |
+| PLO4 | 111/111                        | 2,557,440 | +6.94 [+6.25, +7.62]           | qualified         | 36,601        | `docs/evidence/phase10/strength-2026-10-09/` (`strength.json` `0b56fce6...5a31`)      |
+| PLO8 | 114/114                        | 1,116,288 | +7.84 [+6.84, +8.84]           | qualified         | 16,297        | `docs/evidence/phase11/strength-2026-10-09-plo8/` (`strength.json` `6bca9b49...c719`) |
+| PLO5 | 100/243 at 03:05Z on October 9 |           |                                | pending           |               | run 37837891124, still queued or running on the shared hosted runners                 |
+| PLO6 | 82/243 at 03:05Z on October 9  |           |                                | pending           |               | run 37837895674, still queued or running on the shared hosted runners                 |
 
 Where the gain comes from, as designed: only the two-dealt profile changes (PLO4 +34.68 [+31.25, +38.10], PLO8 +39.20 [+34.20, +44.21] bb/100); every four-dealt and six-max profile and every position but the button is exactly 0. PLO4 by street of first divergence: preflop +4.50 [+4.01, +5.00], turn +0.90 [+0.58, +1.22], river +1.53 [+1.18, +1.88], flop 0. Every PLO4 seed interval is trusted and positive (+7.03, +6.47, +7.30); PLO8's seeds are +8.23, +7.18 and +8.11, two of them with intervals the contract marks untrusted; its seed replication rule asks only for a positive point estimate per seed, and the primary and all 14 gating cells are trusted. The round 1 packs lost on the same seeds (PLO4 pooled -0.16, PLO8 -9.21 [-12.20, -6.23] bb/100).
 
-`qualified: true` in these files is condition (a) alone. Under the winning contract no pack qualifies without condition (b), so neither file is shipped for selection and no protected-release step is taken.
+The assembler verdict `qualified: true` in these strength records is condition (a) alone. Under the winning contract no pack qualifies without condition (b), so no `horse-phase10-qualification-v1` or `horse-phase11-qualification-v1` file is committed for PLO4 or PLO8: a qualification file is the admission input, a file saying `qualified: true` would claim a qualification the winning contract denies, and the P10.3 and P11.3 null proofs on main (`HorsePhase10Authority.test.ts`, `HorsePhase11Authority.test.ts`) refuse one while the selections are `null`. The assemblers reproduce them from the committed strength records when both conditions pass. No protected-release step is taken.
 
 ### Condition (b): Human-Calibrated Population On The Held-Out Human Seeds
 
@@ -121,7 +121,7 @@ Run once on `91fd2864f1a74d8b97a153c8e0d5ebbbabc73e74`, the commit that fixed it
 
 ### Selection
 
-Every Phase 10 and Phase 11 selection stays `null`. Condition (b) is unavailable external input for every pack, and PLO5, PLO6 and PLO8 also fail its interval. No qualification file is shipped for selection and no protected-release step is taken, so natural accepted use and the withdrawal path are not applicable with reason (nothing is selected).
+Every Phase 10 and Phase 11 selection stays `null`. Condition (b) is unavailable external input for every pack, and PLO5, PLO6 and PLO8 also fail its interval. No qualification file is committed or shipped for selection and no protected-release step is taken, so natural accepted use and the withdrawal path are not applicable with reason (nothing is selected).
 
 ### Next Root Causes
 

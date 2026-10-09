@@ -123,7 +123,10 @@ describe('new club opening wizard', () => {
     expect(openingSql).toContain("'bbj_main'");
     expect(openingSql).toContain("'leaderboard_prizes'");
     expect(openingSql).toContain('leaderboard_seed_remaining');
-    expect(openingSql).toContain('REVOKE ALL ON FUNCTION public.fn_complete_club_opening_setup');
+    expect(openingSql).toContain("'authenticated:EXECUTE,postgres:EXECUTE,service_role:EXECUTE'");
+    expect(openingSql).toContain(
+      '-- Existing owner and execute ACL retained by CREATE OR REPLACE.'
+    );
   });
 
   it('ends the launch checklist with a fully configured first agent', () => {
@@ -160,20 +163,18 @@ describe('new club opening wizard', () => {
 });
 
 describe('paid leaderboard funding waterfall', () => {
-  it('uses the first-round seed, then Promo Funds, then an explicit overlay the owner allowed', () => {
-    expect(payoutSql).toContain('v_seed_debit := LEAST(v_total, v_seed_available)');
-    expect(payoutSql).toContain('v_promo_debit := v_total - v_seed_debit - v_overlay;');
-    expect(payoutSql).toContain('v_overlay := v_total - v_seed_available - v_promo_available;');
-    expect(payoutSql).toContain('chip_treasury = chip_treasury - v_overlay');
-    expect(payoutSql).toContain('leaderboard_seed_remaining = 0');
-    // The overlay is never silent: without the owner's per-program opt-in the
-    // round is refused as underfunded and retried, and a union is never debited.
-    expect(payoutSql).toContain('SELECT program.overlay_enabled');
+  it('uses only Club or Union Promo and refuses a short wallet without Seed or Bank fallback', () => {
+    expect(payoutSql).toContain('v_promo_debit := v_total;');
+    expect(payoutSql).toContain('SET promo_balance = promo_balance - v_promo_debit,');
+    expect(payoutSql).toContain('SET promo_wallet = promo_wallet - v_promo_debit,');
     expect(payoutSql).toMatch(
-      /IF NOT v_overlay_enabled THEN\s*RAISE EXCEPTION\s*'LEADERBOARD_PROMO_UNDERFUNDED\|/
+      /IF v_promo_available < v_total THEN\s*RAISE EXCEPTION\s*'LEADERBOARD_PROMO_UNDERFUNDED\|/
     );
-    expect(payoutSql).toContain("AND program.funding_owner_type = 'club';");
-    expect(payoutSql).toContain("set_config('app.ledger_category', 'overlay', true)");
+    expect(payoutSql).not.toContain('v_seed_debit');
+    expect(payoutSql).not.toContain('v_overlay :=');
+    expect(payoutSql).not.toContain('chip_treasury =');
+    expect(payoutSql).not.toContain('leaderboard_seed_remaining =');
+    expect(payoutSql).toContain('v_total, 0, v_promo_debit, 0,');
   });
 
   it('records and credits one atomic, idempotent payout batch', () => {
@@ -183,18 +184,23 @@ describe('paid leaderboard funding waterfall', () => {
     expect(payoutSql).toContain('INSERT INTO public.leaderboard_payout_batches');
     expect(payoutSql).toContain('INSERT INTO public.leaderboard_payouts');
     expect(payoutSql).toContain('Leaderboard Credit Key Already Exists Without A Batch Receipt');
-    expect(payoutSql).toContain("'overlay_funded', v_overlay,");
+    expect(payoutSql).toContain("'overlay_funded', 0,");
   });
 
   it('settles only through the server role and has a scheduled boundary sweep', () => {
     expect(sweepSql).toContain('CREATE OR REPLACE FUNCTION public.fn_settle_due_leaderboards()');
     expect(sweepScheduleSql).toContain("'leaderboard-payout-waterfall-daily'");
     expect(sweepScheduleSql).toContain("'20 0 * * *'");
-    expect(payoutFile).toMatch(
-      /REVOKE ALL ON FUNCTION public\.fn_payout_leaderboard\(uuid, text, text, timestamptz, timestamptz\)\s*FROM PUBLIC, anon, authenticated;/
+    const permissionSql = read(
+      'supabase/migrations/20261009112249_leaderboard_ranking_preserved_access_declaration.sql'
     );
-    expect(payoutFile).toMatch(
-      /GRANT EXECUTE ON FUNCTION public\.fn_payout_leaderboard\(uuid, text, text, timestamptz, timestamptz\)\s*TO service_role;/
+    expect(permissionSql).toMatch(
+      /REVOKE ALL ON FUNCTION public\.fn_payout_leaderboard\(uuid,text,text,timestamptz,timestamptz\) FROM PUBLIC, anon, authenticated;/
+    );
+    expect(permissionSql).toContain("'postgres:EXECUTE,service_role:EXECUTE'");
+    expect(permissionSql).toContain('after_image IS DISTINCT FROM before_image');
+    expect(payoutFile).toContain(
+      '-- CREATE OR REPLACE retains existing ownership and execute ACL.'
     );
   });
 });

@@ -42,6 +42,7 @@ import { validateMttBlindStructure } from '../domain/tournamentBlindContract.js'
 import { supabase } from './supabase.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
+import { raiseFinancialAlert } from './financialAlerts.js';
 import { isGuaranteeBankRefusal } from '../domain/guaranteeBankRefusal.js';
 import { GuaranteeRefusalBackoff } from './guaranteeRefusalBackoff.js';
 import { buyInFor, freeBuyColumns, rakeRateFor, wholeChips } from '../config/buyIn.js';
@@ -77,6 +78,15 @@ import {
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
+
+/** How close to its start a refused occurrence must be before it pages. */
+export const MISSED_OCCURRENCE_PAGE_WITHIN_MS = 60 * 60_000;
+export const MISSED_OCCURRENCE_SOURCE = 'ScheduledTournaments.occurrence_not_created';
+
+/** A refusal pages only when the occurrence is due within the hour or overdue. */
+export function missedOccurrenceIsPageable(startTime: Date, now: Date): boolean {
+  return startTime.getTime() - now.getTime() <= MISSED_OCCURRENCE_PAGE_WITHIN_MS;
+}
 
 export interface TournamentScheduleRow {
   id: string;
@@ -892,7 +902,14 @@ export class ScheduledTournamentService {
     // skipped spawn (e.g. satellite target not found yet) is retried next poll
     // instead of being burned forever.
     const row = await this.buildInsertRow(schedule, cfg, startTime);
-    if (!row) return;
+    if (!row) {
+      await this.pageMissedOccurrence(
+        schedule,
+        startTime,
+        'its configuration was refused before creation (the ScheduledTournaments error log names the rule)'
+      );
+      return;
+    }
 
     /* THE DIAMOND ARENA RUNS THE MIDWAY UNION'S SCHEDULE (Dan 2026-10-06:
        "USE THE SAME TOURNAMENT SCHEDULE AND RAKE AS THE MIDWAY UNION FOR
@@ -914,6 +931,7 @@ export class ScheduledTournamentService {
           ),
           'ScheduledTournaments.diamond_config_refused'
         );
+        await this.pageMissedOccurrence(schedule, startTime, mapped.reason);
         return;
       }
       diamondConfig = mapped.config;
@@ -930,6 +948,7 @@ export class ScheduledTournamentService {
         deferralKey
       );
       if (!diamondId) return;
+      await this.clearMissedOccurrencePage(schedule.id);
       await this.finishSpawn(row, cfg, spawnKey, startTime, diamondId);
       return;
     }
@@ -991,6 +1010,7 @@ export class ScheduledTournamentService {
         new Error(`[ScheduledTournaments] insert failed for ${spawnKey}: ${msg}`),
         'ScheduledTournaments.insert_failed'
       );
+      await this.pageMissedOccurrence(schedule, startTime, msg);
       // THE POP-UP (Dan 2026-08-29): "IF THE BANK DOESN'T HOLD ENOUGH CHIPS A
       // POP UP MUST APPEAR LETTING THE CLUB OR UNION KNOW THEY NEED MORE CHIPS
       // IN THE BANK TO COVER THE GUARANTEE."
@@ -1026,6 +1046,7 @@ export class ScheduledTournamentService {
       return;
     }
     this.guaranteeBackoff.settled(deferralKey);
+    await this.clearMissedOccurrencePage(schedule.id);
     await this.finishSpawn(row, cfg, spawnKey, startTime, created.id);
   }
 
@@ -1108,6 +1129,7 @@ export class ScheduledTournamentService {
       new Error(`[ScheduledTournaments] Diamond spawn refused for ${spawnKey}: ${answer.reason}`),
       'ScheduledTournaments.diamond_spawn_refused'
     );
+    await this.pageMissedOccurrence(schedule, startTime, answer.reason);
     await this.guaranteeBackoff.refused(
       deferralKey,
       schedule.club_id,
@@ -1118,6 +1140,62 @@ export class ScheduledTournamentService {
   }
 
   /** Link the spawn key to the event it created, and seed horses at the gun. */
+  /**
+   * A SCHEDULED EVENT THAT WILL NOT EXIST IS PAGED (2026-10-09).
+   *
+   * Every refusal on the spawn path was an error-log line and nothing else.
+   * Four Diamond Arena "$100 Freeroll" schedules were refused by the arena's
+   * door on every poll since they were seeded on 2026-10-07 and not one of
+   * their occurrences ever existed, with no durable record anywhere. The look
+   * ahead is a day or more, so a refusal far from the start is still normal
+   * retry traffic; once the start is within MISSED_OCCURRENCE_PAGE_WITHIN_MS
+   * and the occurrence still could not be created, players will not get the
+   * event, and that is one open alert per schedule (keyed on it) naming the
+   * reason. The schedule's next successful spawn closes it.
+   */
+  private async pageMissedOccurrence(
+    schedule: TournamentScheduleRow,
+    startTime: Date,
+    reason: string
+  ): Promise<void> {
+    if (!missedOccurrenceIsPageable(startTime, new Date())) return;
+    // raiseFinancialAlert never throws; the page can never cost the retry.
+    await raiseFinancialAlert(
+      'warning',
+      MISSED_OCCURRENCE_SOURCE,
+      `Scheduled tournament "${schedule.name}" (${schedule.id.slice(0, 8)}) could not be created ` +
+        `for ${startTime.toISOString()}: ${reason}`,
+      {
+        schedule_id: schedule.id,
+        club_id: schedule.club_id,
+        start_time: startTime.toISOString(),
+        reason,
+      },
+      `scheduled-occurrence-not-created:${schedule.id}`,
+      schedule.id
+    );
+  }
+
+  /** Housekeeping only: it never throws, so it can never cost a spawn. */
+  private async clearMissedOccurrencePage(scheduleId: string): Promise<void> {
+    try {
+      const at = new Date().toISOString();
+      const { error } = await supabase
+        .from('financial_alerts')
+        .update({
+          resolved: true,
+          resolved_at: at,
+          resolution: `The schedule created its next occurrence at ${at}.`,
+        })
+        .eq('source', MISSED_OCCURRENCE_SOURCE)
+        .eq('context->>schedule_id', scheduleId)
+        .or('resolved.is.null,resolved.eq.false');
+      if (error) reportError(error, 'ScheduledTournaments.occurrence_page_clear_failed');
+    } catch (err) {
+      reportError(err, 'ScheduledTournaments.occurrence_page_clear_failed');
+    }
+  }
+
   private async finishSpawn(
     row: Record<string, unknown>,
     cfg: Record<string, unknown>,

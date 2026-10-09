@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import ts from 'typescript';
 
-export const HEAP_FLAGS = ['--max-old-space-size=512', '--max-semi-space-size=4'];
+export const HEAP_FLAGS = ['--max-old-space-size=1024', '--max-semi-space-size=4'];
 export const MAX_BATCH_FILES = 64;
 export const MAX_BATCH_BYTES = 1024 * 1024;
 
@@ -86,7 +86,7 @@ export function emitBatch(files, options) {
 
 export function emitRuntime(args = process.argv.slice(2)) {
   if (JSON.stringify(process.execArgv) !== JSON.stringify(HEAP_FLAGS)) {
-    throw new Error('Runtime emitter requires the exact 512 MiB old / 4 MiB semi-space profile');
+    throw new Error('Runtime emitter requires the exact 1024 MiB old / 4 MiB semi-space profile');
   }
   const { options, batches, roots } = readProject();
   if (args.length === 2 && args[0] === '--batch-index' && /^(0|[1-9][0-9]*)$/.test(args[1])) {

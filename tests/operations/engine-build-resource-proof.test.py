@@ -90,21 +90,21 @@ class OriginalBuildResourceEvidenceTests(unittest.TestCase):
 
 
 class CompilerHeapProfileTests(unittest.TestCase):
-    command = ("RUN ulimit -c 0 && node --max-old-space-size=512 "
+    command = ("RUN ulimit -c 0 && node --max-old-space-size=1024 "
                "--max-semi-space-size=4 ./scripts/emit-runtime.mjs "
                "--project tsconfig.emit.json")
 
     def test_actual_dockerfile_uses_the_qualified_compiler_profile(self):
         profile = proof.verified_compiler_profile((proof.ROOT / 'server/Dockerfile').read_text())
-        self.assertEqual(profile, {"old_space_max_mib": 512, "semi_space_max_mib": 4,
+        self.assertEqual(profile, {"old_space_max_mib": 1024, "semi_space_max_mib": 4,
                                    "young_generation_max_mib": 12, "project": "tsconfig.emit.json"})
 
     def test_refuses_the_previous_implicit_young_generation(self):
-        with self.assertRaisesRegex(RuntimeError, 'explicit 512 MiB old / 4 MiB semi-space'):
+        with self.assertRaisesRegex(RuntimeError, 'explicit 1024 MiB old / 4 MiB semi-space'):
             proof.verified_compiler_profile(self.command.replace('--max-semi-space-size=4 ', ''))
 
     def test_refuses_changed_limits_project_or_duplicate_compiler(self):
-        for command in (self.command.replace('size=512', 'size=768'),
+        for command in (self.command.replace('size=1024', 'size=768'),
                         self.command.replace('space-size=4 ', 'space-size=8 '),
                         self.command.replace('tsconfig.emit.json', 'tsconfig.json'),
                         self.command.replace('./scripts/emit-runtime.mjs', './node_modules/typescript/bin/tsc'),

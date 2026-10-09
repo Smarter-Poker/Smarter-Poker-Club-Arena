@@ -32,8 +32,9 @@ COPY release-evidence/ ./release-evidence/
 # independently of detected cgroup memory. Preserve the current canonical
 # 2048 MiB no-swap builder; resource CI proves every checked runtime output.
 # Release each bounded program before emitting the next: retaining every AST
-# together exhausted the same 512 MiB heap as the runtime source grew.
-RUN ulimit -c 0 && node --max-old-space-size=512 --max-semi-space-size=4 ./scripts/emit-runtime.mjs --project tsconfig.emit.json
+# together exhausted the old 512 MiB heap as the runtime source grew.
+# Preserve main's measured 1024 MiB compiler allowance inside its 2048 MiB builder.
+RUN ulimit -c 0 && node --max-old-space-size=1024 --max-semi-space-size=4 ./scripts/emit-runtime.mjs --project tsconfig.emit.json
 
 
 # Remove dev dependencies

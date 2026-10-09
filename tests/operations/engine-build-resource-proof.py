@@ -65,11 +65,11 @@ def verified_compiler_profile(dockerfile):
     commands = [line.strip() for line in dockerfile.splitlines()
                 if line.lstrip().startswith("RUN ") and ("emit-runtime.mjs" in line or "typescript/bin/tsc" in line)]
     expected = ["RUN", "ulimit", "-c", "0", "&&", "node",
-                "--max-old-space-size=512", "--max-semi-space-size=4",
+                "--max-old-space-size=1024", "--max-semi-space-size=4",
                 "./scripts/emit-runtime.mjs", "--project", "tsconfig.emit.json"]
     if len(commands) != 1 or shlex.split(commands[0]) != expected:
-        raise RuntimeError("canonical compiler must retain its explicit 512 MiB old / 4 MiB semi-space profile")
-    return {"old_space_max_mib": 512, "semi_space_max_mib": 4,
+        raise RuntimeError("canonical compiler must retain its explicit 1024 MiB old / 4 MiB semi-space profile")
+    return {"old_space_max_mib": 1024, "semi_space_max_mib": 4,
             "young_generation_max_mib": 12, "project": "tsconfig.emit.json"}
 
 

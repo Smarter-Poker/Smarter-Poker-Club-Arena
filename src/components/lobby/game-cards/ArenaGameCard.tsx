@@ -13,6 +13,7 @@ import { SpadePloCard } from './SpadePloCard';
 import { SpinsPremiumCard } from './SpinsPremiumCard';
 import { HeadsUpPremiumCard } from './HeadsUpPremiumCard';
 import './ArenaGameCard.css';
+import { MttPremiumCard } from './MttPremiumCard';
 
 const CASH_CARD_TITLE_LIMIT = 30;
 
@@ -24,6 +25,7 @@ type LayeredRenderer = (props: {
 /** Skin id -> layered mobile renderer. Keyed by skin, not family, so a
     family can keep an older CSS skin registered and selectable. */
 const LAYERED_RENDERERS: Record<string, LayeredRenderer> = {
+  'shark-mtt-v2': MttPremiumCard,
   'spade-nlh-premium-v1': NlhPremiumCard,
   'shark-plo-four-bay-v1': PloFourBayCard,
   'spade-plo-premium-v1': SpadePloCard,
@@ -489,7 +491,9 @@ export const ArenaGameCard = memo(function ArenaGameCard({
      semantic buttons over the painted ones. The CSS "machines" above stay as
      the desktop renderers and as every family's fallback. */
   const Layered =
-    resolved.presentation === 'mobile' ? LAYERED_RENDERERS[resolved.skinId] : undefined;
+    resolved.presentation === 'mobile' || resolved.skinId === 'shark-mtt-v2'
+      ? LAYERED_RENDERERS[resolved.skinId]
+      : undefined;
   const dataState = data.dataState || 'loaded';
   const notice = stateLabel(dataState);
   const style = {

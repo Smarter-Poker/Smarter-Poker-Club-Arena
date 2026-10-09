@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { arenaDisplayText } from '../src/lib/arenaDisplay/text';
 import { formatGameTitle } from '../src/utils/formatGameTitle';
 import { formatPopupText } from '../src/utils/popupStyle';
@@ -47,6 +48,20 @@ describe('dollar signs never reach arena display copy', () => {
     const model = { name: '$5', balance: 54 };
     const Component = () => null;
     expect(jsx(Component, { model }).props.model).toBe(model);
+  });
+
+  it('registers the generated runtime imports without raising the orphan baseline', () => {
+    const report = JSON.parse(
+      execFileSync(process.execPath, ['scripts/ci/report-orphan-modules.mjs', '--json'], {
+        encoding: 'utf8',
+      })
+    );
+    expect(report.orphans.length).toBeLessThanOrEqual(report.baseline);
+    expect(report.orphans).not.toContain('src/lib/arenaDisplay/jsx-runtime.ts');
+    expect(report.orphans).not.toContain('src/lib/arenaDisplay/jsx-dev-runtime.ts');
+    const config = readFileSync('vite.config.ts', 'utf8');
+    for (const file of ['jsx-runtime.ts', 'jsx-dev-runtime.ts'])
+      expect(config).toContain(`./src/lib/arenaDisplay/${file}`);
   });
 
   it('applies the same rule in the production and development runtime', () => {

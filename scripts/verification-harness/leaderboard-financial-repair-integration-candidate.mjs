@@ -15,6 +15,7 @@ const opening = 'leaderboard-promo-opening-candidate.mjs';
 const adapter = 'leaderboard-capture-payout-fixture-candidate.mjs';
 const repairDiagnostics = 'leaderboard-repair-financial-diagnostics.mjs';
 const consolidated = 'leaderboard-consolidated-migration-candidate.mjs';
+const registryFixture = 'leaderboard-isolated-money-registry-candidate.sql';
 const postimage = 'leaderboard-consolidated-postimage-candidate.sql';
 const compatibility = 'leaderboard-capture-basis-regression-candidate.sql';
 const openingFixture = 'leaderboard-isolated-opening-policy-draft.sql';
@@ -29,6 +30,7 @@ const unknownAckBaseline = 'leaderboard-unknown-ack-draft.sh';
 const unknownAckProxy = 'leaderboard-unknown-ack-proxy-draft.mjs';
 // Freeze receipts are reviewed whole-input bytes, not runtime qualification.
 const reviewed = Object.freeze({
+  [registryFixture]: '29a49441ee210f1954a8f80231e69da40e4b7b0e7d7aa388bf8a03d29f97bbae',
   [auth]: '93bfc3e5aea54a901f1861f2d450da4f5fe3d1d74c595d89ffb5de102ebd2ac5',
   [capture]: 'd942ae27470d77666f1209a82dd137fe630d2af431f1babc03d444462a9502bc',
   [ranking]: '63a92bb2e01298dab850ddd15f65ce71742bdcbe24084007beee213b579ba1dc',
@@ -160,7 +162,7 @@ export function buildFinancialRepairCandidate(source, mode, readInput = readRepa
   assert.equal(hash(source), preflightHash, 'Reviewed maintained preflight changed');
   assert.ok(Object.hasOwn(modes, mode), 'Exactly one reviewed candidate mode required');
   const selectedInputs =
-    mode === 'capture-compatibility' ? modes[mode] : [...modes[mode], postimage];
+    mode === 'capture-compatibility' ? modes[mode] : [...modes[mode], postimage, registryFixture];
   for (const name of selectedInputs) {
     const input = readInput(name);
     assert.equal(hash(input), reviewed[name], `Reviewed candidate input changed: ${name}`);
@@ -172,7 +174,8 @@ export function buildFinancialRepairCandidate(source, mode, readInput = readRepa
       name === postimage
     )
       transaction(input, 'ROLLBACK');
-    if (name === capture || name === concurrencyFixture) transaction(input, 'COMMIT');
+    if (name === capture || name === concurrencyFixture || name === registryFixture)
+      transaction(input, 'COMMIT');
   }
   function once(anchor, replacement) {
     assert.equal(source.split(anchor).length, 2, 'Unique maintained boundary changed');
@@ -322,7 +325,9 @@ cat "$scratch/repair-authorization.sql" "$here/${openingFixture}" >"$scratch/rep
       splitInstall,
       [invoke('consolidated'), invoke('postimage')].join('\n')
     );
-    preparation += `\nprintf '%s\\n' 'SET ROLE postgres;' >"$scratch/repair-consolidated.sql" || failure 'consolidated owner preparation failed'
+    invocation = invoke('registry') + '\n' + invocation;
+    preparation += `\ncp "$here/${registryFixture}" "$scratch/repair-registry.sql" || failure 'registry private input preparation failed'
+printf '%s\\n' 'SET ROLE postgres;' >"$scratch/repair-consolidated.sql" || failure 'consolidated owner preparation failed'
 node "$here/${consolidated}" >>"$scratch/repair-consolidated.sql" || failure 'exact consolidated migration preparation refused'
 printf '%s\\n' 'RESET ROLE;' >>"$scratch/repair-consolidated.sql" || failure 'consolidated owner reset preparation failed'
 [[ "$(tail -n 1 "$here/${postimage}")" == 'ROLLBACK;' && "$(grep -c '^ROLLBACK;$' "$here/${postimage}")" == 1 ]] || failure 'postimage terminal boundary changed'

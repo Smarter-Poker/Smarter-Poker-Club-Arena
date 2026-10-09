@@ -103,7 +103,7 @@ export function authSqlFailureDiagnostic(result) {
 }
 export async function probeAuthServices(fetcher, pause) {
   const names = ['auth', 'rest'];
-  const endpoints = ['http://leaderboard-auth:9999/health', 'http://leaderboard-rest:3000/'];
+  const endpoints = ['http://leaderboard-auth:9999/health', 'http://leaderboard-rest:3001/ready'];
   let observations;
   for (let attempt = 0; attempt < 50; attempt++) {
     observations = [];
@@ -402,6 +402,9 @@ async function main() {
       'PGRST_DB_USE_LEGACY_GUCS=false',
       'PGRST_SERVER_HOST=0.0.0.0',
       'PGRST_SERVER_PORT=3000',
+      // Pinned PostgREST readiness checks its main socket and loaded schema cache.
+      // Internal-only admin endpoint avoids generating the entire OpenAPI document.
+      'PGRST_ADMIN_SERVER_PORT=3001',
       'PGRST_LOG_LEVEL=error',
     ].join('\n') + '\n',
     { mode: 0o600, flag: 'wx' }

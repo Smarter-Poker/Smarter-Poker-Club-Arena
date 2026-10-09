@@ -216,3 +216,25 @@ test('secondary service diagnostics preserve the original failure and have short
     /command\(\['inspect', '--format', '\{\{json \.State\}\}', name\], '', 15000\)/
   );
 });
+
+test('REST startup requires the pinned internal readiness endpoint and refuses an unloaded cache', async () => {
+  let restCalls = 0;
+  let pauses = 0;
+  const result = await probeAuthServices(
+    async (url) => {
+      if (url.includes('leaderboard-auth')) return { ok: true, status: 200 };
+      assert.equal(url, 'http://leaderboard-rest:3001/ready');
+      restCalls++;
+      return restCalls === 1 ? { ok: false, status: 503 } : { ok: true, status: 200 };
+    },
+    async (ms) => {
+      assert.equal(ms, 100);
+      pauses++;
+    }
+  );
+  assert.equal(result.ready, true);
+  assert.equal(restCalls, 2);
+  assert.equal(pauses, 1);
+  assert.match(launcher, /'PGRST_ADMIN_SERVER_PORT=3001'/);
+  assert.doesNotMatch(probeAuthServices.toString(), /leaderboard-rest:3000\//);
+});

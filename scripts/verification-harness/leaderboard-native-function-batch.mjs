@@ -79,7 +79,7 @@ export function batchNativeFunctions(source) {
     }`
   );
   assert.ok(!fn.includes('PREPARE dumpFunc') && !fn.includes('EXECUTE dumpFunc'));
-  return source.slice(0, begin) + fn + source.slice(end);
+  return batchNativeSequences(source.slice(0, begin) + fn + source.slice(end));
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
@@ -92,4 +92,91 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     console.error('Native batch transformation refused. Private source omitted.');
     process.exitCode = 1;
   }
+}
+
+function batchNativeSequences(source) {
+  const begin = source.indexOf(
+    'static void\ndumpSequence(Archive *fout, const TableInfo *tbinfo)\n'
+  );
+  const end = source.indexOf('\n/*\n * dumpSequenceData', begin);
+  assert.ok(begin > 0 && end > begin);
+  let fn = source.slice(begin, end);
+  const replace = (old, next) => {
+    assert.equal(fn.split(old).length, 2, 'Native sequence anchor changed');
+    fn = fn.replace(old, next);
+  };
+  replace(
+    '\tPGresult   *res;',
+    '\tPGresult   *res;\n\tstatic PGresult *batch_result = NULL;\n\tint batch_row = -1;'
+  );
+  const queryBegin = fn.indexOf('\tif (fout->remoteVersion >= 100000)');
+  const queryEnd = fn.indexOf('\n\tseqtype = PQgetvalue(res, 0, 0);', queryBegin);
+  assert.ok(queryBegin > 0 && queryEnd > queryBegin);
+  fn =
+    fn.slice(0, queryBegin) +
+    `
+    if (fout->remoteVersion < 170000 || fout->remoteVersion >= 180000)
+        pg_fatal("batched sequence metadata requires PostgreSQL 17");
+    if (batch_result == NULL)
+    {
+        DumpableObject **objects;
+        int object_count;
+        int selected_count = 0;
+        getDumpableObjects(&objects, &object_count);
+        appendPQExpBufferStr(query,
+            "SELECT seqrelid AS lb_sequence_oid, format_type(seqtypid, NULL), "
+            "seqstart, seqincrement, seqmax, seqmin, seqcache, seqcycle "
+            "FROM pg_catalog.pg_sequence WHERE seqrelid IN (0");
+        for (int i = 0; i < object_count; i++)
+        {
+            if (objects[i]->objType == DO_TABLE)
+            {
+                TableInfo *table = (TableInfo *) objects[i];
+                if (table->relkind == RELKIND_SEQUENCE &&
+                    (table->dobj.dump & DUMP_COMPONENT_DEFINITION))
+                {
+                    appendPQExpBuffer(query, ",%u", table->dobj.catId.oid);
+                    selected_count++;
+                }
+            }
+        }
+        appendPQExpBufferStr(query, ") ORDER BY seqrelid");
+        pg_free(objects);
+        batch_result = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+        if (PQnfields(batch_result) != 8 || PQntuples(batch_result) != selected_count)
+            pg_fatal("batched sequence metadata count differs from native selection");
+        for (int i = 1; i < PQntuples(batch_result); i++)
+            if (atooid(PQgetvalue(batch_result, i - 1, 0)) >=
+                atooid(PQgetvalue(batch_result, i, 0)))
+                pg_fatal("batched sequence metadata OIDs are not unique and ordered");
+    }
+    {
+        int lower = 0;
+        int upper = PQntuples(batch_result) - 1;
+        while (lower <= upper)
+        {
+            int middle = lower + (upper - lower) / 2;
+            Oid found = atooid(PQgetvalue(batch_result, middle, 0));
+            if (found == tbinfo->dobj.catId.oid) { batch_row = middle; break; }
+            if (found < tbinfo->dobj.catId.oid) lower = middle + 1;
+            else upper = middle - 1;
+        }
+    }
+    if (batch_row < 0)
+        pg_fatal("native sequence missing from batched metadata");
+    res = PQcopyResult(batch_result, PG_COPYRES_ATTRS | PG_COPYRES_NOTICEHOOKS);
+    if (res == NULL)
+        pg_fatal("cannot allocate native sequence metadata result");
+    /* Preserve stock positional fields 0..6, excluding the lookup OID. */
+    for (int column = 0; column < 7; column++)
+    {
+        bool missing = PQgetisnull(batch_result, batch_row, column + 1);
+        if (!PQsetvalue(res, 0, column,
+                        missing ? NULL : PQgetvalue(batch_result, batch_row, column + 1),
+                        missing ? -1 : PQgetlength(batch_result, batch_row, column + 1)))
+            pg_fatal("cannot copy native sequence metadata result");
+    }
+` +
+    fn.slice(queryEnd);
+  return source.slice(0, begin) + fn + source.slice(end);
 }

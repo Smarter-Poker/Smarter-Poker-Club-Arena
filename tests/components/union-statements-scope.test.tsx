@@ -643,4 +643,31 @@ describe('Union Statements painted-console contract', () => {
       expect(screen.getByLabelText('Payment Received From Alpha Club')).not.toBeDisabled();
     }
   );
+
+  it('refuses amounts above the stored payment maximum before saving a request or calling the RPC', async () => {
+    testState.rpc.mockImplementation((name: string) =>
+      Promise.resolve(
+        name === 'ca_union_insurance_pnl'
+          ? insurance()
+          : { data: statementBoard('union-a', 'alpha union', 'alpha club'), error: null }
+      )
+    );
+    render(<UnionStatementsPage />);
+    const club = await screen.findByText('Alpha Club');
+    fireEvent.click(club.closest('button') as HTMLButtonElement);
+    fireEvent.click(screen.getByRole('button', { name: 'Record A Payment' }));
+    const amount = screen.getByLabelText('Payment Received From Alpha Club');
+    fireEvent.change(amount, { target: { value: '10000000000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }));
+    await waitFor(() =>
+      expect(testState.toast.error).toHaveBeenCalledWith(
+        'Enter An Amount No Greater Than 9,999,999,999.99 Chips'
+      )
+    );
+    expect(
+      testState.rpc.mock.calls.some(([name]) => name === 'fn_union_record_presettlement')
+    ).toBe(false);
+    expect(sessionStorage.length).toBe(0);
+    expect(amount).toBeEnabled();
+  });
 });

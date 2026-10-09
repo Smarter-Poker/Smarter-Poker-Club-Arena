@@ -484,6 +484,12 @@ export default function UnionStatementsPage() {
         toast.error('Enter An Amount Greater Than Zero');
         return;
       }
+      // union_presettlements.amount and its receipt are numeric(12,2).
+      // Refuse impossible input before persisting an unresolved operation.
+      if (amount > 9_999_999_999.99) {
+        toast.error('Enter An Amount No Greater Than 9,999,999,999.99 Chips');
+        return;
+      }
       if (
         !Number.isSafeInteger(Math.round(amount * 100)) ||
         Math.abs(amount * 100 - Math.round(amount * 100)) > 0.000001

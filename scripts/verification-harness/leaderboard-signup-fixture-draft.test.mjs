@@ -97,3 +97,20 @@ test('opening and retirement journal actors are actual generated signup identiti
   assert.ok(!sql.includes("'request.jwt.claim.sub', '', true"));
   assert.ok(!sql.includes('2d1cd6c3-5700-4af9-a271-d4863fdab20d'));
 });
+
+test('club opening declarations are consumed in three separate statements before commit', () => {
+  const sql = generateFixture(ids);
+  const section = sql.slice(
+    sql.indexOf('-- Create each club'),
+    sql.indexOf('DO $opening_balances$')
+  );
+  const statements = section.split(';').filter((part) => part.includes('INSERT INTO public.clubs'));
+  assert.equal(statements.length, 3);
+  for (const statement of statements) {
+    assert.equal((statement.match(/INSERT INTO public\.clubs/g) || []).length, 1);
+    assert.equal((statement.match(/(?:true|false), NULL, 0\)/g) || []).length, 1);
+  }
+  assert.equal((sql.match(/ISOLATED_AUTH_FIXTURE_STAGE=club-create/g) || []).length, 1);
+  assert.ok(sql.indexOf('SET CONSTRAINTS ALL IMMEDIATE;') < sql.lastIndexOf('COMMIT;'));
+  assert.ok(!/DISABLE TRIGGER|ledger_autoskip|session_replication_role/i.test(sql));
+});

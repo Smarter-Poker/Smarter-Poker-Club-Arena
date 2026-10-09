@@ -1,5 +1,6 @@
 // Source contracts only. Does not establish PostgreSQL concurrency behavior.
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
@@ -93,4 +94,34 @@ test('unknown-ack executable uses the reviewed glibc image and still checks actu
     'false|none',
   ])
     assert.ok(baseline.includes(marker));
+});
+
+test('proxy admits exactly the actual complete payout statement in both maintained drivers', () => {
+  const proxy = read('leaderboard-unknown-ack-proxy-draft.mjs');
+  const expected = proxy.match(/const payoutSHA256 = '([0-9a-f]{64})';/)[1];
+  for (const driver of [
+    read('leaderboard-unknown-ack-draft.sh'),
+    buildUnknownAckRepairCandidate(),
+  ]) {
+    assert.equal(driver.split('DO $ack_payout$').length, 2);
+    assert.equal(driver.split('$ack_payout$;').length, 2);
+    const query = driver
+      .slice(
+        driver.indexOf('DO $ack_payout$'),
+        driver.indexOf('$ack_payout$;') + '$ack_payout$;'.length
+      )
+      .trim();
+    const digest = (value) => createHash('sha256').update(value).digest('hex');
+    assert.equal(digest(query), expected);
+    assert.notEqual(
+      digest(
+        query.replace(
+          '90000000-0000-4000-8000-000000000001',
+          '90000000-0000-4000-8000-000000000002'
+        )
+      ),
+      expected
+    );
+  }
+  assert.match(proxy, /update\(query\)\.digest\('hex'\) !== payoutSHA256/);
 });

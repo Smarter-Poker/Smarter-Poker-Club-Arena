@@ -79,7 +79,9 @@ cleanup() {
   done
   cleanup_node_source || failed=true
   if [[ "$failed" == true ]]; then
-    diagnostic_stage='own_cleanup'
+    # Preserve the actual failed stage; cleanup is a separate fixed receipt.
+    printf '%s\n' 'UNKNOWN_ACK_OWN_CLEANUP_FAILED'
+    [[ "$code" != 0 ]] || diagnostic_stage='own_cleanup'
     echo 'Owned unknown-ack client cleanup failed; whole container cleanup required' >&2
     [[ "$code" != 0 ]] || code=1
   fi

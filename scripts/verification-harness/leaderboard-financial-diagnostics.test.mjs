@@ -143,3 +143,33 @@ test('pre-verdict psql failure locates only stdin line and SQLSTATE without acce
   );
   assert.match(generated, /-v VERBOSITY=sqlstate --file=-/);
 });
+
+test('unknown-ack EXIT preserves original failure and separately reports owned cleanup failure', () => {
+  const driver = readFileSync(
+    new URL('./leaderboard-unknown-ack-draft.sh', import.meta.url),
+    'utf8'
+  );
+  const cleanup = driver.slice(
+    driver.indexOf('cleanup() {'),
+    driver.indexOf('trap cleanup EXIT') + 'trap cleanup EXIT'.length
+  );
+  for (const original of [0, 9]) {
+    const result = spawnSync(
+      'bash',
+      [
+        '-c',
+        `set -euo pipefail\nstarts=()\ndiagnostic_stage='quarantine'\ncleanup_node_source(){ return 1; }\n${cleanup}\nexit ${original}\n`,
+      ],
+      { encoding: 'utf8', timeout: 3000 }
+    );
+    assert.equal(result.status, original || 1, result.stderr);
+    const receipt = financialDiagnostics('unknown-ack', result.stdout + result.stderr);
+    assert.match(receipt, original ? /stage=quarantine/ : /stage=own_cleanup/);
+    assert.match(receipt, /mode=unknown-ack owned_cleanup=failed/);
+  }
+  const secret = financialDiagnostics(
+    'unknown-ack',
+    'FINANCIAL_DRIVER|f||quarantine\nUNKNOWN_ACK_OWN_CLEANUP_FAILED SECRET_TOKEN\n'
+  );
+  assert.doesNotMatch(secret, /owned_cleanup|SECRET_TOKEN/);
+});

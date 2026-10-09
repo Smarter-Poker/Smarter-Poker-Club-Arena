@@ -1,6 +1,6 @@
 /**
  * Condition (b) of the winning contract
- * (docs/horse-brain-winning-contract-2026-10-08.md), measured for a Phase 12
+ * (docs/horse-brain-winning-contract-2026-10-08.md), measured for a Phase 10, 11 or 12
  * pack: the candidate arm's after-rake net against the human-calibrated
  * population on every one of the pack's cash contract profiles, transformed by
  * `withHumanCalibratedOpponents`, on the held-out seeds
@@ -59,7 +59,7 @@ export interface HumanCalibratedMoments {
 
 export interface HumanCalibratedCheckRun {
   schema: typeof HUMAN_CALIBRATED_CHECK_SCHEMA;
-  phase: 'phase12';
+  phase: 'phase10' | 'phase11' | 'phase12';
   variant: string;
   packVersion: string;
   contractDigest: string;

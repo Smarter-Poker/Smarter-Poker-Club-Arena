@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 194516,
-      "sha256": "087503fd4070b24e0eab1f2f93c46ae20ce198b94d4548efe710ca9fd11759cc"
+      "bytes": 194821,
+      "sha256": "c60b85cae9328f5cb670d4983f6bc31c2c28d80783becbad03cb2772eb18b947"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1825,5 +1825,9 @@
   "operatorPauseCurrent3353MainIntegration20261009": {
     "reason": "Preserve protected main native metadata qualification and the candidate operator-hold step. Combined workflow source identity only; financial assertions and SOURCE_ONLY_UNRUN remain unchanged.",
     "protectedMain": "3353d64d5f2deaee025a1c92377f8c41fb39eaac"
+  },
+  "operatorPauseServing94b2Integration20261009": {
+    "reason": "Preserve all serving protected-main changes and the existing operator-hold qualification. This refreshed workflow fingerprint records source integrity only; no new runtime or Full-B acceptance is claimed.",
+    "integratedServingCommit": "94b2ae91c3c6742b5e05bca858c62580651ee180"
   }
 }

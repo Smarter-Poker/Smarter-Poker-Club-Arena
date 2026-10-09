@@ -57,20 +57,56 @@ export async function checkClubCreateCapacity({
     throw new Error('CLUB_CREATE_CERT_REQUIRED_GRANTS Must Be An Integer From 1 Through 20.');
   }
 
-  const response = await fetchImpl(`${supabaseUrl}/rest/v1/rpc/fn_ca_mint_overview`, {
-    method: 'POST',
-    headers: supabaseServerHeaders(serviceRoleKey, {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-    }),
-    body: '{}',
+  // Capacity is advisory; the existing issuance transaction remains the authority.
+  // Avoid lifetime reconciliation and seat totals in the full Mint overview.
+  const headers = supabaseServerHeaders(serviceRoleKey, {
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
   });
-  const body = await response.json().catch(() => undefined);
-  if (!response.ok) {
-    throw new Error(`Club Create Capacity Read Failed (${response.status}).`);
+  const [issuedResponse, policyResponse] = await Promise.all([
+    fetchImpl(`${supabaseUrl}/rest/v1/rpc/fn_ca_mint_issued_24h`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ p_asset: 'chips', p_except_leg: null }),
+    }),
+    fetchImpl(`${supabaseUrl}/rest/v1/ca_mint_policy?id=eq.1&select=rolling_24h_cap_chips`, {
+      method: 'GET',
+      headers,
+    }),
+  ]);
+  for (const response of [issuedResponse, policyResponse]) {
+    if (!response.ok) throw new Error(`Club Create Capacity Read Failed (${response.status}).`);
   }
-
-  const capacity = readCapacity(body, grants);
+  const [issuedBody, policyBody] = await Promise.all([
+    issuedResponse.json().catch(() => undefined),
+    policyResponse.json().catch(() => undefined),
+  ]);
+  function amount(value) {
+    if (
+      (typeof value !== 'number' && typeof value !== 'string') ||
+      (typeof value === 'string' && !value.trim())
+    )
+      return NaN;
+    return Number(value);
+  }
+  const issued = amount(issuedBody);
+  const ceiling =
+    Array.isArray(policyBody) && policyBody.length === 1
+      ? amount(policyBody[0]?.rolling_24h_cap_chips)
+      : NaN;
+  if (!Number.isFinite(issued) || issued < 0 || !Number.isFinite(ceiling) || ceiling < 0) {
+    throw new Error(
+      'Club Create Capacity Is Unknown: The Rolling Issuance Or Policy Was Incomplete.'
+    );
+  }
+  const capacity = readCapacity(
+    {
+      ok: true,
+      issuance: { issued_24h: issued },
+      policy: { rolling_24h_cap_chips: ceiling, headroom_24h_chips: ceiling - issued },
+    },
+    grants
+  );
   const message = describeCapacity(capacity);
   console.log(message);
   if (environment.GITHUB_STEP_SUMMARY) {

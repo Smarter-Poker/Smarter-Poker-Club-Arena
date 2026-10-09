@@ -176,7 +176,7 @@
     "tests/unit/SettlementCronService.test.ts": "b436754cec532a518975b8f03ff5020dc90048d30c044ca04aa25029a1109a9f",
     "tests/unit/ServiceBootstrap.test.ts": "533800128e0f184de1437e25d2966af1b08a3926ac9398d28938b017fec6ad02",
     "tests/unit/FinancialCronService.test.ts": "19e63654d2b3cd9719e9bde91faece245392c5a05270092c779bbfd192ebb8eb",
-    "tests/components/ClubWeeklyAccountingSummary.test.tsx": "9ca3b030683c58fefe32e75d30d7fddf2d605bb678d7b9df353e7fe635d9b6c9",
+    "tests/components/ClubWeeklyAccountingSummary.test.tsx": "9999e0816dfe89a940745f2b34eee593ed0d5296aa076d9e5b1093ba5d153932",
     "tests/unit/AccountingObservationService.test.ts": "6e571f657f66a05bd37b9aa35b867e12b54c99c75754e017034ec3bafed17ce9",
     "tests/unit/SettlementService.test.ts": "92390199785906650508d16eea99372e24a6451dd8cd9d108679381ed1ca936d",
     "tests/unit/useUnionStore.test.ts": "3b3f59aca73ce2c20fad59c82e23dfa9c4aaef4b22fdff9ab3295b379e593268",
@@ -3798,5 +3798,16 @@
       }
     ],
     "verification": "Before the source repair the focus regression failed; all 36 exact route and component checks passed afterward, and TypeScript and normal hooks passed. This binding records the reviewed additive test bytes, not a new native financial or hosted production qualification."
+  },
+  "weeklySummaryExportScopeRebinding20261009": {
+    "reason": "The complete test diff adds two regressions for a pending weekly-summary export when the club changes or the account epoch changes and returns to the same visible user. Existing financial totals, access, keyboard focus, unavailable/empty and stale-read assertions remain intact. Mock restoration isolates the new export spy. No captured catalog, SQL, financial amount, native assertion or authorization rule is changed.",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/components/ClubWeeklyAccountingSummary.test.tsx",
+        "previous_sha256": "9ca3b030683c58fefe32e75d30d7fddf2d605bb678d7b9df353e7fe635d9b6c9",
+        "sha256": "9999e0816dfe89a940745f2b34eee593ed0d5296aa076d9e5b1093ba5d153932"
+      }
+    ],
+    "verification": "The exact additive test diff was reviewed. Its focused component suite passed in the original candidate; the complete source-binding verifier must pass after this targeted refresh. This refresh is not new native execution or production proof."
   }
 }

@@ -22,6 +22,90 @@ const authImage =
 const restImage =
   'postgrest/postgrest@sha256:b574528fe109c8343c1247155734d03df8c34b462f342dca0ccc20244fc36ef9';
 const nodeImage = 'node@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402';
+const phases = new Set([
+  'input',
+  'runtime-admission',
+  'fresh-data',
+  'catalog-before',
+  'auth-ledger',
+  'original-roles',
+  'synthetic-passwords',
+  'private-environment',
+  'local-hba',
+  'database-restart',
+  'catalog-after-restart',
+  'service-create',
+  'image-migrations',
+  'binary-version',
+  'service-start',
+  'service-health',
+  'catalog-after-start',
+  'signup',
+  'signup-fixture',
+  'delegation-join',
+  'financial-before',
+  'issued-token-expiry',
+  'authorization-matrix',
+  'overseer-appoint',
+  'overseer-admitted',
+  'overseer-revoke',
+  'overseer-refused',
+  'final-readback',
+]);
+let phase = 'input',
+  failureKind = 'assertion-or-input';
+export function authFailureDiagnostic(stage, kind) {
+  const safeStage = phases.has(stage) ? stage : 'unknown';
+  const safeKind = ['docker-timeout', 'docker-exit', 'assertion-or-input'].includes(kind)
+    ? kind
+    : 'unknown';
+  return `Isolated Auth Failure: phase=${safeStage}; kind=${safeKind}`;
+}
+export function authCommandFailure(result) {
+  if (result.error?.code === 'ETIMEDOUT') return 'docker-timeout';
+  if (result.error || result.status !== 0) return 'docker-exit';
+  return null;
+}
+const fixtureStages = new Set([
+  'identity-guard',
+  'mint-policy',
+  'union-create',
+  'club-create',
+  'opening-retirement',
+  'union-link',
+  'memberships',
+  'constraints',
+]);
+const sqlStates = new Set([
+  'P0001',
+  '23502',
+  '23503',
+  '23505',
+  '23514',
+  '42501',
+  '55000',
+  '42P01',
+  '42703',
+  '57014',
+  '08006',
+  'XX000',
+]);
+export function authSqlFailureDiagnostic(result) {
+  const stages = String(result.stdout || '')
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('ISOLATED_AUTH_FIXTURE_STAGE='))
+    .map((line) => line.slice('ISOLATED_AUTH_FIXTURE_STAGE='.length));
+  const candidate = stages.at(-1);
+  const safeStage = fixtureStages.has(candidate) ? candidate : 'unknown';
+  const match = String(result.stderr || '').match(/ERROR:\s+([0-9A-Z]{5})\s*(?:\r?\n|$)/);
+  const safeState = match && sqlStates.has(match[1]) ? match[1] : 'unknown';
+  return `Isolated Auth SQL Failure: fixture=${safeStage}; sqlstate=${safeState}`;
+}
+function stage(name) {
+  assert.ok(phases.has(name));
+  phase = name;
+  console.log(`Isolated Auth Stage: ${name}`);
+}
 const owned = new Set();
 const ownedSecrets = new Set();
 function reserve(name) {
@@ -39,7 +123,12 @@ function command(args, input = '', timeout = 90000) {
     maxBuffer: 8 * 1024 * 1024,
     env: process.env,
   });
-  assert.equal(result.status, 0, 'Isolated Docker stage failed');
+  const failed = authCommandFailure(result);
+  if (failed) {
+    failureKind = failed;
+    if (args.includes('psql')) console.error(authSqlFailureDiagnostic(result));
+  }
+  assert.equal(failed, null, 'Isolated Docker stage failed');
   return result.stdout.trim();
 }
 let cfg;
@@ -59,6 +148,8 @@ function sql(text) {
       'postgres',
       '-v',
       'ON_ERROR_STOP=1',
+      '-v',
+      'VERBOSITY=sqlstate',
     ],
     text
   );
@@ -146,6 +237,7 @@ async function main() {
     'a39a6625824a961c445673001a211a1d'
   );
   assert.ok(cfg.authVersions.every((v) => /^(00|[0-9]{14})$/.test(v)));
+  stage('runtime-admission');
   const db = JSON.parse(command(['inspect', cfg.container]))[0];
   assert.equal(db.Config.Image, 'supabase/postgres:17.6.1.063');
   assert.equal(Object.keys(db.NetworkSettings.Networks).length, 1);
@@ -155,11 +247,14 @@ async function main() {
   assert.equal(network.Internal, true);
   const subnet = network.IPAM.Config[0].Subnet;
   assert.match(subnet, /^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)[0-9./]+$/);
+  stage('fresh-data');
   sql(
     "DO $$ BEGIN IF session_user<>'leaderboard_qualification_bootstrap' OR current_user<>session_user OR inet_server_addr() IS NOT NULL THEN RAISE EXCEPTION 'Isolated socket required'; END IF; IF EXISTS(SELECT 1 FROM auth.users) OR EXISTS(SELECT 1 FROM public.clubs) OR EXISTS(SELECT 1 FROM auth.schema_migrations) THEN RAISE EXCEPTION 'Fresh empty restored data required'; END IF; END $$;"
   );
+  stage('catalog-before');
   const expected = readFileSync(cfg.sourceCatalog, 'utf8').trim();
   assert.equal(catalog(), expected);
+  stage('auth-ledger');
   sql(
     `INSERT INTO auth.schema_migrations(version) VALUES ${cfg.authVersions.map((v) => `('${v}')`).join(',')};`
   );
@@ -167,13 +262,16 @@ async function main() {
   const secret = randomBytes(48).toString('base64url');
   const authPassword = randomBytes(32).toString('base64url');
   const restPassword = randomBytes(32).toString('base64url');
+  stage('original-roles');
   sql(
     "DO $$ BEGIN IF (SELECT count(*) FROM pg_roles WHERE rolname IN('supabase_auth_admin','authenticator') AND rolcanlogin)<>2 THEN RAISE EXCEPTION 'Original login roles unavailable'; END IF; END $$;"
   );
   // Passwords are newly synthetic; role attributes/memberships/grants unchanged.
+  stage('synthetic-passwords');
   sql(
     `SET password_encryption='scram-sha-256'; ALTER ROLE supabase_auth_admin PASSWORD '${authPassword}'; ALTER ROLE authenticator PASSWORD '${restPassword}';`
   );
+  stage('private-environment');
   const authEnv = join(cfg.scratch, 'real-auth.env'),
     restEnv = join(cfg.scratch, 'real-rest.env');
   writeFileSync(
@@ -216,6 +314,7 @@ async function main() {
   );
   ownedSecrets.add(restEnv);
   // Local-only HBA is narrowed to these unchanged original roles and subnet.
+  stage('local-hba');
   command(
     [
       'exec',
@@ -227,10 +326,14 @@ async function main() {
     ],
     `\nhost postgres supabase_auth_admin ${subnet} scram-sha-256\nhost postgres authenticator ${subnet} scram-sha-256\n`
   );
+  stage('database-restart');
   command([
     'exec',
     cfg.container,
     'pg_ctl',
+    // Restart must redirect postgres descendants; otherwise captured pipes stay open.
+    '-l',
+    '/tmp/postgres.log',
     '-D',
     '/tmp/leaderboard-qualification-db',
     '-o',
@@ -238,9 +341,11 @@ async function main() {
     '-w',
     'restart',
   ]);
+  stage('catalog-after-restart');
   assert.equal(catalog(), expected);
   const authName = `${cfg.container}-auth`,
     restName = `${cfg.container}-rest`;
+  stage('service-create');
   for (const [name, alias, image, env, entry, args] of [
     [authName, 'leaderboard-auth', authImage, authEnv, '/usr/local/bin/auth', ['serve']],
     [restName, 'leaderboard-rest', restImage, restEnv, '/bin/postgrest', []],
@@ -265,6 +370,7 @@ async function main() {
       ...args,
     ]);
   }
+  stage('image-migrations');
   const migrationDir = join(cfg.scratch, 'real-auth-image-migrations');
   assert.ok(!existsSync(migrationDir));
   command(['cp', `${authName}:/usr/local/etc/auth/migrations`, migrationDir]);
@@ -279,6 +385,7 @@ async function main() {
   assert.ok(imageMigrationVersions.every((v) => cfg.authVersions.includes(v)));
   // Explicit metadata command has no DB configuration or network; bare Auth
   // startup is never used. Require the actual pinned binary's reported version.
+  stage('binary-version');
   const versionName = `${cfg.container}-auth-version`;
   reserve(versionName);
   const binaryVersion = command([
@@ -296,15 +403,18 @@ async function main() {
   ]);
   assert.match(binaryVersion, /(^|\s)v?2\.197\.0(\s|$)/);
   owned.delete(versionName);
+  stage('service-start');
   command(['start', authName, restName]);
+  stage('service-health');
   inline(
     "for(let i=0;i<50;i++){try{let a=await fetch('http://leaderboard-auth:9999/health',{signal:AbortSignal.timeout(1000)}),b=await fetch('http://leaderboard-rest:3000/',{signal:AbortSignal.timeout(1000)});if(a.ok&&b.ok)process.exit(0);}catch{}await new Promise(r=>setTimeout(r,100));}process.exit(1);",
     {}
   );
+  stage('catalog-after-start');
   assert.equal(catalog(), expected);
   assert.deepEqual(versions(), cfg.authVersions);
   const accounts = Array.from({ length: 5 }, (_, i) => ({
-    email: `lb-real-auth-${i + 1}@example.invalid`,
+    email: `lb-real-auth-${i + 1}@smarter-poker.invalid`,
     password: randomBytes(32).toString('base64url'),
   }));
   const preflight = {
@@ -322,7 +432,9 @@ async function main() {
   };
   const transport = '/harness/leaderboard-real-auth-draft.mjs';
   const base = { kind: 'synthetic-leaderboard-real-auth-v1', accounts, preflight };
+  stage('signup');
   const signup = JSON.parse(driver(transport, { ...base, mode: 'signup' }));
+  stage('signup-fixture');
   const generated = spawnSync(
     process.execPath,
     [join(here, 'leaderboard-signup-fixture-draft.mjs')],
@@ -330,14 +442,18 @@ async function main() {
   );
   assert.equal(generated.status, 0);
   sql(generated.stdout);
+  stage('delegation-join');
   sql(delegationFixture('join', signup.ids));
   const financialQuery =
     "SELECT md5(jsonb_build_object('ledger',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.chip_ledger t),'issuance',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.ca_mint_ledger t),'chips',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.chip_transactions t),'wallet_history',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.wallet_transactions t),'clubs',(SELECT jsonb_agg(jsonb_build_object('id',id,'treasury',chip_treasury,'promo',promo_balance) ORDER BY id) FROM public.clubs),'members',(SELECT jsonb_agg(jsonb_build_object('club',club_id,'user',user_id,'chips',chip_balance,'promo',promo_balance) ORDER BY club_id,user_id) FROM public.club_members),'union_wallets',(SELECT jsonb_agg(to_jsonb(t) ORDER BY union_id) FROM public.union_wallets t))::text);";
+  stage('financial-before');
   const financialBefore = sql(financialQuery);
+  stage('issued-token-expiry');
   const expiry = inline(
     "let s='';for await(const c of process.stdin)s+=c;let a=JSON.parse(s),r=await fetch('http://leaderboard-auth:9999/token?grant_type=password',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(a),signal:AbortSignal.timeout(15000)});if(!r.ok)process.exit(1);let j=await r.json(),t=j.access_token,c=JSON.parse(Buffer.from(t.split('.')[1],'base64url'));let wait=(c.exp+61)*1000-Date.now();if(wait<0||wait>130000)process.exit(1);await new Promise(r=>setTimeout(r,wait));console.log(JSON.stringify({token:t}));",
     accounts[0]
   );
+  stage('authorization-matrix');
   driver(transport, {
     ...base,
     mode: 'matrix',
@@ -346,13 +462,18 @@ async function main() {
   });
   const publicationQuery =
     "SELECT md5(jsonb_build_object('programs',(SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM public.leaderboard_reward_program_versions p),'settings',(SELECT jsonb_agg(to_jsonb(s) ORDER BY club_id) FROM public.club_leaderboard_settings s),'audit',(SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM public.audit_trail a))::text);";
+  stage('overseer-appoint');
   sql(delegationFixture('appoint', signup.ids));
   // Overseer admission/revocation uses fresh actual sessions for the SAME
   // identities. Only owner RPC phases inside the driver prove same-token use.
+  stage('overseer-admitted');
   driver(transport, { ...base, mode: 'overseer-admitted', fixtureUserIds: signup.ids });
+  stage('overseer-revoke');
   sql(delegationFixture('revoke', signup.ids));
   const publicationBeforeRefusal = sql(publicationQuery);
+  stage('overseer-refused');
   driver(transport, { ...base, mode: 'overseer-revoked', fixtureUserIds: signup.ids });
+  stage('final-readback');
   assert.equal(
     sql(publicationQuery),
     publicationBeforeRefusal,
@@ -391,47 +512,49 @@ async function main() {
     'Unqualified Draft Real Auth Matrix Completed; Production Binary Parity Unknown; Root Database Cleanup Required'
   );
 }
-main()
-  .catch(() => {
-    console.error('Real Auth Launcher Draft Failed; No Qualification Claimed');
-    process.exitCode = 1;
-  })
-  .finally(() => {
-    let failed = false;
-    for (const name of owned) {
-      const before = spawnSync(
-        'docker',
-        ['container', 'ls', '-a', '--filter', `name=^/${name}$`, '--format', '{{.Names}}'],
-        { encoding: 'utf8', timeout: 15000 }
-      );
-      if (before.status !== 0) {
-        failed = true;
-        continue;
-      }
-      if (before.stdout.trim()) {
-        const result = spawnSync('docker', ['rm', '-f', name], {
-          encoding: 'utf8',
-          timeout: 30000,
-        });
-        if (result.status !== 0) failed = true;
-      }
-      const remains = spawnSync(
-        'docker',
-        ['container', 'ls', '-a', '--filter', `name=^/${name}$`, '--format', '{{.Names}}'],
-        { encoding: 'utf8', timeout: 15000 }
-      );
-      if (remains.status !== 0 || remains.stdout.trim()) failed = true;
-    }
-    for (const path of ownedSecrets) {
-      try {
-        unlinkSync(path);
-        if (existsSync(path)) failed = true;
-      } catch {
-        failed = true;
-      }
-    }
-    if (failed) {
-      console.error('Owned Auth/REST Draft Cleanup Failed');
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
+  main()
+    .catch(() => {
+      console.error(authFailureDiagnostic(phase, failureKind));
+      console.error('Real Auth Launcher Draft Failed; No Qualification Claimed');
       process.exitCode = 1;
-    }
-  });
+    })
+    .finally(() => {
+      let failed = false;
+      for (const name of owned) {
+        const before = spawnSync(
+          'docker',
+          ['container', 'ls', '-a', '--filter', `name=^/${name}$`, '--format', '{{.Names}}'],
+          { encoding: 'utf8', timeout: 15000 }
+        );
+        if (before.status !== 0) {
+          failed = true;
+          continue;
+        }
+        if (before.stdout.trim()) {
+          const result = spawnSync('docker', ['rm', '-f', name], {
+            encoding: 'utf8',
+            timeout: 30000,
+          });
+          if (result.status !== 0) failed = true;
+        }
+        const remains = spawnSync(
+          'docker',
+          ['container', 'ls', '-a', '--filter', `name=^/${name}$`, '--format', '{{.Names}}'],
+          { encoding: 'utf8', timeout: 15000 }
+        );
+        if (remains.status !== 0 || remains.stdout.trim()) failed = true;
+      }
+      for (const path of ownedSecrets) {
+        try {
+          unlinkSync(path);
+          if (existsSync(path)) failed = true;
+        } catch {
+          failed = true;
+        }
+      }
+      if (failed) {
+        console.error('Owned Auth/REST Draft Cleanup Failed');
+        process.exitCode = 1;
+      }
+    });

@@ -450,6 +450,8 @@ test('failure diagnostics expose only fixed stage and strict SQLSTATE, preservin
   );
   for (const privateError of [
     'ERROR:  55000\nSECRET_SQL_TOKEN_NEVER_EMIT\n',
+    'psql:<stdin>:123: ERROR:  23503\nSECRET_SQL_TOKEN_NEVER_EMIT\n',
+    'psql:<stdin>:123: ERROR:  23503 SECRET_SQL_TOKEN_NEVER_EMIT\n',
     'ERROR:  SECRET_SQL_TOKEN_NEVER_EMIT\n',
     'ERROR:  55000 SECRET_SQL_TOKEN_NEVER_EMIT\n',
   ]) {
@@ -477,7 +479,21 @@ test('failure diagnostics expose only fixed stage and strict SQLSTATE, preservin
       );
       assert.equal(result.status, 42);
       assert.doesNotMatch(result.stdout + result.stderr, /SECRET_SQL_TOKEN|PRIVATE_SQL/);
-      assert.match(result.stderr, /Mode=opening Stage=fixture SQLSTATE=(55000|unknown) Exit=9/);
+      const exact = privateError.startsWith('psql:<stdin>:123: ERROR:  23503\n');
+      const expectedState = exact
+        ? '23503'
+        : privateError.startsWith('ERROR:  55000\n')
+          ? '55000'
+          : 'unknown';
+      assert.ok(
+        result.stderr.includes(
+          'Mode=opening Stage=fixture SQLSTATE=' +
+            expectedState +
+            ' InputLine=' +
+            (exact ? '123' : 'unknown') +
+            ' Exit=9'
+        )
+      );
       assert.equal(readFileSync(join(directory, 'repair-fixture.log'), 'utf8'), privateError);
     } finally {
       rmSync(directory, { recursive: true, force: true });

@@ -110,37 +110,33 @@ export function interpretAnswer<T>(
 
 type RpcClient = Pick<typeof supabase, 'rpc'>;
 
-/** One door call: a missing function, a refusal and a fault each answer
- *  their own way, and every error is bound and reported. */
-async function callRaw(
-  fn: string,
-  args: Record<string, unknown>,
-  client: RpcClient
-): Promise<{ data: unknown } | { failed: OperatorAnswer<never> }> {
-  try {
-    const { data, error } = await client.rpc(fn, args);
-    if (error) {
-      if (isLightningRpcMissing(error)) return { failed: { status: 'unavailable' } };
-      if (isAuthzError(error)) return { failed: { status: 'denied' } };
-      reportError(error, `LightningOperator.${fn}`);
-      return { failed: { status: 'error', message: 'Could Not Read Lightning' } };
-    }
-    return { data };
-  } catch (e) {
-    if (isLightningRpcMissing(e)) return { failed: { status: 'unavailable' } };
-    reportError(e, `LightningOperator.${fn}`);
-    return { failed: { status: 'error', message: 'Could Not Read Lightning' } };
-  }
-}
+type RpcResult = { data: unknown; error: unknown };
 
+/**
+ * One door call: a missing function, a refusal and a fault each answer their
+ * own way, and every error is bound and reported. Each caller passes its own
+ * literal `client.rpc('fn_lightning_operator_...')`, so the repository's
+ * phantom-RPC gate sees every door this page reads.
+ */
 async function callDoor<T>(
   fn: string,
-  args: Record<string, unknown>,
-  interpret: (raw: unknown) => OperatorAnswer<T>,
-  client: RpcClient = supabase
+  call: () => PromiseLike<RpcResult>,
+  interpret: (raw: unknown) => OperatorAnswer<T>
 ): Promise<OperatorAnswer<T>> {
-  const result = await callRaw(fn, args, client);
-  return 'failed' in result ? result.failed : interpret(result.data);
+  try {
+    const { data, error } = await call();
+    if (error) {
+      if (isLightningRpcMissing(error)) return { status: 'unavailable' };
+      if (isAuthzError(error)) return { status: 'denied' };
+      reportError(error, `LightningOperator.${fn}`);
+      return { status: 'error', message: 'Could Not Read Lightning' };
+    }
+    return interpret(data);
+  } catch (e) {
+    if (isLightningRpcMissing(e)) return { status: 'unavailable' };
+    reportError(e, `LightningOperator.${fn}`);
+    return { status: 'error', message: 'Could Not Read Lightning' };
+  }
 }
 
 // ─── Labels (operator vocabulary: Lightning, Must Move, never a rival name) ─
@@ -429,13 +425,12 @@ export function parseOverview(row: Record<string, unknown>): LightningOverview |
 
 export function fetchLightningOverview(
   clubId: string,
-  client?: RpcClient
+  client: RpcClient = supabase
 ): Promise<OperatorAnswer<LightningOverview>> {
   return callDoor(
     'fn_lightning_operator_overview',
-    { p_club_id: clubId },
-    (raw) => interpretAnswer(raw, parseOverview),
-    client
+    () => client.rpc('fn_lightning_operator_overview', { p_club_id: clubId }),
+    (raw) => interpretAnswer(raw, parseOverview)
   );
 }
 
@@ -773,13 +768,17 @@ export function fetchLightningCluster(
   clusterId: string,
   from: Date,
   to: Date,
-  client?: RpcClient
+  client: RpcClient = supabase
 ): Promise<OperatorAnswer<LightningClusterDetail>> {
   return callDoor(
     'fn_lightning_operator_cluster',
-    { p_cluster_id: clusterId, p_from: from.toISOString(), p_to: to.toISOString() },
-    (raw) => interpretAnswer(raw, parseClusterDetail),
-    client
+    () =>
+      client.rpc('fn_lightning_operator_cluster', {
+        p_cluster_id: clusterId,
+        p_from: from.toISOString(),
+        p_to: to.toISOString(),
+      }),
+    (raw) => interpretAnswer(raw, parseClusterDetail)
   );
 }
 
@@ -856,13 +855,16 @@ export function interpretHandReplay(raw: unknown): OperatorAnswer<LightningHandR
 export function fetchLightningHandReplay(
   clusterId: string,
   handId: string,
-  client?: RpcClient
+  client: RpcClient = supabase
 ): Promise<OperatorAnswer<LightningHandReplay>> {
   return callDoor(
     'fn_lightning_operator_hand_replay',
-    { p_cluster_id: clusterId, p_hand_id: handId },
-    interpretHandReplay,
-    client
+    () =>
+      client.rpc('fn_lightning_operator_hand_replay', {
+        p_cluster_id: clusterId,
+        p_hand_id: handId,
+      }),
+    interpretHandReplay
   );
 }
 
@@ -925,13 +927,16 @@ export function parseSessionTrail(row: Record<string, unknown>): LightningSessio
 export function fetchLightningSessionTrail(
   clusterId: string,
   poolSessionId: string,
-  client?: RpcClient
+  client: RpcClient = supabase
 ): Promise<OperatorAnswer<LightningSessionTrail>> {
   return callDoor(
     'fn_lightning_operator_session_trail',
-    { p_cluster_id: clusterId, p_pool_session_id: poolSessionId },
-    (raw) => interpretAnswer(raw, parseSessionTrail),
-    client
+    () =>
+      client.rpc('fn_lightning_operator_session_trail', {
+        p_cluster_id: clusterId,
+        p_pool_session_id: poolSessionId,
+      }),
+    (raw) => interpretAnswer(raw, parseSessionTrail)
   );
 }
 
@@ -956,14 +961,18 @@ export function reviewLightningSignal(
   signalId: string,
   status: SignalReviewStatus,
   note: string,
-  client?: RpcClient
+  client: RpcClient = supabase
 ): Promise<OperatorAnswer<LightningSignalReviewResult>> {
   const trimmed = note.trim();
   return callDoor(
     'fn_lightning_operator_signal_review',
-    { p_signal_id: signalId, p_status: status, p_note: trimmed === '' ? null : trimmed },
-    (raw) => interpretAnswer(raw, parseSignalReview),
-    client
+    () =>
+      client.rpc('fn_lightning_operator_signal_review', {
+        p_signal_id: signalId,
+        p_status: status,
+        p_note: trimmed === '' ? null : trimmed,
+      }),
+    (raw) => interpretAnswer(raw, parseSignalReview)
   );
 }
 

@@ -1,5 +1,7 @@
 name: Union own period settles with its week
 
+# Also proves the existing job 272 starts the due Monday close at 04:00 Chicago
+# and admits a thawed 04:05 tick, retaining its budgets and coordinator guards.
 # fn_union_settlement_cascade (migration 20261008050208). Runs
 # scripts/ci/test-union-own-period-settles.py against a throwaway PostgreSQL 17
 # cluster, never production: the exact production cascade and settler captured
@@ -15,6 +17,7 @@ on:
     branches: [main]
     paths:
       - supabase/migrations/20261008050208_the_union_s_own_square_up_period_settles_with_its_week.sql
+      - supabase/migrations/20261009005558_the_weekly_close_starts_at_four_in_chicago.sql
       - scripts/ci/fixtures/union-own-period-settles/**
       - scripts/ci/test-union-own-period-settles.py
       - .github/workflows/union-own-period-settles.yml
@@ -52,7 +55,7 @@ jobs:
             "$codename" > "$pg_sources/pgdg.sources"
           sudo apt-get "${pg_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
-          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17 postgresql-17-cron
       # Runs as the runner user (non-root), exactly as the ci.yml step would.
       - name: Union own square-up period settles with its week
         env:

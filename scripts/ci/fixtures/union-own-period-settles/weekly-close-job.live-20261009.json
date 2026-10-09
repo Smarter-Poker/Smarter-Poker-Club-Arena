@@ -1,0 +1,13 @@
+{
+  "observed_at": "2026-10-09T00:52:24.967323+00:00",
+  "job": {
+    "jobid": 272,
+    "active": true,
+    "command": "SELECT set_config('statement_timeout',CASE WHEN x.big THEN '3600s' ELSE '720s' END,false),set_config('app.weekly_accounting_attempt_budget','1',false),set_config('app.weekly_accounting_scope_budget',CASE WHEN x.big THEN '50 minutes' ELSE '9 minutes' END,false),set_config('app.weekly_accounting_chunked','on',false) FROM (SELECT (NOT EXISTS(SELECT 1 FROM public.union_pnl_inventory_checkpoints c WHERE c.boundary=public.fn_union_week_start(now())) AND NOT public.fn_accounting_close_seal_held(public.fn_union_week_start(now()))) OR EXISTS(SELECT 1 FROM public.weekly_accounting_scheduler_visits v WHERE v.last_outcome='statement_timeout' AND v.last_visit_at>now()-interval '3 hours') OR EXISTS(SELECT 1 FROM public.union_accounting_runs q WHERE q.status='failed' AND q.result->>'error'='weekly_scope_time_budget_exhausted' AND q.finished_at>now()-interval '3 hours') AS big) x; SELECT CASE WHEN extract(minute FROM now()) BETWEEN 40 AND 44 OR EXISTS(SELECT 1 FROM public.union_accounting_runs q WHERE q.status='running' AND q.result->>'chunk_committed'='true') OR EXISTS(SELECT 1 FROM public.union_accounting_runs q WHERE q.status='failed' AND q.result->>'error'='weekly_scope_time_budget_exhausted' AND q.finished_at>now()-interval '3 hours') OR public.fn_accounting_close_gate_lifted_unstarted() OR public.fn_union_pnl_inventory_seal_in_progress() THEN public.fn_union_settlement_cascade_due() END;",
+    "jobname": "union-weekly-rakeback-close",
+    "schedule": "*/5 * * * *"
+  },
+  "command_md5": "3d27a473c11051deb6fe00ceffd4e409",
+  "candidate_md5": "a532167f5019f181dd10e48102e40cfc",
+  "scheduler_md5": "3cb890191c1da58d621f108934d1116e"
+}

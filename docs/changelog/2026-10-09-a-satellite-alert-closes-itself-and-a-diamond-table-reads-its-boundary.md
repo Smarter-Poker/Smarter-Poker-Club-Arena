@@ -23,3 +23,9 @@ Test: `server/src/engine/aDiamondRefreshReadsWhatItsBoundaryChecks.test.ts`.
 `seedOpenSeatTable` asked for exactly as many opening horses as a seat-first board opens with. A horse another tick had just taken to four games was refused with FOUR TABLE LIMIT (17 reports in six hours) and its seat opened empty. That refusal is the cap working, so it is no longer reported as an error, and the seat is offered to fresh candidates once, never past the opening count.
 
 Test: `server/src/services/aRefusedOpenerIsReplaced.test.ts`.
+
+## A Scheduled Event That Will Not Exist Is Paged
+
+Every refusal on the scheduled spawn path was an error log line and nothing else. Four Diamond Arena "$100 Freeroll" schedules seeded on 2026-10-07 have been refused by the arena's door (`diamond_tournament_format_not_open`) on every poll since, and not one of their occurrences ever existed, with no durable record anywhere. When an occurrence cannot be created and its start is within the hour or already passed, the scheduler now raises one warning alert per schedule (`ScheduledTournaments.occurrence_not_created`, keyed on the schedule) naming the refusal, and the schedule's next successful spawn closes it with a written resolution.
+
+Law: `server/src/services/aScheduledEventThatWillNotExistIsPaged.law.test.ts`.

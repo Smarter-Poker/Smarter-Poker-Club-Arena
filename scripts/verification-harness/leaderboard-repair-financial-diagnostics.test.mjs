@@ -56,7 +56,7 @@ test('complete original failure reports safely without falsely passing unexecute
     repairFinancialDiagnostics('v2-payout', original.split('\n').slice(1).join('\n'))
   );
 });
-test('exact ten source cases and fixed stages agree with actual verdict producers', () => {
+test('exact twelve source cases and fixed stages agree with actual verdict producers', () => {
   const baseline = readFileSync(
     new URL('./leaderboard-isolated-payout-regression-draft.sql', import.meta.url),
     'utf8'
@@ -83,7 +83,7 @@ test('exact ten source cases and fixed stages agree with actual verdict producer
     'v2-payout',
     `SECRET_PRIVATE_TOKEN\nERROR: arbitrary statement\n${fixture}`
   );
-  assert.equal(output.split('\n').length, 10);
+  assert.equal(output.split('\n').length, 12);
   assert.doesNotMatch(output, /SECRET|arbitrary|ERROR:/);
 });
 test('partial, duplicate, unknown, malformed or secret-bearing verdict fields fail closed', () => {

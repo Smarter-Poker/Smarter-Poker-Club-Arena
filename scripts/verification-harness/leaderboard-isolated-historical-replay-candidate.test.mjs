@@ -37,7 +37,7 @@ test('two-stage historical recovery uses the pinned original real opening and du
 test('original payout creates paid historical evidence and candidate replays exact immutable response', () => {
   assert.match(sql, /Exact original unpaid historical fixture required/);
   assert.ok(sql.includes("<>'2ba8db49240eac826b2f3efe0e262648'"));
-  assert.equal(sql.match(/:=public\.fn_payout_leaderboard\(/g).length, 5);
+  assert.equal(sql.match(/:=public\.fn_payout_leaderboard\(/g).length, 7);
   assert.match(sql, /program_id=historical_program/);
   assert.match(sql, /payout_amount=10/);
   assert.match(sql, /seed_funded'\)::numeric IS DISTINCT FROM 10/);
@@ -171,4 +171,36 @@ test('candidate identities and exact new-overlay refusal cannot silently reuse p
   assert.ok(
     sql.includes('LEADERBOARD_PROMO_ONLY|Club Bank Overlay Is Not Allowed For Leaderboard Prizes')
   );
+});
+
+test('original fourth standalone preserves a real positive seed through prospective Promo settlement', () => {
+  const [before, after] = sql.split('\\else');
+  assert.match(
+    before,
+    /INSERT INTO public\.clubs\(id,name,owner_id,is_union,union_id,chip_treasury\)/
+  );
+  assert.match(before, /VALUES\(club,'Isolated Historical Seed Standalone',owner,false,NULL,0\)/);
+  assert.match(
+    before,
+    /result:=public\.fn_complete_club_opening_setup\(club,operation,'Historical Seed Preservation'/
+  );
+  assert.match(
+    before,
+    /fn_diamond_game_fund_promo\(club,20,'historical-positive-seed-promo-fund'\)/
+  );
+  assert.match(before, /seed_proof VALUES/);
+  assert.doesNotMatch(before.split('DO $seed_prepare$')[1], /fn_payout_leaderboard/);
+  assert.match(after, /leaderboard_seed_remaining[^\n]*IS DISTINCT FROM 100/);
+  assert.match(after, /IS DISTINCT FROM proof\.setup/);
+  assert.match(after, /IS DISTINCT FROM proof\.funding/);
+  assert.match(after, /pre_from_balance=20 AND post_from_balance=10/);
+  assert.match(after, /pre_to_balance=0 AND post_to_balance=10/);
+  assert.match(after, /Q0005.*PositiveHistoricalSeedPassedAndRolledBack/);
+  assert.match(after, /Positive seed case did not restore exact preimage/);
+});
+
+test('validated original history restores deferred checks before the next financial setup', () => {
+  assert.ok(sql.includes('END $prepare$;'));
+  assert.ok(sql.indexOf('SET CONSTRAINTS ALL DEFERRED;') > sql.indexOf('END $prepare$;'));
+  assert.ok(sql.indexOf('SET CONSTRAINTS ALL DEFERRED;') < sql.indexOf('DO $seed_prepare$'));
 });

@@ -1,5 +1,6 @@
 name: Union own period settles with its week
 
+# Independently qualifies idempotent payment receipts and private invoice metadata.
 # Also proves the existing job 272 starts the due Monday close at 04:00 Chicago
 # and admits a thawed 04:05 tick, retaining its budgets and coordinator guards.
 # fn_union_settlement_cascade (migration 20261008050208). Runs
@@ -20,6 +21,14 @@ on:
       - supabase/migrations/20261009005558_the_weekly_close_starts_at_four_in_chicago.sql
       - scripts/ci/fixtures/union-own-period-settles/**
       - scripts/ci/test-union-own-period-settles.py
+      - supabase/migrations/20261009023044_a_union_payment_has_one_receipt_and_each_invoice_has_its_con.sql
+      - scripts/ci/fixtures/union-financial-documents/**
+      - scripts/ci/test-union-financial-documents.py
+      - src/pages/UnionStatementsPage.tsx
+      - src/utils/unionStatementMutations.ts
+      - src/utils/sessionPurchaseRequest.ts
+      - tests/components/union-statements-scope.test.tsx
+      - tests/unit/unionStatementMutations.test.ts
       - .github/workflows/union-own-period-settles.yml
 
 permissions:
@@ -67,5 +76,45 @@ jobs:
         with:
           name: union-own-period-settles-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/union-own-period-settles/RESULTS.json
+          retention-days: 7
+          if-no-files-found: warn
+
+  union-financial-documents:
+    name: Union payment and invoice documents are atomic
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      # Runs as the runner user (non-root), exactly as the ci.yml step would.
+      - name: Union payment and invoice documents are atomic
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-union-financial-documents.py --output artifacts/union-financial-documents
+      - name: Retain the regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: union-financial-documents-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/union-financial-documents/RESULTS.json
           retention-days: 7
           if-no-files-found: warn

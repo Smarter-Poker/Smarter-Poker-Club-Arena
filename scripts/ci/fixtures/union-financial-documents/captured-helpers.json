@@ -1,0 +1,51 @@
+{
+  "triggers": [
+    {
+      "function": "fn_accounting_invoice_deliver_on_insert()",
+      "relation": "settlement_invoices",
+      "definition": "CREATE TRIGGER accounting_invoice_deliver AFTER INSERT ON public.settlement_invoices FOR EACH ROW EXECUTE FUNCTION fn_accounting_invoice_deliver_on_insert()"
+    },
+    {
+      "function": "fn_accounting_document_immutable()",
+      "relation": "settlement_invoices",
+      "definition": "CREATE TRIGGER accounting_invoice_immutable BEFORE DELETE OR UPDATE ON public.settlement_invoices FOR EACH ROW EXECUTE FUNCTION fn_accounting_document_immutable()"
+    }
+  ],
+  "functions": [
+    {
+      "acl": ["postgres=X/postgres"],
+      "md5": "c199422b447ff87c8438e21f065111af",
+      "owner": "postgres",
+      "signature": "fn_accounting_correction_is_unverified(uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_correction_is_unverified(p_invoice_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n SELECT EXISTS(SELECT 1 FROM public.settlement_invoices i JOIN public.chip_ledger l ON l.id=i.source_ledger_id\n  WHERE i.id=p_invoice_id AND l.category='correction' AND (i.invoice_type<>'accounting_correction'\n   OR NOT EXISTS(SELECT 1 FROM public.accounting_correction_documents d WHERE d.invoice_id=i.id AND d.source_ledger_id=l.id)));\n$function$\n"
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "md5": "aeb7b75438c33ead7775286ffc02a578",
+      "owner": "postgres",
+      "signature": "fn_accounting_correction_legacy_identity(uuid,uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_correction_legacy_identity(p_message_id uuid, p_user_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE linked record;l public.chip_ledger%ROWTYPE;\nBEGIN\n IF p_user_id IS NULL OR (NOT public.fn_caller_is_engine() AND auth.uid() IS DISTINCT FROM p_user_id) THEN RETURN NULL;END IF;\n -- Verify this viewer's exact original recipient delivery before inspecting\n -- the source category. Participation/issuer status alone grants no identity.\n SELECT i.id,i.invoice_type,i.source_ledger_id,i.club_id,i.from_entity_type,i.from_entity_id,i.to_entity_type,i.to_entity_id\n INTO linked FROM public.accounting_invoice_deliveries d\n JOIN public.social_messages m ON m.id=d.message_id\n JOIN public.settlement_invoices i ON i.id=d.invoice_id\n JOIN public.accounting_conversations c ON c.conversation_id=m.conversation_id AND c.recipient_id=d.recipient_id AND c.sender_id=m.sender_id\n WHERE d.message_id=p_message_id AND d.recipient_id=p_user_id AND d.delivery_mode='immediate'\n  AND m.message_type='invoice' AND NOT COALESCE(m.is_deleted,false)\n  AND m.media_metadata->>'invoice_id'=i.id::text\n  AND c.issuer_type=i.from_entity_type AND c.issuer_id::text=i.from_entity_id\n  AND c.scope_id=i.club_id\n  AND EXISTS(SELECT 1 FROM public.social_conversation_participants p WHERE p.conversation_id=m.conversation_id AND p.user_id=p_user_id)\n  AND EXISTS(SELECT 1 FROM public.social_conversation_participants p WHERE p.conversation_id=m.conversation_id AND p.user_id=m.sender_id)\n  AND NOT EXISTS(SELECT 1 FROM public.social_conversation_participants p WHERE p.conversation_id=m.conversation_id AND p.user_id<>ALL(ARRAY[m.sender_id,p_user_id]));\n IF NOT FOUND THEN RETURN NULL;END IF;\n SELECT * INTO l FROM public.chip_ledger WHERE id=linked.source_ledger_id;\n IF NOT FOUND OR l.category IS DISTINCT FROM 'correction'\n  OR (linked.invoice_type='accounting_correction' AND EXISTS(SELECT 1 FROM public.accounting_correction_documents d\n     WHERE d.invoice_id=linked.id AND d.source_ledger_id=l.id)) THEN RETURN NULL;END IF;\n IF linked.club_id IS NULL OR NOT EXISTS(SELECT 1 FROM public.clubs c WHERE c.id=linked.club_id)\n  OR (l.club_id IS NOT NULL AND l.club_id IS DISTINCT FROM linked.club_id)\n  OR (l.from_type='club_treasury' AND l.from_entity_id IS DISTINCT FROM linked.club_id)\n  OR (l.to_type='club_treasury' AND l.to_entity_id IS DISTINCT FROM linked.club_id)\n  OR (l.club_id IS NULL AND l.from_type<>'club_treasury' AND l.to_type<>'club_treasury')\n THEN RETURN NULL;END IF;\n -- Old generic delivery may have included an issuer. For an individual club\n -- correction only the exact recorded physical payee can see even a placeholder.\n IF (l.from_type='club_treasury' AND l.to_type IN('agent_wallet','player_wallet'))\n   OR (linked.from_entity_type='club' AND linked.to_entity_type IN('agent','player')) THEN\n  IF l.from_type IS DISTINCT FROM 'club_treasury' OR l.to_type NOT IN('agent_wallet','player_wallet')\n   OR l.to_entity_id IS DISTINCT FROM p_user_id OR linked.to_entity_id IS DISTINCT FROM p_user_id::text\n   OR linked.from_entity_type IS DISTINCT FROM 'club' OR linked.from_entity_id IS DISTINCT FROM l.from_entity_id::text\n   OR linked.to_entity_type NOT IN('agent','player') THEN RETURN NULL;END IF;\n END IF;\n RETURN jsonb_build_object('kind','accounting_invoice','invoice_identity_verified',true,'correction_unverified',true,\n  'accounting_verified',false,'correction_verified',false,'invoice_id',linked.id,'invoice_type',linked.invoice_type,\n  'source_ledger_id',l.id,'club_id',linked.club_id,'union_id',l.union_id);\nEND $function$\n"
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "md5": "dcb7a6315174e984f767268d04cfdb8b",
+      "owner": "postgres",
+      "signature": "fn_accounting_next_invoice_number()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_next_invoice_number()\n RETURNS text\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE y int:=extract(year FROM now() AT TIME ZONE 'America/Chicago'); n bigint;\nBEGIN\n INSERT INTO public.accounting_invoice_counters(year,next_number) VALUES(y,2)\n ON CONFLICT(year) DO UPDATE SET next_number=accounting_invoice_counters.next_number+1\n RETURNING next_number-1 INTO n;\n RETURN 'CA-'||y::text||'-'||lpad(n::text,8,'0');\nEND $function$\n"
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "md5": "d9a70f1d932538025e656bfe2b4d091d",
+      "owner": "postgres",
+      "signature": "fn_caller_is_engine()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_caller_is_engine()\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_catalog', 'public', 'auth'\nAS $function$\n  -- The engine and every server-side job authenticate as service_role. A NULL\n  -- means there is no PostgREST request context at all - psql, pg_cron, a\n  -- migration - which is equally trusted. A browser can never produce NULL:\n  -- reaching `authenticated` requires a verified JWT and PostgREST always sets\n  -- request.jwt.claims from it.\n  --\n  -- NOT current_user. Inside a SECURITY DEFINER body current_user is the\n  -- function OWNER for the browser and the engine alike, which is what made an\n  -- earlier guard on club_members a silent no-op.\n  SELECT COALESCE(auth.role(), 'service_role') = 'service_role';\n$function$\n"
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "md5": "ff67c5455ab73377f3b64795c0c684fe",
+      "owner": "postgres",
+      "signature": "fn_messenger_message_visible_to(uuid,uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_messenger_message_visible_to(p_message_id uuid, p_user_id uuid)\n RETURNS boolean\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n IF p_user_id IS NULL OR (NOT public.fn_caller_is_engine() AND auth.uid() IS DISTINCT FROM p_user_id)\n THEN RETURN false; END IF;\n RETURN EXISTS(SELECT 1 FROM public.social_messages m\n   JOIN public.social_conversation_participants p ON p.conversation_id=m.conversation_id AND p.user_id=p_user_id\n   LEFT JOIN public.accounting_invoice_deliveries d ON d.message_id=m.id\n   WHERE m.id=p_message_id AND NOT COALESCE(m.is_deleted,false)\n     AND COALESCE(d.delivery_mode,'immediate')<>'weekly_detail'\n     AND (d.invoice_id IS NULL OR public.fn_messenger_invoice_visible_to(d.invoice_id,p_user_id)));\nEND $function$\n"
+    }
+  ]
+}

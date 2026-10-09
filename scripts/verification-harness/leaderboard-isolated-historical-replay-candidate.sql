@@ -78,7 +78,7 @@ BEGIN
   PERFORM set_config('request.jwt.claim.role','service_role',true);
   SET LOCAL ROLE service_role;
   publication_replay:=public.fn_publish_leaderboard_reward_program(club,true,'profit',
-    '[{"rank":1,"amount":50},{"rank":2,"amount":30},{"rank":3,"amount":20}]','[]','balanced',
+    '[{"rank":1,"amount":50.00},{"rank":2,"amount":30.00},{"rank":3,"amount":20.00}]','[]','balanced',
     expected_version,operation,true);
   RESET ROLE;
   -- Publication starts next round. Only this disposable bootstrap may prepare
@@ -117,7 +117,8 @@ BEGIN
   SELECT max(version)+1 INTO STRICT version_number FROM public.leaderboard_reward_program_versions WHERE club_id=club;
   terms:=jsonb_build_object('club_id',club,'version',version_number,'rewards_enabled',true,
     'payout_metric','profit','weekly_prizes','[{"rank":1,"amount":10}]'::jsonb,'monthly_prizes','[]'::jsonb,
-    'funding_owner_type','club','funding_union_id',NULL,'weekly_effective_from',starts,'monthly_effective_from',monthly_next);
+    'funding_owner_type','club','funding_union_id',NULL,'weekly_effective_from',starts,'monthly_effective_from',monthly_next,
+    'overlay_enabled',true);
   INSERT INTO public.leaderboard_reward_program_versions(id,club_id,version,operation_id,rewards_enabled,payout_metric,
     weekly_prizes,monthly_prizes,suggestion_key,funding_owner_type,funding_union_id,weekly_effective_from,
     monthly_effective_from,published_by,program_hash,overlay_enabled)
@@ -308,11 +309,11 @@ BEGIN
   PERFORM set_config('request.jwt.claim.role','service_role',true);
   SET LOCAL ROLE service_role;
   publication_replay:=public.fn_publish_leaderboard_reward_program(club,true,'profit',
-    '[{"rank":1,"amount":50},{"rank":2,"amount":30},{"rank":3,"amount":20}]','[]','balanced',
+    '[{"rank":1,"amount":50.00},{"rank":2,"amount":30.00},{"rank":3,"amount":20.00}]','[]','balanced',
     expected_version,proof.operation,true);
   BEGIN
     PERFORM public.fn_publish_leaderboard_reward_program(club,true,'profit',
-      '[{"rank":1,"amount":50},{"rank":2,"amount":30},{"rank":3,"amount":20}]','[]','balanced',
+      '[{"rank":1,"amount":50.00},{"rank":2,"amount":30.00},{"rank":3,"amount":20.00}]','[]','balanced',
       expected_version+1,gen_random_uuid(),true);
   EXCEPTION WHEN SQLSTATE '22023' THEN
     IF SQLERRM<>'LEADERBOARD_PROMO_ONLY|Club Bank Overlay Is Not Allowed For Leaderboard Prizes' THEN RAISE; END IF;

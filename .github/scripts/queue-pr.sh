@@ -17,6 +17,27 @@ BASE=$(jq -r '.baseRefName' <<<"$DETAILS")
 [ "$DRAFT" = "false" ] || { echo "PR #$PR is a draft; leaving it unqueued."; exit 0; }
 [ "$AUTO" = "no" ] || { echo "PR #$PR already has auto-merge armed."; exit 0; }
 
+
+PATCH_FILE=$(mktemp)
+gh pr diff "$PR" --repo "$REPO" > "$PATCH_FILE"
+
+if grep -q "^+++ b/src/lib/push/push-gate.js" "$PATCH_FILE" || \
+   grep -q "^+++ b/scripts/ci/approved-senders.txt" "$PATCH_FILE" || \
+   grep -q "^+++ b/scripts/ci/law-test-no-operational-pushes.mjs" "$PATCH_FILE" || \
+   grep -q "^+++ b/src/lib/push/web-push.js" "$PATCH_FILE" || \
+   grep -q "^+++ b/src/lib/push/fcm.js" "$PATCH_FILE" || \
+   grep -q "^+++ b/pages/api/sms/send-otp.js" "$PATCH_FILE" || \
+   grep -q "^+++ b/src/lib/mfaSmsCode.js" "$PATCH_FILE" || \
+   grep -q "^+++ b/vendor/commander-shared/src/lib/commander/twilio.js" "$PATCH_FILE" || \
+   grep -qE "^\+.*(fn_raise_notification|INSERT INTO public\.notifications|INSERT INTO public\.push_outbox|net\.http_post|sendNotification|twilio.*messages\.create|firebase-admin.*messaging|expo-server-sdk|INSERT INTO public\.ca_incident_recipients)" "$PATCH_FILE"; then
+   
+   echo "Routing/alerting change detected. Holding for manual review."
+   gh pr comment "$PR" --repo "$REPO" --body "⚠️ Auto-merge has been skipped. This PR modifies routing guards, senders, or introduces new alert-to-notification/push code. Manual owner review is required."
+   rm "$PATCH_FILE"
+   exit 0
+fi
+rm "$PATCH_FILE"
+
 echo "Queueing #$PR for protected squash auto-merge."
 if OUT=$(gh pr merge "$PR" --repo "$REPO" --squash --auto 2>&1); then
   echo "$OUT"

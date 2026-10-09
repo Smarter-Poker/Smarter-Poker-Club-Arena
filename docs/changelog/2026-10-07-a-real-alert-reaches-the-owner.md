@@ -1,3 +1,8 @@
+> [!IMPORTANT]
+> A real alert reaches the store and the board, never the owner's phone.
+> The paging behavior introduced here has been reverted (migration 20261009152834).
+> The next agent working the launch audit must see this and not re-add a pager.
+
 # A real alert reaches the owner (2026-10-07)
 
 Launch audit: "nobody would be told if a table broke." Migration

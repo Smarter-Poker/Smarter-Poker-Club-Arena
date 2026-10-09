@@ -1566,3 +1566,8 @@ Required invariants (verify their actual execution for the assigned change):
 Full history and rationale: `docs/changelog/2026-09-01-scheduled-maintenance-break.md`
 and `docs/changelog/2026-09-01-total-platform-freeze.md`. Remaining backlog:
 issue #2563.
+\n
+
+## Routing Operational Alerts
+
+Operational alerts must never reach the owner's phone. A real alert reaches the store (public.operational_alert_events) and the board (v_ca_alert_board), never the owner's phone. Do not add triggers or code that page the owner for system issues, outages, or engine failures.

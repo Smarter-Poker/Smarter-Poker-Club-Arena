@@ -27,3 +27,8 @@ This is the active instruction for local and cloud agents. Read [PUBLISHING.md](
 The restored provider routes have successful production evidence; this does not certify every pending application package, a green whole-application suite or a guaranteed six-minute delivery. Selected historical source references were Club Arena `c35e9403a043457c8c8d495dd50cf86c35290919` and World Hub `89043c690147e991d6872bace8bec1fb329e402a`. They are historical references, not instructions to reset newer protected application work. Necessary restoration corrections and global telemetry removal were recorded separately.
 
 On the owner's Mac, also read `/Users/smarter.poker/Documents/AGENTS.md` and `/Users/smarter.poker/Documents/AGENT-HARDENING-STANDARD.md` at task start, after context loss and before completion. Their absence in a cloud checkout does not remove the instructions above. Later explicit owner instructions take precedence.
+\n
+
+## Routing Operational Alerts
+
+Operational alerts must never reach the owner's phone. A real alert reaches the store (public.operational_alert_events) and the board (v_ca_alert_board), never the owner's phone. Do not add triggers or code that page the owner for system issues, outages, or engine failures.

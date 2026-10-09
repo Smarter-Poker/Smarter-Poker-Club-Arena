@@ -114,3 +114,14 @@ it('a cash rebuy already processing in the parent cannot be submitted or dismiss
   expect(onConfirm).not.toHaveBeenCalled();
   expect(onClose).not.toHaveBeenCalled();
 });
+
+it('a cash rebuy amount remains editable before its minimum is applied on blur', () => {
+  render(<BuyInModal {...base} purchaseKind="rebuy" onConfirm={vi.fn()} />);
+  const amount = screen.getByRole('spinbutton', { name: 'Buy-In Amount' }) as HTMLInputElement;
+  fireEvent.change(amount, { target: { value: '1' } });
+  expect(amount.value).toBe('1');
+  fireEvent.change(amount, { target: { value: '137.50' } });
+  fireEvent.blur(amount);
+  expect(amount.value).toBe('137.5');
+  expect(screen.getByRole('button', { name: 'Rebuy 137.50' })).toBeTruthy();
+});

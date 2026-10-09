@@ -360,7 +360,8 @@ export function BuyInModal({
                   min={effectiveMinBuyIn}
                   max={maxBuyIn}
                   step={wholeDiamonds ? 1 : 0.01}
-                  value={clampedBuyIn}
+                  value={buyInAmount}
+                  onBlur={() => setBuyInAmount(clampedBuyIn)}
                   disabled={isProcessing || !!recovery}
                   onChange={(e) => setBuyInAmount(Number(e.target.value))}
                 />

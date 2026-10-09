@@ -8,14 +8,14 @@ none initiates, advances, retries or certifies a release or a restart.
 
 The restored flow uses protected GitHub checks and the original Hetzner engine
 publisher. `server/scripts/build-engine-image.sh` builds the engine image on
-`engine-01`. Its existing gate requires **1179648 KiB available** at the actual
-build attempt: `BUILD_MEMORY_BYTES=939524096` (896 MiB) plus
-`BUILD_RESERVE_KIB=262144` (256 MiB), totaling **1207959552 bytes / 1152 MiB**.
+`engine-01`. Its existing gate requires **2359296 KiB available** at the actual
+build attempt: `BUILD_MEMORY_BYTES=2147483648` (2048 MiB) plus
+`BUILD_RESERVE_KIB=262144` (256 MiB), totaling **2415919104 bytes / 2304 MiB**.
 Keep that gate and all publication, maintenance, lease and financial safeguards.
 Retired local/custom pipelines remain unavailable under the shared owner policy.
 
 - `EngineHostNearOOM`: host MemAvailable below 256 MiB for two minutes, critical.
-- `EngineBuildHeadroomLost`: host MemAvailable below 1152 MiB for thirty minutes,
+- `EngineBuildHeadroomLost`: host MemAvailable below 2304 MiB for thirty minutes,
   warning. It reports sustained pressure relative to the current on-host build
   gate; conditions can change before the next authorized attempt.
 - `EngineProcessMemoryHigh`: engine RSS above 4294967296 bytes (4 GiB) for

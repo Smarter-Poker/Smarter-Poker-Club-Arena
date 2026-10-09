@@ -46,6 +46,10 @@ import { parseUnionInsurancePnl, type UnionInsurancePnl } from '../utils/unionIn
 import {
   parseUnionPresettlementReceipt,
   parseUnionStatementPaidReceipt,
+  readPendingUnionPresettlement,
+  reserveUnionPresettlement,
+  acknowledgeUnionPresettlement,
+  UNION_PRESETTLEMENT_NOTE,
 } from '../utils/unionStatementMutations';
 
 interface BoardSnapshot {
@@ -222,6 +226,7 @@ export default function UnionStatementsPage() {
   // a row, because nothing could put one there.
   const [payingClub, setPayingClub] = useState<string | null>(null);
   const [payAmount, setPayAmount] = useState('');
+  const [payPending, setPayPending] = useState(false);
   const [payingScope, setPayingScope] = useState<string | null>(null);
   // Switching period, and issuing, can both leave two reads in flight. Without
   // a version the older one may land last and show the wrong week's money.
@@ -250,6 +255,7 @@ export default function UnionStatementsPage() {
     setConfirmIssue(false);
     setPayingClub(null);
     setPayAmount('');
+    setPayPending(false);
     setRequestState({ scope: scopeIdentity, loading: true, error: null });
   }, [scopeIdentity]);
 
@@ -446,9 +452,31 @@ export default function UnionStatementsPage() {
   // square-up is the bookkeeping record of what was owed for a period, paid
   // between people out of band, and the RPC deliberately leaves the chip
   // transfer columns alone so the two can never be confused.
+  const openPayment = useCallback(
+    (clubId: string) => {
+      if (!user?.id || !unionId) return;
+      if (payingClub === clubId) {
+        setPayingClub(null);
+        return;
+      }
+      try {
+        const pending = readPendingUnionPresettlement(user.id, unionId, clubId);
+        setPayingClub(clubId);
+        setPayAmount(pending ? pending.amount.toFixed(2) : '');
+        setPayPending(!!pending);
+      } catch (error) {
+        reportError(error, 'UnionStatementsPage.presettlement_recovery');
+        toast.error(
+          'Payment Request Could Not Be Recovered. Keep This Browser Session And Try Again.'
+        );
+      }
+    },
+    [payingClub, toast, unionId, user?.id]
+  );
+
   const recordPayment = useCallback(
     async (clubId: string) => {
-      if (!unionId) return;
+      if (!user?.id || !unionId) return;
       const actionScope = scopeIdentity;
       if (paymentInFlightRef.current === actionScope) return;
       const amount = Number(payAmount);
@@ -467,55 +495,62 @@ export default function UnionStatementsPage() {
       const isCurrent = () => isMounted.current && activeScopeRef.current === actionScope;
       setPayingScope(actionScope);
       try {
+        const request = reserveUnionPresettlement(user.id, unionId, clubId, amount);
+        setPayPending(true);
         const { data, error: rpcError } = await supabase.rpc('fn_union_record_presettlement', {
           p_union_id: unionId,
           p_club_id: clubId,
           p_amount: amount,
           p_method: null,
           p_reference: null,
-          p_note: 'Recorded on the statement board',
+          p_note: UNION_PRESETTLEMENT_NOTE,
+          p_operation_id: request.operationId,
         });
         if (!isCurrent()) return;
         if (rpcError) {
           toast.error(
             isAuthzError(rpcError)
               ? 'Only A Union Owner Or Admin Can Record A Payment'
-              : 'Could Not Record The Payment'
+              : 'Payment Status Unconfirmed. Retry To Check The Same Payment.'
           );
           if (!isAuthzError(rpcError)) reportError(rpcError, 'UnionStatementsPage.presettle');
           return;
         }
         let receipt;
         try {
-          receipt = parseUnionPresettlementReceipt(data, amount);
+          receipt = parseUnionPresettlementReceipt(data, amount, {
+            operationId: request.operationId,
+            unionId,
+            clubId,
+          });
         } catch (receiptError) {
           reportError(receiptError, 'UnionStatementsPage.presettlement_receipt', {
             unionId,
             clubId,
           });
-          toast.error('Payment Receipt Could Not Be Verified. Review The Refreshed Board.');
-          setPayingClub(null);
-          setPayAmount('');
-          await load();
+          toast.error('Payment Receipt Could Not Be Verified. Retry To Check The Same Payment.');
           return;
         }
         if (!receipt.success) {
           toast.error(receipt.error);
           return;
         }
+        acknowledgeUnionPresettlement(request);
+        setPayPending(false);
         toast.success(`Recorded ${money(receipt.amount)}`);
         setPayingClub(null);
         setPayAmount('');
         await load();
       } catch (e) {
         reportError(e, 'UnionStatementsPage.presettle');
-        if (isCurrent()) toast.error('Could Not Record The Payment');
+        if (isCurrent())
+          toast.error('Payment Status Unconfirmed. Retry To Check The Same Payment.');
       } finally {
         if (paymentInFlightRef.current === actionScope) paymentInFlightRef.current = null;
         if (isCurrent()) setPayingScope(null);
       }
     },
-    [isMounted, load, payAmount, scopeIdentity, toast, unionId]
+    [isMounted, load, payAmount, scopeIdentity, toast, unionId, user?.id]
   );
 
   const setPaid = useCallback(
@@ -928,6 +963,7 @@ export default function UnionStatementsPage() {
                               min="0"
                               step="0.01"
                               value={payAmount}
+                              disabled={payBusy || payPending}
                               onChange={(e) => setPayAmount(e.target.value)}
                               placeholder="Amount Received"
                               aria-label={`Payment Received From ${titleCase(c.club_name)}`}
@@ -940,7 +976,11 @@ export default function UnionStatementsPage() {
                               }}
                               disabled={payBusy}
                             >
-                              {payBusy ? 'Saving...' : 'Record'}
+                              {payBusy
+                                ? 'Saving...'
+                                : payPending
+                                  ? 'Retry Payment Check'
+                                  : 'Record'}
                             </button>
                           </div>
                         )}
@@ -956,9 +996,7 @@ export default function UnionStatementsPage() {
                           <button
                             type="button"
                             className={styles.linkBtn}
-                            onClick={() =>
-                              setPayingClub((cur) => (cur === c.club_id ? null : c.club_id))
-                            }
+                            onClick={() => openPayment(c.club_id)}
                           >
                             {payingClub === c.club_id ? 'Cancel Payment' : 'Record A Payment'}
                           </button>

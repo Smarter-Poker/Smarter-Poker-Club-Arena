@@ -1,9 +1,20 @@
+import {
+  readSessionPurchaseRequest,
+  readOrCreateSessionPurchaseRequest,
+  clearSessionPurchaseRequestIfMatches,
+  type SessionPurchaseRequest,
+} from './sessionPurchaseRequest';
+
 export type UnionMutationFailure = { success: false; error: string };
 
 export type UnionPresettlementReceipt = {
   success: true;
   presettlement_id: string;
   amount: number;
+  operation_id: string;
+  union_id: string;
+  club_id: string;
+  duplicate: boolean;
 };
 
 export type UnionStatementPaidReceipt = {
@@ -49,7 +60,8 @@ function failureValue(row: JsonRecord, label: string): UnionMutationFailure {
 
 export function parseUnionPresettlementReceipt(
   value: unknown,
-  expectedAmount: number
+  expectedAmount: number,
+  expected: { operationId: string; unionId: string; clubId: string }
 ): UnionPresettlementReceipt | UnionMutationFailure {
   const row = objectValue(value, 'Presettlement receipt');
   if (typeof row.success !== 'boolean') throw new Error('Presettlement receipt success is invalid');
@@ -62,7 +74,22 @@ export function parseUnionPresettlementReceipt(
   if (Math.round(amount * 100) !== Math.round(requested * 100)) {
     throw new Error('Presettlement receipt amount does not match the request');
   }
-  return { success: true, presettlement_id: id, amount };
+  if (
+    row.operation_id !== expected.operationId ||
+    row.union_id !== expected.unionId ||
+    row.club_id !== expected.clubId ||
+    typeof row.duplicate !== 'boolean'
+  )
+    throw new Error('Presettlement receipt does not match the payment identity');
+  return {
+    success: true,
+    presettlement_id: id,
+    amount,
+    operation_id: expected.operationId,
+    union_id: expected.unionId,
+    club_id: expected.clubId,
+    duplicate: row.duplicate,
+  };
 }
 
 export function parseUnionStatementPaidReceipt(
@@ -118,4 +145,60 @@ export function parseUnionStatementPaidReceipt(
     already_settled: false,
     fully_settled: false,
   };
+}
+
+export const UNION_PRESETTLEMENT_NOTE = 'Recorded on the statement board';
+export interface PendingUnionPresettlement {
+  scope: string;
+  operationId: string;
+  amount: number;
+}
+
+function presettlementScope(actorId: string, unionId: string, clubId: string): string {
+  if (![actorId, unionId, clubId].every((value) => typeof value === 'string' && value.trim()))
+    throw new Error('The Payment Account Could Not Be Verified');
+  return JSON.stringify(['union-presettlement:v1', actorId, unionId, clubId]);
+}
+function paymentPayload(amount: number): string {
+  return JSON.stringify([
+    moneyValue(amount, 'Payment amount', true).toFixed(2),
+    null,
+    null,
+    UNION_PRESETTLEMENT_NOTE,
+  ]);
+}
+function pendingPayment(scope: string, stored: SessionPurchaseRequest): PendingUnionPresettlement {
+  const terms: unknown = JSON.parse(stored.payloadKey);
+  if (!Array.isArray(terms) || typeof terms[0] !== 'string')
+    throw new Error('The Saved Payment Could Not Be Verified');
+  const amount = Number(terms[0]);
+  if (paymentPayload(amount) !== stored.payloadKey)
+    throw new Error('The Saved Payment Could Not Be Verified');
+  return { scope, operationId: stored.requestId, amount };
+}
+export function readPendingUnionPresettlement(
+  actorId: string,
+  unionId: string,
+  clubId: string
+): PendingUnionPresettlement | null {
+  const scope = presettlementScope(actorId, unionId, clubId);
+  const stored = readSessionPurchaseRequest(scope);
+  return stored ? pendingPayment(scope, stored) : null;
+}
+export function reserveUnionPresettlement(
+  actorId: string,
+  unionId: string,
+  clubId: string,
+  amount: number
+): PendingUnionPresettlement {
+  const scope = presettlementScope(actorId, unionId, clubId);
+  const payload = paymentPayload(amount);
+  const stored = readOrCreateSessionPurchaseRequest(scope, payload);
+  if (stored.payloadKey !== payload)
+    throw new Error('An Earlier Payment Is Unconfirmed. Retry Its Original Amount First.');
+  return pendingPayment(scope, stored);
+}
+export function acknowledgeUnionPresettlement(request: PendingUnionPresettlement): void {
+  if (!clearSessionPurchaseRequestIfMatches(request.scope, request.operationId))
+    throw new Error('The Confirmed Payment Could Not Be Cleared. Retry To Check Its Receipt.');
 }

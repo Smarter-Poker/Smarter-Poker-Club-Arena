@@ -39,6 +39,7 @@ vi.mock('../../src/lib/supabase', () => ({ supabase: { from: vi.fn(), rpc: vi.fn
 
 import { supabase } from '../../src/lib/supabase';
 import ClubWeeklyAccountingSummary from '../../src/components/accounting/ClubWeeklyAccountingSummary';
+import { FinancialExportService } from '../../src/services/FinancialExportService';
 
 function signIn(userId: string | null) {
   fixture.userId = userId;
@@ -52,6 +53,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 beforeEach(() => {
+  vi.restoreAllMocks();
   vi.clearAllMocks();
   fixture.rows = [];
   fixture.reply = null;
@@ -167,4 +169,40 @@ describe('issued club weekly summaries', () => {
     });
     expect(screen.queryByRole('table')).toBeNull();
   });
+
+  it('retires an old export lock when the club changes and ignores its late result', async () => {
+    fixture.rows = [weeklyStatementRow()];
+    const old = deferred<{ success: boolean }>();
+    const exportCsv = vi.spyOn(FinancialExportService, 'exportCSV').mockReturnValueOnce(old.promise)
+      .mockResolvedValue({ success: true });
+    const view = render(<ClubWeeklyAccountingSummary clubId={ID.club} />);
+    await screen.findByRole('table');
+    fireEvent.click(screen.getByRole('button', { name: 'Export Weekly Summaries' }));
+    expect(screen.getByRole('button', { name: 'Preparing Weekly Export...' })).toBeDisabled();
+
+    fixture.rows = [weeklyStatementRow({ club_id: ID.otherClub, from_entity_id: ID.otherClub,
+      to_entity_id: ID.otherClub, summary_club_id: ID.otherClub })];
+    view.rerender(<ClubWeeklyAccountingSummary clubId={ID.otherClub} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Export Weekly Summaries' })).toBeEnabled());
+    await act(async () => { old.resolve({ success: true }); });
+    expect(screen.queryByText('Weekly Summary Export Prepared.')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Export Weekly Summaries' }));
+    await screen.findByText('Weekly Summary Export Prepared.');
+    expect(exportCsv).toHaveBeenLastCalledWith(expect.objectContaining({ clubId: ID.otherClub }));
+  });
+
+  it('retires a pending export after an account epoch changes with the same visible user', async () => {
+    fixture.rows = [weeklyStatementRow()];
+    const old = deferred<{ success: boolean }>();
+    vi.spyOn(FinancialExportService, 'exportCSV').mockReturnValueOnce(old.promise);
+    const view = render(<ClubWeeklyAccountingSummary clubId={ID.club} />);
+    await screen.findByRole('table');
+    fireEvent.click(screen.getByRole('button', { name: 'Export Weekly Summaries' }));
+    act(() => { signIn(ID.otherActor); signIn(ID.actor); });
+    view.rerender(<ClubWeeklyAccountingSummary clubId={ID.club} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Export Weekly Summaries' })).toBeEnabled());
+    await act(async () => { old.resolve({ success: false }); });
+    expect(screen.queryByText('Weekly Summary Export Is Unavailable.')).toBeNull();
+  });
+
 });

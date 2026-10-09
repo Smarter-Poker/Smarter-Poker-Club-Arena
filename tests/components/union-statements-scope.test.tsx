@@ -191,6 +191,7 @@ function insurance(unionId = testState.route.unionId) {
 }
 
 beforeEach(() => {
+  sessionStorage.clear();
   testState.route.unionId = 'union-a';
   testState.route.unionRef = 'union-a';
   testState.actorId = 'operator-a';
@@ -462,6 +463,7 @@ describe('Union Statements request identity', () => {
         p_method: null,
         p_reference: null,
         p_note: 'Recorded on the statement board',
+        p_operation_id: expect.stringMatching(/^[0-9a-f-]{36}$/i),
       })
     );
     await waitFor(() =>
@@ -473,7 +475,7 @@ describe('Union Statements request identity', () => {
     );
     expect(testState.toast.success).not.toHaveBeenCalled();
     expect(testState.toast.error).toHaveBeenCalledWith(
-      'Payment Receipt Could Not Be Verified. Review The Refreshed Board.'
+      'Payment Receipt Could Not Be Verified. Retry To Check The Same Payment.'
     );
   });
 
@@ -569,4 +571,74 @@ describe('Union Statements painted-console contract', () => {
     expect(source).toContain('titleCase(c.club_name)');
     expect(source).toContain('titleCase(c.status)');
   });
+
+  it.each(['transport', 'malformed'] as const)(
+    'recovers the same payment after a %s response and remount instead of adding another credit',
+    async (response) => {
+      let calls = 0;
+      const payments: Record<string, unknown>[] = [];
+      testState.rpc.mockImplementation((name: string, args: Record<string, unknown>) => {
+        if (name === 'ca_union_insurance_pnl') return Promise.resolve(insurance());
+        if (name === 'fn_union_record_presettlement') {
+          payments.push(args);
+          calls++;
+          if (calls === 1)
+            return Promise.resolve(
+              response === 'transport'
+                ? { data: null, error: { message: 'Response Lost' } }
+                : {
+                    data: {
+                      success: true,
+                      presettlement_id: '1d243df4-a97b-4d21-840a-890c5ccdc162',
+                      amount: 999,
+                    },
+                    error: null,
+                  }
+            );
+          return Promise.resolve({
+            data: {
+              success: true,
+              presettlement_id: '1d243df4-a97b-4d21-840a-890c5ccdc162',
+              amount: args.p_amount,
+              operation_id: args.p_operation_id,
+              union_id: args.p_union_id,
+              club_id: args.p_club_id,
+              duplicate: true,
+            },
+            error: null,
+          });
+        }
+        return Promise.resolve({
+          data: statementBoard('union-a', 'alpha union', 'alpha club'),
+          error: null,
+        });
+      });
+      const openPayment = async () => {
+        const club = await screen.findByText('Alpha Club');
+        fireEvent.click(club.closest('button') as HTMLButtonElement);
+        fireEvent.click(screen.getByRole('button', { name: 'Record A Payment' }));
+      };
+      const view = render(<UnionStatementsPage />);
+      await openPayment();
+      fireEvent.change(screen.getByLabelText('Payment Received From Alpha Club'), {
+        target: { value: '15.25' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Record' }));
+      await waitFor(() => expect(testState.toast.error).toHaveBeenCalled());
+      expect(payments[0].p_operation_id).toMatch(/^[0-9a-f-]{36}$/i);
+      view.unmount();
+      render(<UnionStatementsPage />);
+      await openPayment();
+      expect(screen.getByLabelText('Payment Received From Alpha Club')).toHaveValue(15.25);
+      expect(screen.getByLabelText('Payment Received From Alpha Club')).toBeDisabled();
+      fireEvent.click(screen.getByRole('button', { name: 'Retry Payment Check' }));
+      await waitFor(() => expect(testState.toast.success).toHaveBeenCalled());
+      expect(payments).toHaveLength(2);
+      expect(payments[1]).toEqual(payments[0]);
+      const club = await screen.findByText('Alpha Club');
+      fireEvent.click(club.closest('button') as HTMLButtonElement);
+      fireEvent.click(screen.getByRole('button', { name: 'Record A Payment' }));
+      expect(screen.getByLabelText('Payment Received From Alpha Club')).not.toBeDisabled();
+    }
+  );
 });

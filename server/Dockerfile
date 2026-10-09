@@ -27,9 +27,11 @@ COPY release-evidence/ ./release-evidence/
 # The runtime project omits unit-test entrypoints and unused declarations.
 # Full test compilation and execution remain in the exact-source CI preflight.
 # The 1024 MiB V8 heap leaves native/compiler and BuildKit room inside the
-# canonical 1536 MiB no-swap builder. On 2026-10-09 the emit outgrew a 512 MiB
-# heap; it completes at 544 MiB and peaks near 830 MiB RSS, so both limits sit
-# more than 80% above the measured need. Resource CI proves exact runtime output.
+# canonical 2048 MiB no-swap builder. On 2026-10-09 the emit outgrew a 512 MiB
+# heap; it completes at 544 MiB and peaks near 830 MiB RSS. The first bounded
+# Linux build at this heap peaked at 1261 MiB of cgroup memory including page
+# cache, so the heap sits 88% and the builder 62% above the measured need.
+# Resource CI proves exact runtime output.
 RUN ulimit -c 0 && node --max-old-space-size=1024 ./node_modules/typescript/bin/tsc --project tsconfig.emit.json
 
 # Remove dev dependencies

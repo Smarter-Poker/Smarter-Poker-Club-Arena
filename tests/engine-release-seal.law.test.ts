@@ -1721,13 +1721,16 @@ describe('every host mutation path obeys the durable release authority', () => {
     const heaps = [...dockerfile.matchAll(/--max-old-space-size=(\d+)/g)].map((m) => Number(m[1]));
     expect(heaps).toEqual([1024]);
     const limit = Number(/^BUILD_MEMORY_BYTES=(\d+)$/m.exec(imageBuilderSource)?.[1]);
-    expect(limit).toBe(1536 * 1024 * 1024);
+    expect(limit).toBe(2048 * 1024 * 1024);
     // The builder stays bounded with no swap, and the heap leaves native and
     // BuildKit memory inside that same boundary.
     expect(imageBuilderSource).toContain('--driver-opt "memory-swap=$BUILD_MEMORY_BYTES"');
     expect(heaps[0] * 1024 * 1024).toBeLessThanOrEqual((limit * 2) / 3);
     expect(heaps[0]).toBeGreaterThanOrEqual(Math.ceil(544 * 1.4));
     expect(limit).toBeGreaterThanOrEqual(Math.ceil(830 * 1.4) * 1024 * 1024);
+    // The first real bounded Linux build at this heap peaked at 1322455040
+    // bytes of cgroup memory (page cache included); keep 40% above that too.
+    expect(limit).toBeGreaterThanOrEqual(Math.ceil(1322455040 * 1.4));
   });
 
   it('fully writes durable JSON and removes every abandoned atomic temporary', () => {
@@ -2465,12 +2468,12 @@ if [ "$1" = buildx ]; then
   if [ "$2" = stop ]; then printf 'stop\\n' >> "$STATE_DIR/builder-stops"; exit 0; fi
 fi
 if [ "$1" = inspect ]; then
-  printf '%s\\n' 'moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8 1610612736 1610612736 100000 100000 no'
+  printf '%s\\n' 'moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8 2147483648 2147483648 100000 100000 no'
   exit 0
 fi
 if [ "$1" = exec ]; then
   case "$4" in
-    */memory.max) printf '%s\\n' "\${FAKE_CGROUP_MEMORY:-1610612736}" ;;
+    */memory.max) printf '%s\\n' "\${FAKE_CGROUP_MEMORY:-2147483648}" ;;
     */memory.peak) printf '654311424\\n' ;;
     */memory.swap.max) printf '0\\n' ;;
     */cpu.max) printf '100000 100000\\n' ;;
@@ -2566,7 +2569,7 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
         ...isolatedEnv,
         PATH: `${bin}:${isolatedEnv.PATH ?? ''}`,
         FAKE_DOCKER_STATE_DIR: dockerState,
-        FAKE_AVAILABLE_KIB: '1835008',
+        FAKE_AVAILABLE_KIB: '2359296',
         ENGINE_BUILD_CONTEXT_ROOT: contextRoot,
         ENGINE_BUILD_LOCK_FILE: join(sandbox, 'engine-build.lock'),
       };
@@ -2629,12 +2632,12 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
         [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
         {
           encoding: 'utf8',
-          env: { ...env, FAKE_AVAILABLE_KIB: '1835007' },
+          env: { ...env, FAKE_AVAILABLE_KIB: '2359295' },
         }
       );
       expect(noHeadroom.status).toBe(1);
       expect(noHeadroom.stderr).toContain('insufficient memory headroom');
-      expect(noHeadroom.stderr).toContain('available=1835007KiB, required=1835008KiB');
+      expect(noHeadroom.stderr).toContain('available=2359295KiB, required=2359296KiB');
       expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
       expect(readdirSync(contextRoot)).toEqual([]);
       const wrongDriver = spawnSync(

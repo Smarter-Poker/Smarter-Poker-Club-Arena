@@ -122,7 +122,7 @@
     {
       "id": 7,
       "title": "Build headroom (engine-01)",
-      "description": "Current original GitHub/Hetzner publication builds the engine image on engine-01. The existing build gate requires 1792 MiB available at its actual start (1536 MiB builder limit plus 256 MiB reserve). This panel observes current host pressure; it does not authorize a build or restart or predict later build success. The 256 MiB line is the separate critical OOM-risk threshold. See docs/runbooks/engine-memory.md.",
+      "description": "Current original GitHub/Hetzner publication builds the engine image on engine-01. The existing build gate requires 2304 MiB available at its actual start (2048 MiB builder limit plus 256 MiB reserve). This panel observes current host pressure; it does not authorize a build or restart or predict later build success. The 256 MiB line is the separate critical OOM-risk threshold. See docs/runbooks/engine-memory.md.",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -136,7 +136,7 @@
           "legendFormat": "available"
         },
         {
-          "expr": "vector(1879048192)",
+          "expr": "vector(2415919104)",
           "legendFormat": "image build needs"
         },
         {

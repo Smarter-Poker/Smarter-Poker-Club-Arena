@@ -20,12 +20,13 @@ BUILD_CONTRACT='clean-server-archive-v1'
 # existing v3 builder or borrow memory from the running game process.
 # 2026-10-09: the runtime emit outgrew v3's 640 MiB cgroup and 512 MiB heap
 # (heap exhaustion at about 506 MiB used). The emit now needs a heap between
-# 512 and 544 MiB and peaks near 830 MiB RSS, so v4 is 1536 MiB with no swap
-# beside a 1024 MiB compiler heap: both are more than 80% above those peaks.
+# 512 and 544 MiB and peaks near 830 MiB RSS; a real bounded Linux build with
+# a 1024 MiB heap peaked at 1261 MiB of cgroup memory including page cache.
+# v4 is 2048 MiB with no swap, 62% above that kernel peak.
 BUILDER='club-arena-engine-bounded-v4'
 BUILDER_CONTAINER="buildx_buildkit_${BUILDER}0"
 BUILDKIT_IMAGE='moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8'
-BUILD_MEMORY_BYTES=1610612736
+BUILD_MEMORY_BYTES=2147483648
 BUILD_RESERVE_KIB=262144
 
 die() {

@@ -29,3 +29,11 @@ are printed for diagnosis. Runtime budgets and financial assertions are preserve
 Validation: 13 persistence tests, server compilation, deterministic real-matcher
 countercases, focused S1 with all 15 invariants, and 25 harness contract tests
 passed. Required exact-candidate hosted checks remain necessary for delivery.
+
+The next required runner exhausted Docker Hub's anonymous pull allowance while
+fetching the pinned Prometheus verification image. Both connected offline rule
+checks now use Prometheus's official Quay repository with the identical manifest
+digest, verified from the registry response and independently hashed bytes.
+Container isolation, rule fixtures and assertions are unchanged. Shell syntax and
+source review pass locally; Docker is unavailable on this Mac, so actual
+container execution remains a hosted prerequisite.

@@ -145,6 +145,7 @@ function fakeDb(opts: {
       'limit',
       'range',
       'ilike',
+      'or',
     ])
       b[m] = (...args: unknown[]) => {
         calls.push({ table, op: m, args });

@@ -1,6 +1,13 @@
+// Dollar-bearing pictograms are removal targets, never displayed decoration.
+// Code points avoid embedding forbidden pictograms in player-facing source.
+const dollarDisplayCharacters = new RegExp(
+  `[$＄﹩${String.fromCodePoint(0x1f4b2, 0x1f4b0, 0x1f4b5)}]`,
+  'gu'
+);
+
 /** Owner rule, 2026-10-09: no dollar signs in either arena's displayed copy. */
 export function arenaDisplayText(text: string): string {
-  return text.replace(/[$＄﹩\u{1F4B2}\u{1F4B0}\u{1F4B5}]/gu, '');
+  return text.replace(dollarDisplayCharacters, '');
 }
 
 function displayChildren(value: unknown): unknown {

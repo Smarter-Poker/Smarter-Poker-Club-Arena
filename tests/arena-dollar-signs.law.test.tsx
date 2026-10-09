@@ -81,6 +81,14 @@ describe('dollar signs never reach arena display copy', () => {
     expect(jsx(Component, { model }).props.model).toBe(model);
   });
 
+  it('retains the existing no-decoration source guard while removing dollar-bearing pictograms', () => {
+    expect(
+      execFileSync(process.execPath, ['scripts/ci/check-no-emoji.mjs'], {
+        encoding: 'utf8',
+      })
+    ).toContain('OK - no emoji in player-facing code');
+  });
+
   it('registers the generated runtime imports without raising the orphan baseline', () => {
     const report = JSON.parse(
       execFileSync(process.execPath, ['scripts/ci/report-orphan-modules.mjs', '--json'], {

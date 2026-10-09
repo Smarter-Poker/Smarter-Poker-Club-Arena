@@ -15,7 +15,7 @@ const unknown = 'leaderboard-unknown-ack-draft.sh';
 const proxy = 'leaderboard-unknown-ack-proxy-draft.mjs';
 const diagnostics = 'leaderboard-financial-diagnostics.mjs';
 const reviewed = Object.freeze({
-  [auth]: '82ffd067d1e4f584ab92f41330acc12b336bfdb7eed612c3d7b2a12d1adbc94a',
+  [auth]: '93bfc3e5aea54a901f1861f2d450da4f5fe3d1d74c595d89ffb5de102ebd2ac5',
   [payout]: '7ba2b11d291baa8aed69d8b0330a5e1ba77c5d0d58037f0651e2826f4c6a2395',
   [funding]: '116f66d955bae3adfde904c8b131cf1a32d0d64b02337a18c239b4886b71fb49',
   [fixture]: 'c2057bbbbb9b08c860ac82cf02e98171ff9188ab36694dcb672f1abd3f37ed41',

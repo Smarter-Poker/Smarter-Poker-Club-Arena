@@ -107,6 +107,11 @@ INSERT INTO public.ca_chip_store_coverage (store, treatment, counted_by, notes) 
 END;
 $mint_policy$;
 
+-- The intact journal FK must name an actual synthetic signup actor, never
+-- the production service fallback absent from this empty disposable DB.
+SELECT set_config('request.jwt.claims', '{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}', true);
+SELECT set_config('request.jwt.claim.sub', '90000000-0000-4000-8000-000000000001', true);
+SELECT set_config('request.jwt.claim.role', 'service_role', true);
 INSERT INTO public.union_creators (user_id, note)
 VALUES ('90000000-0000-4000-8000-000000000001', 'Isolated authorization fixture');
 INSERT INTO public.unions (id, name, owner_id, slug)
@@ -140,8 +145,8 @@ BEGIN
       WHERE id = '92000000-0000-4000-8000-000000000001') IS DISTINCT FROM 100000 THEN
     RAISE EXCEPTION 'Synthetic affiliate opening-grant preimage changed';
   END IF;
-  PERFORM set_config('request.jwt.claims', '{"role":"service_role"}', true);
-  PERFORM set_config('request.jwt.claim.sub', '', true);
+  PERFORM set_config('request.jwt.claims', '{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}', true);
+  PERFORM set_config('request.jwt.claim.sub', '90000000-0000-4000-8000-000000000001', true);
   PERFORM set_config('request.jwt.claim.role', 'service_role', true);
   SET LOCAL ROLE service_role;
   result := public.fn_ca_burn('chips', 'club',

@@ -87,3 +87,13 @@ test('schema-only fixture restores authoritative journal policy before intact op
   assert.match(sql, /chip_treasury=100000\) <> 2/);
   assert.ok(!/DISABLE TRIGGER|ledger_autoskip|session_replication_role/i.test(sql));
 });
+
+test('opening and retirement journal actors are actual generated signup identities', () => {
+  const sql = generateFixture(ids);
+  const claims = `'{"sub":"${ids[0]}","role":"service_role"}'`;
+  assert.equal(sql.split(claims).length - 1, 2);
+  assert.ok(sql.indexOf(claims) < sql.indexOf('INSERT INTO public.clubs'));
+  assert.equal(sql.split(`'request.jwt.claim.sub', '${ids[0]}', true`).length - 1, 2);
+  assert.ok(!sql.includes("'request.jwt.claim.sub', '', true"));
+  assert.ok(!sql.includes('2d1cd6c3-5700-4af9-a271-d4863fdab20d'));
+});

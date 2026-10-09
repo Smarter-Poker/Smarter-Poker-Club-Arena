@@ -29,7 +29,7 @@ const unknownAckBaseline = 'leaderboard-unknown-ack-draft.sh';
 const unknownAckProxy = 'leaderboard-unknown-ack-proxy-draft.mjs';
 // Freeze receipts are reviewed whole-input bytes, not runtime qualification.
 const reviewed = Object.freeze({
-  [auth]: 'f03d66b7785dd69cc46b63db261b0139a74245d315183da6a96adfc17faf8f81',
+  [auth]: 'c014b653863a6427dae7e97dfcac69a09aa903cff85bda114f8a37fcb7bbad92',
   [capture]: 'd942ae27470d77666f1209a82dd137fe630d2af431f1babc03d444462a9502bc',
   [ranking]: '63a92bb2e01298dab850ddd15f65ce71742bdcbe24084007beee213b579ba1dc',
   [payout]: '18ffcc9db372bc49d83e37cb42a812ddc919532807af1444678524d7cb4ba8df',

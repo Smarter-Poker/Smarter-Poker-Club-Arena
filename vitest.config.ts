@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react({ jsxImportSource: '@arena-display' })],
   test: {
     globals: true,
     // happy-dom, NOT jsdom. Changed 2026-08-23 for cost.
@@ -87,6 +87,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      '@arena-display': path.resolve(__dirname, './src/lib/arenaDisplay'),
       // Server-only dep — stubbed so client suites can import server services
       // See tests/stubs/canvas-confetti.ts — the real library's rAF loop
       // outlives jsdom's canvas and fails the whole run, which blocks the

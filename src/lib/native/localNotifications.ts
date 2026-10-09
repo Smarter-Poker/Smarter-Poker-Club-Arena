@@ -1,3 +1,4 @@
+import { arenaDisplayText } from '../arenaDisplay/text';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  LOCAL NOTIFICATIONS — what public/sw-bus.js did for a backgrounded tab
@@ -31,6 +32,7 @@ const TITLES: Record<string, string> = {
 };
 
 function titleCase(raw: string): string {
+  raw = arenaDisplayText(raw);
   return raw
     .split(' ')
     .filter(Boolean)

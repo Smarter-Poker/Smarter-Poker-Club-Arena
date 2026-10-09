@@ -370,7 +370,7 @@ export function BBJCelebration({
           ctx.font = `bold ${p.size}px sans-serif`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText('$', 0, 0);
+          ctx.fillText('C', 0, 0);
         } else if (p.type === 'spark') {
           // Glowing spark
           ctx.shadowColor = p.color;

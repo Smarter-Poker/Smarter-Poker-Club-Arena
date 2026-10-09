@@ -127,7 +127,7 @@ function oneImmer(): Plugin {
 export default defineConfig({
   base: NATIVE ? '/' : WEB_BASE,
   plugins: [
-    react(),
+    react({ jsxImportSource: '@arena-display' }),
     sourceMapAssetIdentity(),
     oneImmer(),
     mediaIdentity.plugin,
@@ -170,6 +170,7 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
+      '@arena-display': path.resolve(__dirname, './src/lib/arenaDisplay'),
       '@': path.resolve(__dirname, './src'),
       '@components': path.resolve(__dirname, './src/components'),
       '@lib': path.resolve(__dirname, './src/lib'),

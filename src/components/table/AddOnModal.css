@@ -173,3 +173,107 @@
 .addon-console__plate--secondary .addon-console__fit {
   color: #f4f7fb !important;
 }
+
+.purchase-console__amount {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #4dc660;
+  font:
+    800 10cqw 'Roboto Condensed',
+    sans-serif;
+  text-align: center;
+  appearance: textfield;
+}
+.purchase-console__amount::-webkit-inner-spin-button,
+.purchase-console__amount::-webkit-outer-spin-button {
+  appearance: none;
+}
+[role='dialog'] .purchase-console__amount.purchase-console__amount {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  color: #4dc660 !important;
+}
+.addon-console__timer strong .addon-console__fit {
+  font-size: calc(1em * var(--fit, 1));
+}
+.cashier-dialog.addon-console {
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  outline: 0 !important;
+}
+[role='dialog'] .purchase-console__amount.purchase-console__amount {
+  font:
+    800 10cqw 'Roboto Condensed',
+    sans-serif !important;
+  outline: none !important;
+}
+
+.purchase-console__cash {
+  aspect-ratio: 1024 / 1536;
+}
+.purchase-console__cash .addon-console__title {
+  top: 12.5%;
+  height: 7%;
+}
+.purchase-console__cash .addon-console__subtitle {
+  top: 19.5%;
+}
+.purchase-console__cash .addon-console__timer {
+  top: 24%;
+  left: 15%;
+  width: 70%;
+  height: 12%;
+}
+.purchase-console__cash .addon-console__row {
+  height: 7%;
+}
+.purchase-console__cash .addon-console__row--cost {
+  top: 39.5%;
+}
+.purchase-console__cash .addon-console__row--chips {
+  top: 47.3%;
+}
+.purchase-console__cash .addon-console__row--balance {
+  top: 55.2%;
+}
+.purchase-console__cash .addon-console__plate {
+  top: 79.3%;
+  height: 7.5%;
+}
+.purchase-console__presets {
+  position: absolute;
+  left: 10.7%;
+  top: 65.5%;
+  width: 78.3%;
+  height: 8.5%;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.1%;
+}
+[role='dialog'] .purchase-console__presets button {
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: #e4e7ec !important;
+  font:
+    800 4.4cqw 'Roboto Condensed',
+    sans-serif;
+  cursor: pointer;
+}
+[role='dialog'] .purchase-console__presets button[aria-pressed='true'] {
+  color: #45adff !important;
+}

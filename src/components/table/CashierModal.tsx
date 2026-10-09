@@ -16,7 +16,7 @@
 
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { haptic } from '../../services/SoundService';
-import { SpadeConsole } from '../console/SpadeConsole';
+import { PurchaseConsole, PurchaseText } from './PurchaseConsole';
 import './CashierModal.css';
 import { reportError } from '../../utils/errorReporter';
 import { uuid } from '../../utils/uuid';
@@ -305,95 +305,33 @@ export function CashierModal({
   const confirmLabel =
     isProcessing || busy ? 'Processing...' : `Add ${formatAmount(amount, currency)}`;
 
-  /* REBUILT ON THE CONSOLE 2026-09-14 (#ClubArenaConsole, the riveted family:
-     chips move from the account to the felt here, so it wears the money frame).
-     Re-rendered, not rewritten. Everything above this line is untouched: the
-     per-attempt idempotency id, the busyRef double-tap guard, the focus trap
-     and its Escape, the previous-focus restore, the reset on open, the exact
-     precision formatting, the whole-unit floor. Below, the same elements print
-     onto the frame: the balances as rows on the glass, the amount as the one
-     drawn control (an input, which the art does not paint), the quick amounts
-     as lit words, the new stack in green, Close and Add on the two plates.
-     The accessible names the tests read - "Amount To Add", "Close Cashier",
-     "Add 99" - are the ones that were here. */
+  // Existing exact-amount, idempotency, busy and focus logic owns the purchase.
+  const closeTopUp = () => {
+    if (!busyRef.current && !isProcessing) onClose();
+  };
+  const unit = currency || 'Chips';
   return (
     <div
-      className="cashier-overlay"
-      onClick={() => {
-        if (!busy) onClose();
-      }}
+      className="cashier-overlay addon-console__overlay"
+      onClick={closeTopUp}
       role="dialog"
       aria-modal="true"
       aria-labelledby="table-cashier-title"
     >
-      <div className="cashier-dialog" ref={modalRef} onClick={(e) => e.stopPropagation()}>
-        <SpadeConsole
-          onClose={busy ? undefined : onClose}
-          as="section"
-          family="riveted"
-          eyebrow="Add Chips"
-          title="Cashier"
+      <div
+        className="cashier-dialog addon-console"
+        ref={modalRef}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <PurchaseConsole
+          title="Add-On Available"
           titleId="table-cashier-title"
-          pill={currency || 'Chips'}
-          pillInk="blue"
-          plates={{
-            secondary: {
-              label: 'Close',
-              ink: 'silver',
-              onClick: onClose,
-              disabled: busy,
-              'aria-label': 'Close Cashier',
-            },
-            primary: {
-              label: confirmLabel,
-              ink: confirmDisabled ? 'muted' : 'white',
-              onClick: handleConfirm,
-              disabled: confirmDisabled,
-            },
-          }}
-        >
-          {/* Balance Summary */}
-          <div className="cashier-rows">
-            <div className="cashier-row">
-              <span className="sc-label sc-ink--blue">At Table</span>
-              <span className="cashier-row__value sc-ink--silver">
-                {formatAmount(currentStack, currency)}
-              </span>
-            </div>
-            <div className="cashier-row">
-              <span className="sc-label sc-ink--blue">Account</span>
-              <span
-                className={`cashier-row__value ${balanceKnown ? 'sc-ink--silver' : 'sc-ink--red'}`}
-              >
-                {balanceKnown ? formatAmount(accountBalance, currency) : 'Unavailable'}
-              </span>
-            </div>
-          </div>
-
-          {/* One action: Add Chips. The eyebrow prints it; this keeps the id the
-              amount group is labelled by. */}
-          <span id="table-cashier-tab-add" className="cashier-sr" aria-hidden="true">
-            Add Chips
-          </span>
-
-          {/* Amount Input - the one drawn control: the art paints no field. */}
-          <div
-            className="cashier-amount"
-            id="table-cashier-panel-add"
-            role="group"
-            aria-labelledby="table-cashier-tab-add"
-          >
-            <span className="sc-label sc-ink--blue">Amount</span>
-            <div className="cashier-amount__field">
-              {currency && (
-                <span className="cashier-amount__currency sc-ink--blue">{currency}</span>
-              )}
-              {/* parseInt threw away the cents on every 25/50/75/MAX value (they are
-                  truncated to 2dp), so editing after a quick tap silently changed the
-                  amount. parseFloat + snap-to-cent keeps them. */}
+          subtitle={`At Table: ${formatAmount(currentStack, currency)} ${unit}`}
+          status={
+            <>
               <input
                 type="number"
-                className="cashier-amount__input sc-ink--silver"
+                className="purchase-console__amount"
                 value={amount || ''}
                 onChange={(e) => setAmount(clampToCents(e.target.value, activeMax, wholeUnits))}
                 onBlur={() => setAmount((prev) => clampToCents(prev, activeMax, wholeUnits))}
@@ -401,81 +339,88 @@ export function CashierModal({
                 min={0}
                 step={wholeUnits ? 1 : 0.01}
                 max={activeMax}
-                disabled={busy}
+                disabled={busy || isProcessing}
                 aria-label="Amount To Add"
                 aria-invalid={amount > 0 && !isValidAmount}
               />
-            </div>
-            <span className="cashier-amount__limit sc-ink--muted">
-              Available To Add: {formatAmount(canAddAmount, currency)}
-            </span>
-          </div>
-
-          {/* Quick Amounts - lit words on the glass, the chosen one in white. */}
-          <div className="cashier-quick" role="group" aria-label="Quick Amounts">
-            {quickAmounts.map(({ label, value }, idx) => (
-              <button
-                key={label}
-                className={`cashier-quick__word ${amount === value && value > 0 ? 'sc-ink--white' : 'sc-ink--muted'}`}
-                type="button"
-                onClick={() => {
-                  setSubmitError(null);
-                  setAmount(value);
-                }}
-                disabled={value <= 0 || busy}
-                aria-pressed={amount === value}
-                style={{
-                  opacity: visibleQuick[idx] ? 1 : 0,
-                  transform: visibleQuick[idx] ? 'scale(1)' : 'scale(0.85)',
-                  transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {/* New Stack Preview - chips in, so green. */}
-          <div className="cashier-rows cashier-rows--preview">
-            <div className="cashier-row">
-              <span className="sc-label sc-ink--blue">New Stack</span>
-              <span className="cashier-row__value cashier-row__value--big sc-ink--green">
-                {formatAmount(currentStack + amount, currency)}
+              <span>
+                Available To Add: {formatAmount(canAddAmount, currency)} {unit}
               </span>
-            </div>
-          </div>
-
-          {/* Failure notice — the modal used to close as if it had worked */}
-          {submitError && (
-            <p
-              className="sc-copy sc-copy--center sc-ink--red cashier-error"
-              role="alert"
-              aria-live="assertive"
-            >
-              {submitError}
-            </p>
-          )}
-
-          {/* Recent Transactions */}
-          {transactions.length > 0 && (
-            <div className="cashier-recent">
-              <span className="sc-label sc-ink--muted">Recent</span>
-              {transactions.slice(0, 5).map((tx) => (
-                <div key={tx.id} className="cashier-recent__row">
-                  <span
-                    className={`cashier-recent__amount ${tx.type === 'add' ? 'sc-ink--green' : 'sc-ink--red'}`}
-                  >
-                    {tx.type === 'add' ? '+' : '-'}
-                    {formatAmount(tx.amount, currency)}
-                  </span>
-                  <span className="cashier-recent__time sc-ink--muted">
-                    {formatTime(tx.timestamp)}
-                  </span>
-                </div>
+            </>
+          }
+          rows={[
+            <React.Fragment key="cost">
+              <span>Add-On Cost</span>
+              <strong>
+                <PurchaseText>{`${formatAmount(amount, currency)} ${unit}`}</PurchaseText>
+              </strong>
+            </React.Fragment>,
+            <React.Fragment key="stack">
+              <span>New Stack</span>
+              <strong>
+                <PurchaseText>{`${formatAmount(currentStack + amount, currency)} ${unit}`}</PurchaseText>
+              </strong>
+            </React.Fragment>,
+            <React.Fragment key="balance">
+              <span>Your Balance</span>
+              <strong>
+                <PurchaseText>
+                  {balanceKnown
+                    ? `${formatAmount(accountBalance, currency)} ${unit}`
+                    : 'Unavailable'}
+                </PurchaseText>
+              </strong>
+            </React.Fragment>,
+          ]}
+          secondary={{
+            label: 'Close',
+            'aria-label': 'Close Cashier',
+            onClick: closeTopUp,
+            disabled: busy || isProcessing,
+          }}
+          primary={{ label: confirmLabel, onClick: handleConfirm, disabled: confirmDisabled }}
+          onClose={closeTopUp}
+          closeDisabled={busy || isProcessing}
+          amountControls={
+            <>
+              {quickAmounts.map(({ label, value }, idx) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => {
+                    setSubmitError(null);
+                    setAmount(value);
+                  }}
+                  disabled={value <= 0 || busy || isProcessing}
+                  aria-pressed={amount === value}
+                  style={{ opacity: visibleQuick[idx] ? 1 : 0 }}
+                >
+                  {label}
+                </button>
               ))}
-            </div>
-          )}
-        </SpadeConsole>
+            </>
+          }
+          messages={
+            <>
+              {submitError && (
+                <p className="cashier-error" role="alert" aria-live="assertive">
+                  {submitError}
+                </p>
+              )}
+              {transactions.length > 0 && (
+                <div className="cashier-recent">
+                  <span>Recent</span>
+                  {transactions.slice(0, 5).map((tx) => (
+                    <div key={tx.id}>
+                      {tx.type === 'add' ? '+' : '-'}
+                      {formatAmount(tx.amount, currency)} {formatTime(tx.timestamp)}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          }
+        />
       </div>
     </div>
   );

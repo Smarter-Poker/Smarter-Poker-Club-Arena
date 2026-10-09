@@ -89,7 +89,7 @@ describe('RebuyModal charges what it advertises', () => {
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 
-  it('shows the fee and the total, not just the base cost', () => {
+  it('shows the full rebuy charge once without a separate fee', () => {
     render(
       <RebuyModal
         {...base}
@@ -99,8 +99,10 @@ describe('RebuyModal charges what it advertises', () => {
         isProcessing={false}
       />
     );
-    expect(screen.getByText('House Fee')).toBeTruthy();
-    expect(screen.getByText('Total Charged')).toBeTruthy();
+    expect(screen.getByText('Rebuy Cost')).toBeTruthy();
+    expect(screen.getAllByText('110 Chips')).toHaveLength(1);
+    expect(screen.queryByText('House Fee')).toBeNull();
+    expect(screen.queryByText('Total Charged')).toBeNull();
     expect(screen.getByRole('button', { name: /Rebuy 110/ })).toBeTruthy();
   });
 
@@ -116,8 +118,9 @@ describe('RebuyModal charges what it advertises', () => {
         isProcessing={false}
       />
     );
-    expect(screen.getByText('13.50')).toBeTruthy();
-    expect(screen.getByText('1.50')).toBeTruthy();
+    expect(screen.getByText('Rebuy Cost').parentElement?.textContent).toBe('Rebuy Cost15 Chips');
+    expect(screen.queryByText('13.50')).toBeNull();
+    expect(screen.queryByText('1.50')).toBeNull();
     expect(screen.getByRole('button', { name: /Rebuy 15/ })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Rebuy 16/ })).toBeNull();
   });

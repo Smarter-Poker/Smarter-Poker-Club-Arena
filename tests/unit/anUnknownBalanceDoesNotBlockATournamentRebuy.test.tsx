@@ -25,10 +25,7 @@ function open(walletBalance: number | null) {
   );
 }
 
-const confirm = () =>
-  screen
-    .getAllByRole('button')
-    .find((b) => b.getAttribute('aria-label') !== 'Decline Rebuy') as HTMLButtonElement;
+const confirm = () => screen.getByRole('button', { name: 'Rebuy 100' }) as HTMLButtonElement;
 
 describe('an unknown balance does not block a tournament rebuy', () => {
   it('unknown: the attempt is allowed and no figure is invented', () => {

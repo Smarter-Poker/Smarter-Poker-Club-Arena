@@ -200,6 +200,7 @@ describe('the stop-playing ending (Phase 9 notice, Phase 10 words)', () => {
       kind: 'ended',
       timedOut: false,
       stopped: true,
+      rgLimit: false,
       seatTableId: SEAT_TABLE,
     });
     const legacy = parseLightningReconnectState({ ...STOPPED_ROW, exit_reason: undefined });
@@ -212,12 +213,13 @@ describe('the stop-playing ending (Phase 9 notice, Phase 10 words)', () => {
     const stopped = lightningSessionEndText({
       timedOut: false,
       stopped: true,
+      rgLimit: false,
       seatTableId: SEAT_TABLE,
     });
     expect(stopped).toBe('You Stopped Playing. Your Seat Is Ready At Your Table.');
-    expect(lightningSessionEndText({ timedOut: true, stopped: false, seatTableId: null })).toBe(
-      'Your Lightning Session Timed Out.'
-    );
+    expect(
+      lightningSessionEndText({ timedOut: true, stopped: false, rgLimit: false, seatTableId: null })
+    ).toBe('Your Lightning Session Timed Out.');
     for (const s of [stopped, LIGHTNING_STOP_FINISHING_TEXT, LIGHTNING_STOP_UNAVAILABLE_TEXT]) {
       expect(s).not.toContain('—');
       for (const word of s.replace(/[.]/g, '').split(' ')) {
@@ -231,6 +233,45 @@ describe('the stop-playing ending (Phase 9 notice, Phase 10 words)', () => {
 });
 
 // ─── 4. Hand volume ────────────────────────────────────────────────────────
+
+describe('the responsible-gaming ending (Lightning Phase 12, exit_reason rg_limit)', () => {
+  it('reads as its own ending, Title Case with no em dashes, the seat kept', () => {
+    // The ended answer of fn_lightning_reconnect_state (20261008142857), its exit_reason rg_limit.
+    const row = {
+      pool_session_id: POOL,
+      state: 'ended',
+      in_hand: false,
+      hand_id: null,
+      disconnected_at: null,
+      stop_requested: false,
+      seat_table_id: SEAT_TABLE,
+      seat_number: 3,
+      stack: 180,
+      joinable: false,
+      exit_reason: 'rg_limit',
+    };
+    expect(lightningReconnectVerdict(POOL, parseLightningReconnectState(row))).toEqual({
+      kind: 'ended',
+      timedOut: false,
+      stopped: false,
+      rgLimit: true,
+      seatTableId: SEAT_TABLE,
+    });
+    const text = lightningSessionEndText({
+      timedOut: false,
+      stopped: false,
+      rgLimit: true,
+      seatTableId: SEAT_TABLE,
+    });
+    expect(text).toBe(
+      'Your Responsible Gaming Limit Ended This Session. Your Seat Is Ready At Your Table.'
+    );
+    expect(text).not.toMatch(/\u2014/);
+    expect(
+      lightningSessionEndText({ timedOut: false, stopped: false, rgLimit: true, seatTableId: null })
+    ).toBe('Your Responsible Gaming Limit Ended This Session.');
+  });
+});
 
 describe('session metrics: hand volume, duration and rate', () => {
   it('the arithmetic: baseline plus local ticks, a dash while nothing is known', () => {
@@ -293,62 +334,97 @@ describe('session metrics: hand volume, duration and rate', () => {
 
 // ─── 5. The auto-rebuy status line ─────────────────────────────────────────
 
-describe('the auto-rebuy status (read-only, from the operator’s config)', () => {
-  it('parses the config keys and prints the one line', () => {
+describe('the auto-rebuy status (read-only, from fn_lightning_pool_status since Lightning Phase 12)', () => {
+  /* LIGHTNING PHASE 12 (widened, not deleted): the line used to read
+     fn_lightning_config, which is service_role only, so it never showed. It
+     now reads the `auto_rebuy` object fn_lightning_pool_status answers
+     (20261009143757) and is shown only while auto-rebuy is ON. */
+  it('parses the pool-status object and prints the one line', () => {
     expect(parseLightningAutoRebuyStatus(null)).toBeNull();
-    const off = parseLightningAutoRebuyStatus({ auto_rebuy_enabled: false })!;
+    expect(parseLightningAutoRebuyStatus({ auto_rebuy_enabled: true })).toBeNull();
+    const off = parseLightningAutoRebuyStatus({ enabled: false })!;
     expect(lightningAutoRebuyText(off)).toBe('Auto-Rebuy: Off');
     const zero = parseLightningAutoRebuyStatus({
-      auto_rebuy_enabled: true,
-      auto_rebuy_trigger: 'zero',
-      auto_rebuy_target: 'initial',
+      enabled: true,
+      trigger: 'zero',
+      target: 'initial',
     })!;
     expect(lightningAutoRebuyText(zero)).toBe(
       'Auto-Rebuy: On (When Out Of Chips → Initial Buy-In)'
     );
     const bb = parseLightningAutoRebuyStatus({
-      auto_rebuy_enabled: true,
-      auto_rebuy_trigger: 'below_bb',
-      auto_rebuy_threshold_bb: 20,
-      auto_rebuy_target: 'max',
+      enabled: true,
+      trigger: 'below_bb',
+      threshold_bb: 20,
+      target: 'max',
     })!;
     expect(lightningAutoRebuyText(bb)).toBe('Auto-Rebuy: On (Below 20 BB → Max Buy-In)');
     const pct = parseLightningAutoRebuyStatus({
-      auto_rebuy_enabled: true,
-      auto_rebuy_trigger: 'below_pct',
-      auto_rebuy_threshold_pct: 25,
-      auto_rebuy_target: 'initial',
+      enabled: true,
+      trigger: 'below_pct',
+      threshold_pct: 25,
+      target: 'initial',
+      max_count: 3,
+      session_cap: 0,
+      used_count: 1,
+      used_total: 200,
     })!;
-    expect(lightningAutoRebuyText(pct)).toBe('Auto-Rebuy: On (Below 25% → Initial Buy-In)');
+    expect(pct.sessionCap).toBeNull();
+    expect(pct.usedTotal).toBe(200);
+    expect(lightningAutoRebuyText(pct)).toBe(
+      'Auto-Rebuy: On (Below 25% → Initial Buy-In), 1 Of 3 Used'
+    );
   });
 
-  it('an unreadable config says nothing at all (deploy window, not granted)', async () => {
+  it('an unreadable status says nothing at all (deploy window, older payload)', async () => {
     rpc.mockResolvedValue({ data: null, error: MISSING });
+    expect(await fetchLightningAutoRebuyStatus(CLUSTER)).toBeNull();
+    rpc.mockResolvedValue({ data: { players: 20, status: 'ACTIVE' }, error: null });
     expect(await fetchLightningAutoRebuyStatus(CLUSTER)).toBeNull();
     rpc.mockRejectedValue(new Error('network'));
     expect(await fetchLightningAutoRebuyStatus(CLUSTER)).toBeNull();
   });
 
-  it('the Session panel shows the line when the config can be read, and hides it when not', async () => {
+  it('the Session panel shows the line only while auto-rebuy is on, and never asks fn_lightning_config', async () => {
     quietRpc({
-      fn_lightning_config: () => ({
-        data: { auto_rebuy_enabled: false },
+      fn_lightning_pool_status: () => ({
+        data: {
+          players: 20,
+          status: 'ACTIVE',
+          joinable: true,
+          auto_rebuy: {
+            enabled: true,
+            trigger: 'zero',
+            target: 'max',
+            max_count: 3,
+            used_count: 0,
+          },
+        },
         error: null,
       }),
     });
     renderTools();
     fireEvent.click(screen.getByTestId('lightning-session-toggle'));
     await waitFor(() =>
-      expect(screen.getByTestId('lightning-auto-rebuy-status').textContent).toBe('Auto-Rebuy: Off')
+      expect(screen.getByTestId('lightning-auto-rebuy-status').textContent).toBe(
+        'Auto-Rebuy: On (When Out Of Chips → Max Buy-In), 0 Of 3 Used'
+      )
     );
     cleanup();
-    quietRpc({ fn_lightning_config: () => ({ data: null, error: MISSING }) });
+    quietRpc({
+      fn_lightning_pool_status: () => ({
+        data: { players: 20, status: 'ACTIVE', auto_rebuy: { enabled: false } },
+        error: null,
+      }),
+    });
     renderTools();
     fireEvent.click(screen.getByTestId('lightning-session-toggle'));
     await waitFor(() =>
-      expect(rpc.mock.calls.some(([fn]) => fn === 'fn_lightning_config')).toBe(true)
+      expect(rpc.mock.calls.some(([fn]) => fn === 'fn_lightning_pool_status')).toBe(true)
     );
     expect(screen.queryByTestId('lightning-auto-rebuy-status')).toBeNull();
+    expect(rpc.mock.calls.some(([fn]) => fn === 'fn_lightning_config')).toBe(false);
+    expect(read('src/lightning/lightningSessionApi.ts')).not.toMatch(/rpc\('fn_lightning_config'/);
   });
 });
 

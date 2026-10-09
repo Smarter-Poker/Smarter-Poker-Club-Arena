@@ -1417,6 +1417,24 @@ export class EngineStateClient {
   }
 
   /**
+   * LIGHTNING PHASE 12: this room's hand reached the screen (RENDER_ACK). A
+   * hand id and a bounded client delta only - never a card; the engine times
+   * the leg on its own clock and ignores the delta. Sent only on an open
+   * socket; a failure is silent (telemetry).
+   */
+  sendRenderAck(handId: string, deltaMs: number): void {
+    if (!handId || this.ws?.readyState !== 1) return;
+    const d = Number.isFinite(deltaMs) ? Math.max(0, Math.min(60_000, Math.round(deltaMs))) : 0;
+    try {
+      this.ws.send(
+        JSON.stringify({ type: 'RENDER_ACK', tableId: this.opts.tableId, hand_id: handId, d })
+      );
+    } catch {
+      /* onclose will reconnect; a lost ack is no sample */
+    }
+  }
+
+  /**
    * Skip the backoff wait that is pending and make one attempt now
    * (2026-09-20).
    *

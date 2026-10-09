@@ -110,16 +110,17 @@ export function useLightningAnchorHandoff(input: {
         const session = await fetchMyLightningSession(clusterId);
         if (stopped) return;
         if (hasLightningRoom(session) && session.poolSessionId) {
-          let meta: LightningClusterMeta | null = null;
-          try {
-            meta = await fetchLightningClusterMeta(clusterId);
-          } catch (err) {
-            reportError(err, 'lightning.handoff_meta_read_failed', { clusterId });
-          }
-          if (stopped) return;
-          registerLightningPoolSession({ poolSessionId: session.poolSessionId, clusterId, meta });
+          /* FIRST-HAND PATH (Lightning Phase 12): JOIN -> HAND with no
+             avoidable round trip. The tab follows the chair the moment the
+             pool session exists; the Cluster's felt metadata is not waited
+             for here - the room registers without it and the room's own
+             view asks for it once (TablePage), while the engine is already
+             forming the first hand. */
+          const poolSessionId = session.poolSessionId;
+          const meta: LightningClusterMeta | null = null;
+          registerLightningPoolSession({ poolSessionId, clusterId, meta });
           finish();
-          followRef.current(session.poolSessionId);
+          followRef.current(poolSessionId);
           return;
         }
         /* No pool session yet. If the Cluster is not Lightning any more, none

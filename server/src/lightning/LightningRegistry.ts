@@ -106,7 +106,22 @@ export interface LightningRegistryDeps {
   presenceReport?: LightningPresenceReport | null;
   /** Engine clock (injected for tests). */
   now?: () => number;
+  /** LIGHTNING PHASE 12: where hand_to_first_render goes (the process metrics otherwise). */
+  metrics?: LightningMetrics;
 }
+
+/** LIGHTNING PHASE 12: a first hand frame waiting for its room's RENDER_ACK. */
+interface PendingRender {
+  handId: string;
+  userId: string;
+  clusterId: string | null;
+  sentAtMs: number;
+}
+
+/** A first frame unacknowledged this long is no sample (the room was not watching). */
+export const LIGHTNING_RENDER_ACK_TTL_MS = 60_000;
+/** Most first frames awaiting an ack at once (one per room; memory bound). */
+export const LIGHTNING_RENDER_PENDING_MAX = 20_000;
 
 /** The close reason of a room whose player left (or was cashed out of) the pool. */
 export const LIGHTNING_SESSION_ENDED_REASON = 'Your Lightning Session Has Ended';
@@ -175,6 +190,11 @@ export class LightningRegistry {
   private readonly decisions = new Map<string, Map<string, LightningDecision>>();
   private userEventSink: LightningUserEventSink | null = null;
   private readonly clock: () => number;
+  /** LIGHTNING PHASE 12: room -> the first frame of its current hand, until acked. */
+  private readonly renderPending = new Map<string, PendingRender>();
+  private readonly metrics: LightningMetrics;
+  /** LIGHTNING PHASE 12: a room's first socket arrived (admission wake). */
+  private arrivalListener: ((clusterId: string) => void) | null = null;
 
   constructor(deps: LightningRegistryDeps = {}) {
     this.viewAccess = deps.viewAccess ?? lightningHandViewAccess;
@@ -183,6 +203,84 @@ export class LightningRegistry {
     this.closeRoom = deps.closeRoom ?? null;
     this.presenceReport = deps.presenceReport ?? null;
     this.clock = deps.now ?? Date.now;
+    this.metrics = deps.metrics ?? lightningMetrics;
+  }
+
+  /**
+   * Boot wiring (Lightning Phase 12): told when a room's FIRST socket arrives
+   * with a known Cluster - a player joining, or back - so that Cluster's
+   * worker runs its next pass soon instead of a pass interval later.
+   */
+  setArrivalListener(listener: ((clusterId: string) => void) | null): void {
+    this.arrivalListener = listener;
+  }
+
+  // ─── LIGHTNING PHASE 12: HAND CREATION -> FIRST CLIENT RENDER ───────────
+
+  /**
+   * A host sent this room its hand's first frame at `atMs` (engine clock).
+   * One entry per room: the next hand in the room replaces an unacked one.
+   */
+  noteFirstFrame(roomId: string, userId: string, handId: string, atMs: number): void {
+    if (!isUuid(roomId) || !isUuid(handId)) return;
+    this.renderPending.delete(roomId);
+    this.renderPending.set(roomId, {
+      handId,
+      userId,
+      clusterId:
+        this.rooms.get(roomId)?.clusterId ?? this.hostByRoom.get(roomId)?.clusterId ?? null,
+      sentAtMs: atMs,
+    });
+    if (this.renderPending.size > LIGHTNING_RENDER_PENDING_MAX) {
+      for (const [room, p] of this.renderPending) {
+        if (
+          this.renderPending.size <= LIGHTNING_RENDER_PENDING_MAX &&
+          atMs - p.sentAtMs < LIGHTNING_RENDER_ACK_TTL_MS
+        )
+          break;
+        this.renderPending.delete(room);
+      }
+    }
+  }
+
+  /**
+   * The room's socket says it rendered this hand (RENDER_ACK). Only the
+   * room's owner can close it, only once, only for the hand that room was
+   * sent, and only inside the TTL. The leg is the ENGINE's clock from the
+   * first frame to now: the client's timestamps are never used. The frame
+   * carries a hand id and nothing else of the hand.
+   */
+  renderAck(roomId: string, userId: string, handId: unknown): boolean {
+    const p = this.renderPending.get(roomId);
+    if (!p || typeof handId !== 'string' || p.handId !== handId || p.userId !== userId)
+      return false;
+    this.renderPending.delete(roomId);
+    const ms = this.clock() - p.sentAtMs;
+    if (ms < 0 || ms > LIGHTNING_RENDER_ACK_TTL_MS) return false;
+    this.metrics.observeLatency('hand_to_first_render', ms, p.clusterId);
+    return true;
+  }
+
+  /** First frames still waiting for an ack (memory bound checks). */
+  get pendingRenderAcks(): number {
+    return this.renderPending.size;
+  }
+
+  /** Rooms and hosts held (memory bound checks). */
+  get sizes(): {
+    rooms: number;
+    hosts: number;
+    hostByRoom: number;
+    proxies: number;
+    decisions: number;
+  } {
+    return {
+      rooms: this.rooms.size,
+      hosts: this.hosts.size,
+      hostByRoom: this.hostByRoom.size,
+      proxies: this.proxies.size,
+      decisions: this.decisions.size,
+    };
   }
 
   /** Boot wiring: how a private frame reaches a player's sockets in a room. */
@@ -261,6 +359,11 @@ export class LightningRegistry {
    */
   async authorize(roomId: string, userId: string): Promise<TableConnectionAccess> {
     if (!isUuid(roomId) || !isUuid(userId)) return REFUSED;
+    // FIRST-HAND PATH (Lightning Phase 12): a room this process has not seen
+    // asks the access door and the owner row together - one round trip, not
+    // two. The owner row is attribution only and is used only when admitted.
+    const ownerP = this.rooms.has(roomId) ? null : this.roomOwner(roomId);
+    ownerP?.catch(() => undefined);
     let ok: boolean;
     try {
       ok = await this.viewAccess(roomId, userId);
@@ -279,7 +382,7 @@ export class LightningRegistry {
     if (!this.rooms.has(roomId)) {
       let clusterId: string | null = null;
       try {
-        const owner = await this.roomOwner(roomId);
+        const owner = await (ownerP ?? this.roomOwner(roomId));
         if (owner && owner.playerId === userId) clusterId = owner.clusterId;
       } catch {
         /* presence attribution only; the hand host fills it in on its first hand */
@@ -300,6 +403,12 @@ export class LightningRegistry {
     // socket in the same room changes nothing the database should hear.
     if (info.sockets === 1 && info.clusterId) {
       this.reportPresence('reconnected', info.clusterId, userId);
+      // LIGHTNING PHASE 12: a player arrived in the pool - admission wake.
+      try {
+        this.arrivalListener?.(info.clusterId);
+      } catch {
+        /* a listener must never take the registry down */
+      }
     }
   }
 
@@ -352,6 +461,7 @@ export class LightningRegistry {
     if (info && info.sockets === 0 && !this.hostByRoom.has(roomId)) {
       this.rooms.delete(roomId);
       this.proxies.delete(roomId);
+      this.renderPending.delete(roomId);
     }
   }
 
@@ -550,8 +660,13 @@ export interface LightningHostingDeps {
    * database does all money movement and validation - the engine only asks.
    */
   autoRebuy?: LightningAutoRebuyReport | null;
-  /** Injected for tests. */
-  hostOptions?: Partial<Pick<LightningHandHostDeps, 'timer' | 'sleep' | 'now' | 'logger'>>;
+  /** Injected for tests (and the Phase 12 load suite's in-memory world). */
+  hostOptions?: Partial<
+    Pick<
+      LightningHandHostDeps,
+      'timer' | 'sleep' | 'now' | 'logger' | 'horseLane' | 'jackpot' | 'postCommitBudgetMs'
+    >
+  >;
 }
 
 /** The longest a Cluster waits after consecutive abandons before forming again. */
@@ -644,6 +759,9 @@ export class LightningHosting {
         }
       },
       onDealing: (h) => registry.register(h),
+      // LIGHTNING PHASE 12: hand_to_first_render starts at the first frame.
+      onFirstFrame: (playerId, roomId, handId, atMs) =>
+        registry.noteFirstFrame(roomId, playerId, handId, atMs),
       onDecision: (playerId, decision, reason) => {
         if (decision) registry.announceDecision(playerId, decision);
         else registry.clearDecision(playerId, host.currentHandId, reason ?? 'cleared');

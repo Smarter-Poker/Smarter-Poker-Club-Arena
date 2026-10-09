@@ -8,9 +8,11 @@
  *   - ACTION LATENCY (spec "ACTION LATENCY TELEMETRY"): every leg the
  *     Prometheus histogram already measures (LightningMetrics), attributed to
  *     its Cluster and kept as a bounded sample so the shadow record can carry
- *     the window's p50/p95 per leg. Hand creation -> first client render is
- *     NOT measured: the client sends no render acknowledgement today, and the
- *     engine will not guess one.
+ *     the window's p50/p95 per leg. Hand creation -> first client render
+ *     is measured since Lightning Phase 12 on the engine's own clock (the
+ *     host's first hand frame to a room, then that socket's RENDER_ACK), and
+ *     the latency ledger (LightningLatencyLedger) reports every leg's
+ *     n/p50/p95/p99 per window through fn_lightning_latency_report.
  *   - DECISION LATENCY per player (spec "INTEGRITY / BOT / COLLUSION"): the
  *     time from a turn being offered to the action that answered it. A
  *     distribution that is abnormally fast or abnormally constant is what an
@@ -45,8 +47,38 @@ export interface LightningClusterTelemetrySink {
   handEnded?(handId: string, atMs: number): void;
 }
 
+/**
+ * LIGHTNING PHASE 12: the latency ledger's own hook. A Cluster's shadow
+ * runner and its latency ledger are registered side by side, so either can
+ * be on without the other; both receive every Cluster-attributed leg.
+ */
+export interface LightningLatencySink {
+  latency(segment: LightningLatencySegment, ms: number): void;
+}
+
 export class LightningTelemetry {
   private readonly sinks = new Map<string, LightningClusterTelemetrySink>();
+  private readonly latencySinks = new Map<string, LightningLatencySink>();
+
+  /** LIGHTNING PHASE 12: the Cluster's latency ledger (fn_lightning_latency_report). */
+  registerLatency(clusterId: string, sink: LightningLatencySink): void {
+    this.latencySinks.set(clusterId, sink);
+  }
+
+  /** Only the ledger that registered removes itself. */
+  unregisterLatency(clusterId: string, sink: LightningLatencySink): void {
+    if (this.latencySinks.get(clusterId) === sink) this.latencySinks.delete(clusterId);
+  }
+
+  /** Is a latency ledger recording this Cluster? */
+  isRecordingLatency(clusterId: string | null | undefined): boolean {
+    return !!clusterId && this.latencySinks.has(clusterId);
+  }
+
+  /** How many Clusters hold a sink of either kind (memory bound checks). */
+  get size(): { sinks: number; latency: number } {
+    return { sinks: this.sinks.size, latency: this.latencySinks.size };
+  }
 
   register(clusterId: string, sink: LightningClusterTelemetrySink): void {
     this.sinks.set(clusterId, sink);
@@ -69,6 +101,8 @@ export class LightningTelemetry {
     if (!clusterId) return;
     const s = this.sinks.get(clusterId);
     if (s?.latency) guard(() => s.latency!(segment, ms));
+    const l = this.latencySinks.get(clusterId);
+    if (l) guard(() => l.latency(segment, ms));
   }
 
   idle(clusterId: string | null | undefined, playerId: string, atMs: number): void {

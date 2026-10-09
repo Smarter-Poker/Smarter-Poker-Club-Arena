@@ -149,7 +149,13 @@ describe('the verdict', () => {
     // The player was reaped here and re-entered from another tab or seat:
     // the stale tab's session is over, and the new session belongs to the
     // tab that opened it (navigation only on an explicit tap).
-    const endedForThisTab = { kind: 'ended', timedOut: false, stopped: false, seatTableId: null };
+    const endedForThisTab = {
+      kind: 'ended',
+      timedOut: false,
+      stopped: false,
+      rgLimit: false,
+      seatTableId: null,
+    };
     expect(
       lightningReconnectVerdict(
         POOL_B,
@@ -169,6 +175,7 @@ describe('the verdict', () => {
       kind: 'ended',
       timedOut: true,
       stopped: false,
+      rgLimit: false,
       seatTableId: SEAT_TABLE,
     });
     // The remediated function's own spelling for a recent exited session.
@@ -177,7 +184,13 @@ describe('the verdict', () => {
         POOL,
         parseLightningReconnectState({ ...TIMED_OUT_ROW, state: 'ended' })
       )
-    ).toEqual({ kind: 'ended', timedOut: true, stopped: false, seatTableId: SEAT_TABLE });
+    ).toEqual({
+      kind: 'ended',
+      timedOut: true,
+      stopped: false,
+      rgLimit: false,
+      seatTableId: SEAT_TABLE,
+    });
     // The player's own STOP PLAYING.
     expect(
       lightningReconnectVerdict(
@@ -188,7 +201,13 @@ describe('the verdict', () => {
           exit_reason: 'stop_playing',
         })
       )
-    ).toEqual({ kind: 'ended', timedOut: false, stopped: true, seatTableId: SEAT_TABLE });
+    ).toEqual({
+      kind: 'ended',
+      timedOut: false,
+      stopped: true,
+      rgLimit: false,
+      seatTableId: SEAT_TABLE,
+    });
     // Any other exit_reason is the generic ending.
     expect(
       lightningReconnectVerdict(
@@ -200,7 +219,13 @@ describe('the verdict', () => {
           exit_reason: 'cash_out',
         })
       )
-    ).toEqual({ kind: 'ended', timedOut: false, stopped: false, seatTableId: null });
+    ).toEqual({
+      kind: 'ended',
+      timedOut: false,
+      stopped: false,
+      rgLimit: false,
+      seatTableId: null,
+    });
   });
 
   it('a database before the remediation degrades to the generic ending', () => {
@@ -209,6 +234,7 @@ describe('the verdict', () => {
       kind: 'ended',
       timedOut: false,
       stopped: false,
+      rgLimit: false,
       seatTableId: null,
     });
     // An ended row that carries no exit_reason field names no special ending.
@@ -217,7 +243,13 @@ describe('the verdict', () => {
         POOL,
         parseLightningReconnectState({ ...TIMED_OUT_ROW, exit_reason: null })
       )
-    ).toEqual({ kind: 'ended', timedOut: false, stopped: false, seatTableId: SEAT_TABLE });
+    ).toEqual({
+      kind: 'ended',
+      timedOut: false,
+      stopped: false,
+      rgLimit: false,
+      seatTableId: SEAT_TABLE,
+    });
   });
 
   it("no code path references a pool-session state 'expired' - the database cannot produce one", () => {
@@ -234,7 +266,12 @@ describe('the verdict', () => {
     expect(LIGHTNING_STOPPED_TITLE).toBe('You Stopped Playing');
     const withSeat = lightningSessionEndText({ timedOut: true, seatTableId: SEAT_TABLE });
     const noSeat = lightningSessionEndText({ timedOut: false, seatTableId: null });
-    const stopped = lightningSessionEndText({ timedOut: false, stopped: true, seatTableId: null });
+    const stopped = lightningSessionEndText({
+      timedOut: false,
+      stopped: true,
+      rgLimit: false,
+      seatTableId: null,
+    });
     expect(withSeat).toBe('Your Lightning Session Timed Out. Your Seat Is Ready At Your Table.');
     expect(noSeat).toBe('Your Lightning Session Has Ended.');
     expect(stopped).toBe('You Stopped Playing.');

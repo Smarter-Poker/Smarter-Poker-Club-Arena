@@ -30,6 +30,11 @@ const GAME_SERVER_URL =
 export interface UseEngineTableStateResult {
   requestSnapshot: () => void;
   /**
+   * LIGHTNING PHASE 12: acknowledge that this room's hand rendered (see
+   * EngineStateClient.sendRenderAck). A no-op unless the socket is open.
+   */
+  sendRenderAck: (handId: string, deltaMs: number) => void;
+  /**
    * 2026-09-20: cut a pending reconnect wait short and try now (see
    * EngineStateClient.reconnectNow). A no-op unless a retry is waiting.
    */
@@ -146,6 +151,10 @@ export function useEngineTableState(
   const requestSnapshot = useCallback(() => clientRef.current?.requestSnapshot(), []);
   const reconnectNow = useCallback(() => clientRef.current?.reconnectNow(), []);
   const probeLink = useCallback(() => clientRef.current?.probeLink(), []);
+  const sendRenderAck = useCallback(
+    (handId: string, deltaMs: number) => clientRef.current?.sendRenderAck(handId, deltaMs),
+    []
+  );
   return {
     snapshot,
     seq,
@@ -156,6 +165,7 @@ export function useEngineTableState(
     requestSnapshot,
     reconnectNow,
     probeLink,
+    sendRenderAck,
   };
 }
 

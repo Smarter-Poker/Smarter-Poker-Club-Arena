@@ -142,6 +142,14 @@ upper bound on engine cost at a given population, not a production forecast.
 | Load 500   | 501 / 3            | 328   | 1.5 / 11.1 / 13.7 | 63 / 124 / 137             | 57 / 121 / 138          | 54 / 121 / 135           | 30 / 45 / 48        |
 | Load 1,000 | 1,002 / 3          | 495   | 1.6 / 20 / 26.3   | 155 / 322 / 479            | 155 / 355 / 475         | 135 / 334 / 504          | 36 / 53 / 62        |
 
+With `LIGHTNING_LOAD_FULL=1` (run locally, the machine otherwise busy): 5,000 players
+over 8 Clusters dealt 1,753 hands and 10,000 over 12 dealt 2,746, every invariant
+holding, none abandoned. There the single process is saturated: pass time
+6.9 / 89 / 115.4 and 30.6 / 230.1 / 468.4, LIGHTNING FOLD → next hand
+1,701 / 3,110 / 3,420 and 7,599 / 11,657 / 14,123, render 127 / 180 / 188 and
+283 / 571 / 588. That is the engine, the world and a crowd of 10,000 sharing one
+thread; it is the ceiling of this harness, not a forecast for production.
+
 Surge, JOIN → first hand: 20 arrivals in 1 s 124 / 264 / 441; 100 in 1.5 s
 118 / 258 / 263; 500 in 2 s 149 / 258 / 264 (the 250 ms admission window dominates).
 Other legs at 1,000 players: `fold_ack` 0 / 0 / 1, `ack_to_idle` 10 / 19 / 22,

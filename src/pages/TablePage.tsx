@@ -2338,8 +2338,8 @@ function LiveTablePage({
     lastUserEvent: engineLastUserEvent,
     requestSnapshot: requestEngineSnapshot,
     probeLink: probeEngineLink,
-    reconnectNow: reconnectEngineNow,
     sendRenderAck: sendEngineRenderAck,
+    reconnectNow: reconnectEngineNow,
   } = useEngineTableState(tableId || undefined, {
     enabled: USE_ENGINE_WS,
     /* The break's end, from the database, handed to the reconnect ladder so it

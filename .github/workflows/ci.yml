@@ -1725,6 +1725,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase11-integrity-shadow.sh
+      - name: Lightning Phase 12 ends a responsible-gaming refusal like Stop Playing and answers the caller's own auto-rebuy status at the pool door
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-lightning-phase12-rg-limits.sh
       - name: Lightning Phase 12 operator doors, alerts and latency ledger
         if: matrix.shard == 1
         env:

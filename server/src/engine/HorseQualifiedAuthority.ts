@@ -246,10 +246,46 @@ export interface HorseAuthorityEvidenceReader {
   read(relativePath: string): Buffer;
 }
 
-/** Repository root in source and test runs; the engine image root in production. */
-export const repositoryEvidenceReader: HorseAuthorityEvidenceReader = {
+/**
+ * The server-root directory that carries committed admission evidence into the
+ * engine image. The image is built from the server tree alone
+ * (`server/scripts/build-engine-image.sh`, a `git archive` of `server/`), so a
+ * file under the repository's `docs/evidence/` never reaches production; a
+ * selection naming only that copy would be refused `missing_evidence` on the
+ * engine and stay in shadow. Every file a committed selection reads (its
+ * qualification, the strength record that file names, and any completion
+ * record) is therefore also committed at
+ * `server/release-evidence/<the same repository-relative path>`, byte for byte,
+ * and `server/Dockerfile` copies this directory to `/app/release-evidence/`.
+ * `aSelectedPackShipsItsEvidence.law.test.ts` admits every committed selection
+ * from this directory alone and refuses a copy that differs from `docs/`.
+ */
+export const RELEASE_EVIDENCE_DIRECTORY = 'release-evidence/';
+
+/** Reads only the shipped copy: `server/release-evidence/` in source runs,
+ * `/app/release-evidence/` in the engine image (dist/engine/../../ is /app). */
+export const releaseEvidenceReader: HorseAuthorityEvidenceReader = {
   read: (relativePath) =>
-    readFileSync(fileURLToPath(new URL(`../../../${relativePath}`, import.meta.url))),
+    readFileSync(
+      fileURLToPath(new URL(`../../${RELEASE_EVIDENCE_DIRECTORY}${relativePath}`, import.meta.url))
+    ),
+};
+
+/**
+ * The shipped copy first; the repository root (source and test runs only) when
+ * the shipped copy does not have the file. In the engine image there is no
+ * repository root, so a file that was not shipped is refused `missing_evidence`.
+ */
+export const repositoryEvidenceReader: HorseAuthorityEvidenceReader = {
+  read: (relativePath) => {
+    try {
+      return releaseEvidenceReader.read(relativePath);
+    } catch (error) {
+      const code = (error as { code?: unknown })?.code;
+      if (code !== 'ENOENT' && code !== 'ENOTDIR') throw error;
+      return readFileSync(fileURLToPath(new URL(`../../../${relativePath}`, import.meta.url)));
+    }
+  },
 };
 
 /**

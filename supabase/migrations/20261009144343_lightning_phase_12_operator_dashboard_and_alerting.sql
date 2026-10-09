@@ -394,7 +394,7 @@ CREATE INDEX IF NOT EXISTS lightning_integrity_signal_open_by_cluster
 --    is re-appliable; who may execute and the comment must survive.
 -- ===========================================================================
 
-CREATE OR REPLACE FUNCTION pg_temp.lp12_rewrite(p_fn text, p_marker text,
+CREATE OR REPLACE FUNCTION pg_temp.lp12ops_rewrite(p_fn text, p_marker text,
                                                 p_from text[], p_to text[], p_counts integer[])
 RETURNS void LANGUAGE plpgsql AS $rw$
 DECLARE
@@ -446,7 +446,7 @@ $rw$;
 --    third object is joined. The Phase 11 second object is untouched.
 -- ===========================================================================
 
-SELECT pg_temp.lp12_rewrite(
+SELECT pg_temp.lp12ops_rewrite(
   'public.fn_lightning_config(uuid)',
   '''latency_window_ms''',
   ARRAY[$a$  v_it_on    boolean;

@@ -7,8 +7,9 @@
 #
 # THE CHAIN IS THE REAL ONE: every Lightning migration from 20260920172736
 # through Phase 11 (20261008161509), in order, exactly as
-# test-lightning-phase11-integrity-shadow.sh builds them, then the migration
-# under test, twice. Every Cluster is converted ON by the real drive, every
+# test-lightning-phase11-integrity-shadow.sh builds them, then the sibling
+# Phase 12 file applied before this one (20261009143757, responsible gaming
+# limits and the auto-rebuy status), then the migration under test, twice. Every Cluster is converted ON by the real drive, every
 # hand formed by the real barrier, dealt by the real begin_dealing and
 # settled by the real settlement, every freeze is the real settlement
 # freeze, every alert goes through fn_raise_server_financial_alert verbatim.
@@ -74,11 +75,12 @@ p9d=$M/20261008050805_lightning_phase_9_disconnect_reconnect_and_the_forensic_le
 p10=$M/20261008111425_lightning_phase_10_responsible_gaming_stop_playing_auto_rebu.sql
 p9r2=$M/20261008142857_lightning_phase_9_remediation_the_ended_session_answers_the_.sql
 p11=$M/20261008161509_lightning_phase_11_integrity_telemetry_and_the_shadow_matche.sql
+p12rg=$M/20261009143757_lightning_phase_12_responsible_gaming_limits_and_auto_rebuy_.sql
 mine=${LIGHTNING_P12_MIGRATION:-$M/20261009144343_lightning_phase_12_operator_dashboard_and_alerting.sql}
 for f in "$base_fixture" "$pop_fixture" "$p5_fixture" "$p9_fixture" "$r2_fixture" "$p6_fixture" "$s6_fixture" \
          "$phase1" "$phase1r" "$phase2" "$phase2r" "$phase3" "$phase3r" "$phase4" "$phase4r" \
          "$phase5" "$phase5r" "$phase9" "$phase9r" "$r2a" "$r2b" "$r2c" "$r2d" "$p6" "$s6" "$s6r" "$p7" \
-         "$phase8" "$p7r" "$fix" "$p9d" "$p10" "$p9r2" "$p11" "$mine"; do
+         "$phase8" "$p7r" "$fix" "$p9d" "$p10" "$p9r2" "$p11" "$p12rg" "$mine"; do
   [ -f "$f" ] || { echo "FAIL: missing input $f"; exit 1; }
 done
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/lightning-p12-test.XXXXXX")
@@ -125,6 +127,7 @@ predecessor_proofs() {
   gen_proofs "$phase" p10 "$p10"
   gen_proofs "$phase" p9r2 "$p9r2"
   gen_proofs "$phase" p11 "$p11"
+  gen_proofs "$phase" p12rg "$p12rg"
 }
 
 # ===========================================================================
@@ -1968,6 +1971,7 @@ set +e
   -f "$phase8" -f "$p7r" -f "$fix" -f "$p9d" -f "$p10" -f "$p9r2" \
   -f "$fixture/ground.sql" \
   -f "$p11" \
+  -f "$p12rg" \
   -f "$fixture/ground12.sql" \
   -f "$fixture/proofs-before.sql" \
   -f "$mine" \
@@ -1977,7 +1981,7 @@ set +e
   -f "$fixture/own-proofs.sql" \
   -f "$fixture/precapture.sql" \
   -f "$mine" \
-  -f "$fixture/reapply.sql" 2>&1 | grep -v -E '^psql:.*: (NOTICE|WARNING):' | grep -v -E '^ lp7?8_rewrite|^ lp9_rewrite|^ lp10_rewrite|^ lp9r2_rewrite|^ lp11_rewrite|^ lp12_rewrite|^-+$|^ *$|^\([0-9]+ rows?\)$|^ +format *$' | tee "$fixture/psql.out"
+  -f "$fixture/reapply.sql" 2>&1 | grep -v -E '^psql:.*: (NOTICE|WARNING):' | grep -v -E '^ lp7?8_rewrite|^ lp9_rewrite|^ lp10_rewrite|^ lp9r2_rewrite|^ lp11_rewrite|^ lp12_rewrite|^ lp12ops_rewrite|^-+$|^ *$|^\([0-9]+ rows?\)$|^ +format *$' | tee "$fixture/psql.out"
 status=${PIPESTATUS[0]}
 set -e
 if [ "$status" != 0 ]; then
@@ -1991,4 +1995,4 @@ if [ "$oks" != 18 ]; then
   echo "FAIL: $oks of the 18 sections reported, so this run proved less than this file claims"
   exit 1
 fi
-echo "PASS: Lightning Phase 12 (DB), 18 sections, under production's default function, table and sequence ACLs and its live autorevoke event trigger, over the real chain through Phase 11 (20261008161509): before the file nothing of it exists; after it no predecessor proof is falsified but the one it supersedes and restates; anon reaches no door and non-operators of the club are NOT_AUTHORIZED everywhere; the overview and detail of a Cluster of humans and horses carry exactly their documented keys and the reconcile stack is exact; no card, hole, deck, seed or shuffle key leaves the forensics, replay, trail or detail doors; a frozen Cluster is one page across passes and is never touched; a stuck pending_on, a failed reap, drive errors, an integrity spike and a latency regression over consecutive windows each page once and the state pages resolve themselves; the latency door is validated, idempotent and refuses cards; the signal review is gated, audited and survives rescans; one failing check never fails the pass; the cron job and the config keys are in place; every @live-proof holds and the file is re-appliable"
+echo "PASS: Lightning Phase 12 (DB), 18 sections, under production's default function, table and sequence ACLs and its live autorevoke event trigger, over the real chain through Phase 11 (20261008161509) and the sibling Phase 12 file (20261009143757): before the file nothing of it exists; after it no predecessor proof is falsified but the one it supersedes and restates; anon reaches no door and non-operators of the club are NOT_AUTHORIZED everywhere; the overview and detail of a Cluster of humans and horses carry exactly their documented keys and the reconcile stack is exact; no card, hole, deck, seed or shuffle key leaves the forensics, replay, trail or detail doors; a frozen Cluster is one page across passes and is never touched; a stuck pending_on, a failed reap, drive errors, an integrity spike and a latency regression over consecutive windows each page once and the state pages resolve themselves; the latency door is validated, idempotent and refuses cards; the signal review is gated, audited and survives rescans; one failing check never fails the pass; the cron job and the config keys are in place; every @live-proof holds and the file is re-appliable"

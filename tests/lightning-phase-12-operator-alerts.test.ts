@@ -347,12 +347,12 @@ describe('the sweep', () => {
 
 describe('the one substitution is asserted', () => {
   it('the rewriter counts each anchor, refuses a blind replace and reads back the grants', () => {
-    expect(SQL).toContain('CREATE OR REPLACE FUNCTION pg_temp.lp12_rewrite(');
+    expect(SQL).toContain('CREATE OR REPLACE FUNCTION pg_temp.lp12ops_rewrite(');
     expect(SQL).toContain('refusing to substitute blind');
     expect(SQL).toContain('did not keep who may execute');
-    expect(count(SQL, /SELECT pg_temp\.lp12_rewrite\(/g)).toBe(1);
+    expect(count(SQL, /SELECT pg_temp\.lp12ops_rewrite\(/g)).toBe(1);
     expect(SQL).toContain(
-      "SELECT pg_temp.lp12_rewrite(\n  'public.fn_lightning_config(uuid)',\n  '''latency_window_ms''',"
+      "SELECT pg_temp.lp12ops_rewrite(\n  'public.fn_lightning_config(uuid)',\n  '''latency_window_ms''',"
     );
   });
   it('the configuration gains the Phase 12 keys in a third object, each clamped like every other', () => {

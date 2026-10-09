@@ -20,8 +20,8 @@ const reviewed = Object.freeze({
   [funding]: 'd3b0d591994d0c8cc5a0c3b66b984d42241e921cf5c06668f29518c84b3eb756',
   [fixture]: 'c2057bbbbb9b08c860ac82cf02e98171ff9188ab36694dcb672f1abd3f37ed41',
   [concurrency]: 'c734ab9c039bd926a4b854177ea76729d825a57df45506b11ac67a59b57723ea',
-  [unknown]: '737aa48564e13962646a0ab7dee1e2f9e8ed5e22adafe212d6e971338253ca58',
-  [proxy]: 'ee690ad41a6790617215400ea6287847c18f553effe0cd7a32f94e0dee057381',
+  [unknown]: 'd4184e26cb9ad08d63e49dabd8d1fac41d68974544ba88280d8766f37f1f3272',
+  [proxy]: '9c50efe5eeb70066d66abfd6c3aedf13867763df6b2818aa76a173048bc1701c',
   [diagnostics]: '3659a7e29421017046f4256bac1339b437c8bca5839e47ef3197c1dbe2e003e6',
 });
 const modes = Object.freeze({

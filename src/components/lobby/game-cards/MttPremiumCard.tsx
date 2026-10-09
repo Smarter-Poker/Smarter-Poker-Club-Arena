@@ -21,7 +21,7 @@ export function MttPremiumCard({
   actions: ArenaGameCardActions;
 }) {
   const titleRef = useFitText<HTMLHeadingElement>(data.title, 1, 0.45, {
-    wrapBelow: 0.8,
+    wrapBelow: 0.95,
     maxLines: 2,
   });
   const metrics = [

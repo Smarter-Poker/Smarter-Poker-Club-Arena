@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { getArenaSectionNavigation } from '../../src/config/arenaSectionNavigation';
+import { getArenaSectionNavigation } from '../src/config/arenaSectionNavigation';
 import {
   resetTournamentDockStoreForTests,
   subscribeTournamentDock,
@@ -8,7 +8,7 @@ import {
   setTournamentDockClosed,
   tournamentDockCollapsed,
   toggleTournamentDockCollapsed,
-} from '../../src/lib/tournamentDockStore';
+} from '../src/lib/tournamentDockStore';
 const read = (p: string) => readFileSync(p, 'utf8');
 beforeEach(() => {
   localStorage.clear();

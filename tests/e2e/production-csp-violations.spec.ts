@@ -42,7 +42,9 @@ const ARENA_ROUTES = ['', 'clubs', 'wallet', 'profile', 'promotions'];
  * The policy is set by the World Hub for the whole origin, so a Club-Arena-only
  * sweep would certify a header that mostly governs somebody else's pages.
  */
-const HUB_ROUTES = ['/', '/diamonds', '/games'];
+// Use the World Hub's maintained Diamonds and Games navigation destinations
+// (src/config/world-footer-navigation.json); the old bare URLs return 404.
+const HUB_ROUTES = ['/', '/hub/diamond-store', '/hub/home-games'];
 
 const COLLECT = () => {
   (window as unknown as { __cspViolations?: Violation[] }).__cspViolations = [];

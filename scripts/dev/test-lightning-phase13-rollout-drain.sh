@@ -890,7 +890,7 @@ BEGIN
   FOREACH f IN ARRAY ARRAY['lightning_pool_health', 'lightning_repeat_suppression', 'lightning_session_stats', 'lightning_adaptive_liquidity'] LOOP
     PERFORM harness.refused(harness.ctl('admin', v_g, 'set_flag', jsonb_build_object('flag', f, 'value', false)), 'FLAG_NOT_SUPPORTED', 'P13 ' || f);
   END LOOP;
-  PERFORM harness.refused(harness.ctl('admin', v_g, 'set_flag', '{"flag": "lightning_zoom", "value": false}'), 'INVALID_ARGS', 'P13 unknown flag');
+  PERFORM harness.refused(harness.ctl('admin', v_g, 'set_flag', '{"flag": "lightning_turbo_mode", "value": false}'), 'INVALID_ARGS', 'P13 unknown flag');
   PERFORM harness.refused(harness.ctl('admin', v_g, 'set_flag', '{"flag": "lightning_fast_fold", "value": "no"}'), 'INVALID_ARGS', 'P13 non-boolean');
   IF (SELECT count(*) FROM jsonb_object_keys(public.fn_lightning_operator_cluster_row(v_g, now()) -> 'flags')) <> 14 THEN
     RAISE EXCEPTION 'FAIL P13: the row''s flags are not the four Phase 12 keys and the ten specification flags';
@@ -984,7 +984,12 @@ BEGIN
      OR (r #>> '{evidence,migrations,applied}')::integer <> 32 OR harness.card_keys(r) <> 0 THEN
     RAISE EXCEPTION 'FAIL P15: worker off: %', r;
   END IF;
-  PERFORM harness.cfg(v_g, '{"worker_mode": "form"}');
+  PERFORM harness.refused(harness.ctl('admin', v_g, 'set_worker_mode', '{"mode": "fast"}'), 'INVALID_ARGS', 'P15 bad worker mode');
+  r := harness.must(harness.ctl('admin', v_g, 'set_worker_mode', '{"mode": "form"}', 'the pilot forms'), 'P15 worker form');
+  IF public.fn_lightning_config(v_g) ->> 'worker_mode' <> 'form' OR r #>> '{detail,was}' <> 'off' THEN
+    RAISE EXCEPTION 'FAIL P15: set_worker_mode: %', r;
+  END IF;
+  PERFORM harness.already(harness.ctl('admin', v_g, 'set_worker_mode', '{"mode": "form"}'), 'P15 worker form again');
   r := harness.door('admin', format('SELECT public.fn_lightning_rollout_readiness(%L::uuid)', v_g));
   IF r ->> 'verdict' <> 'insufficient_evidence'
      OR (SELECT array_agg(x.v ->> 'code' ORDER BY x.v ->> 'code') FROM jsonb_array_elements(r -> 'reasons') x(v)) <> ARRAY['NO_AA_CALIBRATION', 'NO_LATENCY_EVIDENCE'] THEN
@@ -1049,7 +1054,7 @@ BEGIN
     RAISE EXCEPTION 'FAIL P15: estate evidence: %', r -> 'evidence' -> 'shadow';
   END IF;
 END $$;
-\echo '  ok  P15 READINESS  a stranger is NOT_AUTHORIZED; worker off is no_go; with the worker forming and no evidence it is insufficient_evidence (NO_AA_CALIBRATION, NO_LATENCY_EVIDENCE); with thirty calibrated A/A windows and latency under the ceilings it is go; a latency regression, a missing Lightning migration, a broken seven-tables census and an open page are each no_go; the estate''s A/A evidence is used for a Cluster with none of its own; never a card'
+\echo '  ok  P15 READINESS  a stranger is NOT_AUTHORIZED; worker off is no_go; set_worker_mode (off, shadow or form, anything else INVALID_ARGS) sets the worker forming, and and no evidence it is insufficient_evidence (NO_AA_CALIBRATION, NO_LATENCY_EVIDENCE); with thirty calibrated A/A windows and latency under the ceilings it is go; a latency regression, a missing Lightning migration, a broken seven-tables census and an open page are each no_go; the estate''s A/A evidence is used for a Cluster with none of its own; never a card'
 
 -- P16 THE DRIVE AND THE TICK STILL DRIVE THE ESTATE, AND NOTHING IS STRANDED ---------------------------------
 DO $$

@@ -1751,6 +1751,24 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase11-remediation.sh
+      - name: Lightning Phase 13 rollout controls pause, close joins, drain to MUST-MOVE with every hand settled, freeze, roll back the matcher and answer a readiness verdict (production bodies, real chain)
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-lightning-phase13-rollout-drain.sh
+      - name: Lightning Phase 12 load, stress and chaos rig over the chain through Phase 13 (operator doors, remediation and the rollout drain applied twice)
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          LIGHTNING_CHAOS_PROFILE: ci
+          LIGHTNING_P12_EXTRA: >-
+            scripts/dev/fixtures/lightning-phase13-operator-ground.sql
+            supabase/migrations/20261009144343_lightning_phase_12_operator_dashboard_and_alerting.sql
+            supabase/migrations/20261009151825_lightning_phase_12_load_chaos_the_pass_forms_under_surge.sql
+            supabase/migrations/20261009181945_lightning_phase_11_remediation_integrity_signals_are_fair_an.sql
+            supabase/migrations/20261009235505_lightning_phase_13_rollout_drain_and_rollback.sql
+          LIGHTNING_P12_SUPERSEDED: 20261008161509_lightning_phase_11_integrity_telemetry_and_the_shadow_matche.sql#10
+        run: bash scripts/dev/test-lightning-phase12-load-chaos.sh
       - name: Credit invoices bill only uninvoiced drawn debt
         if: matrix.shard == 1
         env:

@@ -171,7 +171,10 @@
 --       enable_lightning, disable_lightning,
 --       set_matcher_version {version, role: 'live' (default) | 'shadow'},
 --       disable_matcher_version {version}, enable_matcher_version {version},
---       rollback_matcher_version, set_flag {flag, value: boolean}.
+--       rollback_matcher_version, set_flag {flag, value: boolean},
+--       set_worker_mode {mode: 'off' | 'shadow' | 'form'} (the engine
+--       worker's configuration key worker_mode, a rollout stage rather than a
+--       specification flag, so a pilot never needs a hand-written config).
 --       A service_role caller may name the operator as actor_id (uuid);
 --       unfreeze requires one.
 --     Refusals {ok:false, code, reason}: NOT_AUTHORIZED, INVALID_ACTION,
@@ -1422,7 +1425,7 @@ DECLARE
   c_actions constant text[] := ARRAY['pause', 'resume', 'disable_joins', 'enable_joins', 'drain', 'freeze',
                                      'unfreeze', 'enable_lightning', 'disable_lightning', 'set_matcher_version',
                                      'disable_matcher_version', 'enable_matcher_version', 'rollback_matcher_version',
-                                     'set_flag'];
+                                     'set_flag', 'set_worker_mode'];
   c_flags   constant text[] := ARRAY['lightning_v1', 'lightning_fast_fold', 'lightning_fold_watch',
                                      'lightning_multi_table', 'lightning_pool_health', 'lightning_repeat_suppression',
                                      'lightning_session_stats', 'lightning_shadow_matcher', 'lightning_auto_rebuy',
@@ -1509,7 +1512,7 @@ BEGIN
                  ELSE 'club_control' END;
   v_safe := jsonb_strip_nulls(jsonb_build_object('version', v_args -> 'version', 'role', v_args -> 'role',
                                                  'flag', v_args -> 'flag', 'value', v_args -> 'value',
-                                                 'actor_id', v_args -> 'actor_id'));
+                                                 'mode', v_args -> 'mode', 'actor_id', v_args -> 'actor_id'));
 
   -- A REPEATED REQUEST IS ANSWERED, NOT DONE AGAIN.
   SELECT r.cluster_id, r.action, r.answer INTO v_prior
@@ -1929,6 +1932,20 @@ BEGIN
                                     'matcher_version_previous', CASE WHEN v_live_v = ANY (c_known) THEN v_live_v ELSE 'm1' END);
       v_detail := jsonb_build_object('from', v_live_v, 'to', v_prev);
 
+    ELSIF v_op = 'set_worker_mode' THEN
+      -- THE ENGINE WORKER: off (nothing), shadow (plans and compares, forms
+      -- nothing) or form. A rollout stage, not a specification flag.
+      v_role := CASE WHEN jsonb_typeof(v_args -> 'mode') = 'string' THEN v_args ->> 'mode' END;
+      IF v_role IS NULL OR v_role NOT IN ('off', 'shadow', 'form') THEN
+        v_answer := jsonb_build_object('ok', false, 'code', 'INVALID_ARGS', 'reason', 'mode_must_be_off_shadow_or_form');
+        EXIT act;
+      END IF;
+      IF (v_cfg ->> 'worker_mode') = v_role THEN
+        v_answer := jsonb_build_object('ok', true, 'already', true); EXIT act;
+      END IF;
+      v_patch := jsonb_build_object('worker_mode', v_role);
+      v_detail := jsonb_build_object('worker_mode', v_role, 'was', v_cfg ->> 'worker_mode');
+
     ELSIF v_op = 'set_flag' THEN
       IF (public.fn_lightning_spec_flags(g.lightning_enabled, v_cfg) ->> v_flag)::boolean IS NOT DISTINCT FROM v_value THEN
         v_answer := jsonb_build_object('ok', true, 'already', true); EXIT act;
@@ -2136,7 +2153,7 @@ BEGIN
   END IF;
   IF (v_cfg ->> 'worker_mode') = 'off' THEN
     v_reasons := v_reasons || jsonb_build_object('code', 'WORKER_OFF', 'severity', 'blocking',
-      'detail', 'worker_mode off: a converted pool would form no hands');
+      'detail', 'worker_mode off: a converted pool would form no hands (set_worker_mode form)');
   ELSIF (v_cfg ->> 'worker_mode') = 'shadow' THEN
     v_reasons := v_reasons || jsonb_build_object('code', 'WORKER_SHADOW_ONLY', 'severity', 'evidence',
       'detail', 'worker_mode shadow plans and compares and forms no hands');

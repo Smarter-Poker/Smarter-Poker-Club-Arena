@@ -62,6 +62,136 @@ export interface LightningConfig {
    * Absent (an older caller, a test) is off: nothing is aggregated or sent.
    */
   latency?: LightningLatencyConfig;
+  /**
+   * LIGHTNING PHASE 13: the operator's rollout controls (joins, drain bound,
+   * matcher versions, the fold flags). Absent (an older caller, a test, a
+   * database without the keys) is today's behaviour: joins open, both folds
+   * offered, no version disabled.
+   */
+  rollout?: LightningRolloutConfig;
+}
+
+/**
+ * LIGHTNING PHASE 13 (spec OPERATOR CONTROLS, FEATURE FLAGS, VERSIONING). The
+ * keys fn_lightning_config's third object reports, read so that a missing key
+ * is exactly today's behaviour. Only a JSON boolean false closes a door that
+ * is open today; an unreadable value is the default, never a refusal.
+ */
+export interface LightningRolloutConfig {
+  /** `lightning_joins_enabled`: newcomers may enter the pool (seated players always play on). */
+  joinsEnabled: boolean;
+  /** `drain_timeout_ms`: how long an operator drain waits before abandoning never-dealt instances. */
+  drainTimeoutMs: number;
+  /** `matcher_version_previous`: where a rollback goes. */
+  matcherVersionPrevious: string;
+  /** `matcher_versions_disabled`: versions neither the live pass nor the shadow may run. */
+  matcherVersionsDisabled: string[];
+  /** `lightning_fast_fold`: LIGHTNING FOLD is offered and accepted. */
+  fastFold: boolean;
+  /** `lightning_fold_watch`: FOLD & WATCH is offered and accepted. */
+  foldWatch: boolean;
+  /**
+   * The Cluster is paused by its operator (`paused` / `cluster_paused` in the
+   * config, or the `paused` cluster_mode the supervisor reads itself): no
+   * new hand forms, every hand in the air plays on and settles.
+   */
+  paused: boolean;
+}
+
+/** The live matcher every version falls back to (the one the SQL always implements). */
+export const LIGHTNING_MATCHER_FALLBACK_VERSION = 'm1';
+export const LIGHTNING_DRAIN_TIMEOUT_DEFAULT_MS = 120_000;
+export const LIGHTNING_DRAIN_TIMEOUT_MIN_MS = 10_000;
+export const LIGHTNING_DRAIN_TIMEOUT_MAX_MS = 3_600_000;
+
+/** Today's behaviour: what a Cluster gets when none of the Phase 13 keys is present. */
+export const LIGHTNING_ROLLOUT_DEFAULTS: Readonly<LightningRolloutConfig> = Object.freeze({
+  joinsEnabled: true,
+  drainTimeoutMs: LIGHTNING_DRAIN_TIMEOUT_DEFAULT_MS,
+  matcherVersionPrevious: LIGHTNING_MATCHER_FALLBACK_VERSION,
+  matcherVersionsDisabled: [] as string[],
+  fastFold: true,
+  foldWatch: true,
+  paused: false,
+});
+
+function versionList(raw: unknown): string[] {
+  const list = Array.isArray(raw)
+    ? raw
+    : typeof raw === 'string' && raw.trim().startsWith('{')
+      ? // a Postgres text[] literal, should one ever arrive unconverted
+        raw.trim().slice(1, -1).split(',')
+      : [];
+  const out = new Set<string>();
+  for (const v of list) {
+    if (typeof v !== 'string') continue;
+    const s = v.trim().replace(/^"|"$/g, '');
+    if (s !== '' && s.length <= 64) out.add(s);
+  }
+  return [...out].sort();
+}
+
+/**
+ * A feature flag, read from the config's top level or its `flags` object
+ * (fn_lightning_operator_cluster_row reports them there). Only false closes.
+ */
+function flagOpen(row: Record<string, unknown>, key: string): boolean {
+  const flags =
+    row.flags && typeof row.flags === 'object' && !Array.isArray(row.flags)
+      ? (row.flags as Record<string, unknown>)
+      : {};
+  const v = key in row ? row[key] : flags[key];
+  return v !== false && v !== 'false' && v !== 'off';
+}
+
+/** Parse the Phase 13 keys. Never throws; anything unreadable is today's behaviour. */
+export function parseLightningRolloutConfig(raw: unknown): LightningRolloutConfig {
+  const row =
+    raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const previous =
+    typeof row.matcher_version_previous === 'string' && row.matcher_version_previous.trim() !== ''
+      ? row.matcher_version_previous.trim()
+      : LIGHTNING_MATCHER_FALLBACK_VERSION;
+  const paused = row.paused === true || row.cluster_paused === true;
+  return {
+    joinsEnabled: flagOpen(row, 'lightning_joins_enabled'),
+    drainTimeoutMs: readInteger(
+      row.drain_timeout_ms,
+      LIGHTNING_DRAIN_TIMEOUT_DEFAULT_MS,
+      LIGHTNING_DRAIN_TIMEOUT_MIN_MS,
+      LIGHTNING_DRAIN_TIMEOUT_MAX_MS
+    ),
+    matcherVersionPrevious: previous,
+    matcherVersionsDisabled: versionList(row.matcher_versions_disabled),
+    fastFold: flagOpen(row, 'lightning_fast_fold'),
+    foldWatch: flagOpen(row, 'lightning_fold_watch'),
+    paused,
+  };
+}
+
+export function sameLightningRolloutConfig(
+  a: LightningRolloutConfig | undefined,
+  b: LightningRolloutConfig | undefined
+): boolean {
+  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+}
+
+/**
+ * The live version the engine asks the SQL for, as fn_lightning_config clamps
+ * it: a version the operator disabled falls back to 'm1' (the SQL's own), and
+ * no version named stays null (the SQL chooses). The engine never invents a
+ * version the database did not report.
+ */
+export function effectiveLightningMatcherVersion(
+  version: string | null,
+  rollout: LightningRolloutConfig | undefined
+): string | null {
+  if (version === null) return null;
+  const disabled = rollout?.matcherVersionsDisabled ?? [];
+  if (!disabled.includes(version)) return version;
+  return disabled.includes(LIGHTNING_MATCHER_FALLBACK_VERSION)
+    ? null
+    : LIGHTNING_MATCHER_FALLBACK_VERSION;
 }
 
 /**
@@ -347,10 +477,21 @@ export function parseLightningConfig(raw: unknown): LightningConfig {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw))
     return { ...LIGHTNING_CONFIG_DEFAULTS };
   const row = raw as Record<string, unknown>;
-  const version =
+  const rollout = parseLightningRolloutConfig(raw);
+  const named =
     typeof row.matcher_version === 'string' && row.matcher_version.trim() !== ''
       ? row.matcher_version.trim()
       : null;
+  // LIGHTNING PHASE 13: a disabled live version falls back exactly as the DB
+  // clamps it, and a disabled shadow version records nothing at all.
+  const version = effectiveLightningMatcherVersion(named, rollout);
+  const shadow = parseLightningShadowConfig(raw);
+  // fn_lightning_config also reports it outright (shadow_matcher_disabled).
+  if (
+    rollout.matcherVersionsDisabled.includes(shadow.version) ||
+    row.shadow_matcher_disabled === true
+  )
+    shadow.enabled = false;
   return {
     matcherVersion: version,
     workerMode: readMode(row.worker_mode),
@@ -379,8 +520,9 @@ export function parseLightningConfig(raw: unknown): LightningConfig {
       LIGHTNING_DEAL_WINDOW_MAX_MS
     ),
     autoRebuy: parseLightningAutoRebuyConfig(raw),
-    shadow: parseLightningShadowConfig(raw),
+    shadow,
     latency: parseLightningLatencyConfig(raw),
+    rollout,
   };
 }
 
@@ -395,6 +537,7 @@ export function sameLightningConfig(a: LightningConfig, b: LightningConfig): boo
     a.dealWindowMs === b.dealWindowMs &&
     sameLightningAutoRebuyConfig(a.autoRebuy, b.autoRebuy) &&
     sameLightningShadowConfig(a.shadow, b.shadow) &&
-    sameLightningLatencyConfig(a.latency, b.latency)
+    sameLightningLatencyConfig(a.latency, b.latency) &&
+    sameLightningRolloutConfig(a.rollout, b.rollout)
   );
 }

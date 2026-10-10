@@ -195,6 +195,8 @@ export class LightningRegistry {
   private readonly metrics: LightningMetrics;
   /** LIGHTNING PHASE 12: a room's first socket arrived (admission wake). */
   private arrivalListener: ((clusterId: string) => void) | null = null;
+  /** LIGHTNING PHASE 13: Cluster -> what its rooms are told about its hold. */
+  private readonly clusterStatuses = new Map<string, 'ending' | 'paused'>();
 
   constructor(deps: LightningRegistryDeps = {}) {
     this.viewAccess = deps.viewAccess ?? lightningHandViewAccess;
@@ -569,6 +571,50 @@ export class LightningRegistry {
   rePushHoleCards(roomId: string, userId: string): void {
     this.hostByRoom.get(roomId)?.rePushHoleCards(userId);
     this.rePushDecisions(roomId, userId);
+    this.rePushClusterStatus(roomId, userId);
+  }
+
+  // ─── LIGHTNING PHASE 13: WHAT A HELD CLUSTER'S ROOMS ARE TOLD ──────────
+
+  /** The private frame naming a Cluster's hold. Never a card, a stack or another player. */
+  clusterStatusFrame(clusterId: string): Record<string, unknown> {
+    return {
+      type: 'lightning_cluster_status',
+      cluster_id: clusterId,
+      status: this.clusterStatuses.get(clusterId) ?? null,
+    };
+  }
+
+  clusterStatusOf(clusterId: string): 'ending' | 'paused' | null {
+    return this.clusterStatuses.get(clusterId) ?? null;
+  }
+
+  /**
+   * The supervisor's word on a Cluster's hold: 'ending' while it drains back
+   * to MUST MOVE, 'paused' while an operator holds it, null when it forms
+   * again (or has left Lightning). Every room of the Cluster here is told at
+   * once, and a room that connects later is told on its RESYNC. Every room is
+   * told alike, whoever owns it.
+   */
+  setClusterStatus(clusterId: string, status: 'ending' | 'paused' | null): void {
+    if (!isUuid(clusterId)) return;
+    const prev = this.clusterStatuses.get(clusterId) ?? null;
+    if (prev === status) return;
+    if (status === null) this.clusterStatuses.delete(clusterId);
+    else this.clusterStatuses.set(clusterId, status);
+    const frame = this.clusterStatusFrame(clusterId);
+    for (const [room, info] of this.rooms) {
+      const cluster = info.clusterId ?? this.hostByRoom.get(room)?.clusterId ?? null;
+      if (cluster === clusterId) this.sendUserEvent(room, info.userId, frame);
+    }
+  }
+
+  private rePushClusterStatus(roomId: string, userId: string): void {
+    const info = this.rooms.get(roomId);
+    if (!info || info.userId !== userId) return;
+    const cluster = info.clusterId ?? this.hostByRoom.get(roomId)?.clusterId ?? null;
+    if (!cluster || !this.clusterStatuses.has(cluster)) return;
+    this.sendUserEvent(roomId, userId, this.clusterStatusFrame(cluster));
   }
 
   // ─── THE DECISION QUEUE (Lightning Phase 8) ─────────────────────────────
@@ -711,6 +757,25 @@ export class LightningHosting {
     return this.abandonBackoff.get(clusterId)?.until ?? 0;
   }
 
+  /**
+   * LIGHTNING PHASE 13: a PAUSE voids every formation not yet dealt, and each
+   * of those abandons counted towards the backoff - for a stop the operator
+   * asked for, not a fault. Resume clears it, so forming starts at once.
+   */
+  clearFormBackoff(clusterId: string): void {
+    this.abandonBackoff.delete(clusterId);
+  }
+
+  /**
+   * LIGHTNING PHASE 13: this Cluster's hands still being dealt here (started
+   * and not finished, whatever their state). The drain's progress report.
+   */
+  handsInFlight(clusterId: string): number {
+    let n = 0;
+    for (const h of this.pending) if (h.clusterId === clusterId) n++;
+    return n;
+  }
+
   private noteOutcome(clusterId: string, lifecycle: string): void {
     const now = this.deps.hostOptions?.now?.() ?? Date.now();
     if (lifecycle === 'complete') {
@@ -732,7 +797,13 @@ export class LightningHosting {
     hand: LightningFormedHand,
     config: LightningConfig,
     wake: () => void,
-    onClusterFrozen?: (clusterId: string) => void
+    onClusterFrozen?: (clusterId: string) => void,
+    /**
+     * LIGHTNING PHASE 13: the worker's CURRENT config, read at the action door
+     * so an operator's flag change reaches a hand already being dealt. Absent,
+     * the config the hand was formed under stands.
+     */
+    liveConfig?: () => LightningConfig
   ): LightningHandHost {
     let ledger = this.timeBanks.get(hand.clusterId);
     if (!ledger) {
@@ -748,6 +819,11 @@ export class LightningHosting {
       dealWindowMs: config.dealWindowMs,
       timeBanks: ledger,
       metrics: this.deps.metrics ?? lightningMetrics,
+      // LIGHTNING PHASE 13: LIGHTNING FOLD and FOLD & WATCH flags, read live.
+      foldFlags: () => {
+        const r = (liveConfig?.() ?? config).rollout;
+        return { fastFold: r?.fastFold !== false, foldWatch: r?.foldWatch !== false };
+      },
       isConnected: (playerId, roomId) => registry.isConnected(playerId, roomId),
       onPlayerReleased: (playerId, why) => {
         // A FOLDED player is free while the hand plays on: match them now.

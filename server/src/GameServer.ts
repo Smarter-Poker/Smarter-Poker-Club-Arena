@@ -3413,6 +3413,9 @@ export class GameServer {
     hosting: this.lightningHosting,
     // Ended pool sessions: their rooms' sockets are closed (every 5 s).
     sweepRooms: () => this.lightningRooms.sweepEndedRooms(),
+    // Lightning Phase 13: a drained, reverting or paused Cluster's rooms are
+    // told so (lightning_cluster_status), once per change and on RESYNC.
+    clusterStatus: (clusterId, status) => this.lightningRooms.setClusterStatus(clusterId, status),
   });
   /* Lightning Phase 12 (surge protection): a room's first socket is a player
      arriving in the pool, so their Cluster's worker forms within the admission

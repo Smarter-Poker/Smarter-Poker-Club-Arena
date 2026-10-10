@@ -217,6 +217,22 @@ export interface LightningPoolHealth {
    * the payload predates it or carries none.
    */
   autoRebuy: LightningAutoRebuyStatus | null;
+  /**
+   * LIGHTNING PHASE 13: false while an operator has stopped new players
+   * entering the pool (seated players play on). Present only when the
+   * payload carries it; absent, nothing is decided.
+   */
+  joinsEnabled?: boolean;
+}
+
+/** LIGHTNING PHASE 13: the joins flag, from whichever spelling the payload uses. */
+export function lightningJoinsEnabledOf(raw: unknown): boolean | undefined {
+  const row = objectOf(raw);
+  if (!row) return undefined;
+  for (const key of ['joins_enabled', 'lightning_joins_enabled']) {
+    if (typeof row[key] === 'boolean') return row[key] as boolean;
+  }
+  return undefined;
 }
 
 const POOL_STATUSES: readonly LightningPoolStatus[] = ['BUILDING', 'ACTIVE', 'HOT', 'THIN'];
@@ -246,6 +262,10 @@ export function parseLightningPoolHealth(raw: unknown): LightningPoolHealth | nu
     joinable: typeof row.joinable === 'boolean' ? row.joinable : null,
     multiTableLimit: parseMultiTableLimit(row.multi_table_limit),
     autoRebuy: parseLightningAutoRebuyStatus(row.auto_rebuy),
+    // Only when the payload says so, so an older payload reads exactly as before.
+    ...(lightningJoinsEnabledOf(row) !== undefined
+      ? { joinsEnabled: lightningJoinsEnabledOf(row) }
+      : {}),
   };
 }
 

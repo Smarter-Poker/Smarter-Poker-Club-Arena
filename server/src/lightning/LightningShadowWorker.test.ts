@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MetricsRegistry } from '../observability/Metrics.js';
 import {
   LIGHTNING_CONFIG_DEFAULTS,
+  LIGHTNING_ROLLOUT_DEFAULTS,
   LIGHTNING_DISCOVERY_INTERVAL_MS,
   LIGHTNING_PASS_INTERVAL_MAX_MS,
   LIGHTNING_PASS_INTERVAL_MIN_MS,
@@ -127,6 +128,8 @@ describe('LightningConfig', () => {
       shadow: expect.objectContaining({ enabled: false, integrityEnabled: false }),
       // Lightning Phase 12: the latency ledger, ON by default (inert without traffic).
       latency: { enabled: true, windowMs: 60_000 },
+      // Lightning Phase 13: the rollout controls, today's behaviour when absent.
+      rollout: LIGHTNING_ROLLOUT_DEFAULTS,
     });
     expect(parseLightningConfig({ worker_mode: 'form', pass_interval_ms: 0 }).passIntervalMs).toBe(
       LIGHTNING_PASS_INTERVAL_MIN_MS

@@ -40,6 +40,11 @@ export interface LightningLobbyState {
    */
   poolStatus?: LightningPoolStatus | null;
   poolPlayers?: number | null;
+  /**
+   * LIGHTNING PHASE 13: false while an operator has stopped new players
+   * entering the pool. Present only when the Cluster's state carries it.
+   */
+  joinsEnabled?: boolean;
 }
 
 /**
@@ -83,11 +88,19 @@ export function parseLightningLobbyState(raw: unknown): LightningLobbyState | nu
   if (!r || typeof r !== 'object') return null;
   const verdict = (r.verdict ?? null) as Record<string, unknown> | null;
   const thresholds = (r.thresholds ?? null) as Record<string, unknown> | null;
+  const joins =
+    typeof r.joins_enabled === 'boolean'
+      ? r.joins_enabled
+      : typeof r.lightning_joins_enabled === 'boolean'
+        ? r.lightning_joins_enabled
+        : undefined;
   return {
     clusterMode: typeof r.cluster_mode === 'string' ? r.cluster_mode : null,
     liveEligible: count(verdict?.live_eligible),
     onThreshold: count(thresholds?.on),
     offThreshold: count(thresholds?.off),
+    // LIGHTNING PHASE 13: only when the state says so; absent decides nothing.
+    ...(joins !== undefined ? { joinsEnabled: joins } : {}),
   };
 }
 
@@ -114,6 +127,11 @@ export interface LightningLobbyBadge {
   joinLightning: boolean;
   /** Set for a paused, frozen or dead Cluster: no join is offered at all. */
   closedLabel: 'Paused' | 'Closed' | null;
+  /**
+   * LIGHTNING PHASE 13: an operator has stopped new players entering the
+   * pool. JOIN LIGHTNING is still shown, and not offered. Present only then.
+   */
+  joinsClosed?: true;
 }
 
 /** What a Cluster's card says about its mode. */
@@ -152,6 +170,9 @@ export function lightningLobbyBadge(input: {
     status: input.clusterMode === 'lightning' ? lightningPoolStatus(state) : 'THIN',
     joinLightning: display.joinLightning,
     closedLabel: null,
+    ...(display.joinLightning && state?.joinsEnabled === false
+      ? { joinsClosed: true as const }
+      : {}),
   };
 }
 

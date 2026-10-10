@@ -65,11 +65,14 @@ export function arenaGameCardActionsForEntry(
     /* LIGHTNING PHASE 6: a Lightning Cluster's door is JOIN LIGHTNING; the
        page routes it to the Lightning route, never to a table. */
     if (entry.game?.lightning) {
+      /* LIGHTNING PHASE 13: an operator stopped new players. The door is
+         shown, and not offered; seated players carry on from their rooms. */
+      const joinsClosed = entry.game.lightning.joinsClosed === true;
       return {
         primaryLabel: 'Join Lightning',
-        primaryTone: 'blue',
+        primaryTone: joinsClosed ? 'neutral' : 'blue',
         onPrimary: () => ctx.onJoinTable?.(entry),
-        primaryDisabled: !ctx.onJoinTable,
+        primaryDisabled: joinsClosed || !ctx.onJoinTable,
         secondaryLabel: 'View Game',
         onSecondary: () => ctx.onViewTable?.(entry),
       };

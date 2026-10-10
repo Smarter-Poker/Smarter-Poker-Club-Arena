@@ -320,6 +320,7 @@ import {
 import PreActionBar from '../components/table/PreActionBar';
 import LightningFoldBar from '../components/table/LightningFoldBar';
 import LightningNextHand from '../components/table/LightningNextHand';
+import LightningEndingNotice from '../components/table/LightningEndingNotice';
 import LightningJoining from '../components/table/LightningJoining';
 import LightningEndedNotice from '../components/table/LightningEndedNotice';
 import { lightningReturnPath, useLightningReversion } from '../lightning/lightningReversion';
@@ -340,6 +341,7 @@ import {
 } from '../lightning/lightningSession';
 import {
   lightningFastFoldFlag,
+  lightningFoldFlags,
   lightningFoldAvailability,
   lightningHandOnFelt,
   lightningHandId,
@@ -23502,6 +23504,10 @@ function LiveTablePage({
         ? lightningFastFoldFlag(engineSnapshot as LightningSnapshotFields)
         : null,
       handOnFelt: lightningHandLive,
+      /* LIGHTNING PHASE 13: a control the Cluster switched off is never offered. */
+      engineFoldFlags: lightningRoom
+        ? lightningFoldFlags(engineSnapshot as LightningSnapshotFields)
+        : null,
     },
     lightningCaps
   );
@@ -26982,6 +26988,10 @@ function LiveTablePage({
                 handInProgress={lightningHandLive && tableState.isHandInProgress}
               />
             ) : null}
+            {/* LIGHTNING PHASE 13: the Cluster is draining back to MUST MOVE.
+                Words only; the room closes on its own once the last hand has
+                settled, and the ended notice below offers VIEW GAME. */}
+            {lightningRoom ? <LightningEndingNotice clusterId={lightningRoom.clusterId} /> : null}
             {/* JOIN LIGHTNING completing: the anchor table never deals this
                 player a hand, so it says one neutral line until the tab
                 moves on, rather than showing a dead felt. */}

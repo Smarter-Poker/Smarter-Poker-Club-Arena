@@ -51,6 +51,15 @@
  * executed in the hand when the action reaches them; while anyone faces a
  * bet, the player who made it is still live, so a folded hand can never be
  * left alone to win.
+ *
+ * THE FOLD FLAGS (Lightning Phase 13). `lightning_fast_fold` off refuses
+ * LIGHTNING FOLD at this door with LIGHTNING_FOLD_DISABLED, and
+ * `lightning_fold_watch` off refuses FOLD & WATCH with FOLD_WATCH_DISABLED;
+ * a refused request moves nothing, and the ordinary fold on the player's turn
+ * is always there. The flags are read live (an operator's change reaches a
+ * hand already in the air) and published in the room's Lightning block as
+ * `fast_fold_enabled` / `fold_watch_enabled`, so the client never offers a
+ * control the door would refuse. Every seat is held to them alike.
  */
 import { createHash } from 'node:crypto';
 import { HandController } from '../engine/HandController.js';
@@ -328,6 +337,11 @@ export interface LightningHandHostDeps {
   onFirstFrame?(playerId: string, roomId: string, handId: string, atMs: number): void;
   /** The host is done, whatever the outcome. */
   onFinished?(host: LightningHandHost): void;
+  /**
+   * LIGHTNING PHASE 13: the Cluster's fold flags, read live at the action door.
+   * Absent is today's behaviour: both folds offered.
+   */
+  foldFlags?(): { fastFold: boolean; foldWatch: boolean };
   /** Settlement found a conservation disagreement and FROZE the Cluster. */
   onClusterFrozen?(clusterId: string): void;
   /**
@@ -380,6 +394,10 @@ const RPC_RETRY_ATTEMPTS = 3;
  */
 const POST_COMMIT_BUDGET_MS = 15_000;
 const POST_COMMIT_HANDOVER_MS = 5_000;
+
+/** LIGHTNING PHASE 13: the action door's refusal codes for a fold the operator switched off. */
+export const LIGHTNING_FOLD_DISABLED_CODE = 'LIGHTNING_FOLD_DISABLED';
+export const LIGHTNING_FOLD_WATCH_DISABLED_CODE = 'FOLD_WATCH_DISABLED';
 
 /** A request id that is the same for the same (hand, purpose) on every retry. */
 export function lightningRequestId(handId: string, purpose: string): string {
@@ -855,7 +873,24 @@ export class LightningHandHost {
       big_blind: Number(rules.big_blind),
       variant: String(rules.game_variant || 'nlh'),
       fast_fold_available: state ? this.foldAvailable(playerId, state) : false,
+      // LIGHTNING PHASE 13: which of the two controls the Cluster offers at all.
+      ...this.foldFlagFields(),
     };
+  }
+
+  /** LIGHTNING PHASE 13: the fold flags, read live; unreadable is today's behaviour. */
+  private foldFlagsNow(): { fastFold: boolean; foldWatch: boolean } {
+    try {
+      const f = this.deps.foldFlags?.();
+      return { fastFold: f?.fastFold !== false, foldWatch: f?.foldWatch !== false };
+    } catch {
+      return { fastFold: true, foldWatch: true };
+    }
+  }
+
+  private foldFlagFields(): { fast_fold_enabled: boolean; fold_watch_enabled: boolean } {
+    const f = this.foldFlagsNow();
+    return { fast_fold_enabled: f.fastFold, fold_watch_enabled: f.foldWatch };
   }
 
   /** May this player LIGHTNING FOLD (or FOLD & WATCH) right now? */
@@ -1584,6 +1619,21 @@ export class LightningHandHost {
       return { success: false, error: 'Player not found at this table' };
     const normalized = String(action ?? '').toLowerCase();
     if (normalized === 'fast_fold' || normalized === 'fold_watch') {
+      // LIGHTNING PHASE 13: an operator switched this control off. Refused
+      // before anything is marked or moved; the ordinary fold still stands.
+      const flags = this.foldFlagsNow();
+      if (normalized === 'fast_fold' && !flags.fastFold)
+        return {
+          success: false,
+          code: LIGHTNING_FOLD_DISABLED_CODE,
+          error: 'Lightning Fold Is Not Available Right Now',
+        };
+      if (normalized === 'fold_watch' && !flags.foldWatch)
+        return {
+          success: false,
+          code: LIGHTNING_FOLD_WATCH_DISABLED_CODE,
+          error: 'Fold & Watch Is Not Available Right Now',
+        };
       const had = this.foldRequestedAt.has(userId);
       if (!had) this.foldRequestedAt.set(userId, receivedAt);
       const out = this.requestFold(userId, normalized === 'fast_fold' ? 'fast' : 'fold_watch');

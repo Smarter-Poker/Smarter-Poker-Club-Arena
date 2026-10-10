@@ -309,6 +309,6 @@ run_game_probe diamond-spins-every-movement-has-a-ledger-row 'NOTICE:  PASS Ever
 # --- end D1 wheel v4 2026-09-21 ---
 
 # Daily Bonus upgrade: same isolated native database and canonical ledger doors.
-"${diamond_psql[@]}" -f "$root/supabase/migrations/20261010062545_daily_bonus_varies_each_day_and_claims_all_rewards.sql"
+"${diamond_psql[@]}" -f "$root/supabase/migrations/20261010063541_daily_bonus_varies_each_day_and_claims_all_rewards.sql"
 "${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
 run_game_probe daily-bonus-one-claim 'NOTICE:  PASS Daily Bonus: 400 dates, streak resets, preview repeatability, one batch, exact replay, stale day, request identity, VIP and auth permissions'

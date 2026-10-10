@@ -1,6 +1,12 @@
 -- Isolated PostgreSQL only: real selector, claim, status and award bodies.
 \set ON_ERROR_STOP on
 BEGIN;
+-- Production catalog readback 2026-10-10. The older game fixture predates
+-- this action; exercise the canonical award with its real configuration.
+INSERT INTO public.diamond_reward_catalog
+ (action_key,diamonds,max_per_day,counts_toward_daily_cap,lifetime,category,active)
+ VALUES ('daily_bonus',0,4,true,false,'daily',true)
+ ON CONFLICT (action_key) DO NOTHING;
 DO $$
 DECLARE uid uuid:=gen_random_uuid(); today date:=(now() AT TIME ZONE 'America/Chicago')::date;
  previous jsonb:='[]'; picked jsonb; again jsonb; r jsonb; replay jsonb; row jsonb; day integer; n integer; before_count integer;

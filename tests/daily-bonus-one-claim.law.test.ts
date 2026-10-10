@@ -11,7 +11,7 @@ it('daily bonus has one claim action and no cash equivalent copy', () => {
 });
 it('daily selection excludes yesterday type and the original claim owns every award', () => {
   const sql = read(
-    'supabase/migrations/20261010062545_daily_bonus_varies_each_day_and_claims_all_rewards.sql'
+    'supabase/migrations/20261010063541_daily_bonus_varies_each_day_and_claims_all_rewards.sql'
   );
   expect(sql).toContain('pool.kind IS DISTINCT FROM previous_kind');
   expect(sql).toContain('public.fn_ca_daily_bonus_claim((v_tile');

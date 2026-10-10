@@ -350,9 +350,10 @@ BEGIN
   -- Private helpers are source-pinned separately because they must not satisfy
   -- the browser EXECUTE contract above. Only the two pure read helpers remain
   -- callable by service_role; every mutating/actor primitive is owner-only.
+  -- Active-member source includes the installed 20261010190307 deleted-profile rule.
   v_private_contract := jsonb_build_array(
     jsonb_build_object('signature', 'public.fn_cashier_member_is_active(uuid,uuid)',
-      'hash', 'b8fa4b50580e379dadc17afca61cdfe8', 'service_execute', true),
+      'hash', 'e2fa92deff49c93f0c68b5deff48aa1f', 'service_execute', true),
     jsonb_build_object('signature', 'public.fn_club_active_cashier_edges(uuid)',
       'hash', '7811cf9a95d7bc76037158c1285d4069', 'service_execute', true),
     jsonb_build_object('signature', 'public.fn_cashier_assert_active_actor(uuid)',

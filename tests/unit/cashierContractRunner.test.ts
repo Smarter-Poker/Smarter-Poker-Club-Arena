@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -46,6 +49,26 @@ describe('cashier database contract runner', () => {
     const sql = readPsqlFreeContract();
     expect(sql).not.toContain('\\set ON_ERROR_STOP');
     expect(sql).toContain('md5(pg_get_functiondef(v_oid))');
+  });
+
+  it('pins the exact maintained deletion-aware active-member source', () => {
+    const migration = readFileSync(
+      resolve(
+        __dirname,
+        '../../supabase/migrations/20261010190307_deleted_accounts_cannot_receive_cashier_transfers.sql'
+      ),
+      'utf8'
+    );
+    const body = migration.match(
+      /CREATE OR REPLACE FUNCTION public\.fn_cashier_member_is_active[\s\S]*?AS \$function\$([\s\S]*?)\$function\$/
+    )?.[1];
+    expect(body).toBeDefined();
+    expect(body).toContain("p.status='deleted'");
+    const hash = createHash('md5').update(body!).digest('hex');
+    const pin = readPsqlFreeContract().match(
+      /'public\.fn_cashier_member_is_active\(uuid,uuid\)',\s*'hash', '([a-f0-9]+)'/
+    )?.[1];
+    expect(pin).toBe(hash);
   });
 
   it('requires a database credential without printing it', () => {

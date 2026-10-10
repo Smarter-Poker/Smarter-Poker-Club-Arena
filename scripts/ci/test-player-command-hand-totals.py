@@ -269,12 +269,114 @@ try:
     assert q("SELECT has_function_privilege('authenticated','ca_club_member_downline(uuid,uuid)','EXECUTE') AND has_function_privilege('service_role','ca_club_member_downline(uuid,uuid)','EXECUTE')")=='t'
     assert q(f"SELECT row_to_json(d) FROM ca_club_member_downline('{B}','{U}') d;")==downline_before
     print('PASS real downline projection preserves exact hierarchy and financial rows',flush=True)
+    # The published Seven Days record still scanned cold fact heap pages.
+    # Compare the actual old RPCs to the repaired RPCs across every date/variant
+    # boundary, then make any remaining fact scan raise rather than warm it.
+    q('ALTER TABLE ca_hand_facts ADD COLUMN game_variant text, ADD COLUMN vpip boolean, ADD COLUMN pfr boolean, ADD COLUMN three_bet boolean, ADD COLUMN faced_three_bet boolean, ADD COLUMN folded_to_three_bet boolean, ADD COLUMN cbet_flop boolean, ADD COLUMN had_cbet_flop_opp boolean;')
+    statistics_preimage=(ROOT/'scripts/ci/fixtures/player-command-hand-totals/statistics-preimage.sql').read_text()
+    q(statistics_preimage)
+    assert q("SELECT md5(pg_get_functiondef('ca_club_member_statistics(uuid,uuid,text,date,date)'::regprocedure))")=='fbdfb2174da3f0ab8ef59c46aa490b5e'
+    q(statistics_preimage.replace('public.ca_club_member_statistics(', 'public.fixture_member_statistics('))
+    detail_preimage='CREATE OR REPLACE FUNCTION'+play_activate.read_text().split('CREATE OR REPLACE FUNCTION',1)[1].split('COMMIT;',1)[0]
+    q(detail_preimage.replace('public.ca_club_member_detail(', 'public.fixture_member_detail('))
+    daily_stage=ROOT/'supabase/migrations/20261010090246_player_command_utc_daily_facts_advance_atomically.sql'
+    daily_activate=ROOT/'supabase/migrations/20261010090330_player_ranges_and_statistics_read_exact_daily_facts.sql'
+    q("SET TIME ZONE 'America/Chicago';")
+    q(f"INSERT INTO ca_hand_facts(hand_id,user_id,club_id,rake_paid,net,tournament_id,played_at,game_variant,vpip,pfr,three_bet,faced_three_bet,folded_to_three_bet,cbet_flop,had_cbet_flop_opp) VALUES"
+      f"(gen_random_uuid(),'{U}','{B}',.015,5,NULL,'2026-09-30T23:59:59.999Z','NLHE',true,true,false,true,true,false,false),"
+      f"(gen_random_uuid(),'{U}','{B}',.015,-2,NULL,'2026-10-01T00:00:00Z','nlhe',false,false,true,true,false,true,true),"
+      f"(gen_random_uuid(),'{U}','{B}',.019,0,gen_random_uuid(),'2026-10-01T23:59:59.999Z','PLO',NULL,NULL,NULL,NULL,NULL,NULL,NULL),"
+      f"(gen_random_uuid(),'{U}','{B}',.019,3,gen_random_uuid(),'2026-10-02T00:00:00Z',NULL,true,false,false,false,false,false,true),"
+      f"(gen_random_uuid(),'{U}','{B}',0,NULL,NULL,NULL,'',NULL,true,true,NULL,NULL,true,true);")
+    q(daily_stage.read_text())
+    q(f"UPDATE ca_hand_facts SET played_at='2026-10-02T01:00:00Z',game_variant='plo',net=7 WHERE user_id='{V}';")
+    daily_holder=start('BEGIN; SELECT pg_advisory_xact_lock(74103);')
+    deadline=time.monotonic()+10
+    while q("SELECT count(*) FROM pg_locks WHERE locktype='advisory' AND granted")!='1':
+        assert time.monotonic()<deadline
+        time.sleep(.02)
+    daily_seed=start(daily_activate.read_text().replace('WITH facts AS MATERIALIZED (','WITH gate AS MATERIALIZED (SELECT pg_advisory_xact_lock(74103)), facts AS MATERIALIZED (').replace('FROM public.ca_hand_facts WHERE club_id IS NOT NULL','FROM public.ca_hand_facts CROSS JOIN gate WHERE club_id IS NOT NULL'))
+    deadline=time.monotonic()+10
+    while q("SELECT count(*) FROM pg_stat_activity WHERE wait_event='advisory'")!='1':
+        assert time.monotonic()<deadline
+        time.sleep(.02)
+    q(f"INSERT INTO ca_hand_facts(hand_id,user_id,club_id,rake_paid,net,played_at,game_variant,vpip) VALUES(gen_random_uuid(),'{U}','{B}',.01,4,'2026-10-04T00:00:00Z','NLHE',true);")
+    q(f"UPDATE ca_hand_facts SET played_at='2026-10-03T01:00:00Z',net=-6 WHERE user_id='{V}';")
+    finish(daily_holder,'COMMIT;')
+    finish(daily_seed)
+    metric_expressions=['count(*)','count(*) FILTER(WHERE net>0)','count(*) FILTER(WHERE vpip)','count(*) FILTER(WHERE pfr)','count(*) FILTER(WHERE three_bet)','count(*) FILTER(WHERE faced_three_bet)','count(*) FILTER(WHERE folded_to_three_bet)','count(*) FILTER(WHERE cbet_flop)','count(*) FILTER(WHERE had_cbet_flop_opp)','coalesce(sum(rake_paid),0)','coalesce(sum(net),0)']
+    daily_fields=['hands','wins','vpip_hands','pfr_hands','tb_hands','faced_tb','folded_tb','cb_hands','cb_opps','fees','net']
+    def daily_parity(label):
+        aggregates=','.join(e+' AS '+f for e,f in zip(metric_expressions,daily_fields))
+        mismatches=' OR '.join('coalesce(f.'+f+',0) IS DISTINCT FROM t.'+f for f in daily_fields)
+        assert q("WITH facts AS (SELECT club_id,user_id,(played_at AT TIME ZONE 'UTC')::date played_on,lower(game_variant) game_variant,(tournament_id IS NOT NULL) is_mtt,"+aggregates+" FROM ca_hand_facts WHERE club_id IS NOT NULL GROUP BY 1,2,3,4,5) SELECT count(*) FROM facts f FULL JOIN club_member_daily_facts t ON f.club_id=t.club_id AND f.user_id=t.user_id AND f.played_on IS NOT DISTINCT FROM t.played_on AND f.game_variant IS NOT DISTINCT FROM t.game_variant AND f.is_mtt=t.is_mtt WHERE "+mismatches)=='0',label
+        print('PASS daily facts '+label,flush=True)
+    ranges=[(None,None),('2026-10-01',None),(None,'2026-10-01'),('2026-10-01','2026-10-01'),('2026-09-30','2026-10-02'),('2026-10-02','2026-10-01'),('2026-10-04','2026-10-10'),('2026-10-01','2026-10-31'),('2026-10-10','2026-10-10')]
+    literal=lambda value:'NULL' if value is None else "'"+value+"'"
+    def rpc_parity(label):
+        for who in [U,V]:
+            for date_from,date_to in ranges:
+                dates=literal(date_from)+','+literal(date_to)
+                args="'"+B+"','"+who+"',"+dates
+                assert q('SELECT ca_club_member_detail('+args+');')==q('SELECT fixture_member_detail('+args+');'),(label,'detail',who,dates)
+                for variant in [None,'all','NLHE','plo','','no_such_variant']:
+                    args="'"+B+"','"+who+"',"+literal(variant)+','+dates
+                    assert q('SELECT ca_club_member_statistics('+args+');')==q('SELECT fixture_member_statistics('+args+');'),(label,'statistics',who,variant,dates)
+        print('PASS real dated detail/statistics '+label+' match production preimages for UTC boundaries, open and reversed ranges, null/empty/mixed variants and cash/MTT',flush=True)
+    daily_parity('concurrent initialization preserves every metric')
+    rpc_parity('initialization')
+    q(f"UPDATE ca_hand_facts SET club_id='{A}',user_id='{V}',played_at=NULL,game_variant=NULL,tournament_id=gen_random_uuid(),net=-8,vpip=true,pfr=false,three_bet=true,faced_three_bet=true,folded_to_three_bet=true,cbet_flop=true,had_cbet_flop_opp=true WHERE game_variant='PLO';")
+    daily_parity('club/player/day/variant/classification/net/flag corrections')
+    rpc_parity('corrections')
+    q('UPDATE ca_hand_facts SET net=net; BEGIN; DELETE FROM ca_hand_facts; ROLLBACK;')
+    daily_parity('unchanged update and rollback')
+    q("DELETE FROM ca_hand_facts WHERE lower(game_variant)='plo';")
+    daily_parity('retention removes the final variant and its metrics')
+    rpc_parity('retention')
+    q(daily_activate.read_text(),error='already initialized')
+    q('SET ROLE authenticated; SELECT * FROM club_member_daily_facts;',error='permission denied')
+    q('SET ROLE anon; SELECT * FROM club_member_daily_facts_state;',error='permission denied')
+    assert q("SELECT NOT has_table_privilege('service_role','club_member_daily_facts','UPDATE') AND NOT has_table_privilege('service_role','club_member_daily_facts_state','UPDATE') AND NOT has_function_privilege('service_role','fn_club_member_daily_facts_insert()','EXECUTE')")=='t'
+    q(f"SET ROLE service_role; INSERT INTO ca_hand_facts(hand_id,user_id,club_id,rake_paid,played_at,game_variant) VALUES(gen_random_uuid(),'{V}','{B}',0,NULL,NULL); RESET ROLE;")
+    daily_parity('private projections still permit the original source writer and null-key grouping')
+    overlapping_insert=f"INSERT INTO ca_hand_facts(hand_id,user_id,club_id,rake_paid,played_at,game_variant) VALUES(gen_random_uuid(),'{U}','{B}',.02,NULL,NULL);"
+    first_daily_writer=start('BEGIN; '+overlapping_insert)
+    deadline=time.monotonic()+10
+    while q("SELECT count(*) FROM pg_stat_activity WHERE state='idle in transaction'")!='1':
+        assert time.monotonic()<deadline
+        time.sleep(.02)
+    second_daily_writer=start(overlapping_insert)
+    deadline=time.monotonic()+10
+    while q("SELECT count(*) FROM pg_stat_activity WHERE wait_event='transactionid'")!='1':
+        assert time.monotonic()<deadline
+        time.sleep(.02)
+    finish(first_daily_writer,'COMMIT;')
+    finish(second_daily_writer)
+    daily_parity('concurrent writers add once to the same nullable bucket')
+    duplicate_hand=q(f"SELECT hand_id FROM ca_hand_facts WHERE user_id='{U}' AND club_id='{B}' LIMIT 1;")
+    q(f"INSERT INTO ca_hand_facts(hand_id,user_id,club_id,rake_paid) VALUES('{duplicate_hand}','{U}','{B}',99);",error='duplicate key value')
+    daily_parity('duplicate source hand is refused without moving a total')
+    rpc_parity('concurrent and duplicate writers')
+    q('UPDATE club_member_daily_facts_state SET initialized=false;')
+    q(f"SELECT ca_club_member_detail('{B}','{U}','2026-10-01','2026-10-01');",error='not initialized')
+    q(f"SELECT ca_club_member_statistics('{B}','{U}');",error='not initialized')
+    q('UPDATE club_member_daily_facts_state SET initialized=true;')
+    print('PASS missing readiness is an error, not fake zeroes',flush=True)
+    overall=q(f"SELECT ca_club_member_detail('{B}','{U}')->'stats';")
+    dated=q(f"SELECT ca_club_member_detail('{B}','{U}','2026-10-01','2026-10-31')->'stats';")
+    statistics=q(f"SELECT ca_club_member_statistics('{B}','{U}');")
+    downline_before=q(f"SELECT row_to_json(d) FROM ca_club_member_downline('{B}','{U}') d;")
     q('ALTER TABLE ca_hand_facts RENAME TO facts_unavailable_to_roster;')
     q("CREATE FUNCTION public.reject_fact_read() RETURNS numeric LANGUAGE plpgsql VOLATILE AS $$BEGIN RAISE EXCEPTION 'unexpected fact scan'; END;$$;")
-    q("CREATE VIEW ca_hand_facts AS SELECT hand_id,user_id,club_id,rake_paid+public.reject_fact_read() AS rake_paid,net+public.reject_fact_read() AS net,tournament_id,played_at FROM facts_unavailable_to_roster;")
+    q("CREATE VIEW ca_hand_facts AS SELECT hand_id,user_id,club_id,rake_paid+public.reject_fact_read() AS rake_paid,net+public.reject_fact_read() AS net,tournament_id,played_at,game_variant,vpip,pfr,three_bet,faced_three_bet,folded_to_three_bet,cbet_flop,had_cbet_flop_opp FROM facts_unavailable_to_roster;")
+    q(f"SELECT fixture_member_detail('{B}','{U}','2026-10-01','2026-10-31');",error='unexpected fact scan')
+    q(f"SELECT fixture_member_statistics('{B}','{U}');",error='unexpected fact scan')
     assert q(f"SELECT count(*) FROM ca_club_roster_rows('{B}')") == '2'
     assert q(f"SELECT ca_club_member_detail('{B}','{U}')->'stats';")==overall
     assert q(f"SELECT row_to_json(d) FROM ca_club_member_downline('{B}','{U}') d;")==downline_before
+    assert q(f"SELECT ca_club_member_detail('{B}','{U}','2026-10-01','2026-10-31')->'stats';")==dated
+    assert q(f"SELECT ca_club_member_statistics('{B}','{U}');")==statistics
+    print('PASS old ranged detail/statistics fail poisoned facts; maintained ranged and performance repairs do not scan facts',flush=True)
     print('PASS roster, member lifetime and downline do not scan hand facts after activation', flush=True)
     print('PLAYER COMMAND HAND TOTALS QUALIFICATION PASSED', flush=True)
 finally:

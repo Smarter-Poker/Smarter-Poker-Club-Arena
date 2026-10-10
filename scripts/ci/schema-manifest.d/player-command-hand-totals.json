@@ -4,7 +4,9 @@
     "club_roster_hand_totals",
     "club_roster_hand_totals_state",
     "club_member_play_totals",
-    "club_member_play_totals_state"
+    "club_member_play_totals_state",
+    "club_member_daily_facts",
+    "club_member_daily_facts_state"
   ],
   "functions": [
     "fn_club_roster_hand_totals_insert",
@@ -15,6 +17,10 @@
     "fn_club_member_play_totals_insert",
     "fn_club_member_play_totals_update",
     "fn_club_member_play_totals_delete",
-    "ca_club_member_detail"
+    "ca_club_member_detail",
+    "fn_club_member_daily_facts_insert",
+    "fn_club_member_daily_facts_update",
+    "fn_club_member_daily_facts_delete",
+    "ca_club_member_statistics"
   ]
 }

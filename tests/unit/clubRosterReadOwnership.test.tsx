@@ -9,17 +9,22 @@ const f = vi.hoisted(() => ({
   page: vi.fn(),
   summary: vi.fn(),
   channel: null as null | { onPayload: (payload: unknown) => void },
+  audit: null as null | { onPayload: (payload: unknown) => void },
+  bus: null as null | ((payload: { clubId: string }) => void),
   aborts: 0,
   searches: [] as string[],
 }));
 vi.mock('../../src/hooks/useAuthUser', () => ({ useAuthUser: () => f.actor }));
 vi.mock('../../src/hooks/useProfilePresence', () => ({ useOnlineNow: () => new Set() }));
 vi.mock('../../src/hooks/useMasterBusSubscription', () => ({
-  useMasterBusSubscriptions: () => undefined,
+  useMasterBusSubscriptions: (_events: unknown, callback: typeof f.bus) => {
+    f.bus = callback;
+  },
 }));
 vi.mock('../../src/hooks/useMasterBusChannel', () => ({
-  useMasterBusChannel: (config: typeof f.channel) => {
-    f.channel = config;
+  useMasterBusChannel: (config: NonNullable<typeof f.channel> & { table: string }) => {
+    if (config.table === 'audit_trail') f.audit = config;
+    else f.channel = config;
   },
 }));
 vi.mock('../../src/components/common/Toast', () => ({ useToast: () => f.toast }));
@@ -177,4 +182,80 @@ it('still refreshes the unchanged directory and summary for a structural event',
   expect(f.aborts).toBe(0);
   expect(f.searches).toEqual(['', '']);
   expect(f.summary).toHaveBeenCalledTimes(2);
+});
+
+it('refreshes changed membership authority but ignores unrelated club and wallet-only events', async () => {
+  render(
+    <MemoryRouter initialEntries={['/clubs/shark-club/members']}>
+      <Routes>
+        <Route path="/clubs/:clubId/members" element={<ClubMembersPage />} />
+      </Routes>
+    </MemoryRouter>
+  );
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(100);
+  });
+  const count = f.page.mock.calls.length;
+  act(() => {
+    f.channel!.onPayload({
+      eventType: 'UPDATE',
+      old: { role: 'player', chip_balance: 10 },
+      new: { role: 'player', chip_balance: 20 },
+    });
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1300);
+  });
+  expect(f.page).toHaveBeenCalledTimes(count);
+  act(() => {
+    f.bus!({ clubId: 'another-club' });
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1300);
+  });
+  expect(f.page).toHaveBeenCalledTimes(count);
+  act(() => {
+    f.channel!.onPayload({ eventType: 'UPDATE', old: { role: 'player' }, new: { role: 'agent' } });
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1300);
+  });
+  expect(f.page).toHaveBeenCalledTimes(count + 1);
+});
+
+it('refreshes off-page role changes from the authorized audit lane without reacting to wallet audits', async () => {
+  render(
+    <MemoryRouter initialEntries={['/clubs/shark-club/members']}>
+      <Routes>
+        <Route path="/clubs/:clubId/members" element={<ClubMembersPage />} />
+      </Routes>
+    </MemoryRouter>
+  );
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(100);
+  });
+  const clubId = '00000000-0000-0000-0000-000000000043';
+  act(() => {
+    f.audit!.onPayload({
+      new: { club_id: clubId, target_type: 'club_member', action: 'wallet_transfer' },
+    });
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1300);
+  });
+  expect(f.searches).toEqual(['']);
+  act(() => {
+    f.audit!.onPayload({
+      new: {
+        club_id: clubId,
+        target_type: 'club_member',
+        action: 'set_member_role',
+        target_id: 'unloaded-player',
+      },
+    });
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1300);
+  });
+  expect(f.searches).toEqual(['', '']);
 });

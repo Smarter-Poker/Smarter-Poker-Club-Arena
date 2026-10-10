@@ -1,0 +1,47 @@
+name: Original launch native peer boundary
+on:
+  pull_request:
+    paths:
+      - server/scripts/engine-launch-broker.py
+      - server/src/services/originalLaunchBroker.ts
+      - server/src/services/originalLaunchBroker.test.ts
+      - tests/operations/engine-launch-broker.test.py
+      - tests/operations/original-launch-peer-native.py
+      - tests/operations/original-launch-peer-native.test.py
+      - .github/workflows/original-launch-peer-native.yml
+permissions:
+  contents: read
+concurrency:
+  group: original-launch-peer-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+jobs:
+  native-peer:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Verify host namespace refusal and local persistence
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 python3 tests/operations/original-launch-peer-native.test.py
+          PYTHONDONTWRITEBYTECODE=1 python3 tests/operations/engine-launch-broker.test.py
+      - name: Qualify actual peer exit and PID reuse inside a private namespace
+        env:
+          BROKER_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$BROKER_SOURCE_SHA"
+          sudo -n --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT python3 \
+            tests/operations/original-launch-peer-native.py \
+            --source-sha "$BROKER_SOURCE_SHA" \
+            --output "$RUNNER_TEMP/original-launch-peer-receipt.json"
+      - name: Preserve the exact native peer and cleanup receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: original-launch-native-peer-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/original-launch-peer-receipt.json
+          if-no-files-found: error
+          retention-days: 7

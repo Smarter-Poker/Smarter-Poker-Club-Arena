@@ -3738,7 +3738,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       json: JSON.stringify({ user_id: userId, seat_number: seat, cards }),
     };
     const handNumberAtDeal = this.handCount;
-    // Private socket delivery stays synchronous and never waits for PostgREST.
+    // Enqueue through the original private transport; dealing never awaits its session read.
     this.hub?.sendToUser(this.tableId, userId, {
       kind: 'hole_cards',
       row: {

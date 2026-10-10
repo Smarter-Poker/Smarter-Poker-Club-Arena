@@ -37,8 +37,9 @@ function makeFakeWs() {
     readyState: 1,
     bufferedAmount: 0,
     sent,
-    send(data: string) {
+    send(data: string, complete?: (error?: Error) => void) {
       sent.push(data);
+      complete?.();
     },
     close: vi.fn(),
     on(event: string, cb: Handler) {

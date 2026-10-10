@@ -30,6 +30,7 @@ vi.mock('../services/supabase.js', () => ({
   default: {},
 }));
 
+import { playerSessionVerdict } from '../services/PlayerSessionAccess.js';
 import { ChannelWebSocketServer } from './ChannelWebSocketServer.js';
 
 class FakeWs {
@@ -39,8 +40,9 @@ class FakeWs {
   on(event: string, callback: (arg?: unknown) => void) {
     this.handlers.set(event, callback);
   }
-  send(raw: string) {
+  send(raw: string, complete?: (error?: Error) => void) {
     this.sent.push(JSON.parse(raw));
+    complete?.();
   }
   close() {
     this.readyState = 3;
@@ -59,7 +61,12 @@ function deferred() {
   return { promise, resolve };
 }
 function hand(userId: string, actions: unknown[] = [{ action: 'check' }]) {
-  return { id: 'hand', players: [{ userId }], actions, ended_at: '2026-09-13T12:00:00Z' };
+  return {
+    id: 'hand',
+    players: [{ userId, cards: ['As', 'Ks'] }],
+    actions,
+    ended_at: '2026-09-13T12:00:00Z',
+  };
 }
 function request(ws: FakeWs, handId = 'hand') {
   ws.receive({ type: 'REQUEST_HAND_REPLAY', handId });
@@ -93,6 +100,7 @@ function holdReads() {
 beforeEach(() => {
   vi.useFakeTimers();
   readHand.mockReset();
+  vi.mocked(playerSessionVerdict).mockResolvedValue('alive');
   server = new ChannelWebSocketServer();
   sockets = [];
   outstanding = [];
@@ -319,5 +327,31 @@ describe('hand replay work belongs to its initiating connection', () => {
     expect(new Set(replayFrames(second).map((frame) => frame.handId))).toEqual(
       new Set(['second-hand'])
     );
+  });
+});
+
+describe('second audit: durable session expires during private replay', () => {
+  it.each(['revoked', 'unknown'] as const)(
+    'does not release cards after a delayed %s verdict',
+    async (verdict) => {
+      holdReads();
+      const ws = socket();
+      request(ws);
+      await flush();
+      vi.mocked(playerSessionVerdict).mockResolvedValue(verdict);
+      outstanding[0].resolve({ data: hand(user), error: null });
+      await flush();
+      expect(replayFrames(ws)).toEqual([]);
+      expect(ws.readyState).toBe(verdict === 'revoked' ? 3 : 1);
+    }
+  );
+  it('does not emit later action frames after the durable session is revoked', async () => {
+    const ws = socket();
+    request(ws);
+    await flush();
+    expect(replayFrames(ws).map((frame) => frame.event?.frame)).toEqual(['META']);
+    vi.mocked(playerSessionVerdict).mockResolvedValue('revoked');
+    await vi.advanceTimersByTimeAsync(200);
+    expect(replayFrames(ws).map((frame) => frame.event?.frame)).toEqual(['META']);
   });
 });

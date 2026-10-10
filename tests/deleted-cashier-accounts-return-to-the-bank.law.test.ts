@@ -1,11 +1,27 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const sql = readFileSync(
-  'supabase/migrations/20261010184827_deleted_accounts_cannot_receive_cashier_transfers.sql',
-  'utf8'
+const dir = 'supabase/migrations';
+const migration = readdirSync(dir).filter((name) =>
+  name.endsWith('_deleted_accounts_cannot_receive_cashier_transfers.sql')
 );
+if (migration.length !== 1) throw new Error('Expected One Deleted-Account Custody Migration');
+const sql = readFileSync(`${dir}/${migration[0]}`, 'utf8');
 describe('deleted cashier accounts return to the bank', () => {
+  it('locks only the source credited wallet during concurrent player and agent credits', () => {
+    const refinements = readdirSync(dir).filter((name) =>
+      name.endsWith('_deleted_account_bank_returns_lock_only_their_credited_wallet.sql')
+    );
+    expect(refinements).toHaveLength(1);
+    const refined = readFileSync(`${dir}/${refinements[0]}`, 'utf8');
+    expect(refined).toContain("IF p_source IN ('wallets','agent_wallet') THEN");
+    expect(refined).toContain("IF p_source IN ('wallets','player_wallet') THEN");
+    expect(refined).toContain(
+      "CASE WHEN TG_TABLE_NAME='agents' THEN 'agent_wallet' ELSE 'player_wallet' END"
+    );
+    const native = readFileSync('scripts/ci/test-cashier-deleted-accounts.py', 'utf8');
+    expect(native).toContain('simultaneous-member-agent-credits-do-not-cross-lock');
+  });
   it('excludes authoritative deleted profiles without guessing from names or player type', () => {
     expect(sql).toContain("p.status='deleted'");
     expect(sql).not.toMatch(/is_horse|LIKE\s+'deleted/i);

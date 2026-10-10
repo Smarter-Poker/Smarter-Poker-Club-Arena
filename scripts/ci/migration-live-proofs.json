@@ -42,6 +42,13 @@
       "proofs": [
         "(SELECT NOT has_function_privilege('anon','public.ca_club_member_downline(uuid,uuid)','EXECUTE') AND has_function_privilege('authenticated','public.ca_club_member_downline(uuid,uuid)','EXECUTE') AND has_function_privilege('service_role','public.ca_club_member_downline(uuid,uuid)','EXECUTE'))"
       ]
+    },
+    {
+      "file": "20261010191226_return_existing_deleted_shark_club_cash_custody_to_the_main_bank.sql",
+      "sha256": "74dc0edbc547821975b7aff8007fcfddd0167cb3c2cf7fe0054bfdfd04e971e9",
+      "proofs": [
+        "(SELECT count(*)=1 AND bool_and(resolved AND context->>'board_md5'='d51aa23ba8af0e9143c38c86bfac3627' AND (context->>'amount')::numeric=8940782.63 AND (context->>'journal')::numeric=8940782.63 AND (context->>'receipts')::numeric=8940782.63 AND (context->>'repeat_amount')::numeric=0 AND jsonb_array_length(context->'board')=62) FROM public.financial_alerts WHERE id='ae1ca8e0-e77a-4089-b7dd-01ea9a56bfe4' AND source='deleted_cashier_custody_20261010')"
+      ]
     }
   ]
 }

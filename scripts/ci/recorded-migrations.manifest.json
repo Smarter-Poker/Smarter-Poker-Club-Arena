@@ -627,6 +627,46 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
       "refusedBy": [],
       "liveVerdict": "Reconciliation of 2026-10-07. Installed with no file in this repository or on any remote branch of either repository. md5 read live the same day from public.fn_ca_migration_text(20261007002846) equals the file md5 (1697 bytes). The only file-text finding was the 60-character name rule, which applies to new work; the ledger row already exists under this 61-character name, so the version ties the row to this file."
+    },
+    {
+      "version": "20261010012101",
+      "name": "the_unpaid_tournament_alarm_reads_the_diamond_book",
+      "file": "supabase/migrations/20261010012101_the_unpaid_tournament_alarm_reads_the_diamond_book.sql",
+      "md5": "7e4e9ea7c1c18c04bf9b1fca1505aec1",
+      "appliedToProductionAt": "2026-10-10T01:21:01Z",
+      "recoveredOn": "2026-10-10",
+      "recoveredFrom": "The applying session's own text, which is what public.fn_ca_migration_text(version).body returns: octet_length 9790 and md5 compared equal before commit, with no trailing newline appended. Applied through the Supabase MCP on the owner's explicit approval of 2026-10-09 (\"Yes, apply all 3\"), then recorded here in the same session.",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": [
+        "check-definer-authorization: anon rule (fn_tournament_metrics)"
+      ],
+      "liveVerdict": "Production read 2026-10-10 01:34 UTC. The anon finding is not true of production: the file is CREATE OR REPLACE of an existing function, which keeps its ACL, and fn_tournament_metrics(integer,integer,integer) reads live as {postgres=X/postgres,service_role=X/postgres}; has_function_privilege('anon',...) and ('authenticated',...) are both false, and fn_definer_exposure_audit() does not list it. It is engine telemetry read by the service-role TournamentMetrics collector. Live after apply: unpaid_completed is 0 for 6 hours and for 168 hours, and the 49 TournamentCompletedUnpaid inbox rows read verified_fixed."
+    },
+    {
+      "version": "20261010012144",
+      "name": "a_satellite_completes_only_with_its_settlement_receipt",
+      "file": "supabase/migrations/20261010012144_a_satellite_completes_only_with_its_settlement_receipt.sql",
+      "md5": "e190e8d82b31858df7abc01bcc46b69b",
+      "appliedToProductionAt": "2026-10-10T01:21:44Z",
+      "recoveredOn": "2026-10-10",
+      "recoveredFrom": "The applying session's own text, which is what public.fn_ca_migration_text(version).body returns: octet_length 6859 and md5 compared equal before commit, with no trailing newline appended. Applied through the Supabase MCP on the owner's explicit approval of 2026-10-09 (\"Yes, apply all 3\"), then recorded here in the same session.",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": [
+        "check-money-trigger-declared: satellite_completed_requires_settlement_receipt on public.tournaments, declared in the next migration instead of this one"
+      ],
+      "liveVerdict": "Production read 2026-10-10 01:34 UTC. The money-trigger finding WAS true when this ran: the trigger went live undeclared at 01:21:44 UTC. It was closed at 01:26:36 UTC by 20261010012636 the_satellite_lock_is_a_declared_money_trigger: ca_declared_money_triggers now holds ('tournaments','satellite_completed_requires_settlement_receipt') and fn_undeclared_money_triggers() no longer lists it (its one remaining row, club_wallets.poker_arena_no_chip_rake, predates this change and is not part of it). UndeclaredTriggerOnAMoneyTable was already firing for that older row, so the five minutes added no new page. The trigger function's ACL is {postgres=X/postgres}: anon, authenticated and service_role cannot execute it, and fn_definer_exposure_audit() does not list it. The trigger reads enabled, DEFERRABLE INITIALLY DEFERRED; non_satellite_completed_requires_terminal_receipt reads enabled; aaa_guard_atomic_satellite_completion stays disabled."
+    },
+    {
+      "version": "20261010012636",
+      "name": "the_satellite_lock_is_a_declared_money_trigger",
+      "file": "supabase/migrations/20261010012636_the_satellite_lock_is_a_declared_money_trigger.sql",
+      "md5": "5e54b8d8809fc24b8c339b8af997c432",
+      "appliedToProductionAt": "2026-10-10T01:26:36Z",
+      "recoveredOn": "2026-10-10",
+      "recoveredFrom": "Decoded from production's own base64 of public.fn_ca_migration_text(version).body in the shell, never pasted through a JSON tool boundary: octet_length 1560 and md5 compared equal before commit, with no trailing newline appended.",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": [],
+      "liveVerdict": "Production read 2026-10-10 01:34 UTC. Data only: one ca_declared_money_triggers row, declared_at 2026-10-10 01:26:36 UTC, and its proof that fn_undeclared_money_triggers() no longer lists the trigger. No file-text guard raised a finding."
     }
   ]
 }

@@ -45,9 +45,7 @@ test.describe('Production Cashier Certification', () => {
     });
     await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/, { timeout: 30_000 });
     await expect(page.locator('[data-cashier-surface="trade"]')).toBeVisible({ timeout: 60_000 });
-    await expect(
-      page.getByRole('heading', { name: 'Every Chip. Accounted For.', exact: true })
-    ).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Wallet Command', exact: true })).toBeVisible();
 
     const tablist = page.getByRole('tablist', { name: 'Cashier Actions' });
     await expect(tablist).toBeVisible();
@@ -87,9 +85,7 @@ test.describe('Production Cashier Certification', () => {
     // verified timestamp. Scoping this assertion to the console looked for a
     // node that cannot exist and made a healthy production cashier fail its
     // canary after hydration completed.
-    const cashierStatus = page
-      .getByRole('region', { name: 'Every Chip. Accounted For.' })
-      .getByRole('status');
+    const cashierStatus = page.getByRole('region', { name: 'Wallet Command' }).getByRole('status');
     // A first roster page is usable before the remaining pages have been
     // verified. Both witnesses must agree within the existing hydration budget;
     // a continuation warning or refused read must still fail certification.
@@ -128,6 +124,24 @@ test.describe('Production Cashier Certification', () => {
     expectCompactCashierFigure(await currentBalances.nth(1).innerText(), 'Agent Wallet');
     await expectCashierAxeClean(page, testInfo, '[data-cashier-surface="trade"]', 'trade-cashier');
     await attachCashierScreenshot(page, testInfo, 'trade-cashier');
+    await expect(surface.locator('[data-cashier-layout="directory"]')).toHaveCount(1);
+    await expect(surface.locator('.sc')).toHaveCount(0);
+    const rosterSearch = page.getByRole('searchbox', { name: /^Search \d+ Members?$/ });
+    await expect(rosterSearch).toBeVisible();
+    await rosterSearch.fill('cashier-no-member-9284176');
+    await expect(page.getByText('No Members Match That Search.', { exact: true })).toBeVisible();
+    await rosterSearch.fill('');
+    await expect(page.getByText('No Members Match That Search.', { exact: true })).toHaveCount(0);
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    const directoryWidth = await surface
+      .locator('[data-cashier-layout="directory"]')
+      .evaluate((el) => el.getBoundingClientRect().width);
+    expect(directoryWidth).toBeGreaterThan(1000);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+    ).toBe(true);
+    await attachCashierScreenshot(page, testInfo, 'trade-cashier-desktop');
+    await page.setViewportSize({ width: 393, height: 852 });
 
     await page.getByRole('button', { name: /Open Another Club Cashier/ }).click();
     await expect(page.getByRole('listbox', { name: 'Club Cashiers' })).toBeVisible();
@@ -277,7 +291,10 @@ test.describe('Production Cashier Certification', () => {
       timeout: 60_000,
     });
     await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/, { timeout: 30_000 });
-    const console = page.locator('main .sc').filter({ hasText: 'Club Arena Cashier' }).first();
+    const console = page
+      .locator('main [data-cashier-layout="directory"]')
+      .filter({ hasText: 'Club Arena Cashier' })
+      .first();
     await expect(console).toBeVisible({ timeout: 60_000 });
     const agentWallet = page.getByRole('button', { name: /Agent Wallet/ }).first();
     // The painted console precedes authoritative role and wallet hydration.

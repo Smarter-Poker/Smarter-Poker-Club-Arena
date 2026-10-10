@@ -74,6 +74,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
 import { reportError } from '../utils/errorReporter';
 import { formatPopupText } from '../utils/popupStyle';
+import { CashierWorkspace } from '../components/wallet/CashierWorkspace';
 import { SpadeConsole } from '../components/console/SpadeConsole';
 import { compactChips } from '../utils/format';
 import { enumToTitleCase, titleCase } from '../utils/titleCase';
@@ -2244,7 +2245,7 @@ function CashierContent() {
   if (!clubId) {
     return (
       <StandardContentLayout className={styles.page}>
-        <SpadeConsole
+        <CashierWorkspace
           eyebrow="Club Arena Cashier"
           title="Cashier"
           subtitle="Club Wallet Access"
@@ -2274,7 +2275,7 @@ function CashierContent() {
               </p>
             )}
           </div>
-        </SpadeConsole>
+        </CashierWorkspace>
       </StandardContentLayout>
     );
   }
@@ -2347,7 +2348,7 @@ function CashierContent() {
         </>
       )}
 
-      <SpadeConsole
+      <CashierWorkspace
         eyebrow="Club Arena Cashier"
         title="Cashier"
         subtitle={titleCase(clubName || 'Club Wallet')}
@@ -3268,7 +3269,7 @@ function CashierContent() {
             </section>
           )}
         </div>
-      </SpadeConsole>
+      </CashierWorkspace>
 
       {/* Cashout Request Modal — Full step tracker UX */}
       {clubId && user?.id && (

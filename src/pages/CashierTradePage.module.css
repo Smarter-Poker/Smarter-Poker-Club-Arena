@@ -1,48 +1,38 @@
-/*
- * CASHIER TRADE / #ClubArenaConsole
- *
- * #ClubArenaConsole is the visual authority of this file. The page and its four
- * dialogs (Transaction Receipt, Request Chips, Send Out / Send Ticket, Claim
- * Back) sit on the approved spade console master through <SpadeConsole>, and
- * the master paints every frame, rail, crest and plate. This sheet only lays
- * live copy and native controls onto the black glass, in the master's own inks.
- *
- * Nothing here draws a card, a pill, a button face, an avatar box or an icon
- * holder. Rows are separated by the engraved rule (a black line with a light
- * lip, the cut the master's own chrome rules are made of), every control is a
- * lit word, and a field is a single engraved rule under its text.
- *
- * #SMARTERCASINOREALISM was the former authority of this page (the vault hero
- * and its gunmetal frames); it no longer governs anything in this file.
- *
- * No hover states. Everything on the glass sizes in cqw against the console.
- */
+/* October 10 owner direction: routed cashier pages follow the Players
+   directory layout without large frames. #ClubArenaConsole is the visual authority
+   of financial dialogs; their approved masters, handlers and guards remain.
+   Page typography is bounded on desktop, controls retain 44px touch targets,
+   and the compact directory uses the Players page inks and hairline rules. */
 
 .page {
   /* The master's inks (SpadeConsole.css), for copy that carries a module class
      rather than an sc-ink class. Schema colours only. */
   --ink-blue: #45adff;
   --ink-blue-glow:
-    0 0 0.9cqw rgb(49 168 255 / 70%), 0 0 2cqw rgb(49 168 255 / 30%),
-    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+    0 0 min(0.9cqw, 4.5px) rgb(49 168 255 / 70%), 0 0 min(2cqw, 10px) rgb(49 168 255 / 30%),
+    0 min(0.2cqw, 1px) min(0.3cqw, 1.5px) rgb(0 0 0 / 85%);
   --ink-silver: #e4e7ec;
   --ink-silver-bevel:
-    0 -0.18cqw 0 rgb(255 255 255 / 55%), 0 0.25cqw 0 #6d747c, 0 0.45cqw 0 #050607,
-    0 0.7cqw 0.9cqw rgb(0 0 0 / 90%);
+    0 -0min (18cqw, 90px) 0 rgb(255 255 255 / 55%), 0 min(0.25cqw, 1.25px) 0 #6d747c,
+    0 min(0.45cqw, 2.25px) 0 #050607, 0 min(0.7cqw, 3.5px) min(0.9cqw, 4.5px) rgb(0 0 0 / 90%);
   --ink-white: #f4f7fb;
   --ink-white-glow:
-    0 0 1cqw rgb(140 210 255 / 90%), 0 0.25cqw 0 rgb(0 0 0 / 70%), 0 0.5cqw 1cqw rgb(0 0 0 / 60%);
+    0 0 min(1cqw, 5px) rgb(140 210 255 / 90%), 0 min(0.25cqw, 1.25px) 0 rgb(0 0 0 / 70%),
+    0 min(0.5cqw, 2.5px) min(1cqw, 5px) rgb(0 0 0 / 60%);
   --ink-green: #c8ffd2;
   --ink-green-glow:
-    0 0 1cqw rgb(53 217 90 / 80%), 0 0 2cqw rgb(53 217 90 / 35%), 0 0.25cqw 0 rgb(0 0 0 / 70%);
+    0 0 min(1cqw, 5px) rgb(53 217 90 / 80%), 0 0 min(2cqw, 10px) rgb(53 217 90 / 35%),
+    0 min(0.25cqw, 1.25px) 0 rgb(0 0 0 / 70%);
   --ink-red: #ff5b6e;
   --ink-red-glow:
-    0 0 1cqw rgb(240 40 73 / 80%), 0 0 2cqw rgb(240 40 73 / 35%), 0 0.25cqw 0 rgb(0 0 0 / 70%);
+    0 0 min(1cqw, 5px) rgb(240 40 73 / 80%), 0 0 min(2cqw, 10px) rgb(240 40 73 / 35%),
+    0 min(0.25cqw, 1.25px) 0 rgb(0 0 0 / 70%);
   --ink-gold: #ffd700;
   --ink-gold-glow:
-    0 0 1cqw rgb(255 215 0 / 70%), 0 0 2cqw rgb(255 215 0 / 30%), 0 0.25cqw 0 rgb(0 0 0 / 70%);
+    0 0 min(1cqw, 5px) rgb(255 215 0 / 70%), 0 0 min(2cqw, 10px) rgb(255 215 0 / 30%),
+    0 min(0.25cqw, 1.25px) 0 rgb(0 0 0 / 70%);
   --ink-muted: #9aa5b3;
-  --ink-muted-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  --ink-muted-shadow: 0 min(0.2cqw, 1px) min(0.3cqw, 1.5px) rgb(0 0 0 / 80%);
   --ink-copy: #d7dee7;
   --engraved-rule-lip: inset 0 1px 0 rgb(255 255 255 / 8%);
 
@@ -51,7 +41,7 @@
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 1000px;
+  max-width: 1380px;
   min-height: 100dvh;
   margin: 0 auto;
   /* Page content pads with the designed clearance so nothing jumps when the
@@ -72,7 +62,7 @@
 .glass {
   display: flex;
   flex-direction: column;
-  gap: 3cqw;
+  gap: min(3cqw, 15px);
   min-width: 0;
 }
 
@@ -129,10 +119,10 @@
   appearance: none;
   min-height: 44px;
   margin: 0;
-  padding: 0 1cqw;
+  padding: 0 min(1cqw, 5px);
   color: var(--ink-blue);
   font:
-    800 3.2cqw/1.2 'Roboto Condensed',
+    800 min(3.2cqw, 16px)/1.2 'Roboto Condensed',
     Inter,
     system-ui,
     sans-serif;
@@ -168,7 +158,7 @@
   min-width: 0;
   min-height: 44px;
   margin: 0;
-  padding: 2.2cqw 1cqw;
+  padding: min(2.2cqw, 11px) min(1cqw, 5px);
   border: 0 !important;
   border-bottom: 1px solid #000 !important;
   border-radius: 0 !important;
@@ -178,7 +168,7 @@
   box-shadow: 0 1px 0 rgb(255 255 255 / 8%) !important;
   color: var(--ink-white) !important;
   font:
-    600 max(16px, 3.6cqw) / 1.3 Inter,
+    600 max(16px, min(3.6cqw, 18px)) / 1.3 Inter,
     system-ui,
     sans-serif;
 }
@@ -216,7 +206,7 @@
 .recoveryMetric > span,
 .pickerLabel {
   color: var(--ink-blue);
-  font-size: 2.7cqw;
+  font-size: min(2.7cqw, 13.5px);
   font-weight: 700;
   letter-spacing: 0.16em;
   text-shadow: var(--ink-blue-glow);
@@ -241,12 +231,12 @@
 }
 
 .heroTitle {
-  font-size: 5.6cqw;
+  font-size: min(5.6cqw, 28px);
 }
 
 .sectionTitle,
 .recoveryTitle {
-  font-size: 4.6cqw;
+  font-size: min(4.6cqw, 23px);
 }
 
 .heroMetricValue,
@@ -255,7 +245,7 @@
 .summaryValue,
 .recoveryMetric strong {
   color: var(--ink-silver);
-  font-size: 4cqw;
+  font-size: min(4cqw, 20px);
   font-weight: 800;
   font-variant-numeric: tabular-nums lining-nums;
   text-shadow: var(--ink-silver-bevel);
@@ -280,7 +270,7 @@
   margin: 0;
   color: var(--ink-muted);
   font:
-    500 3.1cqw/1.5 Inter,
+    500 min(3.1cqw, 15.5px)/1.5 Inter,
     system-ui,
     sans-serif;
   text-shadow: var(--ink-muted-shadow);
@@ -288,7 +278,7 @@
 
 .empty,
 .pickerStatus {
-  padding: 3cqw 1cqw;
+  padding: min(3cqw, 15px) min(1cqw, 5px);
   text-align: center;
 }
 
@@ -297,7 +287,7 @@
 .reqBtn,
 .closeBtn {
   min-height: 44px;
-  padding: 0 1.4cqw;
+  padding: 0 min(1.4cqw, 7px);
 }
 
 .reqBtnGo {
@@ -310,7 +300,7 @@
 .hero {
   display: flex;
   flex-direction: column;
-  gap: 2.6cqw;
+  gap: min(2.6cqw, 13px);
   min-width: 0;
 }
 
@@ -323,7 +313,7 @@
 .entityBtn {
   display: inline-flex;
   align-items: center;
-  gap: 2.4cqw;
+  gap: min(2.4cqw, 12px);
   max-width: 100%;
   min-height: 44px;
   padding: 0;
@@ -334,8 +324,8 @@
 /* A real logo prints as itself: no frame, no rounding, no fallback square.
    A club without one is represented by its name beside it. */
 .entityLogo {
-  width: 7cqw;
-  height: 7cqw;
+  width: min(7cqw, 35px);
+  height: min(7cqw, 35px);
   flex: 0 0 auto;
   object-fit: cover;
 }
@@ -344,7 +334,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--ink-silver);
-  font-size: 3.8cqw;
+  font-size: min(3.8cqw, 19px);
   font-weight: 800;
   letter-spacing: 0.04em;
   text-overflow: ellipsis;
@@ -360,7 +350,7 @@
 .heroContent {
   display: flex;
   flex-direction: column;
-  gap: 1.8cqw;
+  gap: min(1.8cqw, 9px);
   min-width: 0;
 }
 
@@ -372,7 +362,7 @@
    is kept because tests/cashier-casino-realism-phase2.test.ts pins it. */
 .securityLine {
   color: var(--ink-green);
-  font-size: 2.9cqw;
+  font-size: min(2.9cqw, 14.5px);
   font-weight: 700;
   letter-spacing: 0.1em;
   text-shadow: var(--ink-green-glow);
@@ -395,9 +385,9 @@
   display: grid;
   grid-auto-columns: minmax(0, 1fr);
   grid-auto-flow: column;
-  gap: 3cqw;
+  gap: min(3cqw, 15px);
   min-width: 0;
-  padding: 2.2cqw 0.5cqw 0;
+  padding: min(2.2cqw, 11px) min(0.5cqw, 2.5px) 0;
   border-top: 1px solid #000;
   box-shadow: var(--engraved-rule-lip);
 }
@@ -408,7 +398,7 @@
 .summaryCell {
   display: flex;
   flex-direction: column;
-  gap: 1cqw;
+  gap: min(1cqw, 5px);
   min-width: 0;
 }
 
@@ -416,7 +406,7 @@
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 2cqw;
+  gap: min(2cqw, 10px);
 }
 
 /* A word control is a thumb target: 44px tall AND at least 44px wide
@@ -424,7 +414,7 @@
 .plusBtn {
   min-width: 44px;
   min-height: 44px;
-  padding: 0 1cqw;
+  padding: 0 min(1cqw, 5px);
   color: var(--ink-gold);
   text-shadow: var(--ink-gold-glow);
 }
@@ -434,22 +424,22 @@
 .picker {
   display: flex;
   flex-direction: column;
-  max-height: 96cqw;
+  max-height: min(96cqw, 480px);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
 .pickerLabel {
-  padding: 1.4cqw 0.5cqw;
+  padding: min(1.4cqw, 7px) min(0.5cqw, 2.5px);
 }
 
 .pickerRow {
   display: flex;
   align-items: center;
-  gap: 2.4cqw;
+  gap: min(2.4cqw, 12px);
   width: 100%;
   min-height: 44px;
-  padding: 2cqw 0.5cqw;
+  padding: min(2cqw, 10px) min(0.5cqw, 2.5px);
   border-top: 1px solid #000;
   box-shadow: var(--engraved-rule-lip);
   color: var(--ink-silver);
@@ -465,7 +455,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--ink-silver);
-  font-size: 3.4cqw;
+  font-size: min(3.4cqw, 17px);
   font-weight: 800;
   letter-spacing: 0.04em;
   text-overflow: ellipsis;
@@ -482,7 +472,7 @@
 .pickerBalance {
   flex: 0 0 auto;
   color: var(--ink-muted);
-  font-size: 2.9cqw;
+  font-size: min(2.9cqw, 14.5px);
   font-variant-numeric: tabular-nums lining-nums;
   text-shadow: var(--ink-muted-shadow);
   white-space: nowrap;
@@ -494,8 +484,8 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 0 2cqw;
-  padding-bottom: 0.6cqw;
+  gap: 0 min(2cqw, 10px);
+  padding-bottom: min(0.6cqw, 3px);
   border-bottom: 1px solid #000;
   box-shadow: 0 1px 0 rgb(255 255 255 / 8%);
 }
@@ -503,9 +493,9 @@
 .tab {
   flex: 1 1 28%;
   min-height: 44px;
-  padding: 1cqw 0.5cqw;
+  padding: min(1cqw, 5px) min(0.5cqw, 2.5px);
   color: var(--ink-muted);
-  font-size: 3cqw;
+  font-size: min(3cqw, 15px);
   text-shadow: var(--ink-muted-shadow);
 }
 
@@ -515,7 +505,7 @@
 }
 
 .tabBadge {
-  margin-left: 1.2cqw;
+  margin-left: min(1.2cqw, 6px);
   color: var(--ink-gold);
   text-shadow: var(--ink-gold-glow);
 }
@@ -525,7 +515,7 @@
 .recoveryConsole {
   display: flex;
   flex-direction: column;
-  gap: 1.6cqw;
+  gap: min(1.6cqw, 8px);
   min-width: 0;
 }
 
@@ -540,7 +530,7 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 1cqw 3cqw;
+  gap: min(1cqw, 5px) min(3cqw, 15px);
   min-width: 0;
 }
 
@@ -548,13 +538,13 @@
 .sectionHeading > div {
   display: flex;
   flex-direction: column;
-  gap: 0.8cqw;
+  gap: min(0.8cqw, 4px);
   min-width: 0;
 }
 
 .reconcileBtn {
   min-height: 44px;
-  padding: 0 1cqw;
+  padding: 0 min(1cqw, 5px);
 }
 
 .recoveryAlert {
@@ -562,8 +552,8 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 1.4cqw 3cqw;
-  padding: 2.2cqw 0.5cqw 0;
+  gap: min(1.4cqw, 7px) min(3cqw, 15px);
+  padding: min(2.2cqw, 11px) min(0.5cqw, 2.5px) 0;
   border-top: 1px solid #000;
   box-shadow: var(--engraved-rule-lip);
 }
@@ -571,13 +561,13 @@
 .recoveryAlert > div {
   display: flex;
   flex-direction: column;
-  gap: 0.8cqw;
+  gap: min(0.8cqw, 4px);
   min-width: 0;
 }
 
 .recoveryAlert strong {
   color: var(--ink-red);
-  font-size: 3.2cqw;
+  font-size: min(3.2cqw, 16px);
   font-weight: 800;
   letter-spacing: 0.08em;
   text-shadow: var(--ink-red-glow);
@@ -587,7 +577,7 @@
 .recoveryAlert span {
   color: var(--ink-copy);
   font:
-    500 3.1cqw/1.5 Inter,
+    500 min(3.1cqw, 15.5px)/1.5 Inter,
     system-ui,
     sans-serif;
 }
@@ -601,20 +591,20 @@
 .sectionShell {
   display: flex;
   flex-direction: column;
-  gap: 2.4cqw;
+  gap: min(2.4cqw, 12px);
   min-width: 0;
 }
 
 .searchRow {
   display: flex;
   align-items: center;
-  gap: 2.4cqw;
+  gap: min(2.4cqw, 12px);
 }
 
 .memberCount {
   flex: 0 0 auto;
   color: var(--ink-muted);
-  font-size: 3cqw;
+  font-size: min(3cqw, 15px);
   font-weight: 700;
   font-variant-numeric: tabular-nums lining-nums;
   text-shadow: var(--ink-muted-shadow);
@@ -624,7 +614,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0 3cqw;
+  gap: 0 min(3cqw, 15px);
 }
 
 .groupToggle {
@@ -633,7 +623,7 @@
   align-items: center;
   min-height: 44px;
   color: var(--ink-muted);
-  font-size: 3cqw;
+  font-size: min(3cqw, 15px);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-shadow: var(--ink-muted-shadow);
@@ -686,10 +676,10 @@
 .claimRow {
   display: flex;
   align-items: center;
-  gap: 2.6cqw;
+  gap: min(2.6cqw, 13px);
   min-width: 0;
   min-height: 44px;
-  padding: 2.2cqw 0.5cqw;
+  padding: min(2.2cqw, 11px) min(0.5cqw, 2.5px);
   border-top: 1px solid #000;
   box-shadow: var(--engraved-rule-lip);
 }
@@ -713,8 +703,8 @@
 
 /* A real avatar prints as itself; a player without one is their name. */
 .avatar {
-  width: 8cqw;
-  height: 8cqw;
+  width: min(8cqw, 40px);
+  height: min(8cqw, 40px);
   flex: 0 0 auto;
   object-fit: cover;
 }
@@ -723,23 +713,23 @@
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 0.6cqw;
+  gap: min(0.6cqw, 3px);
   min-width: 0;
 }
 
 .rowName {
   overflow: hidden;
   color: var(--ink-white);
-  font-size: 3.5cqw;
+  font-size: min(3.5cqw, 17.5px);
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .rowYou {
-  margin-left: 1.6cqw;
+  margin-left: min(1.6cqw, 8px);
   color: var(--ink-gold);
-  font-size: 2.6cqw;
+  font-size: min(2.6cqw, 13px);
   letter-spacing: 0.14em;
   text-shadow: var(--ink-gold-glow);
   text-transform: uppercase;
@@ -747,7 +737,7 @@
 
 .rowSub {
   color: var(--ink-muted);
-  font-size: 2.8cqw;
+  font-size: min(2.8cqw, 14px);
   line-height: 1.45;
   text-shadow: var(--ink-muted-shadow);
 }
@@ -755,7 +745,7 @@
 .rowBalance {
   flex: 0 0 auto;
   color: var(--ink-silver);
-  font-size: 3.6cqw;
+  font-size: min(3.6cqw, 18px);
   font-weight: 800;
   font-variant-numeric: tabular-nums lining-nums;
   text-shadow: var(--ink-silver-bevel);
@@ -775,9 +765,9 @@
 /* The selection mark is a word, not a drawn box. */
 .checkbox {
   flex: 0 0 auto;
-  min-width: 13cqw;
+  min-width: min(13cqw, 65px);
   color: var(--ink-muted);
-  font-size: 2.6cqw;
+  font-size: min(2.6cqw, 13px);
   font-weight: 700;
   letter-spacing: 0.14em;
   text-align: right;
@@ -794,14 +784,14 @@
 .loadMore {
   width: 100%;
   min-height: 44px;
-  padding: 1.4cqw 1cqw;
+  padding: min(1.4cqw, 7px) min(1cqw, 5px);
   border-top: 1px solid #000;
   box-shadow: var(--engraved-rule-lip);
 }
 
 .receiptRow {
   width: 100%;
-  padding: 2.2cqw 0.5cqw;
+  padding: min(2.2cqw, 11px) min(0.5cqw, 2.5px);
   border-top: 1px solid #000;
   box-shadow: var(--engraved-rule-lip);
   color: inherit;
@@ -816,7 +806,7 @@
 .receiptCue {
   flex: 0 0 auto;
   color: var(--ink-blue);
-  font-size: 2.6cqw;
+  font-size: min(2.6cqw, 13px);
   font-weight: 700;
   letter-spacing: 0.14em;
   text-shadow: var(--ink-blue-glow);
@@ -845,12 +835,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 3cqw;
-  padding: 0.6cqw 0.5cqw;
+  gap: min(3cqw, 15px);
+  padding: min(0.6cqw, 3px) min(0.5cqw, 2.5px);
   border-top: 1px solid #000;
   box-shadow: var(--engraved-rule-lip);
   color: var(--ink-blue);
-  font-size: 2.8cqw;
+  font-size: min(2.8cqw, 14px);
   font-weight: 700;
   font-variant-numeric: tabular-nums lining-nums;
   letter-spacing: 0.1em;
@@ -865,15 +855,15 @@
 .footer {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 2cqw;
-  padding: 0.6cqw 0;
+  gap: min(2cqw, 10px);
+  padding: min(0.6cqw, 3px) 0;
   border-top: 1px solid #000;
   box-shadow: var(--engraved-rule-lip);
 }
 
 .footerBtn {
   min-height: 44px;
-  padding: 1cqw;
+  padding: min(1cqw, 5px);
 }
 
 .footerBtn:last-child {
@@ -886,7 +876,7 @@
 .ledgerToolbar {
   display: flex;
   flex-direction: column;
-  gap: 1cqw;
+  gap: min(1cqw, 5px);
 }
 
 .ledgerSearch {
@@ -897,7 +887,7 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: 0 2cqw;
+  gap: 0 min(2cqw, 10px);
 }
 
 .ledgerFilter {
@@ -948,13 +938,13 @@
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 1cqw 2.4cqw;
-  padding: 0 0.5cqw 1cqw;
+  gap: min(1cqw, 5px) min(2.4cqw, 12px);
+  padding: 0 min(0.5cqw, 2.5px) min(1cqw, 5px);
 }
 
 .receiptAmount strong {
   margin-left: auto;
-  font-size: 7cqw;
+  font-size: min(7cqw, 35px);
   font-weight: 800;
   line-height: 1;
   font-variant-numeric: tabular-nums lining-nums;
@@ -971,8 +961,8 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 3cqw;
-  padding: 2.2cqw 0.5cqw;
+  gap: min(3cqw, 15px);
+  padding: min(2.2cqw, 11px) min(0.5cqw, 2.5px);
   border-top: 1px solid #000;
   box-shadow: var(--engraved-rule-lip);
 }
@@ -984,14 +974,14 @@
 .receiptFacts dd {
   min-width: 0;
   margin: 0;
-  font-size: 3.4cqw;
+  font-size: min(3.4cqw, 17px);
   font-weight: 700;
   text-align: right;
   overflow-wrap: anywhere;
 }
 
 .receiptReference dd {
-  font-size: 2.8cqw;
+  font-size: min(2.8cqw, 14px);
   letter-spacing: 0.02em;
 }
 
@@ -1004,7 +994,7 @@
 }
 
 .modalTargets {
-  max-height: 60cqw;
+  max-height: min(60cqw, 300px);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -1014,8 +1004,8 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 3cqw;
-  padding: 1.8cqw 0.5cqw;
+  gap: min(3cqw, 15px);
+  padding: min(1.8cqw, 9px) min(0.5cqw, 2.5px);
   border-top: 1px solid #000;
   box-shadow: var(--engraved-rule-lip);
 }
@@ -1024,7 +1014,7 @@
 .modalFailureRow > span:first-child {
   min-width: 0;
   color: var(--ink-white);
-  font-size: 3.4cqw;
+  font-size: min(3.4cqw, 17px);
   font-weight: 700;
   overflow-wrap: anywhere;
 }
@@ -1032,16 +1022,16 @@
 .modalTargetRow > span:last-child {
   flex: 0 0 auto;
   color: var(--ink-silver);
-  font-size: 3.4cqw;
+  font-size: min(3.4cqw, 17px);
   font-weight: 800;
   font-variant-numeric: tabular-nums lining-nums;
   text-shadow: var(--ink-silver-bevel);
 }
 
 .modalFailuresTitle {
-  padding: 0 0.5cqw 1.2cqw;
+  padding: 0 min(0.5cqw, 2.5px) min(1.2cqw, 6px);
   color: var(--ink-red);
-  font-size: 2.8cqw;
+  font-size: min(2.8cqw, 14px);
   font-weight: 700;
   letter-spacing: 0.14em;
   text-shadow: var(--ink-red-glow);
@@ -1050,7 +1040,7 @@
 
 .modalFailureRow > span:last-child {
   color: var(--ink-red);
-  font-size: 3cqw;
+  font-size: min(3cqw, 15px);
   text-align: right;
   text-shadow: var(--ink-red-glow);
 }
@@ -1064,7 +1054,7 @@
   bottom: 0;
   display: flex;
   justify-content: center;
-  padding-top: 0.6cqw;
+  padding-top: min(0.6cqw, 3px);
   border-top: 1px solid #000;
   box-shadow: var(--engraved-rule-lip);
   background: #0a0b0d;
@@ -1104,8 +1094,8 @@
     flex-direction: row;
     align-items: baseline;
     justify-content: space-between;
-    gap: 3cqw;
-    padding: 2cqw 0.5cqw;
+    gap: min(3cqw, 15px);
+    padding: min(2cqw, 10px) min(0.5cqw, 2.5px);
     border-top: 1px solid #000;
     box-shadow: var(--engraved-rule-lip);
   }
@@ -1119,5 +1109,188 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* Players directory layout, October 10. The page owns no painted enclosure. */
+.page {
+  max-width: 1380px;
+  padding-inline: 16px;
+}
+.page .hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.7fr);
+  gap: 12px 24px;
+}
+.page .header {
+  grid-column: 1 / -1;
+}
+.page .heroTitle {
+  font-size: clamp(24px, 4cqw, 32px);
+  font-weight: 400;
+  text-transform: none;
+  text-shadow: none;
+}
+.page .heroMetrics {
+  padding: 0;
+  align-content: center;
+}
+.page .heroCopy {
+  max-width: 620px;
+}
+.page .recoveryConsole {
+  padding-block: 14px;
+}
+.page .recoveryGrid {
+  padding-top: 10px;
+}
+.page .tabs {
+  justify-content: flex-start;
+  gap: 6px;
+}
+.page .tab {
+  flex: 0 1 auto;
+  padding: 12px 16px;
+  border: 1px solid #27313c;
+  background: #0d1218;
+  font-size: 12px;
+}
+.page .tabActive {
+  border-bottom: 2px solid #00d4ff;
+  color: #f4f7fa;
+}
+.page .searchRow {
+  gap: 0;
+  flex-wrap: wrap;
+  border: 1px solid #27313c;
+  background: #05070a;
+}
+.searchLabel {
+  flex: 0 0 auto;
+  padding: 16px;
+  color: #9ba8b5;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+}
+.page .searchRow input {
+  flex: 1;
+  width: auto;
+  padding: 14px;
+  border: 0;
+  min-width: 180px;
+  background: #05070a;
+  font-size: 16px;
+}
+.page .memberCount {
+  padding: 12px 16px;
+  font-size: 12px;
+}
+.page .filterRow {
+  gap: 6px 16px;
+}
+.page .list {
+  gap: 8px;
+}
+.page .row {
+  padding: 18px 16px;
+  min-height: 88px;
+  background: #080b0f;
+  border: 1px solid #27313c;
+  border-left: 2px solid #27313c;
+  box-shadow: none;
+}
+.page .rowSelected {
+  border-left-color: #00d4ff;
+  background: #0d1218;
+}
+.page .rowName {
+  font-size: 16px;
+  text-shadow: none;
+}
+.page .rowSub {
+  font-size: 12px;
+}
+.page .rowBalance {
+  font-size: 18px;
+  text-shadow: none;
+}
+.page .avatar {
+  width: 52px;
+  height: 52px;
+}
+.page .checkbox {
+  min-width: 64px;
+  font-size: 11px;
+}
+@media (max-width: 560px) {
+  .page {
+    padding-inline: 0;
+  }
+  .page .hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .page .header {
+    grid-column: auto;
+  }
+  .page .heroMetrics {
+    grid-auto-flow: column;
+  }
+  .page .heroMetric {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .page .searchLabel {
+    width: 100%;
+    padding: 12px 14px 0;
+  }
+  .page .memberCount {
+    padding: 12px;
+  }
+  .page .row {
+    padding: 14px 10px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .page .avatar {
+    width: 40px;
+    height: 40px;
+  }
+  .page .rowInfo {
+    flex-basis: calc(100% - 64px);
+  }
+  .page .rowBalance {
+    margin-left: 52px;
+  }
+}
+.page .dock {
+  position: static;
+}
+@media (max-width: 560px) {
+  .page .recoveryGrid {
+    grid-auto-flow: column;
+    gap: 10px;
+  }
+  .page .recoveryMetric {
+    flex-direction: column;
+    align-items: flex-start;
+    border: 0;
+    box-shadow: none;
+  }
+  .page .recoveryMetric span {
+    font-size: 10px;
+  }
+  .page .recoveryMetric strong {
+    font-size: 14px;
+  }
+  .page .searchRow input {
+    min-width: 0;
+    flex-basis: 100%;
+    padding-bottom: 8px;
+  }
+  .page .memberCount {
+    padding-top: 0;
+  }
+  .page .rowBalance {
+    margin-left: 0;
   }
 }

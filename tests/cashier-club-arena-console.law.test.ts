@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest';
 /**
  * #ClubArenaConsole IS THE CASHIER'S VISUAL AUTHORITY (Dan, September 2026).
  *
- * Every Cashier page and every Cashier-owned dialog is rendered ON the approved
+ * October 10 owner direction replaces routed page frames with Players-style
+ * CashierWorkspace layouts. Cashier-owned dialogs remain ON the approved
  * painted master through `SpadeConsole`, directly: no wrapper framework, no
  * retired vault picture, no flat `x` close glyph, no CSS-built frame, plate or
  * pill on the glass, no browser number spinner, and the console's own crest
@@ -33,13 +34,13 @@ const CASHIER_SURFACES: ReadonlyArray<{
   {
     tsx: 'src/pages/CashierTradePage.tsx',
     css: 'src/pages/CashierTradePage.module.css',
-    consoles: 5,
+    consoles: 4,
   },
-  { tsx: 'src/pages/CashierPage.tsx', css: 'src/pages/CashierPage.module.css', consoles: 3 },
+  { tsx: 'src/pages/CashierPage.tsx', css: 'src/pages/CashierPage.module.css', consoles: 1 },
   {
     tsx: 'src/pages/CashierStatementsPage.tsx',
     css: 'src/pages/CashierStatementsPage.module.css',
-    consoles: 1,
+    consoles: 0,
   },
   {
     tsx: 'src/components/wallet/WalletCashierModal.tsx',
@@ -126,9 +127,10 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
     '$tsx renders $consoles console(s) directly on SpadeConsole',
     ({ tsx, consoles }) => {
       const source = read(tsx);
-      expect(source).toMatch(
-        /import \{[^}]*\bSpadeConsole\b[^}]*\} from '[^']*\/console\/SpadeConsole'/
-      );
+      if (consoles > 0)
+        expect(source).toMatch(
+          /import \{[^}]*\bSpadeConsole\b[^}]*\} from '[^']*\/console\/SpadeConsole'/
+        );
       expect(consoleTags(source)).toHaveLength(consoles);
     }
   );
@@ -226,6 +228,9 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
     expect(read('src/pages/CashierTradePage.tsx')).toContain('title="Cashier"');
     expect(read('src/pages/CashierPage.tsx')).toContain('title="Cashier"');
     expect(read('src/pages/CashierStatementsPage.tsx')).toContain('title="Cashier"');
+    for (const page of ['CashierTradePage', 'CashierPage', 'CashierStatementsPage']) {
+      expect(read(`src/pages/${page}.tsx`)).toContain('<CashierWorkspace');
+    }
   });
 
   it('puts every Trade Cashier dialog on the painted authority', () => {

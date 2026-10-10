@@ -167,7 +167,11 @@ beforeEach(() => {
   maybeSingle.mockReset();
   selectSpy.mockReset();
   rpcSpy.mockReset();
-  rpcSpy.mockResolvedValue({ data: '2026-09-21T15:16:19.000Z', error: null });
+  rpcSpy.mockImplementation(async (name) =>
+    name === 'fn_ca_operator_floor_state'
+      ? { data: { hold: null, close: null }, error: null }
+      : { data: '2026-09-21T15:16:19.000Z', error: null }
+  );
   // The club read that follows the table read in refreshRakeConfig.
   maybeSingle.mockResolvedValue({ data: null });
   loadTable.mockReset();
@@ -301,7 +305,7 @@ describe('a halted table finishes its hand and deals no other', () => {
     // only a polled lock raised it returns at once, and the branch continues -
     // a hot spin. All three polled locks are excluded together.
     expect(DEALING).toMatch(
-      /if \(!this\.adminPauseLock && !this\.maintenanceLock && !this\.dealingHaltLock\)/
+      /if \(\s*!this\.adminPauseLock &&\s*!this\.maintenanceLock &&\s*!this\.dealingHaltLock &&\s*!this\.operatorFloorPaused\s*\)/
     );
     expect(GATE, 'the halt must not park on a gate nobody will open').not.toMatch(
       /awaitPauseGate|releasePauseGate|handForHandResolve/

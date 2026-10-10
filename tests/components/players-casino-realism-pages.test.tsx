@@ -9,6 +9,7 @@ const state = vi.hoisted(() => ({
     clubId: 'shark-club',
     userId: '11111111-1111-4111-8111-111111111111',
   } as Record<string, string>,
+  viewerId: 'viewer-1',
   navigate: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
   getMemberDetail: vi.fn(),
@@ -25,7 +26,7 @@ vi.mock('react-router-dom', () => ({
 }));
 
 vi.mock('../../src/hooks/useAuthUser', () => ({
-  useAuthUser: () => ({ user: { id: 'viewer-1' }, isHydrating: false }),
+  useAuthUser: () => ({ user: { id: state.viewerId }, isHydrating: false }),
 }));
 
 vi.mock('../../src/components/common/Toast', () => ({
@@ -147,6 +148,7 @@ beforeEach(() => {
     clubId: 'shark-club',
     userId: '11111111-1111-4111-8111-111111111111',
   };
+  state.viewerId = 'viewer-1';
   state.navigate.mockReset();
   state.toast.success.mockReset();
   state.toast.error.mockReset();
@@ -236,6 +238,9 @@ describe('Players detail surfaces', () => {
     await waitFor(() => expect(state.toast.error).toHaveBeenCalled());
     expect(state.updateMemberNotes).toHaveBeenCalledTimes(1);
     const first = state.updateMemberNotes.mock.calls[0];
+    expect(screen.getByRole('button', { name: 'Revert' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save Notes' })).toBeEnabled();
+    expect(screen.getByText('Save Outcome Is Unconfirmed. Retry The Same Request.')).toBeVisible();
     fireEvent.change(name, { target: { value: 'Newer Draft' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save Notes' }));
     await waitFor(() => expect(state.updateMemberNotes).toHaveBeenCalledTimes(2));
@@ -384,4 +389,78 @@ describe('Players Casino Realism asset and interaction contracts', () => {
     expect(cashier).toContain('.chip-transfer-modal .form-group');
     expect(cashier).not.toMatch(/(^|\})\s*\.form-group\s*\{/m);
   });
+});
+
+it('clears private statistics when the signed-in viewer changes and ignores their late answer', async () => {
+  let finishOld!: (value: typeof memberStats) => void;
+  state.getMemberStatistics.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishOld = resolve;
+      })
+  );
+  const view = render(<PlayerStatisticsPage />);
+  await waitFor(() => expect(state.getMemberStatistics).toHaveBeenCalledTimes(1));
+  const oldSignal = state.getMemberStatistics.mock.calls[0][4] as AbortSignal;
+  state.viewerId = 'viewer-2';
+  state.getMemberStatistics.mockResolvedValue({
+    ...memberStats,
+    authorized: false,
+    reason: 'restricted',
+  });
+  view.rerender(<PlayerStatisticsPage />);
+  expect(await screen.findByText('Statistics Restricted')).toBeVisible();
+  expect(oldSignal.aborted).toBe(true);
+  await act(async () => finishOld(memberStats));
+  expect(screen.queryByRole('heading', { name: 'Playing Style' })).not.toBeInTheDocument();
+});
+
+it('preserves unsaved notes when a range refresh returns newer remote notes', async () => {
+  state.getMemberDetail.mockResolvedValue({
+    ...memberDetail,
+    capabilities: { ...memberDetail.capabilities, can_edit_notes: true },
+  });
+  render(<MemberManagementPage />);
+  const name = await screen.findByRole('textbox', { name: 'Nickname' });
+  fireEvent.change(name, { target: { value: 'Local Draft' } });
+  state.getMemberDetail.mockResolvedValue({
+    ...memberDetail,
+    identity: { ...memberDetail.identity, nickname: 'Remote Name', remark: 'Remote Remark' },
+    capabilities: { ...memberDetail.capabilities, can_edit_notes: true },
+  });
+  fireEvent.click(screen.getByRole('button', { name: '7 Days' }));
+  await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(2));
+  await waitFor(() =>
+    expect(screen.getByRole('textbox', { name: 'Remark' })).toHaveValue('Remote Remark')
+  );
+  expect(name).toHaveValue('Local Draft');
+  expect(screen.getByRole('button', { name: 'Save Notes' })).toBeEnabled();
+});
+
+it('keeps a local draft and original note receipt through a failed range read and retry', async () => {
+  state.getMemberDetail.mockResolvedValue({
+    ...memberDetail,
+    capabilities: { ...memberDetail.capabilities, can_edit_notes: true },
+  });
+  state.updateMemberNotes.mockRejectedValueOnce(new Error('Unknown Acknowledgement'));
+  state.updateMemberNotes.mockResolvedValue({
+    nickname: 'Local Draft',
+    remark: memberDetail.identity.remark,
+    replayed: true,
+  });
+  render(<MemberManagementPage />);
+  const name = await screen.findByRole('textbox', { name: 'Nickname' });
+  fireEvent.change(name, { target: { value: 'Local Draft' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save Notes' }));
+  await waitFor(() => expect(state.toast.error).toHaveBeenCalled());
+  const original = state.updateMemberNotes.mock.calls[0];
+  state.getMemberDetail.mockRejectedValueOnce(new Error('range unavailable'));
+  fireEvent.click(screen.getByRole('button', { name: '7 Days' }));
+  expect(await screen.findByText('The Member Ledger Did Not Respond')).toBeVisible();
+  expect(screen.queryByText('Cash Hands')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry Member' }));
+  expect(await screen.findByRole('textbox', { name: 'Nickname' })).toHaveValue('Local Draft');
+  fireEvent.click(screen.getByRole('button', { name: 'Save Notes' }));
+  await waitFor(() => expect(state.updateMemberNotes).toHaveBeenCalledTimes(2));
+  expect(state.updateMemberNotes.mock.calls[1]).toEqual(original);
 });

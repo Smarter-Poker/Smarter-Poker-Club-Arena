@@ -333,6 +333,21 @@ export default function MemberManagementPage() {
             Retry Member
           </button>
         </div>
+        {/* Keep the note owner mounted through a recoverable read failure.
+            Financial sections stay absent and edits wait for verification. */}
+        <div className="mm-ledger-grid" key={`ledger:${clubId}:${userId}:${user?.id}`}>
+          {identity?.user_id && detail?.capabilities.can_view_notes && (
+            <NotesEditor
+              key={`${resolvedClubId}:${identity.user_id}`}
+              clubId={resolvedClubId}
+              userId={identity.user_id}
+              initialNickname={identity.nickname}
+              initialRemark={identity.remark}
+              editable={detail.capabilities.can_edit_notes}
+              disabled
+            />
+          )}
+        </div>
       </div>
     );
   }
@@ -432,7 +447,7 @@ export default function MemberManagementPage() {
         </div>
       </section>
 
-      <div className="mm-ledger-grid">
+      <div className="mm-ledger-grid" key={`ledger:${clubId}:${userId}:${user?.id}`}>
         {/* ── Nickname and remark ──────────────────────────────────────────── */}
 
         {detail!.capabilities.can_view_notes && (
@@ -723,12 +738,14 @@ function NotesEditor({
   initialNickname,
   initialRemark,
   editable,
+  disabled = false,
 }: {
   clubId: string | null;
   userId: string;
   initialNickname: string | null;
   initialRemark: string | null;
   editable: boolean;
+  disabled?: boolean;
 }) {
   const toast = useToast();
   const isMountedRef = useIsMounted();
@@ -738,6 +755,7 @@ function NotesEditor({
   const [nicknameUnsaved, setNicknameUnsaved] = useState(false);
   const [remarkUnsaved, setRemarkUnsaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveUnconfirmed, setSaveUnconfirmed] = useState(false);
 
   // The saved values, so a blur that changed nothing does not write anything.
   const savedRef = useRef({
@@ -756,17 +774,28 @@ function NotesEditor({
   );
 
   useEffect(() => {
-    setNickname(initialNickname ?? '');
-    setRemark(initialRemark ?? '');
-    savedRef.current = { nickname: initialNickname ?? '', remark: initialRemark ?? '' };
-    draftRef.current = { nickname: initialNickname ?? '', remark: initialRemark ?? '' };
-    queuedSaveRef.current = false;
-    setNicknameUnsaved(false);
-    setRemarkUnsaved(false);
+    // A range refresh may carry another editor's newer notes. Keep local
+    // unsaved fields and unresolved operation payloads until explicitly saved.
+    const incoming = { nickname: initialNickname ?? '', remark: initialRemark ?? '' };
+    const previous = savedRef.current;
+    const draft = draftRef.current;
+    if (!pendingNoteRef.current && !savingRef.current) {
+      if (draft.nickname === previous.nickname) {
+        draft.nickname = incoming.nickname;
+        setNickname(incoming.nickname);
+      }
+      if (draft.remark === previous.remark) {
+        draft.remark = incoming.remark;
+        setRemark(incoming.remark);
+      }
+      savedRef.current = incoming;
+    }
+    setNicknameUnsaved(draft.nickname !== savedRef.current.nickname);
+    setRemarkUnsaved(draft.remark !== savedRef.current.remark);
   }, [initialNickname, initialRemark, userId]);
 
   const save = useCallback(async () => {
-    if (!clubId) return;
+    if (!clubId || disabled) return;
     if (savingRef.current) {
       queuedSaveRef.current = true;
       return;
@@ -787,6 +816,7 @@ function NotesEditor({
         draft.requestId
       );
       pendingNoteRef.current = null;
+      if (isMountedRef.current) setSaveUnconfirmed(false);
       const persisted = {
         nickname: result.nickname ?? '',
         remark: result.remark ?? '',
@@ -816,6 +846,7 @@ function NotesEditor({
       queuedSaveRef.current = false; // Unknown writes require an explicit retry of the same receipt.
       reportError(e, 'MemberManagementPage.saveNotes');
       if (!isMountedRef.current) return;
+      setSaveUnconfirmed(true);
       setNicknameUnsaved(savedRef.current.nickname !== draftRef.current.nickname);
       setRemarkUnsaved(savedRef.current.remark !== draftRef.current.remark);
       toast.error(safeErrorMessage(e, 'Could Not Save. Your Text Is Still Here'));
@@ -827,7 +858,7 @@ function NotesEditor({
         queueMicrotask(() => void save());
       }
     }
-  }, [clubId, isMountedRef, toast, userId]);
+  }, [clubId, disabled, isMountedRef, toast, userId]);
 
   const discardDraft = useCallback(() => {
     const saved = savedRef.current;
@@ -860,6 +891,8 @@ function NotesEditor({
         <input
           type="text"
           value={nickname}
+          aria-label="Nickname"
+          disabled={disabled}
           maxLength={64}
           placeholder={toTitleCase('enter the nickname here...')}
           onChange={(e) => {
@@ -877,6 +910,8 @@ function NotesEditor({
         <input
           type="text"
           value={remark}
+          aria-label="Remark"
+          disabled={disabled}
           maxLength={240}
           placeholder={toTitleCase('enter remark here...')}
           onChange={(e) => {
@@ -893,15 +928,17 @@ function NotesEditor({
         <span className="mm-notes__status" role="status" aria-live="polite">
           {saving
             ? 'Saving Through The Audited Club Ledger...'
-            : nicknameUnsaved || remarkUnsaved
-              ? 'Changes Are Still Local To This Device.'
-              : 'Notes Match The Audited Club Record.'}
+            : saveUnconfirmed
+              ? 'Save Outcome Is Unconfirmed. Retry The Same Request.'
+              : nicknameUnsaved || remarkUnsaved
+                ? 'Changes Are Still Local To This Device.'
+                : 'Notes Match The Audited Club Record.'}
         </span>
         <button
           type="button"
           className="mm-notes__discard"
           onClick={discardDraft}
-          disabled={saving || (!nicknameUnsaved && !remarkUnsaved)}
+          disabled={disabled || saving || saveUnconfirmed || (!nicknameUnsaved && !remarkUnsaved)}
         >
           Revert
         </button>
@@ -909,7 +946,7 @@ function NotesEditor({
           type="button"
           className="mm-notes__save"
           onClick={() => void save()}
-          disabled={saving || (!nicknameUnsaved && !remarkUnsaved)}
+          disabled={disabled || saving || (!saveUnconfirmed && !nicknameUnsaved && !remarkUnsaved)}
         >
           {saving ? 'Saving...' : 'Save Notes'}
         </button>
@@ -1402,7 +1439,7 @@ function RoleSection({
                 <span className="mm-roles__option-name" style={{ color: roleColor(role) }}>
                   {roleLabel(role)}
                 </span>
-                <span className="mm-roles__option-desc">{ROLE_DESCRIPTION[role]}</span>
+                <span className="mm-roles__option-desc">{toTitleCase(ROLE_DESCRIPTION[role])}</span>
               </span>
             </button>
           ))}

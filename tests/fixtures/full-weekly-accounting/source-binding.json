@@ -443,12 +443,12 @@
     "tests/fixtures/sep8-spin-custody/README.md": "be6f3eb4eb716056e9ecc8863d326c78de3d176662b77e95c2951aa42453ff73",
     "tests/fixtures/sep8-spin-custody/late-fault.sql": "43653b983d870248707525058134de21821aa8f4f1c55df3d42f0a1e02d8b7b7",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
-    "tests/unit/fixtureNativeCi.test.ts": "a708facf9f8769820d54df76d06b4ae0eb90a80d76bd403a8ae0dc7028fac7ae",
+    "tests/unit/fixtureNativeCi.test.ts": "3a442cdfb793eb70eb158ade1b9c2ed57e4428d3fcf8db248bae982899e6863a",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "b703d1d4b5cf539da7a6eee60021a871a1055ca6b4052f52511fb60b61651153",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "8e4a9ccadaa9a7f775a125fdbbc73a660cb5fbfa5d9051066c98fa2c5ced06e9",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -488,7 +488,7 @@
     "tests/fixtures/earlybird-fee-custody/after.sql": "5c86539a1f6e4904d61c4f3c2ee79b98fbc29b976adbc89fc38f8a4be8c97e0b",
     "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62",
     "supabase/migrations/20260919025445_early_bird_original_fee_custody_after_player_finality.sql": "3b3fa10d81077d09fc997bb0549ee7dd73b12726406f92da17105d002d021ab8",
-    "tests/fixtures/earlybird-fee-custody/source-binding.json": "ea75235733c7fd064f4a8150112da64ec4df23c239e508265cdfb911d2a2ace1",
+    "tests/fixtures/earlybird-fee-custody/source-binding.json": "62d33c1691440dc3e1e952f41b73168b364da875884bbdc2c40f6dbf3e2f3991",
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536",
@@ -3892,5 +3892,28 @@
     ],
     "reason": "Club Arena Cashier launch audit, 2026-10-09 (docs/changelog/2026-10-09-cashier-launch-audit.md). Eight repository test and README bindings move; no accounting component, SQL, captured catalog fixture, limit or native assertion changed. tests/unit/CashoutService.test.ts: S-01 adds a describe that maps SQLSTATE 22023/23514/42501 refusals of fn_cashout_request_v2/approve_v2/release_v2 to the new definitive CashoutRefusedError and keeps 57014/40001/08xxx/unknown codes as CashoutOutcomeUnknownError; S-08/S-11 delete the cases for the removed dead wrappers (sendChipsToPlayer, claimBackSend, removeChipsFromPlayer, completeCashout, expireStale) and replace them with a case pinning that no such method exists; every other assertion is unchanged. tests/cashout-escrow-flow.test.ts: the same S-08/S-11 wrapper cases become absence pins (no service method, no rpc('fn_admin_remove_player_chips'|'fn_agent_wallet_claim_back'|'fn_agent_wallet_send') and no '|| newOpId()' in CashoutService.ts); the unused accept helper is removed; every hold/approval/decline/cancellation receipt assertion is unchanged. tests/fixtures/cashier-document-authority/README.md: S-02 corrects the title and adds a status note that component33 is installed on production (2026-09-14) and was verified live on 2026-10-09 by md5(pg_get_functiondef); the remaining UNRUN lines describe the authored regression cases, unchanged. tests/components/cashier-cashout-generations.test.tsx: P-06/P-15 classic cashier Title Case and tab fixes by the pages fixer: the default tab query moves from 'Buy-In' to 'Cash-Out' (the Buy-In dead end tab was removed), the amount label from 'AMOUNT:' to 'Amount' and the confirm button from 'CONFIRM SECURE CASHOUT' to 'Confirm Secure Cashout'; the generation, replay and receipt assertions are unchanged. tests/unit/discardedErrorReadRatchet.test.ts: S-07 lowers the src/components/wallet/ChipMintModal.tsx baseline from 2 to 0 because its mint pre-flight now reads the club through fn_club_money_panel and binds every error; a ratchet tightening, not a relaxation. tests/cashier-weekly-statements.test.tsx: P-09/R-08 by the pages fixer: the weekly statement rows now print whole chips rounded down ('Retained 40 Chips', 'Rake Funding 100 Chips', 'Paid By Club 60 Chips') instead of 40.05 / 100.25 / 60.20, and the not-present check widens to refuse the exact decimals as well; the reader still keeps the exact figures and every scope, stale-read and empty-state assertion is unchanged. tests/config/roleScopedCashier.test.ts: S-08: 'every cashout leg goes through its own RPC' keeps the four cashout RPC pins on CashoutService and moves the fn_agent_wallet_send / fn_agent_wallet_claim_back pins to WalletCashierModal, which calls them with a retained op id, while also asserting the service no longer names them; every other assertion is unchanged. tests/unit/CashoutOperation.test.ts (release integration, S-01 follow-through): one additive case, 'a definitive balance refusal acknowledges the generation so the next start mints a fresh id', pins that runCashoutOperation acknowledges the admitted generation when the service rejects with CashoutRefusedError (rpc resolves {data:null,error:{code:'23514',message:'cashier_wallet_balance_unverified'}}, the caller sees 'Not Enough Chips For That Cashout.', exactly one rpc call, generations[0].acknowledged and every start acknowledged); every existing generation, replay, storage-interruption and receipt assertion is unchanged.",
     "verification": "Each sha256 is hashlib.sha256(path.read_bytes()).hexdigest() of the file on disk in the audit worktree at the moment of this restamp, after the repository's prettier formatting pass, no normalisation; each previous_sha256 is the value this binding held at base commit 3bfc46f877. The diffs were read in full before restamping. npx vitest run on tests/unit/CashoutService.test.ts, tests/unit/CashoutOperation.test.ts (43 passed after the additive case), tests/cashout-escrow-flow.test.ts, tests/components/cashier-cashout-generations.test.tsx, tests/unit/discardedErrorReadRatchet.test.ts tests/cashier-weekly-statements.test.tsx and tests/config/roleScopedCashier.test.ts passes on these bytes; python3 scripts/ci/verify-source-bindings.py, python3 -m unittest discover -s scripts/ci -p test_cash_native_pgcron.py and tests/every-pinned-source-stays-bound.law.test.ts are run after this restamp and their outputs are in the services fixer report. This file is not pinned by any other binding or by the cash native manifest, so nothing cascades. No native financial execution and no production installation is established by this refresh; no production object was read, created or changed by it."
+  },
+  "stableAdminFormattedIntegration20261010": {
+    "reason": "Reviewed normal formatter changes to additive fixtureNativeCi assertions and combined current-main workflow. Incoming funding recovery check and every original accounting assertion/status are retained. Refresh nested current evidence identity only; no new native or production proof.",
+    "changes": [
+      {
+        "section": "repository_fixtures",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": "a708facf9f8769820d54df76d06b4ae0eb90a80d76bd403a8ae0dc7028fac7ae",
+        "current": "3a442cdfb793eb70eb158ade1b9c2ed57e4428d3fcf8db248bae982899e6863a"
+      },
+      {
+        "section": "repository_fixtures",
+        "path": "tests/fixtures/earlybird-fee-custody/source-binding.json",
+        "previous": "ea75235733c7fd064f4a8150112da64ec4df23c239e508265cdfb911d2a2ace1",
+        "current": "62d33c1691440dc3e1e952f41b73168b364da875884bbdc2c40f6dbf3e2f3991"
+      },
+      {
+        "section": "repository_fixtures",
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous": "b703d1d4b5cf539da7a6eee60021a871a1055ca6b4052f52511fb60b61651153",
+        "current": "8e4a9ccadaa9a7f775a125fdbbc73a660cb5fbfa5d9051066c98fa2c5ced06e9"
+      }
+    ]
   }
 }

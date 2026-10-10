@@ -27,7 +27,7 @@
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/restore-synthetic-terms.sql": "9d14a15482330a285c5346e9607a3beec85b2b21b46dcec3a15372a1524e5596",
     "tests/fixtures/sep8-spin-custody/setup.sql": "eded939b6797c5e561e12071cb08938a25359b791cdb810fc49b5e0424565f29",
-    "tests/unit/fixtureNativeCi.test.ts": "a708facf9f8769820d54df76d06b4ae0eb90a80d76bd403a8ae0dc7028fac7ae",
+    "tests/unit/fixtureNativeCi.test.ts": "3a442cdfb793eb70eb158ade1b9c2ed57e4428d3fcf8db248bae982899e6863a",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -831,5 +831,16 @@
         "after": "2fc728ea5555ced40641d89f8c85b8f094a09f9f14d5decaa405ffbc5e11ea2a"
       }
     }
+  },
+  "stableAdminFormattedIntegration20261010": {
+    "reason": "Reviewed normal formatter changes to additive fixtureNativeCi assertions and combined current-main workflow. Incoming funding recovery check and every original accounting assertion/status are retained. Refresh nested current evidence identity only; no new native or production proof.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": "a708facf9f8769820d54df76d06b4ae0eb90a80d76bd403a8ae0dc7028fac7ae",
+        "current": "3a442cdfb793eb70eb158ade1b9c2ed57e4428d3fcf8db248bae982899e6863a"
+      }
+    ]
   }
 }

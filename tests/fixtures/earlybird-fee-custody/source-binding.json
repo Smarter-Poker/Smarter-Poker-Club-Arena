@@ -15,7 +15,7 @@
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "supabase/migrations/20260918122532_five_original_spin_standings_retain_their_recorded_cash_outc.sql": "9f6e0b02abea54394d317c6d20f8e47ae10edefc9ba6c12f6542c23daf4540c4",
     ".prettierignore": "09ce1f38a5e012220b004ee809caf9fdcf0e61d9d72e924fd82341de73d53874",
-    "tests/unit/fixtureNativeCi.test.ts": "a708facf9f8769820d54df76d06b4ae0eb90a80d76bd403a8ae0dc7028fac7ae",
+    "tests/unit/fixtureNativeCi.test.ts": "3a442cdfb793eb70eb158ade1b9c2ed57e4428d3fcf8db248bae982899e6863a",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536"
   },
   "restamp_audit": [
@@ -183,6 +183,17 @@
         "path": "tests/unit/fixtureNativeCi.test.ts",
         "previous": "de6b3df38897164bbd2959b7add96db5be7594007388b0de552dd3f94a1ad615",
         "current": "d6e9aca796e2719eb8c6b5ee284eb06f70b2004d6c3720abd1b79718cd9883b3"
+      }
+    ]
+  },
+  "stableAdminFormattedIntegration20261010": {
+    "reason": "Reviewed normal formatter changes to additive fixtureNativeCi assertions and combined current-main workflow. Incoming funding recovery check and every original accounting assertion/status are retained. Refresh nested current evidence identity only; no new native or production proof.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": "a708facf9f8769820d54df76d06b4ae0eb90a80d76bd403a8ae0dc7028fac7ae",
+        "current": "3a442cdfb793eb70eb158ade1b9c2ed57e4428d3fcf8db248bae982899e6863a"
       }
     ]
   }

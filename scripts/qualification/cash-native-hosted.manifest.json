@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 197931,
-      "sha256": "136a28a553939892e2a53f8a0e2b2f99316d57a2f4ccb759c1af229d607611dc"
+      "bytes": 198155,
+      "sha256": "872269a39245dca8ddd5438ebd018c3f0e5bb04643184468c418fcb81ed62738"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1803,5 +1803,13 @@
         "sha256": "0ed8b0f3eedcd503d45f07a52cb720a436cd6f9f410db9eb656d984b23d3fb9f"
       }
     }
+  },
+  "stableAdminCurrentMainIntegration20261010": {
+    "reason": "Preserve incoming funding-recovery native step and both Stable Admin native owner qualifiers. Only reviewed combined workflow fingerprint changes; all original financial fixtures, statuses and audit history are retained. This is source binding, not native execution.",
+    "previousCandidateWorkflowPin": {
+      "bytes": 197931,
+      "sha256": "136a28a553939892e2a53f8a0e2b2f99316d57a2f4ccb759c1af229d607611dc"
+    },
+    "incomingMainRevision": "e057b9d71b"
   }
 }

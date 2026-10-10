@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "9b80166752ba255d91dbdabf11cd7ed02489c28d2ddcef28b5dc9edea78ce76e",
+    "scripts/ci/classify-ci-changes.mjs": "846747f1e40dcb9c027feb8aadedb1f1d469fcfc91315b4e9ff2e2af77af0f64",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
@@ -723,5 +723,16 @@
         "after": "2fc728ea5555ced40641d89f8c85b8f094a09f9f14d5decaa405ffbc5e11ea2a"
       }
     }
+  },
+  "stableAdminCancelLaneQualification20261010": {
+    "reason": "Reviewed additive native cancellation lane classifier and required execution assertions. Existing financial fixture/source/commands/assertions and all historical pins remain unchanged. Refresh exact current source identity; this is not production or financial qualification.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "9b80166752ba255d91dbdabf11cd7ed02489c28d2ddcef28b5dc9edea78ce76e",
+        "current": "846747f1e40dcb9c027feb8aadedb1f1d469fcfc91315b4e9ff2e2af77af0f64"
+      }
+    ]
   }
 }

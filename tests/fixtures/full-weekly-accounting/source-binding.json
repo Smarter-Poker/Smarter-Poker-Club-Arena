@@ -426,7 +426,7 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "9b80166752ba255d91dbdabf11cd7ed02489c28d2ddcef28b5dc9edea78ce76e",
+    "scripts/ci/classify-ci-changes.mjs": "846747f1e40dcb9c027feb8aadedb1f1d469fcfc91315b4e9ff2e2af77af0f64",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
     "tests/fixtures/legacy-fee-finality/source-binding.json": "9109faf5f99316100217de21f582ec8f09c42199f26d596b3928c1fbccfbe322",
@@ -443,7 +443,7 @@
     "tests/fixtures/sep8-spin-custody/README.md": "be6f3eb4eb716056e9ecc8863d326c78de3d176662b77e95c2951aa42453ff73",
     "tests/fixtures/sep8-spin-custody/late-fault.sql": "43653b983d870248707525058134de21821aa8f4f1c55df3d42f0a1e02d8b7b7",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
-    "tests/unit/fixtureNativeCi.test.ts": "3a442cdfb793eb70eb158ade1b9c2ed57e4428d3fcf8db248bae982899e6863a",
+    "tests/unit/fixtureNativeCi.test.ts": "5f3225db066ecc1c3023aaf61be0173967383268b25237b10f2914976f5dbe00",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
@@ -3913,6 +3913,23 @@
         "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
         "previous": "b703d1d4b5cf539da7a6eee60021a871a1055ca6b4052f52511fb60b61651153",
         "current": "8e4a9ccadaa9a7f775a125fdbbc73a660cb5fbfa5d9051066c98fa2c5ced06e9"
+      }
+    ]
+  },
+  "stableAdminCancelLaneQualification20261010": {
+    "reason": "Reviewed additive native cancellation lane classifier and required execution assertions. Existing financial fixture/source/commands/assertions and all historical pins remain unchanged. Refresh exact current source identity; this is not production or financial qualification.",
+    "changes": [
+      {
+        "section": "repository_fixtures",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "9b80166752ba255d91dbdabf11cd7ed02489c28d2ddcef28b5dc9edea78ce76e",
+        "current": "846747f1e40dcb9c027feb8aadedb1f1d469fcfc91315b4e9ff2e2af77af0f64"
+      },
+      {
+        "section": "repository_fixtures",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": "3a442cdfb793eb70eb158ade1b9c2ed57e4428d3fcf8db248bae982899e6863a",
+        "current": "5f3225db066ecc1c3023aaf61be0173967383268b25237b10f2914976f5dbe00"
       }
     ]
   }

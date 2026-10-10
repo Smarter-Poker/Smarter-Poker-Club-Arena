@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 199252,
-      "sha256": "9603a0e218e20ccd08c7685cb098123749abe04969c4556f08a051573c27a865"
+      "bytes": 199212,
+      "sha256": "3bcc969104421d78aa3b6b686b1b9b1e933f9138db855a7b3867c45a124e5fe5"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -2017,5 +2017,8 @@
         }
       }
     }
+  },
+  "operatorPauseNativeSelfBuild20261010": {
+    "reason": "Own the server emit prerequisite in the maintained native PostgreSQL runner, so both direct CI and generic node:test pre-push execute exact current compiled engine modules. Remove duplicate CI build only; preserve all22 native assertions, original timeout, historical pins and SOURCE_ONLY_UNRUN. Fingerprint refresh is source identity, not qualification."
   }
 }

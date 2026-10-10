@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Every entry point executes freshly compiled committed server modules.
+# The outer node:test pre-push path does not have the CI build prerequisite.
+npm run build --prefix "$repo/server"
 pgbin="${PG17_BINDIR:-/opt/homebrew/opt/postgresql@17/bin}"
 parent="${OPERATOR_HOLD_PG_SCRATCH_PARENT:-/Volumes/SmarterWork/agent-work}"
 [[ -d "$parent" ]] || exit 2

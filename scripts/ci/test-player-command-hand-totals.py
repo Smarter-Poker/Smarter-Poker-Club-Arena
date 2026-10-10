@@ -260,12 +260,19 @@ try:
     ranged=q(f"SELECT ca_club_member_detail('{B}','{U}','2026-10-01','2026-10-01')->'stats';")
     assert overall==ranged,(overall,ranged)
     print('PASS real member record overall equals independently ranged facts',flush=True)
+    q((ROOT/'scripts/ci/fixtures/player-command-hand-totals/downline-preimage.sql').read_text())
+    q(f"UPDATE club_members SET agent_id='{U}' WHERE user_id='{V}' AND club_id='{B}';")
+    downline_before=q(f"SELECT row_to_json(d) FROM ca_club_member_downline('{B}','{U}') d;")
+    q((ROOT/'supabase/migrations/20261010074219_player_downline_reads_exact_retained_hand_totals.sql').read_text())
+    assert q(f"SELECT row_to_json(d) FROM ca_club_member_downline('{B}','{U}') d;")==downline_before
+    print('PASS real downline projection preserves exact hierarchy and financial rows',flush=True)
     q('ALTER TABLE ca_hand_facts RENAME TO facts_unavailable_to_roster;')
     q("CREATE FUNCTION public.reject_fact_read() RETURNS numeric LANGUAGE plpgsql VOLATILE AS $$BEGIN RAISE EXCEPTION 'unexpected fact scan'; END;$$;")
     q("CREATE VIEW ca_hand_facts AS SELECT hand_id,user_id,club_id,rake_paid+public.reject_fact_read() AS rake_paid,net+public.reject_fact_read() AS net,tournament_id,played_at FROM facts_unavailable_to_roster;")
     assert q(f"SELECT count(*) FROM ca_club_roster_rows('{B}')") == '2'
     assert q(f"SELECT ca_club_member_detail('{B}','{U}')->'stats';")==overall
-    print('PASS roster and overall member record do not scan hand facts after activation', flush=True)
+    assert q(f"SELECT row_to_json(d) FROM ca_club_member_downline('{B}','{U}') d;")==downline_before
+    print('PASS roster, member lifetime and downline do not scan hand facts after activation', flush=True)
     print('PLAYER COMMAND HAND TOTALS QUALIFICATION PASSED', flush=True)
 finally:
     for child in children:

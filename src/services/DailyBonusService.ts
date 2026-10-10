@@ -327,6 +327,50 @@ class DailyBonusServiceClass {
    * Claim one tile. Resolves with the server's verdict; only throws on a
    * transport failure. A refusal is a business outcome the sheet renders.
    */
+  async claimAll(today: string): Promise<{
+    success: boolean;
+    reason?: string;
+    results?: DailyBonusClaimResult[];
+    status?: DailyBonusStatus;
+  }> {
+    const { data, error } = await supabase.rpc('fn_ca_daily_bonus_claim_all', {
+      p_bonus_date: today,
+      p_request_id: this.requestIdFor(today, 0),
+    });
+    if (error) {
+      reportError(error, 'DailyBonusService.claimAll');
+      throw new Error('Could Not Reach The Bonus Ledger, Try Again');
+    }
+    if (
+      !data ||
+      typeof data.success !== 'boolean' ||
+      (data.success &&
+        (!Array.isArray(data.results) || !data.status || !Array.isArray(data.status.tiles)))
+    ) {
+      throw new Error('Could Not Read The Bonus Receipt, Try Again');
+    }
+    if (data.success) {
+      masterBus.emit('BALANCE_UPDATED', { source: 'daily_bonus' });
+      for (const result of (data.results ?? []) as DailyBonusClaimResult[]) {
+        if (!result.success || !result.granted || result.idempotent) continue;
+        const g = result.granted;
+        if (g.kind === 'diamonds' && typeof g.balance_after === 'number') {
+          masterBus.emit('DIAMOND_BALANCE_CHANGED', {
+            newBalance: g.balance_after,
+            delta: g.diamonds,
+            source: 'daily_bonus',
+          });
+        }
+        masterBus.emit('DAILY_REWARD_CLAIMED', {
+          amount: g.kind === 'diamonds' ? g.diamonds : g.quantity,
+          rewardType: g.kind,
+          streakDay: result.streak ?? 0,
+        });
+      }
+    }
+    return data;
+  }
+
   async claim(today: string, slot: number): Promise<DailyBonusClaimResult> {
     const requestId = this.requestIdFor(today, slot);
     const { data, error } = await supabase.rpc('fn_ca_daily_bonus_claim', {

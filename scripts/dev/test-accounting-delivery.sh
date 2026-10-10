@@ -307,3 +307,8 @@ run_game_probe diamond-wheel-v4-model-and-matrix 'NOTICE:  PASS Wheel v4 model a
 run_game_probe diamond-wheel-v4-draw-and-cards 'NOTICE:  PASS Wheel v4 draw and cards: 400 real spins with no repeated prize or game, the mix'
 run_game_probe diamond-spins-every-movement-has-a-ledger-row 'NOTICE:  PASS Every movement has a ledger row: exact entry journal and custody intake per spin, Promo-first then bank chip prizes journaled in chip_ledger, chip_transactions and union wallet rows, diamond prizes both sides, item grants as feature_purchases with retired custody, bonus as an award only, day equals movements, wallets equal journals, no documents'
 # --- end D1 wheel v4 2026-09-21 ---
+
+# Daily Bonus upgrade: same isolated native database and canonical ledger doors.
+"${diamond_psql[@]}" -f "$root/supabase/migrations/20261010062545_daily_bonus_varies_each_day_and_claims_all_rewards.sql"
+"${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
+run_game_probe daily-bonus-one-claim 'NOTICE:  PASS Daily Bonus: 400 dates, streak resets, preview repeatability, one batch, exact replay, stale day, request identity, VIP and auth permissions'

@@ -282,3 +282,47 @@ describe('DailyBonusService', () => {
     expect(diamondsToCentsLabel(125)).toBe('$1.25');
   });
 });
+
+it('claims all through one server request with a stable identity and no caller reward amounts', async () => {
+  mocks.rpc.mockReset();
+  mocks.emit.mockReset();
+  const receipt = {
+    success: true,
+    results: [{ success: true, granted: { kind: 'throwables', quantity: 2 } }],
+    status: STATUS,
+  };
+  mocks.rpc.mockResolvedValue({ data: receipt, error: null });
+  await dailyBonusService.claimAll('2026-10-10');
+  const args = mocks.rpc.mock.calls[0][1];
+  expect(mocks.rpc.mock.calls[0][0]).toBe('fn_ca_daily_bonus_claim_all');
+  expect(Object.keys(args).sort()).toEqual(['p_bonus_date', 'p_request_id']);
+  await dailyBonusService.claimAll('2026-10-10');
+  expect(mocks.rpc.mock.calls[1][1].p_request_id).toBe(args.p_request_id);
+});
+it('refuses a missing batch receipt instead of announcing success', async () => {
+  mocks.rpc.mockResolvedValue({ data: { success: true }, error: null });
+  await expect(dailyBonusService.claimAll('2026-10-10')).rejects.toThrow(
+    'Could Not Read The Bonus Receipt'
+  );
+});
+it('does not announce a replay as another reward', async () => {
+  mocks.emit.mockReset();
+  mocks.rpc.mockResolvedValue({
+    data: {
+      success: true,
+      results: [
+        {
+          success: true,
+          idempotent: true,
+          granted: { kind: 'diamonds', diamonds: 5, balance_after: 5 },
+        },
+      ],
+      status: STATUS,
+    },
+    error: null,
+  });
+  await dailyBonusService.claimAll('2026-10-10');
+  expect(mocks.emit.mock.calls.filter(([event]) => event === 'DAILY_REWARD_CLAIMED')).toHaveLength(
+    0
+  );
+});

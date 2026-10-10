@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   getStatus: vi.fn(),
   claim: vi.fn(),
+  claimAll: vi.fn(),
   markShown: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
@@ -31,12 +32,14 @@ vi.mock('../../src/services/DailyBonusService', async () => {
     dailyBonusService: {
       getStatus: mocks.getStatus,
       claim: mocks.claim,
+      claimAll: mocks.claimAll,
       markShown: mocks.markShown,
       requestIdFor: () => 'req',
     },
   };
 });
 
+import { applyClaim } from '../../src/components/daily-bonus/useDailyBonus';
 import DailyBonusSheet from '../../src/components/daily-bonus/DailyBonusSheet';
 
 const tile = (over: Record<string, unknown>) => ({
@@ -147,6 +150,15 @@ describe('DailyBonusSheet', () => {
   beforeEach(() => {
     mocks.getStatus.mockReset();
     mocks.claim.mockReset();
+    mocks.claimAll.mockReset();
+    mocks.claimAll.mockImplementation(async (today: string) => {
+      const base = await mocks.getStatus();
+      const result = await mocks.claim(today, undefined);
+      if (!result?.success) return result;
+      // Preserve phase-three render cases with an authoritative batch status.
+      const next = applyClaim(base, result.slot, result);
+      return { success: true, results: [result], status: next };
+    });
     mocks.markShown.mockReset();
     mocks.markShown.mockResolvedValue(undefined);
     mocks.toast.success.mockReset();
@@ -154,10 +166,10 @@ describe('DailyBonusSheet', () => {
     mocks.getStatus.mockResolvedValue(status);
   });
 
-  it('renders the server tiles with their cent value, the streak, the countdown and the week', async () => {
+  it('renders the server tiles without cash equivalents, the streak, the countdown and the week', async () => {
     const { container } = render(<DailyBonusSheet mode="inline" />);
     expect(await screen.findByText('+5')).toBeTruthy();
-    expect(screen.getByText('5¢ Value')).toBeTruthy();
+    expect(screen.queryByText(/¢|Value/)).toBeNull();
     expect(
       container.querySelector('.dbs-row[data-kind="rabbit_hunts"] .dbs-row__figure')?.textContent
     ).toBe('×1');
@@ -210,14 +222,14 @@ describe('DailyBonusSheet', () => {
     const srcs = Array.from(
       container.querySelectorAll<HTMLImageElement>('.dbs-row__render img')
     ).map((img) => img.getAttribute('src') ?? '');
-    expect(srcs.some((s) => s.endsWith('images/diamond-icon.png'))).toBe(true);
+    expect(srcs.some((s) => s.endsWith('images/daily-bonus/blue-diamond-v1.webp'))).toBe(true);
     expect(srcs.some((s) => s.endsWith('game-card-icons/rabbit-hunt.png'))).toBe(true);
     expect(srcs.some((s) => s.endsWith('game-card-icons/mystery-bounty.png'))).toBe(true);
     expect(srcs.some((s) => s.endsWith('images/global-header/vip.png'))).toBe(true);
     expect(screen.getByTestId('throwable-render').getAttribute('data-id')).toBe('tomato');
     expect(container.querySelectorAll('.dbs-row__render svg')).toHaveLength(0);
     // Every claim control is a lit word in the master's ink, nothing drawn.
-    for (const b of screen.getAllByRole('button', { name: 'Claim' })) {
+    for (const b of screen.getAllByRole('button', { name: 'Claim All' })) {
       expect(b.className).toContain('dbs-word');
       expect(b.className).toContain('sc-ink--white');
     }
@@ -231,10 +243,11 @@ describe('DailyBonusSheet', () => {
     render(<DailyBonusSheet mode="inline" />);
     await screen.findByText('+5');
     expect(screen.getByText('VIP Members Only')).toBeTruthy();
-    expect(screen.getAllByRole('button', { name: 'Claim' })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Claim All' })).toHaveLength(1);
+    expect(document.querySelectorAll('.dbs-row button')).toHaveLength(0);
   });
 
-  it('claims one tile by hand and shows what the ledger actually granted', async () => {
+  it('claims through one daily batch request and shows what the ledger actually granted', async () => {
     mocks.claim.mockResolvedValue({
       success: true,
       slot: 1,
@@ -244,11 +257,11 @@ describe('DailyBonusSheet', () => {
     });
     render(<DailyBonusSheet mode="inline" />);
     await screen.findByText('+5');
-    fireEvent.click(screen.getAllByRole('button', { name: 'Claim' })[0]);
-    await waitFor(() => expect(mocks.claim).toHaveBeenCalledWith('2026-09-08', 1));
+    fireEvent.click(screen.getByRole('button', { name: 'Claim All' }));
+    await waitFor(() => expect(mocks.claimAll).toHaveBeenCalledWith('2026-09-08'));
     expect(await screen.findByText('Claimed')).toBeTruthy();
-    expect(screen.getByText('5¢ Credited')).toBeTruthy();
-    expect(mocks.toast.success).toHaveBeenCalledWith('Claimed +5 Diamonds (5¢)');
+    expect(screen.getByText('Diamonds Credited')).toBeTruthy();
+    expect(mocks.toast.success).toHaveBeenCalledWith('All Rewards Collected');
     expect(screen.getByText('Streak Locked In For Today.')).toBeTruthy();
   });
 
@@ -256,7 +269,7 @@ describe('DailyBonusSheet', () => {
     mocks.claim.mockResolvedValue({ success: false, reason: 'daily_cap' });
     render(<DailyBonusSheet mode="inline" />);
     await screen.findByText('+5');
-    fireEvent.click(screen.getAllByRole('button', { name: 'Claim' })[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Claim All' }));
     await waitFor(() =>
       expect(mocks.toast.error).toHaveBeenCalledWith('Daily Diamond Cap Reached')
     );
@@ -273,7 +286,7 @@ describe('DailyBonusSheet', () => {
     await screen.findByText('+5');
     const overlay = document.querySelector('.dbs-overlay');
     expect(overlay?.parentElement).toBe(document.body);
-    // The two painted plates: NOT NOW closes, CLAIM NEXT claims the first open tile.
+    // The two painted plates: NOT NOW closes, CLAIM ALL collects the open rewards.
     /* Two controls close it since 2026-09-23: the X in the head's corner
        (Dan: every popup closes from its top right) and the foot plate. This
        is the plate. */
@@ -290,8 +303,8 @@ describe('DailyBonusSheet', () => {
       granted: { kind: 'diamonds', diamonds: 5, quantity: 0, balance_after: 505 },
       streak: 2,
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Claim Next' }));
-    await waitFor(() => expect(mocks.claim).toHaveBeenCalledWith('2026-09-08', 1));
+    fireEvent.click(screen.getByRole('button', { name: 'Claim All' }));
+    await waitFor(() => expect(mocks.claimAll).toHaveBeenCalledWith('2026-09-08'));
   });
 
   it('says so when the account is not eligible instead of showing an empty sheet', async () => {
@@ -345,11 +358,11 @@ describe('DailyBonusSheet', () => {
     expect(row?.querySelector('.dbs-row__render img')?.getAttribute('src')).toContain(
       'images/challenges/daily-missions-streak-freeze-v1.webp'
     );
-    fireEvent.click(screen.getAllByRole('button', { name: 'Claim' })[2]);
-    await waitFor(() => expect(mocks.claim).toHaveBeenCalledWith('2026-09-08', 3));
+    fireEvent.click(screen.getByRole('button', { name: 'Claim All' }));
+    await waitFor(() => expect(mocks.claimAll).toHaveBeenCalledWith('2026-09-08'));
     expect(await screen.findByText('Held For 30 Days')).toBeTruthy();
     expect(screen.getByText(/One Shield Held\. It Covers One Missed Day/)).toBeTruthy();
-    expect(mocks.toast.success).toHaveBeenCalledWith('Claimed ×1 Streak Shield, Held For 30 Days');
+    expect(mocks.toast.success).toHaveBeenCalledWith('All Rewards Collected');
   });
 
   it('a Mission Boost tile is printed as 2×, claims into a running boost with its own clock, and is refused while one runs', async () => {
@@ -376,15 +389,13 @@ describe('DailyBonusSheet', () => {
     expect(row?.querySelector('.dbs-row__render--print')?.textContent).toBe('24H');
     expect(row?.querySelector('.dbs-row__figure')?.textContent).toBe('2×');
     expect(row?.querySelector('.dbs-row__render img')).toBeNull();
-    fireEvent.click(screen.getAllByRole('button', { name: 'Claim' })[3]);
-    await waitFor(() => expect(mocks.claim).toHaveBeenCalledWith('2026-09-08', 4));
+    fireEvent.click(screen.getByRole('button', { name: 'Claim All' }));
+    await waitFor(() => expect(mocks.claimAll).toHaveBeenCalledWith('2026-09-08'));
     expect(await screen.findByText('Boost Is Running')).toBeTruthy();
     // The boost readout is live the moment it is claimed, not a tick later.
     expect(noteText(container, 'Boost')).toContain('2× Daily Mission Diamonds For Another');
     expect(noteText(container, 'Boost')).toMatch(/2[34]:\d\d:\d\d/);
-    expect(mocks.toast.success).toHaveBeenCalledWith(
-      'Mission Boost Is Live, 2× Diamonds For 24 Hours'
-    );
+    expect(mocks.toast.success).toHaveBeenCalledWith('All Rewards Collected');
   });
 
   it('a running boost from the ledger shows its countdown, and a second boost claim is refused in the server’s words', async () => {
@@ -406,7 +417,7 @@ describe('DailyBonusSheet', () => {
     await screen.findByText('Double Daily Mission Diamonds');
     expect(screen.getByText('01:02:05')).toBeTruthy();
     expect(noteText(container, 'Boost')).toContain('+12 Diamonds So Far');
-    fireEvent.click(screen.getAllByRole('button', { name: 'Claim' })[3]);
+    fireEvent.click(screen.getByRole('button', { name: 'Claim All' }));
     await waitFor(() =>
       expect(mocks.toast.error).toHaveBeenCalledWith('A Mission Boost Is Already Running')
     );
@@ -424,13 +435,13 @@ describe('DailyBonusSheet', () => {
     const { container } = render(<DailyBonusSheet mode="inline" />);
     await screen.findByText('Claim To Reveal, With A Lucky Roll Up To 5×');
     expect(screen.getByText('?')).toBeTruthy();
-    fireEvent.click(screen.getAllByRole('button', { name: 'Claim' })[1]);
-    await waitFor(() => expect(mocks.claim).toHaveBeenCalledWith('2026-09-08', 2));
+    fireEvent.click(screen.getByRole('button', { name: 'Claim All' }));
+    await waitFor(() => expect(mocks.claimAll).toHaveBeenCalledWith('2026-09-08'));
     expect(await screen.findByText('+20')).toBeTruthy();
-    expect(screen.getByText('20¢ Credited')).toBeTruthy();
+    expect(screen.getByText('Diamonds Credited')).toBeTruthy();
     expect(screen.getByText('Lucky Roll ×2')).toBeTruthy();
     expect(container.querySelector('.dbs-row[data-kind="mystery"][data-revealed]')).toBeTruthy();
-    expect(mocks.toast.success).toHaveBeenCalledWith('Claimed +20 Diamonds (20¢), Lucky ×2');
+    expect(mocks.toast.success).toHaveBeenCalledWith('All Rewards Collected');
   });
 
   it('a day a shield covered says so on the streak readout, and a chest day lights the pill gold', async () => {
@@ -487,9 +498,9 @@ it('requires a tenth-day bonus spin to be claimed before the club chooser appear
   render(<DailyBonusSheet mode="inline" />);
   await screen.findByText('100 Diamond Bonus Spin');
   expect(screen.queryByRole('button', { name: 'Use Bonus Spin' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'Claim' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Claim All' }));
   await screen.findByRole('button', { name: 'Use Bonus Spin' });
-  expect(mocks.claim).toHaveBeenCalledWith('2026-09-08', 7);
+  expect(mocks.claimAll).toHaveBeenCalledWith('2026-09-08');
   expect(screen.getByText('100 Diamond Bonus Spin Claimed')).toBeTruthy();
 });
 

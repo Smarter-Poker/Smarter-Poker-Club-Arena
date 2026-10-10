@@ -3,6 +3,8 @@
 -- are denominated in FINAL stake. Crash 25x can cover the 40x / 30x base
 -- reservation without paying above 25x. Keep existing larger reservations.
 -- No game ceiling, probability, wallet, award or settled round is rewritten.
+-- @live-proof: md5(pg_get_functiondef('public.fn_wheel_state_v2(uuid,integer)'::regprocedure))='b6c4224bcbd24cf0571b9096477d8d64'
+-- @live-proof: md5(pg_get_functiondef('public.fn_wheel_spin_v2(uuid,uuid,text,integer,text,uuid)'::regprocedure))='2b50c8310f1b41548815d48b1a5997e9'
 BEGIN;
 SET LOCAL lock_timeout='3s';
 SET LOCAL statement_timeout='30s';

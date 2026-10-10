@@ -23,12 +23,105 @@
   padding: 0;
 }
 
-.walletHeader :global(.dw) {
+.walletHeader.walletHeader :global(.dw) {
   width: 100%;
   max-width: none;
+  gap: 0;
+  margin-bottom: 20px;
 }
 
-.walletHeader :global(.dw__error-badge) {
+/* The routed cashier uses the Players directory presentation. Keep the same
+   role-scoped live balances and wallet handlers, without full-width artwork. */
+.walletHeader.walletHeader :global(.dw__row-picture),
+.walletHeader.walletHeader :global(.dw__bbj-shell),
+.walletHeader.walletHeader :global(.dw__row-icon),
+.walletHeader.walletHeader :global(.dw__row-chevron) {
+  display: none;
+}
+
+.walletHeader.walletHeader :global(.dw__rows) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: 0;
+}
+
+.walletHeader.walletHeader :global(.dw__row),
+.walletHeader.walletHeader :global(.dw__row--wallet-art.dw__row--actionable),
+.walletHeader.walletHeader :global(.dw__bbj),
+.walletHeader.walletHeader :global(.dw__bbj[role='button']) {
+  aspect-ratio: auto;
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 0;
+  border-bottom: 1px solid rgb(154 165 179 / 18%);
+  border-radius: 0;
+  background: #0d1218;
+  box-shadow: none;
+}
+
+.walletHeader.walletHeader :global(.dw__bbj),
+.walletHeader.walletHeader :global(.dw__bbj[role='button']) {
+  min-height: 44px;
+  justify-content: space-between;
+}
+
+.walletHeader.walletHeader :global(.dw__row-label),
+.walletHeader.walletHeader :global(.dw__row-hint),
+.walletHeader.walletHeader :global(.dw__bbj-label) {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  clip: auto;
+  clip-path: none;
+  white-space: normal;
+  color: #9aa5b3;
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.walletHeader.walletHeader :global(.dw__row-hint) {
+  font-size: 10px;
+}
+
+.walletHeader.walletHeader :global(.dw__row-value),
+.walletHeader.walletHeader :global(.dw__bbj-amount) {
+  position: static;
+  inset: auto;
+  flex: 1;
+  justify-content: flex-end;
+  min-width: 0;
+  color: #e4e7ec;
+  font-size: 18px;
+  line-height: 1.2;
+  text-shadow: none;
+}
+
+.walletHeader.walletHeader :global(.dw__bbj-amount) {
+  flex: 0;
+}
+
+.walletHeader.walletHeader :global(.dw__row--wallet-art .dw__plus) {
+  position: static;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  opacity: 1;
+  color: #45adff;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.walletHeader.walletHeader :global(.dw__error-badge) {
   min-height: 44px;
   border: 0 !important;
   border-radius: 0 !important;
@@ -38,7 +131,7 @@
   box-shadow: none !important;
 }
 
-.walletHeader :global(.dw__error-badge)::before {
+.walletHeader.walletHeader :global(.dw__error-badge)::before {
   content: none !important;
 }
 

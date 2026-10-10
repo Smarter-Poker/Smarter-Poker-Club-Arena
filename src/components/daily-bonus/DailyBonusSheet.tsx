@@ -43,7 +43,7 @@ import { mediaUrl } from '../../utils/mediaBase';
 import { reportError } from '../../utils/errorReporter';
 import {
   dailyBonusService,
-  diamondsToCentsLabel,
+  claimReasonText,
   type DailyBonusGranted,
   type DailyBonusStatus,
   type DailyBonusTile,
@@ -82,14 +82,14 @@ const KIND_TITLE: Record<DailyBonusTileKind, string> = {
 
 /** The painted renders already in the kit; the throwable is a 3D render from storage. */
 const ICON_SRC = {
-  diamonds: mediaUrl('images/diamond-icon.png'),
+  diamonds: mediaUrl('images/daily-bonus/blue-diamond-v1.webp'),
   vip: mediaUrl('images/global-header/vip.png'),
   rabbit_hunts: mediaUrl('game-card-icons/rabbit-hunt.png'),
   mystery: mediaUrl('game-card-icons/mystery-bounty.png'),
   /* The shield that protects a Daily Missions streak protects this one too:
      one render for one idea, wherever a streak is kept. */
   shield: mediaUrl('images/challenges/daily-missions-streak-freeze-v1.webp'),
-  free_spin: mediaUrl('images/diamond-icon.png'),
+  free_spin: mediaUrl('images/daily-bonus/blue-diamond-v1.webp'),
 } as const;
 
 /** The throwable tile shows the classic: the tomato render every table throws. */
@@ -136,7 +136,9 @@ function TileRender({
   }
   const src = kind === 'diamonds' ? (vip ? ICON_SRC.vip : ICON_SRC.diamonds) : ICON_SRC[kind];
   return (
-    <span className="dbs-row__render">
+    <span
+      className={`dbs-row__render${kind === 'diamonds' && !vip ? ' dbs-row__render--diamond' : ''}`}
+    >
       <img src={src} alt="" loading="lazy" decoding="async" draggable={false} />
     </span>
   );
@@ -148,7 +150,7 @@ function offered(tile: DailyBonusTile): { figure: string; sub: string } {
     case 'mystery':
       return { figure: '?', sub: 'Claim To Reveal, With A Lucky Roll Up To 5×' };
     case 'diamonds':
-      return { figure: `+${tile.diamonds}`, sub: `${diamondsToCentsLabel(tile.diamonds)} Value` };
+      return { figure: `+${tile.diamonds}`, sub: 'Diamonds' };
     case 'time_bank':
       return { figure: `×${tile.quantity}`, sub: '20 Seconds Each' };
     case 'shield':
@@ -166,7 +168,7 @@ function offered(tile: DailyBonusTile): { figure: string; sub: string } {
 function granted(g: DailyBonusGranted): { figure: string; sub: string } {
   switch (g.kind) {
     case 'diamonds':
-      return { figure: `+${g.diamonds}`, sub: `${diamondsToCentsLabel(g.diamonds)} Credited` };
+      return { figure: `+${g.diamonds}`, sub: 'Diamonds Credited' };
     case 'time_bank':
       return { figure: `×${g.quantity}`, sub: 'In Your Bank' };
     case 'shield':
@@ -188,8 +190,6 @@ function grantedWords(g: DailyBonusGranted): string {
 interface RowProps {
   tile: DailyBonusTile;
   busy: boolean;
-  disabled: boolean;
-  onClaim: (tile: DailyBonusTile) => void;
   burst: boolean;
   revealed: boolean;
 }
@@ -198,7 +198,7 @@ interface RowProps {
  * A ROW on the glass, not a card: the render beside the words, the figure and
  * its unit on one line, the value line under them, CLAIM a lit word at the end.
  */
-function BonusRow({ tile, busy, disabled, onClaim, burst, revealed }: RowProps) {
+function BonusRow({ tile, busy, burst, revealed }: RowProps) {
   const state = tile.claimed
     ? 'claimed'
     : tile.locked
@@ -262,15 +262,9 @@ function BonusRow({ tile, busy, disabled, onClaim, burst, revealed }: RowProps) 
           VIP Members Only
         </span>
       ) : (
-        <button
-          type="button"
-          className={`dbs-word sc-ink--white dbs-row__action${busy ? ' dbs-word--busy' : ''}`}
-          onClick={() => onClaim(tile)}
-          disabled={disabled || busy}
-          aria-busy={busy || undefined}
-        >
-          {busy ? 'Claiming' : tile.capped ? 'Claim What Fits' : 'Claim'}
-        </button>
+        <span className="dbs-word sc-ink--muted dbs-row__action" aria-live="polite">
+          {busy ? 'Claiming' : tile.capped ? 'Cap Applies' : 'Ready'}
+        </span>
       )}
     </article>
   );
@@ -317,7 +311,7 @@ export default function DailyBonusSheet({
     loading,
     loadError,
     reload,
-    claim,
+    claimAll,
     claimingSlot,
     secondsToReset,
     boostSecondsLeft,
@@ -403,40 +397,31 @@ export default function DailyBonusSheet({
     };
   }, [mode, open, onClose]);
 
-  const handleClaim = useCallback(
-    async (tile: DailyBonusTile) => {
-      triggerHaptic('medium');
-      const outcome = await claim(tile);
-      if (!outcome) return;
-      if (outcome.result.success && outcome.result.granted) {
-        triggerHaptic('success');
-        playPremiumSfx('ctaClick');
-        setBurstSlot(tile.slot);
-        if (tile.kind === 'mystery') setRevealSlot(tile.slot);
-        if (burstTimer.current) clearTimeout(burstTimer.current);
-        burstTimer.current = setTimeout(() => setBurstSlot(null), 1400);
-        const g = outcome.result.granted;
-        const lucky = g.lucky ?? 0;
-        toast.success(
-          g.kind === 'diamonds'
-            ? `Claimed +${g.diamonds} Diamonds (${diamondsToCentsLabel(g.diamonds)})${lucky > 1 ? `, Lucky ×${lucky}` : ''}`
-            : g.kind === 'boost'
-              ? `Mission Boost Is Live, ${g.factor ?? 2}× Diamonds For ${g.hours ?? g.quantity} Hours`
-              : g.kind === 'shield'
-                ? `Claimed ×${g.quantity} Streak Shield, Held For 30 Days`
-                : `Claimed ×${g.quantity} ${KIND_TITLE[g.kind]}${lucky > 1 ? `, Lucky ×${lucky}` : ''}`
-        );
-      } else if (outcome.result.reason === 'day_rolled_over') {
-        // Midnight passed under the sheet; the hook has re-read today's tiles.
-        triggerHaptic('light');
-        toast.info(outcome.refusal);
-      } else {
-        triggerHaptic('error');
-        toast.error(outcome.refusal);
-      }
-    },
-    [claim, toast]
-  );
+  const handleClaim = useCallback(async () => {
+    triggerHaptic('medium');
+    const receipt = await claimAll();
+    if (!receipt) return;
+    if (!receipt.success) {
+      triggerHaptic('error');
+      toast.error(claimReasonText(receipt.reason));
+      return;
+    }
+    const failures = (receipt.results ?? []).filter((r) => !r.success);
+    const paid = (receipt.results ?? []).filter((r) => r.success && !r.idempotent);
+    if (paid.length) {
+      triggerHaptic('success');
+      playPremiumSfx('ctaClick');
+      setBurstSlot(0);
+      setRevealSlot(0);
+      if (burstTimer.current) clearTimeout(burstTimer.current);
+      burstTimer.current = setTimeout(() => setBurstSlot(null), 1400);
+    }
+    if (failures.length) {
+      toast.info(`Available Rewards Collected. ${claimReasonText(failures[0].reason)}`);
+    } else {
+      toast.success('All Rewards Collected');
+    }
+  }, [claimAll, toast]);
 
   if (mode === 'modal' && !open) return null;
 
@@ -533,7 +518,7 @@ export default function DailyBonusSheet({
                       : 'sc-ink--muted'
                 }`}
               >
-                {d.diamonds != null ? `+${d.diamonds}` : ''}
+                {d.diamonds != null ? `+${d.diamonds}` : d.state === 'done' ? 'Done' : 'New'}
               </span>
             </li>
           ))}
@@ -544,14 +529,23 @@ export default function DailyBonusSheet({
             <BonusRow
               key={tile.slot}
               tile={tile}
-              busy={claimingSlot === tile.slot}
-              disabled={claimingSlot !== null}
-              onClaim={(t) => void handleClaim(t)}
-              burst={burstSlot === tile.slot}
-              revealed={revealSlot === tile.slot}
+              busy={claimingSlot !== null && !tile.claimed && !tile.locked}
+              burst={burstSlot === 0 && tile.claimed}
+              revealed={revealSlot === 0 && tile.claimed}
             />
           ))}
         </div>
+
+        {mode === 'inline' && nextClaimable && (
+          <button
+            type="button"
+            className="dbs-word sc-ink--white dbs__claim-all"
+            disabled={claimingSlot !== null}
+            onClick={() => void handleClaim()}
+          >
+            {claimingSlot !== null ? 'Claiming' : 'Claim All'}
+          </button>
+        )}
 
         <dl className="dbs__notes">
           <div className="dbs__note">
@@ -606,7 +600,7 @@ export default function DailyBonusSheet({
             <dd className="sc-copy">
               {status.claimed_today
                 ? 'Streak Locked In For Today.'
-                : 'Claim At Least One Tile Today To Keep Your Streak.'}
+                : 'Claim All Rewards Today To Keep Your Streak.'}
             </dd>
           </div>
           {status.shield.held > 0 && (
@@ -670,7 +664,7 @@ export default function DailyBonusSheet({
       ? 'green'
       : 'blue';
   const claiming = claimingSlot !== null;
-  const primaryLabel = claiming ? 'Claiming' : nextClaimable ? 'Claim Next' : 'Done';
+  const primaryLabel = claiming ? 'Claiming' : nextClaimable ? 'Claim All' : 'Done';
 
   const sheet = (
     <div
@@ -707,7 +701,7 @@ export default function DailyBonusSheet({
                   ink: 'white',
                   disabled: claiming || (!nextClaimable && !onClose),
                   onClick: () => {
-                    if (nextClaimable) void handleClaim(nextClaimable);
+                    if (nextClaimable) void handleClaim();
                     else onClose?.();
                   },
                 },

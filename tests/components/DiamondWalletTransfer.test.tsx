@@ -147,3 +147,18 @@ it('preserves a lost-response identity through session refusal and returns its o
   expect(mocks.rpc.mock.calls.map((call) => call[1])).toEqual([original, original, original]);
   expect(sessionStorage.getItem('diamond-transfer:' + sender)).toBeNull();
 });
+
+it('opens the cashier recipient preset without a lookup or transfer', () => {
+  render(
+    <DiamondWalletTransfer
+      userId={sender}
+      initialRecipientId={recipient}
+      initiallyOpen
+      onComplete={() => {}}
+    />
+  );
+  expect(screen.getByLabelText('Friend Player ID')).toHaveValue(recipient);
+  expect(screen.getByRole('button', { name: 'Review Transfer' })).toBeTruthy();
+  expect(mocks.rpc).not.toHaveBeenCalled();
+  expect(mocks.from).not.toHaveBeenCalled();
+});

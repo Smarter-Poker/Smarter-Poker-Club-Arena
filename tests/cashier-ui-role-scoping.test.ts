@@ -378,8 +378,8 @@ describe('the cashier never offers a recipient the server will refuse', () => {
     // It is listed now, marked "You", and refused by toggleSelect - see
     // tests/every-member-is-discoverable-in-the-cashier.law.test.ts.
     expect(TRADE).not.toContain('String(row.user_id) !== viewerId');
-    expect(TRADE).toContain('if (id === user?.id) return prev;');
-    expect(TRADE).toContain('aria-disabled={r.isSelf || undefined}');
+    expect(TRADE).toContain('if (r.isSelf || r.userId === user?.id) return;');
+    expect(TRADE).toContain('{r.isSelf ? null : (');
   });
 });
 

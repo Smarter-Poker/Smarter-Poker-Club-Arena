@@ -1,0 +1,8 @@
+{
+  "functions": [
+    "fn_ca_deleted_account_bank_return",
+    "fn_ca_deleted_wallet_credit",
+    "fn_ca_deleted_wallet_bank_return"
+  ],
+  "_comment": "Observed installed 2026-10-10 via Supabase MCP, custody and source-lock refinement; private postgres-owned functions and readback in cashier task evidence."
+}

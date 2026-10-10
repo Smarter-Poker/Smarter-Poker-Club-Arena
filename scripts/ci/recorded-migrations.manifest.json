@@ -637,9 +637,7 @@
       "recoveredOn": "2026-10-10",
       "recoveredFrom": "The applying session's own text, which is what public.fn_ca_migration_text(version).body returns: octet_length 9790 and md5 compared equal before commit, with no trailing newline appended. Applied through the Supabase MCP on the owner's explicit approval of 2026-10-09 (\"Yes, apply all 3\"), then recorded here in the same session.",
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
-      "refusedBy": [
-        "check-definer-authorization: anon rule (fn_tournament_metrics)"
-      ],
+      "refusedBy": ["check-definer-authorization: anon rule (fn_tournament_metrics)"],
       "liveVerdict": "Production read 2026-10-10 01:34 UTC. The anon finding is not true of production: the file is CREATE OR REPLACE of an existing function, which keeps its ACL, and fn_tournament_metrics(integer,integer,integer) reads live as {postgres=X/postgres,service_role=X/postgres}; has_function_privilege('anon',...) and ('authenticated',...) are both false, and fn_definer_exposure_audit() does not list it. It is engine telemetry read by the service-role TournamentMetrics collector. Live after apply: unpaid_completed is 0 for 6 hours and for 168 hours, and the 49 TournamentCompletedUnpaid inbox rows read verified_fixed."
     },
     {
@@ -679,6 +677,32 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
       "refusedBy": [],
       "liveVerdict": "Production read 2026-10-10 05:11 UTC. Data only: one ca_declared_money_triggers row (club_wallets, poker_arena_no_chip_rake), declared_at 2026-10-10 05:11:04 UTC, and its proof that fn_undeclared_money_triggers() then lists nothing. The trigger it declares is unchanged: BEFORE INSERT OR UPDATE on club_wallets, rake_records, rake_attributions and rake_distribution_legs, enabled, executing fn_ca_reject_diamond_chip_rake_row(). No file-text guard raised a finding."
+    },
+    {
+      "version": "20261010191226",
+      "name": "return_existing_deleted_shark_club_cash_custody_to_the_main_bank",
+      "file": "supabase/migrations/20261010191226_return_existing_deleted_shark_club_cash_custody_to_the_main_bank.sql",
+      "md5": "effe55c9c476f62dafe0bb613bc7e067",
+      "appliedToProductionAt": "2026-10-10T19:12:26Z",
+      "recoveredOn": "2026-10-10",
+      "recoveredFrom": "The applying session original immutable SQL bytes. Read-only schema_migrations statements joined with newline have the exact same md5 as this file, including its existing trailing newline, verified 2026-10-10 19:33 UTC. No SQL edits, name changes, ledger rewrites or replay.",
+      "refusedBy": [
+        "check-new-migration-version-collisions: installed name exceeds the new-file 60-character limit"
+      ],
+      "liveVerdict": "Already installed under the exact version and full original name; production statements md5 equals file md5. Exact-board settlement d51aa23ba8af0e9143c38c86bfac3627 returned 8,940,782.63 to Shark Club main bank, ledger/receipt/bank totals identical, repeat zero, resolved financial alert retains full account/source board. This data migration creates no function or trigger; no browser grant or recurring writer. All ordinary migration guards already passed. Preserving the installed identity through the existing verified recording path."
+    },
+    {
+      "version": "20261010192048",
+      "name": "return_remaining_deleted_account_club_cash_custody_to_jaqk_main_bank",
+      "file": "supabase/migrations/20261010192048_return_remaining_deleted_account_club_cash_custody_to_jaqk_main_bank.sql",
+      "md5": "a172a616495c51ac0ca4fe9b20ea6f7a",
+      "appliedToProductionAt": "2026-10-10T19:20:48Z",
+      "recoveredOn": "2026-10-10",
+      "recoveredFrom": "The applying session original immutable SQL bytes. Read-only schema_migrations statements joined with newline have the exact same md5 as this file, including its existing trailing newline, verified 2026-10-10 19:33 UTC. No SQL edits, name changes, ledger rewrites or replay.",
+      "refusedBy": [
+        "check-new-migration-version-collisions: installed name exceeds the new-file 60-character limit"
+      ],
+      "liveVerdict": "Already installed under the exact version and full original name; production statements md5 equals file md5. Exact-board settlement 28969489aa8a9434428f74c32058de3b returned 4,536,780.11 to JAQK main bank, ledger/receipt/bank totals identical, repeat zero, resolved financial alert retains full account/source board. This data migration creates no function or trigger; no browser grant or recurring writer. All ordinary migration guards already passed. Preserving the installed identity through the existing verified recording path."
     }
   ]
 }

@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 198959,
-      "sha256": "952bef2eb8781237ab0d0a9a0ac115bc3803b9f54dc48b5db697fadfe08680e5"
+      "bytes": 199223,
+      "sha256": "cf109e72a2d7a1433f7d88b7d9f82e7f5b0231ac87f2341c5c1f7175b35c7f1f"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1899,5 +1899,12 @@
         "current": "8181a10a7d67b8e5c7dc3bc79f0a7959ff630257622f5a9cb333e053b6beed93"
       }
     ]
+  },
+  "cashierDeletedCustodyQualification20261010": {
+    "reason": "Add the deleted-account custody native qualification in the existing required Accounting1 shard. Preserve every existing financial input, assertion and qualification status; fingerprint refresh is source identity, not runtime proof.",
+    "previousWorkflowPin": {
+      "bytes": 198959,
+      "sha256": "952bef2eb8781237ab0d0a9a0ac115bc3803b9f54dc48b5db697fadfe08680e5"
+    }
   }
 }

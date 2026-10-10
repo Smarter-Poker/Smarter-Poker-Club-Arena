@@ -267,10 +267,10 @@ const schedulingsIn = (sql: string): Scheduling[] => {
 };
 
 /** Everything in `sql` that brings back a job `retirement` retired. */
-const returnsIn = (sql: string, retirement: Retirement): string[] => {
+const returnsFrom = (schedulings: Scheduling[], retirement: Retirement): string[] => {
   const problems: string[] = [];
   const jobs = new Set(retirement.jobs.map((j) => j.toLowerCase()));
-  for (const s of schedulingsIn(sql)) {
+  for (const s of schedulings) {
     const flat = s.text.replace(/\s+/g, ' ').trim();
     if (s.name !== null && jobs.has(s.name.toLowerCase())) {
       problems.push(`schedules the retired job ${s.name}: ${flat}`);
@@ -293,6 +293,9 @@ const returnsIn = (sql: string, retirement: Retirement): string[] => {
   }
   return problems;
 };
+
+const returnsIn = (sql: string, retirement: Retirement): string[] =>
+  returnsFrom(schedulingsIn(sql), retirement);
 
 describe('a retired compensation job is never scheduled again', () => {
   describe('each retirement is real', () => {
@@ -347,9 +350,15 @@ describe('a retired compensation job is never scheduled again', () => {
   it('THE ONE THAT MATTERS LATER: no migration after a retirement brings a retired job back', () => {
     const offenders: string[] = [];
     const names = migrationNames();
-    for (const retirement of RETIREMENTS) {
-      for (const file of names.filter((f) => f > retirement.migration)) {
-        for (const problem of returnsIn(read(file), retirement)) {
+    // Parse each immutable input once; every applicable retirement still judges
+    // the same scheduling calls. Re-reading and lexing the growing corpus for
+    // each retirement exceeded the unchanged five-second hosted test budget.
+    for (const file of names) {
+      const applicable = RETIREMENTS.filter((retirement) => file > retirement.migration);
+      if (applicable.length === 0) continue;
+      const schedulings = schedulingsIn(read(file));
+      for (const retirement of applicable) {
+        for (const problem of returnsFrom(schedulings, retirement)) {
           offenders.push(`${file}: ${problem}`);
         }
       }

@@ -25,8 +25,6 @@
 
 import { supabase } from '../lib/supabase';
 import { normaliseRole, type ClubRole } from '../types/clubRoles';
-import { runWithRequestDeadline } from '../utils/requestDeadline';
-import { runRosterReadWithRetry } from '../utils/rosterReadReliability';
 
 /** Each subpage read owns one deadline, including auth and response decoding. */
 async function readMemberRpc(
@@ -34,6 +32,7 @@ async function readMemberRpc(
   parameters: Record<string, unknown>,
   signal?: AbortSignal
 ): Promise<unknown> {
+  const { runRosterReadWithRetry } = await import('../utils/rosterReadReliability');
   return runRosterReadWithRetry(
     async (attemptSignal) => {
       const { data, error } = await supabase.rpc(name, parameters).abortSignal(attemptSignal);
@@ -577,6 +576,7 @@ export const ClubRosterService = {
     query: Pick<RosterQuery, 'search' | 'filter' | 'sort'>,
     userIds: string[] | null = null
   ): Promise<{ rows: Record<string, unknown>[]; row_count: number; audit_id: string }> {
+    const { runWithRequestDeadline } = await import('../utils/requestDeadline');
     const data = await runWithRequestDeadline(
       async (signal) => {
         const { data, error } = await supabase
@@ -616,6 +616,7 @@ export const ClubRosterService = {
     remark: string,
     requestId: string
   ): Promise<{ nickname: string | null; remark: string | null; replayed: boolean }> {
+    const { runWithRequestDeadline } = await import('../utils/requestDeadline');
     const data = await runWithRequestDeadline(
       async (signal) => {
         const { data, error } = await supabase

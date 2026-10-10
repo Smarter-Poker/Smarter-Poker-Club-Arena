@@ -129,7 +129,7 @@ describe('cashier Phase 5 production certification contracts', () => {
     const spec = source('tests/e2e/production-cashier.spec.ts');
     expect(workflow).toContain('tests/e2e/production-cashier.spec.ts');
     expect(spec).toContain('[data-cashier-surface="trade"]');
-    expect(spec).toContain("name: 'Every Chip. Accounted For.'");
+    expect(spec).toContain("name: 'Wallet Command'");
     expect(spec).not.toContain("name: 'CASHIER'");
     expect(spec).toContain("tabs.first()).toHaveAttribute('aria-selected', 'true')");
     expect(spec).toContain("tabs.nth(1)).toHaveAttribute('aria-selected', 'false')");

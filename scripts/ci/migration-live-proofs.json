@@ -49,6 +49,27 @@
       "proofs": [
         "(SELECT count(*)=1 AND bool_and(resolved AND context->>'board_md5'='d51aa23ba8af0e9143c38c86bfac3627' AND (context->>'amount')::numeric=8940782.63 AND (context->>'journal')::numeric=8940782.63 AND (context->>'receipts')::numeric=8940782.63 AND (context->>'repeat_amount')::numeric=0 AND jsonb_array_length(context->'board')=62) FROM public.financial_alerts WHERE id='ae1ca8e0-e77a-4089-b7dd-01ea9a56bfe4' AND source='deleted_cashier_custody_20261010')"
       ]
+    },
+    {
+      "file": "20261010215612_player_data_hides_deleted_members.sql",
+      "sha256": "92eec6f3d1ac9c4290e20de4d90f127d320eeaade55ea8234c0743a1bc9c20b8",
+      "proofs": [
+        "md5(pg_get_functiondef(to_regprocedure('public.ca_club_member_detail(uuid,uuid,date,date)')))='4c9933400f9f0bd1bc826769d91282c3' AND md5(pg_get_functiondef(to_regprocedure('public.ca_club_roster_rows(uuid)')))='432ba60071a5a372ba058c755d46bf80' AND (SELECT count(*)=2 AND bool_and(p.prosecdef AND pg_get_userbyid(p.proowner)='postgres' AND p.proconfig @> ARRAY['search_path=public, pg_temp'] AND NOT has_function_privilege('anon',p.oid,'EXECUTE')) FROM pg_proc p WHERE p.oid IN (to_regprocedure('public.ca_club_member_detail(uuid,uuid,date,date)'),to_regprocedure('public.ca_club_roster_rows(uuid)')))"
+      ]
+    },
+    {
+      "file": "20261010220349_deleted_players_cannot_transfer_diamonds.sql",
+      "sha256": "744f7b1b892efa6280572a6115665de13b5f39678c260756446586cb544ee95b",
+      "proofs": [
+        "md5(pg_get_functiondef(to_regprocedure('public.send_wallet_diamond_transfer(uuid,integer,text,text)')))='655fd3a4fc415ef0032bb8799ee9e842' AND (SELECT count(*)=1 AND bool_and(p.prosecdef AND pg_get_userbyid(p.proowner)='postgres' AND p.proconfig @> ARRAY['search_path=public, pg_temp'] AND NOT has_function_privilege('anon',p.oid,'EXECUTE')) FROM pg_proc p WHERE p.oid IN (to_regprocedure('public.send_wallet_diamond_transfer(uuid,integer,text,text)')))"
+      ]
+    },
+    {
+      "file": "20261010221326_player_summary_hides_deleted_profiles.sql",
+      "sha256": "b7043672b308d3c4faf1dfc798bb5d741b584ba4c76102dffc6d8840c463d4b8",
+      "proofs": [
+        "md5(pg_get_functiondef(to_regprocedure('public.ca_club_members_summary(uuid)')))='b95e8d9454e1467883aa4eda854f99a8' AND md5(pg_get_functiondef(to_regprocedure('public.ca_club_member_detail(uuid,uuid,date,date)')))='4c9933400f9f0bd1bc826769d91282c3' AND md5(pg_get_functiondef(to_regprocedure('public.ca_club_roster_rows(uuid)')))='432ba60071a5a372ba058c755d46bf80' AND (SELECT count(*)=3 AND bool_and(p.prosecdef AND pg_get_userbyid(p.proowner)='postgres' AND p.proconfig @> ARRAY['search_path=public, pg_temp'] AND NOT has_function_privilege('anon',p.oid,'EXECUTE')) FROM pg_proc p WHERE p.oid IN (to_regprocedure('public.ca_club_members_summary(uuid)'),to_regprocedure('public.ca_club_member_detail(uuid,uuid,date,date)'),to_regprocedure('public.ca_club_roster_rows(uuid)')))"
+      ]
     }
   ]
 }

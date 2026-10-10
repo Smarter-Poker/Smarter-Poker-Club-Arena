@@ -58,7 +58,7 @@ RUNNERS = [
     ('run-poker-diamond-custody.py', '69 additional assertions passed'),
     ('run-diamond-wallet-transfer.py', '37 Phase 4 assertions passed'),
     ('run-diamond-transfer-door-and-dr16.py',
-     '26 isolated transfer door and DR16 checks passed; this is not a production certification.'),
+     '34 isolated transfer door and DR16 checks passed; this is not a production certification.'),
     ('run-diamond-cash-custody.py',
      'Diamond custody contract passed; this is not full gameplay certification.'),
     ('run-diamond-cash-admission.py', 'forgery case leaves the fixture settled again'),

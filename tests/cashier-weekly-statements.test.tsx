@@ -10,9 +10,9 @@ import { WEEKLY_ID as ID, weeklyStatementRow } from './helpers/clubWeeklyStateme
 
 const state = vi.hoisted(() => ({
   userId: null as string | null,
-  auth: undefined as
-    | undefined
-    | ((event: { payload: { isAuthenticated: boolean; userId?: string } }) => void),
+  authListeners: new Set<
+    (event: { payload: { isAuthenticated: boolean; userId?: string } }) => void
+  >(),
   role: 'owner',
   rows: [] as Record<string, unknown>[],
   reply: null as null | (() => Promise<unknown>),
@@ -32,8 +32,8 @@ vi.mock('../src/core/MasterBus', () => ({
   masterBus: {
     emit: vi.fn(),
     subscribe: vi.fn((event, callback) => {
-      if (event === 'AUTH_STATE_CHANGED') state.auth = callback;
-      return vi.fn();
+      if (event === 'AUTH_STATE_CHANGED') state.authListeners.add(callback);
+      return () => state.authListeners.delete(callback);
     }),
   },
 }));
@@ -56,7 +56,8 @@ import styles from '../src/pages/CashierTradePage.module.css';
 
 function signIn(userId: string | null) {
   state.userId = userId;
-  state.auth?.({ payload: { isAuthenticated: !!userId, userId: userId ?? undefined } });
+  for (const listener of [...state.authListeners])
+    listener({ payload: { isAuthenticated: !!userId, userId: userId ?? undefined } });
 }
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -246,10 +247,16 @@ describe('cashier club weekly statement boundary', () => {
       signIn(ID.actor);
       old.resolve({ data: [weeklyStatementRow()], error: null });
     });
-    expect(await within(panel).findByRole('alert')).toHaveTextContent(
+    // The scoped workspace remounts on the auth epoch and starts at Trade.
+    // Inspect its new panel, never the detached panel from the previous epoch.
+    expect(panel).not.toBeInTheDocument();
+    expect(screen.queryByText('Retained 40 Chips')).not.toBeInTheDocument();
+    const renewedPanel = await openWeeklyStatements();
+    expect(await within(renewedPanel).findByRole('alert')).toHaveTextContent(
       'Weekly Statements Are Unavailable'
     );
-    expect(within(panel).queryByText('Retained 40 Chips')).not.toBeInTheDocument();
+    expect(reads).toBeGreaterThan(1);
+    expect(within(renewedPanel).queryByText('Retained 40 Chips')).not.toBeInTheDocument();
   });
   it('removes the first club statement on navigation while the next club read is unresolved', async () => {
     state.rows = [weeklyStatementRow()];

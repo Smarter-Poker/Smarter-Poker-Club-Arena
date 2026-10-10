@@ -61,7 +61,7 @@ import { roleLabel, roleRank, type ClubRole } from '../types/clubRoles';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
-import { useCashoutScope } from '../hooks/useCashoutScope';
+import { useCashoutScope, useCashoutScopeKey } from '../hooks/useCashoutScope';
 import {
   readClubWeeklyStatements,
   formatWeeklyChipsForDisplay,
@@ -268,7 +268,16 @@ function txLabel(value: string | null | undefined): string {
     .join(' ');
 }
 
+// Retire dialogs and read/write refs immediately when the account or route changes.
+// Pending durable requests keep their original account, club and request identity.
 export default function CashierTradePage() {
+  const { clubId } = useParams<{ clubId: string }>();
+  const { user } = useAuthUser();
+  const key = useCashoutScopeKey(user?.id, clubId || '');
+  return <CashierTradeWorkspace key={key} />;
+}
+
+function CashierTradeWorkspace() {
   const { clubId: clubParam } = useParams<{ clubId: string }>();
   const navigate = useNavigate();
   const { user, isHydrating } = useAuthUser();

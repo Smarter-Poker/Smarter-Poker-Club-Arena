@@ -162,3 +162,48 @@ it('opens the cashier recipient preset without a lookup or transfer', () => {
   expect(mocks.rpc).not.toHaveBeenCalled();
   expect(mocks.from).not.toHaveBeenCalled();
 });
+
+it('sends only one request when two clicks arrive before React renders busy', async () => {
+  let complete!: (value: unknown) => void;
+  mocks.rpc.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        complete = resolve;
+      })
+  );
+  render(<DiamondWalletTransfer userId={sender} onComplete={() => {}} />);
+  await review();
+  const button = screen.getByRole('button', { name: 'Confirm Transfer' });
+  const { act } = await import('@testing-library/react');
+  act(() => {
+    button.click();
+    button.click();
+  });
+  expect(mocks.rpc).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole('button', { name: 'Send Diamonds' })).toBeDisabled();
+  await act(async () => complete({ data: null, error: { message: 'Connection Lost' } }));
+});
+
+it('does not review or disclose a deleted friend', async () => {
+  mocks.from.mockImplementation(() => {
+    const q: any = {
+      select: () => q,
+      eq: () => q,
+      maybeSingle: async () => ({
+        data: { id: recipient, username: 'Deleted Friend', status: 'deleted' },
+        error: null,
+      }),
+    };
+    return q;
+  });
+  render(<DiamondWalletTransfer userId={sender} onComplete={() => {}} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Send Diamonds' }));
+  fireEvent.change(screen.getByLabelText('Friend Player ID'), { target: { value: recipient } });
+  fireEvent.change(screen.getByLabelText('Diamond Amount'), { target: { value: '25' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Review Transfer' }));
+  await screen.findByText('This Player Is No Longer Available.');
+  expect(screen.queryByRole('button', { name: 'Confirm Transfer' })).toBeNull();
+  expect(screen.queryByText('Deleted Friend')).toBeNull();
+  expect(mocks.from).toHaveBeenCalledTimes(1);
+  expect(mocks.rpc).not.toHaveBeenCalled();
+});

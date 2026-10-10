@@ -1792,6 +1792,11 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
           TMPDIR: /tmp
         run: bash scripts/dev/test-xid-restorer-reads-xmax.sh
+      - name: Funding recovery index preserves exact installation guards
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-funding-recovery-cover.py
       - name: Credit payments preserve scope cents replay and delivery atomicity
         if: matrix.shard == 1
         env:

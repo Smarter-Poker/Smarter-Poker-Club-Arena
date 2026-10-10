@@ -1,0 +1,9 @@
+# Funding receipt recovery census covering scan
+
+The same-cut full recovery capture completed 1,659 relation counts, then the original funding receipt aggregate reached its existing 19-second server limit. The maintained read-only plan measured a wide receipt heap scan; exact replica metadata found no covering index for asset, amount, ledger_id and wallet_transaction_id, with 172,810 of 186,496 pages all-visible. A LATERAL rewrite was rejected because its estimated plan cost was worse.
+
+This migration adds one nonunique, nonpartial B-tree on ledger_id with the other three aggregate inputs included. It allows the original aggregate to read a compact index and can support the existing ledger primary-key join. It changes no financial SQL, data, authorizations, constraints, player treatment or time budgets. Existing ledger and wallet join costs still require actual post-installation measurement; source alone proves no performance result.
+
+The existing production applier splits the concurrent index preamble, checks validity and runs the guarded transaction before recording this exact file. The guard refuses absent, invalid, partial, expression, incorrectly ordered, unique, differently owned or otherwise incompatible indexes. Read-only pre/post metadata and migration history are required; do not replay an installed migration or blindly retry an invalid concurrent build.
+
+Validation: exact-candidate TypeScript compiler and two splitter/no-financial-change regressions passed. Root isolated PostgreSQL 17 qualification passed all eight guard cases with data preserved, temporary-only rollback and identical native custody before and after; no production connection or persistent object was created. Production installation, replica availability and the original same-cut aggregate/full recovery capture remain pending. TypeScript: passed. No realtime UI or engine behavior is changed.

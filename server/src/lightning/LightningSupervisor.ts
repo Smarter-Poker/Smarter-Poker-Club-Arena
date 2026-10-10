@@ -47,6 +47,21 @@
  * being dealt. A worker stops (and its unsettled hands are abandoned) only
  * when its Cluster is MUST MOVE or gone, frozen, its config `off`, or the
  * leader steps down.
+ *
+ * OPERATOR CONTROLS (Lightning Phase 13, 2026-10-09). Discovery also finds
+ * `draining` (the operator's EMERGENCY DRAIN) and `paused` (the operator's
+ * PAUSE) Clusters. Both are HOLDS: the worker forms nothing and every hand in
+ * the air plays on to settlement under its own host. A paused Cluster's
+ * worker forms again the moment resume returns it to `lightning`; a draining
+ * one is stopped as soon as the database's drive has rebuilt MUST MOVE (while
+ * a drain or reversion has no hand left here, discovery runs every
+ * LIGHTNING_DRAIN_RECHECK_MS instead of every LIGHTNING_DISCOVERY_INTERVAL_MS,
+ * so the worker stops itself within seconds of the Cluster reaching MUST MOVE).
+ * Every room of a held Cluster is told, once per change, through the
+ * private room frame `lightning_cluster_status` ({ status: 'ending' |
+ * 'paused' | null }), so a player sees "Lightning Is Ending" before their
+ * room closes. A database without the Phase 13 modes never names them, and
+ * this file behaves exactly as before.
  */
 import { supabase } from '../services/supabase.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
@@ -61,6 +76,7 @@ import { LightningPresence, type PresenceSource } from './LightningPresence.js';
 import {
   LightningClusterWorker,
   type LightningClusterWorkerDeps,
+  type LightningWorkerHold,
   type LightningWorkerLogger,
 } from './LightningClusterWorker.js';
 import { lightningMetrics, type LightningMetrics } from './LightningMetrics.js';
@@ -103,6 +119,27 @@ export interface LightningSupervisorDeps {
    * (the formation gate and the forming call's timeout; tests shorten it).
    */
   workerOptions?: Partial<Pick<LightningClusterWorkerDeps, 'formationGate' | 'formTimeoutMs'>>;
+  /**
+   * LIGHTNING PHASE 13: tell every room of a Cluster what the player should
+   * see about its hold ('ending' while it drains back to MUST MOVE, 'paused'
+   * while an operator holds it, null when it forms again or has left).
+   * Called once per change. Absent (tests, an older wiring) tells nobody.
+   */
+  clusterStatus?: (clusterId: string, status: LightningClusterStatus | null) => void;
+}
+
+/** LIGHTNING PHASE 13: what a held Cluster's rooms are told. */
+export type LightningClusterStatus = 'ending' | 'paused';
+
+/** While a drain or reversion has nothing left in the air here, discovery runs this often. */
+export const LIGHTNING_DRAIN_RECHECK_MS = 2_000;
+
+/** The room status a hold means: every way out of Lightning is 'ending'. */
+export function lightningClusterStatusOf(
+  hold: LightningWorkerHold | null
+): LightningClusterStatus | null {
+  if (hold === null) return null;
+  return hold === 'paused' ? 'paused' : 'ending';
 }
 
 /** One Cluster discovery found, and whether it is on its way out of Lightning. */
@@ -113,10 +150,24 @@ export interface LightningDiscoveredCluster {
    * forms; the hands in the air settle.
    */
   draining: boolean;
+  /**
+   * LIGHTNING PHASE 13: the operator's hold, present only for the `draining`
+   * and `paused` modes (a `pending_off` or switched-off Cluster carries none:
+   * `draining` alone says it).
+   */
+  hold?: LightningWorkerHold;
 }
 
-/** The Cluster modes that hold a worker: running, and draining on the way out. */
-export const LIGHTNING_WORKER_CLUSTER_MODES = ['lightning', 'pending_off'] as const;
+/**
+ * The Cluster modes that hold a worker: running, draining on the way out, and
+ * (Lightning Phase 13) the operator's drain and pause.
+ */
+export const LIGHTNING_WORKER_CLUSTER_MODES = [
+  'lightning',
+  'pending_off',
+  'draining',
+  'paused',
+] as const;
 
 /** How often ended Lightning rooms are looked for (their sockets closed). */
 export const LIGHTNING_ROOM_SWEEP_INTERVAL_MS = 5_000;
@@ -147,6 +198,10 @@ export function parseDiscoveredClusters(rows: unknown): LightningDiscoveredClust
   for (const row of Array.isArray(rows) ? rows : []) {
     const r = row as { id?: unknown; cluster_mode?: unknown; lightning_enabled?: unknown } | null;
     if (!r || !isUuid(r.id)) continue;
+    if (r.cluster_mode === 'draining' || r.cluster_mode === 'paused') {
+      out.push({ clusterId: r.id, draining: true, hold: r.cluster_mode });
+      continue;
+    }
     if (r.cluster_mode !== 'lightning' && r.cluster_mode !== 'pending_off') continue;
     out.push({
       clusterId: r.id,
@@ -156,15 +211,33 @@ export function parseDiscoveredClusters(rows: unknown): LightningDiscoveredClust
   return out;
 }
 
+interface DiscoveredState {
+  draining: boolean;
+  hold: LightningWorkerHold | null;
+}
+
+/** The hold a discovered Cluster's worker runs under (null: it forms). */
+function holdOf(state: DiscoveredState | undefined): LightningWorkerHold | null {
+  if (!state) return null;
+  if (state.hold) return state.hold;
+  return state.draining ? 'pending_off' : null;
+}
+
 function normalizeDiscovered(
   found: Array<string | LightningDiscoveredCluster>
-): Map<string, boolean> {
-  const out = new Map<string, boolean>();
+): Map<string, DiscoveredState> {
+  const out = new Map<string, DiscoveredState>();
   for (const item of found) {
     if (typeof item === 'string') {
-      if (isUuid(item)) out.set(item, out.get(item) ?? false);
+      if (isUuid(item)) out.set(item, out.get(item) ?? { draining: false, hold: null });
     } else if (item && isUuid(item.clusterId)) {
-      out.set(item.clusterId, item.draining === true || out.get(item.clusterId) === true);
+      const prev = out.get(item.clusterId);
+      const hold =
+        item.hold === 'draining' || item.hold === 'paused' ? item.hold : (prev?.hold ?? null);
+      out.set(item.clusterId, {
+        draining: item.draining === true || prev?.draining === true || hold !== null,
+        hold,
+      });
     }
   }
   return out;
@@ -182,6 +255,8 @@ const consoleLogger: LightningWorkerLogger = {
 export class LightningSupervisor {
   private readonly workers = new Map<string, LightningClusterWorker>();
   private timer: ReturnType<typeof setTimeout> | null = null;
+  /** When the armed discovery timer fires (epoch ms), so a drain can bring it forward. */
+  private timerDueAtMs = Number.POSITIVE_INFINITY;
   private running = false;
   private generation = 0;
   private inFlight: Promise<void> | null = null;
@@ -195,6 +270,8 @@ export class LightningSupervisor {
   private readonly frozen: () => boolean;
   private roomSweepTimer: ReturnType<typeof setInterval> | null = null;
   private readonly frontTables = new Map<string, { tableId: string | null; at: number }>();
+  /** LIGHTNING PHASE 13: the room status each Cluster was last told. */
+  private readonly statusTold = new Map<string, LightningClusterStatus>();
 
   constructor(private readonly deps: LightningSupervisorDeps) {
     this.presence = new LightningPresence(deps.presenceSource);
@@ -275,6 +352,7 @@ export class LightningSupervisor {
       clearTimeout(this.timer);
       this.timer = null;
     }
+    this.timerDueAtMs = Number.POSITIVE_INFINITY;
     if (this.roomSweepTimer) {
       clearInterval(this.roomSweepTimer);
       this.roomSweepTimer = null;
@@ -292,17 +370,66 @@ export class LightningSupervisor {
 
   private arm(generation: number, delayMs: number): void {
     if (!this.running || generation !== this.generation) return;
+    if (this.timer) clearTimeout(this.timer);
+    this.timerDueAtMs = Date.now() + delayMs;
     this.timer = setTimeout(() => {
       this.timer = null;
+      this.timerDueAtMs = Number.POSITIVE_INFINITY;
       if (!this.running || generation !== this.generation) return;
       const pass = this.reconcile(generation);
       this.inFlight = pass;
       void pass.finally(() => {
         if (this.inFlight === pass) this.inFlight = null;
-        this.arm(generation, LIGHTNING_DISCOVERY_INTERVAL_MS);
+        this.arm(generation, this.nextDiscoveryDelayMs());
       });
     }, delayMs);
     (this.timer as { unref?: () => void }).unref?.();
+  }
+
+  /**
+   * LIGHTNING PHASE 13: while a worker is held on its way out of Lightning
+   * (a drain or a reversion) and none of its hands is still in the air here,
+   * the Cluster is about to reach MUST MOVE: look again soon, so the worker
+   * stops itself within seconds instead of a discovery interval later.
+   */
+  nextDiscoveryDelayMs(): number {
+    for (const [clusterId, worker] of this.workers) {
+      const hold = worker.currentHold;
+      if (hold === null || hold === 'paused') continue;
+      let inFlight = 0;
+      try {
+        inFlight = this.deps.hosting?.handsInFlight?.(clusterId) ?? 0;
+      } catch {
+        inFlight = 0;
+      }
+      if (inFlight === 0) return LIGHTNING_DRAIN_RECHECK_MS;
+    }
+    return LIGHTNING_DISCOVERY_INTERVAL_MS;
+  }
+
+  /**
+   * LIGHTNING PHASE 13: a held worker on its way out has nothing left in the
+   * air: bring the next discovery forward to within LIGHTNING_DRAIN_RECHECK_MS,
+   * so the worker stops itself within seconds of the Cluster reaching MUST
+   * MOVE. A discovery already due sooner (or in flight) is left alone.
+   */
+  discoverSoon(): void {
+    if (!this.running || !this.timer) return;
+    if (this.timerDueAtMs <= Date.now() + LIGHTNING_DRAIN_RECHECK_MS) return;
+    this.arm(this.generation, LIGHTNING_DRAIN_RECHECK_MS);
+  }
+
+  /** LIGHTNING PHASE 13: tell a Cluster's rooms about its hold, once per change. */
+  private tellStatus(clusterId: string, status: LightningClusterStatus | null): void {
+    if ((this.statusTold.get(clusterId) ?? null) === status) return;
+    if (status === null) this.statusTold.delete(clusterId);
+    else this.statusTold.set(clusterId, status);
+    try {
+      this.deps.clusterStatus?.(clusterId, status);
+    } catch (err) {
+      if (this.failureLog.shouldLog('cluster_status'))
+        this.logger.error('[LightningSupervisor] cluster status notice failed', err);
+    }
   }
 
   /**
@@ -314,7 +441,7 @@ export class LightningSupervisor {
     // makes no request at all.
     if (!this.running || generation !== this.generation) return;
     if (this.frozen()) return;
-    let candidates: Map<string, boolean>;
+    let candidates: Map<string, DiscoveredState>;
     try {
       candidates = normalizeDiscovered(await this.discover());
     } catch (err) {
@@ -361,6 +488,7 @@ export class LightningSupervisor {
       this.logger.log(
         `[LightningSupervisor] ${clusterId} no longer qualifies - stopping its worker`
       );
+      this.tellStatus(clusterId, null);
       await worker.stop();
       // After LIGHTNING -> MUST_MOVE nothing is left to abandon: the commit
       // waited for every hand to settle. Lightning switched off never lands
@@ -382,17 +510,22 @@ export class LightningSupervisor {
 
     // Start the new ones; hand the others their fresh config and mode.
     for (const [clusterId, config] of qualifying) {
-      const draining = candidates.get(clusterId) === true;
+      const state = candidates.get(clusterId);
+      const hold = holdOf(state);
       const existing = this.workers.get(clusterId);
       if (existing) {
         if (!sameLightningConfig(existing.currentConfig, config)) existing.updateConfig(config);
-        existing.setDraining(draining);
+        if (state?.hold) existing.setHold(hold);
+        else existing.setDraining(state?.draining === true);
+        this.tellStatus(clusterId, lightningClusterStatusOf(existing.currentHold));
         continue;
       }
       const worker = this.createWorker(clusterId, config);
       this.workers.set(clusterId, worker);
-      worker.setDraining(draining);
+      if (state?.hold) worker.setHold(hold);
+      else worker.setDraining(state?.draining === true);
       worker.start();
+      this.tellStatus(clusterId, lightningClusterStatusOf(worker.currentHold));
     }
     this.metrics.setWorkers(this.workers.size);
   }
@@ -417,6 +550,9 @@ export class LightningSupervisor {
       logger: this.logger,
       frozen: this.frozen,
       now: this.deps.now,
+      // LIGHTNING PHASE 13: the drain's progress report (hands still in the air here).
+      handsInFlight: () => hosting?.handsInFlight?.(clusterId) ?? 0,
+      onHeldIdle: () => this.discoverSoon(),
       ...(hosting
         ? {
             startHand: (hand) => {
@@ -424,7 +560,9 @@ export class LightningSupervisor {
                 hand,
                 worker.currentConfig,
                 () => worker.wake(),
-                (id) => onFrozen(id)
+                (id) => onFrozen(id),
+                // LIGHTNING PHASE 13: the fold flags are read live, at the action door.
+                () => worker.currentConfig
               );
             },
             hasInstance: (id) => hosting.hasInstance(id),
@@ -453,6 +591,7 @@ export class LightningSupervisor {
   private async stopAllWorkers(): Promise<void> {
     const workers = [...this.workers.values()];
     this.workers.clear();
+    this.statusTold.clear();
     await Promise.allSettled(workers.map((w) => w.stop()));
     // Leadership is gone: no hand this process formed may be settled under it.
     await this.deps.hosting?.abortAll('leadership_lost');

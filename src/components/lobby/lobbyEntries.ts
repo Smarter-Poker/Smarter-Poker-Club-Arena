@@ -260,7 +260,8 @@ export interface LobbyEntry {
      * card then says LIGHTNING LIVE with the pool's player count and one
      * word for the pool, and its door is the Lightning route, never a table.
      */
-    lightning?: { players: number; status: LightningPoolStatus } | null;
+    /** LIGHTNING PHASE 13: `joinsClosed` while an operator has stopped new players. */
+    lightning?: { players: number; status: LightningPoolStatus; joinsClosed?: true } | null;
   };
   startTime: string | null;
   startValue: number; // ms epoch, Infinity when none — numeric sort key
@@ -1405,7 +1406,13 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
              set only while the mode is lightning itself. pending_off and
              draining still say LIGHTNING LIVE below, with JOIN GAME. */
           ...(lightning && lightningStatus && lightning.joinLightning
-            ? { lightning: { players: lightning.players, status: lightningStatus } }
+            ? {
+                lightning: {
+                  players: lightning.players,
+                  status: lightningStatus,
+                  ...(lightning.joinsClosed ? { joinsClosed: true as const } : {}),
+                },
+              }
             : {}),
         }
       : null;

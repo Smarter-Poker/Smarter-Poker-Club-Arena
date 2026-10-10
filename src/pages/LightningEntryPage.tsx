@@ -78,6 +78,13 @@ function mySessionPath(row: LightningMySessionRow): string {
 export const LIGHTNING_LIMIT_TEXT =
   'You Are Playing The Most Lightning Tables This Device Allows. Leave One To Join Another.';
 
+/**
+ * LIGHTNING PHASE 13: an operator has stopped new players entering this
+ * Cluster's pool (fn_lightning_pool_status joins_enabled false). Players
+ * already in it play on; JOIN LIGHTNING is shown, and not offered.
+ */
+export const LIGHTNING_JOINS_CLOSED_TEXT = 'Lightning Is Not Taking New Players Right Now.';
+
 type Phase =
   | { kind: 'resolving' }
   | { kind: 'entry'; meta: LightningClusterMeta | null; decision: LightningEntryDecision }
@@ -278,6 +285,13 @@ export default function LightningEntryPage() {
     meta?.enabled === false ||
     modeDisplay.closedLabel !== null ||
     (lightning && poolHealth?.joinable === false);
+  /* LIGHTNING PHASE 13: joins stopped by an operator. Said in its own words,
+     ahead of the generic closed line the joinable verdict would give. */
+  const joinsClosed =
+    lightning &&
+    meta?.enabled !== false &&
+    modeDisplay.closedLabel === null &&
+    poolHealth?.joinsEnabled === false;
   /* At the device's limit, another Cluster's JOIN LIGHTNING is not offered. */
   const atLimit = lightning && !closed && !withinLimit;
   const eyebrow = modeDisplay.closedLabel
@@ -291,19 +305,32 @@ export default function LightningEntryPage() {
         eyebrow={eyebrow}
         title={meta?.name ?? 'Lightning'}
         description={
-          closed
-            ? 'This Game Is Not Taking Players.'
-            : atLimit
-              ? LIGHTNING_LIMIT_TEXT
-              : [stakes, 'Buy In Once And Play One Stream Of Hands.'].filter(Boolean).join('. ')
+          joinsClosed
+            ? LIGHTNING_JOINS_CLOSED_TEXT
+            : closed
+              ? 'This Game Is Not Taking Players.'
+              : atLimit
+                ? LIGHTNING_LIMIT_TEXT
+                : [stakes, 'Buy In Once And Play One Stream Of Hands.'].filter(Boolean).join('. ')
         }
         action={
-          closed || atLimit
+          joinsClosed || closed || atLimit
             ? undefined
             : { label: joining ? 'Joining...' : joinLabel, onClick: () => void join() }
         }
         secondaryAction={{ label: 'Return To Lobby', onClick: () => navigate('/') }}
       >
+        {joinsClosed ? (
+          <button
+            type="button"
+            className="lightning-entry__join-closed"
+            data-testid="lightning-entry-join-closed"
+            disabled
+            aria-disabled="true"
+          >
+            {joinLabel}
+          </button>
+        ) : null}
         {lightning && poolHealth ? (
           <div className="lightning-entry__badge">
             <LightningPoolBadge status={poolHealth.status} players={poolHealth.players} />

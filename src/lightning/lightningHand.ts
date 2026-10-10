@@ -48,6 +48,12 @@ export interface LightningSnapshotFields {
     variant?: unknown;
     /** The engine's own answer: may the hero LIGHTNING FOLD right now. */
     fast_fold_available?: unknown;
+    /**
+     * LIGHTNING PHASE 13: whether the Cluster offers each control at all (an
+     * operator can switch either off). Absent on an older engine: both offered.
+     */
+    fast_fold_enabled?: unknown;
+    fold_watch_enabled?: unknown;
   } | null;
 }
 
@@ -113,6 +119,27 @@ export function lightningFastFoldFlag(
   return typeof v === 'boolean' ? v : null;
 }
 
+/**
+ * LIGHTNING PHASE 13: which controls the Cluster offers, from the engine's
+ * snapshot. Only an explicit false switches one off; null when the snapshot
+ * carries neither field (an older engine), which offers both as before.
+ */
+export function lightningFoldFlags(
+  snapshot: LightningSnapshotFields | null | undefined
+): { fastFold: boolean; foldWatch: boolean } | null {
+  const l = snapshot?.lightning;
+  if (!l || (l.fast_fold_enabled === undefined && l.fold_watch_enabled === undefined)) return null;
+  return { fastFold: l.fast_fold_enabled !== false, foldWatch: l.fold_watch_enabled !== false };
+}
+
+/**
+ * LIGHTNING PHASE 13: the room's words while its Cluster drains back to MUST
+ * MOVE (an operator's drain, or the pool thinning out). Every hand in the air
+ * finishes first; the player's seat is kept. Popup rules: Title Case, no dashes.
+ */
+export const LIGHTNING_ENDING_TEXT =
+  'Lightning Is Ending. Your Game Returns To MUST MOVE After This Hand.';
+
 // ─── The two Lightning controls ────────────────────────────────────────────
 
 export interface LightningFoldInput {
@@ -136,6 +163,12 @@ export interface LightningFoldInput {
    * input still says from the hand that just ended.
    */
   handOnFelt?: boolean;
+  /**
+   * LIGHTNING PHASE 13: `lightningFoldFlags(snapshot)`. A control the Cluster
+   * switched off is never offered (the engine's door would refuse it). Null or
+   * absent offers both, as before.
+   */
+  engineFoldFlags?: { fastFold: boolean; foldWatch: boolean } | null;
 }
 
 export interface LightningFoldAvailability {
@@ -162,9 +195,10 @@ export function lightningFoldAvailability(
           input.handInProgress &&
           !input.handSettling &&
           String(input.heroStatus ?? '') === 'active';
+  const flags = input.engineFoldFlags ?? null;
   return {
-    fastFold: foldable && caps.fast_fold === true,
-    foldWatch: foldable && caps.fold_and_watch === true,
+    fastFold: foldable && caps.fast_fold === true && flags?.fastFold !== false,
+    foldWatch: foldable && caps.fold_and_watch === true && flags?.foldWatch !== false,
   };
 }
 

@@ -59,6 +59,10 @@ export function noteLightningUserEvent(
   payload: Record<string, unknown> | null | undefined
 ): boolean {
   const type = payload?.type;
+  if (type === 'lightning_cluster_status') {
+    noteLightningClusterStatus(payload);
+    return true;
+  }
   if (type !== 'lightning_decision' && type !== 'lightning_decision_cleared') return false;
   const handId = typeof payload?.hand_id === 'string' ? payload.hand_id : '';
   if (!handId) return true;
@@ -136,4 +140,50 @@ export function lightningUrgencyByRoom(
 export function resetLightningDecisionsForTests(): void {
   entries.clear();
   emit();
+}
+
+// ─── LIGHTNING PHASE 13: A HELD CLUSTER, AS ITS ROOMS ARE TOLD ───────────────
+
+/**
+ * The engine tells every room of a Cluster when it stops forming hands
+ * (USER_EVENT 'lightning_cluster_status'): 'ending' while it drains back to
+ * MUST MOVE, 'paused' while an operator holds it, null when it forms again.
+ * Kept per Cluster here (the socket client feeds it, beside the decisions) so
+ * the room can say "Lightning Is Ending" before it closes. It never moves the
+ * view (CLAUDE.md 10.6): it is words, nothing else.
+ */
+export type LightningClusterStatus = 'ending' | 'paused';
+
+const clusterStatuses = new Map<string, LightningClusterStatus>();
+const statusListeners = new Set<() => void>();
+
+function noteLightningClusterStatus(payload: Record<string, unknown> | null | undefined): void {
+  const clusterId = typeof payload?.cluster_id === 'string' ? payload.cluster_id : '';
+  if (!clusterId) return;
+  const raw = payload?.status;
+  const status: LightningClusterStatus | null = raw === 'ending' || raw === 'paused' ? raw : null;
+  if ((clusterStatuses.get(clusterId) ?? null) === status) return;
+  if (status === null) clusterStatuses.delete(clusterId);
+  else clusterStatuses.set(clusterId, status);
+  for (const l of statusListeners) l();
+}
+
+/** What the engine last said about this Cluster's hold (null: it forms, or nothing was said). */
+export function lightningClusterStatus(
+  clusterId: string | null | undefined
+): LightningClusterStatus | null {
+  return clusterId ? (clusterStatuses.get(clusterId) ?? null) : null;
+}
+
+export function subscribeLightningClusterStatus(listener: () => void): () => void {
+  statusListeners.add(listener);
+  return () => {
+    statusListeners.delete(listener);
+  };
+}
+
+/** Tests only. */
+export function resetLightningClusterStatusForTests(): void {
+  clusterStatuses.clear();
+  for (const l of statusListeners) l();
 }

@@ -24,6 +24,9 @@ AS $function$
      AND a.user_id=m.user_id AND a.status='active'))
  )
 $function$;
+-- Preserve the installed private-helper ACL explicitly for source qualification.
+REVOKE ALL ON FUNCTION public.fn_cashier_member_is_active(uuid,uuid) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_cashier_member_is_active(uuid,uuid) TO service_role;
 INSERT INTO public.ca_money_rpc_registry(proname,status,notes) VALUES
  ('fn_ca_deleted_account_bank_return','system','Owner October 10 account lifecycle cash custody return. Locks balances, conserves chips, declares ledger counterparty and writes receipts. No seats, tickets, diamonds or active profiles change.'),
  ('fn_ca_deleted_wallet_credit','system','Same-transaction deleted-account cash credit lifecycle hook. No scheduled repair.')

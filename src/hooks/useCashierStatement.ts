@@ -392,6 +392,10 @@ export type StatementProblem =
   | 'malformed'
   | 'too_large'
   | 'expired'
+  /** 55000 "an export is already being prepared": try again, nothing is lost. */
+  | 'busy'
+  /** 55000 "export is unavailable" / "export metadata is invalid": prepare anew. */
+  | 'gone'
   | 'download_failed';
 
 const errorCode = (e: unknown): string | null =>
@@ -417,7 +421,13 @@ function exportProblem(e: unknown): StatementProblem {
   const code = errorCode(e);
   const text = errorText(e).toLowerCase();
   if (code === '55000') {
+    // The server raises 55000 for four different things (migration
+    // 20260923131325); every one of them used to be told as "expired"
+    // (launch audit 2026-10-09, S-09). Each keeps its own word now; only a
+    // message that actually says so is an expiry.
     if (/narrow the range|20,000|20000/.test(text)) return 'too_large';
+    if (/already being prepared/.test(text)) return 'busy';
+    if (/export is unavailable|metadata is invalid/.test(text)) return 'gone';
     return 'expired';
   }
   if (code === '22023') return 'range';
@@ -973,7 +983,9 @@ export function useCashierStatement({
           // so revoke() clears everything and cancels it (best effort).
           if (isAccessRefusal(response.error)) return revoke('refused');
           const problem = exportProblem(response.error);
-          if (problem === 'expired') {
+          // Expired or gone: the job is over either way and the only road is
+          // Prepare Again; the words differ so the reader knows which.
+          if (problem === 'expired' || problem === 'gone') {
             exportJob.current = null;
             exportBuffer.current = null;
             setExportView({ ...EXPORT_IDLE, status: 'expired', problem });

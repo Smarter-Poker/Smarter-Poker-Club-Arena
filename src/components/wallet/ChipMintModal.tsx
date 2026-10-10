@@ -61,6 +61,7 @@ import { reportError } from '../../utils/errorReporter';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { uuid } from '../../utils/uuid';
 import { SpadeConsole } from '../console/SpadeConsole';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import './ChipMintModal.css';
 
 interface ChipMintModalProps {
@@ -73,6 +74,8 @@ interface ChipMintModalProps {
 }
 
 const fmt = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+/** The spelling of a whole-diamond amount: digits only, no sign, no exponent. */
+const WHOLE_DIAMONDS = /^\d+$/;
 
 /** Where this mint will land, resolved before a single diamond is burned. */
 type MintTarget =
@@ -165,6 +168,11 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
     };
   }, [isOpen, onClose]);
 
+  /* Tab stays inside the sheet and focus returns to the cashier's control that
+     opened it (launch audit D-11). The amount field takes first focus, as the
+     autoFocus below already asked. */
+  const panelRef = useFocusTrap<HTMLDivElement>(isOpen, '.cmm-input');
+
   useEffect(() => {
     if (!isOpen || !user?.id) return;
     let live = true;
@@ -195,50 +203,87 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
       // whether this mint is even permitted so the panel can say where the
       // chips land (club pool vs union bank) or that the mint is revoked.
       const uuidResolved = (await resolveClubUUID(clubId)) || clubId;
-      const { data: club } = await supabase
-        .from('clubs')
-        .select('id, name, union_id, owner_id')
-        .eq('id', uuidResolved)
-        .maybeSingle();
+      /* THE CLUB IS READ THROUGH THE ROLE-CHECKED PANEL (launch audit S-07,
+         2026-10-09), not off the clubs table. fn_club_money_panel is SECURITY
+         DEFINER, answers `authorized:false` with a reason for a stranger, and
+         says in `scope` whether the caller is club staff ('club': the owner
+         row or owner / co_owner / admin / manager) or union staff ('union':
+         the union owner or a union admin), which is the exact pair of checks
+         this pre-flight used to assemble from four table reads. A read that
+         fails, or a refusal, falls to the denied side: nothing here can make
+         a mint LOOK permitted that the RPC would refuse. */
+      const { data: panelData, error: panelError } = await supabase.rpc('fn_club_money_panel', {
+        p_club_id: uuidResolved,
+      });
       if (!live) return;
-      if (!club) {
-        setTarget({ state: 'denied', label: 'Club Not Found' });
+      if (panelError) {
+        reportError(panelError, 'ChipMintModal.preflight');
+        setTarget({ state: 'denied', label: 'Mint Rights Could Not Be Checked' });
+        return;
+      }
+      const panel = ((Array.isArray(panelData) ? panelData[0] : panelData) ?? {}) as {
+        authorized?: boolean;
+        reason?: string;
+        scope?: string;
+        club_name?: string | null;
+        in_union?: boolean;
+        union_id?: string | null;
+      };
+      if (panel.authorized !== true) {
+        setTarget({
+          state: 'denied',
+          label:
+            panel.reason === 'club_not_found'
+              ? 'Club Not Found'
+              : 'Only A Club Owner Or Admin May Mint',
+        });
         return;
       }
 
-      if (club.union_id) {
-        const [{ data: union }, { data: ua }] = await Promise.all([
-          supabase.from('unions').select('name, owner_id').eq('id', club.union_id).maybeSingle(),
-          supabase
-            .from('union_admins')
-            .select('user_id')
-            .eq('union_id', club.union_id)
-            .eq('user_id', user.id)
-            .maybeSingle(),
-        ]);
+      const unionId = panel.union_id ?? null;
+      if (panel.in_union === true || unionId) {
+        /* The union's NAME is the only thing still read from a table, for the
+           label; the right to mint is the panel's `scope`, never this row. */
+        const { data: union, error: unionError } = unionId
+          ? await supabase.from('unions').select('name').eq('id', unionId).maybeSingle()
+          : { data: null, error: null };
         if (!live) return;
-        const mayMint = union?.owner_id === user.id || Boolean(ua);
+        if (unionError) reportError(unionError, 'ChipMintModal.unionName');
+        const unionName = (union?.name as string | undefined) || '';
+        const mayMint = panel.scope === 'union';
         setTarget(
           mayMint
-            ? { state: 'union', clubUuid: uuidResolved, label: `${union?.name || 'Union'} Bank` }
-            : { state: 'revoked', label: union?.name || 'This Union' }
+            ? { state: 'union', clubUuid: uuidResolved, label: `${unionName || 'Union'} Bank` }
+            : { state: 'revoked', label: unionName || 'This Union' }
         );
         return;
       }
 
-      // Standalone club — owner / co_owner / admin only.
-      const { data: mem } = await supabase
+      // Standalone club: owner / co_owner / admin only. The panel's 'club'
+      // scope also admits a manager, whom the RPC refuses, so the caller's own
+      // membership row (self-scoped) narrows it; an owner with no row at all
+      // is 'club' scoped by owner_id alone and keeps the right.
+      if (panel.scope !== 'club') {
+        setTarget({ state: 'denied', label: 'Only A Club Owner Or Admin May Mint' });
+        return;
+      }
+      const { data: mem, error: memError } = await supabase
         .from('club_members')
         .select('role')
         .eq('club_id', uuidResolved)
         .eq('user_id', user.id)
         .maybeSingle();
       if (!live) return;
-      const role = (mem?.role as string) || '';
-      const mayMint = club.owner_id === user.id || ['owner', 'co_owner', 'admin'].includes(role);
+      if (memError) {
+        reportError(memError, 'ChipMintModal.memberRole');
+        setTarget({ state: 'denied', label: 'Mint Rights Could Not Be Checked' });
+        return;
+      }
+      const role = String(mem?.role || '').toLowerCase();
+      const mayMint = role !== 'manager';
       setTarget(
         mayMint
-          ? { state: 'club', clubUuid: uuidResolved, label: `${club.name || 'Club'} Bank` }
+          ? { state: 'club', clubUuid: uuidResolved, label: `${panel.club_name || 'Club'} Bank` }
           : { state: 'denied', label: 'Only A Club Owner Or Admin May Mint' }
       );
     })();
@@ -254,9 +299,15 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
   const chips = rate ? Math.round((d / rate) * 100) / 100 : 0;
   const canMintHere = target.state === 'club' || target.state === 'union';
   const overBalance = balance !== null && d > balance;
+  /* THE SPELLING IS INSPECTED, NOT JUST THE VALUE (launch audit D-15):
+     `Number('1e3')` floors to 1000 whole diamonds, so "1e3" burned a thousand
+     the typist never saw written out. Diamonds are counted in whole units, so
+     the amount is digits and nothing else. */
+  const spelledWhole = WHOLE_DIAMONDS.test(diamonds.trim());
   // AUDIT: validity used to pass while `balance` was still null (loading), so
   // a fast tap could submit an amount the player does not hold.
-  const valid = d > 0 && balance !== null && !overBalance && canMintHere && rate !== null;
+  const valid =
+    d > 0 && spelledWhole && balance !== null && !overBalance && canMintHere && rate !== null;
 
   const mint = async () => {
     if (!valid || busy || busyRef.current) return;
@@ -307,7 +358,7 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
       aria-label="Chip Mint"
       onClick={() => !busy && onClose()}
     >
-      <div className="cmm-panel" onClick={(e) => e.stopPropagation()}>
+      <div ref={panelRef} className="cmm-panel" onClick={(e) => e.stopPropagation()}>
         <SpadeConsole
           onClose={busy ? undefined : onClose}
           as="div"
@@ -449,6 +500,11 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
                 {overBalance && (
                   <div className="cmm-blocked sc-ink--red" role="alert">
                     You Only Hold {fmt(balance ?? 0)} Diamonds.
+                  </div>
+                )}
+                {diamonds.trim() !== '' && !spelledWhole && (
+                  <div className="cmm-blocked sc-ink--red" role="alert">
+                    Enter A Whole Number Of Diamonds.
                   </div>
                 )}
               </div>

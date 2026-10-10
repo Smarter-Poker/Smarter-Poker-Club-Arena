@@ -83,7 +83,7 @@ function start() {
   );
 }
 async function showHistory() {
-  await screen.findByRole('tab', { name: 'Buy-In', selected: true });
+  await screen.findByRole('tab', { name: 'Cash-Out', selected: true });
   const history = screen.getByRole('tab', { name: /history/i });
   fireEvent.click(history);
 }

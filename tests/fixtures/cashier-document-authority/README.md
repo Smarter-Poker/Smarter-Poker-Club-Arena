@@ -1,4 +1,6 @@
-# Cashier document authority — source candidate, UNRUN
+# Cashier document authority — installed on production 2026-09-14
+
+> **Status corrected 2026-10-09 (Club Arena Cashier launch audit, S-02).** This README used to say "source candidate, UNRUN". The component it describes, `20260914164700_cashier_cashout_documents_share_the_existing_invoice_authority.sql`, is installed on production (applied 2026-09-14) and was verified live on 2026-10-09 by `md5(pg_get_functiondef)`: `fn_cashout_request_v2` `07cf5457edf315929b07316c07be313d`, `fn_cashout_approve_v2` `6fecd34df575557d81966dc1166a2fc4`, `fn_cashout_release_v2` `3122994e23d96770a2f50e4fe6a191a6`, `fn_cashout_operation_receipt_v2` `c9af51f246a9be79c7b79c49b760e9a9`. By decision the `supabase/migrations` directory holds no mirror; `scripts/verification-harness/cashier-release-contract.sql` pins the three browser-callable writers. The "UNRUN" statements that remain below describe the AUTHORED FIXTURE CASES in this directory (`regression.sql`), which have still not been executed in a protected run; they no longer describe the component's installation state.
 
 This fixture belongs to component33, `20260914164700_cashier_cashout_documents_share_the_existing_invoice_authority.sql`, after the sealed 32-component Club Arena accounting authority. It extends the existing chip journal, invoice delivery, private Messenger reader and deferred push bridge. It does not create a second ledger, payout coordinator or browser invoice writer.
 

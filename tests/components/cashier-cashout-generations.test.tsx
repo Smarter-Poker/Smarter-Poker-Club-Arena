@@ -148,9 +148,9 @@ async function mount(amount: string) {
       <Navigation />
     </MemoryRouter>
   );
-  await screen.findByRole('tab', { name: 'Buy-In', selected: true });
+  await screen.findByRole('tab', { name: 'Cash-Out', selected: true });
   fireEvent.click(screen.getByRole('tab', { name: 'Cash-Out' }));
-  fireEvent.change(screen.getByLabelText('AMOUNT:'), { target: { value: amount } });
+  fireEvent.change(screen.getByLabelText('Amount'), { target: { value: amount } });
   const button = screen.getByRole('button', { name: /REQUEST CASHOUT/i });
   await waitFor(() => expect(button).not.toBeDisabled());
   return button;
@@ -209,7 +209,7 @@ it('captures before the first settlement await and refuses same-frame duplicate 
 
 it('carries one captured start through high-value confirmation and states the hold has not happened yet', async () => {
   fireEvent.click(await mount('10000'));
-  const confirm = await screen.findByRole('button', { name: 'CONFIRM SECURE CASHOUT' });
+  const confirm = await screen.findByRole('button', { name: 'Confirm Secure Cashout' });
   expect(state.capture).toHaveBeenCalledTimes(1);
   expect(state.run).not.toHaveBeenCalled();
   expect(screen.getByText('Chips Will Be Held After You Confirm This Request')).toBeTruthy();
@@ -222,7 +222,7 @@ it('carries one captured start through high-value confirmation and states the ho
 
 it('confirmation recovers the same operation completed elsewhere while the dialog was open and its balance is now low', async () => {
   fireEvent.click(await mount('10000'));
-  const confirm = await screen.findByRole('button', { name: 'CONFIRM SECURE CASHOUT' });
+  const confirm = await screen.findByRole('button', { name: 'Confirm Secure Cashout' });
   const original = state.capture.mock.calls[0][0];
   const priorLockCalls = state.lock.mock.calls.length;
   state.balance = 0;
@@ -242,7 +242,7 @@ it.each(['unknown', 'absent'] as const)(
   'confirmation %s never pays through a now-low balance',
   async (outcome) => {
     fireEvent.click(await mount('10000'));
-    const confirm = await screen.findByRole('button', { name: 'CONFIRM SECURE CASHOUT' });
+    const confirm = await screen.findByRole('button', { name: 'Confirm Secure Cashout' });
     state.balance = 0;
     await act(async () => state.refreshBalance());
     if (outcome === 'unknown')
@@ -266,7 +266,7 @@ it('hides already visible pending rows on a same-ID account epoch change until a
       <CashierPage />
     </MemoryRouter>
   );
-  await screen.findByRole('tab', { name: 'Buy-In', selected: true });
+  await screen.findByRole('tab', { name: 'Cash-Out', selected: true });
   fireEvent.click(screen.getByRole('tab', { name: 'Cash-Out' }));
   await screen.findByText('876 Chips');
   const nextRead = deferred<any>();
@@ -297,11 +297,11 @@ it('auth notification remounts the Cashier during an old pending action and its 
     state.epoch += 2;
     for (const handler of state.authListeners) handler();
   });
-  await screen.findByRole('tab', { name: 'Buy-In', selected: true });
+  await screen.findByRole('tab', { name: 'Cash-Out', selected: true });
   await waitFor(() => expect(state.pendingRead.mock.calls.length).toBeGreaterThan(priorReads));
   expect(oldIntent.isCurrent()).toBe(false);
   fireEvent.click(screen.getByRole('tab', { name: 'Cash-Out' }));
-  fireEvent.change(screen.getByLabelText('AMOUNT:'), { target: { value: '250' } });
+  fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '250' } });
   const freshButton = screen.getByRole('button', { name: /REQUEST CASHOUT/i });
   await waitFor(() => expect(freshButton).not.toBeDisabled());
   fireEvent.click(freshButton);

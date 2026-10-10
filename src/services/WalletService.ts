@@ -20,6 +20,8 @@ import { masterBus } from '../core/MasterBus';
 import { FinancialAlertService } from './FinancialAlertService';
 import { reportError } from '../utils/errorReporter';
 import { uuid } from '../utils/uuid';
+
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 import { useUserStore } from '../stores/useUserStore';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -227,12 +229,25 @@ export const WalletService = {
    * - If the club is standalone (no union affiliation), the club owner can mint directly.
    *
    * MINT RATE (Dan 2026-08-21, BINDING): 100 Diamonds = 10,000 Chips.
+   *
+   * THE IDEMPOTENCY KEY IS THE CALLER'S (launch audit 2026-10-09, S-03). This
+   * used to mint `uuid()` INSIDE the call, which protects nothing: the
+   * dangerous shape is commit + lost response + retry, and that retry must
+   * present the SAME key or the route mints a second time. The caller holds
+   * the key across a failure and rotates it only when the mint lands or the
+   * amount changes (ChipMintModal.opIdRef is the pattern). The classic
+   * Cashier no longer calls this at all; it mints through
+   * fn_mint_chips_from_diamonds with a retained p_op_id.
    */
   async mintChips(
     clubId: string,
     chipAmount: number,
+    idempotencyKey: string,
     requestingUserId?: string
   ): Promise<ChipMintResult> {
+    if (!idempotencyKey || typeof idempotencyKey !== 'string') {
+      throw new Error('A mint needs an idempotency key held by the caller');
+    }
     // Resolve the authenticated minter. Server-side authorization is enforced by
     // mint_club_chips (which now rejects a null minter), but we resolve it here so
     // the union-lock check below is never silently skipped when a caller omits the
@@ -299,7 +314,7 @@ export const WalletService = {
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
-        'X-Idempotency-Key': uuid(),
+        'X-Idempotency-Key': idempotencyKey,
       },
       body: JSON.stringify({
         clubId: resolvedClubId,
@@ -414,9 +429,18 @@ export const WalletService = {
     clubId: string,
     playerId: string,
     amount: number,
-    note?: string
+    note: string | undefined,
+    opId: string
   ): Promise<boolean> {
     if (amount <= 0) throw new Error('Amount must be positive');
+    // THE PAYMENT IDENTITY IS THE CALLER'S (launch audit 2026-10-09, S-04).
+    // Minting `uuid()` here protected nothing: commit + lost response + a
+    // user retry presented a fresh id and paid twice. The caller retains the
+    // id across a failure (AgentDashboardPage.promoOpIdRef) and rotates it
+    // only when the grant lands or the amount/target changes.
+    if (typeof opId !== 'string' || !UUID_SHAPE.test(opId)) {
+      throw new Error('Promo Disbursement Requires A Retained Operation Id');
+    }
 
     // The union holds the promo float for its member clubs; an unaffiliated
     // club holds its own.
@@ -429,7 +453,7 @@ export const WalletService = {
     if (!club) throw new Error('Club not found');
 
     // One payment identity survives every network retry, including a lost commit response.
-    const operationId = uuid();
+    const operationId = opId;
     const { data, error } = await retryAsync(
       () =>
         supabase.rpc('fn_promo_disburse', {
@@ -459,12 +483,12 @@ export const WalletService = {
 
   /**
    * @deprecated Kept so nothing calls the retired agent path by accident.
-   * Use `disbursePromo(clubId, playerId, amount)`.
+   * Use `disbursePromo(clubId, playerId, amount, note, opId)`.
    */
   async distributePromo(_agentId: string, _playerId: string, _amount: number): Promise<boolean> {
     throw new Error(
       'distributePromo is retired: promo is disbursed by the union owner, or by an unaffiliated ' +
-        'club owner, through WalletService.disbursePromo(clubId, playerId, amount).'
+        'club owner, through WalletService.disbursePromo(clubId, playerId, amount, note, opId).'
     );
   },
 
@@ -480,7 +504,9 @@ export const WalletService = {
 
     for (const dist of distributions) {
       try {
-        await this.disbursePromo(clubId, dist.playerId, dist.amount);
+        // Each row is its own deliberate payment; a bulk caller has no edit
+        // to retain across, so the id is minted once per row here.
+        await this.disbursePromo(clubId, dist.playerId, dist.amount, undefined, uuid());
         success++;
       } catch (err) {
         reportError(err, 'WalletService.bulkDistributePromo', { playerId: dist.playerId });

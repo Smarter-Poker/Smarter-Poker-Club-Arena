@@ -152,7 +152,14 @@ describe('a lost response cannot send twice', () => {
 
 describe('the number on screen is the account that gets debited', () => {
   it('reads the club treasury for a bank role and the agent wallet otherwise', () => {
-    expect(MODAL_CODE).toMatch(/\.from\('clubs'\)\s*\n?\s*\.select\('chip_treasury'\)/);
+    // Launch audit 2026-10-09 (S-07): the treasury comes from the role-checked
+    // money panel, never a direct clubs.chip_treasury select that RLS can
+    // answer differently from the account the send debits.
+    expect(MODAL_CODE).toMatch(
+      /supabase\.rpc\('fn_club_money_panel', \{\s*\n?\s*p_club_id: resolvedId,/
+    );
+    expect(MODAL_CODE).toMatch(/\.club_treasury/);
+    expect(MODAL_CODE).not.toMatch(/\.select\('chip_treasury'\)/);
     expect(MODAL_CODE).toMatch(/\.from\('agents'\)\s*\n?\s*\.select\('agent_wallet_balance'\)/);
   });
 

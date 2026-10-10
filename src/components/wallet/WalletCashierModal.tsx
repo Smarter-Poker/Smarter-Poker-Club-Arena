@@ -123,6 +123,8 @@ import { enumToTitleCase, titleCase } from '../../utils/titleCase';
 import ChipMintModal from './ChipMintModal';
 import './WalletCashierModal.css';
 import { downloadBlob } from '../../utils/downloadCsv';
+import { statementCsvCell } from '../../utils/cashierStatementCsv';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 type DestinationWallet = CashierDestination;
 type Tab = CashierTab;
@@ -276,10 +278,21 @@ function newOpId(): string {
   });
 }
 
-/** RFC 4180 enough for a spreadsheet: quote everything, double the quotes. */
-function csvCell(v: unknown): string {
-  return `"${String(v ?? '').replace(/"/g, '""')}"`;
-}
+/**
+ * ONE ESCAPER FOR EVERY CASHIER CSV (launch audit S-04, 2026-10-09). A note
+ * on a send is text the sender typed, and a name is text a player chose:
+ * `=HYPERLINK(...)` or `-2+3|cmd` in either used to be written quoted but
+ * otherwise verbatim, which a spreadsheet evaluates on open. The statement
+ * export already had the hardened cell (control characters flattened,
+ * invisibles stripped, formula triggers prefixed), so the ledgers now use it:
+ * figures and timestamps pass raw only when they match their strict shape,
+ * everything else is treated as untrusted text.
+ */
+const csvText = (v: unknown) => statementCsvCell(v, 'text');
+const csvDecimal = (v: unknown) => statementCsvCell(v, 'decimal');
+const csvTimestamp = (v: unknown) => statementCsvCell(v, 'timestamp');
+/** The spelling of a whole-chip amount: digits only, no sign, no exponent. */
+const WHOLE_CHIPS = /^\d+$/;
 
 export default function WalletCashierModal({
   isOpen,
@@ -297,6 +310,9 @@ export default function WalletCashierModal({
   const [clubName, setClubName] = useState('');
   const [inUnion, setInUnion] = useState<boolean | null>(null);
   const [bank, setBank] = useState<number | null>(null);
+  // false: the agent float row does not exist yet (D-16, launch audit
+  // 2026-10-09). That is neither 0 nor unavailable, and the header says so.
+  const [hasFloat, setHasFloat] = useState<boolean | null>(null);
 
   const [tab, setTab] = useState<Tab>('send');
   const [destination, setDestination] = useState<DestinationWallet>('agent_wallet');
@@ -344,6 +360,8 @@ export default function WalletCashierModal({
   const [reversibleAnchor, setReversibleAnchor] = useState<number | null>(null);
   /** Ticks once a second so each countdown on that list re-renders. */
   const [, setNowTick] = useState(0);
+  /** Bumped after a claim lands so the agent / promo holder figure re-reads. */
+  const [holderNonce, setHolderNonce] = useState(0);
 
   /**
    * WHICH PROMO ACCOUNT THIS CASHIER SPENDS (2026-09-05). A Club Bank role
@@ -368,6 +386,17 @@ export default function WalletCashierModal({
   const [reversingId, setReversingId] = useState<string | null>(null);
 
   const [showMint, setShowMint] = useState(false);
+  /**
+   * ESCAPE BELONGS TO THE TOP SHEET (launch audit D-01, 2026-10-09). The mint
+   * stacks above this cashier and both listen on `document`, so one Escape
+   * ran both: the mint's guard held while a mint was in flight, and the
+   * cashier closed anyway, unmounting the mint and its idempotency key mid
+   * RPC. A ref, because the key listener is registered once per open.
+   */
+  const showMintRef = useRef(false);
+  useEffect(() => {
+    showMintRef.current = showMint;
+  }, [showMint]);
 
   /**
    * The idempotency key for the CURRENT attempt. Regenerated when the form is
@@ -443,6 +472,7 @@ export default function WalletCashierModal({
       balanceScopeRef.current++;
       setClubUuid(null);
       setBank(null);
+      setHasFloat(null);
       setPromoPot(null);
       setPromoFloat(null);
       setInUnion(null);
@@ -452,6 +482,7 @@ export default function WalletCashierModal({
       setClubUuid(snapshot.clubId);
       setClubName(snapshot.name);
       setInUnion(snapshot.inUnion);
+      setHasFloat(snapshot.hasFloat);
       if (walletType !== 'promo_wallet') setBank(snapshot.bank);
       setPromoPot(snapshot.promoPot);
       setPromoFloat(snapshot.promoFloat);
@@ -461,6 +492,7 @@ export default function WalletCashierModal({
       reportError(error, 'WalletCashierModal.loadClub');
       // An unread balance is unavailable, never zero or permission to spend.
       setBank(null);
+      setHasFloat(null);
       setPromoPot(null);
       setPromoFloat(null);
       setInUnion(null);
@@ -503,19 +535,27 @@ export default function WalletCashierModal({
         return;
       }
       const rows = (data || []) as Array<Record<string, unknown>>;
-      setMembers(
-        rows.map((m) => ({
-          user_id: String(m.user_id),
-          role: String(m.role || 'player'),
-          name: (m.name as string) || `Member ${String(m.user_id).slice(0, 8)}`,
-          chip_balance:
-            m.chip_balance !== undefined && m.chip_balance !== null
-              ? Number(m.chip_balance)
-              : undefined,
-          avatar_url: (m.avatar_url as string) || '',
-          username: (m.username as string) || '',
-          short_id: String(m.player_number || '----'),
-        }))
+      const mapped: Member[] = rows.map((m) => ({
+        user_id: String(m.user_id),
+        role: String(m.role || 'player'),
+        name: (m.name as string) || `Member ${String(m.user_id).slice(0, 8)}`,
+        chip_balance:
+          m.chip_balance !== undefined && m.chip_balance !== null
+            ? Number(m.chip_balance)
+            : undefined,
+        avatar_url: (m.avatar_url as string) || '',
+        username: (m.username as string) || '',
+        short_id: String(m.player_number || '----'),
+      }));
+      setMembers(mapped);
+      /* THE CHOSEN RECIPIENT IS RE-READ WITH THE ROSTER (launch audit D-04).
+         After a claim the roster was refetched but `recipient` kept the OLD
+         row, so the Claim tab still said "Holds 1,000" after taking 500 and
+         offered a second 1,000. The holder figure and the cap read this
+         object, so it follows the refresh. A recipient who left the roster
+         is dropped rather than kept on a stale figure. */
+      setRecipient((prev) =>
+        prev ? (mapped.find((m) => m.user_id === prev.user_id) ?? null) : prev
       );
       setMembersLoading(false);
     },
@@ -690,6 +730,18 @@ export default function WalletCashierModal({
     setHolderHeld(null);
     setReversible([]);
     setClaimingId(null);
+    /* THE LEDGER FIGURES BELONG TO THE CLUB THAT WAS OPEN TOO (launch audit
+       D-03). Reopened for another club, the eyebrow printed the previous
+       club's name and the Ledger tab its totals, count and type chips until
+       the new club's first page landed. */
+    setClubName('');
+    setLedgerTotal(0);
+    setLedgerTotals(null);
+    setLedgerTypes([]);
+    setLedgerError(null);
+    setPromoLedgerTotal(0);
+    setPromoLedgerTotals(null);
+    setReversibleAnchor(null);
     opIdRef.current = newOpId();
     busyRef.current = false;
   }, [isOpen, clubId, user?.id, walletType, role]);
@@ -699,7 +751,8 @@ export default function WalletCashierModal({
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !busyRef.current) onClose();
+      if (e.key !== 'Escape' || busyRef.current || showMintRef.current) return;
+      onClose();
     };
     document.addEventListener('keydown', onKey);
     const prevOverflow = document.body.style.overflow;
@@ -709,6 +762,11 @@ export default function WalletCashierModal({
       document.body.style.overflow = prevOverflow;
     };
   }, [isOpen, onClose]);
+
+  /* Tab stays inside the sheet, focus lands on its first control and returns
+     to the control that opened it (launch audit D-11). Suspended while the
+     mint is stacked above, so the two traps never fight over the keyboard. */
+  const panelRef = useFocusTrap<HTMLDivElement>(isOpen && !showMint);
 
   useEffect(() => {
     if (!isOpen || !clubUuid || !allowed) return;
@@ -811,7 +869,7 @@ export default function WalletCashierModal({
     return () => {
       cancelled = true;
     };
-  }, [tab, destination, recipient, clubUuid, isMounted]);
+  }, [tab, destination, recipient, clubUuid, isMounted, holderNonce]);
 
   // A send that lands, a claim, a reversal, or a mint changes the bank and the
   // recipient. Refetch rather than patching state by hand — a hand-patched
@@ -921,7 +979,7 @@ export default function WalletCashierModal({
         )
         .slice(0, 60)
     );
-  }, [members, destination, search, user?.id, recentIds, excludeSelf, blockFor]);
+  }, [members, search, recentIds, blockFor]);
 
   // Changing destination can strand a recipient who cannot hold the new wallet,
   // and a viewer who picked themselves on a cashier that then narrows to one the
@@ -946,7 +1004,11 @@ export default function WalletCashierModal({
      while the success toast (which formats with fmtWhole) reported "Sent 0
      Chips" - and 10.6 reported 11. The `min={1}` on the input never applied
      because submission goes through onClick, not form validation. */
-  const amountIsWhole = Number.isFinite(amt) && Number.isInteger(amt) && amt >= 1;
+  /* AND THE SPELLING IS INSPECTED, NOT JUST THE VALUE (launch audit D-15):
+     `Number('1e3')` is 1000, whole and finite, so "1e3" sent a thousand chips
+     the typist never saw written out. Digits only. */
+  const amountIsWhole =
+    Number.isFinite(amt) && Number.isInteger(amt) && amt >= 1 && WHOLE_CHIPS.test(amount.trim());
   const canSend = Boolean(recipient) && amountIsWhole && cap !== null && !overCap && !sending;
   const needsConfirm =
     tab === 'claim'
@@ -1055,6 +1117,7 @@ export default function WalletCashierModal({
       setReason('');
       setConfirming(false);
       opIdRef.current = newOpId();
+      setHolderNonce((n) => n + 1);
       refresh();
     } catch (e) {
       reportError(e, 'WalletCashierModal.send');
@@ -1172,7 +1235,10 @@ export default function WalletCashierModal({
       `${name}-${clubName.replace(/\W+/g, '-').toLowerCase()}-${new Date()
         .toISOString()
         .slice(0, 10)}.csv`,
-      new Blob([[header.map(csvCell).join(','), ...body].join('\r\n')], {
+      /* The byte order mark and the trailing CRLF are the statement export's
+         convention (buildStatementCsv): Excel reads UTF-8 instead of guessing,
+         and the last row ends like every other. */
+      new Blob(['\ufeff' + [header.map(csvText).join(','), ...body].join('\r\n') + '\r\n'], {
         type: 'text/csv;charset=utf-8',
       })
     );
@@ -1187,17 +1253,15 @@ export default function WalletCashierModal({
       ['When', 'Direction', 'Category', 'Amount', 'Counterparty', 'By', 'Wallet After', 'Note'],
       rows.map((r) =>
         [
-          new Date(r.created_at).toISOString(),
-          r.direction,
-          r.category,
-          r.amount,
-          r.counterparty_name ?? r.counterparty_type ?? '',
-          r.actor_name ?? '',
-          r.balance_after ?? '',
-          r.notes ?? '',
-        ]
-          .map(csvCell)
-          .join(',')
+          csvTimestamp(new Date(r.created_at).toISOString()),
+          csvText(r.direction),
+          csvText(r.category),
+          csvDecimal(r.amount),
+          csvText(r.counterparty_name ?? r.counterparty_type ?? ''),
+          csvText(r.actor_name ?? ''),
+          csvDecimal(r.balance_after ?? ''),
+          csvText(r.notes ?? ''),
+        ].join(',')
       )
     );
     toast?.success?.(`Exported ${rows.length.toLocaleString('en-US')} Ledger Entries`);
@@ -1220,18 +1284,16 @@ export default function WalletCashierModal({
     ];
     const body = rows.map((r) =>
       [
-        new Date(r.created_at).toISOString(),
-        r.transaction_type,
-        r.amount,
-        r.from_name ?? '',
-        r.to_name ?? '',
-        ((r.metadata?.destination || r.metadata?.source) as string) ?? '',
-        r.balance_after ?? '',
-        r.is_reversed ? 'yes' : 'no',
-        r.notes ?? '',
-      ]
-        .map(csvCell)
-        .join(',')
+        csvTimestamp(new Date(r.created_at).toISOString()),
+        csvText(r.transaction_type),
+        csvDecimal(r.amount),
+        csvText(r.from_name ?? ''),
+        csvText(r.to_name ?? ''),
+        csvText(((r.metadata?.destination || r.metadata?.source) as string) ?? ''),
+        csvDecimal(r.balance_after ?? ''),
+        csvText(r.is_reversed ? 'yes' : 'no'),
+        csvText(r.notes ?? ''),
+      ].join(',')
     );
     /* REVOKE AFTER THE DOWNLOAD HAS STARTED, not in the same tick. Safari and
        Firefox read the blob asynchronously once the click is dispatched, so a
@@ -1279,10 +1341,11 @@ export default function WalletCashierModal({
       <div
         className="cbc-overlay wcm-overlay"
         role="dialog"
+        aria-modal="true"
         aria-label="Club Bank Cashier"
         onClick={onClose}
       >
-        <div className="cbc-panel wcm ac-popup" onClick={(e) => e.stopPropagation()}>
+        <div ref={panelRef} className="cbc-panel wcm ac-popup" onClick={(e) => e.stopPropagation()}>
           <SpadeConsole
             onClose={onClose}
             as="div"
@@ -1321,16 +1384,18 @@ export default function WalletCashierModal({
         aria-label={`${cashierTitle} Cashier`}
         onClick={closeIfIdle}
       >
-        <div className="cbc-panel wcm ac-popup" onClick={(e) => e.stopPropagation()}>
+        <div ref={panelRef} className="cbc-panel wcm ac-popup" onClick={(e) => e.stopPropagation()}>
           <SpadeConsole
-            onClose={onClose}
+            onClose={inFlight ? undefined : closeIfIdle}
             as="div"
             /* The club in the header well's eyebrow, the account engraved
                beneath it, and the viewer's own standing in the well's painted
-               pill slot. The corner X is gone: the foot and the flat cap carry
-               Close now, at 44px in the thumb zone, exactly as every other
-               surface on this master does. `closeIfIdle` is unchanged and is
-               still what the overlay, the Escape key and every Close calls. */
+               pill slot. The console's corner X is the one control a thumb
+               reaches first, so it goes through `closeIfIdle` like the
+               overlay, the Escape key and every Close word, and it is not
+               rendered at all while a send, a claim back or a reversal is
+               travelling (launch audit D-02), exactly as the cashout sheet
+               and the mint already hide theirs. */
             eyebrow={clubName || 'Club Arena'}
             title={cashierTitle}
             pill={roleLabel(viewerRole)}
@@ -1374,7 +1439,13 @@ export default function WalletCashierModal({
                     : 'Club Bank Balance'}
               </span>
               <strong aria-live="polite">
-                {bank === null ? (clubLoading ? '...' : 'Unavailable') : fmt(bank)}
+                {walletType === 'agent_wallet' && hasFloat === false
+                  ? 'No Agent Float Yet'
+                  : bank === null
+                    ? clubLoading
+                      ? '...'
+                      : 'Unavailable'
+                    : fmt(bank)}
               </strong>
               {walletType === 'promo_wallet' && clubName && (
                 <em className="cbc-bank-sub">
@@ -1483,7 +1554,7 @@ export default function WalletCashierModal({
                         <div className="cbc-tx-mid">
                           <span>Into {enumToTitleCase(row.destination)}</span>
                           <span className="cbc-tx-when">
-                            {Math.floor(left / 60)}m {left % 60}s Left
+                            {Math.floor(left / 60)} Min {left % 60} Sec Left
                           </span>
                         </div>
                         {/* `claimed_back` was fetched and never shown, so a send

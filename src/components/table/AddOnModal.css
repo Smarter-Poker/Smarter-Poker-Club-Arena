@@ -219,8 +219,10 @@
   outline: none !important;
 }
 
+/* The cash chassis is 1010 x 1557 (sips, launch audit D-09); drawn at
+   1024 / 1536 it was stretched 2.7% across. */
 .purchase-console__cash {
-  aspect-ratio: 1024 / 1536;
+  aspect-ratio: 1010 / 1557;
 }
 .purchase-console__cash .addon-console__title {
   top: 12.5%;
@@ -247,9 +249,16 @@
 .purchase-console__cash .addon-console__row--balance {
   top: 55.2%;
 }
+/* 44px at 375px: a 343px canvas on this ratio is 528px tall, so 8.4% of it
+   is 44.4px for the two money plates and the painted close (launch audit
+   D-09). The plates keep their centre line. */
 .purchase-console__cash .addon-console__plate {
-  top: 79.3%;
-  height: 7.5%;
+  top: 78.85%;
+  height: 8.4%;
+}
+.purchase-console__cash .addon-console__close {
+  top: 4.8%;
+  height: 8.4%;
 }
 .purchase-console__presets {
   position: absolute;

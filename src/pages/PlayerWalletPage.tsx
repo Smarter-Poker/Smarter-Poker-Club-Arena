@@ -39,6 +39,7 @@ import { useUserStore } from '../stores/useUserStore';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useDiamondWalletSummary } from '../hooks/useDiamondWalletSummary';
+import { readCashierOnlineState } from '../services/CashierResilience';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useToast } from '../components/common/Toast';
 import DiamondsToChipsButton from '../components/games/DiamondsToChipsButton';
@@ -102,7 +103,42 @@ const PLATE = {
  */
 const MIN_DIAMOND_SEND = 1;
 
-const fmtNum = (n: number) => (Number.isFinite(n) ? n : 0).toLocaleString();
+/**
+ * Chip figures keep both cent digits or none (launch audit 2026-10-09, P-24).
+ * A bare `toLocaleString()` printed 12.30 as "12.3" and would print 12.345 as
+ * "12.345"; a wallet figure is whole, or it is exactly two places.
+ */
+const fmtNum = (n: number) => {
+  const safe = Number.isFinite(n) ? n : 0;
+  const cents = Math.round(safe * 100);
+  return cents % 100 === 0
+    ? (cents / 100).toLocaleString()
+    : (cents / 100).toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+};
+
+/**
+ * What the wallet head may claim about the ledger (launch audit 2026-10-09,
+ * P-15). "Synchronized" used to be printed unconditionally, read failed or
+ * not. The store keeps the last snapshot through a failed refresh and exposes
+ * no error flag, so each read this page starts is settled against the
+ * store's own stamp: a forced read that did not advance it failed, a cached
+ * read is only trusted inside the store's freshness window.
+ */
+type LedgerReadState = 'reading' | 'synced' | 'unavailable';
+/** Mirrors BALANCE_FRESH_MS in useWalletStore (not exported from there). */
+const WALLET_STORE_FRESH_MS = 30_000;
+const LEDGER_STATUS: Record<
+  LedgerReadState | 'offline',
+  { status: string; ink: 'green' | 'gold' | 'red' }
+> = {
+  reading: { status: 'Wallet Ledger // Reading', ink: 'gold' },
+  synced: { status: 'Wallet Ledger // Synced', ink: 'green' },
+  unavailable: { status: 'Wallet Ledger // Unavailable', ink: 'gold' },
+  offline: { status: 'Wallet Ledger // Offline', ink: 'red' },
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ANIMATED COUNTER HOOK
@@ -218,7 +254,7 @@ const WALLET_CONFIG: Record<
 // WALLET PLATE - rendered plate art, live figures in the bay
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function WalletPlate({
+export function WalletPlate({
   type,
   available,
   locked,
@@ -507,7 +543,39 @@ export default function PlayerWalletPage() {
   const navigate = useNavigate();
   const toast = useToast();
   const { user } = useAuthUser();
-  const { balances, diamonds, loadBalances, loadDiamonds } = useWalletStore();
+  const { balances, diamonds, loadBalances: storeLoadBalances, loadDiamonds } = useWalletStore();
+  const [ledgerRead, setLedgerRead] = useState<LedgerReadState>('reading');
+  const [isOnline, setIsOnline] = useState(readCashierOnlineState);
+  useEffect(() => {
+    const online = () => setIsOnline(true);
+    const offline = () => setIsOnline(false);
+    window.addEventListener('online', online);
+    window.addEventListener('offline', offline);
+    setIsOnline(readCashierOnlineState());
+    return () => {
+      window.removeEventListener('online', online);
+      window.removeEventListener('offline', offline);
+    };
+  }, []);
+  /**
+   * Every balance read this page starts goes through here so the head's
+   * status word is the read's real outcome (P-15). The store's promise
+   * resolves on failure too; the stamp is the evidence. It keeps the store
+   * action's name and signature so every call site below reads as before.
+   */
+  const loadBalances = useCallback(
+    async (userId: string, opts?: { force?: boolean }) => {
+      const before = useWalletStore.getState()._balancesAt;
+      await storeLoadBalances(userId, opts);
+      const after = useWalletStore.getState();
+      const held = after._balancesUserId === userId && after._balancesAt > 0;
+      const advanced = after._balancesAt > before;
+      const servedFromCache =
+        !opts?.force && held && Date.now() - after._balancesAt < WALLET_STORE_FRESH_MS;
+      setLedgerRead(held && (advanced || servedFromCache) ? 'synced' : 'unavailable');
+    },
+    [storeLoadBalances]
+  );
   /**
    * A dispute is filed AGAINST A CLUB, and this page is not club-scoped, so
    * the Dispute button used to open a modal hard-wired to `clubId=""`.
@@ -1060,15 +1128,25 @@ export default function PlayerWalletPage() {
     );
 
   const escrow = balances.PLAYER.locked;
+  /** Offline outranks whatever the last read said: nothing is live. */
+  const ledgerState: LedgerReadState | 'offline' = isOnline ? ledgerRead : 'offline';
 
   return (
     <div className="wallet-page" data-arena-surface="wallet">
       <RewardsSurfaceHeader
         eyebrow="Rewards Circuit / Wallet"
         title="Your Value Vault"
-        description="One Secure Command Surface For Playable Chips, Protected Balances, Club Earnings, Promotional Value, And Diamonds. Every Figure Below Remains Connected To The Live Wallet Ledger."
+        description={`One Secure Command Surface For Playable Chips, Protected Balances, Club Earnings, Promotional Value, And Diamonds. ${
+          ledgerState === 'synced'
+            ? 'Every Figure Below Remains Connected To The Live Wallet Ledger.'
+            : ledgerState === 'reading'
+              ? 'Reading The Live Wallet Ledger.'
+              : 'The Live Wallet Ledger Could Not Be Read Just Now, So The Figures Below Are The Last Known Snapshot.'
+        }`}
         artPath="images/wallet/value-vault-hero-v1.webp"
-        status="WALLET LEDGER // SYNCHRONIZED"
+        status={LEDGER_STATUS[ledgerState].status}
+        pill={LEDGER_STATUS[ledgerState].status.split('//')[1].trim()}
+        pillInk={LEDGER_STATUS[ledgerState].ink}
         crest="diamond"
         metrics={[
           {

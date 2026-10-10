@@ -1,0 +1,20 @@
+{
+  "_owner": "Player Command loading repair; exact retained facts projection and atomic statement triggers",
+  "tables": [
+    "club_roster_hand_totals",
+    "club_roster_hand_totals_state",
+    "club_member_play_totals",
+    "club_member_play_totals_state"
+  ],
+  "functions": [
+    "fn_club_roster_hand_totals_insert",
+    "fn_club_roster_hand_totals_update",
+    "fn_club_roster_hand_totals_delete",
+    "ca_club_roster_rows",
+    "ca_club_member_notes_update",
+    "fn_club_member_play_totals_insert",
+    "fn_club_member_play_totals_update",
+    "fn_club_member_play_totals_delete",
+    "ca_club_member_detail"
+  ]
+}

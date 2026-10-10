@@ -1520,6 +1520,10 @@ jobs:
         if: matrix.shard == 4
         run: python3 scripts/ci/test-player-search-privacy-postgres.py
 
+      - name: Player Command totals remain exact through writes and concurrent initialization
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-player-command-hand-totals.py
+
       - name: Satellite conservation keeps exact results through an online source index
         if: matrix.shard == 4
         run: python3 scripts/ci/test-satellite-audit-index-postgres.py

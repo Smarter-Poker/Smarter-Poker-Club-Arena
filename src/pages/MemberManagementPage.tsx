@@ -51,6 +51,8 @@ import ChipTransferModal from '../components/agent/ChipTransferModal';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { runWithRequestDeadline } from '../utils/requestDeadline';
+import { runRosterReadWithRetry } from '../utils/rosterReadReliability';
 import { toTitleCase } from '../utils/titleCase';
 import { isUUID } from '../utils/clubIdResolver';
 import { ClubNotFoundError, resolveClubUUIDStrict } from '../utils/strictClubIdResolver';
@@ -145,6 +147,7 @@ export default function MemberManagementPage() {
   // "The Member Ledger Did Not Respond", which reads as an outage.
   const [notFound, setNotFound] = useState(false);
   const [myRole, setMyRole] = useState<ClubRole>('player');
+  const detailAbortRef = useRef<AbortController | null>(null);
   const [downlineShown, setDownlineShown] = useState(DOWNLINE_RENDER_CAP);
 
   const [rangeMode, setRangeMode] = useState<RangeMode>('overall');
@@ -154,8 +157,19 @@ export default function MemberManagementPage() {
 
   /* ── Load ───────────────────────────────────────────────────────────────── */
 
+  useEffect(() => {
+    setDetail(null);
+    setDownline([]);
+    setMyRole('player');
+    setResolvedClubId(null);
+    setNotFound(false);
+  }, [clubId, userId, user?.id]);
+
   const loadDetail = useCallback(
     async (activeRange: MemberRange, getIsMounted?: () => boolean) => {
+      detailAbortRef.current?.abort();
+      const controller = new AbortController();
+      detailAbortRef.current = controller;
       if (!clubId || !userId) {
         if (!getIsMounted || getIsMounted()) {
           setNotFound(true);
@@ -164,7 +178,10 @@ export default function MemberManagementPage() {
         }
         return;
       }
-      const live = () => (getIsMounted ? getIsMounted() : true) && isMountedRef.current;
+      const live = () =>
+        !controller.signal.aborted &&
+        (getIsMounted ? getIsMounted() : true) &&
+        isMountedRef.current;
 
       if (live()) {
         setLoading(true);
@@ -199,8 +216,8 @@ export default function MemberManagementPage() {
         setResolvedClubId(resolved);
 
         const [memberDetail, memberDownline] = await Promise.all([
-          ClubRosterService.getMemberDetail(resolved, userId, activeRange),
-          ClubRosterService.getDownline(resolved, userId),
+          ClubRosterService.getMemberDetail(resolved, userId, activeRange, controller.signal),
+          ClubRosterService.getDownline(resolved, userId, controller.signal),
         ]);
         if (!live()) return;
         setDetail(memberDetail);
@@ -210,17 +227,25 @@ export default function MemberManagementPage() {
         // Whoever is reading decides what this page lets them do. One row, and
         // only for the viewer, so it costs a single indexed lookup.
         if (user?.id) {
-          const { data: mine } = await supabase
-            .from('club_members')
-            .select('role')
-            .eq('club_id', resolved)
-            .eq('user_id', user.id)
-            .maybeSingle();
-          if (live() && mine) setMyRole(normaliseRole(mine.role));
+          const mine = await runRosterReadWithRetry(
+            async (signal) => {
+              const result = await supabase
+                .from('club_members')
+                .select('role')
+                .eq('club_id', resolved)
+                .eq('user_id', user.id)
+                .abortSignal(signal)
+                .maybeSingle();
+              if (result.error) throw result.error;
+              return result.data;
+            },
+            { attempts: 1, timeoutMs: 8_000, signal: controller.signal }
+          );
+          if (live()) setMyRole(normaliseRole(mine?.role));
         }
       } catch (error) {
-        reportError(error, 'MemberManagementPage.loadDetail');
         if (live()) {
+          reportError(error, 'MemberManagementPage.loadDetail');
           setLoadError(true);
           toast.error('Failed To Load This Member');
         }
@@ -236,6 +261,7 @@ export default function MemberManagementPage() {
     loadDetail(range, () => mounted);
     return () => {
       mounted = false;
+      detailAbortRef.current?.abort();
     };
   }, [loadDetail, range]);
 
@@ -291,7 +317,7 @@ export default function MemberManagementPage() {
     );
   }
 
-  if (loadError && !detail) {
+  if (loadError) {
     return (
       <div className="member-mgmt-page">
         <PageHeader onBack={() => navigate(-1)} />
@@ -301,7 +327,7 @@ export default function MemberManagementPage() {
           </span>
           <p className="mm-empty__heading">The Member Ledger Did Not Respond</p>
           <p className="mm-empty__body">
-            Your Access Has Not Changed. Retry The Live Record Without Leaving This Page.
+            The Latest Record Could Not Be Verified. Retry Without Leaving This Page.
           </p>
           <button type="button" className="mm-empty__retry" onClick={reload}>
             Retry Member
@@ -411,7 +437,7 @@ export default function MemberManagementPage() {
 
         {detail!.capabilities.can_view_notes && (
           <NotesEditor
-            key={identity!.user_id!}
+            key={`${resolvedClubId}:${identity!.user_id!}`}
             clubId={resolvedClubId}
             userId={identity!.user_id!}
             initialNickname={identity!.nickname}
@@ -610,6 +636,7 @@ export default function MemberManagementPage() {
 
         {detail!.capabilities.can_manage_role && identity!.home_club_id && (
           <RoleSection
+            key={`${identity!.home_club_id}:${identity!.user_id!}`}
             resolvedClubId={identity!.home_club_id}
             targetUserId={identity!.user_id!}
             targetName={alias}
@@ -723,6 +750,10 @@ function NotesEditor({
   });
   const savingRef = useRef(false);
   const queuedSaveRef = useRef(false);
+  // An unknown acknowledgement retains the original payload and receipt key.
+  const pendingNoteRef = useRef<{ nickname: string; remark: string; requestId: string } | null>(
+    null
+  );
 
   useEffect(() => {
     setNickname(initialNickname ?? '');
@@ -740,24 +771,22 @@ function NotesEditor({
       queuedSaveRef.current = true;
       return;
     }
-    const draft = { ...draftRef.current };
+    const draft = pendingNoteRef.current ?? { ...draftRef.current, requestId: crypto.randomUUID() };
     if (savedRef.current.nickname === draft.nickname && savedRef.current.remark === draft.remark)
       return;
 
     savingRef.current = true;
     setSaving(true);
     try {
-      const requestId =
-        typeof crypto.randomUUID === 'function'
-          ? crypto.randomUUID()
-          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      pendingNoteRef.current = draft;
       const result = await ClubRosterService.updateMemberNotes(
         clubId,
         userId,
         draft.nickname,
         draft.remark,
-        requestId
+        draft.requestId
       );
+      pendingNoteRef.current = null;
       const persisted = {
         nickname: result.nickname ?? '',
         remark: result.remark ?? '',
@@ -784,6 +813,7 @@ function NotesEditor({
       }
       toast.success('Member Notes Saved');
     } catch (e) {
+      queuedSaveRef.current = false; // Unknown writes require an explicit retry of the same receipt.
       reportError(e, 'MemberManagementPage.saveNotes');
       if (!isMountedRef.current) return;
       setNicknameUnsaved(savedRef.current.nickname !== draftRef.current.nickname);
@@ -912,6 +942,7 @@ function RoleSection({
   onRoleChanged: () => void;
 }) {
   const toast = useToast();
+  const isMountedRef = useIsMounted();
   const [promoting, setPromoting] = useState(false);
   const [confirmRole, setConfirmRole] = useState<ClubRole | null>(null);
   const [error, setError] = useState('');
@@ -959,31 +990,37 @@ function RoleSection({
   // which the client has no way to answer, is answered where the tree lives.
   const [promotableRoles, setPromotableRoles] = useState<ClubRole[]>([]);
   const [rolesLoading, setRolesLoading] = useState(true);
+  const [rolesLoadFailed, setRolesLoadFailed] = useState(false);
 
   useEffect(() => {
     let live = true;
+    const controller = new AbortController();
     (async () => {
       setRolesLoading(true);
+      setRolesLoadFailed(false);
       try {
-        const { data, error: rolesErr } = await supabase.rpc('ca_club_grantable_roles', {
-          p_club_id: resolvedClubId,
-          p_target_user_id: targetUserId,
-        });
+        const roles = await ClubRosterService.getGrantableRoles(
+          resolvedClubId,
+          targetUserId,
+          controller.signal
+        );
         if (!live) return;
-        if (rolesErr) throw rolesErr;
-        const roles = (data as { roles?: string[] } | null)?.roles ?? [];
-        setPromotableRoles(roles.map(normaliseRole));
+        setPromotableRoles(roles);
       } catch (e) {
-        reportError(e, 'MemberManagementPage.grantable_roles');
+        if (live) reportError(e, 'MemberManagementPage.grantable_roles');
         // Offering nothing is the safe direction to be wrong in: the user is
         // told, rather than shown a button the server will refuse.
-        if (live) setPromotableRoles([]);
+        if (live) {
+          setPromotableRoles([]);
+          setRolesLoadFailed(true);
+        }
       } finally {
         if (live) setRolesLoading(false);
       }
     })();
     return () => {
       live = false;
+      controller.abort();
     };
     // targetRole is a dependency because the answer changes once the role does:
     // after promoting a player to agent, "agent" must stop being on offer.
@@ -991,8 +1028,9 @@ function RoleSection({
 
   const canManage = promotableRoles.length > 0 && targetRole !== 'owner';
 
-  const noRolesReason =
-    targetRole === 'owner'
+  const noRolesReason = rolesLoadFailed
+    ? 'Role Options Could Not Be Loaded. Refresh This Player Record To Retry.'
+    : targetRole === 'owner'
       ? 'The Club Owner Cannot Be Changed From Here.'
       : roleRank(myRole) <= roleRank('sub_agent')
         ? 'Your Role Does Not Allow Changing Anyone Else’s.'
@@ -1084,17 +1122,24 @@ function RoleSection({
       // a co-owner, or promote outside their downline, by making one request
       // fail. A trigger on club_members now refuses that update outright, so
       // the fallback could not work even if someone put it back.
-      const { data, error: rpcError } = await supabase.rpc('fn_club_set_member_role', {
-        p_club_id: resolvedClubId,
-        p_user_id: targetUserId,
-        p_role: newRole,
-        ...(rates ?? {}),
-      });
+      const { data, error: rpcError } = await runWithRequestDeadline(
+        (signal) =>
+          supabase
+            .rpc('fn_club_set_member_role', {
+              p_club_id: resolvedClubId,
+              p_user_id: targetUserId,
+              p_role: newRole,
+              ...(rates ?? {}),
+            })
+            .abortSignal(signal),
+        { timeoutMs: 40_000 }
+      );
       if (rpcError) throw rpcError;
 
       const result = data as { success?: boolean; error?: string } | null;
       if (!result?.success) throw new Error(result?.error || 'Role Change Refused');
 
+      if (!isMountedRef.current) return;
       setSuccess(`${targetName} Is Now ${roleLabel(newRole)}`);
       setConfirmRole(null);
       toast.success(`${targetName} Is Now ${roleLabel(newRole)}`);
@@ -1118,14 +1163,19 @@ function RoleSection({
       // when the wallet really is empty, so re-grading an agent who is already
       // carrying float does not ask a question with an obvious answer.
       if (isAgentRole(newRole)) {
-        let float_ = 0;
+        let float_: number | null = null;
         try {
-          const { data: agentRow, error: balanceError } = await supabase
-            .from('agents')
-            .select('agent_wallet_balance')
-            .eq('club_id', resolvedClubId)
-            .eq('user_id', targetUserId)
-            .maybeSingle();
+          const { data: agentRow, error: balanceError } = await runWithRequestDeadline(
+            (signal) =>
+              supabase
+                .from('agents')
+                .select('agent_wallet_balance')
+                .eq('club_id', resolvedClubId)
+                .eq('user_id', targetUserId)
+                .abortSignal(signal)
+                .maybeSingle(),
+            { timeoutMs: 8_000 }
+          );
           // Bound and acted on rather than discarded. supabase-js returns the
           // failure, it does not throw one, so an unbound `error` here would
           // read a missing row and a denied read as the same thing: zero. That
@@ -1139,7 +1189,8 @@ function RoleSection({
           // the transfer screen reads the real number itself.
           reportError(e, 'MemberManagementPage.fundPromptBalance');
         }
-        if (float_ <= 0) {
+        if (!isMountedRef.current) return;
+        if (float_ === null || float_ <= 0) {
           setFundPrompt({ role: newRole });
           return; // The prompt owns what happens next, including the refresh.
         }
@@ -1151,9 +1202,9 @@ function RoleSection({
         onRoleChanged();
       }, 1200);
     } catch (err) {
-      setError(safeErrorMessage(err, 'Failed To Update Role'));
+      if (isMountedRef.current) setError(safeErrorMessage(err, 'Failed To Update Role'));
     } finally {
-      setPromoting(false);
+      if (isMountedRef.current) setPromoting(false);
     }
   };
 
@@ -1177,7 +1228,7 @@ function RoleSection({
             {targetName} Is Now {roleLabel(fundPrompt.role)}
           </p>
           <p className="mm-roles__fund-note">
-            Their Agent Wallet Is Empty, So They Cannot Send Chips To Anybody Yet. Fund Them Now?
+            Review Their Agent Wallet And Send Chips If Funding Is Needed. Fund Them Now?
           </p>
           <div className="mm-roles__confirm-actions">
             <button

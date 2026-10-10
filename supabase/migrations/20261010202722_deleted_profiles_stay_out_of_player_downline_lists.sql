@@ -65,4 +65,6 @@ BEGIN
                                        pr.first_name, pr.last_name, pr.full_name));
 END;
 $function$;
+REVOKE ALL ON FUNCTION public.ca_club_member_downline(uuid,uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.ca_club_member_downline(uuid,uuid) TO authenticated, service_role;
 COMMIT;

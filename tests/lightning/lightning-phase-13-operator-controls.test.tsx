@@ -576,12 +576,18 @@ describe('the Cluster detail', () => {
     );
     const reads = () =>
       state.rpc.mock.calls.filter((c) => c[0] === 'fn_lightning_operator_cluster').length;
-    await waitFor(() => expect(reads()).toBeGreaterThanOrEqual(1));
+    // The faster loop starts once the drain has been read: within a few 5 s
+    // ticks there are reads that the 30 s loop would never have made.
     const first = reads();
-    await act(async () => {
-      vi.advanceTimersByTime(5_100);
-    });
-    await waitFor(() => expect(reads()).toBeGreaterThan(first));
+    for (let i = 0; i < 4 && reads() <= first + 1; i += 1) {
+      await act(async () => {
+        vi.advanceTimersByTime(5_100);
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+    expect(reads()).toBeGreaterThan(first + 1);
   });
 
   it('prints the readiness verdict and every reason', async () => {

@@ -262,7 +262,9 @@ export function ControlDialog({
       const root = dialogRef.current;
       if (!root) return;
       const focusable = Array.from(
-        root.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled])')
+        root.querySelectorAll<HTMLElement>(
+          'button:not([disabled]):not([tabindex="-1"]), input:not([disabled]):not([tabindex="-1"])'
+        )
       );
       if (focusable.length === 0) {
         e.preventDefault();

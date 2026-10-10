@@ -630,6 +630,26 @@ export default function ClubMembersPage() {
     if (hasMore && virtual.endIndex >= members.length - 8) void loadMore();
   }, [hasMore, loadMore, members.length, virtual.endIndex]);
 
+  // Default WAL old images cannot identify an off-page promotion. The
+  // already-authorized, persisted audit event carries its structural cause;
+  // wallet traffic never enters this lane. Existing RLS remains authoritative.
+  useMasterBusChannel({
+    channelName: resolvedClubId ? `club-members-audit-${resolvedClubId}` : null,
+    table: 'audit_trail',
+    filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
+    event: 'INSERT',
+    onPayload: (payload) => {
+      const row = (payload as { new?: Record<string, unknown> } | null)?.new;
+      if (
+        row?.club_id === resolvedClubId &&
+        row?.target_type === 'club_member' &&
+        ['set_member_role', 'set_member_status', 'update_member_notes'].includes(String(row.action))
+      )
+        scheduleStructuralRefresh();
+    },
+    enabled: !!resolvedClubId && ['owner', 'co_owner', 'admin'].includes(summary.viewer_role),
+  });
+
   const canUseFinancialViews = summary.capabilities.can_view_financials;
   const isAgent = AGENT_ROLES.includes(summary.viewer_role);
   const filters = (Object.keys(FILTER_LABEL) as RosterFilter[]).filter((value) => {

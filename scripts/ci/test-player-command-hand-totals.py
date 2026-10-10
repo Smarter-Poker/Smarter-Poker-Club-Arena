@@ -206,9 +206,66 @@ try:
     assert q(f"SELECT nickname FROM club_members WHERE user_id='{V}'") == 'Newer Note'
     q(actor + f"SELECT ca_club_member_notes_update('{B}','{U}','No','No','self');", error='Not Self-Editable')
     print('PASS concurrent note receipts serialize and replay cannot overwrite newer notes', flush=True)
+    q("ALTER TABLE ca_hand_facts ADD COLUMN tournament_id uuid, ADD COLUMN net numeric DEFAULT 0, ADD COLUMN played_at timestamptz DEFAULT '2026-10-01';")
+    q("ALTER TABLE profiles ADD COLUMN first_name text,ADD COLUMN last_name text,ADD COLUMN full_name text;")
+    q("CREATE FUNCTION fn_arena_name(text,text,text,text,text,text) RETURNS text LANGUAGE sql AS $$SELECT coalesce($1,$2)$$;")
+    q("CREATE TABLE chip_transactions(amount numeric,to_user_id uuid,from_user_id uuid,transaction_type text,club_id uuid,created_at timestamptz);")
+    q((ROOT/'scripts/ci/fixtures/player-command-hand-totals/detail-preimage.sql').read_text())
+    assert q("SELECT md5(pg_get_functiondef('ca_club_member_detail(uuid,uuid,date,date)'::regprocedure))") == '9da2de967380dd721ed1e6fa864df1ba'
+    play_stage=ROOT/'supabase/migrations/20261010073005_player_command_retained_play_totals_advance_atomically.sql'
+    play_activate=ROOT/'supabase/migrations/20261010073030_player_records_read_exact_retained_play_totals.sql'
+    q(play_stage.read_text())
+    q(f"UPDATE ca_hand_facts SET net=-3.25,tournament_id=gen_random_uuid() WHERE user_id='{U}';")
+    play_holder=start('BEGIN; SELECT pg_advisory_xact_lock(74102);')
+    deadline=time.monotonic()+10
+    while q("SELECT count(*) FROM pg_locks WHERE locktype='advisory' AND granted") != '1':
+        assert time.monotonic()<deadline
+        time.sleep(.02)
+    play_seed=start(play_activate.read_text().replace('WITH facts AS MATERIALIZED (','WITH gate AS MATERIALIZED (SELECT pg_advisory_xact_lock(74102)), facts AS MATERIALIZED (').replace('FROM public.ca_hand_facts WHERE club_id IS NOT NULL','FROM public.ca_hand_facts CROSS JOIN gate WHERE club_id IS NOT NULL'))
+    deadline=time.monotonic()+10
+    while q("SELECT count(*) FROM pg_stat_activity WHERE wait_event='advisory'") != '1':
+        assert time.monotonic()<deadline
+        time.sleep(.02)
+    q(f"INSERT INTO ca_hand_facts(hand_id,user_id,club_id,rake_paid,net,tournament_id) VALUES(gen_random_uuid(),'{U}','{B}',3.33,14.25,NULL);")
+    finish(play_holder,'COMMIT;')
+    finish(play_seed)
+    def play_parity(label):
+        assert q("""WITH facts AS (SELECT club_id,user_id,
+          count(*) FILTER(WHERE tournament_id IS NULL) hands,count(*) FILTER(WHERE tournament_id IS NOT NULL) mtt_hands,
+          coalesce(sum(rake_paid) FILTER(WHERE tournament_id IS NULL),0) fees,coalesce(sum(rake_paid) FILTER(WHERE tournament_id IS NOT NULL),0) mtt_fees,
+          coalesce(sum(net) FILTER(WHERE tournament_id IS NULL),0) net,coalesce(sum(net) FILTER(WHERE tournament_id IS NOT NULL),0) mtt_net
+          FROM ca_hand_facts WHERE club_id IS NOT NULL GROUP BY club_id,user_id)
+          SELECT count(*) FROM facts f FULL JOIN club_member_play_totals t USING(club_id,user_id)
+          WHERE coalesce(f.hands,0) IS DISTINCT FROM t.hands OR coalesce(f.mtt_hands,0) IS DISTINCT FROM t.mtt_hands
+          OR coalesce(f.fees,0) IS DISTINCT FROM t.fees OR coalesce(f.mtt_fees,0) IS DISTINCT FROM t.mtt_fees
+          OR coalesce(f.net,0) IS DISTINCT FROM t.net OR coalesce(f.mtt_net,0) IS DISTINCT FROM t.mtt_net""")=='0',label
+        print('PASS play totals '+label,flush=True)
+    play_parity('concurrent snapshot initialization')
+    q(f"INSERT INTO ca_hand_facts(hand_id,user_id,club_id,rake_paid,net,tournament_id) VALUES(gen_random_uuid(),'{V}','{B}',1.23,-7.50,gen_random_uuid()),(gen_random_uuid(),'{U}','{A}',0,0,NULL);")
+    play_parity('cash/MTT inserts and zero-fee hands')
+    q(f"UPDATE ca_hand_facts SET tournament_id=NULL,net=net+2.25,club_id='{B}' WHERE club_id='{A}';")
+    play_parity('club move, classification and net corrections')
+    q(f"UPDATE ca_hand_facts SET tournament_id=gen_random_uuid(),user_id='{U}' WHERE user_id='{V}';")
+    play_parity('player reassignment and cash to MTT')
+    q('UPDATE ca_hand_facts SET net=net; BEGIN; DELETE FROM ca_hand_facts; ROLLBACK;')
+    play_parity('unchanged updates and rollback')
+    q('DELETE FROM ca_hand_facts WHERE net<0;')
+    play_parity('retention deletes')
+    q(play_activate.read_text(),error='already initialized')
+    q('SET ROLE authenticated; SELECT * FROM club_member_play_totals;',error='permission denied')
+    assert q("SELECT NOT has_table_privilege('service_role','club_member_play_totals','UPDATE') AND NOT has_function_privilege('service_role','fn_club_member_play_totals_insert()','EXECUTE')")=='t'
+    q(f"SET ROLE service_role; INSERT INTO ca_hand_facts(hand_id,user_id,club_id,rake_paid) VALUES(gen_random_uuid(),'{V}','{B}',0); RESET ROLE;")
+    play_parity('private grants preserve source writer')
+    overall=q(f"SELECT ca_club_member_detail('{B}','{U}')->'stats';")
+    ranged=q(f"SELECT ca_club_member_detail('{B}','{U}','2026-10-01','2026-10-01')->'stats';")
+    assert overall==ranged,(overall,ranged)
+    print('PASS real member record overall equals independently ranged facts',flush=True)
     q('ALTER TABLE ca_hand_facts RENAME TO facts_unavailable_to_roster;')
+    q("CREATE FUNCTION public.reject_fact_read() RETURNS numeric LANGUAGE plpgsql VOLATILE AS $$BEGIN RAISE EXCEPTION 'unexpected fact scan'; END;$$;")
+    q("CREATE VIEW ca_hand_facts AS SELECT hand_id,user_id,club_id,rake_paid+public.reject_fact_read() AS rake_paid,net+public.reject_fact_read() AS net,tournament_id,played_at FROM facts_unavailable_to_roster;")
     assert q(f"SELECT count(*) FROM ca_club_roster_rows('{B}')") == '2'
-    print('PASS roster does not scan hand facts after activation', flush=True)
+    assert q(f"SELECT ca_club_member_detail('{B}','{U}')->'stats';")==overall
+    print('PASS roster and overall member record do not scan hand facts after activation', flush=True)
     print('PLAYER COMMAND HAND TOTALS QUALIFICATION PASSED', flush=True)
 finally:
     for child in children:

@@ -207,7 +207,13 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
       closeMenu(false);
       if (club.id === currentClub?.id) return;
       haptic.light();
-      navigate(`/clubs/${club.slug || club.id}/${cashierDestination(location.pathname)}`);
+      const slug = club.slug || club.id;
+      // Literal targets, one per declared route, so check-route-targets can
+      // match each of them against src/App.tsx.
+      const destination = cashierDestination(location.pathname);
+      if (destination === 'cashier-classic') navigate(`/clubs/${slug}/cashier-classic`);
+      else if (destination === 'cashier/statements') navigate(`/clubs/${slug}/cashier/statements`);
+      else navigate(`/clubs/${slug}/cashier`);
     },
     [closeMenu, currentClub, navigate, location.pathname]
   );

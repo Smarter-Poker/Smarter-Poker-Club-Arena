@@ -46,18 +46,18 @@ export function text(value: unknown): string | null {
   return typeof value === 'string' && value.trim() !== '' ? value : null;
 }
 
-function bool(value: unknown): boolean | null {
+export function bool(value: unknown): boolean | null {
   return typeof value === 'boolean' ? value : null;
 }
 
-function objectOf(raw: unknown): Record<string, unknown> | null {
+export function objectOf(raw: unknown): Record<string, unknown> | null {
   const row = Array.isArray(raw) ? raw[0] : raw;
   return row && typeof row === 'object' && !Array.isArray(row)
     ? (row as Record<string, unknown>)
     : null;
 }
 
-function listOf(raw: unknown): Record<string, unknown>[] {
+export function listOf(raw: unknown): Record<string, unknown>[] {
   return Array.isArray(raw)
     ? raw.filter(
         (r): r is Record<string, unknown> => !!r && typeof r === 'object' && !Array.isArray(r)
@@ -66,7 +66,7 @@ function listOf(raw: unknown): Record<string, unknown>[] {
 }
 
 /** An id the door handed over, kept exactly as it came (uuid or bigint). */
-function idOf(value: unknown): string | null {
+export function idOf(value: unknown): string | null {
   if (typeof value === 'string' && value.trim() !== '') return value;
   if (typeof value === 'number' && Number.isFinite(value)) return String(value);
   return null;
@@ -108,7 +108,7 @@ export function interpretAnswer<T>(
     : { status: 'ok', data };
 }
 
-type RpcClient = Pick<typeof supabase, 'rpc'>;
+export type RpcClient = Pick<typeof supabase, 'rpc'>;
 
 type RpcResult = { data: unknown; error: unknown };
 
@@ -118,7 +118,7 @@ type RpcResult = { data: unknown; error: unknown };
  * literal `client.rpc('fn_lightning_operator_...')`, so the repository's
  * phantom-RPC gate sees every door this page reads.
  */
-async function callDoor<T>(
+export async function callDoor<T>(
   fn: string,
   call: () => PromiseLike<RpcResult>,
   interpret: (raw: unknown) => OperatorAnswer<T>
@@ -169,6 +169,11 @@ export function modeBadge(mode: string | null): LightningModeBadge {
       return { label: 'Pending', tone: 'pending', detail: 'Reverting To Must Move' };
     case 'frozen':
       return { label: 'Frozen', tone: 'frozen', detail: null };
+    // Phase 13 (operator controls): the two modes an operator puts a Cluster in.
+    case 'paused':
+      return { label: 'Paused', tone: 'pending', detail: 'Held By An Operator' };
+    case 'draining':
+      return { label: 'Draining', tone: 'pending', detail: 'Returning To Must Move' };
     default:
       return { label: mode ? enumLabel(mode) : 'Unknown', tone: 'other', detail: null };
   }
@@ -315,6 +320,86 @@ export interface LightningOverviewCluster {
     candidateVersion: string | null;
   } | null;
   latency: { windowFrom: string | null; windowTo: string | null; legs: LatencyLegs } | null;
+  // ── Phase 13: operator controls (fn_lightning_operator_cluster_row) ──
+  /** Held by an operator's Pause; null when the door does not say. */
+  paused: boolean | null;
+  /** The mode a paused Cluster returns to on Resume. */
+  pausedFrom: string | null;
+  /** Whether new players may enter the Lightning pool. */
+  joinsEnabled: boolean | null;
+  /** The emergency drain in progress, or null. */
+  drain: LightningDrain | null;
+  /** The live matcher, the one a roll back returns to, the disabled ones. */
+  matcher: LightningMatcherState | null;
+  /** Every boolean the door's `flags` object carries, key for key. */
+  flagValues: Record<string, boolean | null>;
+}
+
+/** fn_lightning_operator_cluster_row's `drain` (20261009235505). The phase is
+ *  the drain row's own: finishing (hands play out), reverting (the Must Move
+ *  rebuild is running) or complete. */
+export interface LightningDrain {
+  drainId: string | null;
+  phase: string | null;
+  fromMode: string | null;
+  /** The deadline has passed: never-dealt instances are being abandoned. */
+  overdue: boolean | null;
+  requestedAt: string | null;
+  requestedBy: string | null;
+  reason: string | null;
+  deadlineAt: string | null;
+  instancesRemaining: number | null;
+  handsRemaining: number | null;
+  sessionsRemaining: number | null;
+}
+
+export interface LightningMatcherState {
+  version: string | null;
+  previous: string | null;
+  disabled: string[];
+  shadowVersion: string | null;
+  /** The candidate version is disabled: the engine records no shadow. */
+  shadowDisabled: boolean | null;
+}
+
+export function parseDrain(raw: unknown): LightningDrain | null {
+  const r = objectOf(raw);
+  if (!r) return null;
+  return {
+    drainId: idOf(r.drain_id),
+    phase: text(r.phase),
+    fromMode: text(r.from_mode),
+    overdue: bool(r.overdue),
+    requestedAt: text(r.requested_at),
+    requestedBy: idOf(r.requested_by),
+    reason: text(r.reason),
+    deadlineAt: text(r.deadline_at),
+    instancesRemaining: num(r.instances_remaining),
+    handsRemaining: num(r.hands_remaining),
+    sessionsRemaining: num(r.sessions_remaining),
+  };
+}
+
+export function parseMatcher(raw: unknown): LightningMatcherState | null {
+  const r = objectOf(raw);
+  if (!r) return null;
+  return {
+    version: text(r.version),
+    previous: text(r.previous),
+    disabled: Array.isArray(r.disabled)
+      ? r.disabled.filter((v): v is string => typeof v === 'string' && v.trim() !== '')
+      : [],
+    shadowVersion: text(r.shadow_version),
+    shadowDisabled: bool(r.shadow_disabled),
+  };
+}
+
+function parseFlagValues(raw: Record<string, unknown>): Record<string, boolean | null> {
+  const out: Record<string, boolean | null> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === 'boolean' || value === null) out[key] = value;
+  }
+  return out;
 }
 
 function parseStuck(raw: unknown): LightningOverviewCluster['stuckConversion'] {
@@ -403,6 +488,12 @@ export function parseOverviewCluster(raw: unknown): LightningOverviewCluster | n
           legs: parseLatencyLegs(latency.legs),
         }
       : null,
+    paused: bool(r.paused),
+    pausedFrom: text(r.paused_from),
+    joinsEnabled: bool(r.joins_enabled),
+    drain: parseDrain(r.drain),
+    matcher: parseMatcher(r.matcher),
+    flagValues: parseFlagValues(flags),
   };
 }
 
@@ -446,7 +537,7 @@ export function fetchLightningOverview(
  * its outcome) or the freeze (`kind:'freeze'`).
  */
 export interface LightningTransition {
-  kind: 'epoch' | 'conversion' | 'freeze' | 'other';
+  kind: 'epoch' | 'conversion' | 'freeze' | 'operator' | 'drain' | 'other';
   epoch: number | null;
   mode: string | null;
   fromMode: string | null;
@@ -454,6 +545,14 @@ export interface LightningTransition {
   reason: string | null;
   at: string | null;
   endedAt: string | null;
+  /** Phase 13 (`kind:'operator'`): the operator action, e.g. 'pause'. */
+  action: string | null;
+  /** Phase 13 (`kind:'drain'`): the event (lightning_drain_step,
+   *  lightning_drain_timeout, lightning_drain_ended), its step and outcome. */
+  eventKind: string | null;
+  step: number | null;
+  stepName: string | null;
+  outcome: string | null;
 }
 
 export function parseTransition(raw: unknown): LightningTransition | null {
@@ -461,7 +560,15 @@ export function parseTransition(raw: unknown): LightningTransition | null {
   if (!r) return null;
   const kindText = text(r.kind);
   const kind: LightningTransition['kind'] =
-    kindText === 'epoch' || kindText === 'conversion' || kindText === 'freeze' ? kindText : 'other';
+    kindText === 'epoch' ||
+    kindText === 'conversion' ||
+    kindText === 'freeze' ||
+    kindText === 'operator' ||
+    kindText === 'drain'
+      ? kindText
+      : 'other';
+  // Operator actions and drain steps carry their facts in the event payload.
+  const payload = objectOf(r.payload) ?? {};
   return {
     kind,
     epoch: num(r.epoch ?? r.epoch_after ?? r.cluster_epoch),
@@ -471,6 +578,11 @@ export function parseTransition(raw: unknown): LightningTransition | null {
     reason: text(r.started_by) ?? text(r.abort_reason) ?? text(r.reason),
     at: text(r.at) ?? text(r.started_at) ?? text(r.opened_at),
     endedAt: text(r.ended_at) ?? text(r.closed_at),
+    action: kind === 'operator' ? text(payload.action) : null,
+    eventKind: text(r.event_kind),
+    step: kind === 'drain' ? num(payload.step) : null,
+    stepName: kind === 'drain' ? text(payload.name) : null,
+    outcome: kind === 'drain' ? text(payload.outcome) : null,
   };
 }
 

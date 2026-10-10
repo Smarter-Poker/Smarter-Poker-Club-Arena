@@ -26,6 +26,10 @@
  * engraved rules with their figures beneath, never as drawn cards; Back and
  * Refresh sit on the two painted plates.
  *
+ * Phase 13 adds what an operator has done (Paused, Joins Disabled, Draining)
+ * beneath a Cluster's name; the controls themselves live in the Cluster
+ * detail (LightningOperatorControls), one confirm dialog per action.
+ *
  * Auto-refresh: every 15 s while the tab is visible, never while hidden, and
  * never again after the door answers "not available yet" or "not
  * authorized" (useLightningOperator).
@@ -47,6 +51,7 @@ import {
   type LightningOverview,
   type LightningOverviewCluster,
 } from '../../lightning/lightningOperatorApi';
+import { drainPhaseLabel } from '../../lightning/lightningOperatorControls';
 import { OVERVIEW_REFRESH_MS, usePolledAnswer } from '../../lightning/useLightningOperator';
 import LightningClusterDetail from './lightning/LightningClusterDetail';
 import {
@@ -92,6 +97,15 @@ export function clusterWarnings(c: LightningOverviewCluster): string[] {
   return out;
 }
 
+/** What an operator has done to a Cluster, printed in gold beneath its name. */
+export function clusterNotices(c: LightningOverviewCluster): string[] {
+  const out: string[] = [];
+  if (c.drain) out.push(`Draining: ${drainPhaseLabel(c.drain.phase)}`);
+  if (c.paused === true && c.mode !== 'frozen') out.push('Paused By An Operator');
+  if (c.joinsEnabled === false) out.push('Lightning Joins Disabled');
+  return out;
+}
+
 function signedOne(n: number | null | undefined): string {
   if (n === null || n === undefined) return '-';
   return `${n > 0 ? '+' : ''}${n.toFixed(1)}`;
@@ -108,6 +122,7 @@ export function ClusterRecord({
 }) {
   const badge = modeBadge(c.mode);
   const warnings = clusterWarnings(c);
+  const notices = clusterNotices(c);
   const meta = clusterMeta(c);
   return (
     <li className={styles.record} data-cluster-id={c.clusterId}>
@@ -125,6 +140,11 @@ export function ClusterRecord({
       {warnings.map((w) => (
         <p className={`${styles.warning} sc-ink--red`} key={w} role="status">
           {w}
+        </p>
+      ))}
+      {notices.map((n) => (
+        <p className={`${styles.notice} sc-ink--gold`} key={n} role="status">
+          {n}
         </p>
       ))}
       <dl className={styles.figures} aria-label="Conversion">

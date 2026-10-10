@@ -317,7 +317,11 @@
 
 .fieldInput:focus-visible {
   outline: none;
+  border-radius: 0;
   border-bottom-color: #8fd4ff;
+  /* The global input:focus-visible ring is a rounded box; the field stays an
+     underline, lit brighter and doubled for the keyboard. */
+  box-shadow: 0 1px 0 #8fd4ff;
 }
 
 .review {
@@ -363,4 +367,118 @@
   padding: 1.4cqw 0;
   border-top: var(--lops-rule);
   box-shadow: var(--lops-rule-lit);
+}
+
+/* ── Phase 13: operator controls ────────────────────────────────────────────
+   Printed on the same glass: state as rows, controls as lit words (red ink
+   for the three that stop a Cluster), the flags as a three-column grid. The
+   confirm dialog is its own spade console on a black backdrop; this sheet
+   only places it. data-popup-chassis="none" keeps metallic-popups.css off
+   its content, and SpadeConsole.css already switches that chassis off the
+   painted plates inside any dialog. */
+
+.subhead {
+  padding-top: 2cqw;
+}
+
+.notice {
+  margin: 0;
+  font-size: 3cqw;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.flagRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 0.7fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 2cqw;
+  padding: 0.6cqw 0;
+}
+
+.flagRow + .flagRow {
+  border-top: var(--lops-rule);
+  box-shadow: var(--lops-rule-lit);
+}
+
+.flagWord {
+  justify-self: end;
+  padding-right: 0;
+  font-size: 2.8cqw;
+}
+
+.changeRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1.2fr);
+  align-items: baseline;
+  gap: 2cqw;
+  padding: 1.4cqw 0;
+}
+
+.changeRow + .changeRow {
+  border-top: var(--lops-rule);
+  box-shadow: var(--lops-rule-lit);
+}
+
+.reasons {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reason {
+  padding: 1.4cqw 0;
+  border-top: var(--lops-rule);
+  box-shadow: var(--lops-rule-lit);
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 3.2cqw;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.reasonSeverity {
+  display: block;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 2.4cqw;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.fieldHint {
+  font-size: 2.4cqw;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.dialogBackdrop {
+  --lops-rule: 1px solid #000;
+  --lops-rule-lit: inset 0 1px 0 rgb(255 255 255 / 8%);
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 16px;
+  overflow-y: auto;
+  background: rgb(0 0 0 / 90%);
+  color: #e6e9ee;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  color-scheme: dark;
+}
+
+.dialog {
+  width: min(100%, 440px);
+  margin: auto;
+}
+
+.dialogCopy {
+  margin: 0;
+  padding: 1cqw 1cqw 2cqw;
+  font-size: 3.6cqw;
+  color: #dbe2ea;
 }

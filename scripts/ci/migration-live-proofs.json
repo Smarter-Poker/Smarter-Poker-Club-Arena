@@ -28,6 +28,13 @@
       "proofs": [
         "(SELECT count(*) = 14 AND bool_and(status = 'resolved') FROM public.ca_drift_incidents WHERE id IN ('bc741723-93e4-44e3-bec4-bdfa0a8802d5','767b15b2-fc8a-4b5e-83cc-14b493d35e11','7d4460f4-0841-4920-9ec9-df439dfb3731','830128d6-1a64-47ca-9783-0b77ca77205c','98b42128-5e2a-459e-99b2-3a98f506cc20','b5d4d40d-c2f3-4e81-a06b-d8d4dcaaa8aa','cceefc20-bd37-4b82-a085-9f4d06cd2cb7','612fe3e9-89e5-404d-a874-8de4de3d3c45','d27f0d00-27cb-4d6f-b377-61e0604cf908','6cb84ad1-90a2-419a-89da-e36f83eaff71','42dbcaf4-6424-42f3-b7f2-3a3cb2949cf2','4f83f238-9baa-4842-baa1-8e3855de4666','903c106e-9826-426b-897a-d96547fb2f3c','dbcd10a3-7149-4792-abc5-6195d1251e1a'))"
       ]
+    },
+    {
+      "file": "20261010070915_player_command_totals_have_no_direct_service_writer.sql",
+      "sha256": "ccc1a98df06a34868aec4aa427d94e8061abae0ee16fc992ebe2a426c519b653",
+      "proofs": [
+        "(SELECT count(*)=2 AND bool_and(has_table_privilege('service_role',c.oid,'SELECT') AND NOT has_table_privilege('service_role',c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('club_roster_hand_totals','club_roster_hand_totals_state')) AND (SELECT count(*)=3 AND bool_and(NOT has_function_privilege('service_role',p.oid,'EXECUTE')) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname IN ('fn_club_roster_hand_totals_insert','fn_club_roster_hand_totals_update','fn_club_roster_hand_totals_delete'))"
+      ]
     }
   ]
 }

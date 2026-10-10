@@ -467,7 +467,6 @@ export function BBJCelebration({
         >
           <span className="bbj-amount-label">TOTAL PAYOUT</span>
           <span className="bbj-amount-value">
-            $
             {displayAmount.toLocaleString('en-US', {
               minimumFractionDigits: 2,
               maximumFractionDigits: 2,
@@ -482,7 +481,7 @@ export function BBJCelebration({
             <div className="bbj-breakdown-label">BAD BEAT HOLDER</div>
             <div className="bbj-breakdown-name">{loser?.username || 'Player'}</div>
             <div className="bbj-breakdown-hand">{loser?.handName || ''}</div>
-            <div className="bbj-breakdown-amount">+${chips(loser?.share)}</div>
+            <div className="bbj-breakdown-amount">+{chips(loser?.share)}</div>
             <div className="bbj-breakdown-percent">50%</div>
           </div>
 
@@ -491,7 +490,7 @@ export function BBJCelebration({
             <div className="bbj-breakdown-label">HAND WINNER</div>
             <div className="bbj-breakdown-name">{winner?.username || 'Player'}</div>
             <div className="bbj-breakdown-hand">{winner?.handName || ''}</div>
-            <div className="bbj-breakdown-amount">+${chips(winner?.share)}</div>
+            <div className="bbj-breakdown-amount">+{chips(winner?.share)}</div>
             <div className="bbj-breakdown-percent">25%</div>
           </div>
 
@@ -499,9 +498,9 @@ export function BBJCelebration({
             <div className="bbj-breakdown-emoji" aria-hidden="true" />
             <div className="bbj-breakdown-label">TABLE SHARE</div>
             <div className="bbj-breakdown-name">{tablePlayerCount} Players</div>
-            <div className="bbj-breakdown-hand">${chips(perPlayerShare)} Each</div>
+            <div className="bbj-breakdown-hand">{chips(perPlayerShare)} Each</div>
             <div className="bbj-breakdown-amount">
-              +${tableShare.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              +{tableShare.toLocaleString('en-US', { minimumFractionDigits: 2 })}
             </div>
             <div className="bbj-breakdown-percent">25%</div>
           </div>
@@ -512,7 +511,7 @@ export function BBJCelebration({
           {heroShare > 0 ? (
             <>
               <span className="bbj-hero-share">
-                YOU WON +$
+                YOU WON +
                 {heroShare.toLocaleString('en-US', {
                   minimumFractionDigits: 2,
                   maximumFractionDigits: 2,

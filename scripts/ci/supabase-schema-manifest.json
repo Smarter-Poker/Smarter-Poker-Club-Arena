@@ -2936,6 +2936,7 @@
     "fn_ca_tally_pair",
     "fn_ca_tally_store_move",
     "fn_ca_terminal_marker_transition_is_exact",
+    "fn_ca_text_without_dollar",
     "fn_ca_ticket_escrow_float",
     "fn_ca_touch_updated_at",
     "fn_ca_tournament_accounting_evidence_immutable",

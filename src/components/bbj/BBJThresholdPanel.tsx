@@ -245,7 +245,7 @@ export default function BBJThresholdPanel({ clubId: clubParam, canEdit }: Props)
         {jackpot !== null && (
           <>
             {' '}
-            The Jackpot Is Currently <strong>${money(jackpot)}</strong>.
+            The Jackpot Is Currently <strong>{money(jackpot)} Chips</strong>.
           </>
         )}
       </p>
@@ -259,7 +259,7 @@ export default function BBJThresholdPanel({ clubId: clubParam, canEdit }: Props)
           {rows.map((row) => (
             <li key={row.id} className="bbj-threshold-panel__row">
               <span className="bbj-threshold-panel__amount sc-ink--silver">
-                ${money(row.amount)}
+                {money(row.amount)}
               </span>
               {/* An operator types this note, so it is DATA and the copy gates
                   never see it. Title Case at the print site (Dan 2026-09-14). */}
@@ -301,7 +301,9 @@ export default function BBJThresholdPanel({ clubId: clubParam, canEdit }: Props)
       {canEdit && (
         <div className="bbj-threshold-panel__add">
           <label className="bbj-threshold-panel__field" htmlFor="bbj-threshold-amount">
-            <span className="bbj-threshold-panel__field-label sc-ink--blue">Announce At ($)</span>
+            <span className="bbj-threshold-panel__field-label sc-ink--blue">
+              Announce At (Chips)
+            </span>
             <input
               id="bbj-threshold-amount"
               className="bbj-threshold-panel__input"

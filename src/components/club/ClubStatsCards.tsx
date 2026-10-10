@@ -336,7 +336,7 @@ export default function ClubStatsCards({
             fill="#f59e0b"
             fontFamily="Rajdhani, monospace"
           >
-            $
+            C
           </text>
         </svg>
       ),

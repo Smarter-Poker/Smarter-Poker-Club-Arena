@@ -279,7 +279,7 @@ describe('DailyBonusService', () => {
 
   it('prices diamonds at one cent each', () => {
     expect(diamondsToCentsLabel(5)).toBe('5¢');
-    expect(diamondsToCentsLabel(125)).toBe('$1.25');
+    expect(diamondsToCentsLabel(125)).toBe('1.25 USD');
   });
 });
 

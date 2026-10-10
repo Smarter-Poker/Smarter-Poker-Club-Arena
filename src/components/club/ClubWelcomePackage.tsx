@@ -337,13 +337,13 @@ export default function ClubWelcomePackage({ clubId, clubName, onStateChange }: 
               </strong>
             </div>
             <div>
-              <span>Classic 50¢ / $1 Games</span>
+              <span>Classic 0.5/1 Games</span>
               <strong>
                 {cashGameCount > 0 ? `${compactChips(cashGameCount)} Preloaded` : 'Not Preloaded'}
               </strong>
             </div>
             <div>
-              <span>Daily $25 Freezeout · 7 PM UTC</span>
+              <span>Daily 25 Chip Freezeout · 7 PM UTC</span>
               <strong>{tournamentCount > 0 ? 'Preloaded' : 'Not Preloaded'}</strong>
             </div>
           </div>

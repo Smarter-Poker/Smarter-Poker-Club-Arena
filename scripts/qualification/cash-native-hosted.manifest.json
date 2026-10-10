@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 199431,
-      "sha256": "c7d2af346934ce21ead08551f46e2372b88bc47587cc3ac54eb0bf868ff74645"
+      "bytes": 199478,
+      "sha256": "ac90ff313c46cf0985726f0123c1c32a0704f29c16a330fccd1c2665bccda88b"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1933,5 +1933,12 @@
         }
       }
     ]
+  },
+  "playerCommandContainment20261010": {
+    "reason": "Add the rendered roster containment regression to the existing required CSS browser invocation. Only the workflow source fingerprint changes; financial inputs, assertions, qualification status and historical pins remain unchanged. This is not execution evidence.",
+    "previousWorkflowPin": {
+      "bytes": 199431,
+      "sha256": "c7d2af346934ce21ead08551f46e2372b88bc47587cc3ac54eb0bf868ff74645"
+    }
   }
 }

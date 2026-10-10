@@ -1,3 +1,4 @@
+import { playerSessionVerdict } from '../services/PlayerSessionAccess.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * ChannelWebSocketServer — WebSocket transport for /ws/channel
@@ -158,12 +159,33 @@ type InboundMessage =
 // be refused with a close code the browser can read, and an auth outage can
 // be told apart from it.
 async function verifyToken(token: string): Promise<TokenVerdict> {
-  return verifySupabaseToken(supabase.auth, token);
+  const verdict = await verifySupabaseToken(supabase.auth, token);
+  if (!verdict.userId) return verdict;
+  const session = await playerSessionVerdict(verdict.userId, token);
+  return session === 'alive'
+    ? verdict
+    : {
+        denied: session === 'revoked' ? 'invalid' : 'unavailable',
+        code: session === 'revoked' ? 'session_not_found' : 'session_check_unavailable',
+      };
 }
 
 // ─── ChannelWebSocketServer ───────────────────────────────────────────────────
 
 export class ChannelWebSocketServer {
+  /** Close only the target's definitively revoked sessions; active hands retain normal disconnect handling. */
+  public async revokePlayerSessions(userId: string): Promise<void> {
+    for (const [ws, connection] of this.connections) {
+      if (connection.userId !== userId) continue;
+      if ((await playerSessionVerdict(userId, connection.token)) !== 'revoked') continue;
+      try {
+        ws.close(4401, 'auth:session_not_found');
+      } catch {
+        /* normal close cleanup owns presence */
+      }
+    }
+  }
+
   private wss: WebSocketServer;
   private connections: Map<WebSocket, ConnectionState> = new Map();
   private heartbeatTimer: NodeJS.Timeout | null = null;

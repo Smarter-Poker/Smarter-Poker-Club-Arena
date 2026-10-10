@@ -1,0 +1,4270 @@
+[
+  {
+    "schema": "public",
+    "name": "accounting_cashier_events",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "contract_version",
+        "type": "smallint",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "cashout_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "escrow_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "source_transaction_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "source_ledger_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "invoice_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "event_slot",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "event_kind",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "hold_event_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "hold_invoice_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "club_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "player_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "assigned_agent_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "actor_user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "actor_role",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "ledger_actor_user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "issuer_representative_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "issuer_name",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "player_name",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "audience_user_ids",
+        "type": "uuid[]",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "op_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "operation_fingerprint",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "accepted_note",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "transaction_note",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "amount",
+        "type": "numeric(15,2)",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "ledger_from_type",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "ledger_from_entity_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "ledger_to_type",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "ledger_to_entity_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "wallet_owner_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "wallet_before",
+        "type": "numeric",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "wallet_after",
+        "type": "numeric",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "occurred_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "issued_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "accounting_conversations",
+    "columns": [
+      {
+        "name": "scope_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "issuer_type",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "issuer_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "sender_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "recipient_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "conversation_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "last_discussion_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "accounting_invoice_deliveries",
+    "columns": [
+      {
+        "name": "invoice_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "recipient_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "message_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "notification_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "delivered_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "delivery_mode",
+        "type": "text",
+        "default": "'immediate'::text",
+        "notnull": true,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "agents",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "club_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "membership_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "role",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'active'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "parent_agent_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "commission_rate",
+        "type": "numeric(5,4)",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "player_rakeback_rate",
+        "type": "numeric(5,4)",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "credit_limit",
+        "type": "numeric(15,2)",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "credit_used",
+        "type": "numeric(15,2)",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "is_prepaid",
+        "type": "boolean",
+        "default": "false",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "business_balance",
+        "type": "numeric(15,2)",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "player_balance",
+        "type": "numeric(15,2)",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "promo_balance",
+        "type": "numeric(15,2)",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "total_players",
+        "type": "integer",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "active_player_count",
+        "type": "integer",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "sub_agent_count",
+        "type": "integer",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "weekly_rake_generated",
+        "type": "numeric(15,2)",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "lifetime_earnings",
+        "type": "numeric(15,2)",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "joined_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "last_active_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "auto_rakeback_enabled",
+        "type": "boolean",
+        "default": "true",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "rakeback_percentage",
+        "type": "numeric(5,4)",
+        "default": "0.0000",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "agent_wallet_balance",
+        "type": "numeric(18,2)",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "player_wallet_balance",
+        "type": "numeric(18,4)",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "promo_wallet_balance",
+        "type": "numeric(18,2)",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "lifetime_rake_generated",
+        "type": "numeric(18,4)",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "credit_control_revision",
+        "type": "bigint",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "cashout_requests",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "club_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "player_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "agent_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "amount",
+        "type": "numeric(15,2)",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'pending'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "player_note",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "agent_note",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "acknowledged_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "completed_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "cancelled_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "chip_escrow",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "cashout_request_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "player_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "amount",
+        "type": "numeric(15,2)",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "locked_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "released_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "release_type",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "club_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "chip_ledger",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "performed_by",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "from_type",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "from_entity_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "from_label",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "to_type",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "to_entity_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "to_label",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "amount",
+        "type": "numeric(15,2)",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "category",
+        "type": "text",
+        "default": "'transfer'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "description",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "notes",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "club_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "union_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "hand_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "tournament_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "idempotency_key",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "correlation_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "causation_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "settlement_id",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "epoch_id",
+        "type": "integer",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "actor_service",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "db_role",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "pre_from_balance",
+        "type": "numeric",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "post_from_balance",
+        "type": "numeric",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "pre_to_balance",
+        "type": "numeric",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "post_to_balance",
+        "type": "numeric",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'posted'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "chain_seq",
+        "type": "bigint",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "prev_hash",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "row_hash",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "chip_ledger_idem",
+    "columns": [
+      {
+        "name": "idempotency_key",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "leg_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "chip_transactions",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "club_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "from_user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "to_user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "amount",
+        "type": "numeric(14,2)",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "transaction_type",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "notes",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "related_cashout_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "balance_after",
+        "type": "numeric(14,2)",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "clawed_back",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "reversible_until",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "is_reversed",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "club_members",
+    "columns": [
+      {
+        "name": "club_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "role",
+        "type": "text",
+        "default": "'player'::text",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "agent_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "joined_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "parent_agent_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "invited_by",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "notes",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "last_active_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "is_bot",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'active'::text",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "chip_balance",
+        "type": "numeric(20,2)",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "diamonds",
+        "type": "integer",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "is_active",
+        "type": "boolean",
+        "default": "true",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "orange_ball_status",
+        "type": "text",
+        "default": "'inactive'::text",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "rank_level",
+        "type": "integer",
+        "default": "1",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "credit_limit",
+        "type": "numeric(15,2)",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "credit_used",
+        "type": "numeric(15,2)",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "nickname",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "last_active",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "tier",
+        "type": "text",
+        "default": "'bronze'::text",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "trust_score",
+        "type": "integer",
+        "default": "50",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "sessions_played",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "promo_balance",
+        "type": "numeric(14,2)",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "chips_won",
+        "type": "bigint",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "chips_lost",
+        "type": "bigint",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "commission_rate",
+        "type": "numeric(5,2)",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "rakeback_rate",
+        "type": "numeric(5,2)",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "hands_played",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "total_rake_paid",
+        "type": "bigint",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "biggest_pot",
+        "type": "bigint",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "locked_chips",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "player_rakeback_pct",
+        "type": "numeric(5,4)",
+        "default": "0.0000",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "held_chips",
+        "type": "numeric",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "display_name",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "is_prepaid",
+        "type": "boolean",
+        "default": "true",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "promo_received_total",
+        "type": "numeric(14,2)",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "promo_wagered",
+        "type": "numeric(14,2)",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "promo_playthrough_required",
+        "type": "numeric(14,2)",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "missions_completed",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "membership_lifecycle_status",
+        "type": "text",
+        "default": "'active'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "departed_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "departed_by",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "departure_reason",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "clubs",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "uuid_generate_v4()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "name",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "description",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "owner_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "is_union",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "club_id",
+        "type": "integer",
+        "default": "(((10000)::double precision + floor((random() * (90000)::double precision))))::integer",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "avatar_url",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "is_public",
+        "type": "boolean",
+        "default": "true",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "requires_approval",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "gps_restricted",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "settings",
+        "type": "jsonb",
+        "default": "'{\"rake_cap\": 15, \"max_buy_in_bb\": 200, \"min_buy_in_bb\": 40, \"allow_straddle\": true, \"time_bank_seconds\": 30, \"allow_run_it_twice\": true, \"default_rake_percent\": 5}'::jsonb",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "union_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "color_theme",
+        "type": "text",
+        "default": "'royal-blue'::text",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "slug",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "chip_treasury",
+        "type": "numeric(18,2)",
+        "default": "100000",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "total_rake",
+        "type": "numeric(18,2)",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "online_count",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "game_types",
+        "type": "text[]",
+        "default": "ARRAY['NLH'::text]",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "member_count",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "table_count",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "promo_balance",
+        "type": "numeric(14,2)",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "code",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "rake_percent",
+        "type": "numeric(5,2)",
+        "default": "5.0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "rake_cap_bb",
+        "type": "numeric(8,2)",
+        "default": "3.0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "max_tables",
+        "type": "integer",
+        "default": "20",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "max_members",
+        "type": "integer",
+        "default": "500",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'active'::text",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "hands_played",
+        "type": "bigint",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "logo_url",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "banner_url",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "game_variants",
+        "type": "text[]",
+        "default": "ARRAY['nlh'::text]",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "settlement_locked",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "settlement_locked_until",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "auto_settlement_enabled",
+        "type": "boolean",
+        "default": "true",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "auto_settlement_day",
+        "type": "text",
+        "default": "'monday'::text",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "auto_settlement_hour",
+        "type": "integer",
+        "default": "10",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "club_commission_rate",
+        "type": "numeric(5,4)",
+        "default": "0.9000",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "insurance_balance",
+        "type": "numeric(14,2)",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "bbj_enabled",
+        "type": "boolean",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "player_level",
+        "type": "integer",
+        "default": "1",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "hierarchy_level",
+        "type": "integer",
+        "default": "1",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "level",
+        "type": "integer",
+        "default": "1",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "player_threshold_current",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "player_threshold_next",
+        "type": "integer",
+        "default": "30",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "hierarchy_units",
+        "type": "numeric(10,2)",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "hierarchy_units_rounded_up",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "hierarchy_threshold_current",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "hierarchy_threshold_next",
+        "type": "integer",
+        "default": "2",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "tags",
+        "type": "text[]",
+        "default": "'{}'::text[]",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "average_rating",
+        "type": "numeric(3,2)",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "game_type",
+        "type": "text",
+        "default": "'Texas Holdem'::text",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "settlement_lock_until",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "card_image_url",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "active_players",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "default_rake_percent",
+        "type": "numeric(5,2)",
+        "default": "'-1'::integer",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "rake_cap",
+        "type": "numeric(18,4)",
+        "default": "'-1'::integer",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "min_buyin_bb",
+        "type": "integer",
+        "default": "20",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "max_buyin_bb",
+        "type": "integer",
+        "default": "200",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "allow_straddle",
+        "type": "boolean",
+        "default": "true",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "allow_run_it_twice",
+        "type": "boolean",
+        "default": "true",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "allow_rabbit_hunt",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "logo",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "is_private",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "min_buy_in",
+        "type": "numeric(18,4)",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "max_buy_in",
+        "type": "numeric(18,4)",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "default_game_type",
+        "type": "text",
+        "default": "'NLHE'::text",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "allow_insurance",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "auto_approve_agents",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "auto_settlement",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "active_tables",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "admin_count",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "super_agent_count",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "agent_count",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "chip_pool",
+        "type": "numeric(18,2)",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "bbj_rake_enabled",
+        "type": "boolean",
+        "default": "true",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "spins_enabled",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "spins_preseed_amount",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "spins_wallet_funding",
+        "type": "text",
+        "default": "'PROMO'::text",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "ticker_enabled",
+        "type": "boolean",
+        "default": "true",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "guarantee_treasury_floor",
+        "type": "numeric",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "guarantee_enforcement_enabled",
+        "type": "boolean",
+        "default": "true",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "tagline",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "opening_checklist_started_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "lobby_message",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "lobby_message_updated_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "message_revision",
+        "type": "bigint",
+        "default": "1",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "lifecycle_status",
+        "type": "text",
+        "default": "'active'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "retired_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "retired_by",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "retirement_reason",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "asset",
+        "type": "text",
+        "default": "'chips'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "is_platform",
+        "type": "boolean",
+        "default": "false",
+        "notnull": true,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "notifications",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "type",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "title",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "message",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "data",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "read",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "is_read",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "action_url",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "actor_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "link",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "read_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "profiles",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "full_name",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "display_name",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "first_name",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "last_name",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "username",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "email",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "phone",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "bio",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "city",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "state",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "alias",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "avatar_url",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "role",
+        "type": "text",
+        "default": "'user'::text",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'active'::text",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "is_vip",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "is_horse",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "is_admin",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "is_online",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "player_number",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "diamonds",
+        "type": "integer",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "diamond_balance",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "diamond_multiplier",
+        "type": "numeric(3,2)",
+        "default": "1.00",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "level",
+        "type": "integer",
+        "default": "1",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "tier",
+        "type": "text",
+        "default": "'Newcomer'::text",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "skill_tier",
+        "type": "text",
+        "default": "'Newcomer'::text",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "login_streak",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "streak_days",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "settings",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "preferences",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "social_page_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "favorite_venue",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "home_poker_club",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "referred_by",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "friends_count",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "hendon_total_cashes",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "hendon_total_earnings",
+        "type": "numeric",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "email_verified",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "phone_verified",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "onboarding_complete",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "last_login",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "last_login_date",
+        "type": "date",
+        "default": "CURRENT_DATE",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "last_seen",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "training_view_mode",
+        "type": "text",
+        "default": "'grid'::text",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "last_trivia_date",
+        "type": "date",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "trivia_streak",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "trivia_high_score",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "total_hands_played",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "notification_token",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "referral_code",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "horse_status",
+        "type": "character varying",
+        "default": "'available'::character varying",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "horse_profile",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "sounds_enabled",
+        "type": "boolean",
+        "default": "true",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "vibrations_enabled",
+        "type": "boolean",
+        "default": "true",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "show_stack_bb",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "birth_year",
+        "type": "integer",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "favorite_hand_type",
+        "type": "text",
+        "default": "'holdem'::text",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "card_back_preference",
+        "type": "text",
+        "default": "'white'::text",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "country",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "website",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "twitter",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "instagram",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "hendon_url",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "favorite_game",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "favorite_hand",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "home_casino",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "cover_photo_url",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "favorite_hand_plo",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "app_settings",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "display_name_preference",
+        "type": "text",
+        "default": "'full_name'::text",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "cover_photo_position",
+        "type": "text",
+        "default": "'50% 50%'::text",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "tiktok",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "telegram",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "birthday",
+        "type": "date",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "hendon_biggest_cash",
+        "type": "numeric",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "use_real_name",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "streak_count",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "access_tier",
+        "type": "text",
+        "default": "'Full_Access'::text",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "vip_tier",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "vip_expires_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "last_active",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "poker_near_me_preferences",
+        "type": "jsonb",
+        "default": "'{\"geofenceAlerts\": true, \"locationEnabled\": true, \"showNewcomerFriendly\": true}'::jsonb",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "can_review",
+        "type": "boolean",
+        "default": "true",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "deleted_reviews_count",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "kyc_status",
+        "type": "text",
+        "default": "'NONE'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "kyc_provider",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "kyc_inquiry_id",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "kyc_completed_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "kyc_rejection_reason",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "age_verified",
+        "type": "boolean",
+        "default": "false",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "age_verified_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "jurisdiction_country",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "mfa_required",
+        "type": "boolean",
+        "default": "false",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "hub_preferences",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "friend_preferences",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "store_preferences",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "messenger_preferences",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "reels_preferences",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "over_18_attested_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "jurisdiction_region",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "jurisdiction_acknowledged_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "home_games_onboarded_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "social_profile_completed",
+        "type": "boolean",
+        "default": "false",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "is_farming_flagged",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "stripe_customer_id",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "club_arena_tos_accepted_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "bankroll_preferences",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "memory_games_preferences",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "news_preferences",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "video_library_preferences",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "memory_elo",
+        "type": "integer",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "arena_avatar_url",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "equipped_frame",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "equipped_aura",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "use_avatar_as_profile_pic",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "status_text",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "player_tags",
+        "type": "text[]",
+        "default": "'{}'::text[]",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "vip_lifetime_card_purchase_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "lifetime_vip_since",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "trivia_preferences",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "trivia_preferences_revision",
+        "type": "bigint",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "settlement_invoices",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "club_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "period_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "invoice_type",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "from_entity_type",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "from_entity_id",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "to_entity_type",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "to_entity_id",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "gross_amount",
+        "type": "numeric(12,2)",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "net_amount",
+        "type": "numeric(12,2)",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "deductions",
+        "type": "numeric(12,2)",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "breakdown",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'generated'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "chip_transfer_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "chips_transferred",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "transferred_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "message_sent",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "message_sent_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "notes",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "due_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "invoice_number",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "adjusts_invoice_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "overdue_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "reminders_sent",
+        "type": "integer",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "last_reminder_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "source_ledger_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "source_credit_invoice_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "source_credit_payment_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "source_credit_reduction_operation_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "source_union_presettlement_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "social_conversation_participants",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "conversation_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "joined_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "last_read_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "is_muted",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "read_receipts_enabled",
+        "type": "boolean",
+        "default": "true",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "is_pinned",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "context_entity_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "context_entity_type",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "social_messages",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "conversation_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "sender_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "content",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "message_type",
+        "type": "text",
+        "default": "'text'::text",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "is_edited",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "is_deleted",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "read_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "media_metadata",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "request_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "accounting_correction_documents",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "contract_version",
+        "type": "smallint",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "source_ledger_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "invoice_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "club_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "union_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "source_club_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "source_union_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "source_row",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "amount",
+        "type": "numeric",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "issuer_type",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "issuer_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "payee_type",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "payee_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "issuer_representative_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "issuer_name",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "payee_name",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "audience_user_ids",
+        "type": "uuid[]",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "incident_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "write_failure_id",
+        "type": "bigint",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "recorded_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "issued_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "accounting_credit_change_documents_v1",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "invoice_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "operation_receipt_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "issuer_name",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "recipient_name",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "audience_user_ids",
+        "type": "uuid[]",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "issued_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "accounting_credit_reduction_operations_v1",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "contract_version",
+        "type": "smallint",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "actor_user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "operation_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "club_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "agent_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "target_user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "action",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "requested_reduction",
+        "type": "numeric(15,2)",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "assignment_reason",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "before_limit",
+        "type": "numeric(15,2)",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "after_limit",
+        "type": "numeric(15,2)",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "credit_used",
+        "type": "numeric(15,2)",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "before_prepaid",
+        "type": "boolean",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "after_prepaid",
+        "type": "boolean",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "before_revision",
+        "type": "bigint",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "after_revision",
+        "type": "bigint",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "applied_reduction",
+        "type": "numeric(15,2)",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "assignment_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "document_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "invoice_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "recorded_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "social_conversations",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "last_message_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "last_message_preview",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "is_group",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "group_name",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "is_request",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "request_sender_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "context_entity_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "context_entity_type",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "social_pages",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "owner_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "page_type",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "name",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "slug",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "description",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "avatar_url",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "cover_url",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "category",
+        "type": "text",
+        "default": "'general'::text",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "website",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "contact_email",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "phone",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "location_city",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "location_state",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "location_country",
+        "type": "text",
+        "default": "'US'::text",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "linked_venue_id",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "linked_entity_type",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "linked_entity_id",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "follower_count",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "post_count",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "member_count",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "is_verified",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "is_public",
+        "type": "boolean",
+        "default": "true",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "allow_member_posts",
+        "type": "boolean",
+        "default": "true",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "require_post_approval",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "view_count",
+        "type": "integer",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "avg_rating",
+        "type": "numeric(3,2)",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "accounting_invoice_counters",
+    "columns": [
+      {
+        "name": "year",
+        "type": "integer",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "next_number",
+        "type": "bigint",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "union_clubs",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "union_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "club_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "joined_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "club_commission_rate",
+        "type": "numeric(5,4)",
+        "default": "0.9000",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "rate_cash",
+        "type": "numeric",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "rate_mtt",
+        "type": "numeric",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "rate_sng",
+        "type": "numeric",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "rate_spin",
+        "type": "numeric",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "rate_satellite",
+        "type": "numeric",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      }
+    ]
+  }
+]

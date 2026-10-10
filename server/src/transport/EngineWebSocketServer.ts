@@ -1,3 +1,4 @@
+import { playerSessionVerdict } from '../services/PlayerSessionAccess.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * EngineWebSocketServer — native WebSocket transport for authoritative state
@@ -369,14 +370,28 @@ async function defaultVerifyToken(token: string): Promise<TokenVerdict> {
   if (!token) return { denied: 'invalid', code: 'missing' };
   const hit = tokenCache.get(token);
   if (hit && Date.now() - hit.verifiedAt < TOKEN_CACHE_TTL_MS) {
-    return { userId: hit.userId };
+    const session = await playerSessionVerdict(hit.userId, token);
+    return session === 'alive'
+      ? { userId: hit.userId }
+      : {
+          denied: session === 'revoked' ? 'invalid' : 'unavailable',
+          code: session === 'revoked' ? 'session_not_found' : 'session_check_unavailable',
+        };
   }
   if (hit) tokenCache.delete(token);
   // 2026-09-04: the verdict says WHY (see wsHelpers). Only successes are
   // cached, as before - a 30s cache of "invalid" would lock a player out for
   // 30s after they sign back in.
   const verdict = await verifySupabaseToken(supabase.auth, token);
-  if (verdict.userId) cacheToken(token, verdict.userId);
+  if (verdict.userId) {
+    const session = await playerSessionVerdict(verdict.userId, token);
+    if (session !== 'alive')
+      return {
+        denied: session === 'revoked' ? 'invalid' : 'unavailable',
+        code: session === 'revoked' ? 'session_not_found' : 'session_check_unavailable',
+      };
+    cacheToken(token, verdict.userId);
+  }
   return verdict;
 }
 
@@ -455,6 +470,19 @@ export function refuseProtocol(
 // ─── EngineWebSocketServer ────────────────────────────────────────────────────
 
 export class EngineWebSocketServer {
+  /** Close only the target's definitively revoked sessions; active hands retain normal disconnect handling. */
+  public async revokePlayerSessions(userId: string): Promise<void> {
+    for (const [ws, connection] of this.connections) {
+      if (connection.userId !== userId) continue;
+      if ((await playerSessionVerdict(userId, connection.token)) !== 'revoked') continue;
+      try {
+        ws.close(4401, 'auth:session_not_found');
+      } catch {
+        /* normal close cleanup owns presence */
+      }
+    }
+  }
+
   private wss: WebSocketServer;
   private connections: Map<WebSocket, ConnectionState> = new Map();
   private heartbeatTimer: NodeJS.Timeout | null = null;

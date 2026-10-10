@@ -249,6 +249,9 @@ export interface ResumeWavesProgress {
 export interface MaintenanceBreakDeps {
   /** Every live table engine, cash and tournament alike. */
   engines(): Iterable<[string, PausableTableEngine]>;
+  /** Operator intent joins the existing hourly owner; no new scheduler. */
+  claimOperatorAnnouncement?: (announcedAt: number) => Promise<string | null>;
+  observeOperatorAnnouncement?: (operationId: string, announcedAt: number) => Promise<void>;
   /** Durable original preparations retained across a process replacement. */
   retainedPreparationBlockers?(): readonly string[];
   /** False once the process is shutting down; stops any further scheduling. */
@@ -1065,7 +1068,22 @@ export class MaintenanceBreak {
    * the loop cannot come back around until dealHand() resolves.
    */
   async announceLastHand(): Promise<void> {
-    return this.announceBreak(this.now(), 'Scheduled Engine Maintenance');
+    const announcedAt = this.now();
+    let operationId: string | null = null;
+    try {
+      if (this.deps.claimOperatorAnnouncement)
+        operationId = await this.deps.claimOperatorAnnouncement(announcedAt);
+    } catch (error) {
+      console.warn('[MaintenanceBreak] operator receipt claim unknown', error);
+    }
+    await this.announceBreak(announcedAt, 'Scheduled Engine Maintenance');
+    if (operationId && this.durableConfirmed && this.announcedAt === announcedAt) {
+      try {
+        await this.deps.observeOperatorAnnouncement?.(operationId, announcedAt);
+      } catch (error) {
+        console.warn('[MaintenanceBreak] operator receipt acknowledgement unknown', error);
+      }
+    }
   }
 
   /**

@@ -681,6 +681,10 @@ if [ -f scripts/ci/check-no-orphaned-work.mjs ]; then
   fi
 fi
 
+# check-ui-text.mjs also starts scripts/ci/check-ui-dollar.mjs, the other half
+# of the copy rule (Dan 2026-10-09: "you are forbidden from using $ the dollar
+# sign anywhere in the club arena"), so a rendered "$" fails here too. Law:
+# tests/the-club-arena-shows-no-dollar-sign.law.test.ts.
 if [ -f scripts/ci/check-ui-text.mjs ]; then
   if ! node scripts/ci/check-ui-text.mjs; then
     FAIL=1

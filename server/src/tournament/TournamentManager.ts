@@ -38,6 +38,7 @@ import { supabase } from '../services/supabase.js';
 import { type BalancerTable, type MoveInstruction } from '../engine/TableBalancer.js';
 import type { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import { reportError } from '../services/errorReporter.js';
+import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { selectInChunks } from '../services/supabase/chunkedIn.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
 import {
@@ -2349,6 +2350,46 @@ export class TournamentManager extends TournamentManagerEliminations {
         new Error('F06 terminal owner disposition required'),
         'Tournament.break_terminal_handoff',
         { tournamentId: this.tournamentId, breakId: current.break_id }
+      );
+      /**
+       * A DISPOSITION NOBODY IS TOLD ABOUT IS NOT A DISPOSITION (2026-09-27).
+       *
+       * This branch names exactly what is needed - "the terminal owner"
+       * disposes of the break - and then nothing does it and nothing tells
+       * anyone. `reportError` alone goes to the error reporter only: measured
+       * live, zero rows ever reached `financial_alerts` or
+       * `operational_alert_events` for this source. Tournament bfcfaf17's
+       * winner's table (0cfc4303, break 544dc515) sat exactly here,
+       * `park_requested` and unadmitted, for nine days: every elimination
+       * sweep re-derived this same branch, on a table that can never deal
+       * again to trigger the ordinary hand-refusal admission path that begins
+       * in `holdSourceForItsBreak`, and every pass reported to a channel
+       * nobody reads.
+       *
+       * This does not admit the park itself - that decision belongs to the
+       * terminal settlement authority this comment already names, not to a
+       * balancer sweep reaching in to claim custody on its behalf. It makes
+       * the wait visible and durable instead of silent: one open critical per
+       * break, deduped so a five-second sweep cadence cannot flood it, and
+       * left for an operator or a dedicated pass to resolve once the break is
+       * actually admitted or retired - this branch never resolves its own
+       * alert, because it never touches the break.
+       */
+      void raiseFinancialAlert(
+        'critical',
+        'Tournament.break_terminal_handoff',
+        `Tournament ${this.tournamentId} table ${current.source_table_id} is bound to F06 break ` +
+          `${current.break_id} (state ${current.state}) with no path back except the terminal ` +
+          `settlement authority admitting it - the table cannot deal again to trigger the ordinary ` +
+          `hand-refusal admission path, so nothing will retry this on its own.`,
+        {
+          tournament_id: this.tournamentId,
+          break_id: current.break_id,
+          source_table_id: current.source_table_id,
+          break_state: current.state,
+        },
+        `${this.tournamentId}:${current.break_id}:terminal_handoff`,
+        this.tournamentId
       );
       return;
     }

@@ -856,15 +856,48 @@ for (const action of ['fold', 'check']) {
  *                        missing or does not match;
  *   rake_attribution     rake attribution incomplete for another reason;
  *   prize_set            the prize set could not be certified;
+ *   f06_table_excluded   the winner's table is still bound to an unresolved
+ *                        F06 table-break/movement operation (F06_SOURCE_
+ *                        EXCLUDED); see the 2026-09-27 note below - a plain
+ *                        retry cannot clear this on its own;
  *   deadlock             the database chose this transaction as the victim;
  *   timeout              statement or lock timeout;
  *   other                anything else, which is the label to read first when
  *                        it moves.
+ *
+ * F06_TABLE_EXCLUDED WAS MISFILED AS "TIMEOUT" AND "OTHER" (2026-09-27).
+ *
+ * Tournament bfcfaf17 ("DSS Thursday $5.50 NLH Turbo") was decided at
+ * 2026-09-18 05:17:48 UTC and sat RUNNING and unpaid for nine days. Its
+ * winner's table (0cfc4303) carries an F06 table-break operation
+ * (break 544dc515) still `park_requested`, never admitted - `recoverTournamentBreak`
+ * in TournamentManager.ts correctly identifies this as needing "the terminal
+ * owner" to dispose of it (`Tournament.break_terminal_handoff`, reported but
+ * never alerted - see that file), but `fn_complete_tournament_terminal` has no
+ * way to admit the park itself, so every write to that table's seats/roster is
+ * refused by the `f06_source_guard` trigger with `F06_SOURCE_EXCLUDED`
+ * (SQLSTATE 55000). Proven live in a rolled-back probe (CLAUDE.md 11.5):
+ * calling `fn_complete_tournament_terminal` for this exact tournament/winner
+ * raises exactly `F06_SOURCE_EXCLUDED` and nothing else.
+ *
+ * That message previously fell to `m.includes('timeout')` whenever the
+ * resolver's own status check separately hit lock contention (the composed
+ * failure text ends with "...serialized outcome check failed: ...timeout..."),
+ * and to `other` otherwise. Both are wrong in the same way: this is not
+ * contention a plain retry clears, it is the database saying "not like this"
+ * -- exactly the "rule" class `finishRefusalIsTransient` already exists to
+ * separate from a deadlock or a statement timeout. Filed as `timeout`, the
+ * refusal retried at a flat five-second cadence forever with no backoff and,
+ * because `alertFinishRefusalOnce` only alerts once per (tournament, reason),
+ * exactly one critical alert for the entire nine days - the same silent-
+ * forever shape the 2026-09-18 fix ended for rule refusals, reopened here by a
+ * refusal the classifier did not recognise as one.
  */
 export type FinishRefusalReason =
   | 'fee_reconciliation'
   | 'rake_attribution'
   | 'prize_set'
+  | 'f06_table_excluded'
   | 'deadlock'
   | 'timeout'
   | 'other';
@@ -873,6 +906,7 @@ export const FINISH_REFUSAL_REASONS: readonly FinishRefusalReason[] = [
   'fee_reconciliation',
   'rake_attribution',
   'prize_set',
+  'f06_table_excluded',
   'deadlock',
   'timeout',
   'other',
@@ -890,6 +924,12 @@ export function classifyFinishRefusal(message: string | null | undefined): Finis
   if (m.includes('rake attribution') || m.includes('attribution incomplete'))
     return 'rake_attribution';
   if (m.includes('prize')) return 'prize_set';
+  // Checked before the generic deadlock/timeout patterns: an F06_SOURCE_EXCLUDED
+  // refusal is a rule refusal that happens to compose a message which can also
+  // contain the word "timeout" (from an unrelated, separately-contended
+  // resolver check appended to the same failure text). Matching this first
+  // keeps it out of the transient bucket regardless of what follows it.
+  if (m.includes('f06_source_excluded')) return 'f06_table_excluded';
   if (m.includes('deadlock')) return 'deadlock';
   if (m.includes('timeout') || m.includes('canceling statement')) return 'timeout';
   return 'other';
@@ -897,7 +937,7 @@ export function classifyFinishRefusal(message: string | null | undefined): Finis
 
 export const tournamentFinishRefusalsTotal: Counter = alwaysOnRegistry.counter(
   'poker_tournament_finish_refusals_total',
-  'Tournament finishes the database definitively refused before commit (label: reason=fee_reconciliation|rake_attribution|prize_set|deadlock|timeout|other)'
+  'Tournament finishes the database definitively refused before commit (label: reason=fee_reconciliation|rake_attribution|prize_set|f06_table_excluded|deadlock|timeout|other)'
 );
 for (const reason of FINISH_REFUSAL_REASONS) {
   tournamentFinishRefusalsTotal.inc(0, { reason });
@@ -953,7 +993,7 @@ export function finishRefusalRetryDelayMs(
  */
 export const tournamentFinishRefusalAlertsSuppressedTotal: Counter = alwaysOnRegistry.counter(
   'poker_tournament_finish_refusal_alerts_suppressed_total',
-  'Repeat critical finish-refusal alerts counted instead of raised because this tournament had already reported this reason (label: reason=fee_reconciliation|rake_attribution|prize_set|deadlock|timeout|other)'
+  'Repeat critical finish-refusal alerts counted instead of raised because this tournament had already reported this reason (label: reason=fee_reconciliation|rake_attribution|prize_set|f06_table_excluded|deadlock|timeout|other)'
 );
 for (const reason of FINISH_REFUSAL_REASONS) {
   tournamentFinishRefusalAlertsSuppressedTotal.inc(0, { reason });

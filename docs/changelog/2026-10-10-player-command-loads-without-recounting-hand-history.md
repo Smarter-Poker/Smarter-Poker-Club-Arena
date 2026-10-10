@@ -9,3 +9,5 @@ Member detail, downline, statistics and role-option requests own bounded abortab
 Roster structural invalidation is scoped to the affected club. Role/hierarchy/note changes are recognized without refreshing for wallet-only churn; socket recovery retains its existing explicit-event behavior.
 
 Maintained coverage: real PostgREST builder deadline/decoding/permission tests, React route/range/note retry tests, roster event ownership tests, and private PostgreSQL qualification of snapshot concurrency, all fact transitions, rollback, browser denial, retained semantics, source-scan removal and concurrent note receipts. The PostgreSQL proof runs in the existing required accounting shard. Production installation, protected integration and client publication are separate evidence stages recorded in the task checkpoint.
+
+Signed-in mobile inspection found role, presence and player ID overlapping at375px. The existing credential artwork is preserved; identity fields now use separate grid rows and wrap role/status. The existing published-page browser suite checks actual field geometry at375px and393px.

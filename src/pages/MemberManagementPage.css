@@ -170,6 +170,7 @@
 
 .mm-identity__line {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem;
 }
@@ -1400,6 +1401,20 @@
 }
 
 @media (max-width: 760px) {
+  /* Identity and ID own separate grid rows; role/status can wrap on phones. */
+  .mm-identity {
+    display: grid;
+    grid-template-columns: 78px minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .mm-player-id {
+    grid-column: 2;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
   .mm-credential {
     min-height: 330px;
   }

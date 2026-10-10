@@ -86,11 +86,8 @@ vi.mock('../../src/utils/clubIdResolver', async (importOriginal) => ({
 }));
 
 import { supabase } from '../../src/lib/supabase';
-import CashierTradePage, {
-  exactChipFigure,
-  parseTradeAmount,
-  sumChips,
-} from '../../src/pages/CashierTradePage';
+import CashierTradePage from '../../src/pages/CashierTradePage';
+import { exactChipFigure, parseTradeAmount, sumChips } from '../../src/utils/cashierAmount';
 import { WalletPlate } from '../../src/pages/PlayerWalletPage';
 
 const read = (path: string) => readFileSync(path, 'utf8');
@@ -414,8 +411,56 @@ describe('P-20: a comma-grouped amount is understood, any other comma is named',
   });
 });
 
+describe('G-06: the Trade route module exports only its page', () => {
+  it('keeps the amount helpers in src/utils/cashierAmount.ts', () => {
+    expect(TRADE.match(/^export (?!default)/gm) ?? []).toHaveLength(0);
+    expect(TRADE).toContain(
+      "import { exactChipFigure, parseTradeAmount, sumChips } from '../utils/cashierAmount';"
+    );
+    const helpers = read('src/utils/cashierAmount.ts');
+    for (const name of ['exactChipFigure', 'sumChips', 'parseTradeAmount'])
+      expect(helpers).toContain(`export function ${name}(`);
+  });
+});
+
+describe('G-08: the Trade amount is read on its spelling, not by Number()', () => {
+  const digits = { ok: false, error: 'Enter The Amount As Digits, With Up To Two Decimals' };
+
+  it('refuses exponent, hex, signed and over-precise spellings', () => {
+    expect(parseTradeAmount('1e3')).toEqual(digits);
+    expect(parseTradeAmount('1E9')).toEqual(digits);
+    expect(parseTradeAmount('0x10')).toEqual(digits);
+    expect(parseTradeAmount('+5')).toEqual(digits);
+    expect(parseTradeAmount('.5')).toEqual(digits);
+    expect(parseTradeAmount('5.')).toEqual(digits);
+    expect(parseTradeAmount('10.005')).toEqual(digits);
+    expect(parseTradeAmount('1,000.123')).toEqual(digits);
+  });
+
+  it('still accepts plain and grouped amounts with up to two decimals', () => {
+    expect(parseTradeAmount('1000')).toEqual({ ok: true, value: 1000 });
+    expect(parseTradeAmount(' 12.5 ')).toEqual({ ok: true, value: 12.5 });
+    expect(parseTradeAmount('0.07')).toEqual({ ok: true, value: 0.07 });
+    expect(parseTradeAmount('1,000.50')).toEqual({ ok: true, value: 1000.5 });
+  });
+
+  it('a Send Out typed as 1e3 is refused and nothing moves', async () => {
+    state.agentWallet = 5000;
+    mountCashier();
+    await synchronized();
+    await openSendOut('1e3', 1);
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await waitFor(() =>
+      expect(toastMocks.error).toHaveBeenCalledWith(
+        'Enter The Amount As Digits, With Up To Two Decimals'
+      )
+    );
+    expect(state.rpcCalls.some((call) => call.name === 'fn_cashier_batch_transfer')).toBe(false);
+  });
+});
+
 describe('S-06: the batch-send reason is the same on every retry', () => {
-  it('builds the reason from the submission id, never from a display name', async () => {
+  it('sends a constant reason, never a display name or a UUID; op_id is the identity (G-07)', async () => {
     state.roster = [player(0, 10, 'Mutable Alias')];
     state.agentWallet = 5000;
     let attempt = 0;
@@ -453,11 +498,18 @@ describe('S-06: the batch-send reason is the same on every retry', () => {
     const [first, second] = batches.map(
       (call) => (call.args.p_items as Array<{ reason: string; op_id: string }>)[0]
     );
-    expect(first.reason).toBe(`Cashier Send Out ${batches[0].args.p_batch_id}`);
+    expect(first.reason).toBe('Cashier Send Out');
     expect(first.reason).not.toContain('Mutable Alias');
+    expect(first.reason).not.toContain(String(batches[0].args.p_batch_id));
+    expect(first.reason).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
     expect(second.reason).toBe(first.reason);
+    expect(first.op_id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
     expect(second.op_id).toBe(first.op_id);
     expect(batches[1].args.p_batch_id).toBe(batches[0].args.p_batch_id);
+    expect(TRADE).toContain("const CASHIER_SEND_OUT_REASON = 'Cashier Send Out';");
+    expect(TRADE).toContain('reason: CASHIER_SEND_OUT_REASON,');
   });
 });
 

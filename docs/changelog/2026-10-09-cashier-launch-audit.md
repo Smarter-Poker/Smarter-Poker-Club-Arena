@@ -569,3 +569,18 @@ See D-16 above: the Agent Wallet cashier now consumes `hasFloat`.
 ## Not Fixed In This Round
 
 S-02's migration mirror (deliberately not written, see the decision above) and the column level REVOKE on `clubs.chip_treasury` and `clubs.promo_balance` (S-07; `ClubHomePage` and `ClubsService` still select the column directly) are deferred. The REVOKE is a cross repo change for the reason recorded under Column Privileges On Clubs above.
+
+## Regression Review Follow-Up (G-01 To G-08)
+
+The read-only regression review of the launch audit fix (2026-10-10) found eight gaps; each is closed below with a regression test.
+
+- G-01: `src/pages/CashierPage.tsx` reads the Send amount through `parseChipAmount` in the Confirm Send gate, the After-balance preview and the Distribute label (`typedAmount` / `typedChips`), never `parseFloat`; `handleAction` checks the typed text even when the confirm dialog passes an override and refuses a figure that differs from the one confirmed, so "1e9" can no longer reach the high-value confirm.
+- G-02: `src/components/wallet/CashoutRequestModal.tsx` subscribes with `player_id=eq.${playerId}` again and reloads only when the payload's `club_id` is this club, the club is unresolved, or the payload carries no club.
+- G-03: `src/pages/CashierPage.tsx` exports `parseWholeChipAmount`, which accepts the spellings `parseChipAmount` accepts (grouped thousands included) and then requires whole chips; the Mint branch uses it.
+- G-04: `src/pages/CashierPage.tsx` says "The Club Could Not Be Read." when the `clubs` read fails and keeps "Your Cashier Role Could Not Be Read." for the role read.
+- G-05: `src/components/wallet/WalletCashierModal.tsx` keeps `useFocusTrap(isOpen)` under the stacked mint; `src/hooks/useFocusTrap.ts` keeps a stack of active traps and only the most recently activated one acts on Tab, so the mint owns the keyboard and focus returns to the Mint control instead of dropping behind the overlay.
+- G-06: `exactChipFigure`, `sumChips` and `parseTradeAmount` moved to `src/utils/cashierAmount.ts` and `cashierDestination` to `src/utils/cashierDestination.ts`; `CashierTradePage` and `CashierClubSwitcher` export only their components, so the react-refresh warnings are gone.
+- G-07: `src/pages/CashierTradePage.tsx` sends the constant reason `'Cashier Send Out'` (`CASHIER_SEND_OUT_REASON`) on every Send Out retry; `op_id` stays the identity, and no UUID prints in the ledger note.
+- G-08: `parseTradeAmount` in `src/utils/cashierAmount.ts` refuses anything that is not digits with up to two decimals once grouping is stripped ("Enter The Amount As Digits, With Up To Two Decimals"), exponent and hex spellings included.
+
+Tests: `tests/unit/cashier-classic-launch-audit.test.tsx` (G-01, G-03, G-04), `tests/unit/cashier-trade-launch-audit.test.tsx` (G-06, G-07, G-08), `tests/components/cashier-dialogs-launch-audit.test.tsx` and `tests/unit/useFocusTrap.test.ts` (G-05), `tests/unit/CashoutRequestModal.test.tsx` (G-02), `tests/unit/CashierClubSwitcher.test.tsx` (G-06), with the source pins in `tests/cashier-dialogs-launch-audit.law.test.ts` moved to the new lines.

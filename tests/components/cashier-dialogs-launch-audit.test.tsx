@@ -479,6 +479,72 @@ describe('D-11: focus is moved in, kept in and returned', () => {
   });
 });
 
+describe('G-05: the cashier keeps its trap under the stacked mint', () => {
+  const FOCUSABLE =
+    'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+  it('focus never drops behind the overlay, Tab cycles in the mint, and returns to the Mint control', async () => {
+    const opener = document.createElement('button');
+    opener.textContent = 'Open';
+    document.body.appendChild(opener);
+    opener.focus();
+    const { view, onClose } = await openCashier();
+    const panel = view.container.querySelector('.cbc-panel')!;
+    await waitFor(() => expect(panel.contains(document.activeElement)).toBe(true));
+    let openerFocused = 0;
+    opener.addEventListener('focus', () => {
+      openerFocused += 1;
+    });
+
+    const mintControl = screen.getByText('Mint Chips Into The Club Bank').closest('button')!;
+    mintControl.focus();
+    fireEvent.click(mintControl);
+    const input = await screen.findByLabelText('Diamonds To Convert');
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    expect(openerFocused).toBe(0);
+
+    // Both traps are active; only the top one (the mint) acts on Tab.
+    const mintPanel = view.container.querySelector('.cmm-panel')!;
+    const mintFocusable = mintPanel.querySelectorAll<HTMLElement>(FOCUSABLE);
+    // A Tab from the mint's first control is the browser's to move; the
+    // cashier's trap underneath does not drag focus back to itself.
+    mintFocusable[0].focus();
+    expect(fireEvent.keyDown(document, { key: 'Tab' })).toBe(true);
+    expect(document.activeElement).toBe(mintFocusable[0]);
+    mintFocusable[mintFocusable.length - 1].focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(document.activeElement).toBe(mintFocusable[0]);
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(mintFocusable[mintFocusable.length - 1]);
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(view.container.querySelector('.cmm-panel')).toBeNull());
+    await settle();
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+    expect(document.activeElement).toBe(mintControl);
+    expect(openerFocused).toBe(0);
+
+    // The cashier owns Tab again once the mint is gone.
+    const cashierFocusable = panel.querySelectorAll<HTMLElement>(FOCUSABLE);
+    cashierFocusable[cashierFocusable.length - 1].focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(document.activeElement).toBe(cashierFocusable[0]);
+
+    // Closing the cashier still returns focus to what opened it.
+    view.rerender(
+      <WalletCashierModal
+        isOpen={false}
+        onClose={onClose}
+        clubId={CLUB}
+        role="owner"
+        walletType="club_bank"
+      />
+    );
+    expect(document.activeElement).toBe(opener);
+    opener.remove();
+  });
+});
+
 describe('S-07: the mint pre-flight is the role-checked panel', () => {
   const mint = () => render(<ChipMintModal isOpen onClose={() => {}} clubId={CLUB} />);
 

@@ -54,6 +54,8 @@ C = '10000000-0000-0000-0000-000000000003'   # no friendship, no lots: the reser
 TABLE = '30000000-0000-0000-0000-000000000001'
 LIVE_CLAIMS = json.dumps({'role': 'authenticated', 'session_id': '60000000-0000-0000-0000-000000000001'})
 
+# Keep the wrapper completion proof exact; a missing assertion cannot certify this runner.
+EXPECTED_CHECKS = 34
 passed = 0
 
 
@@ -277,4 +279,10 @@ finally:
     if _private is not None:
         shutil.rmtree(_private)
 
-print(f'{passed} isolated transfer door and DR16 checks passed; this is not a production certification.')
+# The optional private-cluster startup assertion is infrastructure evidence,
+# separate from the same 34 financial checks on private and hosted clusters.
+qualification_checks = passed - int(started_here is not None)
+if qualification_checks != EXPECTED_CHECKS:
+    raise AssertionError(f'Transfer qualification completed {qualification_checks} checks, expected {EXPECTED_CHECKS}')
+
+print(f'{qualification_checks} isolated transfer door and DR16 checks passed; this is not a production certification.')

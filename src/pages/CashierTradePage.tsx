@@ -58,7 +58,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { roleLabel, roleRank, type ClubRole } from '../types/clubRoles';
-import { useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useCashoutScope } from '../hooks/useCashoutScope';
@@ -86,6 +86,7 @@ import {
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
+import DiamondWalletTransfer from '../components/wallet/DiamondWalletTransfer';
 import { DEFAULT_CASHIER_WALLET, secondsLeftFromServer } from '../components/wallet/cashierModes';
 import { canSeeClubBank, canHoldAgentWallet } from '../components/wallet/walletRows';
 import { describeChipTransaction, walletRoute } from '../components/wallet/describeChipTransaction';
@@ -362,7 +363,9 @@ export default function CashierTradePage() {
   const [askNote, setAskNote] = useState('');
   const [recordsLoading, setRecordsLoading] = useState(false);
   const [recordsError, setRecordsError] = useState<string | null>(null);
-  const [amountModal, setAmountModal] = useState<'send' | 'ticket' | null>(null);
+  const [diamondSending, setDiamondSending] = useState(false);
+  const [claimRecipient, setClaimRecipient] = useState<string | null>(null);
+  const [amountModal, setAmountModal] = useState<'send' | 'ticket' | 'diamonds' | null>(null);
   /**
    * CLAIM BACK IS NO LONGER AN AMOUNT AGAINST A SELECTION.
    *
@@ -955,6 +958,7 @@ export default function CashierTradePage() {
     setRosterLoadingMore(false);
     setRosterWarning(null);
     setSelected(new Set());
+    setClaimRecipient(null);
     setVisibleCount(25);
     setAmountModal(null);
     setAmount('');
@@ -1590,17 +1594,6 @@ export default function CashierTradePage() {
   /** Chips the selected players are holding right now. */
   const pickedHeld = useMemo(() => sumChips(picked.map((r) => r.chipBalance)), [picked]);
 
-  const toggleSelect = (id: string) =>
-    setSelected((prev) => {
-      // Listed, searchable, never a recipient: the server refuses a send to
-      // yourself, so the row does not pretend to offer one.
-      if (id === user?.id) return prev;
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-
   // ── Money actions ──────────────────────────────────────────────────────────
   const runTransfers = async (kind: 'send' | 'ticket') => {
     if (!user?.id || !clubUuid) return;
@@ -2123,7 +2116,7 @@ export default function CashierTradePage() {
     });
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (amountModal && !busy) {
+        if (amountModal && !busy && !diamondSending) {
           setAmountModal(null);
           setTransferFailures([]);
         }
@@ -2164,7 +2157,17 @@ export default function CashierTradePage() {
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [dialogOpen, amountModal, askOpen, claimOpen, receipt, busy, asking, claimingId]);
+  }, [
+    dialogOpen,
+    amountModal,
+    askOpen,
+    claimOpen,
+    receipt,
+    busy,
+    diamondSending,
+    asking,
+    claimingId,
+  ]);
 
   useEffect(() => {
     if (dialogWasOpenRef.current && !dialogOpen) {
@@ -2654,28 +2657,20 @@ export default function CashierTradePage() {
                     <div
                       key={r.userId}
                       className={`${styles.row} ${r.isSelf ? styles.rowSelf : styles.selectableRow} ${selected.has(r.userId) ? styles.rowSelected : ''}`}
-                      onClick={() => toggleSelect(r.userId)}
-                      onKeyDown={(e) => {
-                        // role="checkbox" + tabIndex advertises a control. Without
-                        // this, every row was reachable by keyboard and none of them
-                        // could be selected.
-                        if (e.key === ' ' || e.key === 'Enter') {
-                          e.preventDefault();
-                          toggleSelect(r.userId);
-                        }
-                      }}
-                      role="checkbox"
-                      aria-checked={selected.has(r.userId)}
-                      aria-disabled={r.isSelf || undefined}
+                      onClick={() => navigate(`/clubs/${clubParam}/members/${r.userId}`)}
                       title={
                         r.isSelf ? 'This Is You. Chips Cannot Be Sent To Yourself.' : undefined
                       }
-                      tabIndex={0}
                     >
                       {r.avatarUrl ? (
                         <img src={r.avatarUrl} alt="" className={styles.avatar} />
                       ) : null}
-                      <div className={styles.rowInfo}>
+                      <Link
+                        className={styles.rowInfo}
+                        to={`/clubs/${clubParam}/members/${r.userId}`}
+                        aria-label={`Manage ${r.name}`}
+                        onClick={(event) => event.stopPropagation()}
+                      >
                         <span className={styles.rowName}>
                           {r.name}
                           {r.isSelf ? <span className={styles.rowYou}>You</span> : null}
@@ -2685,15 +2680,24 @@ export default function CashierTradePage() {
                           {titleCase(roleLabel(r.role as ClubRole))}
                           {r.username ? ` · @${r.username}` : ''}
                         </span>
-                      </div>
+                      </Link>
                       <span className={styles.rowBalance}>{fmt(r.chipBalance)}</span>
                       {r.isSelf ? null : (
-                        <span
+                        <button
+                          type="button"
                           className={`${styles.checkbox} ${selected.has(r.userId) ? styles.checkboxOn : ''}`}
-                          aria-hidden="true"
+                          disabled={!isOnline || busy || cashierAuthorityBlocked}
+                          aria-label={`Select ${r.name}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            if (r.isSelf || r.userId === user?.id) return;
+                            dialogTriggerRef.current = event.currentTarget;
+                            setSelected(new Set([r.userId]));
+                            setAmountModal('send');
+                          }}
                         >
                           {selected.has(r.userId) ? 'Selected' : 'Select'}
-                        </span>
+                        </button>
                       )}
                     </div>
                   ))}
@@ -2751,6 +2755,7 @@ export default function CashierTradePage() {
                     disabled={!isOnline || busy || claimingId !== null}
                     onClick={(event) => {
                       dialogTriggerRef.current = event.currentTarget;
+                      setClaimRecipient(null);
                       setClaimOpen(true);
                     }}
                   >
@@ -3395,7 +3400,7 @@ export default function CashierTradePage() {
         <div
           className={styles.modalOverlay}
           onClick={() => {
-            if (busy) return;
+            if (busy || diamondSending) return;
             setAmountModal(null);
             setTransferFailures([]);
           }}
@@ -3412,7 +3417,7 @@ export default function CashierTradePage() {
           >
             <SpadeConsole
               onClose={
-                busy
+                busy || diamondSending
                   ? undefined
                   : () => {
                       setAmountModal(null);
@@ -3420,110 +3425,172 @@ export default function CashierTradePage() {
                     }
               }
               eyebrow={`${compactChips(picked.length)} Player${picked.length === 1 ? '' : 's'} · ${fmt(batchAmount(Number(amount) || 0, picked.length))} Total`}
-              title={amountModal === 'send' ? 'Send Out' : 'Send Ticket'}
+              title={
+                amountModal === 'send'
+                  ? 'Send Out'
+                  : amountModal === 'ticket'
+                    ? 'Send Ticket'
+                    : 'Send Diamonds'
+              }
               titleId="cashier-amount-title"
               pill={busy ? 'Working' : 'Ready'}
               pillInk={busy ? 'gold' : 'green'}
-              foot="plates"
+              foot={amountModal === 'diamonds' ? 'foot' : 'plates'}
               className={styles.console}
-              plates={{
-                secondary: {
-                  label: 'Cancel',
-                  disabled: busy,
-                  onClick: () => {
-                    setAmountModal(null);
-                    setTransferFailures([]);
-                  },
-                },
-                primary: {
-                  label:
-                    busy && batchProgress
-                      ? `${batchProgress.processed}/${batchProgress.total}`
-                      : 'Confirm',
-                  ink: 'blue',
-                  disabled: !isOnline || picked.length === 0 || cashierAuthorityBlocked,
-                  onClick: () => runTransfers(amountModal),
-                },
-              }}
+              plates={
+                amountModal === 'diamonds'
+                  ? undefined
+                  : {
+                      secondary: {
+                        label: 'Cancel',
+                        disabled: busy,
+                        onClick: () => {
+                          setAmountModal(null);
+                          setTransferFailures([]);
+                        },
+                      },
+                      primary: {
+                        label:
+                          busy && batchProgress
+                            ? `${batchProgress.processed}/${batchProgress.total}`
+                            : 'Confirm',
+                        ink: 'blue',
+                        disabled: !isOnline || picked.length === 0 || cashierAuthorityBlocked,
+                        onClick: () => void runTransfers(amountModal),
+                      },
+                    }
+              }
             >
               <div className={styles.glass}>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  min={0}
-                  step="0.01"
-                  aria-label="Amount Per Player"
-                  value={amount}
-                  onChange={(e) => {
-                    setAmount(e.target.value);
-                    if (transferFailures.length) setTransferFailures([]);
-                  }}
-                  placeholder={
-                    amountModal === 'ticket' ? 'Ticket Value Per Player' : 'Amount Per Player'
-                  }
-                  autoFocus
-                />
-                {/* WHO, AND WHERE IT LANDS (Dan 2026-08-25).
+                <div className={styles.modalActions} aria-label="Player Transfer Actions">
+                  <button
+                    type="button"
+                    disabled={busy || diamondSending || Boolean(transferRecovery)}
+                    onClick={() => setAmountModal('send')}
+                  >
+                    Send Out
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || diamondSending || Boolean(transferRecovery)}
+                    onClick={() => {
+                      setClaimRecipient(picked.length === 1 ? picked[0].userId : null);
+                      setAmountModal(null);
+                      setClaimOpen(true);
+                    }}
+                  >
+                    Claim Back
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || diamondSending || Boolean(transferRecovery)}
+                    onClick={() => setAmountModal('ticket')}
+                  >
+                    Send Ticket
+                  </button>
+                  <button
+                    type="button"
+                    disabled={
+                      busy || diamondSending || Boolean(transferRecovery) || picked.length !== 1
+                    }
+                    onClick={() => setAmountModal('diamonds')}
+                  >
+                    Send Diamonds
+                  </button>
+                </div>
+                {amountModal === 'diamonds' && user?.id && picked.length === 1 ? (
+                  <DiamondWalletTransfer
+                    key={picked[0].userId}
+                    userId={user.id}
+                    initialRecipientId={picked[0].userId}
+                    initiallyOpen
+                    onBusyChange={setDiamondSending}
+                    onComplete={() =>
+                      masterBus.emit('BALANCE_UPDATED', { source: 'cashier-diamonds' })
+                    }
+                  />
+                ) : (
+                  <>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      step="0.01"
+                      aria-label="Amount Per Player"
+                      value={amount}
+                      onChange={(e) => {
+                        setAmount(e.target.value);
+                        if (transferFailures.length) setTransferFailures([]);
+                      }}
+                      placeholder={
+                        amountModal === 'ticket' ? 'Ticket Value Per Player' : 'Amount Per Player'
+                      }
+                      autoFocus
+                    />
+                    {/* WHO, AND WHERE IT LANDS (Dan 2026-08-25).
                 The modal named a count and never the people; on a 375px screen
                 the selection has scrolled out of view and the user is one tap
                 from moving real money to a set they cannot see. The wallet is
                 named too, because a send to a sub agent funds the float they
                 distribute from rather than a balance they can sit down with. */}
-                {picked.length > 0 && (
-                  <div className={styles.modalTargets}>
-                    {picked.map((r) => (
-                      <div className={styles.modalTargetRow} key={r.userId}>
-                        <span>
-                          {r.name}
-                          {amountModal === 'send' && canHoldAgentWallet(r.role)
-                            ? ' (Agent Wallet)'
-                            : ''}
-                        </span>
-                        <span>{exactChipFigure(Number(amount) || 0)}</span>
+                    {picked.length > 0 && (
+                      <div className={styles.modalTargets}>
+                        {picked.map((r) => (
+                          <div className={styles.modalTargetRow} key={r.userId}>
+                            <span>
+                              {r.name}
+                              {amountModal === 'send' && canHoldAgentWallet(r.role)
+                                ? ' (Agent Wallet)'
+                                : ''}
+                            </span>
+                            <span>{exactChipFigure(Number(amount) || 0)}</span>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                )}
-                {amountModal === 'ticket' && (
-                  <div className={styles.modalHint}>
-                    Tickets Are Paid Now And Held Until The Player Redeems Them. Cancel An
-                    Unredeemed Ticket To Get The Chips Back.
-                  </div>
-                )}
-                <div className={styles.modalHint}>
-                  Total: {exactChipFigure(batchAmount(Number(amount) || 0, picked.length))} &middot;{' '}
-                  {/* THE ACCOUNT EACH ACTION SPENDS. Send Out debits the agent
+                    )}
+                    {amountModal === 'ticket' && (
+                      <div className={styles.modalHint}>
+                        Tickets Are Paid Now And Held Until The Player Redeems Them. Cancel An
+                        Unredeemed Ticket To Get The Chips Back.
+                      </div>
+                    )}
+                    <div className={styles.modalHint}>
+                      Total: {exactChipFigure(batchAmount(Number(amount) || 0, picked.length))}{' '}
+                      &middot;{' '}
+                      {/* THE ACCOUNT EACH ACTION SPENDS. Send Out debits the agent
                   wallet; a ticket escrows the caller's own chip balance. They
                   are different accounts and quoting the wrong one tells the
                   user they have money this action cannot reach. */}
-                  {amountModal === 'send'
-                    ? `Your Agent Wallet: ${agentWallet === null ? '--' : fmt(agentWallet)}`
-                    : `Your Chips: ${fmt(myBalance)}`}
-                </div>
-                {amountModal === 'send' && (
-                  <div className={styles.modalHint}>
-                    You Can Claim These Chips Back For Ten Minutes. After That The Player Must
-                    Request A Cash Out.
-                  </div>
-                )}
-                {transferFailures.length > 0 && (
-                  <div className={styles.modalFailures} role="alert">
-                    <div className={styles.modalFailuresTitle}>
-                      {transferFailures.length} Did Not Go Through
+                      {amountModal === 'send'
+                        ? `Your Agent Wallet: ${agentWallet === null ? '--' : fmt(agentWallet)}`
+                        : `Your Chips: ${fmt(myBalance)}`}
                     </div>
-                    {transferFailures.map((f) => (
-                      <div className={styles.modalFailureRow} key={f.userId}>
-                        <span>{f.name}</span>
-                        <span>{f.message}</span>
+                    {amountModal === 'send' && (
+                      <div className={styles.modalHint}>
+                        You Can Claim These Chips Back For Ten Minutes. After That The Player Must
+                        Request A Cash Out.
                       </div>
-                    ))}
-                  </div>
-                )}
-                {busy && batchProgress && (
-                  <div className={styles.modalHint} role="status" aria-live="polite">
-                    Processing {batchProgress.processed.toLocaleString()} Of{' '}
-                    {batchProgress.total.toLocaleString()} Recipients
-                  </div>
+                    )}
+                    {transferFailures.length > 0 && (
+                      <div className={styles.modalFailures} role="alert">
+                        <div className={styles.modalFailuresTitle}>
+                          {transferFailures.length} Did Not Go Through
+                        </div>
+                        {transferFailures.map((f) => (
+                          <div className={styles.modalFailureRow} key={f.userId}>
+                            <span>{f.name}</span>
+                            <span>{f.message}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {busy && batchProgress && (
+                      <div className={styles.modalHint} role="status" aria-live="polite">
+                        Processing {batchProgress.processed.toLocaleString()} Of{' '}
+                        {batchProgress.total.toLocaleString()} Recipients
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </SpadeConsole>
@@ -3582,48 +3649,54 @@ export default function CashierTradePage() {
                     </button>
                   </div>
                 )}
-                {!reversibleLoading && !reversibleError && stillClaimable.length === 0 && (
-                  <div className={styles.empty}>
-                    {
-                      'Nothing Is Still Inside Its Ten Minute Window. Ask The Player To Request A Cash Out.'
-                    }
-                  </div>
-                )}
+                {!reversibleLoading &&
+                  !reversibleError &&
+                  stillClaimable.filter(
+                    (row) => !claimRecipient || row.to_user_id === claimRecipient
+                  ).length === 0 && (
+                    <div className={styles.empty}>
+                      {
+                        'Nothing Is Still Inside Its Ten Minute Window. Ask The Player To Request A Cash Out.'
+                      }
+                    </div>
+                  )}
                 {stillClaimable.length > 0 && (
                   <div className={styles.claimList}>
-                    {stillClaimable.map((row) => {
-                      // The countdown is the DATABASE's own seconds_left, counted
-                      // down by a monotonic stopwatch rather than by the phone's
-                      // clock. The decision is never the phone's either:
-                      // fn_agent_wallet_claim_back re-checks reversible_until and
-                      // refuses a late claim outright.
-                      const left = secondsLeftFor(row);
-                      const mm = Math.floor(left / 60);
-                      // padStart on a CLOCK, not on an amount - "9:05 Left", not
-                      // "9:5". Chip figures on this page all go through fmt().
-                      const ss = String(left % 60).padStart(2, '0');
-                      return (
-                        <div className={styles.claimRow} key={row.transaction_id}>
-                          <div className={styles.rowInfo}>
-                            <span className={styles.rowName}>{row.to_name}</span>
-                            <span className={styles.rowSub}>
-                              {row.destination === 'agent_wallet'
-                                ? 'Agent Wallet'
-                                : 'Player Wallet'}{' '}
-                              &middot; {mm}:{ss} Left
-                            </span>
+                    {stillClaimable
+                      .filter((row) => !claimRecipient || row.to_user_id === claimRecipient)
+                      .map((row) => {
+                        // The countdown is the DATABASE's own seconds_left, counted
+                        // down by a monotonic stopwatch rather than by the phone's
+                        // clock. The decision is never the phone's either:
+                        // fn_agent_wallet_claim_back re-checks reversible_until and
+                        // refuses a late claim outright.
+                        const left = secondsLeftFor(row);
+                        const mm = Math.floor(left / 60);
+                        // padStart on a CLOCK, not on an amount - "9:05 Left", not
+                        // "9:5". Chip figures on this page all go through fmt().
+                        const ss = String(left % 60).padStart(2, '0');
+                        return (
+                          <div className={styles.claimRow} key={row.transaction_id}>
+                            <div className={styles.rowInfo}>
+                              <span className={styles.rowName}>{row.to_name}</span>
+                              <span className={styles.rowSub}>
+                                {row.destination === 'agent_wallet'
+                                  ? 'Agent Wallet'
+                                  : 'Player Wallet'}{' '}
+                                &middot; {mm}:{ss} Left
+                              </span>
+                            </div>
+                            <span className={styles.rowBalance}>{fmt(row.remaining)}</span>
+                            <button
+                              className={`${styles.reqBtn} ${styles.reqBtnGo}`}
+                              disabled={!isOnline || claimingId !== null}
+                              onClick={() => void claimBack(row)}
+                            >
+                              {claimingId === row.transaction_id ? 'Working...' : 'Claim Back'}
+                            </button>
                           </div>
-                          <span className={styles.rowBalance}>{fmt(row.remaining)}</span>
-                          <button
-                            className={`${styles.reqBtn} ${styles.reqBtnGo}`}
-                            disabled={!isOnline || claimingId !== null}
-                            onClick={() => void claimBack(row)}
-                          >
-                            {claimingId === row.transaction_id ? 'Working...' : 'Claim Back'}
-                          </button>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
                   </div>
                 )}
                 <div className={styles.modalActions}>

@@ -15,9 +15,13 @@ export default function DiamondWalletTransfer({
   userId,
   onComplete,
   onBusyChange,
+  initialRecipientId = '',
+  initiallyOpen = false,
 }: {
   userId: string;
   onComplete: () => void;
+  initialRecipientId?: string;
+  initiallyOpen?: boolean;
   /** Told whenever the transfer RPC is travelling, so the wallet sheet around
       this form can hold its close paths shut (launch audit D-13). */
   onBusyChange?: (busy: boolean) => void;
@@ -46,12 +50,12 @@ export default function DiamondWalletTransfer({
       return null;
     }
   });
-  const [recipient, setRecipient] = useState('');
+  const [recipient, setRecipient] = useState(initialRecipientId);
   const [amount, setAmount] = useState('');
   const [review, setReview] = useState<Request | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
-  const [open, setOpen] = useState(Boolean(request));
+  const [open, setOpen] = useState(Boolean(request) || initiallyOpen);
   /* Only the SEND is reported: verifying a friend moves nothing. */
   const [sending, setSending] = useState(false);
   useEffect(() => {

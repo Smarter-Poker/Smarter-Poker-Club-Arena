@@ -1,0 +1,2 @@
+-- One top-level command on the approved direct/session route. No BEGIN, IF NOT EXISTS or automatic retry.
+CREATE INDEX CONCURRENTLY idx_chip_ledger_cashier_direction_totals ON public.chip_ledger(club_id,created_at DESC) INCLUDE(amount,from_entity_id,to_entity_id) WHERE status='posted' AND category=ANY(ARRAY['buyin','addon','rebuy','tournament_prize','bounty','refund','spin_entry','spin_prize','promo','promo_send','treasury_transfer','transfer','player_funding','agent_funding','overlay','reversal','correction','adjustment','leaderboard_payout']::text[]);

@@ -357,7 +357,9 @@ for (const viewport of [
     await expect(page.getByRole('button', { name: 'Spin 2,500', exact: true })).toBeEnabled();
     await controls.getByRole('button', { name: 'Run Off', exact: true }).click();
     await expect(controls.getByRole('button', { name: /^Auto Spin / })).toBeEnabled();
+    await expect(controls.getByRole('button', { name: 'Spin 2,500', exact: true })).toBeEnabled();
     await assertFits();
+    await page.screenshot({ path: testInfo.outputPath('paid-controls.png') });
     await controls.getByRole('button', { name: 'Bonus Spins (2)', exact: true }).click();
     await expect(page.getByLabel('Diamonds To Spin')).toBeDisabled();
     await expect(controls.getByRole('button', { name: 'Bonus Spin', exact: true })).toBeEnabled();

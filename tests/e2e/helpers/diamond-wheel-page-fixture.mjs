@@ -13,7 +13,7 @@ export function diamondWheelPageFixture() {
     const receipt = receipts.find((r) => r.outcome.kind === 'chips');
     const state = {
       ok: true,
-      contract_version: 3,
+      contract_version: 4,
       available: true,
       frozen: false,
       segments: receipt.segments,

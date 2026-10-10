@@ -6,15 +6,25 @@ const backend = vi.hoisted(() => ({
   navigate: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
   refresh: vi.fn(),
+  spinV2: vi.fn(),
+  spin: vi.fn(),
+  runBegin: vi.fn(),
 }));
 vi.mock('../../src/services/DiamondWheelService', async (importOriginal) => ({
   // The page reads the service's named exports (the unverified-receipt error).
   ...(await importOriginal<typeof import('../../src/services/DiamondWheelService')>()),
   default: {
     getStateV2: backend.state,
+    spinV2: backend.spinV2,
+    spin: backend.spin,
+    runBegin: backend.runBegin,
     welcomeState: async () => ({ available: false, enabled: false }),
     dailyBonusState: async () => ({ available: false, ticket_count: 0 }),
-    commit: async () => ({ ok: true, commit_id: 'commit', server_seed_hash: 'hash' }),
+    commit: async () => ({
+      ok: true,
+      commit_id: 'd1000000-0000-4000-8000-000000000001',
+      server_seed_hash: 'a'.repeat(64),
+    }),
     history: async () => [],
   },
 }));
@@ -70,7 +80,7 @@ afterEach(() => {
 });
 const state = {
   ok: true,
-  contract_version: 2,
+  contract_version: 4,
   available: true,
   frozen: false,
   segments: [],
@@ -85,6 +95,59 @@ const state = {
   },
 };
 describe('the selected wheel stake owns its availability quote', () => {
+  it.each([2, 3, 4])(
+    'quotes and submits a custom amount through contract %s, preserving one single-spin action',
+    async (version) => {
+      backend.state.mockImplementation((_club: string, amount: number) =>
+        Promise.resolve({
+          ...state,
+          contract_version: version,
+          config: { ...state.config, spin_price_diamonds: amount },
+        })
+      );
+      backend.spinV2.mockReturnValue(new Promise(() => {}));
+      render(<DiamondWheelPage />);
+      const entry = await screen.findByLabelText('Diamonds To Spin');
+      fireEvent.change(entry, { target: { value: '375' } });
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Spin 375', exact: true })).toBeEnabled()
+      );
+      expect(backend.state).toHaveBeenLastCalledWith('club-a', 375);
+      fireEvent.click(screen.getByRole('button', { name: 'Run Off' }));
+      expect(screen.getByRole('button', { name: 'Auto Spin 5' })).toBeEnabled();
+      const spin = screen.getByRole('button', { name: 'Spin 375', exact: true });
+      fireEvent.click(spin);
+      fireEvent.click(spin);
+      await waitFor(() => expect(backend.spinV2).toHaveBeenCalledOnce());
+      expect(backend.spinV2).toHaveBeenCalledWith(
+        expect.objectContaining({ entryDiamonds: 375, contractVersion: version, mode: 'paid' })
+      );
+      expect(backend.spin).not.toHaveBeenCalled();
+      expect(backend.runBegin).not.toHaveBeenCalled();
+      expect(
+        JSON.parse(localStorage.getItem('diamond-wheel-pending:v1:player-a:club-a')!)
+      ).toMatchObject({ entryDiamonds: 375, contractVersion: version });
+    }
+  );
+
+  it('shows a version 4 server refusal and lets a lower funded amount reopen play', async () => {
+    backend.state.mockImplementation((_club: string, amount: number) =>
+      Promise.resolve({
+        ...state,
+        available: amount === 25,
+        reason: amount === 25 ? null : 'The Host Must Fund Every Bonus Before A Spin',
+        config: { ...state.config, spin_price_diamonds: amount },
+      })
+    );
+    render(<DiamondWheelPage />);
+    expect(await screen.findByText('The Host Must Fund Every Bonus Before A Spin')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Spin 100', exact: true })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '25', exact: true }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Spin 25', exact: true })).toBeEnabled()
+    );
+  });
+
   it('measures the stage when loading finishes and follows later viewport changes', async () => {
     let width = 1248;
     let resize!: () => void;

@@ -1,0 +1,13 @@
+# Diamond Spins controls speak the live contract
+
+Production serves wheel contract 4, while the wheel page recognized only 2 and 3 in its controls, quotes and submission. The amount input disappeared, paid spins used the old fixed price, server refusals became a generic paused notice, and new or recovered version-4 spins selected the legacy API.
+
+The page now recognizes all three supported contracts consistently: whole entries from 25 to 2,500 use their authoritative quote, retain their stake and contract in the durable request, and submit through spinV2. The ordinary Spin button remains a single spin even after a batch size is selected. Auto Spin has its own explicit button; Stop retains the existing run semantics. The primary painted control has more space. Artwork, odds, funding checks, pending cards/awards and idempotency remain intact.
+
+The version-4 quote fixture and database-receipt card tests now exercise the real request shape. Regression checks cover custom amounts under contracts 2/3/4, exact saved request, duplicate clicks, independent single versus batch actions, a denied quote reopening at a funded amount, stale quotes and pending awards. Existing browser checks use contract 4 and verify all controls fit portrait/landscape and desktop, including fallback fonts.
+
+The new regressions fail on the prior page and pass after repair. Focused checks passed 178 tests across 18 files; five real-browser control checks passed. TypeScript, four copy gates and canonical policy comparison passed. Hosted checks, protected merge, publication and live proof are recorded separately in the task checkpoint.
+
+Read-only production diagnosis also found the four Deep Stack Society bonus configs disabled on October 4 at 23:17:20 UTC. The wheel itself and owner agreement are enabled. No payout freeze is active. This page repair exposes the server's exact refusal; configuration activation needs its own verified outcome.
+
+The connected server diagnosis also reproduces a reservation-unit mismatch: wheel awards reserve 20x of a possible Double Down total but compare that base-stake reservation against Crash's final-stake 25x limit. A guarded migration normalizes the reservation ceiling in state and spin together. It retains the actual game ceilings and refuses games below 20x, insufficient cover, closed games and freezes. Private PostgreSQL qualification passed with production's 25x Crash trigger, refusal before repair, funded custom stakes after repair, Double Down coverage, a real Crash round capped at 25x, exact spin replay, the 400-spin v4 draw/cards/run suite and ledger invariants.

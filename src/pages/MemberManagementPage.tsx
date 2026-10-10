@@ -42,6 +42,9 @@ import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { sizedStorageUrl, generateAvatarSvg } from '../utils/avatarGenerator';
 import { masterBus } from '../core/MasterBus';
+import { useRosterWalletUpdates } from '../hooks/useRosterWalletUpdates';
+import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
+import { useMasterBusBroadcastChannel } from '../hooks/useMasterBusBroadcastChannel';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useOnlineNow } from '../hooks/useProfilePresence';
 import { useToast } from '../components/common/Toast';
@@ -66,6 +69,7 @@ import {
   type ClubRole,
 } from '../types/clubRoles';
 import ClubRosterService, {
+  MemberAccessDeniedError,
   RANGE_OVERALL,
   lastDaysRange,
   isoDate,
@@ -155,6 +159,152 @@ export default function MemberManagementPage() {
   const [customTo, setCustomTo] = useState<string>(() => isoDate(new Date()));
   const [range, setRange] = useState<MemberRange>(RANGE_OVERALL);
 
+  type WalletRow = {
+    user_id: string;
+    can_view_financials: boolean;
+    chip_balance: number | null;
+    player_wallet: number | null;
+    agent_wallet: number | null;
+    promo_wallet: number | null;
+  };
+  const walletScopeKey = `${clubId ?? ''}:${userId ?? ''}:${user?.id ?? ''}`;
+  const detailOwnerRef = useRef<string | null>(null);
+  const walletRowsRef = useRef<WalletRow[]>([]);
+  const toWalletRow = (value: MemberDetail): WalletRow[] =>
+    value.identity?.user_id
+      ? [
+          {
+            user_id: value.identity.user_id,
+            can_view_financials: value.capabilities.can_view_financials,
+            chip_balance: value.wallets?.chip_balance ?? null,
+            player_wallet: value.wallets?.player_wallet ?? null,
+            agent_wallet: value.wallets?.agent_wallet ?? null,
+            promo_wallet: value.wallets?.promo_wallet ?? null,
+          },
+        ]
+      : [];
+  walletRowsRef.current =
+    detail && detailOwnerRef.current === walletScopeKey ? toWalletRow(detail) : [];
+  const applyWalletRow = (value: MemberDetail, row?: WalletRow): MemberDetail => {
+    if (!row || value.identity?.user_id !== row.user_id) return value;
+    return {
+      ...value,
+      capabilities: { ...value.capabilities, can_view_financials: row.can_view_financials },
+      // A financial denial withdraws the entire financial record, not only its wallet totals.
+      ...(!row.can_view_financials
+        ? {
+            stats: null,
+            downline: null,
+            identity: value.identity
+              ? {
+                  ...value.identity,
+                  last_login: null,
+                  upline_user_id: null,
+                  upline_name: null,
+                  upline_player_number: null,
+                }
+              : value.identity,
+          }
+        : {}),
+      wallets:
+        row.can_view_financials &&
+        row.chip_balance !== null &&
+        row.player_wallet !== null &&
+        row.agent_wallet !== null &&
+        row.promo_wallet !== null
+          ? {
+              chip_balance: row.chip_balance,
+              player_wallet: row.player_wallet,
+              agent_wallet: row.agent_wallet,
+              promo_wallet: row.promo_wallet,
+            }
+          : null,
+    };
+  };
+  const accessDenialRef = useRef<{ key: string; revision: number; detail: MemberDetail | null }>({
+    key: walletScopeKey,
+    revision: 0,
+    detail: null,
+  });
+  if (accessDenialRef.current.key !== walletScopeKey)
+    accessDenialRef.current = { key: walletScopeKey, revision: 0, detail: null };
+  const applyAccessDenial = (value: MemberDetail, denied: MemberDetail): MemberDetail => ({
+    ...value,
+    capabilities: { ...denied.capabilities },
+    identity: value.identity
+      ? {
+          ...value.identity,
+          ...(!denied.capabilities.can_view_notes ? { nickname: null, remark: null } : {}),
+        }
+      : value.identity,
+  });
+  const withdrawRecordAccess = (denied: MemberDetail | null) => {
+    if (!isMountedRef.current || accessDenialRef.current.key !== walletScopeKey) return;
+    accessDenialRef.current = {
+      key: walletScopeKey,
+      revision: accessDenialRef.current.revision + 1,
+      detail: denied,
+    };
+    if (!denied || !denied.identity?.user_id) {
+      // An authoritative access withdrawal cancels the obsolete read owner.
+      detailAbortRef.current?.abort();
+      detailOwnerRef.current = null;
+      walletRowsRef.current = [];
+      setDetail(null);
+      setDownline([]);
+      setNotFound(true);
+      setLoadError(false);
+      setLoading(false);
+    } else {
+      setDetail((current) => (current ? applyAccessDenial(current, denied) : current));
+    }
+  };
+  const walletUpdates = useRosterWalletUpdates(
+    walletScopeKey,
+    resolvedClubId,
+    walletRowsRef,
+    (rows) => {
+      if (detailOwnerRef.current !== walletScopeKey) return;
+      if (rows[0]?.can_view_financials === false) setDownline([]);
+      setDetail((current) => (current ? applyWalletRow(current, rows[0]) : current));
+    },
+    () => toast.error('The Live Wallet Update Could Not Be Loaded.'),
+    withdrawRecordAccess
+  );
+  const walletUpdatesRef = useRef(walletUpdates);
+  walletUpdatesRef.current = walletUpdates;
+  useMasterBusChannel({
+    channelName: resolvedClubId
+      ? `member-record-wallet-${resolvedClubId}-${userId}-${user?.id}`
+      : null,
+    table: 'club_members',
+    filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
+    event: 'UPDATE',
+    enabled: !!resolvedClubId && !!user?.id,
+    onPayload: (value) => {
+      if (value?.new) walletUpdates.membership(value.new);
+    },
+    onSubscriptionStatus: (status) => {
+      if (status === 'SUBSCRIBED') walletUpdates.refresh(userId);
+    },
+    onSubscriptionError: () => toast.error('The Live Wallet Connection Could Not Be Established.'),
+  });
+  useMasterBusBroadcastChannel({
+    channelName: resolvedClubId ? `club-roster-wallet:${resolvedClubId}` : null,
+    event: 'wallet_changed',
+    enabled: !!resolvedClubId && !!user?.id,
+    onPayload: (value) => {
+      const payload = (value as { payload?: { club_id?: string; user_id?: string } } | null)
+        ?.payload;
+      if (payload?.club_id === resolvedClubId && payload.user_id === userId)
+        walletUpdates.refresh(userId);
+    },
+    onSubscriptionStatus: (status) => {
+      if (status === 'SUBSCRIBED') walletUpdates.refresh(userId);
+    },
+    onSubscriptionError: () => toast.error('The Live Wallet Connection Could Not Be Established.'),
+  });
+
   /* ── Load ───────────────────────────────────────────────────────────────── */
 
   useEffect(() => {
@@ -215,13 +365,29 @@ export default function MemberManagementPage() {
         setNotFound(false);
         setResolvedClubId(resolved);
 
+        const walletSnapshot = walletUpdatesRef.current.snapshot();
+        const accessRevision = accessDenialRef.current.revision;
         const [memberDetail, memberDownline] = await Promise.all([
           ClubRosterService.getMemberDetail(resolved, userId, activeRange, controller.signal),
           ClubRosterService.getDownline(resolved, userId, controller.signal),
         ]);
         if (!live()) return;
-        setDetail(memberDetail);
-        setDownline(memberDownline);
+        detailOwnerRef.current = `${clubId ?? ''}:${userId ?? ''}:${user?.id ?? ''}`;
+        const reconciledWallets = walletUpdatesRef.current.reconcile(
+          toWalletRow(memberDetail),
+          walletSnapshot
+        );
+        let currentDetail = applyWalletRow(memberDetail, reconciledWallets[0]);
+        const newerDenial = accessDenialRef.current;
+        if (
+          newerDenial.key === `${clubId ?? ''}:${userId ?? ''}:${user?.id ?? ''}` &&
+          newerDenial.revision > accessRevision
+        ) {
+          if (!newerDenial.detail) return;
+          currentDetail = applyAccessDenial(currentDetail, newerDenial.detail);
+        }
+        setDetail(currentDetail);
+        setDownline(currentDetail.capabilities.can_view_financials ? memberDownline : []);
         setDownlineShown(DOWNLINE_RENDER_CAP);
 
         // Whoever is reading decides what this page lets them do. One row, and
@@ -245,6 +411,10 @@ export default function MemberManagementPage() {
         }
       } catch (error) {
         if (live()) {
+          if (error instanceof MemberAccessDeniedError) {
+            withdrawRecordAccess(null);
+            return;
+          }
           reportError(error, 'MemberManagementPage.loadDetail');
           setLoadError(true);
           toast.error('Failed To Load This Member');
@@ -338,7 +508,7 @@ export default function MemberManagementPage() {
         <div className="mm-ledger-grid" key={`ledger:${clubId}:${userId}:${user?.id}`}>
           {identity?.user_id && detail?.capabilities.can_view_notes && (
             <NotesEditor
-              key={`${resolvedClubId}:${identity.user_id}`}
+              key={`notes:${resolvedClubId}:${identity.user_id}`}
               clubId={resolvedClubId}
               userId={identity.user_id}
               initialNickname={identity.nickname}
@@ -369,9 +539,9 @@ export default function MemberManagementPage() {
     );
   }
 
-  const stats = detail!.stats;
-  const wallets = detail!.wallets;
-  const counts = detail!.downline;
+  const stats = detail!.capabilities.can_view_financials ? detail!.stats : null;
+  const wallets = detail!.capabilities.can_view_financials ? detail!.wallets : null;
+  const counts = detail!.capabilities.can_view_financials ? detail!.downline : null;
   const alias = identity!.alias || 'Unknown';
   const initial = alias[0]?.toUpperCase() ?? '?';
 
@@ -452,7 +622,7 @@ export default function MemberManagementPage() {
 
         {detail!.capabilities.can_view_notes && (
           <NotesEditor
-            key={`${resolvedClubId}:${identity!.user_id!}`}
+            key={`notes:${resolvedClubId}:${identity!.user_id!}`}
             clubId={resolvedClubId}
             userId={identity!.user_id!}
             initialNickname={identity!.nickname}
@@ -651,7 +821,7 @@ export default function MemberManagementPage() {
 
         {detail!.capabilities.can_manage_role && identity!.home_club_id && (
           <RoleSection
-            key={`${identity!.home_club_id}:${identity!.user_id!}`}
+            key={`roles:${identity!.home_club_id}:${identity!.user_id!}`}
             resolvedClubId={identity!.home_club_id}
             targetUserId={identity!.user_id!}
             targetName={alias}
@@ -860,6 +1030,8 @@ function NotesEditor({
     }
   }, [clubId, disabled, isMountedRef, toast, userId]);
 
+  const discardButtonRef = useRef<HTMLButtonElement>(null);
+
   const discardDraft = useCallback(() => {
     const saved = savedRef.current;
     draftRef.current = { ...saved };
@@ -900,7 +1072,10 @@ function NotesEditor({
             draftRef.current.nickname = e.target.value;
             setNicknameUnsaved(savedRef.current.nickname !== e.target.value);
           }}
-          onBlur={() => void save()}
+          onBlur={(event) => {
+            // Moving to Revert must not start a write before its click or keyboard activation.
+            if (event.relatedTarget !== discardButtonRef.current) void save();
+          }}
         />
         {nicknameUnsaved && <span className="mm-field__unsaved">Not Saved Yet</span>}
       </label>
@@ -919,7 +1094,10 @@ function NotesEditor({
             draftRef.current.remark = e.target.value;
             setRemarkUnsaved(savedRef.current.remark !== e.target.value);
           }}
-          onBlur={() => void save()}
+          onBlur={(event) => {
+            // Moving to Revert must not start a write before its click or keyboard activation.
+            if (event.relatedTarget !== discardButtonRef.current) void save();
+          }}
         />
         {remarkUnsaved && <span className="mm-field__unsaved">Not Saved Yet</span>}
       </label>
@@ -937,6 +1115,11 @@ function NotesEditor({
         <button
           type="button"
           className="mm-notes__discard"
+          ref={discardButtonRef}
+          onPointerDown={(event) => {
+            // Keep pointer activation from blurring the draft before Revert runs.
+            event.preventDefault();
+          }}
           onClick={discardDraft}
           disabled={disabled || saving || saveUnconfirmed || (!nicknameUnsaved && !remarkUnsaved)}
         >
@@ -1028,6 +1211,7 @@ function RoleSection({
   const [promotableRoles, setPromotableRoles] = useState<ClubRole[]>([]);
   const [rolesLoading, setRolesLoading] = useState(true);
   const [rolesLoadFailed, setRolesLoadFailed] = useState(false);
+  const [rolesLoadAttempt, setRolesLoadAttempt] = useState(0);
 
   useEffect(() => {
     let live = true;
@@ -1061,12 +1245,12 @@ function RoleSection({
     };
     // targetRole is a dependency because the answer changes once the role does:
     // after promoting a player to agent, "agent" must stop being on offer.
-  }, [resolvedClubId, targetUserId, targetRole]);
+  }, [resolvedClubId, targetUserId, targetRole, rolesLoadAttempt]);
 
   const canManage = promotableRoles.length > 0 && targetRole !== 'owner';
 
   const noRolesReason = rolesLoadFailed
-    ? 'Role Options Could Not Be Loaded. Refresh This Player Record To Retry.'
+    ? 'Role Options Could Not Be Loaded. Retry To Check Them Again.'
     : targetRole === 'owner'
       ? 'The Club Owner Cannot Be Changed From Here.'
       : roleRank(myRole) <= roleRank('sub_agent')
@@ -1290,7 +1474,18 @@ function RoleSection({
       ) : rolesLoading ? (
         <p className="mm-roles__note">Checking What You May Grant...</p>
       ) : !canManage ? (
-        <p className="mm-roles__note">{noRolesReason}</p>
+        <>
+          <p className="mm-roles__note">{noRolesReason}</p>
+          {rolesLoadFailed && (
+            <button
+              type="button"
+              className="mm-roles__confirm-no"
+              onClick={() => setRolesLoadAttempt((attempt) => attempt + 1)}
+            >
+              Retry Role Options
+            </button>
+          )}
+        </>
       ) : confirmRole ? (
         <div className="mm-roles__confirm">
           <p>

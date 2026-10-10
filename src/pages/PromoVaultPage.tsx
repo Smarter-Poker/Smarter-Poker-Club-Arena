@@ -179,6 +179,12 @@ export default function PromoVaultPage() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [buyTarget, setBuyTarget] = useState<VaultItem | null>(null);
   const [grantTarget, setGrantTarget] = useState<VaultItem | null>(null);
+  const grantDialogOwnerRef = useRef<object | null>(null);
+  const buyDialogOwnerRef = useRef<object | null>(null);
+  const openBuyDialog = useCallback((item: VaultItem) => {
+    buyDialogOwnerRef.current = {};
+    setBuyTarget(item);
+  }, []);
 
   const recordsLoadedRef = useRef(false);
   const vaultRequest = useRef<AbortController | null>(null);
@@ -377,6 +383,7 @@ export default function PromoVaultPage() {
     async (item: VaultItem, quantity: number) => {
       if (!resolvedClubId) return;
       const scope = vaultScopeRef.current;
+      const dialogOwner = buyDialogOwnerRef.current;
       const live = () => isMountedRef.current && vaultScopeRef.current === scope;
       try {
         const { data, error } = await runWithRequestDeadline(
@@ -407,7 +414,10 @@ export default function PromoVaultPage() {
         setDiamonds(num(result.diamond_balance));
         recordsLoadedRef.current = false;
         if (tab === 'records') void loadRecords();
-        setBuyTarget(null);
+        if (buyDialogOwnerRef.current === dialogOwner) {
+          buyDialogOwnerRef.current = null;
+          setBuyTarget(null);
+        }
         toast.success(
           `Bought ${count(quantity)} ${item.label} For ${count(num(result.diamonds_spent))} Diamonds`
         );
@@ -432,6 +442,7 @@ export default function PromoVaultPage() {
          retry of this one. */
       const scope = vaultScopeRef.current;
       const live = () => isMountedRef.current && vaultScopeRef.current === scope;
+      const dialogOwner = grantDialogOwnerRef.current;
       const attemptKey = `${scope.key}:${resolvedClubId}:${item.item_key}:${recipient.user_id}:${quantity}`;
       let opId = grantOpIds.current.get(attemptKey);
       if (!opId) {
@@ -472,7 +483,11 @@ export default function PromoVaultPage() {
         );
         recordsLoadedRef.current = false;
         if (tab === 'records') void loadRecords();
-        setGrantTarget(null);
+        // Apply the receipt to inventory, but only dismiss the dialog that submitted it.
+        if (grantDialogOwnerRef.current === dialogOwner) {
+          grantDialogOwnerRef.current = null;
+          setGrantTarget(null);
+        }
         /* Say what the player actually received, not that a button was
            pressed. Before 20260905083005 this said "Sent" and the recipient
            got nothing at all. */
@@ -500,16 +515,17 @@ export default function PromoVaultPage() {
   const openTile = useCallback(
     (item: VaultItem) => {
       if (item.quantity > 0) {
+        grantDialogOwnerRef.current = {};
         setGrantTarget(item);
         return;
       }
       if (canManage) {
-        setBuyTarget(item);
+        openBuyDialog(item);
         return;
       }
       toast.info('The Vault Holds None Of This Item Yet');
     },
-    [canManage, toast]
+    [canManage, toast, openBuyDialog]
   );
 
   /* ── Render ───────────────────────────────────────────────────────────── */
@@ -589,14 +605,14 @@ export default function PromoVaultPage() {
             items={features}
             canManage={canManage}
             onOpen={openTile}
-            onBuy={setBuyTarget}
+            onBuy={openBuyDialog}
           />
           <ItemSection
             heading="VIP Cards"
             items={vipCards}
             canManage={canManage}
             onOpen={openTile}
-            onBuy={setBuyTarget}
+            onBuy={openBuyDialog}
           />
         </div>
       ) : recordsError ? (
@@ -611,7 +627,10 @@ export default function PromoVaultPage() {
         <BuyDialog
           item={buyTarget}
           diamonds={diamonds}
-          onCancel={() => setBuyTarget(null)}
+          onCancel={() => {
+            buyDialogOwnerRef.current = null;
+            setBuyTarget(null);
+          }}
           onConfirm={handleBuy}
         />
       )}
@@ -622,7 +641,10 @@ export default function PromoVaultPage() {
           roster={roster}
           canManage={canManage}
           preselectedPlayerId={preselectedPlayer}
-          onCancel={() => setGrantTarget(null)}
+          onCancel={() => {
+            grantDialogOwnerRef.current = null;
+            setGrantTarget(null);
+          }}
           onConfirm={handleGrant}
         />
       )}

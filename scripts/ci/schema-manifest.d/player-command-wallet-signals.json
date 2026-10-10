@@ -1,0 +1,4 @@
+{
+  "_owner": "Player Command wallet invalidation: PG17 qualified; installed once as 20261010220304, ledger MD5 f6785de3115a1cc457a7c8bc17e7169e, function MD5 6f1c28ffce6de828bec8c4984a425883; scoped policy/trigger/private grants read back 2026-10-10 22:03 UTC",
+  "functions": ["fn_publish_agent_wallet_change"]
+}

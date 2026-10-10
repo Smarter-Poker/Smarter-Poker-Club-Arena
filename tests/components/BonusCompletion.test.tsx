@@ -205,7 +205,7 @@ describe('bonus completion presentation', () => {
     );
     expect(screen.getAllByRole('button', { name: /, Mine$/ })).toHaveLength(5);
     fireEvent.animationEnd(
-      screen.getByRole('button', { name: 'Tile 1, Gem' }).querySelector('svg')!
+      screen.getByRole('button', { name: 'Tile 1, Gem' }).querySelector('img[data-daily-diamond]')!
     );
     expect(onSettled).not.toHaveBeenCalled();
     fireEvent.animationEnd(screen.getByLabelText('Diamond Mines Board'));

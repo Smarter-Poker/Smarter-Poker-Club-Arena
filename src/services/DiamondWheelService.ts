@@ -117,6 +117,7 @@ export interface WheelBonusAward {
   entry_diamonds: number;
   /** When the wheel awarded it; absent from a receipt's own `bonus` and from older servers. */
   created_at?: string;
+  won_order?: number;
 }
 
 /**
@@ -308,6 +309,7 @@ export interface WheelCardAward {
   /** The spin that dealt it. Listed with a pending award, absent from the receipt's own block. */
   spin_id?: string;
   created_at?: string;
+  won_order?: number;
 }
 
 /** What the player reads when the database would not turn a card over. */
@@ -519,6 +521,9 @@ function normaliseAward(raw: Record<string, unknown>): WheelBonusAward {
     boost_multiplier: num(raw.boost_multiplier),
     entry_diamonds: num(raw.entry_diamonds),
     ...(typeof raw.created_at === 'string' ? { created_at: raw.created_at } : {}),
+    ...(typeof raw.won_order === 'number' && Number.isFinite(raw.won_order)
+      ? { won_order: raw.won_order }
+      : {}),
   };
 }
 
@@ -533,7 +538,8 @@ function normaliseAwards(raw: Record<string, unknown>): WheelBonusAward[] {
       : [];
   return list
     .filter((a): a is Record<string, unknown> => Boolean(a) && typeof a === 'object')
-    .map(normaliseAward);
+    .map(normaliseAward)
+    .sort((a, b) => (a.won_order ?? 0) - (b.won_order ?? 0));
 }
 
 /**
@@ -550,6 +556,9 @@ function normaliseCardAward(raw: Record<string, unknown>): WheelCardAward {
     status: 'pending',
     ...(typeof raw.spin_id === 'string' ? { spin_id: raw.spin_id } : {}),
     ...(typeof raw.created_at === 'string' ? { created_at: raw.created_at } : {}),
+    ...(typeof raw.won_order === 'number' && Number.isFinite(raw.won_order)
+      ? { won_order: raw.won_order }
+      : {}),
   };
 }
 
@@ -563,6 +572,7 @@ function normaliseCardAwards(raw: Record<string, unknown>): WheelCardAward[] {
   return (Array.isArray(raw.pending_cards) ? raw.pending_cards : [])
     .filter((c): c is Record<string, unknown> => Boolean(c) && typeof c === 'object')
     .map(normaliseCardAward)
+    .sort((a, b) => (a.won_order ?? 0) - (b.won_order ?? 0))
     .filter(
       (c) =>
         UUID.test(c.award_id) &&
@@ -832,7 +842,7 @@ function normaliseSpin(raw: Record<string, unknown>): WheelSpinResult {
   };
 }
 
-function spinResponse(data: unknown): WheelSpinResult {
+export function parseWheelSpinReceipt(data: unknown): WheelSpinResult {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     throw new Error('The Spin Receipt Could Not Be Confirmed');
   }
@@ -1038,7 +1048,7 @@ const DiamondWheelService = {
       input.commitId
     );
     return verifiedSpin(() => {
-      const result = spinResponse(data);
+      const result = parseWheelSpinReceipt(data);
       if (result.ok && contractVersion(result.contract_version) === undefined)
         throw new Error('The Diamond Spins Receipt Version Could Not Be Confirmed');
       return result;
@@ -1197,7 +1207,7 @@ const DiamondWheelService = {
       ) {
         throw new Error('Bonus Spin Receipt Could Not Be Confirmed. Retry The Same Spin');
       }
-      return spinResponse(data);
+      return parseWheelSpinReceipt(data);
     });
   },
 
@@ -1232,7 +1242,7 @@ const DiamondWheelService = {
       { p_club_id: clubId, p_commit_id: commitId, p_client_seed: clientSeed },
       commitId
     );
-    return verifiedSpin(() => spinResponse(data));
+    return verifiedSpin(() => parseWheelSpinReceipt(data));
   },
 
   async history(clubId: string, limit = 25): Promise<WheelSpinResult[]> {
@@ -1243,7 +1253,7 @@ const DiamondWheelService = {
     if (error) throw error;
     return Array.isArray(data)
       ? (data as Record<string, unknown>[]).map((raw) =>
-          raw.contract_version == null ? normaliseSpin(raw) : spinResponse(raw)
+          raw.contract_version == null ? normaliseSpin(raw) : parseWheelSpinReceipt(raw)
         )
       : [];
   },
@@ -1270,7 +1280,7 @@ const DiamondWheelService = {
       { p_club_id: clubId, p_commit_id: commitId, p_client_seed: clientSeed },
       commitId
     );
-    return verifiedSpin(() => spinResponse(data));
+    return verifiedSpin(() => parseWheelSpinReceipt(data));
   },
 
   /** The operator's switch, budget and window for the welcome spin. The RPC decides who may. */

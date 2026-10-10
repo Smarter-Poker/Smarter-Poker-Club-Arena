@@ -668,6 +668,19 @@ for (const game of ['crossing', 'mines'] as const)
                   `${name} sits ${Math.round(box.top)}..${Math.round(box.bottom)} of a ${innerHeight}px phone`
                 );
             });
+            // The new decision information must fit beside the controls too;
+            // keeping only the plates visible could hide the actual risk.
+            [...shell.querySelectorAll('p')]
+              .filter((line) =>
+                /^(Next Tile:|Next Street:|A Loss Pays At Least)/.test(
+                  line.textContent?.trim() ?? ''
+                )
+              )
+              .forEach((line) => {
+                const bounds = line.getBoundingClientRect();
+                if (bounds.top < 0 || bounds.bottom > innerHeight)
+                  wrong.push(`the next-move risk sits outside the ${innerHeight}px phone`);
+              });
             const box = scene?.getBoundingClientRect();
             if (!box) wrong.push('the scene is not on the page');
             else {
@@ -682,6 +695,8 @@ for (const game of ['crossing', 'mines'] as const)
         }
       )
       .toEqual([]);
+
+    await page.screenshot({ path: test.info().outputPath(`${game}-phone.png`) });
 
     // Sideways, on every phone this page is played on.
     for (const width of CHOICE_PHONE_WIDTHS) {

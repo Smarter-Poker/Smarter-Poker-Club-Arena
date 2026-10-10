@@ -142,8 +142,8 @@ describe('the wheel and crash share their repeat-round runner', () => {
 
 describe('the run stops wherever a thumb would be stopped', () => {
   it('on any blocker the page would print', () => {
-    expect(WHEEL).toContain(
-      '{ busy: spinning || pending !== null || preparing, blocker, ready: canSpin }'
+    expect(WHEEL).toMatch(
+      /busy:\s*spinning \|\| pending !== null \|\| Boolean\(batchOffer\) \|\| \(!paidBatch\.current && preparing\),\s*blocker: paidBatch\.current \? null : blocker,\s*ready: paidBatch\.current \? true : canSpin/
     );
   });
 
@@ -201,7 +201,7 @@ describe('a welcome spin is never auto-played', () => {
 
 describe('the wheel turns before the spin is counted', () => {
   it('busy covers the landing animation, not just the request', () => {
-    expect(WHEEL).toContain('busy: spinning || pending !== null');
+    expect(WHEEL).toMatch(/busy:\s*spinning \|\| pending !== null/);
   });
 
   it('the count moves on landing, where the result finally belongs to the player', () => {

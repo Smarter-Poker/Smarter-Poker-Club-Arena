@@ -68,12 +68,14 @@ export function WheelBonusQueue({
 export function WheelRunResume({
   spins,
   spinsDone,
+  prepaid = false,
   busy,
   onResume,
   onEnd,
 }: {
   spins: number;
   spinsDone: number;
+  prepaid?: boolean;
   busy: boolean;
   onResume: () => void;
   onEnd: () => void;
@@ -85,22 +87,18 @@ export function WheelRunResume({
         Your Run Is Waiting
       </h2>
       <p className={styles.cardCopy}>
-        {spinsDone.toLocaleString()} Of {spins.toLocaleString()} Spins Done. Resume To Spin The
-        Rest, Or End The Run And Keep What It Won.
+        {prepaid
+          ? `All ${spins.toLocaleString()} Paid Spins Are Saved. Review Your Results And Play Your Saved Bonus Games In Order.`
+          : `${spinsDone.toLocaleString()} Of ${spins.toLocaleString()} Spins Done. Resume To Spin The Rest, Or End The Run And Keep What It Won.`}
       </p>
       <div className={styles.cardActions}>
         <button type="button" className={styles.cardButtonQuiet} disabled={busy} onClick={onEnd}>
           End Run
           <TapHaptic disabled={busy} radius="0px" />
         </button>
-        <button
-          type="button"
-          className={styles.cardButton}
-          disabled={busy || left === 0}
-          onClick={onResume}
-        >
-          {left === 0 ? 'Run Complete' : `Resume Run (${left.toLocaleString()} Left)`}
-          <TapHaptic disabled={busy || left === 0} radius="0px" />
+        <button type="button" className={styles.cardButton} disabled={busy} onClick={onResume}>
+          {left === 0 ? 'Review Saved Run' : `Resume Run (${left.toLocaleString()} Left)`}
+          <TapHaptic disabled={busy} radius="0px" />
         </button>
       </div>
     </section>
@@ -121,6 +119,7 @@ export interface WheelRunSummaryData {
    * stops "Run Complete" from reading as though nothing were left.
    */
   cards?: WheelCardAward[];
+  sequence?: { spinId: string; position: number; title: string }[];
 }
 
 function prizeWorth(prize: WheelRunPrize): string {
@@ -138,7 +137,12 @@ export function WheelRunSummary({
   onPlay: (award: WheelBonusAward) => void;
   onClose: () => void;
 }) {
-  const next = summary.games[0];
+  const firstGame = summary.games[0];
+  const firstCard = summary.cards?.[0];
+  const next =
+    firstGame && (!firstCard || (firstGame.won_order ?? 0) <= (firstCard.won_order ?? 0))
+      ? firstGame
+      : undefined;
   const title = summary.why ? 'Run Stopped' : 'Run Complete';
   const chips = summary.prizes
     .filter((p) => p.kind === 'chips')
@@ -171,6 +175,19 @@ export function WheelRunSummary({
           </p>
         )}
         <div className={styles.summary}>
+          {summary.sequence && (
+            <>
+              <h3 className={styles.summaryHeading}>Every Result In Won Order</h3>
+              <ol className={styles.list} aria-label="Results In Won Order">
+                {summary.sequence.map((result) => (
+                  <li key={result.spinId} className={styles.item}>
+                    <span className={styles.itemValue}>{result.position}</span>
+                    <span className={styles.itemTitle}>{result.title}</span>
+                  </li>
+                ))}
+              </ol>
+            </>
+          )}
           <h3 className={styles.summaryHeading}>
             {summary.prizes.length === 0
               ? 'No Instant Prizes This Run'

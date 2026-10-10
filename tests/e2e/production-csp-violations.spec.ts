@@ -42,7 +42,9 @@ const ARENA_ROUTES = ['', 'clubs', 'wallet', 'profile', 'promotions'];
  * The policy is set by the World Hub for the whole origin, so a Club-Arena-only
  * sweep would certify a header that mostly governs somebody else's pages.
  */
-const HUB_ROUTES = ['/', '/diamonds', '/games'];
+// Current Hub purchase and gameplay routes. Retired paths return 404 and
+// cannot provide a document whose resources this sweep can certify.
+const HUB_ROUTES = ['/', '/hub/diamond-store', '/hub/trivia'];
 
 const COLLECT = () => {
   (window as unknown as { __cspViolations?: Violation[] }).__cspViolations = [];

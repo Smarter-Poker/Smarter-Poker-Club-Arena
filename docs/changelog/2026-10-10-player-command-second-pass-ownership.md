@@ -20,6 +20,10 @@ Protected baseline: `052899dd3f52a2d9367ef0eec8dcc33bdbd74071`.
 
 The existing database purchase refusal is an intentional Diamond Accounting Standard restriction, confirmed by read-only current function inspection. This change does not fund club Diamond wallets, enable unavailable purchases, change prices or move production chips. No migrations or engine changes are required; all ten prior installed Player Command migrations remain immutable.
 
+## Forward-facing copy
+
+The live role descriptions bypassed the static copy gates because they were printed from shared data. Apply the maintained title-case transform at this page's print site, preserving the shared role definitions and authority.
+
 ## Verification
 
 The full client suite passed 35,211 tests across 2,549 files (one existing skip). The final note-error recovery refinement reruns all affected checks; unchanged suite evidence remains valid. Final focused component/real-PostgREST results are recorded in the checkpoint. Full exact-candidate client checks, type/build checks and protected publication/live proof are recorded separately in the existing external task checkpoint; queued checks are not passes.

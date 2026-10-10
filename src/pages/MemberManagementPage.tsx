@@ -1439,7 +1439,7 @@ function RoleSection({
                 <span className="mm-roles__option-name" style={{ color: roleColor(role) }}>
                   {roleLabel(role)}
                 </span>
-                <span className="mm-roles__option-desc">{ROLE_DESCRIPTION[role]}</span>
+                <span className="mm-roles__option-desc">{toTitleCase(ROLE_DESCRIPTION[role])}</span>
               </span>
             </button>
           ))}

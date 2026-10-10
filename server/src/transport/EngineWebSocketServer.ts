@@ -1031,24 +1031,19 @@ export class EngineWebSocketServer {
     (ws as unknown as { __sub: HubSubscriber }).__sub = subscriber;
     this.hub.subscribe(tableId, subscriber);
     if (!this.connectionCanWrite(conn)) return;
-    // FIX 2 (2026-07-24): a fresh (re)connect gets the public SNAPSHOT above;
-    // ask the engine to also re-deliver this player's hole cards for the
-    // current hand so a reconnecting player isn't left blind.
-    // 2026-08-22 review: these callbacks reach into engine code and MUST NOT
-    // be able to abort the wiring below — a throw here used to leave the
-    // socket in this.connections and subscribed to the hub with NO close
-    // handler: a permanent leak the sweeps could never collect.
-    try {
-      this.resyncPlayer(tableId, userId);
-      // Presence belongs only to a physical connection that remains usable.
-      if (this.connectionCanWrite(conn)) this.notifyConnect(tableId, userId, conn.platform);
-    } catch {
-      /* engine wiring must never take down the transport */
-    }
-
+    // Wire lifecycle handlers before asynchronous admission or private delivery.
     ws.on('message', (raw) => this.onMessage(conn, raw));
     ws.on('close', () => this.onClose(ws));
     ws.on('error', () => this.onClose(ws));
+    // The upgrade's earlier verdict can expire during authorization/table wake.
+    // Recheck the registered connection before any initial private replay.
+    void this.sessionCanReceive(conn)
+      .then((allowed) => {
+        if (!allowed || !this.connectionCanWrite(conn)) return;
+        this.resyncPlayer(tableId, userId);
+        if (this.connectionCanWrite(conn)) this.notifyConnect(tableId, userId, conn.platform);
+      })
+      .catch((error) => reportError(error, 'EngineWS.initial_private_replay', { tableId }));
   }
 
   // ─── Roadmap batch 6: mux connection lifecycle ──────────────────────────
@@ -1417,13 +1412,15 @@ export class EngineWebSocketServer {
         if (!tableId || !conn.subs) return;
         const sub = conn.subs.get(tableId);
         if (sub && typeof sub !== 'symbol') {
-          void this.sessionCanReceive(conn).then((allowed) => {
-            if (!allowed || !this.connectionCanWrite(conn) || conn.subs?.get(tableId) !== sub)
-              return;
-            this.hub.resync(tableId, sub);
-            this.notifyAlive(tableId, conn.userId);
-            this.resyncPlayer(tableId, conn.userId);
-          });
+          void this.sessionCanReceive(conn)
+            .then((allowed) => {
+              if (!allowed || !this.connectionCanWrite(conn) || conn.subs?.get(tableId) !== sub)
+                return;
+              this.hub.resync(tableId, sub);
+              this.notifyAlive(tableId, conn.userId);
+              this.resyncPlayer(tableId, conn.userId);
+            })
+            .catch((error) => reportError(error, 'EngineWS.authorized_resync', { tableId }));
         }
         return;
       }
@@ -1498,12 +1495,16 @@ export class EngineWebSocketServer {
         const sub = (conn.ws as unknown as { __sub: HubSubscriber }).__sub;
         // FIX 2 (2026-07-24): re-deliver hole cards alongside the public
         // snapshot — the RESYNC snapshot only carries scrubbed public state.
-        void this.sessionCanReceive(conn).then((allowed) => {
-          if (!allowed || !this.connectionCanWrite(conn)) return;
-          this.hub.resync(conn.tableId, sub);
-          this.notifyAlive(conn.tableId, conn.userId);
-          this.resyncPlayer(conn.tableId, conn.userId);
-        });
+        void this.sessionCanReceive(conn)
+          .then((allowed) => {
+            if (!allowed || !this.connectionCanWrite(conn)) return;
+            this.hub.resync(conn.tableId, sub);
+            this.notifyAlive(conn.tableId, conn.userId);
+            this.resyncPlayer(conn.tableId, conn.userId);
+          })
+          .catch((error) =>
+            reportError(error, 'EngineWS.authorized_resync', { tableId: conn.tableId })
+          );
         return;
       }
       case 'RENDER_ACK':

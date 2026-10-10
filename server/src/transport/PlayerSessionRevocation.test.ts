@@ -1,9 +1,90 @@
 import { describe, expect, it, vi } from 'vitest';
 vi.mock('../services/supabase.js', () => ({ supabase: {} }));
 vi.mock('../services/PlayerSessionAccess.js', () => ({ playerSessionVerdict: vi.fn() }));
+vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
+import { reportError } from '../services/errorReporter.js';
 import { playerSessionVerdict } from '../services/PlayerSessionAccess.js';
 import { EngineWebSocketServer } from './EngineWebSocketServer.js';
 import { ChannelWebSocketServer } from './ChannelWebSocketServer.js';
+describe('initial single-table private admission', () => {
+  function admission() {
+    const server = Object.create(EngineWebSocketServer.prototype);
+    const handlers = new Map<string, (...args: any[]) => void>();
+    const ws = {
+      readyState: 1,
+      bufferedAmount: 0,
+      close: vi.fn(),
+      send: vi.fn(),
+      on: vi.fn((event: string, handler: (...args: any[]) => void) => handlers.set(event, handler)),
+    };
+    server.connections = new Map();
+    server.refuseIfOverSocketCap = vi.fn(() => false);
+    server.hub = { subscribe: vi.fn() };
+    server.resyncPlayer = vi.fn();
+    server.notifyConnect = vi.fn();
+    return { server, ws, handlers };
+  }
+  it.each(['revoked', 'unknown', 'alive'] as const)(
+    'rechecks the durable %s grant after upgrade authorization before initial replay',
+    async (verdict) => {
+      let finish!: (value: typeof verdict) => void;
+      vi.mocked(playerSessionVerdict).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          })
+      );
+      const { server, ws, handlers } = admission();
+      server.onUpgraded(ws, {}, 'target', 'table', null, 'old');
+      expect([...handlers.keys()]).toEqual(['message', 'close', 'error']);
+      expect(server.resyncPlayer).not.toHaveBeenCalled();
+      expect(server.notifyConnect).not.toHaveBeenCalled();
+      finish(verdict);
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(playerSessionVerdict).toHaveBeenCalledWith('target', 'old');
+      expect(server.resyncPlayer).toHaveBeenCalledTimes(verdict === 'alive' ? 1 : 0);
+      expect(server.notifyConnect).toHaveBeenCalledTimes(verdict === 'alive' ? 1 : 0);
+      expect(ws.close).toHaveBeenCalledTimes(verdict === 'revoked' ? 1 : 0);
+    }
+  );
+  it.each(['disconnect', 'replacement', 'shutdown'])(
+    'discards a late initial alive verdict after %s',
+    async (mode) => {
+      let finish!: (value: 'alive') => void;
+      vi.mocked(playerSessionVerdict).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          })
+      );
+      const { server, ws } = admission();
+      server.onUpgraded(ws, {}, 'target', 'table', null, 'old');
+      if (mode === 'disconnect') server.connections.delete(ws);
+      if (mode === 'replacement')
+        server.connections.set(ws, { ...server.connections.get(ws), token: 'new' });
+      if (mode === 'shutdown') server.closing = true;
+      finish('alive');
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(server.resyncPlayer).not.toHaveBeenCalled();
+      expect(server.notifyConnect).not.toHaveBeenCalled();
+    }
+  );
+  it('reports an initial delivery callback failure without an unhandled rejection', async () => {
+    vi.mocked(reportError).mockClear();
+    vi.mocked(playerSessionVerdict).mockResolvedValue('alive');
+    const { server, ws } = admission();
+    const failure = new Error('initial replay failed');
+    server.resyncPlayer.mockImplementation(() => {
+      throw failure;
+    });
+    server.onUpgraded(ws, {}, 'target', 'table', null, 'old');
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(reportError).toHaveBeenCalledWith(failure, 'EngineWS.initial_private_replay', {
+      tableId: 'table',
+    });
+    expect(server.notifyConnect).not.toHaveBeenCalled();
+  });
+});
 describe.each([EngineWebSocketServer, ChannelWebSocketServer])(
   'targeted socket session invalidation',
   (Server) => {
@@ -98,6 +179,45 @@ describe.each([EngineWebSocketServer, ChannelWebSocketServer])(
 );
 
 describe.each([false, true])('explicit RESYNC private grant (mux=%s)', (isMux) => {
+  it('reports a rejected authorized delivery and permits a later explicit resync', async () => {
+    vi.mocked(reportError).mockClear();
+    vi.mocked(playerSessionVerdict).mockResolvedValue('alive');
+    const server = Object.create(EngineWebSocketServer.prototype);
+    const ws = { readyState: 1, close: vi.fn() };
+    const subscriber = {};
+    const conn = {
+      ws,
+      userId: 'target',
+      token: 'old',
+      tableId: 'table',
+      isMux,
+      subs: new Map([['table', subscriber]]),
+      inboundWindowStart: Date.now(),
+      inboundCount: 0,
+    };
+    (ws as any).__sub = subscriber;
+    server.connections = new Map([[ws, conn]]);
+    const failure = new Error('hub delivery failed');
+    server.hub = {
+      resync: vi.fn().mockImplementationOnce(() => {
+        throw failure;
+      }),
+    };
+    server.resyncPlayer = vi.fn();
+    server.notifyAlive = vi.fn();
+    const message = Buffer.from(JSON.stringify({ type: 'RESYNC', tableId: 'table' }));
+    server.onMessage(conn, message);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(reportError).toHaveBeenCalledWith(failure, 'EngineWS.authorized_resync', {
+      tableId: 'table',
+    });
+    expect(server.resyncPlayer).not.toHaveBeenCalled();
+    expect(ws.close).not.toHaveBeenCalled();
+    server.onMessage(conn, message);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(server.hub.resync).toHaveBeenCalledTimes(2);
+    expect(server.resyncPlayer).toHaveBeenCalledOnce();
+  });
   it.each(['revoked', 'unknown', 'alive'] as const)(
     'uses current durable %s verdict before delivering private state',
     async (verdict) => {

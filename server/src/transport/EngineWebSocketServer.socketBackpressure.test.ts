@@ -322,6 +322,7 @@ describe('the physical socket owns its hard backpressure fence', () => {
         ws = new FakeWs();
         sockets.push(ws);
         f.inner.onUpgraded(ws, {}, 'hero', TABLE_A, '192.0.2.1');
+        await flush();
       }
       expect(f.onConnect).not.toHaveBeenCalled();
       expect(f.server.connectionCount()).toBe(0);

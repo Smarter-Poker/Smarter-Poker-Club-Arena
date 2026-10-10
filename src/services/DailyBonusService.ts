@@ -3,9 +3,10 @@
  *  DAILY BONUS SERVICE - the Daily Club Arena Bonus sheet's only door
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Two RPCs, both server-authoritative (docs/DAILY-CLUB-ARENA-BONUS.md):
+ * Server-authoritative RPCs (docs/DAILY-CLUB-ARENA-BONUS.md):
  *
  *   fn_ca_daily_bonus_status()                 what today offers and what is claimed
+ *   fn_ca_daily_bonus_claim_all(day, req)       accept all eligible rewards once
  *   fn_ca_daily_bonus_claim(slot, req, day)    pay one tile, exactly once
  *   fn_ca_daily_bonus_mark_shown()             today's sheet was shown (one popup per day, any device)
  *
@@ -17,7 +18,7 @@
  * The client never sends an amount and never credits anything itself. A tile
  * pays diamonds through award_diamonds_v2 or a consumable credit in
  * feature_purchases, inside the claim function, under the per-player caps.
- * Nothing here can mint: the only thing the browser decides is WHICH tile,
+ * Nothing here can mint: the browser accepts the saved day's rewards,
  * and the server refuses a tile that is not today's, is already claimed, or
  * is VIP-only for a non-VIP.
  *
@@ -324,8 +325,8 @@ class DailyBonusServiceClass {
   }
 
   /**
-   * Claim one tile. Resolves with the server's verdict; only throws on a
-   * transport failure. A refusal is a business outcome the sheet renders.
+   * Accept the saved day's eligible rewards in one server transaction.
+   * Transport failures preserve request identity for durable recovery.
    */
   async claimAll(today: string): Promise<{
     success: boolean;

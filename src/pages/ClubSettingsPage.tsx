@@ -265,9 +265,9 @@ export default function ClubSettingsPage() {
     const uncappedLow = Math.round(settings.rake_cap * 2 * 100) / 100;
     const uncappedHigh = Math.round(settings.rake_cap * 10 * 100) / 100;
     const limited = uncappedLow > low || uncappedHigh > high;
-    return `Currently ${settings.rake_cap} BB - $${low.toFixed(2)} per pot at 1/2 and $${high.toFixed(
+    return `Currently ${settings.rake_cap} BB - ${low.toFixed(2)} Chips per pot at 1/2 and ${high.toFixed(
       2
-    )} at 5/10${limited ? ', held down by the house cap for those stakes.' : '.'}`;
+    )} Chips at 5/10${limited ? ', held down by the house cap for those stakes.' : '.'}`;
   })();
   const [loadError, setLoadError] = useState(false);
   // A club id that resolves to no row (deleted club, bad code, or a club RLS
@@ -1738,7 +1738,7 @@ export default function ClubSettingsPage() {
               />
               <small className="form-hint">
                 Most That Can Be Raked From One Pot, In Big Blinds. Blank Uses The House Cap For
-                Each Stake ($3-$20 Depending On Blinds).{' '}
+                Each Stake (3-20 Chips Depending On Blinds).{' '}
                 {settings.rake_cap < 0 ? 'Currently: House Cap.' : capPreview}
               </small>
             </div>

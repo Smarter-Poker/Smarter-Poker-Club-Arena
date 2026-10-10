@@ -370,6 +370,6 @@ export const dailyBonusService = new DailyBonusServiceClass();
 /** Cents for a diamond amount at the platform rate (1 diamond = 1 cent). */
 export function diamondsToCentsLabel(diamonds: number, centsPerDiamond = 1): string {
   const cents = Math.round(diamonds * centsPerDiamond);
-  if (cents >= 100) return `$${(cents / 100).toFixed(2)}`;
+  if (cents >= 100) return `${(cents / 100).toFixed(2)} USD`;
   return `${cents}¢`;
 }

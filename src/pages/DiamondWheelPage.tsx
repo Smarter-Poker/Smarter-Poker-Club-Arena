@@ -99,9 +99,9 @@ function historyTime(iso: string): string {
   });
 }
 
-/** A prize's worth in dollars: whole figures compact, a fraction exact (2.5 chips is $2.50, not $2). */
+/** A prize's worth in chips: whole figures compact, a fraction exact (2.5 chips is 2.50 Chips, not 2). */
 function worth(valueChips: number): string {
-  return `$${Number.isInteger(valueChips) ? compactChips(valueChips) : valueChips.toFixed(2)}`;
+  return `${Number.isInteger(valueChips) ? compactChips(valueChips) : valueChips.toFixed(2)} Chips`;
 }
 
 const MAX_CLIENT_SEED = 64;

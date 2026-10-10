@@ -618,7 +618,7 @@ export default function MembershipTab({
                     100-per-dollar conversion. A term shows USD only when the
                     server marks its complete Card lifecycle ready. */}
                 {cardCheckoutIsReady(plan)
-                  ? `$${(plan.priceUsd ?? 0).toFixed(2)}`
+                  ? `${(plan.priceUsd ?? 0).toFixed(2)} USD`
                   : `${fmt(plan.priceDiamonds)} Diamonds`}
               </div>
               <div className={styles.planPeriod}>{formatPopupText(plan.period)}</div>

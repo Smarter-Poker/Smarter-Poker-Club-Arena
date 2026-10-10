@@ -1420,6 +1420,19 @@ jobs:
           PG17_BINDIR: /usr/lib/postgresql/17/bin
           MANAGED_GAME_PG_SCRATCH_PARENT: ${{ runner.temp }}
         run: bash scripts/dev/test-managed-game-one-door-postgres.sh
+      - name: Stable Admin floor and maintenance owners qualify on native PostgreSQL 17
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: node scripts/qualify-stable-admin-floor.mjs
+      - name: Stable Admin original cancellation and emergency-stop writers qualify on native PostgreSQL 17
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          STABLE_CANCEL_POSTGRES_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: node scripts/qualify-stable-admin-cancel-stops-pg17.mjs
       - name: Build the matching native PostgreSQL isolation test tool
         id: pg17_isolation_tool
         if: (matrix.shard == 3 || matrix.shard == 4)

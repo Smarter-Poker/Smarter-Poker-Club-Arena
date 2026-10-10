@@ -245,11 +245,14 @@ export function loginRedirectUrl(pathname: string, search: string): string {
  * Returns the verdict so the caller can decide whether to keep its reconnect
  * ladder running ('alive' / 'unknown': yes; 'revoked': the page is leaving).
  */
-export async function handleEngineAuthRejection(source: string): Promise<SessionVerdict> {
+export async function handleEngineAuthRejection(
+  source: string,
+  force = false
+): Promise<SessionVerdict> {
   if (redirecting) return 'revoked';
   if (inFlight) return inFlight;
   const now = Date.now();
-  if (now - lastProbeAt < PROBE_THROTTLE_MS) return lastVerdict;
+  if (!force && now - lastProbeAt < PROBE_THROTTLE_MS) return lastVerdict;
   lastProbeAt = now;
 
   inFlight = (async () => {
@@ -298,4 +301,57 @@ export async function handleEngineAuthRejection(source: string): Promise<Session
     return verdict;
   })();
   return inFlight;
+}
+
+/** Bind the original logout transaction's event to the existing verified sign-in flow. */
+export function installPlayerSessionRevocationEvents(): () => void {
+  let disposed = false;
+  let stopChannel: (() => void) | null = null;
+  let stopAuth: (() => void) | null = null;
+  void import('./supabase')
+    .then(({ supabase }) => {
+      if (disposed) return;
+      const bind = (userId: string | null) => {
+        stopChannel?.();
+        stopChannel = null;
+        if (!userId || disposed) return;
+        const channel = supabase
+          .channel(`player-session-control:${userId}`)
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'ca_player_session_revocations',
+              filter: `user_id=eq.${userId}`,
+            },
+            () => {
+              void handleEngineAuthRejection('operator:force_logout', true);
+            }
+          )
+          .subscribe();
+        stopChannel = () => {
+          void supabase.removeChannel(channel);
+        };
+      };
+      try {
+        const raw = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || 'null');
+        bind(raw?.user?.id || null);
+      } catch {
+        /* auth state callback handles the next valid session */
+      }
+      const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+        // Avoid calling SDK methods inside the SDK's held auth-state lock.
+        queueMicrotask(() => bind(session?.user?.id || null));
+      });
+      stopAuth = () => data.subscription.unsubscribe();
+    })
+    .catch(() => {
+      /* request authentication remains authoritative */
+    });
+  return () => {
+    disposed = true;
+    stopChannel?.();
+    stopAuth?.();
+  };
 }

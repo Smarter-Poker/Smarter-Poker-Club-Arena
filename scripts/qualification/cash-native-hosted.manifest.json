@@ -56,16 +56,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 197294,
-      "sha256": "a9422a1122cfd4a39c721d93ba0ff2e9dc3a2615fde2da36aec451be35733914"
+      "bytes": 197931,
+      "sha256": "136a28a553939892e2a53f8a0e2b2f99316d57a2f4ccb759c1af229d607611dc"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 32804,
-      "sha256": "9e32091e5a712856d7593b6650b54e60e9d49f52b44af7d1f87972b27ed79388"
+      "bytes": 33273,
+      "sha256": "9b80166752ba255d91dbdabf11cd7ed02489c28d2ddcef28b5dc9edea78ce76e"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -160,8 +160,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 102135,
-      "sha256": "0ed8b0f3eedcd503d45f07a52cb720a436cd6f9f410db9eb656d984b23d3fb9f"
+      "bytes": 103913,
+      "sha256": "a708facf9f8769820d54df76d06b4ae0eb90a80d76bd403a8ae0dc7028fac7ae"
     }
   },
   "nativePgCron": {
@@ -1785,6 +1785,23 @@
     "combinedWorkflowPin": {
       "bytes": 194060,
       "sha256": "e83e7c74448545adca5677a5f2646df3a956ae43651d1feb948c35dcdab3c592"
+    }
+  },
+  "stableAdminNativeEnforcement20261010": {
+    "reason": "Stable Admin six-capability integration: add two original-owner PG17 qualifiers to the existing required accounting shards, classify their drivers/loaded fixtures/schema fragments, and test that enforcement. Reviewed additive workflow/classifier/test diff; no prior financial authority, assertion, captured fixture or qualification status changes. Source fingerprint refresh does not prove native execution, installation or publication.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 197294,
+        "sha256": "a9422a1122cfd4a39c721d93ba0ff2e9dc3a2615fde2da36aec451be35733914"
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "bytes": 32804,
+        "sha256": "9e32091e5a712856d7593b6650b54e60e9d49f52b44af7d1f87972b27ed79388"
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "bytes": 102135,
+        "sha256": "0ed8b0f3eedcd503d45f07a52cb720a436cd6f9f410db9eb656d984b23d3fb9f"
+      }
     }
   }
 }

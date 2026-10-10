@@ -1,0 +1,2565 @@
+[
+  {
+    "schema": "public",
+    "name": "ad_campaign",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "advertiser_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "club_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "name",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "slot",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'submitted'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "scope",
+        "type": "text",
+        "default": "'platform'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "priority",
+        "type": "integer",
+        "default": "75",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "starts_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "ends_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "days",
+        "type": "integer",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "image_url",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "target_url",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "headline",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "diamonds_charged",
+        "type": "integer",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "diamonds_refunded",
+        "type": "integer",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "submitted_by",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "reviewed_by",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "reviewed_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "review_note",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "ad_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "external_url",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "click_code",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "pacing",
+        "type": "text",
+        "default": "'even'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "goal_impressions",
+        "type": "integer",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "poster_url",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "quoted_cents",
+        "type": "integer",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "invoiced_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "paid_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "billed_by",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "countries",
+        "type": "text[]",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "ca_commerce_entitlements",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "scope_kind",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "scope_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "sku",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "kind",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "capacity",
+        "type": "integer",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "quantity",
+        "type": "integer",
+        "default": "1",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "asset_id",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "starts_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "ends_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "data_start",
+        "type": "date",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "data_end",
+        "type": "date",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "report_tz",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "source",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "purchase_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "line_index",
+        "type": "integer",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "trial_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "state",
+        "type": "text",
+        "default": "'effective'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "revision",
+        "type": "integer",
+        "default": "1",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "superseded_by",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "net_paid",
+        "type": "integer",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "value_basis",
+        "type": "integer",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "ca_commerce_events",
+    "columns": [
+      {
+        "name": "id",
+        "type": "bigint",
+        "default": "nextval('ca_commerce_events_id_seq'::regclass)",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "occurred_at",
+        "type": "timestamp with time zone",
+        "default": "clock_timestamp()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "kind",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "actor_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "scope_kind",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "scope_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "reference_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "detail",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": true,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "ca_commerce_purchases",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "quote_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "actor_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "payer_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "request_key",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "request_hash",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "scope_kind",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "scope_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "sponsorship_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "kind",
+        "type": "text",
+        "default": "'purchase'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "gross",
+        "type": "integer",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "net",
+        "type": "integer",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "trial_waiver",
+        "type": "integer",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "lines",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "diamond_tx_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "mint_op_id",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "lot_allocation",
+        "type": "jsonb",
+        "default": "'[]'::jsonb",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "catalog_version",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "policy_version",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "terms_version",
+        "type": "integer",
+        "default": "fn_ca_commerce_policy_version('service_terms'::text)",
+        "notnull": false,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "ca_commerce_refunds",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "purchase_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "line_index",
+        "type": "integer",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "request_key",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "requested_by",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "payer_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "gross",
+        "type": "integer",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "debt_settled",
+        "type": "integer",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "net_increase",
+        "type": "integer",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "diamond_tx_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "mint_op_id",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "lot_restoration",
+        "type": "jsonb",
+        "default": "'[]'::jsonb",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "revoked_entitlement",
+        "type": "boolean",
+        "default": "false",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "ca_commerce_renewal_mandates",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "entitlement_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "scope_kind",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "scope_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "payer_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "sku",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "quantity",
+        "type": "integer",
+        "default": "1",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "max_diamonds",
+        "type": "integer",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "state",
+        "type": "text",
+        "default": "'authorized'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "due_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "lease_token",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "lease_until",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "attempts",
+        "type": "integer",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "last_result",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "renewal_purchase_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "accepted_by",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "accepted_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "cancelled_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "cancelled_by",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "sponsorship_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "terms_version",
+        "type": "integer",
+        "default": "fn_ca_commerce_policy_version('renewal_terms'::text)",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "ceiling_text_version",
+        "type": "integer",
+        "default": "fn_ca_commerce_policy_version('renewal_ceiling'::text)",
+        "notnull": false,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "ca_commerce_sponsorships",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "union_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "payer_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "club_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "total_budget",
+        "type": "integer",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "per_club_budget",
+        "type": "integer",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "committed",
+        "type": "integer",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "effective_from",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "effective_to",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "state",
+        "type": "text",
+        "default": "'active'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "revision",
+        "type": "integer",
+        "default": "1",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "created_by",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "revoked_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "club_shop_inventory",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "club_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "item_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "purchase_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "item_name",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "category",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "price_paid",
+        "type": "numeric",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'owned'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "acquired_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "redeemed_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "stackable_snapshot",
+        "type": "boolean",
+        "default": "false",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "grant_snapshot",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "club_shop_items",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "club_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "name",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "description",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "price",
+        "type": "integer",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "category",
+        "type": "text",
+        "default": "'general'::text",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "image_url",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "is_active",
+        "type": "boolean",
+        "default": "true",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "item_type",
+        "type": "text",
+        "default": "'general'::text",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "grant_spec",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "stock",
+        "type": "integer",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "stackable",
+        "type": "boolean",
+        "default": "false",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "per_user_limit",
+        "type": "integer",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "sale_price",
+        "type": "integer",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "available_from",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "available_until",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "sort_order",
+        "type": "integer",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "club_shop_purchases",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "club_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "item_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "buyer_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "price_paid",
+        "type": "integer",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "refunded_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "stock_claimed",
+        "type": "boolean",
+        "default": "false",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "currency",
+        "type": "text",
+        "default": "'chips'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "grant_snapshot",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "charge_reference",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "competitive_quarantine",
+    "columns": [
+      {
+        "name": "entity_type",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "entity_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "reason_code",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "invariant_snapshot",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "quarantined_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "diamond_purchases",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "package_name",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "diamonds_amount",
+        "type": "integer",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "bonus_diamonds",
+        "type": "integer",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "price_usd",
+        "type": "numeric(10,2)",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'pending'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "stripe_checkout_session_id",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "stripe_payment_intent_id",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "completed_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "refunded_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "refunded_amount_cents",
+        "type": "integer",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "refunded_diamonds",
+        "type": "integer",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": true,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "merchandise_orders",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "items",
+        "type": "jsonb",
+        "default": "'[]'::jsonb",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "total_usd",
+        "type": "numeric(10,2)",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'pending'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "stripe_checkout_session_id",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "shipping_address",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "tracking_number",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "stripe_payment_intent_id",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "diamonds_spent",
+        "type": "integer",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "payment_method",
+        "type": "text",
+        "default": "'stripe'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "tracking_url",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "carrier",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "shipped_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "delivered_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "refunded_amount_cents",
+        "type": "integer",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "purchase_reference",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "refunded_diamonds",
+        "type": "integer",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "refunded_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "stock_restored",
+        "type": "boolean",
+        "default": "false",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "fulfillment_version",
+        "type": "integer",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "trivia_pvp_matches",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "player1_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "player2_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "stake_amount",
+        "type": "integer",
+        "default": "10",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "questions",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'active'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "player1_score",
+        "type": "integer",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "player2_score",
+        "type": "integer",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "winner_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "completed_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "challenger_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "opponent_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "challenger_score",
+        "type": "integer",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "opponent_score",
+        "type": "integer",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "category",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "settlement_kind",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "stats_recorded_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "rules_version_id",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "rules_sha256",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "engine_version",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "match_kind",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "roster_snapshot_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "roster_hash",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "player1_ticket_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "player2_ticket_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "horse_side",
+        "type": "smallint",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "activated_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "deadline_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "trivia_pvp_session_links",
+    "columns": [
+      {
+        "name": "match_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "side",
+        "type": "smallint",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "session_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "engine_version",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "trivia_pvp_settlement_decisions",
+    "columns": [
+      {
+        "name": "match_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "decision_kind",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "winner_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "player1_score",
+        "type": "integer",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "player2_score",
+        "type": "integer",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "forfeit",
+        "type": "boolean",
+        "default": "false",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "reference_family",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "side_state",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "credit_plan",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "decided_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "trivia_sessions",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "mode",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "question_ids",
+        "type": "uuid[]",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "permutations",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "submitted_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "score",
+        "type": "integer",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "correct_count",
+        "type": "integer",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "diamonds_awarded",
+        "type": "integer",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'open'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "answers",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "parent_session_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "entry_cost",
+        "type": "integer",
+        "default": "0",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "entry_state",
+        "type": "text",
+        "default": "'legacy'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "expires_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "survival_run_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "survival_level",
+        "type": "integer",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "settlement_result",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "stats_recorded_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "rules_version_id",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "rules_sha256",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "engine_version",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "roster_snapshot_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "roster_round_no",
+        "type": "integer",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "roster_profile_id",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "seat_key",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "actor_type",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "session_contract",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "contract_signature",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "settlement_request_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "question_revision_ids",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": true,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "vip_subscriptions",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "stripe_subscription_id",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "stripe_customer_id",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "plan",
+        "type": "text",
+        "default": "'vip-monthly'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'active'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "current_period_start",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "current_period_end",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "cancel_at_period_end",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "tier",
+        "type": "text",
+        "default": "'monthly'::text",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "canceled_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "price_usd",
+        "type": "numeric(10,2)",
+        "default": "0",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "cancel_reason",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "cancel_reason_text",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "ca_commerce_notices",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "dedupe_key",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "kind",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "title",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "message",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "action_url",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "payload",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "due_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "notification_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "delivered_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "lease_token",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "lease_until",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "suppressed_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "suppressed_reason",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "notifications",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "type",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "title",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "message",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "data",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "read",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "is_read",
+        "type": "boolean",
+        "default": "false",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "action_url",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "actor_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "link",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "read_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      }
+    ]
+  }
+]

@@ -1,0 +1,182 @@
+[
+  {
+    "table_name": "users",
+    "column_name": "confirmed_at",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "identities",
+    "column_name": "email",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "horse_hand_reviews",
+    "column_name": "is_win",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "horse_mind_pairs",
+    "column_name": "opps",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "scim_users",
+    "column_name": "user_name",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "scim_users",
+    "column_name": "external_id",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "scim_users",
+    "column_name": "active",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "training_user_progress",
+    "column_name": "accuracy",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "venue_daily_tournaments",
+    "column_name": "pnm_verified_morning_evidence",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "venue_daily_tournaments",
+    "column_name": "pnm_reader_static_servable",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "tournament_spin_settlement_cutover",
+    "column_name": "production_requires_receipt",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "training_question_cache",
+    "column_name": "audit_shard",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "accounting_routed_settlement_runs",
+    "column_name": "scope_kind",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "accounting_routed_settlement_runs",
+    "column_name": "scope_id",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "union_accounting_runs",
+    "column_name": "scope_kind",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "union_accounting_runs",
+    "column_name": "scope_id",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "diamond_bonus_entries",
+    "column_name": "total_diamonds",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "ledger_reconcile_log",
+    "column_name": "drift",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "trivia_tournaments",
+    "column_name": "starts_at",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "trivia_tournaments",
+    "column_name": "ends_at",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "bankroll_ledger",
+    "column_name": "net_result",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "session_history",
+    "column_name": "session_start",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "session_history",
+    "column_name": "session_end",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "venue_location_integrity_state",
+    "column_name": "search_vector",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "ca_mint_ledger",
+    "column_name": "origin",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "ca_horse_fleet_policy",
+    "column_name": "scope_key",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "trivia_questions",
+    "column_name": "question_fingerprint",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "tables",
+    "column_name": "min_buy_in_bb",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "tables",
+    "column_name": "max_buy_in_bb",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "tables",
+    "column_name": "min_buyin",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "tables",
+    "column_name": "max_buyin",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "ca_seat_stack_rebases",
+    "column_name": "amount",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "ca_cash_pot_check_evidence",
+    "column_name": "evidence_bytes",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "trivia_rules_versions",
+    "column_name": "rules",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "diamond_spin_days",
+    "column_name": "credited_net",
+    "attgenerated": "s"
+  },
+  {
+    "table_name": "social_posts",
+    "column_name": "search_vector",
+    "attgenerated": "s"
+  }
+]

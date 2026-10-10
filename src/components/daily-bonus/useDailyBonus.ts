@@ -120,6 +120,8 @@ export function useDailyBonus(enabled: boolean) {
   const [secondsToReset, setSecondsToReset] = useState(0);
   const [boostSecondsLeft, setBoostSecondsLeft] = useState(0);
   const mounted = useRef(true);
+  const batchInFlight = useRef(false);
+  const statusVersion = useRef(0);
   /** Absolute instant of the Chicago midnight the last status reported. */
   const deadline = useRef<number | null>(null);
   /** Absolute instant a live Mission Boost ends, from the status or the claim that started it. */
@@ -141,10 +143,11 @@ export function useDailyBonus(enabled: boolean) {
     if (inFlight.current) return inFlight.current;
     setLoading(true);
     setLoadError(null);
+    const version = statusVersion.current;
     const run = (async () => {
       try {
         const next = await dailyBonusService.getStatus();
-        if (!mounted.current) return;
+        if (!mounted.current || version !== statusVersion.current) return;
         const seconds = Math.max(0, Number(next.seconds_to_reset) || 0);
         deadline.current = Date.now() + seconds * 1000;
         const boostLeft = next.boost?.active ? Math.max(0, next.boost.seconds_left ?? 0) : 0;
@@ -235,12 +238,46 @@ export function useDailyBonus(enabled: boolean) {
     [status, claimingSlot, load]
   );
 
+  const claimAll = useCallback(async () => {
+    if (!status || batchInFlight.current || claimingSlot !== null) return null;
+    batchInFlight.current = true;
+    setClaimingSlot(0);
+    try {
+      const receipt = await dailyBonusService.claimAll(status.today);
+      if (!mounted.current) return null;
+      if (receipt.success && receipt.status) {
+        statusVersion.current += 1;
+        deadline.current = Date.now() + Math.max(0, receipt.status.seconds_to_reset) * 1000;
+        setStatus(receipt.status);
+        const ends = receipt.status.boost?.ends_at;
+        boostEnds.current = ends ? Date.parse(ends) : null;
+        setBoostSecondsLeft(
+          Math.max(0, Math.ceil(((boostEnds.current ?? Date.now()) - Date.now()) / 1000))
+        );
+      } else {
+        await load();
+      }
+      return receipt;
+    } catch (err) {
+      reportError(err, 'useDailyBonus.claimAll');
+      // A transport failure is unknown: read saved receipts before the player
+      // retries. The server's per-day/slot keys also prevent duplicate awards.
+      await load();
+      if (!mounted.current) return null;
+      return { success: false, reason: 'transport' };
+    } finally {
+      batchInFlight.current = false;
+      if (mounted.current) setClaimingSlot(null);
+    }
+  }, [status, claimingSlot, load]);
+
   return {
     status,
     loading,
     loadError,
     reload: load,
     claim,
+    claimAll,
     claimingSlot,
     secondsToReset,
     boostSecondsLeft,

@@ -45,7 +45,7 @@ const db = vi.hoisted(() => ({
     },
     error: null,
   } as { data: unknown; error: unknown },
-  pinnedDelayMs: 0,
+  pinnedRead: null as Promise<void> | null,
   clubOwner: '47965354-0e56-43ef-931c-ddaab82af765' as string | null,
   /* fn_club_money_panel is the role-checked treasury read a bank-role sender
      spends against (launch audit 2026-10-09). The clubs table is never asked. */
@@ -95,7 +95,7 @@ function chainFor(table: string) {
       filters['eq:user_id'] === AGENT &&
       selectArg.includes('users:user_id')
     ) {
-      if (db.pinnedDelayMs) await new Promise((r) => setTimeout(r, db.pinnedDelayMs));
+      if (db.pinnedRead) await db.pinnedRead;
       return db.pinned;
     }
     if (table === 'clubs' && selectArg.includes('owner_id'))
@@ -149,7 +149,7 @@ beforeEach(() => {
     },
     error: null,
   };
-  db.pinnedDelayMs = 0;
+  db.pinnedRead = null;
   db.clubOwner = SENDER;
 });
 
@@ -193,7 +193,10 @@ describe('funding a named recipient', () => {
   });
 
   it('keeps Confirm closed, and sends nothing, while the recipient is still unknown', async () => {
-    db.pinnedDelayMs = 400;
+    let finishRecipientRead!: () => void;
+    db.pinnedRead = new Promise<void>((resolve) => {
+      finishRecipientRead = resolve;
+    });
     render(<ChipTransferModal isOpen onClose={() => {}} clubId={CLUB} recipientId={AGENT} />);
     fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '250' } });
     // Before the read lands the button is disabled; a click must not send.
@@ -202,9 +205,12 @@ describe('funding a named recipient', () => {
       fireEvent.click(confirmButton());
     });
     expect(rpcMock.mock.calls.filter((c) => String(c[0]).endsWith('_send'))).toHaveLength(0);
-    await waitFor(() => expect((confirmButton() as HTMLButtonElement).disabled).toBe(false), {
-      timeout: 2000,
+    // The read remains unresolved until this explicit release, independent of
+    // runner speed or an elapsed delay.
+    await act(async () => {
+      finishRecipientRead();
     });
+    await waitFor(() => expect((confirmButton() as HTMLButtonElement).disabled).toBe(false));
   });
 
   it('names a recipient who is not a member and never sends', async () => {

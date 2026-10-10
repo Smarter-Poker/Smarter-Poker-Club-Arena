@@ -31,3 +31,5 @@ The full client suite passed 35,211 tests across 2,549 files (one existing skip)
 ## Connected transfer verification
 
 Hosted shard4 exposed an existing test that awaited any RPC, including the treasury read, rather than the transfer RPC. It could finish before its asynchronous send and let that send reach the next case. Await exactly one send, its real confirmation and cleared amount before advancing; preserve all source/destination and unknown-recipient assertions. No wallet runtime or transaction changes.
+
+The unknown-recipient case now holds its read on an explicitly released promise instead of an elapsed400ms timer, so the refusal assertion runs while the recipient is provably unknown even on a stalled worker.

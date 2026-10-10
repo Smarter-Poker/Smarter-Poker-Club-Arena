@@ -863,7 +863,14 @@ export function waitForSharedNaturalLevel(
           undefined,
           new Error('Qualified MTT produced no shared natural level transition')
         );
-      const level = read();
+      let level: HudLevel | undefined;
+      try {
+        level = read();
+      } catch (error) {
+        // Propagate a connected continuity refusal through the owning case's
+        // existing durable classifier, and retire this observation timer.
+        return finish(undefined, error instanceof Error ? error : new Error(String(error)));
+      }
       if (level) return finish(level);
       timer = setTimeout(inspect, 50);
     };

@@ -93,6 +93,9 @@ function deferred(): Deferred {
 let roleReads: Record<string, () => Promise<RoleRead>>;
 let rpcCalls: Array<[string, Record<string, unknown>]>;
 let mintResponses: Array<{ data: unknown; error: unknown }>;
+let recipientProfiles: Array<{ id: string; status: string | null }> = [];
+let recipientProfileError: unknown = null;
+let extraRecipients: Array<Record<string, unknown>> = [];
 
 function ownerRead(): Promise<RoleRead> {
   return Promise.resolve({ data: { role: 'owner' }, error: null });
@@ -151,9 +154,15 @@ function installSupabase() {
                 chip_balance: 5,
                 agent_id: null,
               },
+              ...extraRecipients,
             ]
-          : [];
-      return Promise.resolve({ data: rows, error: null }).then(done);
+          : table === 'profiles'
+            ? recipientProfiles
+            : [];
+      return Promise.resolve({
+        data: rows,
+        error: table === 'profiles' ? recipientProfileError : null,
+      }).then(done);
     };
     return query as never;
   });
@@ -192,6 +201,9 @@ describe('Cashier Classic launch audit', () => {
     mocks.walletProps.length = 0;
     rpcCalls = [];
     mintResponses = [];
+    recipientProfiles = [];
+    recipientProfileError = null;
+    extraRecipients = [];
     roleReads = { [CLUB]: ownerRead, [OTHER_CLUB]: ownerRead };
     nowMs = 1_700_000_000_000;
     vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
@@ -344,6 +356,75 @@ describe('Cashier Classic launch audit', () => {
     const distIds = Array.from(distSelect.options).map((o) => o.value);
     expect(distIds).toContain(OWNER);
     expect(distIds).toContain(PLAYER_ONE);
+  });
+
+  it('hides authoritative deleted recipients even with a membership name, preserving active names and missing profiles', async () => {
+    recipientProfiles = [{ id: PLAYER_ONE, status: 'deleted' }];
+    extraRecipients = [
+      {
+        user_id: 'active-prefix',
+        role: 'player',
+        display_name: 'deleted-legitimate-name',
+        chip_balance: 0,
+      },
+      {
+        user_id: 'missing-profile',
+        role: 'admin',
+        display_name: 'Admin Without Profile',
+        chip_balance: 0,
+      },
+    ];
+    start();
+    const select = (await screen.findByLabelText('Send To Recipient')) as HTMLSelectElement;
+    await waitFor(() =>
+      expect(Array.from(select.options).map((o) => o.value)).toContain('active-prefix')
+    );
+    expect(Array.from(select.options).map((o) => o.value)).not.toContain(PLAYER_ONE);
+    expect(Array.from(select.options).map((o) => o.value)).toContain('missing-profile');
+    fireEvent.click(screen.getByRole('tab', { name: 'Distribute' }));
+    const distribution = (await screen.findByLabelText(
+      'Distribute To Player'
+    )) as HTMLSelectElement;
+    expect(Array.from(distribution.options).map((o) => o.value)).not.toContain(PLAYER_ONE);
+    expect(Array.from(distribution.options).map((o) => o.value)).toContain(OWNER);
+  });
+
+  it('clears an already selected recipient when a fresh recipient read reports deletion', async () => {
+    start();
+    const select = (await screen.findByLabelText('Send To Recipient')) as HTMLSelectElement;
+    await waitFor(() => expect(select.options.length).toBe(2));
+    fireEvent.change(select, { target: { value: PLAYER_ONE } });
+    recipientProfiles = [{ id: PLAYER_ONE, status: 'deleted' }];
+    nowMs += 61_000;
+    fireEvent.click(screen.getByRole('tab', { name: 'Distribute' }));
+    const distribution = (await screen.findByLabelText(
+      'Distribute To Player'
+    )) as HTMLSelectElement;
+    await waitFor(() =>
+      expect(Array.from(distribution.options).map((o) => o.value)).not.toContain(PLAYER_ONE)
+    );
+    expect(distribution.value).toBe('');
+    expect(screen.getByRole('button', { name: 'Distribute 0 Chips' })).toBeDisabled();
+  });
+
+  it('places agents before players when the first role rank is zero', async () => {
+    extraRecipients = [
+      { user_id: 'agent-recipient', role: 'agent', display_name: 'Agent First', chip_balance: 0 },
+    ];
+    start();
+    const select = (await screen.findByLabelText('Send To Recipient')) as HTMLSelectElement;
+    await waitFor(() => expect(select.options.length).toBe(3));
+    expect(select.options[1].value).toBe('agent-recipient');
+    expect(select.options[2].value).toBe(PLAYER_ONE);
+  });
+
+  it('does not offer unverified recipients when the authoritative profile status read fails', async () => {
+    recipientProfileError = { message: 'Profile Status Unavailable' };
+    start();
+    await waitFor(() => expect(mocks.toast.error).toHaveBeenCalled());
+    const select = (await screen.findByLabelText('Send To Recipient')) as HTMLSelectElement;
+    expect(Array.from(select.options).map((o) => o.value)).not.toContain(PLAYER_ONE);
+    expect(rpcCalls.some(([name]) => name === 'fn_agent_wallet_send')).toBe(false);
   });
 
   it('P-04: chip amounts take a decimal keypad; the Mint field takes whole chips', async () => {

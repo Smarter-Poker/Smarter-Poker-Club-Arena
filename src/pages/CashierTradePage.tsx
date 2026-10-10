@@ -2662,6 +2662,23 @@ export default function CashierTradePage() {
                         r.isSelf ? 'This Is You. Chips Cannot Be Sent To Yourself.' : undefined
                       }
                     >
+                      <input
+                        type="checkbox"
+                        className={styles.batchPicker}
+                        aria-label={`Include ${r.name}`}
+                        checked={selected.has(r.userId)}
+                        disabled={r.isSelf || busy}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={() => {
+                          if (r.isSelf || r.userId === user?.id) return;
+                          setSelected((previous) => {
+                            const next = new Set(previous);
+                            if (next.has(r.userId)) next.delete(r.userId);
+                            else next.add(r.userId);
+                            return next;
+                          });
+                        }}
+                      />
                       {r.avatarUrl ? (
                         <img src={r.avatarUrl} alt="" className={styles.avatar} />
                       ) : null}

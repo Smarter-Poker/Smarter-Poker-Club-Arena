@@ -276,6 +276,14 @@
   text-shadow: var(--ink-muted-shadow);
 }
 
+.batchPicker {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 44px;
+  margin: 0;
+  accent-color: var(--ink-blue);
+}
+
 .empty,
 .pickerStatus {
   padding: min(3cqw, 15px) min(1cqw, 5px);

@@ -390,7 +390,18 @@ export function externalDeclaredProofs(sql, registry, dir) {
  *                  stays a failure, exactly as before. Prose that parses as
  *                  SQL but names nothing real is caught here, not above.
  */
+// The grammar result depends only on the expression. External declarations
+// repeat across every migration in a scan; retain a bounded pure result cache.
+// File bytes and hashes are still read and validated on every declaration.
+const proofGrammarResults = new Map();
 export function proofIsRunnable(expr) {
+  if (proofGrammarResults.has(expr)) return proofGrammarResults.get(expr);
+  const result = proofGrammarIsRunnable(expr);
+  if (proofGrammarResults.size >= 4096) proofGrammarResults.clear();
+  proofGrammarResults.set(expr, result);
+  return result;
+}
+function proofGrammarIsRunnable(expr) {
   const s = String(expr ?? '');
   if (!s.trim()) return false;
   let depth = 0;

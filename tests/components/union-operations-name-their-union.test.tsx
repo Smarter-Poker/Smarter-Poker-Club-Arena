@@ -7,6 +7,7 @@
  * meant. The panel now requires a union and refuses a blank one, and the hub
  * renders no panel until a union has been chosen from its selector.
  */
+import { Profiler } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -473,6 +474,31 @@ describe('UnionOpsPanel cannot render or run without a union', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(document.body.style.overflow).toBe('scroll');
     expect(document.activeElement).toBe(review);
+  });
+
+  it('locks page scrolling before the scheduled review becomes observable at commit', async () => {
+    document.body.style.overflow = 'scroll';
+    const committedOverflows: string[] = [];
+    render(
+      <Profiler
+        id="scheduled-review"
+        onRender={() => {
+          if (document.querySelector('[role="dialog"]')) {
+            committedOverflows.push(document.body.style.overflow);
+          }
+        }}
+      >
+        <UnionOpsPanel unionId={UNION_A} canRun />
+      </Profiler>
+    );
+    fireEvent.click(await screen.findByRole('tab', { name: 'Settlement' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Review Scheduled Settlement' }));
+    await screen.findByRole('dialog', { name: 'Scheduled Settlement Review' });
+    expect(committedOverflows.length).toBeGreaterThan(0);
+    expect(committedOverflows.every((overflow) => overflow === 'hidden')).toBe(true);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(document.body.style.overflow).toBe('scroll');
   });
 
   it('keeps an oversized mobile review reachable from the scroll origin', () => {

@@ -227,6 +227,31 @@ describe('the Phase 13 config keys', () => {
     });
     expect(off.shadow?.enabled).toBe(false);
     expect(off.shadow?.integrityEnabled).toBe(true);
+    // The DB's own derived key says the same thing outright.
+    expect(
+      parseLightningConfig({
+        lightning_shadow_matcher: true,
+        shadow_matcher_version: 'm2',
+        shadow_matcher_disabled: true,
+      }).shadow?.enabled
+    ).toBe(false);
+    // The DB's real default third object (20261009235505) is today's behaviour.
+    const dbDefaults = parseLightningConfig({
+      worker_mode: 'form',
+      matcher_version: 'm1',
+      drain_timeout_ms: 120000,
+      lightning_joins_enabled: true,
+      lightning_joins_disabled_at: null,
+      matcher_version_previous: 'm1',
+      matcher_versions_disabled: [],
+      shadow_matcher_disabled: false,
+      lightning_fast_fold: true,
+      lightning_fold_watch: true,
+      sql_matcher_versions: ['m1'],
+      known_matcher_versions: ['m1', 'm1-port', 'm2'],
+    });
+    expect(dbDefaults.rollout).toEqual(LIGHTNING_ROLLOUT_DEFAULTS);
+    expect(dbDefaults.matcherVersion).toBe('m1');
     // A rollout key change is a config change (the supervisor hands it on).
     expect(
       sameLightningConfig(

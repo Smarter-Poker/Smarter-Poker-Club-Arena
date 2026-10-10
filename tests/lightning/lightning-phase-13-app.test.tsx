@@ -27,36 +27,87 @@ const ANCHOR = '33333333-3333-4333-8333-333333333333';
 const SEAT_TABLE = '44444444-4444-4444-8444-444444444444';
 
 /**
- * DB_CONTRACT: the answers of the Phase 13 migration's doors, copied from the
- * migration header (agent/claude-lightning-p13/lightning/rollout-drain-db).
+ * DB_CONTRACT: the answers of the Phase 13 migration's doors
+ * (20261009235505_lightning_phase_13_rollout_drain_and_rollback.sql on
+ * agent/claude-lightning-p13/lightning/rollout-drain-db), built from the
+ * bodies production carries now plus that file's asserted substitutions.
  */
+const AUTO_REBUY_ROW = {
+  enabled: false,
+  trigger: 'zero',
+  threshold_bb: 1,
+  threshold_pct: 25,
+  target: 'initial',
+  max_count: 3,
+  session_cap: 0,
+  used_count: null,
+  used_total: null,
+};
 const DB_CONTRACT = {
-  /** fn_lightning_pool_status(p_cluster_id) while an operator has disabled joins. */
+  /**
+   * fn_lightning_pool_status(p_cluster_id) after 20261009235505 section 9:
+   * joinable gains "AND joins enabled", plus joins_enabled and draining.
+   * An operator has run disable_joins (lightning_joins_enabled false).
+   */
   poolStatusJoinsClosed: {
     players: 21,
     status: 'ACTIVE',
     joinable: false,
     joins_enabled: false,
-    multi_table_limit: { desktop: 4, tablet: 3, mobile: 2 },
-    auto_rebuy: { enabled: false },
+    draining: false,
+    multi_table_limit: { mobile: 2, tablet: 3, desktop: 4 },
+    auto_rebuy: AUTO_REBUY_ROW,
   },
-  /** fn_lightning_pool_status(p_cluster_id) with joins open (today's answer plus the key). */
+  /** The same door with joins open (the default, lightning_joins_enabled true). */
   poolStatusOpen: {
     players: 21,
     status: 'ACTIVE',
     joinable: true,
     joins_enabled: true,
-    multi_table_limit: { desktop: 4, tablet: 3, mobile: 2 },
-    auto_rebuy: { enabled: false },
+    draining: false,
+    multi_table_limit: { mobile: 2, tablet: 3, desktop: 4 },
+    auto_rebuy: AUTO_REBUY_ROW,
   },
-  /** fn_cash_cluster_lightning_state (the lobby's `lightning` key) with joins disabled. */
+  /**
+   * fn_cash_cluster_lightning_state (the lobby's `lightning` key) as
+   * production answers it today, with 20261009235505 section 6's
+   * joins_enabled, for a Lightning Cluster whose joins an operator closed.
+   */
   lobbyStateJoinsClosed: {
+    enabled: true,
+    game_id: CLUSTER,
+    verdict: {
+      to_on: 0,
+      to_off: 9,
+      confidence: 'partial',
+      live_eligible: 21,
+      would_turn_on: false,
+      would_turn_off: false,
+    },
+    must_move: true,
+    handedness: 6,
+    thresholds: {
+      ok: true,
+      on: 18,
+      off: 12,
+      band: 'six_max',
+      source: 'default',
+      game_id: CLUSTER,
+      rejected: [],
+      handedness: 6,
+    },
     cluster_mode: 'lightning',
-    thresholds: { on: 18, off: 12 },
-    verdict: { live_eligible: 21 },
+    cluster_epoch: 1,
+    lightning_enabled: true,
+    open_pool_sessions: 21,
+    open_cluster_sessions: 21,
     joins_enabled: false,
   },
-  /** fn_lightning_reconnect_state after the drain closed the pool session. */
+  /**
+   * fn_lightning_reconnect_state after the drain's commit_must_move closed
+   * the pool session with exit_reason 'lightning_drained' (the anchor seat
+   * untouched); joinable false (the Cluster is MUST MOVE).
+   */
   reconnectDrained: {
     pool_session_id: POOL,
     state: 'closed',

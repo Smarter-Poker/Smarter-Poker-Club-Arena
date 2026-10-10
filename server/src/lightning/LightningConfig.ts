@@ -486,7 +486,12 @@ export function parseLightningConfig(raw: unknown): LightningConfig {
   // clamps it, and a disabled shadow version records nothing at all.
   const version = effectiveLightningMatcherVersion(named, rollout);
   const shadow = parseLightningShadowConfig(raw);
-  if (rollout.matcherVersionsDisabled.includes(shadow.version)) shadow.enabled = false;
+  // fn_lightning_config also reports it outright (shadow_matcher_disabled).
+  if (
+    rollout.matcherVersionsDisabled.includes(shadow.version) ||
+    row.shadow_matcher_disabled === true
+  )
+    shadow.enabled = false;
   return {
     matcherVersion: version,
     workerMode: readMode(row.worker_mode),

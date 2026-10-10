@@ -49,8 +49,9 @@ off in production (`lightning_enabled` false on every Cluster).
    Only a JSON `false` closes anything; unreadable is today's behaviour.
 5. **Matcher versions.** A disabled live version falls back to `m1`, exactly as the DB
    clamps it; a rollback (the operator writing `matcher_version` back to its previous)
-   takes effect on the next pass; a disabled shadow version leaves the shadow runner
-   inactive, so it records nothing (integrity telemetry is untouched).
+   takes effect on the next pass; a disabled shadow version (in
+   `matcher_versions_disabled`, or the DB's derived `shadow_matcher_disabled`) leaves the
+   shadow runner inactive, so it records nothing (integrity telemetry is untouched).
 6. **The fold flags at the action door.** With `lightning_fast_fold` off, LIGHTNING FOLD
    is refused with `LIGHTNING_FOLD_DISABLED` ("Lightning Fold Is Not Available Right
    Now"); with `lightning_fold_watch` off, FOLD & WATCH is refused with
@@ -89,6 +90,8 @@ off in production (`lightning_enabled` false on every Cluster).
   version disable, rollback and shadow suppression; the fold flags refused at the
   action door with their codes; Law 10.5.
 - `tests/lightning/lightning-phase-13-app.test.tsx`: the client against real contract
-  rows from the DB migration.
+  rows of 20261009235505 (`fn_lightning_pool_status` with `joins_enabled` and
+  `draining`, `fn_cash_cluster_lightning_state` with `joins_enabled`,
+  `fn_lightning_reconnect_state` with `exit_reason` `lightning_drained`).
 - Widened, never deleted: the Phase 7 discovery pin (`lightning`, `pending_off` now
   lead a longer list), the Phase 6 Lightning block pin, and the Phase 6 config pin.

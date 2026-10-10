@@ -664,6 +664,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // counted at the deal itself, below.
         await this.evictExpiredSitOuts({ countOrbit: false });
 
+        if (await this.passOperatorFloorBoundary()) {
+          await this.sleep(3000);
+          continue;
+        }
+
         // Bible V8 §6.17: Admin pause/maintenance lock — skip dealing
         if (this.adminPauseLock || this.maintenanceLock) {
           if (this.tableFSM.state === 'running') {
@@ -1079,11 +1084,16 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // Return through the owner's gate before using the prepared hand.
         if (this.isNextHandPaused()) {
           if (this.maintenancePaused) await this.persistPresenceForRestart('parked');
-          // The three POLLED owners have no gate to wait on. awaitPauseGate
+          // The four POLLED owners have no gate to wait on. awaitPauseGate
           // returns immediately when only one of them is raised, and this
           // branch then `continue`s - a hot spin. The gate is for the owners
           // that something in this process will release.
-          if (!this.adminPauseLock && !this.maintenanceLock && !this.dealingHaltLock)
+          if (
+            !this.adminPauseLock &&
+            !this.maintenanceLock &&
+            !this.dealingHaltLock &&
+            !this.operatorFloorPaused
+          )
             await this.awaitPauseGate();
           if (!this.running) break;
           continue;

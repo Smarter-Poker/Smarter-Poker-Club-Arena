@@ -1,0 +1,388 @@
+[
+  {
+    "schema": "public",
+    "name": "ca_cert_accounts",
+    "columns": [
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "tagged_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "active",
+        "type": "boolean",
+        "default": "true",
+        "notnull": true,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "ca_diamond_incidents",
+    "columns": [
+      {
+        "name": "id",
+        "type": "bigint",
+        "default": "nextval('ca_diamond_incidents_id_seq'::regclass)",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "occurred_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "rule",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "severity",
+        "type": "text",
+        "default": "'info'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "amount",
+        "type": "numeric(20,0)",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "writer",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "db_role",
+        "type": "text",
+        "default": "CURRENT_USER",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "app_name",
+        "type": "text",
+        "default": "COALESCE(current_setting('application_name'::text, true), ''::text)",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "detail",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "resolved_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "resolution",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "acknowledged_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "acknowledged_by",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "resolved_by",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "reopened_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "reopened_by",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "ca_diamond_rule_modes",
+    "columns": [
+      {
+        "name": "rule",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "mode",
+        "type": "text",
+        "default": "'log'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "flip_after",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "clean_days_required",
+        "type": "integer",
+        "default": "7",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "flipped_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "flipped_by",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "ruling",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "note",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "ca_payout_freeze",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "scope",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "opened_by",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "opened_by_label",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "opened_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "cleared_by",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "cleared_by_label",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "cleared_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "chip_ledger_idem",
+    "columns": [
+      {
+        "name": "idempotency_key",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "leg_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "diamond_debts",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "purchase_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "amount",
+        "type": "integer",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "settled_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "settled_by",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      }
+    ]
+  }
+]

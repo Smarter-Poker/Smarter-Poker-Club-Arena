@@ -40,6 +40,11 @@ const dataConsolePostgres =
 const managedGameOneDoor =
   /^(scripts\/dev\/test-managed-game-one-door-postgres\.sh$|tests\/fixtures\/managed-game-one-door\/|tests\/unit\/managedGameOneDoorMigration\.test\.ts$|supabase\/migrations\/20261004195024_managed_game_browser_updates_use_command_gateway\.sql$)/;
 
+// These original-owner qualifications execute inside the required accounting
+// matrix. Changes to a driver, captured owner or manifest must run it too.
+const stableAdminQualification =
+  /^(scripts\/qualify-stable-admin-(?:floor|cancel-stops-pg17|cancel-lane-pg17)\.mjs$|scripts\/qualification\/stable-admin-(?:floor|cancel-stops|cancel-lane)\/|scripts\/ci\/schema-manifest\.d\/stable-admin-[a-z-]+\.json$)/;
+
 // Spin qualification and every reviewed input use the existing accounting job.
 const spinExpiry =
   /^(supabase\/components\/(?:spin-expiry-lock-order|spin-history-retention|spin-mixed-basis-(?:receipt-lane|current-receipt-lane|current-terminal))(?:\.rollback)?\.sql$|supabase\/components\/spin-mixed-basis-evidence\.sql$|scripts\/qualification\/(?:spin-mixed-basis-(?:shape\.sql|evidence\.preimage\.sql|pure\.(?:sql|hosted\.manifest\.json))$|spin-finalized-horse-admission\.(?:py|manifest\.json)$|spin-horse-admission-race\.py$|spin-horse-platform-paid-entry\.sql$|spin-paid-terminal\.(?:py|md|hosted\.manifest\.json)$|spin-positive-fee-entry(?:-oracle)?\.py$|spin-positive-fee-entry\.(?:md|hosted\.manifest\.json)$|spin-mixed-positive-fee-entry\.sql$|spin-mixed-current(?:-(?:races|assertions))?\.py$|spin-mixed-current\.(?:md|hosted\.manifest\.json)$|spin-receipt-lane(?:-compactor)?\.(?:sql|py|md|hosted\.manifest\.json)$|spin-expiry-|spin-history-retention(?:-behavior\.sql|(?:-completed)?\.(?:sql|md|manifest\.json))$|fixtures\/(?:finalized-horse-admission|archived-spin-core-provider|spin-history-retention|spin-receipt-lane|spin-mixed-current|spin-mixed-positive-fee|spin-paid-terminal)\/)|scripts\/ci\/(?:test-spin-expiry-postgres\.py$|test_spin_expiry_wrapper\.py$|probes\/spin-expiry\/)|tests\/unit\/fixtureNativeCi\.test\.ts$)/;
@@ -285,6 +290,7 @@ export function classifyChangedPaths(paths) {
       matches(accounting) ||
       matches(dataConsolePostgres) ||
       matches(managedGameOneDoor) ||
+      matches(stableAdminQualification) ||
       nativeIsolationTool ||
       spinRules ||
       horsePriority ||
@@ -329,6 +335,7 @@ export function classifyChangedPaths(paths) {
       commitmentAudit ||
       matches(dataConsolePostgres) ||
       tournamentAccountingInput ||
+      matches(stableAdminQualification) ||
       matches(mttPreparation) ||
       matches(mttActivation) ||
       matches(f06HandAuthority) ||

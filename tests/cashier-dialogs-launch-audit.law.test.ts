@@ -230,8 +230,14 @@ describe('D-11: focus is trapped, moved in and returned on every money dialog', 
     expect(src).toContain('ref={panelRef}');
   });
 
-  it('the cashier suspends its trap while the mint is stacked, and the union sheet locks scroll', () => {
-    expect(read(WCM)).toContain('useFocusTrap<HTMLDivElement>(isOpen && !showMint)');
+  it('the cashier keeps its trap under the stacked mint (G-05), and the union sheet locks scroll', () => {
+    expect(read(WCM)).toContain('const panelRef = useFocusTrap<HTMLDivElement>(isOpen);');
+    expect(read(WCM)).not.toContain('useFocusTrap<HTMLDivElement>(isOpen && !showMint)');
+    const trap = read('src/hooks/useFocusTrap.ts');
+    expect(trap).toContain(
+      'if (activeTraps[activeTraps.length - 1] !== trapIdRef.current) return;'
+    );
+    expect(trap).toContain('activeTraps.push(trapId);');
     expect(read(MINT)).toContain("useFocusTrap<HTMLDivElement>(isOpen, '.cmm-input')");
     const union = read(UWM);
     expect(union).toContain("document.body.style.overflow = 'hidden';");
@@ -435,12 +441,12 @@ describe('D-18 .. D-23: the low findings on the dialog slice', () => {
     expect(agent).not.toContain('setProcessing(null)');
   });
 
-  it('the cashout sheet listens to this club, resolved to a uuid first', () => {
+  it('the cashout sheet listens to this player and reloads for this club, resolved to a uuid first (G-02)', () => {
     const src = read(CASHOUT);
     expect(src).toContain("import { resolveClubUUID } from '../../utils/clubIdResolver';");
-    expect(src).toContain(
-      'filter: resolved ? `club_id=eq.${resolved}` : `player_id=eq.${playerId}`,'
-    );
+    expect(src).toContain('filter: `player_id=eq.${playerId}`,');
+    expect(src).not.toContain('`club_id=eq.${resolved}`');
+    expect(src).toContain('if (!resolved || rowClub === undefined || rowClub === resolved) {');
     expect(src).toContain('const resolved = clubId ? await resolveClubUUID(clubId) : null;');
   });
 });

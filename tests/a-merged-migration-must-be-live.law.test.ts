@@ -53,6 +53,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 // The law parses a migration with the CHECK's own functions, never a lookalike
 // regex of its own: a guard that disagrees with the thing it guards is worse
 // than no guard.
@@ -98,6 +99,24 @@ function migrations(): string[] {
 }
 
 describe('a merged migration must be live', () => {
+  it('invalidates cached file bytes after a same-length rewrite', () => {
+    const dir = fs.mkdtempSync(
+      path.join(process.env.TMPDIR || '/Volumes/SmarterWork/agent-work', 'cashier-proof-cache-')
+    );
+    const name = '20990101000000_cached.sql';
+    const sql = 'SELECT 1;';
+    const file = path.join(dir, name);
+    fs.writeFileSync(file, sql);
+    const sha256 = createHash('sha256').update(sql).digest('hex');
+    const registry = { schema: 1, entries: [{ file: name, sha256, proofs: ['(SELECT 1)=1'] }] };
+    try {
+      expect(externalDeclaredProofs(sql, registry, dir)).toEqual(['(SELECT 1)=1']);
+      fs.writeFileSync(file, 'SELECT 2;');
+      expect(() => externalDeclaredProofs(sql, registry, dir)).toThrow('bytes changed');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
   it('immutable external proofs bind exact installed bytes and fail closed', () => {
     const file = '20261007040648_solver_platform_ids_validate_uuid_shape.sql';
     const sql = fs.readFileSync(path.join(MIGRATIONS, file), 'utf8');

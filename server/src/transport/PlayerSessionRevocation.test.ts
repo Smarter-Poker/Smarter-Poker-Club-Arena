@@ -4,6 +4,7 @@ vi.mock('../services/PlayerSessionAccess.js', () => ({ playerSessionVerdict: vi.
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 import { reportError } from '../services/errorReporter.js';
 import { playerSessionVerdict } from '../services/PlayerSessionAccess.js';
+import { TableStateHub } from './TableStateHub.js';
 import { EngineWebSocketServer } from './EngineWebSocketServer.js';
 import { ChannelWebSocketServer } from './ChannelWebSocketServer.js';
 describe('initial single-table private admission', () => {
@@ -247,4 +248,110 @@ describe.each([false, true])('explicit RESYNC private grant (mux=%s)', (isMux) =
       expect(ws.close).toHaveBeenCalledTimes(verdict === 'revoked' ? 1 : 0);
     }
   );
+});
+
+describe('mux private admission survives table wake', () => {
+  it.each(['revoked', 'unknown'] as const)(
+    'refuses a delayed %s grant after table wake',
+    async (verdict) => {
+      vi.mocked(playerSessionVerdict).mockResolvedValue('alive');
+      let wake!: (ready: boolean) => void;
+      const server = Object.create(EngineWebSocketServer.prototype);
+      const ws = { readyState: 1, close: vi.fn(), send: vi.fn(), bufferedAmount: 0 };
+      const conn = { ws, userId: 'target', token: 'old', subs: new Map() };
+      server.connections = new Map([[ws, conn]]);
+      server.authorizeConnection = vi.fn(async () => ({ allowed: true }));
+      server.tableExists = vi.fn(() => false);
+      server.ensureTable = vi.fn(
+        () =>
+          new Promise<boolean>((resolve) => {
+            wake = resolve;
+          })
+      );
+      server.isIpConflict = vi.fn(() => false);
+      server.logConnectionAudit = vi.fn();
+      server.hub = { subscribe: vi.fn() };
+      server.resyncPlayer = vi.fn();
+      server.notifyConnect = vi.fn();
+      server.muxSubscriptionAttempt = 0;
+      const pending = server.handleMuxSubscribe(conn, 'table');
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(server.ensureTable).toHaveBeenCalledOnce();
+      vi.mocked(playerSessionVerdict).mockResolvedValue(verdict);
+      wake(true);
+      await pending;
+      expect(server.hub.subscribe).not.toHaveBeenCalled();
+      expect(server.resyncPlayer).not.toHaveBeenCalled();
+      if (verdict === 'revoked')
+        expect(ws.close).toHaveBeenCalledWith(4401, 'auth:session_not_found');
+      else {
+        expect(ws.close).not.toHaveBeenCalled();
+        expect(conn.subs.has('table')).toBe(false);
+        vi.mocked(playerSessionVerdict).mockResolvedValue('alive');
+        server.tableExists.mockReturnValue(true);
+        await server.handleMuxSubscribe(conn, 'table');
+        expect(server.hub.subscribe).toHaveBeenCalledOnce();
+        expect(server.resyncPlayer).toHaveBeenCalledOnce();
+      }
+    }
+  );
+});
+
+describe('original private fanout observes current session', () => {
+  it('does not bypass a pending initial grant through the live table hub', async () => {
+    let finish!: (value: 'unknown') => void;
+    vi.mocked(playerSessionVerdict).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    const server = Object.create(EngineWebSocketServer.prototype);
+    const ws = { readyState: 1, bufferedAmount: 0, close: vi.fn(), send: vi.fn(), on: vi.fn() };
+    server.connections = new Map();
+    server.refuseIfOverSocketCap = vi.fn(() => false);
+    server.hub = new TableStateHub();
+    server.resyncPlayer = vi.fn();
+    server.notifyConnect = vi.fn();
+    server.onUpgraded(ws, {}, 'target', 'table', null, 'old');
+    server.hub.sendToUser('table', 'target', { kind: 'hole_cards', cards: ['As', 'Ks'] });
+    finish('unknown');
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(ws.send).not.toHaveBeenCalled();
+  });
+});
+
+describe('mux queued private frame belongs to its original table adapter', () => {
+  it('discards cards when UNSUBSCRIBE wins during the final session read', async () => {
+    vi.mocked(playerSessionVerdict).mockResolvedValue('alive');
+    const server = Object.create(EngineWebSocketServer.prototype);
+    const ws = { readyState: 1, bufferedAmount: 0, close: vi.fn(), send: vi.fn(), on: vi.fn() };
+    server.connections = new Map();
+    server.refuseIfOverSocketCap = vi.fn(() => false);
+    server.hub = new TableStateHub();
+    server.authorizeConnection = vi.fn(async () => ({ allowed: true }));
+    server.tableExists = vi.fn(() => true);
+    server.isIpConflict = vi.fn(() => false);
+    server.logConnectionAudit = vi.fn();
+    server.resyncPlayer = vi.fn();
+    server.notifyConnect = vi.fn();
+    server.muxSubscriptionAttempt = 0;
+    server.onUpgradedMux(ws, 'target', null, 'old');
+    const conn = server.connections.get(ws);
+    await server.handleMuxSubscribe(conn, 'table');
+    ws.send.mockClear();
+    let finish!: (value: 'alive') => void;
+    vi.mocked(playerSessionVerdict).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    server.hub.sendToUser('table', 'target', { kind: 'hole_cards', cards: ['As', 'Ks'] });
+    server.handleMuxMessage(conn, { type: 'UNSUBSCRIBE', tableId: 'table' });
+    ws.send.mockClear();
+    finish('alive');
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(ws.send).not.toHaveBeenCalled();
+  });
 });

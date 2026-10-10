@@ -894,16 +894,12 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
        delivers to nobody; without this the correction is simply lost and the
        client's balance stays wrong until an absolute read. One frame per
        player is enough: it is the newest adjustment that matters. */
-    const delivered = this.hub.sendToUser(this.tableId, userId, frame);
-    /* Retained ONLY while undelivered. `onResync` fires on EVERY connect
-       and mux subscribe, not just a seq-gap RESYNC, so a frame kept after
-       delivery would greet this player on every reload until the hourly
-       restart - and a freshly loaded client, whose balance was just read
-       absolutely, would credit the refund a second time. Delivered once to
-       an open socket is delivered; the same-session dedupe covers a later
-       gap-RESYNC. */
-    if (delivered > 0) this.lastAddOnAdjustedByUser.delete(userId);
-    else this.lastAddOnAdjustedByUser.set(userId, frame);
+    this.lastAddOnAdjustedByUser.set(userId, frame);
+    const delivered = () => {
+      if (this.lastAddOnAdjustedByUser.get(userId) === frame)
+        this.lastAddOnAdjustedByUser.delete(userId);
+    };
+    if (this.hub.sendToUser(this.tableId, userId, frame, delivered) > 0) delivered();
   }
 
   /** An add_on_adjusted frame that found no open socket, held for the
@@ -914,9 +910,11 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
   public rePushAddOnAdjusted(userId: string): void {
     const frame = this.lastAddOnAdjustedByUser.get(userId);
     if (!frame || !this.hub || typeof this.hub.sendToUser !== 'function') return;
-    if (this.hub.sendToUser(this.tableId, userId, frame) > 0) {
-      this.lastAddOnAdjustedByUser.delete(userId);
-    }
+    const delivered = () => {
+      if (this.lastAddOnAdjustedByUser.get(userId) === frame)
+        this.lastAddOnAdjustedByUser.delete(userId);
+    };
+    if (this.hub.sendToUser(this.tableId, userId, frame, delivered) > 0) delivered();
   }
 
   /**

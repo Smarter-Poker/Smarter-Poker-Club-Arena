@@ -331,7 +331,9 @@ describe('Player Command resilience wiring', () => {
     expect(POLICY).toContain('Promise.allSettled');
     expect(PAGE).toContain('RosterSummaryCoordinator');
     expect(PAGE).toContain("reportError(error, 'ClubMembersPage.loadSummary')");
-    expect(PAGE).toMatch(/onPage: \(page\) => {[\s\S]*setMembers\(page\.items\)/);
+    expect(PAGE).toMatch(
+      /onPage: \(page\) => {[\s\S]*const nextRows = wallets\.reconcile\(page\.items, walletRevision\);[\s\S]*setMembers\(nextRows\)/
+    );
   });
 
   it('announces a summary label before its value and exposes independent freshness', () => {

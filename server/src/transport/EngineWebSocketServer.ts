@@ -1,3 +1,4 @@
+import { AuthorizedPrivateSend } from './AuthorizedPrivateSend.js';
 import { playerSessionVerdict } from '../services/PlayerSessionAccess.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -303,6 +304,7 @@ interface ConnectionState {
    * session revoked AFTER the upgrade.
    */
   token: string;
+  privateSend?: AuthorizedPrivateSend;
   sessionRead?: Promise<boolean>;
   /** Epoch ms of the next re-auth. Staggered at connect, see REAUTH_INTERVAL_MS. */
   nextReauthAt: number;
@@ -1002,6 +1004,16 @@ export class EngineWebSocketServer {
       clientIp,
     };
     this.connections.set(ws, conn);
+    const privateSend = new AuthorizedPrivateSend({
+      current: () => !this.closing && this.connectionCanWrite(conn),
+      authorize: () => this.sessionCanReceive(conn),
+      send: (data, complete) => ws.send(data, complete),
+      buffered: () => ws.bufferedAmount,
+      retire: () =>
+        this.retireConnection(conn, CLOSE_RATE_LIMITED, 'private backpressure - reconnect'),
+      error: (error) => reportError(error, 'EngineWS.private_send'),
+    });
+    conn.privateSend = privateSend;
 
     // HubSubscriber adapter: ws already matches the shape almost exactly,
     // but we need a stable .id field and a numeric readyState.
@@ -1019,6 +1031,7 @@ export class EngineWebSocketServer {
       get bufferedAmount() {
         return ws.bufferedAmount;
       },
+      sendPrivate: (data, delivered) => conn.privateSend?.enqueue(data, delivered),
       send(data: string) {
         ws.send(data);
       },
@@ -1073,6 +1086,16 @@ export class EngineWebSocketServer {
       subs: new Map(),
     };
     this.connections.set(ws, conn);
+    const privateSend = new AuthorizedPrivateSend({
+      current: () => !this.closing && this.connectionCanWrite(conn),
+      authorize: () => this.sessionCanReceive(conn),
+      send: (data, complete) => ws.send(data, complete),
+      buffered: () => ws.bufferedAmount,
+      retire: () =>
+        this.retireConnection(conn, CLOSE_RATE_LIMITED, 'private backpressure - reconnect'),
+      error: (error) => reportError(error, 'EngineWS.private_send'),
+    });
+    conn.privateSend = privateSend;
     ws.on('message', (raw) => this.onMessage(conn, raw));
     ws.on('close', () => this.onClose(ws));
     ws.on('error', () => this.onClose(ws));
@@ -1307,6 +1330,8 @@ export class EngineWebSocketServer {
       }
       // The socket may have closed while the async gates ran.
       if (!isCurrent()) return;
+      // Table wake may outlive the durable grant checked before that await.
+      if (!isCurrent() || !(await this.sessionCanReceive(conn)) || !isCurrent()) return;
       this.logConnectionAudit(conn.userId, tableId, conn.clientIp);
       const ws = conn.ws;
       // eslint-disable-next-line @typescript-eslint/no-this-alias
@@ -1320,6 +1345,8 @@ export class EngineWebSocketServer {
         get bufferedAmount() {
           return ws.bufferedAmount;
         },
+        sendPrivate: (data, delivered) =>
+          conn.privateSend?.enqueue(data, delivered, () => conn.subs?.get(tableId) === subscriber),
         send(data: string) {
           ws.send(data);
           if (measuringInitialFrames && timing.firstHubFrameQueuedAtMs === null) {
@@ -1359,6 +1386,9 @@ export class EngineWebSocketServer {
       conn.subs.delete(tableId);
       this.sendMuxError(conn, tableId, 'SUB_FAILED', 'Subscribe failed');
     } finally {
+      // An unknown grant is not a settled subscription. Release only this
+      // pending attempt so a later explicit retry can recheck authority.
+      if (typeof owned === 'symbol' && conn.subs?.get(tableId) === owned) conn.subs.delete(tableId);
       measuringInitialFrames = false;
       // Private replay/presence callbacks can retire an admitted connection.
       // Observe final ownership without invoking another admission/cleanup gate.

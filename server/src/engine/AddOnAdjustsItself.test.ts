@@ -17,6 +17,8 @@
  *   2. Nothing told the player. The refund reached a console.log.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { AuthorizedPrivateSend } from '../transport/AuthorizedPrivateSend.js';
+import { TableStateHub } from '../transport/TableStateHub.js';
 
 const { ServerTableEngine } = await import('./ServerTableEngine.js');
 const { supabase } = await import('../services/supabase.js');
@@ -208,7 +210,8 @@ describe('the rows the hand envelope resolved are announced (verified lease path
         requested: 49.95,
         applied: 48.88,
         refunded: 1.07,
-      })
+      }),
+      expect.any(Function)
     );
     // The frozen rows were read BY ID, the cache from what is STILL open,
     // and the stale 49.95 - now in the stack - is gone from the cache.
@@ -336,5 +339,74 @@ describe('the rows the hand envelope resolved are announced (verified lease path
     engine.hub.sendToUser.mockClear();
     engine.rePushAddOnAdjusted('hero');
     expect(engine.hub.sendToUser).not.toHaveBeenCalled();
+  });
+});
+
+describe('asynchronous private delivery retains the original adjustment', () => {
+  it('does not forget queued or failed delivery, and an old acknowledgment cannot clear a newer frame', () => {
+    const engine = engineWith(1, 0, false);
+    const callbacks: Array<() => void> = [];
+    engine.hub.sendToUser.mockImplementation(
+      (_table: string, _user: string, _payload: unknown, delivered: () => void) => {
+        callbacks.push(delivered);
+        return 0;
+      }
+    );
+    engine.tellPlayerAddOnAdjusted('hero', 'addon', 48.88, 1.07, 'old');
+    engine.rePushAddOnAdjusted('hero');
+    expect(callbacks).toHaveLength(2);
+    engine.tellPlayerAddOnAdjusted('hero', 'addon', 48.88, 1.07, 'new');
+    callbacks[0]();
+    engine.hub.sendToUser.mockClear();
+    engine.rePushAddOnAdjusted('hero');
+    expect(engine.hub.sendToUser.mock.calls[0][2].pending_id).toBe('new');
+    callbacks[2]();
+    engine.hub.sendToUser.mockClear();
+    engine.rePushAddOnAdjusted('hero');
+    expect(engine.hub.sendToUser).not.toHaveBeenCalled();
+  });
+});
+
+describe('socket callback owns adjustment completion', () => {
+  it('retains the actual original add-on through callback failure and clears only successful retry', async () => {
+    const engine = engineWith(1, 0, false),
+      hub = new TableStateHub();
+    const completions: Array<(error?: Error) => void> = [],
+      errors = vi.fn();
+    const queue = new AuthorizedPrivateSend({
+      current: () => true,
+      authorize: async () => true,
+      buffered: () => 0,
+      retire: vi.fn(),
+      error: errors,
+      send: (_data, complete) => {
+        completions.push(complete);
+      },
+    });
+    const subscriber = {
+      id: 'callback-socket',
+      userId: 'hero',
+      readyState: 1,
+      bufferedAmount: 0,
+      send: vi.fn(),
+      close: vi.fn(),
+      sendPrivate: (data: string, delivered?: () => void) => queue.enqueue(data, delivered),
+    };
+    hub.subscribe(TABLE, subscriber);
+    engine.hub = hub;
+    engine.tellPlayerAddOnAdjusted('hero', 'addon', 48.88, 1.07, 'socket-row');
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(completions).toHaveLength(1);
+    completions[0](new Error('socket callback failed'));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(errors).toHaveBeenCalledOnce();
+    engine.rePushAddOnAdjusted('hero');
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(completions).toHaveLength(2);
+    completions[1]();
+    await new Promise((resolve) => setImmediate(resolve));
+    engine.rePushAddOnAdjusted('hero');
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(completions).toHaveLength(2);
   });
 });

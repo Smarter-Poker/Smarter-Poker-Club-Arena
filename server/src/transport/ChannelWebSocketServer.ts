@@ -1,3 +1,5 @@
+import { reportError } from '../services/errorReporter.js';
+import { AuthorizedPrivateSend } from './AuthorizedPrivateSend.js';
 import { playerSessionVerdict } from '../services/PlayerSessionAccess.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -374,7 +376,22 @@ export class ChannelWebSocketServer {
       nextReauthAt: staggeredReauthAt(REAUTH_INTERVAL_MS),
     };
     this.connections.set(ws, conn);
-    channelHub.addConnection(userId, ws);
+    const privateSend = new AuthorizedPrivateSend({
+      current: () =>
+        !this.closing && this.connections.get(ws) === conn && ws.readyState === WebSocket.OPEN,
+      authorize: () => this.sessionCanReceive(conn),
+      send: (data, complete) => ws.send(data, complete),
+      buffered: () => ws.bufferedAmount,
+      retire: () => {
+        try {
+          ws.close(CLOSE_RATE_LIMITED, 'private backpressure - reconnect');
+        } finally {
+          this.onClose(ws);
+        }
+      },
+      error: (error) => reportError(error, 'ChannelWS.private_send'),
+    });
+    channelHub.addConnection(userId, ws, (data) => privateSend.enqueue(data));
 
     ws.on('message', (raw) => this.onMessage(conn, raw));
     ws.on('close', () => this.onClose(ws));
@@ -485,6 +502,10 @@ export class ChannelWebSocketServer {
       return;
     }
     if (!this.clubJoinIsCurrent(conn, clubId, pending)) return;
+    if (!(await this.sessionCanReceive(conn)) || !this.clubJoinIsCurrent(conn, clubId, pending)) {
+      this.cancelClubJoin(conn, clubId);
+      return;
+    }
     conn.clubJoins.delete(clubId);
     if (!member) {
       // Revalidation can revoke a previously granted feed. A confirmed denial
@@ -752,7 +773,12 @@ export class ChannelWebSocketServer {
         .abortSignal(replay.abort.signal)
         .maybeSingle();
 
-      if (!this.handReplayIsCurrent(conn, handId, replay)) return;
+      if (
+        !this.handReplayIsCurrent(conn, handId, replay) ||
+        !(await this.sessionCanReceive(conn)) ||
+        !this.handReplayIsCurrent(conn, handId, replay)
+      )
+        return;
 
       if (error || !rows) {
         channelHub.sendWs(conn.ws, {
@@ -813,7 +839,12 @@ export class ChannelWebSocketServer {
       // Subsequent frames: one per action, with delay
       for (let i = 0; i < actions.length; i++) {
         await this.waitForHandReplayFrame(replay);
-        if (!this.handReplayIsCurrent(conn, handId, replay)) return;
+        if (
+          !this.handReplayIsCurrent(conn, handId, replay) ||
+          !(await this.sessionCanReceive(conn)) ||
+          !this.handReplayIsCurrent(conn, handId, replay)
+        )
+          return;
 
         channelHub.sendWs(conn.ws, {
           type: 'HAND_REPLAY_EVENT',

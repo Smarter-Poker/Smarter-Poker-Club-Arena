@@ -43,7 +43,7 @@ import {
   type StatementScope,
   type WalletFamily,
 } from '../hooks/useCashierStatement';
-import { SpadeConsole } from '../components/console/SpadeConsole';
+import { CashierWorkspace } from '../components/wallet/CashierWorkspace';
 import { isUUID, resolveClubUUID } from '../utils/clubIdResolver';
 import { copyCashierText, readCashierOnlineState } from '../services/CashierResilience';
 import { compactChips } from '../utils/format';
@@ -373,7 +373,7 @@ function StatementsContent({ clubParam, userId }: { clubParam: string; userId?: 
 
   return (
     <div className={styles.page} data-cashier-surface="statements">
-      <SpadeConsole
+      <CashierWorkspace
         eyebrow="Full Statement"
         title="Cashier"
         pill={pillText}
@@ -922,7 +922,7 @@ function StatementsContent({ clubParam, userId }: { clubParam: string; userId?: 
             </>
           )}
         </div>
-      </SpadeConsole>
+      </CashierWorkspace>
     </div>
   );
 }

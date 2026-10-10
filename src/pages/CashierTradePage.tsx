@@ -101,6 +101,7 @@ import {
 import { UnionService } from '../services/UnionService';
 import { unionRouteRef } from '../utils/unionIdResolver';
 import { rememberLastClub } from '../utils/clubQuickLink';
+import { CashierWorkspace } from '../components/wallet/CashierWorkspace';
 import { SpadeConsole } from '../components/console/SpadeConsole';
 import { compactChips } from '../utils/format';
 import { exactChipFigure, parseTradeAmount, sumChips } from '../utils/cashierAmount';
@@ -1446,7 +1447,7 @@ export default function CashierTradePage() {
     rows = q
       ? [...rows].sort((a, b) => rosterMatchRank(b, q) - rosterMatchRank(a, q) || bySort(a, b))
       : [...rows].sort(bySort);
-    if (groupByRole) {
+    if (groupByRole && !q) {
       // ROLE_RANK from types/clubRoles, not a local map. The local one listed
       // super_agent/agent/sub_agent/admin/player and OMITTED owner and
       // co_owner, so both fell to the `?? 9` default and sorted BELOW every
@@ -2202,7 +2203,7 @@ export default function CashierTradePage() {
 
   return (
     <div className={styles.page} data-cashier-surface="trade">
-      <SpadeConsole
+      <CashierWorkspace
         eyebrow="Secure Cashier"
         title="Cashier"
         pill={isOnline ? 'Live Ledger' : 'Locked'}
@@ -2233,11 +2234,9 @@ export default function CashierTradePage() {
             </div>
 
             <div className={styles.heroContent}>
-              <h1 className={`${styles.heroTitle} sc-ink--silver`} id="cashier-title">
-                Every Chip.
-                <br />
-                Accounted For.
-              </h1>
+              <h2 className={`${styles.heroTitle} sc-ink--silver`} id="cashier-title">
+                Wallet Command
+              </h2>
               <p className={`${styles.heroCopy} sc-copy`}>
                 Move Chips Through The Correct Wallet, Answer Requests, Redeem Tickets, And Verify
                 Every Ledger Entry From One Secure Desk.
@@ -2534,15 +2533,19 @@ export default function CashierTradePage() {
 
               {/* Search + filters */}
               <div className={styles.searchRow}>
+                <label className={styles.searchLabel} htmlFor="cashier-member-search">
+                  Search The Roster
+                </label>
                 <input
+                  id="cashier-member-search"
                   type="search"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search Members"
+                  placeholder="Search Name, Number, Handle, Or Role"
                   aria-label={`Search ${downline.length} Member${downline.length === 1 ? '' : 's'}`}
                 />
-                <span className={styles.memberCount} aria-hidden="true">
-                  {downline.length}
+                <span className={styles.memberCount} role="status" aria-live="polite">
+                  {list.length.toLocaleString()} Results
                 </span>
               </div>
               <div className={styles.filterRow}>
@@ -3195,7 +3198,7 @@ export default function CashierTradePage() {
             </section>
           )}
         </div>
-      </SpadeConsole>
+      </CashierWorkspace>
 
       {receipt && (
         <div className={styles.modalOverlay} onClick={() => setReceipt(null)}>

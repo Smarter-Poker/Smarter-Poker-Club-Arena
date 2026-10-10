@@ -1,7 +1,7 @@
 # tests/cashier-club-arena-console.law.test.ts
 
-Every Cashier page and Cashier-owned dialog renders directly on the approved
-`#ClubArenaConsole` master through `SpadeConsole`: no wrapper framework, no
-retired vault picture, no flat close glyph, no rejected crest, no CSS-painted
-frame, gradient or number spinner on the glass, both plates or none, and
-`compactChips` in the painted head zones.
+October 10 owner direction: routed Trade, Classic and Statements cashiers use
+the Players-style CashierWorkspace directory layout with no large enclosing
+frames. Cashier-owned confirmation and wallet dialogs retain their approved
+SpadeConsole masters, crest, focus handling, number-spinner suppression and
+financial safeguards. No second painted console framework or flat close glyph.

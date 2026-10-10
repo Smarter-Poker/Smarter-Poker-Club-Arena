@@ -1370,7 +1370,7 @@ DECLARE
   g     record;
   v_cfg jsonb;
   d     record;
-  c     record;
+  v_ctl record;
 BEGIN
   SELECT cg.id, cg.cluster_mode, cg.cluster_epoch, cg.lightning_enabled INTO g
     FROM public.cash_games cg WHERE cg.id = p_cluster_id;
@@ -1380,13 +1380,13 @@ BEGIN
   v_cfg := public.fn_lightning_config(g.id);
   SELECT x.id, x.phase, x.from_mode, x.requested_at, x.deadline_at INTO d
     FROM public.lightning_cluster_drain x WHERE x.cluster_id = g.id AND x.completed_at IS NULL;
-  SELECT x.paused_from INTO c FROM public.lightning_cluster_control x WHERE x.cluster_id = g.id;
+  SELECT x.* INTO v_ctl FROM public.lightning_cluster_control x WHERE x.cluster_id = g.id;
   RETURN jsonb_build_object(
     'cluster_mode', g.cluster_mode,
     'cluster_epoch', g.cluster_epoch,
     'lightning_enabled', coalesce(g.lightning_enabled, false),
     'paused', g.cluster_mode = 'paused',
-    'paused_from', CASE WHEN g.cluster_mode = 'paused' THEN c.paused_from END,
+    'paused_from', CASE WHEN g.cluster_mode = 'paused' THEN v_ctl.paused_from END,
     'joins_enabled', coalesce((v_cfg ->> 'lightning_joins_enabled')::boolean, true),
     'drain', CASE WHEN d.id IS NULL THEN NULL ELSE jsonb_build_object(
                'drain_id', d.id, 'phase', d.phase, 'from_mode', d.from_mode,
@@ -2075,7 +2075,7 @@ BEGIN
   IF g.id IS NULL THEN
     RETURN jsonb_build_object('ok', false, 'code', 'NOT_FOUND', 'reason', 'NOT_FOUND');
   END IF;
-  SELECT (to_jsonb(c) ->> 'is_public')::boolean AS is_public INTO v_club FROM public.clubs c WHERE c.id = g.club_id;
+  SELECT (to_jsonb(cl) ->> 'is_public')::boolean AS is_public INTO v_club FROM public.clubs cl WHERE cl.id = g.club_id;
   v_row := public.fn_lightning_operator_cluster_row(g.id, v_now);
   v_cfg := public.fn_lightning_config(g.id);
   v_live_v := v_cfg ->> 'matcher_version';

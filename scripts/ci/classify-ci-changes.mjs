@@ -207,6 +207,11 @@ export function classifyChangedPaths(paths) {
   const diamondGames = matches(
     /^(tests\/sql\/diamond-[a-z0-9-]+\.sql|tests\/fixtures\/(diamond-wheel-v2-(receipts|state)|diamond-spins\/wheel-(?:earned|v3|v4)-postgres-receipts)\.json|tests\/unit\/wheel(ServerReceipts|EarnedPostgresContract|UpgradeReceipts|UpgradePostgresContract|V4PostgresContract)\.test\.ts|src\/services\/(DiamondBonusService|DiamondGamesService|DiamondChoiceService|DiamondWheelService|DiamondReplayService|DiamondStatementService|WheelBonusEntryService|diamondBonusRecovery)\.ts|src\/hooks\/use(BonusBudget|EarnedBonus)\.ts|src\/components\/games\/BonusSetup\.tsx|src\/utils\/(crashReceipt|bonusGameBudget|wheelAward|wheelPendingSpin|wheelFairness|wheelV4Model)\.ts|src\/pages\/Diamond(Choice|Crash|Plinko|Wheel)Page\.tsx)$/
   );
+  // Daily Bonus grants share the canonical Diamond award path and the
+  // accounting PostgreSQL runner. Input-only edits must run that job too.
+  const dailyBonus = matches(
+    /^(tests\/sql\/daily-bonus-[a-z0-9-]+\.sql|src\/services\/DailyBonusService\.ts|src\/hooks\/useDailyBonus\.ts)$/
+  );
 
   // The Diamond Arena SQL acceptance (2026-09-19): every runner, every fixture
   // file the runners read and the wrapper that runs them in the accounting job.
@@ -273,6 +278,7 @@ export function classifyChangedPaths(paths) {
       bbjFixture ||
       chipStoreCoverage ||
       diamondGames ||
+      dailyBonus ||
       diamondSqlAcceptance ||
       phase4Changed ||
       matches(mttPreparation) ||
@@ -325,6 +331,7 @@ export function classifyChangedPaths(paths) {
       matches(breakfastWitness) ||
       buildProvenance ||
       diamondGames ||
+      dailyBonus ||
       diamondSqlAcceptance ||
       commitmentAudit ||
       matches(dataConsolePostgres) ||

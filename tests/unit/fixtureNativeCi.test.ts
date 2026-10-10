@@ -30,6 +30,16 @@ const native = parse(
   readFileSync(join(root, '.github/workflows/component-fixture-native-smoke.yml'), 'utf8')
 );
 
+describe('Daily Bonus accounting qualification follows its actual inputs', () => {
+  it.each([
+    'src/components/daily-bonus/useDailyBonus.ts',
+    'src/services/DailyBonusService.ts',
+    'tests/sql/daily-bonus-one-claim.sql',
+  ])('executes required accounting for %s', (path) => {
+    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+  });
+});
+
 describe('Stable Admin owning transactions retain native qualification', () => {
   it.each([
     'scripts/qualify-stable-admin-floor.mjs',

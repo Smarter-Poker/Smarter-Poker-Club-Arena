@@ -326,3 +326,16 @@ it('does not announce a replay as another reward', async () => {
     0
   );
 });
+it('a single-tile compatibility replay does not announce or add the already credited reward', async () => {
+  mocks.emit.mockReset();
+  mocks.rpc.mockResolvedValue({
+    data: {
+      success: true,
+      idempotent: true,
+      granted: { kind: 'diamonds', diamonds: 5, balance_after: 5 },
+    },
+    error: null,
+  });
+  await dailyBonusService.claim('2026-10-10', 1);
+  expect(mocks.emit).not.toHaveBeenCalled();
+});

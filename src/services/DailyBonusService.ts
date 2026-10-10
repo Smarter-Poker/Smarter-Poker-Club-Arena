@@ -384,7 +384,7 @@ class DailyBonusServiceClass {
       throw new Error('Could Not Reach The Bonus Ledger, Try Again');
     }
     const result = (data ?? { success: false, reason: 'empty_response' }) as DailyBonusClaimResult;
-    if (result.success && result.granted) {
+    if (result.success && result.granted && !result.idempotent) {
       // The header and wallet re-read their balances; the amount comes from
       // the ledger, never from here. When the ledger reported the balance it
       // left behind, the header can paint it now rather than after a re-read.

@@ -1,0 +1,7 @@
+# Daily Bonus Request Ownership Audit
+
+The Daily Bonus sheet could show an old status error after a successful Claim All, reuse a pre-claim read when recovering a lost receipt, or retain another account's state. Reads and claims now carry an account-scoped generation; authoritative receipts retire pending reads, and recovery starts a fresh durable read. The inline page remounts its sheet when the account changes, resetting shown-day, spin-club and animation state. The existing single-tile compatibility path shares the same ownership and synchronous claim lock.
+
+The CI selector named a nonexistent `src/hooks/useDailyBonus.ts`. It now selects the actual component hook for required PostgreSQL accounting, with additive selector regression assertions and reviewed current source-pin updates. Historical qualification pins and financial assertions are preserved.
+
+Validation: four request-race failures reproduced before correction; focused runtime/consumer tests and actual PostgreSQL accounting passed, including 400 rotation dates, streak resets, repeatability, batch/replay, stale-day rejection, VIP/auth permissions and complete rollback of monetary fixtures. Production function definitions and permissions match the installed migration; it is not replayed. Protected CI, merge, publisher and current live evidence are recorded in the task checkpoint as each completes.

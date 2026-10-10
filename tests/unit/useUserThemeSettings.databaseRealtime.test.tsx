@@ -1,3 +1,4 @@
+import nativeThemeSequence from '../fixtures/theme-row-native-stream.json';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { convertChangeData } from '@supabase/realtime-js/dist/module/lib/transformers';
@@ -217,6 +218,26 @@ describe('useUserThemeSettings database realtime', () => {
       },
     });
   }
+
+  it('consumes the actual native first-save event sequence and retains equal-version conflict rejection', async () => {
+    const { result, unmount } = renderHook(() => useUserThemeSettings('user-1', 'nlh'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    act(() => {
+      for (const event of nativeThemeSequence.before)
+        row('ALL', event.row_data.table_id, event.row_data.updated_at);
+    });
+    expect(result.current.theme.table_id).toBe('classic_green');
+    // A fresh account cache receives the repaired native INSERT then UPDATE.
+    localStorage.clear();
+    act(() => {
+      for (const event of nativeThemeSequence.after)
+        row('ALL', event.row_data.table_id, event.row_data.updated_at);
+    });
+    expect(result.current.theme.table_id).toBe('carbon_red');
+    act(() => row('ALL', 'classic_green', nativeThemeSequence.after[1].row_data.updated_at));
+    expect(result.current.theme.table_id).toBe('carbon_red');
+    unmount();
+  });
 
   it.each([
     '2026-10-10 01:50:18.817999+00',

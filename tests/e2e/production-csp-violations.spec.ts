@@ -67,21 +67,31 @@ test.describe('the content security policy', () => {
     const origin = new URL(baseURL ?? 'https://smarter.poker/hub/club-arena/').origin;
 
     const visit = async (url: string, label: string) => {
-      try {
-        await page.goto(url, { waitUntil: 'networkidle', timeout: 60_000 });
-      } catch {
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
-      }
+      // Realtime/background requests need not become idle. A second navigation
+      // would also discard violations already captured in the first document.
+      const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+      expect(response, `${label}: navigation returned no document`).not.toBeNull();
+      expect(response!.ok(), `${label}: document HTTP ${response!.status()}`).toBe(true);
+      expect(response!.headers()['content-type'], `${label}: document is not HTML`).toContain(
+        'text/html'
+      );
+      await expect(page.locator('body')).toBeVisible();
+      const app = page.locator(label.startsWith('arena:') ? '#root' : '#__next');
+      await expect(app, `${label}: application did not render`).toBeVisible();
+      await expect(app, `${label}: application has no rendered content`).toContainText(/\S/);
       await page.waitForTimeout(3500);
+      await expect(app, `${label}: route rendered a fallback`).not.toContainText(
+        /This Arena Door Is Closed|This page ran into an issue|Something went wrong|This page could not be found/i
+      );
       // Lazily mounted panels fetch their own things; a viewport-height visit
       // certifies the header against about a third of the page.
-      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {});
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
       await page.waitForTimeout(2000);
-      const batch = await page
-        .evaluate(
-          () => (window as unknown as { __cspViolations?: Violation[] }).__cspViolations ?? []
-        )
-        .catch(() => [] as Violation[]);
+      const batch = await page.evaluate(() => {
+        const violations = (window as unknown as { __cspViolations?: Violation[] }).__cspViolations;
+        if (!Array.isArray(violations)) throw new Error('CSP collector is unavailable');
+        return violations;
+      });
       for (const v of batch) found.push({ ...v, route: label });
     };
 

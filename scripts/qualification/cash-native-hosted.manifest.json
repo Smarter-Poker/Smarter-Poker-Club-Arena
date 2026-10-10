@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 198155,
-      "sha256": "872269a39245dca8ddd5438ebd018c3f0e5bb04643184468c418fcb81ed62738"
+      "bytes": 198267,
+      "sha256": "6de24feea8c8d3c0994ea7a9d264514373c9b5c22d2b525d308fa7108bd9bbe1"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1825,6 +1825,17 @@
           "sha256": "3a442cdfb793eb70eb158ade1b9c2ed57e4428d3fcf8db248bae982899e6863a"
         }
       }
+    }
+  },
+  "stableAdminLightningProgress20261010": {
+    "reason": "Reviewed one additive forward migration in the existing required P13 native chain. Original cash commands, inputs, assertions, all historical bindings and SOURCE_ONLY_UNRUN status remain unchanged. This exact workflow fingerprint is source identity, not cash qualification or production proof. Normal pre-push detected the omitted current binding before publication.",
+    "previousWorkflowPin": {
+      "bytes": 198155,
+      "sha256": "872269a39245dca8ddd5438ebd018c3f0e5bb04643184468c418fcb81ed62738"
+    },
+    "currentWorkflowPin": {
+      "bytes": 198267,
+      "sha256": "6de24feea8c8d3c0994ea7a9d264514373c9b5c22d2b525d308fa7108bd9bbe1"
     }
   }
 }

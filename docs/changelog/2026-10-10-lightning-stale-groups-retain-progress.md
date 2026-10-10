@@ -69,3 +69,9 @@ WH0b8e9df11f. External SSD mounted with free space. Exact forward SQL
 SHA256b56aea27caf66d304b213790368c30d19d12817370f60cda76025afa0b71115a.
 Installation waits for the protected DDL window to end; required current-head
 CI, protected integration, publication and genuine live proof remain pending.
+
+Normal pre-push refused the stale active cash qualification workflow binding
+and its accepted-roster regression. Reviewed additive one-line native-chain
+selection now has its exact current fingerprint in the existing manifest;
+previous pin is retained, and historical pins, financial inputs/assertions
+and SOURCE_ONLY_UNRUN status remain unchanged. This is source identity only.

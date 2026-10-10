@@ -387,6 +387,34 @@ test.describe('Production Shark Club Players', () => {
       )
       .toBe(true);
 
+    // The identity must remain readable beside a long role at phone widths.
+    // These are real rendered boxes on the published page, not CSS string pins.
+    const originalViewport = page.viewportSize();
+    for (const width of [375, 393]) {
+      await page.setViewportSize({ width, height: 812 });
+      const boxes = await Promise.all(
+        ['.mm-avatar', '.role-badge', '.mm-presence', '.mm-player-id', '#mm-player-name'].map(
+          (selector) => page.locator(`.mm-credential ${selector}`).boundingBox()
+        )
+      );
+      for (let i = 0; i < boxes.length; i++) {
+        expect(boxes[i], `identity field ${i} has no rendered box at ${width}px`).not.toBeNull();
+        expect(boxes[i]!.x).toBeGreaterThanOrEqual(0);
+        expect(boxes[i]!.x + boxes[i]!.width).toBeLessThanOrEqual(width);
+        for (let j = 0; j < i; j++) {
+          const a = boxes[i]!;
+          const b = boxes[j]!;
+          const overlapX = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+          const overlapY = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+          expect(
+            overlapX > 0.5 && overlapY > 0.5,
+            `identity fields ${i}/${j} overlap at ${width}px`
+          ).toBe(false);
+        }
+      }
+    }
+    if (originalViewport) await page.setViewportSize(originalViewport);
+
     const roleOption = page.locator('.mm-roles__option:not([disabled])').first();
     if (await roleOption.count()) {
       await roleOption.click();

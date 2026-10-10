@@ -25,7 +25,7 @@
  * Palette and tokens are ClubMembersPage's. No green, no purple.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { useToast } from '../components/common/Toast';
 import PageSkeleton from '../components/common/PageSkeleton';
@@ -120,6 +120,14 @@ export default function PlayerStatisticsPage() {
    * variant is chosen.
    */
   const [knownVariants, setKnownVariants] = useState<string[]>([]);
+  const statsAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    setStats(null);
+    setKnownVariants([]);
+    setVariant(null);
+    setNotFound(false);
+  }, [clubId, userId]);
 
   const load = useCallback(
     async (
@@ -127,6 +135,9 @@ export default function PlayerStatisticsPage() {
       activeRange: MemberRange,
       getIsMounted?: () => boolean
     ) => {
+      statsAbortRef.current?.abort();
+      const controller = new AbortController();
+      statsAbortRef.current = controller;
       if (!clubId || !userId) {
         if ((!getIsMounted || getIsMounted()) && isMountedRef.current) {
           setNotFound(true);
@@ -135,7 +146,10 @@ export default function PlayerStatisticsPage() {
         }
         return;
       }
-      const live = () => (getIsMounted ? getIsMounted() : true) && isMountedRef.current;
+      const live = () =>
+        !controller.signal.aborted &&
+        (getIsMounted ? getIsMounted() : true) &&
+        isMountedRef.current;
 
       if (live()) {
         setLoading(true);
@@ -171,7 +185,8 @@ export default function PlayerStatisticsPage() {
           resolved,
           userId,
           activeVariant,
-          activeRange
+          activeRange,
+          controller.signal
         );
         if (!live()) return;
         setStats(result);
@@ -183,8 +198,8 @@ export default function PlayerStatisticsPage() {
           });
         }
       } catch (error) {
-        reportError(error, 'PlayerStatisticsPage.load');
         if (live()) {
+          reportError(error, 'PlayerStatisticsPage.load');
           setLoadFailed(true);
           toast.error('Failed To Load Player Statistics');
         }
@@ -200,6 +215,7 @@ export default function PlayerStatisticsPage() {
     load(variant, range, () => mounted);
     return () => {
       mounted = false;
+      statsAbortRef.current?.abort();
     };
   }, [load, variant, range, reloadKey]);
 

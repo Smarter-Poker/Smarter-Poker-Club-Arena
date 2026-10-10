@@ -67,7 +67,6 @@ const ALLOWED: Record<string, Reason> = {
   'src/components/wallet/WalletCashierModal.tsx': 'identifier', // uuid v4 fallback for an idempotency key
   'src/pages/CashierPage.tsx': 'identifier', // uuid v4 fallback for an idempotency key
   'src/pages/CashierTradePage.tsx': 'identifier', // uuid v4 fallback for an idempotency key
-  'src/pages/MemberManagementPage.tsx': 'identifier', // request key fallback
   // src/pages/TablePage.tsx left 2026-10-05: its last Math.random() was the
   // jitter on the browser horse-yield poll, removed with that poll.
   'src/pages/tournament/TournamentDetails.tsx': 'identifier', // request key

@@ -514,7 +514,10 @@ export default function ClubMembersPage() {
 
   useMasterBusSubscriptions(
     ['CLUB_JOINED', 'CLUB_LEFT', 'MEMBER_ROLE_CHANGED'],
-    scheduleStructuralRefresh,
+    (payload) => {
+      const event = payload as { clubId?: string } | null;
+      if (event?.clubId === resolvedClubId) scheduleStructuralRefresh();
+    },
     { debounce: 800 }
   );
 
@@ -524,12 +527,37 @@ export default function ClubMembersPage() {
     filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
     event: '*',
     onPayload: (payload) => {
-      const value = payload as { eventType?: string; new?: { status?: string } } | null;
-      const status = value?.new?.status;
+      const value = payload as {
+        eventType?: string;
+        new?: Record<string, unknown>;
+        old?: Record<string, unknown>;
+      } | null;
+      const next = value?.new;
+      const previous = value?.old;
+      const member = membersRef.current.find((row) => row.user_id === next?.user_id);
+      // WAL's default old image has only keys. Compare a full old image when
+      // present, otherwise the displayed identity. Wallet churn alone must not
+      // abort a healthy directory load.
+      const structural = ['role', 'status', 'agent_id', 'nickname', 'notes', 'display_name'].some(
+        (field) =>
+          next && previous && field in next && field in previous && next[field] !== previous[field]
+      );
+      const displayedIdentityChanged =
+        member &&
+        next &&
+        ((typeof next.role === 'string' && next.role !== member.role) ||
+          ('agent_id' in next && next.agent_id !== member.upline_user_id) ||
+          (member.can_view_notes &&
+            (('nickname' in next && next.nickname !== member.nickname) ||
+              ('notes' in next && next.notes !== member.remark))));
       if (
         value?.eventType === 'INSERT' ||
         value?.eventType === 'DELETE' ||
-        (value?.eventType === 'UPDATE' && (status === 'banned' || status === 'suspended'))
+        (value?.eventType === 'UPDATE' &&
+          (structural ||
+            displayedIdentityChanged ||
+            next?.status === 'banned' ||
+            next?.status === 'suspended'))
       )
         scheduleStructuralRefresh();
     },
@@ -601,6 +629,26 @@ export default function ClubMembersPage() {
   useEffect(() => {
     if (hasMore && virtual.endIndex >= members.length - 8) void loadMore();
   }, [hasMore, loadMore, members.length, virtual.endIndex]);
+
+  // Default WAL old images cannot identify an off-page promotion. The
+  // already-authorized, persisted audit event carries its structural cause;
+  // wallet traffic never enters this lane. Existing RLS remains authoritative.
+  useMasterBusChannel({
+    channelName: resolvedClubId ? `club-members-audit-${resolvedClubId}` : null,
+    table: 'audit_trail',
+    filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
+    event: 'INSERT',
+    onPayload: (payload) => {
+      const row = (payload as { new?: Record<string, unknown> } | null)?.new;
+      if (
+        row?.club_id === resolvedClubId &&
+        row?.target_type === 'club_member' &&
+        ['set_member_role', 'set_member_status', 'update_member_notes'].includes(String(row.action))
+      )
+        scheduleStructuralRefresh();
+    },
+    enabled: !!resolvedClubId && ['owner', 'co_owner', 'admin'].includes(summary.viewer_role),
+  });
 
   const canUseFinancialViews = summary.capabilities.can_view_financials;
   const isAgent = AGENT_ROLES.includes(summary.viewer_role);

@@ -111,7 +111,7 @@ describe('DiamondTopUpModal secure checkout contract', () => {
     expect(screen.getByRole('dialog', { name: 'Add Diamonds' })).toBeVisible();
     expect(document.body.style.overflow).toBe('hidden');
     const purchase = await screen.findByRole('button', {
-      name: 'Buy First Stack, 550 Diamonds For 3.99',
+      name: 'Buy First Stack, 550 Diamonds For 3.99 USD',
     });
     await waitFor(() => expect(purchase).toBeEnabled());
     expect(screen.getByText('Server-Priced')).toBeVisible();
@@ -137,7 +137,7 @@ describe('DiamondTopUpModal secure checkout contract', () => {
     const view = render(<DiamondTopUpModal isOpen onClose={mocks.close} />);
     const close = screen.getByRole('button', { name: 'Close Diamond Store' });
     const purchase = await screen.findByRole('button', {
-      name: 'Buy First Stack, 550 Diamonds For 3.99',
+      name: 'Buy First Stack, 550 Diamonds For 3.99 USD',
     });
     await waitFor(() => expect(purchase).toBeEnabled());
     await waitFor(() => expect(close).toHaveFocus());
@@ -172,7 +172,7 @@ describe('DiamondTopUpModal secure checkout contract', () => {
 
     expect(await screen.findByText('First Stack')).toBeVisible();
     expect(
-      screen.getByRole('button', { name: 'Buy First Stack, 550 Diamonds For 3.99' })
+      screen.getByRole('button', { name: 'Buy First Stack, 550 Diamonds For 3.99 USD' })
     ).toBeVisible();
   });
 
@@ -180,7 +180,7 @@ describe('DiamondTopUpModal secure checkout contract', () => {
     render(<DiamondTopUpModal isOpen onClose={mocks.close} />);
     fireEvent.click(
       await screen.findByRole('button', {
-        name: 'Buy First Stack, 550 Diamonds For 3.99',
+        name: 'Buy First Stack, 550 Diamonds For 3.99 USD',
       })
     );
 
@@ -234,7 +234,7 @@ describe('DiamondTopUpModal secure checkout contract', () => {
     render(<DiamondTopUpModal isOpen onClose={mocks.close} returnParams="from=table-studio" />);
     fireEvent.click(
       await screen.findByRole('button', {
-        name: 'Buy First Stack, 550 Diamonds For 3.99',
+        name: 'Buy First Stack, 550 Diamonds For 3.99 USD',
       })
     );
 
@@ -258,7 +258,7 @@ describe('DiamondTopUpModal secure checkout contract', () => {
     render(<DiamondTopUpModal isOpen onClose={mocks.close} />);
 
     const purchase = await screen.findByRole('button', {
-      name: 'Buy First Stack, 550 Diamonds For 3.99',
+      name: 'Buy First Stack, 550 Diamonds For 3.99 USD',
     });
     await waitFor(() => expect(purchase).toBeDisabled());
     expect(screen.getByRole('alert')).toHaveTextContent('Packages Are Display Only');
@@ -272,7 +272,7 @@ describe('DiamondTopUpModal secure checkout contract', () => {
     render(<DiamondTopUpModal isOpen onClose={mocks.close} />);
 
     const purchase = await screen.findByRole('button', {
-      name: 'Buy First Stack, 550 Diamonds For 3.99',
+      name: 'Buy First Stack, 550 Diamonds For 3.99 USD',
     });
     await waitFor(() => expect(purchase).toBeDisabled());
     expect(screen.getByRole('alert')).toHaveTextContent(
@@ -295,7 +295,7 @@ describe('DiamondTopUpModal secure checkout contract', () => {
 
     expect(
       await screen.findByRole('button', {
-        name: 'Buy First Stack, 550 Diamonds For 3.99',
+        name: 'Buy First Stack, 550 Diamonds For 3.99 USD',
       })
     ).toBeDisabled();
     expect(mocks.startCheckout).not.toHaveBeenCalled();
@@ -306,7 +306,7 @@ describe('DiamondTopUpModal secure checkout contract', () => {
     render(<DiamondTopUpModal isOpen onClose={mocks.close} />);
     fireEvent.click(
       await screen.findByRole('button', {
-        name: 'Buy First Stack, 550 Diamonds For 3.99',
+        name: 'Buy First Stack, 550 Diamonds For 3.99 USD',
       })
     );
 
@@ -328,7 +328,7 @@ describe('DiamondTopUpModal secure checkout contract', () => {
     render(<DiamondTopUpModal isOpen onClose={mocks.close} />);
     fireEvent.click(
       await screen.findByRole('button', {
-        name: 'Buy First Stack, 550 Diamonds For 3.99',
+        name: 'Buy First Stack, 550 Diamonds For 3.99 USD',
       })
     );
 
@@ -348,7 +348,7 @@ describe('DiamondTopUpModal secure checkout contract', () => {
     render(<DiamondTopUpModal isOpen onClose={mocks.close} />);
     fireEvent.click(
       await screen.findByRole('button', {
-        name: 'Buy First Stack, 550 Diamonds For 3.99',
+        name: 'Buy First Stack, 550 Diamonds For 3.99 USD',
       })
     );
 
@@ -363,7 +363,7 @@ describe('DiamondTopUpModal secure checkout contract', () => {
     render(<DiamondTopUpModal isOpen onClose={mocks.close} />);
     fireEvent.click(
       await screen.findByRole('button', {
-        name: 'Buy First Stack, 550 Diamonds For 3.99',
+        name: 'Buy First Stack, 550 Diamonds For 3.99 USD',
       })
     );
 
@@ -381,7 +381,7 @@ describe('DiamondTopUpModal secure checkout contract', () => {
     const { unmount } = render(<DiamondTopUpModal isOpen onClose={mocks.close} />);
     fireEvent.click(
       await screen.findByRole('button', {
-        name: 'Buy First Stack, 550 Diamonds For 3.99',
+        name: 'Buy First Stack, 550 Diamonds For 3.99 USD',
       })
     );
     await waitFor(() => expect(mocks.toast.error).toHaveBeenCalledWith('Connection Lost'));
@@ -393,7 +393,7 @@ describe('DiamondTopUpModal secure checkout contract', () => {
     render(<DiamondTopUpModal isOpen onClose={mocks.close} />);
     fireEvent.click(
       await screen.findByRole('button', {
-        name: 'Buy First Stack, 550 Diamonds For 3.99',
+        name: 'Buy First Stack, 550 Diamonds For 3.99 USD',
       })
     );
     await waitFor(() =>
@@ -413,7 +413,7 @@ describe('DiamondTopUpModal secure checkout contract', () => {
     const { unmount } = render(<DiamondTopUpModal isOpen onClose={mocks.close} />);
     fireEvent.click(
       await screen.findByRole('button', {
-        name: 'Buy First Stack, 550 Diamonds For 3.99',
+        name: 'Buy First Stack, 550 Diamonds For 3.99 USD',
       })
     );
     await waitFor(() => expect(mocks.toast.error).toHaveBeenCalledWith('Request Conflict'));
@@ -425,7 +425,7 @@ describe('DiamondTopUpModal secure checkout contract', () => {
     render(<DiamondTopUpModal isOpen onClose={mocks.close} />);
     fireEvent.click(
       await screen.findByRole('button', {
-        name: 'Buy First Stack, 550 Diamonds For 3.99',
+        name: 'Buy First Stack, 550 Diamonds For 3.99 USD',
       })
     );
     await waitFor(() =>
@@ -436,7 +436,7 @@ describe('DiamondTopUpModal secure checkout contract', () => {
   it('closes on Escape without leaving page scroll locked', async () => {
     const { unmount } = render(<DiamondTopUpModal isOpen onClose={mocks.close} />);
     await screen.findByRole('button', {
-      name: 'Buy First Stack, 550 Diamonds For 3.99',
+      name: 'Buy First Stack, 550 Diamonds For 3.99 USD',
     });
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(mocks.close).toHaveBeenCalledTimes(1);

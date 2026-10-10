@@ -41,6 +41,7 @@
  */
 
 import { readdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join, extname, resolve } from 'node:path';
 
 const ROOT = new URL('../../', import.meta.url).pathname;
@@ -63,10 +64,7 @@ const EXTS = new Set(['.ts', '.tsx', '.css', '.html', '.js']);
  * twitter:title. Those are not decoration: they are the browser tab, the Google
  * result and every shared link. Scanned explicitly now.
  */
-const HTML_FILES = [
-  'index.html',
-  'public/offline.html',
-];
+const HTML_FILES = ['index.html', 'public/offline.html'];
 /**
  * THE WHOLE ENGINE, NOT TWO FILES OF IT (2026-08-31).
  *
@@ -187,7 +185,8 @@ const fix = process.argv.includes('--fix');
  * a dash at all so ordinary regexes are untouched. Blanked, not skipped: --fix
  * reads its offsets from this same copy.
  */
-const REGEX_LITERAL = /(^|[=(,[:!&|?{;\n]|\breturn)(\s*)(\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^/\\\n[])+\/[gimsuy]*)/g;
+const REGEX_LITERAL =
+  /(^|[=(,[:!&|?{;\n]|\breturn)(\s*)(\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^/\\\n[])+\/[gimsuy]*)/g;
 
 /** Strip comments so the scan only sees code and copy. */
 function stripComments(source, isCss, isHtml) {
@@ -265,6 +264,22 @@ if (fix) {
   process.exit(0);
 }
 
+/**
+ * THE CLUB ARENA SHOWS NO DOLLAR SIGN (2026-10-09). Dan: "you are forbidden
+ * from using $ the dollar sign anywhere in the club arena. it just needs to say
+ * 100 Chip Guarantee". The dollar half of this rule is check-ui-dollar.mjs, a
+ * separate script because it reads the syntax tree (a dollar sign is code all
+ * the time; an em dash never is). It runs from HERE so every place that runs
+ * this gate runs it too: pre-push, the CI invariant guards and all-gates.sh.
+ * Both verdicts print before either fails. A throwaway UI_TEXT_SOURCE_DIR is an
+ * em dash fixture, so the dollar half is not run over it.
+ */
+const dollarStatus = SOURCE_OVERRIDE
+  ? 0
+  : (spawnSync(process.execPath, [join(ROOT, 'scripts/ci/check-ui-dollar.mjs')], {
+      stdio: 'inherit',
+    }).status ?? 1);
+
 if (offenders.length > 0) {
   console.error('\ncheck-ui-text FAILED: em dashes found in user-facing text.\n');
   console.error('Dan 2026-08-20: em dashes are forbidden in Club Arena UI copy.');
@@ -276,3 +291,4 @@ if (offenders.length > 0) {
 }
 
 console.log('check-ui-text: OK - no em dashes in UI text.');
+if (dollarStatus !== 0) process.exit(1);

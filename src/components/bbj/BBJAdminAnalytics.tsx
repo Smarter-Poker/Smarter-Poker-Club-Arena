@@ -223,7 +223,7 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
       <div className="bbj-admin__grid">
         <div className="bbj-admin__stat">
           <span className="bbj-admin__stat-label">Funded (24H)</span>
-          <span className="bbj-admin__stat-value">${money(data.contributions_24h)}</span>
+          <span className="bbj-admin__stat-value">{money(data.contributions_24h)}</span>
           <span className="bbj-admin__stat-sub">
             {Number(data.hands_24h).toLocaleString()} Qualifying Hands
           </span>
@@ -231,8 +231,8 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
 
         <div className="bbj-admin__stat">
           <span className="bbj-admin__stat-label">Funded (7D)</span>
-          <span className="bbj-admin__stat-value">${money(data.contributions_7d)}</span>
-          <span className="bbj-admin__stat-sub">&asymp; ${money(dailyFunding)}/Day</span>
+          <span className="bbj-admin__stat-value">{money(data.contributions_7d)}</span>
+          <span className="bbj-admin__stat-sub">&asymp; {money(dailyFunding)} Chips/Day</span>
         </div>
 
         {/* THE MAIN JACKPOT ON ITS OWN, falling back to the blended figure only
@@ -256,8 +256,8 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
 
         <div className="bbj-admin__stat">
           <span className="bbj-admin__stat-label">Paid Out</span>
-          <span className="bbj-admin__stat-value">${money(data.total_paid_all_time)}</span>
-          <span className="bbj-admin__stat-sub">Biggest ${money(data.biggest_hit)}</span>
+          <span className="bbj-admin__stat-value">{money(data.total_paid_all_time)}</span>
+          <span className="bbj-admin__stat-sub">Biggest {money(data.biggest_hit)} Chips</span>
         </div>
 
         <div className="bbj-admin__stat">
@@ -277,7 +277,8 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
         <div className={`bbj-admin__stat ${netPositive ? 'is-positive' : 'is-negative'}`}>
           <span className="bbj-admin__stat-label">Net Position</span>
           <span className="bbj-admin__stat-value">
-            {netPositive ? '+' : '-'}${money(Math.abs(Number(data.net_pool_position)))}
+            {netPositive ? '+' : '-'}
+            {money(Math.abs(Number(data.net_pool_position)))}
           </span>
           <span className="bbj-admin__stat-sub">Collected Minus Paid, All Time</span>
         </div>
@@ -302,10 +303,10 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
             <div className="bbj-admin__stat">
               <span className="bbj-admin__stat-label">Mini Paid</span>
               <span className="bbj-admin__stat-value">
-                ${money(Number(data.mini_paid_all_time ?? 0))}
+                {money(Number(data.mini_paid_all_time ?? 0))}
               </span>
               <span className="bbj-admin__stat-sub">
-                ${money(Number(data.mini_paid_30d ?? 0))} In 30 Days, From The Backup Pool
+                {money(Number(data.mini_paid_30d ?? 0))} Chips In 30 Days, From The Backup Pool
               </span>
             </div>
 
@@ -314,10 +315,10 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
             >
               <span className="bbj-admin__stat-label">Mini Headroom</span>
               <span className="bbj-admin__stat-value">
-                ${money(Number(data.mini_available ?? 0), 0)}
+                {money(Number(data.mini_available ?? 0), 0)}
               </span>
               <span className="bbj-admin__stat-sub">
-                Backup Above Its ${money(Number(data.mini_reserve_floor ?? 0), 0)} Floor
+                Backup Above Its {money(Number(data.mini_reserve_floor ?? 0), 0)} Chip Floor
                 {Number(data.mini_parked ?? 0) > 0
                   ? ` (${money(Number(data.mini_parked), 0)} Parked)`
                   : ''}
@@ -341,8 +342,8 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
           a flow on the jackpot page (fn_bbj_promo_facts). */}
       <div className="bbj-admin__bar">
         <div className="bbj-admin__bar-label">
-          Jackpot Banks - Main ${money(data.main_balance, 0)} / Backup $
-          {money(data.backup_balance, 0)}
+          Jackpot Banks - Main {money(data.main_balance, 0)} / Backup{' '}
+          {money(data.backup_balance, 0)} Chips
         </div>
         <div className="bbj-admin__bar-track">
           {(() => {
@@ -422,7 +423,7 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
                 <span className="bbj-admin__miss-sub">
                   {m.last_at ? `Last ${new Date(m.last_at).toLocaleDateString()}` : ''}
                   {Number(m.biggest_pot) > 0
-                    ? ` - Biggest Pot $${money(Number(m.biggest_pot), 0)}`
+                    ? ` - Biggest Pot ${money(Number(m.biggest_pot), 0)} Chips`
                     : ''}
                 </span>
                 {/* The sentence the ENGINE already wrote for the player at the

@@ -125,7 +125,7 @@ export interface WheelRunSummaryData {
 
 function prizeWorth(prize: WheelRunPrize): string {
   const v = prize.valueChips;
-  return `$${Number.isInteger(v) ? v.toLocaleString() : v.toFixed(2)}`;
+  return `${Number.isInteger(v) ? v.toLocaleString() : v.toFixed(2)} Chips`;
 }
 
 /** One screen at the end of a run: every prize, every game, one Play Game plate. */

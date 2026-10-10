@@ -77,6 +77,31 @@ describe('cashier database contract runner', () => {
     expect(config).toMatchObject({ port: 6543, password: 'not-logged' });
   });
 
+  it('certifies the same Diamond transfer postimage as the isolated writer qualification', () => {
+    const qualification = readFileSync(
+      resolve(__dirname, '../sql/run-diamond-transfer-door-and-dr16.py'),
+      'utf8'
+    );
+    const qualifiedHash = qualification.match(
+      /SELECT md5\(pg_get_functiondef\('send_wallet_diamond_transfer\(uuid,integer,text,text\)'::regprocedure\)\)"\) == '([a-f0-9]{32})'/
+    )?.[1];
+    expect(qualifiedHash).toBeDefined();
+    const pin = readPsqlFreeContract().match(
+      /'public\.send_wallet_diamond_transfer\(uuid,integer,text,text\)',[\s\S]*?'hash', '([a-f0-9]{32})'/
+    )?.[1];
+    expect(pin).toBe(qualifiedHash);
+    const proofs = JSON.parse(
+      readFileSync(resolve(__dirname, '../../scripts/ci/migration-live-proofs.json'), 'utf8')
+    ).entries;
+    const proof = proofs.find(
+      (entry: { file: string }) =>
+        entry.file === '20261010220349_deleted_players_cannot_transfer_diamonds.sql'
+    );
+    const migration = readFileSync(resolve(__dirname, '../../supabase/migrations', proof.file));
+    expect(createHash('sha256').update(migration).digest('hex')).toBe(proof.sha256);
+    expect(proof.proofs.some((sql: string) => sql.includes(`='${qualifiedHash}'`))).toBe(true);
+  });
+
   it('executes both contracts and always rolls the authenticated canary back', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     FakeClient.instances = [];

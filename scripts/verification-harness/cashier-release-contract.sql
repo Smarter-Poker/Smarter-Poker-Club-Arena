@@ -307,7 +307,9 @@ BEGIN
     jsonb_build_object(
       'signature', 'public.send_wallet_diamond_transfer(uuid,integer,text,text)',
       -- The Diamond Wallet transfer (DiamondWalletTransfer).
-      'hash', '8d5b95d8ad2a74c1ba85339168349606'
+      -- 20261010220349 adds the deletion refusal after immutable receipt replay.
+      -- Exact isolated PostgreSQL writer qualification retains both journal legs.
+      'hash', '655fd3a4fc415ef0032bb8799ee9e842'
     )
   );
 

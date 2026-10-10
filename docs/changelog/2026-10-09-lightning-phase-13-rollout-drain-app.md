@@ -27,7 +27,9 @@ off in production (`lightning_enabled` false on every Cluster).
    and `paused`. A held worker forms nothing and calls nothing (no matcher, no
    `fn_lightning_match_and_form`, no admission or wake pass) from its next pass; every
    hand already dealt plays on and settles under its own host, and nothing is
-   abandoned. Resume returns the worker to forming in the mode it was paused from.
+   abandoned. Resume returns the worker to forming in the mode it was paused from, and
+   clears the abandon backoff the pause's own voided formations built up, so forming
+   starts at once.
 2. **The drain reports and stops itself.** A draining pass reports the hands of the
    Cluster still in the air here (`handsInFlight`, and a keepalive log line). When a
    drain or reversion has none left, the worker asks the supervisor to look again

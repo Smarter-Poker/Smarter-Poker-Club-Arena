@@ -377,6 +377,7 @@ describe('discovery reads the operator modes', () => {
       formBackoffUntil: vi.fn(() => 0),
       leaseFor: vi.fn(() => ({ instance: 'x', generation: 'y' })),
       handsInFlight: vi.fn(() => inFlight),
+      clearFormBackoff: vi.fn(),
       abortCluster: vi.fn(async () => {}),
       abortAll: vi.fn(async () => {}),
     };
@@ -416,6 +417,8 @@ describe('discovery reads the operator modes', () => {
     await sup.reconcile();
     expect(w.currentHold).toBeNull();
     expect(told.at(-1)).toEqual([A, null]);
+    // The pause voided its undealt formations: resume forms at once, no backoff.
+    expect(hosting.clearFormBackoff).toHaveBeenCalledWith(A);
 
     inFlight = 2;
     mode = 'draining';

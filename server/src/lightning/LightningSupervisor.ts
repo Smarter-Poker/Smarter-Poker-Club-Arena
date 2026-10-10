@@ -514,9 +514,13 @@ export class LightningSupervisor {
       const hold = holdOf(state);
       const existing = this.workers.get(clusterId);
       if (existing) {
+        const was = existing.currentHold;
         if (!sameLightningConfig(existing.currentConfig, config)) existing.updateConfig(config);
         if (state?.hold) existing.setHold(hold);
         else existing.setDraining(state?.draining === true);
+        // A resume: the pause's own abandons are no reason to wait before forming.
+        if (was === 'paused' && existing.currentHold === null)
+          this.deps.hosting?.clearFormBackoff?.(clusterId);
         this.tellStatus(clusterId, lightningClusterStatusOf(existing.currentHold));
         continue;
       }

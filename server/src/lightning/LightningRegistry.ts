@@ -758,6 +758,15 @@ export class LightningHosting {
   }
 
   /**
+   * LIGHTNING PHASE 13: a PAUSE voids every formation not yet dealt, and each
+   * of those abandons counted towards the backoff - for a stop the operator
+   * asked for, not a fault. Resume clears it, so forming starts at once.
+   */
+  clearFormBackoff(clusterId: string): void {
+    this.abandonBackoff.delete(clusterId);
+  }
+
+  /**
    * LIGHTNING PHASE 13: this Cluster's hands still being dealt here (started
    * and not finished, whatever their state). The drain's progress report.
    */

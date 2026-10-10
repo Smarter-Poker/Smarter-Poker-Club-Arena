@@ -97,7 +97,7 @@ describe('the hand rests before the next one', () => {
     // unpaused path still waits on nothing here, so the window the player gets
     // to click Rabbit Hunt is still the rest and nothing but the rest.
     const requestedPauseGate =
-      /if \(this\.isNextHandPaused\(\)\) \{\s*if \(this\.maintenancePaused\) await this\.persistPresenceForRestart\('parked'\);\s*if \(!this\.adminPauseLock && !this\.maintenanceLock && !this\.dealingHaltLock\)\s*await this\.awaitPauseGate\(\);\s*if \(!this\.running\) break;\s*continue;\s*\}/g;
+      /if \(this\.isNextHandPaused\(\)\) \{\s*if \(this\.maintenancePaused\) await this\.persistPresenceForRestart\('parked'\);\s*if \(\s*!this\.adminPauseLock\s*&&\s*!this\.maintenanceLock\s*&&\s*!this\.dealingHaltLock\s*&&\s*!this\.operatorFloorPaused\s*\)\s*await this\.awaitPauseGate\(\);\s*if \(!this\.running\) break;\s*continue;\s*\}/g;
     expect(betweenRestAndDeal.match(boundaryGate)?.length ?? 0).toBeGreaterThanOrEqual(1);
     expect(betweenRestAndDeal.match(requestedPauseGate)).toHaveLength(1);
     expect(

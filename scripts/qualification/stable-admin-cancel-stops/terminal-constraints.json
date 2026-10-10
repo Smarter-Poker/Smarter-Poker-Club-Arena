@@ -1,0 +1,3180 @@
+[
+  {
+    "schema": "auth",
+    "table_name": "users",
+    "name": "users_email_change_confirm_status_check",
+    "type": "c",
+    "definition": "CHECK (((email_change_confirm_status >= 0) AND (email_change_confirm_status <= 2)))"
+  },
+  {
+    "schema": "auth",
+    "table_name": "users",
+    "name": "users_phone_key",
+    "type": "u",
+    "definition": "UNIQUE (phone)"
+  },
+  {
+    "schema": "auth",
+    "table_name": "users",
+    "name": "users_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "auth",
+    "table_name": "sessions",
+    "name": "sessions_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "auth",
+    "table_name": "sessions",
+    "name": "sessions_scopes_length",
+    "type": "c",
+    "definition": "CHECK ((char_length(scopes) <= 4096))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_players",
+    "name": "tournament_players_elimination_sequence_positive",
+    "type": "c",
+    "definition": "CHECK (((elimination_sequence IS NULL) OR (elimination_sequence > 0)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_players",
+    "name": "tournament_players_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_players",
+    "name": "tournament_players_status_check",
+    "type": "c",
+    "definition": "CHECK ((status = ANY (ARRAY['registered'::text, 'playing'::text, 'eliminated'::text, 'winner'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_players",
+    "name": "tournament_players_tournament_id_user_id_key",
+    "type": "u",
+    "definition": "UNIQUE (tournament_id, user_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "player_stats",
+    "name": "player_stats_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "player_stats",
+    "name": "player_stats_user_id_club_id_key",
+    "type": "u",
+    "definition": "UNIQUE (user_id, club_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "spin_bonus_pools",
+    "name": "spin_bonus_pools_balance_check",
+    "type": "c",
+    "definition": "CHECK ((balance >= ('-500'::integer)::numeric))"
+  },
+  {
+    "schema": "public",
+    "table_name": "spin_bonus_pools",
+    "name": "spin_bonus_pools_balance_non_negative",
+    "type": "c",
+    "definition": "CHECK ((balance >= (0)::numeric))"
+  },
+  {
+    "schema": "public",
+    "table_name": "spin_bonus_pools",
+    "name": "spin_bonus_pools_club_id_key",
+    "type": "u",
+    "definition": "UNIQUE (club_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "spin_bonus_pools",
+    "name": "spin_bonus_pools_owner_kind_check",
+    "type": "c",
+    "definition": "CHECK ((owner_kind = ANY (ARRAY['union'::text, 'club'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "spin_bonus_pools",
+    "name": "spin_bonus_pools_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "spin_reserve_ledger",
+    "name": "chk_amount_is_two_decimal_places",
+    "type": "c",
+    "definition": "CHECK (((amount IS NULL) OR (amount = round(amount, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "spin_reserve_ledger",
+    "name": "spin_reserve_ledger_kind_check",
+    "type": "c",
+    "definition": "CHECK ((kind = ANY (ARRAY['seed'::text, 'contribution'::text, 'jackpot_draw'::text, 'surplus_return'::text, 'adjustment'::text, 'merge'::text, 'wallet_return'::text, 'seed_return'::text, 'activation'::text, 'deactivation'::text, 'draw_reversal'::text, 'contribution_reversal'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "spin_reserve_ledger",
+    "name": "spin_reserve_ledger_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_rake_settlements",
+    "name": "tournament_rake_settlements_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (tournament_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "spin_draw_receipts",
+    "name": "spin_draw_receipts_entrants_check",
+    "type": "c",
+    "definition": "CHECK ((jsonb_array_length(entrants) = 3))"
+  },
+  {
+    "schema": "public",
+    "table_name": "spin_draw_receipts",
+    "name": "spin_draw_receipts_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (tournament_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "spin_draw_receipts",
+    "name": "spin_draw_receipts_rule_sha256_check",
+    "type": "c",
+    "definition": "CHECK ((rule_sha256 ~ '^[0-9a-f]{64}$'::text))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_entitlements",
+    "name": "tournament_refund_entitlement_tournament_id_user_id_entitle_key",
+    "type": "u",
+    "definition": "UNIQUE (tournament_id, user_id, entitlement_kind, source_ledger_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_entitlements",
+    "name": "tournament_refund_entitlements_charge_category_check",
+    "type": "c",
+    "definition": "CHECK ((charge_category = ANY (ARRAY['tournament_buyin'::text, 'rebuy'::text, 'addon'::text, 'satellite_seat'::text, 'tournament_ticket'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_entitlements",
+    "name": "tournament_refund_entitlements_check",
+    "type": "c",
+    "definition": "CHECK ((gross = ((refund_prize + refund_bounty) + refund_fee)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_entitlements",
+    "name": "tournament_refund_entitlements_check1",
+    "type": "c",
+    "definition": "CHECK (((((entitlement_kind = 'wallet_charge'::text) AND (charge_category = ANY (ARRAY['tournament_buyin'::text, 'rebuy'::text, 'addon'::text])) AND (registration_id IS NULL) AND (source_satellite_id IS NULL) AND (source_award_place IS NULL) AND (source_ticket_id IS NULL) AND (escrow_bucket = 'wallet_gross'::text) AND (evidence_kind = ANY (ARRAY['atomic_wallet_charge'::text, 'cutover_wallet_charge'::text]))) OR ((entitlement_kind = 'satellite_seat'::text) AND (charge_category = 'satellite_seat'::text) AND (registration_id IS NOT NULL) AND (source_satellite_id IS NOT NULL) AND (source_satellite_id <> tournament_id) AND (source_award_place > 0) AND (source_ticket_id IS NULL) AND (escrow_bucket = ANY (ARRAY['satellite_gross'::text, 'satellite_in'::text])) AND (evidence_kind = ANY (ARRAY['atomic_satellite_seat'::text, 'cutover_satellite_seat'::text]))) OR ((entitlement_kind = 'tournament_ticket'::text) AND (charge_category = 'tournament_ticket'::text) AND (registration_id IS NOT NULL) AND (source_satellite_id IS NOT NULL) AND (source_award_place IS NULL) AND (source_ticket_id IS NOT NULL) AND (escrow_bucket = 'ticket_gross'::text) AND (evidence_kind = 'atomic_tournament_ticket'::text))) IS TRUE))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_entitlements",
+    "name": "tournament_refund_entitlements_entitlement_kind_check",
+    "type": "c",
+    "definition": "CHECK ((entitlement_kind = ANY (ARRAY['wallet_charge'::text, 'satellite_seat'::text, 'tournament_ticket'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_entitlements",
+    "name": "tournament_refund_entitlements_escrow_bucket_check",
+    "type": "c",
+    "definition": "CHECK ((escrow_bucket = ANY (ARRAY['wallet_gross'::text, 'satellite_gross'::text, 'satellite_in'::text, 'ticket_gross'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_entitlements",
+    "name": "tournament_refund_entitlements_evidence_kind_check",
+    "type": "c",
+    "definition": "CHECK ((evidence_kind = ANY (ARRAY['atomic_wallet_charge'::text, 'cutover_wallet_charge'::text, 'atomic_satellite_seat'::text, 'cutover_satellite_seat'::text, 'atomic_tournament_ticket'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_entitlements",
+    "name": "tournament_refund_entitlements_gross_check",
+    "type": "c",
+    "definition": "CHECK ((((gross)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (gross > (0)::numeric) AND (gross = round(gross, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_entitlements",
+    "name": "tournament_refund_entitlements_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_entitlements",
+    "name": "tournament_refund_entitlements_refund_bounty_check",
+    "type": "c",
+    "definition": "CHECK ((((refund_bounty)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (refund_bounty >= (0)::numeric) AND (refund_bounty = round(refund_bounty, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_entitlements",
+    "name": "tournament_refund_entitlements_refund_fee_check",
+    "type": "c",
+    "definition": "CHECK ((((refund_fee)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (refund_fee >= (0)::numeric) AND (refund_fee = round(refund_fee, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_entitlements",
+    "name": "tournament_refund_entitlements_refund_prize_check",
+    "type": "c",
+    "definition": "CHECK ((((refund_prize)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (refund_prize >= (0)::numeric) AND (refund_prize = round(refund_prize, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_entitlements",
+    "name": "tournament_refund_entitlements_source_ledger_id_key",
+    "type": "u",
+    "definition": "UNIQUE (source_ledger_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_satellite_awards",
+    "name": "tournament_satellite_awards_amount_check",
+    "type": "c",
+    "definition": "CHECK (((amount > (0)::numeric) AND (amount = round(amount, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_satellite_awards",
+    "name": "tournament_satellite_awards_check",
+    "type": "c",
+    "definition": "CHECK (((((delivery_kind = 'seat'::text) AND (registration_id IS NOT NULL) AND (ticket_id IS NULL) AND (obligation_id IS NULL) AND (obligation_kind IS NULL) AND (payout_source = 'satellite_seat'::text)) OR ((delivery_kind = 'cash'::text) AND (registration_id IS NULL) AND (ticket_id IS NULL) AND (obligation_id IS NOT NULL) AND (obligation_kind = ANY (ARRAY['seat'::text, 'place'::text])) AND (payout_source <> 'satellite_seat'::text)) OR ((delivery_kind = 'ticket'::text) AND (registration_id IS NULL) AND (ticket_id IS NOT NULL) AND (obligation_id IS NULL) AND (obligation_kind IS NULL) AND (payout_source = 'satellite_ticket'::text))) IS TRUE))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_satellite_awards",
+    "name": "tournament_satellite_awards_delivery_kind_check",
+    "type": "c",
+    "definition": "CHECK ((delivery_kind = ANY (ARRAY['seat'::text, 'cash'::text, 'ticket'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_satellite_awards",
+    "name": "tournament_satellite_awards_idempotency_key_check",
+    "type": "c",
+    "definition": "CHECK ((length(btrim(idempotency_key)) > 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_satellite_awards",
+    "name": "tournament_satellite_awards_idempotency_key_key",
+    "type": "u",
+    "definition": "UNIQUE (idempotency_key)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_satellite_awards",
+    "name": "tournament_satellite_awards_payout_id_key",
+    "type": "u",
+    "definition": "UNIQUE (payout_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_satellite_awards",
+    "name": "tournament_satellite_awards_payout_source_check",
+    "type": "c",
+    "definition": "CHECK ((length(btrim(payout_source)) > 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_satellite_awards",
+    "name": "tournament_satellite_awards_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (tournament_id, place)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_satellite_awards",
+    "name": "tournament_satellite_awards_place_check",
+    "type": "c",
+    "definition": "CHECK ((place > 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_satellite_awards",
+    "name": "tournament_satellite_awards_registration_id_key",
+    "type": "u",
+    "definition": "UNIQUE (registration_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_satellite_awards",
+    "name": "tournament_satellite_awards_ticket_id_key",
+    "type": "u",
+    "definition": "UNIQUE (ticket_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_satellite_awards",
+    "name": "tournament_satellite_awards_tournament_id_user_id_key",
+    "type": "u",
+    "definition": "UNIQUE (tournament_id, user_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_authorizations",
+    "name": "tournament_refund_authorizations_amount_paid_before_check",
+    "type": "c",
+    "definition": "CHECK (((amount_paid_before >= (0)::numeric) AND ((amount_paid_before)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (amount_paid_before = round(amount_paid_before, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_authorizations",
+    "name": "tournament_refund_authorizations_amount_paid_now_check",
+    "type": "c",
+    "definition": "CHECK ((((amount_paid_now)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (amount_paid_now > (0)::numeric) AND (amount_paid_now = round(amount_paid_now, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_authorizations",
+    "name": "tournament_refund_authorizations_check",
+    "type": "c",
+    "definition": "CHECK ((amount_paid_now = ((refund_prize + refund_bounty) + refund_fee)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_authorizations",
+    "name": "tournament_refund_authorizations_description_check",
+    "type": "c",
+    "definition": "CHECK ((length(btrim(description)) > 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_authorizations",
+    "name": "tournament_refund_authorizations_entitlement_id_key",
+    "type": "u",
+    "definition": "UNIQUE (entitlement_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_authorizations",
+    "name": "tournament_refund_authorizations_idempotency_key_key",
+    "type": "u",
+    "definition": "UNIQUE (idempotency_key)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_authorizations",
+    "name": "tournament_refund_authorizations_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (token)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_authorizations",
+    "name": "tournament_refund_authorizations_refund_bounty_check",
+    "type": "c",
+    "definition": "CHECK ((((refund_bounty)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (refund_bounty >= (0)::numeric) AND (refund_bounty = round(refund_bounty, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_authorizations",
+    "name": "tournament_refund_authorizations_refund_fee_check",
+    "type": "c",
+    "definition": "CHECK ((((refund_fee)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (refund_fee >= (0)::numeric) AND (refund_fee = round(refund_fee, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_authorizations",
+    "name": "tournament_refund_authorizations_refund_prize_check",
+    "type": "c",
+    "definition": "CHECK ((((refund_prize)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (refund_prize >= (0)::numeric) AND (refund_prize = round(refund_prize, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_authorizations",
+    "name": "tournament_refund_authorizations_source_check",
+    "type": "c",
+    "definition": "CHECK ((length(btrim(source)) > 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_actual_start_check",
+    "type": "c",
+    "definition": "CHECK ((((start_authority = 'scheduled_clock'::text) AND (settled_at < scheduled_start_at)) OR (start_authority = ANY (ARRAY['spin_actual_start'::text, 'heads_up_sng_actual_start'::text, 'launch_release'::text, 'owner_never_seated_release'::text]))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_check",
+    "type": "c",
+    "definition": "CHECK (((array_position(entitlement_ids, NULL::uuid) IS NULL) AND (array_position(ticket_ids, NULL::uuid) IS NULL) AND (array_position(source_wallet_club_ids, NULL::uuid) IS NULL) AND (array_position(credit_ledger_ids, NULL::uuid) IS NULL) AND (array_position(wallet_transaction_ids, NULL::uuid) IS NULL) AND (array_position(fee_reversal_ids, NULL::uuid) IS NULL) AND (array_position(fee_source_rake_record_ids, NULL::uuid) IS NULL)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_check1",
+    "type": "c",
+    "definition": "CHECK ((cardinality(entitlement_ids) = cardinality(source_wallet_club_ids)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_check2",
+    "type": "c",
+    "definition": "CHECK ((cardinality(entitlement_ids) = (cardinality(ticket_ids) + cardinality(wallet_transaction_ids))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_check3",
+    "type": "c",
+    "definition": "CHECK ((cardinality(credit_ledger_ids) = cardinality(wallet_transaction_ids)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_check4",
+    "type": "c",
+    "definition": "CHECK (((returned_ticket_value = (0)::numeric) = (cardinality(ticket_ids) = 0)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_check5",
+    "type": "c",
+    "definition": "CHECK (((refunded_chips = (0)::numeric) = (cardinality(wallet_transaction_ids) = 0)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_check6",
+    "type": "c",
+    "definition": "CHECK (((fees_reversed = (0)::numeric) = (cardinality(fee_reversal_ids) = 0)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_check7",
+    "type": "c",
+    "definition": "CHECK (((fees_reversed = (0)::numeric) = (cardinality(fee_source_rake_record_ids) = 0)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_check8",
+    "type": "c",
+    "definition": "CHECK ((((source_table_id IS NULL) AND (seat_number IS NULL)) OR ((source_table_id IS NOT NULL) AND (seat_number IS NOT NULL))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_fees_reversed_check",
+    "type": "c",
+    "definition": "CHECK (((fees_reversed >= (0)::numeric) AND ((fees_reversed)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (fees_reversed = round(fees_reversed, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (registration_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_refunded_chips_check",
+    "type": "c",
+    "definition": "CHECK (((refunded_chips >= (0)::numeric) AND ((refunded_chips)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (refunded_chips = round(refunded_chips, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_request_id_key",
+    "type": "u",
+    "definition": "UNIQUE (request_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_returned_ticket_value_check",
+    "type": "c",
+    "definition": "CHECK (((returned_ticket_value >= (0)::numeric) AND ((returned_ticket_value)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (returned_ticket_value = round(returned_ticket_value, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "vip_points",
+    "name": "vip_points_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (user_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "vip_points_carry",
+    "name": "vip_points_carry_carry_check",
+    "type": "c",
+    "definition": "CHECK (((carry >= (0)::numeric) AND (carry < (1)::numeric)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "vip_points_carry",
+    "name": "vip_points_carry_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (user_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_custody",
+    "name": "poker_diamond_custody_balance_check",
+    "type": "c",
+    "definition": "CHECK (((balance >= 0) AND (balance <= 2147483647)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_custody",
+    "name": "poker_diamond_custody_check",
+    "type": "c",
+    "definition": "CHECK (((state = 'released'::text) = (released_at IS NOT NULL)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_custody",
+    "name": "poker_diamond_custody_check1",
+    "type": "c",
+    "definition": "CHECK (((state <> 'released'::text) OR (balance = 0)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_custody",
+    "name": "poker_diamond_custody_entry_key_check",
+    "type": "c",
+    "definition": "CHECK (((length(entry_key) >= 1) AND (length(entry_key) <= 160)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_custody",
+    "name": "poker_diamond_custody_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_custody",
+    "name": "poker_diamond_custody_purpose_check",
+    "type": "c",
+    "definition": "CHECK ((purpose = ANY (ARRAY['cash_seat'::text, 'tournament_entry'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_custody",
+    "name": "poker_diamond_custody_state_check",
+    "type": "c",
+    "definition": "CHECK ((state = ANY (ARRAY['reserved'::text, 'active'::text, 'released'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_custody",
+    "name": "poker_diamond_custody_user_id_purpose_target_id_entry_key_key",
+    "type": "u",
+    "definition": "UNIQUE (user_id, purpose, target_id, entry_key)"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_custody",
+    "name": "poker_diamond_seat_identity_complete",
+    "type": "c",
+    "definition": "CHECK ((((seat_id IS NULL) AND (seat_joined_at IS NULL) AND (occupancy_id IS NULL)) OR ((purpose = 'cash_seat'::text) AND (seat_id IS NOT NULL) AND (seat_joined_at IS NOT NULL) AND (occupancy_id IS NOT NULL))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_lot_reservations",
+    "name": "poker_diamond_lot_reservations_amount_check",
+    "type": "c",
+    "definition": "CHECK ((amount > 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_lot_reservations",
+    "name": "poker_diamond_lot_reservations_check",
+    "type": "c",
+    "definition": "CHECK (((consumed >= 0) AND (consumed <= amount)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_lot_reservations",
+    "name": "poker_diamond_lot_reservations_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (custody_id, lot_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_obligations",
+    "name": "tournament_obligations_amount_owed_check",
+    "type": "c",
+    "definition": "CHECK ((amount_owed >= (0)::numeric))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_obligations",
+    "name": "tournament_obligations_check",
+    "type": "c",
+    "definition": "CHECK (((amount_paid >= (0)::numeric) AND (amount_paid <= amount_owed)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_obligations",
+    "name": "tournament_obligations_check1",
+    "type": "c",
+    "definition": "CHECK (((place IS NOT NULL) OR (user_id IS NOT NULL)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_obligations",
+    "name": "tournament_obligations_kind_check",
+    "type": "c",
+    "definition": "CHECK ((kind = ANY (ARRAY['place'::text, 'bounty'::text, 'bounty_residual'::text, 'mystery_bounty'::text, 'refund'::text, 'seat'::text, 'satellite_remainder'::text, 'bubble_protection'::text, 'final_table_deal'::text, 'late_reg_adjustment'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_obligations",
+    "name": "tournament_obligations_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "agent_commission_settlements",
+    "name": "agent_commission_settlements_amount_check",
+    "type": "c",
+    "definition": "CHECK (((amount >= (0)::numeric) AND (amount = round(amount, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "agent_commission_settlements",
+    "name": "agent_commission_settlements_check",
+    "type": "c",
+    "definition": "CHECK ((period_end > period_start))"
+  },
+  {
+    "schema": "public",
+    "table_name": "agent_commission_settlements",
+    "name": "agent_commission_settlements_club_id_user_id_period_start_p_key",
+    "type": "u",
+    "definition": "UNIQUE (club_id, user_id, period_start, period_end)"
+  },
+  {
+    "schema": "public",
+    "table_name": "agent_commission_settlements",
+    "name": "agent_commission_settlements_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "agent_commission_settlements",
+    "name": "chk_amount_is_two_decimal_places",
+    "type": "c",
+    "definition": "CHECK (((amount IS NULL) OR (amount = round(amount, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "club_members",
+    "name": "chk_held_chips_is_two_decimal_places",
+    "type": "c",
+    "definition": "CHECK (((held_chips IS NULL) OR (held_chips = round(held_chips, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "club_members",
+    "name": "club_members_bot_house_only",
+    "type": "c",
+    "definition": "CHECK (((NOT COALESCE(is_bot, false)) OR fn_ca_house_board_allows_automation(club_id)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "club_members",
+    "name": "club_members_chip_balance_nonneg",
+    "type": "c",
+    "definition": "CHECK ((chip_balance >= (0)::numeric))"
+  },
+  {
+    "schema": "public",
+    "table_name": "club_members",
+    "name": "club_members_membership_lifecycle_check",
+    "type": "c",
+    "definition": "CHECK ((membership_lifecycle_status = ANY (ARRAY['active'::text, 'departed'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "club_members",
+    "name": "club_members_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (club_id, user_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "club_members",
+    "name": "club_members_promo_balance_nonneg",
+    "type": "c",
+    "definition": "CHECK ((promo_balance >= (0)::numeric))"
+  },
+  {
+    "schema": "public",
+    "table_name": "club_members",
+    "name": "club_members_role_check",
+    "type": "c",
+    "definition": "CHECK ((role = ANY (ARRAY['owner'::text, 'co_owner'::text, 'admin'::text, 'super_agent'::text, 'agent'::text, 'sub_agent'::text, 'player'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "users",
+    "name": "users_email_key",
+    "type": "u",
+    "definition": "UNIQUE (email)"
+  },
+  {
+    "schema": "public",
+    "table_name": "users",
+    "name": "users_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "users",
+    "name": "users_username_key",
+    "type": "u",
+    "definition": "UNIQUE (username)"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_cash_bank_receipts",
+    "name": "accounting_cash_bank_receipts_amount_check",
+    "type": "c",
+    "definition": "CHECK (((amount > (0)::numeric) AND (amount = round(amount, 2)) AND ((amount)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text]))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_cash_bank_receipts",
+    "name": "accounting_cash_bank_receipts_check",
+    "type": "c",
+    "definition": "CHECK ((((union_id IS NOT NULL) AND (union_transaction_id IS NOT NULL) AND (club_ledger_id IS NULL)) OR ((union_id IS NULL) AND (union_transaction_id IS NULL) AND (club_ledger_id IS NOT NULL))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_cash_bank_receipts",
+    "name": "accounting_cash_bank_receipts_club_ledger_id_key",
+    "type": "u",
+    "definition": "UNIQUE (club_ledger_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_cash_bank_receipts",
+    "name": "accounting_cash_bank_receipts_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (rake_record_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_cash_bank_receipts",
+    "name": "accounting_cash_bank_receipts_union_transaction_id_key",
+    "type": "u",
+    "definition": "UNIQUE (union_transaction_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_period_recompute_requests",
+    "name": "accounting_period_recompute_r_club_id_period_start_period_e_key",
+    "type": "u",
+    "definition": "UNIQUE (club_id, period_start, period_end)"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_period_recompute_requests",
+    "name": "accounting_period_recompute_requests_check",
+    "type": "c",
+    "definition": "CHECK (((EXTRACT(isodow FROM period_start) = (1)::numeric) AND (period_end = (period_start + 6))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_period_recompute_requests",
+    "name": "accounting_period_recompute_requests_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_period_recompute_requests",
+    "name": "accounting_period_recompute_requests_status_check",
+    "type": "c",
+    "definition": "CHECK ((status = ANY (ARRAY['pending'::text, 'blocked'::text, 'complete'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_routed_settlement_runs",
+    "name": "accounting_routed_run_one_scope",
+    "type": "c",
+    "definition": "CHECK ((num_nonnulls(union_id, standalone_club_id) = 1))"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_routed_settlement_runs",
+    "name": "accounting_routed_settlement_runs_check",
+    "type": "c",
+    "definition": "CHECK ((period_start < period_end))"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_routed_settlement_runs",
+    "name": "accounting_routed_settlement_runs_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (scope_kind, scope_id, period_start, period_end, round_no)"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_routed_settlement_runs",
+    "name": "accounting_routed_settlement_runs_round_no_check",
+    "type": "c",
+    "definition": "CHECK ((round_no = ANY (ARRAY[2, 3])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_routed_settlement_runs",
+    "name": "accounting_routed_settlement_runs_routing_version_check",
+    "type": "c",
+    "definition": "CHECK ((routing_version = 3))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_guarantee_overlays",
+    "name": "tournament_guarantee_overlays_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (tournament_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_tournament_fee_cutover",
+    "name": "accounting_tournament_fee_cutover_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (singleton)"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_tournament_fee_cutover",
+    "name": "accounting_tournament_fee_cutover_singleton_check",
+    "type": "c",
+    "definition": "CHECK (singleton)"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_tournament_fee_batches",
+    "name": "accounting_tournament_fee_batches_check",
+    "type": "c",
+    "definition": "CHECK (((status = 'legacy_unverified'::text) OR (jsonb_typeof(source_manifest) = 'object'::text)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_tournament_fee_batches",
+    "name": "accounting_tournament_fee_batches_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (rake_record_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_tournament_fee_batches",
+    "name": "accounting_tournament_fee_batches_rake_amount_check",
+    "type": "c",
+    "definition": "CHECK (((rake_amount > (0)::numeric) AND (rake_amount = round(rake_amount, 2)) AND ((rake_amount)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text]))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_tournament_fee_batches",
+    "name": "accounting_tournament_fee_batches_source_version_check",
+    "type": "c",
+    "definition": "CHECK ((source_version = 2))"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_tournament_fee_batches",
+    "name": "accounting_tournament_fee_batches_status_check",
+    "type": "c",
+    "definition": "CHECK ((status = ANY (ARRAY['captured'::text, 'legacy_unverified'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_tournament_fee_sources",
+    "name": "accounting_tournament_fee_sources_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_tournament_fee_sources",
+    "name": "accounting_tournament_fee_sources_rake_credit_check",
+    "type": "c",
+    "definition": "CHECK (((rake_credit >= (0)::numeric) AND (rake_credit = round(rake_credit, 2)) AND ((rake_credit)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text]))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_tournament_fee_sources",
+    "name": "accounting_tournament_fee_sources_rake_record_id_player_id_key",
+    "type": "u",
+    "definition": "UNIQUE (rake_record_id, player_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_tournament_fee_sources",
+    "name": "accounting_tournament_fee_sources_source_entitlement_id_key",
+    "type": "u",
+    "definition": "UNIQUE (source_entitlement_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_tournament_recognized_sources",
+    "name": "accounting_tournament_recognized_sources_disposition_check",
+    "type": "c",
+    "definition": "CHECK ((disposition = ANY (ARRAY['earned'::text, 'refunded'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_tournament_recognized_sources",
+    "name": "accounting_tournament_recognized_sources_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (source_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_tournament_recognized_sources",
+    "name": "accounting_tournament_recognized_sources_rake_credit_check",
+    "type": "c",
+    "definition": "CHECK (((rake_credit >= (0)::numeric) AND (rake_credit = round(rake_credit, 2)) AND ((rake_credit)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text]))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_tournament_fee_recognitions",
+    "name": "accounting_tournament_fee_recog_union_wallet_transaction_id_key",
+    "type": "u",
+    "definition": "UNIQUE (union_wallet_transaction_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_tournament_fee_recognitions",
+    "name": "accounting_tournament_fee_recognitions_bank_journal_id_key",
+    "type": "u",
+    "definition": "UNIQUE (bank_journal_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_tournament_fee_recognitions",
+    "name": "accounting_tournament_fee_recognitions_check",
+    "type": "c",
+    "definition": "CHECK (((net_rake = (0)::numeric) OR (bank_club_id IS NOT NULL)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_tournament_fee_recognitions",
+    "name": "accounting_tournament_fee_recognitions_check1",
+    "type": "c",
+    "definition": "CHECK ((((net_rake = (0)::numeric) AND (union_wallet_transaction_id IS NULL) AND (bank_journal_id IS NULL)) OR ((net_rake > (0)::numeric) AND ((((union_wallet_transaction_id IS NOT NULL))::integer + ((bank_journal_id IS NOT NULL))::integer) = 1))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_tournament_fee_recognitions",
+    "name": "accounting_tournament_fee_recognitions_net_rake_check",
+    "type": "c",
+    "definition": "CHECK (((net_rake >= (0)::numeric) AND (net_rake = round(net_rake, 2)) AND ((net_rake)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text]))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_tournament_fee_recognitions",
+    "name": "accounting_tournament_fee_recognitions_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (tournament_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_tournament_fee_recognitions",
+    "name": "accounting_tournament_fee_recognitions_status_check",
+    "type": "c",
+    "definition": "CHECK ((status = ANY (ARRAY['recognized'::text, 'cancelled'::text, 'banked_accrual_deferred'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "rake_records",
+    "name": "chk_rake_amount_is_two_decimal_places",
+    "type": "c",
+    "definition": "CHECK (((rake_amount IS NULL) OR (rake_amount = round(rake_amount, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "rake_records",
+    "name": "ck_whole_cents",
+    "type": "c",
+    "definition": "CHECK (((created_at < '2026-09-07 22:00:00+00'::timestamp with time zone) OR ((rake_amount = round(rake_amount, 2)) AND (bbj_contribution = round(bbj_contribution, 2))))) NOT VALID"
+  },
+  {
+    "schema": "public",
+    "table_name": "rake_records",
+    "name": "rake_records_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "rake_records",
+    "name": "rake_records_rake_method_check",
+    "type": "c",
+    "definition": "CHECK ((rake_method = ANY (ARRAY['DEALT_EQUAL'::text, 'WEIGHTED_CONTRIBUTED'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_agreement_history",
+    "name": "accounting_agreement_history_check",
+    "type": "c",
+    "definition": "CHECK (((before_terms IS NOT NULL) OR (after_terms IS NOT NULL)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_agreement_history",
+    "name": "accounting_agreement_history_entity_type_check",
+    "type": "c",
+    "definition": "CHECK ((entity_type = ANY (ARRAY['agents'::text, 'club_members'::text, 'union_clubs'::text, 'unions'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_agreement_history",
+    "name": "accounting_agreement_history_event_type_check",
+    "type": "c",
+    "definition": "CHECK ((event_type = ANY (ARRAY['baseline'::text, 'INSERT'::text, 'UPDATE'::text, 'DELETE'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_agreement_history",
+    "name": "accounting_agreement_history_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_agreement_history",
+    "name": "accounting_agreement_history_scope_check",
+    "type": "c",
+    "definition": "CHECK ((((entity_type = 'unions'::text) AND (union_id IS NOT NULL) AND (club_id IS NULL) AND (subject_user_id IS NULL) AND (entity_key = (union_id)::text)) OR ((entity_type <> 'unions'::text) AND (club_id IS NOT NULL) AND (union_id IS NULL))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_payout_freeze",
+    "name": "ca_payout_freeze_clear_after_open",
+    "type": "c",
+    "definition": "CHECK (((cleared_at IS NULL) OR (cleared_at >= opened_at)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_payout_freeze",
+    "name": "ca_payout_freeze_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_payout_freeze",
+    "name": "ca_payout_freeze_reason_check",
+    "type": "c",
+    "definition": "CHECK ((length(btrim(reason)) >= 10))"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_payout_freeze",
+    "name": "ca_payout_freeze_scope_check",
+    "type": "c",
+    "definition": "CHECK ((scope = ANY (ARRAY['tournament_payouts'::text, 'bbj_payouts'::text, 'diamond_issuance'::text, 'diamond_tournament_payouts'::text, 'wheel'::text, 'plinko'::text, 'crash'::text, 'crossing'::text, 'mines'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_payouts",
+    "name": "chk_prize_pool_is_two_decimal_places",
+    "type": "c",
+    "definition": "CHECK (((prize_pool IS NULL) OR (prize_pool = round(prize_pool, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_payouts",
+    "name": "tournament_payouts_amount_check",
+    "type": "c",
+    "definition": "CHECK (((amount >= (0)::numeric) OR (source = 'clawback'::text)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_payouts",
+    "name": "tournament_payouts_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_payouts",
+    "name": "tournament_payouts_source_check",
+    "type": "c",
+    "definition": "CHECK ((source = ANY (ARRAY['structure'::text, 'reconcile'::text, 'hu_shortfall'::text, 'bounty'::text, 'bounty_residual'::text, 'own_bounty'::text, 'late_reg_adjustment'::text, 'clawback'::text, 'final_table_deal'::text, 'mystery_bounty'::text, 'mystery_bounty_residual'::text, 'spin_backpay'::text, 'overlay_backpay'::text, 'bubble_protection'::text, 'satellite_remainder'::text, 'satellite_seat'::text, 'satellite_ticket'::text, 'finish_position_correction'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "clubs",
+    "name": "clubs_asset_known",
+    "type": "c",
+    "definition": "CHECK ((asset = ANY (ARRAY['chips'::text, 'diamonds'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "clubs",
+    "name": "clubs_chip_pool_nonneg",
+    "type": "c",
+    "definition": "CHECK ((chip_pool >= (0)::numeric))"
+  },
+  {
+    "schema": "public",
+    "table_name": "clubs",
+    "name": "clubs_chip_treasury_nonneg",
+    "type": "c",
+    "definition": "CHECK ((chip_treasury >= (0)::numeric))"
+  },
+  {
+    "schema": "public",
+    "table_name": "clubs",
+    "name": "clubs_club_id_key",
+    "type": "u",
+    "definition": "UNIQUE (club_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "clubs",
+    "name": "clubs_default_rake_percent_range",
+    "type": "c",
+    "definition": "CHECK (((default_rake_percent IS NULL) OR (default_rake_percent = ('-1'::integer)::numeric) OR ((default_rake_percent >= (0)::numeric) AND (default_rake_percent <= (10)::numeric)))) NOT VALID"
+  },
+  {
+    "schema": "public",
+    "table_name": "clubs",
+    "name": "clubs_description_character_limit",
+    "type": "c",
+    "definition": "CHECK ((char_length(COALESCE(description, ''::text)) <= 500))"
+  },
+  {
+    "schema": "public",
+    "table_name": "clubs",
+    "name": "clubs_insurance_balance_nonneg",
+    "type": "c",
+    "definition": "CHECK ((insurance_balance >= (0)::numeric))"
+  },
+  {
+    "schema": "public",
+    "table_name": "clubs",
+    "name": "clubs_lifecycle_status_check",
+    "type": "c",
+    "definition": "CHECK ((lifecycle_status = ANY (ARRAY['active'::text, 'retired'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "clubs",
+    "name": "clubs_lobby_message_character_limit",
+    "type": "c",
+    "definition": "CHECK ((char_length(COALESCE(lobby_message, ''::text)) <= 240))"
+  },
+  {
+    "schema": "public",
+    "table_name": "clubs",
+    "name": "clubs_message_revision_positive",
+    "type": "c",
+    "definition": "CHECK ((message_revision > 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "clubs",
+    "name": "clubs_name_not_blank",
+    "type": "c",
+    "definition": "CHECK ((btrim(name) <> ''::text))"
+  },
+  {
+    "schema": "public",
+    "table_name": "clubs",
+    "name": "clubs_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "clubs",
+    "name": "clubs_promo_balance_nonneg",
+    "type": "c",
+    "definition": "CHECK ((promo_balance >= (0)::numeric))"
+  },
+  {
+    "schema": "public",
+    "table_name": "clubs",
+    "name": "clubs_rake_cap_range",
+    "type": "c",
+    "definition": "CHECK (((rake_cap IS NULL) OR (rake_cap = ('-1'::integer)::numeric) OR ((rake_cap >= (0)::numeric) AND (rake_cap <= (10)::numeric)))) NOT VALID"
+  },
+  {
+    "schema": "public",
+    "table_name": "clubs",
+    "name": "clubs_tagline_character_limit",
+    "type": "c",
+    "definition": "CHECK ((char_length(COALESCE(tagline, ''::text)) <= 72))"
+  },
+  {
+    "schema": "public",
+    "table_name": "clubs",
+    "name": "clubs_tagline_length",
+    "type": "c",
+    "definition": "CHECK (((tagline IS NULL) OR (char_length(tagline) <= 72)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "clubs",
+    "name": "poker_arena_diamond_identity",
+    "type": "c",
+    "definition": "CHECK ((((asset = 'chips'::text) AND (NOT is_platform)) OR ((asset = 'diamonds'::text) AND is_platform AND (union_id IS NULL) AND (NOT COALESCE(is_union, false)) AND (COALESCE(chip_treasury, (0)::numeric) = (0)::numeric) AND (COALESCE(chip_pool, (0)::numeric) = (0)::numeric) AND (COALESCE(promo_balance, (0)::numeric) = (0)::numeric) AND (COALESCE(insurance_balance, (0)::numeric) = (0)::numeric))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "chip_transactions",
+    "name": "chip_transactions_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "agents",
+    "name": "agents_agent_wallet_balance_nonneg",
+    "type": "c",
+    "definition": "CHECK ((agent_wallet_balance >= (0)::numeric))"
+  },
+  {
+    "schema": "public",
+    "table_name": "agents",
+    "name": "agents_club_id_user_id_key",
+    "type": "u",
+    "definition": "UNIQUE (club_id, user_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "agents",
+    "name": "agents_commission_rate_check",
+    "type": "c",
+    "definition": "CHECK (((commission_rate >= (0)::numeric) AND (commission_rate <= 0.70)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "agents",
+    "name": "agents_credit_control_revision_nonnegative",
+    "type": "c",
+    "definition": "CHECK ((credit_control_revision >= 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "agents",
+    "name": "agents_credit_used_check",
+    "type": "c",
+    "definition": "CHECK ((credit_used >= (0)::numeric))"
+  },
+  {
+    "schema": "public",
+    "table_name": "agents",
+    "name": "agents_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "agents",
+    "name": "agents_player_rakeback_rate_check",
+    "type": "c",
+    "definition": "CHECK (((player_rakeback_rate >= (0)::numeric) AND (player_rakeback_rate <= 0.50)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "agents",
+    "name": "agents_promo_wallet_balance_nonneg",
+    "type": "c",
+    "definition": "CHECK ((promo_wallet_balance >= (0)::numeric))"
+  },
+  {
+    "schema": "public",
+    "table_name": "agents",
+    "name": "agents_role_check",
+    "type": "c",
+    "definition": "CHECK ((role = ANY (ARRAY['super_agent'::text, 'agent'::text, 'sub_agent'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "agents",
+    "name": "agents_status_check",
+    "type": "c",
+    "definition": "CHECK ((status = ANY (ARRAY['active'::text, 'suspended'::text, 'frozen'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "agents",
+    "name": "check_credit",
+    "type": "c",
+    "definition": "CHECK (((credit_used <= credit_limit) OR (is_prepaid = true)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "agents",
+    "name": "chk_player_wallet_balance_is_two_decimal_places",
+    "type": "c",
+    "definition": "CHECK (((player_wallet_balance IS NULL) OR (player_wallet_balance = round(player_wallet_balance, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "unions",
+    "name": "chk_chip_balance_is_two_decimal_places",
+    "type": "c",
+    "definition": "CHECK (((chip_balance IS NULL) OR (chip_balance = round(chip_balance, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "unions",
+    "name": "chk_rake_wallet_is_two_decimal_places",
+    "type": "c",
+    "definition": "CHECK (((rake_wallet IS NULL) OR (rake_wallet = round(rake_wallet, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "unions",
+    "name": "unions_code_unique",
+    "type": "u",
+    "definition": "UNIQUE (code)"
+  },
+  {
+    "schema": "public",
+    "table_name": "unions",
+    "name": "unions_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "union_admins",
+    "name": "union_admins_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "union_admins",
+    "name": "union_admins_role_check",
+    "type": "c",
+    "definition": "CHECK ((role = ANY (ARRAY['union_lead'::text, 'union_admin'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "union_admins",
+    "name": "union_admins_union_id_user_id_key",
+    "type": "u",
+    "definition": "UNIQUE (union_id, user_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_mint_ledger",
+    "name": "ca_mint_ledger_action_check",
+    "type": "c",
+    "definition": "CHECK ((action = ANY (ARRAY['mint'::text, 'burn'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_mint_ledger",
+    "name": "ca_mint_ledger_amount_check",
+    "type": "c",
+    "definition": "CHECK ((amount > (0)::numeric))"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_mint_ledger",
+    "name": "ca_mint_ledger_asset_check",
+    "type": "c",
+    "definition": "CHECK ((asset = ANY (ARRAY['chips'::text, 'diamonds'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_mint_ledger",
+    "name": "ca_mint_ledger_holder_type_check",
+    "type": "c",
+    "definition": "CHECK ((holder_type = ANY (ARRAY['club'::text, 'union'::text, 'player'::text, 'house'::text, 'circulation'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_mint_ledger",
+    "name": "ca_mint_ledger_op_id_key",
+    "type": "u",
+    "definition": "UNIQUE (op_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_mint_ledger",
+    "name": "ca_mint_ledger_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_mint_ledger",
+    "name": "ca_mint_ledger_reason_check",
+    "type": "c",
+    "definition": "CHECK ((length(btrim(reason)) >= 10))"
+  },
+  {
+    "schema": "public",
+    "table_name": "cashout_requests",
+    "name": "cashout_requests_amount_check",
+    "type": "c",
+    "definition": "CHECK ((amount > (0)::numeric))"
+  },
+  {
+    "schema": "public",
+    "table_name": "cashout_requests",
+    "name": "cashout_requests_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "cashout_requests",
+    "name": "cashout_requests_status_check",
+    "type": "c",
+    "definition": "CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text, 'expired'::text, 'cancelled'::text, 'cancelling'::text, 'completed'::text, 'completing'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "vip_points_ledger",
+    "name": "vip_points_ledger_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "vip_points_ledger",
+    "name": "vip_points_ledger_user_id_source_type_source_id_key",
+    "type": "u",
+    "definition": "UNIQUE (user_id, source_type, source_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "agent_commissions",
+    "name": "agent_commissions_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "agent_commissions",
+    "name": "chk_amount_is_two_decimal_places",
+    "type": "c",
+    "definition": "CHECK (((amount IS NULL) OR (amount = round(amount, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "agent_commissions",
+    "name": "ck_whole_cents",
+    "type": "c",
+    "definition": "CHECK (((created_at < '2026-09-07 22:00:00+00'::timestamp with time zone) OR (amount = round(amount, 2)))) NOT VALID"
+  },
+  {
+    "schema": "public",
+    "table_name": "table_seats",
+    "name": "active_seat_requires_game_scope",
+    "type": "c",
+    "definition": "CHECK ((((left_at IS NULL) AND (active_game_scope IS NOT NULL) AND (user_id IS NOT NULL) AND (table_id IS NOT NULL)) OR ((left_at IS NOT NULL) AND (active_game_scope IS NULL))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "table_seats",
+    "name": "active_seat_requires_open_parent",
+    "type": "c",
+    "definition": "CHECK ((((left_at IS NULL) AND (active_parent_key IS NOT NULL) AND (active_parent_key <> 'closed'::text)) OR ((left_at IS NOT NULL) AND (active_parent_key IS NULL))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "table_seats",
+    "name": "one_committed_seat_per_game_player",
+    "type": "u",
+    "definition": "UNIQUE (user_id, active_game_scope) DEFERRABLE INITIALLY DEFERRED"
+  },
+  {
+    "schema": "public",
+    "table_name": "table_seats",
+    "name": "table_seats_entry_hold_check",
+    "type": "c",
+    "definition": "CHECK (((entry_hold IS NULL) OR (entry_hold = ANY (ARRAY['waiting'::text, 'posting'::text, 'moved'::text]))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "table_seats",
+    "name": "table_seats_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "table_seats",
+    "name": "table_seats_seat_number_check",
+    "type": "c",
+    "definition": "CHECK (((seat_number >= 1) AND (seat_number <= 10)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "table_seats",
+    "name": "table_seats_stack_nonneg",
+    "type": "c",
+    "definition": "CHECK ((stack >= (0)::numeric))"
+  },
+  {
+    "schema": "public",
+    "table_name": "table_seats",
+    "name": "table_seats_table_id_seat_number_key",
+    "type": "u",
+    "definition": "UNIQUE (table_id, seat_number)"
+  },
+  {
+    "schema": "public",
+    "table_name": "admin_audit_log",
+    "name": "admin_audit_log_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "rakeback_stats_applied",
+    "name": "rakeback_stats_applied_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (rake_record_id, user_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_launch_receipts",
+    "name": "tournament_launch_receipts_launch_id_key",
+    "type": "u",
+    "definition": "UNIQUE (launch_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_launch_receipts",
+    "name": "tournament_launch_receipts_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (tournament_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_launch_receipts",
+    "name": "tournament_launch_receipts_supply_version_check",
+    "type": "c",
+    "definition": "CHECK ((supply_version = 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_spin_cancellation_unwinds",
+    "name": "tournament_spin_cancellation__contribution_reversal_journal_key",
+    "type": "u",
+    "definition": "UNIQUE (contribution_reversal_journal_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_spin_cancellation_unwinds",
+    "name": "tournament_spin_cancellation_unwi_original_entry_journal_id_key",
+    "type": "u",
+    "definition": "UNIQUE (original_entry_journal_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_spin_cancellation_unwinds",
+    "name": "tournament_spin_cancellation_unwin_contribution_reversal_id_key",
+    "type": "u",
+    "definition": "UNIQUE (contribution_reversal_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_spin_cancellation_unwinds",
+    "name": "tournament_spin_cancellation_unwin_draw_reversal_journal_id_key",
+    "type": "u",
+    "definition": "UNIQUE (draw_reversal_journal_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_spin_cancellation_unwinds",
+    "name": "tournament_spin_cancellation_unwin_original_contribution_id_key",
+    "type": "u",
+    "definition": "UNIQUE (original_contribution_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_spin_cancellation_unwinds",
+    "name": "tournament_spin_cancellation_unwin_original_draw_journal_id_key",
+    "type": "u",
+    "definition": "UNIQUE (original_draw_journal_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_spin_cancellation_unwinds",
+    "name": "tournament_spin_cancellation_unwinds_check",
+    "type": "c",
+    "definition": "CHECK ((((pool_balance_before)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND ((pool_balance_after)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (pool_balance_before >= (0)::numeric) AND (pool_balance_after >= (0)::numeric)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_spin_cancellation_unwinds",
+    "name": "tournament_spin_cancellation_unwinds_check1",
+    "type": "c",
+    "definition": "CHECK ((pool_balance_after = round(((pool_balance_before + draw_amount) - contribution_amount), 2)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_spin_cancellation_unwinds",
+    "name": "tournament_spin_cancellation_unwinds_check2",
+    "type": "c",
+    "definition": "CHECK ((((draw_amount = (0)::numeric) AND (original_draw_id IS NULL) AND (original_draw_journal_id IS NULL) AND (draw_reversal_id IS NULL) AND (draw_reversal_journal_id IS NULL)) OR ((draw_amount > (0)::numeric) AND (original_draw_id IS NOT NULL) AND (original_draw_journal_id IS NOT NULL) AND (draw_reversal_id IS NOT NULL) AND (draw_reversal_journal_id IS NOT NULL))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_spin_cancellation_unwinds",
+    "name": "tournament_spin_cancellation_unwinds_contribution_amount_check",
+    "type": "c",
+    "definition": "CHECK ((((contribution_amount)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (contribution_amount > (0)::numeric) AND (contribution_amount = round(contribution_amount, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_spin_cancellation_unwinds",
+    "name": "tournament_spin_cancellation_unwinds_draw_amount_check",
+    "type": "c",
+    "definition": "CHECK ((((draw_amount)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (draw_amount >= (0)::numeric) AND (draw_amount = round(draw_amount, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_spin_cancellation_unwinds",
+    "name": "tournament_spin_cancellation_unwinds_draw_reversal_id_key",
+    "type": "u",
+    "definition": "UNIQUE (draw_reversal_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_spin_cancellation_unwinds",
+    "name": "tournament_spin_cancellation_unwinds_original_draw_id_key",
+    "type": "u",
+    "definition": "UNIQUE (original_draw_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_spin_cancellation_unwinds",
+    "name": "tournament_spin_cancellation_unwinds_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (tournament_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_rece_zero_refund_registration_ids_check",
+    "type": "c",
+    "definition": "CHECK ((array_position(zero_refund_registration_ids, NULL::uuid) IS NULL))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipt_refunded_registration_ids_check",
+    "type": "c",
+    "definition": "CHECK ((array_position(refunded_registration_ids, NULL::uuid) IS NULL))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check",
+    "type": "c",
+    "definition": "CHECK ((((fees_reversed)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (fees_reversed >= (0)::numeric) AND (fees_reversed = round(fees_reversed, 2)) AND (fees_reversed <= (total_refunded + total_ticket_returned))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check1",
+    "type": "c",
+    "definition": "CHECK ((source_player_count = cardinality(source_player_ids)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check10",
+    "type": "c",
+    "definition": "CHECK ((released_seat_count = cardinality(released_seat_ids)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check11",
+    "type": "c",
+    "definition": "CHECK ((released_seat_ids <@ source_seat_ids))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check12",
+    "type": "c",
+    "definition": "CHECK ((((total_rake_before)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND ((total_rake_after)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (total_rake_before >= (0)::numeric) AND (total_rake_after = (0)::numeric) AND (total_rake_before = fees_reversed)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check13",
+    "type": "c",
+    "definition": "CHECK ((escrow_closed_at = settled_at))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check14",
+    "type": "c",
+    "definition": "CHECK (((spin_unwind_tournament_id IS NULL) OR (spin_unwind_tournament_id = tournament_id)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check15",
+    "type": "c",
+    "definition": "CHECK ((NOT (((receipt ->> 'tournament_id'::text))::uuid IS DISTINCT FROM tournament_id)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check16",
+    "type": "c",
+    "definition": "CHECK ((NOT (((receipt ->> 'actor_id'::text))::uuid IS DISTINCT FROM actor_id)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check17",
+    "type": "c",
+    "definition": "CHECK ((NOT (((receipt ->> 'receipt_version'::text))::integer IS DISTINCT FROM receipt_version)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check18",
+    "type": "c",
+    "definition": "CHECK ((NOT (((receipt ->> 'source_player_count'::text))::integer IS DISTINCT FROM source_player_count)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check19",
+    "type": "c",
+    "definition": "CHECK ((NOT (((receipt ->> 'refunded_count'::text))::integer IS DISTINCT FROM refunded_count)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check2",
+    "type": "c",
+    "definition": "CHECK ((refunded_count = cardinality(refunded_registration_ids)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check20",
+    "type": "c",
+    "definition": "CHECK ((NOT (((receipt ->> 'refund_line_count'::text))::integer IS DISTINCT FROM refund_line_count)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check21",
+    "type": "c",
+    "definition": "CHECK ((NOT (((receipt ->> 'ticket_return_count'::text))::integer IS DISTINCT FROM ticket_return_count)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check22",
+    "type": "c",
+    "definition": "CHECK ((NOT (((receipt ->> 'total_ticket_returned'::text))::numeric IS DISTINCT FROM total_ticket_returned)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check23",
+    "type": "c",
+    "definition": "CHECK ((NOT (((receipt ->> 'total_refunded'::text))::numeric IS DISTINCT FROM total_refunded)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check24",
+    "type": "c",
+    "definition": "CHECK ((NOT (((receipt ->> 'fees_reversed'::text))::numeric IS DISTINCT FROM fees_reversed)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check25",
+    "type": "c",
+    "definition": "CHECK ((NOT (((receipt ->> 'closed_table_count'::text))::integer IS DISTINCT FROM closed_table_count)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check26",
+    "type": "c",
+    "definition": "CHECK ((NOT (((receipt ->> 'source_seat_count'::text))::integer IS DISTINCT FROM source_seat_count)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check27",
+    "type": "c",
+    "definition": "CHECK ((NOT (((receipt ->> 'released_seat_count'::text))::integer IS DISTINCT FROM released_seat_count)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check28",
+    "type": "c",
+    "definition": "CHECK ((NOT (((receipt ->> 'settled_at'::text))::timestamp with time zone IS DISTINCT FROM settled_at)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check29",
+    "type": "c",
+    "definition": "CHECK ((jsonb_array_length((receipt -> 'refunds'::text)) = refund_line_count))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check3",
+    "type": "c",
+    "definition": "CHECK ((ticket_return_count = cardinality(ticket_return_ids)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check30",
+    "type": "c",
+    "definition": "CHECK ((jsonb_array_length((receipt -> 'ticket_returns'::text)) = ticket_return_count))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check4",
+    "type": "c",
+    "definition": "CHECK ((zero_refund_count = cardinality(zero_refund_registration_ids)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check5",
+    "type": "c",
+    "definition": "CHECK ((source_player_count = (refunded_count + zero_refund_count)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check6",
+    "type": "c",
+    "definition": "CHECK (((refunded_registration_ids && zero_refund_registration_ids) IS FALSE))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check7",
+    "type": "c",
+    "definition": "CHECK (((refunded_registration_ids || zero_refund_registration_ids) <@ source_player_ids))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check8",
+    "type": "c",
+    "definition": "CHECK ((closed_table_count = cardinality(closed_table_ids)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_check9",
+    "type": "c",
+    "definition": "CHECK ((source_seat_count = cardinality(source_seat_ids)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_closed_table_count_check",
+    "type": "c",
+    "definition": "CHECK ((closed_table_count >= 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_closed_table_ids_check",
+    "type": "c",
+    "definition": "CHECK ((array_position(closed_table_ids, NULL::uuid) IS NULL))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_escrow_close_note_check",
+    "type": "c",
+    "definition": "CHECK ((length(btrim(escrow_close_note)) > 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_fee_reversal_ids_check",
+    "type": "c",
+    "definition": "CHECK ((array_position(fee_reversal_ids, NULL::uuid) IS NULL))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (tournament_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_receipt_check",
+    "type": "c",
+    "definition": "CHECK ((jsonb_typeof(receipt) = 'object'::text))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_receipt_check1",
+    "type": "c",
+    "definition": "CHECK ((NOT ((receipt ->> 'status'::text) IS DISTINCT FROM 'CANCELLED'::text)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_receipt_check2",
+    "type": "c",
+    "definition": "CHECK ((((receipt ->> 'ok'::text))::boolean IS TRUE))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_receipt_check3",
+    "type": "c",
+    "definition": "CHECK ((((receipt ->> 'success'::text))::boolean IS TRUE))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_receipt_check4",
+    "type": "c",
+    "definition": "CHECK ((((receipt ->> 'fully_settled'::text))::boolean IS TRUE))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_receipt_check5",
+    "type": "c",
+    "definition": "CHECK ((NOT (jsonb_typeof((receipt -> 'refunds'::text)) IS DISTINCT FROM 'array'::text)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_receipt_check6",
+    "type": "c",
+    "definition": "CHECK ((NOT (jsonb_typeof((receipt -> 'ticket_returns'::text)) IS DISTINCT FROM 'array'::text)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_receipt_version_check",
+    "type": "c",
+    "definition": "CHECK ((receipt_version = 2))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_refund_line_count_check",
+    "type": "c",
+    "definition": "CHECK ((refund_line_count >= 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_refunded_count_check",
+    "type": "c",
+    "definition": "CHECK ((refunded_count >= 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_released_seat_count_check",
+    "type": "c",
+    "definition": "CHECK ((released_seat_count >= 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_released_seat_ids_check",
+    "type": "c",
+    "definition": "CHECK ((array_position(released_seat_ids, NULL::uuid) IS NULL))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_source_player_count_check",
+    "type": "c",
+    "definition": "CHECK ((source_player_count >= 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_source_player_ids_check",
+    "type": "c",
+    "definition": "CHECK ((array_position(source_player_ids, NULL::uuid) IS NULL))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_source_seat_count_check",
+    "type": "c",
+    "definition": "CHECK ((source_seat_count >= 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_source_seat_ids_check",
+    "type": "c",
+    "definition": "CHECK ((array_position(source_seat_ids, NULL::uuid) IS NULL))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_spin_unwind_tournament_id_key",
+    "type": "u",
+    "definition": "UNIQUE (spin_unwind_tournament_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_ticket_return_count_check",
+    "type": "c",
+    "definition": "CHECK ((ticket_return_count >= 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_ticket_return_ids_check",
+    "type": "c",
+    "definition": "CHECK ((array_position(ticket_return_ids, NULL::uuid) IS NULL))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_total_refunded_check",
+    "type": "c",
+    "definition": "CHECK ((((total_refunded)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (total_refunded >= (0)::numeric) AND (total_refunded = round(total_refunded, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_total_ticket_returned_check",
+    "type": "c",
+    "definition": "CHECK ((((total_ticket_returned)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (total_ticket_returned >= (0)::numeric) AND (total_ticket_returned = round(total_ticket_returned, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_cancellation_receipts",
+    "name": "tournament_cancellation_receipts_zero_refund_count_check",
+    "type": "c",
+    "definition": "CHECK ((zero_refund_count >= 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournaments",
+    "name": "tournament_prize_math_contract_valid",
+    "type": "c",
+    "definition": "CHECK ((((payout_math_version = 1) AND (payout_unit_cents = 1)) OR ((payout_math_version = 2) AND (payout_unit_cents = ANY (ARRAY[1, 100])) AND (upper(COALESCE(tournament_type, ''::text)) = 'MTT'::text) AND ((COALESCE(max_players, 0) > 2) OR (NOT (format_contract IS DISTINCT FROM 'mtt-v2'::text))) AND (lower(COALESCE(variant, ''::text)) <> ALL (ARRAY['spin'::text, 'sng'::text, 'satellite'::text])) AND (NOT COALESCE(is_premium_spin, false)) AND (satellite_target_id IS NULL) AND (satellite_target IS NULL))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournaments",
+    "name": "tournaments_final_table_requires_mtt_check",
+    "type": "c",
+    "definition": "CHECK (((final_table_triggered IS NOT TRUE) OR ((format_contract = ANY (ARRAY['mtt-v1'::text, 'mtt-v2'::text])) IS TRUE)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournaments",
+    "name": "tournaments_format_contract_known",
+    "type": "c",
+    "definition": "CHECK (((format_contract IS NULL) OR (format_contract = ANY (ARRAY['mtt-v1'::text, 'mtt-v2'::text, 'seat-first-satellite-v1'::text, 'sng-v1'::text, 'spin-v1'::text]))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournaments",
+    "name": "tournaments_free_buy_entry_is_free",
+    "type": "c",
+    "definition": "CHECK (((NOT free_buy) OR ((COALESCE(buy_in_amount, (0)::numeric) = (0)::numeric) AND (COALESCE(buy_in_fee, (0)::numeric) = (0)::numeric))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournaments",
+    "name": "tournaments_heads_up_rake_within_5_pct",
+    "type": "c",
+    "definition": "CHECK (((max_players IS NULL) OR (max_players > 2) OR (COALESCE(buy_in_fee, (0)::numeric) <= (round(((COALESCE(buy_in_amount, (0)::numeric) + COALESCE(buy_in_fee, (0)::numeric)) * 0.05), 2) + 0.005)))) NOT VALID"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournaments",
+    "name": "tournaments_mystery_activation_chk",
+    "type": "c",
+    "definition": "CHECK ((mystery_bounty_activation = ANY (ARRAY['at_the_money'::text, 'percent_field'::text, 'player_count'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournaments",
+    "name": "tournaments_mystery_activation_generation_nonnegative",
+    "type": "c",
+    "definition": "CHECK ((mystery_bounty_activation_generation >= 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournaments",
+    "name": "tournaments_mystery_profile_chk",
+    "type": "c",
+    "definition": "CHECK ((mystery_bounty_profile = ANY (ARRAY['balanced'::text, 'classic'::text, 'jackpot'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournaments",
+    "name": "tournaments_mystery_stage_chk",
+    "type": "c",
+    "definition": "CHECK ((mystery_bounty_stage = ANY (ARRAY['pending'::text, 'active'::text, 'complete'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournaments",
+    "name": "tournaments_never_pko_and_mystery",
+    "type": "c",
+    "definition": "CHECK ((NOT (COALESCE(is_pko, false) AND COALESCE(is_mystery_bounty, false))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournaments",
+    "name": "tournaments_no_pko_mystery_hybrid",
+    "type": "c",
+    "definition": "CHECK ((NOT (COALESCE(is_pko, false) AND COALESCE(is_mystery_bounty, false))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournaments",
+    "name": "tournaments_payout_percent_check",
+    "type": "c",
+    "definition": "CHECK ((payout_percent = ANY (ARRAY[10, 15, 20]))) NOT VALID"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournaments",
+    "name": "tournaments_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournaments",
+    "name": "tournaments_rake_within_10_pct",
+    "type": "c",
+    "definition": "CHECK ((COALESCE(buy_in_fee, (0)::numeric) <= (((COALESCE(buy_in_amount, (0)::numeric) + COALESCE(buy_in_fee, (0)::numeric)) * 0.1) + 0.000000001))) NOT VALID"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournaments",
+    "name": "tournaments_recorded_entry_capacity",
+    "type": "c",
+    "definition": "CHECK ((((NOT (format_contract IS DISTINCT FROM 'mtt-v2'::text)) AND (max_players IS NULL) AND (COALESCE(min_players, 0) >= 3)) OR ((format_contract IS DISTINCT FROM 'mtt-v2'::text) AND COALESCE((max_players > 0), false))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournaments",
+    "name": "tournaments_spin_has_no_fee",
+    "type": "c",
+    "definition": "CHECK (((created_at < '2026-08-21 00:00:00+00'::timestamp with time zone) OR (((lower(COALESCE(variant, ''::text)) <> 'spin'::text) AND (upper(COALESCE(tournament_type, ''::text)) <> 'SPIN'::text)) OR (COALESCE(buy_in_fee, (0)::numeric) = (0)::numeric)))) NOT VALID"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournaments",
+    "name": "tournaments_spin_no_extra_rake",
+    "type": "c",
+    "definition": "CHECK (((created_at < '2026-08-21 00:00:00+00'::timestamp with time zone) OR ((variant IS DISTINCT FROM 'spin'::text) AND (upper(COALESCE(tournament_type, ''::text)) <> 'SPIN'::text)) OR (COALESCE(buy_in_fee, (0)::numeric) = (0)::numeric))) NOT VALID"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournaments",
+    "name": "tournaments_status_check",
+    "type": "c",
+    "definition": "CHECK ((status = ANY (ARRAY['ANNOUNCED'::text, 'REGISTERING'::text, 'LATE_REG'::text, 'RUNNING'::text, 'COMPLETING'::text, 'COMPLETED'::text, 'CANCELLED'::text, 'BAGGED'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "union_wallet_transactions",
+    "name": "chk_amount_is_two_decimal_places",
+    "type": "c",
+    "definition": "CHECK (((amount IS NULL) OR (amount = round(amount, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "union_wallet_transactions",
+    "name": "ck_whole_cents",
+    "type": "c",
+    "definition": "CHECK (((created_at < '2026-09-07 22:00:00+00'::timestamp with time zone) OR (amount = round(amount, 2)))) NOT VALID"
+  },
+  {
+    "schema": "public",
+    "table_name": "union_wallet_transactions",
+    "name": "union_wallet_transactions_amount_check",
+    "type": "c",
+    "definition": "CHECK ((amount > (0)::numeric))"
+  },
+  {
+    "schema": "public",
+    "table_name": "union_wallet_transactions",
+    "name": "union_wallet_transactions_direction_check",
+    "type": "c",
+    "definition": "CHECK ((direction = ANY (ARRAY['credit'::text, 'debit'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "union_wallet_transactions",
+    "name": "union_wallet_transactions_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "union_wallet_transactions",
+    "name": "union_wallet_transactions_wallet_check",
+    "type": "c",
+    "definition": "CHECK ((wallet = ANY (ARRAY['chip_balance'::text, 'rake_wallet'::text, 'bbj_wallet'::text, 'promo_wallet'::text, 'insurance_wallet'::text, 'spin_reserve_wallet'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "hand_history",
+    "name": "hand_history_kill_pot_is_object",
+    "type": "c",
+    "definition": "CHECK (((kill_pot IS NULL) OR (jsonb_typeof(kill_pot) = 'object'::text))) NOT VALID"
+  },
+  {
+    "schema": "public",
+    "table_name": "hand_history",
+    "name": "hand_history_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_mixed_cutover_spin_fee_proofs",
+    "name": "accounting_mixed_cutover_spin_fee_proof_canonical_sources_check",
+    "type": "c",
+    "definition": "CHECK (((jsonb_typeof(canonical_sources) = 'array'::text) AND (jsonb_array_length(canonical_sources) = 3)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_mixed_cutover_spin_fee_proofs",
+    "name": "accounting_mixed_cutover_spin_fee_proof_original_evidence_check",
+    "type": "c",
+    "definition": "CHECK ((jsonb_typeof(original_evidence) = 'object'::text))"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_mixed_cutover_spin_fee_proofs",
+    "name": "accounting_mixed_cutover_spin_fee_proofs_cutover_at_check",
+    "type": "c",
+    "definition": "CHECK (isfinite(cutover_at))"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_mixed_cutover_spin_fee_proofs",
+    "name": "accounting_mixed_cutover_spin_fee_proofs_original_batch_check",
+    "type": "c",
+    "definition": "CHECK ((jsonb_typeof(original_batch) = 'object'::text))"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_mixed_cutover_spin_fee_proofs",
+    "name": "accounting_mixed_cutover_spin_fee_proofs_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (rake_record_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_mixed_cutover_spin_fee_proofs",
+    "name": "accounting_mixed_cutover_spin_fee_proofs_qualified_at_check",
+    "type": "c",
+    "definition": "CHECK (isfinite(qualified_at))"
+  },
+  {
+    "schema": "public",
+    "table_name": "accounting_mixed_cutover_spin_fee_proofs",
+    "name": "accounting_mixed_cutover_spin_fee_proofs_source_manifest_check",
+    "type": "c",
+    "definition": "CHECK ((jsonb_typeof(source_manifest) = 'object'::text))"
+  },
+  {
+    "schema": "public",
+    "table_name": "diamond_purchase_lots",
+    "name": "diamond_purchase_lots_check",
+    "type": "c",
+    "definition": "CHECK (((arena_reserved >= 0) AND (arena_reserved <= issued)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "diamond_purchase_lots",
+    "name": "diamond_purchase_lots_consumed_check",
+    "type": "c",
+    "definition": "CHECK ((consumed >= 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "diamond_purchase_lots",
+    "name": "diamond_purchase_lots_issued_check",
+    "type": "c",
+    "definition": "CHECK ((issued >= 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "diamond_purchase_lots",
+    "name": "diamond_purchase_lots_not_over_drawn",
+    "type": "c",
+    "definition": "CHECK (((consumed + refunded) <= issued))"
+  },
+  {
+    "schema": "public",
+    "table_name": "diamond_purchase_lots",
+    "name": "diamond_purchase_lots_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "diamond_purchase_lots",
+    "name": "diamond_purchase_lots_purchase_id_key",
+    "type": "u",
+    "definition": "UNIQUE (purchase_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "diamond_purchase_lots",
+    "name": "diamond_purchase_lots_refunded_check",
+    "type": "c",
+    "definition": "CHECK ((refunded >= 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "diamond_debts",
+    "name": "diamond_debts_amount_check",
+    "type": "c",
+    "definition": "CHECK ((amount > 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "diamond_debts",
+    "name": "diamond_debts_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_diamond_house_earmarks",
+    "name": "ca_diamond_house_earmarks_amount_check",
+    "type": "c",
+    "definition": "CHECK (((amount > 0) AND ((amount)::double precision = trunc((amount)::double precision))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_diamond_house_earmarks",
+    "name": "ca_diamond_house_earmarks_earmark_key_check",
+    "type": "c",
+    "definition": "CHECK ((btrim(earmark_key) <> ''::text))"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_diamond_house_earmarks",
+    "name": "ca_diamond_house_earmarks_entry_check",
+    "type": "c",
+    "definition": "CHECK ((entry = ANY (ARRAY['open'::text, 'pay'::text, 'release'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_diamond_house_earmarks",
+    "name": "ca_diamond_house_earmarks_expiry_shape",
+    "type": "c",
+    "definition": "CHECK (((purpose = 'promotional_entry'::text) OR (expires_at IS NULL)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_diamond_house_earmarks",
+    "name": "ca_diamond_house_earmarks_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_diamond_house_earmarks",
+    "name": "ca_diamond_house_earmarks_purpose_check",
+    "type": "c",
+    "definition": "CHECK ((purpose = ANY (ARRAY['guarantee'::text, 'promotional_entry'::text, 'jackpot_seed'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_diamond_house_earmarks",
+    "name": "ca_diamond_house_earmarks_reason_check",
+    "type": "c",
+    "definition": "CHECK ((btrim(reason) <> ''::text))"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_diamond_house_earmarks",
+    "name": "ca_diamond_house_earmarks_shape",
+    "type": "c",
+    "definition": "CHECK (\nCASE purpose\n    WHEN 'guarantee'::text THEN ((tournament_id IS NOT NULL) AND (holder_id IS NULL))\n    WHEN 'promotional_entry'::text THEN (holder_id IS NOT NULL)\n    WHEN 'jackpot_seed'::text THEN ((tournament_id IS NULL) AND (holder_id IS NULL))\n    ELSE NULL::boolean\nEND)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tables",
+    "name": "table_game_scope_is_derived",
+    "type": "c",
+    "definition": "CHECK (((seat_game_scope IS NULL) OR (seat_game_scope =\nCASE\n    WHEN (cluster_id IS NULL) THEN ('table:'::text || (id)::text)\n    ELSE ('cluster:'::text || (cluster_id)::text)\nEND)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tables",
+    "name": "table_game_scope_parent_key",
+    "type": "u",
+    "definition": "UNIQUE (id, seat_game_scope)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tables",
+    "name": "table_seat_admission_is_derived",
+    "type": "c",
+    "definition": "CHECK (((seat_admission_key IS NULL) OR (seat_admission_key =\nCASE\n    WHEN ((lower(COALESCE(status, ''::text)) = ANY (ARRAY['closed'::text, 'completed'::text, 'cancelled'::text, 'finished'::text])) OR (lifecycle = 'closed'::text) OR COALESCE(is_deleted, false) OR COALESCE(is_template, false)) THEN 'closed'::text\n    WHEN (tournament_id IS NOT NULL) THEN ('tournament:'::text || (tournament_id)::text)\n    ELSE 'cash'::text\nEND)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tables",
+    "name": "table_seat_admission_parent_key",
+    "type": "u",
+    "definition": "UNIQUE (id, seat_admission_key)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tables",
+    "name": "tables_bomb_pot_board_count_check",
+    "type": "c",
+    "definition": "CHECK (((bomb_pot_board_count >= 1) AND (bomb_pot_board_count <= 3)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tables",
+    "name": "tables_bomb_pot_button_policy_check",
+    "type": "c",
+    "definition": "CHECK ((bomb_pot_button_policy = ANY (ARRAY['regular'::text, 'separate'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tables",
+    "name": "tables_bomb_pot_trigger_mode_check",
+    "type": "c",
+    "definition": "CHECK ((bomb_pot_trigger_mode = ANY (ARRAY['every_n_hands'::text, 'once_per_orbit'::text, 'timed'::text, 'bomb_pot_only'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tables",
+    "name": "tables_bomb_pot_variant_check",
+    "type": "c",
+    "definition": "CHECK (((bomb_pot_variant IS NULL) OR ((bomb_pot_variant = ANY (ARRAY['nlh'::text, 'plo4'::text, 'plo5'::text, 'plo6'::text, 'flh'::text, 'flo8'::text])) AND ((lower(COALESCE(game_variant, 'nlh'::text)) = ANY (ARRAY['flh'::text, 'flo8'::text])) = (bomb_pot_variant = ANY (ARRAY['flh'::text, 'flo8'::text]))))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tables",
+    "name": "tables_cash_needs_a_game",
+    "type": "c",
+    "definition": "CHECK (((tournament_id IS NOT NULL) OR (cluster_id IS NOT NULL) OR (status = ANY (ARRAY['closed'::text, 'deleted'::text])) OR COALESCE(is_deleted, false) OR (club_id IS NULL) OR (game_variant IS NULL) OR (COALESCE(small_blind, (0)::numeric) <= (0)::numeric) OR (COALESCE(big_blind, (0)::numeric) <= COALESCE(small_blind, (0)::numeric)) OR (club_id = '002c2d27-9584-4e52-835a-bb2be148fc81'::uuid)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tables",
+    "name": "tables_dealing_halt_is_explained",
+    "type": "c",
+    "definition": "CHECK ((((dealing_halted_at IS NULL) AND (dealing_halted_reason IS NULL)) OR ((dealing_halted_at IS NOT NULL) AND (dealing_halted_reason IS NOT NULL) AND (dealing_halted_reason = ANY (ARRAY['lightning_pending_on'::text, 'lightning'::text])))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tables",
+    "name": "tables_game_type_is_format",
+    "type": "c",
+    "definition": "CHECK ((game_type = ANY (ARRAY['cash'::text, 'tournament'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tables",
+    "name": "tables_kill_mode_check",
+    "type": "c",
+    "definition": "CHECK ((kill_mode = ANY (ARRAY['off'::text, 'half'::text, 'full'::text]))) NOT VALID"
+  },
+  {
+    "schema": "public",
+    "table_name": "tables",
+    "name": "tables_kill_threshold_bb_check",
+    "type": "c",
+    "definition": "CHECK ((kill_threshold_bb = ANY (ARRAY[8, 10, 12, 15]))) NOT VALID"
+  },
+  {
+    "schema": "public",
+    "table_name": "tables",
+    "name": "tables_lifecycle_check",
+    "type": "c",
+    "definition": "CHECK ((lifecycle = ANY (ARRAY['opening'::text, 'live'::text, 'breaking'::text, 'closed'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tables",
+    "name": "tables_main_index_check",
+    "type": "c",
+    "definition": "CHECK ((main_index >= 1))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tables",
+    "name": "tables_name_is_not_a_javascript_accident",
+    "type": "c",
+    "definition": "CHECK (((name IS NULL) OR ((name !~ 'undefined'::text) AND (name !~ 'NaN'::text) AND (name !~ '\\[object'::text)))) NOT VALID"
+  },
+  {
+    "schema": "public",
+    "table_name": "tables",
+    "name": "tables_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tables",
+    "name": "tables_rake_cap_bb_range",
+    "type": "c",
+    "definition": "CHECK (((rake_cap_bb IS NULL) OR (rake_cap_bb = ('-1'::integer)::numeric) OR ((rake_cap_bb >= (0)::numeric) AND (rake_cap_bb <= (10)::numeric)))) NOT VALID"
+  },
+  {
+    "schema": "public",
+    "table_name": "tables",
+    "name": "tables_rake_percent_range",
+    "type": "c",
+    "definition": "CHECK (((rake_percent IS NULL) OR (rake_percent = ('-1'::integer)::numeric) OR ((rake_percent >= (0)::numeric) AND (rake_percent <= (10)::numeric)))) NOT VALID"
+  },
+  {
+    "schema": "public",
+    "table_name": "tables",
+    "name": "tables_role_check",
+    "type": "c",
+    "definition": "CHECK ((role = ANY (ARRAY['main'::text, 'feeder'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tables",
+    "name": "tables_stakes_is_not_a_javascript_accident",
+    "type": "c",
+    "definition": "CHECK (((stakes IS NULL) OR ((stakes !~ 'undefined'::text) AND (stakes !~ 'NaN'::text) AND (stakes !~ '\\[object'::text) AND (stakes <> 'null/null'::text)))) NOT VALID"
+  },
+  {
+    "schema": "public",
+    "table_name": "tables",
+    "name": "tables_status_check",
+    "type": "c",
+    "definition": "CHECK ((status = ANY (ARRAY['waiting'::text, 'active'::text, 'running'::text, 'paused'::text, 'closed'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tables",
+    "name": "tables_straddle_type_check",
+    "type": "c",
+    "definition": "CHECK ((straddle_type = 'utg'::text))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tables",
+    "name": "tables_terminal_closed_shape",
+    "type": "c",
+    "definition": "CHECK (((terminal_closed_at IS NULL) OR ((lower(COALESCE(status, ''::text)) = 'closed'::text) AND (lower(COALESCE(lifecycle, ''::text)) = 'closed'::text) AND (NOT (current_players IS DISTINCT FROM 0)))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "chip_ledger",
+    "name": "chip_ledger_a_union_wallet_side_names_its_column",
+    "type": "c",
+    "definition": "CHECK ((((from_type IS DISTINCT FROM 'union_wallet'::text) OR (from_label IS NOT NULL) OR (COALESCE(to_label, ''::text) ~~ '%promo%'::text) OR ((COALESCE(category, ''::text) = 'correction'::text) AND (COALESCE((metadata ->> 'posted_via'::text), ''::text) = 'fn_ca_post_correction'::text))) AND ((to_type IS DISTINCT FROM 'union_wallet'::text) OR (to_label IS NOT NULL) OR (COALESCE(from_label, ''::text) ~~ '%promo%'::text) OR ((COALESCE(category, ''::text) = 'correction'::text) AND (COALESCE((metadata ->> 'posted_via'::text), ''::text) = 'fn_ca_post_correction'::text))))) NOT VALID"
+  },
+  {
+    "schema": "public",
+    "table_name": "chip_ledger",
+    "name": "chip_ledger_amount_check",
+    "type": "c",
+    "definition": "CHECK ((amount > (0)::numeric))"
+  },
+  {
+    "schema": "public",
+    "table_name": "chip_ledger",
+    "name": "chip_ledger_category_check",
+    "type": "c",
+    "definition": "CHECK ((category = ANY (ARRAY['buyin'::text, 'cashout'::text, 'rake'::text, 'commission'::text, 'transfer'::text, 'player_funding'::text, 'agent_funding'::text, 'mint'::text, 'burn'::text, 'legacy_seed_reconcile'::text, 'rakeback'::text, 'settlement'::text, 'tournament_buyin'::text, 'tournament_prize'::text, 'bounty'::text, 'adjustment'::text, 'refund'::text, 'addon'::text, 'rebuy'::text, 'table_cashout'::text, 'tournament_refund'::text, 'bbj_contribution'::text, 'bbj_payout'::text, 'promo'::text, 'promo_release'::text, 'promo_send'::text, 'credit_draw'::text, 'credit_repayment'::text, 'insurance'::text, 'spin_entry'::text, 'spin_prize'::text, 'overlay'::text, 'correction'::text, 'reversal'::text, 'escrow_hold'::text, 'escrow_release'::text, 'treasury_transfer'::text, 'horse_funding'::text, 'fee'::text, 'eco'::text, 'pnl_settlement'::text, 'union_send'::text, 'cashier_send'::text, 'cashier_claim_back'::text, 'ticket_issue'::text, 'ticket_redeem'::text, 'club_opening_allocation'::text, 'leaderboard_payout'::text, 'club_bank_send'::text, 'club_bank_claim'::text, 'agent_send'::text, 'agent_claim'::text, 'union_settlement'::text, 'wheel_prize'::text, 'plinko_prize'::text, 'crash_prize'::text, 'crossing_prize'::text, 'mines_prize'::text]))) NOT VALID"
+  },
+  {
+    "schema": "public",
+    "table_name": "chip_ledger",
+    "name": "chip_ledger_exact_scale",
+    "type": "c",
+    "definition": "CHECK ((amount = round(amount, 2))) NOT VALID"
+  },
+  {
+    "schema": "public",
+    "table_name": "chip_ledger",
+    "name": "chip_ledger_from_type_check",
+    "type": "c",
+    "definition": "CHECK ((from_type = ANY (ARRAY['player_wallet'::text, 'club_treasury'::text, 'union_bank'::text, 'agent_wallet'::text, 'system_mint'::text, 'system_burn'::text, 'table_stack'::text, 'promo_wallet'::text, 'club_wallet'::text, 'union_wallet'::text, 'bbj_pool'::text, 'spin_reserve'::text, 'insurance_bank'::text, 'escrow'::text, 'prize_liability'::text, 'bounty_liability'::text, 'rakeback_payable'::text, 'refund_payable'::text, 'settlement_suspense'::text, 'issuance_reserve'::text, 'chip_retirement'::text, 'credit_facility'::text, 'credit_receivable'::text, 'opening_setup'::text, 'leaderboard_round'::text]))) NOT VALID"
+  },
+  {
+    "schema": "public",
+    "table_name": "chip_ledger",
+    "name": "chip_ledger_no_diamond_category_check",
+    "type": "c",
+    "definition": "CHECK (((category !~* '^diamond'::text) AND (category !~* '_diamond'::text)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "chip_ledger",
+    "name": "chip_ledger_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "chip_ledger",
+    "name": "chip_ledger_positive_amount",
+    "type": "c",
+    "definition": "CHECK ((amount > (0)::numeric))"
+  },
+  {
+    "schema": "public",
+    "table_name": "chip_ledger",
+    "name": "chip_ledger_status_check",
+    "type": "c",
+    "definition": "CHECK ((status = ANY (ARRAY['posted'::text, 'correction'::text, 'reversal'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "chip_ledger",
+    "name": "chip_ledger_to_type_check",
+    "type": "c",
+    "definition": "CHECK ((to_type = ANY (ARRAY['player_wallet'::text, 'club_treasury'::text, 'union_bank'::text, 'agent_wallet'::text, 'system_mint'::text, 'system_burn'::text, 'table_stack'::text, 'promo_wallet'::text, 'club_wallet'::text, 'union_wallet'::text, 'bbj_pool'::text, 'spin_reserve'::text, 'insurance_bank'::text, 'escrow'::text, 'prize_liability'::text, 'bounty_liability'::text, 'rakeback_payable'::text, 'refund_payable'::text, 'settlement_suspense'::text, 'issuance_reserve'::text, 'chip_retirement'::text, 'credit_facility'::text, 'credit_receivable'::text, 'opening_setup'::text, 'leaderboard_round'::text]))) NOT VALID"
+  },
+  {
+    "schema": "public",
+    "table_name": "chip_ledger",
+    "name": "chk_post_from_balance_is_two_decimal_places",
+    "type": "c",
+    "definition": "CHECK (((post_from_balance IS NULL) OR (post_from_balance = round(post_from_balance, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "chip_ledger",
+    "name": "chk_post_to_balance_is_two_decimal_places",
+    "type": "c",
+    "definition": "CHECK (((post_to_balance IS NULL) OR (post_to_balance = round(post_to_balance, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "chip_ledger",
+    "name": "chk_pre_from_balance_is_two_decimal_places",
+    "type": "c",
+    "definition": "CHECK (((pre_from_balance IS NULL) OR (pre_from_balance = round(pre_from_balance, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "chip_ledger",
+    "name": "chk_pre_to_balance_is_two_decimal_places",
+    "type": "c",
+    "definition": "CHECK (((pre_to_balance IS NULL) OR (pre_to_balance = round(pre_to_balance, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "chip_ledger",
+    "name": "ck_whole_cents",
+    "type": "c",
+    "definition": "CHECK (((created_at < '2026-09-07 22:00:00+00'::timestamp with time zone) OR (amount = round(amount, 2)))) NOT VALID"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_settle_sources",
+    "name": "ca_settle_sources_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (source)"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_declared_money_triggers",
+    "name": "ca_declared_money_triggers_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (table_name, trigger_name)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_tranches",
+    "name": "tournament_refund_tranches_amount_paid_before_check",
+    "type": "c",
+    "definition": "CHECK (((amount_paid_before >= (0)::numeric) AND ((amount_paid_before)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (amount_paid_before = round(amount_paid_before, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_tranches",
+    "name": "tournament_refund_tranches_amount_paid_now_check",
+    "type": "c",
+    "definition": "CHECK ((((amount_paid_now)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (amount_paid_now > (0)::numeric) AND (amount_paid_now = round(amount_paid_now, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_tranches",
+    "name": "tournament_refund_tranches_check",
+    "type": "c",
+    "definition": "CHECK ((amount_paid_now = ((refund_prize + refund_bounty) + refund_fee)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_tranches",
+    "name": "tournament_refund_tranches_check1",
+    "type": "c",
+    "definition": "CHECK ((idempotency_key = ((('tourney:'::text || (tournament_id)::text) || ':refund-entitlement:'::text) || (entitlement_id)::text)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_tranches",
+    "name": "tournament_refund_tranches_credit_ledger_id_key",
+    "type": "u",
+    "definition": "UNIQUE (credit_ledger_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_tranches",
+    "name": "tournament_refund_tranches_description_check",
+    "type": "c",
+    "definition": "CHECK ((length(btrim(description)) > 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_tranches",
+    "name": "tournament_refund_tranches_entitlement_id_key",
+    "type": "u",
+    "definition": "UNIQUE (entitlement_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_tranches",
+    "name": "tournament_refund_tranches_idempotency_key_key",
+    "type": "u",
+    "definition": "UNIQUE (idempotency_key)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_tranches",
+    "name": "tournament_refund_tranches_obligation_id_amount_paid_before_key",
+    "type": "u",
+    "definition": "UNIQUE (obligation_id, amount_paid_before)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_tranches",
+    "name": "tournament_refund_tranches_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (wallet_transaction_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_tranches",
+    "name": "tournament_refund_tranches_refund_bounty_check",
+    "type": "c",
+    "definition": "CHECK ((((refund_bounty)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (refund_bounty >= (0)::numeric) AND (refund_bounty = round(refund_bounty, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_tranches",
+    "name": "tournament_refund_tranches_refund_fee_check",
+    "type": "c",
+    "definition": "CHECK ((((refund_fee)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (refund_fee >= (0)::numeric) AND (refund_fee = round(refund_fee, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_tranches",
+    "name": "tournament_refund_tranches_refund_prize_check",
+    "type": "c",
+    "definition": "CHECK ((((refund_prize)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (refund_prize >= (0)::numeric) AND (refund_prize = round(refund_prize, 2))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_refund_tranches",
+    "name": "tournament_refund_tranches_source_check",
+    "type": "c",
+    "definition": "CHECK ((length(btrim(source)) > 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_operator_policy",
+    "name": "ca_operator_policy_approval_ttl_minutes_check",
+    "type": "c",
+    "definition": "CHECK ((approval_ttl_minutes > 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_operator_policy",
+    "name": "ca_operator_policy_id_check",
+    "type": "c",
+    "definition": "CHECK (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_operator_policy",
+    "name": "ca_operator_policy_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_operator_approvals",
+    "name": "ca_operator_approvals_kind_check",
+    "type": "c",
+    "definition": "CHECK ((kind = ANY (ARRAY['mint'::text, 'burn'::text, 'fund_club'::text, 'cashout'::text, 'fleet_policy'::text, 'sanction'::text, 'daily_close'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_operator_approvals",
+    "name": "ca_operator_approvals_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_operator_approvals",
+    "name": "ca_operator_approvals_status_check",
+    "type": "c",
+    "definition": "CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text, 'executed'::text, 'expired'::text, 'auto_approved'::text, 'failed'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_operator_roles",
+    "name": "ca_operator_roles_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (key)"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_operator_role_permissions",
+    "name": "ca_operator_role_permissions_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (role_key, permission)"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_operator_grants",
+    "name": "ca_operator_grants_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "ca_operator_grants",
+    "name": "ca_operator_grants_revocation_complete",
+    "type": "c",
+    "definition": "CHECK (((revoked_by IS NULL) OR (revoked_at IS NOT NULL)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "wallet_transactions",
+    "name": "chk_balance_after_is_two_decimal_places",
+    "type": "c",
+    "definition": "CHECK (((balance_after IS NULL) OR (balance_after = round(balance_after, 2)))) NOT VALID"
+  },
+  {
+    "schema": "public",
+    "table_name": "wallet_transactions",
+    "name": "wallet_transactions_amount_non_negative",
+    "type": "c",
+    "definition": "CHECK ((amount >= (0)::numeric)) NOT VALID"
+  },
+  {
+    "schema": "public",
+    "table_name": "wallet_transactions",
+    "name": "wallet_transactions_category_check",
+    "type": "c",
+    "definition": "CHECK ((category = ANY (ARRAY['buyin'::text, 'cashout'::text, 'promo'::text, 'rake'::text, 'transfer'::text, 'tournament_buyin'::text, 'tournament_winnings'::text, 'tournament_cashout'::text, 'horse_refill'::text, 'deposit'::text, 'withdrawal'::text, 'refund'::text, 'bbj'::text, 'bonus'::text, 'mint'::text, 'settlement'::text, 'commission'::text, 'INSURANCE'::text, 'prize'::text, 'rebuy'::text, 'addon'::text, 'funding'::text, 'promotion'::text, 'rakeback'::text, 'bounty'::text, 'addon_refund'::text, 'bounty_own'::text, 'prize_reversal'::text, 'leaderboard_payout'::text]))) NOT VALID"
+  },
+  {
+    "schema": "public",
+    "table_name": "wallet_transactions",
+    "name": "wallet_transactions_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "wallet_transactions",
+    "name": "wallet_transactions_type_check",
+    "type": "c",
+    "definition": "CHECK ((type = ANY (ARRAY['credit'::text, 'debit'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "wallet_transactions",
+    "name": "wallet_transactions_wallet_type_check",
+    "type": "c",
+    "definition": "CHECK ((wallet_type = ANY (ARRAY['PLAYER'::text, 'BUSINESS'::text, 'PROMO'::text, 'CLUB'::text, 'UNION'::text, 'PLATFORM'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_escrow",
+    "name": "tournament_escrow_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (tournament_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_tickets",
+    "name": "tournament_tickets_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_tickets",
+    "name": "tournament_tickets_redemption_mode_check",
+    "type": "c",
+    "definition": "CHECK ((redemption_mode = ANY (ARRAY['wallet_chips'::text, 'tournament_entry_only'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_tickets",
+    "name": "tournament_tickets_satellite_entry_contract_check",
+    "type": "c",
+    "definition": "CHECK (((((redemption_mode = 'wallet_chips'::text) AND (source_tournament_id IS NULL) AND (source_satellite_id IS NULL) AND (source_refund_entitlement_id IS NULL) AND (source_satellite_award_place IS NULL) AND (entry_prize IS NULL) AND (entry_bounty IS NULL) AND (entry_fee IS NULL)) OR ((redemption_mode = 'tournament_entry_only'::text) AND (issued_by = '2d1cd6c3-5700-4af9-a271-d4863fdab20d'::uuid) AND (source_tournament_id IS NOT NULL) AND (source_satellite_id IS NOT NULL) AND (((source_refund_entitlement_id IS NOT NULL) AND (source_satellite_award_place IS NULL)) OR ((source_refund_entitlement_id IS NULL) AND (source_satellite_award_place > 0) AND (source_tournament_id <> source_satellite_id))) AND (entry_prize IS NOT NULL) AND (entry_prize >= (0)::numeric) AND (entry_prize = round(entry_prize, 2)) AND (entry_bounty IS NOT NULL) AND (entry_bounty >= (0)::numeric) AND (entry_bounty = round(entry_bounty, 2)) AND (entry_fee IS NOT NULL) AND (entry_fee >= (0)::numeric) AND (entry_fee = round(entry_fee, 2)) AND (value = round(((entry_prize + entry_bounty) + entry_fee), 2)))) IS TRUE))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_tickets",
+    "name": "tournament_tickets_status_check",
+    "type": "c",
+    "definition": "CHECK ((status = ANY (ARRAY['issued'::text, 'redeemed'::text, 'cancelled'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "tournament_tickets",
+    "name": "tournament_tickets_value_check",
+    "type": "c",
+    "definition": "CHECK ((value > (0)::numeric))"
+  },
+  {
+    "schema": "public",
+    "table_name": "wallet_credit_idempotency",
+    "name": "wallet_credit_idempotency_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (key)"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_tournament_ledger",
+    "name": "poker_diamond_tournament_ledger_amount_check",
+    "type": "c",
+    "definition": "CHECK (((amount >= 1) AND (amount <= 2147483647)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_tournament_ledger",
+    "name": "poker_diamond_tournament_ledger_bounty_bank",
+    "type": "c",
+    "definition": "CHECK (((kind <> 'bounty'::text) OR ((prize_part = 0) AND (fee_part = 0))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_tournament_ledger",
+    "name": "poker_diamond_tournament_ledger_bounty_part_check",
+    "type": "c",
+    "definition": "CHECK ((bounty_part >= 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_tournament_ledger",
+    "name": "poker_diamond_tournament_ledger_fee_part_check",
+    "type": "c",
+    "definition": "CHECK ((fee_part >= 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_tournament_ledger",
+    "name": "poker_diamond_tournament_ledger_idempotency_key_check",
+    "type": "c",
+    "definition": "CHECK (((length(idempotency_key) >= 1) AND (length(idempotency_key) <= 400)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_tournament_ledger",
+    "name": "poker_diamond_tournament_ledger_idempotency_key_key",
+    "type": "u",
+    "definition": "UNIQUE (idempotency_key)"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_tournament_ledger",
+    "name": "poker_diamond_tournament_ledger_inflow",
+    "type": "c",
+    "definition": "CHECK (((kind <> ALL (ARRAY['entry'::text, 'rebuy'::text, 'reentry'::text, 'addon'::text])) OR ((user_id IS NOT NULL) AND (custody_id IS NOT NULL) AND (wallet_journal_id IS NOT NULL))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_tournament_ledger",
+    "name": "poker_diamond_tournament_ledger_kind_check",
+    "type": "c",
+    "definition": "CHECK ((kind = ANY (ARRAY['entry'::text, 'rebuy'::text, 'reentry'::text, 'addon'::text, 'prize'::text, 'bounty'::text, 'fee'::text, 'refund'::text, 'spin_underwrite'::text, 'spin_surplus'::text, 'overlay'::text, 'overlay_return'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_tournament_ledger",
+    "name": "poker_diamond_tournament_ledger_outflow",
+    "type": "c",
+    "definition": "CHECK ((((kind = ANY (ARRAY['prize'::text, 'bounty'::text, 'refund'::text])) AND (user_id IS NOT NULL)) OR ((kind = 'fee'::text) AND (user_id IS NULL) AND (prize_part = 0) AND (bounty_part = 0)) OR (kind = ANY (ARRAY['entry'::text, 'rebuy'::text, 'reentry'::text, 'addon'::text])) OR ((kind = ANY (ARRAY['spin_underwrite'::text, 'spin_surplus'::text, 'overlay'::text, 'overlay_return'::text])) AND (user_id IS NOT NULL) AND (custody_id IS NOT NULL) AND (prize_part = amount) AND (bounty_part = 0) AND (fee_part = 0))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_tournament_ledger",
+    "name": "poker_diamond_tournament_ledger_parts",
+    "type": "c",
+    "definition": "CHECK ((((prize_part + bounty_part) + fee_part) = amount))"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_tournament_ledger",
+    "name": "poker_diamond_tournament_ledger_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_tournament_ledger",
+    "name": "poker_diamond_tournament_ledger_prize_bank",
+    "type": "c",
+    "definition": "CHECK (((kind <> 'prize'::text) OR ((bounty_part = 0) AND (fee_part = 0))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_tournament_ledger",
+    "name": "poker_diamond_tournament_ledger_prize_part_check",
+    "type": "c",
+    "definition": "CHECK ((prize_part >= 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "diamond_transactions",
+    "name": "diamond_transactions_issuance_class_chk",
+    "type": "c",
+    "definition": "CHECK (((issuance_class IS NULL) OR (issuance_class = ANY (ARRAY['purchased'::text, 'promotional'::text, 'earned'::text, 'transferred'::text, 'seeded'::text, 'refund'::text, 'spend'::text, 'bridge'::text, 'deletion'::text, 'admin'::text, 'arena'::text, 'house'::text, 'unknown'::text]))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "diamond_transactions",
+    "name": "diamond_transactions_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "diamond_transactions",
+    "name": "no_home_games_source",
+    "type": "c",
+    "definition": "CHECK (((source IS NULL) OR (source <> 'home_games'::text)))"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_movements",
+    "name": "poker_diamond_movements_action_check",
+    "type": "c",
+    "definition": "CHECK ((action = ANY (ARRAY['reserve'::text, 'release'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_movements",
+    "name": "poker_diamond_movements_amount_check",
+    "type": "c",
+    "definition": "CHECK ((((amount >= 1) AND (amount <= 2147483647) AND (wallet_journal_id IS NOT NULL)) OR ((action = 'release'::text) AND (amount = 0) AND (wallet_journal_id IS NULL)) OR ((amount >= 1) AND (amount <= 2147483647) AND (wallet_journal_id IS NULL) AND (((action = 'release'::text) AND (source_account ~~ 'arena_custody:%'::text) AND (destination_account = 'house'::text) AND ((request ->> 'action'::text) = 'tournament_drain'::text)) OR ((action = 'reserve'::text) AND (source_account ~~ 'house:%'::text) AND (destination_account ~~ 'arena_custody:%'::text) AND ((request ->> 'action'::text) = ANY (ARRAY['spin_underwrite'::text, 'guarantee_overlay'::text])))))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_movements",
+    "name": "poker_diamond_movements_check",
+    "type": "c",
+    "definition": "CHECK ((source_account <> destination_account))"
+  },
+  {
+    "schema": "public",
+    "table_name": "poker_diamond_movements",
+    "name": "poker_diamond_movements_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (request_id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "profiles",
+    "name": "profiles_diamonds_nonnegative",
+    "type": "c",
+    "definition": "CHECK ((diamonds >= 0))"
+  },
+  {
+    "schema": "public",
+    "table_name": "profiles",
+    "name": "profiles_kyc_provider_check",
+    "type": "c",
+    "definition": "CHECK (((kyc_provider IS NULL) OR (kyc_provider = ANY (ARRAY['persona'::text, 'veriff'::text, 'jumio'::text, 'onfido'::text, 'stub'::text]))))"
+  },
+  {
+    "schema": "public",
+    "table_name": "profiles",
+    "name": "profiles_kyc_status_check",
+    "type": "c",
+    "definition": "CHECK ((kyc_status = ANY (ARRAY['NONE'::text, 'PENDING'::text, 'APPROVED'::text, 'REJECTED'::text, 'EXPIRED'::text])))"
+  },
+  {
+    "schema": "public",
+    "table_name": "profiles",
+    "name": "profiles_pkey",
+    "type": "p",
+    "definition": "PRIMARY KEY (id)"
+  },
+  {
+    "schema": "public",
+    "table_name": "profiles",
+    "name": "profiles_trivia_preferences_revision_nonnegative",
+    "type": "c",
+    "definition": "CHECK ((trivia_preferences_revision >= 0))"
+  }
+]

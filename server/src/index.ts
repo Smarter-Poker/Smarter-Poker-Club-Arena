@@ -1,3 +1,4 @@
+import { subscribePlayerSessionRevocations } from './services/PlayerSessionAccess.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * SMARTER POKER GAME SERVER — 24/7 Server-Side Game Engine (bootstrap only)
@@ -159,6 +160,12 @@ const httpServer = createEngineHttpServer(
 );
 engineWs.attach(httpServer);
 channelWs.attach(httpServer);
+const unsubscribePlayerRevocations = subscribePlayerSessionRevocations((userId) => {
+  void Promise.all([
+    engineWs.revokePlayerSessions(userId),
+    channelWs.revokePlayerSessions(userId),
+  ]).catch((error) => reportError(error, 'PlayerSessions.revocation_delivery_unknown'));
+});
 
 let shuttingDown = false;
 let leaderServicesActive = false;
@@ -429,6 +436,7 @@ async function performShutdown(): Promise<void> {
     ? beginShutdownStep('leader startup', () => leaderStartOperation)
     : Promise.resolve<ShutdownStepResult>({ step: 'leader startup', status: 'fulfilled' });
   const localStops = [
+    beginShutdownStep('Player Session Revocations', () => unsubscribePlayerRevocations()),
     beginShutdownStep('HTTP server', closeHttpServer),
     beginShutdownStep('table WebSocket server', () => engineWs.close()),
     beginShutdownStep('channel WebSocket server', () => channelWs.close()),

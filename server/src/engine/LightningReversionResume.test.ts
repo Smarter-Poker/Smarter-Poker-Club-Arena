@@ -103,9 +103,11 @@ beforeEach(() => {
   seats.lifted = false;
   rpc.mockReset();
   rpc.mockImplementation(async (fn: string) =>
-    fn === 'fn_cash_table_observe_dealing_halt'
-      ? { data: new Date(clock).toISOString(), error: null }
-      : { data: null, error: null }
+    fn === 'fn_ca_operator_floor_state'
+      ? { data: { hold: null, close: null }, error: null }
+      : fn === 'fn_cash_table_observe_dealing_halt'
+        ? { data: new Date(clock).toISOString(), error: null }
+        : { data: null, error: null }
   );
   loadSeatedPlayers.mockReset();
   loadSeatedPlayers.mockImplementation(async () => {

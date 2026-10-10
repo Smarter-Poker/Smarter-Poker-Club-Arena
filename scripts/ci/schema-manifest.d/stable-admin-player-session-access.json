@@ -1,0 +1,6 @@
+{
+  "_owner": "stable-admin-six-20261009",
+  "_comment": "P3 session authority qualified in native PostgreSQL 17 by World Hub migration 20261010035338. This declaration remains a promise until the required live-schema gate confirms installation.",
+  "tables": ["ca_player_session_revocations"],
+  "functions": ["fn_ca_player_session_live"]
+}

@@ -1,3 +1,4 @@
+import { handlePlatformControl } from './handlers/platformControl.js';
 import { handleAdminKickOccupancy } from './handlers/admin.js';
 /**
  * HTTP request router for the Hetzner game server.
@@ -89,6 +90,8 @@ type AnyGameServer = Parameters<typeof handleAction>[2]['gameServer'] &
   Parameters<typeof handleMetrics>[1]['gameServer'] & {
     getTournamentLifecycleDiagnostic?: GameServer['getTournamentLifecycleDiagnostic'];
     requestMaintenanceRecoveryWindow?: GameServer['requestMaintenanceRecoveryWindow'];
+    applyOperatorFloorCommand?: GameServer['applyOperatorFloorCommand'];
+    endOperatorMaintenance?: GameServer['endOperatorMaintenance'];
     /** Lightning Phase 6: a pool_session_id resolves to its seat proxy. */
     getActionEngine?: GameServer['getActionEngine'];
     getPreActionEngine?: GameServer['getPreActionEngine'];
@@ -580,6 +583,8 @@ export function createRouter(
     if (method === 'POST' && url === '/insurance') return handleInsurance(req, res, { gameServer });
     if (method === 'POST' && url === '/showhand') return handleShowhand(req, res, { gameServer });
     if (method === 'POST' && url === '/discard') return handleDiscard(req, res, { gameServer });
+    if (url.split('?')[0] === '/admin/platform-control')
+      return handlePlatformControl(req, res, { gameServer });
     if (method === 'POST' && url === '/admin/pause')
       return handleAdminPause(req, res, { gameServer });
     if (method === 'POST' && url === '/admin/resume')

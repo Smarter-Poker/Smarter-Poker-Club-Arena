@@ -6,7 +6,7 @@
   "raw_sources_per_event": 1,
   "recognized_contributors_per_event": 3,
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "9e32091e5a712856d7593b6650b54e60e9d49f52b44af7d1f87972b27ed79388",
+    "scripts/ci/classify-ci-changes.mjs": "846747f1e40dcb9c027feb8aadedb1f1d469fcfc91315b4e9ff2e2af77af0f64",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
@@ -27,7 +27,7 @@
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/restore-synthetic-terms.sql": "9d14a15482330a285c5346e9607a3beec85b2b21b46dcec3a15372a1524e5596",
     "tests/fixtures/sep8-spin-custody/setup.sql": "eded939b6797c5e561e12071cb08938a25359b791cdb810fc49b5e0424565f29",
-    "tests/unit/fixtureNativeCi.test.ts": "0ed8b0f3eedcd503d45f07a52cb720a436cd6f9f410db9eb656d984b23d3fb9f",
+    "tests/unit/fixtureNativeCi.test.ts": "5f3225db066ecc1c3023aaf61be0173967383268b25237b10f2914976f5dbe00",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -83,7 +83,13 @@
       "to": "9e32091e5a712856d7593b6650b54e60e9d49f52b44af7d1f87972b27ed79388",
       "why": "Reviewed exact Phase 6 V4 classifier diff: add the three V4 migrations, metadata regression, evaluation configuration and evaluator to the existing certified-solver accounting selection. No selector is removed or narrowed, and no financial fixture, SQL image, assertion or threshold changes. Routing regression passed 49 tests; matching pins are not execution evidence."
     },
-    { "on": "2026-10-06", "file": "scripts/ci/classify-ci-changes.mjs", "from": "2fc728ea5555ced40641d89f8c85b8f094a09f9f14d5decaa405ffbc5e11ea2a", "to": "e42ea8ef8b84afcb3c97bfbd5750b7c2310523abe96e9dece1e4575ada84fa65", "why": "Explicitly reviewed current-main integration adds EV fixture coverage while retaining weekly6031 routing and both audit histories. No financial input or assertion changes; hash agreement is not execution evidence." },
+    {
+      "on": "2026-10-06",
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "2fc728ea5555ced40641d89f8c85b8f094a09f9f14d5decaa405ffbc5e11ea2a",
+      "to": "e42ea8ef8b84afcb3c97bfbd5750b7c2310523abe96e9dece1e4575ada84fa65",
+      "why": "Explicitly reviewed current-main integration adds EV fixture coverage while retaining weekly6031 routing and both audit histories. No financial input or assertion changes; hash agreement is not execution evidence."
+    },
     {
       "file": "scripts/dev/test-full-weekly-accounting-activation.sh",
       "from": "f94ca2ae32d92fc4e5d981e8089d42d91f15a448c56483f7d3669d57942d4200",
@@ -515,6 +521,20 @@
       "to": "0ed8b0f3eedcd503d45f07a52cb720a436cd6f9f410db9eb656d984b23d3fb9f",
       "on": "2026-10-06",
       "why": "PR6241 adds authenticated EV lifecycle qualification to the existing native gate and routes its real engine and captured fixture inputs. Reviewed additive classifier/test diff; no prior financial assertion, captured authority, checker or qualification status is changed. This fingerprint refresh is not execution or product certification."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "9e32091e5a712856d7593b6650b54e60e9d49f52b44af7d1f87972b27ed79388",
+      "to": "9b80166752ba255d91dbdabf11cd7ed02489c28d2ddcef28b5dc9edea78ce76e",
+      "on": "2026-10-10",
+      "why": "Stable Admin six-capability integration: add two original-owner PG17 qualifiers to the existing required accounting shards, classify their drivers/loaded fixtures/schema fragments, and test that enforcement. Reviewed additive workflow/classifier/test diff; no prior financial authority, assertion, captured fixture or qualification status changes. Source fingerprint refresh does not prove native execution, installation or publication."
+    },
+    {
+      "file": "tests/unit/fixtureNativeCi.test.ts",
+      "from": "0ed8b0f3eedcd503d45f07a52cb720a436cd6f9f410db9eb656d984b23d3fb9f",
+      "to": "a708facf9f8769820d54df76d06b4ae0eb90a80d76bd403a8ae0dc7028fac7ae",
+      "on": "2026-10-10",
+      "why": "Stable Admin six-capability integration: add two original-owner PG17 qualifiers to the existing required accounting shards, classify their drivers/loaded fixtures/schema fragments, and test that enforcement. Reviewed additive workflow/classifier/test diff; no prior financial authority, assertion, captured fixture or qualification status changes. Source fingerprint refresh does not prove native execution, installation or publication."
     }
   ],
   "union_doors_candidate_20260925": "Restamped for 20260925145748. scripts/dev/test-full-weekly-accounting-activation.sh now applies that migration in the existing pnl-evidence hooks chain, immediately after 20260921023420 and before hooks-regression.sql, and hooks-regression.sql gains assertions for what it changes: the square-up refuses a recorded ECO that does not equal round(-eco_rate*eco_base,2) (the old comparison had become the record against itself and could never fire), keeping both existing refusals; and the closed union send door credits the one owner it resolves from clubs.owner_id instead of every role=owner row, carries the house authorization check, an idempotency key and one club-declaring chip_ledger leg, and records its audit row against wallet='chip_balance' rather than the 'main' that union_wallet_transactions_wallet_check has never permitted. No fixture body owned by these bindings changed and no role gains a key. Diff read before restamping.",
@@ -811,5 +831,33 @@
         "after": "2fc728ea5555ced40641d89f8c85b8f094a09f9f14d5decaa405ffbc5e11ea2a"
       }
     }
+  },
+  "stableAdminFormattedIntegration20261010": {
+    "reason": "Reviewed normal formatter changes to additive fixtureNativeCi assertions and combined current-main workflow. Incoming funding recovery check and every original accounting assertion/status are retained. Refresh nested current evidence identity only; no new native or production proof.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": "a708facf9f8769820d54df76d06b4ae0eb90a80d76bd403a8ae0dc7028fac7ae",
+        "current": "3a442cdfb793eb70eb158ade1b9c2ed57e4428d3fcf8db248bae982899e6863a"
+      }
+    ]
+  },
+  "stableAdminCancelLaneQualification20261010": {
+    "reason": "Reviewed additive native cancellation lane classifier and required execution assertions. Existing financial fixture/source/commands/assertions and all historical pins remain unchanged. Refresh exact current source identity; this is not production or financial qualification.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "9b80166752ba255d91dbdabf11cd7ed02489c28d2ddcef28b5dc9edea78ce76e",
+        "current": "846747f1e40dcb9c027feb8aadedb1f1d469fcfc91315b4e9ff2e2af77af0f64"
+      },
+      {
+        "section": "repository_files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": "3a442cdfb793eb70eb158ade1b9c2ed57e4428d3fcf8db248bae982899e6863a",
+        "current": "5f3225db066ecc1c3023aaf61be0173967383268b25237b10f2914976f5dbe00"
+      }
+    ]
   }
 }

@@ -12,13 +12,20 @@
  *
  * The inspect half of the Spec's OPERATOR CONTROLS: inspect matcher, holds,
  * blind ledger and conversion state, replay hand, replay player session,
- * replay mode transition, reconcile stack. Nothing here changes a Cluster's
- * mode or moves a player; pause, drain and freeze are Phase 13.
+ * replay mode transition, reconcile stack.
+ *
+ * The act half arrived in Phase 13 (LightningOperatorControls): pause and
+ * resume, joins, the emergency drain with its live progress, freeze and
+ * unfreeze, Lightning on and off, the matcher version and the feature flags,
+ * every one through fn_lightning_operator_control behind a confirm dialog,
+ * plus the Rollout Readiness verdict. While a drain or a conversion is in
+ * flight this view reads every 5 seconds instead of every 30, so the drain's
+ * progress is live; the database drives the drain, this page only watches.
  *
  * No card is ever shown (the doors redact; nothing here renders a card), and
  * horses read exactly like every other player (Law 10.5).
  */
-import { lazy, Suspense, useCallback, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { SpadeConsole, type ConsoleInk } from '../../../components/console/SpadeConsole';
 import { useToast } from '../../../components/common/Toast';
 import { compactChips } from '../../../utils/format';
@@ -52,13 +59,30 @@ import {
   type OperatorAnswer,
   type SignalReviewStatus,
 } from '../../../lightning/lightningOperatorApi';
-import { CLUSTER_REFRESH_MS, usePolledAnswer } from '../../../lightning/useLightningOperator';
+import {
+  CLUSTER_ACTIVE_REFRESH_MS,
+  CLUSTER_REFRESH_MS,
+  usePolledAnswer,
+} from '../../../lightning/useLightningOperator';
 import { AnswerState, LatencyGrid, MODE_INK, count } from './lightningOperatorParts';
+import LightningOperatorControls, {
+  DrainProgress,
+  RolloutReadiness,
+} from './LightningOperatorControls';
 import styles from '../ClubLightningOperationsPage.module.css';
 
 const LightningLatencyChart = lazy(() => import('./LightningLatencyChart'));
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A drain, a pause being entered or a conversion: something the operator
+ *  is waiting on, watched at the faster interval. */
+export function isInFlight(c: Detail['cluster']): boolean {
+  if (!c) return false;
+  return (
+    c.drain !== null || c.mode === 'draining' || c.mode === 'pending_on' || c.mode === 'pending_off'
+  );
+}
 
 const SEVERITY_INK: Record<string, ConsoleInk> = { high: 'red', medium: 'gold', low: 'blue' };
 
@@ -521,6 +545,10 @@ export default function LightningClusterDetail({
   const [windowKey, setWindowKey] = useState<DetailWindowKey>('24h');
   const [poolSessionId, setPoolSessionId] = useState('');
   const span = DETAIL_WINDOWS.find((w) => w.key === windowKey) ?? DETAIL_WINDOWS[2];
+  /* A drain or a conversion in flight is watched every 5 seconds. Learned
+     from the last answer, so the faster loop starts on the read after one
+     begins and stops on the read after it ends. */
+  const [active, setActive] = useState(false);
 
   const read = usePolledAnswer<Detail>(
     `cluster:${clusterId}:${windowKey}`,
@@ -528,11 +556,15 @@ export default function LightningClusterDetail({
       const to = new Date();
       return fetchLightningCluster(clusterId, new Date(to.getTime() - span.ms), to);
     },
-    CLUSTER_REFRESH_MS
+    active ? CLUSTER_ACTIVE_REFRESH_MS : CLUSTER_REFRESH_MS
   );
   const answer = read.answer;
   const detail = answer?.status === 'ok' ? answer.data : null;
   const c = detail?.cluster ?? null;
+  const inFlight = isInFlight(c);
+  useEffect(() => {
+    setActive(inFlight);
+  }, [inFlight]);
   const badge = modeBadge(c?.mode ?? null);
   const now = read.refreshedAt ?? Date.now();
 
@@ -608,6 +640,18 @@ export default function LightningClusterDetail({
             />
             <Row label="Worker" value={c?.workerMode ? enumLabel(c.workerMode) : 'Unknown'} />
           </Section>
+
+          {c?.drain ? <DrainProgress drain={c.drain} /> : null}
+
+          {c ? (
+            <LightningOperatorControls
+              cluster={c}
+              canUnfreeze={detail.canUnfreeze}
+              onChanged={read.refresh}
+            />
+          ) : null}
+
+          <RolloutReadiness clusterId={clusterId} />
 
           <Section id="lightning-transitions" title="Mode Transitions">
             {detail.transitions.length === 0 ? (

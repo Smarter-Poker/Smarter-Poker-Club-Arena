@@ -46,18 +46,18 @@ export function text(value: unknown): string | null {
   return typeof value === 'string' && value.trim() !== '' ? value : null;
 }
 
-function bool(value: unknown): boolean | null {
+export function bool(value: unknown): boolean | null {
   return typeof value === 'boolean' ? value : null;
 }
 
-function objectOf(raw: unknown): Record<string, unknown> | null {
+export function objectOf(raw: unknown): Record<string, unknown> | null {
   const row = Array.isArray(raw) ? raw[0] : raw;
   return row && typeof row === 'object' && !Array.isArray(row)
     ? (row as Record<string, unknown>)
     : null;
 }
 
-function listOf(raw: unknown): Record<string, unknown>[] {
+export function listOf(raw: unknown): Record<string, unknown>[] {
   return Array.isArray(raw)
     ? raw.filter(
         (r): r is Record<string, unknown> => !!r && typeof r === 'object' && !Array.isArray(r)
@@ -66,7 +66,7 @@ function listOf(raw: unknown): Record<string, unknown>[] {
 }
 
 /** An id the door handed over, kept exactly as it came (uuid or bigint). */
-function idOf(value: unknown): string | null {
+export function idOf(value: unknown): string | null {
   if (typeof value === 'string' && value.trim() !== '') return value;
   if (typeof value === 'number' && Number.isFinite(value)) return String(value);
   return null;
@@ -108,7 +108,7 @@ export function interpretAnswer<T>(
     : { status: 'ok', data };
 }
 
-type RpcClient = Pick<typeof supabase, 'rpc'>;
+export type RpcClient = Pick<typeof supabase, 'rpc'>;
 
 type RpcResult = { data: unknown; error: unknown };
 
@@ -118,7 +118,7 @@ type RpcResult = { data: unknown; error: unknown };
  * literal `client.rpc('fn_lightning_operator_...')`, so the repository's
  * phantom-RPC gate sees every door this page reads.
  */
-async function callDoor<T>(
+export async function callDoor<T>(
   fn: string,
   call: () => PromiseLike<RpcResult>,
   interpret: (raw: unknown) => OperatorAnswer<T>
@@ -169,6 +169,11 @@ export function modeBadge(mode: string | null): LightningModeBadge {
       return { label: 'Pending', tone: 'pending', detail: 'Reverting To Must Move' };
     case 'frozen':
       return { label: 'Frozen', tone: 'frozen', detail: null };
+    // Phase 13 (operator controls): the two modes an operator puts a Cluster in.
+    case 'paused':
+      return { label: 'Paused', tone: 'pending', detail: 'Held By An Operator' };
+    case 'draining':
+      return { label: 'Draining', tone: 'pending', detail: 'Returning To Must Move' };
     default:
       return { label: mode ? enumLabel(mode) : 'Unknown', tone: 'other', detail: null };
   }
@@ -315,6 +320,73 @@ export interface LightningOverviewCluster {
     candidateVersion: string | null;
   } | null;
   latency: { windowFrom: string | null; windowTo: string | null; legs: LatencyLegs } | null;
+  // ── Phase 13: operator controls (fn_lightning_operator_cluster_row) ──
+  /** Held by an operator's Pause; null when the door does not say. */
+  paused: boolean | null;
+  /** The mode a paused Cluster returns to on Resume. */
+  pausedFrom: string | null;
+  /** Whether new players may enter the Lightning pool. */
+  joinsEnabled: boolean | null;
+  /** The emergency drain in progress, or null. */
+  drain: LightningDrain | null;
+  /** The live matcher, the one a roll back returns to, the disabled ones. */
+  matcher: LightningMatcherState | null;
+  /** Every boolean the door's `flags` object carries, key for key. */
+  flagValues: Record<string, boolean | null>;
+}
+
+export interface LightningDrain {
+  phase: string | null;
+  requestedAt: string | null;
+  requestedBy: string | null;
+  reason: string | null;
+  deadlineAt: string | null;
+  instancesRemaining: number | null;
+  handsRemaining: number | null;
+  sessionsRemaining: number | null;
+}
+
+export interface LightningMatcherState {
+  version: string | null;
+  previous: string | null;
+  disabled: string[];
+  shadowVersion: string | null;
+}
+
+export function parseDrain(raw: unknown): LightningDrain | null {
+  const r = objectOf(raw);
+  if (!r) return null;
+  return {
+    phase: text(r.phase),
+    requestedAt: text(r.requested_at),
+    requestedBy: idOf(r.requested_by),
+    reason: text(r.reason),
+    deadlineAt: text(r.deadline_at),
+    instancesRemaining: num(r.instances_remaining),
+    handsRemaining: num(r.hands_remaining),
+    sessionsRemaining: num(r.sessions_remaining),
+  };
+}
+
+export function parseMatcher(raw: unknown): LightningMatcherState | null {
+  const r = objectOf(raw);
+  if (!r) return null;
+  return {
+    version: text(r.version),
+    previous: text(r.previous),
+    disabled: Array.isArray(r.disabled)
+      ? r.disabled.filter((v): v is string => typeof v === 'string' && v.trim() !== '')
+      : [],
+    shadowVersion: text(r.shadow_version),
+  };
+}
+
+function parseFlagValues(raw: Record<string, unknown>): Record<string, boolean | null> {
+  const out: Record<string, boolean | null> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === 'boolean' || value === null) out[key] = value;
+  }
+  return out;
 }
 
 function parseStuck(raw: unknown): LightningOverviewCluster['stuckConversion'] {
@@ -403,6 +475,12 @@ export function parseOverviewCluster(raw: unknown): LightningOverviewCluster | n
           legs: parseLatencyLegs(latency.legs),
         }
       : null,
+    paused: bool(r.paused),
+    pausedFrom: text(r.paused_from),
+    joinsEnabled: bool(r.joins_enabled),
+    drain: parseDrain(r.drain),
+    matcher: parseMatcher(r.matcher),
+    flagValues: parseFlagValues(flags),
   };
 }
 
@@ -749,6 +827,19 @@ export interface LightningClusterDetail {
   alerts: LightningAlertRow[];
   latencyWindows: LightningLatencyWindow[];
   quality: LightningQuality | null;
+  /** Phase 13: whether the viewer may unfreeze (a platform administrator).
+   *  Null when the door does not say; the control door is the judge. */
+  canUnfreeze: boolean | null;
+}
+
+/** The door's word on the viewer, wherever the row carries it. */
+export function parseCanUnfreeze(row: Record<string, unknown>): boolean | null {
+  const caller = objectOf(row.caller);
+  return (
+    bool(row.can_unfreeze) ??
+    bool(row.caller_is_platform_admin) ??
+    (caller ? (bool(caller.can_unfreeze) ?? bool(caller.platform_admin)) : null)
+  );
 }
 
 function parsedList<T>(raw: unknown, parse: (r: unknown) => T | null): T[] {
@@ -771,6 +862,7 @@ export function parseClusterDetail(row: Record<string, unknown>): LightningClust
     alerts: parsedList(row.alerts, parseAlert),
     latencyWindows: parsedList(row.latency_windows, parseLatencyWindow),
     quality: parseQuality(row.quality),
+    canUnfreeze: parseCanUnfreeze(row),
   };
 }
 

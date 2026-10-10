@@ -351,6 +351,9 @@ export function useClubOperationsOverview(
 
     return () => {
       disposed = true;
+      // A navigation can abort the shared RPC after this reader has gone.
+      // Its outcome belongs to the disposed route, not the next page.
+      requestRef.current += 1;
       clearInterval(poll);
       if (coalesce) clearTimeout(coalesce);
       unsubs.forEach((unsub) => unsub());

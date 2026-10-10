@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -352,6 +352,54 @@ describe('S-04 / S-07: the dialogs trust neither a note nor a table read', () =>
     expect(src).toContain("if (panel.scope !== 'club') {");
     // The RPC is still the authority: nothing here changed what it is told.
     expect(src).toContain("await supabase.rpc('fn_mint_chips_from_diamonds', {");
+  });
+
+  /**
+   * S-07 FOLLOW-UP (2026-10-10). Club Bank (`clubs.chip_treasury`) and the
+   * club promo pot (`clubs.promo_balance`) are readable by every API caller
+   * (table-level SELECT to anon and authenticated), and a column REVOKE is
+   * deferred because PostgREST answers `select=*` with 42501 the moment a role
+   * lacks SELECT on any one column. So the cashier and wallet surfaces must not
+   * DEPEND on those columns: every figure comes through
+   * `fn_club_money_panel`, the SECURITY DEFINER read with the server role
+   * check, which answers Unavailable (never 0) when it refuses.
+   *
+   * This pin walks every `.from('clubs')` read on those surfaces and refuses
+   * a column list that names either column, a `*`, or a bare `.select()`
+   * (which is `*` to PostgREST). The club pages (`ClubHomePage`,
+   * `ClubsService`) still read the column directly and are out of scope here.
+   */
+  it('no cashier or wallet surface selects chip_treasury or promo_balance off clubs', () => {
+    const walletDir = 'src/components/wallet';
+    const surfaces = [
+      'src/pages/CashierPage.tsx',
+      'src/services/WalletService.ts',
+      'src/components/agent/ChipTransferModal.tsx',
+      'src/components/agent/AgentPromoPanel.tsx',
+      'src/components/union/UnionWalletModal.tsx',
+      ...readdirSync(walletDir)
+        .filter((name) => /\.tsx?$/.test(name))
+        .map((name) => `${walletDir}/${name}`),
+    ];
+    expect(surfaces.length).toBeGreaterThan(10);
+    for (const path of surfaces) {
+      const src = read(path);
+      const reads = [...src.matchAll(/\.from\(\s*['"]clubs['"]\s*\)\s*\.select\(([^)]*)\)/g)];
+      for (const [whole, columns] of reads) {
+        const list = columns.trim();
+        expect(list, `${path}: ${whole}`).not.toBe('');
+        expect(list, `${path}: ${whole}`).not.toMatch(/\*/);
+        expect(list, `${path}: ${whole}`).not.toMatch(/chip_treasury|promo_balance/);
+      }
+    }
+    // Every surface that shows the club's money reads it through the panel.
+    expect(read('src/services/cashierBalanceRead.ts')).toContain(
+      "supabase.rpc('fn_club_money_panel', { p_club_id: uuid })"
+    );
+    expect(read('src/components/agent/ChipTransferModal.tsx')).toContain(
+      "await supabase.rpc('fn_club_money_panel', {"
+    );
+    expect(read(DW)).toContain(".rpc('fn_club_money_panel', { p_club_id: resolvedId })");
   });
 });
 

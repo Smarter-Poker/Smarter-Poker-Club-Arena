@@ -289,15 +289,26 @@ BEGIN
     jsonb_build_object(
       'signature', 'public.fn_diamond_spin_statements(date)',
       'hash', '00971f8d29f0078bce0f8d63ac503a71'
+    ),
+    -- The last two client-called cashier doors. Production granted EXECUTE on
+    -- them to authenticated and postgres only (read 2026-10-09), so this loop's
+    -- ACL rule could not pin them; migration
+    -- 20261010022852_cashier_contract_pins_need_service_role_execute grants
+    -- service_role EXECUTE and nothing else. Hashes are the production bodies
+    -- read 2026-10-09 (same file as the entries above).
+    jsonb_build_object(
+      'signature', 'public.fn_cashout_operation_receipt_v2(uuid,uuid,text,uuid,numeric,uuid,text)',
+      -- The cashout v2 receipt reader (CashoutService).
+      -- Its proconfig also carries lock_timeout=3s and statement_timeout=30s;
+      -- the pin is the search_path element, checked by array containment.
+      'hash', 'c9af51f246a9be79c7b79c49b760e9a9',
+      'search_path', 'search_path=public'
+    ),
+    jsonb_build_object(
+      'signature', 'public.send_wallet_diamond_transfer(uuid,integer,text,text)',
+      -- The Diamond Wallet transfer (DiamondWalletTransfer).
+      'hash', '8d5b95d8ad2a74c1ba85339168349606'
     )
-    -- Not pinnable until service_role is granted (this loop requires
-    -- authenticated AND service_role EXECUTE; production grants only
-    -- authenticated + postgres on these two, read 2026-10-09):
-    --   public.fn_cashout_operation_receipt_v2(uuid,uuid,text,uuid,numeric,uuid,text)
-    --     md5 c9af51f246a9be79c7b79c49b760e9a9,
-    --     proconfig search_path=public; lock_timeout=3s; statement_timeout=30s
-    --   public.send_wallet_diamond_transfer(uuid,integer,text,text)
-    --     md5 8d5b95d8ad2a74c1ba85339168349606, proconfig search_path=public, pg_temp
   );
 
   FOR v_item IN SELECT value FROM jsonb_array_elements(v_contract)

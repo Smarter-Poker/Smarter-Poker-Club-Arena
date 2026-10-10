@@ -170,6 +170,27 @@ describe('wallet displays follow authenticated reads, not unpublished channels',
     expect(view.container).toHaveTextContent('Balances Unavailable');
   });
 
+  it('prints "-" for every wallet, never 0, when the FIRST read fails (launch audit R-03)', async () => {
+    fixture.failure = true;
+    const view = render(<DynamicWallet {...base} variant="club" />);
+    await flush();
+    expect(view.container).toHaveTextContent('Balances Unavailable');
+    const values = Array.from(view.container.querySelectorAll('.dw__row-value')).map((el) =>
+      el.textContent?.trim()
+    );
+    expect(values.length).toBeGreaterThan(0);
+    for (const value of values) expect(value).toBe('-');
+    expect(view.container.querySelector('.dw__sr-live')?.textContent).not.toMatch(/\b0\b/);
+    expect(view.container.querySelector('.dw__sr-live')?.textContent).toContain('Unavailable');
+    expect(view.container.querySelector('.dw__sr-live')?.textContent).not.toContain('unavailable');
+
+    // The retry lands: the real figures replace the dashes.
+    fixture.failure = false;
+    await act(() => vi.advanceTimersByTimeAsync(8_000));
+    await flush();
+    expect(value(view.container, 'club_bank')).toHaveTextContent('100');
+  });
+
   it('keeps diamond-only arenas free of chip reads on initial and subsequent refreshes', async () => {
     fixture.chipWallet = false;
     render(<DynamicWallet {...base} variant="club" />);

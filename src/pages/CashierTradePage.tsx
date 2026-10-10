@@ -64,7 +64,7 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { useCashoutScope } from '../hooks/useCashoutScope';
 import {
   readClubWeeklyStatements,
-  formatWeeklyChips,
+  formatWeeklyChipsForDisplay,
   CLUB_WEEKLY_STATEMENT_LIMIT,
   type ClubWeeklyStatement,
 } from '../services/ClubWeeklyAccountingReader';
@@ -213,12 +213,64 @@ type TabKey = 'trade' | 'record' | 'leaderboard' | 'request' | 'tickets';
 const fmt = compactChips;
 
 /**
+ * THE FIGURE A USER CONFIRMS IS THE FIGURE THAT MOVES (launch audit
+ * 2026-10-09, P-10). `fmt` floors to one decimal of K/M/B for head zones and
+ * list rows, which is the console law. Inside a confirmation - the Send Out
+ * total and its per-target rows, an Insufficient Chips refusal, the receipt
+ * amount - the exact two-decimal figure prints instead, grouped by thousands:
+ * 5 x 1,999.99 is "9,999.95", never "9.9K". Whole chips print whole.
+ */
+export function exactChipFigure(value: number): string {
+  const safe = Number.isFinite(value) ? value : 0;
+  const cents = Math.round(Math.abs(safe) * 100);
+  const whole = Math.floor(cents / 100);
+  const fraction = cents % 100;
+  const grouped = whole.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const sign = safe < 0 && cents > 0 ? '-' : '';
+  // Two cent digits by arithmetic: the one padStart on this page is the
+  // mm:ss clock, and the role-scoping law counts call sites.
+  return fraction === 0
+    ? `${sign}${grouped}`
+    : `${sign}${grouped}.${fraction < 10 ? '0' : ''}${fraction}`;
+}
+
+/**
+ * Money is summed in CENTS (launch audit 2026-10-09, P-16). `0.1 + 0.2 - 0.3`
+ * is 5.55e-17 in binary floating point, which `net` printed as "+0"; every
+ * displayed sum on this page goes through here so a figure can never carry
+ * drift the ledger does not have.
+ */
+export function sumChips(values: Iterable<number>): number {
+  let cents = 0;
+  for (const value of values) cents += Math.round((Number(value) || 0) * 100);
+  return cents / 100;
+}
+
+/**
  * Add batch values in chip cents, not binary floating point. `0.10 * 3` is
  * 0.30000000000000004 in JavaScript, which used to reject a send from a wallet
  * holding exactly 0.30 even though every individual RPC amount was valid.
  */
 const batchAmount = (amountPerTarget: number, targetCount: number) =>
   (Math.round(amountPerTarget * 100) * targetCount) / 100;
+
+/**
+ * "1,000" used to reach `Number()` as NaN and be refused as "Enter A Positive
+ * Amount" - the message blamed the sign, not the comma (launch audit
+ * 2026-10-09, P-20). Conventional thousands grouping is accepted and stripped;
+ * any other comma is named for what it is. Same words as the classic cashier.
+ */
+export function parseTradeAmount(
+  input: string
+): { ok: true; value: number } | { ok: false; error: string } {
+  const trimmed = String(input ?? '').trim();
+  const grouped = /^\d{1,3}(,\d{3})+(\.\d+)?$/.test(trimmed);
+  const spelled = grouped ? trimmed.replace(/,/g, '') : trimmed;
+  if (spelled.includes(',')) return { ok: false, error: 'Enter The Amount Without Commas' };
+  const raw = spelled === '' ? NaN : Number(spelled);
+  if (!Number.isFinite(raw) || raw <= 0) return { ok: false, error: 'Enter A Positive Amount' };
+  return { ok: true, value: raw };
+}
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -300,6 +352,8 @@ export default function CashierTradePage() {
   const ticketSeqRef = useRef(0);
   const recordSeqRef = useRef(0);
   const invoiceSeqRef = useRef(0);
+  /** Claim Back list guard (launch audit 2026-10-09, P-03): bumped with the rest. */
+  const reversibleSeqRef = useRef(0);
 
   const [search, setSearch] = useState('');
   const [groupByRole, setGroupByRole] = useState(false);
@@ -463,6 +517,9 @@ export default function CashierTradePage() {
     return () => {
       isMounted.current = false;
     };
+  }, []);
+  useEffect(() => {
+    document.title = 'Cashier | Smarter Poker';
   }, []);
 
   useEffect(() => {
@@ -924,6 +981,7 @@ export default function CashierTradePage() {
     ++ticketSeqRef.current;
     ++recordSeqRef.current;
     ++invoiceSeqRef.current;
+    ++reversibleSeqRef.current;
     setTab('trade');
     initialTabResolvedRef.current = false;
     setRoleResolved(false);
@@ -1094,7 +1152,11 @@ export default function CashierTradePage() {
         for (const pr of profs || []) names.set(pr.id as string, playerDisplayName(pr as any));
       }
       if (!isMounted.current || seq !== reqSeqRef.current) return false;
-      setPendingCount(visible.length);
+      // The head count is exact; this page is capped at 100. A full page says
+      // "at least 100", so it may only RAISE the badge; a short page is the
+      // whole queue and is the truth (launch audit 2026-10-09, P-17).
+      const pageComplete = (data || []).length < 100;
+      setPendingCount((held) => (pageComplete ? visible.length : Math.max(held, visible.length)));
       setRequests(
         visible.map((r) => ({
           id: r.id as string,
@@ -1275,9 +1337,11 @@ export default function CashierTradePage() {
             ? 'Request Declined'
             : 'Request Cancelled'
       );
+      // The bus event is already wired to reload this page (and its badges), so
+      // calling loadClub() here as well fired two identical paged loads at
+      // once (launch audit 2026-10-09, P-18).
       masterBus.emit('BALANCE_UPDATED', { source: 'chip_request', userId: user?.id || '' });
       loadRequests();
-      loadClub();
     } catch (e) {
       reportError(e, 'CashierTradePage.respondToRequest');
       toast?.error?.((e as Error).message || 'Could Not Answer That Request');
@@ -1293,11 +1357,12 @@ export default function CashierTradePage() {
       toast?.error?.('Choose A Club Cashier');
       return;
     }
-    const raw = Number(askAmount);
-    if (!Number.isFinite(raw) || raw <= 0) {
-      toast?.error?.('Enter A Positive Amount');
+    const parsedAsk = parseTradeAmount(askAmount);
+    if (!parsedAsk.ok) {
+      toast?.error?.(parsedAsk.error);
       return;
     }
+    const raw = parsedAsk.value;
     const v = Math.round(raw * 100) / 100;
     if (v !== raw) {
       toast?.error?.('Chips Go To Two Decimal Places');
@@ -1403,7 +1468,7 @@ export default function CashierTradePage() {
   const mineCount = useMemo(() => downline.filter((r) => r.isMine).length, [downline]);
   /** What the reader's own assigned players are holding, for the strip. */
   const mineTotal = useMemo(
-    () => downline.reduce((sum, r) => (r.isMine ? sum + (Number(r.chipBalance) || 0) : sum), 0),
+    () => sumChips(downline.filter((r) => r.isMine).map((r) => r.chipBalance)),
     [downline]
   );
 
@@ -1434,10 +1499,7 @@ export default function CashierTradePage() {
     return rows;
   }, [downline, search, sortKey, groupByRole, mineOnly]);
 
-  const agencyBalance = useMemo(
-    () => recipients.reduce((s, r) => s + r.chipBalance, 0),
-    [recipients]
-  );
+  const agencyBalance = useMemo(() => sumChips(recipients.map((r) => r.chipBalance)), [recipients]);
 
   /** Fast client-side ledger controls over the bounded, newest-first page. */
   const filteredRecords = useMemo(() => {
@@ -1454,19 +1516,15 @@ export default function CashierTradePage() {
   }, [records, recordDirection, recordQuery]);
 
   const recordSummary = useMemo(() => {
-    const incoming = records.reduce(
-      (sum, row) => (row.direction === 'in' ? sum + row.amount : sum),
-      0
-    );
-    const outgoing = records.reduce(
-      (sum, row) => (row.direction === 'out' ? sum + row.amount : sum),
-      0
-    );
-    const managed = records.reduce(
-      (sum, row) => (row.direction === 'managed' ? sum + row.amount : sum),
-      0
-    );
-    return { incoming, outgoing, managed, net: incoming - outgoing };
+    const amountsIn = (direction: TradeRecordRow['direction']) =>
+      records.filter((row) => row.direction === direction).map((row) => row.amount);
+    const incoming = sumChips(amountsIn('in'));
+    const outgoing = sumChips(amountsIn('out'));
+    const managed = sumChips(amountsIn('managed'));
+    // Net in cents too: 0.1 + 0.2 - 0.3 is not 0 in floating point and used to
+    // print as "+0" (P-16).
+    const net = (Math.round(incoming * 100) - Math.round(outgoing * 100)) / 100;
+    return { incoming, outgoing, managed, net };
   }, [records]);
 
   const visibleTabs = useMemo<[TabKey, string][]>(() => {
@@ -1571,10 +1629,7 @@ export default function CashierTradePage() {
   }, [user?.id, clubUuid]);
 
   /** Chips the selected players are holding right now. */
-  const pickedHeld = useMemo(
-    () => picked.reduce((sum, r) => sum + (Number(r.chipBalance) || 0), 0),
-    [picked]
-  );
+  const pickedHeld = useMemo(() => sumChips(picked.map((r) => r.chipBalance)), [picked]);
 
   const toggleSelect = (id: string) =>
     setSelected((prev) => {
@@ -1595,11 +1650,12 @@ export default function CashierTradePage() {
       toast?.error?.('Cashier Is Still Synchronizing. Try Again In A Moment');
       return;
     }
-    const raw = Number(amount);
-    if (!Number.isFinite(raw) || raw <= 0) {
-      toast?.error?.('Enter A Positive Amount');
+    const parsedAmount = parseTradeAmount(amount);
+    if (!parsedAmount.ok) {
+      toast?.error?.(parsedAmount.error);
       return;
     }
+    const raw = parsedAmount.value;
     // QUANTIZE. NaN, negative and zero were covered; 10.005 was not. It passed
     // straight through to club_members.chip_balance while fmt() rendered it as
     // "10.01" in the modal total AND in the receipt, and `value * targets`
@@ -1642,12 +1698,14 @@ export default function CashierTradePage() {
     const total = batchAmount(value, targets.length);
     if (kind === 'send' && agentWallet !== null && total > agentWallet) {
       toast?.error?.(
-        `Insufficient Chips: Sending ${fmt(total)} Needs More Than Your Agent Wallet Holds, ${fmt(agentWallet)}`
+        `Insufficient Chips: Sending ${exactChipFigure(total)} Needs More Than Your Agent Wallet Holds, ${exactChipFigure(agentWallet)}`
       );
       return;
     }
     if (kind === 'ticket' && total > myBalance) {
-      toast?.error?.(`Insufficient Chips: Sending ${fmt(total)} Needs More Than ${fmt(myBalance)}`);
+      toast?.error?.(
+        `Insufficient Chips: Sending ${exactChipFigure(total)} Needs More Than ${exactChipFigure(myBalance)}`
+      );
       return;
     }
     if (busyRef.current) return; // a fast double-tap must not send twice
@@ -1739,7 +1797,10 @@ export default function CashierTradePage() {
             ...(kind === 'send'
               ? {
                   destination: canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet',
-                  reason: `Cashier Send Out To ${target.name}`,
+                  // The server's replay fingerprint includes the reason, so it
+                  // is built from ids that cannot change between an uncertain
+                  // send and its retry - never a display name (S-06).
+                  reason: `Cashier Send Out ${submissionId}`,
                   op_id: opIdFor(target.userId),
                 }
               : {
@@ -1893,12 +1954,17 @@ export default function CashierTradePage() {
    */
   const loadReversible = useCallback(async () => {
     if (!clubUuid) return;
+    // Every other loader on this page drops a stale response by sequence; this
+    // one checked only the unmount guard, so club A's slow list could land
+    // over club B's and offer A's sends against B's club id (P-03).
+    const seq = ++reversibleSeqRef.current;
+    const requestedClub = clubUuid;
     setReversibleLoading(true);
     setReversibleError(null);
     const { data, error } = await supabase.rpc('fn_agent_wallet_reversible', {
-      p_club_id: clubUuid,
+      p_club_id: requestedClub,
     });
-    if (!isMounted.current) return;
+    if (!isMounted.current || seq !== reversibleSeqRef.current) return;
     if (error) {
       reportError(error, 'CashierTradePage.loadReversible');
       // "Nothing Is Claimable" is a different statement from "we could not read
@@ -2255,7 +2321,7 @@ export default function CashierTradePage() {
           {pickerOpen && (
             <div
               ref={pickerRef}
-              id="cashier-club-picker"
+              id="cashier-club-picker-region"
               className={styles.picker}
               role="region"
               tabIndex={-1}
@@ -2282,7 +2348,7 @@ export default function CashierTradePage() {
                 options[nextIndex]?.focus();
               }}
             >
-              <div className={styles.pickerLabel}>OPEN CASHIER FOR</div>
+              <div className={styles.pickerLabel}>Open Cashier For</div>
               {membershipsLoading && (
                 <div className={styles.pickerStatus}>Loading Club Cashiers...</div>
               )}
@@ -2299,7 +2365,7 @@ export default function CashierTradePage() {
                 </div>
               )}
               {!membershipsLoading && !membershipsError && (
-                <div role="listbox" aria-label="Club Cashiers">
+                <div id="cashier-club-picker" role="listbox" aria-label="Club Cashiers">
                   {memberships.map((m) => (
                     <button
                       key={m.clubUuid}
@@ -2974,12 +3040,12 @@ export default function CashierTradePage() {
                         </span>
                       </div>
                       <span className={styles.rowSub}>
-                        Rake Funding {formatWeeklyChips(iv.rakeFunding)}
+                        Rake Funding {formatWeeklyChipsForDisplay(iv.rakeFunding)}
                         <br />
-                        Paid By Club {formatWeeklyChips(iv.paidByClub)}
+                        Paid By Club {formatWeeklyChipsForDisplay(iv.paidByClub)}
                       </span>
                       <span className={styles.rowBalance}>
-                        Retained {formatWeeklyChips(iv.retainedByClub)}
+                        Retained {formatWeeklyChipsForDisplay(iv.retainedByClub)}
                       </span>
                     </div>
                   ))}
@@ -3216,7 +3282,7 @@ export default function CashierTradePage() {
                     }
                   >
                     {receipt.direction === 'in' ? '+' : receipt.direction === 'out' ? '-' : ''}
-                    {fmt(receipt.amount)}
+                    {exactChipFigure(receipt.amount)}
                   </strong>
                   <small className="sc-label sc-ink--muted">Chips</small>
                 </div>
@@ -3321,10 +3387,10 @@ export default function CashierTradePage() {
               <div className={styles.glass}>
                 <input
                   type="number"
-                  inputMode="numeric"
+                  inputMode="decimal"
                   min={0}
                   value={askAmount}
-                  step="1"
+                  step="0.01"
                   aria-label="Chips Requested"
                   onChange={(e) => setAskAmount(e.target.value)}
                   placeholder="How Many Chips?"
@@ -3352,8 +3418,10 @@ export default function CashierTradePage() {
       <WalletCashierModal
         isOpen={!!activeCashier}
         onClose={() => {
+          // The modal emits its own balance bus event on every money move and
+          // that event reloads this page; a second loadClub() here doubled
+          // every paged read on a large club (P-18).
           setActiveCashier(null);
-          loadClub();
         }}
         clubId={clubUuid || clubParam || ''}
         role={myRole}
@@ -3389,7 +3457,7 @@ export default function CashierTradePage() {
                       setTransferFailures([]);
                     }
               }
-              eyebrow={`${compactChips(picked.length)} Player${picked.length === 1 ? '' : 's'}`}
+              eyebrow={`${compactChips(picked.length)} Player${picked.length === 1 ? '' : 's'} · ${fmt(batchAmount(Number(amount) || 0, picked.length))} Total`}
               title={amountModal === 'send' ? 'Send Out' : 'Send Ticket'}
               titleId="cashier-amount-title"
               pill={busy ? 'Working' : 'Ready'}
@@ -3419,9 +3487,9 @@ export default function CashierTradePage() {
               <div className={styles.glass}>
                 <input
                   type="number"
-                  inputMode="numeric"
+                  inputMode="decimal"
                   min={0}
-                  step="1"
+                  step="0.01"
                   aria-label="Amount Per Player"
                   value={amount}
                   onChange={(e) => {
@@ -3449,7 +3517,7 @@ export default function CashierTradePage() {
                             ? ' (Agent Wallet)'
                             : ''}
                         </span>
-                        <span>{fmt(Number(amount) || 0)}</span>
+                        <span>{exactChipFigure(Number(amount) || 0)}</span>
                       </div>
                     ))}
                   </div>
@@ -3461,7 +3529,7 @@ export default function CashierTradePage() {
                   </div>
                 )}
                 <div className={styles.modalHint}>
-                  Total: {fmt(batchAmount(Number(amount) || 0, picked.length))} &middot;{' '}
+                  Total: {exactChipFigure(batchAmount(Number(amount) || 0, picked.length))} &middot;{' '}
                   {/* THE ACCOUNT EACH ACTION SPENDS. Send Out debits the agent
                   wallet; a ticket escrows the caller's own chip balance. They
                   are different accounts and quoting the wrong one tells the

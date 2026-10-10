@@ -8,12 +8,19 @@ import { askToSignInAgain, isDeadSessionRefusal } from '../../lib/deadSessionRef
 type Request = { recipient: string; name: string; amount: number; key: string };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** The spelling of a whole-diamond amount: digits only, no sign, no exponent. */
+const WHOLE_DIAMONDS = /^\d+$/;
+
 export default function DiamondWalletTransfer({
   userId,
   onComplete,
+  onBusyChange,
 }: {
   userId: string;
   onComplete: () => void;
+  /** Told whenever the transfer RPC is travelling, so the wallet sheet around
+      this form can hold its close paths shut (launch audit D-13). */
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const alive = useRef(true);
   useEffect(() => {
@@ -45,13 +52,24 @@ export default function DiamondWalletTransfer({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [open, setOpen] = useState(Boolean(request));
+  /* Only the SEND is reported: verifying a friend moves nothing. */
+  const [sending, setSending] = useState(false);
+  useEffect(() => {
+    onBusyChange?.(sending);
+  }, [sending, onBusyChange]);
+  useEffect(() => () => onBusyChange?.(false), [onBusyChange]);
 
   async function verify() {
     const id = recipient.trim().toLowerCase();
-    const units = Number(amount);
+    const spelled = amount.trim();
+    const units = Number(spelled);
+    /* The spelling is inspected as well as the value (launch audit D-15):
+       Number('1e3') is a safe integer, so "1e3" sent a thousand diamonds the
+       typist never saw written out. */
     if (
       !uuid.test(id) ||
       id === userId ||
+      !WHOLE_DIAMONDS.test(spelled) ||
       !Number.isSafeInteger(units) ||
       units <= 0 ||
       units > 2147483647
@@ -110,6 +128,7 @@ export default function DiamondWalletTransfer({
     const next = request || review;
     if (!next || busy) return;
     setBusy(true);
+    setSending(true);
     setMessage('');
     try {
       // Persist before the request. A refresh must retry this identity.
@@ -172,7 +191,10 @@ export default function DiamondWalletTransfer({
         setMessage('Transfer Not Yet Confirmed. Retry This Transfer To Retrieve Its Receipt.');
       }
     } finally {
-      if (alive.current) setBusy(false);
+      if (alive.current) {
+        setBusy(false);
+        setSending(false);
+      }
     }
   }
 

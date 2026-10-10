@@ -419,7 +419,10 @@
   gap: 2cqw;
 }
 
+/* A word control is a thumb target: 44px tall AND at least 44px wide
+   ("Fund" measured 38px; launch audit 2026-10-09, R-12). */
 .plusBtn {
+  min-width: 44px;
   min-height: 44px;
   padding: 0 1cqw;
   color: var(--ink-gold);
@@ -824,15 +827,18 @@
 
 /* It stacks on the footer's live height (tests/bars-stack-on-the-footers-
    live-height.law.test.ts) and sticks inside the Trade panel, between the
-   rails. The glass is transparent over the page's black, so the dock carries
-   that same black to keep rows from showing through it: one tone. */
+   rails. SpadeConsole.css paints the body glass #0a0b0d, so the dock carries
+   THAT tone to keep rows from showing through it: one tone inside the well
+   (Dan: "CLEAN CONSISTENT BACKGROUNDS"; launch audit 2026-10-09, R-06). It
+   was #000 from when the glass was transparent over the black page, and read
+   as a second, darker well inside the well. */
 .dock {
   position: sticky;
   z-index: 5;
   bottom: var(--bottom-nav-stack-base, 86px);
   display: flex;
   flex-direction: column;
-  background: #000;
+  background: #0a0b0d;
 }
 
 .selBar {
@@ -1050,8 +1056,9 @@
 }
 
 /* Claim Back has one action, so its foot is the flat cap and Close is a lit
-   word on the glass. It stays reachable while a long list scrolls; the black
-   is the glass's own tone over the backdrop. */
+   word on the glass. It stays reachable while a long list scrolls; the band
+   is the glass's own tone (#0a0b0d, SpadeConsole.css) over the backdrop, and
+   the engraved rule above it is the row divider, not a frame (R-06). */
 .modalActions {
   position: sticky;
   bottom: 0;
@@ -1060,7 +1067,7 @@
   padding-top: 0.6cqw;
   border-top: 1px solid #000;
   box-shadow: var(--engraved-rule-lip);
-  background: #000;
+  background: #0a0b0d;
 }
 
 /* ── Focus and responsive behaviour ───────────────────────────────────── */

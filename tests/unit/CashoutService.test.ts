@@ -60,6 +60,7 @@ import {
   cashoutService,
   captureCashoutAccountGuard,
   CashoutOutcomeUnknownError,
+  CashoutRefusedError,
 } from '../../src/services/CashoutService';
 import { masterBus } from '../../src/core/MasterBus';
 import { supabase } from '../../src/lib/supabase';
@@ -204,10 +205,8 @@ describe('verified v2 cashier lifecycle', () => {
     expect(rpc).toHaveBeenCalledTimes(2);
     expect(rpc.mock.calls[1]).toEqual(rpc.mock.calls[0]);
   });
-  it('refuses the retired completion stub instead of fabricating success', async () => {
-    await expect(cashoutService.completeCashout(ID.cashout, ID.agent)).rejects.toThrow(/Retired/);
-    expect(rpc).not.toHaveBeenCalled();
-  });
+  // 2026-10-09 (S-11): the throw-only completeCashout stub was deleted with its
+  // dead case; the public surface below pins that no such method exists.
 });
 
 describe('no unverified success or silent legacy fallback', () => {
@@ -738,37 +737,97 @@ describe('existing reads and separately scoped wallet paths', () => {
       p_status: 'pending',
     });
   });
-  it('keeps the agent wallet send and transaction-anchored claim APIs unchanged', async () => {
-    rpc.mockResolvedValueOnce({
-      data: { success: true, transaction_id: ID.transaction, amount: 100 },
-      error: null,
-    } as never);
-    await cashoutService.sendChipsToPlayer(ID.agent, ID.player, ID.club, 100, 'buy in');
-    expect(rpc.mock.calls[0][0]).toBe('fn_agent_wallet_send');
-    expect(rpc.mock.calls[0][1]).toMatchObject({ p_destination: 'player_wallet' });
-    rpc.mockResolvedValueOnce({
-      data: { success: true, amount: 100, agent_wallet_after: 900 },
-      error: null,
-    } as never);
-    expect(await cashoutService.claimBackSend(ID.club, ID.transaction)).toMatchObject({
-      agentWalletAfter: 900,
-    });
-    expect(rpc.mock.calls[1][0]).toBe('fn_agent_wallet_claim_back');
-    expect(rpc.mock.calls[1][1]).not.toHaveProperty('p_player_id');
-  });
-  it('preserves claim refusal and the blanket player-removal prohibition', async () => {
-    rpc.mockResolvedValueOnce({
-      data: { success: false, error: 'Ten Minute Window Closed' },
-      error: null,
-    } as never);
-    await expect(cashoutService.claimBackSend(ID.club, ID.transaction)).rejects.toThrow(
-      /Ten Minute Window/
-    );
-    rpc.mockClear();
-    await expect(
-      cashoutService.removeChipsFromPlayer(ID.agent, ID.player, ID.club, 10)
-    ).rejects.toThrow(/cannot remove chips/i);
+  // 2026-10-09 (S-08/S-11): the dead sendChipsToPlayer / claimBackSend /
+  // removeChipsFromPlayer wrappers were deleted (nothing in src called them and
+  // two minted a decorative `opId || newOpId()`); their cases went with them.
+  it('no longer exposes a money wrapper that could mint its own op id', () => {
+    const service = cashoutService as unknown as Record<string, unknown>;
+    for (const gone of [
+      'sendChipsToPlayer',
+      'claimBackSend',
+      'adminRemovePlayerChips',
+      'removeChipsFromPlayer',
+      'completeCashout',
+      'expireStale',
+    ]) {
+      expect(service[gone], gone).toBeUndefined();
+    }
     expect(rpc).not.toHaveBeenCalled();
+  });
+});
+
+describe('a refusal the server rolled back is definitive, not unknown (S-01)', () => {
+  const refusal = (code: string, message: string) =>
+    rpc.mockResolvedValueOnce({
+      data: null,
+      error: { code, message, details: null, hint: null },
+    } as never);
+  it.each([
+    ['22023', 'cashier_invalid_amount', 'That Cashout Request Is Not Valid.'],
+    ['22023', 'cashier_operation_conflict', 'That Cashout Request Is Not Valid.'],
+    ['23514', 'cashier_wallet_balance_unverified', 'Not Enough Chips For That Cashout.'],
+    ['23514', 'cashier_pending_request_exists', 'You Already Have A Pending Cashout.'],
+    ['23514', 'cashier_request_already_terminal', 'That Cashout Was Already Decided.'],
+    ['23514', 'cashier_club_unavailable', 'That Cashout Was Refused.'],
+    ['42501', 'cashier_account_changed', 'You Are Not Allowed To Do That Here.'],
+    ['42501', 'cashier_current_authority_required', 'You Are Not Allowed To Do That Here.'],
+  ])('maps SQLSTATE %s %s to a plain refusal the player can act on', async (code, token, words) => {
+    refusal(code, token);
+    const outcome = request().catch((error: unknown) => error);
+    const error = (await outcome) as CashoutRefusedError;
+    expect(error).toBeInstanceOf(CashoutRefusedError);
+    expect(error).not.toBeInstanceOf(CashoutOutcomeUnknownError);
+    expect(error.message).toBe(words);
+    expect(error.definitive).toBe(true);
+    expect(error.code).toBe(code);
+    expect(error.token).toBe(token);
+    expect(error.operationId).toBe(ID.operation);
+    expect(error.clubId).toBe(ID.club);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(masterBus.emit).not.toHaveBeenCalled();
+  });
+  it('reads the token from details or hint when the message is generic', async () => {
+    rpc.mockResolvedValueOnce({
+      data: null,
+      error: {
+        code: '23514',
+        message: 'new row violates check constraint',
+        details: 'cashier_pending_request_exists',
+        hint: null,
+      },
+    } as never);
+    await expect(request()).rejects.toThrow('You Already Have A Pending Cashout.');
+  });
+  it('keeps the agent-side refusals definitive for approval and decline', async () => {
+    signIn(ID.agent);
+    refusal('23514', 'cashier_request_already_terminal');
+    await expect(act('approval')).rejects.toThrow('That Cashout Was Already Decided.');
+    refusal('42501', 'cashier_current_authority_required');
+    await expect(act('decline')).rejects.toThrow('You Are Not Allowed To Do That Here.');
+    expect(masterBus.emit).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['57014', 'canceling statement due to statement timeout'],
+    ['40001', 'could not serialize access due to concurrent update'],
+    ['08006', 'connection failure'],
+    ['08000', 'connection exception'],
+    ['23503', 'cashier_destination_wallet_unavailable'],
+    ['PGRST301', 'JWT expired'],
+    ['', 'TypeError: Failed to fetch'],
+  ])(
+    'keeps SQLSTATE %s unknown so the same operation is checked, never re-sent',
+    async (code, message) => {
+      refusal(code, message);
+      await expect(request()).rejects.toMatchObject({
+        name: 'CashoutOutcomeUnknownError',
+        operationId: ID.operation,
+      });
+      expect(masterBus.emit).not.toHaveBeenCalled();
+    }
+  );
+  it('an error without a code (transport shape) stays unknown', async () => {
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'v2 missing' } } as never);
+    await expect(request()).rejects.toBeInstanceOf(CashoutOutcomeUnknownError);
   });
 });
 
@@ -877,9 +936,6 @@ describe('request read scope and unavailable data', () => {
     pending.resolve({ data: [cashoutV2Receipt().request], error: null });
     await expect(result).rejects.toThrow(/Account Changed/);
   });
-  it('retires browser expiry without dispatch or success-shaped zero', async () => {
-    await expect(cashoutService.expireStale()).rejects.toThrow(/Browser Cashout Expiry Is Retired/);
-    expect(rpc).not.toHaveBeenCalled();
-    expect(masterBus.emit).not.toHaveBeenCalled();
-  });
+  // 2026-10-09 (S-11): the throw-only expireStale stub was deleted; see the
+  // 'no longer exposes a money wrapper' case above.
 });

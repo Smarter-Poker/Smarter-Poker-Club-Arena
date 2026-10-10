@@ -36,7 +36,7 @@ describe('the reveal timing is one spec, mirrored into the engine', () => {
   });
 
   it('the sequence is lead-in, countdown, spin, winner flash, result', () => {
-    expect(SPIN_REVEAL.LEAD_IN_MS).toBe(1000); // "ONE SECOND LATER"
+    expect(SPIN_REVEAL.LEAD_IN_MS).toBe(2000); // two seconds, Dan 2026-10-09
     expect(SPIN_REVEAL.COUNTDOWN_MS).toBeGreaterThan(0); // 3 . 2 . 1
     expect(SPIN_REVEAL.SPIN_MS).toBeGreaterThan(0);
     expect(SPIN_REVEAL.WINNER_FLASH_MS).toBeGreaterThan(0);

@@ -187,6 +187,9 @@ type ThemeRow = Partial<UserThemeSelection> & {
   /** Row timestamp — lets a NEWER 'Apply To: ALL' save beat an older
    *  per-variant row (Dan 2026-08-28, see pickThemeRow). */
   updated_at?: string | null;
+  /** Authenticated DB clock/values, separate from optimistic cache precedence. */
+  server_updated_at?: string;
+  server_values?: Partial<UserThemeSelection>;
 };
 
 /** Fill every field, so a row with a NULL column cannot blank the felt. */
@@ -234,8 +237,8 @@ export function pickThemeRow(rows: ThemeRow[], gameType: CanonicalGameType): The
         ) ?? null)
       : null);
   if (bucketRow && allRow && bucketRow !== allRow) {
-    const bucketTs = Date.parse(bucketRow.updated_at || '') || 0;
-    const allTs = Date.parse(allRow.updated_at || '') || 0;
+    const bucketTs = serverThemeVersion(bucketRow.updated_at) ?? 0n;
+    const allTs = serverThemeVersion(allRow.updated_at) ?? 0n;
     return allTs > bucketTs ? allRow : bucketRow;
   }
   return bucketRow ?? allRow;
@@ -530,22 +533,89 @@ export function resolveCachedTheme(
   return row ? toSelection(row) : null;
 }
 
-/** Merge a live appearance patch into the cached row for its bucket. */
+/** Preserve Postgres microseconds when ordering authenticated row versions. */
+function serverThemeVersion(value?: string | null): bigint | null {
+  // Realtime preserves timestamptz text, including Postgres' space separator
+  // and hour-only offset. Normalize that spelling, never guess a missing zone.
+  const parts = value?.match(
+    /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?(Z|[+-]\d{2}(?::?\d{2})?)$/
+  );
+  if (!parts) return null;
+  const [, date, time, fraction = '', zone] = parts;
+  const offset =
+    zone.length === 3
+      ? `${zone}:00`
+      : zone.length === 5
+        ? `${zone.slice(0, 3)}:${zone.slice(3)}`
+        : zone;
+  const milliseconds = Date.parse(`${date}T${time}${fraction ? `.${fraction}` : ''}${offset}`);
+  if (!Number.isFinite(milliseconds)) return null;
+  return BigInt(milliseconds) * 1000n + BigInt(fraction.padEnd(6, '0').slice(3) || '0');
+}
+
+function cacheAuthoritativeThemeRows(userId: string, rows: ThemeRow[]): void {
+  writeCachedThemeRows(
+    userId,
+    rows.map((row) => ({
+      ...row,
+      ...(serverThemeVersion(row.updated_at) !== null
+        ? {
+            server_updated_at: row.updated_at as string,
+            server_values: toSelection(row),
+          }
+        : {}),
+    }))
+  );
+}
+
+/** Returns false for an older/conflicting DB echo without changing any cache. */
 function mergeCachedThemeRow(
   userId: string | null | undefined,
   bucket: CanonicalGameType,
   patch: Partial<UserThemeSelection>,
-  updatedAt?: string
-): void {
-  if (!userId || (!Object.keys(patch).length && !updatedAt)) return;
+  updatedAt?: string,
+  authoritative = false,
+  metadataOnly = false
+): boolean {
+  if (!userId || (!Object.keys(patch).length && !updatedAt)) return false;
   const rows = readCachedThemeRows(userId);
   const index = rows.findIndex((r) => (r.game_type || '') === bucket);
-  if (index >= 0) {
-    rows[index] = { ...rows[index], ...patch, ...(updatedAt ? { updated_at: updatedAt } : {}) };
-  } else {
-    rows.push({ game_type: bucket, ...patch, ...(updatedAt ? { updated_at: updatedAt } : {}) });
+  const previous = index >= 0 ? rows[index] : undefined;
+  const nextVersion = serverThemeVersion(updatedAt);
+  if (authoritative && updatedAt && nextVersion === null) return false;
+  if (authoritative && nextVersion !== null) {
+    const previousVersion = serverThemeVersion(previous?.server_updated_at);
+    if (previousVersion !== null && nextVersion < previousVersion) return false;
+    // The same version reaches multiple mounted hooks and both account channels.
+    // Admit its identical fields for every subscriber, never a conflicting value.
+    if (
+      previousVersion === nextVersion &&
+      previous?.server_values &&
+      THEME_FIELDS.some(
+        (field) =>
+          patch[field] !== undefined &&
+          previous.server_values?.[field] !== undefined &&
+          patch[field] !== previous.server_values[field]
+      )
+    )
+      return false;
   }
+  const row: ThemeRow = {
+    ...previous,
+    game_type: bucket,
+    ...(metadataOnly ? {} : patch),
+    ...(updatedAt && !metadataOnly ? { updated_at: updatedAt } : {}),
+    ...(authoritative && nextVersion !== null
+      ? {
+          server_updated_at: updatedAt,
+          server_values: { ...previous?.server_values, ...patch },
+        }
+      : {}),
+  };
+  if (index >= 0) rows[index] = row;
+  else rows.push(row);
   writeCachedThemeRows(userId, rows);
+  return true;
 }
 
 function sameSelection(a: UserThemeSelection, b: UserThemeSelection): boolean {
@@ -654,7 +724,7 @@ export function useUserThemeSettings(
         }
         // The database answered: it is the truth, and the cache follows it.
         // (Only a real array is cached — some test doubles resolve to nothing.)
-        if (Array.isArray(data)) writeCachedThemeRows(userId, data as ThemeRow[]);
+        if (Array.isArray(data)) cacheAuthoritativeThemeRows(userId, data as ThemeRow[]);
         const row = pickThemeRow((data as ThemeRow[]) || [], gameType);
         if (row) {
           const selection = toSelection(row);
@@ -762,10 +832,6 @@ export function useUserThemeSettings(
          for that bucket is pending. Tracking a set (not only the newest id)
          also lets an older failed table-field mutation roll back while a newer
          button-field mutation is still saving. */
-      if (savedBucket) {
-        const pending = pendingMutationsRef.current.get(savedBucket);
-        if (!mutationId && pending?.size) return;
-      }
 
       // Only the six theme fields, never whatever else rode along on the bus.
       const clean: Partial<UserThemeSelection> = {};
@@ -777,11 +843,23 @@ export function useUserThemeSettings(
       }
       if (!Object.keys(clean).length) return;
 
+      const authoritative = !mutationId && Boolean(updatedAt);
+      if (savedBucket && !mutationId && pendingMutationsRef.current.get(savedBucket)?.size) {
+        // Remember a committed server version even while a newer local tap owns
+        // the paint. Otherwise its delayed predecessor can win after confirmation.
+        if (authoritative) mergeCachedThemeRow(userId, savedBucket, clean, updatedAt, true, true);
+        return;
+      }
+      // Client confirmation clocks affect optimistic first-paint precedence only.
+      // They never fence an authenticated database row from another device.
+      if (
+        !mergeCachedThemeRow(userId, canonicalGameType(savedFor), clean, updatedAt, authoritative)
+      ) {
+        if (userId) return;
+      }
       liveThemeRevisionRef.current += 1;
-      setTheme((prev) => ({ ...prev, ...clean }));
-      // Keep the first-paint cache current, so a page change or refresh
-      // immediately after a change still opens wearing it — no flash back.
-      mergeCachedThemeRow(userId, canonicalGameType(savedFor), clean, updatedAt);
+      const resolved = authoritative ? resolveCachedTheme(userId, gameType) : null;
+      setTheme((prev) => resolved ?? { ...prev, ...clean });
     });
 
     return () => {

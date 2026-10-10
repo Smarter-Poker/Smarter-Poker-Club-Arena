@@ -12,6 +12,7 @@ import {
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
+import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { cashoutService, CashoutRequest } from '../../services/CashoutService';
 import { CashoutReceiptChecks, useCashoutReceiptChecks } from './CashoutReceiptChecks';
 import { useCashoutScope, useCashoutScopeKey } from '../../hooks/useCashoutScope';
@@ -28,7 +29,7 @@ import {
 } from '../../hooks/usePreparedCashoutOperations';
 import { masterBus } from '../../core/MasterBus';
 import { checkSettlementLock } from '../../utils/settlementLock';
-import { formatRelativeShort as formatTime } from '@/lib/date';
+import { formatRelativeShort } from '@/lib/date';
 import { SpadeConsole } from '../console/SpadeConsole';
 import './CashoutRequestModal.css';
 import { reportError } from '../../utils/errorReporter';
@@ -381,28 +382,43 @@ function CashoutRequestContent({
     const channelKey = `cashout-modal-${playerId}`;
     // The returned channel was bound to a `channel` const nobody read. Teardown
     // goes through masterBus.removeRegisteredChannel(channelKey), not the handle.
-    masterBus
-      .getOrCreateChannel(channelKey)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'cashout_requests',
-          filter: `player_id=eq.${playerId}`,
-        },
-        () => {
-          loadPendingCashouts();
-        }
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          if (err) reportError(err?.message || err, 'CashoutRequestModal._Realtime_channel_error');
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[CashoutRequestModal] Realtime channel timed out');
-        }
-      });
+    /* SCOPED TO THIS CLUB AS WELL AS THIS PLAYER (launch audit D-23). A
+       player-only filter woke this sheet for the player's cashouts in every
+       club they belong to; the reload is club-scoped, so nothing wrong was
+       shown, only read for nothing. Postgres filters take one column, so the
+       club is the narrower key: resolved to a uuid first (a code or slug
+       matches nothing), and an unresolvable club falls back to the player. */
+    let cancelled = false;
+    (async () => {
+      const resolved = clubId ? await resolveClubUUID(clubId) : null;
+      if (cancelled || !isMounted.current) return;
+      masterBus
+        .getOrCreateChannel(channelKey)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'cashout_requests',
+            filter: resolved ? `club_id=eq.${resolved}` : `player_id=eq.${playerId}`,
+          },
+          () => {
+            loadPendingCashouts();
+          }
+        )
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            if (err)
+              reportError(err?.message || err, 'CashoutRequestModal._Realtime_channel_error');
+          }
+          if (status === 'TIMED_OUT') {
+            reportError(
+              'Realtime channel timed out',
+              'CashoutRequestModal._Realtime_channel_timeout'
+            );
+          }
+        });
+    })();
 
     // Bus listener: reload when balance changes
     const unsubBalance = masterBus.subscribeDebounced(
@@ -414,10 +430,11 @@ function CashoutRequestContent({
     );
 
     return () => {
+      cancelled = true;
       masterBus.removeRegisteredChannel(channelKey);
       unsubBalance();
     };
-  }, [isOpen, playerId, clubId, loadPendingCashouts]);
+  }, [isOpen, playerId, clubId, loadPendingCashouts, isMounted]);
 
   const handleSubmit = async () => {
     if (submitLockRef.current || !isCurrent()) return;
@@ -655,7 +672,9 @@ function CashoutRequestContent({
                     <strong className="cro-value sc-ink--gold">
                       {cashout.amount.toLocaleString()} Chips
                     </strong>
-                    <span className="cro-when sc-ink--muted">{formatTime(cashout.createdAt)}</span>
+                    <span className="cro-when sc-ink--muted">
+                      {titleCase(formatRelativeShort(cashout.createdAt))}
+                    </span>
                   </div>
                   <CashoutStepTracker status={cashout.status} />
                   <button

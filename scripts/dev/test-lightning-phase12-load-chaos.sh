@@ -1250,8 +1250,13 @@ if [ "$status" != 0 ]; then
   exit 1
 fi
 grep -q '  ok  00 THE GROUND' "$fixture/build.out" || { echo "FAIL: the Phase 11 ground did not report"; exit 1; }
+# A predecessor proof a later file supersedes by design (its header restates
+# it) is named in LIGHTNING_P12_SUPERSEDED as file#n, space separated; every
+# other fallen proof still fails the build.
+superseded=${LIGHTNING_P12_SUPERSEDED-}
 fallen=$(Q "SELECT coalesce(string_agg(a.file || '#' || a.n, ', '), '') FROM lc_proofs b JOIN lc_proofs a ON a.tag = 'after' AND a.file = b.file AND a.n = b.n
-             WHERE b.tag = 'before' AND b.ok IS TRUE AND a.ok IS NOT TRUE")
+             WHERE b.tag = 'before' AND b.ok IS TRUE AND a.ok IS NOT TRUE
+               AND NOT ((a.file || '#' || a.n) = ANY (string_to_array('$superseded', ' ')))")
 ownbad=$(Q "SELECT coalesce(string_agg(file || '#' || n || '=' || coalesce(ok::text, 'error'), ', '), '') FROM lc_proofs WHERE tag = 'own' AND ok IS NOT TRUE")
 ownn=$(Q "SELECT count(*) FROM lc_proofs WHERE tag = 'own'")
 predn=$(Q "SELECT count(*) FILTER (WHERE ok) FROM lc_proofs WHERE tag = 'before'")

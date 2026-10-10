@@ -18,8 +18,18 @@ import { describe, expect, it } from 'vitest';
 
 const read = (path: string) => readFileSync(path, 'utf8');
 
-/** Every Cashier surface, paired with the stylesheet that dresses its glass. */
-const CASHIER_SURFACES: ReadonlyArray<{ tsx: string; css: string; consoles: number }> = [
+/**
+ * Every Cashier surface, paired with the stylesheet that dresses its glass.
+ * `crest` names the one non-default crest a surface is allowed to ask for:
+ * 'flat' is no crest at all (the rails bridged), which is not one of the
+ * rejected club / diamond / crown crests. Surfaces without it may name none.
+ */
+const CASHIER_SURFACES: ReadonlyArray<{
+  tsx: string;
+  css: string;
+  consoles: number;
+  crest?: 'flat';
+}> = [
   {
     tsx: 'src/pages/CashierTradePage.tsx',
     css: 'src/pages/CashierTradePage.module.css',
@@ -55,6 +65,12 @@ const CASHIER_SURFACES: ReadonlyArray<{ tsx: string; css: string; consoles: numb
     tsx: 'src/components/union/UnionWalletModal.tsx',
     css: 'src/components/union/UnionWalletModal.css',
     consoles: 1,
+  },
+  {
+    tsx: 'src/components/wallet/DiamondWalletModal.tsx',
+    css: 'src/components/wallet/DiamondWalletModal.css',
+    consoles: 1,
+    crest: 'flat',
   },
 ];
 
@@ -142,9 +158,10 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
     // Dan 2026-09-13: the spade is the only crest that passed; the club, diamond
     // and crown crests are to be repainted. Until they are, the Cashier prints
     // on the console's default crest and never asks for one of the rejected ones.
-    for (const { tsx } of CASHIER_SURFACES) {
+    for (const { tsx, crest } of CASHIER_SURFACES) {
       for (const tag of consoleTags(read(tsx))) {
-        expect(tag, tsx).not.toMatch(/\bcrest=/);
+        if (crest) expect(tag, tsx).not.toMatch(/\bcrest=(?!["']flat["'])/);
+        else expect(tag, tsx).not.toMatch(/\bcrest=/);
       }
     }
   });
@@ -216,6 +233,73 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
     for (const title of ['Transaction Receipt', 'Request Chips', 'Send Out', 'Claim Back']) {
       expect(trade).toContain(title);
     }
+  });
+
+  it('offers the decimal keypad wherever a Cashier amount goes to two places', () => {
+    // Launch audit 2026-10-09, P-04: `inputMode="numeric"` has no "." key on a
+    // phone and `step="1"` flags 12.34 as invalid, so the two-decimal rule the
+    // copy advertises was unreachable on the device most agents use.
+    const trade = read('src/pages/CashierTradePage.tsx');
+    const tradeInputs = trade.match(/<input[^>]*type="number"[^>]*>/gs) ?? [];
+    expect(tradeInputs.length).toBeGreaterThanOrEqual(2);
+    for (const tag of tradeInputs) {
+      expect(tag).toContain('inputMode="decimal"');
+      expect(tag).toContain('step="0.01"');
+    }
+    for (const label of ['Amount Per Player', 'Chips Requested']) {
+      expect(trade).toContain(`aria-label="${label}"`);
+    }
+    expect(read('src/pages/CashierPage.tsx')).not.toContain('inputMode="numeric"');
+  });
+
+  it('prints the Settlement Record through the forward display reader, never exact cents', () => {
+    // Launch audit 2026-10-09, P-09 / R-08: "NEVER USE DECIMAL POINTS ON ANY
+    // FORWARD FACING PAGE". The reader keeps its cents; the rows do not.
+    const trade = read('src/pages/CashierTradePage.tsx');
+    expect(trade).not.toContain('formatWeeklyChips(iv');
+    expect(trade).toContain('formatWeeklyChipsForDisplay(iv.rakeFunding)');
+    expect(trade).toContain('formatWeeklyChipsForDisplay(iv.paidByClub)');
+    expect(trade).toContain('formatWeeklyChipsForDisplay(iv.retainedByClub)');
+  });
+
+  it('paints the Trade dock and the Claim Back band in the glass tone, one tone inside the well', () => {
+    // Launch audit 2026-10-09, R-06: SpadeConsole.css paints the body glass
+    // #0a0b0d; a #000 band inside it read as a second, darker well.
+    const css = read('src/pages/CashierTradePage.module.css');
+    expect(css).toMatch(/\.dock \{[^}]*background: #0a0b0d;/);
+    expect(css).toMatch(/\.modalActions \{[^}]*background: #0a0b0d;/);
+    expect(css).not.toMatch(/\.dock \{[^}]*background: #000;/);
+    expect(css).not.toMatch(/\.modalActions \{[^}]*background: #000;/);
+    // The engraved rule above each band stays: a divider, not a frame.
+    expect(css).toMatch(/\.modalActions \{[^}]*border-top: 1px solid #000;/);
+    expect(read('src/components/console/SpadeConsole.css')).toContain('#0a0b0d');
+  });
+
+  it('gives every Cashier word control a 44px thumb target in both directions', () => {
+    // Launch audit 2026-10-09, R-12 and P-11.
+    expect(read('src/pages/CashierTradePage.module.css')).toMatch(
+      /\.plusBtn \{[^}]*min-width: 44px;[^}]*min-height: 44px;/
+    );
+    expect(read('src/pages/CashierStatementsPage.module.css')).toMatch(
+      /\.copyWord \{[^}]*min-width: 44px;/
+    );
+    const wallet = read('src/pages/PlayerWalletPage.css');
+    expect(wallet).toMatch(/\.vault-btn\.small \{[^}]*min-height: 44px;/);
+    expect(wallet).toMatch(/\.wallet-plate__cta \{[^}]*min-height: 44px;/);
+  });
+
+  it('names every routed Cashier document', () => {
+    // Launch audit 2026-10-09, L-03: the Trade and Statement pages kept the
+    // previous page's title; the classic cashier set its own.
+    expect(read('src/pages/CashierTradePage.tsx')).toContain(
+      "document.title = 'Cashier | Smarter Poker';"
+    );
+    expect(read('src/pages/CashierStatementsPage.tsx')).toContain(
+      "document.title = 'Cashier Statement | Smarter Poker';"
+    );
+    expect(read('src/pages/CashierPage.tsx')).toContain(
+      "document.title = 'Cashier | Smarter Poker';"
+    );
   });
 
   it('prints every Cashier chip figure through compactChips, never decimal locale formatting', () => {

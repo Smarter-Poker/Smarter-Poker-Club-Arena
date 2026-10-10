@@ -373,20 +373,48 @@ export interface HorsePhase12AuthoritySelection {
 }
 
 /**
- * THE PROTECTED RELEASE SELECTIONS, one per pack. All null: no qualified
- * Phase 12 authority exists, so every live Short Deck, Crazy Pineapple, FLH
- * and FLO8 decision stays in shadow, as before P12.3. Every P12.2 held-out
- * matrix returned `qualified: false` on October 5 and every committed
- * completion record is below the floor; see
- * docs/horse-brain-phase12-closure-2026-10-05.md. Selecting a pack requires
- * its qualification file, the strength record it names and its natural
- * completion record committed under
- * docs/evidence/phase12/ and shipped in the engine image, their sha256 here,
- * and the protected merge and engine release of that change.
+ * THE PROTECTED RELEASE SELECTIONS, one per pack.
+ *
+ * FLH (`fixed-limit-holdem-round3-v1`), approval generation 1: qualified on
+ * condition (a) of the winning contract as amended by the owner on October 9,
+ * 2026 (docs/horse-brain-winning-contract-2026-10-08.md): the locked P12.2
+ * matrix re-run unchanged on `1235b47a` (#6592), 42 of 42 shards, 544,320
+ * pairs, cash after rake against the horse population, +1.11 [+0.70, +1.52]
+ * bb/100. Its natural completion record on release `15d25de1` (predeclared,
+ * 21:02 to 22:50Z, the 21:55 break excluded) completed every one of 2,218
+ * eligible decisions; the lowest street Wilson bound is 0.982 against the 0.95
+ * floor. Short Deck and FLO8 do not qualify on (a) (trust-check cells);
+ * Pineapple is below the completion floor; all three stay null. Every file a
+ * selection names, and the strength record its qualification names, is
+ * committed under docs/evidence/phase12/ and shipped in the engine image
+ * under server/release-evidence/. Withdrawal is a reviewed change of
+ * `withdrawn` to `{ at, reason }`; a withdrawn generation never returns.
  */
 export const PHASE12_PROTECTED_RELEASE_SELECTIONS: Readonly<
   Record<RemainingPolicyVariant, HorsePhase12AuthoritySelection | null>
-> = Object.freeze({ short_deck: null, pineapple: null, flh: null, flo8: null });
+> = Object.freeze({
+  short_deck: null,
+  pineapple: null,
+  flh: Object.freeze({
+    schema: 'horse-qualified-authority-selection-v1',
+    phase: 'phase12',
+    variant: 'flh',
+    sourceSha: '1235b47a63c439da9bdf8427148bc0818499378c',
+    packVersion: 'fixed-limit-holdem-round3-v1',
+    contractVersion: 'remaining-variant-strength-contract-v1',
+    contractDigest: 'fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0',
+    domain: 'flh-cash-single-board-after-rake-horse-population',
+    qualificationPath: 'docs/evidence/phase12/1235b47a/phase12-qualification-2026-10-09-flh.json',
+    qualificationSha256: '6849ff7f3d7390f885615c7c1daa5e19aae815ec64930b01fcb72b0d0754ada5',
+    completionPath: 'docs/evidence/phase12/15d25de1/phase12-completion-2026-10-09-flh.json',
+    completionSha256: 'fcda72ee6754b5e35d2f4fe8292e4956e3b5f94435d58b02c77f1a344a3eee17',
+    approvalGeneration: 1,
+    issuedAt: '2026-10-10T00:00:00.000Z',
+    expiresAt: null,
+    withdrawn: null,
+  } as const),
+  flo8: null,
+});
 
 const HEX40 = /^[0-9a-f]{40}$/;
 const HEX64 = /^[0-9a-f]{64}$/;

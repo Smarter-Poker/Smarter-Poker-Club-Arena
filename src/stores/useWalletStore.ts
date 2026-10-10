@@ -109,9 +109,15 @@ interface WalletState {
 
   // Wallet operations
   lockForBuyIn: (userId: string, amount: number, tableId: string) => Promise<boolean>;
+  /**
+   * `idempotencyKey` is minted by the CALLER once per intent and held across
+   * a failed attempt, so a retry replays server-side instead of minting twice
+   * (launch audit 2026-10-09, S-03).
+   */
   mintChips: (
     clubId: string,
-    chips: number
+    chips: number,
+    idempotencyKey: string
   ) => Promise<{ chips: number; success: boolean; error?: string }>;
 
   reset: () => void;
@@ -436,9 +442,9 @@ export const useWalletStore = create<WalletState>()(
         }
       },
 
-      mintChips: async (clubId: string, chips: number) => {
+      mintChips: async (clubId: string, chips: number, idempotencyKey: string) => {
         try {
-          const result = await WalletService.mintChips(clubId, chips);
+          const result = await WalletService.mintChips(clubId, chips, idempotencyKey);
           if (result.success) {
             // Refresh balances after minting
             return { chips: result.chipsAdded, success: true };
@@ -515,10 +521,10 @@ export const useWalletStore = create<WalletState>()(
 // 📐 HELPER HOOKS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function useTotalBalance() {
-  const balances = useWalletStore((s) => s.balances);
-  return balances.BUSINESS.total + balances.PLAYER.total + balances.PROMO.total;
-}
+/* useTotalBalance REMOVED (launch audit 2026-10-09, S-11): it summed
+   BUSINESS + PLAYER + PROMO into one figure, the exact conflation
+   WalletService forbids ("Anyone who needs a total should say what it is a
+   total OF"), and nothing called it. */
 
 export function useAvailableChips() {
   const balances = useWalletStore((s) => s.balances);

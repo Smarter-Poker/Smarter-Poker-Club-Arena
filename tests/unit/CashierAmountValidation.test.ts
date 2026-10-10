@@ -54,8 +54,11 @@ describe('parseChipAmount', () => {
   });
 
   it('rejects exponent notation that hides a huge amount', () => {
-    // parseFloat('1e9') silently returned a billion from four keystrokes
-    expect(parseChipAmount('1e9')).toEqual({ ok: true, value: 1e9 });
+    // parseFloat('1e9') silently returned a billion from four keystrokes.
+    // Launch audit 2026-10-09 (P-14): this pin said `{ ok: true, value: 1e9 }`
+    // under the title above - Number('1e9') had passed the whole time. The
+    // shape is now checked on the spelling, so an exponent is refused.
+    expect(parseChipAmount('1e9').ok).toBe(false);
     expect(parseChipAmount('1e13').ok).toBe(false);
   });
 

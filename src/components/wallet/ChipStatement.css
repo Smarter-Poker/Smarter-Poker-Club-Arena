@@ -137,39 +137,8 @@
   font-size: clamp(0.62rem, 2.7cqw, 0.78rem);
 }
 
-.chip-statement__btn {
-  display: block;
-  min-height: 44px;
-  margin: 3cqw auto 0;
-  padding: 1cqw 3cqw;
-  border: 0;
-  background: transparent;
-  color: #45adff;
-  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
-  font-size: clamp(0.74rem, 3.4cqw, 0.96rem);
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  text-shadow: 0 0 0.7cqw rgb(69 173 255 / 65%);
-  cursor: pointer;
-}
-
-.chip-statement__btn:disabled {
-  color: #9aa5b3;
-  cursor: default;
-}
-
-.chip-statement__btn:active:not(:disabled) {
-  transform: translateY(1px);
-}
-
-.chip-statement__btn:focus-visible {
-  outline: 2px solid #45adff;
-  outline-offset: 2px;
-}
-
-.chip-statement__more {
-  width: 100%;
-}
+/* Try Again and Load Earlier Movements are the riveted foot's two painted
+   plates now (launch audit D-08); the lit words they replaced are gone. */
 
 .chip-statement__empty,
 .chip-statement__more-error {

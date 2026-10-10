@@ -55,8 +55,8 @@ case "$LEGACY_SHA" in
     LEGACY_IMAGE=sha256:a58e0d3983b73b59bfc26e0ad55f67759730a7313d0280f80311fe20109658f6 ;;
   8825af51817f379c4261658ca29ecc9d8d81932d)
     LEGACY_IMAGE=sha256:7973b0cd170e7ea00a948f6376b17a201485c3e03ae47c06f0248b17a4bfae1c ;;
-  a9e3ca8b3b6be522065476da2e9ab53e751ad132)
-    LEGACY_IMAGE=sha256:80d5fc79b13b4d795d866f2b4dc3ddcd0286a993931bbaae8889fd275714912c ;;
+  9f9dcc6d55980bf96249dbd985f08c246d7006b2)
+    LEGACY_IMAGE=sha256:14c5afe9221b4b8b35c5a4e555b8522c5e4ca31c31d858b5a99a9507f562489b ;;
   *) die 'sealed predecessor has no qualified checkpoint profile' ;;
 esac
 [ "$(timeout 3s "$CONTROL_DIR/engine-release-seal.py" get desired-image-id)" = "$LEGACY_IMAGE" ] \
@@ -74,7 +74,7 @@ if [ "$LEGACY_SHA" = 8825af51817f379c4261658ca29ecc9d8d81932d ]; then
     || die 'original mixed-custody process changed'
 fi
 NODE_BOOT_STARTED_MS="$(date +%s%3N)"
-if [ "$LEGACY_SHA" = a9e3ca8b3b6be522065476da2e9ab53e751ad132 ]; then
+if [ "$LEGACY_SHA" = 9f9dcc6d55980bf96249dbd985f08c246d7006b2 ]; then
   [ -f "$CONTROL_DIR/operator-hold-predecessor-profile.json" ] && [ ! -L "$CONTROL_DIR/operator-hold-predecessor-profile.json" ] || die 'operator predecessor profile unavailable'
   timeout 5s docker exec -i "$CONTAINER_ID" node -e '
 const fs=require("node:fs"),crypto=require("node:crypto");
@@ -172,7 +172,7 @@ path,instance,container,started,pid,source,run,control=sys.argv[1:]
 intent={"instance":instance,"container":container,"startedAt":started,"hostPid":int(pid),
         "source":source,"runId":run,"controlSha":control,"at":time.time(),"retryAllowed":False}
 if os.path.lexists(path):
-    if source!="a9e3ca8b3b6be522065476da2e9ab53e751ad132": raise SystemExit(70)
+    if source!="9f9dcc6d55980bf96249dbd985f08c246d7006b2": raise SystemExit(70)
     import stat
     st=os.lstat(path)
     if not stat.S_ISREG(st.st_mode) or st.st_uid!=0 or st.st_nlink!=1 or stat.S_IMODE(st.st_mode)!=0o600: raise SystemExit("original intent unsafe")
@@ -192,7 +192,7 @@ if os.path.lexists(path):
     prior['proofDeadline']=int(time.time()*1000)+20000
     print(json.dumps(prior,separators=(",",":")))
     raise SystemExit(0)
-if source=="a9e3ca8b3b6be522065476da2e9ab53e751ad132":
+if source=="9f9dcc6d55980bf96249dbd985f08c246d7006b2":
     intent["handoffId"]=str(uuid.uuid4())
     intent["proofDeadline"]=int(time.time()*1000)+20000
 if source=="8825af51817f379c4261658ca29ecc9d8d81932d":
@@ -229,7 +229,7 @@ CHECKPOINT_RESULT_FILE="$(mktemp "$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-result
 # Fence the exact outgoing plain process before any durable hold capture. The
 # fence stays in place after an unknown import; EXIT must never rearm plain boot.
 # Both Docker and the existing autoheal container can otherwise restart it.
-if [ "$LEGACY_SHA" = a9e3ca8b3b6be522065476da2e9ab53e751ad132 ]; then
+if [ "$LEGACY_SHA" = 9f9dcc6d55980bf96249dbd985f08c246d7006b2 ]; then
   AUTOHEAL_ID="$(bounded_operator_command 5 docker container inspect -f '{{.Id}}' sp-autoheal)" \
     || die 'outgoing autoheal identity unknown; checkpoint not invoked'
   ENGINE_RESTART_POLICY="$(bounded_operator_command 5 docker container inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$CONTAINER_ID")" \
@@ -288,7 +288,7 @@ fi
 # Recovery intent is durable BEFORE the first possible native import. If its
 # acknowledgment is lost, an old-image boot must read that SAME immutable native
 # receipt before any deal; an uncommitted/unknown import refuses that boot.
-if [ "$LEGACY_SHA" = a9e3ca8b3b6be522065476da2e9ab53e751ad132 ] && [ "$CHECKPOINT_MODE" = first-upgrade ]; then
+if [ "$LEGACY_SHA" = 9f9dcc6d55980bf96249dbd985f08c246d7006b2 ] && [ "$CHECKPOINT_MODE" = first-upgrade ]; then
   bounded_operator_command 5 python3 - "$CONTROL_DIR" "$CHECKPOINT_INTENT" "$REQUEST_ROOT/$RUN_ID.operator-restart-fence" <<'OPERATOR_INTENT_BUNDLE'
 import json,os,pathlib,sys
 control,intent,restart_path=sys.argv[1:]; i=json.loads(intent)
@@ -333,7 +333,7 @@ finally: os.close(fd)
 OPERATOR_INTENT_BUNDLE
 fi
 
-if [ "$LEGACY_SHA" = a9e3ca8b3b6be522065476da2e9ab53e751ad132 ]; then
+if [ "$LEGACY_SHA" = 9f9dcc6d55980bf96249dbd985f08c246d7006b2 ]; then
   CHECKPOINT_INTENT="$(python3 - "$CHECKPOINT_INTENT" "$OPERATOR_CHECKPOINT_END_MS" <<'OPERATOR_OBSERVER_DEADLINE'
 import json,sys,time
 i=json.loads(sys.argv[1]);now=int(time.time()*1000)
@@ -346,7 +346,7 @@ fi
 
 set +e
 {
-  if [ "$LEGACY_SHA" = a9e3ca8b3b6be522065476da2e9ab53e751ad132 ]; then
+  if [ "$LEGACY_SHA" = 9f9dcc6d55980bf96249dbd985f08c246d7006b2 ]; then
     cat "$CONTROL_DIR/operator-hold-checkpoint-guard.mjs"
   else
     cat "$CONTROL_DIR/legacy-engine-checkpoint-guard.mjs"
@@ -394,7 +394,7 @@ fi
 
 # Persist the original verified import and its exact preload generation BEFORE
 # replacement. The same immutable directory is used by rollback and crash boot.
-if [ "$LEGACY_SHA" = a9e3ca8b3b6be522065476da2e9ab53e751ad132 ]; then
+if [ "$LEGACY_SHA" = 9f9dcc6d55980bf96249dbd985f08c246d7006b2 ]; then
   bounded_operator_command 5 python3 - "$CONTROL_DIR" "$CHECKPOINT_RESULT_FILE" "$CHECKPOINT_INTENT" <<'OPERATOR_HANDOFF'
 import json,os,pathlib,sys
 control,result,intent=sys.argv[1:]; intent=json.loads(intent)

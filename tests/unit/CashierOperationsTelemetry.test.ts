@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { rpc } = vi.hoisted(() => ({ rpc: vi.fn().mockResolvedValue({ error: null }) }));
+const { rpc, reportError } = vi.hoisted(() => ({
+  rpc: vi.fn().mockResolvedValue({ error: null }),
+  reportError: vi.fn(),
+}));
 vi.mock('../../src/lib/supabase', () => ({
   supabase: { rpc },
 }));
+vi.mock('../../src/utils/errorReporter', () => ({ reportError }));
 
 import {
   cashierReasonCode,
@@ -12,7 +16,32 @@ import {
 } from '../../src/services/CashierOperationsTelemetry';
 
 describe('CashierOperationsTelemetry', () => {
-  beforeEach(() => rpc.mockClear());
+  beforeEach(() => {
+    rpc.mockClear();
+    reportError.mockClear();
+  });
+
+  it('a refused telemetry row goes to reportError, never to console.debug (S-11)', async () => {
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+    const refusal = { code: '42501', message: 'permission denied for function' };
+    rpc.mockResolvedValueOnce({ error: refusal });
+    recordCashierOperation({
+      userId: 'user-1',
+      clubId: 'club-1',
+      event: 'batch_failed',
+      operation: 'send',
+      durationMs: 10,
+      itemCount: 1,
+      successCount: 0,
+      failureCount: 1,
+      reasonCode: 'error',
+    });
+    await vi.waitFor(() =>
+      expect(reportError).toHaveBeenCalledWith(refusal, 'CashierOperationsTelemetry.record')
+    );
+    expect(debug).not.toHaveBeenCalled();
+    debug.mockRestore();
+  });
 
   it('retains every failure and samples routine successes', () => {
     expect(shouldRecordCashierOperation('batch_failed', 0.999)).toBe(true);

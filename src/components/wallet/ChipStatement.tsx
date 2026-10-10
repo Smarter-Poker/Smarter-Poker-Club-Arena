@@ -39,6 +39,47 @@ import { compactChips } from '../../utils/format';
 import { titleCase } from '../../utils/titleCase';
 import './ChipStatement.css';
 
+/**
+ * THE RIVETED MASTER PAINTS TWO PLATES IN EVERY STATE (launch audit D-08 /
+ * R-02, 2026-10-09). It has no flat closing cap: `foot="foot"` still drew the
+ * bolted plates, with nothing on them, under every statement. So each console
+ * here gives both plates a job. Refresh re-reads the first page (or checks
+ * again after a refusal); the blue plate loads the earlier movements while
+ * the journal has more, and says "Up To Date" when it does not. A plate that
+ * cannot act is labelled and disabled, never blank.
+ */
+function statementPlates(opts: {
+  refresh?: () => void;
+  refreshLabel?: string;
+  refreshing?: boolean;
+  earlier?: () => void;
+  hasMore?: boolean;
+  loadingMore?: boolean;
+}) {
+  const canRefresh = Boolean(opts.refresh) && !opts.refreshing;
+  const canLoadEarlier = Boolean(opts.earlier) && Boolean(opts.hasMore) && !opts.loadingMore;
+  return {
+    secondary: {
+      label: opts.refreshLabel ?? 'Refresh',
+      ink: canRefresh ? ('silver' as const) : ('muted' as const),
+      disabled: !canRefresh,
+      onClick: opts.refresh,
+      'aria-label': opts.refreshLabel ?? 'Refresh The Statement',
+    },
+    primary: {
+      label: opts.loadingMore
+        ? 'Loading...'
+        : opts.hasMore
+          ? 'Load Earlier Movements'
+          : 'Up To Date',
+      ink: canLoadEarlier ? ('white' as const) : ('muted' as const),
+      disabled: !canLoadEarlier,
+      onClick: opts.earlier,
+      'aria-label': opts.hasMore ? 'Load Earlier Movements' : 'Every Movement Is Shown',
+    },
+  };
+}
+
 export type StatementScope = 'player' | 'club_treasury';
 
 export interface StatementLeg {
@@ -642,7 +683,8 @@ function ChipStatementRows({ scope, clubId, pageSize = 50, title, actorId, viewK
         title={heading}
         pill="Loading"
         pillInk="blue"
-        foot="foot"
+        foot="plates"
+        plates={statementPlates({ refresh: loadFirst, refreshing: true })}
         aria-busy="true"
       >
         <div className="chip-statement__empty">Loading Your Statement...</div>
@@ -658,7 +700,8 @@ function ChipStatementRows({ scope, clubId, pageSize = 50, title, actorId, viewK
         title={heading}
         pill="Restricted"
         pillInk="red"
-        foot="foot"
+        foot="plates"
+        plates={statementPlates({ refresh: loadFirst, refreshLabel: 'Check Again' })}
       >
         <div className="chip-statement__empty">
           This Statement Is Available To Club Owners, Admins And Super Agents.
@@ -675,15 +718,14 @@ function ChipStatementRows({ scope, clubId, pageSize = 50, title, actorId, viewK
         title={heading}
         pill="Unavailable"
         pillInk="red"
-        foot="foot"
+        foot="plates"
+        plates={statementPlates({
+          refresh: canRetry ? () => void loadFirst() : undefined,
+          refreshLabel: 'Try Again',
+        })}
       >
         <div className="chip-statement__empty" role="alert">
           <div>{error || 'The Statement Could Not Be Loaded'}</div>
-          {canRetry && (
-            <button type="button" className="chip-statement__btn" onClick={() => loadFirst()}>
-              Try Again
-            </button>
-          )}
         </div>
       </SpadeConsole>
     );
@@ -698,7 +740,13 @@ function ChipStatementRows({ scope, clubId, pageSize = 50, title, actorId, viewK
         title={heading}
         pill={auditTone === 'good' ? 'Reconciled' : auditTone === 'bad' ? 'Review' : 'Statement'}
         pillInk={auditTone === 'good' ? 'green' : auditTone === 'bad' ? 'red' : 'blue'}
-        foot="foot"
+        foot="plates"
+        plates={statementPlates({
+          refresh: () => void loadFirst(),
+          earlier: () => void loadMore(),
+          hasMore: statement.has_more,
+          loadingMore,
+        })}
         data-scope={scope}
       >
         <header className="chip-statement__header">
@@ -791,17 +839,6 @@ function ChipStatementRows({ scope, clubId, pageSize = 50, title, actorId, viewK
           </ol>
         )}
 
-        {statement.has_more && (
-          <button
-            type="button"
-            className="chip-statement__btn chip-statement__more"
-            onClick={loadMore}
-            disabled={loadingMore}
-          >
-            {loadingMore ? 'Loading...' : 'Load Earlier Movements'}
-          </button>
-        )}
-
         {moreError && (
           <div className="chip-statement__more-error sc-ink--red" role="alert">
             {moreError}
@@ -843,7 +880,8 @@ export default function ChipStatement({ scope, clubId, pageSize = 50, title }: P
         title={heading}
         pill={isHydrating ? 'Loading' : 'Unavailable'}
         pillInk={isHydrating ? 'blue' : 'red'}
-        foot="foot"
+        foot="plates"
+        plates={statementPlates({ refreshing: isHydrating })}
         aria-busy={isHydrating || undefined}
       >
         <div className="chip-statement__empty" role={isHydrating ? 'status' : 'alert'}>
@@ -862,7 +900,8 @@ export default function ChipStatement({ scope, clubId, pageSize = 50, title }: P
         title={heading}
         pill="Unavailable"
         pillInk="red"
-        foot="foot"
+        foot="plates"
+        plates={statementPlates({})}
       >
         <div className="chip-statement__empty" role="alert">
           Choose A Club To View Its Treasury Statement.

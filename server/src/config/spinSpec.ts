@@ -819,8 +819,14 @@ export function seedInstalmentDue(balance: number, outstandingSeed: number, floo
 // was luck, not a contract.)
 
 export const SPIN_REVEAL = {
-  /** Dan: "ONE SECOND LATER" — the beat between the last buy-in and the count. */
-  LEAD_IN_MS: 1000,
+  /**
+   * The beat between the last buy-in and the count. Dan's first rule was "ONE
+   * SECOND LATER"; on 2026-10-09 he approved two seconds. Measured over 24
+   * hours, every Spin overran a one-second lead-in: starting a Spin takes about
+   * 0.85 s of work, so one second left almost nothing for the moment the last
+   * seat is detected, and the wheel was re-anchored late on every start.
+   */
+  LEAD_IN_MS: 2000,
   /**
    * 3 ... 2 ... 1 on the starting tree: red, then yellow, then green, one
    * second apart. Dan 2026-08-21: "THE 3, 2, 1 SHOULD FEEL LIKE A NASCAR

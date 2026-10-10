@@ -104,9 +104,46 @@ echo ADMITTED
 }
 
 describe('operator authority predecessor compatibility admission', () => {
+  it('binds the selected checkpoint image to the exact measured predecessor profile', () => {
+    const shell = readFileSync(`${root}/server/scripts/legacy-engine-checkpoint.sh`, 'utf8');
+    const start = shell.indexOf('case "$LEGACY_SHA" in');
+    const end = shell.indexOf('\nesac', start);
+    expect(start).toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(start);
+    const selection = shell.slice(start, end + '\nesac'.length);
+    const profile = JSON.parse(
+      readFileSync(`${root}/server/scripts/operator-hold-predecessor-profile.json`, 'utf8')
+    );
+    const admit = (release: string, image: string) =>
+      spawnSync(
+        'bash',
+        [
+          '-c',
+          `set -euo pipefail
+LEGACY_SHA="$1"
+die(){ exit 1; }
+${selection}
+[ "$LEGACY_IMAGE" = "$2" ]`,
+          'exact-checkpoint-image',
+          release,
+          image,
+        ],
+        { encoding: 'utf8' }
+      ).status;
+    expect(admit(profile.releaseSha, profile.imageId)).toBe(0);
+    expect(
+      admit(
+        profile.releaseSha,
+        'sha256:80d5fc79b13b4d795d866f2b4dc3ddcd0286a993931bbaae8889fd275714912c'
+      )
+    ).not.toBe(0);
+    expect(admit('a9e3ca8b3b6be522065476da2e9ab53e751ad132', profile.imageId)).not.toBe(0);
+    expect(admit('f'.repeat(40), profile.imageId)).not.toBe(0);
+  });
+
   it('admits only the specifically qualified pre-store predecessor', () => {
     expect(
-      predecessorAdmission('a9e3ca8b3b6be522065476da2e9ab53e751ad132', '<no value>').status
+      predecessorAdmission('9f9dcc6d55980bf96249dbd985f08c246d7006b2', '<no value>').status
     ).toBe(0);
   });
   it('keeps historical evidence separate from the active native-qualified profile', () => {
@@ -116,12 +153,12 @@ describe('operator authority predecessor compatibility admission', () => {
     const historical = JSON.parse(
       readFileSync(`${root}/server/scripts/operator-hold-predecessor-a29-profile.json`, 'utf8')
     );
-    expect(current.releaseSha).toBe('a9e3ca8b3b6be522065476da2e9ab53e751ad132');
+    expect(current.releaseSha).toBe('9f9dcc6d55980bf96249dbd985f08c246d7006b2');
     expect(current.imageId).toBe(
-      'sha256:80d5fc79b13b4d795d866f2b4dc3ddcd0286a993931bbaae8889fd275714912c'
+      'sha256:14c5afe9221b4b8b35c5a4e555b8522c5e4ca31c31d858b5a99a9507f562489b'
     );
     expect(current.provenance.sourceSha256).toBe(
-      '17fc5e5ea51e827e56b639e1302a1b38d7504454f7b2bbe25979a4fed6eb5e3e'
+      '6f6114f6d78665978a1b111b11492cbab71d18ec471a159f3cf885d57eaca2b5'
     );
     expect(current.runtimeNode).toBe('v22.23.2');
     const gameServer = current.compiled.find(
@@ -129,28 +166,82 @@ describe('operator authority predecessor compatibility admission', () => {
     );
     expect(gameServer).toEqual({
       path: '/app/dist/GameServer.js',
-      bytes: 609433,
-      sha256: '5981445074cbe7c9a9efc30daf0f9e44810a992b74973f6fbad15505637ea050',
+      bytes: 611541,
+      sha256: 'd4708386037a26c85d72a8525c6a6cdca479ed0e13e8632b3129b34ebe959097',
     });
-    expect(
-      current.compiled.filter(
-        (row: { path: string }) =>
-          ![
-            '/app/dist/GameServer.js',
-            '/app/dist/engine/ServerTableEngineSeating.js',
-            '/app/dist/engine/ServerTableEngineBase.js',
-          ].includes(row.path)
-      )
-    ).toEqual(
-      historical.compiled.filter(
-        (row: { path: string }) =>
-          ![
-            '/app/dist/GameServer.js',
-            '/app/dist/engine/ServerTableEngineSeating.js',
-            '/app/dist/engine/ServerTableEngineBase.js',
-          ].includes(row.path)
-      )
-    );
+    // All fourteen expected rows come from genuine root metadata48227, not the profile under test.
+    expect(current.compiled).toEqual([
+      {
+        bytes: 611541,
+        path: '/app/dist/GameServer.js',
+        sha256: 'd4708386037a26c85d72a8525c6a6cdca479ed0e13e8632b3129b34ebe959097',
+      },
+      {
+        bytes: 530863,
+        path: '/app/dist/engine/ServerTableEngineBase.js',
+        sha256: '27072e1294c606c628940dd8478bafdd24cd929b3b9ea971a6be7cb1a029d92e',
+      },
+      {
+        bytes: 111943,
+        path: '/app/dist/engine/ServerTableEngineSeating.js',
+        sha256: '2a9106ea7634003e9cfc1800531c45182dd792ea6ceaeee563273c15bb147ad4',
+      },
+      {
+        bytes: 249469,
+        path: '/app/dist/engine/ServerTableEngineDealing.js',
+        sha256: 'd7dff692d3e06fa69f0cc57df86cb4397bbb29617ae604d8aa1eaf7c495e3823',
+      },
+      {
+        bytes: 15468,
+        path: '/app/dist/handlers/admin.js',
+        sha256: '7600cf1b170b80e775691d413c8791aab3c441b09c3821c16951c06bdd67fc7e',
+      },
+      {
+        bytes: 568882,
+        path: '/app/dist/tournament/TournamentManagerBase.js',
+        sha256: '95d25e403c684b4b3fe938292c7b0026735efe6825738f348dcb16889b949a57',
+      },
+      {
+        bytes: 25463,
+        path: '/app/dist/services/tableLease.js',
+        sha256: 'f6483c4692c99ad4042cdd174cb99a38346a507446306684a491c986ba1d4d0e',
+      },
+      {
+        bytes: 13939,
+        path: '/app/dist/services/supabase/client.js',
+        sha256: 'c27acc261be7815a4686d903b8a6cbfa2dc75e1f0bd289ab25079555f9d91f5f',
+      },
+      {
+        bytes: 797,
+        path: '/app/dist/releaseIdentity.js',
+        sha256: '3386b6a5740b7f6fa936b4e1f0727199b0d661e134dcb20424e602c1d3db8c89',
+      },
+      {
+        bytes: 291,
+        path: '/app/dist/http/createEngineHttpServer.js',
+        sha256: '2925b3958172cb841a1c35c205b3566b6a25e155b8e01b1acec1f961fa6b2b9b',
+      },
+      {
+        bytes: 27163,
+        path: '/app/dist/engine/ServerTableEngine.js',
+        sha256: '185b993331bd71243e32c1ca9e2ff4d6d1df075fc837eed9597c3a9e539e1ce1',
+      },
+      {
+        bytes: 130108,
+        path: '/app/dist/maintenance/MaintenanceBreak.js',
+        sha256: '5cd742c67380abd091bad322619c20c6ebb72d3162c477c43d91b37be0cf0f4f',
+      },
+      {
+        bytes: 4199,
+        path: '/app/dist/maintenance/freezeState.js',
+        sha256: 'c962466ac1178f35a073ed265554d197c4d214467e190d83edfa2c2f4034e001',
+      },
+      {
+        bytes: 9096,
+        path: '/app/dist/services/supabase/dataActorContext.js',
+        sha256: '07ff29c562d000690437b62c46c87a10adb1fc40beb54e82ad863632b7e18985',
+      },
+    ]);
     expect(
       current.compiled.find(
         (row: { path: string }) => row.path === '/app/dist/engine/ServerTableEngineSeating.js'
@@ -178,6 +269,12 @@ describe('operator authority predecessor compatibility admission', () => {
     expect(current.provenance.scope).toContain('not_boot_or_handoff_qualification');
   });
   it('refuses historical pre-store identities instead of broadening the active profile', () => {
+    expect(
+      predecessorAdmission('a9e3ca8b3b6be522065476da2e9ab53e751ad132', '<no value>').status
+    ).not.toBe(0);
+    expect(
+      predecessorAdmission('1406d401954fce9bd9212eaa69455339f9a8ac1e', '<no value>').status
+    ).not.toBe(0);
     expect(
       predecessorAdmission('c1deef24a4b2e3a0db6e1ccbeab05180c6991400', '<no value>').status
     ).not.toBe(0);

@@ -21,6 +21,7 @@ vi.mock('../../src/services/FinancialAlertService', () => ({ FinancialAlertServi
 vi.mock('../../src/utils/clubIdResolver', () => ({ resolveClubUUID: async (id: string) => id }));
 
 import { WalletService } from '../../src/services/WalletService';
+import { uuid } from '../../src/utils/uuid';
 
 describe('Promo payment request identity', () => {
   beforeEach(() => {
@@ -39,25 +40,44 @@ describe('Promo payment request identity', () => {
       }
       return { data: { success: true, replayed: true }, error: null };
     });
-    await WalletService.disbursePromo('club-1', 'player-1', 10);
+    await WalletService.disbursePromo('club-1', 'player-1', 10, undefined, uuid());
     expect(rpc).toHaveBeenCalledTimes(2);
     expect(paid).toBe(10);
     expect(committed.size).toBe(1);
     expect(rpc.mock.calls[0][1]).toEqual(rpc.mock.calls[1][1]);
   });
 
-  it('two deliberate payments have different identities', async () => {
+  it('two deliberate payments have different identities, one retried payment keeps its own', async () => {
     rpc.mockResolvedValue({ data: { success: true }, error: null });
-    await WalletService.disbursePromo('club-1', 'player-1', 10);
-    await WalletService.disbursePromo('club-1', 'player-1', 10);
+    await WalletService.disbursePromo('club-1', 'player-1', 10, undefined, uuid());
+    await WalletService.disbursePromo('club-1', 'player-1', 10, undefined, uuid());
     expect(rpc.mock.calls[0][1].p_op_id).not.toBe(rpc.mock.calls[1][1].p_op_id);
+    // Launch audit 2026-10-09 (S-04): the identity is the caller's, so a user
+    // retry after a failure presents the SAME id and the route replays once.
+    const retained = uuid();
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'connection reset' } });
+    await expect(
+      WalletService.disbursePromo('club-1', 'player-1', 10, undefined, retained)
+    ).rejects.toThrow();
+    await WalletService.disbursePromo('club-1', 'player-1', 10, undefined, retained);
+    const ids = rpc.mock.calls.slice(2).map((call) => call[1].p_op_id);
+    expect(new Set(ids)).toEqual(new Set([retained]));
+  });
+
+  it('refuses to pay without a caller-retained operation id', async () => {
+    await expect(
+      WalletService.disbursePromo('club-1', 'player-1', 10, undefined, undefined as never)
+    ).rejects.toThrow('Promo Disbursement Requires A Retained Operation Id');
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it.each([null, {}, { success: false, error: 'Insufficient Promo' }])(
     'an incomplete or refused receipt does not announce a paid disbursement: %j',
     async (data) => {
       rpc.mockResolvedValue({ data, error: null });
-      await expect(WalletService.disbursePromo('club-1', 'player-1', 10)).rejects.toThrow();
+      await expect(
+        WalletService.disbursePromo('club-1', 'player-1', 10, undefined, uuid())
+      ).rejects.toThrow();
       expect(emit).not.toHaveBeenCalled();
     }
   );

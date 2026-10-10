@@ -10956,7 +10956,7 @@ export class GameServer {
    * Measured on production over 24 hours: all 17,636 Spins overran their own
    * reveal window (lag p50 838 ms, p90 2,020 ms, p99 6,018 ms), and every one
    * was a horse-filled board. The reveal is anchored to the last payment plus
-   * SPIN_REVEAL.LEAD_IN_MS (one second), and about 0.85 s of that is the start
+   * SPIN_REVEAL.LEAD_IN_MS (one second then, two since 2026-10-09), and about 0.85 s of that is the start
    * work itself. The rest was detection: the last seat is bought by this
    * lane's fill job, and nothing told the start path, so the board waited for
    * the next discoverSeatFirstStarts pass (one second of sleep plus about

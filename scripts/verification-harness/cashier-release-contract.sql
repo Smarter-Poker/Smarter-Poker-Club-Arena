@@ -177,7 +177,127 @@ BEGIN
     jsonb_build_object(
       'signature', 'public.fn_cashier_statement_export_cancel(uuid)',
       'hash', '7772e8238e42f490c20e2235d1358ce2'
+    ),
+    -- Launch audit 2026-10-09 (findings S-02 and S-12). Every remaining RPC the
+    -- browser calls from a cashier surface, pinned to the production body read
+    -- the same day (md5(pg_get_functiondef), project kuklfnapbkmacvwxktbh,
+    -- $HOME/tmp-claude/audit1009/production-rpc-hashes-20261009.txt). Entries
+    -- whose production proconfig pins a search_path other than
+    -- 'public, pg_temp' say so with 'search_path'; the loop below checks the
+    -- exact installed value, never a weaker one.
+    --
+    -- The cashout v2 family is DEFINED ONLY in
+    -- supabase/accounting/weekly-v3/components/20260914164700_cashier_cashout_documents_share_the_existing_invoice_authority.sql
+    -- (installed on production 2026-09-14; the legacy fn_cashout_request /
+    -- approve / release were retired to 'cashier_v2_intent_required' tombstones
+    -- the same day). By decision the migrations directory holds no mirror of
+    -- it, so this pin is the only repo-side proof the live writers are the
+    -- audited bodies.
+    jsonb_build_object(
+      'signature', 'public.fn_cashout_request_v2(uuid,numeric,uuid,uuid,text)',
+      'hash', '07cf5457edf315929b07316c07be313d'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_cashout_approve_v2(uuid,uuid,numeric,uuid,uuid,text)',
+      'hash', '6fecd34df575557d81966dc1166a2fc4'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_cashout_release_v2(uuid,uuid,numeric,uuid,uuid,text)',
+      'hash', '3122994e23d96770a2f50e4fe6a191a6'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_cashout_queue(uuid,text)',
+      'hash', 'a9e4ff8df86c6c83001000130e6b3827'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_agent_wallet_reversible(uuid)',
+      'hash', '61b3478f0332f8ee7945d6eb2810bb71'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_agent_wallet_self_stake(uuid,numeric,text,uuid)',
+      'hash', '438f699e38c8e2e6a9949c76e526731b'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_respond_chip_request(uuid,text)',
+      'hash', 'f6b8bf0d7d035d063780b37ff614b068'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_redeem_tournament_ticket(uuid)',
+      'hash', 'ab95c0907acccdedef0190acf242c8a3'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_cancel_tournament_ticket(uuid)',
+      'hash', 'd3f65b7702d4b7f543891dd87c149353'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_club_bank_ledger(uuid,integer,integer,text[])',
+      -- Its live body is the 20260903121500 DO-block rewrite pinned by md5 in
+      -- 20261006005823, not the last CREATE (20260823170000).
+      'hash', '39ff91f5cc60c6300942f51e4ab2c3bb'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_promo_wallet_ledger(text,uuid,integer,integer,text)',
+      'hash', 'edbce76de5a1f9ba633d0a55e713ca00'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_my_wallet_ledger(uuid,integer,integer)',
+      'hash', '59c419c559309605fcb3e2634beb830e'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_ca_chip_statement_page(text,uuid,jsonb,integer)',
+      'hash', 'c706109ed8dab335912f046aaa6ee215',
+      'search_path', 'search_path=public'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_club_money_panel(uuid)',
+      -- The cashier's Club Bank and promo pot read (S-07) and DynamicWallet's.
+      'hash', '169793b84386ae10fd03246a96c7d95c',
+      'search_path', 'search_path=public, extensions'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_mint_chips_from_diamonds(uuid,numeric,uuid)',
+      'hash', 'd6e453042dd2591855dd796adeae58c5'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_promo_disburse(text,uuid,text,uuid,numeric,text,uuid,uuid)',
+      'hash', '54539cb4d66ffdcdacd85521e5fbb929',
+      'search_path', 'search_path=public'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_player_spendable_balance(uuid,uuid,uuid,uuid)',
+      'hash', '2eef81f95feb167a6d687dbb538f9bc2',
+      'search_path', 'search_path=public'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_union_send_to_member(uuid,uuid,text,numeric,text,text,text)',
+      'hash', '4758d36acff34f922bf1129ae6eecc1d'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_union_player_directory(uuid)',
+      'hash', 'd7cae706425a055f9039ba2b9535da48',
+      'search_path', 'search_path=public'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_union_clawback_from_club(uuid,uuid,numeric,text,uuid)',
+      'hash', 'f7bcdc0eab243e9372d28a3aab5f80b6',
+      'search_path', 'search_path=public'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_union_clawback_promo_from_club(uuid,uuid,numeric,text,uuid)',
+      'hash', 'd3019113da444c545a7b4475b700ad99'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_diamond_spin_statements(date)',
+      'hash', '00971f8d29f0078bce0f8d63ac503a71'
     )
+    -- Not pinnable until service_role is granted (this loop requires
+    -- authenticated AND service_role EXECUTE; production grants only
+    -- authenticated + postgres on these two, read 2026-10-09):
+    --   public.fn_cashout_operation_receipt_v2(uuid,uuid,text,uuid,numeric,uuid,text)
+    --     md5 c9af51f246a9be79c7b79c49b760e9a9,
+    --     proconfig search_path=public; lock_timeout=3s; statement_timeout=30s
+    --   public.send_wallet_diamond_transfer(uuid,integer,text,text)
+    --     md5 8d5b95d8ad2a74c1ba85339168349606, proconfig search_path=public, pg_temp
   );
 
   FOR v_item IN SELECT value FROM jsonb_array_elements(v_contract)
@@ -201,7 +321,11 @@ BEGIN
     IF NOT (SELECT prosecdef FROM pg_proc WHERE oid = v_oid) THEN
       RAISE EXCEPTION 'cashier function is not SECURITY DEFINER: %', v_item ->> 'signature';
     END IF;
-    IF NOT coalesce((SELECT proconfig @> ARRAY['search_path=public, pg_temp']
+    -- 'search_path=public, pg_temp' unless the entry pins the exact installed
+    -- value it was read with; a pin is never satisfied by an unpinned function.
+    IF NOT coalesce((SELECT proconfig @> ARRAY[
+                       coalesce(v_item ->> 'search_path', 'search_path=public, pg_temp')
+                     ]
                      FROM pg_proc WHERE oid = v_oid), false) THEN
       RAISE EXCEPTION 'cashier function search_path is not pinned: %', v_item ->> 'signature';
     END IF;

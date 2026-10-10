@@ -7,6 +7,27 @@
       "proofs": [
         "(SELECT count(*)=2 AND bool_and(p.prosecdef AND p.proconfig @> ARRAY['search_path=public'] AND strpos(pg_get_functiondef(p.oid),'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')>0 AND strpos(pg_get_functiondef(p.oid),'^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')=0 AND strpos(pg_get_functiondef(p.oid),'input_bundle_id')>0 AND strpos(pg_get_functiondef(p.oid),'checksum')>0 AND strpos(pg_get_functiondef(p.oid),'approved')>0) FROM pg_proc p WHERE p.oid IN (to_regprocedure('public.fn_gto_v31_register_dataset(jsonb)'),to_regprocedure('public.fn_horse_solver_agreement_v31_decision(jsonb)')))"
       ]
+    },
+    {
+      "file": "20261009233856_the_freeroll_listing_says_what_it_pays.sql",
+      "sha256": "5d390d40fb828b3ca0df4073f04b201b5743431f05b4400d392920393dcb45c4",
+      "proofs": [
+        "(SELECT count(*) FILTER (WHERE config->>'shortDescription' LIKE '%Base Prize Pool. Entry Is Free. 100% Of%') = 0 AND count(*) FILTER (WHERE config->>'shortDescription' LIKE '%Guaranteed Prize Pool. Entry Is Free. Every%') >= 12 FROM public.tournament_schedules)"
+      ]
+    },
+    {
+      "file": "20261009233911_two_caller_driven_checks_are_exempt_from_the.sql",
+      "sha256": "b4305f1679b84b67bf5ecd7cff427eec2e58fe43e0ea0363e2414b7188daf496",
+      "proofs": [
+        "(SELECT count(*) = 2 FROM public.ca_check_sweep_exemptions WHERE proname IN ('fn_ca_integrity_identity_links', 'fn_lightning_integrity_report'))"
+      ]
+    },
+    {
+      "file": "20261009233939_the_explained_alerts_close_with_their.sql",
+      "sha256": "6a0203aae41af284d905af038fcb13a7388398b42ef2dc04c0ce1d02a6391900",
+      "proofs": [
+        "(SELECT count(*) = 14 AND bool_and(status = 'resolved') FROM public.ca_drift_incidents WHERE id IN ('bc741723-93e4-44e3-bec4-bdfa0a8802d5','767b15b2-fc8a-4b5e-83cc-14b493d35e11','7d4460f4-0841-4920-9ec9-df439dfb3731','830128d6-1a64-47ca-9783-0b77ca77205c','98b42128-5e2a-459e-99b2-3a98f506cc20','b5d4d40d-c2f3-4e81-a06b-d8d4dcaaa8aa','cceefc20-bd37-4b82-a085-9f4d06cd2cb7','612fe3e9-89e5-404d-a874-8de4de3d3c45','d27f0d00-27cb-4d6f-b377-61e0604cf908','6cb84ad1-90a2-419a-89da-e36f83eaff71','42dbcaf4-6424-42f3-b7f2-3a3cb2949cf2','4f83f238-9baa-4842-baa1-8e3855de4666','903c106e-9826-426b-897a-d96547fb2f3c','dbcd10a3-7149-4792-abc5-6195d1251e1a'))"
+      ]
     }
   ]
 }

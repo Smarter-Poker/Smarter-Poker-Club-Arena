@@ -327,6 +327,22 @@ describe('ClubQuickLinkTile', () => {
     expect(onDirectoryRetry).toHaveBeenCalledOnce();
   });
 
+  it('labels the shark plate Close and fills the pill slot (launch audit D-14)', async () => {
+    const user = userEvent.setup();
+    renderTile();
+    const trigger = screen.getByRole('button', { name: /Hold To Choose A Wallet/ });
+    fireEvent.contextMenu(trigger);
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+    const plate = document.querySelector('.sc__foot .sc-plate') as HTMLButtonElement;
+    expect(plate).toBeTruthy();
+    expect(plate.textContent?.trim()).toBe('Close');
+    expect(plate.getAttribute('aria-label')).toBe('Close Wallet Directory');
+    expect(document.querySelector('.sc__pill')?.textContent?.trim()).toBe('Wallets');
+    await user.click(plate);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
   it('closes the popover on Escape and returns focus to the tile trigger', async () => {
     const user = userEvent.setup();
     renderTile();

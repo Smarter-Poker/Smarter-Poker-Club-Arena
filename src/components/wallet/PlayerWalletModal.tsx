@@ -18,7 +18,7 @@
  * Styling rides on the cashier's cbc- classes so the two read as one family.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useIsMounted } from '../../hooks/useIsMounted';
@@ -29,6 +29,7 @@ import { roleLabel } from '../../types/clubRoles';
 import { canHoldAgentWallet } from './walletRows';
 import { titleCase, enumToTitleCase } from '../../utils/titleCase';
 import { SpadeConsole } from '../console/SpadeConsole';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import './WalletCashierModal.css';
 
 const PAGE = 40;
@@ -184,6 +185,14 @@ export default function PlayerWalletModal({ isOpen, onClose, clubId }: PlayerWal
   const [totals, setTotals] = useState<MyTotals | null>(null);
   const [total, setTotal] = useState(0);
   const [rows, setRows] = useState<MyLedgerRow[]>([]);
+  /**
+   * NEWEST REQUEST WINS (launch audit D-05). The sheet stays mounted between
+   * opens, so `isMounted` let club A's slow statement land AFTER club B's and
+   * paint A's balance under B's heading. Every read takes a sequence number
+   * and a response is only applied while it is still the latest one asked
+   * for; the open effect bumps it so a reopen discards whatever was in flight.
+   */
+  const seqRef = useRef(0);
 
   const load = useCallback(
     async (offset: number) => {
@@ -195,11 +204,13 @@ export default function PlayerWalletModal({ isOpen, onClose, clubId }: PlayerWal
         setLoading(false);
         return;
       }
+      const seq = ++seqRef.current;
+      const current = () => isMounted.current && seq === seqRef.current;
       setLoading(true);
       if (offset === 0) setError(null);
       try {
         const uuid = await resolveClubUUID(clubId);
-        if (!isMounted.current) return;
+        if (!current()) return;
         if (!isUUID(uuid)) {
           setError('That Club Could Not Be Resolved');
           return;
@@ -219,7 +230,7 @@ export default function PlayerWalletModal({ isOpen, onClose, clubId }: PlayerWal
           totals?: MyTotals;
           rows?: MyLedgerRow[];
         } | null;
-        if (!isMounted.current) return;
+        if (!current()) return;
         if (!res?.authorized) {
           setError(res?.error || 'Your Wallet Could Not Be Read');
           return;
@@ -242,9 +253,9 @@ export default function PlayerWalletModal({ isOpen, onClose, clubId }: PlayerWal
         });
       } catch (e) {
         reportError(e, 'PlayerWalletModal.load');
-        if (isMounted.current) setError('Could Not Load Your Wallet');
+        if (current()) setError('Could Not Load Your Wallet');
       } finally {
-        if (isMounted.current) setLoading(false);
+        if (current()) setLoading(false);
       }
     },
     [clubId, isMounted]
@@ -252,10 +263,13 @@ export default function PlayerWalletModal({ isOpen, onClose, clubId }: PlayerWal
 
   useEffect(() => {
     if (!isOpen || !user?.id) return;
+    ++seqRef.current;
     setRows([]);
     setTotal(0);
     setBalances(null);
     setTotals(null);
+    setRole('player');
+    setError(null);
     load(0);
   }, [isOpen, user?.id, load]);
 
@@ -302,6 +316,10 @@ export default function PlayerWalletModal({ isOpen, onClose, clubId }: PlayerWal
     };
   }, [isOpen, onClose]);
 
+  /* Tab stays inside the sheet, focus lands on its first control and returns
+     to the row that opened it (launch audit D-11). */
+  const panelRef = useFocusTrap<HTMLDivElement>(isOpen);
+
   if (!isOpen) return null;
 
   const isAgentShaped = canHoldAgentWallet(role);
@@ -323,7 +341,7 @@ export default function PlayerWalletModal({ isOpen, onClose, clubId }: PlayerWal
       aria-label="Player Wallet"
       onClick={onClose}
     >
-      <div className="cbc-panel wcm ac-popup" onClick={(e) => e.stopPropagation()}>
+      <div ref={panelRef} className="cbc-panel wcm ac-popup" onClick={(e) => e.stopPropagation()}>
         {/* ON THE SPADE CONSOLE (#ClubArenaConsole), paired with the Club Bank
             cashier's own sheet: the same glass, the same rows, the same inks.
             One action (Close), so the foot is the flat cap and Close is a lit

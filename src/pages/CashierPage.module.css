@@ -92,6 +92,13 @@
   box-shadow: none;
 }
 
+/* The dialog element itself takes focus when it opens (P-05); show it only
+   to keyboard users, as the Trade page does. */
+.consoleDialog:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: 2px;
+}
+
 /* ── Legacy flattening inside the console ─────────────────────────────
    The Cashier Club Switcher and the Agent Promo Panel print inside this
    glass and bring their own stylesheets, which still manufacture cards,

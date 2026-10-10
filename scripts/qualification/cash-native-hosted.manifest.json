@@ -64,8 +64,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 33640,
-      "sha256": "0f705a4af412dd07399d0325240b6d6e4dce0a4f3f57797410baeb768cfc1e3e"
+      "bytes": 33658,
+      "sha256": "af901a21df2a9a92a7f87d4261091260bbabb542b21def88bcdef737c2f94a05"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -160,8 +160,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 104055,
-      "sha256": "5f3225db066ecc1c3023aaf61be0173967383268b25237b10f2914976f5dbe00"
+      "bytes": 104439,
+      "sha256": "8181a10a7d67b8e5c7dc3bc79f0a7959ff630257622f5a9cb333e053b6beed93"
     }
   },
   "nativePgCron": {
@@ -1882,5 +1882,22 @@
   },
   "dailyBonusProtectedIntegration20261010": {
     "reason": "Preserves protected main Stable Admin additive qualification routing and all its audit entries alongside Daily Bonus routing. Refreshes current exact classifier and nested source bytes after normal merge; no historical qualification claim is changed."
+  },
+  "dailyBonusAuditRouting20261010": {
+    "reason": "Reviewed Daily Bonus audit correction: route the actual component hook to required accounting and retain three additive selector assertions. No financial SQL, historical pins, or existing assertion changes. Current byte pins are source identity, not runtime certification.",
+    "changes": [
+      {
+        "section": "files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "0f705a4af412dd07399d0325240b6d6e4dce0a4f3f57797410baeb768cfc1e3e",
+        "current": "af901a21df2a9a92a7f87d4261091260bbabb542b21def88bcdef737c2f94a05"
+      },
+      {
+        "section": "files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": "5f3225db066ecc1c3023aaf61be0173967383268b25237b10f2914976f5dbe00",
+        "current": "8181a10a7d67b8e5c7dc3bc79f0a7959ff630257622f5a9cb333e053b6beed93"
+      }
+    ]
   }
 }

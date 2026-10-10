@@ -416,7 +416,10 @@ export default function DailyBonusSheet({
       if (burstTimer.current) clearTimeout(burstTimer.current);
       burstTimer.current = setTimeout(() => setBurstSlot(null), 1400);
     }
-    if (failures.length) {
+    if (failures.length && !paid.length) {
+      triggerHaptic('error');
+      toast.error(claimReasonText(failures[0].reason));
+    } else if (failures.length) {
       toast.info(`Available Rewards Collected. ${claimReasonText(failures[0].reason)}`);
     } else {
       toast.success('All Rewards Collected');

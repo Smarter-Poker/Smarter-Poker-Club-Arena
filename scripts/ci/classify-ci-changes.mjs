@@ -215,7 +215,7 @@ export function classifyChangedPaths(paths) {
   // Daily Bonus grants share the canonical Diamond award path and the
   // accounting PostgreSQL runner. Input-only edits must run that job too.
   const dailyBonus = matches(
-    /^(tests\/sql\/daily-bonus-[a-z0-9-]+\.sql|src\/services\/DailyBonusService\.ts|src\/hooks\/useDailyBonus\.ts)$/
+    /^(tests\/sql\/daily-bonus-[a-z0-9-]+\.sql|src\/services\/DailyBonusService\.ts|src\/components\/daily-bonus\/useDailyBonus\.ts)$/
   );
 
   // The Diamond Arena SQL acceptance (2026-09-19): every runner, every fixture

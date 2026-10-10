@@ -15,7 +15,7 @@
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "supabase/migrations/20260918122532_five_original_spin_standings_retain_their_recorded_cash_outc.sql": "9f6e0b02abea54394d317c6d20f8e47ae10edefc9ba6c12f6542c23daf4540c4",
     ".prettierignore": "09ce1f38a5e012220b004ee809caf9fdcf0e61d9d72e924fd82341de73d53874",
-    "tests/unit/fixtureNativeCi.test.ts": "5f3225db066ecc1c3023aaf61be0173967383268b25237b10f2914976f5dbe00",
+    "tests/unit/fixtureNativeCi.test.ts": "8181a10a7d67b8e5c7dc3bc79f0a7959ff630257622f5a9cb333e053b6beed93",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536"
   },
   "restamp_audit": [
@@ -207,5 +207,11 @@
         "current": "5f3225db066ecc1c3023aaf61be0173967383268b25237b10f2914976f5dbe00"
       }
     ]
+  },
+  "dailyBonusAuditRouting20261010": {
+    "reason": "Reviewed three additive Daily Bonus path-selection assertions. All existing assertions, fee custody SQL and historical source evidence unchanged. Current pin refresh is not runtime certification.",
+    "path": "tests/unit/fixtureNativeCi.test.ts",
+    "previous": "5f3225db066ecc1c3023aaf61be0173967383268b25237b10f2914976f5dbe00",
+    "current": "8181a10a7d67b8e5c7dc3bc79f0a7959ff630257622f5a9cb333e053b6beed93"
   }
 }

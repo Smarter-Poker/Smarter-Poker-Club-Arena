@@ -331,8 +331,15 @@ CREATE FUNCTION lc.pass_starved(r jsonb) RETURNS boolean LANGUAGE sql IMMUTABLE 
     AND coalesce((r ->> 'formed')::integer, 0) = 0
     AND NOT (coalesce((r ->> 'replans')::integer, 0) > 0
       AND jsonb_array_length(coalesce(r -> 'retries', '[]'::jsonb)) > 0
-      AND coalesce((SELECT bool_and(coalesce(x ->> 'reason' = 'formation_contended'
-                            AND x ->> 'sqlstate' IN ('55P03', '40P01', '40001'), false))
+      -- The final attempted barrier must explain the budget stop. Earlier
+      -- stale groups can precede it, but cannot excuse semantic-only starvation.
+      AND coalesce((r -> 'retries' -> -1 ->> 'reason') = 'formation_contended'
+        AND (r -> 'retries' -> -1 ->> 'sqlstate') IN ('55P03', '40P01', '40001'), false)
+      AND coalesce((SELECT bool_and(coalesce(
+                          (x ->> 'reason' = 'formation_contended'
+                            AND x ->> 'sqlstate' IN ('55P03', '40P01', '40001'))
+                          OR (x ->> 'reason' = 'insufficient_legal_candidates'
+                            AND x ->> 'sqlstate' IS NULL), false))
                       FROM jsonb_array_elements(coalesce(r -> 'retries', '[]'::jsonb)) x), false));
 $f$;
 
@@ -1302,6 +1309,13 @@ BEGIN
  SELECT count(*) INTO n FROM pg_temp.diag_budget_attempts WHERE mode='retry';
  RAISE NOTICE 'RETRY_BUDGET response=% attempts=%',r,n;
  IF lc.pass_starved(r) OR NOT lc.pass_starved(r || jsonb_build_object('retries',jsonb_build_array(jsonb_build_object('reason','unknown','sqlstate','55P03')))) OR NOT lc.pass_starved((r - 'retries' - 'replans') || jsonb_build_object('retries','[]'::jsonb,'replans',0)) OR r->>'stopped_reason'<>'time_budget' OR coalesce((r->>'formed')::integer,-1)<>0 OR n<>1 OR (r->>'replans')::integer<>1 OR jsonb_array_length(r->'retries')<>1 THEN RAISE EXCEPTION 'retry budget failed'; END IF;
+ -- Exact CI38039741939 S2 witness: stale groups, then bounded deadlock attempts.
+ r := '{"stopped_reason":"time_budget","formed":0,"replans":2,"retries":[{"reason":"insufficient_legal_candidates","sqlstate":null},{"reason":"insufficient_legal_candidates","sqlstate":null},{"reason":"formation_contended","sqlstate":"40P01"},{"reason":"formation_contended","sqlstate":"40P01"}]}'::jsonb;
+ IF lc.pass_starved(r) THEN RAISE EXCEPTION 'mixed documented contention misclassified as starvation'; END IF;
+ IF NOT lc.pass_starved(r || jsonb_build_object('retries',jsonb_build_array(jsonb_build_object('reason','insufficient_legal_candidates','sqlstate',NULL)))) THEN RAISE EXCEPTION 'semantic-only starvation concealed'; END IF;
+ IF NOT lc.pass_starved(r || jsonb_build_object('retries',(r->'retries') || jsonb_build_array(jsonb_build_object('reason','insufficient_legal_candidates','sqlstate',NULL)))) THEN RAISE EXCEPTION 'semantic tail starvation concealed'; END IF;
+ IF NOT lc.pass_starved(r || jsonb_build_object('retries',jsonb_build_array(jsonb_build_object('reason','unknown','sqlstate',NULL)) || (r->'retries'))) THEN RAISE EXCEPTION 'unexpected retry concealed'; END IF;
+ RAISE NOTICE 'MIXED_RETRY_BUDGET exact failed witness accepted; semantic-only, semantic-tail and unexpected retries still fail';
 END $cases$;
 ROLLBACK;
 BUDGET_CASES

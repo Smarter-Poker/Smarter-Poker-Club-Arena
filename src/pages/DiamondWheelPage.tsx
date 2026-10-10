@@ -30,6 +30,7 @@ import DiamondWheelService, {
   clearWheelPendingCard,
   readWheelPendingCard,
   saveWheelPendingCard,
+  type WheelContractVersion,
   type WheelWelcomeState,
   type WheelDailyBonusState,
   type WheelSegment,
@@ -106,6 +107,13 @@ function worth(valueChips: number): string {
 
 const MAX_CLIENT_SEED = 64;
 
+/** All server-qualified entry contracts share the quote and idempotent spin path. */
+function hasVariableEntry(
+  version: WheelState['contract_version']
+): version is WheelContractVersion {
+  return version === 2 || version === 3 || version === 4;
+}
+
 /**
  * THE ONE BLOCKER WITH A WAY OUT (2026-09-11). Every other reason the plate is
  * dead is the club's to fix or the clock's; this one is the player's, and it
@@ -169,9 +177,7 @@ export default function DiamondWheelPage() {
   const [state, setState] = useState<WheelState | null>(null);
   const [welcomeState, setWelcome] = useState<WheelWelcomeState | null>(null);
   const welcome =
-    welcomeState &&
-    (state?.contract_version === 2 || state?.contract_version === 3) &&
-    state.welcome
+    welcomeState && hasVariableEntry(state?.contract_version) && state.welcome
       ? {
           ...welcomeState,
           available: state.welcome.available,
@@ -517,7 +523,7 @@ export default function DiamondWheelPage() {
     const entry = freeMode ? 100 : entryDiamonds;
     if (
       !clubUuid ||
-      (state?.contract_version !== 2 && state?.contract_version !== 3) ||
+      !hasVariableEntry(state?.contract_version) ||
       !validSpinAmount(entry) ||
       quotedEntry.current === entry ||
       spinning ||
@@ -566,17 +572,16 @@ export default function DiamondWheelPage() {
   const segments: WheelSegment[] = state?.segments ?? [];
   const welcomeSegments: WheelSegment[] = welcome?.segments ?? [];
   /* The odds follow the offer; the rim follows the last spin (see `face`). */
-  const table =
-    state?.contract_version === 2 || state?.contract_version === 3
-      ? segments
-      : welcomeMode
-        ? welcomeSegments
-        : dailyBonusMode
-          ? (dailyBonus?.segments ?? segments)
-          : segments;
+  const table = hasVariableEntry(state?.contract_version)
+    ? segments
+    : welcomeMode
+      ? welcomeSegments
+      : dailyBonusMode
+        ? (dailyBonus?.segments ?? segments)
+        : segments;
   const rim =
     pending?.segments ??
-    (state?.contract_version === 2 || state?.contract_version === 3
+    (hasVariableEntry(state?.contract_version)
       ? segments
       : face === 'welcome'
         ? welcomeSegments
@@ -589,7 +594,7 @@ export default function DiamondWheelPage() {
     recovery?.entryDiamonds ??
     (freeMode
       ? 100
-      : state?.contract_version === 2 || state?.contract_version === 3
+      : hasVariableEntry(state?.contract_version)
         ? entryDiamonds
         : (cfg?.spin_price_diamonds ?? 0));
 
@@ -612,16 +617,12 @@ export default function DiamondWheelPage() {
       return 'Pick Your Diamond Card Before Another Spin';
     if (preparationError) return preparationError;
     if (!validSpinAmount(price)) return 'Choose 25 To 2,500 Whole Diamonds';
-    if (
-      quoting ||
-      ((state.contract_version === 2 || state.contract_version === 3) &&
-        quotedEntry.current !== price)
-    )
+    if (quoting || (hasVariableEntry(state.contract_version) && quotedEntry.current !== price))
       return 'Checking Your Spin';
     if (!state.available)
       return state.reason === 'not_configured'
         ? 'The Diamond Wheel Is Not Open Here Yet'
-        : (state.contract_version === 2 || state.contract_version === 3) && state.reason
+        : hasVariableEntry(state.contract_version) && state.reason
           ? state.reason
           : 'The Diamond Wheel Is Paused';
     if (state.frozen) return 'The Platform Is In Its Maintenance Break';
@@ -825,34 +826,29 @@ export default function DiamondWheelPage() {
         commitHash: commit.hash,
         clientSeed: clientSeed.trim().slice(0, MAX_CLIENT_SEED) || randomClientSeed(),
         ticketId: dailyBonusMode ? (dailyBonus?.ticket_id ?? null) : null,
-        ...(state?.contract_version === 2 || state?.contract_version === 3
+        ...(hasVariableEntry(state?.contract_version)
           ? { contractVersion: state.contract_version, entryDiamonds: price }
           : {}),
       };
       saveWheelPending(attempt);
       setRecovery(attempt);
       sent = true;
-      const result =
-        attempt.contractVersion === 2 || attempt.contractVersion === 3
-          ? await DiamondWheelService.spinV2({ ...attempt, entryDiamonds: attempt.entryDiamonds! })
-          : attempt.mode === 'daily_bonus'
-            ? await DiamondWheelService.dailyBonusSpin(
+      const result = hasVariableEntry(attempt.contractVersion)
+        ? await DiamondWheelService.spinV2({ ...attempt, entryDiamonds: attempt.entryDiamonds! })
+        : attempt.mode === 'daily_bonus'
+          ? await DiamondWheelService.dailyBonusSpin(
+              attempt.clubId,
+              attempt.commitId,
+              attempt.clientSeed,
+              attempt.ticketId!
+            )
+          : attempt.mode === 'welcome'
+            ? await DiamondWheelService.welcomeSpin(
                 attempt.clubId,
                 attempt.commitId,
-                attempt.clientSeed,
-                attempt.ticketId!
+                attempt.clientSeed
               )
-            : attempt.mode === 'welcome'
-              ? await DiamondWheelService.welcomeSpin(
-                  attempt.clubId,
-                  attempt.commitId,
-                  attempt.clientSeed
-                )
-              : await DiamondWheelService.spin(
-                  attempt.clubId,
-                  attempt.commitId,
-                  attempt.clientSeed
-                );
+            : await DiamondWheelService.spin(attempt.clubId, attempt.commitId, attempt.clientSeed);
       if (!live() || scopeRef.current !== scope) return;
       if (!result.ok) {
         clearWheelPending(attempt);
@@ -1367,9 +1363,7 @@ export default function DiamondWheelPage() {
                   ? 'Welcome Spin'
                   : waitSeconds > 0
                     ? `Ready In ${waitSeconds}s`
-                    : autoSize
-                      ? `Auto Spin ${autoSize}`
-                      : `Spin ${price.toLocaleString()}`;
+                    : `Spin ${price.toLocaleString()}`;
   /* The run plate, the same one Plinko and Crash carry. The Odds plate it
      replaces was a scroll shortcut to a console that sits immediately below
      this one, and the wheel is the only one of the three that had it; the run
@@ -1529,9 +1523,10 @@ export default function DiamondWheelPage() {
                 </button>
               )}
             </nav>
-            {(state.contract_version === 2 || state.contract_version === 3) && (
+            {hasVariableEntry(state.contract_version) && (
               <WheelEntry
                 value={freeMode ? 100 : entryDiamonds}
+                fundedMaximum={freeMode ? undefined : state.max_funded_entry}
                 disabled={freeMode || spinning || running || Boolean(recovery)}
                 onChange={(amount) => {
                   setEntryDiamonds(amount);
@@ -1568,24 +1563,26 @@ export default function DiamondWheelPage() {
                   disabled: spinning,
                 }
         }
+        batch={
+          autoSize > 0 && !freeMode && !recovery && !running
+            ? {
+                label: `Auto Spin ${autoSize}`,
+                onClick: () => void startAuto(),
+                disabled: !canSpin || Boolean(runBusy),
+              }
+            : undefined
+        }
         primary={
           shortOfDiamonds
             ? { label: 'Get Diamonds', ink: 'gold', onClick: () => navigate(BUY_DIAMONDS) }
             : running
               ? { label: spinLabel, ink: 'gold', disabled: true }
-              : autoSize && !freeMode && !recovery
-                ? {
-                    label: spinLabel,
-                    ink: 'gold',
-                    onClick: () => void startAuto(),
-                    disabled: !canSpin || Boolean(runBusy),
-                  }
-                : {
-                    label: spinLabel,
-                    ink: freeMode ? 'gold' : 'white',
-                    onClick: handleSpin,
-                    disabled: !canSpin,
-                  }
+              : {
+                  label: spinLabel,
+                  ink: freeMode ? 'gold' : 'white',
+                  onClick: handleSpin,
+                  disabled: !canSpin,
+                }
         }
       >
         <div className={wheelStyles.stage} ref={stageRef}>
@@ -1667,7 +1664,7 @@ export default function DiamondWheelPage() {
                     ? 'One Claimed Bonus Spin. 100 Diamond Value, No Diamonds Taken From You.'
                     : welcomeMode
                       ? `Your Welcome Spin, On The Club. A ${price.toLocaleString()} Diamond Spin On The Same Wheel, At No Cost To You, Once.`
-                      : `Spin ${price.toLocaleString()} Diamonds.${state.contract_version === 2 || state.contract_version === 3 ? ' Every Spin Wins A Prize.' : ' Explore The Prizes Below.'}${welcomeNote}`}
+                      : `Spin ${price.toLocaleString()} Diamonds.${hasVariableEntry(state.contract_version) ? ' Every Spin Wins A Prize.' : ' Explore The Prizes Below.'}${welcomeNote}`}
           </p>
         )}
         <TodayLine

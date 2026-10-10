@@ -106,7 +106,7 @@
 }
 .dashboard {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 420px);
   align-items: center;
   gap: 8px;
 }
@@ -162,6 +162,7 @@
   position: relative;
 }
 .primary {
+  flex: 2;
   background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');
   position: relative;
   isolation: isolate;
@@ -306,7 +307,7 @@
     gap: 0;
   }
   .actions {
-    max-width: 350px;
+    max-width: 420px;
     margin: 4px auto 0;
   }
   .entry {

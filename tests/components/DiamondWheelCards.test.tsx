@@ -20,6 +20,7 @@ vi.mock('../../src/services/DiamondWheelService', async (importOriginal) => ({
     getStateV2: backend.state,
     commit: backend.commit,
     spin: backend.spin,
+    spinV2: backend.spin,
     pickCard: backend.pick,
     runEnd: backend.runEnd,
     welcomeState: async () => ({ available: false, enabled: false }),
@@ -117,8 +118,9 @@ beforeEach(() => {
   ticket = 0;
   backend.state.mockImplementation(async () => stateWith([]));
   backend.commit.mockImplementation(async () => nextTicket());
-  backend.spin.mockImplementation(async (clubId: string, commitId: string, clientSeed: string) =>
-    receiptFor({ commitId, commitHash: 'a'.repeat(64), clientSeed })
+  backend.spin.mockImplementation(
+    async (attempt: { commitId: string; commitHash: string; clientSeed: string }) =>
+      receiptFor(attempt)
   );
   backend.pick.mockImplementation(async () => ({ ok: true, pick: cardPick }));
 });

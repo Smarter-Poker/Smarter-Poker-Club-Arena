@@ -179,7 +179,13 @@ describe('a welcome spin is never auto-played', () => {
   });
 
   it('the primary plate stays the single welcome spin, never an auto run', () => {
-    expect(WHEEL).toContain('autoSize && !freeMode && !recovery');
+    expect(WHEEL).toContain('autoSize > 0 && !freeMode && !recovery && !running');
+    const primary = WHEEL.slice(
+      WHEEL.indexOf('        primary={'),
+      WHEEL.indexOf('<WheelExperience')
+    );
+    expect(primary).toContain('onClick: handleSpin');
+    expect(primary).not.toContain('startAuto');
   });
 
   it('and the Prizes plate is what the welcome spin keeps in the run plate seat', () => {

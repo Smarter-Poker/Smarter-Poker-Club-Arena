@@ -54,6 +54,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { tmpdir } from 'node:os';
 // The law parses a migration with the CHECK's own functions, never a lookalike
 // regex of its own: a guard that disagrees with the thing it guards is worse
 // than no guard.
@@ -101,7 +102,11 @@ function migrations(): string[] {
 describe('a merged migration must be live', () => {
   it('invalidates cached file bytes after a same-length rewrite', () => {
     const dir = fs.mkdtempSync(
-      path.join(process.env.TMPDIR || '/Volumes/SmarterWork/agent-work', 'cashier-proof-cache-')
+      path.join(
+        process.env.TMPDIR ||
+          (process.platform === 'darwin' ? '/Volumes/SmarterWork/agent-work' : tmpdir()),
+        'cashier-proof-cache-'
+      )
     );
     const name = '20990101000000_cached.sql';
     const sql = 'SELECT 1;';

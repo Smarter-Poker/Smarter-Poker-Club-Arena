@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 
 root = Path(__file__).resolve().parents[2]
@@ -21,7 +22,9 @@ args = parser.parse_args()
 out = args.output.resolve()
 out.mkdir(parents=True, exist_ok=True)
 pg = Path(os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin'))
-storage = '/Volumes/SmarterWork/agent-work' if Path('/Volumes/SmarterWork').is_dir() else None
+if sys.platform == 'darwin' and not Path('/Volumes/SmarterWork').is_mount():
+    raise RuntimeError('The work SSD must be mounted; no internal-drive fallback is allowed')
+storage = '/Volumes/SmarterWork/agent-work' if sys.platform == 'darwin' else None
 cluster = Path(tempfile.mkdtemp(prefix='cashier-delete-', dir=storage))
 socket = cluster / 's'
 socket.mkdir(mode=0o700)

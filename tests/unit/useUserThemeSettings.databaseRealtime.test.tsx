@@ -435,4 +435,28 @@ describe('useUserThemeSettings database realtime', () => {
     expect(result.current.theme.table_id).toBe('carbon_red');
     unmount();
   });
+  it('does not hydrate a newly mounted table from a coalesced read older than an accepted account row', async () => {
+    const old = { game_type: 'ALL', table_id: 'classic_green', updated_at: '2026-10-10T03:08:26Z' };
+    mocks.rows = [old];
+    const first = renderHook(() => useUserThemeSettings('user-1', 'nlh'));
+    await waitFor(() => expect(first.result.current.loading).toBe(false));
+    mocks.deferRead = true;
+    act(() => mocks.realtimeStatus?.('CHANNEL_ERROR'));
+    act(() => mocks.realtimeStatus?.('SUBSCRIBED'));
+    await waitFor(() => expect(mocks.deferredRead).toBeDefined());
+    act(() => row('ALL', 'carbon_red', '2026-10-10T03:08:27.964379+00:00'));
+    expect(first.result.current.theme.table_id).toBe('carbon_red');
+    const second = renderHook(() => useUserThemeSettings('user-1', 'nlh'));
+    expect(second.result.current.theme.table_id).toBe('carbon_red');
+    await act(async () => {
+      mocks.deferredRead?.({ data: [old], error: null });
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(second.result.current.loading).toBe(false));
+    expect(first.result.current.theme.table_id).toBe('carbon_red');
+    expect(second.result.current.theme.table_id).toBe('carbon_red');
+    expect(resolveCachedTheme('user-1', 'NLH')?.table_id).toBe('carbon_red');
+    second.unmount();
+    first.unmount();
+  });
 });

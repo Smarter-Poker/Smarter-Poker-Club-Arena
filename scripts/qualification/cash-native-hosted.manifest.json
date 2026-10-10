@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 197750,
-      "sha256": "8eedbd8fe4f583a027cfe9540f6b845bcc7d0246133a5d79794cf047ddc991b6"
+      "bytes": 197974,
+      "sha256": "794adb63503c19e6fc009da8e5071ec9c66cb782521546500bd7df4d9e1e1479"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1765,6 +1765,28 @@
       "sha256": "e0e545fb9a0426b0645e42ff1bfd1c6fd10fb1816215686627e4b69f4b0a1d09"
     }
   },
+  "leaderboardNativeRoutineBatch20261008": {
+    "reason": "Add actual pinned native stock-parity and full-catalog fixture to required Accounting4 before source access. All cash inputs, assertions, historical pins and SOURCE_ONLY_UNRUN status remain unchanged. Fingerprint refresh is not runtime financial qualification.",
+    "previousWorkflowPin": {
+      "bytes": 193493,
+      "sha256": "2d4d815a02258d735977ec1aa478443781981f19f52f69b517d870d069c5123e"
+    }
+  },
+  "leaderboardNativeRoutineBatchMainIntegration20261008": {
+    "reason": "Preserve both the reviewed native metadata fixture on shard4 and protected-main Lightning phase9 remediation on shard1. Resolve only the combined CI source fingerprint; all financial inputs, assertions and SOURCE_ONLY_UNRUN status preserved. This is source integrity, not runtime financial qualification.",
+    "previousBranchWorkflowPin": {
+      "bytes": 193745,
+      "sha256": "1c6485e9c11199c4d0bb454551a9fd5bbe95c004f63f8151e860cd51d19f18e0"
+    },
+    "protectedMainWorkflowPin": {
+      "bytes": 193808,
+      "sha256": "78a89d9ae242fbffa6c0d28fde75b470234680c15917b317b0233748e5d6b5db"
+    },
+    "combinedWorkflowPin": {
+      "bytes": 194060,
+      "sha256": "e83e7c74448545adca5677a5f2646df3a956ae43651d1feb948c35dcdab3c592"
+    }
+  },
   "operatorPauseNativeQualification20261007": {
     "reason": "Adds only the isolated native operator-hold regression in the existing Accounting2 lane. Existing cash qualification inputs and financial assertions are unchanged; workflow fingerprint refresh is source admission, not a new native cash verdict.",
     "previousWorkflowPin": {
@@ -1799,28 +1821,6 @@
     "reason": "Preserve all current protected-main native qualification steps and the candidate operator-hold accounting step. Only combined workflow source fingerprint is refreshed; no native financial or Full-B verdict is claimed.",
     "protectedMain": "527d7229490fdc9e54d75b3e005518bde7c72b98",
     "originalPredecessor": "f59e0a36a08b756d23b47976cd31ecca8f8d28a3"
-  },
-  "leaderboardNativeRoutineBatch20261008": {
-    "reason": "Add actual pinned native stock-parity and full-catalog fixture to required Accounting4 before source access. All cash inputs, assertions, historical pins and SOURCE_ONLY_UNRUN status remain unchanged. Fingerprint refresh is not runtime financial qualification.",
-    "previousWorkflowPin": {
-      "bytes": 193493,
-      "sha256": "2d4d815a02258d735977ec1aa478443781981f19f52f69b517d870d069c5123e"
-    }
-  },
-  "leaderboardNativeRoutineBatchMainIntegration20261008": {
-    "reason": "Preserve both the reviewed native metadata fixture on shard4 and protected-main Lightning phase9 remediation on shard1. Resolve only the combined CI source fingerprint; all financial inputs, assertions and SOURCE_ONLY_UNRUN status preserved. This is source integrity, not runtime financial qualification.",
-    "previousBranchWorkflowPin": {
-      "bytes": 193745,
-      "sha256": "1c6485e9c11199c4d0bb454551a9fd5bbe95c004f63f8151e860cd51d19f18e0"
-    },
-    "protectedMainWorkflowPin": {
-      "bytes": 193808,
-      "sha256": "78a89d9ae242fbffa6c0d28fde75b470234680c15917b317b0233748e5d6b5db"
-    },
-    "combinedWorkflowPin": {
-      "bytes": 194060,
-      "sha256": "e83e7c74448545adca5677a5f2646df3a956ae43651d1feb948c35dcdab3c592"
-    }
   },
   "operatorPauseCurrent3353MainIntegration20261009": {
     "reason": "Preserve protected main native metadata qualification and the candidate operator-hold step. Combined workflow source identity only; financial assertions and SOURCE_ONLY_UNRUN remain unchanged.",

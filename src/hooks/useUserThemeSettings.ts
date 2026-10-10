@@ -270,6 +270,13 @@ const themeRowsQuery = (userId: string) =>
 type ThemeRowsResult = Awaited<ReturnType<typeof themeRowsQuery>>;
 
 const inFlightThemeReads = new Map<string, Promise<ThemeRowsResult>>();
+// A shared read belongs to the account revision when it STARTED, even if a
+// later-mounted hook joins that promise after an accepted live row arrived.
+const accountThemeRevisions = new Map<string, number>();
+const themeReadRevisions = new WeakMap<Promise<ThemeRowsResult>, number>();
+function advanceAccountThemeRevision(userId: string | null | undefined): void {
+  if (userId) accountThemeRevisions.set(userId, (accountThemeRevisions.get(userId) ?? 0) + 1);
+}
 
 export function fetchUserThemeRows(userId: string): Promise<ThemeRowsResult> {
   const existing = inFlightThemeReads.get(userId);
@@ -291,6 +298,7 @@ export function fetchUserThemeRows(userId: string): Promise<ThemeRowsResult> {
     }
   );
 
+  themeReadRevisions.set(p, accountThemeRevisions.get(userId) ?? 0);
   inFlightThemeReads.set(userId, p);
   return p;
 }
@@ -702,7 +710,9 @@ export function useUserThemeSettings(
         // game_type) over seven buckets, so this is a handful of rows at most,
         // and resolving in memory is both cheaper than the old two round trips
         // and the only way to see a row stored under a raw variant key.
-        const { data, error: queryError } = await fetchUserThemeRows(userId);
+        const read = fetchUserThemeRows(userId);
+        const accountRevisionAtRead = themeReadRevisions.get(read) ?? 0;
+        const { data, error: queryError } = await read;
 
         if (!mounted) return;
 
@@ -718,7 +728,12 @@ export function useUserThemeSettings(
         // A read started before a newer accepted live patch cannot replace
         // that patch when its older snapshot arrives. The event already owns
         // the current paint and cache; no second read or replay is needed.
-        if (liveThemeRevisionRef.current !== liveRevisionAtRead) {
+        if (
+          liveThemeRevisionRef.current !== liveRevisionAtRead ||
+          (accountThemeRevisions.get(userId) ?? 0) !== accountRevisionAtRead
+        ) {
+          const current = resolveCachedTheme(userId, gameType);
+          if (current) setTheme((prev) => (sameSelection(prev, current) ? prev : current));
           setLoading(false);
           return;
         }
@@ -847,7 +862,12 @@ export function useUserThemeSettings(
       if (savedBucket && !mutationId && pendingMutationsRef.current.get(savedBucket)?.size) {
         // Remember a committed server version even while a newer local tap owns
         // the paint. Otherwise its delayed predecessor can win after confirmation.
-        if (authoritative) mergeCachedThemeRow(userId, savedBucket, clean, updatedAt, true, true);
+        if (
+          authoritative &&
+          mergeCachedThemeRow(userId, savedBucket, clean, updatedAt, true, true)
+        ) {
+          advanceAccountThemeRevision(userId);
+        }
         return;
       }
       // Client confirmation clocks affect optimistic first-paint precedence only.
@@ -857,6 +877,7 @@ export function useUserThemeSettings(
       ) {
         if (userId) return;
       }
+      advanceAccountThemeRevision(userId);
       liveThemeRevisionRef.current += 1;
       const resolved = authoritative ? resolveCachedTheme(userId, gameType) : null;
       setTheme((prev) => resolved ?? { ...prev, ...clean });

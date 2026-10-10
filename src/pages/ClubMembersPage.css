@@ -18,11 +18,13 @@
   --members-text: #f4f7fa;
   --members-text-dim: #9ba8b5;
   --members-text-faint: #6f7c89;
-  --members-content: min(1380px, calc(100vw - 32px));
+  /* The application shell can be narrower than the viewport. Every roster
+     surface shares the page's available width, including its clipped controls. */
+  --members-content: min(1380px, calc(100% - 32px));
   width: 100%;
   min-height: 100vh;
   min-height: 100dvh;
-  max-width: 100vw;
+  max-width: 100%;
   overflow-x: hidden;
   overflow-x: clip;
   padding: 16px 0 calc(var(--bottom-nav-clearance, 74px) + 24px);
@@ -1089,7 +1091,7 @@
 
 @media (max-width: 720px) {
   .club-members-page {
-    --members-content: calc(100vw - 18px);
+    --members-content: calc(100% - 18px);
     padding-top: 9px;
     background-size: 36px 36px;
   }

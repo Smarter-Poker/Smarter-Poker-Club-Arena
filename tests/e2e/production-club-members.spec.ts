@@ -315,6 +315,74 @@ test.describe('Production Shark Club Players', () => {
     expect(probe.criticalConsoleErrorCount).toBe(0);
   });
 
+  test('keeps roster surfaces and controls inside the actual page at desktop and phone widths', async ({
+    page,
+  }) => {
+    const probe = observeMembersPath(page);
+    await openMembers(page, probe);
+    const originalViewport = page.viewportSize();
+    for (const width of [1449, 375, 393]) {
+      await page.setViewportSize({ width, height: 812 });
+      const frame = await page.locator('.club-members-page').boundingBox();
+      expect(frame, 'the roster page must have a rendered containing block').not.toBeNull();
+      for (const selector of [
+        '.members-hero',
+        '.members-console',
+        '.members-list',
+        '.members-count',
+        '.members-search',
+        '.members-search input',
+        '.members-sort',
+        '.members-refresh',
+        '.members-toolbar',
+      ]) {
+        const box = await page.locator(selector).boundingBox();
+        expect(box, `${selector} must render at ${width}px`).not.toBeNull();
+        expect(box!.width).toBeGreaterThan(0);
+        expect(
+          box!.x,
+          `${selector} clips at the left page edge at ${width}px`
+        ).toBeGreaterThanOrEqual(frame!.x - 0.5);
+        expect(
+          box!.x + box!.width,
+          `${selector} clips at the right page edge at ${width}px`
+        ).toBeLessThanOrEqual(frame!.x + frame!.width + 0.5);
+      }
+      const consoleFrame = await page.locator('.members-console').boundingBox();
+      expect(consoleFrame).not.toBeNull();
+      for (const control of await page
+        .locator(
+          '.members-search input, .members-sort select, .members-refresh, .members-columns, .members-export, .members-select-loaded'
+        )
+        .all()) {
+        const box = await control.boundingBox();
+        expect(box).not.toBeNull();
+        expect(box!.x).toBeGreaterThanOrEqual(consoleFrame!.x);
+        expect(box!.x + box!.width).toBeLessThanOrEqual(consoleFrame!.x + consoleFrame!.width);
+        expect(
+          await control.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+          'a roster control clips its own content'
+        ).toBe(true);
+      }
+      // Permission-specific controls are checked whenever the actual viewer
+      // can see them; the required search/sort/refresh checks always execute.
+      for (const control of await page
+        .locator('.members-export, .members-select-loaded, .members-columns, .member-row__open')
+        .all()) {
+        const box = await control.boundingBox();
+        expect(box).not.toBeNull();
+        expect(box!.x).toBeGreaterThanOrEqual(frame!.x - 0.5);
+        expect(box!.x + box!.width).toBeLessThanOrEqual(frame!.x + frame!.width + 0.5);
+      }
+    }
+    if (originalViewport) await page.setViewportSize(originalViewport);
+    expect(probe.responseFailures).toEqual([]);
+    expect(probe.requestFailureCount).toBe(0);
+    expect(probe.requestAbortCount).toBe(0);
+    expect(probe.pageErrorCount).toBe(0);
+    expect(probe.criticalConsoleErrorCount).toBe(0);
+  });
+
   test('keeps the complete Players control surface usable at 375px', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
     const probe = observeMembersPath(page);

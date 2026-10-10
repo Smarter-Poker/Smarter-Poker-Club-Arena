@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 199060,
-      "sha256": "60e94a691469d9cd92c08a47332b4f25079b9ebbd2c1ddf60cdcbc22e2738a34"
+      "bytes": 199252,
+      "sha256": "9603a0e218e20ccd08c7685cb098123749abe04969c4556f08a051573c27a865"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1990,5 +1990,32 @@
   },
   "dailyBonusProtectedIntegration20261010": {
     "reason": "Preserves protected main Stable Admin additive qualification routing and all its audit entries alongside Daily Bonus routing. Refreshes current exact classifier and nested source bytes after normal merge; no historical qualification claim is changed."
+  },
+  "playerCommandRegression20261010": {
+    "reason": "Add exact retained-fact totals and concurrent note receipt qualification to the existing Accounting4 lane. All previous qualification commands and assertions remain unchanged. Fingerprint update is source binding, not proof of production installation or financial qualification.",
+    "previousWorkflowPin": {
+      "bytes": 198604,
+      "sha256": "c4b0d65e0ef9d442c504dd6c5aafa0522607bff1ffd2953d3a8c5822c7f88950"
+    }
+  },
+  "operatorPausePlayerCommandIntegration20261010": {
+    "reason": "Preserve current protected Player Command Accounting4 qualification and all its annotations beside operator pause and Daily Bonus. Refresh exact combined current workflow only; historical pins, financial assertions and SOURCE_ONLY_UNRUN status remain unchanged. No runtime or FullB qualification is claimed.",
+    "protectedMain": "3b004c6bb2d9210b7105694f4df496b778cac524",
+    "reviewedChangedPins": {
+      ".github/workflows/ci.yml": {
+        "previousCandidate": {
+          "bytes": 199060,
+          "sha256": "60e94a691469d9cd92c08a47332b4f25079b9ebbd2c1ddf60cdcbc22e2738a34"
+        },
+        "incomingProtected": {
+          "bytes": 198796,
+          "sha256": "8fb03799e942bf3d132b672cfbe6b7003048ab7d2f43d3fab279478ac389c70c"
+        },
+        "actualMerged": {
+          "bytes": 199252,
+          "sha256": "9603a0e218e20ccd08c7685cb098123749abe04969c4556f08a051573c27a865"
+        }
+      }
+    }
   }
 }

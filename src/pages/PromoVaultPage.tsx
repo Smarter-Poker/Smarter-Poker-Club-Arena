@@ -49,7 +49,8 @@ import { useToast } from '../components/common/Toast';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { ErrorState } from '../components/common/EmptyState';
 import RoleBadge from '../components/club/RoleBadge';
-import { resolveClubUUID } from '../utils/clubIdResolver';
+import { resolveClubUUIDStrict } from '../utils/strictClubIdResolver';
+import { runWithRequestDeadline } from '../utils/requestDeadline';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 import { toTitleCase } from '../utils/titleCase';
@@ -169,7 +170,7 @@ export default function PromoVaultPage() {
   const [items, setItems] = useState<VaultItem[]>([]);
   const [records, setRecords] = useState<VaultRecord[]>([]);
   const [roster, setRoster] = useState<RosterMember[]>([]);
-  const [diamonds, setDiamonds] = useState(0);
+  const [diamonds, setDiamonds] = useState<number | null>(null);
   const [userRole, setUserRole] = useState<ClubRole>('player');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -180,6 +181,9 @@ export default function PromoVaultPage() {
   const [grantTarget, setGrantTarget] = useState<VaultItem | null>(null);
 
   const recordsLoadedRef = useRef(false);
+  const vaultRequest = useRef<AbortController | null>(null);
+  const recordsRequest = useRef<AbortController | null>(null);
+  const [recordsError, setRecordsError] = useState<string | null>(null);
 
   /* One retry key per (item, recipient, quantity) attempt. Held until the send
      either succeeds or is refused, so pressing Send again after a lost
@@ -188,91 +192,96 @@ export default function PromoVaultPage() {
 
   const canManage = MANAGER_ROLES.includes(userRole);
 
-  // Safety net: an empty vault is a better answer than a skeleton that never
-  // resolves, if auth or the network hangs.
-  useEffect(() => {
-    const timeout = setTimeout(() => setLoading(false), 8000);
-    return () => clearTimeout(timeout);
-  }, []);
-
   /* ── Load ─────────────────────────────────────────────────────────────── */
 
   const loadVault = useCallback(
     async (getIsMounted?: () => boolean) => {
-      if (!clubId) return;
-      const live = () => (getIsMounted ? getIsMounted() : true) && isMountedRef.current;
-
-      if (live()) setLoading(true);
-      if (live()) setLoadError(null);
+      vaultRequest.current?.abort();
+      const controller = new AbortController();
+      vaultRequest.current = controller;
+      const live = () =>
+        !controller.signal.aborted &&
+        vaultRequest.current === controller &&
+        (getIsMounted ? getIsMounted() : true) &&
+        isMountedRef.current;
+      if (live()) {
+        setLoading(true);
+        setLoadError(null);
+        setItems([]);
+        setRoster([]);
+        setUserRole('player');
+        setDiamonds(null);
+        setResolvedClubId(null);
+        setBuyTarget(null);
+        setGrantTarget(null);
+      }
       try {
-        const uuid = await resolveClubUUID(clubId);
-        if (!live()) return;
-        if (!uuid) {
-          setItems([]);
-          return;
-        }
-        setResolvedClubId(uuid);
-
-        // The catalog already carries this club's holdings, so the shelf and the
-        // price list are one round trip rather than two and a join in the
-        // browser. The wallet and the roster ride alongside it.
-        const [catalogResult, walletResult, rosterResult] = await Promise.allSettled([
-          supabase.rpc('ca_promo_vault_catalog', { p_club_id: uuid }),
-          supabase.from('club_diamond_wallets').select('balance').eq('club_id', uuid).maybeSingle(),
-          ClubRosterService.getRoster(uuid),
-        ]);
-        if (!live()) return;
-
-        if (catalogResult.status === 'fulfilled') {
-          const { data, error } = catalogResult.value;
-          if (error) throw error;
-          setItems(
-            ((data ?? []) as Record<string, unknown>[]).map((row) => ({
-              item_key: String(row.item_key ?? ''),
-              category: (row.category as VaultItem['category']) ?? 'feature',
-              label: (row.label as string) ?? '',
-              description: (row.description as string) ?? null,
-              duration_days: row.duration_days == null ? null : num(row.duration_days),
-              pack_size: row.pack_size == null ? null : num(row.pack_size),
-              tier: (row.tier as string) ?? null,
-              diamond_cost: num(row.diamond_cost),
-              icon_key: (row.icon_key as string) ?? null,
-              sort_order: num(row.sort_order),
-              quantity: num(row.quantity),
-            }))
-          );
-        } else {
-          throw catalogResult.reason;
-        }
-
-        // A club with no wallet row yet shows zero rather than an error: the
-        // vault is still perfectly readable, buying is simply refused.
-        if (walletResult.status === 'fulfilled') {
-          setDiamonds(num(walletResult.value.data?.balance));
-        }
-
-        if (rosterResult.status === 'fulfilled') {
-          const list = rosterResult.value;
-          setRoster(list);
-          if (user?.id) {
-            const me = list.find((m) => m.user_id === user.id);
-            if (me) setUserRole(me.role);
-            else {
-              const { data: memberData } = await supabase
-                .from('club_members')
-                .select('role')
+        const result = await runWithRequestDeadline(
+          async (signal) => {
+            if (!clubId) throw new Error('Choose A Club To Read Its Vault.');
+            const uuid = await resolveClubUUIDStrict(clubId, signal);
+            if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+            const [catalog, wallet, list] = await Promise.all([
+              supabase.rpc('ca_promo_vault_catalog', { p_club_id: uuid }).abortSignal(signal),
+              supabase
+                .from('club_diamond_wallets')
+                .select('balance')
                 .eq('club_id', uuid)
-                .eq('user_id', user.id)
-                .maybeSingle();
-              if (live() && memberData) setUserRole(normaliseRole(memberData.role));
+                .abortSignal(signal)
+                .maybeSingle(),
+              ClubRosterService.getRoster(uuid, signal),
+            ]);
+            if (catalog.error) throw catalog.error;
+            if (wallet.error) throw wallet.error;
+            const data = catalog.data;
+            if (!Array.isArray(data)) throw new Error('The Vault Catalog Response Was Incomplete.');
+            let role: ClubRole = 'player';
+            if (user?.id) {
+              const me = list.find((member) => member.user_id === user.id);
+              if (me) role = me.role;
+              else {
+                const { data: memberData, error } = await supabase
+                  .from('club_members')
+                  .select('role')
+                  .eq('club_id', uuid)
+                  .eq('user_id', user.id)
+                  .abortSignal(signal)
+                  .maybeSingle();
+                if (error) throw error;
+                if (memberData) role = normaliseRole(memberData.role);
+              }
             }
-          }
-        } else {
-          reportError(rosterResult.reason, 'PromoVaultPage.roster');
-        }
+            return {
+              uuid,
+              list,
+              role,
+              diamonds: num(wallet.data?.balance),
+              items: (data as Record<string, unknown>[]).map((row) => ({
+                item_key: String(row.item_key ?? ''),
+                category: (row.category as VaultItem['category']) ?? 'feature',
+                label: (row.label as string) ?? '',
+                description: (row.description as string) ?? null,
+                duration_days: row.duration_days == null ? null : num(row.duration_days),
+                pack_size: row.pack_size == null ? null : num(row.pack_size),
+                tier: (row.tier as string) ?? null,
+                diamond_cost: num(row.diamond_cost),
+                icon_key: (row.icon_key as string) ?? null,
+                sort_order: num(row.sort_order),
+                quantity: num(row.quantity),
+              })),
+            };
+          },
+          { timeoutMs: 40_000, signal: controller.signal }
+        );
+        if (!live()) return;
+        setResolvedClubId(result.uuid);
+        setItems(result.items);
+        setRoster(result.list);
+        setDiamonds(result.diamonds);
+        setUserRole(result.role);
       } catch (error) {
-        reportError(error, 'PromoVaultPage.loadVault');
         if (live()) {
+          reportError(error, 'PromoVaultPage.loadVault');
           setLoadError('The live vault catalog could not be loaded. No diamonds were spent.');
           toast.error('Failed To Load The Promo Vault');
         }
@@ -285,22 +294,43 @@ export default function PromoVaultPage() {
 
   useEffect(() => {
     let mounted = true;
-    if (clubId) loadVault(() => mounted);
+    recordsRequest.current?.abort();
+    recordsLoadedRef.current = false;
+    setRecords([]);
+    setRecordsError(null);
+    setRecordsLoading(false);
+    void loadVault(() => mounted);
     return () => {
       mounted = false;
+      vaultRequest.current?.abort();
+      recordsRequest.current?.abort();
     };
   }, [clubId, loadVault]);
 
   const loadRecords = useCallback(async () => {
     if (!resolvedClubId) return;
+    recordsRequest.current?.abort();
+    const controller = new AbortController();
+    recordsRequest.current = controller;
+    const live = () =>
+      !controller.signal.aborted && recordsRequest.current === controller && isMountedRef.current;
     setRecordsLoading(true);
+    setRecordsError(null);
+    setRecords([]);
     try {
-      const { data, error } = await supabase.rpc('ca_promo_vault_records', {
-        p_club_id: resolvedClubId,
-        p_limit: 100,
-      });
+      const { data, error } = await runWithRequestDeadline(
+        (signal) =>
+          supabase
+            .rpc('ca_promo_vault_records', {
+              p_club_id: resolvedClubId,
+              p_limit: 100,
+            })
+            .abortSignal(signal),
+        { timeoutMs: 40_000, signal: controller.signal }
+      );
       if (error) throw error;
-      if (!isMountedRef.current) return;
+      if (!live()) return;
+      if (!Array.isArray(data)) throw new Error('The Vault Records Response Was Incomplete.');
       setRecords(
         ((data ?? []) as Record<string, unknown>[]).map((row) => ({
           id: String(row.id ?? ''),
@@ -318,10 +348,13 @@ export default function PromoVaultPage() {
       );
       recordsLoadedRef.current = true;
     } catch (error) {
-      reportError(error, 'PromoVaultPage.loadRecords');
-      if (isMountedRef.current) toast.error('Failed To Load The Vault Records');
+      if (live()) {
+        reportError(error, 'PromoVaultPage.loadRecords');
+        setRecordsError('The Live Vault Records Could Not Be Loaded.');
+        toast.error('Failed To Load The Vault Records');
+      }
     } finally {
-      if (isMountedRef.current) setRecordsLoading(false);
+      if (live()) setRecordsLoading(false);
     }
   }, [resolvedClubId, isMountedRef, toast]);
 
@@ -477,7 +510,9 @@ export default function PromoVaultPage() {
             <span className="pv-balance__glyph" aria-hidden="true">
               ◆
             </span>
-            <span className="pv-balance__value">{count(diamonds)}</span>
+            <span className="pv-balance__value">
+              {diamonds === null ? (loading ? 'Loading' : 'Unavailable') : count(diamonds)}
+            </span>
             <span className="sr-only">Diamonds In The Club Wallet</span>
           </span>
           <button
@@ -512,7 +547,7 @@ export default function PromoVaultPage() {
         </button>
       </div>
 
-      {loading && items.length === 0 ? (
+      {loading ? (
         <PageSkeleton variant="list" />
       ) : loadError ? (
         <ErrorState message={loadError} onRetry={() => void loadVault()} />
@@ -541,13 +576,15 @@ export default function PromoVaultPage() {
             onBuy={setBuyTarget}
           />
         </div>
+      ) : recordsError ? (
+        <ErrorState message={recordsError} onRetry={() => void loadRecords()} />
       ) : (
         <RecordsList records={records} loading={recordsLoading} />
       )}
 
       {helpOpen && <HelpDialog onClose={() => setHelpOpen(false)} />}
 
-      {buyTarget && (
+      {buyTarget && diamonds !== null && (
         <BuyDialog
           item={buyTarget}
           diamonds={diamonds}

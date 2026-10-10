@@ -24,6 +24,7 @@ without the guard stayed green.
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -32,7 +33,11 @@ import uuid
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SQL_DIR = ROOT / 'tests/sql'
 PG = pathlib.Path(os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin'))
-SOCKET = '/tmp/codex-diamond-phase2-pg'
+if sys.platform == 'darwin' and not pathlib.Path('/Volumes/SmarterWork').is_mount():
+    raise RuntimeError('The work SSD must be mounted; no internal-drive fallback is allowed')
+_private = pathlib.Path(tempfile.mkdtemp(prefix='diamond-door-', dir='/Volumes/SmarterWork/agent-work' if sys.platform == 'darwin' else None))
+SOCKET = str(_private / 's')
+pathlib.Path(SOCKET).mkdir(mode=0o700)
 PORT = '55472'
 DB = 'poker_diamond_transfer_door_test'
 MIGRATION = ROOT / 'supabase/migrations/20260919223115_the_transfer_door_is_named_and_dr16_has_a_consumer.sql'
@@ -236,9 +241,34 @@ INSERT INTO friendships(user_id,friend_id,status) VALUES('10000000-0000-0000-000
     check(sql("SELECT count(*) FROM pg_proc WHERE proname='fn_poker_diamond_reserve' AND prosrc LIKE "
               "'%fn_ca_diamond_rule_mode(''DR16:deposit_inside_settlement_window'')%'") == '1',
           'the reserve consults DR16 by its literal name, which is what the flip door checks')
+    # Deleted-recipient baseline and exact current writer qualification.
+    sql("ALTER TABLE profiles ADD COLUMN status text DEFAULT 'active'")
+    sql(f"UPDATE profiles SET status='deleted' WHERE id='{B}'")
+    baseline = send(amount=10)
+    check(isinstance(baseline, dict) and baseline.get('success') is True,
+          'negative control: the current writer pays a deleted accepted friend')
+    script((ROOT / 'supabase/migrations/20261010220349_deleted_players_cannot_transfer_diamonds.sql').read_text())
+    check(sql("SELECT md5(pg_get_functiondef('send_wallet_diamond_transfer(uuid,integer,text,text)'::regprocedure))") == '655fd3a4fc415ef0032bb8799ee9e842', 'the installed diamond function matches the qualified definition')
+    before = sql('SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM profiles p')
+    journal = sql('SELECT count(*) FROM diamond_transactions')
+    refused = send(amount=10)
+    check(isinstance(refused, dict) and refused.get('success') is False and refused.get('code') == 'transfer_player_deleted',
+          'new diamond transfer refuses a deleted recipient')
+    check(before == sql('SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM profiles p') and journal == sql('SELECT count(*) FROM diamond_transactions'),
+          'deleted-recipient refusal changes neither wallet nor journal')
+    check(first == send(request=ref), 'a committed receipt still replays after recipient deletion')
+    sql(f"UPDATE profiles SET status='active' WHERE id='{B}'; UPDATE profiles SET status='deleted' WHERE id='{A}'")
+    refused = send(amount=10)
+    check(isinstance(refused, dict) and refused.get('code') == 'transfer_player_deleted', 'deleted sender is refused too')
+    sql(f"UPDATE profiles SET status='active' WHERE id='{A}'; UPDATE profiles SET status=NULL WHERE id='{B}'")
+    allowed = send(amount=10)
+    check(isinstance(allowed, dict) and allowed.get('success') is True, 'a retained profile with null status still receives')
+    check(first == send(request=ref), 'receipt remains immutable after further transfers')
 finally:
     if started_here is not None:
         subprocess.run([str(PG / 'pg_ctl'), '-D', str(started_here), '-m', 'fast', '-w', '-t', '30', 'stop'],
                        capture_output=True, env={**os.environ, 'LC_ALL': 'C', 'LANG': 'C'})
+
+    shutil.rmtree(_private)
 
 print(f'{passed} isolated transfer door and DR16 checks passed; this is not a production certification.')

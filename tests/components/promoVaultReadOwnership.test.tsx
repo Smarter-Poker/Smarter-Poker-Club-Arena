@@ -103,6 +103,7 @@ describe('Promo Vault owns truthful bounded reads', () => {
         await screen.findByText(/live vault catalog could not be loaded/i)
       ).toBeInTheDocument();
       expect(screen.queryByText('Time Bank')).not.toBeInTheDocument();
+      expect(screen.getByTitle('Club Diamond Balance')).toHaveTextContent('Unavailable');
     }
   );
   it('accepts an actual empty catalog and absent wallet row', async () => {

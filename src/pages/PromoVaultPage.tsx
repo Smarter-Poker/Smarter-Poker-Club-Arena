@@ -170,7 +170,7 @@ export default function PromoVaultPage() {
   const [items, setItems] = useState<VaultItem[]>([]);
   const [records, setRecords] = useState<VaultRecord[]>([]);
   const [roster, setRoster] = useState<RosterMember[]>([]);
-  const [diamonds, setDiamonds] = useState(0);
+  const [diamonds, setDiamonds] = useState<number | null>(null);
   const [userRole, setUserRole] = useState<ClubRole>('player');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -210,7 +210,7 @@ export default function PromoVaultPage() {
         setItems([]);
         setRoster([]);
         setUserRole('player');
-        setDiamonds(0);
+        setDiamonds(null);
         setResolvedClubId(null);
         setBuyTarget(null);
         setGrantTarget(null);
@@ -510,7 +510,9 @@ export default function PromoVaultPage() {
             <span className="pv-balance__glyph" aria-hidden="true">
               ◆
             </span>
-            <span className="pv-balance__value">{count(diamonds)}</span>
+            <span className="pv-balance__value">
+              {diamonds === null ? (loading ? 'Loading' : 'Unavailable') : count(diamonds)}
+            </span>
             <span className="sr-only">Diamonds In The Club Wallet</span>
           </span>
           <button
@@ -582,7 +584,7 @@ export default function PromoVaultPage() {
 
       {helpOpen && <HelpDialog onClose={() => setHelpOpen(false)} />}
 
-      {buyTarget && (
+      {buyTarget && diamonds !== null && (
         <BuyDialog
           item={buyTarget}
           diamonds={diamonds}

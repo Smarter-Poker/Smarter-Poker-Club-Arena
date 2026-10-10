@@ -326,7 +326,9 @@ run_game_probe daily-bonus-one-claim 'NOTICE:  PASS Daily Bonus: 400 dates, stre
 "${diamond_psql[@]}" -f "$root/supabase/migrations/20261010084125_wheel_batches_commit_every_paid_spin_atomically_and_retain_o.sql"
 
 # Owner's October 10 progressive loss guarantee, after all historical probes.
+"${diamond_psql[@]}" -f "$diamond/choice-v4-before-v5.sql"
 "${diamond_psql[@]}" -f "$root/supabase/migrations/20261010083333_choice_losses_keep_half_the_last_prize_and_games_show_lifeti.sql"
+"${diamond_psql[@]}" -f "$diamond/choice-v4-after-v5.sql"
 "${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
 run_game_probe diamond-choice-progressive-loss 'NOTICE:  PASS Progressive choice losses: new contract5 Mines and Crossing, first step safe, increasing half-last-prize guarantee, exact Promo settlement, duplicate move replay, historical contracts preserved, probability and ladder martingales retain initial 80 percent'
 

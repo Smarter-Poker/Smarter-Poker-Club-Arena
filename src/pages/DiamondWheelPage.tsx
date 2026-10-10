@@ -1893,6 +1893,7 @@ export default function DiamondWheelPage() {
         >
           <SpadeConsole
             title="Bonus Game Won"
+            onClose={() => setBatchOffer(null)}
             eyebrow={diamondGameTitle(batchOffer.game, batchOffer.boost_multiplier)}
             plates={{
               secondary: { label: 'Not Now', onClick: () => setBatchOffer(null) },

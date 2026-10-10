@@ -162,7 +162,7 @@ $$;
 REVOKE ALL ON FUNCTION public.fn_wheel_prize_order(uuid),public.fn_wheel_next_unplayed(uuid,uuid) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_wheel_prize_order(uuid),public.fn_wheel_next_unplayed(uuid,uuid) TO service_role;
 DO $$ BEGIN IF md5(pg_get_functiondef('public.fn_wheel_bonus_public_award(public.wheel_bonus_awards,boolean)'::regprocedure)) IS DISTINCT FROM '05c398390da8bf8c5d84b7c6549cf83b' THEN RAISE EXCEPTION 'fn_wheel_bonus_public_award preimage changed'; END IF; END $$;
-CREATE OR REPLACE FUNCTION public.fn_wheel_bonus_public_award(a wheel_bonus_awards, p_double boolean)
+CREATE OR REPLACE FUNCTION public.fn_wheel_bonus_public_award(a public.wheel_bonus_awards, p_double boolean)
  RETURNS jsonb
  LANGUAGE sql
  STABLE
@@ -175,7 +175,7 @@ AS $function$
 $function$
 ;
 DO $$ BEGIN IF md5(pg_get_functiondef('public.fn_wheel_card_public(public.wheel_card_awards)'::regprocedure)) IS DISTINCT FROM '89ba43cc77d479c10fa64dd7c5764093' THEN RAISE EXCEPTION 'fn_wheel_card_public preimage changed'; END IF; END $$;
-CREATE OR REPLACE FUNCTION public.fn_wheel_card_public(a wheel_card_awards)
+CREATE OR REPLACE FUNCTION public.fn_wheel_card_public(a public.wheel_card_awards)
  RETURNS jsonb
  LANGUAGE sql
  STABLE

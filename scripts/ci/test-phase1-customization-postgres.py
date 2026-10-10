@@ -1347,6 +1347,15 @@ try:
         sha_map,
     )
 
+    # Separate isolated database: exact unchanged appearance RPC + its row-version owner.
+    theme_migration = ROOT / "supabase/migrations/20261010075740_theme_row_versions_advance_per_write.sql"
+    require(psql("CREATE DATABASE theme_versions;").returncode == 0, "theme fixture database creation failed")
+    theme_result = command(["node", ROOT / "scripts/dev/verify-theme-row-versions.mjs", PORT,
+        theme_migration, run_dir / "theme-stream.json", socket, "theme_versions", "postgres"])
+    require(theme_result.returncode == 0, "theme row-version native proof failed:\n" + output_tail(theme_result))
+    record("theme-row-first-save-serialized-writes-replay-and-rollback", True, theme_result.stdout)
+    RESULTS["migrationSha256"][theme_migration.name] = hashlib.sha256(theme_migration.read_bytes()).hexdigest()
+
     RESULTS["passed"] = all(case["passed"] for case in RESULTS["cases"] if isinstance(case, dict))
 finally:
     if started and (data / "postmaster.pid").exists():

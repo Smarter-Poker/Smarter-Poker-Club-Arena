@@ -68,7 +68,7 @@ test.describe('the content security policy', () => {
     const origin = new URL(baseURL ?? 'https://smarter.poker/hub/club-arena/').origin;
 
     const visit = async (url: string, label: string) => {
-      const batch = await visitCspRoute(page, url);
+      const batch = await visitCspRoute(page, url, label);
       for (const v of batch) found.push({ ...v, route: label });
     };
 

@@ -8,6 +8,9 @@ vi.mock('../services/supabase/client.js', () => ({
     rpc: vi.fn(async (name: string) => {
       if (name === 'fn_ca_get_table_operator_hold')
         return { data: { paused: false, version: 0, command_id: null }, error: null };
+      if (name === 'fn_ca_operator_floor_state')
+        return { data: { hold: null, close: null }, error: null };
+      return { data: null, error: null };
     }),
   },
   maintenanceSupabase: {},

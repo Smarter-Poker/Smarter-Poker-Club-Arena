@@ -10,13 +10,16 @@
  *   P-07  the viewer is never a Send recipient (and still a Distribute one)
  *   P-13/14/15/19/20  console law, dead code, Title Case, a11y, parsing
  *   S-03  the Mint tab holds one p_op_id across a failed attempt
+ *   G-01  the Send confirm and its previews read the spelling, not a float
+ *   G-03  the Mint field reads grouped thousands like every other amount
+ *   G-04  a failed club read says the club, not the role
  */
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import CashierPage, { parseChipAmount } from '../../src/pages/CashierPage';
+import CashierPage, { parseChipAmount, parseWholeChipAmount } from '../../src/pages/CashierPage';
 import { supabase } from '../../src/lib/supabase';
 import { engineChannelClient } from '../../src/services/EngineStateClient';
 import { masterBus } from '../../src/core/MasterBus';
@@ -236,7 +239,7 @@ describe('Cashier Classic launch audit', () => {
     expect(screen.getByTestId('dynamic-wallet')).toHaveAttribute('data-role-ready', 'true');
   });
 
-  it('P-01: a failed club read is reported the same way', async () => {
+  it('P-01 / G-04: a failed club read hides the cashier and names the club, not the role', async () => {
     vi.mocked(supabase.from).mockImplementation((table: string) => {
       const query: Record<string, unknown> = {};
       for (const method of ['select', 'or', 'order', 'limit', 'is', 'in', 'eq', 'range'])
@@ -254,8 +257,13 @@ describe('Cashier Classic launch audit', () => {
       return query as never;
     });
     start();
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Your Cashier Role Could Not Be Read.'
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('The Club Could Not Be Read.');
+    expect(alert).not.toHaveTextContent('Your Cashier Role Could Not Be Read.');
+    expect(within(alert).getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'PGRST301' }),
+      'CashierPage.loadUserContext'
     );
     expect(screen.queryAllByRole('tab')).toHaveLength(0);
   });
@@ -456,6 +464,65 @@ describe('Cashier Classic launch audit', () => {
     expect(supabase.rpc).not.toHaveBeenCalledWith('fn_agent_wallet_send', expect.anything());
   });
 
+  // ── G-01 ─────────────────────────────────────────────────────────────────
+  async function sendTabWith(text: string) {
+    start();
+    await screen.findByRole('tab', { name: 'Send', selected: true });
+    const sendSelect = (await screen.findByLabelText('Send To Recipient')) as HTMLSelectElement;
+    await waitFor(() => expect(sendSelect.options.length).toBe(2));
+    fireEvent.change(sendSelect, { target: { value: PLAYER_ONE } });
+    const field = document.getElementById('cashier-send-amount') as HTMLInputElement;
+    fireEvent.change(field, { target: { value: text } });
+    return field;
+  }
+  const sendCalls = () => rpcCalls.filter(([name]) => name === 'fn_agent_wallet_send');
+
+  it('G-01: "1e9" never reaches the high-value confirm, and nothing is sent', async () => {
+    const field = await sendTabWith('1e9');
+    expect(field.value).toBe('1e9');
+    fireEvent.click(screen.getByRole('button', { name: /Send 1e9 Chips To Selected Recipient/ }));
+    expect(await screen.findByText('Please Enter A Valid Amount')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(sendCalls()).toHaveLength(0);
+  });
+
+  it('G-01: the confirm re-reads the typed spelling, so a changed field cannot ride the override', async () => {
+    const field = await sendTabWith('10000');
+    fireEvent.click(screen.getByRole('button', { name: /Send 10000 Chips To Selected Recipient/ }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(field, { target: { value: '1e9' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm Send' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(await screen.findByText('Please Enter A Valid Amount')).toBeInTheDocument();
+    expect(sendCalls()).toHaveLength(0);
+
+    // A different well-spelled figure than the one confirmed is refused too.
+    fireEvent.change(field, { target: { value: '10000' } });
+    fireEvent.click(screen.getByRole('button', { name: /Send 10000 Chips To Selected Recipient/ }));
+    const again = await screen.findByRole('dialog');
+    fireEvent.change(field, { target: { value: '20000' } });
+    fireEvent.click(within(again).getByRole('button', { name: 'Confirm Send' }));
+    expect(
+      await screen.findByText('The Amount Changed. Confirm The Send Again')
+    ).toBeInTheDocument();
+    expect(sendCalls()).toHaveLength(0);
+  });
+
+  it('G-01: the After-balance preview and the Distribute label read parseChipAmount', async () => {
+    await sendTabWith('1e3');
+    expect(screen.queryByText('Claim Back Window')).toBeNull();
+    fireEvent.change(document.getElementById('cashier-send-amount')!, {
+      target: { value: '1000' },
+    });
+    expect(await screen.findByText('Claim Back Window')).toBeInTheDocument();
+    expect(CLASSIC).not.toContain('parseFloat(amount) > 0');
+    expect(CLASSIC).not.toContain('chipFigure(parseFloat(amount))');
+    expect(CLASSIC).toContain('const typedAmount = parseChipAmount(amount);');
+    expect(CLASSIC).toContain(
+      "`Distribute ${typedChips !== null ? chipFigure(typedChips) : '0'} Chips`"
+    );
+  });
+
   // ── S-03 ─────────────────────────────────────────────────────────────────
   it('S-03: the Mint tab mints through fn_mint_chips_from_diamonds with one p_op_id per attempt', async () => {
     mintResponses.push(
@@ -538,6 +605,33 @@ describe('Cashier Classic launch audit', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirm Mint' }));
     await screen.findByText('Mint Whole Chips Only');
     expect(rpcCalls.some(([name]) => name === 'fn_mint_chips_from_diamonds')).toBe(false);
+  });
+
+  it('G-03: the Mint branch reads the field through parseWholeChipAmount', () => {
+    expect(CLASSIC).toContain('const whole = parseWholeChipAmount(input);');
+    expect(CLASSIC).not.toContain('WHOLE_CHIPS.test(input.trim())');
+  });
+});
+
+// ── G-03: the Mint field's reader ────────────────────────────────────────────
+describe('parseWholeChipAmount (regression review)', () => {
+  it('reads conventional grouping as the classic parser does, then requires whole chips', () => {
+    expect(parseWholeChipAmount('1,000')).toEqual({ ok: true, value: 1000 });
+    expect(parseWholeChipAmount('1,234,567')).toEqual({ ok: true, value: 1234567 });
+    expect(parseWholeChipAmount('250')).toEqual({ ok: true, value: 250 });
+    for (const text of ['1.5', '100.00', '1,000.50']) {
+      expect(parseWholeChipAmount(text)).toEqual({ ok: false, error: 'Mint Whole Chips Only' });
+    }
+  });
+
+  it("refuses what parseChipAmount refuses, with parseChipAmount's own words", () => {
+    for (const text of ['1e3', '1,0', '-5', '', '0']) {
+      const whole = parseWholeChipAmount(text);
+      const classic = parseChipAmount(text);
+      expect(whole.ok).toBe(false);
+      expect(classic.ok).toBe(false);
+      if (!whole.ok && !classic.ok) expect(whole.error).toBe(classic.error);
+    }
   });
 });
 

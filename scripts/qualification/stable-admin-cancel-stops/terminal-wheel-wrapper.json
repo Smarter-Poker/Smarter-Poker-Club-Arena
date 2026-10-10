@@ -1,0 +1,6 @@
+{
+  "proname": "fn_wheel_spin_core",
+  "args": "p_club_id uuid, p_commit_id uuid, p_client_seed text, p_welcome boolean",
+  "md5": "4c9c2645c10f7440951f15ffeca63d68",
+  "definition": "CREATE OR REPLACE FUNCTION public.fn_wheel_spin_core(p_club_id uuid, p_commit_id uuid, p_client_seed text, p_welcome boolean)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$\nBEGIN\n IF auth.uid() IS NULL THEN RETURN jsonb_build_object('ok',false,'error','Sign In To Spin'); END IF;\n RETURN public.fn_wheel_spin_core(p_club_id,p_commit_id,p_client_seed,p_welcome,NULL);\nEND $function$\n"
+}

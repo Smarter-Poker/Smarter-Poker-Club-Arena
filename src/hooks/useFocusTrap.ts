@@ -14,6 +14,20 @@
 
 import { useRef, useEffect, useCallback } from 'react';
 
+/**
+ * NESTED TRAPS: THE TOP ONE OWNS TAB (regression review 2026-10-10, G-05).
+ * Every trap listens on `document`, so with a dialog stacked over another
+ * (the mint over the cashier) both handlers ran on one Tab: the outer one,
+ * registered first, saw focus outside its container and pulled it to its
+ * own first control, and the inner one then pulled it back to ITS first
+ * control, so Tab could never move. Each active trap is pushed here on
+ * activation and removed on cleanup; only the most recently activated one
+ * acts on Tab. The outer trap stays active underneath, so it never runs its
+ * restore while the inner one is up, and it owns Tab again once the inner
+ * one closes.
+ */
+const activeTraps: object[] = [];
+
 const FOCUSABLE_SELECTORS =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -23,9 +37,11 @@ export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(
 ) {
   const containerRef = useRef<T>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const trapIdRef = useRef<object>({});
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key !== 'Tab' || !containerRef.current) return;
+    if (activeTraps[activeTraps.length - 1] !== trapIdRef.current) return;
 
     const focusableElements =
       containerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTORS);
@@ -104,11 +120,15 @@ export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(
       });
     }
 
+    const trapId = trapIdRef.current;
+    activeTraps.push(trapId);
     document.addEventListener('keydown', handleKeyDown);
 
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
       document.removeEventListener('keydown', handleKeyDown);
+      const index = activeTraps.lastIndexOf(trapId);
+      if (index !== -1) activeTraps.splice(index, 1);
       // Restore focus to the previously focused element
       previousFocusRef.current?.focus();
     };

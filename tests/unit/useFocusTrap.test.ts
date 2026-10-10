@@ -59,4 +59,56 @@ describe('useFocusTrap', () => {
 
     container.remove();
   });
+
+  it('G-05: with two traps active the most recent one owns Tab, and the outer one takes it back', async () => {
+    const build = (label: string) => {
+      const box = document.createElement('div');
+      const a = document.createElement('button');
+      const b = document.createElement('button');
+      a.textContent = `${label} first`;
+      b.textContent = `${label} last`;
+      box.append(a, b);
+      document.body.append(box);
+      return { box, a, b };
+    };
+    const outerDom = build('outer');
+    const innerDom = build('inner');
+    const outer = renderHook(({ active }) => useFocusTrap(active), {
+      initialProps: { active: false },
+    });
+    outer.result.current.current = outerDom.box;
+    outer.rerender({ active: true });
+    await waitFor(() => expect(outerDom.a).toHaveFocus());
+
+    outerDom.b.focus();
+    const inner = renderHook(({ active }) => useFocusTrap(active), {
+      initialProps: { active: false },
+    });
+    inner.result.current.current = innerDom.box;
+    inner.rerender({ active: true });
+    await waitFor(() => expect(innerDom.a).toHaveFocus());
+
+    // The outer trap is still active but does not pull focus back to itself:
+    // a Tab from the inner trap's first control is left to the browser.
+    innerDom.a.focus();
+    expect(fireEvent.keyDown(document, { key: 'Tab' })).toBe(true);
+    expect(innerDom.a).toHaveFocus();
+    innerDom.b.focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(innerDom.a).toHaveFocus();
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(innerDom.b).toHaveFocus();
+
+    // Closing the inner trap returns focus to where it was opened from, and the
+    // outer trap owns Tab again.
+    inner.rerender({ active: false });
+    expect(outerDom.b).toHaveFocus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(outerDom.a).toHaveFocus();
+
+    outer.unmount();
+    inner.unmount();
+    outerDom.box.remove();
+    innerDom.box.remove();
+  });
 });

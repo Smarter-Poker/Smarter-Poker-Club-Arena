@@ -760,6 +760,54 @@ export abstract class ServerTableEngineBase {
     }
   }
 
+  protected operatorFloorPaused = false;
+  private operatorFloorReadSequence = 0;
+  protected operatorCloseRequest: {
+    operation_id: string;
+    actor_id: string;
+    reason: string;
+  } | null = null;
+
+  /** Called by this table's existing boundary, never a second floor sweeper. */
+  public async refreshOperatorFloor(): Promise<void> {
+    const sequence = (this.operatorFloorReadSequence = (this.operatorFloorReadSequence ?? 0) + 1);
+    const { data, error } = await supabase.rpc('fn_ca_operator_floor_state', {
+      p_table_id: this.tableId,
+    });
+    if (sequence !== this.operatorFloorReadSequence) return;
+    if (error || !data || typeof data !== 'object') {
+      this.operatorFloorPaused = true;
+      throw new Error('operator_floor_state_unknown');
+    }
+    this.operatorCloseRequest = data.close ?? null;
+    const paused = Boolean(data.hold || this.operatorCloseRequest);
+    const wasPaused = this.operatorFloorPaused;
+    this.operatorFloorPaused = paused;
+    if (paused !== wasPaused && (paused || (!this.isNextHandPaused() && !this.handForHandPaused))) {
+      this.hub?.emitEvent(this.tableId, {
+        type: paused ? 'table_paused' : 'table_resumed',
+        table_id: this.tableId,
+        reason: data.close?.reason ?? data.hold?.reason ?? null,
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  protected async closeOperatorCashAtBoundary(): Promise<void> {
+    if (!this.operatorCloseRequest) return;
+    throw new Error('operator_cash_close_owner_unavailable');
+  }
+
+  protected async passOperatorFloorBoundary(): Promise<boolean> {
+    await this.refreshOperatorFloor();
+    if (!this.operatorFloorPaused) return false;
+    this.markProgress();
+    if (this.operatorCloseRequest && !this.maintenancePaused && this.isBetweenHands()) {
+      await this.closeOperatorCashAtBoundary();
+    }
+    return true;
+  }
+
   /**
    * Wall-clock instant before which this table must not deal (2026-08-21).
    *
@@ -3840,6 +3888,10 @@ export abstract class ServerTableEngineBase {
           await this.awaitPauseGate();
           if (!this.running) break;
           this.setLoopPhase('start_wait_for_players');
+        }
+        if (await this.passOperatorFloorBoundary()) {
+          await this.waitForPlayersPause(ServerTableEngineBase.WAIT_FOR_PLAYERS_POLL_MS);
+          continue;
         }
         const idsBeforeSweep = new Set(this.seatedPlayers.map((p) => p.user_id));
         try {
@@ -7105,6 +7157,7 @@ export abstract class ServerTableEngineBase {
       this.adminPauseLock ||
       this.pendingOperatorPauses > 0 ||
       this.hasUnconfirmedOperatorPause() ||
+      this.operatorFloorPaused ||
       this.maintenanceLock ||
       // Lightning 2.0 Phase 5: the Cluster's row says finish this hand and
       // start no other. Sits with the two locks above because it is polled
@@ -8302,6 +8355,7 @@ export abstract class ServerTableEngineBase {
       this.finalTableDealPaused ||
       this.terminalCloseoutPaused ||
       this.dealingHaltLock ||
+      this.operatorFloorPaused ||
       (this.tournamentMovePauseOwners.size > 0 && this.handForHandResolve !== null) ||
       this.dealHoldUntilMs > Date.now() ||
       this.tableFSM.state === 'paused'

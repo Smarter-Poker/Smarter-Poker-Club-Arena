@@ -1,0 +1,3 @@
+# tests/the-club-arena-shows-no-dollar-sign.law.test.ts
+
+Dan 2026-10-09: "you are forbidden from using $ the dollar sign anywhere in the club arena. it just needs to say 100 Chip Guarantee". scripts/ci/check-ui-dollar.mjs parses src/, server/src and public/ and fails on any dollar sign that renders (JSX text, string and template literals, attributes, CSS content, HTML), allowing only interpolation, regex sources, back-references, logs, SQL parameters, JSONPath and types; this law runs the gate on a sample "$100" UI string (it must fail), on that machinery (it must pass) and on the swept tree (it must pass), pins its one file exemption, and proves check-ui-text (which pre-push, CI and all-gates run) fails when the dollar half it starts finds a "$100".

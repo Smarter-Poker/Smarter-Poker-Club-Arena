@@ -30,6 +30,42 @@ const native = parse(
   readFileSync(join(root, '.github/workflows/component-fixture-native-smoke.yml'), 'utf8')
 );
 
+describe('Stable Admin owning transactions retain native qualification', () => {
+  it.each([
+    'scripts/qualify-stable-admin-floor.mjs',
+    'scripts/qualify-stable-admin-cancel-stops-pg17.mjs',
+    'scripts/qualify-stable-admin-cancel-lane-pg17.mjs',
+    'scripts/qualification/stable-admin-cancel-lane/owners.json',
+    'scripts/qualification/stable-admin-floor/bootstrap.sql',
+    'scripts/qualification/stable-admin-cancel-stops/originals.json',
+    'scripts/ci/schema-manifest.d/stable-admin-engine-operator.json',
+    'scripts/ci/schema-manifest.d/stable-admin-emergency-stops.json',
+  ])('selects the required accounting matrix and source contracts for %s', (path) => {
+    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+  });
+
+  it('runs each real PostgreSQL 17 qualifier once and joins its result in the required engine check', () => {
+    for (const driver of ['floor', 'cancel-stops-pg17', 'cancel-lane-pg17']) {
+      const steps = ci.jobs.accounting_postgres.steps.filter((step: { run?: string }) =>
+        step.run?.includes(`node scripts/qualify-stable-admin-${driver}.mjs`)
+      );
+      expect(steps).toHaveLength(1);
+      expect(steps[0].if).toMatch(ONLY_ITS_SHARD);
+      expect(steps[0]['continue-on-error']).toBeUndefined();
+      expect(steps[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
+      expect(steps[0].env.TMPDIR).toBe('${{ runner.temp }}');
+    }
+    expect(ci.jobs.server.needs).toContain('accounting_postgres');
+    expect(ci.jobs.server.name).toBe('Server Engine (typecheck + tests)');
+    const joinStep = ci.jobs.server.steps.find(
+      (step: { env?: Record<string, string> }) => step.env?.ACCOUNTING_RESULT
+    );
+    expect(joinStep.env.ACCOUNTING_RESULT).toBe('${{ needs.accounting_postgres.result }}');
+    expect(joinStep.run).toContain('"accounting:$ACCOUNTING_RESULT"');
+    expect(joinStep.run).toContain('exit 1');
+  });
+});
+
 it('runs the real Diamond playfields once with an isolated software-rendering worker and one visible retry', () => {
   const beat = ci.jobs['css-beats-e2e'].steps.find(
     (step: { name?: string }) => step.name === "Run the beats against this commit's CSS"

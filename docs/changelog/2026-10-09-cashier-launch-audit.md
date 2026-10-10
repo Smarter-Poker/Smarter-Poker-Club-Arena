@@ -2,7 +2,41 @@
 
 Date: 2026-10-09. Branch `audit/cashier-launch-20261009` on `origin/main` 3bfc46f877. One section per finding fixed in this round; the finding ids are those of the audit reports (P pages, D dialogs, R renders, L live, S services and database wiring).
 
-<!-- release evidence to be filled by the parent -->
+## Release Evidence
+
+PR #6609 was squash merged as `486d88d7cb` at 2026-10-10T01:21:31Z. The branch carried one route gate fix after review (`252fe9a06c`), and one a11y runner job was rerun after a "Vite preview did not become ready" flake; nothing else was retried. Publish run 38012872193 built the merge commit at 2026-10-10T01:25:48Z and both build info endpoints served `486d88d7cb`.
+
+Post deploy run 38013206036 ran against live `9e6b189d1d`, which contains `486d88d7cb`:
+
+- Live cashier DB contract (`scripts/verification-harness/certify-cashier-contract.mjs`): PASSED.
+- Authenticated production Cashier: PASSED.
+- Cashier Statements: PASSED.
+- Sweep: 426 passed, every cashier and wallet spec green. One unrelated failure in `gameplay-customization-runtime.spec.ts:623`.
+- Release window: UNKNOWN, because production advanced to a later commit while the run was in progress; the run is evidence for `9e6b189d1d`, which includes this release.
+
+## Decision: Column Privileges On Clubs
+
+The REVOKE of SELECT on `clubs.chip_treasury` and `clubs.promo_balance` from `anon` and `authenticated` (S-07) stays deferred, and the reason is now a verified property of this production rather than caution. On this PostgREST, `select=*` answers 42501 "permission denied for table" whenever the calling role lacks SELECT on any single column of the table; it does not narrow the star to the readable columns. Verified 2026-10-10 02:30 UTC with the publishable key against `profiles` and `trivia_questions`, both of which carry column level grants today. A column level REVOKE on `clubs` would therefore break every `select('*')` and every bare `.select()` on `clubs` in this repo, and the same reads in the World Hub and Commander repos, which share the table.
+
+The decision is:
+
+- The REVOKE is a cross repo change: every `clubs` star read in Club Arena, the World Hub and Commander is rewritten to a column list first, then the grants are narrowed in one migration with its own live proof.
+- Until then the cashier and wallet surfaces do not depend on the two columns at all. After this follow up every Club Bank and promo pot figure on `CashierPage`, `WalletService`, `ChipTransferModal`, `AgentPromoPanel`, `UnionWalletModal` and every file under `src/components/wallet` comes through `fn_club_money_panel` (SECURITY DEFINER, server role check, Unavailable and never 0 on refusal), and `tests/cashier-dialogs-launch-audit.law.test.ts` refuses any `.from('clubs')` read on those surfaces that names either column, a star, or a bare `.select()`.
+- The remaining direct readers of `clubs.chip_treasury` are the club pages, `src/pages/ClubHomePage.tsx` and `src/services/ClubsService.ts`. They are out of scope for the cashier release and are rewritten with the cross repo change.
+
+## Follow Ups Shipped After The Release
+
+### S-12 follow-through: the last two client doors join the release contract
+
+Migration `supabase/migrations/20261010022852_cashier_contract_pins_need_service_role_execute.sql` grants `service_role` EXECUTE on `public.fn_cashout_operation_receipt_v2(uuid,uuid,text,uuid,numeric,uuid,text)` and `public.send_wallet_diamond_transfer(uuid,integer,text,text)` in one transaction and nothing else; a post apply block refuses the apply unless both carry `authenticated` and `service_role` EXECUTE and neither `anon` nor PUBLIC can execute them, and two `@live-proof` lines state the same for the live check. The release contract pins both with their production hashes read 2026-10-09 (`c9af51f246a9be79c7b79c49b760e9a9`, `search_path=public` carried in the per entry `search_path` key; `8d5b95d8ad2a74c1ba85339168349606`), and the "not pinnable" carve out is gone. The migration creates no object, so no `scripts/ci/schema-manifest.d` fragment is needed.
+
+Files: `supabase/migrations/20261010022852_cashier_contract_pins_need_service_role_execute.sql`, `scripts/verification-harness/cashier-release-contract.sql`
+
+### S-07 follow-through: the cashier and wallet surfaces are pinned off the clubs money columns
+
+No cashier or wallet surface in scope still selected `chip_treasury` or `promo_balance` off `clubs` after the release (the three readers were moved in the release itself: `cashierBalanceRead.ts`, `ChipMintModal.tsx`, `ChipTransferModal.tsx`). The source pin in `tests/cashier-dialogs-launch-audit.law.test.ts` makes that a red test before it is a render, and names `ClubHomePage` and `ClubsService` as the readers that remain, see the decision above.
+
+Files: `tests/cashier-dialogs-launch-audit.law.test.ts`
 
 ## Decision: The Cashout V2 Family Is Live And The Migrations Directory Holds No Mirror
 
@@ -534,4 +568,19 @@ See D-16 above: the Agent Wallet cashier now consumes `hasFloat`.
 
 ## Not Fixed In This Round
 
-S-02's migration mirror (deliberately not written, see the decision above) and the column level REVOKE on `clubs.chip_treasury` and `clubs.promo_balance` (S-07, needs DDL; `ClubHomePage` and `ClubsService` still select the column directly) are deferred to a follow-up that carries DDL.
+S-02's migration mirror (deliberately not written, see the decision above) and the column level REVOKE on `clubs.chip_treasury` and `clubs.promo_balance` (S-07; `ClubHomePage` and `ClubsService` still select the column directly) are deferred. The REVOKE is a cross repo change for the reason recorded under Column Privileges On Clubs above.
+
+## Regression Review Follow-Up (G-01 To G-08)
+
+The read-only regression review of the launch audit fix (2026-10-10) found eight gaps; each is closed below with a regression test.
+
+- G-01: `src/pages/CashierPage.tsx` reads the Send amount through `parseChipAmount` in the Confirm Send gate, the After-balance preview and the Distribute label (`typedAmount` / `typedChips`), never `parseFloat`; `handleAction` checks the typed text even when the confirm dialog passes an override and refuses a figure that differs from the one confirmed, so "1e9" can no longer reach the high-value confirm.
+- G-02: `src/components/wallet/CashoutRequestModal.tsx` subscribes with `player_id=eq.${playerId}` again and reloads only when the payload's `club_id` is this club, the club is unresolved, or the payload carries no club.
+- G-03: `src/pages/CashierPage.tsx` exports `parseWholeChipAmount`, which accepts the spellings `parseChipAmount` accepts (grouped thousands included) and then requires whole chips; the Mint branch uses it.
+- G-04: `src/pages/CashierPage.tsx` says "The Club Could Not Be Read." when the `clubs` read fails and keeps "Your Cashier Role Could Not Be Read." for the role read.
+- G-05: `src/components/wallet/WalletCashierModal.tsx` keeps `useFocusTrap(isOpen)` under the stacked mint; `src/hooks/useFocusTrap.ts` keeps a stack of active traps and only the most recently activated one acts on Tab, so the mint owns the keyboard and focus returns to the Mint control instead of dropping behind the overlay.
+- G-06: `exactChipFigure`, `sumChips` and `parseTradeAmount` moved to `src/utils/cashierAmount.ts` and `cashierDestination` to `src/utils/cashierDestination.ts`; `CashierTradePage` and `CashierClubSwitcher` export only their components, so the react-refresh warnings are gone.
+- G-07: `src/pages/CashierTradePage.tsx` sends the constant reason `'Cashier Send Out'` (`CASHIER_SEND_OUT_REASON`) on every Send Out retry; `op_id` stays the identity, and no UUID prints in the ledger note.
+- G-08: `parseTradeAmount` in `src/utils/cashierAmount.ts` refuses anything that is not digits with up to two decimals once grouping is stripped ("Enter The Amount As Digits, With Up To Two Decimals"), exponent and hex spellings included.
+
+Tests: `tests/unit/cashier-classic-launch-audit.test.tsx` (G-01, G-03, G-04), `tests/unit/cashier-trade-launch-audit.test.tsx` (G-06, G-07, G-08), `tests/components/cashier-dialogs-launch-audit.test.tsx` and `tests/unit/useFocusTrap.test.ts` (G-05), `tests/unit/CashoutRequestModal.test.tsx` (G-02), `tests/unit/CashierClubSwitcher.test.tsx` (G-06), with the source pins in `tests/cashier-dialogs-launch-audit.law.test.ts` moved to the new lines.

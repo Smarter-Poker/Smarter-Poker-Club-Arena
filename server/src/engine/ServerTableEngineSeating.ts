@@ -1,3 +1,4 @@
+import { loadSeatedPlayers } from '../services/supabase.js';
 import { requestSeatDeparture, type AdminDepartureAuthority } from '../services/supabase/seats.js';
 /**
  * ServerTableEngine, layer 2/8 — buy-ins, cash-outs, sit-out/leave, admin locks, BB entry.
@@ -1936,6 +1937,36 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
   /**
    * POST /admin/pause — Bible V8 §6.17: Admin pause. Current hand finishes, then no new hands.
    */
+  protected override async closeOperatorCashAtBoundary(): Promise<void> {
+    const command = this.operatorCloseRequest;
+    if (!command || this.isTournamentTable() || !this.isBetweenHands()) return;
+    const roster = await loadSeatedPlayers(this.tableId);
+    if (!this.lifecycleCanMutate() || !this.isBetweenHands()) return;
+    this.adoptSeatRoster(roster);
+    for (const seat of [...this.seatedPlayers]) {
+      const answer = await this.leaveTable(seat.user_id, {
+        forced: true,
+        occupancyId: seat.occupancy_id,
+        seatNumber: seat.seat_number,
+        admin: {
+          actorId: command.actor_id,
+          clubId: this.tableInfo!.club_id,
+          reason: command.reason,
+        },
+      });
+      if (!answer.success || !answer.immediate) return;
+    }
+    const { data, error } = await supabase.rpc('fn_ca_operator_finish_cash_close', {
+      p_table_id: this.tableId,
+      p_operation_id: command.operation_id,
+    });
+    if (error) throw new Error('operator_cash_close_outcome_unknown');
+    // stop() joins this dealer loop. Fence it now, then let this boundary
+    // return so teardown can join the original loop without awaiting itself.
+    if (data === true)
+      void this.stop().catch((error) => reportError(error, 'operator_cash_close_stop_failed'));
+  }
+
   public async requestOperatorHold(
     paused: boolean,
     actorId: string,

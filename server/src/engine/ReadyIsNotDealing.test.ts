@@ -87,6 +87,7 @@ const seat = (n: number) => ({
     "start() has not resolved" is observable rather than a race. */
 function startable() {
   const engine = new ServerTableEngine(TABLE) as any;
+  engine.refreshOperatorFloor = async () => {}; // Fixture has no operator hold; floor refusal is tested independently.
   engine.sleep = (ms: number) => new Promise((r) => setTimeout(r, Math.min(ms, 20)));
   engine.seedHandCountFromHistory = async () => {};
   engine.restoreButtonFromHistory = async () => {};
@@ -137,6 +138,7 @@ describe('engine.ready', () => {
       const engine = startable();
       const progress = vi.spyOn(engine, 'markProgress');
       let passes = 0;
+      engine.refreshOperatorFloor = async () => {}; // Fixture has no operator hold; floor refusal is tested independently.
       engine.sleep = async () => {
         expect(engine.msSinceProgress()).toBe(0);
         expect(engine.dealingLoop).not.toHaveBeenCalled();

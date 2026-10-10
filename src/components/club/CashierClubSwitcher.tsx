@@ -30,6 +30,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import { compactChips } from '../../utils/format';
 import { titleCase } from '../../utils/titleCase';
+import { cashierDestination } from '../../utils/cashierDestination';
 import {
   eligibleQuickLinkClubs,
   clubParamToUuid,
@@ -48,20 +49,6 @@ interface CashierClubSwitcherProps {
   clubId: string;
   /** Resolved display name from the page (fallback when the cache is cold). */
   clubName?: string;
-}
-
-/**
- * Switching clubs keeps the viewer on the cashier surface they are on (launch
- * audit 2026-10-09, P-08). This always sent them to `/cashier`, the Trade
- * grid, so an owner on the classic cashier's Mint or History tab who picked
- * another club lost the classic page. The classic route is
- * `clubs/:clubId/cashier-classic` and the statements route
- * `clubs/:clubId/cashier/statements`; anything else is the Trade cashier.
- */
-export function cashierDestination(pathname: string): string {
-  if (/\/cashier-classic\/?$/.test(pathname)) return 'cashier-classic';
-  if (/\/cashier\/statements\/?$/.test(pathname)) return 'cashier/statements';
-  return 'cashier';
 }
 
 export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwitcherProps) {

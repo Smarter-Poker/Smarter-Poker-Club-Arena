@@ -113,6 +113,8 @@ beforeEach(() => {
   db.hold = null;
   rpc.mockReset();
   rpc.mockImplementation(async (fn: string) => {
+    if (fn === 'fn_ca_operator_floor_state')
+      return { data: { hold: null, close: null }, error: null };
     if (fn === 'fn_cash_table_observe_dealing_halt') {
       if (db.observeReply) return db.observeReply();
       return { data: new Date(clock).toISOString(), error: null };

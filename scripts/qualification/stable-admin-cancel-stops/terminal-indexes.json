@@ -1,0 +1,37 @@
+[
+  {
+    "table_name": "diamond_transactions",
+    "name": "idx_diamond_transactions_reference_id",
+    "definition": "CREATE UNIQUE INDEX idx_diamond_transactions_reference_id ON public.diamond_transactions USING btree (reference_id) WHERE (reference_id IS NOT NULL)"
+  },
+  {
+    "table_name": "chip_ledger",
+    "name": "chip_ledger_chain_seq_key",
+    "definition": "CREATE UNIQUE INDEX chip_ledger_chain_seq_key ON public.chip_ledger USING btree (chain_seq)"
+  },
+  {
+    "table_name": "ca_operator_approvals",
+    "name": "ca_operator_approvals_op_id_uq",
+    "definition": "CREATE UNIQUE INDEX ca_operator_approvals_op_id_uq ON public.ca_operator_approvals USING btree (op_id) WHERE (op_id IS NOT NULL)"
+  },
+  {
+    "table_name": "tournament_obligations",
+    "name": "ux_tournament_obligations_user",
+    "definition": "CREATE UNIQUE INDEX ux_tournament_obligations_user ON public.tournament_obligations USING btree (tournament_id, kind, user_id) WHERE (place IS NULL)"
+  },
+  {
+    "table_name": "tournament_obligations",
+    "name": "ux_tournament_obligations_place",
+    "definition": "CREATE UNIQUE INDEX ux_tournament_obligations_place ON public.tournament_obligations USING btree (tournament_id, kind, place) WHERE (place IS NOT NULL)"
+  },
+  {
+    "table_name": "chip_ledger",
+    "name": "ux_chip_ledger_idempotency_key",
+    "definition": "CREATE UNIQUE INDEX ux_chip_ledger_idempotency_key ON public.chip_ledger USING btree (idempotency_key) WHERE (idempotency_key IS NOT NULL)"
+  },
+  {
+    "table_name": "diamond_transactions",
+    "name": "diamond_transactions_user_reference_uidx",
+    "definition": "CREATE UNIQUE INDEX diamond_transactions_user_reference_uidx ON public.diamond_transactions USING btree (user_id, reference_id) WHERE (reference_id IS NOT NULL)"
+  }
+]

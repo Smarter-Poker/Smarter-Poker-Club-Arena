@@ -91,6 +91,7 @@ const seat = (n: number) => ({
 /** Everything after the opening read stubbed; `sleep` records what it was asked for. */
 function startable(pauses: number[], stopAfter: number) {
   const engine = new ServerTableEngine(TABLE) as any;
+  engine.refreshOperatorFloor = async () => {}; // Fixture has no operator hold; floor refusal is tested independently.
   engine.sleep = async (ms: number) => {
     pauses.push(ms);
     if (pauses.length >= stopAfter) engine.running = false;
@@ -171,6 +172,7 @@ describe('the quiet tournament table backs off', () => {
     const engine = pacedByRealTimers();
     const asked: number[] = [];
     const realSleep = engine.sleep.bind(engine);
+    engine.refreshOperatorFloor = async () => {}; // Fixture has no operator hold; floor refusal is tested independently.
     engine.sleep = (ms: number) => {
       asked.push(ms);
       return realSleep(ms);
@@ -207,6 +209,7 @@ describe('the quiet tournament table backs off', () => {
       const engine = pacedByRealTimers();
       const asked: number[] = [];
       const realSleep = engine.sleep.bind(engine);
+      engine.refreshOperatorFloor = async () => {}; // Fixture has no operator hold; floor refusal is tested independently.
       engine.sleep = (ms: number) => {
         asked.push(ms);
         return realSleep(ms);
@@ -283,6 +286,7 @@ describe('the quiet tournament table backs off', () => {
       const engine = pacedByRealTimers();
       const asked: number[] = [];
       const realSleep = engine.sleep.bind(engine);
+      engine.refreshOperatorFloor = async () => {}; // Fixture has no operator hold; floor refusal is tested independently.
       engine.sleep = (ms: number) => {
         asked.push(ms);
         return realSleep(ms);
@@ -372,6 +376,7 @@ describe('the quiet tournament table backs off', () => {
     const engine = pacedByRealTimers();
     const asked: number[] = [];
     const realSleep = engine.sleep.bind(engine);
+    engine.refreshOperatorFloor = async () => {}; // Fixture has no operator hold; floor refusal is tested independently.
     engine.sleep = (ms: number) => {
       asked.push(ms);
       return realSleep(ms);

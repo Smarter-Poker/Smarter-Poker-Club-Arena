@@ -6,10 +6,10 @@
  */
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { readFileSync } from 'fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import CashierClubSwitcher, {
-  cashierDestination,
-} from '../../src/components/club/CashierClubSwitcher';
+import CashierClubSwitcher from '../../src/components/club/CashierClubSwitcher';
+import { cashierDestination } from '../../src/utils/cashierDestination';
 
 const USER = '22222222-2222-4222-8222-222222222222';
 const CLUB_A = '11111111-1111-4111-8111-111111111111';
@@ -75,6 +75,16 @@ describe('CashierClubSwitcher destination', () => {
     expect(cashierDestination(`/clubs/${CLUB_A}/cashier`)).toBe('cashier');
     expect(cashierDestination('/cashier')).toBe('cashier');
     expect(cashierDestination('/clubs/x/cashier-classic-old')).toBe('cashier');
+  });
+
+  it('G-06: the switcher module exports only its component; the helper lives in utils', () => {
+    const switcher = readFileSync('src/components/club/CashierClubSwitcher.tsx', 'utf8');
+    expect(switcher).not.toMatch(/export function cashierDestination/);
+    expect(switcher).toContain(
+      "import { cashierDestination } from '../../utils/cashierDestination';"
+    );
+    const exportsOtherThanDefault = switcher.match(/^export (?!default)/gm) ?? [];
+    expect(exportsOtherThanDefault).toHaveLength(0);
   });
 
   it('keeps the viewer on the classic cashier when switching from it', async () => {

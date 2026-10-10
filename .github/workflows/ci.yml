@@ -1431,6 +1431,26 @@ jobs:
           PG17_BINDIR: /usr/lib/postgresql/17/bin
           MANAGED_GAME_PG_SCRATCH_PARENT: ${{ runner.temp }}
         run: bash scripts/dev/test-managed-game-one-door-postgres.sh
+      - name: Stable Admin floor and maintenance owners qualify on native PostgreSQL 17
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: node scripts/qualify-stable-admin-floor.mjs
+      - name: Stable Admin original cancellation and emergency-stop writers qualify on native PostgreSQL 17
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          STABLE_CANCEL_POSTGRES_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: node scripts/qualify-stable-admin-cancel-stops-pg17.mjs
+      - name: Stable Admin cancellation preserves the reviewed settlement lane
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          STABLE_CANCEL_POSTGRES_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: node scripts/qualify-stable-admin-cancel-lane-pg17.mjs
       - name: Build the matching native PostgreSQL isolation test tool
         id: pg17_isolation_tool
         if: (matrix.shard == 3 || matrix.shard == 4)
@@ -1778,6 +1798,7 @@ jobs:
             supabase/migrations/20261009151825_lightning_phase_12_load_chaos_the_pass_forms_under_surge.sql
             supabase/migrations/20261009181945_lightning_phase_11_remediation_integrity_signals_are_fair_an.sql
             supabase/migrations/20261009235505_lightning_phase_13_rollout_drain_and_rollback.sql
+            supabase/migrations/20261010054420_lightning_phase_12_load_chaos_stale_groups_preserve_remainin.sql
           LIGHTNING_P12_SUPERSEDED: 20261008161509_lightning_phase_11_integrity_telemetry_and_the_shadow_matche.sql#10
         run: bash scripts/dev/test-lightning-phase12-load-chaos.sh
       - name: Credit invoices bill only uninvoiced drawn debt

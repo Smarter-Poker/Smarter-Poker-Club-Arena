@@ -100,6 +100,7 @@ function startable(leaseAuthority: ConstructorParameters<typeof ServerTableEngin
     killed.push(reason);
     engine.running = false;
   };
+  engine.refreshOperatorFloor = async () => {}; // Fixture has no operator hold; floor refusal is tested independently.
   engine.sleep = async () => {};
   engine.seedHandCountFromHistory = async () => {};
   /* ── FLAKE FIX 2026-08-27 ──────────────────────────────────────────────

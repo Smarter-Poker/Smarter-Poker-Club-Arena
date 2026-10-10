@@ -667,6 +667,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
       "refusedBy": [],
       "liveVerdict": "Production read 2026-10-10 01:34 UTC. Data only: one ca_declared_money_triggers row, declared_at 2026-10-10 01:26:36 UTC, and its proof that fn_undeclared_money_triggers() no longer lists the trigger. No file-text guard raised a finding."
+    },
+    {
+      "version": "20261010051104",
+      "name": "the_diamond_rake_guard_is_a_declared_money_trigger",
+      "file": "supabase/migrations/20261010051104_the_diamond_rake_guard_is_a_declared_money_trigger.sql",
+      "md5": "147919c89400eeff4e7a321b5f6c2f91",
+      "appliedToProductionAt": "2026-10-10T05:11:04Z",
+      "recoveredOn": "2026-10-10",
+      "recoveredFrom": "Decoded in the shell from production's own base64 of public.fn_ca_migration_text(version).body (base64 is ASCII, so no tool boundary can alter a byte of it): octet_length 1699 and md5 compared equal before commit, with no trailing newline appended.",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": [],
+      "liveVerdict": "Production read 2026-10-10 05:11 UTC. Data only: one ca_declared_money_triggers row (club_wallets, poker_arena_no_chip_rake), declared_at 2026-10-10 05:11:04 UTC, and its proof that fn_undeclared_money_triggers() then lists nothing. The trigger it declares is unchanged: BEFORE INSERT OR UPDATE on club_wallets, rake_records, rake_attributions and rake_distribution_legs, enabled, executing fn_ca_reject_diamond_chip_rake_row(). No file-text guard raised a finding."
     }
   ]
 }

@@ -8,4 +8,6 @@ riveted statement shows both plates, the in-table cashier keeps its refusal
 inside the painted frame and never claims nothing moved, focus is trapped and
 returned on every money dialog, the Diamond Wallet holds its door while a
 transfer travels, the CSV export and the mint pre-flight trust neither a note
-nor a table read, and no money surface writes to the console.
+nor a table read, no cashier or wallet surface selects the club's money columns
+off `clubs` (every figure comes through `fn_club_money_panel`), and no money
+surface writes to the console.

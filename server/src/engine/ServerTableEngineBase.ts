@@ -212,6 +212,7 @@ import {
 export type EngineLeaseAuthority =
   | {
       scope: 'cash';
+      closureOperationId?: string;
       verified: true;
       generation: string;
       proofDeadlineMonotonicMs: number;
@@ -655,6 +656,7 @@ export abstract class ServerTableEngineBase {
   // Bible V8 §6.17: Admin pause/maintenance lock — prevents new hands from starting
   protected adminPauseLock: boolean = false;
   protected operatorFloorPaused = false;
+  protected readonly operatorClosureOnlyId: string | null;
   private operatorFloorReadSequence = 0;
   protected operatorCloseRequest: {
     operation_id: string;
@@ -674,7 +676,7 @@ export abstract class ServerTableEngineBase {
       throw new Error('operator_floor_state_unknown');
     }
     this.operatorCloseRequest = data.close ?? null;
-    const paused = Boolean(data.hold || this.operatorCloseRequest);
+    const paused = Boolean(this.operatorClosureOnlyId || data.hold || this.operatorCloseRequest);
     const wasPaused = this.operatorFloorPaused;
     this.operatorFloorPaused = paused;
     if (paused !== wasPaused && (paused || (!this.isNextHandPaused() && !this.handForHandPaused))) {
@@ -696,6 +698,11 @@ export abstract class ServerTableEngineBase {
     await this.refreshOperatorFloor();
     if (!this.operatorFloorPaused) return false;
     this.markProgress();
+    if (
+      this.operatorClosureOnlyId &&
+      this.operatorCloseRequest?.operation_id !== this.operatorClosureOnlyId
+    )
+      throw new Error('operator_cash_close_authority_changed');
     if (this.operatorCloseRequest && !this.maintenancePaused && this.isBetweenHands()) {
       await this.closeOperatorCashAtBoundary();
     }
@@ -2805,6 +2812,10 @@ export abstract class ServerTableEngineBase {
   protected engineTelemetry: EngineTelemetry;
 
   constructor(tableId: string, leaseAuthority: EngineLeaseAuthority | null = null) {
+    this.operatorClosureOnlyId =
+      leaseAuthority?.scope === 'cash' && leaseAuthority.verified
+        ? (leaseAuthority.closureOperationId ?? null)
+        : null;
     this.tableId = tableId;
     this.engineLeaseScope = leaseAuthority?.scope ?? null;
     this.engineLeaseVerified = leaseAuthority?.verified ?? false;
@@ -3546,7 +3557,9 @@ export abstract class ServerTableEngineBase {
         try {
           // Sequenced BEFORE the request goes out (see beginDealingHaltRead).
           haltReadSeq = this.beginDealingHaltRead();
-          tableData = await loadTable(this.tableId);
+          tableData = this.operatorClosureOnlyId
+            ? await loadTable(this.tableId, this.operatorClosureOnlyId)
+            : await loadTable(this.tableId);
           break;
         } catch (err) {
           if (

@@ -1,3 +1,7 @@
+// Synthetic transport identities explicitly retain a live durable session.
+vi.mock('../services/PlayerSessionAccess.js', () => ({
+  playerSessionVerdict: vi.fn(async () => 'alive'),
+}));
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type ReadRequest = { handId: string; signal?: AbortSignal };
@@ -109,6 +113,7 @@ describe('hand replay work belongs to its initiating connection', () => {
     holdReads();
     const ws = socket();
     for (let i = 0; i < 30; i++) request(ws);
+    await flush();
     expect(readHand).toHaveBeenCalledTimes(1);
     outstanding[0].resolve({ data: hand(user, Array(10).fill({ action: 'check' })), error: null });
     await flush();
@@ -116,13 +121,15 @@ describe('hand replay work belongs to its initiating connection', () => {
     expect(vi.getTimerCount()).toBe(1);
     vi.setSystemTime(Date.now() + 1001);
     for (let i = 0; i < 10; i++) request(ws);
+    await flush();
     expect(readHand).toHaveBeenCalledTimes(1);
   });
 
-  it('bounds distinct requests per connection without starting excess reads', () => {
+  it('bounds distinct requests per connection without starting excess reads', async () => {
     holdReads();
     const ws = socket();
     for (let i = 0; i < 30; i++) request(ws, `hand-${i}`);
+    await flush();
     expect(readHand).toHaveBeenCalledTimes(4);
     expect(
       ws.sent.some((frame) => frame.type === 'CHANNEL_ERROR' && frame.code === 'REPLAY_LIMIT')
@@ -135,15 +142,18 @@ describe('hand replay work belongs to its initiating connection', () => {
       const ws = socket(`${user}-${owner}`);
       for (let i = 0; i < 4; i++) request(ws, `hand-${i}`);
     }
+    await flush();
     expect(readHand).toHaveBeenCalledTimes(64);
     for (const ws of sockets) ws.close();
     const replacement = socket(`${user}-replacement`);
     request(replacement);
+    await flush();
     expect(readHand).toHaveBeenCalledTimes(64);
     expect(replacement.sent.some((frame) => frame.code === 'REPLAY_LIMIT')).toBe(true);
     outstanding[0].resolve({ data: null, error: null });
     await flush();
     request(replacement);
+    await flush();
     expect(readHand).toHaveBeenCalledTimes(65);
   });
 
@@ -165,6 +175,7 @@ describe('hand replay work belongs to its initiating connection', () => {
     holdReads();
     const requester = socket();
     request(requester);
+    await flush();
     const sentRead = readHand.mock.calls[0][0] as ReadRequest;
     requester.close();
     const replacement = socket();
@@ -195,11 +206,13 @@ describe('hand replay work belongs to its initiating connection', () => {
     holdReads();
     const requester = socket();
     request(requester);
+    await flush();
     // A close handshake is not completion; simulate one that stays OPEN.
     requester.close = () => {};
     await server.close();
     expect((readHand.mock.calls[0][0] as ReadRequest).signal?.aborted).toBe(true);
     request(requester, 'new-after-shutdown');
+    await flush();
     expect(readHand).toHaveBeenCalledTimes(1);
     outstanding[0].resolve({ data: hand(user), error: null });
     await flush();
@@ -223,6 +236,7 @@ describe('hand replay work belongs to its initiating connection', () => {
     holdReads();
     const requester = socket();
     request(requester);
+    await flush();
     requester.handlers.get('error')?.(new Error('transport lost'));
     expect(requester.readyState).toBe(1);
     expect((readHand.mock.calls[0][0] as ReadRequest).signal?.aborted).toBe(true);
@@ -242,6 +256,7 @@ describe('hand replay work belongs to its initiating connection', () => {
     request(ws);
     await flush();
     await vi.advanceTimersByTimeAsync(200);
+    await flush();
     expect(readHand).toHaveBeenCalledTimes(2);
     expect(replayFrames(ws).map((frame) => frame.event?.frame)).toEqual([
       'META',
@@ -270,6 +285,7 @@ describe('hand replay work belongs to its initiating connection', () => {
       expect(vi.getTimerCount()).toBe(0);
       request(ws);
       await flush();
+      await flush();
       expect(readHand).toHaveBeenCalledTimes(2);
     }
   );
@@ -285,6 +301,7 @@ describe('hand replay work belongs to its initiating connection', () => {
     request(ws);
     await flush();
     await vi.advanceTimersByTimeAsync(200);
+    await flush();
     expect(readHand).toHaveBeenCalledTimes(2);
     expect(replayFrames(ws).at(-1)?.event?.frame).toBe('END');
   });

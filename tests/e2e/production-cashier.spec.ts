@@ -313,6 +313,9 @@ test.describe('Production Cashier Certification', () => {
       .toEqual({ loading: 0, walletVisible: true, walletVerified: true });
     await expectNoRawCashierCents(page.locator('main'), 'Advanced Cashier');
     await expectCashierAxeClean(page, testInfo, 'main', 'advanced-cashier');
+    await expect(page.locator('main .dw__row-picture').first()).not.toBeVisible();
+    await expect(page.locator('main .dw__row-label').first()).toBeVisible();
+    await expect(page.locator('main .dw__bbj-shell')).not.toBeVisible();
     await attachCashierScreenshot(page, testInfo, 'advanced-cashier');
 
     await agentWallet.click();

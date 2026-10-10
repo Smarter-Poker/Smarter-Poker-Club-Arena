@@ -2282,7 +2282,7 @@ function CashierContent() {
 
   return (
     <StandardContentLayout className={styles.page}>
-      {/* ── Wallet Display — a separate approved master, never nested in the console. ── */}
+      {/* ── Wallet Display: compact live balances using the cashier directory layout. ── */}
       {user?.id && clubId && (
         <div className={styles.walletHeader}>
           <DynamicWallet

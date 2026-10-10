@@ -37,3 +37,11 @@ This is a database/qualification follow-up to the published Player Command
 client repair. No new engine behavior or engine replacement is required.
 Installation, protected integration and final live range/performance proof are
 recorded separately in the task checkpoint.
+
+The all-recorded captions in MemberManagementPage.tsx (line 533) and
+PlayerStatisticsPage.tsx (line 360) said “Showing Lifetime Totals,” although
+hand counts and results come from retained facts and shrink with the existing
+history retention policy. Both captions now say “Showing All Recorded
+Activity.” The figures, formulas and retention policy are unchanged. The
+source was read before and after this copy correction; TypeScript and all 54
+affected component/source checks passed before submission.

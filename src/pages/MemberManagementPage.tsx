@@ -530,7 +530,7 @@ export default function MemberManagementPage() {
               {loading
                 ? 'Loading The Selected Range...'
                 : detail!.range.is_overall
-                  ? 'Showing Lifetime Totals'
+                  ? 'Showing All Recorded Activity'
                   : `Showing ${detail!.range.from ?? '?'} To ${detail!.range.to ?? '?'}`}
             </p>
           </section>

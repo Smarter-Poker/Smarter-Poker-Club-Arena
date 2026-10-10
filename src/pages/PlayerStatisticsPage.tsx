@@ -357,7 +357,7 @@ export default function PlayerStatisticsPage() {
           {loading && stats
             ? 'Loading The Selected Range...'
             : stats?.is_overall
-              ? 'Showing Lifetime Totals'
+              ? 'Showing All Recorded Activity'
               : `Showing ${stats?.from ?? range.from ?? '?'} To ${stats?.to ?? range.to ?? '?'}`}
         </p>
       </section>

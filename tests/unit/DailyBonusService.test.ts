@@ -10,10 +10,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
+  userId: 'first',
   emit: vi.fn(),
   reportError: vi.fn(),
 }));
 
+vi.mock('../../src/stores/useUserStore', () => ({
+  useUserStore: { getState: () => ({ user: { id: mocks.userId } }) },
+}));
 vi.mock('../../src/lib/supabase', () => ({ supabase: { rpc: mocks.rpc } }));
 vi.mock('../../src/core/MasterBus', () => ({ masterBus: { emit: mocks.emit } }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: mocks.reportError }));
@@ -337,5 +341,28 @@ it('a single-tile compatibility replay does not announce or add the already cred
     error: null,
   });
   await dailyBonusService.claim('2026-10-10', 1);
+  expect(mocks.emit).not.toHaveBeenCalled();
+});
+it('a delayed reward receipt cannot announce or update the next account', async () => {
+  mocks.emit.mockReset();
+  mocks.userId = 'first';
+  let deliver!: (value: unknown) => void;
+  mocks.rpc.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        deliver = resolve;
+      })
+  );
+  const claim = dailyBonusService.claimAll('2026-10-10');
+  mocks.userId = 'second';
+  deliver({
+    data: {
+      success: true,
+      results: [{ success: true, granted: { kind: 'diamonds', diamonds: 5, balance_after: 5 } }],
+      status: STATUS,
+    },
+    error: null,
+  });
+  expect((await claim).success).toBe(true);
   expect(mocks.emit).not.toHaveBeenCalled();
 });

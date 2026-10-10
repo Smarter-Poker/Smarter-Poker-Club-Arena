@@ -30,6 +30,7 @@
  * safety.
  */
 
+import { useUserStore } from '../stores/useUserStore';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
@@ -334,6 +335,7 @@ class DailyBonusServiceClass {
     results?: DailyBonusClaimResult[];
     status?: DailyBonusStatus;
   }> {
+    const accountId = useUserStore.getState().user?.id ?? null;
     const { data, error } = await supabase.rpc('fn_ca_daily_bonus_claim_all', {
       p_bonus_date: today,
       p_request_id: this.requestIdFor(today, 0),
@@ -350,7 +352,7 @@ class DailyBonusServiceClass {
     ) {
       throw new Error('Could Not Read The Bonus Receipt, Try Again');
     }
-    if (data.success) {
+    if (data.success && accountId === (useUserStore.getState().user?.id ?? null)) {
       masterBus.emit('BALANCE_UPDATED', { source: 'daily_bonus' });
       for (const result of (data.results ?? []) as DailyBonusClaimResult[]) {
         if (!result.success || !result.granted || result.idempotent) continue;
@@ -373,6 +375,7 @@ class DailyBonusServiceClass {
   }
 
   async claim(today: string, slot: number): Promise<DailyBonusClaimResult> {
+    const accountId = useUserStore.getState().user?.id ?? null;
     const requestId = this.requestIdFor(today, slot);
     const { data, error } = await supabase.rpc('fn_ca_daily_bonus_claim', {
       p_slot: slot,
@@ -384,7 +387,12 @@ class DailyBonusServiceClass {
       throw new Error('Could Not Reach The Bonus Ledger, Try Again');
     }
     const result = (data ?? { success: false, reason: 'empty_response' }) as DailyBonusClaimResult;
-    if (result.success && result.granted && !result.idempotent) {
+    if (
+      result.success &&
+      result.granted &&
+      !result.idempotent &&
+      accountId === (useUserStore.getState().user?.id ?? null)
+    ) {
       // The header and wallet re-read their balances; the amount comes from
       // the ledger, never from here. When the ledger reported the balance it
       // left behind, the header can paint it now rather than after a re-read.

@@ -379,8 +379,8 @@ export const ClubRosterService = {
    * callers resolve a slug with utils/clubIdResolver first, because this
    * service has no opinion about routing.
    */
-  async getRoster(clubId: string): Promise<RosterMember[]> {
-    const data = await readMemberRpc('ca_club_members_overview', { p_club_id: clubId });
+  async getRoster(clubId: string, signal?: AbortSignal): Promise<RosterMember[]> {
+    const data = await readMemberRpc('ca_club_members_overview', { p_club_id: clubId }, signal);
     if (!Array.isArray(data)) throw new Error('The Roster Response Was Incomplete');
     return data.map((row: Record<string, unknown>) => mapRosterRow(row));
   },

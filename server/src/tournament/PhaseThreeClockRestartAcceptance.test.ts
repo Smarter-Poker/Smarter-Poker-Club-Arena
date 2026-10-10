@@ -111,6 +111,8 @@ function table(hand: HandController | null = null) {
   // Only construction/network dependencies are replaced. All pause decisions,
   // ownership flags, between-hand checks and gate timers use the real methods.
   return Object.assign(Object.create(ServerTableEngineBase.prototype), {
+    unconfirmedOperatorCommands: new Map(),
+    pendingOperatorPauses: 0,
     tableId: TABLE,
     running: true,
     handController: hand,

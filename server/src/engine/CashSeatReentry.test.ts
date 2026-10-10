@@ -5,11 +5,13 @@ import * as database from '../services/supabase.js';
 vi.mock('../services/supabase/client.js', () => ({
   supabase: {
     from: vi.fn(),
-    rpc: vi.fn(async (name) =>
-      name === 'fn_ca_operator_floor_state'
-        ? { data: { hold: null, close: null }, error: null }
-        : { data: null, error: null }
-    ),
+    rpc: vi.fn(async (name: string) => {
+      if (name === 'fn_ca_get_table_operator_hold')
+        return { data: { paused: false, version: 0, command_id: null }, error: null };
+      if (name === 'fn_ca_operator_floor_state')
+        return { data: { hold: null, close: null }, error: null };
+      return { data: null, error: null };
+    }),
   },
   maintenanceSupabase: {},
 }));

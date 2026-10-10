@@ -1,0 +1,15 @@
+{
+  "tables": [
+    "ca_table_operator_holds",
+    "ca_table_operator_hold_commands",
+    "ca_operator_hold_handoffs"
+  ],
+  "functions": [
+    "fn_ca_get_table_operator_hold",
+    "fn_ca_set_table_operator_hold",
+    "fn_ca_import_operator_holds",
+    "fn_ca_get_operator_hold_handoff",
+    "fn_ca_operator_hold_contract",
+    "fn_list_managed_games"
+  ]
+}

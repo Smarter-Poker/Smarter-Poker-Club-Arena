@@ -65,6 +65,45 @@ legacy_checkpoint_countdown
 }
 
 describe('the exact legacy checkpoint enters the existing release transaction', () => {
+  it.each([0, 124])(
+    'bounds the initial identity probe before later helpers exist (exit %s)',
+    (status) => {
+      const initial = checkpointShell.split('\n').find((line) => line.startsWith('IDENTITY='));
+      expect(initial).toBeDefined();
+      const result = spawnSync(
+        'bash',
+        [
+          '-c',
+          `set -euo pipefail
+CONTAINER=unexecuted-owned-fixture
+timeout() {
+  printf '%s\\n' "$*" >&2
+  if [ "$IDENTITY_STATUS" = 0 ]; then printf '%s' original-owned-identity; fi
+  return "$IDENTITY_STATUS"
+}
+${initial}
+printf '%s' "$IDENTITY"
+`,
+        ],
+        {
+          encoding: 'utf8',
+          timeout: 3000,
+          env: { ...process.env, IDENTITY_STATUS: String(status) },
+        }
+      );
+      expect(result.error).toBeUndefined();
+      expect(result.status, result.stderr).toBe(status);
+      expect(result.stderr).toContain('--signal=TERM --kill-after=1s 2s docker inspect');
+      expect(result.stdout).toBe(status === 0 ? 'original-owned-identity' : '');
+      expect(checkpointShell.indexOf(initial!)).toBeLessThan(
+        checkpointShell.indexOf('bounded_operator_command() {')
+      );
+      expect(checkpointShell.indexOf(initial!)).toBeLessThan(
+        checkpointShell.indexOf('CHECKPOINT_INTENT="$(python3')
+      );
+    }
+  );
+
   it('checks the installed custody contract before saving intent or opening inspector access', () => {
     const prerequisite = checkpointShell.indexOf('--mixed-custody-contract');
     const intent = checkpointShell.indexOf('CHECKPOINT_INTENT="$(python3');
@@ -85,10 +124,11 @@ describe('the exact legacy checkpoint enters the existing release transaction', 
     (status) => {
       const requestRoot = mkdtempSync(join(tmpdir(), 'legacy-custody-prerequisite-'));
       try {
-        const block = checkpointShell.slice(
-          checkpointShell.indexOf('# Installed SQL is a prerequisite'),
-          checkpointShell.indexOf('{ cat "$CONTROL_DIR/legacy-engine-checkpoint-guard.mjs";')
-        );
+        const prerequisite = checkpointShell.indexOf('# Installed SQL is a prerequisite');
+        const invocation = checkpointShell.indexOf('\nset +e\n{\n', prerequisite);
+        expect(prerequisite).toBeGreaterThan(0);
+        expect(invocation).toBeGreaterThan(prerequisite);
+        const block = checkpointShell.slice(prerequisite, invocation);
         expect(block).toContain('--mixed-custody-contract');
         const result = spawnSync(
           'bash',

@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 198959,
-      "sha256": "952bef2eb8781237ab0d0a9a0ac115bc3803b9f54dc48b5db697fadfe08680e5"
+      "bytes": 199375,
+      "sha256": "ac45636410f691f8c1638985e8cb1904a650c0f6f26b706895049767e6c788f8"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1883,6 +1883,144 @@
   "dailyBonusProtectedIntegration20261010": {
     "reason": "Preserves protected main Stable Admin additive qualification routing and all its audit entries alongside Daily Bonus routing. Refreshes current exact classifier and nested source bytes after normal merge; no historical qualification claim is changed."
   },
+  "operatorPauseNativeQualification20261007": {
+    "reason": "Adds only the isolated native operator-hold regression in the existing Accounting2 lane. Existing cash qualification inputs and financial assertions are unchanged; workflow fingerprint refresh is source admission, not a new native cash verdict.",
+    "previousWorkflowPin": {
+      "bytes": 192539,
+      "sha256": "1d9cdf018f8f964600e844038b36e07375eb584ab282d7c6fc9980c2374184cd"
+    }
+  },
+  "operatorPauseProtectedMainIntegration20261008": {
+    "reason": "Preserve protected main's existing Lightning Phase 8 accounting step and the candidate's native operator-hold Accounting2 qualification. Only the combined workflow source fingerprint changes; financial inputs, assertions, historical qualification and SOURCE_ONLY_UNRUN status are unchanged.",
+    "previousProtectedMainWorkflowPin": {
+      "bytes": 192834,
+      "sha256": "ab88e09bba733b4c642831d3bb8e8467d16de882cf7e4f8aa8f51fa21b12a4bc"
+    },
+    "previousOperatorPauseWorkflowPin": {
+      "bytes": 192956,
+      "sha256": "65e578ea1f5e92b5c6582c118fd4146a457b7b80015ad3e5befca583a38014bd"
+    }
+  },
+  "operatorPauseCurrentMainIntegration20261008": {
+    "reason": "Preserve current protected main native steps and candidate operator-hold native qualification. Combined workflow pin is source identity only, not native financial or full-B acceptance.",
+    "protectedMain": "743ae1a1c158e828321b07d151a27fa9f9d32de0"
+  },
+  "operatorPauseCurrent4fMainIntegration20261008": {
+    "reason": "Preserve all current protected-main native steps and the candidate operator-hold qualification after ordinary integration. Fingerprint is source identity only; no native financial or full-B verdict.",
+    "protectedMain": "82c56ae3aa",
+    "previousWorkflowPin": {
+      "bytes": 193493,
+      "sha256": "2d4d815a02258d735977ec1aa478443781981f19f52f69b517d870d069c5123e"
+    }
+  },
+  "operatorPauseCurrent527dMainIntegration20261008": {
+    "reason": "Preserve all current protected-main native qualification steps and the candidate operator-hold accounting step. Only combined workflow source fingerprint is refreshed; no native financial or Full-B verdict is claimed.",
+    "protectedMain": "527d7229490fdc9e54d75b3e005518bde7c72b98",
+    "originalPredecessor": "f59e0a36a08b756d23b47976cd31ecca8f8d28a3"
+  },
+  "operatorPauseCurrent3353MainIntegration20261009": {
+    "reason": "Preserve protected main native metadata qualification and the candidate operator-hold step. Combined workflow source identity only; financial assertions and SOURCE_ONLY_UNRUN remain unchanged.",
+    "protectedMain": "3353d64d5f2deaee025a1c92377f8c41fb39eaac"
+  },
+  "operatorPauseServing94b2Integration20261009": {
+    "reason": "Preserve all serving protected-main changes and the existing operator-hold qualification. This refreshed workflow fingerprint records source integrity only; no new runtime or Full-B acceptance is claimed.",
+    "integratedServingCommit": "94b2ae91c3c6742b5e05bca858c62580651ee180"
+  },
+  "operatorPauseA9ProtectedMainIntegration20261009": {
+    "reason": "Preserve every current protected-main qualification and the original operator-hold accounting step. Refresh only actual combined workflow identity; financial inputs, assertions, historical pins and SOURCE_ONLY_UNRUN remain unchanged. No native financial or FullB verdict.",
+    "protectedMain": "3bfc46f8771a1cd9e6cdd523703387b55ed03b96",
+    "previousCandidateWorkflowPin": {
+      "bytes": 194821,
+      "sha256": "c60b85cae9328f5cb670d4983f6bc31c2c28d80783becbad03cb2772eb18b947"
+    },
+    "protectedMainWorkflowPin": {
+      "bytes": 195274,
+      "sha256": "b053f1df29535c0171faaa7d05397ab1693fdcff15b35414e16fe7214713faeb"
+    }
+  },
+  "operatorPauseProtectedMain1406Integration20261009": {
+    "reason": "Preserve current main CI additions beside operator-pause native qualification. Refresh only the combined current workflow binding; retain all financial inputs, assertions, historical pins and SOURCE_ONLY_UNRUN status. Preserve canonical 2048 MiB builder and anonymous disposable CI cache routing while retaining bounded sequential runtime emission.",
+    "protectedMain": "1406d40195",
+    "previousProtectedMainWorkflowPin": {
+      "bytes": 195935,
+      "sha256": "cee3958adf74bd53f66029f4dc2a299e88d37a868e0b4c3970dfe47e040caedb"
+    },
+    "combinedWorkflowPin": {
+      "bytes": 196391,
+      "sha256": "2cb6ca5b69d65819dd7dab649b0e9d3cd9d8677f515c4dd87fa89cccd599e7f8"
+    }
+  },
+  "operatorPauseStableAdminIntegration20261010": {
+    "reason": "Preserve current protected Stable Admin floor/close qualification and original operator-hold qualification together. Refresh only actual connected source fingerprints, retaining every historical pin, financial assertion and qualification status. Source identity does not establish native financial or FullB acceptance.",
+    "protectedMain": "71aa27a37d97e713df59df9a929b48c042505ec0",
+    "reviewedChangedPins": {
+      ".github/workflows/ci.yml": {
+        "candidate": {
+          "bytes": 197974,
+          "sha256": "794adb63503c19e6fc009da8e5071ec9c66cb782521546500bd7df4d9e1e1479"
+        },
+        "protectedMain": {
+          "bytes": 198604,
+          "sha256": "c4b0d65e0ef9d442c504dd6c5aafa0522607bff1ffd2953d3a8c5822c7f88950"
+        },
+        "combined": {
+          "bytes": 199060,
+          "sha256": "60e94a691469d9cd92c08a47332b4f25079b9ebbd2c1ddf60cdcbc22e2738a34"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "candidate": {
+          "bytes": 32804,
+          "sha256": "9e32091e5a712856d7593b6650b54e60e9d49f52b44af7d1f87972b27ed79388"
+        },
+        "protectedMain": {
+          "bytes": 33302,
+          "sha256": "846747f1e40dcb9c027feb8aadedb1f1d469fcfc91315b4e9ff2e2af77af0f64"
+        },
+        "combined": {
+          "bytes": 33302,
+          "sha256": "846747f1e40dcb9c027feb8aadedb1f1d469fcfc91315b4e9ff2e2af77af0f64"
+        }
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "candidate": {
+          "bytes": 102135,
+          "sha256": "0ed8b0f3eedcd503d45f07a52cb720a436cd6f9f410db9eb656d984b23d3fb9f"
+        },
+        "protectedMain": {
+          "bytes": 104055,
+          "sha256": "5f3225db066ecc1c3023aaf61be0173967383268b25237b10f2914976f5dbe00"
+        },
+        "combined": {
+          "bytes": 104055,
+          "sha256": "5f3225db066ecc1c3023aaf61be0173967383268b25237b10f2914976f5dbe00"
+        }
+      }
+    }
+  },
+  "operatorPausePlayerCommandIntegration20261010": {
+    "reason": "Preserve current protected Player Command Accounting4 qualification and all its annotations beside operator pause and Daily Bonus. Refresh exact combined current workflow only; historical pins, financial assertions and SOURCE_ONLY_UNRUN status remain unchanged. No runtime or FullB qualification is claimed.",
+    "protectedMain": "3b004c6bb2d9210b7105694f4df496b778cac524",
+    "reviewedChangedPins": {
+      ".github/workflows/ci.yml": {
+        "previousCandidate": {
+          "bytes": 199060,
+          "sha256": "60e94a691469d9cd92c08a47332b4f25079b9ebbd2c1ddf60cdcbc22e2738a34"
+        },
+        "incomingProtected": {
+          "bytes": 198796,
+          "sha256": "8fb03799e942bf3d132b672cfbe6b7003048ab7d2f43d3fab279478ac389c70c"
+        },
+        "actualMerged": {
+          "bytes": 199252,
+          "sha256": "9603a0e218e20ccd08c7685cb098123749abe04969c4556f08a051573c27a865"
+        }
+      }
+    }
+  },
+  "operatorPauseNativeSelfBuild20261010": {
+    "reason": "Own the server emit prerequisite in the maintained native PostgreSQL runner, so both direct CI and generic node:test pre-push execute exact current compiled engine modules. Remove duplicate CI build only; preserve all22 native assertions, original timeout, historical pins and SOURCE_ONLY_UNRUN. Fingerprint refresh is source identity, not qualification."
+  },
   "dailyBonusAuditRouting20261010": {
     "reason": "Reviewed Daily Bonus audit correction: route the actual component hook to required accounting and retain three additive selector assertions. No financial SQL, historical pins, or existing assertion changes. Current byte pins are source identity, not runtime certification.",
     "changes": [
@@ -1899,5 +2037,9 @@
         "current": "8181a10a7d67b8e5c7dc3bc79f0a7959ff630257622f5a9cb333e053b6beed93"
       }
     ]
+  },
+  "operatorPauseCashCloseIntegration20261010": {
+    "reason": "Preserve protected cash-floor close and session recovery implementation and all original operator-pause qualification. Resolve only exact current source fingerprints; retain financial assertions, historical pins and SOURCE_ONLY_UNRUN. No runtime or FullB acceptance claimed.",
+    "protectedMain": "d026c1d35a807780826d2da3793674972f37cf02"
   }
 }

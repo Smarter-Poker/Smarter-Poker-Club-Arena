@@ -25,6 +25,8 @@ function setup() {
   const engine = Object.create(ServerTableEngine.prototype) as any;
   engine.tableId = TABLE;
   engine.running = true;
+  engine.pendingOperatorPauses = 0;
+  engine.unconfirmedOperatorCommands = new Map();
   engine.tournamentMovePauseOwners = new Set();
   engine.tableInfo = { cluster_id: 'game' };
   engine.seatedPlayers = [

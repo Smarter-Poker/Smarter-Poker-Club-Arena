@@ -140,10 +140,13 @@ describe('a re-entered release refuses by name', () => {
   it('BEHAVIOUR: the second entry exits 70 and leaves the first intent untouched', () => {
     // Drive the real intent-write block twice, exactly as a re-entered
     // transaction would, and read the answers rather than the source.
-    const block = checkpointShell.slice(
-      checkpointShell.indexOf('# Persist intent before opening debugger access.'),
-      checkpointShell.indexOf('{ cat "$CONTROL_DIR/legacy-engine-checkpoint-guard.mjs";')
-    );
+    const intentAt = checkpointShell.indexOf('# Persist intent before opening debugger access.');
+    const intentEnd = checkpointShell.indexOf('CHECKPOINT_MODE=', intentAt);
+    expect(intentAt).toBeGreaterThan(0);
+    expect(intentEnd).toBeGreaterThan(intentAt);
+    // The one-shot writer is the boundary under test, not the later live
+    // operator fence or streamed inspector transport.
+    const block = checkpointShell.slice(intentAt, intentEnd);
     expect(block).toContain('O_EXCL');
     const root = mkdtempSync(join(tmpdir(), 'release-reentry-'));
     try {

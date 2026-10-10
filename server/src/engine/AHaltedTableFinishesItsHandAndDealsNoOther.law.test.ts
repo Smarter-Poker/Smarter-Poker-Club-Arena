@@ -95,7 +95,12 @@ vi.mock('../services/supabase/client.js', () => {
       return { eq: () => ({ maybeSingle }) };
     },
   });
-  return { supabase: { from, rpc: rpcSpy }, maintenanceSupabase: { from, rpc: rpcSpy } };
+  const rpc = (name: string, ...args: unknown[]) => {
+    if (name === 'fn_ca_get_table_operator_hold')
+      return { data: { paused: false, version: 0, command_id: null }, error: null };
+    return rpcSpy(name, ...args);
+  };
+  return { supabase: { from, rpc }, maintenanceSupabase: { from, rpc: rpcSpy } };
 });
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 
@@ -305,7 +310,7 @@ describe('a halted table finishes its hand and deals no other', () => {
     // only a polled lock raised it returns at once, and the branch continues -
     // a hot spin. All three polled locks are excluded together.
     expect(DEALING).toMatch(
-      /if \(\s*!this\.adminPauseLock &&\s*!this\.maintenanceLock &&\s*!this\.dealingHaltLock &&\s*!this\.operatorFloorPaused\s*\)/
+      /if\s*\(\s*!this\.adminPauseLock &&\s*this\.pendingOperatorPauses === 0 &&\s*!this\.hasUnconfirmedOperatorPause\(\) &&\s*!this\.maintenanceLock &&\s*!this\.dealingHaltLock &&\s*!this\.operatorFloorPaused\s*\)/
     );
     expect(GATE, 'the halt must not park on a gate nobody will open').not.toMatch(
       /awaitPauseGate|releasePauseGate|handForHandResolve/

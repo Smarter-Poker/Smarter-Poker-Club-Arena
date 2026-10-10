@@ -144,6 +144,14 @@ touch '${switched}'
         );
         chmodSync(join(control, 'engine-up.sh'), 0o755);
         writeFileSync(
+          join(control, 'operator-hold-run-spec.py'),
+          readFileSync(join(root, 'server/scripts/operator-hold-run-spec.py'))
+        );
+        writeFileSync(
+          join(control, 'operator-hold-autoheal-policy.py'),
+          readFileSync(join(root, 'server/scripts/operator-hold-autoheal-policy.py'))
+        );
+        writeFileSync(
           join(bin, 'docker'),
           `#!/usr/bin/env bash
 set -eu
@@ -156,10 +164,11 @@ fi
 if [ "$1" = container ] && [ "$2" = inspect ]; then
   format=''
   while [ "$#" -gt 0 ]; do
-    [ "$1" = -f ] && { format="$2"; shift 2; continue; }
+    { [ "$1" = -f ] || [ "$1" = --format ]; } && { format="$2"; shift 2; continue; }
     shift
   done
   case "$format" in
+    *'json .Id'*) printf '%s\\n' '{"id":"qualified-fixture","image":"${desiredImage}","startedAt":"fixture","pid":1,"cmd":["node","dist/index.js"],"mounts":[]}' ;;
     '{{.State.Status}}') printf '%s\n' 'running' ;;
     '{{.Image}}') [ -e '${switched}' ] && printf '%s\n' '${desiredImage}' || printf '%s\n' '${candidateImage}' ;;
     *sp.release.sha*) [ -e '${switched}' ] && printf '%s\n' '${desiredSha}' || printf '%s\n' '${'d'.repeat(40)}' ;;

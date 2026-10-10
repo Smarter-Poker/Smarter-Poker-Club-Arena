@@ -298,6 +298,29 @@ def read_mixed_custody_contract(base_url: str, service_key: str) -> object:
     return json.loads(payload.decode("utf-8"))
 
 
+
+def read_operator_hold_contract(base_url: str, service_key: str) -> object:
+    request = Request(
+        f"{base_url}/rest/v1/rpc/fn_ca_operator_hold_contract",
+        headers={"apikey": service_key, "authorization": f"Bearer {service_key}",
+                 "accept": "application/json", "cache-control": "no-cache, no-store"},
+        method="GET",
+    )
+    opener = build_opener(HTTPSHandler(context=ssl.create_default_context()), RefuseRedirects())
+    with opener.open(request, timeout=5.0) as response:
+        payload = response.read(65537)
+    if len(payload) > 65536:
+        raise ValueError("operator-hold catalog response exceeds its bounded contract")
+    return json.loads(payload.decode("utf-8"))
+
+
+def verify_operator_hold_contract(payload: object) -> None:
+    # Immutable control-generation sibling; callers cannot provide a replacement.
+    expected = json.loads(Path(__file__).with_name("operator-hold-contract.json").read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or not expected or payload != expected:
+        raise ValueError("installed operator-hold contract differs from qualification")
+
+
 def verify_mixed_custody_contract(payload: object) -> None:
     # Exact equality includes signatures, body/definition digests, owner,
     # privileges, search path, security mode and volatility. Missing, duplicate,
@@ -391,6 +414,7 @@ def main() -> None:
     parser.add_argument("--sha", required=True)
     parser.add_argument("--instance-id")
     parser.add_argument("--mixed-custody-contract", action="store_true")
+    parser.add_argument("--operator-hold-contract", action="store_true")
     parser.add_argument("--timeout-seconds", type=int, default=240)
     parser.add_argument("--poll-seconds", type=int, default=10)
     parser.add_argument("--max-heartbeat-age-seconds", type=int, default=60)
@@ -400,7 +424,10 @@ def main() -> None:
     if not SHA_RE.fullmatch(target_sha):
         die("target SHA must be one lowercase 40-hex commit")
     instance_id = str(args.instance_id)
-    if args.mixed_custody_contract:
+    if args.operator_hold_contract:
+        if args.mixed_custody_contract or args.instance_id is not None:
+            die("operator-hold admission cannot be combined with a leader or legacy custody proof")
+    elif args.mixed_custody_contract:
         if target_sha != MIXED_CUSTODY_PREDECESSOR or args.instance_id is not None:
             die("mixed-custody prerequisite is limited to the qualified predecessor")
     elif not re.fullmatch(r"^[1-9][0-9]*-[0-9a-f]{8}$", instance_id):
@@ -420,6 +447,14 @@ def main() -> None:
         die("SUPABASE_URL is not the pinned Club Arena project origin")
     if not service_key:
         die("SUPABASE_SERVICE_ROLE_KEY is absent from the fixed engine environment")
+
+    if args.operator_hold_contract:
+        try:
+            verify_operator_hold_contract(read_operator_hold_contract(base_url, service_key))
+        except (HTTPError, URLError, TimeoutError, OSError, ValueError) as exc:
+            die(f"operator-hold prerequisite unconfirmed ({type(exc).__name__}); activation not started")
+        print("[engine-release-database-proof] installed operator-hold contract matches qualification")
+        return
 
     if args.mixed_custody_contract:
         try:

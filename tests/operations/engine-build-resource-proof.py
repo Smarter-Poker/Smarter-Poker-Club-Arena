@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -57,6 +58,19 @@ def verified_build_resources(output):
     return {"engine_build_resource_boundary": boundaries[0],
             "engine_build_memory_peak": peak,
             "engine_build_memory_peak_over_limit_bytes": max(0, peak - LIMIT)}
+
+
+def verified_compiler_profile(dockerfile):
+    """Pin the compiler's explicit heap profile before the real bounded build."""
+    commands = [line.strip() for line in dockerfile.splitlines()
+                if line.lstrip().startswith("RUN ") and ("emit-runtime.mjs" in line or "typescript/bin/tsc" in line)]
+    expected = ["RUN", "ulimit", "-c", "0", "&&", "node",
+                "--max-old-space-size=1024", "--max-semi-space-size=4",
+                "./scripts/emit-runtime.mjs", "--project", "tsconfig.emit.json"]
+    if len(commands) != 1 or shlex.split(commands[0]) != expected:
+        raise RuntimeError("canonical compiler must retain its explicit 1024 MiB old / 4 MiB semi-space profile")
+    return {"old_space_max_mib": 1024, "semi_space_max_mib": 4,
+            "young_generation_max_mib": 12, "project": "tsconfig.emit.json"}
 
 
 def runtime_hashes(directory):
@@ -197,6 +211,8 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     receipt = {"source_sha": sha, "scope": "isolated-build-resource-containment",
                "production_certificate": False, "status": "failed"}
+    receipt["compiler_heap_profile"] = verified_compiler_profile(
+        (ROOT / "server/Dockerfile").read_text())
     # Hosted runners may carry Docker Hub client authentication. Do not read
     # it or reuse it: anonymous cache routing owns a separate client config.
     previous_docker_config = os.environ.get("DOCKER_CONFIG")
@@ -204,6 +220,7 @@ def main():
     isolated_docker_config.mkdir()
     (isolated_docker_config / "config.json").write_text("{}")
     os.environ["DOCKER_CONFIG"] = str(isolated_docker_config)
+
     before = None
     owned_tags = [tag, failed_tag]
     try:

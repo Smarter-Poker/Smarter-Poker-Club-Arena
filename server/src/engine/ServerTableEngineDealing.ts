@@ -670,7 +670,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         }
 
         // Bible V8 §6.17: Admin pause/maintenance lock — skip dealing
-        if (this.adminPauseLock || this.maintenanceLock) {
+        if (
+          this.adminPauseLock ||
+          this.pendingOperatorPauses > 0 ||
+          this.hasUnconfirmedOperatorPause() ||
+          this.maintenanceLock
+        ) {
           if (this.tableFSM.state === 'running') {
             this.tableFSM.transition('paused');
           }
@@ -1090,6 +1095,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           // that something in this process will release.
           if (
             !this.adminPauseLock &&
+            this.pendingOperatorPauses === 0 &&
+            !this.hasUnconfirmedOperatorPause() &&
             !this.maintenanceLock &&
             !this.dealingHaltLock &&
             !this.operatorFloorPaused

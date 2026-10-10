@@ -175,8 +175,9 @@ describe('2. every bank or custody reason refuses, whoever is serving', () => {
     );
   });
 
-  it('refuses each one alone and beside a preparation reason, with the database proof saying no hand', () => {
-    for (const reason of CUSTODY_REASONS) {
+  it.each(CUSTODY_REASONS)(
+    '%s refuses alone and beside a preparation reason with no hand',
+    (reason) => {
       for (const releaseSha of SERVING) {
         for (const reasons of [{ [reason]: 1 }, { f06_preparation_stuck: 13, [reason]: 1 }]) {
           const result = run(CERTIFICATE, reasons, releaseSha);
@@ -188,7 +189,7 @@ describe('2. every bank or custody reason refuses, whoever is serving', () => {
         }
       }
     }
-  });
+  );
 
   it('still admits the preparation reasons alone, so the refusals above are not a broken harness', () => {
     const result = run(CERTIFICATE, { f06_preparation_stuck: 13 }, RETIRED);

@@ -176,7 +176,13 @@ describe('funding a named recipient', () => {
     await act(async () => {
       fireEvent.click(confirmButton());
     });
-    await waitFor(() => expect(rpcMock).toHaveBeenCalled());
+    // Treasury reads also call rpcMock. Await the actual send and its mounted
+    // completion so this test cannot leave a transfer entering the next case.
+    await waitFor(() =>
+      expect(rpcMock.mock.calls.filter((c) => String(c[0]).endsWith('_send'))).toHaveLength(1)
+    );
+    await waitFor(() => expect(screen.getByText('Transferred 250 To Rook')).toBeTruthy());
+    await waitFor(() => expect(screen.getByLabelText('Amount')).toHaveValue(null));
     const [fn, args] = rpcMock.mock.calls.find((c) => String(c[0]).endsWith('_send'))!;
     expect(fn).toBe('fn_club_bank_send');
     expect(args).toMatchObject({

@@ -27,3 +27,7 @@ The live role descriptions bypassed the static copy gates because they were prin
 ## Verification
 
 The full client suite passed 35,211 tests across 2,549 files (one existing skip). The final note-error recovery refinement reruns all affected checks; unchanged suite evidence remains valid. Final focused component/real-PostgREST results are recorded in the checkpoint. Full exact-candidate client checks, type/build checks and protected publication/live proof are recorded separately in the existing external task checkpoint; queued checks are not passes.
+
+## Connected transfer verification
+
+Hosted shard4 exposed an existing test that awaited any RPC, including the treasury read, rather than the transfer RPC. It could finish before its asynchronous send and let that send reach the next case. Await exactly one send, its real confirmation and cleared amount before advancing; preserve all source/destination and unknown-recipient assertions. No wallet runtime or transaction changes.

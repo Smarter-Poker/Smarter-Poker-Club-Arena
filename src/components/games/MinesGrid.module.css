@@ -500,7 +500,7 @@
      stops biting above roughly 755px of viewport, so a modern phone held
      upright still gets the full column. */
   .board {
-    width: min(100%, 500px, calc(100dvh - 390px));
+    width: min(100%, 500px, calc(100dvh - 390px - var(--choice-risk-reserve, 0px)));
     padding: 10px 5px;
   }
   .tile {

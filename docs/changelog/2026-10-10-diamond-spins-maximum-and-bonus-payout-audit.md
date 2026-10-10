@@ -9,10 +9,12 @@ bonus stakes through 7,500. The funding quote exposed a smaller maximum because 
 backing was too small. The original rolled-back qualification proved a
 5,000-diamond seed and 2,500-chip allowances for single spins. The later
 owner request for complete prepaid 25-spin runs expands the backing needed:
-the proposed wheel seed is 125,000 diamonds, wheel exposure 62,500 chips,
-and each bonus game's exposure 37,500 chips. These are allocations against
-existing owner custody and host cover. Qualification, committed configuration
-and durable readback remain separate entries in the owning checkpoint.
+the wheel seed is 125,000 diamonds, wheel exposure 62,500 chips,
+and each bonus game's exposure 37,500 chips. The qualified configuration was
+committed through the supported operator doors and read back at 09:34 UTC.
+These are allocations against existing owner custody and host cover; the
+owner's wallet and total host cover stayed unchanged. Installation, client
+publication and final behavior proof remain separate entries in the checkpoint.
 
 The maintained real PostgreSQL qualification now checks all sixteen maximum
 v4 combinations: Plinko, Crash, Donkey Cross and Mines, ordinary and Super,
@@ -147,3 +149,7 @@ The lower console removes Refresh Wheel and prioritizes the amount, balances,
 run selection and illuminated Spin plate. Lifetime averages use recorded
 nonfixture completed games with sample counts and explicit definitions;
 conditional next-move odds come from the sealed game, not those averages.
+The hosted browser gate caught the odds text pushing the choice-game plates
+off a 375-by-667 phone. A dedicated compact risk readout and scene height
+budget now keep the board, odds, loss floor and both plates on that screen;
+the maintained browser test checks the risk text as well as the controls.

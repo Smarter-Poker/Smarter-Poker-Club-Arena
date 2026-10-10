@@ -928,7 +928,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           .join(' ')
       : null;
   return (
-    <div className={`${styles.page} ${styles.fullscreenPage}`}>
+    <div className={`${styles.page} ${styles.fullscreenPage} ${styles.choicePage}`}>
       <button
         type="button"
         className={styles.back}
@@ -1102,7 +1102,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
             sceneRound && sceneRound.status !== 'open' ? sceneRound.payout_chips : undefined
           }
         />
-        <div className={styles.readout}>
+        <div className={styles.choiceRisk}>
           {nextOdds && (
             <p className="sc-copy">
               {game === 'mines'
@@ -1111,10 +1111,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
             </p>
           )}
           {guaranteedChips !== null && (
-            <p className="sc-copy">
-              A Loss Pays At Least {gameChips(guaranteedChips)} Chips. New Rounds Keep At Least Half
-              The Last Safe Prize.
-            </p>
+            <p className="sc-copy">A Loss Pays At Least {gameChips(guaranteedChips)} Chips.</p>
           )}
         </div>
         <div className={styles.readout} aria-live="polite" aria-atomic="true">
@@ -1200,7 +1197,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         <p className="sc-copy">
           One Setting For Every Round. Nobody Picks A Difficulty; It Is Built Into The Payout. Any
           Loss, And Any Round You Do Not Cash Out, Pays At Least The Guaranteed Minimum Shown Before
-          You Start.
+          You Start. New Rounds Keep At Least Half The Last Safe Prize.
         </p>
         <p className="sc-copy">
           Your Round Is Saved If You Leave. Reaching The Round Limit Books Your Win Automatically.

@@ -33,11 +33,16 @@ import uuid
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SQL_DIR = ROOT / 'tests/sql'
 PG = pathlib.Path(os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin'))
-if sys.platform == 'darwin' and not pathlib.Path('/Volumes/SmarterWork').is_mount():
-    raise RuntimeError('The work SSD must be mounted; no internal-drive fallback is allowed')
-_private = pathlib.Path(tempfile.mkdtemp(prefix='diamond-door-', dir='/Volumes/SmarterWork/agent-work' if sys.platform == 'darwin' else None))
-SOCKET = str(_private / 's')
-pathlib.Path(SOCKET).mkdir(mode=0o700)
+SOCKET = '/tmp/codex-diamond-phase2-pg'
+_private = None
+# Hosted acceptance retains its declared wrapper socket. The owner's Mac must
+# use an independently owned SSD cluster, never the internal drive or a sibling.
+if sys.platform == 'darwin':
+    if not pathlib.Path('/Volumes/SmarterWork').is_mount():
+        raise RuntimeError('The work SSD must be mounted; no internal-drive fallback is allowed')
+    _private = pathlib.Path(tempfile.mkdtemp(prefix='diamond-door-', dir='/Volumes/SmarterWork/agent-work'))
+    SOCKET = str(_private / 's')
+    pathlib.Path(SOCKET).mkdir(mode=0o700)
 PORT = '55472'
 DB = 'poker_diamond_transfer_door_test'
 MIGRATION = ROOT / 'supabase/migrations/20260919223115_the_transfer_door_is_named_and_dr16_has_a_consumer.sql'
@@ -269,6 +274,7 @@ finally:
         subprocess.run([str(PG / 'pg_ctl'), '-D', str(started_here), '-m', 'fast', '-w', '-t', '30', 'stop'],
                        capture_output=True, env={**os.environ, 'LC_ALL': 'C', 'LANG': 'C'})
 
-    shutil.rmtree(_private)
+    if _private is not None:
+        shutil.rmtree(_private)
 
 print(f'{passed} isolated transfer door and DR16 checks passed; this is not a production certification.')

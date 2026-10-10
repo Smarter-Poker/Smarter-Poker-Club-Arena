@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "0b83cbe612308769e27c5e770aae52b12f01c781d8b49bf56bc50b1ee7bfcf55",
+    "scripts/ci/classify-ci-changes.mjs": "9eef710ba89f994e5299852d62375543242c60a792dcb9ffb4601cc523d0e73c",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
@@ -763,6 +763,17 @@
         "path": "scripts/ci/classify-ci-changes.mjs",
         "previous": "af901a21df2a9a92a7f87d4261091260bbabb542b21def88bcdef737c2f94a05",
         "current": "0b83cbe612308769e27c5e770aae52b12f01c781d8b49bf56bc50b1ee7bfcf55"
+      }
+    ]
+  },
+  "playerCommandWalletRouting20261010": {
+    "reason": "Reviewed four-line additive Player Command wallet fixture/runner routing to the existing required PostgreSQL and test jobs. Existing financial selectors, source images, assertions and historical evidence remain unchanged. These current byte bindings establish source identity only, not financial or production qualification.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "0b83cbe612308769e27c5e770aae52b12f01c781d8b49bf56bc50b1ee7bfcf55",
+        "current": "9eef710ba89f994e5299852d62375543242c60a792dcb9ffb4601cc523d0e73c"
       }
     ]
   }

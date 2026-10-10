@@ -1433,6 +1433,13 @@ jobs:
           STABLE_CANCEL_POSTGRES_BIN: /usr/lib/postgresql/17/bin
           TMPDIR: ${{ runner.temp }}
         run: node scripts/qualify-stable-admin-cancel-stops-pg17.mjs
+      - name: Stable Admin cancellation preserves the reviewed settlement lane
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          STABLE_CANCEL_POSTGRES_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: node scripts/qualify-stable-admin-cancel-lane-pg17.mjs
       - name: Build the matching native PostgreSQL isolation test tool
         id: pg17_isolation_tool
         if: (matrix.shard == 3 || matrix.shard == 4)

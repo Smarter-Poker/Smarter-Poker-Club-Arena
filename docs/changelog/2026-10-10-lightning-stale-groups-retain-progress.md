@@ -75,3 +75,7 @@ and its accepted-roster regression. Reviewed additive one-line native-chain
 selection now has its exact current fingerprint in the existing manifest;
 previous pin is retained, and historical pins, financial inputs/assertions
 and SOURCE_ONLY_UNRUN status remain unchanged. This is source identity only.
+
+Fresh resumption: canonical policies emitted and fully read at2026-10-10T06:04:05.422Z, v2.9, unchanged manifest/source hashes above. Repository AGENTS/CLAUDE/playbook/publishing, migration laws, deploy references, full owning maintenance handoff/programme, storage and World Hub task checkpoint freshly read. Recovered CA6a354f1bc2c04409416566a8253e1cd332c41e94 and WH27656996117836e6e7929a447acddaff4c8399c5, existing draft PRs6621/2263 and six exact installed dependencies. SSD remains mounted with free space. Fresh06:05:27 database preflight confirms no DDL refusal, uninstalled matcher forward, exact original body/definition, single overload and preserved invoker/volatile/searchpath/owner/ACL.
+
+Exact forward installed once at06:05:37UTC as provider20261010060537. Independent06:05:48 readback matches full sourceSHA256b56aea27caf66d304b213790368c30d19d12817370f60cda76025afa0b71115a and qualified body8e06bde427b2b38939194c4ebb16c7de/definition449fdbe1fa82cf75c17129b098e1c5f9. Ownerpostgres, single overload, invoker/volatile, fixed public-pg_temp path and service-only execute unchanged. Advisor counts exactly unchanged from06:00 baseline. No production game/player/financial fixture or installed predecessor replay.

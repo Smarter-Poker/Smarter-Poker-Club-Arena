@@ -56,16 +56,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 198267,
-      "sha256": "6de24feea8c8d3c0994ea7a9d264514373c9b5c22d2b525d308fa7108bd9bbe1"
+      "bytes": 198604,
+      "sha256": "c4b0d65e0ef9d442c504dd6c5aafa0522607bff1ffd2953d3a8c5822c7f88950"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 33273,
-      "sha256": "9b80166752ba255d91dbdabf11cd7ed02489c28d2ddcef28b5dc9edea78ce76e"
+      "bytes": 33302,
+      "sha256": "846747f1e40dcb9c027feb8aadedb1f1d469fcfc91315b4e9ff2e2af77af0f64"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -160,8 +160,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 103912,
-      "sha256": "3a442cdfb793eb70eb158ade1b9c2ed57e4428d3fcf8db248bae982899e6863a"
+      "bytes": 104055,
+      "sha256": "5f3225db066ecc1c3023aaf61be0173967383268b25237b10f2914976f5dbe00"
     }
   },
   "nativePgCron": {
@@ -1836,6 +1836,41 @@
     "currentWorkflowPin": {
       "bytes": 198267,
       "sha256": "6de24feea8c8d3c0994ea7a9d264514373c9b5c22d2b525d308fa7108bd9bbe1"
+    }
+  },
+  "stableAdminCancelLaneQualification20261010": {
+    "reason": "Add the isolated cancellation lane failure-before/after and global-before-row concurrency qualification in existing required Accounting3. Preserve all financial owners/assertions, historical pins and SOURCE_ONLY_UNRUN. These source bindings do not establish production proof.",
+    "reviewedPins": {
+      ".github/workflows/ci.yml": {
+        "previousPin": {
+          "bytes": 198267,
+          "sha256": "6de24feea8c8d3c0994ea7a9d264514373c9b5c22d2b525d308fa7108bd9bbe1"
+        },
+        "currentPin": {
+          "bytes": 198604,
+          "sha256": "c4b0d65e0ef9d442c504dd6c5aafa0522607bff1ffd2953d3a8c5822c7f88950"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previousPin": {
+          "bytes": 33273,
+          "sha256": "9b80166752ba255d91dbdabf11cd7ed02489c28d2ddcef28b5dc9edea78ce76e"
+        },
+        "currentPin": {
+          "bytes": 33302,
+          "sha256": "846747f1e40dcb9c027feb8aadedb1f1d469fcfc91315b4e9ff2e2af77af0f64"
+        }
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "previousPin": {
+          "bytes": 103912,
+          "sha256": "3a442cdfb793eb70eb158ade1b9c2ed57e4428d3fcf8db248bae982899e6863a"
+        },
+        "currentPin": {
+          "bytes": 104055,
+          "sha256": "5f3225db066ecc1c3023aaf61be0173967383268b25237b10f2914976f5dbe00"
+        }
+      }
     }
   }
 }

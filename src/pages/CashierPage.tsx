@@ -93,6 +93,7 @@ interface Transaction {
 
 interface Recipient {
   id: string;
+  searchText: string;
   username: string;
   role: string;
   balance: number;
@@ -480,10 +481,7 @@ function CashierContent() {
     if (!recipientSearch.trim()) return recipients;
     const q = recipientSearch.trim().toLowerCase();
     return recipients.filter(
-      (r) =>
-        r.username.toLowerCase().includes(q) ||
-        r.role.toLowerCase().includes(q) ||
-        (r.id === user?.id && 'you'.includes(q))
+      (r) => r.searchText.includes(q) || (r.id === user?.id && 'you'.includes(q))
     );
   }, [recipients, recipientSearch, user?.id]);
 
@@ -1058,6 +1056,7 @@ function CashierContent() {
       // Profile and commission chunks remain independent concurrent reads.
       const needNames = members.map((m) => m.user_id);
       const profileMap: Record<string, string> = {};
+      const profileSearchMap: Record<string, string> = {};
       const deletedRecipientIds = new Set<string>();
       const CHUNK_SIZE = 200;
       const nameChunks: string[][] = [];
@@ -1077,7 +1076,7 @@ function CashierContent() {
             () =>
               supabase
                 .from('profiles')
-                .select(`id, status, ${PLAYER_NAME_COLUMNS}`)
+                .select(`id, status, player_number, ${PLAYER_NAME_COLUMNS}`)
                 .in('id', chunk)
                 .then((r) => r),
             { maxRetries: 2, isMountedRef: isMounted }
@@ -1113,6 +1112,9 @@ function CashierContent() {
         if (profiles) {
           for (const p of profiles) {
             profileMap[p.id] = playerDisplayName(p);
+            profileSearchMap[p.id] = [profileMap[p.id], p.username, p.alias, p.player_number]
+              .filter((value) => value !== null && value !== undefined)
+              .join(' ');
             if (p.status === 'deleted') deletedRecipientIds.add(p.id);
           }
         }
@@ -1134,6 +1136,17 @@ function CashierContent() {
         .filter((m) => m.user_id && !deletedRecipientIds.has(m.user_id))
         .map((m) => ({
           id: m.user_id,
+          searchText: [
+            m.display_name,
+            m.nickname,
+            profileSearchMap[m.user_id],
+            m.user_id,
+            m.role,
+            enumToTitleCase(m.role),
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase(),
           username: m.display_name || m.nickname || profileMap[m.user_id] || 'Player',
           role: m.role,
           balance: m.chip_balance || 0,
@@ -2495,7 +2508,7 @@ function CashierContent() {
                   <input
                     id="cashier-send-search"
                     type="text"
-                    placeholder="Search Member Or Role..."
+                    placeholder="Search Name, Number, Handle, Or Role..."
                     className={styles.input}
                     style={{ marginBottom: '8px' }}
                     value={recipientSearch}
@@ -2690,7 +2703,7 @@ function CashierContent() {
                   <input
                     id="cashier-distribute-search"
                     type="text"
-                    placeholder="Search Member, Role Or (You)..."
+                    placeholder="Search Name, Number, Handle, Role, Or You..."
                     className={styles.input}
                     style={{ marginBottom: '8px' }}
                     value={recipientSearch}

@@ -93,7 +93,12 @@ function deferred(): Deferred {
 let roleReads: Record<string, () => Promise<RoleRead>>;
 let rpcCalls: Array<[string, Record<string, unknown>]>;
 let mintResponses: Array<{ data: unknown; error: unknown }>;
-let recipientProfiles: Array<{ id: string; status: string | null }> = [];
+let recipientProfiles: Array<{
+  id: string;
+  status: string | null;
+  username?: string;
+  player_number?: string;
+}> = [];
 let recipientProfileError: unknown = null;
 let extraRecipients: Array<Record<string, unknown>> = [];
 
@@ -347,7 +352,7 @@ describe('Cashier Classic launch audit', () => {
     expect(sendIds).not.toContain(OWNER);
     expect(screen.getByLabelText('Search Recipients')).toHaveAttribute(
       'placeholder',
-      'Search Member Or Role...'
+      'Search Name, Number, Handle, Or Role...'
     );
 
     fireEvent.click(screen.getByRole('tab', { name: 'Distribute' }));
@@ -405,6 +410,38 @@ describe('Cashier Classic launch audit', () => {
     );
     expect(distribution.value).toBe('');
     expect(screen.getByRole('button', { name: 'Distribute 0 Chips' })).toBeDisabled();
+  });
+
+  it.each(['940777', 'distinct-handle'])(
+    'finds a named member by profile number or handle: %s',
+    async (query) => {
+      recipientProfiles = [
+        { id: PLAYER_ONE, status: 'active', username: 'distinct-handle', player_number: '940777' },
+      ];
+      start();
+      const select = (await screen.findByLabelText('Send To Recipient')) as HTMLSelectElement;
+      await waitFor(() => expect(select.options.length).toBe(2));
+      fireEvent.change(screen.getByLabelText('Search Recipients'), { target: { value: query } });
+      expect(Array.from(select.options).map((o) => o.value)).toContain(PLAYER_ONE);
+    }
+  );
+
+  it('finds a role using its readable spelling instead of an underscore enum', async () => {
+    extraRecipients = [
+      {
+        user_id: 'super-agent',
+        role: 'super_agent',
+        display_name: 'Role Recipient',
+        chip_balance: 0,
+      },
+    ];
+    start();
+    const select = (await screen.findByLabelText('Send To Recipient')) as HTMLSelectElement;
+    await waitFor(() => expect(select.options.length).toBe(3));
+    fireEvent.change(screen.getByLabelText('Search Recipients'), {
+      target: { value: 'Super Agent' },
+    });
+    expect(Array.from(select.options).map((o) => o.value)).toContain('super-agent');
   });
 
   it('places agents before players when the first role rank is zero', async () => {

@@ -10,7 +10,9 @@ Advanced Cashier reads authoritative profile status for every recipient, even
 when membership data already supplies a name. It removes deleted recipients and
 clears stale selection after refresh; failed status verification clears the list
 instead of exposing unverified choices. Active names and missing profiles remain
-discoverable. Recipient sorting correctly preserves the first role rank.
+discoverable. Both recipient selectors match player numbers, handles, membership
+names and readable role spellings, preserving self-discovery for distribution.
+Recipient sorting correctly preserves the first role rank.
 
 The member-data database query excludes profiles explicitly marked deleted from
 roster rows and downline counts, retains active descendants below deleted parents,

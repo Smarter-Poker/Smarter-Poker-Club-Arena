@@ -10,7 +10,7 @@ vi.mock('../../src/lib/supabase', async () => {
     }),
   };
 });
-import ClubRosterService from '../../src/services/ClubRosterService';
+import ClubRosterService, { MemberAccessDeniedError } from '../../src/services/ClubRosterService';
 import { RequestDeadlineError } from '../../src/utils/requestDeadline';
 import { RosterReadTimeoutError } from '../../src/utils/rosterReadReliability';
 
@@ -75,10 +75,11 @@ describe('real PostgREST member reads have one request deadline', () => {
     expect(state.fetch).toHaveBeenCalledTimes(1);
   });
   it.each(calls.map((call, i) => [i, call] as const))(
-    'rejects a null payload for read %i',
-    async (_i, call) => {
+    'distinguishes a null access denial from incomplete reads for read %i',
+    async (i, call) => {
       state.fetch.mockResolvedValue(new Response('null', { status: 200 }));
-      await expect(call()).rejects.toThrow(/Incomplete/);
+      if (i === 1) await expect(call()).rejects.toBeInstanceOf(MemberAccessDeniedError);
+      else await expect(call()).rejects.toThrow(/Incomplete/);
     }
   );
   it('keeps an explicit statistics restriction', async () => {

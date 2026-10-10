@@ -17,8 +17,8 @@ const f = vi.hoisted(() => ({
 vi.mock('../../src/hooks/useAuthUser', () => ({ useAuthUser: () => f.actor }));
 vi.mock('../../src/hooks/useProfilePresence', () => ({ useOnlineNow: () => new Set() }));
 vi.mock('../../src/hooks/useMasterBusSubscription', () => ({
-  useMasterBusSubscriptions: (_events: unknown, callback: typeof f.bus) => {
-    f.bus = callback;
+  useMasterBusSubscriptions: (events: string[], callback: typeof f.bus) => {
+    if (!events.includes('BALANCE_UPDATED')) f.bus = callback;
   },
 }));
 vi.mock('../../src/hooks/useMasterBusChannel', () => ({
@@ -26,6 +26,10 @@ vi.mock('../../src/hooks/useMasterBusChannel', () => ({
     if (config.table === 'audit_trail') f.audit = config;
     else f.channel = config;
   },
+}));
+// Private wallet delivery is covered by the dedicated wallet-update cases.
+vi.mock('../../src/hooks/useMasterBusBroadcastChannel', () => ({
+  useMasterBusBroadcastChannel: vi.fn(),
 }));
 vi.mock('../../src/components/common/Toast', () => ({ useToast: () => f.toast }));
 vi.mock('../../src/utils/strictClubIdResolver', () => ({

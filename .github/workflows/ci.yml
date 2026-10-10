@@ -2123,6 +2123,11 @@ jobs:
           path: ${{ runner.temp }}/original-paid-custody/
           if-no-files-found: error
           retention-days: 7
+      - name: Agent wallet signals preserve scoped access
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-agent-wallet-postgres.py
       - name: Profile appearance signals preserve scoped access
         if: matrix.shard == 1
         env:

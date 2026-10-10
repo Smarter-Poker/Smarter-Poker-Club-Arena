@@ -35,6 +35,13 @@ vi.mock('../../src/components/common/Toast', () => ({
 
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 
+// These page rendering/read-ownership cases do not deliver realtime events.
+// Dedicated Player Command wallet tests exercise both channel callbacks.
+vi.mock('../../src/hooks/useMasterBusChannel', () => ({ useMasterBusChannel: vi.fn() }));
+vi.mock('../../src/hooks/useMasterBusBroadcastChannel', () => ({
+  useMasterBusBroadcastChannel: vi.fn(),
+}));
+
 vi.mock('../../src/utils/strictClubIdResolver', () => ({
   ClubNotFoundError: class ClubNotFoundError extends Error {},
   resolveClubUUIDStrict: async () => '22222222-2222-4222-8222-222222222222',
@@ -211,9 +218,7 @@ describe('Players detail surfaces', () => {
     state.getGrantableRoles.mockRejectedValueOnce(new Error('transport failed'));
     render(<MemberManagementPage />);
     expect(
-      await screen.findByText(
-        'Role Options Could Not Be Loaded. Refresh This Player Record To Retry.'
-      )
+      await screen.findByText('Role Options Could Not Be Loaded. Retry To Check Them Again.')
     ).toBeVisible();
     expect(
       screen.queryByText('Your Role Does Not Allow Changing Anyone Else’s.')

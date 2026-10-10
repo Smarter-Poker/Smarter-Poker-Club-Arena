@@ -6,6 +6,8 @@ import { useDebounce } from '../hooks/useDebounce';
 import { useOnlineNow } from '../hooks/useProfilePresence';
 import { useMasterBusSubscriptions } from '../hooks/useMasterBusSubscription';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
+import { useMasterBusBroadcastChannel } from '../hooks/useMasterBusBroadcastChannel';
+import { useRosterWalletUpdates } from '../hooks/useRosterWalletUpdates';
 import { useToast } from '../components/common/Toast';
 import { useVirtualScroll } from '../hooks/useVirtualScroll';
 import PageSkeleton from '../components/common/PageSkeleton';
@@ -147,6 +149,14 @@ export default function ClubMembersPage() {
   const forceNextSummaryRef = useRef(false);
   const requestEpochRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  const exportAbortRef = useRef<AbortController | null>(null);
+  const exportScopeKey = `${routeClub}:${user?.id ?? ''}`;
+  const exportScopeRef = useRef({ key: exportScopeKey });
+  // Rotate during render: an old answer cannot land between a scope change
+  // and its effect, or become current again after an A/B/A navigation.
+  if (exportScopeRef.current.key !== exportScopeKey) {
+    exportScopeRef.current = { key: exportScopeKey };
+  }
   const moreAbortRef = useRef<AbortController | null>(null);
   const moreRef = useRef(false);
   const membersRef = useRef<RosterMember[]>([]);
@@ -158,6 +168,14 @@ export default function ClubMembersPage() {
   const realtimeConnectionRef = useRef<'connecting' | 'live' | 'degraded'>('connecting');
   const latestLoadRef = useRef<(options?: RosterLoadOptions) => Promise<void>>(
     async () => undefined
+  );
+
+  const wallets = useRosterWalletUpdates(
+    `${routeClub}:${user?.id ?? ''}:${searchQuery}:${filter}:${sortKey}`,
+    resolvedClubId,
+    membersRef,
+    setMembers,
+    () => setDataFreshness('stale')
   );
 
   useEffect(() => {
@@ -173,6 +191,9 @@ export default function ClubMembersPage() {
   useEffect(() => {
     let active = true;
     setLoading(true);
+    exportAbortRef.current?.abort();
+    exportAbortRef.current = null;
+    setIsExporting(false);
     abortRef.current?.abort();
     moreAbortRef.current?.abort();
     summaryAbortRef.current?.abort();
@@ -303,6 +324,7 @@ export default function ClubMembersPage() {
         },
         { force: forceSummary }
       );
+      const walletRevision = wallets.snapshot();
       const pageRequest = ClubRosterService.getRosterPage(resolvedClubId, {
         search: debouncedSearch,
         filter,
@@ -355,8 +377,9 @@ export default function ClubMembersPage() {
         },
         onPage: (page) => {
           if (!isCurrent()) return;
-          membersRef.current = page.items;
-          setMembers(page.items);
+          const nextRows = wallets.reconcile(page.items, walletRevision);
+          membersRef.current = nextRows;
+          setMembers(nextRows);
           directoryAvailableRef.current = true;
           setDirectoryAvailable(true);
           setCursor(page.next_cursor);
@@ -402,7 +425,7 @@ export default function ClubMembersPage() {
         filter === 'all' &&
         sortKey === 'hierarchy'
       ) {
-        writeRosterCache(user.id, resolvedClubId, pageResult.value.items, summaryResult.value);
+        writeRosterCache(user.id, resolvedClubId, membersRef.current, summaryResult.value);
       }
     },
     [debouncedSearch, filter, resolvedClubId, sortKey, user?.id]
@@ -508,6 +531,7 @@ export default function ClubMembersPage() {
       abortRef.current?.abort();
       moreAbortRef.current?.abort();
       summaryAbortRef.current?.abort();
+      exportAbortRef.current?.abort();
     },
     []
   );
@@ -533,6 +557,7 @@ export default function ClubMembersPage() {
         old?: Record<string, unknown>;
       } | null;
       const next = value?.new;
+      if (value?.eventType === 'UPDATE' && next) wallets.membership(next);
       const previous = value?.old;
       const member = membersRef.current.find((row) => row.user_id === next?.user_id);
       // WAL's default old image has only keys. Compare a full old image when
@@ -578,6 +603,37 @@ export default function ClubMembersPage() {
     enabled: !!resolvedClubId,
   });
 
+  const walletChannelDegradedRef = useRef(false);
+  useMasterBusBroadcastChannel({
+    channelName: resolvedClubId ? `club-roster-wallet:${resolvedClubId}` : null,
+    event: 'wallet_changed',
+    enabled: !!resolvedClubId && !!user?.id,
+    onPayload: (value) => {
+      const payload = (value as { payload?: { club_id?: string; user_id?: string } } | null)
+        ?.payload;
+      if (payload?.club_id === resolvedClubId && typeof payload.user_id === 'string') {
+        wallets.refresh(payload.user_id);
+      }
+    },
+    onSubscriptionError: () => {
+      walletChannelDegradedRef.current = true;
+      setDataFreshness('stale');
+    },
+    onSubscriptionStatus: (status) => {
+      if (status !== 'SUBSCRIBED') return;
+      const recovered = walletChannelDegradedRef.current;
+      walletChannelDegradedRef.current = false;
+      if (recovered) wallets.refresh();
+    },
+  });
+  useMasterBusSubscriptions(['BALANCE_UPDATED'], (value) => {
+    const payload = value as { clubId?: string; userId?: string } | null;
+    if (payload?.clubId && payload.clubId !== resolvedClubId) return;
+    if (payload?.clubId === resolvedClubId || typeof payload?.userId === 'string') {
+      wallets.refresh(payload?.userId);
+    }
+  });
+
   const loadMore = useCallback(async () => {
     if (!resolvedClubId || !cursor || !hasMore || moreRef.current) return;
     moreRef.current = true;
@@ -587,6 +643,7 @@ export default function ClubMembersPage() {
     moreAbortRef.current?.abort();
     moreAbortRef.current = controller;
     try {
+      const walletRevision = wallets.snapshot();
       const page = await ClubRosterService.getRosterPage(resolvedClubId, {
         search: debouncedSearch,
         filter,
@@ -598,7 +655,10 @@ export default function ClubMembersPage() {
       if (controller.signal.aborted || epoch !== requestEpochRef.current) return;
       setMembers((current) => {
         const known = new Set(current.map((row) => row.user_id));
-        const next = [...current, ...page.items.filter((row) => !known.has(row.user_id))];
+        const next = [
+          ...current,
+          ...wallets.reconcile(page.items, walletRevision).filter((row) => !known.has(row.user_id)),
+        ];
         membersRef.current = next;
         return next;
       });
@@ -703,16 +763,26 @@ export default function ClubMembersPage() {
       !resolvedClubId ||
       !summary.capabilities.can_export ||
       isExporting ||
+      exportAbortRef.current !== null ||
       searchQuery.trim() !== debouncedSearch.trim()
     )
       return;
+    const controller = new AbortController();
+    const scope = exportScopeRef.current;
+    exportAbortRef.current = controller;
+    const ownsExport = () =>
+      !controller.signal.aborted &&
+      exportScopeRef.current === scope &&
+      exportAbortRef.current === controller;
     setIsExporting(true);
     try {
       const result = await ClubRosterService.exportRoster(
         resolvedClubId,
         { search: debouncedSearch, filter, sort: sortKey },
-        selected.size ? [...selected] : null
+        selected.size ? [...selected] : null,
+        controller.signal
       );
+      if (!ownsExport()) return;
       /* AN EMPTY ROSTER PRODUCES NO FILE. `exportToCSV` returns early when the
          row array is empty (src/lib/export.ts), so "0 Players Exported" was a
          success message for a download that never started. ClubFinancialsPage
@@ -728,12 +798,16 @@ export default function ClubMembersPage() {
       );
       toast.success(`${result.row_count.toLocaleString()} Players Exported`);
     } catch (error) {
+      if (!ownsExport()) return;
       reportError(error, 'ClubMembersPage.export');
       // The RPC's own refusal (the 5,000-selection cap, for one) is the
       // useful part of the message.
       toast.error(safeErrorMessage(error, 'Could Not Export The Roster'));
     } finally {
-      setIsExporting(false);
+      if (ownsExport()) {
+        exportAbortRef.current = null;
+        setIsExporting(false);
+      }
     }
   }, [
     debouncedSearch,

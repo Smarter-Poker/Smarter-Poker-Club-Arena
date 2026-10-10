@@ -1,0 +1,58 @@
+name: Retired cron jobs match the dispatcher
+
+# The World Hub's ALL_CRONS list and ca_retired_cron_jobs must agree in both
+# directions (2026-09-16: clawbot-orchestrator was dropped from ALL_CRONS with
+# no registry row, and v_openclaw_job_staleness treated it as newly silent for
+# eight days -- see
+# 20260926171100_a_retired_error_providers_orchestrator_stays_retired.sql).
+#
+# No new timer (CLAUDE.md 10.85): the live check rides the existing hourly
+# Production Integrity Audit through workflow_run. On pull requests touching
+# this path it runs the decision-rule regression test only.
+on:
+  workflow_run:
+    workflows: ['Production Integrity Audit']
+    types: [completed]
+  pull_request:
+    paths:
+      - scripts/ci/check-retired-cron-jobs-match-dispatcher.mjs
+      - scripts/ci/check-retired-cron-jobs-match-dispatcher.test.mjs
+      - .github/workflows/retired-cron-jobs-match-dispatcher.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: retired-cron-jobs-match-dispatcher-${{ github.event_name == 'workflow_run' && 'live' || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  decision-rules:
+    name: Reactivated and unregistered retirements are both caught
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node --test scripts/ci/check-retired-cron-jobs-match-dispatcher.test.mjs
+
+  live-consistency:
+    name: The retired-cron registry and the dispatcher agree
+    if: github.event_name == 'workflow_run'
+    needs: decision-rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install the pinned database client
+        run: npm ci --ignore-scripts --prefer-offline --no-audit --no-fund
+      - name: Record or recover the mismatch incident
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node scripts/ci/check-retired-cron-jobs-match-dispatcher.mjs

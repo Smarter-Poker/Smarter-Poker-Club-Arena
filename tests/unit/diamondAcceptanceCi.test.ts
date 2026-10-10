@@ -192,6 +192,22 @@ describe('every Diamond SQL runner is run by the accounting job', () => {
     expect(wrapper).toContain('if result.returncode or not proved:');
   });
 
+  it('requires the complete 34-case transfer and deletion qualification result', () => {
+    const proof = runnerProofsInWrapper(wrapper).find(
+      ([name]) => name === 'run-diamond-transfer-door-and-dr16.py'
+    );
+    expect(proof?.[1]).toBe(
+      '34 isolated transfer door and DR16 checks passed; this is not a production certification.'
+    );
+    const runner = read('tests/sql/run-diamond-transfer-door-and-dr16.py');
+    expect(runner).toContain('EXPECTED_CHECKS = 34');
+    expect(runner).toContain('qualification_checks = passed - int(started_here is not None)');
+    expect(runner).toContain('if qualification_checks != EXPECTED_CHECKS:');
+    expect(runner).toContain(
+      "raise AssertionError(f'Transfer qualification completed {qualification_checks} checks, expected {EXPECTED_CHECKS}')"
+    );
+  });
+
   it('runs the wrapper in the accounting job, once, without a bypass, on PostgreSQL 17', () => {
     const job = ci.jobs.accounting_postgres;
     const steps = job.steps.filter((s: { id?: string }) => s.id === 'diamond_sql_acceptance');

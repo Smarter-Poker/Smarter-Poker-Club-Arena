@@ -54,6 +54,7 @@ export default function DiamondWalletTransfer({
   const [amount, setAmount] = useState('');
   const [review, setReview] = useState<Request | null>(null);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
   const [message, setMessage] = useState('');
   const [open, setOpen] = useState(Boolean(request) || initiallyOpen);
   /* Only the SEND is reported: verifying a friend moves nothing. */
@@ -64,6 +65,7 @@ export default function DiamondWalletTransfer({
   useEffect(() => () => onBusyChange?.(false), [onBusyChange]);
 
   async function verify() {
+    if (busyRef.current) return;
     const id = recipient.trim().toLowerCase();
     const spelled = amount.trim();
     const units = Number(spelled);
@@ -81,16 +83,21 @@ export default function DiamondWalletTransfer({
       setMessage('Enter A Different Player ID And A Positive Whole Diamond Amount.');
       return;
     }
+    busyRef.current = true;
     setBusy(true);
     setMessage('');
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, alias, username')
+        .select('id, alias, username, status')
         .eq('id', id)
         .maybeSingle();
       if (!alive.current) return;
       if (error || !data) throw error || new Error('Player Not Found');
+      if (data.status === 'deleted') {
+        setMessage('This Player Is No Longer Available.');
+        return;
+      }
       const { data: friendship, error: friendshipError } = await supabase
         .from('friendships')
         .select('id')
@@ -124,13 +131,15 @@ export default function DiamondWalletTransfer({
       reportError(error, 'DiamondWalletTransfer.Verify');
       setMessage('Could Not Verify This Friend. Please Try Again.');
     } finally {
+      busyRef.current = false;
       if (alive.current) setBusy(false);
     }
   }
 
   async function send() {
     const next = request || review;
-    if (!next || busy) return;
+    if (!next || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setSending(true);
     setMessage('');
@@ -195,6 +204,7 @@ export default function DiamondWalletTransfer({
         setMessage('Transfer Not Yet Confirmed. Retry This Transfer To Retrieve Its Receipt.');
       }
     } finally {
+      busyRef.current = false;
       if (alive.current) {
         setBusy(false);
         setSending(false);
@@ -208,6 +218,7 @@ export default function DiamondWalletTransfer({
       <button
         type="button"
         className="diamond-wallet-modal__buy-btn"
+        disabled={busy}
         onClick={() => setOpen(!open)}
         aria-expanded={open}
       >

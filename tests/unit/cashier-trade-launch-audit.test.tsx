@@ -33,6 +33,7 @@ type TableCall = {
 };
 
 const state = vi.hoisted(() => ({
+  resolveClub: null as null | ((id: string) => Promise<string>),
   agentWallet: 500,
   roster: [] as Array<Record<string, unknown>>,
   chipRequests: [] as Array<Record<string, unknown>>,
@@ -82,7 +83,7 @@ vi.mock('../../src/services/UnionService', () => ({
 }));
 vi.mock('../../src/utils/clubIdResolver', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/utils/clubIdResolver')>()),
-  resolveClubUUID: vi.fn(async (id: string) => id),
+  resolveClubUUID: vi.fn(async (id: string) => (state.resolveClub ? state.resolveClub(id) : id)),
 }));
 
 import { supabase } from '../../src/lib/supabase';
@@ -119,7 +120,14 @@ function player(index: number, chipBalance: number, name = `Player ${index + 1}`
 
 function NavigateClub() {
   const navigate = useNavigate();
-  return <button onClick={() => navigate(`/clubs/${CLUB_B}/cashier`)}>Switch Fixture Club</button>;
+  return (
+    <>
+      <button onClick={() => navigate(`/clubs/${CLUB_B}/cashier`)}>Switch Fixture Club</button>
+      <button onClick={() => navigate('/clubs/resolving-club/cashier')}>
+        Switch Unresolved Club
+      </button>
+    </>
+  );
 }
 
 function mountCashier() {
@@ -163,6 +171,7 @@ beforeEach(() => {
   localStorage.clear();
   document.title = 'Poker Arena | Smarter Poker';
   Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+  state.resolveClub = null;
   state.agentWallet = 500;
   state.roster = [player(0, 75)];
   state.chipRequests = [];
@@ -720,4 +729,39 @@ describe('P-11, P-15, P-24: the player wallet', () => {
     expect(css).not.toMatch(/\.vault-btn\.small \{[^}]*min-height: 34px/);
     expect(css).not.toMatch(/\.wallet-plate__cta \{[^}]*min-height: 40px/);
   });
+});
+
+it('removes the previous club recipients and transfer dialog while the next slug resolves', async () => {
+  const resolution = deferred<string>();
+  mountCashier();
+  await synchronized();
+  await openSendOut('25', 1);
+  state.resolveClub = (id) => (id === 'resolving-club' ? resolution.promise : Promise.resolve(id));
+  fireEvent.click(screen.getByRole('button', { name: 'Switch Unresolved Club' }));
+  await waitFor(() =>
+    expect(screen.queryByRole('dialog', { name: /Send Out/ })).not.toBeInTheDocument()
+  );
+  expect(screen.queryByRole('checkbox', { name: /Player 1/ })).not.toBeInTheDocument();
+  expect(state.rpcCalls.some((call) => call.name === 'fn_cashier_batch_transfer')).toBe(false);
+  await act(async () => resolution.resolve(CLUB_B));
+  await synchronized();
+});
+
+it('keeps a late uncertain transfer in its original club instead of poisoning the next cashier', async () => {
+  const batch = deferred<unknown>();
+  state.batch = () => batch.promise;
+  mountCashier();
+  await synchronized();
+  await openSendOut('25', 1);
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+  await waitFor(() =>
+    expect(state.rpcCalls.some((call) => call.name === 'fn_cashier_batch_transfer')).toBe(true)
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Switch Fixture Club' }));
+  await synchronized();
+  await act(async () => batch.resolve({ data: null, error: { message: 'Connection Lost' } }));
+  expect(screen.queryByText(/Nothing Was Sent/)).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Select Player 1' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Select Player 1' }));
+  expect(await screen.findByRole('dialog', { name: /Send Out/ })).toBeInTheDocument();
 });

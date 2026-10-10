@@ -164,7 +164,7 @@
     "tests/fixtures/correction-document-authority/captured-references.json": "60b794f91a5d726c9302856a220b193eae52fbd95dc1e15ad4b95b312b092479",
     "tests/fixtures/correction-document-authority/captured-union-party.json": "9bc97fef36c4e3e3ec2766cb3596764513bb20fd8bce78e5fa1ee87337bb86f7",
     "tests/fixtures/correction-document-authority/regression.sql": "f70b287534ee6024469629a18fd38cb4074f528e906808c5bf6ebdb1464091f1",
-    "tests/cashier-weekly-statements.test.tsx": "f20219b5d79ec266603635c2be3ad3d30e12744956caf75dcac58ee75b22b2fd",
+    "tests/cashier-weekly-statements.test.tsx": "ea17078ccc7576d3fd2d66cb51c175e9416e4d3e4ced93f80df87cc2d74e7229",
     "tests/helpers/clubWeeklyStatement.ts": "7061277bbc67933e1aba5bcd76ebd3cd4fec241ffe9545c39e0b0f10806b2d21",
     "tests/unit/ClubWeeklyAccountingReader.test.ts": "a014cdab643e4adb2612f49112a4d51947c33de71c23e16757cb432bd09d8c2e",
     "tests/unit/FinancialExportService.test.ts": "a3870a8c151e21c7917687b6953dcd3d51cf82cc03071c655674111ad9556c16",
@@ -4045,6 +4045,18 @@
         "current": "d0d1655c9145b8cb3fc874ea21784cd8cc0a9a97e9e95fc340fce3691caf51aa"
       }
     ]
+  },
+  "cashierAccountEpochQualification20261010": {
+    "reason": "Cashier connected audit PR6649 scopes the Trade workspace to the account and club route. The weekly-statements test MasterBus mock now retains all concurrent AUTH_STATE_CHANGED subscribers with subscription cleanup, matching the real bus. Its ABA account test additionally asserts the old panel is detached, opens the current remounted panel and verifies the late old response never renders and a fresh failed read reports unavailable. Existing scope, exact amount, receipt and stale-read assertions remain enforced; no accounting component or captured catalog fixture changes. Only this reviewed repository test binding moves.",
+    "changes": [
+      {
+        "section": "repository_fixtures",
+        "path": "tests/cashier-weekly-statements.test.tsx",
+        "previous_sha256": "f20219b5d79ec266603635c2be3ad3d30e12744956caf75dcac58ee75b22b2fd",
+        "sha256": "ea17078ccc7576d3fd2d66cb51c175e9416e4d3e4ced93f80df87cc2d74e7229"
+      }
+    ],
+    "verification": "The exact formatted test bytes passed in the 590-test focused suite and normal 607-test related pre-push. The baseline source-binding verifier refused this path; the corrected verifier must validate all 821 pins. This fingerprint refresh proves reviewed source identity, not native financial qualification or production installation; the protected full Accounting workflow remains required."
   },
   "playerCommandWalletRouting20261010": {
     "reason": "Reviewed four-line additive Player Command wallet fixture/runner routing to the existing required PostgreSQL and test jobs. Existing financial selectors, source images, assertions and historical evidence remain unchanged. These current byte bindings establish source identity only, not financial or production qualification.",

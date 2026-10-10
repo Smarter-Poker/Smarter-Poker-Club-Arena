@@ -93,6 +93,7 @@ interface Transaction {
 
 interface Recipient {
   id: string;
+  searchText: string;
   username: string;
   role: string;
   balance: number;
@@ -480,10 +481,7 @@ function CashierContent() {
     if (!recipientSearch.trim()) return recipients;
     const q = recipientSearch.trim().toLowerCase();
     return recipients.filter(
-      (r) =>
-        r.username.toLowerCase().includes(q) ||
-        r.role.toLowerCase().includes(q) ||
-        (r.id === user?.id && 'you'.includes(q))
+      (r) => r.searchText.includes(q) || (r.id === user?.id && 'you'.includes(q))
     );
   }, [recipients, recipientSearch, user?.id]);
 
@@ -1053,14 +1051,13 @@ function CashierContent() {
         members = collected as unknown as RecipientRow[];
       }
 
-      // Batch-fetch display names from profiles for members without display_name
-      // PERF 2026-08-23: both lookups below derive from `members` and neither
-      // depends on the other, yet they ran in series - and the display-name
-      // fetch ran one chunk at a time, so a 588-member club paid three round
-      // trips before the agents query had even started. They are all issued
-      // together now; the consuming loops are unchanged.
-      const needNames = members.filter((m) => !m.display_name && !m.nickname).map((m) => m.user_id);
+      // Read authoritative profile status for every member, including members
+      // whose membership already supplies a name. Name spelling never means deleted.
+      // Profile and commission chunks remain independent concurrent reads.
+      const needNames = members.map((m) => m.user_id);
       const profileMap: Record<string, string> = {};
+      const profileSearchMap: Record<string, string> = {};
+      const deletedRecipientIds = new Set<string>();
       const CHUNK_SIZE = 200;
       const nameChunks: string[][] = [];
       for (let i = 0; i < needNames.length; i += CHUNK_SIZE) {
@@ -1079,24 +1076,12 @@ function CashierContent() {
             () =>
               supabase
                 .from('profiles')
-                .select(`id, ${PLAYER_NAME_COLUMNS}`)
+                .select(`id, status, player_number, ${PLAYER_NAME_COLUMNS}`)
                 .in('id', chunk)
                 .then((r) => r),
             { maxRetries: 2, isMountedRef: isMounted }
           )
         )
-      ).then(
-        (r) => r,
-        (error) => {
-          reportError(error, 'CashierPage.loadRecipients.names');
-          return [] as Array<{
-            data: Array<{
-              id: string;
-              display_name: string | null;
-              username: string | null;
-            }> | null;
-          }>;
-        }
       );
 
       const agentsPromise =
@@ -1122,10 +1107,15 @@ function CashierContent() {
       const [nameResults, agentResult] = await Promise.all([namesPromise, agentsPromise]);
       if (!isMounted.current || stale()) return;
 
-      for (const { data: profiles } of nameResults) {
+      for (const { data: profiles, error: profileError } of nameResults) {
+        if (profileError) throw profileError;
         if (profiles) {
           for (const p of profiles) {
             profileMap[p.id] = playerDisplayName(p);
+            profileSearchMap[p.id] = [profileMap[p.id], p.username, p.alias, p.player_number]
+              .filter((value) => value !== null && value !== undefined)
+              .join(' ');
+            if (p.status === 'deleted') deletedRecipientIds.add(p.id);
           }
         }
       }
@@ -1143,9 +1133,20 @@ function CashierContent() {
       }
 
       const list: Recipient[] = members
-        .filter((m) => m.user_id)
+        .filter((m) => m.user_id && !deletedRecipientIds.has(m.user_id))
         .map((m) => ({
           id: m.user_id,
+          searchText: [
+            m.display_name,
+            m.nickname,
+            profileSearchMap[m.user_id],
+            m.user_id,
+            m.role,
+            enumToTitleCase(m.role),
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase(),
           username: m.display_name || m.nickname || profileMap[m.user_id] || 'Player',
           role: m.role,
           balance: m.chip_balance || 0,
@@ -1160,19 +1161,25 @@ function CashierContent() {
             member: 2,
             player: 2,
           };
-          return (order[a.role] || 3) - (order[b.role] || 3);
+          return (order[a.role] ?? 3) - (order[b.role] ?? 3);
         });
 
       if (isMounted.current) {
         setRecipients(list);
+        setSelectedRecipient((current) => (list.some((r) => r.id === current) ? current : ''));
         // Update cache
         recipientsCacheRef.current = { data: list, ts: Date.now(), clubId };
       }
     } catch (err: unknown) {
+      if (!isMounted.current || stale()) return;
+      // A failed status read cannot leave a previously verified recipient payable.
+      recipientsCacheRef.current = null;
+      setRecipients([]);
+      setSelectedRecipient('');
       reportError(err, 'CashierPage.Failed_to_load_recipients');
       toast.error(err instanceof Error ? err.message : 'Failed to load eligible recipients');
     }
-    if (isMounted.current) setLoadingRecipients(false);
+    if (isMounted.current && !stale()) setLoadingRecipients(false);
   };
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -2501,7 +2508,7 @@ function CashierContent() {
                   <input
                     id="cashier-send-search"
                     type="text"
-                    placeholder="Search Member Or Role..."
+                    placeholder="Search Name, Number, Handle, Or Role..."
                     className={styles.input}
                     style={{ marginBottom: '8px' }}
                     value={recipientSearch}
@@ -2696,7 +2703,7 @@ function CashierContent() {
                   <input
                     id="cashier-distribute-search"
                     type="text"
-                    placeholder="Search Member, Role Or (You)..."
+                    placeholder="Search Name, Number, Handle, Role, Or You..."
                     className={styles.input}
                     style={{ marginBottom: '8px' }}
                     value={recipientSearch}

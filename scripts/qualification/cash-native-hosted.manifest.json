@@ -56,16 +56,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 199223,
-      "sha256": "cf109e72a2d7a1433f7d88b7d9f82e7f5b0231ac87f2341c5c1f7175b35c7f1f"
+      "bytes": 199431,
+      "sha256": "c7d2af346934ce21ead08551f46e2372b88bc47587cc3ac54eb0bf868ff74645"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 33688,
-      "sha256": "0b83cbe612308769e27c5e770aae52b12f01c781d8b49bf56bc50b1ee7bfcf55"
+      "bytes": 33920,
+      "sha256": "9eef710ba89f994e5299852d62375543242c60a792dcb9ffb4601cc523d0e73c"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -1906,5 +1906,32 @@
       "bytes": 198959,
       "sha256": "952bef2eb8781237ab0d0a9a0ac115bc3803b9f54dc48b5db697fadfe08680e5"
     }
+  },
+  "playerCommandWalletQualification20261010": {
+    "reason": "Reviewed additive private agent wallet PG17 qualification step and fixture routing in the existing required accounting lane. Cash financial sources, input set, assertions and historical qualification status remain unchanged. Current source fingerprints supply no additional financial or production proof.",
+    "changes": [
+      {
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 199223,
+          "sha256": "cf109e72a2d7a1433f7d88b7d9f82e7f5b0231ac87f2341c5c1f7175b35c7f1f"
+        },
+        "current": {
+          "bytes": 199431,
+          "sha256": "c7d2af346934ce21ead08551f46e2372b88bc47587cc3ac54eb0bf868ff74645"
+        }
+      },
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 33688,
+          "sha256": "0b83cbe612308769e27c5e770aae52b12f01c781d8b49bf56bc50b1ee7bfcf55"
+        },
+        "current": {
+          "bytes": 33920,
+          "sha256": "9eef710ba89f994e5299852d62375543242c60a792dcb9ffb4601cc523d0e73c"
+        }
+      }
+    ]
   }
 }

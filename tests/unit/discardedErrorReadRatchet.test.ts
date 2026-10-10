@@ -212,7 +212,7 @@ const BASELINE = new Map<string, number>([
   ['src/pages/PromoVaultPage.tsx', 1],
   ['src/pages/ProfilePage.tsx', 0],
   ['src/pages/PlayerStatsPage.tsx', 0],
-  ['src/pages/MemberManagementPage.tsx', 1],
+  ['src/pages/MemberManagementPage.tsx', 0],
   ['src/pages/MarketplacePage.tsx', 0],
   ['src/pages/InvitePage.tsx', 1],
   ['src/pages/CreateUnionPage.tsx', 1],

@@ -188,7 +188,7 @@
     "tests/components/cashier-cashout-generations.test.tsx": "18f5fadfadc7cba15d554d269e03b56bf7f99e01bbbf855d3dd2702bd7a21a39",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "51094ea1ec27a4e1e4c43f1e6fc919c84f41fd1f3a29326bb3508bd708566eb9",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "0de76a50b30c1dd3b59a594fea6f2c5b2ebf4f7101446d4b48b629f1304584cb",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "2eba1e52a5f10fc57913bba3c226ed57a3aa49074ff60cea395e2fa6bbbcd0dc",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
@@ -3950,5 +3950,14 @@
         "current": "d0b2de1f1bf01c1c8cc00e7b071ae6e3fc4acbe29497e01ee8346fb002331f2e"
       }
     ]
+  },
+  "player_command_read_ratchet_20261010": {
+    "changed_repository_binding": {
+      "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+      "previous_sha256": "0de76a50b30c1dd3b59a594fea6f2c5b2ebf4f7101446d4b48b629f1304584cb",
+      "sha256": "2eba1e52a5f10fc57913bba3c226ed57a3aa49074ff60cea395e2fa6bbbcd0dc"
+    },
+    "reason": "Reviewed one-line tightening: MemberManagementPage binds its viewer-role read failure, so its discarded-error allowance decreases from one to zero. All financial fixtures, assertions, historic hashes and qualification status remain unchanged.",
+    "verification": "Focused ratchet passed; this refresh records current source identity, not new native or production qualification."
   }
 }

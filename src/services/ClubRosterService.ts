@@ -25,6 +25,24 @@
 
 import { supabase } from '../lib/supabase';
 import { normaliseRole, type ClubRole } from '../types/clubRoles';
+import { runWithRequestDeadline } from '../utils/requestDeadline';
+import { runRosterReadWithRetry } from '../utils/rosterReadReliability';
+
+/** Each subpage read owns one deadline, including auth and response decoding. */
+async function readMemberRpc(
+  name: string,
+  parameters: Record<string, unknown>,
+  signal?: AbortSignal
+): Promise<unknown> {
+  return runRosterReadWithRetry(
+    async (attemptSignal) => {
+      const { data, error } = await supabase.rpc(name, parameters).abortSignal(attemptSignal);
+      if (error) throw error;
+      return data;
+    },
+    { attempts: 1, timeoutMs: 40_000, signal }
+  );
+}
 
 /** PostgREST hands back `numeric` as a string. Make it a number, exactly once. */
 function num(value: unknown): number {
@@ -363,25 +381,30 @@ export const ClubRosterService = {
    * service has no opinion about routing.
    */
   async getRoster(clubId: string): Promise<RosterMember[]> {
-    const { data, error } = await supabase.rpc('ca_club_members_overview', {
-      p_club_id: clubId,
-    });
-    if (error) throw error;
-    return (data ?? []).map((row: Record<string, unknown>) => mapRosterRow(row));
+    const data = await readMemberRpc('ca_club_members_overview', { p_club_id: clubId });
+    if (!Array.isArray(data)) throw new Error('The Roster Response Was Incomplete');
+    return data.map((row: Record<string, unknown>) => mapRosterRow(row));
   },
 
   async getMemberDetail(
     clubId: string,
     userId: string,
-    range: MemberRange = RANGE_OVERALL
+    range: MemberRange = RANGE_OVERALL,
+    signal?: AbortSignal
   ): Promise<MemberDetail> {
-    const { data, error } = await supabase.rpc('ca_club_member_detail', {
-      p_club_id: clubId,
-      p_user_id: userId,
-      p_from: range.from,
-      p_to: range.to,
-    });
-    if (error) throw error;
+    const data = await readMemberRpc(
+      'ca_club_member_detail',
+      {
+        p_club_id: clubId,
+        p_user_id: userId,
+        p_from: range.from,
+        p_to: range.to,
+      },
+      signal
+    );
+    if (!data || typeof data !== 'object' || !('identity' in data)) {
+      throw new Error('The Member Response Was Incomplete');
+    }
     const d = (data ?? {}) as Record<string, any>;
     // The RPC already guarantees numbers rather than strings and zeros rather
     // than nulls, but a missing member returns an object with null identity, so
@@ -455,19 +478,31 @@ export const ClubRosterService = {
     clubId: string,
     userId: string,
     variant: string | null = null,
-    range: MemberRange = RANGE_OVERALL
+    range: MemberRange = RANGE_OVERALL,
+    signal?: AbortSignal
   ): Promise<MemberStatistics> {
-    const { data, error } = await supabase.rpc('ca_club_member_statistics', {
-      p_club_id: clubId,
-      p_user_id: userId,
-      p_variant: variant,
-      p_from: range.from,
-      p_to: range.to,
-    });
-    if (error) throw error;
+    const data = await readMemberRpc(
+      'ca_club_member_statistics',
+      {
+        p_club_id: clubId,
+        p_user_id: userId,
+        p_variant: variant,
+        p_from: range.from,
+        p_to: range.to,
+      },
+      signal
+    );
+    if (
+      !data ||
+      typeof data !== 'object' ||
+      !('authorized' in data) ||
+      typeof data.authorized !== 'boolean'
+    ) {
+      throw new Error('The Statistics Response Was Incomplete');
+    }
     const d = (data ?? {}) as Record<string, any>;
     return {
-      authorized: d.authorized !== false,
+      authorized: d.authorized === true,
       reason: d.reason === 'not_member' || d.reason === 'restricted' ? d.reason : null,
       variant: d.variant ?? 'all',
       variants: Array.isArray(d.variants) ? d.variants.filter(Boolean) : [],
@@ -490,13 +525,21 @@ export const ClubRosterService = {
     };
   },
 
-  async getDownline(clubId: string, userId: string): Promise<DownlineMember[]> {
-    const { data, error } = await supabase.rpc('ca_club_member_downline', {
-      p_club_id: clubId,
-      p_user_id: userId,
-    });
-    if (error) throw error;
-    return (data ?? []).map((row: Record<string, unknown>) => ({
+  async getDownline(
+    clubId: string,
+    userId: string,
+    signal?: AbortSignal
+  ): Promise<DownlineMember[]> {
+    const data = await readMemberRpc(
+      'ca_club_member_downline',
+      {
+        p_club_id: clubId,
+        p_user_id: userId,
+      },
+      signal
+    );
+    if (!Array.isArray(data)) throw new Error('The Downline Response Was Incomplete');
+    return data.map((row: Record<string, unknown>) => ({
       user_id: String(row.user_id ?? ''),
       player_number: (row.player_number as string) ?? null,
       alias: (row.alias as string) || 'Unknown',
@@ -510,21 +553,55 @@ export const ClubRosterService = {
     }));
   },
 
+  async getGrantableRoles(
+    clubId: string,
+    userId: string,
+    signal?: AbortSignal
+  ): Promise<ClubRole[]> {
+    const data = await readMemberRpc(
+      'ca_club_grantable_roles',
+      {
+        p_club_id: clubId,
+        p_target_user_id: userId,
+      },
+      signal
+    );
+    if (!data || typeof data !== 'object' || !('roles' in data) || !Array.isArray(data.roles)) {
+      throw new Error('The Role Options Response Was Incomplete');
+    }
+    return data.roles.map(normaliseRole);
+  },
+
   async exportRoster(
     clubId: string,
     query: Pick<RosterQuery, 'search' | 'filter' | 'sort'>,
     userIds: string[] | null = null
   ): Promise<{ rows: Record<string, unknown>[]; row_count: number; audit_id: string }> {
-    const { data, error } = await supabase.rpc('ca_club_members_export', {
-      p_club_id: clubId,
-      p_search: normalizeRosterSearch(query.search),
-      p_filter: query.filter ?? 'all',
-      p_sort: query.sort ?? 'hierarchy',
-      p_user_ids: userIds,
-    });
-    if (error) throw error;
+    const data = await runWithRequestDeadline(
+      async (signal) => {
+        const { data, error } = await supabase
+          .rpc('ca_club_members_export', {
+            p_club_id: clubId,
+            p_search: normalizeRosterSearch(query.search),
+            p_filter: query.filter ?? 'all',
+            p_sort: query.sort ?? 'hierarchy',
+            p_user_ids: userIds,
+          })
+          .abortSignal(signal);
+        if (error) throw error;
+        return data;
+      },
+      { timeoutMs: 40_000 }
+    );
     const d = (data ?? {}) as Record<string, any>;
     if (d.success !== true) throw new Error(d.error || 'Roster export failed');
+    if (
+      !Array.isArray(d.rows) ||
+      !d.audit_id ||
+      !Number.isFinite(Number(d.row_count)) ||
+      Number(d.row_count) !== d.rows.length
+    )
+      throw new Error('The Roster Export Response Was Incomplete');
     return {
       rows: Array.isArray(d.rows) ? d.rows : [],
       row_count: num(d.row_count),
@@ -539,14 +616,22 @@ export const ClubRosterService = {
     remark: string,
     requestId: string
   ): Promise<{ nickname: string | null; remark: string | null; replayed: boolean }> {
-    const { data, error } = await supabase.rpc('ca_club_member_notes_update', {
-      p_club_id: clubId,
-      p_target_user_id: userId,
-      p_nickname: nickname,
-      p_remark: remark,
-      p_request_id: requestId,
-    });
-    if (error) throw error;
+    const data = await runWithRequestDeadline(
+      async (signal) => {
+        const { data, error } = await supabase
+          .rpc('ca_club_member_notes_update', {
+            p_club_id: clubId,
+            p_target_user_id: userId,
+            p_nickname: nickname,
+            p_remark: remark,
+            p_request_id: requestId,
+          })
+          .abortSignal(signal);
+        if (error) throw error;
+        return data;
+      },
+      { timeoutMs: 40_000 }
+    );
     const d = (data ?? {}) as Record<string, any>;
     if (d.success !== true) throw new Error(d.error || 'Member note update failed');
     return {

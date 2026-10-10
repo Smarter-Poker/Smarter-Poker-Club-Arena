@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 198604,
-      "sha256": "c4b0d65e0ef9d442c504dd6c5aafa0522607bff1ffd2953d3a8c5822c7f88950"
+      "bytes": 198796,
+      "sha256": "8fb03799e942bf3d132b672cfbe6b7003048ab7d2f43d3fab279478ac389c70c"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1871,6 +1871,13 @@
           "sha256": "5f3225db066ecc1c3023aaf61be0173967383268b25237b10f2914976f5dbe00"
         }
       }
+    }
+  },
+  "playerCommandRegression20261010": {
+    "reason": "Add exact retained-fact totals and concurrent note receipt qualification to the existing Accounting4 lane. All previous qualification commands and assertions remain unchanged. Fingerprint update is source binding, not proof of production installation or financial qualification.",
+    "previousWorkflowPin": {
+      "bytes": 198604,
+      "sha256": "c4b0d65e0ef9d442c504dd6c5aafa0522607bff1ffd2953d3a8c5822c7f88950"
     }
   }
 }

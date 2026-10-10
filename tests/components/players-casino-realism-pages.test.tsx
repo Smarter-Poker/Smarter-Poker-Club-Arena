@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -14,6 +14,8 @@ const state = vi.hoisted(() => ({
   getMemberDetail: vi.fn(),
   getDownline: vi.fn(),
   getMemberStatistics: vi.fn(),
+  getGrantableRoles: vi.fn(),
+  updateMemberNotes: vi.fn(),
 }));
 
 vi.mock('react-router-dom', () => ({
@@ -45,6 +47,7 @@ vi.mock('../../src/lib/supabase', () => ({
       Object.assign(chain, {
         select: self,
         eq: self,
+        abortSignal: self,
         maybeSingle: async () => ({ data: { role: 'owner' }, error: null }),
       });
       return chain;
@@ -64,6 +67,8 @@ vi.mock('../../src/services/ClubRosterService', async () => {
       getMemberDetail: state.getMemberDetail,
       getDownline: state.getDownline,
       getMemberStatistics: state.getMemberStatistics,
+      getGrantableRoles: state.getGrantableRoles,
+      updateMemberNotes: state.updateMemberNotes,
     },
   };
 });
@@ -149,6 +154,9 @@ beforeEach(() => {
   state.getMemberDetail.mockReset();
   state.getDownline.mockReset();
   state.getMemberStatistics.mockReset();
+  state.getGrantableRoles.mockReset();
+  state.updateMemberNotes.mockReset();
+  state.getGrantableRoles.mockResolvedValue([]);
   state.getMemberDetail.mockResolvedValue(memberDetail);
   state.getDownline.mockResolvedValue([
     {
@@ -170,6 +178,94 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('Players detail surfaces', () => {
+  it('ignores an older member response after a newer refresh has completed', async () => {
+    let finishOld!: (value: typeof memberDetail) => void;
+    state.getMemberDetail.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishOld = resolve;
+        })
+    );
+    const view = render(<MemberManagementPage />);
+    await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(1));
+    const oldSignal = state.getMemberDetail.mock.calls[0][3] as AbortSignal;
+    state.params = { ...state.params, userId: '33333333-3333-4333-8333-333333333333' };
+    state.getMemberDetail.mockResolvedValue({
+      ...memberDetail,
+      identity: { ...memberDetail.identity, alias: 'New Player' },
+    });
+    view.rerender(<MemberManagementPage />);
+    expect(await screen.findByRole('heading', { name: 'New Player' })).toBeVisible();
+    expect(oldSignal.aborted).toBe(true);
+    await act(async () => finishOld(memberDetail));
+    expect(screen.queryByRole('heading', { name: 'River Shark' })).not.toBeInTheDocument();
+  });
+
+  it('reports a role-options outage distinctly from missing permission', async () => {
+    state.getMemberDetail.mockResolvedValue({
+      ...memberDetail,
+      capabilities: { ...memberDetail.capabilities, can_manage_role: true },
+    });
+    state.getGrantableRoles.mockRejectedValueOnce(new Error('transport failed'));
+    render(<MemberManagementPage />);
+    expect(
+      await screen.findByText(
+        'Role Options Could Not Be Loaded. Refresh This Player Record To Retry.'
+      )
+    ).toBeVisible();
+    expect(
+      screen.queryByText('Your Role Does Not Allow Changing Anyone Else’s.')
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps an unknown note operation identity and payload for explicit retry', async () => {
+    state.getMemberDetail.mockResolvedValue({
+      ...memberDetail,
+      capabilities: { ...memberDetail.capabilities, can_edit_notes: true },
+    });
+    state.updateMemberNotes.mockRejectedValueOnce(new Error('Unknown Acknowledgement'));
+    state.updateMemberNotes.mockResolvedValue({
+      nickname: 'Saved Draft',
+      remark: memberDetail.identity.remark,
+      replayed: true,
+    });
+    render(<MemberManagementPage />);
+    const name = await screen.findByRole('textbox', { name: 'Nickname' });
+    fireEvent.change(name, { target: { value: 'Saved Draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Notes' }));
+    await waitFor(() => expect(state.toast.error).toHaveBeenCalled());
+    expect(state.updateMemberNotes).toHaveBeenCalledTimes(1);
+    const first = state.updateMemberNotes.mock.calls[0];
+    fireEvent.change(name, { target: { value: 'Newer Draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Notes' }));
+    await waitFor(() => expect(state.updateMemberNotes).toHaveBeenCalledTimes(2));
+    expect(state.updateMemberNotes.mock.calls[1]).toEqual(first);
+    expect(name).toHaveValue('Newer Draft');
+  });
+
+  it('does not label old ledger figures with a failed new range', async () => {
+    render(<MemberManagementPage />);
+    await screen.findByRole('heading', { name: 'River Shark' });
+    state.getMemberDetail.mockRejectedValueOnce(new Error('range unavailable'));
+    fireEvent.click(screen.getByRole('button', { name: '7 Days' }));
+    expect(await screen.findByText('The Member Ledger Did Not Respond')).toBeVisible();
+    expect(screen.queryByText('Cash Hands')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Member' }));
+    expect(await screen.findByRole('heading', { name: 'River Shark' })).toBeVisible();
+  });
+
+  it('clears the prior player figures and variants on a statistics route change', async () => {
+    const view = render(<PlayerStatisticsPage />);
+    expect(await screen.findByRole('heading', { name: 'Playing Style' })).toBeVisible();
+    state.params = { ...state.params, userId: '33333333-3333-4333-8333-333333333333' };
+    state.getMemberStatistics.mockImplementation(() => new Promise(() => {}));
+    view.rerender(<PlayerStatisticsPage />);
+    await waitFor(() =>
+      expect(screen.queryByRole('heading', { name: 'Playing Style' })).not.toBeInTheDocument()
+    );
+    expect(screen.queryByRole('option', { name: 'No Limit Holdem' })).not.toBeInTheDocument();
+  });
+
   it('renders the audited credential and wires every player destination', async () => {
     render(<MemberManagementPage />);
 

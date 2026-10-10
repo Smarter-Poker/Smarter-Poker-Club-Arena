@@ -160,8 +160,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 103913,
-      "sha256": "a708facf9f8769820d54df76d06b4ae0eb90a80d76bd403a8ae0dc7028fac7ae"
+      "bytes": 103912,
+      "sha256": "3a442cdfb793eb70eb158ade1b9c2ed57e4428d3fcf8db248bae982899e6863a"
     }
   },
   "nativePgCron": {
@@ -1811,5 +1811,20 @@
       "sha256": "136a28a553939892e2a53f8a0e2b2f99316d57a2f4ccb759c1af229d607611dc"
     },
     "incomingMainRevision": "e057b9d71b"
+  },
+  "stableAdminFormattedIntegration20261010": {
+    "reason": "Normal pre-commit formatting changed only the reviewed additive fixture enforcement test whitespace. Refresh active source binding after actual loader refusal; preserve all historical pins, financial authorities and qualification statuses. This is source binding only.",
+    "reviewedPins": {
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "previousPin": {
+          "bytes": 103913,
+          "sha256": "a708facf9f8769820d54df76d06b4ae0eb90a80d76bd403a8ae0dc7028fac7ae"
+        },
+        "currentPin": {
+          "bytes": 103912,
+          "sha256": "3a442cdfb793eb70eb158ade1b9c2ed57e4428d3fcf8db248bae982899e6863a"
+        }
+      }
+    }
   }
 }

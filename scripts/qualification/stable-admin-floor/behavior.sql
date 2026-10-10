@@ -1,5 +1,6 @@
 SET request.jwt.claim.role='service_role';
 SET request.jwt.claims='{"role":"service_role"}';
+SELECT floor_assert((SELECT count(*)=1 FROM ca_declared_money_triggers WHERE table_name='table_seats' AND trigger_name='ca_operator_floor_entry_guard'),'floor admission trigger is declared in its installing transaction');
 -- Named role enforcement, identity replay, parked admission, and hold ownership.
 DO $$ BEGIN
  BEGIN PERFORM fn_ca_engine_operator_command('10000000-0000-4000-8000-000000000002','70000000-0000-4000-8000-000000000009','floor','park','Read only cannot park'); RAISE EXCEPTION 'missing permission refusal'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;

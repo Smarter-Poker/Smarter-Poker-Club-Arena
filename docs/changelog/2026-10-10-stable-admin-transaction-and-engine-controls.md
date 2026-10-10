@@ -37,3 +37,5 @@ read or explicitly model no hold in isolated startup tests. Existing timing,
 launch-owner RPC and failure assertions remain; 115 affected tests pass. The
 rebuy native runner honors caller SSD TMPDIR with exact owned-prefix cleanup
 and refuses an overlong Unix socket path. No native failure is skipped.
+
+Normal pre-push refused two real floor migration omissions: resume deleted the singleton hold without a WHERE clause, and its new seat trigger lacked the required declaration. The same uninstalled migration now targets id=true and declares its trigger atomically, with prerequisite/postflight checks and a native declaration assertion. The qualification fixture retains the canonical registry shape and role boundary. The actual cash qualification loader also refused the formatted additive enforcement test pin; only its active bytes/hash are refreshed, preserving historical records. Requalification pending. Full engine suite passed 21,952 tests with 168 existing skips; the ordinary affected engine hook passed 3,842 with 166 existing skips, but the push was correctly refused by the guards above.

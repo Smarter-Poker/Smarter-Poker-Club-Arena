@@ -7,7 +7,7 @@ BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '30s';
 DO $preflight$ BEGIN
- IF to_regprocedure('public.fn_ca_operator_permissions(uuid)') IS NULL OR to_regprocedure('public.fn_log_admin_action(uuid,text,text,text,jsonb,jsonb,jsonb,text,text,text)') IS NULL OR to_regclass('public.table_seats') IS NULL OR to_regclass('public.hand_state_snapshots') IS NULL THEN RAISE EXCEPTION 'engine_operator_prerequisite_missing'; END IF;
+ IF to_regprocedure('public.fn_ca_operator_permissions(uuid)') IS NULL OR to_regprocedure('public.fn_log_admin_action(uuid,text,text,text,jsonb,jsonb,jsonb,text,text,text)') IS NULL OR to_regclass('public.table_seats') IS NULL OR to_regclass('public.hand_state_snapshots') IS NULL OR to_regclass('public.ca_declared_money_triggers') IS NULL THEN RAISE EXCEPTION 'engine_operator_prerequisite_missing'; END IF;
  IF to_regclass('public.ca_engine_operator_commands') IS NOT NULL OR to_regclass('public.ca_operator_floor_hold') IS NOT NULL OR to_regclass('public.ca_operator_table_closes') IS NOT NULL THEN RAISE EXCEPTION 'engine_operator_contract_already_present_do_not_replay'; END IF;
 END $preflight$;
 CREATE TABLE public.ca_engine_operator_commands (
@@ -70,7 +70,7 @@ BEGIN
   INSERT INTO public.ca_engine_operator_commands(id,actor_id,domain,action,reason,status,announced_at,result,created_at,updated_at) VALUES(p_operation_id,p_actor_id,p_domain,p_action,p_reason,'queued',v_announcement,NULL,clock_timestamp(),clock_timestamp()) RETURNING * INTO v;
  ELSIF p_domain='floor' AND p_action IN ('pause','park','resume','close_cash') THEN
   INSERT INTO public.ca_engine_operator_commands(id,actor_id,domain,action,reason,status) VALUES(p_operation_id,p_actor_id,p_domain,p_action,p_reason,'accepted') RETURNING * INTO v;
-  IF p_action='resume' THEN DELETE FROM public.ca_operator_floor_hold;
+  IF p_action='resume' THEN DELETE FROM public.ca_operator_floor_hold WHERE id=true;
   ELSIF p_action IN ('pause','park') THEN
    INSERT INTO public.ca_operator_floor_hold VALUES(true,p_operation_id,p_action,p_reason) ON CONFLICT(id) DO UPDATE SET operation_id=excluded.operation_id,mode=excluded.mode,reason=excluded.reason;
   ELSE
@@ -154,10 +154,12 @@ END $fn$;
 REVOKE ALL ON FUNCTION public.fn_ca_operator_floor_entry_guard() FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_ca_operator_floor_entry_guard() TO service_role;
 CREATE TRIGGER ca_operator_floor_entry_guard BEFORE INSERT OR UPDATE OF left_at,occupancy_id ON public.table_seats FOR EACH ROW EXECUTE FUNCTION public.fn_ca_operator_floor_entry_guard();
+INSERT INTO public.ca_declared_money_triggers(table_name,trigger_name,note) VALUES ('table_seats','ca_operator_floor_entry_guard','Serialize new seat occupancies with the operator park and cash-close transaction; retain existing hands and original cashout owners.');
 DO $postflight$ DECLARE v_name text; BEGIN
  FOREACH v_name IN ARRAY ARRAY['ca_engine_operator_commands','ca_operator_floor_hold','ca_operator_table_closes'] LOOP
   IF NOT EXISTS(SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname=v_name AND c.relrowsecurity) OR has_table_privilege('authenticated','public.'||v_name,'INSERT') OR has_table_privilege('anon','public.'||v_name,'UPDATE') THEN RAISE EXCEPTION 'engine_operator_storage_security_not_installed:%',v_name; END IF;
  END LOOP;
+ IF NOT EXISTS(SELECT 1 FROM public.ca_declared_money_triggers WHERE table_name='table_seats' AND trigger_name='ca_operator_floor_entry_guard') THEN RAISE EXCEPTION 'engine_operator_floor_trigger_not_declared'; END IF;
  IF NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgname='ca_operator_floor_entry_guard' AND tgrelid='public.table_seats'::regclass AND tgenabled='O') OR has_function_privilege('authenticated','public.fn_ca_engine_operator_command(uuid,uuid,text,text,text)','EXECUTE') OR NOT has_function_privilege('service_role','public.fn_ca_engine_operator_command(uuid,uuid,text,text,text)','EXECUTE') THEN RAISE EXCEPTION 'engine_operator_owner_contract_not_installed'; END IF;
 END $postflight$;
 COMMIT;

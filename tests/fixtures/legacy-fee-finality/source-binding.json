@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "846747f1e40dcb9c027feb8aadedb1f1d469fcfc91315b4e9ff2e2af77af0f64",
+    "scripts/ci/classify-ci-changes.mjs": "0f705a4af412dd07399d0325240b6d6e4dce0a4f3f57797410baeb768cfc1e3e",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
@@ -734,5 +734,14 @@
         "current": "846747f1e40dcb9c027feb8aadedb1f1d469fcfc91315b4e9ff2e2af77af0f64"
       }
     ]
+  },
+  "daily_bonus_routing_20261010": {
+    "file": "scripts/ci/classify-ci-changes.mjs",
+    "previous_sha256": "9e32091e5a712856d7593b6650b54e60e9d49f52b44af7d1f87972b27ed79388",
+    "sha256": "42b01fd52d0214d5125833693591daabdcfad3d0c356a75ca1ba2303cb3031c8",
+    "reason": "Reviewed seven-line additive routing change admits daily-bonus SQL probes and DailyBonus service/hook inputs to existing accounting qualification. All previous selectors and financial assertions remain unchanged; pin refresh is not runtime qualification."
+  },
+  "dailyBonusProtectedIntegration20261010": {
+    "reason": "Preserves protected main Stable Admin additive qualification routing and all its audit entries alongside Daily Bonus routing. Refreshes current exact classifier and nested source bytes after normal merge; no historical qualification claim is changed."
   }
 }

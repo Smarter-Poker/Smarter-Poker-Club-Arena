@@ -56,16 +56,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 199212,
-      "sha256": "3bcc969104421d78aa3b6b686b1b9b1e933f9138db855a7b3867c45a124e5fe5"
+      "bytes": 199375,
+      "sha256": "ac45636410f691f8c1638985e8cb1904a650c0f6f26b706895049767e6c788f8"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 33640,
-      "sha256": "0f705a4af412dd07399d0325240b6d6e4dce0a4f3f57797410baeb768cfc1e3e"
+      "bytes": 33688,
+      "sha256": "0b83cbe612308769e27c5e770aae52b12f01c781d8b49bf56bc50b1ee7bfcf55"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -160,8 +160,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 104055,
-      "sha256": "5f3225db066ecc1c3023aaf61be0173967383268b25237b10f2914976f5dbe00"
+      "bytes": 104655,
+      "sha256": "de6f003caff7c9b5e4652b8c072fe145591cafc1b02fbc9836ad11f5fe628154"
     }
   },
   "nativePgCron": {
@@ -1873,6 +1873,16 @@
       }
     }
   },
+  "playerCommandRegression20261010": {
+    "reason": "Add exact retained-fact totals and concurrent note receipt qualification to the existing Accounting4 lane. All previous qualification commands and assertions remain unchanged. Fingerprint update is source binding, not proof of production installation or financial qualification.",
+    "previousWorkflowPin": {
+      "bytes": 198604,
+      "sha256": "c4b0d65e0ef9d442c504dd6c5aafa0522607bff1ffd2953d3a8c5822c7f88950"
+    }
+  },
+  "dailyBonusProtectedIntegration20261010": {
+    "reason": "Preserves protected main Stable Admin additive qualification routing and all its audit entries alongside Daily Bonus routing. Refreshes current exact classifier and nested source bytes after normal merge; no historical qualification claim is changed."
+  },
   "operatorPauseNativeQualification20261007": {
     "reason": "Adds only the isolated native operator-hold regression in the existing Accounting2 lane. Existing cash qualification inputs and financial assertions are unchanged; workflow fingerprint refresh is source admission, not a new native cash verdict.",
     "previousWorkflowPin": {
@@ -1988,16 +1998,6 @@
       }
     }
   },
-  "dailyBonusProtectedIntegration20261010": {
-    "reason": "Preserves protected main Stable Admin additive qualification routing and all its audit entries alongside Daily Bonus routing. Refreshes current exact classifier and nested source bytes after normal merge; no historical qualification claim is changed."
-  },
-  "playerCommandRegression20261010": {
-    "reason": "Add exact retained-fact totals and concurrent note receipt qualification to the existing Accounting4 lane. All previous qualification commands and assertions remain unchanged. Fingerprint update is source binding, not proof of production installation or financial qualification.",
-    "previousWorkflowPin": {
-      "bytes": 198604,
-      "sha256": "c4b0d65e0ef9d442c504dd6c5aafa0522607bff1ffd2953d3a8c5822c7f88950"
-    }
-  },
   "operatorPausePlayerCommandIntegration20261010": {
     "reason": "Preserve current protected Player Command Accounting4 qualification and all its annotations beside operator pause and Daily Bonus. Refresh exact combined current workflow only; historical pins, financial assertions and SOURCE_ONLY_UNRUN status remain unchanged. No runtime or FullB qualification is claimed.",
     "protectedMain": "3b004c6bb2d9210b7105694f4df496b778cac524",
@@ -2020,5 +2020,26 @@
   },
   "operatorPauseNativeSelfBuild20261010": {
     "reason": "Own the server emit prerequisite in the maintained native PostgreSQL runner, so both direct CI and generic node:test pre-push execute exact current compiled engine modules. Remove duplicate CI build only; preserve all22 native assertions, original timeout, historical pins and SOURCE_ONLY_UNRUN. Fingerprint refresh is source identity, not qualification."
+  },
+  "dailyBonusAuditRouting20261010": {
+    "reason": "Reviewed Daily Bonus audit correction: route the actual component hook to required accounting and retain three additive selector assertions. No financial SQL, historical pins, or existing assertion changes. Current byte pins are source identity, not runtime certification.",
+    "changes": [
+      {
+        "section": "files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "0f705a4af412dd07399d0325240b6d6e4dce0a4f3f57797410baeb768cfc1e3e",
+        "current": "af901a21df2a9a92a7f87d4261091260bbabb542b21def88bcdef737c2f94a05"
+      },
+      {
+        "section": "files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": "5f3225db066ecc1c3023aaf61be0173967383268b25237b10f2914976f5dbe00",
+        "current": "8181a10a7d67b8e5c7dc3bc79f0a7959ff630257622f5a9cb333e053b6beed93"
+      }
+    ]
+  },
+  "operatorPauseCashCloseIntegration20261010": {
+    "reason": "Preserve protected cash-floor close and session recovery implementation and all original operator-pause qualification. Resolve only exact current source fingerprints; retain financial assertions, historical pins and SOURCE_ONLY_UNRUN. No runtime or FullB acceptance claimed.",
+    "protectedMain": "d026c1d35a807780826d2da3793674972f37cf02"
   }
 }

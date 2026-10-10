@@ -460,6 +460,20 @@
 .fullscreenPage .readout {
   gap: 5px;
 }
+/* Next-move odds and the live loss floor share the phone with the board and
+   both decision plates. Reserve their space in each choice scene's budget. */
+.choicePage {
+  --choice-risk-reserve: 80px;
+}
+.choiceRisk {
+  text-align: center;
+  margin: 4px 0;
+}
+.fullscreenPage .choiceRisk :global(.sc-copy) {
+  margin: 2px 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
 .fullscreenPage .readoutValue {
   font-size: clamp(40px, 7vw, 88px);
 }

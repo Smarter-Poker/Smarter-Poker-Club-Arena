@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "0f705a4af412dd07399d0325240b6d6e4dce0a4f3f57797410baeb768cfc1e3e",
+    "scripts/ci/classify-ci-changes.mjs": "0b83cbe612308769e27c5e770aae52b12f01c781d8b49bf56bc50b1ee7bfcf55",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
@@ -743,5 +743,27 @@
   },
   "dailyBonusProtectedIntegration20261010": {
     "reason": "Preserves protected main Stable Admin additive qualification routing and all its audit entries alongside Daily Bonus routing. Refreshes current exact classifier and nested source bytes after normal merge; no historical qualification claim is changed."
+  },
+  "dailyBonusAuditRouting20261010": {
+    "reason": "Reviewed Daily Bonus audit correction: route the actual component hook to required accounting and retain three additive selector assertions. No financial SQL, historical pins, or existing assertion changes. Current byte pins are source identity, not runtime certification.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "0f705a4af412dd07399d0325240b6d6e4dce0a4f3f57797410baeb768cfc1e3e",
+        "current": "af901a21df2a9a92a7f87d4261091260bbabb542b21def88bcdef737c2f94a05"
+      }
+    ]
+  },
+  "stableAdminCloseSelectorRouting20261010": {
+    "reason": "Reviewed additive Stable Admin close-selector native driver/input classification and required original accounting-gate execution assertions. Refresh only these current source fingerprints; original financial SQL, captured definitions, fixture assertions, historical hashes and qualification statuses remain unchanged. Source identity refresh supplies no new financial or production qualification.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "af901a21df2a9a92a7f87d4261091260bbabb542b21def88bcdef737c2f94a05",
+        "current": "0b83cbe612308769e27c5e770aae52b12f01c781d8b49bf56bc50b1ee7bfcf55"
+      }
+    ]
   }
 }

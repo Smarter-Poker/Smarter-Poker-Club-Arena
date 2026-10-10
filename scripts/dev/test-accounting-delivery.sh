@@ -301,6 +301,7 @@ fi
 # wheel, the card game and the run. The R16 ledger audit is re-run afterwards so
 # that its wheel-v4 branch (fn_wheel_diamond_cards_pick, paid exactly once) runs
 # against the contract it was written for.
+"${diamond_psql[@]}" -f "$diamond/live-ticket-transition.sql"
 "${diamond_psql[@]}" -f "$root/supabase/migrations/20260922194123_diamond_wheel_v4_draws_a_different_prize_every_time_and_diam.sql"
 "${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
 # Match production's Crash 25x ceiling before exercising wheel admission.
@@ -310,6 +311,7 @@ run_game_probe diamond-wheel-capped-bonus-before 'NOTICE:  PASS Before repair: a
 "${diamond_psql[@]}" -f "$root/supabase/migrations/20261010064303_wheel_bonus_reserves_normalize_the_double_down_stake.sql"
 "${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
 run_game_probe diamond-wheel-capped-bonus 'NOTICE:  PASS Capped bonus: selectable funded entries, low cover and disabled games refused, reservation units cover Double Down, Crash round ceiling stays 25x'
+run_game_probe diamond-wheel-maximum-and-double-down 'NOTICE:  PASS Maximum and Double Down: all 16 real v4 combinations, four ordinary/Super games with/without addon, 2500 spin ceiling, exact 2500/5000/7500 stake, 12.50/25/50 floors, addon debited once, receipt replay, Crash stays 25x'
 run_game_probe diamond-wheel-v4-model-and-matrix 'NOTICE:  PASS Wheel v4 model and matrix: twelve ords and 0.8 exactly for every entry 25..2500 standard and VIP, a VIP table with no items and the same 5000 on ords 3/6/9, a symmetric zero-diagonal matrix whose rows and columns both sum to the base law, the mix exactly 50/30/20, every conditional expectation at most 0.862037 of the entry, the cross-tier rule value neutral on both wheels and six distinct card orders each worth 11/6'
 run_game_probe diamond-wheel-v4-draw-and-cards 'NOTICE:  PASS Wheel v4 draw and cards: 400 real spins with no repeated prize or game, the mix'
 run_game_probe diamond-spins-every-movement-has-a-ledger-row 'NOTICE:  PASS Every movement has a ledger row: exact entry journal and custody intake per spin, Promo-first then bank chip prizes journaled in chip_ledger, chip_transactions and union wallet rows, diamond prizes both sides, item grants as feature_purchases with retired custody, bonus as an award only, day equals movements, wallets equal journals, no documents'
@@ -319,3 +321,20 @@ run_game_probe diamond-spins-every-movement-has-a-ledger-row 'NOTICE:  PASS Ever
 "${diamond_psql[@]}" -f "$root/supabase/migrations/20261010063541_daily_bonus_varies_each_day_and_claims_all_rewards.sql"
 "${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
 run_game_probe daily-bonus-one-claim 'NOTICE:  PASS Daily Bonus: 400 dates, streak resets, preview repeatability, one batch, exact replay, stale day, request identity, VIP and auth permissions'
+
+# Install the backward-compatible batch contract first, matching production order.
+"${diamond_psql[@]}" -f "$root/supabase/migrations/20261010084125_wheel_batches_commit_every_paid_spin_atomically_and_retain_o.sql"
+
+# Owner's October 10 progressive loss guarantee, after all historical probes.
+"${diamond_psql[@]}" -f "$diamond/choice-v4-before-v5.sql"
+"${diamond_psql[@]}" -f "$root/supabase/migrations/20261010083333_choice_losses_keep_half_the_last_prize_and_games_show_lifeti.sql"
+"${diamond_psql[@]}" -f "$diamond/choice-v4-after-v5.sql"
+"${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
+run_game_probe diamond-choice-progressive-loss 'NOTICE:  PASS Progressive choice losses: new contract5 Mines and Crossing, first step safe, increasing half-last-prize guarantee, exact Promo settlement, duplicate move replay, historical contracts preserved, probability and ladder martingales retain initial 80 percent'
+
+# All paid spins commit atomically before their sequential presentation.
+"${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
+run_game_probe diamond-wheel-atomic-batch 'NOTICE:  PASS Atomic paid batches: 5/10/25 maximum-entry runs, sealed before payment, full cost withdrawn once, every spin fulfilled, exact immutable receipt replay'
+
+# Exact qualified postimages for installation readback, from this private cluster.
+"${diamond_psql[@]}" -At -c "SELECT jsonb_build_object('qualified_postimages',jsonb_agg(jsonb_build_object('signature',p.oid::regprocedure::text,'md5',md5(pg_get_functiondef(p.oid)),'owner',pg_get_userbyid(p.proowner),'security_definer',p.prosecdef,'config',p.proconfig,'acl',p.proacl))) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname IN ('fn_choice_start','fn_choice_state','fn_choice_act','fn_choice_prizes','fn_choice_prizes_v5','fn_choice_road_probability_v5','fn_choice_loss_floor_v5','fn_wheel_bonus_state','fn_diamond_game_lifetime','fn_wheel_spin_v2','fn_wheel_bonus_start','fn_wheel_bonus_public_award','fn_wheel_card_public','fn_wheel_diamond_cards_pick','fn_wheel_batch_immutable','fn_wheel_batch_active','fn_wheel_batch_prepare','fn_wheel_batch_begin','fn_wheel_batch_read','fn_wheel_prize_order','fn_wheel_next_unplayed');"

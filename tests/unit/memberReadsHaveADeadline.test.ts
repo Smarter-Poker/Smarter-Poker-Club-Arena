@@ -109,3 +109,37 @@ describe('audited member operations never retry an unknown acknowledgement', () 
     await expect(ClubRosterService.exportRoster('club', {})).rejects.toThrow('Incomplete');
   });
 });
+
+describe('directory response truth', () => {
+  it.each([
+    null,
+    {},
+    { items: [], has_more: false },
+    { items: [], has_more: false, filtered_total: 'unknown' },
+    { items: [], has_more: false, filtered_total: true },
+    { items: [null], has_more: false, filtered_total: 1 },
+    { items: [], has_more: true, filtered_total: 1, next_cursor: null },
+  ])('rejects incomplete directory success %j', async (data) => {
+    state.fetch.mockResolvedValue(new Response(JSON.stringify(data), { status: 200 }));
+    await expect(ClubRosterService.getRosterPage('club')).rejects.toThrow(/Incomplete/);
+    expect(state.fetch).toHaveBeenCalledTimes(1);
+  });
+  it('keeps a genuine empty directory valid', async () => {
+    state.fetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({ items: [], has_more: false, filtered_total: 0, next_cursor: null }),
+        { status: 200 }
+      )
+    );
+    await expect(ClubRosterService.getRosterPage('club')).resolves.toMatchObject({
+      items: [],
+      filtered_total: 0,
+    });
+  });
+  it('refuses incomplete summary totals but preserves explicit access denial', async () => {
+    state.fetch.mockResolvedValueOnce(new Response('{}', { status: 200 }));
+    await expect(ClubRosterService.getSummary('club')).rejects.toThrow(/Incomplete/);
+    state.fetch.mockResolvedValueOnce(new Response('null', { status: 200 }));
+    await expect(ClubRosterService.getSummary('club')).resolves.toBeNull();
+  });
+});

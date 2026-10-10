@@ -411,7 +411,7 @@
 }
 @media (max-width: 760px) {
   .scene {
-    height: clamp(280px, 48dvh, 500px);
+    height: clamp(240px, calc(48dvh - var(--choice-risk-reserve, 0px)), 500px);
   }
   .readoutValue {
     font-size: 19px;

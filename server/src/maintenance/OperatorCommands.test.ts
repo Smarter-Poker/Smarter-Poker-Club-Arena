@@ -46,3 +46,22 @@ it('the owning SQL predicate can explicitly deny the actor', async () => {
   } as any);
   await expect(operatorCommand('actor', {})).rejects.toThrow('engine_operator_forbidden');
 });
+
+it('a non-executable cash target is an explicit refusal rather than unknown acceptance', async () => {
+  vi.spyOn(supabase, 'rpc').mockResolvedValue({
+    data: null,
+    error: { code: '22023', message: 'cash_floor_close_target_not_executable' },
+  } as any);
+  await expect(operatorCommand('actor', {})).rejects.toThrow(
+    'engine_operator_refused:cash_floor_close_target_not_executable'
+  );
+});
+it('an unrelated invalid-parameter error remains technical unknown', async () => {
+  vi.spyOn(supabase, 'rpc').mockResolvedValue({
+    data: null,
+    error: { code: '22023', message: 'unexpected database parameter failure' },
+  } as any);
+  await expect(operatorCommand('actor', {})).rejects.toThrow(
+    'engine_operator_command_outcome_unknown'
+  );
+});

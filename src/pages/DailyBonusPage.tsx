@@ -7,12 +7,14 @@
  * prints on that header's own glass (#ClubArenaConsole: one master per
  * surface, never a frame inside a frame), so the page is one picture.
  */
+import { useUserStore } from '../stores/useUserStore';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import DailyBonusSheet from '../components/daily-bonus/DailyBonusSheet';
 import './DailyBonusPage.css';
 
 export default function DailyBonusPage() {
+  const accountId = useUserStore((state) => state.user?.id ?? null);
   return (
     <StandardContentLayout className="daily-bonus-page">
       <RewardsSurfaceHeader
@@ -23,7 +25,7 @@ export default function DailyBonusPage() {
         status="DAILY SHEET // LIVE"
         crest="diamond"
       >
-        <DailyBonusSheet mode="inline" chassis="glass" />
+        <DailyBonusSheet key={accountId ?? 'signed-out'} mode="inline" chassis="glass" />
       </RewardsSurfaceHeader>
     </StandardContentLayout>
   );

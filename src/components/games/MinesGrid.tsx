@@ -4,6 +4,7 @@ import { gameChips } from '../../utils/bonusGameBudget';
 import { soundService } from '../../services/SoundService';
 import { triggerHaptic } from '../../services/HapticService';
 import { TapHaptic } from '../haptics/TapHaptic';
+import { mediaUrl } from '../../utils/mediaBase';
 import styles from './MinesGrid.module.css';
 /**
  * The gem and the mine a tile turns over. The geometry is the original art; the
@@ -13,47 +14,36 @@ import styles from './MinesGrid.module.css';
  */
 export function GemArt({ mine = false }: { mine?: boolean }) {
   const id = useId().replace(/:/g, '');
+  if (!mine)
+    return (
+      <img
+        src={mediaUrl('images/daily-bonus/blue-diamond-v1.webp')}
+        alt=""
+        className={styles.gem}
+        data-daily-diamond="true"
+        draggable={false}
+      />
+    );
   return (
     <svg viewBox="0 0 100 100" aria-hidden="true" className={styles.gem}>
       <defs>
-        <linearGradient id={`${id}a`} x1="0" y1="0" x2=".8" y2="1">
-          <stop stopColor="#f4f7fb" />
-          <stop offset=".42" stopColor="#45adff" />
-          <stop offset="1" stopColor="#1877f2" />
-        </linearGradient>
         <radialGradient id={`${id}b`} cx=".35" cy=".25">
           <stop stopColor="#b8c3cd" />
           <stop offset=".38" stopColor="#3a4756" />
           <stop offset="1" stopColor="#0b1017" />
         </radialGradient>
       </defs>
-      {mine ? (
-        <g>
-          <g stroke="#7f8c9b" strokeWidth="5" strokeLinecap="round">
-            {[0, 45, 90, 135].map((a) => (
-              <path key={a} d="M50 13V87" transform={`rotate(${a} 50 50)`} />
-            ))}
-          </g>
-          <circle cx="50" cy="50" r="29" fill={`url(#${id}b)`} stroke="#9aa5b3" />
-          <path d="M31 38Q37 25 51 26" fill="none" stroke="#e4e7ec" strokeWidth="3" opacity=".7" />
-          <circle cx="54" cy="40" r="8" fill="#ff5b6e" />
-          <circle cx="52" cy="38" r="3" fill="#ffd2d8" />
+      <g>
+        <g stroke="#7f8c9b" strokeWidth="5" strokeLinecap="round">
+          {[0, 45, 90, 135].map((a) => (
+            <path key={a} d="M50 13V87" transform={`rotate(${a} 50 50)`} />
+          ))}
         </g>
-      ) : (
-        <g stroke="#e4e7ec" strokeWidth=".8" strokeLinejoin="round">
-          <path d="M11 35L28 16H72L89 35L50 87Z" fill={`url(#${id}a)`} />
-          <path d="M11 35H89L50 87Z" fill="#1877f2" />
-          <path d="M11 35L34 37L50 87Z" fill="#45adff" />
-          <path d="M34 37H65L50 87Z" fill="#bfe6ff" />
-          <path d="M65 37L89 35L50 87Z" fill="#1466d6" />
-          <path d="M28 16L34 37L11 35Z" fill="#8ecfff" />
-          <path d="M28 16L50 16L34 37Z" fill="#f4f7fb" />
-          <path d="M50 16L65 37H34Z" fill="#a9dcff" />
-          <path d="M50 16H72L65 37Z" fill="#f4f7fb" />
-          <path d="M72 16L89 35L65 37Z" fill="#6bbcff" />
-          <path d="M20 22L22 14L24 22L32 24L24 26L22 34L20 26L12 24Z" fill="white" stroke="none" />
-        </g>
-      )}
+        <circle cx="50" cy="50" r="29" fill={`url(#${id}b)`} stroke="#9aa5b3" />
+        <path d="M31 38Q37 25 51 26" fill="none" stroke="#e4e7ec" strokeWidth="3" opacity=".7" />
+        <circle cx="54" cy="40" r="8" fill="#ff5b6e" />
+        <circle cx="52" cy="38" r="3" fill="#ffd2d8" />
+      </g>
     </svg>
   );
 }
@@ -276,7 +266,7 @@ export default function MinesGrid({
                   ) : (
                     <>
                       <span className={styles.seal} aria-hidden="true">
-                        ◆
+                        <GemArt />
                       </span>
                       <span className={styles.number}>{String(cell + 1).padStart(2, '0')}</span>
                     </>

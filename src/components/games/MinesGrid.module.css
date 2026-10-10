@@ -500,7 +500,7 @@
      stops biting above roughly 755px of viewport, so a modern phone held
      upright still gets the full column. */
   .board {
-    width: min(100%, 500px, calc(100dvh - 390px));
+    width: min(100%, 500px, calc(100dvh - 390px - var(--choice-risk-reserve, 0px)));
     padding: 10px 5px;
   }
   .tile {
@@ -570,4 +570,33 @@
   .board[data-attract='true'] .stage::after {
     animation: none;
   }
+}
+
+/* The Daily Bonus render stays upright inside the rotated board. */
+.gem[data-daily-diamond='true'] {
+  object-fit: contain;
+  animation: daily-diamond-float calc(4s * var(--animation-speed, 1)) ease-in-out infinite;
+}
+@keyframes daily-diamond-float {
+  0%,
+  100% {
+    transform: rotate(-48deg) translateY(0);
+  }
+  50% {
+    transform: rotate(-42deg) translateY(-3px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gem[data-daily-diamond='true'] {
+    animation: none;
+    transform: rotate(-45deg);
+  }
+}
+
+.seal {
+  display: grid;
+  place-items: center;
+  width: 80%;
+  height: 80%;
+  transform: none;
 }

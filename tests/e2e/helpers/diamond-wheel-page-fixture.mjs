@@ -31,6 +31,7 @@ export function diamondWheelPageFixture() {
       },
     };
     const stubs = {
+      supabase: `export const supabase={rpc:async()=>({data:{ok:true,games:['wheel','mines','crossing','crash','plinko'].map(game=>({game,rounds:0,losses:0,average_return:null,average_safe_steps:null,average_before_loss:null,average_crash:null}))},error:null})};`,
       DiamondReplayService: `export const DiamondReplayService={list:async()=>[]}; export const bonusReplayTitle=()=> 'Diamond Plinko';`,
       ClubArenaWelcomeModal: `export default()=>null;export const useClubArenaWelcome=()=>({isReady:false,showWelcome:false,acceptWelcome:()=>{}});`,
       CompleteProfileModal: `export default()=>null;export const useCompleteProfile=()=>({isReady:false,showProfileModal:false,profileStatus:'complete',finishProfile:()=>{}});`,
@@ -52,6 +53,7 @@ export function diamondWheelPageFixture() {
       // empty and both money doors refuse.
       DiamondWheelService: `const state=${JSON.stringify(state)};export class WheelReceiptUnverified extends Error{};
         export const CARD_NOT_PICKED='That Card Could Not Be Turned Over';
+        export const parseWheelSpinReceipt=()=>{throw Error('This Layout Fixture Cannot Wager')};
         export const readWheelPendingCard=()=>null;
         export const saveWheelPendingCard=()=>{};
         export const clearWheelPendingCard=()=>{};

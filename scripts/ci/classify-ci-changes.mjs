@@ -43,7 +43,7 @@ const managedGameOneDoor =
 // These original-owner qualifications execute inside the required accounting
 // matrix. Changes to a driver, captured owner or manifest must run it too.
 const stableAdminQualification =
-  /^(scripts\/qualify-stable-admin-(?:floor|cancel-stops-pg17|cancel-lane-pg17)\.mjs$|scripts\/qualification\/stable-admin-(?:floor|cancel-stops|cancel-lane)\/|scripts\/ci\/schema-manifest\.d\/stable-admin-[a-z-]+\.json$)/;
+  /^(scripts\/qualify-stable-admin-(?:floor|close-selector|cancel-stops-pg17|cancel-lane-pg17)\.mjs$|scripts\/qualification\/stable-admin-(?:floor|close-selector|cancel-stops|cancel-lane)\/|scripts\/ci\/schema-manifest\.d\/stable-admin-[a-z-]+\.json$)/;
 
 // Spin qualification and every reviewed input use the existing accounting job.
 const spinExpiry =
@@ -215,7 +215,7 @@ export function classifyChangedPaths(paths) {
   // Daily Bonus grants share the canonical Diamond award path and the
   // accounting PostgreSQL runner. Input-only edits must run that job too.
   const dailyBonus = matches(
-    /^(tests\/sql\/daily-bonus-[a-z0-9-]+\.sql|src\/services\/DailyBonusService\.ts|src\/hooks\/useDailyBonus\.ts)$/
+    /^(tests\/sql\/daily-bonus-[a-z0-9-]+\.sql|src\/services\/DailyBonusService\.ts|src\/components\/daily-bonus\/useDailyBonus\.ts)$/
   );
 
   // The Diamond Arena SQL acceptance (2026-09-19): every runner, every fixture

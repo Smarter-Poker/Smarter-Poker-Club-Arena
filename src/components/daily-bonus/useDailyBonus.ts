@@ -1,7 +1,7 @@
 /**
  * useDailyBonus - state for the Daily Club Arena Bonus sheet.
  *
- * Loads the server's view of today, claims one tile at a time, and keeps a
+ * Loads the server's view of today, accepts all eligible rewards at once, and keeps a
  * live countdown to the Chicago midnight the server reported. Every number
  * rendered comes from the status or claim payload; nothing is computed
  * client-side except the ticking clock.
@@ -22,6 +22,7 @@ import {
   type DailyBonusStatus,
   type DailyBonusTile,
 } from '../../services/DailyBonusService';
+import { useUserStore } from '../../stores/useUserStore';
 import { reportError } from '../../utils/errorReporter';
 import { reportDailyBonusStatusError } from '../../services/dailyBonusStatusError';
 
@@ -113,6 +114,7 @@ export function applyClaim(
 }
 
 export function useDailyBonus(enabled: boolean) {
+  const accountId = useUserStore((state) => state.user?.id ?? null);
   const [status, setStatus] = useState<DailyBonusStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -137,6 +139,27 @@ export function useDailyBonus(enabled: boolean) {
     };
   }, []);
 
+  // Each account owns its reads and claims. Retire promises without allowing
+  // their late responses or cleanup to overwrite the next account.
+  useEffect(() => {
+    statusVersion.current += 1;
+    inFlight.current = null;
+    batchInFlight.current = false;
+    deadline.current = null;
+    boostEnds.current = null;
+    rolledOver.current = null;
+    setStatus(null);
+    setLoadError(null);
+    setLoading(false);
+    setClaimingSlot(null);
+    setSecondsToReset(0);
+    setBoostSecondsLeft(0);
+    return () => {
+      statusVersion.current += 1;
+      inFlight.current = null;
+    };
+  }, [accountId]);
+
   const load = useCallback(async () => {
     // One read at a time: a rollover tick, a refusal and a manual retry that
     // land together share the request instead of racing three.
@@ -156,12 +179,14 @@ export function useDailyBonus(enabled: boolean) {
         setSecondsToReset(seconds);
         setBoostSecondsLeft(boostLeft);
       } catch (err) {
-        if (!mounted.current) return;
+        if (!mounted.current || version !== statusVersion.current) return;
         reportDailyBonusStatusError(err, 'useDailyBonus.getStatus');
         setLoadError(err instanceof Error ? err.message : 'Could Not Load Your Daily Bonus');
       } finally {
-        inFlight.current = null;
-        if (mounted.current) setLoading(false);
+        if (version === statusVersion.current) {
+          inFlight.current = null;
+          if (mounted.current) setLoading(false);
+        }
       }
     })();
     inFlight.current = run;
@@ -171,7 +196,7 @@ export function useDailyBonus(enabled: boolean) {
   useEffect(() => {
     if (!enabled) return;
     void load();
-  }, [enabled, load]);
+  }, [enabled, load, accountId]);
 
   // The countdown measures the distance to the deadline on every tick, so a
   // throttled background tab catches up the moment it is looked at. Crossing
@@ -200,12 +225,26 @@ export function useDailyBonus(enabled: boolean) {
 
   const claim = useCallback(
     async (tile: DailyBonusTile): Promise<ClaimOutcome | null> => {
-      if (!status || claimingSlot !== null) return null;
+      if (!status || batchInFlight.current || claimingSlot !== null) return null;
+      batchInFlight.current = true;
+      let version = ++statusVersion.current;
+      inFlight.current = null;
+      setLoading(false);
+      setLoadError(null);
       setClaimingSlot(tile.slot);
       try {
         const result = await dailyBonusService.claim(status.today, tile.slot);
-        if (!mounted.current) return null;
+        if (!mounted.current || version !== statusVersion.current) return null;
+        if (result.success && result.idempotent) {
+          await load();
+          if (!mounted.current || version !== statusVersion.current) return null;
+          return { slot: tile.slot, result, refusal: '' };
+        }
         if (result.success && result.granted) {
+          version = ++statusVersion.current;
+          inFlight.current = null;
+          setLoading(false);
+          setLoadError(null);
           if (result.granted.kind === 'boost') {
             const hours = result.granted.hours ?? result.granted.quantity;
             const ends = result.granted.ends_at ? Date.parse(result.granted.ends_at) : NaN;
@@ -224,15 +263,20 @@ export function useDailyBonus(enabled: boolean) {
         void load();
         return { slot: tile.slot, result, refusal: claimReasonText(result.reason) };
       } catch (err) {
-        if (!mounted.current) return null;
+        if (!mounted.current || version !== statusVersion.current) return null;
         reportError(err, 'useDailyBonus.claim', { slot: tile.slot });
+        await load();
+        if (!mounted.current || version !== statusVersion.current) return null;
         return {
           slot: tile.slot,
           result: { success: false, reason: 'transport' },
           refusal: err instanceof Error ? err.message : 'Could Not Claim, Try Again',
         };
       } finally {
-        if (mounted.current) setClaimingSlot(null);
+        if (version === statusVersion.current) {
+          batchInFlight.current = false;
+          if (mounted.current) setClaimingSlot(null);
+        }
       }
     },
     [status, claimingSlot, load]
@@ -241,14 +285,22 @@ export function useDailyBonus(enabled: boolean) {
   const claimAll = useCallback(async () => {
     if (!status || batchInFlight.current || claimingSlot !== null) return null;
     batchInFlight.current = true;
+    let version = ++statusVersion.current;
+    inFlight.current = null;
+    setLoading(false);
+    setLoadError(null);
     setClaimingSlot(0);
     try {
       const receipt = await dailyBonusService.claimAll(status.today);
-      if (!mounted.current) return null;
+      if (!mounted.current || version !== statusVersion.current) return null;
       if (receipt.success && receipt.status) {
-        statusVersion.current += 1;
+        version = ++statusVersion.current;
+        inFlight.current = null;
+        setLoading(false);
+        setLoadError(null);
         deadline.current = Date.now() + Math.max(0, receipt.status.seconds_to_reset) * 1000;
         setStatus(receipt.status);
+        setSecondsToReset(Math.max(0, receipt.status.seconds_to_reset));
         const ends = receipt.status.boost?.ends_at;
         boostEnds.current = ends ? Date.parse(ends) : null;
         setBoostSecondsLeft(
@@ -259,15 +311,18 @@ export function useDailyBonus(enabled: boolean) {
       }
       return receipt;
     } catch (err) {
+      if (!mounted.current || version !== statusVersion.current) return null;
       reportError(err, 'useDailyBonus.claimAll');
       // A transport failure is unknown: read saved receipts before the player
       // retries. The server's per-day/slot keys also prevent duplicate awards.
       await load();
-      if (!mounted.current) return null;
+      if (!mounted.current || version !== statusVersion.current) return null;
       return { success: false, reason: 'transport' };
     } finally {
-      batchInFlight.current = false;
-      if (mounted.current) setClaimingSlot(null);
+      if (version === statusVersion.current) {
+        batchInFlight.current = false;
+        if (mounted.current) setClaimingSlot(null);
+      }
     }
   }, [status, claimingSlot, load]);
 

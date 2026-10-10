@@ -30,9 +30,22 @@ const native = parse(
   readFileSync(join(root, '.github/workflows/component-fixture-native-smoke.yml'), 'utf8')
 );
 
+describe('Daily Bonus accounting qualification follows its actual inputs', () => {
+  it.each([
+    'src/components/daily-bonus/useDailyBonus.ts',
+    'src/services/DailyBonusService.ts',
+    'tests/sql/daily-bonus-one-claim.sql',
+  ])('executes required accounting for %s', (path) => {
+    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+  });
+});
+
 describe('Stable Admin owning transactions retain native qualification', () => {
   it.each([
     'scripts/qualify-stable-admin-floor.mjs',
+    'scripts/qualify-stable-admin-close-selector.mjs',
+    'scripts/qualification/stable-admin-close-selector/behavior.sql',
+    'scripts/qualification/stable-admin-close-selector/source.test.mjs',
     'scripts/qualify-stable-admin-cancel-stops-pg17.mjs',
     'scripts/qualify-stable-admin-cancel-lane-pg17.mjs',
     'scripts/qualification/stable-admin-cancel-lane/owners.json',
@@ -45,7 +58,7 @@ describe('Stable Admin owning transactions retain native qualification', () => {
   });
 
   it('runs each real PostgreSQL 17 qualifier once and joins its result in the required engine check', () => {
-    for (const driver of ['floor', 'cancel-stops-pg17', 'cancel-lane-pg17']) {
+    for (const driver of ['floor', 'close-selector', 'cancel-stops-pg17', 'cancel-lane-pg17']) {
       const steps = ci.jobs.accounting_postgres.steps.filter((step: { run?: string }) =>
         step.run?.includes(`node scripts/qualify-stable-admin-${driver}.mjs`)
       );

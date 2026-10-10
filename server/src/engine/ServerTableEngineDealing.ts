@@ -2093,6 +2093,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   }
 
   protected async dealHand(players: SeatedPlayer[]): Promise<void> {
+    if (this.operatorClosureOnlyId) throw new Error('operator_cash_close_dealing_forbidden');
     // Resume an already-owned cancellation with the same immutable identity.
     // A lost response never permits allocation of a different hand first.
     if (this.f06CurrentPermit?.hasPreparedCancellation()) await this.cancelF06PreparedHand();

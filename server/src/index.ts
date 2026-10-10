@@ -160,12 +160,20 @@ const httpServer = createEngineHttpServer(
 );
 engineWs.attach(httpServer);
 channelWs.attach(httpServer);
-const unsubscribePlayerRevocations = subscribePlayerSessionRevocations((userId) => {
-  void Promise.all([
-    engineWs.revokePlayerSessions(userId),
-    channelWs.revokePlayerSessions(userId),
-  ]).catch((error) => reportError(error, 'PlayerSessions.revocation_delivery_unknown'));
-});
+const unsubscribePlayerRevocations = subscribePlayerSessionRevocations(
+  (userId) => {
+    void Promise.all([
+      engineWs.revokePlayerSessions(userId),
+      channelWs.revokePlayerSessions(userId),
+    ]).catch((error) => reportError(error, 'PlayerSessions.revocation_delivery_unknown'));
+  },
+  (isCurrent) => {
+    void Promise.all([
+      engineWs.revalidatePlayerSessions(isCurrent),
+      channelWs.revalidatePlayerSessions(isCurrent),
+    ]).catch((error) => reportError(error, 'PlayerSessions.recovered_delivery_unknown'));
+  }
+);
 
 let shuttingDown = false;
 let leaderServicesActive = false;

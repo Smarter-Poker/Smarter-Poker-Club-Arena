@@ -536,3 +536,20 @@ it('does not offer a consumed spin merely because its reward was claimed today',
   await screen.findByText('100 Diamond Bonus Spin');
   expect(screen.queryByRole('button', { name: 'Use Bonus Spin' })).toBeNull();
 });
+it('reports a refused batch without saying rewards were collected when nothing new was granted', async () => {
+  mocks.toast.info.mockClear();
+  mocks.toast.error.mockClear();
+  mocks.toast.success.mockClear();
+  const capped = { ...status, unclaimed: 1, tiles: [tile({ slot: 1, capped: true })] };
+  mocks.getStatus.mockResolvedValue(capped);
+  mocks.claimAll.mockResolvedValue({
+    success: true,
+    results: [{ success: false, reason: 'daily_cap' }],
+    status: capped,
+  });
+  render(<DailyBonusSheet mode="inline" />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Claim All' }));
+  await waitFor(() => expect(mocks.toast.error).toHaveBeenCalledWith('Daily Diamond Cap Reached'));
+  expect(mocks.toast.info).not.toHaveBeenCalled();
+  expect(mocks.toast.success).not.toHaveBeenCalled();
+});

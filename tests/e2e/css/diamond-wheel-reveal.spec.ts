@@ -254,6 +254,7 @@ for (const width of [320, 390, 1280]) {
 for (const viewport of [
   { width: 320, height: 568 },
   { width: 390, height: 844 },
+  { width: 393, height: 844 },
   { width: 1280, height: 720 },
   { width: 844, height: 390 },
   { width: 844, height: 390, fallbackFonts: true },
@@ -383,7 +384,7 @@ for (const viewport of [
       await expect(controls.getByText('Local Connection Is Paused', { exact: true })).toBeVisible();
       await expect(
         controls.getByRole('button', { name: 'Refresh Wheel', exact: true })
-      ).toBeEnabled();
+      ).toHaveCount(0);
       await expect(
         controls.getByRole('button', { name: 'Bonus Spin', exact: true })
       ).toBeDisabled();

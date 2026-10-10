@@ -115,6 +115,7 @@ interface PendingHandReplay {
 }
 
 interface ConnectionState {
+  sessionRead?: Promise<boolean>;
   handReplays: Map<string, PendingHandReplay>;
   clubJoins: Map<string, PendingClubJoin>;
   userId: string;
@@ -174,15 +175,55 @@ async function verifyToken(token: string): Promise<TokenVerdict> {
 
 export class ChannelWebSocketServer {
   /** Close only the target's definitively revoked sessions; active hands retain normal disconnect handling. */
-  public async revokePlayerSessions(userId: string): Promise<void> {
-    for (const [ws, connection] of this.connections) {
+  public async revokePlayerSessions(userId: string, isCurrent = () => true): Promise<void> {
+    for (const [ws, connection] of Array.from(this.connections)) {
+      if (this.closing || !isCurrent()) return;
       if (connection.userId !== userId) continue;
-      if ((await playerSessionVerdict(userId, connection.token)) !== 'revoked') continue;
+      const token = connection.token;
+      if ((await playerSessionVerdict(userId, token)) !== 'revoked') continue;
+      if (
+        this.closing ||
+        !isCurrent() ||
+        this.connections.get(ws) !== connection ||
+        connection.token !== token
+      )
+        continue;
       try {
         ws.close(4401, 'auth:session_not_found');
       } catch {
         /* normal close cleanup owns presence */
       }
+    }
+  }
+  public async revalidatePlayerSessions(isCurrent = () => true): Promise<void> {
+    const users = new Set(Array.from(this.connections.values(), (connection) => connection.userId));
+    for (const userId of users) {
+      if (this.closing || !isCurrent()) return;
+      await this.revokePlayerSessions(userId, isCurrent);
+    }
+  }
+  private async sessionCanReceive(conn: ConnectionState): Promise<boolean> {
+    if (this.closing || this.connections.get(conn.ws) !== conn) return false;
+    if (conn.sessionRead) return conn.sessionRead;
+    const token = conn.token;
+    const check = (async () => {
+      const verdict = await playerSessionVerdict(conn.userId, token);
+      if (this.closing || this.connections.get(conn.ws) !== conn || conn.token !== token)
+        return false;
+      if (verdict === 'revoked') {
+        try {
+          conn.ws.close(4401, 'auth:session_not_found');
+        } catch {
+          /* normal cleanup owns presence */
+        }
+      }
+      return verdict === 'alive';
+    })();
+    conn.sessionRead = check;
+    try {
+      return await check;
+    } finally {
+      if (conn.sessionRead === check) conn.sessionRead = undefined;
     }
   }
 
@@ -406,6 +447,9 @@ export class ChannelWebSocketServer {
     const hit = this.clubMembershipCache.get(key);
     let member: boolean;
     try {
+      if (!(await this.sessionCanReceive(conn)))
+        throw new Error('player session authority unavailable');
+      if (!this.clubJoinIsCurrent(conn, clubId, pending)) return;
       if (hit && Date.now() - hit.readAt < CLUB_MEMBERSHIP_TTL_MS) {
         member = hit.member;
       } else {
@@ -696,6 +740,8 @@ export class ChannelWebSocketServer {
   ): Promise<void> {
     const { userId } = conn;
     try {
+      if (!(await this.sessionCanReceive(conn)) || !this.handReplayIsCurrent(conn, handId, replay))
+        return;
       const { data: rows, error } = await supabase
         .from('hand_history')
         .select(

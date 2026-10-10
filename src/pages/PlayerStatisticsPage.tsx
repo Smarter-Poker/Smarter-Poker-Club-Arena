@@ -27,6 +27,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
+import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useIsMounted } from '../hooks/useIsMounted';
@@ -98,6 +99,7 @@ export default function PlayerStatisticsPage() {
 
   const navigate = useNavigate();
   const toast = useToast();
+  const { user } = useAuthUser();
   const isMountedRef = useIsMounted();
 
   const [stats, setStats] = useState<MemberStatistics | null>(null);
@@ -127,7 +129,7 @@ export default function PlayerStatisticsPage() {
     setKnownVariants([]);
     setVariant(null);
     setNotFound(false);
-  }, [clubId, userId]);
+  }, [clubId, userId, user?.id]);
 
   const load = useCallback(
     async (
@@ -207,7 +209,7 @@ export default function PlayerStatisticsPage() {
         if (live()) setLoading(false);
       }
     },
-    [clubId, userId, isMountedRef, toast]
+    [clubId, userId, user?.id, isMountedRef, toast]
   );
 
   useEffect(() => {
@@ -357,7 +359,7 @@ export default function PlayerStatisticsPage() {
           {loading && stats
             ? 'Loading The Selected Range...'
             : stats?.is_overall
-              ? 'Showing Lifetime Totals'
+              ? 'Showing All Recorded Activity'
               : `Showing ${stats?.from ?? range.from ?? '?'} To ${stats?.to ?? range.to ?? '?'}`}
         </p>
       </section>

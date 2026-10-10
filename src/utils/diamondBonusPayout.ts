@@ -179,7 +179,11 @@ export function validBonusMinimum(value: Record<string, unknown>): boolean {
       return false;
     }
   }
-  if (version !== BONUS_PAYOUT_VERSION) return false;
+  if (
+    version !== BONUS_PAYOUT_VERSION &&
+    !(version === 5 && ['mines', 'crossing'].includes(String(value.game)))
+  )
+    return false;
   const rate = value.diamonds_per_chip;
   const betChips =
     typeof value.bet_chips === 'number'

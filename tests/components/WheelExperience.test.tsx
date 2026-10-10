@@ -253,6 +253,28 @@ describe('wheel to prize to earned game', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(onFinished).not.toHaveBeenCalled();
   });
+  it('completes both sealed wheels in an explicitly prepaid run without another gesture or wager', () => {
+    const onFinished = vi.fn();
+    render(
+      <WheelExperience
+        segments={[]}
+        receipt={upgradeToMines()}
+        spinKey={7}
+        spinning
+        runMode
+        prepaidRun
+        onFinished={onFinished}
+        size={500}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Land Main Wheel' }));
+    expect(
+      screen.queryByRole('button', { name: UPGRADE_SPIN_INSTRUCTION })
+    ).not.toBeInTheDocument();
+    expect(onFinished).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Land Bonus Wheel' }));
+    expect(onFinished).toHaveBeenCalledTimes(1);
+  });
   it('opens a normal bonus only when Play Game is tapped after one complete wheel and reveal', () => {
     vi.useFakeTimers();
     const onFinished = vi.fn();

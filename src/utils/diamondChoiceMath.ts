@@ -1,3 +1,9 @@
+import {
+  choiceLossGuarantee,
+  minePrizeV5,
+  roadSurvivesV5,
+  RANDOM_SPACE,
+} from './choiceProgressiveGuarantee';
 /** Internal game mathematics. Presentation never advertises return percentages. */
 import { hmacSha256Hex, sha256Hex } from './wheelFairness';
 
@@ -34,7 +40,7 @@ export const MINE_COUNTS = [5, 6, 10, 15] as const;
 /** The one setting per game. Nobody chooses a difficulty: the payout carries it.
  * Mirrors public.fn_choice_mode. */
 export const CHOICE_MODE = { crossing: 'road', mines: '6' } as const;
-export const RANDOM_SPACE = 281474976710656n;
+export { RANDOM_SPACE } from './choiceProgressiveGuarantee';
 
 export function choose(n: number, k: number): bigint {
   if (!Number.isInteger(n) || !Number.isInteger(k) || n < 0 || k < 0 || k > n) return 0n;
@@ -278,9 +284,11 @@ export async function verifyChoiceRoundDetailed(
   const stake = () =>
     round.game === 'mines'
       ? (picks: number) =>
-          sealedV4
-            ? minePrizeV4(round.bet_chips, Number(round.mode), picks, floor)
-            : minePrize(round.bet_chips, Number(round.mode), picks, floor)
+          version === 5
+            ? minePrizeV5(round.bet_chips, Number(round.mode), picks, floor)
+            : sealedV4
+              ? minePrizeV4(round.bet_chips, Number(round.mode), picks, floor)
+              : minePrize(round.bet_chips, Number(round.mode), picks, floor)
       : (picks: number) => ({
           numerator: BigInt(Math.round(round.bet_chips * 100)) * BigInt(ladder[picks - 1]),
           denominator: 100n,
@@ -290,7 +298,8 @@ export async function verifyChoiceRoundDetailed(
       async () =>
         (await sha256Hex(proof.server_seed)) === proof.server_seed_hash &&
         // A receipt is sealed under one contract, and says which one it was.
-        sealedV4 === (proof.payout_version ?? 0) >= CHOICE_PAYOUT_VERSION
+        sealedV4 === (proof.payout_version ?? 0) >= CHOICE_PAYOUT_VERSION &&
+        (version !== 5 || proof.payout_version === 5)
     ),
     draw: await checked(async () => {
       if (!(await sealedDrawMatches(proof))) return false;
@@ -301,7 +310,9 @@ export async function verifyChoiceRoundDetailed(
           round.game === 'mines'
             ? !proof.mine_cells.includes(round.picked[i])
             : round.picked[i] === i &&
-              roadSurvives(BigInt(proof.road_roll), ladder[i], round.bet_chips, floor);
+              (version === 5
+                ? roadSurvivesV5(BigInt(proof.road_roll), round.prizes, i + 1, floor)
+                : roadSurvives(BigInt(proof.road_roll), ladder[i], round.bet_chips, floor));
         if (safe === (round.status === 'lost' && i === round.picked.length - 1)) return false;
       }
       return true;
@@ -316,7 +327,13 @@ export async function verifyChoiceRoundDetailed(
       return true;
     }),
     payout: await checked(async () => {
-      if (round.status === 'lost') return round.payout_chips === floor;
+      if (round.status === 'lost')
+        return (
+          round.payout_chips ===
+          (version === 5
+            ? choiceLossGuarantee(round.prizes, round.picked.length - 1, floor)
+            : floor)
+        );
       if (round.status !== 'cashed') return false;
       const n = round.picked.length;
       const rational = stake()(n);

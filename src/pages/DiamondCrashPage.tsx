@@ -1,3 +1,4 @@
+import GameLifetimeAverages from '../components/games/GameLifetimeAverages';
 import { useLiveBonusGuard } from '../hooks/useLiveBonusGuard';
 import { pendingBonus, PriorBonusPending } from '../services/diamondBonusRecovery';
 import { useAutoSettle, useStandingRefresh } from '../hooks/useAutoSettle';
@@ -1469,6 +1470,10 @@ function DiamondCrashGame() {
       </GameConsole>
 
       <div>
+        <GameLifetimeAverages
+          clubId={clubUuid}
+          revision={round ? `${round.round_id}:${round.status}` : null}
+        />
         <GamePanel eyebrow="Your Game" title="How To Play" foot="foot">
           <p className="sc-copy">
             Cash Out Before The Crash To Collect Your Chip Prize. Your Confirmed Result Shows The

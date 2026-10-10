@@ -103,7 +103,10 @@ describe('tiles turn over', () => {
     const gem = screen.getByRole('button', { name: 'Tile 7, Gem' });
     expect(gem).toHaveAttribute('data-flip', 'true');
     expect(gem).toHaveAttribute('data-cascade', 'false');
-    expect(gem.querySelector('svg')).toBeTruthy();
+    expect(gem.querySelector('img[data-daily-diamond="true"]')).toHaveAttribute(
+      'src',
+      expect.stringContaining('images/daily-bonus/blue-diamond-v1.webp')
+    );
     const sealed = screen.getByRole('button', { name: 'Tile 8' });
     expect(sealed).toHaveAttribute('data-flip', 'false');
     expect(sealed).toHaveAttribute('data-revealed', 'false');

@@ -63,7 +63,28 @@ vi.mock('../../src/services/DiamondBonusService', async (original) => ({
   DiamondBonusService: { start: backend.start },
   BonusRefusal: backend.BonusRefusal,
 }));
-vi.mock('../../src/lib/supabase', () => ({ supabase: { rpc: backend.rpc } }));
+vi.mock('../../src/lib/supabase', () => ({
+  supabase: {
+    rpc: (name: string, ...args: unknown[]) =>
+      name === 'fn_diamond_game_lifetime'
+        ? Promise.resolve({
+            data: {
+              ok: true,
+              games: ['wheel', 'mines', 'crossing', 'crash', 'plinko'].map((game) => ({
+                game,
+                rounds: 0,
+                losses: 0,
+                average_return: null,
+                average_safe_steps: null,
+                average_before_loss: null,
+                average_crash: null,
+              })),
+            },
+            error: null,
+          })
+        : backend.rpc(name, ...args),
+  },
+}));
 vi.mock('../../src/services/WheelBonusEntryService', async (original) => ({
   ...(await original<typeof import('../../src/services/WheelBonusEntryService')>()),
   WheelBonusEntryService: { state: backend.awardState },

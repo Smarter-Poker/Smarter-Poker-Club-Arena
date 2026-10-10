@@ -571,3 +571,32 @@
     animation: none;
   }
 }
+
+/* The Daily Bonus render stays upright inside the rotated board. */
+.gem[data-daily-diamond='true'] {
+  object-fit: contain;
+  animation: daily-diamond-float calc(4s * var(--animation-speed, 1)) ease-in-out infinite;
+}
+@keyframes daily-diamond-float {
+  0%,
+  100% {
+    transform: rotate(-48deg) translateY(0);
+  }
+  50% {
+    transform: rotate(-42deg) translateY(-3px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gem[data-daily-diamond='true'] {
+    animation: none;
+    transform: rotate(-45deg);
+  }
+}
+
+.seal {
+  display: grid;
+  place-items: center;
+  width: 80%;
+  height: 80%;
+  transform: none;
+}

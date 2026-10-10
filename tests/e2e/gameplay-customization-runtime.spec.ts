@@ -810,6 +810,29 @@ test.describe('production routed gameplay customization', () => {
           writerRoot.getAttribute('data-felt-theme', { timeout: 5_000 }),
           readerRoot.getAttribute('data-felt-theme', { timeout: 5_000 }),
           readerRoot.getAttribute('data-player-appearance-sync', { timeout: 5_000 }),
+          ...[writer, reader].map((page) =>
+            page.evaluate((userId) => {
+              const observedAt = new Date().toISOString();
+              try {
+                const parsed = JSON.parse(
+                  localStorage.getItem(`ca_user_theme_rows:${userId}`) || '[]'
+                );
+                const rows = Array.isArray(parsed)
+                  ? parsed.slice(0, 8).map((row) => ({
+                      gameType: typeof row?.game_type === 'string' ? row.game_type : null,
+                      feltMatchesExpected: row?.table_id === 'carbon_red',
+                      serverFeltMatchesExpected: row?.server_values?.table_id === 'carbon_red',
+                      updatedAt: typeof row?.updated_at === 'string' ? row.updated_at : null,
+                      serverUpdatedAt:
+                        typeof row?.server_updated_at === 'string' ? row.server_updated_at : null,
+                    }))
+                  : null;
+                return { observedAt, rows };
+              } catch {
+                return { observedAt, outcome: 'unavailable' };
+              }
+            }, account!.id)
+          ),
         ]);
         const value = (index: number) => {
           const result = reads[index];
@@ -834,6 +857,8 @@ test.describe('production routed gameplay customization', () => {
               writerFelt: value(1),
               readerFelt: value(2),
               readerSync: value(3),
+              writerThemeCache: value(4),
+              readerThemeCache: value(5),
               writerRealtime,
               readerRealtime,
               writerTableArtRealtime,

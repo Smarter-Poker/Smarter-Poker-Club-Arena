@@ -127,13 +127,17 @@ interface SupabaseAuthLike {
  * client injectable so the unit test can drive every branch without a
  * network.
  */
-export async function probeSessionAlive(auth: SupabaseAuthLike): Promise<SessionVerdict> {
+export async function probeSessionAlive(
+  auth: SupabaseAuthLike,
+  isCurrent = () => true
+): Promise<SessionVerdict> {
   let userRes: Awaited<ReturnType<SupabaseAuthLike['getUser']>>;
   try {
     userRes = await auth.getUser();
   } catch {
     return 'unknown';
   }
+  if (!isCurrent()) return 'unknown';
   if (!userRes.error && userRes.data?.user) return 'alive';
   if (!isDefinitiveAuthRejection(userRes.error)) return 'unknown';
 
@@ -216,6 +220,17 @@ let inFlight: Promise<SessionVerdict> | null = null;
 let lastProbeAt = 0;
 let lastVerdict: SessionVerdict = 'unknown';
 let redirecting = false;
+let probeScope: string | null = null;
+function currentSessionScope(): string | null {
+  try {
+    const session = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || 'null');
+    return typeof session?.user?.id === 'string' && typeof session?.access_token === 'string'
+      ? JSON.stringify([session.user.id, session.access_token])
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Test seam. */
 export function _resetSessionRevokedStateForTests(): void {
@@ -223,6 +238,7 @@ export function _resetSessionRevokedStateForTests(): void {
   lastProbeAt = 0;
   lastVerdict = 'unknown';
   redirecting = false;
+  probeScope = null;
 }
 
 /**
@@ -249,6 +265,16 @@ export async function handleEngineAuthRejection(
   source: string,
   force = false
 ): Promise<SessionVerdict> {
+  const scope = currentSessionScope();
+  if (!scope) return 'unknown';
+  if (scope !== probeScope) {
+    probeScope = scope;
+    inFlight = null;
+    lastProbeAt = 0;
+    lastVerdict = 'unknown';
+    redirecting = false;
+  }
+  const isCurrent = () => currentSessionScope() === scope && probeScope === scope;
   if (redirecting) return 'revoked';
   if (inFlight) return inFlight;
   const now = Date.now();
@@ -259,7 +285,9 @@ export async function handleEngineAuthRejection(
     let verdict: SessionVerdict = 'unknown';
     try {
       const { supabase } = await import('./supabase');
-      verdict = await probeSessionAlive(supabase.auth as unknown as SupabaseAuthLike);
+      if (!isCurrent()) return 'unknown';
+      verdict = await probeSessionAlive(supabase.auth as unknown as SupabaseAuthLike, isCurrent);
+      if (!isCurrent()) return 'unknown';
       if (verdict === 'revoked') {
         redirecting = true;
         try {
@@ -276,27 +304,33 @@ export async function handleEngineAuthRejection(
           await supabase.auth.signOut({ scope: 'local' });
         } catch {
           try {
-            localStorage.removeItem(AUTH_STORAGE_KEY);
+            if (currentSessionScope() === scope) localStorage.removeItem(AUTH_STORAGE_KEY);
           } catch {
             /* nothing more to clear */
           }
         }
+        if (currentSessionScope() && currentSessionScope() !== scope) return 'unknown';
         if (typeof window !== 'undefined') {
           // Say why BEFORE leaving. The login page also renders
           // "No active session was found" via authError=no_session, so the
           // player is told twice, not zero times.
-          announceSessionEnded(() =>
-            window.location.assign(
-              loginRedirectUrl(window.location.pathname, window.location.search)
-            )
+          announceSessionEnded(
+            () =>
+              // signOut clears the original session; a later login owns the page.
+              !currentSessionScope() &&
+              window.location.assign(
+                loginRedirectUrl(window.location.pathname, window.location.search)
+              )
           );
         }
       }
     } catch {
       verdict = 'unknown';
     } finally {
-      lastVerdict = verdict;
-      inFlight = null;
+      if (probeScope === scope) {
+        lastVerdict = isCurrent() ? verdict : 'unknown';
+        inFlight = null;
+      }
     }
     return verdict;
   })();

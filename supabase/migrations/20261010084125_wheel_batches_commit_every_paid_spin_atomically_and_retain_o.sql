@@ -30,6 +30,10 @@
 -- @live-proof: (SELECT relrowsecurity FROM pg_class WHERE oid='public.wheel_batch_requests'::regclass)
 -- @live-proof: EXISTS(SELECT 1 FROM pg_policy WHERE polrelid='public.wheel_batch_requests'::regclass AND polname='wheel_batch_own')
 -- @live-proof: NOT has_table_privilege('authenticated','public.wheel_batch_requests','INSERT,UPDATE,DELETE') AND NOT has_table_privilege('anon','public.wheel_batch_requests','SELECT')
+-- @live-proof: md5(pg_get_functiondef('public.fn_choice_loss_floor_v5(numeric[],integer,numeric)'::regprocedure))='0148240902ba12addea66c61b8803589'
+-- @live-proof: md5(pg_get_functiondef('public.fn_choice_prizes_v5(text,text,numeric,numeric)'::regprocedure))='3a8e05e61d655710838589b696a4e201'
+-- @live-proof: md5(pg_get_functiondef('public.fn_choice_road_probability_v5(numeric[],integer,numeric)'::regprocedure))='4720717acc762bce235788e08236123b'
+-- @live-proof: md5(pg_get_functiondef('public.fn_diamond_game_lifetime(uuid)'::regprocedure))='42d751fe3d61ca92f5769ae2c2f79373'
 BEGIN;
 SET LOCAL lock_timeout='2s';
 SET LOCAL statement_timeout='90s';
@@ -304,4 +308,72 @@ BEGIN
  END;
 END $function$
 ;
+-- Compatible preparation: these private helpers are not used until the
+-- later choice-v5 activation. The aggregate reader is safe for older clients.
+CREATE FUNCTION public.fn_choice_loss_floor_v5(p_prizes numeric[],p_safe integer,p_minimum numeric)
+RETURNS numeric LANGUAGE sql IMMUTABLE SET search_path=public AS $$
+ SELECT greatest(p_minimum,CASE WHEN p_safe>0 THEN ceil(p_prizes[p_safe]*50)/100 ELSE 0 END)
+$$;
+CREATE FUNCTION public.fn_choice_prizes_v5(p_game text,p_mode text,p_bet numeric,p_floor numeric)
+RETURNS numeric[] LANGUAGE plpgsql IMMUTABLE SET search_path=public AS $$
+DECLARE prizes numeric[]; n integer; m integer; loss numeric; previous numeric;
+BEGIN
+ IF p_game='crossing' THEN RETURN public.fn_choice_prizes_v4(p_game,p_mode,p_bet,p_floor); END IF;
+ IF p_game IS DISTINCT FROM 'mines' OR p_mode IS DISTINCT FROM '6' OR p_bet<=0 OR p_floor<0 OR p_floor>=p_bet*.8 THEN RAISE EXCEPTION 'Invalid Choice Prize'; END IF;
+ m:=p_mode::integer;prizes:=ARRAY[p_bet*.8];
+ FOR n IN 1..24-m LOOP
+  previous:=prizes[n];loss:=public.fn_choice_loss_floor_v5(prizes,n,p_floor);
+  prizes:=array_append(prizes,(previous*(25-n)-loss*m)/(25-n-m));
+ END LOOP;
+ RETURN prizes;
+END $$;
+CREATE FUNCTION public.fn_choice_road_probability_v5(p_prizes numeric[],p_steps integer,p_floor numeric)
+RETURNS numeric LANGUAGE plpgsql IMMUTABLE SET search_path=public AS $$
+DECLARE chance numeric:=1; n integer; loss numeric;
+BEGIN
+ FOR n IN 1..p_steps-1 LOOP
+  loss:=public.fn_choice_loss_floor_v5(p_prizes,n,p_floor);
+  chance:=chance*(p_prizes[n]-loss)/(p_prizes[n+1]-loss);
+ END LOOP;
+ RETURN chance;
+END $$;
+REVOKE ALL ON FUNCTION public.fn_choice_loss_floor_v5(numeric[],integer,numeric), public.fn_choice_prizes_v5(text,text,numeric,numeric),public.fn_choice_road_probability_v5(numeric[],integer,numeric) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_choice_loss_floor_v5(numeric[],integer,numeric), public.fn_choice_prizes_v5(text,text,numeric,numeric),public.fn_choice_road_probability_v5(numeric[],integer,numeric) TO service_role;
+-- Aggregates only. Never expose a seed, open board, player identity or fixture.
+CREATE FUNCTION public.fn_diamond_game_lifetime(p_club_id uuid)
+RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=public AS $$
+DECLARE host uuid; result jsonb;
+BEGIN
+ IF auth.uid() IS NULL THEN RETURN jsonb_build_object('ok',false,'error','Sign In To See Game Averages'); END IF;
+ SELECT h.host_id INTO host FROM public.fn_wheel_host(p_club_id) h;
+ IF host IS NULL THEN RETURN jsonb_build_object('ok',false,'error','That Club Could Not Be Found'); END IF;
+ WITH played AS (
+  SELECT r.game, r.payout_chips/NULLIF(r.bet_chips,0) paid_return,
+   cardinality(r.picked)-CASE WHEN r.status='lost' THEN 1 ELSE 0 END safe_steps,
+   r.status='lost' lost, NULL::numeric crash_point
+  FROM public.diamond_choice_rounds r WHERE r.host_id=host AND r.status<>'open' AND NOT r.is_fixture
+  UNION ALL
+  SELECT 'crash',c.payout_chips/NULLIF(c.bet_chips,0),NULL,c.status='crashed',c.crash_cents::numeric/100
+  FROM public.crash_rounds c WHERE c.host_id=host AND c.status<>'open' AND NOT c.is_fixture
+  UNION ALL
+  SELECT 'plinko',(e.result->>'payout_chips')::numeric/NULLIF(e.total_diamonds::numeric/(e.result->>'diamonds_per_chip')::integer,0),NULL,false,NULL
+  FROM public.diamond_bonus_entries e WHERE e.host_id=host AND e.game='plinko' AND e.result IS NOT NULL AND NOT e.is_fixture
+  UNION ALL
+  SELECT 'plinko',d.payout_chips/NULLIF(d.bet_chips,0),NULL,false,NULL
+  FROM public.plinko_drops d WHERE d.host_id=host AND NOT d.is_fixture
+  UNION ALL
+  SELECT 'wheel',s.prize_value_chips/NULLIF(s.spin_price_diamonds::numeric/s.diamonds_per_chip,0),NULL,false,NULL
+  FROM public.wheel_spins s WHERE s.host_id=host AND NOT s.is_fixture
+ ), totals AS (
+  SELECT g.game,count(p.game) rounds,avg(p.paid_return) average_return,avg(p.safe_steps) average_safe_steps,
+   count(p.game) FILTER (WHERE p.lost) losses,avg(p.safe_steps) FILTER (WHERE p.lost) average_before_loss,
+   avg(p.crash_point) average_crash
+  FROM unnest(ARRAY['wheel','mines','crossing','crash','plinko']) WITH ORDINALITY g(game,ordinal)
+  LEFT JOIN played p ON p.game=g.game GROUP BY g.game,g.ordinal ORDER BY g.ordinal
+ ) SELECT jsonb_agg(to_jsonb(t)) INTO result FROM totals t;
+ RETURN jsonb_build_object('ok',true,'games',result);
+END $$;
+REVOKE ALL ON FUNCTION public.fn_diamond_game_lifetime(uuid) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.fn_diamond_game_lifetime(uuid) TO authenticated,service_role;
+
 COMMIT;

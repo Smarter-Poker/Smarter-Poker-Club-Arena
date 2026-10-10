@@ -125,10 +125,12 @@ export function WheelPrizeGallery({ segments }: { segments: WheelSegment[] }) {
 
 export function WheelEntry({
   value,
+  fundedMaximum,
   disabled,
   onChange,
 }: {
   value: number;
+  fundedMaximum?: number;
   disabled: boolean;
   onChange: (value: number) => void;
 }) {
@@ -147,7 +149,13 @@ export function WheelEntry({
         disabled={disabled}
         onChange={(e) => onChange(e.target.valueAsNumber)}
       />
-      <span id="diamond-spin-range">25 To 2,500</span>
+      <span id="diamond-spin-range">
+        {fundedMaximum != null && fundedMaximum < 2500
+          ? fundedMaximum >= 25
+            ? `Funded To ${fundedMaximum.toLocaleString()}`
+            : 'Host Funding Needed'
+          : '25 To 2,500'}
+      </span>
       <div className={styles.presets}>
         {[25, 100, 500, 1000, 2500].map((amount) => (
           <button

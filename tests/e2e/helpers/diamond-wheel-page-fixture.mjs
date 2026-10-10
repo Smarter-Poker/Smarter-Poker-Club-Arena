@@ -56,7 +56,7 @@ export function diamondWheelPageFixture() {
         export const saveWheelPendingCard=()=>{};
         export const clearWheelPendingCard=()=>{};
         export default {
-        getStateV2:async()=>({...state,available:!location.search.includes('paused'),reason:'Local Connection Is Paused'}),
+        getStateV2:async(_club,entry=100)=>({...state,max_funded_entry:location.search.includes('limited')?1277:2500,available:!location.search.includes('paused')&&(!location.search.includes('limited')||entry<=1277),reason:location.search.includes('paused')?'Local Connection Is Paused':'The Host Must Fund Every Prize Before A Spin'}),
         welcomeState:async()=>({available:true,enabled:true,price:100}),
         dailyBonusState:async()=>({available:true,ticket_count:2}), history:async()=>[],
         commit:async()=>({ok:true,commit_id:'d1000000-0000-4000-8000-000000000001',server_seed_hash:'a'.repeat(64)}),

@@ -135,12 +135,14 @@ describe('the selected wheel stake owns its availability quote', () => {
       Promise.resolve({
         ...state,
         available: amount === 25,
+        max_funded_entry: 25,
         reason: amount === 25 ? null : 'The Host Must Fund Every Bonus Before A Spin',
         config: { ...state.config, spin_price_diamonds: amount },
       })
     );
     render(<DiamondWheelPage />);
     expect(await screen.findByText('The Host Must Fund Every Bonus Before A Spin')).toBeVisible();
+    expect(screen.getByText('Funded To 25')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Spin 100', exact: true })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: '25', exact: true }));
     await waitFor(() =>

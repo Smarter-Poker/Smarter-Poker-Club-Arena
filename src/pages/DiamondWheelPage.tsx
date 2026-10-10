@@ -1526,6 +1526,7 @@ export default function DiamondWheelPage() {
             {hasVariableEntry(state.contract_version) && (
               <WheelEntry
                 value={freeMode ? 100 : entryDiamonds}
+                fundedMaximum={freeMode ? undefined : state.max_funded_entry}
                 disabled={freeMode || spinning || running || Boolean(recovery)}
                 onChange={(amount) => {
                   setEntryDiamonds(amount);

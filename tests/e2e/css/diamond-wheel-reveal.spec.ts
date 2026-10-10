@@ -390,5 +390,25 @@ for (const viewport of [
       await assertFits();
       await page.screenshot({ path: testInfo.outputPath('one-screen-paused.png') });
     }
+    await page.goto('https://diamond-wheel.test/?limited');
+    await page.addStyleTag({ content: bundle.css });
+    if ('fallbackFonts' in viewport) {
+      await page.addStyleTag({
+        content:
+          '[aria-label="Diamond Spins Controls"] button {font-family: Arial, sans-serif !important}',
+      });
+    }
+    await page.addScriptTag({ content: bundle.javascript });
+    await controls.getByRole('button', { name: 'Use Diamonds', exact: true }).click();
+    await expect(controls.getByText('Funded To 1,277', { exact: true })).toBeVisible();
+    await page.getByLabel('Diamonds To Spin').fill('2000');
+    await expect(controls.getByRole('button', { name: 'Spin 2,000', exact: true })).toBeDisabled();
+    await expect(
+      controls.getByText('The Host Must Fund Every Prize Before A Spin', { exact: true })
+    ).toBeVisible();
+    await controls.getByRole('button', { name: '1,000', exact: true }).click();
+    await expect(controls.getByRole('button', { name: 'Spin 1,000', exact: true })).toBeEnabled();
+    await assertFits();
+    await page.screenshot({ path: testInfo.outputPath('funded-controls.png') });
   });
 }

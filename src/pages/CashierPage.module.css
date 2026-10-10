@@ -410,7 +410,8 @@
   }
 
   50% {
-    opacity: 0.55;
+    /* Keep normal-text contrast readable at the pulse trough. */
+    opacity: 0.9;
   }
 }
 

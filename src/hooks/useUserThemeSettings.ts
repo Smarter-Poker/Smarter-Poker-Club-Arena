@@ -535,14 +535,21 @@ export function resolveCachedTheme(
 
 /** Preserve Postgres microseconds when ordering authenticated row versions. */
 function serverThemeVersion(value?: string | null): bigint | null {
-  if (
-    !value ||
-    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:?\d{2})$/.test(value)
-  )
-    return null;
-  const milliseconds = Date.parse(value);
+  // Realtime preserves timestamptz text, including Postgres' space separator
+  // and hour-only offset. Normalize that spelling, never guess a missing zone.
+  const parts = value?.match(
+    /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?(Z|[+-]\d{2}(?::?\d{2})?)$/
+  );
+  if (!parts) return null;
+  const [, date, time, fraction = '', zone] = parts;
+  const offset =
+    zone.length === 3
+      ? `${zone}:00`
+      : zone.length === 5
+        ? `${zone.slice(0, 3)}:${zone.slice(3)}`
+        : zone;
+  const milliseconds = Date.parse(`${date}T${time}${fraction ? `.${fraction}` : ''}${offset}`);
   if (!Number.isFinite(milliseconds)) return null;
-  const fraction = /\.(\d{1,6})(?:Z|[+-]\d{2}:?\d{2})$/.exec(value)?.[1] ?? '';
   return BigInt(milliseconds) * 1000n + BigInt(fraction.padEnd(6, '0').slice(3) || '0');
 }
 

@@ -1,5 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { convertChangeData } from '@supabase/realtime-js/dist/module/lib/transformers';
 
 const mocks = vi.hoisted(() => ({
   channelCalls: 0,
@@ -216,6 +217,85 @@ describe('useUserThemeSettings database realtime', () => {
       },
     });
   }
+
+  it.each([
+    '2026-10-10 01:50:18.817999+00',
+    '2026-10-10T01:50:18.817999+00',
+    '2026-10-09 20:50:18.817999-05',
+    '2026-10-10 07:20:18.817999+0530',
+    '2026-10-10 07:20:18.817999+05:30',
+  ])(
+    'orders native Realtime timestamp %s with PostgREST versions on every table',
+    async (native) => {
+      mocks.rows = [
+        { game_type: 'ALL', table_id: 'classic_green', updated_at: '2026-10-10T01:50:17Z' },
+      ];
+      const { result, unmount } = renderHook(() => ({
+        first: useUserThemeSettings('user-1', 'nlh'),
+        second: useUserThemeSettings('user-1', 'plo4'),
+      }));
+      await waitFor(() => expect(result.current.first.loading).toBe(false));
+      const converted = convertChangeData([{ name: 'updated_at', type: 'timestamptz' }], {
+        updated_at: native,
+      });
+      // The actual SDK does not normalize timestamptz, unlike timestamp.
+      expect(converted.updated_at).toBe(native);
+      act(() => row('ALL', 'carbon_red', converted.updated_at as string));
+      for (const table of Object.values(result.current)) {
+        expect(table.theme.table_id).toBe('carbon_red');
+      }
+      act(() => {
+        row('ALL', 'classic_green', '2026-10-10T01:50:18.817998+00:00');
+        row('ALL', 'classic_green', '2026-10-10T01:50:18.817999Z');
+        row('ALL', 'carbon_red', '2026-10-10T01:50:18.817999Z');
+      });
+      for (const table of Object.values(result.current)) {
+        expect(table.theme.table_id).toBe('carbon_red');
+      }
+      expect(resolveCachedTheme('user-1', 'NLH')?.table_id).toBe('carbon_red');
+      act(() => row('ALL', 'jade_city', '2026-10-10T01:50:18.818000Z'));
+      for (const table of Object.values(result.current)) {
+        expect(table.theme.table_id).toBe('jade_city');
+      }
+      unmount();
+    }
+  );
+
+  it('uses native server versions for cached ALL precedence and the read fence', async () => {
+    mocks.rows = [
+      { game_type: 'ALL', table_id: 'carbon_red', updated_at: '2026-10-10 01:50:18.817999+00' },
+      { game_type: 'NLH', table_id: 'jade_city', updated_at: '2026-10-10T01:50:18.817998Z' },
+    ];
+    const { result, unmount } = renderHook(() => useUserThemeSettings('user-1', 'nlh'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.theme.table_id).toBe('carbon_red');
+    act(() => row('ALL', 'classic_green', '2026-10-10T01:50:18.817998Z'));
+    expect(result.current.theme.table_id).toBe('carbon_red');
+    expect(resolveCachedTheme('user-1', 'NLH')?.table_id).toBe('carbon_red');
+    unmount();
+  });
+
+  it.each([
+    '2026-10-10 01:50:18.817999',
+    '2026-10-10 01:50:18.8179999+00',
+    '2026-10-10 01:50:18+0',
+    '2026-10-10 01:50:18+24',
+    '2026-10-10 01:50:18+00:60',
+    'not-a-server-timestamp',
+  ])(
+    'refuses malformed or unzoned server timestamp %s without changing paint or cache',
+    async (bad) => {
+      mocks.rows = [
+        { game_type: 'ALL', table_id: 'carbon_red', updated_at: '2026-10-10T01:50:17Z' },
+      ];
+      const { result, unmount } = renderHook(() => useUserThemeSettings('user-1', 'nlh'));
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      act(() => row('ALL', 'classic_green', bad));
+      expect(result.current.theme.table_id).toBe('carbon_red');
+      expect(resolveCachedTheme('user-1', 'NLH')?.table_id).toBe('carbon_red');
+      unmount();
+    }
+  );
 
   it('rejects an older same-bucket DB row without changing paint or first-paint cache', async () => {
     const { result, unmount } = renderHook(() => ({

@@ -1,7 +1,9 @@
 -- Version reserved by scripts/new-migration.mjs.
 -- Reduce the default owner total to one directional range per source; retain
 -- exact omitted movements, NaN semantics and every filtered/page fallback.
--- Index must first be built through the supported concurrent-index route.
+-- Apply Merged Migration builds this preamble alone, validates it, then runs
+-- the guarded transaction and records this exact file in migration history.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_chip_ledger_cashier_direction_totals ON public.chip_ledger(club_id,created_at DESC) INCLUDE(amount,from_entity_id,to_entity_id) WHERE status='posted' AND category=ANY(ARRAY['buyin','addon','rebuy','tournament_prize','bounty','refund','spin_entry','spin_prize','promo','promo_send','treasury_transfer','transfer','player_funding','agent_funding','overlay','reversal','correction','adjustment','leaderboard_payout']::text[]);
 BEGIN;
 SET LOCAL lock_timeout = '2s';
 DO $guard$
@@ -10,6 +12,9 @@ BEGIN
  IF md5(pg_get_functiondef('public.fn_cashier_statement_rows(uuid,uuid,text,timestamptz,timestamptz,jsonb,timestamptz,text,uuid,integer)'::regprocedure)) <> '72d29ab402ff75ae3f240ce40a750437'
  OR md5(pg_get_functiondef('public.fn_cashier_statement_totals(uuid,timestamptz,timestamptz,jsonb)'::regprocedure)) <> '5e50033127ded658f0bb4de87e0a10e6'
  THEN RAISE EXCEPTION 'cashier_source_preimage_changed'; END IF;
+ IF (SELECT proacl::text FROM pg_proc WHERE oid='public.fn_cashier_statement_rows(uuid,uuid,text,timestamptz,timestamptz,jsonb,timestamptz,text,uuid,integer)'::regprocedure) IS DISTINCT FROM '{postgres=X/postgres}'
+ OR (SELECT proowner FROM pg_proc WHERE oid='public.fn_cashier_statement_rows(uuid,uuid,text,timestamptz,timestamptz,jsonb,timestamptz,text,uuid,integer)'::regprocedure)<>(SELECT oid FROM pg_roles WHERE rolname='postgres')
+ THEN RAISE EXCEPTION 'cashier_private_authority_changed'; END IF;
  SELECT i.*,c.relowner,c.relpersistence,c.reloptions,am.amname INTO ix
  FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid JOIN pg_am am ON am.oid=c.relam
  WHERE c.oid=to_regclass('public.idx_chip_ledger_cashier_direction_totals');
@@ -460,6 +465,10 @@ $sql$;
           v_omitted;                                  -- $19 (totals, scope all)
 END;
 $function$;
+
+-- Restate the already-private boundary for changed-migration authorization checks.
+-- The precondition and complete authority postcondition forbid any grant change.
+REVOKE ALL ON FUNCTION public.fn_cashier_statement_rows(uuid,uuid,text,timestamptz,timestamptz,jsonb,timestamptz,text,uuid,integer) FROM PUBLIC, anon, authenticated;
 
 DO $guard$
 BEGIN

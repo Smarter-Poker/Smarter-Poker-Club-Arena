@@ -58,7 +58,14 @@ def main():
         original=previous[start:previous.index('$function$;',start)+len('$function$;')]+'\n'
         sql(original)
         assert md5(ROW)=='72d29ab402ff75ae3f240ce40a750437' and md5(TOTAL)=='5e50033127ded658f0bb4de87e0a10e6'
-        original_authority=authority();migration=MIGRATION.read_text();cases={}
+        original_authority=authority();cases={}
+        # Use the production splitter, so tests exercise its exact preamble/body.
+        node=shutil.which('node');assert node
+        parser=(REPO/'scripts/ci/migration-concurrent-preamble.mjs').as_uri()
+        js="import {readFileSync} from 'node:fs'; import {splitConcurrentPreamble} from "+json.dumps(parser)+"; console.log(JSON.stringify(splitConcurrentPreamble(readFileSync("+json.dumps(str(MIGRATION))+",'utf8'))));"
+        shape=json.loads(subprocess.run([node,'--input-type=module','-e',js],capture_output=True,text=True,check=True,timeout=10).stdout)
+        assert shape['ok'] and len(shape['indexes'])==1
+        migration=shape['body'];online=shape['indexes'][0]['statement']
         cases['missingIndex']=sql(migration,refusal='cashier_direction_cover_missing')
         assert md5(ROW)=='72d29ab402ff75ae3f240ce40a750437' and authority()==original_authority
         # Supported concurrent unique build fails on genuine synthetic duplicates,
@@ -67,7 +74,7 @@ def main():
         assert sql("SELECT NOT indisvalid FROM pg_index WHERE indexrelid='"+INDEX+"'::regclass")=='t'
         cases['invalidIndex']=sql(migration,refusal='cashier_direction_cover_shape_changed')
         sql('DROP INDEX '+INDEX)
-        sql((REPO/'scripts/ops/build-cashier-direction-totals-index-concurrently.sql').read_text())
+        sql(online)
         sql('ALTER FUNCTION '+ROW+' COST 101')
         cases['wrongPreimage']=sql(migration,refusal='cashier_source_preimage_changed')
         sql('ALTER FUNCTION '+ROW+' COST 100')
@@ -84,6 +91,10 @@ def main():
         VALUES(u(991003),u(100),'club_wallet',u(1),'player_wallet',u(20),'NaN','refund','nan-mirror','2026-09-07Z');
         INSERT INTO chip_transactions(id,club_id,from_user_id,to_user_id,amount,transaction_type,metadata,created_at)
         VALUES(u(991004),u(100),u(1),u(20),2.5,'topup','{"idempotency_key":"nan-mirror"}','2026-09-07Z');""")
+        sql('GRANT EXECUTE ON FUNCTION '+ROW+' TO authenticated')
+        cases['wrongAuthority']=sql(migration,refusal='cashier_private_authority_changed')
+        sql('REVOKE EXECUTE ON FUNCTION '+ROW+' FROM authenticated')
+        assert authority()==original_authority
         before=matrix(sql)
         sql(migration)
         assert matrix(sql)==before,'whole_scope_filter_totals_changed'

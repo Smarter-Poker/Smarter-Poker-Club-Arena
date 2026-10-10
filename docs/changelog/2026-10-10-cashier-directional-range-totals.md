@@ -17,15 +17,19 @@ the old helper showed no benefit, so this change includes the qualified aggregat
 
 ## Installation
 
-After protected delivery, inspect the actual source preimages and index state.
-Run `scripts/ops/build-cashier-direction-totals-index-concurrently.sql` as its
-single top-level statement through the maintained direct/session connection;
-do not wrap it in a transaction or send it through a transaction-wrapped API.
-An unknown result requires readback of that operation, not another build.
-Then apply reserved migration `20261010011934` through the supported migration
-ledger route outside the DDL break window. Its two-second lock cap and exact
+After protected delivery, dispatch the existing **Apply Merged Migration** workflow
+with reserved migration `20261010011934`. Its maintained splitter sends the exact
+concurrent-index preamble alone through its existing direct/session connection,
+requires the original twelve-minute DDL runway and checks validity/readiness
+before the transaction. `IF NOT EXISTS` permits reuse of an already valid index;
+it is not an invalid-index repair. Unknown outcomes require durable readback,
+not blind replay. No new installer or separately transcribed SQL is needed.
+The same owning operation applies the guarded transaction and records the exact
+file through its migration ledger route outside the DDL break window. Its two-second lock cap and exact
 function/index guards refuse changed inputs and replay. It preserves the entire
-helper authority tuple and public wrapper. Verify installed history, post-image
+helper authority tuple and public wrapper. An explicit postgres-only ACL
+precondition plus a no-op REVOKE restates the existing private-helper boundary
+for the changed-migration security gate; no allowlist or permission expansion is used. Verify installed history, post-image
 `45d82a8afb00381ee4e784e7ffdf097d`, index validity/readiness/liveness and authority,
 then run the authorized Statements page check at the current release.
 

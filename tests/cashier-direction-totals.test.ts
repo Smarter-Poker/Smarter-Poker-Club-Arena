@@ -22,10 +22,14 @@ describe('Cashier default totals preserve their independent read paths', () => {
   });
 
   it('keeps online index construction outside the guarded recording transaction', () => {
-    const online = read('scripts/ops/build-cashier-direction-totals-index-concurrently.sql');
-    expect(online).toMatch(/^CREATE INDEX CONCURRENTLY idx_chip_ledger_cashier_direction_totals/m);
-    expect(online).not.toMatch(/^BEGIN;/m);
-    expect(migration).not.toMatch(/CREATE INDEX/i);
+    const begin = migration.indexOf('\nBEGIN;');
+    const online = migration.slice(0, begin);
+    expect(online).toMatch(
+      /^CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_chip_ledger_cashier_direction_totals/m
+    );
+    expect(migration.slice(begin)).not.toMatch(/CREATE INDEX/i);
+    expect(migration).toContain('cashier_private_authority_changed');
+    expect(migration).toContain('FROM PUBLIC, anon, authenticated;');
     expect(migration).toContain("SET LOCAL lock_timeout = '2s'");
     expect(migration).toContain('cashier_source_preimage_changed');
     expect(migration).toContain('cashier_direction_cover_shape_changed');

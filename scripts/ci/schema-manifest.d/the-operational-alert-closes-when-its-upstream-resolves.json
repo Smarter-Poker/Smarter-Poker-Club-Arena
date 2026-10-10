@@ -1,0 +1,4 @@
+{
+  "_owner": "codex/alerts-closure-path-20261006. NOT YET APPLIED TO PRODUCTION as of 2026-10-06 05:4xZ. Introduced by migration 20261006052925_the_operational_alert_closes_when_its_upstream_resolves: public.operational_alert_events had no closure path at all (investigation_touched_at NULL on all 209,580 rows), so a recovery minted another open row and 78.8 pct of the open backlog was alerts that had already recovered upstream. The migration adds fn_close_operational_alerts_for_upstream and calls it from the existing a00_operational_source_intake trigger in the resolving UPDATE's own transaction. It is prepared, its regression is green and all four migration guards pass, but installation is the owner's: no Production Alerts lane may install a migration (PRODUCTION-ALERTS-FLEET/OWNER-AUTHORIZATION-20260920.md). This fragment is a note that the function is coming, not a claim that production has it.",
+  "functions": ["fn_close_operational_alerts_for_upstream"]
+}

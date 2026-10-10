@@ -260,6 +260,25 @@ beforeEach(() => {
   });
 });
 
+describe('the deployed reconciliation witness belongs to the real cashier region', () => {
+  it('resolves the maintained browser locator against the mounted Trade page', async () => {
+    mountCashier();
+    await synchronized();
+    // Exercise the actual E2E locator against the real page, rather than
+    // asserting that a string exists in two source files. The directory
+    // layout moved this status out of the retired painted-console region.
+    const spec = read('tests/e2e/routes/cashier-deep.spec.ts');
+    const regionName = spec.match(/getByRole\('region', \{ name: '([^']+)' \}\)/)?.[1];
+    expect(regionName).toBeTruthy();
+    const region = screen.getByRole('region', { name: regionName });
+    const status = within(region).getByRole('status');
+    expect(status).toHaveTextContent(/^Balances Synchronized$/);
+    expect(region).toContainElement(status);
+    const reconciliation = screen.getByRole('region', { name: 'Reconciliation Console' });
+    expect(within(reconciliation).queryByText('Not Yet Verified', { exact: true })).toBeNull();
+  });
+});
+
 describe('P-03: the Claim Back list belongs to the club it was read from', () => {
   it("drops club A's late reply after switching to club B, rows and loading flag alike", async () => {
     const replies = new Map<string, ReturnType<typeof deferred<unknown>>>();

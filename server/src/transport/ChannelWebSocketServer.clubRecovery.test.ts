@@ -12,6 +12,7 @@ vi.mock('../services/supabase.js', () => ({
   },
   default: {},
 }));
+import { playerSessionVerdict } from '../services/PlayerSessionAccess.js';
 import { ChannelWebSocketServer } from './ChannelWebSocketServer.js';
 import { channelHub } from '../hub/ChannelHub.js';
 
@@ -22,8 +23,9 @@ class FakeWs {
   on(event: string, callback: (arg?: unknown) => void) {
     this.handlers.set(event, callback);
   }
-  send(raw: string) {
+  send(raw: string, complete?: (error?: Error) => void) {
     this.sent.push(JSON.parse(raw));
+    complete?.();
   }
   close() {
     this.readyState = 3;
@@ -62,6 +64,7 @@ async function flush() {
 beforeEach(() => {
   vi.useFakeTimers();
   readMember.mockReset().mockResolvedValue(member);
+  vi.mocked(playerSessionVerdict).mockResolvedValue('alive');
   server = new ChannelWebSocketServer();
   sockets = [];
   user = 'club-recovery-' + ++serial;
@@ -293,4 +296,51 @@ describe('tournament presentation on the authenticated channel', () => {
     expect(replacement.sent.at(-1).event.payload).toEqual({ handForHand: null });
     expect(observe).toHaveBeenCalledTimes(3);
   });
+});
+
+describe('delayed channel private authority', () => {
+  it.each(['revoked', 'unknown'] as const)(
+    'does not admit membership after a delayed %s session',
+    async (verdict) => {
+      const read = deferred();
+      readMember.mockReturnValue(read.promise);
+      const ws = socket();
+      ws.receive(join);
+      await flush();
+      vi.mocked(playerSessionVerdict).mockResolvedValue(verdict);
+      read.resolve(member);
+      await flush();
+      expect(channelHub.clubSubscriberCount(club)).toBe(0);
+      expect(ws.readyState).toBe(verdict === 'revoked' ? 3 : 1);
+    }
+  );
+  it.each(['revoked', 'unknown'] as const)(
+    'refuses a financial push under current %s authority',
+    async (verdict) => {
+      const ws = socket();
+      vi.mocked(playerSessionVerdict).mockResolvedValue(verdict);
+      channelHub.sendToUser(user, {
+        type: 'FINANCIAL_UPDATE',
+        userId: user,
+        walletType: 'PLAYER',
+        available: 50,
+        total: 50,
+      });
+      await flush();
+      expect(ws.sent.some((frame) => frame.type === 'FINANCIAL_UPDATE')).toBe(false);
+      expect(ws.readyState).toBe(verdict === 'revoked' ? 3 : 1);
+      if (verdict === 'unknown') {
+        vi.mocked(playerSessionVerdict).mockResolvedValue('alive');
+        channelHub.sendToUser(user, {
+          type: 'FINANCIAL_UPDATE',
+          userId: user,
+          walletType: 'PLAYER',
+          available: 50,
+          total: 50,
+        });
+        await flush();
+        expect(ws.sent.filter((frame) => frame.type === 'FINANCIAL_UPDATE')).toHaveLength(1);
+      }
+    }
+  );
 });

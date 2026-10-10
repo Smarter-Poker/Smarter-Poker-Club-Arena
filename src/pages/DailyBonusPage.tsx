@@ -18,7 +18,7 @@ export default function DailyBonusPage() {
       <RewardsSurfaceHeader
         eyebrow="Rewards Circuit / Daily Bonus"
         title="Daily Bonus"
-        description="Show Up Every Day And Claim Each Tile By Hand. Diamonds, Throwables, Rabbit Hunts, Time Bank, Streak Shields And Mission Boosts Are Paid The Moment You Tap, And Unclaimed Tiles Are Gone At Midnight Central."
+        description="Show Up Every Day And Claim All Rewards With One Tap. Reward Types Change Daily, With No Repeat In The Same Slot On Consecutive Days. Unclaimed Rewards Are Gone At Midnight Central."
         art="diamonds"
         status="DAILY SHEET // LIVE"
         crest="diamond"

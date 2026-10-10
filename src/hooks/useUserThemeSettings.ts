@@ -616,7 +616,15 @@ function mergeCachedThemeRow(
     ...(authoritative && nextVersion !== null
       ? {
           server_updated_at: updatedAt,
-          server_values: { ...previous?.server_values, ...patch },
+          // A partial echo authenticates only its supplied fields at THIS
+          // version. Carrying older fields into a newer version would falsely
+          // reject the complete post-image arriving on the other account channel.
+          server_values: {
+            ...(serverThemeVersion(previous?.server_updated_at) === nextVersion
+              ? previous?.server_values
+              : {}),
+            ...patch,
+          },
         }
       : {}),
   };

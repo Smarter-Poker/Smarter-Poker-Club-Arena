@@ -3,18 +3,19 @@ import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
-const source = readFileSync('tests/e2e/production-csp-violations.spec.ts', 'utf8');
+const spec = readFileSync('tests/e2e/production-csp-violations.spec.ts', 'utf8');
+const source = readFileSync('tests/e2e/support/cspRouteObservation.ts', 'utf8');
 function visitBody(text: string) {
   const tree = ts.createSourceFile('csp.ts', text, ts.ScriptTarget.Latest, true);
   let body = '';
   function find(node: ts.Node) {
-    if (ts.isVariableDeclaration(node) && node.name.getText(tree) === 'visit')
-      body = node.initializer!.getText(tree);
+    if (ts.isFunctionDeclaration(node) && node.name?.getText(tree) === 'visitCspRoute')
+      body = node.getText(tree).replace('export ', '');
     ts.forEachChild(node, find);
   }
   find(tree);
   if (!body) throw new Error('Missing maintained CSP visit');
-  return ts.transpileModule(`const visit = ${body};`, {
+  return ts.transpileModule(`${body}; const visit = visitCspRoute;`, {
     compilerOptions: { target: ts.ScriptTarget.ES2022 },
   }).outputText;
 }
@@ -36,7 +37,16 @@ function harness(text = source, failure?: 'scroll' | 'collector' | 'http' | 'emp
         headers: () => ({ 'content-type': 'text/html' }),
       };
     },
-    locator: (selector: string) => ({ selector }),
+    locator: (selector: string) => ({
+      selector,
+      async waitFor() {},
+      async innerText() {
+        return 'Rendered app';
+      },
+    }),
+    async waitForFunction() {
+      if (failure === 'empty') throw new Error('application has no content');
+    },
     async waitForTimeout(ms: number) {
       windows.push(ms);
     },
@@ -67,7 +77,15 @@ function harness(text = source, failure?: 'scroll' | 'collector' | 'http' | 'emp
     assertion,
     found
   );
-  return { run: () => visit('http://fixture/club-arena/', 'arena:/'), found, navigation, windows };
+  return {
+    async run() {
+      const batch = await visit(page, 'http://fixture/club-arena/', 'arena:/');
+      for (const v of batch) found.push({ ...v, route: 'arena:/' });
+    },
+    found,
+    navigation,
+    windows,
+  };
 }
 
 describe('CSP observation owns one rendered document', () => {
@@ -83,7 +101,7 @@ describe('CSP observation owns one rendered document', () => {
       /const response = await page.goto[\s\S]*?(?=await page.waitForTimeout\(3500\))/,
       `try { await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 }); }
       catch { await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 }); }
-      const app = page.locator('#root');
+      const selector = '#root';
       `
     );
     const h = harness(old);
@@ -99,10 +117,11 @@ describe('CSP observation owns one rendered document', () => {
     }
   );
   it('keeps all eight routes, the original observation windows, and zero-violation assertion', () => {
-    expect(source).toContain("['', 'clubs', 'wallet', 'profile', 'promotions']");
-    expect(source).toContain("['/', '/diamonds', '/games']");
-    expect(source).toContain('test.setTimeout(240_000)');
-    expect(source).toContain(').toEqual([])');
+    expect(spec).toContain("['', 'clubs', 'wallet', 'profile', 'promotions']");
+    expect(spec).toContain("['/', '/diamonds', '/games']");
+    expect(spec).toContain('test.setTimeout(240_000)');
+    expect(spec).toContain(').toEqual([])');
+    expect(spec).toContain('visitCspRoute(page, url, label)');
     expect(source).toContain('CSP collector is unavailable');
   });
 });

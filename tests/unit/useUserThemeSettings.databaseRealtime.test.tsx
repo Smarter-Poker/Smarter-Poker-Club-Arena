@@ -359,6 +359,101 @@ describe('useUserThemeSettings database realtime', () => {
     unmount();
   });
 
+  it('admits a full post-image after a changed-field echo advances the row version', async () => {
+    mocks.rows = [
+      {
+        game_type: 'ALL',
+        table_id: 'classic_green',
+        cards_id: 'classic_red',
+        updated_at: '2026-10-10T07:10:00Z',
+      },
+    ];
+    const { result, unmount } = renderHook(() => ({
+      first: useUserThemeSettings('user-1', 'nlh'),
+      second: useUserThemeSettings('user-1', 'plo4'),
+    }));
+    await waitFor(() => expect(result.current.first.loading).toBe(false));
+    const updatedAt = '2026-10-10T07:11:00.090473+00:00';
+    act(() => {
+      // PostgresSyncHooks emits changed fields, the table-art channel emits
+      // the full row. Delivery order between these account channels is arbitrary.
+      masterBus.emit('UI_THEME_CHANGED', {
+        key: 'ALL',
+        userId: 'user-1',
+        value: { cards_id: 'classic_blue' },
+        updatedAt,
+      });
+      mocks.realtime?.({
+        eventType: 'UPDATE',
+        new: {
+          game_type: 'ALL',
+          table_id: 'carbon_red',
+          cards_id: 'classic_blue',
+          updated_at: updatedAt,
+        },
+        old: {},
+      });
+    });
+    for (const table of Object.values(result.current)) {
+      expect(table.theme.table_id).toBe('carbon_red');
+      expect(table.theme.cards_id).toBe('classic_blue');
+    }
+    expect(resolveCachedTheme('user-1', 'NLH')?.table_id).toBe('carbon_red');
+    act(() => row('ALL', 'classic_green', updatedAt));
+    expect(result.current.first.theme.table_id).toBe('carbon_red');
+    expect(result.current.second.theme.table_id).toBe('carbon_red');
+    unmount();
+  });
+
+  it('does not attest old fields when a partial committed echo arrives during a pending tap', async () => {
+    mocks.rows = [
+      { game_type: 'ALL', table_id: 'classic_green', updated_at: '2026-10-10T07:10:00Z' },
+    ];
+    const { result, unmount } = renderHook(() => useUserThemeSettings('user-1', 'nlh'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const updatedAt = '2026-10-10T07:11:00.090473+00:00';
+    act(() => {
+      masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+        kind: 'table-appearance',
+        scope: 'user-1:ALL',
+        mutationId: 'partial-version',
+        state: 'pending',
+      });
+      masterBus.emit('UI_THEME_CHANGED', {
+        key: 'ALL',
+        userId: 'user-1',
+        value: { table_id: 'carbon_red' },
+        mutationId: 'partial-version',
+      });
+      masterBus.emit('UI_THEME_CHANGED', {
+        key: 'ALL',
+        userId: 'user-1',
+        value: { cards_id: 'classic_blue' },
+        updatedAt,
+      });
+      masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+        kind: 'table-appearance',
+        scope: 'user-1:ALL',
+        mutationId: 'partial-version',
+        state: 'confirmed',
+      });
+      mocks.realtime?.({
+        eventType: 'UPDATE',
+        new: {
+          game_type: 'ALL',
+          table_id: 'carbon_red',
+          cards_id: 'classic_blue',
+          updated_at: updatedAt,
+        },
+        old: {},
+      });
+    });
+    expect(result.current.theme.table_id).toBe('carbon_red');
+    expect(result.current.theme.cards_id).toBe('classic_blue');
+    expect(resolveCachedTheme('user-1', 'NLH')?.cards_id).toBe('classic_blue');
+    unmount();
+  });
+
   it('resolves older/newer ALL and per-game rows through the same cached precedence', async () => {
     mocks.rows = [
       { game_type: 'ALL', table_id: 'classic_green', updated_at: '2026-10-10T00:10:00Z' },

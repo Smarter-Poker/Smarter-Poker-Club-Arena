@@ -64,8 +64,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 33302,
-      "sha256": "846747f1e40dcb9c027feb8aadedb1f1d469fcfc91315b4e9ff2e2af77af0f64"
+      "bytes": 33640,
+      "sha256": "0f705a4af412dd07399d0325240b6d6e4dce0a4f3f57797410baeb768cfc1e3e"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -1872,5 +1872,8 @@
         }
       }
     }
+  },
+  "dailyBonusProtectedIntegration20261010": {
+    "reason": "Preserves protected main Stable Admin additive qualification routing and all its audit entries alongside Daily Bonus routing. Refreshes current exact classifier and nested source bytes after normal merge; no historical qualification claim is changed."
   }
 }

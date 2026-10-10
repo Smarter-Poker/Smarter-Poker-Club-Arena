@@ -190,6 +190,11 @@ export default function PromoVaultPage() {
      response replays rather than sends twice. */
   const grantOpIds = useRef<Map<string, string>>(new Map());
 
+  // Navigation changes ownership immediately, even before effect cleanup.
+  const vaultScope = `${clubId ?? ''}:${user?.id ?? ''}`;
+  const vaultScopeRef = useRef({ key: vaultScope });
+  if (vaultScopeRef.current.key !== vaultScope) vaultScopeRef.current = { key: vaultScope };
+
   const canManage = MANAGER_ROLES.includes(userRole);
 
   /* ── Load ─────────────────────────────────────────────────────────────── */
@@ -371,13 +376,22 @@ export default function PromoVaultPage() {
   const handleBuy = useCallback(
     async (item: VaultItem, quantity: number) => {
       if (!resolvedClubId) return;
+      const scope = vaultScopeRef.current;
+      const live = () => isMountedRef.current && vaultScopeRef.current === scope;
       try {
-        const { data, error } = await supabase.rpc('ca_promo_vault_buy', {
-          p_club_id: resolvedClubId,
-          p_item_key: item.item_key,
-          p_quantity: quantity,
-        });
+        const { data, error } = await runWithRequestDeadline(
+          (signal) =>
+            supabase
+              .rpc('ca_promo_vault_buy', {
+                p_club_id: resolvedClubId,
+                p_item_key: item.item_key,
+                p_quantity: quantity,
+              })
+              .abortSignal(signal),
+          { timeoutMs: 40_000 }
+        );
         if (error) throw error;
+        if (!live()) return;
         const result = (data ?? {}) as Record<string, unknown>;
         if (result.success !== true) {
           toast.error(String(result.error ?? 'That Purchase Could Not Be Completed'));
@@ -399,10 +413,10 @@ export default function PromoVaultPage() {
         );
       } catch (err) {
         reportError(err, 'PromoVaultPage.handleBuy');
-        toast.error('That Purchase Could Not Be Completed');
+        if (live()) toast.error('That Purchase Could Not Be Completed');
       }
     },
-    [resolvedClubId, tab, loadRecords, toast]
+    [resolvedClubId, tab, loadRecords, toast, vaultScope, isMountedRef]
   );
 
   /* ── Grant ────────────────────────────────────────────────────────────── */
@@ -416,22 +430,31 @@ export default function PromoVaultPage() {
          `replayed` set and touches neither the stock nor the player. Keyed on
          the item and recipient so a DIFFERENT send is never mistaken for a
          retry of this one. */
-      const attemptKey = `${item.item_key}:${recipient.user_id}:${quantity}`;
+      const scope = vaultScopeRef.current;
+      const live = () => isMountedRef.current && vaultScopeRef.current === scope;
+      const attemptKey = `${scope.key}:${resolvedClubId}:${item.item_key}:${recipient.user_id}:${quantity}`;
       let opId = grantOpIds.current.get(attemptKey);
       if (!opId) {
         opId = crypto.randomUUID();
         grantOpIds.current.set(attemptKey, opId);
       }
       try {
-        const { data, error } = await supabase.rpc('ca_promo_vault_grant', {
-          p_club_id: resolvedClubId,
-          p_item_key: item.item_key,
-          p_recipient_user_id: recipient.user_id,
-          p_quantity: quantity,
-          p_note: null,
-          p_op_id: opId,
-        });
+        const { data, error } = await runWithRequestDeadline(
+          (signal) =>
+            supabase
+              .rpc('ca_promo_vault_grant', {
+                p_club_id: resolvedClubId,
+                p_item_key: item.item_key,
+                p_recipient_user_id: recipient.user_id,
+                p_quantity: quantity,
+                p_note: null,
+                p_op_id: opId,
+              })
+              .abortSignal(signal),
+          { timeoutMs: 40_000 }
+        );
         if (error) throw error;
+        if (!live()) return;
         const result = (data ?? {}) as Record<string, unknown>;
         if (result.success !== true) {
           toast.error(String(result.error ?? 'That Item Could Not Be Sent'));
@@ -463,10 +486,10 @@ export default function PromoVaultPage() {
         );
       } catch (err) {
         reportError(err, 'PromoVaultPage.handleGrant');
-        toast.error('That Item Could Not Be Sent');
+        if (live()) toast.error('That Item Could Not Be Sent');
       }
     },
-    [resolvedClubId, tab, loadRecords, toast]
+    [resolvedClubId, tab, loadRecords, toast, vaultScope, isMountedRef]
   );
 
   /* ── Sections ─────────────────────────────────────────────────────────── */

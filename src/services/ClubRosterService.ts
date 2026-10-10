@@ -57,6 +57,14 @@ function nullableNum(value: unknown): number | null {
   return value === null || value === undefined ? null : num(value);
 }
 
+function isRosterCount(value: unknown): boolean {
+  return (
+    (typeof value === 'number' || (typeof value === 'string' && value.trim() !== '')) &&
+    Number.isSafeInteger(Number(value)) &&
+    Number(value) >= 0
+  );
+}
+
 const MAX_ROSTER_SEARCH_LENGTH = 120;
 
 /** Keep hostile or accidentally pasted search payloads bounded at the client edge. */
@@ -312,8 +320,22 @@ export const ClubRosterService = {
         }
         const { data, error } = await request;
         if (error) throw error;
-        if (!data) return null;
+        if (data === null) return null;
         const d = data as Record<string, any>;
+        if (
+          !d ||
+          typeof d !== 'object' ||
+          typeof d.viewer_role !== 'string' ||
+          !d.capabilities ||
+          !d.counts ||
+          !['can_view_financials', 'can_export', 'can_manage_members', 'can_view_notes'].every(
+            (key) => typeof d.capabilities[key] === 'boolean'
+          ) ||
+          !['total', 'online', 'seated', 'agents', 'admins'].every((key) =>
+            isRosterCount(d.counts[key])
+          )
+        )
+          throw new Error('The Roster Summary Response Was Incomplete');
         return {
           viewer_role: normaliseRole(d.viewer_role),
           capabilities: {
@@ -354,7 +376,26 @@ export const ClubRosterService = {
         }
         const { data, error } = await request;
         if (error) throw error;
-        const d = (data ?? {}) as Record<string, any>;
+        const d = data as Record<string, any>;
+        if (
+          !d ||
+          typeof d !== 'object' ||
+          !Array.isArray(d.items) ||
+          typeof d.has_more !== 'boolean' ||
+          !isRosterCount(d.filtered_total) ||
+          Number(d.filtered_total) < d.items.length ||
+          !d.items.every(
+            (row: unknown) =>
+              row !== null &&
+              typeof row === 'object' &&
+              'user_id' in row &&
+              typeof row.user_id === 'string' &&
+              row.user_id.length > 0
+          ) ||
+          (d.has_more &&
+            (!d.next_cursor || typeof d.next_cursor !== 'object' || Array.isArray(d.next_cursor)))
+        )
+          throw new Error('The Roster Page Response Was Incomplete');
         return {
           items: Array.isArray(d.items)
             ? d.items.map((row: Record<string, unknown>) => mapRosterRow(row))

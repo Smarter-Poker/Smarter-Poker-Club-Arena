@@ -1780,6 +1780,7 @@ jobs:
             supabase/migrations/20261009151825_lightning_phase_12_load_chaos_the_pass_forms_under_surge.sql
             supabase/migrations/20261009181945_lightning_phase_11_remediation_integrity_signals_are_fair_an.sql
             supabase/migrations/20261009235505_lightning_phase_13_rollout_drain_and_rollback.sql
+            supabase/migrations/20261010054420_lightning_phase_12_load_chaos_stale_groups_preserve_remainin.sql
           LIGHTNING_P12_SUPERSEDED: 20261008161509_lightning_phase_11_integrity_telemetry_and_the_shadow_matche.sql#10
         run: bash scripts/dev/test-lightning-phase12-load-chaos.sh
       - name: Credit invoices bill only uninvoiced drawn debt

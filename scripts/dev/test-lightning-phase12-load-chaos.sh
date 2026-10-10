@@ -1307,6 +1307,9 @@ ROLLBACK;
 BUDGET_CASES
 "${PSQL[@]}" -f "$fixture/budget-countercases.sql"
 echo "  ok  THE BUDGET COUNTERCASES  slow first plan forms; a documented retry remains bounded; zero-attempt starvation still fails"
+node "$root/scripts/dev/verify-lightning-stale-progress-owner.mjs" "$sock" "$port" "$M/20261010054420_lightning_phase_12_load_chaos_stale_groups_preserve_remainin.sql"
+"${PSQL[@]}" -f "$F/lightning-stale-plan-progress.sql"
+echo "  ok  THE STALE PLAN COUNTERCASE  original owner starves; disjoint remaining groups form through real validation; replay remains exact"
 
 # LIGHTNING_P12_ONLY (a space-separated list of scenario ids: L, S1, C2 ...)
 # runs a subset while developing; a subset never prints PASS.

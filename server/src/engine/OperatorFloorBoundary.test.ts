@@ -35,6 +35,107 @@ describe('the original dealer owns its durable operator floor hold', () => {
     ).toHaveLength(0);
     e.preciseTimer.dispose();
   });
+  it('a confirmed per-table resume cannot release the independent floor hold', async () => {
+    const e = engine();
+    e.lifecycleCanMutate = () => true;
+    e.engineLeaseVerified = true;
+    e.engineLeaseGeneration = '33333333-3333-4333-8333-333333333333';
+    const commandId = '44444444-4444-4444-8444-444444444444';
+    const rpc = vi.spyOn(supabase, 'rpc').mockImplementation((name: string) => {
+      if (name === 'fn_ca_operator_floor_state')
+        return Promise.resolve({
+          data: { hold: { mode: 'park' }, close: null },
+          error: null,
+        }) as any;
+      if (name === 'fn_ca_get_table_operator_hold')
+        return Promise.resolve({
+          data: { paused: true, version: 1, command_id: null },
+          error: null,
+        }) as any;
+      if (name === 'fn_ca_set_table_operator_hold')
+        return Promise.resolve({
+          data: { paused: false, version: 2, command_id: commandId },
+          error: null,
+        }) as any;
+      throw new Error('unexpected operator RPC');
+    });
+    try {
+      await e.refreshOperatorFloor();
+      const answer = await e.requestOperatorHold(false, tableId, commandId);
+      expect(answer).toMatchObject({ success: true, admin_paused: false, paused: true });
+      expect(e.adminPauseLock).toBe(false);
+      expect(e.operatorFloorPaused).toBe(true);
+      expect(e.isNextHandPaused()).toBe(true);
+      expect(rpc).toHaveBeenCalledWith(
+        'fn_ca_set_table_operator_hold',
+        expect.objectContaining({ p_paused: false, p_command_id: commandId, p_expected_version: 1 })
+      );
+      expect(
+        e.hub.emitEvent.mock.calls.filter((call: any[]) => call[1].type === 'table_resumed')
+      ).toHaveLength(0);
+    } finally {
+      e.preciseTimer.dispose();
+    }
+  });
+  it('clearing the floor cannot lift a pending or unconfirmed per-table pause', async () => {
+    const e = engine();
+    e.lifecycleCanMutate = () => true;
+    e.engineLeaseVerified = true;
+    e.engineLeaseGeneration = '33333333-3333-4333-8333-333333333333';
+    const commandId = '44444444-4444-4444-8444-444444444444';
+    let floorHeld = true;
+    let entered!: () => void;
+    const writeEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let finish!: (value: unknown) => void;
+    const unresolvedWrite = new Promise((resolve) => {
+      finish = resolve;
+    });
+    vi.spyOn(supabase, 'rpc').mockImplementation((name: string) => {
+      if (name === 'fn_ca_operator_floor_state')
+        return Promise.resolve({
+          data: { hold: floorHeld ? { mode: 'park' } : null, close: null },
+          error: null,
+        }) as any;
+      if (name === 'fn_ca_get_table_operator_hold')
+        return Promise.resolve({
+          data: { paused: false, version: 0, command_id: null },
+          error: null,
+        }) as any;
+      if (name === 'fn_ca_set_table_operator_hold') {
+        entered();
+        return unresolvedWrite as any;
+      }
+      throw new Error('unexpected operator RPC');
+    });
+    try {
+      await e.refreshOperatorFloor();
+      const attempt = e.requestOperatorHold(true, tableId, commandId);
+      const refused = expect(attempt).rejects.toThrow('Operator hold write is unconfirmed');
+      await writeEntered;
+      expect(e.pendingOperatorPauses).toBe(1);
+      floorHeld = false;
+      await e.refreshOperatorFloor();
+      expect(e.operatorFloorPaused).toBe(false);
+      expect(e.isNextHandPaused()).toBe(true);
+      finish({ data: null, error: { code: '57014' } });
+      await refused;
+      expect(e.pendingOperatorPauses).toBe(0);
+      expect(e.unconfirmedOperatorCommands.get(commandId)).toEqual({
+        paused: true,
+        expectedVersion: 0,
+      });
+      await e.refreshOperatorFloor();
+      expect(e.operatorFloorPaused).toBe(false);
+      expect(e.isNextHandPaused()).toBe(true);
+      expect(
+        e.hub.emitEvent.mock.calls.filter((call: any[]) => call[1].type === 'table_resumed')
+      ).toHaveLength(0);
+    } finally {
+      e.preciseTimer.dispose();
+    }
+  });
   it('fails closed on an unreadable authoritative hold', async () => {
     const e = engine();
     vi.spyOn(supabase, 'rpc').mockResolvedValue({

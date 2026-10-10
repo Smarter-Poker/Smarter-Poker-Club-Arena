@@ -13,6 +13,7 @@ RUN npm ci --include=dev --no-audit --no-fund
 # Copy source
 COPY tsconfig.json tsconfig.runtime.json tsconfig.emit.json ./
 COPY src/ ./src/
+COPY scripts/emit-runtime.mjs ./scripts/emit-runtime.mjs
 # Committed admission evidence for the Horse Brain protected release selections
 # (qualification, strength and completion records). The image is built from the
 # server tree alone, so these are the only copies the running engine can read;
@@ -26,13 +27,15 @@ COPY release-evidence/ ./release-evidence/
 # Resource CI compares every emitted runtime file to the full checked build.
 # The runtime project omits unit-test entrypoints and unused declarations.
 # Full test compilation and execution remain in the exact-source CI preflight.
-# The 1024 MiB V8 heap leaves native/compiler and BuildKit room inside the
-# canonical 2048 MiB no-swap builder. On 2026-10-09 the emit outgrew a 512 MiB
-# heap; it completes at 544 MiB and peaks near 830 MiB RSS. The first bounded
-# Linux build at this heap peaked at 1261 MiB of cgroup memory including page
-# cache, so the heap sits 88% and the builder 62% above the measured need.
-# Resource CI proves exact runtime output.
-RUN ulimit -c 0 && node --max-old-space-size=1024 ./node_modules/typescript/bin/tsc --project tsconfig.emit.json
+# Bound both V8 generations: the old-generation ceiling alone does not bound
+# compiler RSS. A 4 MiB semi-space caps the young generation at 12 MiB
+# independently of detected cgroup memory. Preserve the current canonical
+# 2048 MiB no-swap builder; resource CI proves every checked runtime output.
+# Release each bounded program before emitting the next: retaining every AST
+# together exhausted the old 512 MiB heap as the runtime source grew.
+# Preserve main's measured 1024 MiB compiler allowance inside its 2048 MiB builder.
+RUN ulimit -c 0 && node --max-old-space-size=1024 --max-semi-space-size=4 ./scripts/emit-runtime.mjs --project tsconfig.emit.json
+
 
 # Remove dev dependencies
 RUN npm prune --omit=dev --no-audit --no-fund
@@ -43,6 +46,8 @@ ENV ENGINE_ALERT_JOURNAL_DIR=/var/lib/club-arena/engine-alerts
 # The release seal requires this image's journal to live on the durable host
 # bind mount, including when the canonical recovery path starts the image.
 LABEL sp.alert-journal.schema=1
+# This immutable image implements native operator authority before table READY/deal.
+LABEL sp.operator-hold.persistence=1
 # 2026-08-30: Node tried IPv6 first to Supabase on a host with no IPv6 route,
 # burning ~40s per fresh connection while the client's deadline was 15s —
 # every request on a new socket aborted as supabase_timeout and the platform

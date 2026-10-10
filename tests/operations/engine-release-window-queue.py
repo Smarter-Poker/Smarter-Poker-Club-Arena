@@ -103,7 +103,12 @@ CHECKPOINT_A0_SHA=a0ab287d902879280f0c915e44f5222c5db4d7df
 CHECKPOINT_8825_SHA=8825af51817f379c4261658ca29ecc9d8d81932d
 CHECKPOINT_PREDECESSOR_SHA="$CHECKPOINT_8825_SHA"
 legacy_checkpoint_countdown() {{ event "COUNTDOWN:$LOCK_HELD"; printf '%s\\n' $((NOW + 299)); }}
-timeout() {{ printf '%s\\n' "$CHECKPOINT_8825_SHA"; }}
+timeout() {{
+  while [ "$#" -gt 0 ]; do
+    case "$1" in --signal=*|--kill-after=*|[0-9]*s) shift ;; *) break ;; esac
+  done
+  if [ "${{1:-}}" = "$LEGACY_CHECKPOINT" ]; then "$@"; else printf '%s\\n' "$CHECKPOINT_8825_SHA"; fi
+}}
 prove_rollback_readiness() {{ event "ROLLBACK_PROOF:$LOCK_HELD:$BREAK_END_EPOCH"; }}
 # The helper's exit code per invocation: 0 ran, 75 deferred above its durable
 # intent (nothing attempted), anything else refused. A deferral that leaves an

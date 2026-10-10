@@ -1,3 +1,5 @@
+import { OperatorHoldRefusal } from '../services/supabase/operatorHolds.js';
+import { randomUUID } from 'node:crypto';
 import {
   getAdminSeatCashoutReceipt,
   getSeatCashoutReceipt,
@@ -24,8 +26,12 @@ export interface AdminDeps {
   gameServer: {
     getTableEngine(tableId: string):
       | {
-          adminPause(reason?: string): unknown;
-          adminResume(): unknown;
+          requestOperatorHold(
+            paused: boolean,
+            actorId: string,
+            commandId: string,
+            reason?: string
+          ): Promise<unknown>;
           leaveTable(
             userId: string,
             opts?: {
@@ -229,16 +235,44 @@ export async function handleAdminPause(
   res: ServerResponse,
   deps: AdminDeps
 ): Promise<void> {
+  let commandId: string | null = null;
   try {
     const body = JSON.parse(await readBody(req));
     const authz = await authorizeTableAdmin(req, body.tableId);
     if (!authz.ok) return sendJSON(res, authz.status, { success: false, error: authz.error });
     const engine = deps.gameServer.getTableEngine(body.tableId);
     if (!engine) return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
-    return sendJSON(res, 200, engine.adminPause(body.reason));
+    commandId = body.commandId ?? randomUUID();
+    if (
+      typeof commandId !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(commandId)
+    )
+      return sendJSON(res, 400, { success: false, error: 'Invalid commandId' });
+    return sendJSON(
+      res,
+      200,
+      await engine.requestOperatorHold(true, authz.userId, commandId, body.reason)
+    );
   } catch (err: unknown) {
     reportError(err, 'HTTP.admin_pause_error');
-    return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
+    const status =
+      err instanceof SyntaxError
+        ? 400
+        : err instanceof OperatorHoldRefusal
+          ? err.code === '42501'
+            ? 403
+            : err.code === '22023'
+              ? 400
+              : 409
+          : 503;
+    return sendJSON(res, status, {
+      success: false,
+      command_id: commandId,
+      error:
+        status === 503 ? 'Operator hold outcome is unconfirmed' : 'Operator hold request refused',
+      outcome: status === 503 ? 'unknown' : 'refused',
+      code: err instanceof OperatorHoldRefusal ? err.code : undefined,
+    });
   }
 }
 
@@ -247,16 +281,40 @@ export async function handleAdminResume(
   res: ServerResponse,
   deps: AdminDeps
 ): Promise<void> {
+  let commandId: string | null = null;
   try {
     const body = JSON.parse(await readBody(req));
     const authz = await authorizeTableAdmin(req, body.tableId);
     if (!authz.ok) return sendJSON(res, authz.status, { success: false, error: authz.error });
     const engine = deps.gameServer.getTableEngine(body.tableId);
     if (!engine) return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
-    return sendJSON(res, 200, engine.adminResume());
+    commandId = body.commandId ?? randomUUID();
+    if (
+      typeof commandId !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(commandId)
+    )
+      return sendJSON(res, 400, { success: false, error: 'Invalid commandId' });
+    return sendJSON(res, 200, await engine.requestOperatorHold(false, authz.userId, commandId));
   } catch (err: unknown) {
     reportError(err, 'HTTP.admin_resume_error');
-    return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
+    const status =
+      err instanceof SyntaxError
+        ? 400
+        : err instanceof OperatorHoldRefusal
+          ? err.code === '42501'
+            ? 403
+            : err.code === '22023'
+              ? 400
+              : 409
+          : 503;
+    return sendJSON(res, status, {
+      success: false,
+      command_id: commandId,
+      error:
+        status === 503 ? 'Operator hold outcome is unconfirmed' : 'Operator hold request refused',
+      outcome: status === 503 ? 'unknown' : 'refused',
+      code: err instanceof OperatorHoldRefusal ? err.code : undefined,
+    });
   }
 }
 

@@ -48,7 +48,12 @@ vi.mock('../services/supabase/client.js', () => {
       };
     },
   });
-  return { supabase: { from, rpc }, maintenanceSupabase: { from, rpc } };
+  const dispatchRpc = (name: string, ...args: unknown[]) => {
+    if (name === 'fn_ca_get_table_operator_hold')
+      return { data: { paused: false, version: 0, command_id: null }, error: null };
+    return rpc(name, ...args);
+  };
+  return { supabase: { from, rpc: dispatchRpc }, maintenanceSupabase: { from, rpc } };
 });
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 

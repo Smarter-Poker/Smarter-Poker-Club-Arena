@@ -17,6 +17,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { OperatorHoldRefusal } from '../services/supabase/operatorHolds.js';
 
 vi.mock('../http/auth.js', () => ({ authenticateRequest: vi.fn() }));
 vi.mock('../http/body.js', () => ({ readBody: vi.fn() }));
@@ -250,7 +251,7 @@ describe.each([
       res: ReturnType<typeof mockRes>['res'],
       gs: ReturnType<typeof mockGameServer>
     ) => handleAdminPause(req, res, { gameServer: gs }),
-    engineMethod: 'adminPause',
+    engineMethod: 'requestOperatorHold',
   },
   {
     name: 'admin/resume',
@@ -260,7 +261,7 @@ describe.each([
       res: ReturnType<typeof mockRes>['res'],
       gs: ReturnType<typeof mockGameServer>
     ) => handleAdminResume(req, res, { gameServer: gs }),
-    engineMethod: 'adminResume',
+    engineMethod: 'requestOperatorHold',
   },
 ])('POST /$name - club-admin authz contract', ({ name: _name, body, invoke, engineMethod }) => {
   beforeEach(() => {
@@ -320,6 +321,51 @@ describe.each([
     expect(captured.statusCode).toBe(200);
 
     expect((engine as any)[engineMethod]).toHaveBeenCalled();
+  });
+
+  it('does not acknowledge before the original durable command resolves', async () => {
+    let finish!: (value: unknown) => void;
+    const original = new Promise((resolve) => {
+      finish = resolve;
+    });
+    const engine = mockEngine({ requestOperatorHold: vi.fn(() => original) });
+    const { res, captured } = mockRes();
+    const pending = invoke(mockReq(), res, mockGameServer(engine, 't1'));
+    await vi.waitFor(() => expect((engine as any).requestOperatorHold).toHaveBeenCalled());
+    expect(captured.body).toBeUndefined();
+    finish({ success: true, admin_paused: true, paused: true });
+    await pending;
+    expect(captured.statusCode).toBe(200);
+  });
+
+  it.each([
+    ['42501', 403],
+    ['22023', 400],
+    ['40001', 409],
+  ])('reports native refusal %s without an unknown acknowledgement', async (code, status) => {
+    const engine = mockEngine({
+      requestOperatorHold: vi.fn().mockRejectedValue(new OperatorHoldRefusal(code)),
+    });
+    const { res, captured } = mockRes();
+    await invoke(mockReq(), res, mockGameServer(engine, 't1'));
+    expect(captured.statusCode).toBe(status);
+    expect(parseJson(captured)).toMatchObject({ success: false, outcome: 'refused', code });
+    expect((engine as any).requestOperatorHold).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports an unknown original write without a success acknowledgement', async () => {
+    const engine = mockEngine({
+      requestOperatorHold: vi.fn().mockRejectedValue(new Error('unknown')),
+    });
+    const { res, captured } = mockRes();
+    await invoke(mockReq(), res, mockGameServer(engine, 't1'));
+    expect(captured.statusCode).toBe(503);
+    expect(parseJson(captured)).toMatchObject({
+      success: false,
+      outcome: 'unknown',
+      command_id: expect.any(String),
+    });
+    expect((engine as any).requestOperatorHold).toHaveBeenCalledTimes(1);
   });
 });
 

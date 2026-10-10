@@ -39,6 +39,12 @@ REQUIRED_FILES=(
   verify-recovery-stack.sh
   collect-monitoring-health.sh
   engine-release-database-proof.py
+  operator-hold-contract.json
+  operator-hold-checkpoint-guard.mjs
+  operator-hold-rollback-bootstrap.mjs
+  operator-hold-run-spec.py
+  operator-hold-autoheal-policy.py
+  operator-hold-predecessor-profile.json
   engine-release-inflight-hands.py
   engine-release-transaction.sh
   legacy-engine-checkpoint.sh
@@ -319,7 +325,7 @@ else
     bash -n "$GENERATION_STAGE/$script"
   done
   for script in engine-release-seal.py engine-release-database-proof.py \
-    engine-release-inflight-hands.py; do
+    engine-release-inflight-hands.py operator-hold-run-spec.py operator-hold-autoheal-policy.py; do
     python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
       "$GENERATION_STAGE/$script"
   done

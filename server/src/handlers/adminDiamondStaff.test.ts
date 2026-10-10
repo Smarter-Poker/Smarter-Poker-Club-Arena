@@ -44,10 +44,14 @@ const chipTable = {
   tournament_id: null,
   arena: { id: 'chip-club', asset: 'chips', is_platform: false, union_id: null },
 };
-const adminPause = vi.fn(() => ({ success: true, paused: true }));
-const adminResume = vi.fn(() => ({ success: true, paused: false }));
+const requestOperatorHold = vi.fn(async (paused: boolean, actorId: string, commandId: string) => ({
+  success: true,
+  paused,
+  admin_paused: paused,
+  command_id: commandId,
+}));
 const leaveTable = vi.fn();
-const gameServer = { getTableEngine: vi.fn(() => ({ adminPause, adminResume, leaveTable })) };
+const gameServer = { getTableEngine: vi.fn(() => ({ requestOperatorHold, leaveTable })) };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -87,9 +91,14 @@ describe('a Diamond table is operated by platform staff', () => {
   it.each(['admin', 'superadmin', 'god'])('%s pauses and resumes it', async (role) => {
     mocks.profile = { data: { role }, error: null };
     expect((await run(handleAdminPause)).status).toBe(200);
-    expect(adminPause).toHaveBeenCalledWith('house decision');
+    expect(requestOperatorHold).toHaveBeenLastCalledWith(
+      true,
+      'staff-1',
+      expect.any(String),
+      'house decision'
+    );
     expect((await run(handleAdminResume)).status).toBe(200);
-    expect(adminResume).toHaveBeenCalled();
+    expect(requestOperatorHold).toHaveBeenLastCalledWith(false, 'staff-1', expect.any(String));
     // the platform role is the whole answer: no club role is consulted
     expect(membersAsked()).toBe(0);
   });
@@ -111,7 +120,7 @@ describe('a Diamond table is operated by platform staff', () => {
     expect((await run(handleAdminResume)).status).toBe(403);
     mocks.profile = { data: null, error: null };
     expect((await run(handleAdminResume)).status).toBe(403);
-    expect(adminResume).not.toHaveBeenCalled();
+    expect(requestOperatorHold).not.toHaveBeenCalled();
   });
 
   it('lets staff kick at a Diamond cash table, the authority naming the arena', async () => {
@@ -158,7 +167,7 @@ describe('a chip table is unchanged', () => {
     expect(out.status).toBe(403);
     expect(out.body).toEqual({ success: false, error: 'Not a club member' });
     expect(profilesAsked()).toBe(0);
-    expect(adminPause).not.toHaveBeenCalled();
+    expect(requestOperatorHold).not.toHaveBeenCalled();
   });
 
   it('still admits its club admin', async () => {

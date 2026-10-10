@@ -22,6 +22,29 @@ import path from 'node:path';
 const loadSeatedPlayers = vi.fn();
 const loadTable = vi.fn();
 
+// This suite drives real start(); unrelated tables have a confirmed unpaused hold.
+vi.mock('../services/supabase/client.js', async () => {
+  const actual = await vi.importActual<typeof import('../services/supabase/client.js')>(
+    '../services/supabase/client.js'
+  );
+  return {
+    ...actual,
+    supabase: new Proxy(actual.supabase, {
+      get(target, property) {
+        if (property === 'rpc') {
+          return (name: string, ...args: unknown[]) => {
+            if (name === 'fn_ca_get_table_operator_hold')
+              return { data: { paused: false, version: 0, command_id: null }, error: null };
+            return Reflect.apply(target.rpc, target, [name, ...args]);
+          };
+        }
+        const value = Reflect.get(target, property, target);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    }),
+  };
+});
+
 vi.mock('../services/supabase.js', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('../services/supabase.js');
   return {

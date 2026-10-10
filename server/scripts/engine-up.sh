@@ -175,6 +175,43 @@ esac
 docker image inspect "$AUTHORIZED_IMAGE_ID" >/dev/null 2>&1 \
   || { log "FATAL: authorized image $AUTHORIZED_IMAGE_ID disappeared before cutover"; exit 1; }
 
+# Exact predecessor recovery uses the originally committed import and a fixed
+# pre-index preload. Missing/partial state refuses BEFORE stopping a live engine.
+OPERATOR_HOLD_ROOT=/var/lib/club-arena/operator-hold
+OPERATOR_BOOT_ARGS=()
+OPERATOR_BOOT_COMMAND=()
+if [ "$AUTHORIZED_SHA" = 9f9dcc6d55980bf96249dbd985f08c246d7006b2 ] && { [ -e "$OPERATOR_HOLD_ROOT" ] || [ -L "$OPERATOR_HOLD_ROOT" ] || [ -e /var/lib/club-arena/operator-hold-required ] || [ -L /var/lib/club-arena/operator-hold-required ]; }; then
+  python3 - "$OPERATOR_HOLD_ROOT" "$AUTHORIZED_IMAGE_ID" "$AUTHORIZED_SHA" "$CONTROL_DIR" <<'OPERATOR_BOOT_PREFLIGHT'
+import json,os,pathlib,stat,sys
+root=pathlib.Path(sys.argv[1]); image=sys.argv[2]; source=sys.argv[3]; control=pathlib.Path(sys.argv[4])
+marker=root.parent/'operator-hold-required';mi=marker.lstat()
+if not stat.S_ISREG(mi.st_mode) or mi.st_uid!=0 or mi.st_nlink!=1 or stat.S_IMODE(mi.st_mode)!=0o600: raise SystemExit('operator rollback required marker unsafe')
+required=json.loads(marker.read_text())
+info=root.lstat()
+if not stat.S_ISDIR(info.st_mode) or info.st_uid!=0 or stat.S_IMODE(info.st_mode)!=0o700: raise SystemExit('operator rollback directory unsafe')
+for name in ['intent','handoff.json','restart-fence.json','operator-hold-predecessor-profile.json','operator-hold-checkpoint-guard.mjs','operator-hold-rollback-bootstrap.mjs']:
+ p=root/name;i=p.lstat()
+ if not stat.S_ISREG(i.st_mode) or i.st_uid!=0 or i.st_nlink!=1 or stat.S_IMODE(i.st_mode)!=0o600: raise SystemExit('operator rollback bundle partial or unsafe')
+h=json.loads((root/'handoff.json').read_text());p=json.loads((root/'operator-hold-predecessor-profile.json').read_text())
+r=json.loads((root/'restart-fence.json').read_text())
+if r.get('kind')!='operator_restart_fence_v1' or r.get('handoffId')!=required.get('handoffId') or r.get('container')!=required.get('container') or r.get('source')!=required.get('source') or r.get('autohealPolicy') not in ['always','unless-stopped','no']: raise SystemExit('original restart fence identity mismatch')
+expected='9f9dcc6d55980bf96249dbd985f08c246d7006b2'
+paths=['GameServer.js','engine/ServerTableEngineBase.js','engine/ServerTableEngineSeating.js','engine/ServerTableEngineDealing.js','handlers/admin.js','tournament/TournamentManagerBase.js','services/tableLease.js','services/supabase/client.js','releaseIdentity.js','http/createEngineHttpServer.js','engine/ServerTableEngine.js','maintenance/MaintenanceBreak.js','maintenance/freezeState.js','services/supabase/dataActorContext.js']
+import re
+if source!=expected or h.get('sourceRelease')!=expected or p.get('releaseSha')!=expected or p.get('kind')!='operator_hold_predecessor_v1' or p.get('imageId')!=image or not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+',p.get('runtimeNode','')) or not isinstance(p.get('compiled'),list) or len(p['compiled'])!=len(paths) or any(not isinstance(row,dict) or row.get('path')!='/app/dist/'+paths[index] or not re.fullmatch(r'[0-9a-f]{64}',row.get('sha256','')) for index,row in enumerate(p['compiled'])): raise SystemExit('operator predecessor profile incomplete or not authorized')
+# The readonly native observer qualifies the immutable installed control profile.
+# Refuse before stop if the retained bundle differs from that exact recipe.
+for name in ['operator-hold-predecessor-profile.json','operator-hold-checkpoint-guard.mjs','operator-hold-rollback-bootstrap.mjs']:
+ original=control/name;oi=original.lstat()
+ if not stat.S_ISREG(oi.st_mode) or oi.st_uid!=0 or oi.st_nlink!=1 or oi.st_mode&0o022 or original.read_bytes()!=(root/name).read_bytes(): raise SystemExit('operator rollback recipe changed')
+
+if required.get('handoffId')!=h.get('handoffId') or required.get('source')!=h.get('sourceRelease') or required.get('instance')!=h.get('sourceInstance') or h.get('kind')!='operator_hold_handoff_v1' or (root/'intent').read_text().strip()!=h.get('handoffId') or h.get('sourceRelease')!=p.get('releaseSha') or p.get('imageId')!=image: raise SystemExit('operator rollback identity mismatch')
+OPERATOR_BOOT_PREFLIGHT
+  OPERATOR_BOOT_ARGS=(--mount "type=bind,source=$OPERATOR_HOLD_ROOT,target=/run/club-arena/operator-hold,readonly")
+  OPERATOR_BOOT_COMMAND=(node --import /run/club-arena/operator-hold/operator-hold-rollback-bootstrap.mjs dist/index.js)
+  log 'predecessor recovery restores latest durable operator holds before start; operator pause/resume temporarily unavailable'
+fi
+
 # The alert queue must survive docker rm and a candidate rollback. Establish
 # and test only its dedicated directory before touching the funded engine.
 [[ "$ALERT_JOURNAL_HOST_DIR" = /* && "$ALERT_JOURNAL_HOST_DIR" != *,* && ! -L "$ALERT_JOURNAL_HOST_DIR" ]] \
@@ -308,6 +345,7 @@ docker run -d \
   --mount "type=bind,source=$ALERT_JOURNAL_HOST_DIR,target=$ALERT_JOURNAL_CONTAINER_DIR" \
   --env "HORSE_DECISION_JOURNAL_DIR=$HORSE_JOURNAL_CONTAINER_DIR" \
   --mount "type=bind,source=$HORSE_JOURNAL_HOST_DIR,target=$HORSE_JOURNAL_CONTAINER_DIR" \
-  "$AUTHORIZED_IMAGE_ID"
+  ${OPERATOR_BOOT_ARGS[@]+"${OPERATOR_BOOT_ARGS[@]}"} \
+  "$AUTHORIZED_IMAGE_ID" ${OPERATOR_BOOT_COMMAND[@]+"${OPERATOR_BOOT_COMMAND[@]}"}
 
 log "started $(docker inspect -f '{{.Id}}' "$CONTAINER" | cut -c1-12) from $AUTHORIZED_IMAGE_ID (restart=$RESTART_POLICY)"

@@ -259,7 +259,7 @@ describe('the release enters the break with time to finish', () => {
     );
     const clamp = transaction.slice(
       transaction.indexOf('    BREAK_ENTRY_BUDGET_MS=$(( ROLLBACK_PROOF_MS * 2 ))'),
-      transaction.indexOf('    LEGACY_CHECKPOINT_ATTEMPTED=1\n    set +e')
+      transaction.indexOf('    LEGACY_CHECKPOINT_ATTEMPTED=1\n')
     );
     const result = spawnSync(
       'bash',
@@ -321,10 +321,19 @@ printf '%s %s %s %s' "$BREAK_ENTRY_BUDGET_MS" "$BREAK_ENTRY_BUDGET_CEILING_MS" "
     // Behaviour, not text: drive the real probe with a break that cannot fit
     // the reserve plus the boot still to come, and prove it exits 75 having
     // created nothing. This is the exact shape that ended run 35615604946.
-    const block = checkpointShell.slice(
-      checkpointShell.indexOf('INSTANCE="$(curl'),
-      checkpointShell.indexOf('{ cat "$CONTROL_DIR/legacy-engine-checkpoint-guard.mjs";')
-    );
+    // Exercise the original physical probe and durable intent, stopping before
+    // the separate operator-fence/transport phase. Do not execute that phase
+    // merely because its former stream marker moved.
+    const probeAt = checkpointShell.indexOf('INSTANCE="$(curl');
+    const probeEnd = checkpointShell.indexOf('# One absolute 40-second', probeAt);
+    const intentAt = checkpointShell.indexOf('# Persist intent before opening debugger access.');
+    const intentEnd = checkpointShell.indexOf('CHECKPOINT_MODE=', intentAt);
+    expect(probeAt).toBeGreaterThan(0);
+    expect(probeEnd).toBeGreaterThan(probeAt);
+    expect(intentAt).toBeGreaterThan(probeEnd);
+    expect(intentEnd).toBeGreaterThan(intentAt);
+    const block =
+      checkpointShell.slice(probeAt, probeEnd) + checkpointShell.slice(intentAt, intentEnd);
     const root = mkdtempSync(join(tmpdir(), 'release-window-defer-'));
     try {
       const health = (remainingMs: number) =>
@@ -412,8 +421,11 @@ printf '%s' inspector-boundary-reached
     );
     // the one-shot flag is raised BEFORE the helper runs, so a crash mid-call
     // can never be mistaken for a deferral
-    const raise = transaction.indexOf('LEGACY_CHECKPOINT_ATTEMPTED=1\n    set +e');
+    const raise = transaction.indexOf('    LEGACY_CHECKPOINT_ATTEMPTED=1\n');
     const invoke = transaction.indexOf('"$LEGACY_CHECKPOINT" "$RUN_ID"\n    LEGACY_CHECKPOINT_RC');
+    expect(transaction).toContain(
+      'timeout --signal=TERM --kill-after=1s "$(( LEGACY_CHECKPOINT_BUDGET_SECONDS - 1 ))s" "$LEGACY_CHECKPOINT" "$RUN_ID"'
+    );
     expect(raise).toBeGreaterThan(0);
     expect(raise).toBeLessThan(invoke);
   });

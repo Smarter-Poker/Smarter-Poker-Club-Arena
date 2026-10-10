@@ -469,6 +469,8 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       current_player: null,
       dealer_seat: this.currentHandDealerSeat,
       stage: 'waiting',
+      admin_paused: this.adminPauseLock,
+      maintenance_lock: this.maintenanceLock,
       winner_ids: [],
       winners: [],
       min_raise: 0,

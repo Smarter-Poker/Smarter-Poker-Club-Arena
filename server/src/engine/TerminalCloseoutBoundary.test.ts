@@ -6,6 +6,8 @@ import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 
 function boundaryHarness(): any {
   const engine = Object.create(ServerTableEngineBase.prototype) as any;
+  engine.unconfirmedOperatorCommands = new Map();
+  engine.pendingOperatorPauses = 0;
   engine.running = true;
   engine.tableId = '00000000-0000-4000-8000-000000000001';
   engine.handForHandPaused = false;
@@ -262,6 +264,8 @@ describe('the terminal tournament boundary owns the next deal', () => {
 
   it('finishes teardown after a snapshot flush rejects', async () => {
     const engine = Object.create(ServerTableEngineBase.prototype) as any;
+    engine.unconfirmedOperatorCommands = new Map();
+    engine.pendingOperatorPauses = 0;
     const dispose = vi.fn();
     const failure = new Error('snapshot unavailable');
     engine.running = true;

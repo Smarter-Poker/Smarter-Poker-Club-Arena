@@ -1,3 +1,8 @@
+import {
+  OperatorHoldRefusal,
+  readOperatorHold,
+  writeOperatorHold,
+} from '../services/supabase/operatorHolds.js';
 import { randomUUID } from 'node:crypto';
 import { positionLabelsFor } from './presentation/projectHandState.js';
 import { custodyJSON } from '../tournament/mixedF06Custody.js';
@@ -654,6 +659,107 @@ export abstract class ServerTableEngineBase {
 
   // Bible V8 §6.17: Admin pause/maintenance lock — prevents new hands from starting
   protected adminPauseLock: boolean = false;
+  protected operatorHoldVersion = -1;
+  protected operatorHoldRequestSequence = 0;
+  protected pendingOperatorPauses = 0;
+  protected unconfirmedOperatorCommands = new Map<
+    string,
+    { paused: boolean; expectedVersion: number | null }
+  >();
+
+  protected hasUnconfirmedOperatorPause(): boolean {
+    return [...this.unconfirmedOperatorCommands.values()].some((command) => command.paused);
+  }
+  protected operatorHoldWrites: Promise<void> = Promise.resolve();
+
+  /** Restore before ready/dealing. An unreadable hold cannot mean unpaused. */
+  protected async restoreOperatorHold(): Promise<void> {
+    const sequence = this.operatorHoldRequestSequence;
+    const hold = await readOperatorHold(this.tableId);
+    if (!this.lifecycleCanMutate()) return;
+    if (sequence !== this.operatorHoldRequestSequence) {
+      await this.operatorHoldWrites;
+      return;
+    }
+    if (hold.version >= this.operatorHoldVersion) {
+      this.operatorHoldVersion = hold.version;
+      this.adminPauseLock = hold.paused || this.hasUnconfirmedOperatorPause();
+    }
+  }
+
+  /** One native receipt per original request; never clear a hold on unknown. */
+  protected async persistOperatorHold(
+    paused: boolean,
+    actorId: string,
+    commandId: string
+  ): Promise<boolean> {
+    this.operatorHoldRequestSequence++;
+    // A pause immediately fences the next hand while its acknowledgement is pending.
+    if (paused) {
+      this.pendingOperatorPauses++;
+      this.adminPauseLock = true;
+    }
+    const original = this.operatorHoldWrites;
+    let finish!: () => void;
+    this.operatorHoldWrites = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    await original;
+    let expectedVersion: number | null = null;
+    try {
+      if (!this.engineLeaseVerified || !this.engineLeaseGeneration || !this.lifecycleCanMutate())
+        throw new OperatorHoldRefusal('42501');
+      const before = await readOperatorHold(this.tableId);
+      expectedVersion = before.version;
+      if (!this.lifecycleCanMutate()) throw new OperatorHoldRefusal('42501');
+      const hold = await writeOperatorHold(
+        this.tableId,
+        paused,
+        actorId,
+        commandId,
+        this.engineLeaseGeneration,
+        INSTANCE_ID,
+        before.version
+      );
+      if (!this.lifecycleCanMutate()) throw new Error('Operator hold engine ownership changed');
+      if (hold.version < this.operatorHoldVersion)
+        throw new Error('Operator hold receipt is stale');
+      // A newer native version makes a late original CAS incapable of committing.
+      for (const [id, unresolved] of this.unconfirmedOperatorCommands) {
+        if (unresolved.expectedVersion === null || hold.version > unresolved.expectedVersion)
+          this.unconfirmedOperatorCommands.delete(id);
+      }
+      this.operatorHoldVersion = hold.version;
+      this.adminPauseLock = hold.paused || this.hasUnconfirmedOperatorPause();
+      return hold.paused;
+    } catch (error) {
+      if (error instanceof OperatorHoldRefusal) {
+        // Definitive denial never installs an unauthorized in-memory authority.
+        // Read the latest state: a CAS refusal can follow another committed command.
+        try {
+          const current = await readOperatorHold(this.tableId);
+          if (this.lifecycleCanMutate()) {
+            if (current.version < this.operatorHoldVersion)
+              throw new Error('Operator hold refusal readback is stale');
+            this.operatorHoldVersion = current.version;
+            this.adminPauseLock = current.paused || this.hasUnconfirmedOperatorPause();
+          }
+        } catch {
+          this.unconfirmedOperatorCommands.set(commandId, { paused, expectedVersion });
+          if (paused && this.lifecycleCanMutate()) this.adminPauseLock = true;
+          throw new Error('Operator hold refusal readback is unconfirmed');
+        }
+      } else {
+        this.unconfirmedOperatorCommands.set(commandId, { paused, expectedVersion });
+        if (paused && this.lifecycleCanMutate()) this.adminPauseLock = true;
+      }
+      throw error;
+    } finally {
+      if (paused) this.pendingOperatorPauses--;
+      finish();
+    }
+  }
+
   protected operatorFloorPaused = false;
   private operatorFloorReadSequence = 0;
   protected operatorCloseRequest: {
@@ -3565,6 +3671,8 @@ export abstract class ServerTableEngineBase {
       }
       if (!this.lifecycleCanMutate()) return;
       this.tableInfo = tableData as TableInfo;
+      await this.restoreOperatorHold();
+      if (!this.lifecycleCanMutate()) return;
       /* Lightning 2.0 Phase 5: a halted table must come back HALTED. The
          engine is new, the row is not - this is the read that makes a reaped
          and rebuilt engine honour a conversion that started before it existed,
@@ -7047,6 +7155,8 @@ export abstract class ServerTableEngineBase {
   protected isNextHandPaused(): boolean {
     return (
       this.adminPauseLock ||
+      this.pendingOperatorPauses > 0 ||
+      this.hasUnconfirmedOperatorPause() ||
       this.operatorFloorPaused ||
       this.maintenanceLock ||
       // Lightning 2.0 Phase 5: the Cluster's row says finish this hand and

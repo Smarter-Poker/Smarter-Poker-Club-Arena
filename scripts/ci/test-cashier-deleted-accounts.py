@@ -110,6 +110,17 @@ try:
         raise RuntimeError(str([(r.stdout, r.stderr) for r in race]))
     run('simultaneous-credit-conservation', 'SELECT chip_treasury FROM clubs;', '1140')
     run('source-helper-refuses-browser', f"SET ROLE authenticated; SELECT fn_ca_deleted_wallet_bank_return('{club}','{deleted}','player_wallet');", error='42501')
+    run('downline-fixture', (root / 'tests/fixtures/cashier-deleted-accounts/downline.sql').read_text())
+    original = (root / 'supabase/migrations/20261010074219_player_downline_reads_exact_retained_hand_totals.sql').read_text()
+    original = original[original.index('CREATE OR REPLACE FUNCTION'):original.rindex('COMMIT;')]
+    run('downline-original', original)
+    downline = f"public.ca_club_member_downline('{club}','{closing}')"
+    run('downline-baseline-shows-deleted', f"SELECT count(*) FROM {downline};", '3')
+    run('downline-install', (root / 'supabase/migrations/20261010202722_deleted_profiles_stay_out_of_player_downline_lists.sql').read_text())
+    run('downline-deleted-is-excluded', f"SELECT count(*) FROM {downline} d JOIN profiles p ON p.id=d.user_id WHERE p.status='deleted';", '0')
+    run('downline-keeps-active-descendant-and-exact-fees', f"SELECT depth||'/'||total_fees||'/'||alias FROM {downline} WHERE user_id='{active}';", '2/12.34/deleted-active-name')
+    run('downline-keeps-profile-less-member', f"SELECT count(*) FROM {downline} WHERE user_id='00000000-0000-0000-0000-000000000004';", '1')
+    run('downline-preserves-access-refusal', f"SET fixture.access='restricted'; SELECT count(*) FROM {downline};", '0')
     print(json.dumps({'passed': True, 'cases': cases}))
 finally:
     (out / 'results.json').write_text(json.dumps({'passed': bool(cases) and all(v['passed'] for v in cases), 'cases': cases}, indent=2))

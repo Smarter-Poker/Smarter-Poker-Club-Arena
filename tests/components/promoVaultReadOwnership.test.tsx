@@ -26,12 +26,17 @@ vi.mock('../../src/services/ClubRosterService', () => ({
 }));
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
-    rpc: (name: string, args: unknown) => ({
-      abortSignal: (signal: AbortSignal) => {
-        state.signals.push(signal);
-        return state.rpc(name, args);
-      },
-    }),
+    rpc: (name: string, args: unknown) => {
+      const request = state.rpc(name, args);
+      return {
+        then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) =>
+          request.then(resolve, reject),
+        abortSignal: (signal: AbortSignal) => {
+          state.signals.push(signal);
+          return request;
+        },
+      };
+    },
     from: (table: string) => {
       const chain = {
         select: () => chain,
@@ -196,4 +201,83 @@ describe('Promo Vault owns truthful bounded reads', () => {
     expect(screen.getByText('The Live Vault Records Could Not Be Loaded.')).toBeInTheDocument();
     expect(state.rpc).toHaveBeenCalledTimes(2);
   });
+});
+
+it('ignores an old club purchase answer after navigation', async () => {
+  const old = deferred<{ data: Record<string, unknown>; error: null }>();
+  state.wallet.mockResolvedValue({ data: { balance: 100 }, error: null });
+  state.rpc.mockImplementation((name) =>
+    name === 'ca_promo_vault_buy' ? old.promise : Promise.resolve({ data: catalog, error: null })
+  );
+  const view = render(<PromoVaultPage />);
+  await screen.findByText('Time Bank');
+  fireEvent.click(screen.getByRole('button', { name: 'Buy More Time Bank' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+  await waitFor(() =>
+    expect(state.rpc).toHaveBeenCalledWith('ca_promo_vault_buy', expect.anything())
+  );
+  state.club = 'second-club';
+  view.rerender(<PromoVaultPage />);
+  await screen.findByText('Time Bank');
+  await act(async () =>
+    old.resolve({
+      data: { success: true, quantity: 99, diamond_balance: 1, diamonds_spent: 10 },
+      error: null,
+    })
+  );
+  expect(screen.getByTitle('Club Diamond Balance')).toHaveTextContent('100');
+  expect(state.toast.success).not.toHaveBeenCalled();
+});
+
+it('bounds a stalled purchase without automatically replaying it', async () => {
+  state.wallet.mockResolvedValue({ data: { balance: 100 }, error: null });
+  render(<PromoVaultPage />);
+  await screen.findByText('Time Bank');
+  vi.useFakeTimers();
+  state.rpc.mockImplementation((name) =>
+    name === 'ca_promo_vault_buy'
+      ? new Promise(() => {})
+      : Promise.resolve({ data: catalog, error: null })
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Buy More Time Bank' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(40_000);
+  });
+  expect(state.toast.error).toHaveBeenCalledWith('That Purchase Could Not Be Completed');
+  expect(state.rpc.mock.calls.filter(([name]) => name === 'ca_promo_vault_buy')).toHaveLength(1);
+  expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled();
+});
+
+it('retains the same grant receipt after an unknown answer and separates a new club attempt', async () => {
+  state.roster.mockResolvedValue([
+    { user_id: 'viewer', role: 'owner', alias: 'Recipient', username: 'recipient' },
+  ]);
+  const view = render(<PromoVaultPage />);
+  await screen.findByText('Time Bank');
+  const grantCalls: Array<{ p_op_id: string; p_club_id: string }> = [];
+  state.rpc.mockImplementation((name, args) => {
+    if (name === 'ca_promo_vault_grant') {
+      grantCalls.push(args);
+      return Promise.resolve({ data: null, error: { message: 'Unknown Acknowledgement' } });
+    }
+    return Promise.resolve({ data: catalog, error: null });
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Grant Time Bank' }));
+  fireEvent.click(screen.getByRole('button', { name: /Recipient/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+  await waitFor(() => expect(grantCalls).toHaveLength(1));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+  await waitFor(() => expect(grantCalls).toHaveLength(2));
+  expect(grantCalls[1].p_op_id).toBe(grantCalls[0].p_op_id);
+  state.club = 'second-club';
+  view.rerender(<PromoVaultPage />);
+  await screen.findByText('Time Bank');
+  fireEvent.click(screen.getByRole('button', { name: 'Grant Time Bank' }));
+  fireEvent.click(screen.getByRole('button', { name: /Recipient/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+  await waitFor(() => expect(grantCalls).toHaveLength(3));
+  expect(grantCalls[2].p_op_id).not.toBe(grantCalls[0].p_op_id);
+  expect(grantCalls[2].p_club_id).toBe('second-club');
 });

@@ -118,7 +118,7 @@ describe('CSP observation owns one rendered document', () => {
   );
   it('keeps all eight routes, the original observation windows, and zero-violation assertion', () => {
     expect(spec).toContain("['', 'clubs', 'wallet', 'profile', 'promotions']");
-    expect(spec).toContain("['/', '/diamonds', '/games']");
+    expect(spec).toContain("['/', '/hub/diamond-store', '/hub/trivia']");
     expect(spec).toContain('test.setTimeout(240_000)');
     expect(spec).toContain(').toEqual([])');
     expect(spec).toContain('visitCspRoute(page, url, label)');

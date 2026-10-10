@@ -83,6 +83,8 @@ function synth(): SpeechSynthesis | null {
 }
 
 class ThrowableVoiceClass {
+  private pending: ReturnType<typeof setTimeout> | undefined;
+  private generation = 0;
   /** True when the platform can actually speak. */
   isSupported(): boolean {
     return !!synth() && typeof window.SpeechSynthesisUtterance === 'function';
@@ -92,13 +94,14 @@ class ThrowableVoiceClass {
    * Speak a throwable's line, if it has one. No-op for silent items, for
    * users with sound off, and on any platform that cannot speak.
    */
-  speakFor(throwableId: string): void {
+  speakFor(throwableId: string): (() => void) | undefined {
     const line = VOICE_LINES[throwableId];
     if (!line) return;
-    this.speak(line);
+    return this.speak(line);
   }
 
-  speak(line: VoiceLine): void {
+  speak(line: VoiceLine): (() => void) | undefined {
+    this.cancel();
     if (!soundService.isEnabled()) return;
     const s = synth();
     if (!s || typeof window.SpeechSynthesisUtterance !== 'function') {
@@ -111,7 +114,11 @@ class ThrowableVoiceClass {
       return;
     }
 
+    const generation = this.generation;
     const fire = () => {
+      if (generation !== this.generation) return;
+      this.pending = undefined;
+      if (!soundService.isEnabled()) return;
       try {
         // Rapid throws must not queue into overlapping voices.
         s.cancel();
@@ -125,12 +132,19 @@ class ThrowableVoiceClass {
       }
     };
 
-    if (line.delay && line.delay > 0) setTimeout(fire, line.delay);
+    if (line.delay && line.delay > 0) this.pending = setTimeout(fire, line.delay);
     else fire();
+    // A departing older throw must not cancel a newer throw's voice.
+    return () => {
+      if (generation === this.generation) this.cancel();
+    };
   }
 
   /** Stop anything currently being said (table teardown, mute). */
   cancel(): void {
+    this.generation += 1;
+    if (this.pending !== undefined) clearTimeout(this.pending);
+    this.pending = undefined;
     try {
       synth()?.cancel();
     } catch {

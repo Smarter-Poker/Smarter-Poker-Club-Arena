@@ -296,7 +296,7 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
          are wrapped in calc(... * var(--animation-speed, 1)) THERE.
      Read once rather than per-use so a setting changed mid-flight cannot
      desynchronise a throw that is already in the air. */
-  const speed = getAnimationSpeed();
+  const [speed] = useState(() => getAnimationSpeed());
   const scaled = (ms: number) => Math.round(ms * speed);
   const basePhysics = PHYSICS[t.physics] || PHYSICS.arc;
   const rawPhysics = DURATION_OVERRIDES[t.id]
@@ -367,6 +367,7 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
 
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
+    let cancelVoice: (() => void) | undefined;
     /* Scaled here so all four phase transitions stretch together. Scaling at
        the call sites instead would be four chances to forget one, and a
        forgotten one shows up as an impact that fires before its projectile
@@ -404,7 +405,7 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
         } else {
           throwableSoundService.playImpact(t.sound, t.weight, impactPan);
           // Spoken taunt, for the items that have one. Silent for the rest.
-          throwableVoice.speakFor(t.id);
+          cancelVoice = throwableVoice.speakFor(t.id);
         }
       } catch {
         /* audio is best-effort */
@@ -449,7 +450,10 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
       onCompleteRef.current();
     });
 
-    return () => timers.forEach(clearTimeout);
+    return () => {
+      timers.forEach(clearTimeout);
+      cancelVoice?.();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event.id]);
 
@@ -473,6 +477,7 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
   // below so a paid throw can never vanish silently again.)
 
   const colorVars = {
+    '--animation-speed': speed,
     '--c1': t.color,
     '--c2': t.color2 || t.color,
   } as React.CSSProperties;

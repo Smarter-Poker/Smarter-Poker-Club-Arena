@@ -103,6 +103,7 @@ import { unionRouteRef } from '../utils/unionIdResolver';
 import { rememberLastClub } from '../utils/clubQuickLink';
 import { SpadeConsole } from '../components/console/SpadeConsole';
 import { compactChips } from '../utils/format';
+import { exactChipFigure, parseTradeAmount, sumChips } from '../utils/cashierAmount';
 import { titleCase } from '../utils/titleCase';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -213,38 +214,13 @@ type TabKey = 'trade' | 'record' | 'leaderboard' | 'request' | 'tickets';
 const fmt = compactChips;
 
 /**
- * THE FIGURE A USER CONFIRMS IS THE FIGURE THAT MOVES (launch audit
- * 2026-10-09, P-10). `fmt` floors to one decimal of K/M/B for head zones and
- * list rows, which is the console law. Inside a confirmation - the Send Out
- * total and its per-target rows, an Insufficient Chips refusal, the receipt
- * amount - the exact two-decimal figure prints instead, grouped by thousands:
- * 5 x 1,999.99 is "9,999.95", never "9.9K". Whole chips print whole.
+ * The ledger note on every Send Out row (regression review 2026-10-10, G-07).
+ * It was `Cashier Send Out ${submissionId}`, which printed a UUID into the
+ * recipient's ledger, CSV "Note" column and player statement. The replay
+ * fingerprint only needs a reason that is the same on a retry; a constant is.
+ * The op_id stays the identity of each send.
  */
-export function exactChipFigure(value: number): string {
-  const safe = Number.isFinite(value) ? value : 0;
-  const cents = Math.round(Math.abs(safe) * 100);
-  const whole = Math.floor(cents / 100);
-  const fraction = cents % 100;
-  const grouped = whole.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  const sign = safe < 0 && cents > 0 ? '-' : '';
-  // Two cent digits by arithmetic: the one padStart on this page is the
-  // mm:ss clock, and the role-scoping law counts call sites.
-  return fraction === 0
-    ? `${sign}${grouped}`
-    : `${sign}${grouped}.${fraction < 10 ? '0' : ''}${fraction}`;
-}
-
-/**
- * Money is summed in CENTS (launch audit 2026-10-09, P-16). `0.1 + 0.2 - 0.3`
- * is 5.55e-17 in binary floating point, which `net` printed as "+0"; every
- * displayed sum on this page goes through here so a figure can never carry
- * drift the ledger does not have.
- */
-export function sumChips(values: Iterable<number>): number {
-  let cents = 0;
-  for (const value of values) cents += Math.round((Number(value) || 0) * 100);
-  return cents / 100;
-}
+const CASHIER_SEND_OUT_REASON = 'Cashier Send Out';
 
 /**
  * Add batch values in chip cents, not binary floating point. `0.10 * 3` is
@@ -253,24 +229,6 @@ export function sumChips(values: Iterable<number>): number {
  */
 const batchAmount = (amountPerTarget: number, targetCount: number) =>
   (Math.round(amountPerTarget * 100) * targetCount) / 100;
-
-/**
- * "1,000" used to reach `Number()` as NaN and be refused as "Enter A Positive
- * Amount" - the message blamed the sign, not the comma (launch audit
- * 2026-10-09, P-20). Conventional thousands grouping is accepted and stripped;
- * any other comma is named for what it is. Same words as the classic cashier.
- */
-export function parseTradeAmount(
-  input: string
-): { ok: true; value: number } | { ok: false; error: string } {
-  const trimmed = String(input ?? '').trim();
-  const grouped = /^\d{1,3}(,\d{3})+(\.\d+)?$/.test(trimmed);
-  const spelled = grouped ? trimmed.replace(/,/g, '') : trimmed;
-  if (spelled.includes(',')) return { ok: false, error: 'Enter The Amount Without Commas' };
-  const raw = spelled === '' ? NaN : Number(spelled);
-  if (!Number.isFinite(raw) || raw <= 0) return { ok: false, error: 'Enter A Positive Amount' };
-  return { ok: true, value: raw };
-}
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -1798,9 +1756,10 @@ export default function CashierTradePage() {
               ? {
                   destination: canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet',
                   // The server's replay fingerprint includes the reason, so it
-                  // is built from ids that cannot change between an uncertain
-                  // send and its retry - never a display name (S-06).
-                  reason: `Cashier Send Out ${submissionId}`,
+                  // cannot change between an uncertain send and its retry -
+                  // never a display name (S-06). A constant is stable; op_id
+                  // is the identity (regression review G-07).
+                  reason: CASHIER_SEND_OUT_REASON,
                   op_id: opIdFor(target.userId),
                 }
               : {

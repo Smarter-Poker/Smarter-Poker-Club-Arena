@@ -382,12 +382,16 @@ function CashoutRequestContent({
     const channelKey = `cashout-modal-${playerId}`;
     // The returned channel was bound to a `channel` const nobody read. Teardown
     // goes through masterBus.removeRegisteredChannel(channelKey), not the handle.
-    /* SCOPED TO THIS CLUB AS WELL AS THIS PLAYER (launch audit D-23). A
-       player-only filter woke this sheet for the player's cashouts in every
-       club they belong to; the reload is club-scoped, so nothing wrong was
-       shown, only read for nothing. Postgres filters take one column, so the
-       club is the narrower key: resolved to a uuid first (a code or slug
-       matches nothing), and an unresolvable club falls back to the player. */
+    /* SCOPED TO THIS PLAYER, RELOADED FOR THIS CLUB (launch audit D-23,
+       regression review G-02). A player-only filter woke this sheet for the
+       player's cashouts in every club they belong to; the reload is
+       club-scoped, so nothing wrong was shown, only read for nothing. The
+       first fix moved the filter to `club_id`, which is WIDER, not narrower:
+       RLS delivers every member's cashout in the club to a staff viewer, so
+       an owner's own sheet reloaded for the whole club. Postgres filters take
+       one column, so the filter stays on the player and the club is checked
+       on the payload: resolved to a uuid first (a code or slug matches
+       nothing), and an unresolvable club reloads on every own-row change. */
     let cancelled = false;
     (async () => {
       const resolved = clubId ? await resolveClubUUID(clubId) : null;
@@ -400,10 +404,16 @@ function CashoutRequestContent({
             event: '*',
             schema: 'public',
             table: 'cashout_requests',
-            filter: resolved ? `club_id=eq.${resolved}` : `player_id=eq.${playerId}`,
+            filter: `player_id=eq.${playerId}`,
           },
-          () => {
-            loadPendingCashouts();
+          (payload: { new?: { club_id?: unknown }; old?: { club_id?: unknown } }) => {
+            // A DELETE carries `new: {}` and, without REPLICA IDENTITY FULL,
+            // an `old` with the key only: a row whose club is not on the
+            // payload is not known to be another club's, so it reloads.
+            const rowClub = payload?.new?.club_id ?? payload?.old?.club_id;
+            if (!resolved || rowClub === undefined || rowClub === resolved) {
+              loadPendingCashouts();
+            }
           }
         )
         .subscribe((status: string, err?: Error) => {

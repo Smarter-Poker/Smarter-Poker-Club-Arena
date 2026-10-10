@@ -167,6 +167,28 @@ export function parseChipAmount(
 export const WHOLE_CHIPS = /^\d+$/;
 
 /**
+ * The Mint field's reader (regression review 2026-10-10, G-03). It accepts
+ * exactly the spellings parseChipAmount accepts, conventional thousands
+ * grouping included, and then requires whole chips: "1,000" is one thousand
+ * here too, where the Mint branch used to test the raw text against
+ * WHOLE_CHIPS and refuse it as "Mint Whole Chips Only", blaming the wrong
+ * thing. "1.5" and "100.00" are still not whole chips.
+ */
+export function parseWholeChipAmount(
+  raw: string
+): { ok: true; value: number } | { ok: false; error: string } {
+  const parsed = parseChipAmount(raw);
+  if (!parsed.ok) return parsed;
+  // parseChipAmount accepted the text, so any comma in it is conventional
+  // grouping and stripping it leaves the digits that were typed.
+  const spelled = (raw ?? '').trim().replace(/,/g, '');
+  if (!WHOLE_CHIPS.test(spelled) || !Number.isInteger(parsed.value)) {
+    return { ok: false, error: 'Mint Whole Chips Only' };
+  }
+  return parsed;
+}
+
+/**
  * crypto.randomUUID is not in every embedded webview, and fn_agent_wallet_send
  * takes `p_op_id uuid` - so the fallback must still BE a uuid or the one call
  * that moves the chips fails with a 22P02 on exactly the browsers that lack it.
@@ -648,6 +670,11 @@ function CashierContent() {
     if (!clubId || !user?.id) return;
     const myVersion = contextVersionRef.current;
     const stale = () => contextVersionRef.current !== myVersion;
+    /* WHICH READ FAILED IS SAID (regression review 2026-10-10, G-04). A
+       failed `clubs` read hides the cashier too (union_id gates Mint and the
+       distribute route), but the role read succeeded, so it must not be
+       reported as one. */
+    let failedRead: 'role' | 'club' = 'role';
     try {
       const resolvedId = await resolveClubUUID(clubId);
       if (!isMounted.current || stale()) return;
@@ -701,7 +728,10 @@ function CashierContent() {
          anything had failed. A role we could not read is unknown, not
          'member'. (Launch audit 2026-10-09, P-01.) */
       if (memberResult?.error) throw memberResult.error;
-      if (clubResult?.error) throw clubResult.error;
+      if (clubResult?.error) {
+        failedRead = 'club';
+        throw clubResult.error;
+      }
 
       const role = memberResult?.data?.role || 'player';
       setUserRole(role);
@@ -756,7 +786,11 @@ function CashierContent() {
     } catch (e) {
       reportError(e, 'CashierPage.loadUserContext');
       if (isMounted.current && !stale()) {
-        setContextError('Your Cashier Role Could Not Be Read.');
+        setContextError(
+          failedRead === 'club'
+            ? 'The Club Could Not Be Read.'
+            : 'Your Cashier Role Could Not Be Read.'
+        );
       }
     } finally {
       /* A STALE LOAD MUST NOT CLEAR THE NEXT CLUB'S LOADING STATE (launch
@@ -781,6 +815,10 @@ function CashierContent() {
 
   /** True until the viewer's role in this club is actually known. */
   const roleUnknown = loadingContext || contextError !== null;
+
+  /** The typed amount read by the one rule that moves money (G-01). */
+  const typedAmount = parseChipAmount(amount);
+  const typedChips = typedAmount.ok ? typedAmount.value : null;
 
   const closeSendConfirm = useCallback(() => {
     setSendConfirm({ show: false, value: 0, recipientId: '', recipientName: '' });
@@ -1623,6 +1661,23 @@ function CashierContent() {
       // numeric(20,2)); parseChipAmount holds that rule, the exponent rule and
       // the ceiling. Cashouts have their own validator. The Mint tab alone
       // takes whole chips, checked in its branch below.
+      /* THE TYPED TEXT IS ALWAYS READ (regression review 2026-10-10, G-01).
+         The high-value Send confirm hands back the figure it showed, and this
+         used to validate only String(override.value): "1e9" typed into the
+         field became 1000000000 before parseChipAmount ever saw the spelling.
+         The typed amount is now checked on its spelling here too, and must be
+         the figure the dialog confirmed. */
+      if (override?.value !== undefined && action !== 'cashout') {
+        const typed = parseChipAmount(amount);
+        if (!typed.ok) {
+          setMessage({ type: 'error', text: typed.error });
+          return;
+        }
+        if (typed.value !== override.value) {
+          setMessage({ type: 'error', text: 'The Amount Changed. Confirm The Send Again' });
+          return;
+        }
+      }
       const input = override?.value !== undefined ? String(override.value) : amount;
       const cashoutAmount = action === 'cashout' ? validateCashoutAmount(input) : null;
       const parsed = cashoutAmount
@@ -1813,8 +1868,10 @@ function CashierContent() {
           // Whole chips, checked on the spelling: "100.00" is not how a whole
           // chip is typed, and 1.5 would be charged and credited as something
           // other than what this page said.
-          if (!WHOLE_CHIPS.test(input.trim()) || !Number.isInteger(value)) {
-            if (isMounted.current) setMessage({ type: 'error', text: 'Mint Whole Chips Only' });
+          const whole = parseWholeChipAmount(input);
+          if (!whole.ok || whole.value !== value) {
+            if (isMounted.current)
+              setMessage({ type: 'error', text: whole.ok ? 'Mint Whole Chips Only' : whole.error });
             if (isMounted.current) setIsProcessing(false);
             return;
           }
@@ -2548,33 +2605,30 @@ function CashierContent() {
                   two lines described a movement between two accounts neither of
                   which was involved. Suppressed entirely while the float is
                   unknown rather than projecting a subtraction from nothing. */}
-                {selectedRecipientData &&
-                  amount &&
-                  parseFloat(amount) > 0 &&
-                  myAgentWallet !== null && (
-                    <div className={styles.rows}>
-                      <div className={styles.row}>
-                        <span className="sc-label sc-ink--blue">Your Agent Wallet</span>
-                        <span className={`${styles.value} sc-ink--silver`}>
-                          {chipFigure(myAgentWallet)} →{' '}
-                          {chipFigure(Math.max(0, myAgentWallet - parseFloat(amount)))}
-                        </span>
-                      </div>
-                      <div className={styles.row}>
-                        <span className="sc-label sc-ink--blue">
-                          {selectedRecipientData.username}
-                        </span>
-                        <span className={`${styles.value} sc-ink--silver`}>
-                          {chipFigure(selectedRecipientData.balance)} →{' '}
-                          {chipFigure(selectedRecipientData.balance + parseFloat(amount))}
-                        </span>
-                      </div>
-                      <div className={styles.row}>
-                        <span className="sc-label sc-ink--blue">Claim Back Window</span>
-                        <span className={`${styles.value} sc-ink--silver`}>Ten Minutes</span>
-                      </div>
+                {selectedRecipientData && typedChips !== null && myAgentWallet !== null && (
+                  <div className={styles.rows}>
+                    <div className={styles.row}>
+                      <span className="sc-label sc-ink--blue">Your Agent Wallet</span>
+                      <span className={`${styles.value} sc-ink--silver`}>
+                        {chipFigure(myAgentWallet)} →{' '}
+                        {chipFigure(Math.max(0, myAgentWallet - typedChips))}
+                      </span>
                     </div>
-                  )}
+                    <div className={styles.row}>
+                      <span className="sc-label sc-ink--blue">
+                        {selectedRecipientData.username}
+                      </span>
+                      <span className={`${styles.value} sc-ink--silver`}>
+                        {chipFigure(selectedRecipientData.balance)} →{' '}
+                        {chipFigure(selectedRecipientData.balance + typedChips)}
+                      </span>
+                    </div>
+                    <div className={styles.row}>
+                      <span className="sc-label sc-ink--blue">Claim Back Window</span>
+                      <span className={`${styles.value} sc-ink--silver`}>Ten Minutes</span>
+                    </div>
+                  </div>
+                )}
 
                 {message && (
                   <div
@@ -2589,8 +2643,15 @@ function CashierContent() {
                   className={`${styles.wordAction} sc-ink--white`}
                   aria-label={`Send ${amount || '0'} Chips To Selected Recipient`}
                   onClick={(event) => {
-                    const value = parseFloat(amount);
-                    if (!isNaN(value) && value >= 10000 && selectedRecipientData) {
+                    // The spelling rule, never parseFloat (G-01): "1e9" is
+                    // refused here, not turned into a billion-chip confirm.
+                    const parsed = parseChipAmount(amount);
+                    if (!parsed.ok) {
+                      setMessage({ type: 'error', text: parsed.error });
+                      return;
+                    }
+                    const value = parsed.value;
+                    if (value >= 10000 && selectedRecipientData) {
                       sendDialogTriggerRef.current = event.currentTarget;
                       setSendConfirm({
                         show: true,
@@ -2830,7 +2891,7 @@ function CashierContent() {
                     ? 'Distributing...'
                     : cooldown > 0
                       ? `Wait ${cooldown}s`
-                      : `Distribute ${amount ? chipFigure(parseFloat(amount)) : '0'} Chips`}
+                      : `Distribute ${typedChips !== null ? chipFigure(typedChips) : '0'} Chips`}
                 </button>
               </div>
             </section>

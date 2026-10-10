@@ -764,9 +764,15 @@ export default function WalletCashierModal({
   }, [isOpen, onClose]);
 
   /* Tab stays inside the sheet, focus lands on its first control and returns
-     to the control that opened it (launch audit D-11). Suspended while the
-     mint is stacked above, so the two traps never fight over the keyboard. */
-  const panelRef = useFocusTrap<HTMLDivElement>(isOpen && !showMint);
+     to the control that opened it (launch audit D-11). NOT suspended while
+     the mint is stacked above (regression review G-05): suspending ran this
+     trap's cleanup, which focused the cashier's opener BEHIND both sheets;
+     the mint then recorded that as its own return target, and on its close
+     this trap re-activated on its first control instead of the Mint control
+     the user was on. useFocusTrap gives Tab to the most recently activated
+     trap, so the mint owns the keyboard while it is up and hands it back,
+     with focus on the control that opened it, when it closes. */
+  const panelRef = useFocusTrap<HTMLDivElement>(isOpen);
 
   useEffect(() => {
     if (!isOpen || !clubUuid || !allowed) return;

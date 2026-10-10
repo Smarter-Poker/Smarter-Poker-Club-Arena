@@ -14,6 +14,6 @@ Every migration was proved in a rolled-back transaction before it was applied. A
 
 ## Not A Monitor Error
 
-The supply meter's -14,081.45 reading at 2026-10-06 16:05 was real. At 15:33:04 a bulk retirement of patterned house-horse identities vacated 42 cash seats with triggers off, so no cashout leg was written. Only house horses were affected; no player lost chips. Recording the matching journal entry is a management correction (`fn_ca_post_correction`), and the incident stays open until that entry is made.
+The supply meter's -14,081.45 reading at 2026-10-06 16:05 was real. At 15:33:04 a bulk retirement of patterned house-horse identities vacated 42 cash seats with triggers off, so no cashout leg was written. Only house horses were affected; no player lost chips. No journal leg was posted, because the only door that records one (`fn_ca_post_correction`) takes a management account; on Dan's instruction the incident closed with the cause recorded (20261009233939).
 
 Law: `tests/the-chip-felt-counts-no-diamond-seat.law.test.ts`.

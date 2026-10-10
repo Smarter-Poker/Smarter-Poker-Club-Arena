@@ -109,11 +109,14 @@ describe('the start lane runs at one second', () => {
     expect(remaining, 'the other discovery loops keep their own pace').toBe(4);
   });
 
-  it('one second is inside the lead-in, so the wheel can still open on Dan beat', () => {
-    /* The reveal begins LEAD_IN_MS after the third payment. A detection floor
-       larger than the lead-in would make "1 second later" unreachable no
-       matter what the animation does. */
-    expect(1000).toBeLessThanOrEqual(SPIN_REVEAL.LEAD_IN_MS);
+  it('the lead-in covers detection and the start work, so the wheel can open on its beat', () => {
+    /* The reveal begins LEAD_IN_MS after the third payment. It has to hold the
+       fast lane's one-second detection floor AND the start work itself (about
+       0.85 s measured on production, 2026-10-09). A one-second lead-in held
+       only the first, so every Spin overran; two seconds holds both. */
+    const DETECTION_FLOOR_MS = 1000;
+    const MEASURED_START_WORK_MS = 850;
+    expect(DETECTION_FLOOR_MS + MEASURED_START_WORK_MS).toBeLessThanOrEqual(SPIN_REVEAL.LEAD_IN_MS);
   });
 });
 

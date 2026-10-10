@@ -31,8 +31,8 @@
       "sha256": "2a63498d705aefae65c1d0b3fab754b953b8f3384deb84a5adaf51eae23ab79a"
     },
     "server/src/config/spinSpec.ts": {
-      "bytes": 43968,
-      "sha256": "5a30cbcc3089da4ae49232d3c50afdcc5f8c787817d39cd9d7361205d1446c54"
+      "bytes": 44284,
+      "sha256": "8ce21104f01f9d003f1189207af20808c4b439cb7c4afecf583704f83c1be98e"
     }
   }
 }

@@ -49,6 +49,22 @@ class Composition(unittest.TestCase):
         self.assertIn('except subprocess.TimeoutExpired as error:',runner)
         self.assertIn("receipt['last_stage']=record['stage']",runner)
         self.assertIn("assert result.returncode==0",runner)
+    def test_fresh_engine_session_authority_is_exact_and_not_a_stub(self):
+        import hashlib
+        sql=dict(b.chunks())['player-session-authority']
+        body=sql.split('AS $f$',1)[1].rsplit('$f$',1)[0]
+        self.assertEqual(hashlib.md5(body.encode()).hexdigest(),'fc89c3f60dca4c05ba730f18c83672a1')
+        self.assertIn('FROM auth.sessions WHERE id=p_session_id AND user_id=p_user_id',sql)
+        self.assertIn('not_after>statement_timestamp()',sql)
+        self.assertIn('FROM PUBLIC,anon,authenticated',sql)
+        self.assertIn('TO service_role',sql)
+        native=(HERE/'native.mjs').read_text()
+        self.assertIn("'real session authority must be reachable before authenticated EV actions'",native)
+        self.assertRegex(native,r'sessionLive\(users\[0\]\.id,\s*sessionIds\[1\]\),\s*false')
+        self.assertRegex(native,r'sessionLive\(users\[0\]\.id,\s*null\),\s*false')
+        self.assertRegex(native,r'sessionLive\(users\[1\]\.id,\s*sessionIds\[1\]\),\s*true')
+        actor=(HERE/'actor.mjs').read_text()
+        self.assertIn('another authenticated actor must not accept the leader quote',actor)
     def test_foreign_keys_follow_all_current_relation_keys(self):
         sql=dict(b.chunks())['current-relation-constraints']
         self.assertLess(sql.rfind('PRIMARY KEY'),sql.find('FOREIGN KEY'))

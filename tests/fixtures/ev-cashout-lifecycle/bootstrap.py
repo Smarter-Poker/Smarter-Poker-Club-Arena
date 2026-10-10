@@ -54,6 +54,7 @@ def chunks():
     selected=[t for t in triggers if t['tgname'] in trigger_names or (t['tgname']=='trg_ca_autoledger' and t['table_name'].split('.')[-1]=='club_wallets')]
     assert trigger_names <= {t['tgname'] for t in selected}
     yield 'money-and-seat-triggers','\n'.join(t['definition'].rstrip(';')+';' for t in selected)
+    yield 'player-session-authority', (HERE/'player-session-access.sql').read_text()
     yield 'service-table-access', 'GRANT USAGE ON SCHEMA public,smarter_private,extensions TO service_role; GRANT ALL ON ALL TABLES IN SCHEMA public,smarter_private TO service_role; GRANT ALL ON ALL SEQUENCES IN SCHEMA public,smarter_private TO service_role;'
 
 

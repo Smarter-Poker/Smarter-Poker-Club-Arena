@@ -35,3 +35,12 @@ Local composition/syntax/compiler checks are prerequisites. Genuine service
 execution requires the maintained Linux amd64 Docker image. A local machine
 without that runtime must retain this distinction and use the existing hosted
 check, never replace authentication or settlement with a passing mock.
+
+P3 introduced a fresh engine session check after this catalog capture. The fixture
+now composes `player-session-access.sql`, containing the exact targeted revocation
+relation and session helper from World Hub migration `20261010035338`. This is a
+pending authority input, not evidence that the migration is installed in production.
+The native runner independently pins the helper body MD5 and service-only grants,
+then calls its actual PostgREST RPC with genuine GoTrue session IDs: current target
+session succeeds, foreign/missing target session refuses, and the other account
+retains access. The original authenticated EV handler assertions remain unchanged.

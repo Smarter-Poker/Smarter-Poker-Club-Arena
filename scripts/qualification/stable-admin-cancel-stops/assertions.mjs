@@ -11,6 +11,15 @@ export async function qualify(query) {
  const denied=async(sql,code)=>{await query('SAVEPOINT expected_refusal');try {await query(sql);assert.fail('expected authoritative refusal '+code);}catch(error){assert.equal(error.code,code,error.message+" SQL: "+sql);}finally{await query('ROLLBACK TO SAVEPOINT expected_refusal');await query('RELEASE SAVEPOINT expected_refusal');}count++;};
  const cancel=(event,op,who=actor,reason='Qualification refund reason')=>`SELECT fn_ca_operator_cancel_tournament('${event}','${op}','${reason}','${who}','qualification') result`;
  await query('BEGIN');
+ // Both production overloads coexist: the former name-only preflight was ambiguous.
+ assert.equal(await scalar("SELECT count(*)::integer result FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_wheel_spin_core'"),2);count++;
+ await denied("SELECT (SELECT md5(pg_get_functiondef(oid)) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_wheel_spin_core')",'21000');
+ for(const [signature,hash] of [['uuid,uuid,text,boolean,uuid','d2d449daa747be0d4ae53006cf0c8eba'],['uuid,uuid,text,boolean','4c9c2645c10f7440951f15ffeca63d68']]) {
+  assert.equal(await scalar(`SELECT md5(pg_get_functiondef(to_regprocedure('public.fn_wheel_spin_core(${signature})'))) result`),hash);count++;
+ }
+ await query("SELECT set_config('request.jwt.claims','{}',true)");
+ const signedOut=await scalar("SELECT public.fn_wheel_spin_core(NULL::uuid,NULL::uuid,'qualification',false) result");
+ assert.deepEqual(signedOut,{ok:false,error:'Sign In To Spin'});count++;
  await denied(cancel(chip,'60000000-0000-4000-8000-000000000010',player),'42501');
  await query(`UPDATE tournaments SET started_at=now(),status='RUNNING' WHERE id='${chip}'`);
  await denied(cancel(chip,'60000000-0000-4000-8000-000000000010'),'55000');

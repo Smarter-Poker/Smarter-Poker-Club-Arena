@@ -1,0 +1,4 @@
+{
+  "_owner": "Stable Admin P3: install the account-scoped durable logout listener at the App root on every route before a revoked session can continue using lobby or table views. sessionRevoked.ts reuses the existing verified GoTrue rejection and local-only sign-out flow; it imports no administrative workspace. Reviewed final entry is 166kB gzip, 9kB above the historical base, within the existing independent bundle budget.",
+  "modules": ["src/lib/sessionRevoked.ts"]
+}

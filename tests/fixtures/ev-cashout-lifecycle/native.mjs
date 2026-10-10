@@ -183,6 +183,23 @@ try {
     );
   }
   await db.query("SELECT set_config('request.jwt.claim.role','service_role',false)");
+  setStage('player-session-authority-readback');
+  const sessionAuthority = (
+    await db.query(
+      "SELECT md5(prosrc) AS body_md5,pg_get_userbyid(proowner) AS owner,prosecdef FROM pg_proc WHERE oid='public.fn_ca_player_session_live(uuid,uuid)'::regprocedure"
+    )
+  ).rows[0];
+  assert.deepEqual(sessionAuthority, {
+    body_md5: 'fc89c3f60dca4c05ba730f18c83672a1',
+    owner: 'postgres',
+    prosecdef: true,
+  });
+  const sessionGrants = (
+    await db.query(
+      "SELECT has_function_privilege('service_role','public.fn_ca_player_session_live(uuid,uuid)','EXECUTE') AS service, has_function_privilege('authenticated','public.fn_ca_player_session_live(uuid,uuid)','EXECUTE') AS authenticated, has_function_privilege('anon','public.fn_ca_player_session_live(uuid,uuid)','EXECUTE') AS anon"
+    )
+  ).rows[0];
+  assert.deepEqual(sessionGrants, { service: true, authenticated: false, anon: false });
   setStage('genuine-auth-signin');
   await start('auth', '/usr/local/bin/auth', ['serve'], authEnv);
   await ready(() => healthy('http://127.0.0.1:9999/health'));
@@ -211,6 +228,53 @@ try {
       authorization: `Bearer ${secrets.serviceKey}`,
     })
   );
+  setStage('genuine-player-session-access');
+  const sessionIds = users.map(
+    (user) =>
+      JSON.parse(Buffer.from(user.session.access_token.split('.')[1], 'base64url').toString('utf8'))
+        .session_id
+  );
+  sessionIds.forEach((id) => assert.match(id, /^[0-9a-f-]{36}$/i));
+  const sessionLive = async (userId, sessionId) => {
+    const response = await fetch('http://127.0.0.1:3000/rpc/fn_ca_player_session_live', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${secrets.serviceKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ p_user_id: userId, p_session_id: sessionId }),
+      signal: AbortSignal.timeout(10000),
+    });
+    assert.equal(
+      response.status,
+      200,
+      'real session authority must be reachable before authenticated EV actions'
+    );
+    return response.json();
+  };
+  await db.query(
+    "INSERT INTO public.ca_player_session_revocations(user_id,revoked_before,op_id) VALUES($1,clock_timestamp(),'ev-targeted-session-proof')",
+    [users[0].id]
+  );
+  assert.equal(
+    await sessionLive(users[0].id, sessionIds[0]),
+    true,
+    'targeted account current genuine session remains valid'
+  );
+  assert.equal(
+    await sessionLive(users[0].id, sessionIds[1]),
+    false,
+    'another account session cannot grant targeted access'
+  );
+  assert.equal(
+    await sessionLive(users[0].id, null),
+    false,
+    'targeted account missing session refuses'
+  );
+  assert.equal(await sessionLive(users[1].id, sessionIds[1]), true, 'other account retains access');
+  await db.query('DELETE FROM public.ca_player_session_revocations WHERE user_id=$1', [
+    users[0].id,
+  ]);
   // Only fixed loopback service routes; no fake auth response or remote target.
   gateway = http.createServer((req, res) => {
     const auth = req.url.startsWith('/auth/v1/'),

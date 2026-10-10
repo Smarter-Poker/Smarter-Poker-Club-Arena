@@ -31,6 +31,7 @@ export function fixtureSql() {
   sql += read('terminal-refund-extra-functions.json').map(s=>s.definition+';').join('\n')+'\n';
   sql += read('terminal-cashier-owners.json').map(s=>s.definition+';').join('\n')+'\n';
   sql += read('terminal-funded-owners.json').map(s=>s.definition+';').join('\n')+'\n';
+  sql += read('terminal-wheel-wrapper.json').definition+';\n';
   sql += read('terminal-refund-owners.json').map(s=>s.definition+';').join('\n')+'\n';
   sql += read('terminal-fundowners.json').filter(s => ['fn_ca_fund_club','fn_bank_standalone_week_rake'].includes(s.proname)).map(s => s.definition+';').join('\n')+'\n';
   sql += 'CREATE TABLE ca_financial_epochs(id integer PRIMARY KEY,is_current boolean); INSERT INTO ca_financial_epochs VALUES(1,true); CREATE SEQUENCE chip_ledger_chain_seq;\n';

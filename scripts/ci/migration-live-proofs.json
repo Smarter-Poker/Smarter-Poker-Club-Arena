@@ -35,6 +35,13 @@
       "proofs": [
         "(SELECT count(*)=2 AND bool_and(has_table_privilege('service_role',c.oid,'SELECT') AND NOT has_table_privilege('service_role',c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('club_roster_hand_totals','club_roster_hand_totals_state')) AND (SELECT count(*)=3 AND bool_and(NOT has_function_privilege('service_role',p.oid,'EXECUTE')) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname IN ('fn_club_roster_hand_totals_insert','fn_club_roster_hand_totals_update','fn_club_roster_hand_totals_delete'))"
       ]
+    },
+    {
+      "file": "20261010074515_player_downline_read_access_requires_a_signed_in_caller.sql",
+      "sha256": "8ca86d55cebd8911535874a3489fbd834b3ef15700c98b1dac061b957f7bc397",
+      "proofs": [
+        "(SELECT NOT has_function_privilege('anon','public.ca_club_member_downline(uuid,uuid)','EXECUTE') AND has_function_privilege('authenticated','public.ca_club_member_downline(uuid,uuid)','EXECUTE') AND has_function_privilege('service_role','public.ca_club_member_downline(uuid,uuid)','EXECUTE'))"
+      ]
     }
   ]
 }

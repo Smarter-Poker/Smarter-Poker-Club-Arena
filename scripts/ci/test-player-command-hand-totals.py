@@ -264,6 +264,9 @@ try:
     q(f"UPDATE club_members SET agent_id='{U}' WHERE user_id='{V}' AND club_id='{B}';")
     downline_before=q(f"SELECT row_to_json(d) FROM ca_club_member_downline('{B}','{U}') d;")
     q((ROOT/'supabase/migrations/20261010074219_player_downline_reads_exact_retained_hand_totals.sql').read_text())
+    q((ROOT/'supabase/migrations/20261010074515_player_downline_read_access_requires_a_signed_in_caller.sql').read_text())
+    q(f"SET ROLE anon; SELECT * FROM ca_club_member_downline('{B}','{U}');",error='permission denied')
+    assert q("SELECT has_function_privilege('authenticated','ca_club_member_downline(uuid,uuid)','EXECUTE') AND has_function_privilege('service_role','ca_club_member_downline(uuid,uuid)','EXECUTE')")=='t'
     assert q(f"SELECT row_to_json(d) FROM ca_club_member_downline('{B}','{U}') d;")==downline_before
     print('PASS real downline projection preserves exact hierarchy and financial rows',flush=True)
     q('ALTER TABLE ca_hand_facts RENAME TO facts_unavailable_to_roster;')

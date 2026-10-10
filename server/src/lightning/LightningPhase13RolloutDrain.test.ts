@@ -265,7 +265,7 @@ describe('a held worker forms nothing and calls nothing', () => {
   it("the config's own pause marker holds the worker too, and lifting it forms again", async () => {
     const { w, rpc } = worker(parseLightningConfig({ worker_mode: 'form', paused: true }));
     expect(w.currentHold).toBe('paused');
-    expect((await w.pass()).reason).toBe('paused');
+    expect(await w.pass()).toMatchObject({ reason: 'paused' });
     expect(rpc).not.toHaveBeenCalled();
     w.updateConfig(parseLightningConfig({ worker_mode: 'form' }));
     expect(w.currentHold).toBeNull();

@@ -438,6 +438,15 @@
   line-height: 1.35;
 }
 
+.reasonSeverity {
+  display: block;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 2.4cqw;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 .fieldHint {
   font-size: 2.4cqw;
   font-weight: 700;

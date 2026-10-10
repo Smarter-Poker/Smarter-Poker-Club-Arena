@@ -15,10 +15,12 @@ import { MISSING_FUNCTION_ERROR, NOT_AUTHORIZED_ANSWER } from './fixtures/lightn
 import {
   CLUB_ID,
   CLUSTER_A,
+  alreadyAnswer,
   clusterAnswer13,
   controlAnswer,
   controlCluster,
   drainState,
+  operatorTransitions,
   overviewAnswer13,
   readinessAnswer,
   refusal,
@@ -168,7 +170,10 @@ describe('the Phase 13 row keys are parsed from the shapes the database produces
     const [a, b, c] = parsed.clusters;
     expect(a.joinsEnabled).toBe(false);
     expect(a.drain).toEqual({
-      phase: 'finish_hands',
+      drainId: 'a1a1a1a1-a1a1-41a1-81a1-a1a1a1a1a1a1',
+      phase: 'finishing',
+      fromMode: 'lightning',
+      overdue: false,
       requestedAt: '2026-10-09T13:59:10.000Z',
       requestedBy: '12121212-1212-4212-8212-121212121212',
       reason: 'Emergency drain for the 22:00 maintenance',
@@ -177,7 +182,13 @@ describe('the Phase 13 row keys are parsed from the shapes the database produces
       handsRemaining: 2,
       sessionsRemaining: 14,
     });
-    expect(a.matcher).toEqual({ version: 'm1', previous: 'm1', disabled: [], shadowVersion: 'm2' });
+    expect(a.matcher).toEqual({
+      version: 'm1',
+      previous: 'm1',
+      disabled: [],
+      shadowVersion: 'm2',
+      shadowDisabled: false,
+    });
     expect(b.paused).toBe(true);
     expect(b.pausedFrom).toBe('lightning');
     expect(c.paused).toBe(false);
@@ -210,7 +221,6 @@ describe('the Phase 13 row keys are parsed from the shapes the database produces
       drain: null,
       matcher: null,
     });
-    expect(d.canUnfreeze).toBeNull();
   });
 
   it('names the two operator modes', () => {
@@ -232,20 +242,38 @@ describe('the Phase 13 row keys are parsed from the shapes the database produces
     expect(changed.map((c) => [c.label, c.before, c.after])).toEqual([
       ['Mode', 'Lightning', 'Draining'],
       ['Joins', 'Open', 'Closed'],
-      ['Drain', 'None', 'Finish Hands'],
+      ['Drain', 'None', 'Finishing Hands'],
     ]);
   });
 
-  it('reads the readiness verdict, every reason and every check', () => {
+  it('reads the readiness verdict, every reason in plain words and the evidence', () => {
     const r = parseReadiness(readinessAnswer('no_go'))!;
     expect(r.verdict).toBe('no_go');
-    expect(r.reasons.map((x) => x.code)).toEqual(['OPEN_ALERTS', 'SHADOW_INSUFFICIENT']);
-    expect(r.checks.find((c) => c.key === 'open_alerts')).toEqual({
-      key: 'open_alerts',
+    expect(r.reasons.map((x) => [x.code, x.severity, x.text, x.detail])).toEqual([
+      ['OPEN_ALERTS', 'blocking', 'Lightning Alerts Are Open', '1'],
+      ['INTEGRITY_HIGH_SIGNALS_OPEN', 'blocking', 'High Severity Integrity Signals Are Open', '1'],
+      // An engineer's sentence stays in the database; the code says it.
+      ['WORKER_SHADOW_ONLY', 'evidence', 'The Worker Runs In Shadow Only And Forms No Hands', null],
+      ['NO_AA_CALIBRATION', 'evidence', 'No A/A Calibration Of The Live Matcher Yet', null],
+    ]);
+    expect(r.checks.find((c) => c.label === 'Lightning Migrations Applied')).toEqual({
+      label: 'Lightning Migrations Applied',
+      ok: true,
+      detail: '41 / 41',
+    });
+    expect(r.checks.find((c) => c.label === 'Open Alerts')).toMatchObject({
       ok: false,
       detail: '1',
     });
+    expect(r.checks.find((c) => c.label === 'Worker')).toMatchObject({
+      ok: false,
+      detail: 'Shadow',
+    });
+    expect(r.checks.find((c) => c.label === 'Candidate m2')).toMatchObject({
+      detail: 'Insufficient Evidence',
+    });
     expect(parseReadiness(readinessAnswer('go'))!.reasons).toEqual([]);
+    expect(parseReadiness({ ok: true, cluster_id: CLUSTER_A })).toBeNull();
   });
 });
 
@@ -453,6 +481,27 @@ describe('a control, from the tap to the answer', () => {
     expect(state.toast.info).toHaveBeenCalled();
   });
 
+  it('says plainly when the Cluster was already in the asked-for state', async () => {
+    detailDoors(
+      {},
+      {
+        fn_lightning_operator_control: (args) => ({
+          data: alreadyAnswer('enable_joins', args.p_args.request_id, controlCluster()),
+          error: null,
+        }),
+      }
+    );
+    renderDetail();
+    await openControl('Disable Joins');
+    typeReason('Pool is too thin');
+    fireEvent.click(confirmButton());
+    expect(
+      await within(dialog()).findByText('The Cluster Is Already In That State. Nothing Changed.')
+    ).toBeTruthy();
+    expect(state.toast.info).toHaveBeenCalledWith('Already In That State. Nothing Changed');
+    expect(state.toast.success).not.toHaveBeenCalled();
+  });
+
   it('says Not Available Yet when the door is missing, and restricted on NOT_AUTHORIZED', async () => {
     detailDoors(
       {},
@@ -487,7 +536,7 @@ describe('a control, from the tap to the answer', () => {
     await waitFor(() => expect(controlCalls()).toHaveLength(1));
     expect(controlCalls()[0][1]).toMatchObject({
       p_action: 'set_matcher_version',
-      p_args: { version: 'm2' },
+      p_args: { version: 'm2', role: 'live' },
     });
     fireEvent.click(within(dialog()).getByText('Close'));
 
@@ -500,6 +549,29 @@ describe('a control, from the tap to the answer', () => {
       p_action: 'set_flag',
       p_args: { flag: 'lightning_auto_rebuy', value: true },
     });
+  });
+
+  it('sets the candidate the engine compares with, from the versions that would change it', async () => {
+    detailDoors();
+    renderDetail();
+    await openControl('Set Version');
+    const picker = () => within(dialog()).getByRole('group', { name: 'Matcher Version' });
+    expect(
+      within(picker())
+        .getAllByRole('button')
+        .map((b) => b.textContent)
+    ).toEqual(['m1-port', 'm2']);
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Candidate' }));
+    expect(
+      within(picker())
+        .getAllByRole('button')
+        .map((b) => b.textContent)
+    ).toEqual(['m1', 'm1-port']);
+    fireEvent.click(within(picker()).getByRole('button', { name: 'm1-port' }));
+    typeReason('Calibrate the port');
+    fireEvent.click(confirmButton());
+    await waitFor(() => expect(controlCalls()).toHaveLength(1));
+    expect(controlCalls()[0][1].p_args).toMatchObject({ version: 'm1-port', role: 'shadow' });
   });
 
   it('closes on Escape, and not while a control is in flight', async () => {
@@ -526,7 +598,7 @@ describe('a control, from the tap to the answer', () => {
 });
 
 describe('the Cluster detail', () => {
-  it('waits on everything but Unfreeze while frozen, and hides Unfreeze from a non admin', async () => {
+  it('waits on everything but Unfreeze while frozen, and says who may unfreeze', async () => {
     const frozen = {
       cluster_mode: 'frozen',
       frozen: {
@@ -538,8 +610,9 @@ describe('the Cluster detail', () => {
     doors({
       fn_lightning_operator_cluster: ok(clusterAnswer13(frozen)),
       fn_lightning_rollout_readiness: ok(readinessAnswer('no_go')),
+      fn_lightning_operator_control: ok(NOT_AUTHORIZED_ANSWER),
     });
-    const first = renderDetail();
+    renderDetail();
     expect(await screen.findByRole('button', { name: 'Unfreeze Cluster' })).toHaveProperty(
       'disabled',
       false
@@ -547,15 +620,52 @@ describe('the Cluster detail', () => {
     for (const name of ['Pause Cluster', 'Disable Joins', 'Drain Lightning', 'Disable Lightning']) {
       expect(screen.getByRole('button', { name })).toHaveProperty('disabled', true);
     }
-    first.unmount();
+    expect(screen.queryByRole('button', { name: 'Freeze Cluster' })).toBeNull();
+    await openControl('Unfreeze Cluster');
+    typeReason('Evidence reviewed');
+    fireEvent.click(confirmButton());
+    expect(
+      await within(dialog()).findByText('Only A Platform Administrator Can Unfreeze A Cluster.')
+    ).toBeTruthy();
+    expect(controlCalls()[0][1].p_action).toBe('unfreeze');
+  });
 
+  it('replays the operator actions and drain steps among the mode transitions', async () => {
     doors({
-      fn_lightning_operator_cluster: ok({ ...clusterAnswer13(frozen), can_unfreeze: false }),
+      fn_lightning_operator_cluster: ok({
+        ...clusterAnswer13(),
+        transitions: operatorTransitions(),
+      }),
       fn_lightning_rollout_readiness: ok(readinessAnswer('no_go')),
     });
     renderDetail();
-    await screen.findByText('Operator Controls');
-    expect(screen.queryByRole('button', { name: 'Unfreeze Cluster' })).toBeNull();
+    expect(await screen.findByText('Operator: Drain Lightning')).toBeTruthy();
+    expect(screen.getByText('Drain Step 3: Let Active Hands Finish')).toBeTruthy();
+  });
+
+  it('offers a switch only for the flags a Cluster can switch', async () => {
+    detailDoors();
+    renderDetail();
+    await screen.findByText('Feature Flags');
+    const row = (flag: string) => document.querySelector(`[data-flag="${flag}"]`) as HTMLElement;
+    for (const flag of [
+      'lightning_fast_fold',
+      'lightning_fold_watch',
+      'lightning_multi_table',
+      'lightning_shadow_matcher',
+      'lightning_auto_rebuy',
+    ]) {
+      expect(within(row(flag)).getByRole('button'), flag).toBeTruthy();
+    }
+    for (const flag of [
+      'lightning_pool_health',
+      'lightning_repeat_suppression',
+      'lightning_session_stats',
+      'lightning_adaptive_liquidity',
+    ]) {
+      expect(within(row(flag)).queryByRole('button'), flag).toBeNull();
+      expect(within(row(flag)).getByText('Always On')).toBeTruthy();
+    }
   });
 
   it('shows the drain live, and reads every 5 seconds while it runs', async () => {
@@ -568,7 +678,8 @@ describe('the Cluster detail', () => {
     });
     renderDetail();
     expect(await screen.findByText('Drain Progress')).toBeTruthy();
-    expect(screen.getByText('Finish Hands')).toBeTruthy();
+    expect(screen.getByText('Finishing Hands')).toBeTruthy();
+    expect(screen.getByText('Drained From')).toBeTruthy();
     expect(screen.getByText('Emergency Drain For The 22:00 Maintenance')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Drain In Progress' })).toHaveProperty(
       'disabled',
@@ -594,9 +705,12 @@ describe('the Cluster detail', () => {
     detailDoors();
     renderDetail();
     expect(await screen.findByText('No Go')).toBeTruthy();
-    expect(screen.getByText('1 Open Lightning Alert')).toBeTruthy();
-    expect(screen.getByText('Candidate M2 Has 12 Of 30 Comparisons')).toBeTruthy();
-    expect(screen.getByText('Shadow Verdict, Insufficient Evidence')).toBeTruthy();
+    const reasons = screen.getByRole('list', { name: 'Readiness Reasons' });
+    expect(within(reasons).getAllByRole('listitem')).toHaveLength(4);
+    expect(within(reasons).getByText('Lightning Alerts Are Open: 1')).toBeTruthy();
+    expect(within(reasons).getAllByText('Blocking')).toHaveLength(2);
+    expect(within(reasons).getAllByText('Evidence')).toHaveLength(2);
+    expect(screen.getByText('Lightning Migrations Applied, 41 / 41')).toBeTruthy();
   });
 
   it('says the readiness door is not available yet when the database lacks it', async () => {
@@ -610,7 +724,7 @@ describe('the Cluster detail', () => {
 describe('the overview', () => {
   it('says what an operator has done to each Cluster', () => {
     const [a, b] = parseOverview(overviewAnswer13())!.clusters;
-    expect(clusterNotices(a)).toEqual(['Draining: Finish Hands', 'Lightning Joins Disabled']);
+    expect(clusterNotices(a)).toEqual(['Draining: Finishing Hands', 'Lightning Joins Disabled']);
     expect(clusterNotices(b)).toEqual(['Paused By An Operator']);
   });
 });

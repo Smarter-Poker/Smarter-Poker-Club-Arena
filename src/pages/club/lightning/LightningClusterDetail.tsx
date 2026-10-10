@@ -65,6 +65,7 @@ import {
   usePolledAnswer,
 } from '../../../lightning/useLightningOperator';
 import { AnswerState, LatencyGrid, MODE_INK, count } from './lightningOperatorParts';
+import { ACTION_LABELS, isOperatorAction } from '../../../lightning/lightningOperatorControls';
 import LightningOperatorControls, {
   DrainProgress,
   RolloutReadiness,
@@ -135,6 +136,19 @@ function transitionLine(t: LightningTransition): string {
         ? `${modeBadge(t.fromMode).label} To ${modeBadge(t.mode).label}`
         : modeBadge(t.mode).label;
     return `Conversion, ${path}${t.status ? `, ${enumLabel(t.status)}` : ''}${t.reason ? `, ${enumLabel(t.reason)}` : ''}`;
+  }
+  if (t.kind === 'operator') {
+    const label = t.action && isOperatorAction(t.action) ? ACTION_LABELS[t.action] : null;
+    return `Operator: ${label ?? (t.action ? enumLabel(t.action) : 'Control')}`;
+  }
+  if (t.kind === 'drain') {
+    if (t.eventKind === 'lightning_drain_timeout') {
+      return 'Drain Deadline Passed, Never Dealt Instances Abandoned';
+    }
+    if (t.eventKind === 'lightning_drain_ended') {
+      return `Drain Ended${t.outcome ? `, ${enumLabel(t.outcome)}` : ''}`;
+    }
+    return `Drain Step ${t.step ?? '-'}${t.stepName ? `: ${enumLabel(t.stepName)}` : ''}`;
   }
   if (t.kind === 'freeze') {
     return `Frozen${t.epoch !== null ? ` At Epoch ${t.epoch}` : ''}${t.reason ? `, ${enumLabel(t.reason)}` : ''}`;
@@ -643,13 +657,7 @@ export default function LightningClusterDetail({
 
           {c?.drain ? <DrainProgress drain={c.drain} /> : null}
 
-          {c ? (
-            <LightningOperatorControls
-              cluster={c}
-              canUnfreeze={detail.canUnfreeze}
-              onChanged={read.refresh}
-            />
-          ) : null}
+          {c ? <LightningOperatorControls cluster={c} onChanged={read.refresh} /> : null}
 
           <RolloutReadiness clusterId={clusterId} />
 
@@ -661,7 +669,7 @@ export default function LightningClusterDetail({
                 {detail.transitions.map((t, i) => (
                   <li className={styles.trailStep} key={`${t.kind}-${t.at}-${i}`}>
                     <span
-                      className={`${styles.gridName} sc-ink--${t.kind === 'freeze' ? 'red' : 'silver'}`}
+                      className={`${styles.gridName} sc-ink--${t.kind === 'freeze' ? 'red' : t.kind === 'operator' || t.kind === 'drain' ? 'gold' : 'silver'}`}
                     >
                       {transitionLine(t)}
                     </span>

@@ -64,6 +64,10 @@ export const OPERATOR_ACTIONS = [
 
 export type OperatorAction = (typeof OPERATOR_ACTIONS)[number];
 
+export function isOperatorAction(value: string): value is OperatorAction {
+  return (OPERATOR_ACTIONS as readonly string[]).includes(value);
+}
+
 /** The shortest reason the door accepts (REASON_REQUIRED below it). */
 export const MIN_REASON_LENGTH = 3;
 
@@ -138,7 +142,7 @@ export const ACTION_EXPLAINERS: Record<OperatorAction, string> = {
   disable_lightning:
     'Turns Lightning Off. A Cluster That Is In Lightning Or Converting Is Drained First, So No Player Is Stranded.',
   set_matcher_version:
-    'Makes The Chosen Version The Live Matcher. The Current One Becomes The Roll Back Target.',
+    'Sets The Live Matcher, Whose Current Version Becomes The Roll Back Target, Or The Candidate The Engine Compares It With. Only A Version The Database Matcher Runs Can Be Live.',
   disable_matcher_version:
     'Disables The Chosen Version. Disabling The Live Version Rolls The Cluster Back To The Previous Enabled One.',
   enable_matcher_version: 'Allows The Chosen Version To Be Used Again.',
@@ -181,6 +185,23 @@ export function flagLabel(flag: string): string {
     (FLAG_LABELS as Record<string, string>)[flag] ?? enumLabel(flag.replace(/^lightning_/, ''))
   );
 }
+
+/**
+ * The flags an operator can switch for one Cluster (20261009235505's
+ * mapping): lightning_v1 is Enable / Disable Lightning itself (off on a live
+ * Cluster IS the drain), so it is not switched from the flag list. Pool
+ * Health, Session Stats, Repeat Suppression and Adaptive Liquidity are
+ * always on by design: the door answers FLAG_NOT_SUPPORTED, so no switch is
+ * offered (the first two protect nothing when off, the last two are the live
+ * matcher's own and change only through a matcher version).
+ */
+export const SWITCHABLE_FLAGS: ReadonlySet<string> = new Set([
+  'lightning_fast_fold',
+  'lightning_fold_watch',
+  'lightning_multi_table',
+  'lightning_shadow_matcher',
+  'lightning_auto_rebuy',
+]);
 
 /** The Spec flags the row reports, in the Spec's order, each with its
  *  effective value (null: the door did not report it). */
@@ -240,6 +261,10 @@ export function parseControlState(raw: unknown): ControlState | null {
 
 export interface ControlResult {
   idempotent: boolean;
+  /** The Cluster was already in the asked-for state: nothing written. */
+  already: boolean;
+  /** The same request id was answered before: the first answer, again. */
+  replayed: boolean;
   action: string | null;
   clusterId: string | null;
   requestId: string | null;
@@ -253,6 +278,8 @@ export function parseControlResult(row: Record<string, unknown>): ControlResult 
   const event = row.event_id;
   return {
     idempotent: row.idempotent === true,
+    already: row.already === true,
+    replayed: row.replayed === true,
     action: text(row.action),
     clusterId: text(row.cluster_id),
     requestId: text(row.request_id),
@@ -313,6 +340,7 @@ export const REFUSAL_WORDS: Record<string, string> = {
   NOT_SQL_MATCHER: 'That Version Runs Only As A Candidate, Never As The Live Matcher.',
   FLAG_NOT_SUPPORTED: 'That Feature Flag Cannot Be Changed For One Cluster.',
   ALREADY: 'The Cluster Is Already In That State. Nothing Changed.',
+  NOT_FOUND: 'This Cluster No Longer Exists.',
   IDEMPOTENCY_CONFLICT: 'This Request Was Already Used For A Different Control.',
 };
 
@@ -365,10 +393,11 @@ export function stateChanges(
 
 // ─── The drain's steps ─────────────────────────────────────────────────────
 
+/** lightning_cluster_drain.phase (20261009235505). */
 const DRAIN_PHASE_LABELS: Record<string, string> = {
-  requested: 'Requested',
+  finishing: 'Finishing Hands',
+  reverting: 'Returning To Must Move',
   complete: 'Complete',
-  completed: 'Complete',
 };
 
 export function drainPhaseLabel(phase: string | null): string {
@@ -399,46 +428,171 @@ export function deadlineSeconds(iso: string | null, now: number = Date.now()): n
 
 export type ReadinessVerdict = 'go' | 'no_go' | 'insufficient_evidence';
 
-export interface ReadinessReason {
-  /** A stable code, when the door gives one. */
-  code: string | null;
-  text: string;
-}
-
-export interface LightningReadiness {
-  clusterId: string | null;
-  verdict: ReadinessVerdict | null;
-  reasons: ReadinessReason[];
-  checks: Array<{ key: string; ok: boolean | null; detail: string | null }>;
-  asOf: string | null;
-}
-
 export const READINESS_LABELS: Record<ReadinessVerdict, string> = {
   go: 'Go',
   no_go: 'No Go',
   insufficient_evidence: 'Insufficient Evidence',
 };
 
-function reasonOf(raw: unknown): ReadinessReason | null {
-  if (typeof raw === 'string' && raw.trim() !== '') {
-    // A code ('LIVE_ELIGIBLE_BELOW_ON') is cased for print; a sentence is kept.
-    return /^[A-Za-z0-9_.:-]+$/.test(raw)
-      ? { code: raw, text: enumLabel(raw) }
-      : { code: null, text: raw };
-  }
-  const r = objectOf(raw);
-  if (!r) return null;
-  const code = text(r.code) ?? text(r.check) ?? text(r.key);
-  const detail = text(r.detail) ?? text(r.reason) ?? text(r.message);
-  if (!code && !detail) return null;
-  return { code, text: detail ?? enumLabel(code) };
+/** Every reason code the readiness door gives, in an operator's words. */
+export const READINESS_REASON_WORDS: Record<string, string> = {
+  MIGRATIONS_MISSING: 'Lightning Migrations Are Missing From The Database',
+  MIGRATION_LEDGER_UNREADABLE: 'The Migration Ledger Could Not Be Read',
+  INVARIANT_FAILED: 'A Structural Lightning Invariant Failed',
+  CLUSTER_FROZEN: 'The Cluster Is Frozen',
+  CLUSTER_BUSY: 'A Conversion, Pause Or Drain Is In Progress',
+  CLUSTER_NOT_READY: 'The Cluster Is Not In Must Move Or Lightning',
+  GAME_DISABLED: 'The Game Is Disabled',
+  NOT_A_MUST_MOVE_GAME: 'The Game Is Not A Must Move Game',
+  OPEN_ALERTS: 'Lightning Alerts Are Open',
+  INTEGRITY_HIGH_SIGNALS_OPEN: 'High Severity Integrity Signals Are Open',
+  LATENCY_ABOVE_CEILING: 'Action Latency Is Above Its Ceiling',
+  MATCHER_VERSION_INVALID: 'The Live Matcher Version Is Invalid',
+  AA_CALIBRATION_BIAS: 'The Live Matcher Disagrees With Its Own Port',
+  WORKER_OFF: 'The Lightning Worker Is Off, So No Hands Would Form',
+  NO_AA_CALIBRATION: 'No A/A Calibration Of The Live Matcher Yet',
+  NO_LATENCY_EVIDENCE: 'No Latency Window In The Last 24 Hours',
+  WORKER_SHADOW_ONLY: 'The Worker Runs In Shadow Only And Forms No Hands',
+};
+
+export interface ReadinessReason {
+  code: string;
+  /** 'blocking' makes the verdict No Go; 'evidence' makes it Insufficient. */
+  severity: 'blocking' | 'evidence' | null;
+  text: string;
+  /** A count or a short list the door attached; never the raw paragraph. */
+  detail: string | null;
 }
 
-function detailOf(v: unknown): string | null {
-  if (typeof v === 'string') return v.trim() === '' ? null : v;
+export interface ReadinessCheck {
+  label: string;
+  ok: boolean | null;
+  detail: string | null;
+}
+
+export interface LightningReadiness {
+  clusterId: string | null;
+  asOf: string | null;
+  verdict: ReadinessVerdict | null;
+  reasons: ReadinessReason[];
+  checks: ReadinessCheck[];
+}
+
+/** A reason's detail when it is a figure or a list of names; anything else
+ *  (an object, an engineer's sentence) stays in the database. */
+function reasonDetail(v: unknown): string | null {
   const n = num(v);
-  if (n !== null) return n.toLocaleString('en-US');
+  if (n !== null && typeof v !== 'string') return n.toLocaleString('en-US');
+  if (Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === 'string')) {
+    return v.length > 4 ? `${v.slice(0, 4).join(', ')} And ${v.length - 4} More` : v.join(', ');
+  }
   return null;
+}
+
+function reasonOf(raw: unknown): ReadinessReason | null {
+  const r = objectOf(raw);
+  const code = r ? text(r.code) : null;
+  if (!r || !code) return null;
+  const sev = text(r.severity);
+  return {
+    code,
+    severity: sev === 'blocking' || sev === 'evidence' ? sev : null,
+    text: READINESS_REASON_WORDS[code] ?? enumLabel(code),
+    detail: reasonDetail(r.detail),
+  };
+}
+
+function yes(v: unknown): boolean | null {
+  return typeof v === 'boolean' ? v : null;
+}
+
+/** The evidence object, as rows an operator can read down. */
+export function readinessChecks(evidence: Record<string, unknown> | null): ReadinessCheck[] {
+  if (!evidence) return [];
+  const out: ReadinessCheck[] = [];
+  const mig = objectOf(evidence.migrations);
+  if (mig) {
+    const missing = Array.isArray(mig.missing) ? mig.missing.length : null;
+    const applied = num(mig.applied);
+    const expected = num(mig.expected);
+    out.push({
+      label: 'Lightning Migrations Applied',
+      ok: missing === null ? null : missing === 0,
+      detail: applied !== null && expected !== null ? `${applied} / ${expected}` : null,
+    });
+  }
+  const inv = objectOf(evidence.invariants);
+  if (inv) {
+    out.push({ label: 'Seven Tables Census', ok: yes(inv.seven_tables), detail: null });
+    out.push({ label: 'Anti Manipulation Pin', ok: yes(inv.anti_manipulation), detail: null });
+    out.push({ label: 'Every Player Treated Alike', ok: yes(inv.law_10_5), detail: null });
+    out.push({ label: 'No Anonymous Door', ok: yes(inv.no_anon_door), detail: null });
+  }
+  const cl = objectOf(evidence.cluster);
+  if (cl) {
+    const live = num(cl.live_eligible);
+    const on = num(cl.on_threshold);
+    out.push({
+      label: 'Live Eligible / On Threshold',
+      ok: yes(cl.would_turn_on),
+      detail:
+        live !== null && on !== null
+          ? `${live.toLocaleString('en-US')} / ${on.toLocaleString('en-US')}`
+          : null,
+    });
+    const worker = text(cl.worker_mode);
+    out.push({
+      label: 'Worker',
+      ok: worker === null ? null : worker !== 'off' && worker !== 'shadow',
+      detail: worker ? enumLabel(worker) : null,
+    });
+  }
+  const alerts = objectOf(evidence.alerts);
+  if (alerts) {
+    const open = num(alerts.open);
+    out.push({
+      label: 'Open Alerts',
+      ok: open === null ? null : open === 0,
+      detail: open === null ? null : String(open),
+    });
+  }
+  const integ = objectOf(evidence.integrity);
+  if (integ) {
+    const high = num(integ.open_high);
+    out.push({
+      label: 'High Integrity Signals Open',
+      ok: high === null ? null : high === 0,
+      detail: high === null ? null : String(high),
+    });
+  }
+  const shadow = objectOf(evidence.shadow);
+  if (shadow) {
+    const aa = objectOf(shadow.aa_calibration);
+    const aaVerdict = aa ? text(aa.verdict) : null;
+    out.push({
+      label: 'A/A Calibration',
+      ok: aaVerdict === null ? null : aaVerdict === 'calibrated',
+      detail: aaVerdict ? enumLabel(aaVerdict) : 'None',
+    });
+    const cand = objectOf(shadow.candidate);
+    const candVerdict = cand ? text(cand.verdict) : null;
+    const candVersion = cand ? text(cand.shadow_matcher_version) : null;
+    out.push({
+      label: candVersion ? `Candidate ${candVersion}` : 'Candidate',
+      ok: null,
+      detail: candVerdict ? enumLabel(candVerdict) : 'No Comparisons',
+    });
+  }
+  const lat = objectOf(evidence.latency);
+  if (lat) {
+    const over = Array.isArray(lat.over) ? lat.over.length : null;
+    out.push({
+      label: 'Latency Within Ceilings',
+      ok: over === null ? null : over === 0,
+      detail: over ? `${over} ${over === 1 ? 'Leg' : 'Legs'} Over` : null,
+    });
+  }
+  return out;
 }
 
 export function parseReadiness(row: Record<string, unknown>): LightningReadiness | null {
@@ -447,33 +601,15 @@ export function parseReadiness(row: Record<string, unknown>): LightningReadiness
     verdictText === 'go' || verdictText === 'no_go' || verdictText === 'insufficient_evidence'
       ? verdictText
       : null;
-  if (!verdict && !Array.isArray(row.reasons)) return null;
-  const checksRaw = objectOf(row.checks);
-  const checks = checksRaw
-    ? Object.keys(checksRaw)
-        .sort()
-        .map((key) => {
-          const c = checksRaw[key];
-          const o = objectOf(c);
-          return {
-            key,
-            ok: typeof c === 'boolean' ? c : o ? bool(o.ok ?? o.pass) : null,
-            detail: o ? (detailOf(o.detail) ?? detailOf(o.value) ?? detailOf(o.count)) : null,
-          };
-        })
-    : listOf(row.checks).map((c) => ({
-        key: text(c.key) ?? text(c.check) ?? 'check',
-        ok: bool(c.ok ?? c.pass),
-        detail: detailOf(c.detail) ?? detailOf(c.value),
-      }));
+  if (!verdict || !Array.isArray(row.reasons)) return null;
   return {
     clusterId: text(row.cluster_id),
+    asOf: text(row.as_of),
     verdict,
-    reasons: (Array.isArray(row.reasons) ? row.reasons : [])
+    reasons: listOf(row.reasons)
       .map(reasonOf)
       .filter((r): r is ReadinessReason => r !== null),
-    checks,
-    asOf: text(row.as_of),
+    checks: readinessChecks(objectOf(row.evidence)),
   };
 }
 

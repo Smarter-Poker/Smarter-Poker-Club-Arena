@@ -39,6 +39,7 @@ import {
   enumLabel,
   modeBadge,
   shortId,
+  stampLabel,
   type LightningDrain,
   type LightningOverviewCluster,
   type OperatorAnswer,
@@ -48,6 +49,7 @@ import {
   ACTION_LABELS,
   MIN_REASON_LENGTH,
   READINESS_LABELS,
+  SWITCHABLE_FLAGS,
   confirmationMatches,
   confirmationPhrase,
   deadlineLabel,
@@ -156,13 +158,18 @@ const VERSIONED: ReadonlySet<OperatorAction> = new Set<OperatorAction>([
   'enable_matcher_version',
 ]);
 
-/** The versions a matcher action may be pointed at. */
-export function versionsFor(action: OperatorAction, c: LightningOverviewCluster): string[] {
+/** The versions a matcher action may be pointed at (for a set, the ones
+ *  that would change the chosen role: not its current version, not disabled). */
+export function versionsFor(
+  action: OperatorAction,
+  c: LightningOverviewCluster,
+  role: 'live' | 'shadow' = 'live'
+): string[] {
   const all = matcherVersionChoices(c.matcher);
-  const live = c.matcher?.version ?? null;
+  const current = (role === 'live' ? c.matcher?.version : c.matcher?.shadowVersion) ?? null;
   const disabled = c.matcher?.disabled ?? [];
   if (action === 'set_matcher_version') {
-    return all.filter((v) => v !== live && !disabled.includes(v));
+    return all.filter((v) => v !== current && !disabled.includes(v));
   }
   if (action === 'disable_matcher_version') return all.filter((v) => !disabled.includes(v));
   if (action === 'enable_matcher_version') return disabled;
@@ -185,11 +192,18 @@ export function ControlDialog({
   const destructive = isDestructive(action);
   const clusterName = c.name ? titleCase(c.name) : null;
   const phrase = confirmationPhrase(action, clusterName);
-  const versions = VERSIONED.has(action) ? versionsFor(action, c) : [];
+  /* set_matcher_version sets the live matcher or the candidate the engine
+     shadows. The live one can only be a version the SQL matcher implements;
+     the door says so (NOT_SQL_MATCHER) if another is asked for. */
+  const [role, setRole] = useState<'live' | 'shadow'>('live');
+  const versions = VERSIONED.has(action) ? versionsFor(action, c, role) : [];
 
   const [reason, setReason] = useState('');
   const [typed, setTyped] = useState('');
-  const [version, setVersion] = useState<string | null>(versions.length === 1 ? versions[0] : null);
+  const [picked, setVersion] = useState<string | null>(null);
+  // A pick the role no longer offers is no pick; a single choice is made for you.
+  const version =
+    picked && versions.includes(picked) ? picked : versions.length === 1 ? versions[0] : null;
   const [phase, setPhase] = useState<DialogPhase>({ kind: 'compose' });
 
   /* ONE request id per decision. Made when the dialog opens; kept across a
@@ -220,6 +234,7 @@ export function ControlDialog({
       request_id: requestIdRef.current,
     };
     if (VERSIONED.has(action) && version) args.version = version;
+    if (action === 'set_matcher_version') args.role = role;
     if (action === 'set_flag') {
       args.flag = request.flag;
       args.value = request.value;
@@ -233,7 +248,8 @@ export function ControlDialog({
     if (!mountedRef.current) return;
     if (answer.status === 'ok') {
       setPhase({ kind: 'done', result: answer.data });
-      if (answer.data.idempotent) toast.info('Already Done. Nothing Changed Twice');
+      if (answer.data.already) toast.info('Already In That State. Nothing Changed');
+      else if (answer.data.idempotent) toast.info('Already Done. Nothing Changed Twice');
       else toast.success(SUCCESS_WORDS[action]);
       onChanged();
     } else if (answer.status === 'refused') {
@@ -313,7 +329,9 @@ export function ControlDialog({
         <DoneView result={phase.result} />
       ) : phase.kind === 'denied' ? (
         <p className={`sc-copy sc-copy--center ${styles.state}`} role="status">
-          Operator Controls Are Available To Club Owners And Administrators.
+          {action === 'unfreeze'
+            ? 'Only A Platform Administrator Can Unfreeze A Cluster.'
+            : 'Operator Controls Are Available To Club Owners And Administrators.'}
         </p>
       ) : phase.kind === 'unavailable' ? (
         <p className={`sc-copy sc-copy--center ${styles.state}`} role="status">
@@ -321,6 +339,25 @@ export function ControlDialog({
         </p>
       ) : (
         <>
+          {action === 'set_matcher_version' ? (
+            <div className={styles.field}>
+              <span className="sc-label sc-ink--blue">Set As</span>
+              <div className={styles.words} role="group" aria-label="Matcher Role">
+                {(['live', 'shadow'] as const).map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    className={`${styles.word} ${role === r ? 'sc-ink--white' : 'sc-ink--muted'}`}
+                    aria-pressed={role === r}
+                    onClick={() => setRole(r)}
+                    disabled={sending}
+                  >
+                    {r === 'live' ? 'Live Matcher' : 'Candidate'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {VERSIONED.has(action) ? (
             versions.length === 0 ? (
               <p className={`sc-copy sc-copy--center ${styles.state} sc-ink--muted`}>
@@ -422,7 +459,9 @@ export function ControlDialog({
             eyebrow={clusterName ?? 'Lightning'}
             title={title}
             titleId="lightning-control-title"
-            pill={phase.kind === 'done' ? 'Done' : 'Closed'}
+            pill={
+              phase.kind === 'done' ? 'Done' : phase.kind === 'denied' ? 'Restricted' : 'Not Yet'
+            }
             pillInk={phase.kind === 'done' ? 'green' : 'muted'}
             foot="foot"
             onClose={onClose}
@@ -464,7 +503,11 @@ function DoneView({ result }: { result: ControlResult }) {
   const changed = changes.filter((ch) => ch.changed);
   return (
     <div>
-      {result.idempotent ? (
+      {result.already ? (
+        <p className={`sc-copy sc-copy--center ${styles.state} sc-ink--gold`} role="status">
+          The Cluster Is Already In That State. Nothing Changed.
+        </p>
+      ) : result.idempotent ? (
         <p className={`sc-copy sc-copy--center ${styles.state} sc-ink--gold`} role="status">
           This Request Was Already Answered. Nothing Changed Twice.
         </p>
@@ -522,7 +565,12 @@ export function DrainProgress({ drain }: { drain: LightningDrain }) {
         value={`${agoLabel(drain.requestedAt, now)}${drain.requestedBy ? `, By ${shortId(drain.requestedBy)}` : ''}`}
       />
       {drain.reason ? <Row label="Reason" value={titleCase(drain.reason)} /> : null}
-      <Row label="Deadline" value={deadlineLabel(drain.deadlineAt, now)} ink={deadlineInk} />
+      {drain.fromMode ? <Row label="Drained From" value={modePhrase(drain.fromMode)} /> : null}
+      <Row
+        label="Deadline"
+        value={drain.overdue ? 'Passed' : deadlineLabel(drain.deadlineAt, now)}
+        ink={drain.overdue ? 'red' : deadlineInk}
+      />
       <Row label="Instances Remaining" value={count(drain.instancesRemaining)} />
       <Row label="Hands Remaining" value={count(drain.handsRemaining)} />
       <Row label="Sessions Remaining" value={count(drain.sessionsRemaining)} />
@@ -584,36 +632,49 @@ export function RolloutReadiness({ clusterId }: { clusterId: string }) {
             ink={VERDICT_INK[r.verdict ?? ''] ?? 'muted'}
           />
           {r.reasons.length === 0 ? (
-            <p className={`sc-copy ${styles.empty} sc-ink--muted`}>No Reasons Given</p>
+            <p className={`sc-copy ${styles.empty} sc-ink--muted`}>Nothing Stands In The Way</p>
           ) : (
             <ul className={styles.reasons} aria-label="Readiness Reasons">
               {r.reasons.map((reason, i) => (
                 <li
-                  key={`${reason.code ?? 'reason'}-${i}`}
-                  className={`${styles.reason} sc-ink--silver`}
-                  data-reason-code={reason.code ?? undefined}
+                  key={`${reason.code}-${i}`}
+                  className={styles.reason}
+                  data-reason-code={reason.code}
                 >
-                  {titleCase(reason.text)}
+                  <span
+                    className={`${styles.reasonSeverity} sc-ink--${reason.severity === 'blocking' ? 'red' : 'gold'}`}
+                  >
+                    {reason.severity === 'blocking' ? 'Blocking' : 'Evidence'}
+                  </span>
+                  <span className="sc-ink--silver">
+                    {reason.text}
+                    {reason.detail ? `: ${reason.detail}` : ''}
+                  </span>
                 </li>
               ))}
             </ul>
           )}
           {r.checks.length > 0 ? (
-            <ul className={styles.grid} aria-label="Readiness Checks">
+            <ul className={styles.grid} aria-label="Readiness Evidence">
               {r.checks.map((ch) => (
-                <li className={styles.trailStep} key={ch.key}>
+                <li className={styles.trailStep} key={ch.label}>
                   <span className={`${styles.gridName} sc-ink--blue`}>
-                    {enumLabel(ch.key)}
-                    {ch.detail ? `, ${detailLabel(ch.detail)}` : ''}
+                    {ch.label}
+                    {ch.detail ? `, ${ch.detail}` : ''}
                   </span>
                   <span
                     className={`${styles.gridCell} sc-ink--${ch.ok === null ? 'muted' : ch.ok ? 'green' : 'red'}`}
                   >
-                    {ch.ok === null ? 'Unknown' : ch.ok ? 'Pass' : 'Fail'}
+                    {ch.ok === null ? '-' : ch.ok ? 'Pass' : 'Fail'}
                   </span>
                 </li>
               ))}
             </ul>
+          ) : null}
+          {r.asOf ? (
+            <span
+              className={`${styles.recordMeta} sc-ink--muted`}
+            >{`Checked ${stampLabel(r.asOf)}`}</span>
           ) : null}
         </>
       )}
@@ -631,11 +692,6 @@ export function RolloutReadiness({ clusterId }: { clusterId: string }) {
   );
 }
 
-/** A check's detail: a code ('insufficient_evidence') is cased for print. */
-function detailLabel(detail: string): string {
-  return /^[a-z][a-z0-9_]*$/.test(detail) ? enumLabel(detail) : titleCase(detail);
-}
-
 // ─── The section ───────────────────────────────────────────────────────────
 
 /** "Must Move", "Lightning", "Converting To Lightning": a mode in a phrase. */
@@ -645,17 +701,15 @@ function modePhrase(mode: string): string {
 }
 
 /**
- * `canUnfreeze` is the door's word on whether the viewer is a platform
- * administrator: false hides Unfreeze; null (the door does not say) shows it
- * and lets the door refuse.
+ * Unfreeze is shown on every frozen Cluster: the doors do not say whether the
+ * viewer is a platform administrator, so the control door judges, and a club
+ * operator who asks is told plainly that only a platform administrator can.
  */
 export default function LightningOperatorControls({
   cluster: c,
-  canUnfreeze,
   onChanged,
 }: {
   cluster: LightningOverviewCluster;
-  canUnfreeze: boolean | null;
   onChanged: () => void;
 }) {
   const [request, setRequest] = useState<ControlRequest | null>(null);
@@ -712,9 +766,7 @@ export default function LightningOperatorControls({
           disabled={frozen || draining}
         />
         {frozen ? (
-          canUnfreeze === false ? null : (
-            <ControlWord action="unfreeze" onPick={pick} />
-          )
+          <ControlWord action="unfreeze" onPick={pick} />
         ) : (
           <ControlWord action="freeze" onPick={pick} />
         )}
@@ -735,6 +787,11 @@ export default function LightningOperatorControls({
       <Row label="Live" value={m?.version ?? 'Unknown'} ink="white" />
       <Row label="Roll Back Target" value={m?.previous ?? 'None'} />
       <Row label="Candidate" value={m?.shadowVersion ?? 'None'} />
+      <Row
+        label="Candidate Recording"
+        value={m?.shadowDisabled === null || !m ? 'Unknown' : m.shadowDisabled ? 'Off' : 'On'}
+        ink={m?.shadowDisabled ? 'gold' : 'silver'}
+      />
       <Row label="Disabled" value={m && m.disabled.length ? m.disabled.join(', ') : 'None'} />
       <div className={styles.words} role="group" aria-label="Matcher Controls">
         <ControlWord
@@ -776,6 +833,8 @@ export default function LightningOperatorControls({
               </span>
               {flag === 'lightning_v1' ? (
                 <span className={`${styles.gridCell} sc-ink--muted`}>Above</span>
+              ) : !SWITCHABLE_FLAGS.has(flag) ? (
+                <span className={`${styles.gridCell} sc-ink--muted`}>Always On</span>
               ) : (
                 <button
                   type="button"

@@ -22,6 +22,8 @@ export async function operatorCommand(actorId: string, input: Record<string, unk
   });
   if (error?.code === '42501' && error.message?.includes('engine_operator_forbidden'))
     throw new Error('engine_operator_forbidden');
+  if (error?.code === '22023' && error.message === 'cash_floor_close_target_not_executable')
+    throw new Error(`engine_operator_refused:${error.message}`);
   if (error?.code === 'P0001') throw new Error(`engine_operator_refused:${error.message}`);
   if (error || !data) throw new Error('engine_operator_command_outcome_unknown');
   return data as OperatorCommand;

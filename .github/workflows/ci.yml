@@ -1425,7 +1425,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
           TMPDIR: ${{ runner.temp }}
-        run: node scripts/qualify-stable-admin-floor.mjs
+        run: |
+          node --test scripts/qualification/stable-admin-close-selector/source.test.mjs
+          node scripts/qualify-stable-admin-floor.mjs
+          node scripts/qualify-stable-admin-close-selector.mjs
       - name: Stable Admin original cancellation and emergency-stop writers qualify on native PostgreSQL 17
         if: matrix.shard == 3
         env:

@@ -1,3 +1,7 @@
+// Synthetic transport identities explicitly retain a live durable session.
+vi.mock('../services/PlayerSessionAccess.js', () => ({
+  playerSessionVerdict: vi.fn(async () => 'alive'),
+}));
 /**
  * A PONG OR RESYNC IS PROOF OF LIFE (2026-10-05).
  *
@@ -82,7 +86,7 @@ function makeServer(overrides: Partial<Record<string, unknown>> = {}) {
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 describe('a socket that answers is a player who is here', () => {
-  it('single-table path: PONG and RESYNC each report the table and player', () => {
+  it('single-table path: PONG and RESYNC each report the table and player', async () => {
     const onAlive = vi.fn();
     const { server } = makeServer({ onAlive });
     const ws = makeFakeWs();
@@ -91,6 +95,7 @@ describe('a socket that answers is a player who is here', () => {
     ws.emitMessage({ type: 'PONG', ts: 1 });
     expect(onAlive).toHaveBeenLastCalledWith(T1, 'user-1');
     ws.emitMessage({ type: 'RESYNC' });
+    await flush();
     expect(onAlive).toHaveBeenCalledTimes(2);
   });
 
@@ -108,6 +113,7 @@ describe('a socket that answers is a player who is here', () => {
     expect(onAlive.mock.calls.map((c) => c[0]).sort()).toEqual([T1, T2].sort());
     onAlive.mockClear();
     ws.emitMessage({ type: 'RESYNC', tableId: T2 });
+    await flush();
     expect(onAlive.mock.calls).toEqual([[T2, 'user-1']]);
   });
 

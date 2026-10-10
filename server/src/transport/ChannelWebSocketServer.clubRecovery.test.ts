@@ -1,3 +1,7 @@
+// Explicit live durable grant for synthetic membership/recovery fixtures.
+vi.mock('../services/PlayerSessionAccess.js', () => ({
+  playerSessionVerdict: vi.fn(async () => 'alive'),
+}));
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const readMember = vi.hoisted(() => vi.fn());
@@ -52,8 +56,7 @@ const join = { type: 'JOIN_CLUB', clubId: club };
 const leave = { type: 'LEAVE_CLUB', clubId: club };
 const member = { data: { user_id: 'member' }, error: null };
 async function flush() {
-  await Promise.resolve();
-  await Promise.resolve();
+  await vi.advanceTimersByTimeAsync(0);
 }
 
 beforeEach(() => {
@@ -79,6 +82,7 @@ describe('club subscriptions survive temporary reads without reviving retired in
     expect(channelHub.isInClub(user, club)).toBe(false);
     await vi.advanceTimersByTimeAsync(2500);
     expect(channelHub.isInClub(user, club)).toBe(true);
+    await flush();
     expect(readMember).toHaveBeenCalledTimes(2);
   });
   it('retries a rejected read but never grants unknown membership', async () => {
@@ -94,6 +98,7 @@ describe('club subscriptions survive temporary reads without reviving retired in
     socket().receive(join);
     await flush();
     await vi.advanceTimersByTimeAsync(120000);
+    await flush();
     expect(readMember).toHaveBeenCalledOnce();
     expect(channelHub.isInClub(user, club)).toBe(false);
   });
@@ -104,6 +109,7 @@ describe('club subscriptions survive temporary reads without reviving retired in
     ws.receive(join);
     ws.receive(join);
     ws.receive(join);
+    await flush();
     expect(readMember).toHaveBeenCalledOnce();
     read.resolve(member);
     await flush();
@@ -138,6 +144,7 @@ describe('club subscriptions survive temporary reads without reviving retired in
     if (action === 'leave') ws.receive(leave);
     else ws.close();
     await vi.advanceTimersByTimeAsync(120000);
+    await flush();
     expect(readMember).toHaveBeenCalledOnce();
   });
   it('retains only the latest presence while membership is pending', async () => {
@@ -181,10 +188,13 @@ describe('club subscriptions survive temporary reads without reviving retired in
     await vi.advanceTimersByTimeAsync(900);
     ws.receive(join);
     ws.receive(join);
+    await flush();
     expect(readMember).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(100);
+    await flush();
     expect(readMember).toHaveBeenCalledTimes(2);
     await vi.advanceTimersByTimeAsync(119000);
+    await flush();
     expect(readMember).toHaveBeenCalledTimes(8);
     expect(channelHub.isInClub(user, club)).toBe(false);
   });
@@ -198,9 +208,11 @@ describe('club subscriptions survive temporary reads without reviving retired in
     readMember.mockResolvedValue({ data: null, error: null });
     ws.receive(join);
     await flush();
+    await flush();
     expect(readMember).toHaveBeenCalledTimes(2);
     expect(channelHub.isInClub(user, club)).toBe(false);
     await vi.advanceTimersByTimeAsync(60000);
+    await flush();
     expect(readMember).toHaveBeenCalledTimes(2);
   });
 
@@ -209,6 +221,7 @@ describe('club subscriptions survive temporary reads without reviving retired in
     readMember.mockReturnValueOnce(oldRead.promise);
     const ws = socket();
     ws.receive(join);
+    await flush(); // The old membership read has actually begun.
     ws.receive(leave);
     ws.receive(join);
     await flush();
@@ -218,6 +231,7 @@ describe('club subscriptions survive temporary reads without reviving retired in
     ws.receive(join);
     await flush();
     expect(channelHub.isInClub(user, club)).toBe(true);
+    await flush();
     expect(readMember).toHaveBeenCalledTimes(2);
   });
 
@@ -228,12 +242,14 @@ describe('club subscriptions survive temporary reads without reviving retired in
       vi.setSystemTime(Date.now() + 1001);
       ws.receive({ type: 'JOIN_CLUB', clubId: pendingClub(i) });
     }
+    await flush();
     expect(readMember).toHaveBeenCalledTimes(64);
     expect(ws.sent).toContainEqual(
       expect.objectContaining({ type: 'CHANNEL_ERROR', code: 'CLUB_JOIN_LIMIT' })
     );
     ws.receive({ type: 'LEAVE_CLUB', clubId: pendingClub(0) });
     ws.receive({ type: 'JOIN_CLUB', clubId: pendingClub(64) });
+    await flush();
     expect(readMember).toHaveBeenCalledTimes(65);
   });
 
@@ -241,6 +257,7 @@ describe('club subscriptions survive temporary reads without reviving retired in
     const ws = socket();
     ws.receive({ type: 'JOIN_CLUB', clubId: 'not-a-uuid' });
     await vi.advanceTimersByTimeAsync(120000);
+    await flush();
     expect(readMember).not.toHaveBeenCalled();
     expect(ws.sent).toContainEqual(
       expect.objectContaining({ type: 'CHANNEL_ERROR', code: 'INVALID_CLUB_ID' })

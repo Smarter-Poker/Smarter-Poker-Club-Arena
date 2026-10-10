@@ -38,19 +38,39 @@ export async function playerSessionVerdict(
   }
 }
 /** Explicit transaction event, no correctness/repair polling or scheduled work. */
-export function subscribePlayerSessionRevocations(onRevoke: (userId: string) => void): () => void {
+export function subscribePlayerSessionRevocations(
+  onRevoke: (userId: string) => void,
+  onRecovered?: (isCurrent: () => boolean) => void
+): () => void {
+  let disposed = false,
+    subscribed = false,
+    generation = 0;
   const channel = supabase
     .channel('engine-player-session-revocations')
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'ca_player_session_revocations' },
       (payload) => {
+        if (disposed) return;
         const userId = (payload.new as Record<string, unknown>)?.user_id;
         if (typeof userId === 'string') onRevoke(userId);
       }
     )
-    .subscribe();
+    .subscribe((status) => {
+      if (disposed) return;
+      if (status !== 'SUBSCRIBED') {
+        subscribed = false;
+        generation++;
+        return;
+      }
+      if (subscribed) return;
+      subscribed = true;
+      const original = ++generation;
+      onRecovered?.(() => !disposed && subscribed && generation === original);
+    });
   return () => {
+    disposed = true;
+    generation++;
     void supabase.removeChannel(channel);
   };
 }

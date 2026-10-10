@@ -1,3 +1,4 @@
+import { readPendingOperatorCashClose } from './services/operatorCashClose.js';
 import { type OperatorCommand, acknowledgeMaintenance } from './maintenance/OperatorCommands.js';
 import {
   findMixedF06Transfer,
@@ -3511,6 +3512,23 @@ export class GameServer {
     this.maintenanceBreak.replay(tableId);
   }
 
+  private async resumePendingOperatorCashCloses(generation: number): Promise<void> {
+    const { data, error } = await supabase
+      .from('ca_operator_table_closes')
+      .select('table_id')
+      .eq('status', 'pending');
+    if (error || !Array.isArray(data)) throw new Error('operator_cash_close_targets_unknown');
+    for (const row of data) {
+      if (!this.dealerAdmissionIsCurrent(generation)) return;
+      if (!(await this.ensureCashTableEngine(row.table_id)))
+        reportError(
+          new Error('operator_cash_close_dealer_unconfirmed'),
+          'GameServer.operator_cash_close_startup_refused',
+          { tableId: row.table_id }
+        );
+    }
+  }
+
   async applyOperatorFloorCommand(command: OperatorCommand) {
     // Persisted state was committed first; each original dealer reads its own
     // hold and closes only after its settlement barrier. No second dealer.
@@ -3523,8 +3541,19 @@ export class GameServer {
         .select('table_id')
         .eq('operation_id', command.id)
         .eq('status', 'pending');
-      if (error) throw new Error('operator_close_targets_unknown');
-      for (const row of data ?? []) await this.ensureCashTableEngine(row.table_id);
+      if (error || !Array.isArray(data)) throw new Error('operator_close_targets_unknown');
+      let unconfirmed = false;
+      for (const row of data) {
+        try {
+          if (!(await this.ensureCashTableEngine(row.table_id))) unconfirmed = true;
+        } catch (admissionError) {
+          unconfirmed = true;
+          reportError(admissionError, 'GameServer.operator_cash_close_admission_unknown', {
+            tableId: row.table_id,
+          });
+        }
+      }
+      if (unconfirmed) throw new Error('operator_cash_close_dealer_unconfirmed');
     }
     return {
       observed: settled.filter((result) => result.status === 'fulfilled').length,
@@ -4180,6 +4209,11 @@ export class GameServer {
       this.handOutboxListener.start();
 
       if (!this.publishDealerPrerequisitesReady(generation)) return;
+      // Finite startup recovery uses the original dealer, not a repair interval.
+      this.launchServerLifecycleJob(
+        this.resumePendingOperatorCashCloses(generation),
+        'GameServer.operator_cash_close_startup_unknown'
+      );
       this.leaderBootComplete = true;
       console.log('[GameServer] Running. All services started.');
     } else if (testTableId) {
@@ -11624,6 +11658,7 @@ export class GameServer {
       return 'not_wakeable';
     }
 
+    let closureOperationId: string | undefined;
     try {
       // Both discovery and direct wake use this path. A disabled arena must
       // not acquire a lease or construct an engine merely to refuse its start.
@@ -11631,10 +11666,17 @@ export class GameServer {
     } catch (policyError) {
       if (!this.dealerAdmissionIsCurrent(generation)) return 'not_wakeable';
       if (policyError instanceof DiamondCashPolicyClosedError && policyError.tableId === tableId) {
-        return 'policy_closed';
+        try {
+          closureOperationId = (await readPendingOperatorCashClose(tableId)) ?? undefined;
+        } catch (closeError) {
+          reportError(closeError, 'GameServer.cash_close_authority_unknown', { tableId });
+          return 'retryable_failure';
+        }
+        if (!closureOperationId) return 'policy_closed';
+      } else {
+        reportError(policyError, 'GameServer.cash_table_play_eligibility_unavailable', { tableId });
+        return 'retryable_failure';
       }
-      reportError(policyError, 'GameServer.cash_table_play_eligibility_unavailable', { tableId });
-      return 'retryable_failure';
     }
     if (!this.dealerAdmissionIsCurrent(generation)) return 'not_wakeable';
 
@@ -11726,6 +11768,7 @@ export class GameServer {
     }
 
     const engine = new ServerTableEngine(tableId, {
+      closureOperationId,
       scope: 'cash',
       verified: true,
       generation: lease.leaseGeneration,

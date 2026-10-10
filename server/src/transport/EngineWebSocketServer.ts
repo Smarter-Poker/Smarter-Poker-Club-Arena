@@ -303,6 +303,7 @@ interface ConnectionState {
    * session revoked AFTER the upgrade.
    */
   token: string;
+  sessionRead?: Promise<boolean>;
   /** Epoch ms of the next re-auth. Staggered at connect, see REAUTH_INTERVAL_MS. */
   nextReauthAt: number;
   /** Single-table path: the table from the upgrade URL. Mux path: ''. */
@@ -471,10 +472,19 @@ export function refuseProtocol(
 
 export class EngineWebSocketServer {
   /** Close only the target's definitively revoked sessions; active hands retain normal disconnect handling. */
-  public async revokePlayerSessions(userId: string): Promise<void> {
-    for (const [ws, connection] of this.connections) {
+  public async revokePlayerSessions(userId: string, isCurrent = () => true): Promise<void> {
+    for (const [ws, connection] of Array.from(this.connections)) {
+      if (this.closing || !isCurrent()) return;
       if (connection.userId !== userId) continue;
-      if ((await playerSessionVerdict(userId, connection.token)) !== 'revoked') continue;
+      const token = connection.token;
+      if ((await playerSessionVerdict(userId, token)) !== 'revoked') continue;
+      if (
+        this.closing ||
+        !isCurrent() ||
+        this.connections.get(ws) !== connection ||
+        connection.token !== token
+      )
+        continue;
       try {
         ws.close(4401, 'auth:session_not_found');
       } catch {
@@ -482,10 +492,43 @@ export class EngineWebSocketServer {
       }
     }
   }
+  /** Reconcile missed revocations only on the original subscription recovery event. */
+  public async revalidatePlayerSessions(isCurrent = () => true): Promise<void> {
+    const users = new Set(Array.from(this.connections.values(), (connection) => connection.userId));
+    for (const userId of users) {
+      if (this.closing || !isCurrent()) return;
+      await this.revokePlayerSessions(userId, isCurrent);
+    }
+  }
+  private async sessionCanReceive(conn: ConnectionState): Promise<boolean> {
+    if (this.closing || this.connections.get(conn.ws) !== conn) return false;
+    if (conn.sessionRead) return conn.sessionRead;
+    const token = conn.token;
+    const check = (async () => {
+      const verdict = await playerSessionVerdict(conn.userId, token);
+      if (this.closing || this.connections.get(conn.ws) !== conn || conn.token !== token)
+        return false;
+      if (verdict === 'revoked') {
+        try {
+          conn.ws.close(4401, 'auth:session_not_found');
+        } catch {
+          /* normal cleanup owns presence */
+        }
+      }
+      return verdict === 'alive';
+    })();
+    conn.sessionRead = check;
+    try {
+      return await check;
+    } finally {
+      if (conn.sessionRead === check) conn.sessionRead = undefined;
+    }
+  }
 
   private wss: WebSocketServer;
   private connections: Map<WebSocket, ConnectionState> = new Map();
   private heartbeatTimer: NodeJS.Timeout | null = null;
+  private closing = false;
   /** Last time the heartbeat interval actually got CPU time. */
   private lastHeartbeatSweepAt = Date.now();
   private readonly hub: TableStateHub;
@@ -780,6 +823,7 @@ export class EngineWebSocketServer {
    * heartbeat interval.
    */
   async close(): Promise<void> {
+    this.closing = true;
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
@@ -1157,6 +1201,12 @@ export class EngineWebSocketServer {
     const existing = conn.subs.get(tableId);
     if (typeof existing === 'symbol') return; // in flight - first one wins
     if (existing) {
+      if (
+        !(await this.sessionCanReceive(conn)) ||
+        !this.connectionCanWrite(conn) ||
+        conn.subs.get(tableId) !== existing
+      )
+        return;
       // Idempotent: already subscribed. Re-ack + resync so a client retry
       // converges instead of erroring.
       if (!this.sendControl(conn, { type: 'SUBSCRIBED', tableId })) return;
@@ -1199,6 +1249,7 @@ export class EngineWebSocketServer {
     try {
       const viewerAccess = await this.authorizeConnection(tableId, conn.userId);
       timing.authorityReturnedAtMs = elapsed();
+      if (!isCurrent() || !(await this.sessionCanReceive(conn)) || !isCurrent()) return;
       const banned = viewerAccess.banned;
       // UNSUBSCRIBE, close, or a new attempt may have won during the await.
       // Neither a stale success nor a stale refusal belongs to that attempt.
@@ -1366,11 +1417,13 @@ export class EngineWebSocketServer {
         if (!tableId || !conn.subs) return;
         const sub = conn.subs.get(tableId);
         if (sub && typeof sub !== 'symbol') {
-          this.hub.resync(tableId, sub);
-          if (this.connectionCanWrite(conn)) {
+          void this.sessionCanReceive(conn).then((allowed) => {
+            if (!allowed || !this.connectionCanWrite(conn) || conn.subs?.get(tableId) !== sub)
+              return;
+            this.hub.resync(tableId, sub);
             this.notifyAlive(tableId, conn.userId);
             this.resyncPlayer(tableId, conn.userId);
-          }
+          });
         }
         return;
       }
@@ -1443,13 +1496,14 @@ export class EngineWebSocketServer {
         return;
       case 'RESYNC': {
         const sub = (conn.ws as unknown as { __sub: HubSubscriber }).__sub;
-        this.hub.resync(conn.tableId, sub);
         // FIX 2 (2026-07-24): re-deliver hole cards alongside the public
         // snapshot — the RESYNC snapshot only carries scrubbed public state.
-        if (this.connectionCanWrite(conn)) {
+        void this.sessionCanReceive(conn).then((allowed) => {
+          if (!allowed || !this.connectionCanWrite(conn)) return;
+          this.hub.resync(conn.tableId, sub);
           this.notifyAlive(conn.tableId, conn.userId);
           this.resyncPlayer(conn.tableId, conn.userId);
-        }
+        });
         return;
       }
       case 'RENDER_ACK':

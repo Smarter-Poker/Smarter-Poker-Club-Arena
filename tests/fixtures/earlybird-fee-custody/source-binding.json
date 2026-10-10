@@ -15,7 +15,7 @@
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "supabase/migrations/20260918122532_five_original_spin_standings_retain_their_recorded_cash_outc.sql": "9f6e0b02abea54394d317c6d20f8e47ae10edefc9ba6c12f6542c23daf4540c4",
     ".prettierignore": "09ce1f38a5e012220b004ee809caf9fdcf0e61d9d72e924fd82341de73d53874",
-    "tests/unit/fixtureNativeCi.test.ts": "8181a10a7d67b8e5c7dc3bc79f0a7959ff630257622f5a9cb333e053b6beed93",
+    "tests/unit/fixtureNativeCi.test.ts": "de6f003caff7c9b5e4652b8c072fe145591cafc1b02fbc9836ad11f5fe628154",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536"
   },
   "restamp_audit": [
@@ -213,5 +213,16 @@
     "path": "tests/unit/fixtureNativeCi.test.ts",
     "previous": "5f3225db066ecc1c3023aaf61be0173967383268b25237b10f2914976f5dbe00",
     "current": "8181a10a7d67b8e5c7dc3bc79f0a7959ff630257622f5a9cb333e053b6beed93"
+  },
+  "stableAdminCloseSelectorRouting20261010": {
+    "reason": "Reviewed additive Stable Admin close-selector native driver/input classification and required original accounting-gate execution assertions. Refresh only these current source fingerprints; original financial SQL, captured definitions, fixture assertions, historical hashes and qualification statuses remain unchanged. Source identity refresh supplies no new financial or production qualification.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": "8181a10a7d67b8e5c7dc3bc79f0a7959ff630257622f5a9cb333e053b6beed93",
+        "current": "de6f003caff7c9b5e4652b8c072fe145591cafc1b02fbc9836ad11f5fe628154"
+      }
+    ]
   }
 }

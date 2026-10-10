@@ -102,3 +102,24 @@ describe('the original dealer owns its durable operator floor hold', () => {
     e.preciseTimer.dispose();
   });
 });
+
+it('a closure-only dealer never deals even if its persisted close disappears', async () => {
+  const e = new ServerTableEngine(tableId, {
+    scope: 'cash',
+    verified: true,
+    generation: tableId,
+    proofDeadlineMonotonicMs: performance.now() + 60000,
+    closureOperationId: tableId,
+  }) as any;
+  vi.spyOn(supabase, 'rpc').mockResolvedValue({
+    data: { hold: null, close: null },
+    error: null,
+  } as any);
+  await e.refreshOperatorFloor();
+  expect(e.operatorFloorPaused).toBe(true);
+  await expect(e.passOperatorFloorBoundary()).rejects.toThrow(
+    'operator_cash_close_authority_changed'
+  );
+  await expect(e.dealHand([])).rejects.toThrow('operator_cash_close_dealing_forbidden');
+  e.preciseTimer.dispose();
+});

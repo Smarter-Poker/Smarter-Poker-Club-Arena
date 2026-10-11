@@ -719,12 +719,22 @@ test.describe('Production Shark Club Players', () => {
           () =>
             close.evaluate((button) => {
               const rect = button.getBoundingClientRect();
-              return [2, rect.width / 2, rect.width - 2].every((x) =>
-                [2, rect.height / 2, rect.height - 2].every(
-                  (y) =>
-                    document.elementFromPoint(rect.left + x, rect.top + y)?.closest('button') ===
-                    button
-                )
+              // Sample the face, retaining all four straight edges; rounded corners are void.
+              const points = [
+                [rect.width / 2, 2],
+                [2, rect.height / 2],
+                [rect.width / 2, rect.height / 2],
+                [rect.width - 2, rect.height / 2],
+                [rect.width / 2, rect.height - 2],
+                [rect.width / 4, rect.height / 4],
+                [(rect.width * 3) / 4, rect.height / 4],
+                [rect.width / 4, (rect.height * 3) / 4],
+                [(rect.width * 3) / 4, (rect.height * 3) / 4],
+              ];
+              return points.every(
+                ([x, y]) =>
+                  document.elementFromPoint(rect.left + x, rect.top + y)?.closest('button') ===
+                  button
               );
             }),
           { message: 'The footer must not cover any part of the Vault Help action.' }
@@ -747,12 +757,22 @@ test.describe('Production Shark Club Players', () => {
           () =>
             cancel.evaluate((button) => {
               const rect = button.getBoundingClientRect();
-              return [2, rect.width / 2, rect.width - 2].every((x) =>
-                [2, rect.height / 2, rect.height - 2].every(
-                  (y) =>
-                    document.elementFromPoint(rect.left + x, rect.top + y)?.closest('button') ===
-                    button
-                )
+              // Sample the face, retaining all four straight edges; rounded corners are void.
+              const points = [
+                [rect.width / 2, 2],
+                [2, rect.height / 2],
+                [rect.width / 2, rect.height / 2],
+                [rect.width - 2, rect.height / 2],
+                [rect.width / 2, rect.height - 2],
+                [rect.width / 4, rect.height / 4],
+                [(rect.width * 3) / 4, rect.height / 4],
+                [rect.width / 4, (rect.height * 3) / 4],
+                [(rect.width * 3) / 4, (rect.height * 3) / 4],
+              ];
+              return points.every(
+                ([x, y]) =>
+                  document.elementFromPoint(rect.left + x, rect.top + y)?.closest('button') ===
+                  button
               );
             }),
           { message: 'The footer must not cover any part of the Vault Cancel action.' }

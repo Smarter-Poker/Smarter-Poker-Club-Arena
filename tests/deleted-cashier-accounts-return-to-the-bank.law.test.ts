@@ -41,6 +41,35 @@ describe('deleted cashier accounts return to the bank', () => {
     expect(sql).toContain('zzzz_deleted_agent_credit');
     expect(sql).toContain("'app.cash_original_debit_ledger'");
   });
+  it('refuses unsettled custody at deletion before any bank movement', () => {
+    const guard = readFileSync(
+      'supabase/migrations/20261011051132_deleted_account_closure_waits_for_chip_custody.sql',
+      'utf8'
+    );
+    expect(guard).toContain('BEFORE UPDATE OF status ON public.profiles');
+    expect(guard).toContain("OLD.status IS DISTINCT FROM 'deleted'");
+    expect(guard).toContain('pg_try_advisory_xact_lock');
+    expect(guard).toContain('FOR UPDATE NOWAIT');
+    for (const store of [
+      'table_seats',
+      'tournament_players',
+      'cashout_requests',
+      'chip_escrow',
+      'chip_escrow_holds',
+    ]) {
+      expect(guard).toContain(`public.${store}`);
+    }
+    expect(guard).not.toMatch(/DELETE FROM|UPDATE public.table_seats|cron\.schedule/i);
+    const native = readFileSync('scripts/ci/test-cashier-deleted-accounts.py', 'utf8');
+    expect(native).toContain('baseline-direct-delete-bypasses-live-seat');
+    expect(native).toContain('custody-concurrent-wallet-refuses-without-deadlock');
+    expect(native).toContain('settled-custody-allows-once-only-bank-return');
+    expect(native).toContain('close-account-baseline-blocks-completed-approval');
+    expect(native).toContain('close-account-open-approval-still-refused');
+    expect(native).toContain('custody-changed-preimage-refuses-atomically');
+    expect(native).toContain('baseline-custody-waits-behind-bank');
+    expect(native).toContain('custody-busy-bank-refuses-without-waiting');
+  });
   it('enforces native database concurrency and conservation qualification in required CI', () => {
     const workflow = readFileSync('.github/workflows/ci.yml', 'utf8');
     expect(workflow).toContain('python3 scripts/ci/test-cashier-deleted-accounts.py');

@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 root = Path(__file__).resolve().parents[2]
 parser = argparse.ArgumentParser(description=__doc__)
@@ -110,6 +111,83 @@ try:
         raise RuntimeError(str([(r.stdout, r.stderr) for r in race]))
     run('simultaneous-credit-conservation', 'SELECT chip_treasury FROM clubs;', '1140')
     run('source-helper-refuses-browser', f"SET ROLE authenticated; SELECT fn_ca_deleted_wallet_bank_return('{club}','{deleted}','player_wallet');", error='42501')
+    # Phase 1: qualify the actual deletion prerequisite in native PostgreSQL.
+    custody_user = '00000000-0000-0000-0000-000000000010'
+    custody_table = '20000000-0000-0000-0000-000000000010'
+    tournament = '30000000-0000-0000-0000-000000000010'
+    run('custody-fixture', (root / 'tests/fixtures/cashier-deleted-accounts/custody.sql').read_text())
+    delete_status = f"UPDATE profiles SET status='deleted' WHERE id='{custody_user}';"
+    seat = f"INSERT INTO table_seats VALUES('{custody_table}','{custody_user}',25.37,NULL);"
+    run('baseline-direct-delete-bypasses-live-seat', "BEGIN;" + seat + delete_status +
+        f"SELECT status||'/'||(SELECT stack FROM table_seats WHERE user_id='{custody_user}') FROM profiles WHERE id='{custody_user}'; ROLLBACK;", 'deleted/25.37')
+    run('close-account-preimage', (root / 'tests/fixtures/cashier-deleted-accounts/close-account-preimage.sql').read_text())
+    run('close-account-baseline-blocks-completed-approval', f"BEGIN; INSERT INTO cashout_requests VALUES('{custody_user}','{active}',14.23,'approved',now()); SELECT fn_close_account('{custody_user}')->>'reason'; ROLLBACK;", 'pending_cashout')
+    run('custody-preimage-source-is-exact', "SELECT md5(prosrc) FROM pg_proc WHERE oid='fn_close_account(uuid)'::regprocedure;", '2a65f0150ab9365424754d3096ab3c41')
+    run('custody-changed-preimage-refuses-atomically', "BEGIN; CREATE OR REPLACE FUNCTION fn_close_account(p_user_id uuid) RETURNS jsonb LANGUAGE sql AS $$ SELECT '{}'::jsonb $$;" + (root / 'supabase/migrations/20261011051132_deleted_account_closure_waits_for_chip_custody.sql').read_text(), error='account_close_custody_preimage_changed')
+    run('custody-refused-install-leaves-no-trigger', "SELECT count(*) FROM pg_trigger WHERE tgname='trg_deleted_account_custody_settled';", '0')
+    run('custody-transition-install', (root / 'supabase/migrations/20261011051132_deleted_account_closure_waits_for_chip_custody.sql').read_text())
+    def busy_bank(name, expected_error, timeout=''):
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(command, cmd, f"BEGIN; SELECT 1 FROM clubs WHERE id='{club}' FOR UPDATE; SELECT pg_advisory_xact_lock(77112); SELECT pg_sleep(1); COMMIT;")
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                witness = command(cmd, "SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND objid=77112 AND granted);")
+                if witness.returncode == 0 and witness.stdout.strip() == 't':
+                    break
+                time.sleep(0.01)
+            else:
+                raise RuntimeError('Concurrent custody bank witness never acquired')
+            run(name, timeout + delete_status, error=expected_error)
+            result = future.result()
+            if result.returncode:
+                raise RuntimeError(result.stderr)
+    busy_bank('baseline-custody-waits-behind-bank', '57014', "SET statement_timeout='80ms';")
+    run('custody-bank-lock-refinement', (root / 'supabase/migrations/20261011051848_deleted_account_custody_takes_bank_locks_without_waiting.sql').read_text())
+    busy_bank('custody-busy-bank-refuses-without-waiting', 'could not obtain lock on row')
+    run('custody-busy-bank-refusal-is-atomic', f"SELECT p.status||'/'||m.chip_balance||'/'||(SELECT chip_treasury FROM clubs) FROM profiles p JOIN club_members m ON m.user_id=p.id WHERE p.id='{custody_user}';", 'active/11.11/1140')
+    obligations = {
+        'live-seat': seat,
+        'registered-tournament': f"INSERT INTO tournaments VALUES('{tournament}','RUNNING'); INSERT INTO tournament_players VALUES('{tournament}','{custody_user}','registered');",
+        'playing-tournament': f"INSERT INTO tournaments VALUES('{tournament}','RUNNING'); INSERT INTO tournament_players VALUES('{tournament}','{custody_user}','playing');",
+        'unreleased-escrow': f"INSERT INTO chip_escrow VALUES('{custody_user}',14.23,NULL);",
+        'escrow-hold': f"INSERT INTO chip_escrow_holds VALUES('{custody_user}','held');",
+        'held-wallet': f"UPDATE club_members SET held_chips=4.23 WHERE user_id='{custody_user}';",
+        'locked-wallet': f"UPDATE club_members SET locked_chips=4.23 WHERE user_id='{custody_user}';",
+    }
+    for status in ['pending', 'approved', 'cancelling', 'completing']:
+        obligations['cashout-' + status] = f"INSERT INTO cashout_requests VALUES('{custody_user}','{active}',14.23,'{status}',NULL);"
+        obligations['assigned-cashout-' + status] = f"INSERT INTO cashout_requests VALUES('{active}','{custody_user}',14.23,'{status}',NULL);"
+    for name, setup in obligations.items():
+        run('custody-refuses-' + name, "BEGIN;" + setup + delete_status, error='23514')
+        run('custody-refusal-is-atomic-' + name,
+            f"SELECT p.status||'/'||m.chip_balance||'/'||(SELECT chip_treasury FROM clubs) FROM profiles p JOIN club_members m ON m.user_id=p.id WHERE p.id='{custody_user}';", 'active/11.11/1140')
+    settled = f"INSERT INTO table_seats VALUES('{custody_table}','{custody_user}',25.37,now()); INSERT INTO tournaments VALUES('{tournament}','COMPLETED'); INSERT INTO tournament_players VALUES('{tournament}','{custody_user}','playing'); INSERT INTO chip_escrow VALUES('{custody_user}',14.23,now()); INSERT INTO chip_escrow_holds VALUES('{custody_user}','released'); INSERT INTO cashout_requests VALUES('{custody_user}','{active}',14.23,'approved',now());"
+    run('settled-custody-allows-once-only-bank-return', "BEGIN;" + settled + delete_status +
+        f"SELECT p.status||'/'||m.chip_balance||'/'||(SELECT chip_treasury FROM clubs)||'/'||(SELECT fn_ca_deleted_account_bank_return('{club}','{custody_user}')->>'amount') FROM profiles p JOIN club_members m ON m.user_id=p.id WHERE p.id='{custody_user}'; ROLLBACK;", 'deleted/0.00/1151.11/0')
+    run('close-account-completed-approval-advances-to-wallet-check', f"BEGIN; INSERT INTO cashout_requests VALUES('{custody_user}','{active}',14.23,'approved',now()); SELECT fn_close_account('{custody_user}')->>'reason'; ROLLBACK;", 'club_chips')
+    run('close-account-open-approval-still-refused', f"BEGIN; INSERT INTO cashout_requests VALUES('{custody_user}','{active}',14.23,'approved',NULL); SELECT fn_close_account('{custody_user}')->>'reason'; ROLLBACK;", 'pending_cashout')
+    run('custody-close-account-refuses-browser', f"SET ROLE authenticated; SELECT fn_close_account('{custody_user}');", error='42501')
+    run('custody-close-account-service-access-preserved', f"SET ROLE service_role; SELECT fn_close_account('{custody_user}')->>'reason';", 'club_chips')
+    run('custody-trigger-refuses-browser-call', 'SET ROLE authenticated; SELECT fn_deleted_account_custody_settled();', error='42501')
+    # Hold the actual wallet in another session. Wait on its explicit advisory
+    # witness, not a guessed scheduling delay, then assert NOWAIT refusal.
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(command, cmd, f"BEGIN; SELECT 1 FROM club_members WHERE user_id='{custody_user}' FOR UPDATE; SELECT pg_advisory_xact_lock(77111); SELECT pg_sleep(1); UPDATE club_members SET chip_balance=chip_balance+3.14 WHERE user_id='{custody_user}'; COMMIT;")
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            witness = command(cmd, "SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND objid=77111 AND granted);")
+            if witness.returncode == 0 and witness.stdout.strip() == 't':
+                break
+            time.sleep(0.01)
+        else:
+            raise RuntimeError('Concurrent custody wallet witness never acquired')
+        run('custody-concurrent-wallet-refuses-without-deadlock', delete_status, error='55P03')
+        credit = future.result()
+        if credit.returncode:
+            raise RuntimeError(credit.stderr)
+    run('custody-concurrent-credit-survives', f"SELECT p.status||'/'||m.chip_balance FROM profiles p JOIN club_members m ON m.user_id=p.id WHERE p.id='{custody_user}';", 'active/14.25')
+    run('custody-normal-profile-update-unaffected', f"UPDATE profiles SET username='ordinary-edit' WHERE id='{custody_user}'; SELECT username FROM profiles WHERE id='{custody_user}';", 'ordinary-edit')
+    run('custody-fixture-cleanup', "DROP TABLE table_seats,tournament_players,tournaments,cashout_requests,chip_escrow,chip_escrow_holds,chip_requests; ALTER TABLE club_members DROP COLUMN promo_balance, DROP COLUMN credit_used, DROP COLUMN diamonds; DELETE FROM club_members WHERE user_id='00000000-0000-0000-0000-000000000010'; DELETE FROM profiles WHERE id='00000000-0000-0000-0000-000000000010';")
     run('downline-fixture', (root / 'tests/fixtures/cashier-deleted-accounts/downline.sql').read_text())
     original = (root / 'supabase/migrations/20261010074219_player_downline_reads_exact_retained_hand_totals.sql').read_text()
     original = original[original.index('CREATE OR REPLACE FUNCTION'):original.rindex('COMMIT;')]

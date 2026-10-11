@@ -2,7 +2,8 @@
   "functions": [
     "fn_ca_deleted_account_bank_return",
     "fn_ca_deleted_wallet_credit",
-    "fn_ca_deleted_wallet_bank_return"
+    "fn_ca_deleted_wallet_bank_return",
+    "fn_deleted_account_custody_settled"
   ],
-  "_comment": "Observed installed 2026-10-10 via Supabase MCP, custody and source-lock refinement; private postgres-owned functions and readback in cashier task evidence."
+  "_comment": "Observed installed 2026-10-10 via Supabase MCP, custody and source-lock refinement; private postgres-owned functions and readback in cashier task evidence. Phase1 custody prerequisite installed once 2026-10-11, provider version20261011051643, private postgres-owned trigger; source/readback archived in cashier Phase1 evidence."
 }

@@ -2952,7 +2952,10 @@ export class GameServer {
           'GameServer.seat_first_fast_start_failed',
           { tournamentId }
         );
-      });
+      })
+      .catch((error) =>
+        reportError(error, 'GameServer.seat_first_fast_start_failed', { tournamentId })
+      );
   }
 
   private async performTournamentManagerAdmission(

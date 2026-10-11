@@ -120,7 +120,8 @@ describe('optional event-owned milestone', () => {
     expect(branch).toContain('lightningMilestoneRef.current.note');
     expect(branch).toContain('pendingLightningDecisions().some');
     expect(branch).toContain('!document.hidden');
-    expect(branch).toContain('(isActive || !isMultiTable)');
+    expect(branch).toContain('ambientSoundsAllowed');
+    expect(table).toContain('const ambientSoundsAllowed = (!isMultiTable || isActive) && !muted');
     expect(branch).toContain('soundService.playLightningMilestone()');
     expect(
       sound.slice(sound.indexOf('playLightningMilestone() {'), sound.indexOf('playChatMessage() {'))

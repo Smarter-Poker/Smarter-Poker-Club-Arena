@@ -16848,7 +16848,7 @@ function LiveTablePage({
           if (
             reached &&
             lightningCaps.sound &&
-            (isActive || !isMultiTable) &&
+            ambientSoundsAllowed &&
             !document.hidden &&
             !pendingLightningDecisions().some((d) => d.deadlineAt > serverNow())
           ) {

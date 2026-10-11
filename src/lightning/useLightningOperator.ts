@@ -3,7 +3,8 @@
  *
  * One polled read per surface, with the rules every operator surface needs:
  *
- *   - A sane interval (15 s for the overview, 30 s for one Cluster), and NO
+ *   - A sane interval (15 s for the overview, 30 s for one Cluster, 5 s for
+ *     one Cluster while its drain or conversion is in flight), and NO
  *     reads while the tab is hidden. Coming back to a stale tab reads once.
  *   - One read in flight per surface. A slow answer is never overtaken by a
  *     second request for the same thing.
@@ -19,6 +20,8 @@ import type { OperatorAnswer } from './lightningOperatorApi';
 
 export const OVERVIEW_REFRESH_MS = 15_000;
 export const CLUSTER_REFRESH_MS = 30_000;
+/** One Cluster while a drain or a conversion is in flight (Phase 13). */
+export const CLUSTER_ACTIVE_REFRESH_MS = 5_000;
 
 export interface PolledAnswer<T> {
   answer: OperatorAnswer<T> | null;
@@ -64,7 +67,8 @@ export function usePolledAnswer<T>(
   useEffect(() => {
     scopeRef.current = scope;
   }, [scope]);
-  const inFlightRef = useRef<string | null>(null);
+  const inFlightRef = useRef<{ scope: string; generation: number } | null>(null);
+  const generationRef = useRef(0);
   const answerRef = useRef<OperatorAnswer<T> | null>(null);
   const lastReadRef = useRef(0);
   const mountedRef = useRef(true);
@@ -78,22 +82,30 @@ export function usePolledAnswer<T>(
   const read = useCallback(async () => {
     const readScope = scopeRef.current;
     if (readScope === null) return;
-    if (inFlightRef.current === readScope) return;
-    inFlightRef.current = readScope;
+    const generation = generationRef.current;
+    if (inFlightRef.current?.generation === generation) return;
+    const owner = { scope: readScope, generation };
+    inFlightRef.current = owner;
     setState((s) => (s.scope === readScope ? { ...s, loading: true } : s));
     try {
       const answer = await loadRef.current();
-      if (!mountedRef.current || scopeRef.current !== readScope) return;
+      if (
+        !mountedRef.current ||
+        scopeRef.current !== readScope ||
+        generationRef.current !== generation
+      )
+        return;
       answerRef.current = answer;
       lastReadRef.current = Date.now();
       setState({ scope: readScope, answer, loading: false, refreshedAt: Date.now() });
     } finally {
-      if (inFlightRef.current === readScope) inFlightRef.current = null;
+      if (inFlightRef.current === owner) inFlightRef.current = null;
     }
   }, []);
 
   // A new scope: forget the old answer and read now.
   useEffect(() => {
+    generationRef.current += 1;
     answerRef.current = null;
     lastReadRef.current = 0;
     inFlightRef.current = null;

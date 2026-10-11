@@ -926,13 +926,13 @@ describe('CashierTradePage club load ordering', () => {
     await waitFor(() =>
       expect(screen.getByText('Agent Wallet Could Not Be Verified')).toBeInTheDocument()
     );
-    expect(screen.getByText('Not Yet Verified')).toBeInTheDocument();
+    expect(screen.getByText('Not Yet Refreshed')).toBeInTheDocument();
     // The wallet warning is painted as soon as that read settles, while the
     // roster continuation can still be loading. On a busy CI runner the
     // reconcile control is therefore correctly disabled for a few more
     // milliseconds; clicking it early is a browser no-op and never exercises
     // the promised verification path this test is meant to prove.
-    const reconcile = screen.getByRole('button', { name: 'Reconcile Now' });
+    const reconcile = await screen.findByRole('button', { name: 'Reconcile Now' });
     await waitFor(() => expect(reconcile).toBeEnabled());
     fireEvent.click(reconcile);
     await waitFor(() =>

@@ -251,6 +251,41 @@ beforeEach(() => {
   vi.mocked(supabase.rpc).mockImplementation((name: string, args?: unknown) => {
     const params = (args ?? {}) as Record<string, unknown>;
     state.rpcCalls.push({ name, args: params });
+    if (name === 'fn_cashier_conservation_report') {
+      return Promise.resolve({
+        data: {
+          schema_version: 1,
+          club_id: params.p_club_id,
+          scope: 'bank_and_player_baselines',
+          as_of: '2026-10-11T12:00:00Z',
+          bank: {
+            status: 'verified',
+            actual: '500',
+            expected: '500',
+            drift: '0',
+            baseline_at: '2026-01-01T00:00:00Z',
+          },
+          players: {
+            status: 'incomplete',
+            positions: 2,
+            checked: 1,
+            missing: 1,
+            mismatches: 0,
+            actual: '75',
+            expected: '75',
+            net_drift: '0',
+            absolute_drift: '0',
+          },
+          inventory: {
+            agent_wallets: '500',
+            promo_wallets: '0',
+            held_chips: '0',
+            cash_stacks: '0',
+          },
+        },
+        error: null,
+      }) as never;
+    }
     if (name === 'fn_club_cashier_members_page_v3') {
       return Promise.resolve({ data: state.roster, error: null }) as never;
     }
@@ -290,7 +325,7 @@ describe('the deployed reconciliation witness belongs to the real cashier region
     expect(status).toHaveTextContent(/^Balances Synchronized$/);
     expect(region).toContainElement(status);
     const reconciliation = screen.getByRole('region', { name: 'Reconciliation Console' });
-    expect(within(reconciliation).queryByText('Not Yet Verified', { exact: true })).toBeNull();
+    expect(within(reconciliation).queryByText('Not Yet Refreshed', { exact: true })).toBeNull();
   });
 });
 
@@ -908,4 +943,17 @@ it('Phase 2: a partial recovery skips an already committed removed recipient and
       op_id: secondId,
     }),
   ]);
+});
+
+it('wires the real Trade reconcile action through refreshed authority into the validated accounting RPC', async () => {
+  mountCashier();
+  await synchronized();
+  expect(state.rpcCalls.some((call) => call.name === 'fn_cashier_conservation_report')).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Reconcile Now' }));
+  const report = await screen.findByRole('region', { name: 'Accounting Report' });
+  expect(within(report).getByRole('status')).toHaveTextContent('Coverage Incomplete');
+  expect(state.rpcCalls.filter((call) => call.name === 'fn_cashier_conservation_report')).toEqual([
+    { name: 'fn_cashier_conservation_report', args: { p_club_id: CLUB_A } },
+  ]);
+  expect(toastMocks.success).not.toHaveBeenCalledWith('Cashier Balances Reconciled');
 });

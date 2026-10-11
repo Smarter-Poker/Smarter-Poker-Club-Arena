@@ -29,7 +29,9 @@ test.describe('Production Cashier Certification', () => {
   test('serves the redesigned Trade surface and opens its first visible tab', async ({
     page,
   }, testInfo) => {
-    test.setTimeout(90_000);
+    // Existing route/hydration (up to 90s), plus the new readonly accounting
+    // response (30s) and rendered/a11y proof need a 150s complete flow budget.
+    test.setTimeout(150_000);
     await page.setViewportSize({ width: 393, height: 852 });
     const clubId = process.env.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID;
     const consoleErrors: Array<{ text: string; url: string }> = [];
@@ -93,11 +95,47 @@ test.describe('Production Cashier Certification', () => {
       .poll(
         async () => ({
           status: (await cashierStatus.allTextContents()).join(''),
-          unverified: await reconciliation.getByText('Not Yet Verified', { exact: true }).count(),
+          unverified: await reconciliation.getByText('Not Yet Refreshed', { exact: true }).count(),
         }),
         { timeout: 30_000 }
       )
       .toEqual({ status: 'Balances Synchronized', unverified: 0 });
+    // Prove the actual new request and its rendered verdict, not a refresh-only
+    // timestamp. The action reads a snapshot; never click a money control.
+    const accountingResponse = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname.endsWith('/rpc/fn_cashier_conservation_report'),
+      { timeout: 30_000 }
+    );
+    await reconciliation.getByRole('button', { name: 'Reconcile Now' }).click();
+    const response = await accountingResponse;
+    expect(response.status()).toBe(200);
+    const requestedClub = response.request().postDataJSON().p_club_id;
+    expect(requestedClub).toBe(clubId);
+    const accounting = await response.json();
+    expect(accounting.schema_version).toBe(1);
+    expect(accounting.club_id).toBe(requestedClub);
+    expect(accounting.scope).toBe('bank_and_player_baselines');
+    expect(Number.isFinite(Date.parse(accounting.as_of))).toBe(true);
+    expect(accounting.players.positions).toBe(
+      accounting.players.checked + accounting.players.missing
+    );
+    const verdict =
+      accounting.bank.status === 'attention' || accounting.players.status === 'attention'
+        ? 'Discrepancies Found'
+        : accounting.bank.status === 'incomplete' || accounting.players.status === 'incomplete'
+          ? 'Coverage Incomplete'
+          : 'Covered Balances Match';
+    const report = page.getByRole('region', { name: 'Accounting Report' });
+    await expect(report.getByRole('status')).toHaveText(verdict, { timeout: 15_000 });
+    await expect(report.getByText(/Inventory Is Unverified/)).toBeVisible();
+    await expect(
+      report.getByText('This Report Does Not Move Chips Or Repair Balances.', { exact: false })
+    ).toBeVisible();
+    await testInfo.attach('cashier-accounting-snapshot.json', {
+      body: JSON.stringify(accounting, null, 2),
+      contentType: 'application/json',
+    });
     // Role resolution can rebuild the visible tab set. The default must still
     // be the first available action after authoritative hydration completes.
     await expect(tabs.first()).toHaveAttribute('aria-selected', 'true');

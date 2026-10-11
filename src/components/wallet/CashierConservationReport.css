@@ -1,0 +1,37 @@
+.cashier-conservation {
+  min-width: 0;
+  width: 100%;
+}
+.cashier-conservation__report {
+  margin-top: 16px;
+  min-width: 0;
+}
+.cashier-conservation__rows {
+  margin: 12px 0;
+  font-size: 14px;
+}
+.cashier-conservation__rows > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+.cashier-conservation__rows dt {
+  color: #45adff;
+}
+.cashier-conservation__rows dd {
+  margin: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 560px) {
+  .cashier-conservation__rows > div {
+    flex-direction: column;
+    gap: 4px;
+  }
+  .cashier-conservation__rows dd {
+    text-align: left;
+  }
+}

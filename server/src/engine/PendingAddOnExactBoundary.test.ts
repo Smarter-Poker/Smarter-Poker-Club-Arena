@@ -13,74 +13,89 @@ afterEach(() => {
 });
 
 describe('protocol-2 pending add-ons have one pre-deal owner', () => {
-  it('uses the exact unbound resolver and reflects absolute stack truth', async () => {
-    const engine = new ServerTableEngine(TABLE, {
-      scope: 'cash',
-      verified: true,
-      generation: GENERATION,
-      proofDeadlineMonotonicMs: performance.now() + 60_000,
-    }) as any;
-    engine.running = true;
-    engine.isCurrentEngine = () => true;
-    engine.tableInfo = { id: TABLE, tournament_id: null };
-    engine.pendingAddOnSweepNeeded = true;
-    engine.getMaxBuyIn = () => 500;
-    engine.broadcastCurrentState = vi.fn();
-    engine.hub = { emitEvent: vi.fn() };
-    const hero = { user_id: 'hero', seat_number: 2, stack: 350 };
+  it.each([false, true])(
+    'reflects committed add-on truth without replaying its resolver (transient read=%s)',
+    async (transientRead) => {
+      const engine = new ServerTableEngine(TABLE, {
+        scope: 'cash',
+        verified: true,
+        generation: GENERATION,
+        proofDeadlineMonotonicMs: performance.now() + 60_000,
+      }) as any;
+      engine.running = true;
+      engine.isCurrentEngine = () => true;
+      engine.tableInfo = { id: TABLE, tournament_id: null };
+      engine.pendingAddOnSweepNeeded = true;
+      engine.getMaxBuyIn = () => 500;
+      engine.broadcastCurrentState = vi.fn();
+      engine.hub = { emitEvent: vi.fn() };
+      const hero = { user_id: 'hero', seat_number: 2, stack: 350 };
 
-    const rpc = vi.spyOn(supabase, 'rpc').mockResolvedValue({
-      data: {
-        ok: true,
-        table_id: TABLE,
-        lease_generation: GENERATION,
-        resolved: 1,
-        rows: [
-          {
-            id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-            user_id: 'hero',
-            kind: 'rebuy',
-            applied: '150',
-            refunded: '50',
-          },
-        ],
-      },
-      error: null,
-    } as never);
-    vi.spyOn(supabase, 'from').mockReturnValue({
-      select: () => ({
-        eq: () => ({
-          is: () => Promise.resolve({ data: [{ user_id: 'hero', stack: 500 }], error: null }),
+      const rpc = vi.spyOn(supabase, 'rpc').mockResolvedValue({
+        data: {
+          ok: true,
+          table_id: TABLE,
+          lease_generation: GENERATION,
+          resolved: 1,
+          rows: [
+            {
+              id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+              user_id: 'hero',
+              kind: 'rebuy',
+              applied: '150',
+              refunded: '50',
+            },
+          ],
+        },
+        error: null,
+      } as never);
+      const stackRead = vi
+        .fn()
+        .mockResolvedValue({ data: [{ user_id: 'hero', stack: 500 }], error: null });
+      if (transientRead)
+        stackRead.mockResolvedValueOnce({
+          data: null,
+          error: { code: 'PGRST003', message: 'pool unavailable' },
+        });
+      const kill = vi.spyOn(engine, 'killForRestart');
+      vi.spyOn(engine, 'sleep').mockResolvedValue(undefined);
+      vi.spyOn(supabase, 'from').mockReturnValue({
+        select: () => ({
+          eq: () => ({
+            is: stackRead,
+          }),
         }),
-      }),
-    } as never);
+      } as never);
 
-    await engine.processPendingAddOns([hero]);
+      await engine.processPendingAddOns([hero]);
 
-    expect(rpc).toHaveBeenCalledTimes(1);
-    expect(rpc).toHaveBeenCalledWith(
-      'fn_ca_resolve_unbound_pending_addons',
-      expect.objectContaining({
-        p_table_id: TABLE,
-        p_max_buy_in: 500,
-        p_lease_generation: GENERATION,
-        p_instance_id: expect.any(String),
-      })
-    );
-    expect(rpc).not.toHaveBeenCalledWith('resolve_pending_addon', expect.anything());
-    expect(hero.stack).toBe(500);
-    expect(engine.pendingAddOnSweepNeeded).toBe(false);
-    expect(engine.hub.emitEvent).toHaveBeenCalledWith(
-      TABLE,
-      expect.objectContaining({
-        type: 'add_on_applied',
-        user_id: 'hero',
-        amount: 150,
-        stack: 500,
-        kind: 'rebuy',
-      })
-    );
-  });
+      expect(rpc).toHaveBeenCalledTimes(1);
+      expect(stackRead).toHaveBeenCalledTimes(transientRead ? 2 : 1);
+      expect(kill).not.toHaveBeenCalled();
+      expect(rpc).toHaveBeenCalledWith(
+        'fn_ca_resolve_unbound_pending_addons',
+        expect.objectContaining({
+          p_table_id: TABLE,
+          p_max_buy_in: 500,
+          p_lease_generation: GENERATION,
+          p_instance_id: expect.any(String),
+        })
+      );
+      expect(rpc).not.toHaveBeenCalledWith('resolve_pending_addon', expect.anything());
+      expect(hero.stack).toBe(500);
+      expect(engine.pendingAddOnSweepNeeded).toBe(false);
+      expect(engine.hub.emitEvent).toHaveBeenCalledWith(
+        TABLE,
+        expect.objectContaining({
+          type: 'add_on_applied',
+          user_id: 'hero',
+          amount: 150,
+          stack: 500,
+          kind: 'rebuy',
+        })
+      );
+    }
+  );
 
   it('fences a dealer whose database authority is gone', async () => {
     const engine = new ServerTableEngine(TABLE, {

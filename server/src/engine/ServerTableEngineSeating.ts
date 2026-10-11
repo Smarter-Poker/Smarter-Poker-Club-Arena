@@ -1,3 +1,4 @@
+import { readCommittedSeatStacks } from './committedSeatStackRead.js';
 import { loadSeatedPlayers } from '../services/supabase.js';
 import { requestSeatDeparture, type AdminDepartureAuthority } from '../services/supabase/seats.js';
 /**
@@ -661,11 +662,28 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       /* A committed response may have been lost before the identical retry.
          Re-read absolute seat truth even when the replay resolves zero rows;
          never infer a stack delta from which HTTP response happened to land. */
-      const { data: persistedSeats, error: persistedSeatError } = await supabase
-        .from('table_seats')
-        .select('user_id,stack')
-        .eq('table_id', this.tableId)
-        .is('left_at', null);
+      let persistedSeats: Awaited<ReturnType<typeof readCommittedSeatStacks>> = null;
+      let persistedSeatError: unknown = null;
+      try {
+        persistedSeats = await readCommittedSeatStacks({
+          read: () =>
+            supabase
+              .from('table_seats')
+              .select('user_id,stack')
+              .eq('table_id', this.tableId)
+              .is('left_at', null),
+          canReflect: () => this.lifecycleCanMutate(),
+          progress: () => this.markProgress(),
+          sleep: (ms) => this.sleep(ms),
+          report: (error, attempt) =>
+            reportError(error, 'ServerTableEngine.pending_addon_stack_refresh_failed', {
+              tableId: this.tableId,
+              attempt,
+            }),
+        });
+      } catch (error) {
+        persistedSeatError = error;
+      }
       if (!this.lifecycleCanMutate()) return;
       if (persistedSeatError) {
         reportError(

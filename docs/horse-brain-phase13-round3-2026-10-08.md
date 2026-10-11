@@ -162,6 +162,53 @@ The eight other runs were cancelled between 2026-10-09T03:37:40Z and 03:39:03Z b
 
 A second attempt of each (`gh run rerun --failed`, same seeds) was started at 03:57Z and cancelled by this lane at 04:20Z on the program coordinator's instruction to leave the runs cancelled; it completed no shard. None of the eight is assembled: the assembler refuses a variant with a required shard that has no complete result, and no partial matrix is reported as a result. Condition (a) for these eight: historical only (cancelled before completion, not assembled). Condition (b): unavailable external input. Selection: `null`.
 
+## 8. Held-Out Matrices On The Running Source (October 10, 2026)
+
+The five-day-old runs on `5adefba4` measured code that no longer runs: #6517, #6526 and #6592 changed Phase 13 policy digest files after it, so a qualification assembled from them could never be admitted. Each interrupted variant therefore runs the locked contract unchanged (same profiles, held-out seeds, pairs and thresholds) on `1235b47a`, whose Phase 13 policy digests are main's, under the owner's October 9 confirmation of the handoff (rerun the interrupted matrices when runners allow). Assembled with `server/scripts/phase13-strength-assemble.mjs` on a clean checkout of `1235b47a`; every result is kept.
+
+### NLH
+
+Run [37994385464](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37994385464): 105 of 105 shards, 105 attempts, 0 defective, 4,762,800 pairs. Cash after the published rake, horse population:
+
+| Cell                   | bb/100, 99% interval    |
+| ---------------------- | ----------------------- |
+| primary (pooled)       | +5.16 [+3.99, +6.33]    |
+| bomb 3 boards, 6max    | +82.77 [+77.15, +88.39] |
+| bomb 2 boards, 6max    | +13.69 [+7.28, +20.09]  |
+| bomb 1 board, 6max     | -38.58 [-41.44, -35.72] |
+| 6max 200bb             | -6.36 [-7.61, -5.10]    |
+| 9max 100bb             | -4.74 [-6.38, -3.09]    |
+| 6max 100bb             | -3.57 [-4.71, -2.44]    |
+| small blind (position) | -29.48 [-33.12, -25.83] |
+| big blind (position)   | -12.14 [-15.62, -8.67]  |
+
+Condition (a): **not qualified** (`cash:profile:p13c-nlh-bomb1-6max-100bb:regression_margin_exceeded`, `cash:position:small_blind:regression_margin_exceeded`, `cash:position:big_blind:regression_margin_exceeded`, `cash:profile:p13c-nlh-3dealt-100bb:interval_not_trusted`). The pooled gain is the multi-board bomb pots; single-board bomb pots and both blinds lose beyond the margin. Why the blinds lose is not yet diagnosed (it is the next root cause for this variant, to be measured on development seeds only). Selection stays `null`. Status: verified now. Evidence: `docs/evidence/phase13/1235b47a/strength-2026-10-10-nlh/` (`strength.json` `54ca0c4c...9ee4`), `docs/evidence/phase13/1235b47a/phase13-qualification-2026-10-10-nlh.json` (`qualified: false`).
+
+### PLO8
+
+Run [38011357161](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/38011357161): 138 of 138 shards, 146 attempts (the attempt rule kept one complete result per shard), 0 defective, 874,368 pairs. Assembled 2026-10-11. Cash after the published rake, horse population:
+
+| Cell                        | bb/100, 99% interval       |
+| --------------------------- | -------------------------- |
+| primary (pooled)            | +55.70 [+53.04, +58.37]    |
+| 3 dealt, 100bb              | +2.88 [+0.46, +5.30]       |
+| 8max 100bb                  | +3.35 [+0.15, +6.55]       |
+| 6max 40bb                   | +1.47 [-0.41, +3.35]       |
+| 6max 100bb                  | +1.87 [-1.69, +5.42]       |
+| 6max 200bb                  | +3.74 [-1.03, +8.51]       |
+| bomb 1 board, 6max          | +60.78 [+52.60, +68.97]    |
+| bomb 2 boards, 6max         | +154.09 [+143.00, +165.18] |
+| bomb 3 boards, 6max         | +217.46 [+202.97, +231.95] |
+| lowest position (big blind) | +45.45 [+38.12, +52.79]    |
+
+Every cell's interval is trusted and none is near the -10 regression margin; each held-out seed alone is above +49. Condition (a): **qualified** (`qualified: true`, no reasons). Policy digest `e8aca233...2a76` (`horse-phase13-policy-digest-v1`), unchanged on main. Condition (b): unavailable external input (calibration inadequate). Tournament: unavailable dependency (no joint tournament outcome model), so PLO8 tournaments stay shadow. Status: verified now. Evidence: `docs/evidence/phase13/1235b47a/strength-2026-10-10-plo8/` (`strength.json` `33f5bb29...0cdf`), `docs/evidence/phase13/1235b47a/phase13-qualification-2026-10-10-plo8.json` (`27039934...2366`).
+
+Selection still needs P13.3: a natural completion record on a release with this digest that meets the floor in every street and every board count. The window is predeclared (`docs/evidence/phase13/declaration-completion-2026-10-11-p13-plo8.txt`). Production telemetry for October 10 already shows the two risks: about 19% of eligible PLO8 joint decisions fell back on the work budget (7,403 of 39,315), and no three-board bomb hand was dealt at any cash table that day, so the three-board cell can have no evidence and fails closed by design.
+
+### The Other Six Variants
+
+PLO4, PLO5, PLO6, Short Deck, Crazy Pineapple and FLO8 run on `1235b47a` one at a time as runners free. Each is added here when assembled.
+
 ## Gate status
 
 - Round-2 response model: defective (uncalibrated; measured above as the cause of the loss on every variant).

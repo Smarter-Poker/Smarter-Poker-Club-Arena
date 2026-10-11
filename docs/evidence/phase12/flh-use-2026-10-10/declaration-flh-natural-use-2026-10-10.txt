@@ -1,0 +1,22 @@
+Horse Brain Phase 12: FLH Natural Accepted Use, Predeclaration
+=============================================================
+Declared 2026-10-10 before 02:15Z, before reading anything below.
+
+Release: the first club-arena-engine release containing 27a5ffba5c4cd08900372197ca67ab12c25caa30
+(#6611, the FLH selection), expected at the 02:55Z break. Its Phase 12 policy
+digests must equal main's (unchanged since 1235b47a).
+
+Reads (read-only):
+1. public.horse_brain_telemetry, every feature beginning phase12_, day
+   2026-10-10, read once now (baseline) and once after 03:50Z.
+2. Engine journal archive segments (closed files, sha256-name verified),
+   DECIDE_FAST decision records with gameVariant flh, decisionTimeMs in
+   [03:02:00Z, 03:50:00Z), sourceRelease exactly that release: counts of
+   decision.remainingVariantPolicy by gameMode, mode, authority.state,
+   applied and changed. If the release does not cut over at 02:55Z, or is
+   replaced before 03:50Z, the window moves to the first full hour (:02 to
+   :50) of the first release containing 27a5ffba with the same digests.
+
+Pass: cash FLH decisions are candidate mode with usable authority, applied
+decisions exist and are controller-accepted (telemetry), tournament FLH
+decisions stay shadow. Every count is recorded whatever it shows.

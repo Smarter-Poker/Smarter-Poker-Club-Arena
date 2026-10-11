@@ -426,10 +426,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "9eef710ba89f994e5299852d62375543242c60a792dcb9ffb4601cc523d0e73c",
+    "scripts/ci/classify-ci-changes.mjs": "5374a01c45ef4118c957bd2613a495bad7f042655d6282e40c005efba8fc055d",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "cb8ce5f29dc13b6e713c8b3f3b271532e80d404cd5ced8c47dfe56bc048d9eac",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "6d535c1ff4e6b9497c2364a7f3e6d2ded0ebbd9a705995041de76349c0e59770",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -448,7 +448,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "21ca39f81153dbb7eca673eefb0a05263454bcb67dd014016a41bf0d7e36756b",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "a04364ad5c9ef6d6bef7f0c513ca4851acbaedcce1951ec19239750ed5d9f801",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -4089,6 +4089,29 @@
         "path": "tests/cashier-weekly-statements.test.tsx",
         "previous_sha256": "ea17078ccc7576d3fd2d66cb51c175e9416e4d3e4ced93f80df87cc2d74e7229",
         "sha256": "5d62394eda8cdf404f63bb37dbdbacb053f24d1f15d15c895706a6b8e27578fd"
+      }
+    ]
+  },
+  "cashierDbHarnessesRouting20261011": {
+    "reason": "Reviewed additive cashier database harness routing: one new cashierDbHarnesses selector naming the four cashier launch PostgreSQL 17 harnesses (chip request approval, union send, cashier arena names, finance gate) and their fixture directories, added to the existing server and tests selections, and four accounting_postgres shard 2 steps that run them. No selector is removed or narrowed; financial sources, assertions and historical evidence are unchanged. These byte bindings establish source identity only, not financial or production qualification.",
+    "changes": [
+      {
+        "section": "repository_fixtures",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "9eef710ba89f994e5299852d62375543242c60a792dcb9ffb4601cc523d0e73c",
+        "current": "5374a01c45ef4118c957bd2613a495bad7f042655d6282e40c005efba8fc055d"
+      },
+      {
+        "section": "repository_fixtures",
+        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous": "cb8ce5f29dc13b6e713c8b3f3b271532e80d404cd5ced8c47dfe56bc048d9eac",
+        "current": "6d535c1ff4e6b9497c2364a7f3e6d2ded0ebbd9a705995041de76349c0e59770"
+      },
+      {
+        "section": "repository_fixtures",
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous": "21ca39f81153dbb7eca673eefb0a05263454bcb67dd014016a41bf0d7e36756b",
+        "current": "a04364ad5c9ef6d6bef7f0c513ca4851acbaedcce1951ec19239750ed5d9f801"
       }
     ]
   }

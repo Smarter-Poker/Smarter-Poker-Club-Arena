@@ -1420,6 +1420,30 @@ jobs:
           PG17_BINDIR: /usr/lib/postgresql/17/bin
           MANAGED_GAME_PG_SCRATCH_PARENT: ${{ runner.temp }}
         run: bash scripts/dev/test-managed-game-one-door-postgres.sh
+      - name: A chip request approval key belongs to its approver (20261010003544)
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: python3 scripts/ci/test-chip-request-approval-db-postgres.py
+      - name: A union send is suppressed only as a retry to the same member (20261010004314)
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: python3 scripts/ci/test-union-send-db-postgres.py
+      - name: A cashier list names a member by the arena name (20261010005048)
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: python3 scripts/ci/test-cashier-arena-names-db-postgres.py
+      - name: A suspended agent stops reading the club finances (20261010010632)
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: python3 scripts/ci/test-finance-gate-db-postgres.py
       - name: Stable Admin floor and maintenance owners qualify on native PostgreSQL 17
         if: matrix.shard == 2
         env:

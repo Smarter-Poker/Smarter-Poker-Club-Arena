@@ -84,6 +84,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useIsMounted } from '../../hooks/useIsMounted';
@@ -129,6 +130,8 @@ import './WalletCashierModal.css';
 import { downloadBlob } from '../../utils/downloadCsv';
 import { statementCsvCell } from '../../utils/cashierStatementCsv';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
+import { compactChips } from '../../utils/format';
+import { safeErrorMessage } from '../../utils/safeErrorMessage';
 
 type DestinationWallet = CashierDestination;
 type Tab = CashierTab;
@@ -243,30 +246,55 @@ interface WalletCashierModalProps {
 }
 
 /**
- * A chip figure on the glass. Dan: "NEVER USE DECIMAL POINTS ON ANY FORWARD
- * FACING PAGE", so a whole balance prints 12,500 and not 12,500.00 (the
- * render showed ".00" on the Club Bank and on every member row). A cashier
- * never misstates the ledger, so a figure that really carries cents keeps
- * them. No test pins two-decimal DISPLAY on this surface: the two-decimal law
- * is about what is stored and sent, and every amount this cashier sends is a
- * whole chip already (amountIsWhole).
- *
- * Unknown is "...", and a value that is not a number is "Unavailable" - it
- * used to print a confident 0.00, which is an invented balance.
+ * A chip figure on the glass: compactChips, the house reading for every chip
+ * count outside the felt (Dan 2026-09-09: "NEVER USE DECIMAL POINTS ON ANY
+ * FORWARD FACING PAGE ... IF ITS 1200 USE 1.2K"). This printed 12,500.5 -
+ * decimals and all - on balances, member rows and the ledgers (audit C2-17).
+ * Rounded down, so a balance is never overstated. Unknown is "...", and a
+ * value that is not a number is "Unavailable" - it used to print a confident
+ * 0.00, which is an invented balance.
  */
 const fmt = (n?: number | null) =>
-  n === undefined || n === null
-    ? '...'
-    : Number.isFinite(n)
-      ? n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
-      : 'Unavailable';
+  n === undefined || n === null ? '...' : Number.isFinite(n) ? compactChips(n) : 'Unavailable';
 
+/** The amount being moved, exactly: a confirmation or a receipt never abbreviates it. */
 const fmtWhole = (n: number) => Math.round(n).toLocaleString('en-US');
+
+/** An exact figure that may carry cents, such as the part of a send drawn on credit. */
+const fmtExact = (n: number) =>
+  (Number.isFinite(n) ? n : 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
+
+/**
+ * Append a ledger page, dropping rows already listed. The ledgers page by
+ * OFFSET, so a row written between two pages shifts the next one and its
+ * first rows repeat the last ones on screen (audit C2-17).
+ */
+function appendNew<T extends { id: string }>(listed: T[], page: T[]): T[] {
+  const seen = new Set(listed.map((r) => r.id));
+  return [...listed, ...page.filter((r) => !seen.has(r.id))];
+}
 
 /* "Club Bank Send" from "club_bank_send" is `enumToTitleCase`, the house
    transform in src/utils/titleCase.ts. A local copy lived here and lower-cased
    the tail of every word, so an initialism printed as "Bbj Promo Sweep". Names
    and notes that come out of a row go through `titleCase` where they print. */
+
+/** A refusal the server answered with: the move did not happen. */
+class CashierRefusal extends Error {}
+
+/**
+ * True when a money RPC failed WITHOUT the server answering, so the move may
+ * have committed before its response was lost (2026-10-09, dialogs merge). A
+ * refusal came back as `{ success: false }`; any PostgREST error that carries
+ * a SQLSTATE rolled its transaction back. What is left - a transport failure
+ * with no code, or a dropped database connection (class 08) - is unknown.
+ */
+function outcomeUnknown(e: unknown): boolean {
+  if (e instanceof CashierRefusal) return false;
+  const code = (e as { code?: unknown } | null)?.code;
+  if (typeof code !== 'string' || code.trim() === '') return true;
+  return code.startsWith('08');
+}
 
 /** crypto.randomUUID is not in every embedded webview; fall back rather than throw. */
 function newOpId(): string {
@@ -283,14 +311,15 @@ function newOpId(): string {
 }
 
 /**
- * ONE ESCAPER FOR EVERY CASHIER CSV (launch audit S-04, 2026-10-09). A note
- * on a send is text the sender typed, and a name is text a player chose:
- * `=HYPERLINK(...)` or `-2+3|cmd` in either used to be written quoted but
- * otherwise verbatim, which a spreadsheet evaluates on open. The statement
- * export already had the hardened cell (control characters flattened,
- * invisibles stripped, formula triggers prefixed), so the ledgers now use it:
- * figures and timestamps pass raw only when they match their strict shape,
- * everything else is treated as untrusted text.
+ * ONE ESCAPER FOR EVERY CASHIER CSV (launch audit S-04 and audit C2-16,
+ * 2026-10-09). A note on a send is text the sender typed, and a name is text
+ * a player chose: `=HYPERLINK(...)`, `@evil` or `-2+3|cmd` in either used to
+ * be written quoted but otherwise verbatim, which a spreadsheet evaluates on
+ * open. The statement export already had the hardened cell (control
+ * characters flattened, invisibles stripped, every formula trigger including
+ * the pipe, the percent and the full-width forms prefixed), so the ledgers now
+ * use it: figures and timestamps pass raw only when they match their strict
+ * shape, everything else is treated as untrusted text.
  */
 const csvText = (v: unknown) => statementCsvCell(v, 'text');
 const csvDecimal = (v: unknown) => statementCsvCell(v, 'decimal');
@@ -317,11 +346,22 @@ export default function WalletCashierModal({
   // false: the agent float row does not exist yet (D-16, launch audit
   // 2026-10-09). That is neither 0 nor unavailable, and the header says so.
   const [hasFloat, setHasFloat] = useState<boolean | null>(null);
+  /**
+   * THE CREDIT LINE BEHIND THE AGENT WALLET (audit C2-1): credit_limit -
+   * credit_used for an agent who is not prepaid, 0 for everyone else. A send
+   * spends the float and draws any shortfall against the line
+   * (fn_agent_wallet_send_core), so what this cashier may send is the float
+   * PLUS this. It capped every send at the float, and a credit agent with an
+   * empty float could not send at all. Read with the float; null while unread.
+   */
+  const [credit, setCredit] = useState<number | null>(null);
 
   const [tab, setTab] = useState<Tab>('send');
   const [destination, setDestination] = useState<DestinationWallet>('agent_wallet');
   const [members, setMembers] = useState<Member[]>([]);
   const [membersLoading, setMembersLoading] = useState(true);
+  /** The roster read FAILED, which is not the same thing as an empty club (audit C2-15). */
+  const [membersError, setMembersError] = useState(false);
   const [search, setSearch] = useState('');
   const [recipient, setRecipient] = useState<Member | null>(null);
   const [amount, setAmount] = useState('');
@@ -366,6 +406,22 @@ export default function WalletCashierModal({
   const [, setNowTick] = useState(0);
   /** Bumped after a claim lands so the agent / promo holder figure re-reads. */
   const [holderNonce, setHolderNonce] = useState(0);
+  /**
+   * A MONEY MOVE THAT GOT NO ANSWER (2026-10-09, dialogs merge; the "unknown
+   * outcome" render). A send, claim, claim back or reversal whose request died
+   * in transit may have committed, and the toast door silences connection
+   * errors by house rule, so this sheet said nothing at all: the plate went
+   * back to Send and the form sat there as if untouched. It now says so inside
+   * the frame and re-reads the figures. The key is still held, so the same
+   * request sent again can only replay the first one, never move chips twice.
+   */
+  const [unconfirmed, setUnconfirmed] = useState<'send' | 'claim' | 'undo' | 'reverse' | null>(
+    null
+  );
+  /** Brings that sentence into view once, when it appears (a stable ref, so a re-render never scrolls). */
+  const revealOnMount = useCallback((el: HTMLDivElement | null) => {
+    el?.scrollIntoView?.({ block: 'nearest' });
+  }, []);
 
   /**
    * WHICH PROMO ACCOUNT THIS CASHIER SPENDS (2026-09-05). A Club Bank role
@@ -391,11 +447,13 @@ export default function WalletCashierModal({
 
   const [showMint, setShowMint] = useState(false);
   /**
-   * ESCAPE BELONGS TO THE TOP SHEET (launch audit D-01, 2026-10-09). The mint
-   * stacks above this cashier and both listen on `document`, so one Escape
-   * ran both: the mint's guard held while a mint was in flight, and the
-   * cashier closed anyway, unmounting the mint and its idempotency key mid
-   * RPC. A ref, because the key listener is registered once per open.
+   * ESCAPE BELONGS TO THE TOP SHEET (launch audit D-01 / audit C2-4,
+   * 2026-10-09). The mint stacks above this cashier and both listen on
+   * `document`, so one Escape ran both: the mint's guard held while a mint was
+   * in flight, and the cashier closed anyway, unmounting the mint and its
+   * idempotency key mid RPC. A ref, because the key listener is registered
+   * once per open. While the Chip Mint is up, Escape and every close path here
+   * belong to the mint (closeIfIdle and the corner X below read it too).
    */
   const showMintRef = useRef(false);
   useEffect(() => {
@@ -480,6 +538,7 @@ export default function WalletCashierModal({
       setClubUuid(null);
       setBank(null);
       setHasFloat(null);
+      setCredit(null);
       setPromoPot(null);
       setPromoFloat(null);
       setInUnion(null);
@@ -491,6 +550,7 @@ export default function WalletCashierModal({
       setInUnion(snapshot.inUnion);
       setHasFloat(snapshot.hasFloat);
       if (walletType !== 'promo_wallet') setBank(snapshot.bank);
+      setCredit(snapshot.credit);
       setPromoPot(snapshot.promoPot);
       setPromoFloat(snapshot.promoFloat);
       setClubLoading(false);
@@ -500,6 +560,7 @@ export default function WalletCashierModal({
       // An unread balance is unavailable, never zero or permission to spend.
       setBank(null);
       setHasFloat(null);
+      setCredit(null);
       setPromoPot(null);
       setPromoFloat(null);
       setInUnion(null);
@@ -528,6 +589,7 @@ export default function WalletCashierModal({
     async (uuid: string) => {
       const scope = balanceScopeRef.current;
       setMembersLoading(true);
+      setMembersError(false);
       const { data, error } = await supabase.rpc('fn_club_cashier_members', {
         p_club_id: uuid,
       });
@@ -538,6 +600,7 @@ export default function WalletCashierModal({
            search box sit there returning nothing forever. */
         reportError(error, 'WalletCashierModal.loadMembers');
         setMembers([]);
+        setMembersError(true);
         setMembersLoading(false);
         return;
       }
@@ -545,7 +608,10 @@ export default function WalletCashierModal({
       const mapped: Member[] = rows.map((m) => ({
         user_id: String(m.user_id),
         role: String(m.role || 'player'),
-        name: (m.name as string) || `Member ${String(m.user_id).slice(0, 8)}`,
+        /* fn_arena_name already falls back through alias, username and the
+           name columns. A member with none of them is unnamed - never
+           "Member" plus the first eight characters of an internal id. */
+        name: (m.name as string) || (m.username as string) || 'Unnamed Member',
         chip_balance:
           m.chip_balance !== undefined && m.chip_balance !== null
             ? Number(m.chip_balance)
@@ -640,7 +706,7 @@ export default function WalletCashierModal({
         setLedgerTotal(Number(res.total) || 0);
         setLedgerTotals(res.totals ?? null);
         if (Array.isArray(res.types)) setLedgerTypes(res.types);
-        setLedger((prev) => (offset === 0 ? res.rows || [] : [...prev, ...(res.rows || [])]));
+        setLedger((prev) => (offset === 0 ? res.rows || [] : appendNew(prev, res.rows || [])));
       } catch (e) {
         reportError(e, 'WalletCashierModal.loadLedger');
         if (current()) setLedgerError('Could Not Load The Ledger');
@@ -691,7 +757,7 @@ export default function WalletCashierModal({
         // fn_promo_wallet_ledger); a Load More page answers null for both.
         if (offset === 0 || res.total != null) setPromoLedgerTotal(Number(res.total) || 0);
         if (offset === 0 || res.totals) setPromoLedgerTotals(res.totals ?? null);
-        setPromoLedger((prev) => (offset === 0 ? res.rows || [] : [...prev, ...(res.rows || [])]));
+        setPromoLedger((prev) => (offset === 0 ? res.rows || [] : appendNew(prev, res.rows || [])));
       } catch (e) {
         reportError(e, 'WalletCashierModal.loadPromoLedger');
         if (current()) setLedgerError('Could Not Load The Ledger');
@@ -749,11 +815,16 @@ export default function WalletCashierModal({
     setPromoLedgerTotal(0);
     setPromoLedgerTotals(null);
     setReversibleAnchor(null);
+    setUnconfirmed(null);
     opIdRef.current = newOpId();
   }, [isOpen, clubId, user?.id, walletType, role]);
 
   // Escape closes, and the page behind stops scrolling. Both are what a person
   // expects of a modal and neither was here.
+  // NOT WHILE THE CHIP MINT IS UP (audit C2-4). The mint listens for Escape on
+  // the same document, and this listener was registered first: one Escape
+  // closed the whole cashier, unmounting the mint mid-mint with the key it was
+  // holding. With the mint open, Escape is the mint's alone.
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -1006,11 +1077,17 @@ export default function WalletCashierModal({
   }, [destination, recipient, excludeSelf, user?.id]);
 
   const amt = Number(amount) || 0;
+  /* What an agent wallet send may draw past the float: the credit line still
+     open (audit C2-1). Nothing else in this cashier lends. */
+  const creditLine = walletType === 'agent_wallet' && tab === 'send' ? (credit ?? 0) : 0;
+  /** The part of this send that the credit line would cover, if any. */
+  const creditDraw = bank !== null && creditLine > 0 && amt > bank ? amt - bank : 0;
   // A send is capped by the wallet being SPENT (the bank, or the caller's own
-  // float). A claim is capped by the wallet being CLAIMED FROM. The two caps
-  // are different accounts, and mixing them up is how a claim gets refused for
-  // "insufficient bank" while the bank is the thing being paid.
-  const cap = tab === 'claim' ? holderHeld : bank;
+  // float plus any credit line still open). A claim is capped by the wallet
+  // being CLAIMED FROM. The two caps are different accounts, and mixing them up
+  // is how a claim gets refused for "insufficient bank" while the bank is the
+  // thing being paid.
+  const cap = tab === 'claim' ? holderHeld : bank === null ? null : bank + creditLine;
   const overCap = cap !== null && amt > cap;
   /* WHOLE CHIPS ONLY. `amt > 0` accepted 0.4, which the RPC took verbatim
      while the success toast (which formats with fmtWhole) reported "Sent 0
@@ -1022,18 +1099,32 @@ export default function WalletCashierModal({
   const amountIsWhole =
     Number.isFinite(amt) && Number.isInteger(amt) && amt >= 1 && WHOLE_CHIPS.test(amount.trim());
   const canSend = Boolean(recipient) && amountIsWhole && cap !== null && !overCap && !sending;
+  // A send that borrows on the credit line always asks first: it creates debt.
   const needsConfirm =
     tab === 'claim'
       ? claimNeedsConfirm(amt)
-      : bank !== null && bank > 0 && amt >= bank * CONFIRM_SHARE_OF_BANK;
+      : creditDraw > 0 || (bank !== null && bank > 0 && amt >= bank * CONFIRM_SHARE_OF_BANK);
+  /** The account a send spends, by name, for the sentences that quote it (audit C2-14). */
+  const spentAccount =
+    walletType === 'club_bank'
+      ? 'The Club Bank'
+      : walletType === 'agent_wallet'
+        ? 'Your Agent Wallet'
+        : promoSource === 'club_pot'
+          ? 'The Club Promo Wallet'
+          : 'Your Promo Float';
 
   // Any change to what is being sent is a NEW operation, so it gets a new key.
   // Without this, correcting a typo after a failed attempt would replay the
   // first attempt's amount if that attempt had in fact committed.
+  // THE REASON IS PART OF THE OPERATION (audit C2-5): fn_cashier_exact_intent_begin
+  // binds the key to the reason too, and a refused attempt keeps its intent, so
+  // editing only the reason and retrying was refused, every time, as "That Retry
+  // Key Belongs To A Different Cashier Request".
   useEffect(() => {
     opIdRef.current = newOpId();
     setConfirming(false);
-  }, [recipient?.user_id, amount, destination, tab]);
+  }, [recipient?.user_id, amount, destination, tab, reason]);
 
   const doSend = async () => {
     if (!canSend || !clubUuid || !recipient || busyRef.current) return;
@@ -1057,7 +1148,7 @@ export default function WalletCashierModal({
         p_amount: amt,
         p_reason: reason.trim() || null,
       });
-      if (!operation) throw new Error('Cashier Safety Storage Is Unavailable. Try Again');
+      if (!operation) throw new CashierRefusal('Cashier Safety Storage Is Unavailable. Try Again');
       if (!isMounted.current || actionView.current !== owningView) return;
       opIdRef.current = operation.operationId;
       let res: {
@@ -1125,7 +1216,7 @@ export default function WalletCashierModal({
       // The RPCs return refusals as { success: false, error } rather than
       // throwing. Toasting success over a refusal is how a cashier lies.
       if (!res?.success) {
-        throw new Error(res?.error || 'The Cashier Refused That Movement');
+        throw new CashierRefusal(res?.error || 'The Cashier Refused That Movement');
       }
 
       clearCashierWalletOperation(operation);
@@ -1135,10 +1226,10 @@ export default function WalletCashierModal({
         tab === 'claim'
           ? res.replayed
             ? `That Claim Had Already Gone Through. ${fmtWhole(amt)} Chips Are Back In The Club Bank`
-            : `Claimed ${fmtWhole(amt)} Chips Back From ${recipient.name} Into The Club Bank`
+            : `Claimed ${fmtWhole(amt)} Chips Back From ${titleCase(recipient.name)} Into The Club Bank`
           : res.replayed
-            ? `That Send Had Already Gone Through. ${fmtWhole(amt)} Chips Are With ${recipient.name}`
-            : `Sent ${fmtWhole(amt)} Chips To ${recipient.name} ${destLabel}`
+            ? `That Send Had Already Gone Through. ${fmtWhole(amt)} Chips Are With ${titleCase(recipient.name)}`
+            : `Sent ${fmtWhole(amt)} Chips To ${titleCase(recipient.name)} ${destLabel}`
       );
       masterBus.emit('CHIPS_DISTRIBUTED', {
         clubId: clubUuid,
@@ -1152,14 +1243,21 @@ export default function WalletCashierModal({
       setConfirming(false);
       opIdRef.current = newOpId();
       setHolderNonce((n) => n + 1);
+      setUnconfirmed(null);
       refresh();
     } catch (e) {
       if (!isMounted.current || actionView.current !== owningView) return;
       reportError(e, 'WalletCashierModal.send');
-      toast?.error?.((e as Error).message || 'Send Failed');
+      // A refusal sentence passes through; a thrown object never prints raw.
+      toast?.error?.(safeErrorMessage(e, 'Send Failed'));
       // The key is NOT rotated here. If this failed because the response was
       // lost rather than because the send was refused, the retry must be able
-      // to find the original instead of sending a second time.
+      // to find the original instead of sending a second time. And the sheet
+      // says so, and re-reads what it can, because that toast is silenced.
+      if (outcomeUnknown(e) && isMounted.current) {
+        setUnconfirmed(tab === 'claim' ? 'claim' : 'send');
+        refresh();
+      }
     } finally {
       busyRef.current = false;
       if (isMounted.current) setSending(false);
@@ -1205,7 +1303,7 @@ export default function WalletCashierModal({
           p_reason: 'Claimed Back From The Agent Wallet Cashier',
         }
       );
-      if (!operation) throw new Error('Cashier Safety Storage Is Unavailable. Try Again');
+      if (!operation) throw new CashierRefusal('Cashier Safety Storage Is Unavailable. Try Again');
       if (!isMounted.current || actionView.current !== owningView) return;
       const opId = operation.operationId;
       claimOpIdsRef.current.set(row.transaction_id, opId);
@@ -1223,13 +1321,14 @@ export default function WalletCashierModal({
         replayed?: boolean;
         amount?: number;
       } | null;
-      if (!res?.success) throw new Error(res?.error || 'Those Chips Could Not Be Claimed Back');
+      if (!res?.success)
+        throw new CashierRefusal(res?.error || 'Those Chips Could Not Be Claimed Back');
       clearCashierWalletOperation(operation);
       if (!isMounted.current || actionView.current !== owningView) return;
       toast?.success?.(
         res.replayed
           ? `That Claim Had Already Gone Through. ${fmtWhole(Number(res.amount) || 0)} Chips Are Back In Your Agent Wallet`
-          : `Claimed ${fmtWhole(Number(res.amount) || 0)} Chips Back From ${row.to_name}`
+          : `Claimed ${fmtWhole(Number(res.amount) || 0)} Chips Back From ${titleCase(row.to_name)}`
       );
       masterBus.emit('BALANCE_UPDATED', { source: 'agent_wallet_claim', userId: user?.id || '' });
       masterBus.emit('BALANCE_UPDATED', {
@@ -1237,11 +1336,16 @@ export default function WalletCashierModal({
         userId: row.to_user_id,
       });
       claimOpIdsRef.current.delete(row.transaction_id);
+      setUnconfirmed(null);
       refresh();
     } catch (e) {
       if (!isMounted.current || actionView.current !== owningView) return;
       reportError(e, 'WalletCashierModal.claimBack');
-      toast?.error?.((e as Error).message || 'Claim Back Failed');
+      toast?.error?.(safeErrorMessage(e, 'Claim Back Failed'));
+      if (outcomeUnknown(e) && isMounted.current) {
+        setUnconfirmed('undo');
+        refresh();
+      }
     } finally {
       busyRef.current = false;
       if (isMounted.current) setClaimingId(null);
@@ -1260,7 +1364,7 @@ export default function WalletCashierModal({
         'fn_club_bank_reverse',
         { p_transaction_id: row.id, p_reason: 'Reversed From The Club Bank Cashier' }
       );
-      if (!operation) throw new Error('Cashier Safety Storage Is Unavailable. Try Again');
+      if (!operation) throw new CashierRefusal('Cashier Safety Storage Is Unavailable. Try Again');
       if (!isMounted.current || actionView.current !== owningView) return;
       const opId = operation.operationId;
       reverseOpIdsRef.current.set(row.id, opId);
@@ -1274,17 +1378,22 @@ export default function WalletCashierModal({
         success?: boolean;
         error?: string;
       } | null;
-      if (!res?.success) throw new Error(res?.error || 'That Send Could Not Be Reversed');
+      if (!res?.success) throw new CashierRefusal(res?.error || 'That Send Could Not Be Reversed');
       clearCashierWalletOperation(operation);
       if (!isMounted.current || actionView.current !== owningView) return;
       toast?.success?.(`Reversed ${fmtWhole(row.amount)} Chips Back Into The Club Bank`);
       masterBus.emit('BALANCE_UPDATED', { source: 'club_bank_reverse', userId: user?.id || '' });
       reverseOpIdsRef.current.delete(row.id);
+      setUnconfirmed(null);
       refresh();
     } catch (e) {
       if (!isMounted.current || actionView.current !== owningView) return;
       reportError(e, 'WalletCashierModal.reverse');
-      toast?.error?.((e as Error).message || 'Reversal Failed');
+      toast?.error?.(safeErrorMessage(e, 'Reversal Failed'));
+      if (outcomeUnknown(e) && isMounted.current) {
+        setUnconfirmed('reverse');
+        refresh();
+      }
     } finally {
       busyRef.current = false;
       if (isMounted.current) setReversingId(null);
@@ -1379,8 +1488,10 @@ export default function WalletCashierModal({
    * `sending` alone was too narrow: it is false for both of those.
    */
   const inFlight = sending || claimingId !== null || reversingId !== null;
+  // While the Chip Mint is up, every close path here is the mint's to use
+  // (audit C2-4): closing the cashier would unmount a mint in flight.
   const closeIfIdle = () => {
-    if (!inFlight) onClose();
+    if (!inFlight && !showMint) onClose();
   };
 
   const cashierTitle =
@@ -1402,7 +1513,7 @@ export default function WalletCashierModal({
   // somehow reached anyway, say so plainly rather than rendering an empty
   // cashier.
   if (!allowed) {
-    return (
+    return createPortal(
       <div
         className="cbc-overlay wcm-overlay"
         role="dialog"
@@ -1436,11 +1547,16 @@ export default function WalletCashierModal({
             </div>
           </SpadeConsole>
         </div>
-      </div>
+      </div>,
+      document.body
     );
   }
 
-  return (
+  /* RENDERED INTO <body> (audit C2-17, render-measured). Mounted inside <main>,
+     whose .casinoStage sets `isolation: isolate`, the fixed footer (z-index
+     1000, outside <main>) painted over the bottom 22-26px of this panel at any
+     z-index - the welcome modal's 2026-10-05 cause and cure. */
+  return createPortal(
     <>
       <div
         className="cbc-overlay wcm-overlay"
@@ -1451,16 +1567,19 @@ export default function WalletCashierModal({
       >
         <div ref={panelRef} className="cbc-panel wcm ac-popup" onClick={(e) => e.stopPropagation()}>
           <SpadeConsole
-            onClose={inFlight ? undefined : closeIfIdle}
+            onClose={inFlight || showMint ? undefined : closeIfIdle}
             as="div"
             /* The club in the header well's eyebrow, the account engraved
                beneath it, and the viewer's own standing in the well's painted
-               pill slot. The console's corner X is the one control a thumb
-               reaches first, so it goes through `closeIfIdle` like the
-               overlay, the Escape key and every Close word, and it is not
-               rendered at all while a send, a claim back or a reversal is
-               travelling (launch audit D-02), exactly as the cashout sheet
-               and the mint already hide theirs. */
+               pill slot. THE CORNER X GOES THROUGH closeIfIdle (launch audit
+               D-02 / audit C2-3): SpadeConsole paints an X for any onClose
+               since 2026-09-23, and this one called onClose directly, so the
+               one control a thumb reaches first closed the cashier with a send,
+               a claim back or a reversal in flight - and the reopen minted a
+               fresh key for the retry. No X is painted at all while anything is
+               travelling or the Chip Mint is up, exactly as the cashout sheet
+               and the mint hide theirs; the overlay, Escape and every Close
+               word guard the same. */
             eyebrow={clubName || 'Club Arena'}
             title={cashierTitle}
             pill={roleLabel(viewerRole)}
@@ -1517,15 +1636,27 @@ export default function WalletCashierModal({
                   {promoSource === 'club_pot' ? clubName : `${clubName} Agent Float`}
                 </em>
               )}
+              {/* The line a send may draw past the float, printed only when
+                  there is one, so a prepaid agent reads what they always read. */}
+              {walletType === 'agent_wallet' && bank !== null && credit !== null && credit > 0 && (
+                <em className="cbc-bank-sub">
+                  {`Plus ${fmt(credit)} Credit Line Left, So You Can Send ${fmt(bank + credit)}`}
+                </em>
+              )}
             </div>
 
             {/* TWO PROMO ACCOUNTS, ONE SWITCH (2026-09-05). Offered only when the
                 viewer can stand at both: a Club Bank role who also holds a
                 personal float. An agent sees their float alone; a bank role with
                 no float sees the pot alone. Both balances are printed on the
-                switch so the one you are NOT looking at is never a mystery. */}
+                switch so the one you are NOT looking at is never a mystery.
+                "Holds a float" is `hasFloat`, the agents row itself (2026-10-09):
+                a missing row now reads as an empty float (0) rather than an
+                unknown one, so `promoFloat !== null` alone would offer a bank
+                role a float they do not have. */}
             {walletType === 'promo_wallet' &&
               promoSourceFor(viewerRole) === 'club_pot' &&
+              hasFloat === true &&
               promoFloat !== null && (
                 <div className="cbc-source" role="radiogroup" aria-label="Promo Wallet Source">
                   <button
@@ -1600,6 +1731,12 @@ export default function WalletCashierModal({
                   <div className="cbc-blurb">
                     {destinationBlurb(walletType, destination, 'claim')}
                   </div>
+                  {unconfirmed === 'undo' && (
+                    <div className="cbc-warn" role="alert" ref={revealOnMount}>
+                      That Claim Back Got No Answer And May Have Gone Through. Tapping It Again
+                      Cannot Take Twice.
+                    </div>
+                  )}
                   {reversibleLoading && (
                     <div className="cbc-empty">Reading Your Recent Sends...</div>
                   )}
@@ -1691,11 +1828,30 @@ export default function WalletCashierModal({
                     />
                     <div className="cbc-list">
                       {membersLoading && <div className="cbc-empty">Loading Members...</div>}
-                      {!membersLoading && eligible.length === 0 && (
+                      {/* A READ THAT FAILED IS NOT AN EMPTY CLUB (audit C2-15).
+                          It printed "No Members In This Club Yet." over a
+                          network error, the same words an agent with no
+                          downline reads, with nothing to try again. */}
+                      {!membersLoading && membersError && (
+                        <>
+                          <div className="cbc-empty cbc-empty--bad" role="alert">
+                            The Member List Could Not Be Loaded.
+                          </div>
+                          <button
+                            className="cbc-more"
+                            onClick={() => clubUuid && void loadMembers(clubUuid)}
+                          >
+                            Retry
+                          </button>
+                        </>
+                      )}
+                      {!membersLoading && !membersError && eligible.length === 0 && (
                         <div className="cbc-empty">
-                          {members.length === 0
-                            ? 'No Members In This Club Yet.'
-                            : 'No Members Match That Search.'}
+                          {members.length > 0
+                            ? 'No Members Match That Search.'
+                            : ['super_agent', 'agent', 'sub_agent'].includes(viewerRole)
+                              ? 'Nobody In Your Downline Yet.'
+                              : 'No Members In This Club Yet.'}
                         </div>
                       )}
                       {eligible.map((m) => {
@@ -1788,15 +1944,34 @@ export default function WalletCashierModal({
                     {amt > 0 && !overCap && bank !== null && (
                       <div className="cbc-blurb">
                         {tab === 'claim'
-                          ? `Claiming ${fmt(amt)}. The Club Bank Would Hold ${fmt(bank + amt)} Afterwards.`
-                          : `Sending ${fmt(amt)}. The Wallet Would Hold ${fmt(bank - amt)} Afterwards.`}
+                          ? `Claiming ${fmtWhole(amt)}. The Club Bank Would Hold ${fmt(bank + amt)} Afterwards.`
+                          : creditDraw > 0
+                            ? `Sending ${fmtWhole(amt)}. ${fmtExact(creditDraw)} Of It Is Drawn From Your Credit Line.`
+                            : `Sending ${fmtWhole(amt)}. The Wallet Would Hold ${fmt(bank - amt)} Afterwards.`}
                       </div>
                     )}
                     {overCap && (
                       <div className="cbc-warn">
                         {tab === 'claim'
                           ? `That Wallet Only Holds ${fmt(cap ?? 0)} Chips.`
-                          : `The Wallet Only Holds ${fmt(cap ?? 0)} Chips.`}
+                          : creditLine > 0
+                            ? `Your Wallet And Credit Line Cover ${fmt(cap ?? 0)} Chips.`
+                            : `The Wallet Only Holds ${fmt(cap ?? 0)} Chips.`}
+                      </div>
+                    )}
+                    {/* THE UNKNOWN OUTCOME, INSIDE THE FRAME and under the
+                        figures it is about (see `unconfirmed`), scrolled into
+                        view: the plate that was tapped sits in the foot. */}
+                    {unconfirmed === 'claim' && (
+                      <div className="cbc-warn" role="alert" ref={revealOnMount}>
+                        That Claim Got No Answer And May Have Gone Through. Check The Balance Above:
+                        Claiming It Again Unchanged Cannot Take Twice.
+                      </div>
+                    )}
+                    {unconfirmed === 'send' && (
+                      <div className="cbc-warn" role="alert" ref={revealOnMount}>
+                        That Send Got No Answer And May Have Gone Through. Check The Balance Above:
+                        Sending It Again Unchanged Cannot Pay Twice.
                       </div>
                     )}
                   </div>
@@ -1819,9 +1994,14 @@ export default function WalletCashierModal({
 
                   {confirming && recipient && (
                     <div className="cbc-confirmbox" role="alert">
+                      {/* THE ACCOUNT BY ITS NAME (audit C2-14). This said "Of The
+                          Club Bank" on every cashier, so an agent sending 20 of
+                          a 40 chip float read "50 Percent Of The Club Bank". */}
                       {tab === 'claim'
-                        ? `Claim ${fmt(amt)} Chips From ${titleCase(recipient.name)} Back Into The Club Bank?`
-                        : `That Is ${Math.round((amt / (bank || 1)) * 100)} Percent Of The Club Bank. Send ${fmt(amt)} Chips To ${titleCase(recipient.name)}?`}
+                        ? `Claim ${fmtWhole(amt)} Chips From ${titleCase(recipient.name)} Back Into The Club Bank?`
+                        : creditDraw > 0
+                          ? `Send ${fmtWhole(amt)} Chips To ${titleCase(recipient.name)}? ${fmtExact(creditDraw)} Of Them Are Drawn From Your Credit Line.`
+                          : `That Is ${((amt / (bank || 1)) * 100).toFixed(1)} Percent Of ${spentAccount}. Send ${fmtWhole(amt)} Chips To ${titleCase(recipient.name)}?`}
                     </div>
                   )}
 
@@ -1941,6 +2121,12 @@ export default function WalletCashierModal({
               ) : (
                 <>
                   {ledgerError && <div className="cbc-empty cbc-empty--bad">{ledgerError}</div>}
+                  {unconfirmed === 'reverse' && (
+                    <div className="cbc-warn" role="alert" ref={revealOnMount}>
+                      That Reversal Got No Answer And May Have Gone Through. Tapping It Again Cannot
+                      Reverse Twice.
+                    </div>
+                  )}
 
                   {!ledgerError && ledgerTotals && (
                     <div className="cbc-totals">
@@ -2077,13 +2263,16 @@ export default function WalletCashierModal({
       </div>
 
       {/* Stacked above the cashier. The RPC still refuses a union club, so this
-          is a convenience gate, not the rule. */}
+          is a convenience gate, not the rule. While it is up the keyboard is
+          the mint's: its own focus trap holds Tab, and this cashier's trap is
+          suspended (useFocusTrap above). */}
       <ChipMintModal
         isOpen={showMint}
         onClose={() => setShowMint(false)}
         clubId={clubUuid || clubId}
         onMinted={refresh}
       />
-    </>
+    </>,
+    document.body
   );
 }

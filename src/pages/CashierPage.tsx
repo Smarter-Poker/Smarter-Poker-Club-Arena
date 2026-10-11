@@ -236,7 +236,9 @@ const CATEGORY_LABELS: Record<string, string> = {
   promotion: 'Promotion',
   promo: 'Promo Bonus',
   bbj: 'Bad Beat Jackpot',
-  horse_refill: 'Auto Refill',
+  /* A refill from the club reads as the human transfer it is: a label of
+     its own named the rows only one kind of member receives (B-5). */
+  horse_refill: 'Transfer',
   transfer: 'Transfer',
   deposit: 'Deposit',
   withdrawal: 'Withdrawal',

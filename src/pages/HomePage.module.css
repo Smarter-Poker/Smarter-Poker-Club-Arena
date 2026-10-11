@@ -2201,6 +2201,8 @@
 
 .cashierSwitchStatus button {
   min-height: 44px;
+  /* The directory Retry measured 21x44 at 393 (cashier launch B-3). */
+  min-width: 44px;
   padding: 0;
   border: 0;
   border-radius: 0;

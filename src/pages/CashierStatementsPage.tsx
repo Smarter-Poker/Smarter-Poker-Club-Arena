@@ -88,7 +88,10 @@ const KIND_WORD: Record<string, string> = {
   tournament_cashout: 'Tournament Cash-Out',
   bbj: 'Bad Beat Jackpot',
   bbj_promo_sweep: 'Bad Beat Jackpot Promo Sweep',
-  horse_refill: 'Auto Refill',
+  /* Read as the Club Bank send it is: a label of its own named the rows
+     only one kind of member ever receives (cashier launch B-5). */
+  horse_refill: 'Club Bank Send',
+  club_bank_send: 'Club Bank Send',
 };
 
 function kindWord(kind: string): string {

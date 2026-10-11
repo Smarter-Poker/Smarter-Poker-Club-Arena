@@ -78,7 +78,9 @@ describe('D-01 / D-02: the Club Bank cashier cannot be closed out from under mon
   });
 
   it('the painted corner X goes through closeIfIdle and is absent while in flight', () => {
-    expect(src).toContain('onClose={inFlight ? undefined : closeIfIdle}');
+    // Merged 2026-10-09 with audit C2-3: the X is also absent while the Chip
+    // Mint is stacked above, so this pins the stricter of the two guards.
+    expect(src).toContain('onClose={inFlight || showMint ? undefined : closeIfIdle}');
     expect(src).not.toMatch(/<SpadeConsole\s+onClose=\{onClose\}\s+as="div"\s+\/\* The club/);
     expect(src).not.toContain('The corner X is gone');
   });

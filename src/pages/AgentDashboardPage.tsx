@@ -18,6 +18,7 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { uuid } from '../utils/uuid';
 import type { ChipTransaction } from '../types/database.types';
 import {
+  outcomeNeedsReceiptCheck,
   CashoutReceiptChecks,
   useCashoutReceiptChecks,
 } from '../components/wallet/CashoutReceiptChecks';
@@ -801,7 +802,7 @@ function AgentDashboardContent() {
       );
       void loadDashboard(clubId);
     } catch (err) {
-      if (checkingOutcome && start && isCurrent())
+      if (checkingOutcome && start && isCurrent() && outcomeNeedsReceiptCheck(err))
         receiptChecks.retain(
           `${cashout.id}:${action}`,
           cashout.amount,

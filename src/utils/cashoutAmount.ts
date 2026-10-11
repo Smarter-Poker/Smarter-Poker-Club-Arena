@@ -9,19 +9,19 @@ export function validateCashoutAmount(input: number | string): CashoutAmount {
     return { ok: false, error: 'Enter An Amount Greater Than Zero' };
   }
   // Inspect the original spelling before Number can erase hidden sub-cent digits.
+  // PLAIN DECIMAL DIGITS ONLY (cashier launch B-4, 2026-10-11). `Number` reads
+  // "1e3" as 1,000, "+5" as 5 and "0x10" as 16, so an amount typed in any of
+  // those spellings asked to cash out a figure nobody typed. The typed text is
+  // digits with an optional decimal part, the same rule the Trade and classic
+  // cashiers apply (src/utils/cashierAmount.ts, parseChipAmount); trailing
+  // zeros past the cents are exact and stay accepted.
   if (text !== null) {
-    const decimal = /^\+?(?:([0-9]+)(?:\.([0-9]*))?|\.([0-9]+))(?:e([+-]?[0-9]+))?$/i.exec(text);
-    const exponent = Number(decimal?.[4] ?? 0);
-    if (!decimal || !Number.isSafeInteger(exponent)) {
-      return { ok: false, error: 'Enter An Amount In Whole Cents' };
+    const decimal = /^(?:([0-9]+)(?:\.([0-9]*))?|\.([0-9]+))$/.exec(text);
+    if (!decimal) {
+      return { ok: false, error: 'Enter The Amount As Digits, With Up To Two Decimals' };
     }
     const fraction = decimal[2] ?? decimal[3] ?? '';
-    const digits = (decimal[1] ?? '') + fraction;
-    const subcentPlaces = fraction.length - exponent - 2;
-    if (
-      subcentPlaces > 0 &&
-      /[1-9]/.test(digits.slice(Math.max(0, digits.length - subcentPlaces)))
-    ) {
+    if (/[1-9]/.test(fraction.slice(2))) {
       return { ok: false, error: 'Enter An Amount In Whole Cents' };
     }
   }

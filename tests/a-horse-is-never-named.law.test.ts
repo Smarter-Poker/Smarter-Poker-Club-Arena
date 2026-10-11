@@ -1,6 +1,12 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import {
+  describeChipTransaction,
+  presentChipTransaction,
+  thirdPartySender,
+  walletRoute,
+} from '../src/components/wallet/describeChipTransaction';
 
 /**
  * A HORSE IS NEVER NAMED (Dan, 2026-09-14, BINDING)
@@ -148,5 +154,166 @@ describe('a horse is never named (Dan 2026-09-14, binding)', () => {
         ? `Dan, 2026-09-14 (binding): "NOTHING SHOULD EVER REVEAL A HORSES IDENTITY."`
         : undefined
     ).toEqual([]);
+  });
+});
+
+/**
+ * THE TRADE RECORD CANNOT PRINT A HORSE LABEL (cashier launch round 3,
+ * contract 2, 2026-10-09; Dan: "NOTHING SHOULD EVER REVEAL A HORSES IDENTITY"
+ * and "HORSES ARE NEVER EVER EXCLUDED BY DESIGN").
+ *
+ * The treasury writers book a horse's seat funding, rebuy shortfall and
+ * bankroll top-up under a kind of their own - from nobody, to the horse, no
+ * metadata, a stock note naming a horse - and the Trade record printed that
+ * kind as the row's label ("Horse Treasury Funding"), matched a search on it
+ * and copied it into receipts: one search listed every horse in the club. The
+ * record builds every row from presentChipTransaction, which presents the
+ * legacy kind as the Club Bank send it is, and a third party reads every Club
+ * Bank send by its pot, so a send nobody pressed reads like one somebody did.
+ *
+ * Pinned two ways: each writer's row, as the record presents it, is a human
+ * Club Bank send's word for word (kind, label, route, sentence, sending side;
+ * the amount and the recipient kept, the note gone); and the page builds
+ * every row from that presentation, with no line of code of its own, and none
+ * in the presentation module but the one legacy spelling it maps, naming a
+ * horse. The rendered row is tested in tests/cashier-r3trade-launch.test.tsx.
+ */
+describe('the Trade record cannot print a horse label (round 3, contract 2)', () => {
+  const OWNER = '11111111-1111-4111-8111-111111111111';
+  const ADMIN = '22222222-2222-4222-8222-222222222222';
+  const SEATED = '33333333-3333-4333-8333-333333333333';
+  const PERSON = '44444444-4444-4444-8444-444444444444';
+  /** Two members with one alias, so the two sentences can be compared whole. */
+  const names = new Map([
+    [OWNER, 'Club Owner'],
+    [ADMIN, 'Desk Admin'],
+    [SEATED, 'Midnight Run'],
+    [PERSON, 'Midnight Run'],
+  ]);
+  /** Each writer's note, from its INSERT in supabase/migrations. */
+  const WRITER_NOTES = [
+    'Horse buy-in/rebuy funded from club treasury',
+    'Horse seated + funded from club treasury',
+    'Horse rebuy shortfall funded from club treasury (wallet paid 25)',
+    'Topped up to the club bankroll floor so the horse can buy into any table',
+  ];
+  const funded = (notes: string) => ({
+    transaction_type: 'horse_treasury_funding',
+    amount: 500,
+    from_user_id: null,
+    to_user_id: SEATED,
+    notes,
+    metadata: null,
+  });
+  /** The same movement for a person: staff paying a member's player wallet. */
+  const human = {
+    transaction_type: 'club_bank_send',
+    amount: 500,
+    from_user_id: ADMIN,
+    to_user_id: PERSON,
+    notes: 'Club Bank Send',
+    metadata: { op_id: 'k', destination: 'player_wallet', actor_role: 'admin' },
+  };
+  const label = (kind: unknown) =>
+    String(kind ?? '')
+      .split('_')
+      .filter(Boolean)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+
+  it.each(WRITER_NOTES)('presents the row noted %j as a human Club Bank send', (note) => {
+    const shown = presentChipTransaction(funded(note));
+    expect(label(shown.transaction_type)).toBe(label(human.transaction_type));
+    expect(shown.notes).toBeNull();
+    expect(shown.metadata).toEqual({ destination: 'player_wallet' });
+    // Never dropped, never resized, still paid to the member it paid.
+    expect(shown.amount).toBe(500);
+    expect(shown.to_user_id).toBe(SEATED);
+    for (const reader of [OWNER, null]) {
+      expect(describeChipTransaction(funded(note), names, reader)).toBe(
+        describeChipTransaction(human, names, reader)
+      );
+    }
+    expect(walletRoute(funded(note))).toBe(walletRoute(human));
+    expect(thirdPartySender(shown, null)).toBe(thirdPartySender(human, 'Desk Admin'));
+    const printed = [
+      label(shown.transaction_type),
+      shown.notes,
+      JSON.stringify(shown.metadata),
+      describeChipTransaction(funded(note), names, OWNER),
+      walletRoute(funded(note)),
+      thirdPartySender(shown, null),
+    ].join(' | ');
+    expect(printed).not.toMatch(/horse/i);
+  });
+
+  it('builds every Trade record row from that presentation, and no code names a horse', () => {
+    const page = readFileSync(join(ROOT, 'src/pages/CashierTradePage.tsx'), 'utf8');
+    const load = page.slice(
+      page.indexOf("supabase.rpc('fn_club_trade_ledger'"),
+      page.indexOf("reportError(e, 'CashierTradePage.records')")
+    );
+    expect(load.length).toBeGreaterThan(0);
+    const presentation = 'const r = presentChipTransaction(raw);';
+    const mapped = load.indexOf('pageRows.map((raw) => {');
+    const presented = load.indexOf(presentation);
+    expect(mapped).toBeGreaterThan(-1);
+    expect(presented).toBeGreaterThan(mapped);
+    // Nothing reads the ledger row as it arrived once it has been presented.
+    expect(load.slice(presented + presentation.length)).not.toMatch(/\braw\b/);
+    expect(load).toContain('${thirdPartySender(r, r.from_name)} To ');
+    expect(load).not.toMatch(/\$\{r\.from_name \|\| 'A Member'\} To /);
+
+    const code = (source: string) =>
+      source
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((t) => t && !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('/*'))
+        .filter((t) => /horse/i.test(t));
+    expect(code(page)).toEqual([]);
+    expect(
+      code(readFileSync(join(ROOT, 'src/components/wallet/describeChipTransaction.ts'), 'utf8'))
+    ).toEqual(["const LEGACY_CLUB_BANK_SEND_KINDS = new Set<string>(['horse_treasury_funding']);"]);
+    expect(code(readFileSync(join(ROOT, 'src/services/CashierResilience.ts'), 'utf8'))).toEqual([]);
+  });
+});
+
+/**
+ * NO HORSE ROW WEARS A LABEL OF ITS OWN (cashier launch B-5, 2026-10-11).
+ *
+ * The ledger label maps gave each horse-only kind its own words - "Treasury
+ * Funding", "Table Funding", "Auto Refill" - plus, on the wallet history, its
+ * own grey ink and refill mark. No human row ever printed those, so the label
+ * alone told a reader which member was a horse. Each kind now reads as the
+ * human movement it is. Pinned on the source of every map that names one: a
+ * horse-only key may only carry a label some human key in the same file also
+ * carries, and the retired words are gone.
+ */
+describe('no horse row wears a label of its own (B-5)', () => {
+  const MAPS = [
+    'src/components/wallet/PlayerWalletModal.tsx',
+    'src/components/wallet/ChipStatement.tsx',
+    'src/components/wallet/TransactionHistory.tsx',
+    'src/pages/CashierStatementsPage.tsx',
+    'src/pages/CashierPage.tsx',
+  ];
+
+  it.each(MAPS)('%s gives every horse key a human label', (file) => {
+    const source = readFileSync(join(ROOT, file), 'utf8');
+    const entries = [...source.matchAll(/^\s*([a-z_]+):\s*'([^']*)',?\s*$/gm)].map((m) => ({
+      key: m[1],
+      value: m[2],
+    }));
+    const human = new Set(entries.filter((e) => !/horse/.test(e.key)).map((e) => e.value));
+    const horse = entries.filter((e) => /horse/.test(e.key));
+    for (const entry of horse) expect(human.has(entry.value), `${file} ${entry.key}`).toBe(true);
+    expect(source).not.toMatch(/'(?:Treasury Funding|Table Funding|Auto Refill)'/);
+  });
+
+  it('the wallet history prints a club refill exactly as a transfer', () => {
+    const source = readFileSync(join(ROOT, 'src/components/wallet/TransactionHistory.tsx'), 'utf8');
+    expect(source).toContain("return raw === 'horse_refill' ? 'transfer' : raw;");
+    expect(source).toContain('CATEGORY_ICONS[shownCategory(tx.category)]');
+    expect(source).toContain('CATEGORY_COLORS[shownCategory(tx.category)]');
   });
 });

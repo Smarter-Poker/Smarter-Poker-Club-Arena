@@ -110,6 +110,12 @@ const certificationRetirement =
 const certificationPlayerIndex =
   /^(scripts\/(?:ci\/(?:test-certification-player-index-postgres\.py$|fixtures\/certification-player-index\/)|ops\/build-certification-player-index-concurrently\.sql$)|tests\/certificationPlayerIndexRegression\.test\.ts$)/;
 
+// The Cashier Statement's once-only counting migration (2026-10-11) is
+// qualified by its own PostgreSQL 17 harness in accounting_postgres (shard 2);
+// an edit to the harness alone must still run it. Its fixtures live under
+// tests/fixtures/cashier-statements/, which the accounting lane already admits.
+const cashierStatementDbHarness = /^scripts\/ci\/test-cashier-statement-db-postgres\.py$/;
+
 // Phase 1 customization has a two-step database cutover. Its native harness,
 // loaded fixtures, durable marker and service-role sealer are one qualification
 // unit with both migrations; changing any one of them must admit the existing
@@ -327,6 +333,7 @@ export function classifyChangedPaths(paths) {
       matches(certificationRetirement) ||
       matches(satelliteAuditIndex) ||
       matches(satelliteLedgerAuditIndex) ||
+      matches(cashierStatementDbHarness) ||
       matches(certificationPlayerIndex),
     tests:
       bbjFixture ||
@@ -379,6 +386,7 @@ export function classifyChangedPaths(paths) {
       matches(certificationRetirement) ||
       matches(satelliteAuditIndex) ||
       matches(satelliteLedgerAuditIndex) ||
+      matches(cashierStatementDbHarness) ||
       matches(certificationPlayerIndex),
     phase4: phase4Changed,
     fixture: matches(fixture),

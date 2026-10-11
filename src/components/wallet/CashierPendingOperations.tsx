@@ -11,9 +11,11 @@ import {
 export default function CashierPendingOperations({
   userId,
   clubId: routeClubId,
+  actionClassName,
 }: {
   userId?: string;
   clubId: string | null;
+  actionClassName?: string;
 }) {
   const [clubId, setClubId] = useState<string | null>(null);
   useEffect(() => {
@@ -118,7 +120,7 @@ export default function CashierPendingOperations({
       )}
       <button
         type="button"
-        className="sc-label"
+        className={actionClassName || 'sc-label'}
         disabled={checking || !operations.length}
         onClick={() => void check()}
       >

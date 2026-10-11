@@ -2465,6 +2465,7 @@ function CashierContent() {
           {/* ── Club context bar — which club's cashier, with multi-club switcher ── */}
           {clubId && <CashierClubSwitcher clubId={clubId} clubName={clubName} />}
           <CashierPendingOperations
+            actionClassName={styles.wordAction}
             key={`${user?.id}:${clubId}`}
             userId={user?.id}
             clubId={clubId || null}

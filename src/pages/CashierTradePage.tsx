@@ -2707,6 +2707,7 @@ function CashierTradeWorkspace() {
           </section>
 
           <CashierPendingOperations
+            actionClassName={styles.footerBtn}
             key={`${user?.id}:${clubUuid}`}
             userId={user?.id}
             clubId={clubUuid}

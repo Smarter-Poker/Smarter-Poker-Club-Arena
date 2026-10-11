@@ -571,7 +571,7 @@ describe('a control, from the tap to the answer', () => {
       p_args: { version: 'm2', role: 'live' },
     });
     // The recorded request precedes its answer; close only the acknowledged dialog.
-    fireEvent.click(await within(dialog()).findByRole('button', { name: 'Close', exact: true }));
+    fireEvent.click(await within(dialog()).findByText('Close', { exact: true }));
 
     const autoRebuy = document.querySelector('[data-flag="lightning_auto_rebuy"]') as HTMLElement;
     fireEvent.click(within(autoRebuy).getByRole('button', { name: 'Turn On' }));

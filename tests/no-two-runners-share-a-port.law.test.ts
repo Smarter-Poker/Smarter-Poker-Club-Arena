@@ -62,6 +62,21 @@ function startsAServerInCI(code: string): boolean {
 }
 
 describe('no two runners share a port', () => {
+  it('the push harness never selects a browser-restricted port in any runner slot', () => {
+    const base = Number(
+      read('playwright.push-enrollment.config.ts').match(/portFor\((\d+)\)/)?.[1]
+    );
+    const saved = process.env;
+    try {
+      for (let offset = 0; offset < 300; offset++) {
+        process.env = { ...saved, CA_E2E_PORT_OFFSET: String(offset) };
+        // Chromium net/base/port_util.cc: restricted ports within this window.
+        expect([6000, 6566, 6665, 6666, 6667, 6668, 6669, 6697]).not.toContain(portFor(base));
+      }
+    } finally {
+      process.env = saved;
+    }
+  });
   it('there is at least one Playwright config to check', () => {
     expect(PLAYWRIGHT_CONFIGS.length).toBeGreaterThan(0);
   });

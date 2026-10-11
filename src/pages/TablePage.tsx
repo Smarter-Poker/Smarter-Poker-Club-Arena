@@ -361,6 +361,8 @@ import { useLightningAnchorHandoff } from '../lightning/useLightningAnchorHandof
 import LightningRoomTools from '../components/lightning/LightningRoomTools';
 import { openLightningSessionSummary } from '../lightning/lightningSummaryStore';
 import { readLightningPrefs, writeLightningPrefs } from '../lightning/lightningPrefs';
+import { createLightningMilestoneTracker } from '../lightning/lightningMilestone';
+import { lightningDecisions as pendingLightningDecisions } from '../lightning/lightningDecisionQueue';
 import { scheduleLightningRenderAck } from '../lightning/lightningRenderAck';
 // The ShareHand COMPONENT is rendered by TableModalsLayer, not here — the
 // default import this line used to carry was unused. TablePage builds the
@@ -1682,6 +1684,12 @@ function LiveTablePage({
      every read of a `tables` row on this page is skipped for it. */
   const lightningRoom = useLightningPoolSession(tableId);
   const lightningRoomRef = useRef(lightningRoom);
+  const lightningMilestoneRef = useRef(createLightningMilestoneTracker());
+  /* Read before all named-event consumers as well as the action controls. */
+  const lightningCaps = useMemo(
+    () => lightningCapabilities(detectLightningPlatform(readLightningPlatformSignals())),
+    []
+  );
   lightningRoomRef.current = lightningRoom;
   const lightningClubId = lightningRoom?.meta?.clubId ?? null;
   const navigate = useNavigate();
@@ -16829,6 +16837,24 @@ function LiveTablePage({
       // change. The four events below were added with this fix; client must
       // act on them directly, never wait for snapshot diff.
       case 'HAND_STARTED': {
+        if (lightningRoomRef.current && tableId) {
+          const reached = lightningMilestoneRef.current.note(
+            tableId,
+            { ...evt.data, type: 'hand_started' },
+            readLightningPrefs().milestoneHands
+          );
+          // Background rooms count their events but never replay a missed cue.
+          // A decision in any room outranks an optional milestone.
+          if (
+            reached &&
+            lightningCaps.sound &&
+            ambientSoundsAllowed &&
+            !document.hidden &&
+            !pendingLightningDecisions().some((d) => d.deadlineAt > serverNow())
+          ) {
+            soundService.playLightningMilestone();
+          }
+        }
         /* A new hand is taking action again (Dan 2026-09-07, item 5). The
            partner of the flag set at HAND_COMPLETE: cleared HERE rather than
            on a timer, because the start of a hand is an event and a duration
@@ -23490,11 +23516,6 @@ function LiveTablePage({
     }
   }, [lightningRoom, preAction, lightningHandKeyNow]);
 
-  /* The platform's row of the Lightning capability map, read once. */
-  const lightningCaps = useMemo(
-    () => lightningCapabilities(detectLightningPlatform(readLightningPlatformSignals())),
-    []
-  );
   const lightningHero =
     tableState.heroSeat > 0 ? (tableState.players[tableState.heroSeat - 1] ?? null) : null;
   /* THE IDLE SNAPSHOT AFTER A FOLD. The engine answers a fold with stage

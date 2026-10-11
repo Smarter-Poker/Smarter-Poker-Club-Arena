@@ -116,8 +116,13 @@ const ROSTER = join(ROOT, 'docs', 'attestation', 'cron-roster.tsv');
  * 20261009144343 lightning_phase_12_operator_dashboard_and_alerting through
  * the managed cron API (Lightning operator alerting, Phase 21; argument in
  * that migration's header).
+ * 129 -> 132 active on 2026-10-11, read live from cron.job and
+ * fn_ca_cron_health('24 hours'): ca-bound-outside-snapshots-1m (20261006170925),
+ * ca-tournament-dark-while-running-5m (20261008113537) and
+ * ca-terminal-receipt-replay-daily (20261008140859), each scheduled by a merged
+ * migration. The roster header names all three.
  */
-const ACTIVE_JOBS = 129;
+const ACTIVE_JOBS = 132;
 const RETAINED_INACTIVE = 2;
 const TOTAL_JOBS = ACTIVE_JOBS + RETAINED_INACTIVE;
 
@@ -143,8 +148,8 @@ describe('the scheduled-work roster is pinned', () => {
     expect(Number(headerValue('retained-inactive'))).toBe(RETAINED_INACTIVE);
   });
 
-  it('131 total is 129 active plus the two rows cron.job keeps inactive', () => {
-    expect(TOTAL_JOBS).toBe(131);
+  it('134 total is 132 active plus the two rows cron.job keeps inactive', () => {
+    expect(TOTAL_JOBS).toBe(134);
     // The two bust sweeps 20260910073355 restored disabled are both of them
     // again: union-weekly-rakeback-close was the third until 20261003101805
     // re-armed jobid 272, and it is now an ACTIVE row of the body instead.

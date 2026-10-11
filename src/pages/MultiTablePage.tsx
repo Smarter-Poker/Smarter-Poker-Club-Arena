@@ -94,7 +94,18 @@ import { openInBrowser } from '../lib/openExternal';
 import { isNativePlatform } from '../lib/appBase';
 import { parseTileRaiseBounds, tileAllInTo, tilePotRaiseTo } from '../utils/tileRaiseSizing';
 import LightningDecisionQueue from '../components/lightning/LightningDecisionQueue';
-import { lightningUrgencyByRoom } from '../lightning/lightningDecisionQueue';
+import {
+  lightningUrgencyByRoom,
+  lightningDecisions as readLightningDecisions,
+} from '../lightning/lightningDecisionQueue';
+import { lightningShortcut, lightningShortcutRoom } from '../lightning/lightningShortcuts';
+import { readLightningPrefs } from '../lightning/lightningPrefs';
+import { tableBlocksLightningNavigation } from '../hooks/useTableKeyboard';
+import {
+  detectLightningPlatform,
+  readLightningPlatformSignals,
+  lightningCapabilities,
+} from '../lightning/lightningCapabilities';
 import { useLightningDecisions } from '../components/lightning/useLightningDecisions';
 import { getLightningPoolSession, lightningRoomPath } from '../lightning/lightningSession';
 
@@ -4216,6 +4227,33 @@ export default function MultiTablePage() {
       ) {
         return;
       }
+      const lightningKey = lightningShortcut(e, readLightningPrefs().shortcutModifier);
+      if (
+        lightningKey === 'nextUrgent' ||
+        lightningKey === 'previous' ||
+        lightningKey === 'focus'
+      ) {
+        if (
+          tableBlocksLightningNavigation() ||
+          document.querySelector('[aria-modal="true"]') ||
+          !lightningCapabilities(detectLightningPlatform(readLightningPlatformSignals())).hotkeys
+        )
+          return;
+        const current = tablesRef.current[activeIndexRef.current]?.id ?? null;
+        if (!getLightningPoolSession(current)) return;
+        const room = lightningShortcutRoom(
+          lightningKey,
+          tablesRef.current.map((t) => t.id),
+          current,
+          readLightningDecisions(),
+          serverNow()
+        );
+        if (room) {
+          e.preventDefault();
+          handleTabSelect(room);
+        }
+        return;
+      }
       // Audit round 3 (a11y): Alt+Arrow moves the ACTIVE tab - the keyboard
       // path to reorder, matching the quick menu's Move Left/Right.
       if (
@@ -4269,7 +4307,7 @@ export default function MultiTablePage() {
       window.removeEventListener('keydown', handleKeyDown);
       hubKeysRef.current = null;
     };
-  }, [tables.length, hidden, handleReorder, quickJoin.open, showSessionAgg]);
+  }, [tables.length, hidden, handleReorder, handleTabSelect, quickJoin.open, showSessionAgg]);
 
   // ─── Swipe Gesture Handling ──────────────────────────────────────────
   /* Typed on the shape both React's synthetic TouchEvent and the native one

@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 200136,
-      "sha256": "6cd8b0073cfe657e8771b1deeffec808b95314477d0fd32e893acf72ae06b616"
+      "bytes": 200431,
+      "sha256": "03bd45a3a327e123b9471c66eac56bd89f5a3787927adce3745de67c10614d2c"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1979,9 +1979,21 @@
       "sha256": "4eaa992ee411f465b3ff794c2ffce13ed08a2d69fac86a52cc4f6118c378072d"
     },
     "workflowPin": {
+      "bytes": 200431,
+      "sha256": "03bd45a3a327e123b9471c66eac56bd89f5a3787927adce3745de67c10614d2c"
+    },
+    "reason": "Reviewed additive native Club Operations overview, dashboard, activity and bomb reporting qualification in existing accounting shard one. All prior accounting invocations and financial inputs remain unchanged. This source fingerprint refresh does not certify unrelated cash-native runtime qualification or alter its SOURCE_ONLY_UNRUN status.",
+    "isolatedWorkflowPin": {
       "bytes": 200136,
       "sha256": "6cd8b0073cfe657e8771b1deeffec808b95314477d0fd32e893acf72ae06b616"
     },
-    "reason": "Reviewed additive native Club Operations overview, dashboard, activity and bomb reporting qualification in existing accounting shard one. All prior accounting invocations and financial inputs remain unchanged. This source fingerprint refresh does not certify unrelated cash-native runtime qualification or alter its SOURCE_ONLY_UNRUN status."
+    "integrationReason": "Preserved both independently reviewed accounting shard-one qualification steps from protected main and this branch. Combined fingerprint only; financial source and qualification statuses unchanged."
+  },
+  "tournamentLaneContention20261011": {
+    "reason": "Add isolated F06 lock-contention regression to accounting shard one. Existing cash execution, financial sources, assertions and qualification status are unchanged. This workflow fingerprint refresh is not runtime qualification.",
+    "previousWorkflowPin": {
+      "bytes": 199822,
+      "sha256": "4eaa992ee411f465b3ff794c2ffce13ed08a2d69fac86a52cc4f6118c378072d"
+    }
   }
 }

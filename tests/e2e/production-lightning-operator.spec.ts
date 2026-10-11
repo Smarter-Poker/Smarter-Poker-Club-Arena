@@ -4,6 +4,7 @@ import { expect, test } from '@playwright/test';
 const club = process.env.E2E_TEMPLATE_CLUB_ID || '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3';
 const overviewRpc = '/rest/v1/rpc/fn_lightning_operator_overview';
 const clusterRpc = '/rest/v1/rpc/fn_lightning_operator_cluster';
+const readinessRpc = '/rest/v1/rpc/fn_lightning_rollout_readiness';
 
 for (const width of [393, 1440]) {
   test(`Lightning operator cold load at ${width}px preserves read ownership and cancel`, async ({
@@ -42,6 +43,7 @@ for (const width of [393, 1440]) {
     expect(cluster).toMatch(/^[0-9a-f-]{36}$/);
     // A new document with the selected cluster has no SPA overview state.
     const detail = page.waitForResponse((r) => new URL(r.url()).pathname === clusterRpc);
+    const readiness = page.waitForResponse((r) => new URL(r.url()).pathname === readinessRpc);
     await page.goto(`clubs/${club}/lightning?cluster=${cluster}`, {
       waitUntil: 'domcontentloaded',
     });
@@ -49,6 +51,18 @@ for (const width of [393, 1440]) {
     expect(detailResponse.status()).toBe(200);
     expect(detailResponse.request().postDataJSON().p_cluster_id).toBe(cluster);
     expect((await detailResponse.json()).ok).not.toBe(false);
+    const readinessResponse = await readiness;
+    expect(readinessResponse.status()).toBe(200);
+    const gate = await readinessResponse.json();
+    expect(gate.ok, 'the actual authorized readiness read must succeed').toBe(true);
+    expect(gate.evidence.migrations.missing).toEqual([]);
+    expect(Object.keys(gate.evidence.invariants).length).toBeGreaterThan(0);
+    for (const name of ['seven_tables', 'anti_manipulation', 'law_10_5', 'no_anon_door'])
+      expect(gate.evidence.invariants[name], `readiness invariant ${name}`).toBe(true);
+    // SQL explicitly says it does not evaluate live proofs in this read.
+    // Those require the separate installed-proof qualification, never this badge.
+    expect(gate.evidence.invariants.proofs_evaluated_in_sql).toBe(false);
+    // OFF and missing pilot evidence are valid NO_GO; never require an enable decision.
     await expect(page.locator('#lightning-controls')).toHaveText('Operator Controls');
     const worker = page.getByRole('group', { name: 'Worker Mode', exact: true });
     await expect(worker).toBeVisible();

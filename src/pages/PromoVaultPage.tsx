@@ -51,6 +51,7 @@ import { ErrorState } from '../components/common/EmptyState';
 import RoleBadge from '../components/club/RoleBadge';
 import { resolveClubUUIDStrict } from '../utils/strictClubIdResolver';
 import { runWithRequestDeadline } from '../utils/requestDeadline';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 import { toTitleCase } from '../utils/titleCase';
@@ -176,6 +177,19 @@ export default function PromoVaultPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [recordsLoading, setRecordsLoading] = useState(false);
   const [tab, setTab] = useState<'items' | 'records'>('items');
+  const itemsTabRef = useRef<HTMLButtonElement>(null);
+  const recordsTabRef = useRef<HTMLButtonElement>(null);
+  const handleTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    let next: 'items' | 'records';
+    if (event.key === 'Home') next = 'items';
+    else if (event.key === 'End') next = 'records';
+    else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+      next = tab === 'items' ? 'records' : 'items';
+    else return;
+    event.preventDefault();
+    setTab(next);
+    (next === 'items' ? itemsTabRef : recordsTabRef).current?.focus();
+  };
   const [helpOpen, setHelpOpen] = useState(false);
   const [buyTarget, setBuyTarget] = useState<VaultItem | null>(null);
   const [grantTarget, setGrantTarget] = useState<VaultItem | null>(null);
@@ -569,6 +583,11 @@ export default function PromoVaultPage() {
         <button
           type="button"
           role="tab"
+          id="pv-items-tab"
+          ref={itemsTabRef}
+          aria-controls="pv-items-panel"
+          tabIndex={tab === 'items' ? 0 : -1}
+          onKeyDown={handleTabKeyDown}
           aria-selected={tab === 'items'}
           className={tab === 'items' ? 'active' : ''}
           onClick={() => setTab('items')}
@@ -578,6 +597,11 @@ export default function PromoVaultPage() {
         <button
           type="button"
           role="tab"
+          id="pv-records-tab"
+          ref={recordsTabRef}
+          aria-controls="pv-records-panel"
+          tabIndex={tab === 'records' ? 0 : -1}
+          onKeyDown={handleTabKeyDown}
           aria-selected={tab === 'records'}
           className={tab === 'records' ? 'active' : ''}
           onClick={() => setTab('records')}
@@ -586,40 +610,61 @@ export default function PromoVaultPage() {
         </button>
       </div>
 
-      {loading ? (
-        <PageSkeleton variant="list" />
-      ) : loadError ? (
-        <ErrorState message={loadError} onRetry={() => void loadVault()} />
-      ) : tab === 'items' ? (
-        <div className="pv-body">
-          <p className="pv-hint">Click An Item To Grant</p>
+      <div
+        id="pv-items-panel"
+        role="tabpanel"
+        aria-labelledby="pv-items-tab"
+        hidden={tab !== 'items'}
+      >
+        {tab === 'items' &&
+          (loading ? (
+            <PageSkeleton variant="list" />
+          ) : loadError ? (
+            <ErrorState message={loadError} onRetry={() => void loadVault()} />
+          ) : (
+            <div className="pv-body">
+              <p className="pv-hint">Click An Item To Grant</p>
 
-          {!canManage && (
-            <p className="pv-readonly">
-              Only Owners And Admins Can Buy Or Send Items From This Vault.
-            </p>
-          )}
+              {!canManage && (
+                <p className="pv-readonly">
+                  Only Owners And Admins Can Buy Or Send Items From This Vault.
+                </p>
+              )}
 
-          <ItemSection
-            heading="Features"
-            items={features}
-            canManage={canManage}
-            onOpen={openTile}
-            onBuy={openBuyDialog}
-          />
-          <ItemSection
-            heading="VIP Cards"
-            items={vipCards}
-            canManage={canManage}
-            onOpen={openTile}
-            onBuy={openBuyDialog}
-          />
-        </div>
-      ) : recordsError ? (
-        <ErrorState message={recordsError} onRetry={() => void loadRecords()} />
-      ) : (
-        <RecordsList records={records} loading={recordsLoading} />
-      )}
+              <ItemSection
+                heading="Features"
+                items={features}
+                canManage={canManage}
+                onOpen={openTile}
+                onBuy={openBuyDialog}
+              />
+              <ItemSection
+                heading="VIP Cards"
+                items={vipCards}
+                canManage={canManage}
+                onOpen={openTile}
+                onBuy={openBuyDialog}
+              />
+            </div>
+          ))}
+      </div>
+      <div
+        id="pv-records-panel"
+        role="tabpanel"
+        aria-labelledby="pv-records-tab"
+        hidden={tab !== 'records'}
+      >
+        {tab === 'records' &&
+          (loading ? (
+            <PageSkeleton variant="list" />
+          ) : loadError ? (
+            <ErrorState message={loadError} onRetry={() => void loadVault()} />
+          ) : recordsError ? (
+            <ErrorState message={recordsError} onRetry={() => void loadRecords()} />
+          ) : (
+            <RecordsList records={records} loading={recordsLoading} />
+          ))}
+      </div>
 
       {helpOpen && <HelpDialog onClose={() => setHelpOpen(false)} />}
 
@@ -1139,19 +1184,23 @@ function Overlay({
   onClose: () => void;
   labelledBy: string;
 }) {
+  const dialogRef = useFocusTrap(true);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   // Escape closes, because on a phone the backdrop is often entirely covered by
   // the sheet and there is nothing left to tap outside it.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') onCloseRef.current();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, []);
 
   return (
     <div className="pv-overlay" onClick={onClose} role="presentation">
       <div
+        ref={dialogRef}
         className="pv-dialog"
         role="dialog"
         aria-modal="true"

@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 199770,
-      "sha256": "932cff70aec810caf8588d1a95a418dde4a657444cb6af9588ae69b05afbe8fc"
+      "bytes": 199818,
+      "sha256": "647f74822d745a2fad3f270ea9bfaf48fb1b547f6ab546431c2166a110f9b8df"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1946,6 +1946,13 @@
     "previousWorkflowPin": {
       "bytes": 199478,
       "sha256": "ac90ff313c46cf0985726f0123c1c32a0704f29c16a330fccd1c2665bccda88b"
+    }
+  },
+  "playerCommandPhase2Containment20261011": {
+    "reason": "Register the demonstrated Player Record and Statistics inner containment regression in the existing required CSS lane. Only this workflow source fingerprint changes; all financial inputs, assertions, historical pins and qualification status remain unchanged. Matching source is not runtime financial qualification.",
+    "previousWorkflowPin": {
+      "bytes": 199770,
+      "sha256": "932cff70aec810caf8588d1a95a418dde4a657444cb6af9588ae69b05afbe8fc"
     }
   }
 }

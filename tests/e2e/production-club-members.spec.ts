@@ -248,6 +248,29 @@ async function openMembers(page: Page, probe: MembersProbe): Promise<number> {
   return Date.now() - startedAt;
 }
 
+async function expectContainedControls(page: Page, frameSelector: string, selector: string) {
+  const frame = await page.locator(frameSelector).boundingBox();
+  expect(frame, `${frameSelector} must render`).not.toBeNull();
+  const controls = await page.locator(selector).all();
+  expect(controls.length, `${selector} must execute real control checks`).toBeGreaterThan(0);
+  for (const control of controls) {
+    const box = await control.boundingBox();
+    expect(box, `${selector} must have a rendered box`).not.toBeNull();
+    expect(box!.width).toBeGreaterThan(0);
+    expect(box!.x).toBeGreaterThanOrEqual(frame!.x - 0.5);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(frame!.x + frame!.width + 0.5);
+    expect(
+      await control.evaluate((node) => node.scrollWidth <= node.clientWidth + 1),
+      `${selector} clips its own content`
+    ).toBe(true);
+  }
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+    )
+  ).toBeLessThanOrEqual(1);
+}
+
 test.describe('Production Shark Club Players', () => {
   // Each case receives its own browser context and performs only reads. Keep
   // one worker in the workflow, but report every case when a sibling fails.
@@ -563,6 +586,18 @@ test.describe('Production Shark Club Players', () => {
         }
       }
     }
+    await page.getByRole('button', { name: 'Select', exact: true }).click();
+    for (const width of [375, 393, 768]) {
+      await page.setViewportSize({ width, height: 812 });
+      await expectContainedControls(
+        page,
+        '.mm-range',
+        '.mm-range__tabs button, .mm-range__custom input, .mm-range__confirm'
+      );
+      await expectContainedControls(page, '.member-mgmt-page', '.mm-nav__row');
+      await expectContainedControls(page, '.member-mgmt-page', '.member-mgmt-page > *');
+    }
+    await page.getByRole('button', { name: 'Overall', exact: true }).click();
     if (originalViewport) await page.setViewportSize(originalViewport);
 
     const roleOption = page.locator('.mm-roles__option:not([disabled])').first();
@@ -609,6 +644,18 @@ test.describe('Production Shark Club Players', () => {
     }
     await expect(page.locator('.ps-range__custom input[type="date"]')).toHaveCount(2);
 
+    for (const width of [375, 393, 768]) {
+      await page.setViewportSize({ width, height: 812 });
+      await expectContainedControls(
+        page,
+        '.ps-controls',
+        '.ps-range__tabs button, .ps-range__custom input, .ps-range__confirm, .ps-variant select'
+      );
+      await expect(page.getByRole('combobox', { name: 'Game', exact: true })).toBeVisible();
+      await expectContainedControls(page, '.player-stats-page', '.player-stats-page > *');
+    }
+    if (originalViewport) await page.setViewportSize(originalViewport);
+
     const statisticsAxe = await new AxeBuilder({ page }).include('.player-stats-page').analyze();
     expect(
       statisticsAxe.violations.filter((violation) =>
@@ -621,6 +668,64 @@ test.describe('Production Shark Club Players', () => {
       probe.requestAbortCount,
       `Roster request timeline: ${JSON.stringify(probe.timeline)}`
     ).toBe(0);
+    expect(probe.pageErrorCount).toBe(0);
+    expect(probe.criticalConsoleErrorCount).toBe(0);
+  });
+
+  test('keeps linked Vault Help and section tabs keyboard accessible on phones', async ({
+    page,
+  }) => {
+    const probe = observeMembersPath(page);
+    await openMembers(page, probe);
+    await page
+      .getByRole('list', { name: 'Club Member Directory' })
+      .getByRole('listitem')
+      .first()
+      .getByRole('button')
+      .click();
+    await expect(page.getByRole('heading', { name: 'Player Record', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: /Promo Vault Review/ }).click();
+    await expect(page.getByRole('heading', { name: 'Promo Vault', exact: true })).toBeVisible();
+    const help = page.getByRole('button', { name: 'How The Promo Vault Works', exact: true });
+    const items = page.getByRole('tab', { name: 'Items', exact: true });
+    const records = page.getByRole('tab', { name: 'Records', exact: true });
+    for (const width of [375, 393]) {
+      await page.setViewportSize({ width, height: 812 });
+      await items.click();
+      await expect(items).toHaveAttribute('tabindex', '0');
+      await expect(records).toHaveAttribute('tabindex', '-1');
+      await items.press('ArrowRight');
+      await expect(records).toBeFocused();
+      await expect(records).toHaveAttribute('aria-selected', 'true');
+      const panelId = await records.getAttribute('aria-controls');
+      expect(panelId).toBeTruthy();
+      await expect(page.getByRole('tabpanel', { name: 'Records', exact: true })).toHaveAttribute(
+        'id',
+        panelId!
+      );
+      await records.press('Home');
+      await expect(items).toBeFocused();
+      await items.press('End');
+      await expect(records).toBeFocused();
+      await records.press('ArrowLeft');
+      await expect(items).toBeFocused();
+      await help.click();
+      const dialog = page.getByRole('dialog', { name: 'How The Promo Vault Works', exact: true });
+      const close = dialog.getByRole('button', { name: 'Got It', exact: true });
+      await expect(close).toBeFocused();
+      await expectContainedControls(page, '.pv-dialog', '.pv-dialog button');
+      await close.press('Tab');
+      await expect(close).toBeFocused();
+      await close.press('Shift+Tab');
+      await expect(close).toBeFocused();
+      await close.press('Escape');
+      await expect(dialog).toHaveCount(0);
+      await expect(help).toBeFocused();
+      await help.click();
+      await close.click();
+      await expect(dialog).toHaveCount(0);
+      await expect(help).toBeFocused();
+    }
     expect(probe.pageErrorCount).toBe(0);
     expect(probe.criticalConsoleErrorCount).toBe(0);
   });

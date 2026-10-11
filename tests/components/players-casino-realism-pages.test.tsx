@@ -83,6 +83,7 @@ vi.mock('../../src/services/ClubRosterService', async () => {
 
 import MemberManagementPage from '../../src/pages/MemberManagementPage';
 import PlayerStatisticsPage from '../../src/pages/PlayerStatisticsPage';
+import { supabase } from '../../src/lib/supabase';
 
 const memberDetail = {
   identity: {
@@ -187,6 +188,39 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('Players detail surfaces', () => {
+  it.each(['agent', 'admin'] as const)(
+    'keeps keyboard focus through %s role confirmation and cancel without writing',
+    async (grantRole) => {
+      state.getMemberDetail.mockResolvedValue({
+        ...memberDetail,
+        capabilities: { ...memberDetail.capabilities, can_manage_role: true },
+      });
+      state.getGrantableRoles.mockResolvedValue([grantRole]);
+      vi.mocked(supabase.rpc).mockClear();
+      render(<MemberManagementPage />);
+      const roleName = grantRole === 'agent' ? /Agent/ : /Admin/;
+      const role = await screen.findByRole('button', { name: roleName });
+      role.focus();
+      fireEvent.click(role);
+      const firstControl =
+        grantRole === 'agent'
+          ? await screen.findByRole('spinbutton', { name: 'Commission Percent (0 To 70)' })
+          : await screen.findByRole('button', { name: 'Confirm' });
+      expect(firstControl).toHaveFocus();
+      const cancel = screen.getByRole('button', { name: 'Cancel' });
+      cancel.focus();
+      fireEvent.click(cancel);
+      expect(screen.getByRole('button', { name: roleName })).toHaveFocus();
+      expect(
+        screen.queryByRole('spinbutton', { name: 'Commission Percent (0 To 70)' })
+      ).not.toBeInTheDocument();
+      expect(state.toast.success).not.toHaveBeenCalled();
+      expect(
+        vi.mocked(supabase.rpc).mock.calls.filter(([name]) => name === 'fn_club_set_member_role')
+      ).toHaveLength(0);
+    }
+  );
+
   it('ignores an older member response after a newer refresh has completed', async () => {
     let finishOld!: (value: typeof memberDetail) => void;
     state.getMemberDetail.mockImplementationOnce(

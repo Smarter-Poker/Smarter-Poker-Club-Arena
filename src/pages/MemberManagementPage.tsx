@@ -1165,6 +1165,19 @@ function RoleSection({
   const isMountedRef = useIsMounted();
   const [promoting, setPromoting] = useState(false);
   const [confirmRole, setConfirmRole] = useState<ClubRole | null>(null);
+  const roleConfirmationRef = useRef<HTMLDivElement>(null);
+  const roleButtonsRef = useRef(new Map<ClubRole, HTMLButtonElement>());
+  const cancelledRoleRef = useRef<ClubRole | null>(null);
+  useEffect(() => {
+    // Choosing or cancelling a role removes the focused button from the DOM.
+    // Keep keyboard navigation in the same role interaction after each render.
+    if (confirmRole) {
+      roleConfirmationRef.current?.querySelector<HTMLElement>('input, button')?.focus();
+    } else if (cancelledRoleRef.current) {
+      roleButtonsRef.current.get(cancelledRoleRef.current)?.focus();
+      cancelledRoleRef.current = null;
+    }
+  }, [confirmRole]);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   // Percentages, not fractions. Blank on purpose: a rate that arrives
@@ -1487,7 +1500,7 @@ function RoleSection({
           )}
         </>
       ) : confirmRole ? (
-        <div className="mm-roles__confirm">
+        <div className="mm-roles__confirm" ref={roleConfirmationRef}>
           <p>
             Change <strong>{targetName}</strong> To{' '}
             <strong style={{ color: roleColor(confirmRole) }}>{roleLabel(confirmRole)}</strong>?
@@ -1605,7 +1618,10 @@ function RoleSection({
             <button
               type="button"
               className="mm-roles__confirm-no"
-              onClick={() => setConfirmRole(null)}
+              onClick={() => {
+                cancelledRoleRef.current = confirmRole;
+                setConfirmRole(null);
+              }}
               disabled={promoting}
             >
               Cancel
@@ -1618,6 +1634,10 @@ function RoleSection({
             <button
               key={role}
               type="button"
+              ref={(button) => {
+                if (button) roleButtonsRef.current.set(role, button);
+                else roleButtonsRef.current.delete(role);
+              }}
               className={`mm-roles__option${role === targetRole ? ' mm-roles__option--current' : ''}`}
               onClick={() => {
                 setError('');

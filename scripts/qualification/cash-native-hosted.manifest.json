@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 199770,
-      "sha256": "932cff70aec810caf8588d1a95a418dde4a657444cb6af9588ae69b05afbe8fc"
+      "bytes": 199774,
+      "sha256": "15679c47528669fdd53c1677120db79c376b6f10410d2b144c562bf1793c11e6"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1946,6 +1946,13 @@
     "previousWorkflowPin": {
       "bytes": 199478,
       "sha256": "ac90ff313c46cf0985726f0123c1c32a0704f29c16a330fccd1c2665bccda88b"
+    }
+  },
+  "lightningOperatorRecovery20261011": {
+    "reason": "The existing Lightning Phase13 accounting step invokes the extended recovery driver, which first executes the unchanged twenty-section original harness and then qualifies the forward worker-off, event publication and thaw deadline migration. Cash financial inputs, native scheduler route, assertions and historical qualification status remain unchanged. This byte pin is source identity only.",
+    "previousWorkflowPin": {
+      "bytes": 199770,
+      "sha256": "932cff70aec810caf8588d1a95a418dde4a657444cb6af9588ae69b05afbe8fc"
     }
   }
 }

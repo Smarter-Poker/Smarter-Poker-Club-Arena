@@ -26,6 +26,7 @@ const MIGRATION =
 const SQL = fs.readFileSync(MIGRATION, 'utf8');
 const read = (...p: string[]) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
 const HARNESS = read('scripts', 'dev', 'test-lightning-phase13-rollout-drain.sh');
+const RECOVERY = read('scripts', 'dev', 'test-lightning-phase13-operator-recovery.sh');
 const CHANGELOG = read('docs', 'changelog', '2026-10-09-lightning-phase-13-rollout-drain.md');
 const ROLLOUT = read('docs', 'lightning', 'ROLLOUT.md');
 const CI = read('.github', 'workflows', 'ci.yml');
@@ -364,7 +365,12 @@ describe('the proof harness, CI and the documents', () => {
   });
   it('CI runs the harness on shard 1 after the Phase 11 remediation, and the load rig over the Phase 13 chain', () => {
     const p11r = CI.indexOf('test-lightning-phase11-remediation.sh');
-    const p13 = CI.indexOf('test-lightning-phase13-rollout-drain.sh');
+    const p13 = CI.indexOf('test-lightning-phase13-operator-recovery.sh');
+    expect(RECOVERY).toContain(
+      'LIGHTNING_P13_KEEP=1 bash "$root/scripts/dev/test-lightning-phase13-rollout-drain.sh" | tee "$log"'
+    );
+    expect(RECOVERY).toContain('20261011155910_lightning_worker_off_requires_completed_drain.sql');
+    expect(RECOVERY).toContain('fn_credit_maintenance_thaw_targets(t.freeze_started_at,312)');
     expect(p11r).toBeGreaterThan(0);
     expect(p13).toBeGreaterThan(p11r);
     const step = CI.slice(CI.lastIndexOf('- name:', p13), p13);

@@ -195,7 +195,9 @@ describe('an empty queue and a broken queue are different answers', () => {
   });
 
   it('the panel now surfaces that failure, which is what makes its Retry reachable', () => {
-    expect(PANEL).toContain("safeErrorMessage(err, 'Failed to load cashout requests')");
+    // Title Case even as a fallback (launch audit D-19, 2026-10-09): this pinned
+    // the lower-case literal, which was the defect, not the requirement.
+    expect(PANEL).toContain("safeErrorMessage(err, 'Failed To Load Cashout Requests')");
     expect(PANEL).toContain('Failed To Load Cashout Requests');
     // And a load that succeeds clears the stale banner.
     expect(PANEL).toMatch(/setCashouts\(pending\);[\s\S]{0,200}setError\(null\);/);

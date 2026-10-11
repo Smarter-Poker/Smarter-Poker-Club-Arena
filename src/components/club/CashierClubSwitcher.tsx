@@ -144,8 +144,15 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
   });
 
   const currentUuid = useMemo(() => clubParamToUuid(clubId, user?.id), [clubId, user?.id]);
+  // A route can name the club by uuid, numeric code or SLUG (every link this
+  // bar builds uses the slug); an unmatched slug left no row marked current and
+  // let "choosing" the current club navigate away from it.
   const currentClub = useMemo(
-    () => clubs.find((c) => c.id === currentUuid || String(c.club_id) === clubId) || null,
+    () =>
+      clubs.find(
+        (c) =>
+          c.id === currentUuid || String(c.club_id) === clubId || (!!c.slug && c.slug === clubId)
+      ) || null,
     [clubs, currentUuid, clubId]
   );
 

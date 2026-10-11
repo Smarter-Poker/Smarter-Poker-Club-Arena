@@ -28,10 +28,12 @@ describe('cashout exact cents', () => {
   );
   it('accepts exact trailing zeros and leading decimal', () => {
     expect(validateCashoutAmount('1.2500')).toEqual({ ok: true, amount: 1.25, cents: 125 });
-    expect(validateCashoutAmount('29e-2')).toEqual({ ok: true, amount: 0.29, cents: 29 });
-    expect(validateCashoutAmount('1001e-3').ok).toBe(false);
     expect(validateCashoutAmount('.29')).toEqual({ ok: true, amount: 0.29, cents: 29 });
   });
+  it.each(['29e-2', '1e3', '1001e-3', '+5', '0x10', '1,000', ' 5 5', '-5', 'Infinity'])(
+    'refuses a spelling that is not plain decimal digits: %s (B-4)',
+    (input) => expect(validateCashoutAmount(input).ok).toBe(false)
+  );
   it('presets floor cents and show their exact selected value', () => {
     expect(cashoutPercentage(1.25, 25)).toBe('0.31');
     expect(cashoutPercentage(1.25, 50)).toBe('0.62');

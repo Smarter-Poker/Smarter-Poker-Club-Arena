@@ -24,6 +24,8 @@ export interface CashierTransferRecovery {
   kind: 'send' | 'ticket';
   amount: number;
   targetIds: string[];
+  /** Exact per-recipient intent. Absent on older uniform-amount journals. */
+  targetAmounts?: Record<string, number>;
   failures: CashierTransferFailure[];
   submissionId: string;
   opIds: Record<string, string>;
@@ -121,6 +123,24 @@ const isValidRecovery = (
     return false;
 
   if (row.ticketNote !== undefined && row.ticketNote !== 'Cashier Ticket') return false;
+  if (
+    row.targetAmounts !== undefined &&
+    (!row.targetAmounts ||
+      typeof row.targetAmounts !== 'object' ||
+      Array.isArray(row.targetAmounts) ||
+      Object.keys(row.targetAmounts).length !== row.targetIds.length ||
+      row.targetIds.some((id) => {
+        const amount = row.targetAmounts![id];
+        return (
+          typeof amount !== 'number' ||
+          !Number.isFinite(amount) ||
+          amount <= 0 ||
+          amount > 1e9 ||
+          Math.round(amount * 100) / 100 !== amount
+        );
+      }))
+  )
+    return false;
   const targets = new Set(row.targetIds);
   if (targets.size !== row.targetIds.length || row.targetIds.some((id) => !UUID_PATTERN.test(id))) {
     return false;
@@ -208,6 +228,10 @@ const sameRecoveryIntent = (
 ): boolean =>
   left.kind === right.kind &&
   left.amount === right.amount &&
+  left.targetIds.every(
+    (id) =>
+      (left.targetAmounts?.[id] ?? left.amount) === (right.targetAmounts?.[id] ?? right.amount)
+  ) &&
   JSON.stringify(left.targetIds) === JSON.stringify(right.targetIds) &&
   JSON.stringify(left.opIds) === JSON.stringify(right.opIds) &&
   JSON.stringify(left.destinations) === JSON.stringify(right.destinations) &&
@@ -638,4 +662,32 @@ export async function copyCashierText(text: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+export type CashierRpcFailure = 'refused' | 'unknown';
+
+/**
+ * Was this failed RPC a definitive refusal, or might it have committed?
+ *
+ * Cashier launch brief, rule 8: a key is held across an ambiguous failure (no
+ * HTTP status, an empty code, an abort, a 5xx, a 408/409/425/429, a PostgREST
+ * transport code) and rotated only on a definitive outcome, which for an error
+ * means a real SQL refusal carried on a 4xx. When in doubt this answers
+ * 'unknown': holding a key is always safe, minting a second one is not.
+ */
+export function classifyCashierRpcFailure(
+  error: unknown,
+  status?: number | null
+): CashierRpcFailure {
+  const shaped = (error && typeof error === 'object' ? error : {}) as {
+    code?: unknown;
+    name?: unknown;
+  };
+  const code = typeof shaped.code === 'string' ? shaped.code.trim() : '';
+  const httpStatus = Number(status);
+  if (!code || shaped.name === 'AbortError') return 'unknown';
+  if (/^PGRST00[0-3]$/i.test(code)) return 'unknown';
+  if (!Number.isFinite(httpStatus) || httpStatus < 400 || httpStatus >= 500) return 'unknown';
+  if ([408, 409, 425, 429].includes(httpStatus)) return 'unknown';
+  return 'refused';
 }

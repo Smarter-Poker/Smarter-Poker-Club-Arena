@@ -352,6 +352,114 @@ describe('prepared cashout generation and exact service receipts', () => {
   });
 });
 
+// Launch audit 2026-10-09, S-01: a refusal the server rolled back is settled,
+// an unknown outcome keeps its id. Every case dispatches through the real
+// service mapping (CashoutService.definitiveCashoutRefusal), not a stub error.
+describe('a definitive refusal settles its generation; an unknown outcome keeps it', () => {
+  const refuse = (code: string, message: string) =>
+    rpc.mockResolvedValueOnce({
+      data: null,
+      error: { code, message, details: null, hint: null },
+    } as never);
+
+  it('acknowledges a balance refusal and the next preparation mints a fresh id', async () => {
+    refuse('23514', 'cashier_wallet_balance_unverified');
+    await expect(runCashoutOperation(await start())).rejects.toThrow(
+      'Not Enough Chips For That Cashout.'
+    );
+    const refused = rpc.mock.calls[0][1]!.p_op_id;
+    expect(history().generations[0]).toMatchObject({ operationId: refused, acknowledged: true });
+    expect(history().generations[0].starts.every((item: any) => item.acknowledged)).toBe(true);
+    expect(sessionStorage.getItem(historyKey)).toBeNull();
+    await runCashoutOperation(await start());
+    const next = rpc.mock.calls[1][1]!.p_op_id;
+    expect(next).not.toBe(refused);
+    expect(history().generations.map((item: any) => item.operationId)).toEqual([refused, next]);
+    expect(history().generations[1].acknowledged).toBe(true);
+  });
+
+  it('a second tap on the same preparation never re-sends the refused id, and its own uncertainty survives another tab', async () => {
+    const prepared = await prepareCashoutOperation(intent);
+    refuse('23514', 'cashier_pending_request_exists');
+    await expect(runCashoutOperation(captureCashoutStart(prepared))).rejects.toThrow(
+      'You Already Have A Pending Cashout.'
+    );
+    const refused = rpc.mock.calls[0][1]!.p_op_id;
+    rpc.mockRejectedValueOnce(new Error('Response Lost'));
+    await expect(runCashoutOperation(captureCashoutStart(prepared))).rejects.toThrow(
+      /Response Was Lost/
+    );
+    const uncertain = rpc.mock.calls[1][1]!.p_op_id;
+    expect(uncertain).not.toBe(refused);
+    expect(history().head).toBe(2);
+    expect(history().generations[1]).toMatchObject({ operationId: uncertain, acknowledged: false });
+    // Model another tab: an empty session over the same shared history.
+    sessionStorage.clear();
+    await runCashoutOperation(await start());
+    expect(rpc.mock.calls[2][1]!.p_op_id).toBe(uncertain);
+    expect(rpc).toHaveBeenCalledTimes(3);
+  });
+
+  it('an operation conflict settles too: that id belongs to another intent for good', async () => {
+    refuse('22023', 'cashier_operation_conflict');
+    await expect(runCashoutOperation(await start())).rejects.toThrow(
+      'That Cashout Request Is Not Valid.'
+    );
+    const refused = rpc.mock.calls[0][1]!.p_op_id;
+    await runCashoutOperation(await start());
+    expect(rpc.mock.calls[1][1]!.p_op_id).not.toBe(refused);
+  });
+
+  it.each([
+    ['57014', 'canceling statement due to statement timeout'],
+    ['40001', 'could not serialize access due to concurrent update'],
+    // Raised by fn_cashier_operation_receipt on the replay of a COMMITTED operation.
+    ['23514', 'cashier_pending_request_mismatch'],
+    ['23514', 'cashier_terminal_receipt_missing'],
+    ['23514', 'cashier_wallet_write_missing'],
+  ])('keeps the id on an unknown %s %s and replays it on the next start', async (code, message) => {
+    refuse(code, message);
+    await expect(runCashoutOperation(await start())).rejects.toThrow(/Could Not Be Confirmed/);
+    const kept = rpc.mock.calls[0][1]!.p_op_id;
+    expect(history().generations[0].acknowledged).toBe(false);
+    expect(sessionStorage.getItem(historyKey)).not.toBeNull();
+    await runCashoutOperation(await start());
+    expect(rpc.mock.calls[1][1]!.p_op_id).toBe(kept);
+    expect(history().generations).toHaveLength(1);
+  });
+
+  it('a refused terminal cancellation settles but keeps its single operation id', async () => {
+    const terminal = { ...intent, targetId: ID.cashout, kind: 'cashout_cancel' as const };
+    refuse('23514', 'cashier_request_already_terminal');
+    await expect(
+      runCashoutOperation(captureCashoutStart(await prepareCashoutOperation(terminal)))
+    ).rejects.toThrow('That Cashout Was Already Decided.');
+    const original = rpc.mock.calls[0][1]!.p_op_id;
+    rpc.mockImplementationOnce(async (_name, args) => receipt(args, {}, 'cancellation') as never);
+    await runCashoutOperation(captureCashoutStart(await prepareCashoutOperation(terminal)));
+    expect(rpc.mock.calls[1][1]!.p_op_id).toBe(original);
+  });
+
+  it('a refusal that lands after the view retired settles nothing and keeps the id', async () => {
+    let current = true;
+    const gate = deferred<any>();
+    rpc.mockImplementationOnce(() => gate.promise as never);
+    const run = runCashoutOperation(await start({ ...intent, isCurrent: () => current }));
+    const outcome = expect(run).rejects.toThrow(/Changed/);
+    await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(1));
+    current = false;
+    gate.resolve({
+      data: null,
+      error: { code: '23514', message: 'cashier_wallet_balance_unverified' },
+    });
+    await outcome;
+    const kept = rpc.mock.calls[0][1]!.p_op_id;
+    expect(history().generations[0].acknowledged).toBe(false);
+    await runCashoutOperation(await start());
+    expect(rpc.mock.calls[1][1]!.p_op_id).toBe(kept);
+  });
+});
+
 describe('legacy migration and storage interruption', () => {
   it('adopts the exact legacy operation and prevents an empty-session old client from reserving another UUID', async () => {
     const legacyOperation = 'abcdefab-cdef-4abc-8abc-abcdefabcdef';

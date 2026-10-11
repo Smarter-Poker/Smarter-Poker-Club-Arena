@@ -1013,6 +1013,34 @@
   overscroll-behavior: contain;
 }
 
+.modalTargetRow > input {
+  flex: 0 1 130px;
+  min-width: 0;
+  width: 40%;
+  min-height: 44px;
+}
+
+.batchReceiptList {
+  display: flex;
+  flex-direction: column;
+  max-height: min(60vh, 480px);
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.batchReceiptRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink-silver);
+  border-top: 1px solid #000;
+  box-shadow: var(--engraved-rule-lip);
+}
+
 .modalTargetRow,
 .modalFailureRow {
   display: flex;

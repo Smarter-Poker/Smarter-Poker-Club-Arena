@@ -80,7 +80,7 @@ describe('the trade grid spends the AGENT WALLET', () => {
     expect(call).toContain('p_items: items');
     expect(call).toContain('p_batch_id: submissionId');
     expect(RUN_TRANSFERS).toContain('user_id: target.userId');
-    expect(RUN_TRANSFERS).toContain('amount: value');
+    expect(RUN_TRANSFERS).toContain('amount: parsedAmount.amounts[target.userId]');
     expect(RUN_TRANSFERS).toContain('op_id: opIdFor(target.userId)');
   });
 
@@ -140,12 +140,12 @@ describe('one op id per target, held across a failure', () => {
     // protection works.
     const editEffect = PAGE.slice(
       PAGE.indexOf('if (restoringTransferRecoveryRef.current)'),
-      PAGE.indexOf('}, [amount, selected]') + 25
+      PAGE.indexOf('}, [amount, recipientAmounts, selected]') + 25
     );
     expect(editEffect).toContain('submissionIdRef.current = null');
     expect(editEffect).toContain('readCashierTransferRecovery(user.id, clubUuid)');
     expect(editEffect).not.toContain('clearCashierTransferRecovery(');
-    expect(PAGE).toMatch(/\}, \[amount, selected\]\);/);
+    expect(PAGE).toMatch(/\}, \[amount, recipientAmounts, selected\]\);/);
   });
 
   it('is retained across a failure, which is what makes a retry safe', () => {
@@ -162,7 +162,7 @@ describe('one op id per target, held across a failure', () => {
     expect(RUN_TRANSFERS).toMatch(/\$\{clubUuid\}/);
     expect(RUN_TRANSFERS).toMatch(/\$\{submissionId\}/);
     expect(RUN_TRANSFERS).toMatch(/\$\{target\.userId\}/);
-    expect(RUN_TRANSFERS).toMatch(/\$\{value\}/);
+    expect(RUN_TRANSFERS).toMatch(/\$\{parsedAmount.amounts\[target.userId\]\}/);
   });
 });
 

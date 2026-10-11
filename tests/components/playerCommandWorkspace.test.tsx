@@ -1,6 +1,14 @@
 import '@testing-library/jest-dom/vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes, useNavigate, useLocation } from 'react-router-dom';
+import { useContext, useMemo, type ReactNode } from 'react';
+import {
+  MemoryRouter,
+  Route,
+  Routes,
+  useNavigate,
+  useLocation,
+  UNSAFE_NavigationContext,
+} from 'react-router-dom';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 const f = vi.hoisted(() => ({
@@ -11,6 +19,8 @@ const f = vi.hoisted(() => ({
   export: vi.fn(),
   csv: vi.fn(),
   report: vi.fn(),
+  holdOwnReplace: false,
+  releaseReplaces: [] as Array<() => void>,
 }));
 vi.mock('../../src/hooks/useAuthUser', () => ({ useAuthUser: () => f.actor }));
 vi.mock('../../src/hooks/useProfilePresence', () => ({ useOnlineNow: () => false }));
@@ -65,6 +75,9 @@ function Harness() {
       <button onClick={() => navigate('/clubs/club-a/members?view=agents&sort=name')}>
         Linked Agents
       </button>
+      <button onClick={() => navigate('/clubs/club-a/members?view=agents')}>
+        Linked Agents Hierarchy
+      </button>
       <button onClick={() => navigate(-1)}>History Back</button>
       <Routes>
         <Route path="/clubs/:clubId/members" element={<ClubMembersPage />} />
@@ -76,9 +89,29 @@ function Harness() {
     </>
   );
 }
+function DelayedOwnReplace({ children }: { children: ReactNode }) {
+  const context = useContext(UNSAFE_NavigationContext);
+  const navigator = useMemo(
+    () => ({
+      ...context.navigator,
+      replace: (...args: Parameters<typeof context.navigator.replace>) => {
+        if (f.holdOwnReplace) f.releaseReplaces.push(() => context.navigator.replace(...args));
+        else context.navigator.replace(...args);
+      },
+    }),
+    [context.navigator]
+  );
+  return (
+    <UNSAFE_NavigationContext.Provider value={{ ...context, navigator }}>
+      {children}
+    </UNSAFE_NavigationContext.Provider>
+  );
+}
 const tree = (entry = '/clubs/club-a/members') => (
   <MemoryRouter initialEntries={[entry]}>
-    <Harness />
+    <DelayedOwnReplace>
+      <Harness />
+    </DelayedOwnReplace>
   </MemoryRouter>
 );
 async function settle() {
@@ -112,6 +145,8 @@ beforeEach(() => {
   sessionStorage.clear();
   localStorage.clear();
   vi.clearAllMocks();
+  f.holdOwnReplace = false;
+  f.releaseReplaces = [];
   f.actor.user = { id: 'viewer-a' };
   f.page.mockResolvedValue({ items: rows, next_cursor: null, has_more: false, filtered_total: 80 });
   f.summary.mockResolvedValue({
@@ -200,6 +235,151 @@ it('restores the virtual roster position after opening a real roster row and ret
     1476
   );
   expect(screen.queryByRole('button', { name: /^Open Player 0,/ })).not.toBeInTheDocument();
+});
+it('keeps its filter and sort read owned while its own URL replacement is awaiting acknowledgment', async () => {
+  let aborts = 0;
+  const finish: Array<() => void> = [];
+  f.page.mockImplementation((_club, query) => {
+    const page = { items: rows, next_cursor: null, has_more: false, filtered_total: 80 };
+    if (query.filter === 'all' && query.sort === 'hierarchy') return Promise.resolve(page);
+    return new Promise((resolve, reject) => {
+      const aborted = () => {
+        aborts++;
+        reject(new DOMException('Aborted', 'AbortError'));
+      };
+      query.signal.addEventListener('abort', aborted, { once: true });
+      finish.push(() => {
+        query.signal.removeEventListener('abort', aborted);
+        resolve(page);
+      });
+    });
+  });
+  render(tree());
+  await settle();
+  f.holdOwnReplace = true;
+  const agents = screen.getByRole('button', { name: 'Agents', exact: true });
+  fireEvent.click(agents);
+  await act(async () => {});
+  expect(agents).toHaveAttribute('aria-pressed', 'true');
+  expect(aborts).toBe(0);
+  expect(f.page.mock.calls.map(([, query]) => query.filter)).toEqual(['all', 'agents']);
+  await act(async () => {
+    f.holdOwnReplace = false;
+    f.releaseReplaces.splice(0).forEach((release) => release());
+  });
+  await act(async () => {
+    finish[0]();
+  });
+  await settle();
+  expect(agents).toHaveAttribute('aria-pressed', 'true');
+  expect(f.page.mock.calls.map(([, query]) => query.filter)).toEqual(['all', 'agents']);
+  f.holdOwnReplace = true;
+  fireEvent.change(sort(), { target: { value: 'name' } });
+  await act(async () => {});
+  expect(sort()).toHaveValue('name');
+  expect(aborts).toBe(0);
+  expect(f.page.mock.calls.map(([, query]) => query.sort)).toEqual([
+    'hierarchy',
+    'hierarchy',
+    'name',
+  ]);
+  await act(async () => {
+    f.holdOwnReplace = false;
+    f.releaseReplaces.splice(0).forEach((release) => release());
+  });
+  await act(async () => {
+    finish[1]();
+  });
+  await settle();
+  expect(sort()).toHaveValue('name');
+  expect(f.page).toHaveBeenCalledTimes(3);
+  expect(aborts).toBe(0);
+});
+it('serializes pending URL replacements and writes the latest rapidly changed controls', async () => {
+  render(tree());
+  await settle();
+  f.holdOwnReplace = true;
+  fireEvent.click(screen.getByRole('button', { name: 'Agents', exact: true }));
+  fireEvent.change(sort(), { target: { value: 'name' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Online', exact: true }));
+  await act(async () => {});
+  expect(f.releaseReplaces).toHaveLength(1);
+  expect(sort()).toHaveValue('name');
+  expect(screen.getByRole('button', { name: 'Online', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+  const calls = f.page.mock.calls.length;
+  await act(async () => {
+    f.releaseReplaces.shift()!();
+  });
+  expect(f.releaseReplaces).toHaveLength(1);
+  expect(sort()).toHaveValue('name');
+  expect(screen.getByRole('button', { name: 'Online', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+  await act(async () => {
+    f.holdOwnReplace = false;
+    f.releaseReplaces.shift()!();
+  });
+  await settle();
+  expect(screen.getByTestId('location').textContent).toContain('?view=online&sort=name');
+  expect(f.page).toHaveBeenCalledTimes(calls);
+});
+it('does not revive an old URL receipt when the account returns on the same history entry', async () => {
+  const view = render(tree());
+  await settle();
+  f.holdOwnReplace = true;
+  fireEvent.click(screen.getByRole('button', { name: 'Agents', exact: true }));
+  await act(async () => {});
+  expect(f.releaseReplaces).toHaveLength(1);
+  f.actor.user = { id: 'viewer-b' };
+  view.rerender(tree());
+  await settle();
+  expect(screen.getByRole('button', { name: 'All Players', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+  f.actor.user = { id: 'viewer-a' };
+  view.rerender(tree());
+  await settle();
+  expect(screen.getByRole('button', { name: 'Agents', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+  expect(f.releaseReplaces).toHaveLength(2);
+  await act(async () => {
+    f.holdOwnReplace = false;
+    f.releaseReplaces.pop()!();
+  });
+  await settle();
+  expect(screen.getByTestId('location').textContent).toContain('?view=agents');
+});
+it('honors external PUSH and POP while an own URL replacement is pending', async () => {
+  render(tree());
+  await settle();
+  f.holdOwnReplace = true;
+  fireEvent.click(screen.getByRole('button', { name: 'Agents', exact: true }));
+  fireEvent.change(sort(), { target: { value: 'name' } });
+  await act(async () => {});
+  expect(f.releaseReplaces).toHaveLength(1);
+  // This PUSH matches the outstanding replacement's target query, but its
+  // own entry is authoritative and explicitly restores the default sort.
+  fireEvent.click(screen.getByRole('button', { name: 'Linked Agents Hierarchy' }));
+  await settle();
+  expect(sort()).toHaveValue('hierarchy');
+  expect(screen.getByRole('button', { name: 'Agents', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'History Back' }));
+  await settle();
+  expect(sort()).toHaveValue('hierarchy');
+  expect(screen.getByRole('button', { name: 'All Players', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
 });
 it('honors explicit same-club navigation and restores the prior URL on history Back', async () => {
   render(tree());

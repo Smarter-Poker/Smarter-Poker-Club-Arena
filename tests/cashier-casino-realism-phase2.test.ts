@@ -36,7 +36,8 @@ describe('cashier phase 2 hardens money intent math and retries', () => {
   });
 
   it('retains a claim idempotency key until the server confirms success', () => {
-    expect(PAGE).toContain('claimOpIdsRef.current.get(row.transaction_id) || newOpId()');
+    expect(PAGE).toContain('reserveCashierWalletOperation(');
+    expect(PAGE).toContain('const heldOpId = operation.operationId');
     expect(PAGE).toContain('p_op_id: heldOpId');
     expect(PAGE).toContain('claimOpIdsRef.current.delete(row.transaction_id)');
   });

@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import sys
 from concurrent.futures import ThreadPoolExecutor
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -35,7 +36,10 @@ env = {key: value for key, value in os.environ.items() if not key.startswith("PG
 env["LC_ALL"] = "C"
 # PostgreSQL's Unix socket path is capped at roughly 100 bytes on macOS. Keep
 # this task-owned disposable cluster at a short path on the mandated SSD.
-cluster = Path(tempfile.mkdtemp(prefix="cashier-pg-", dir="/Volumes/SmarterWork/agent-work"))
+scratch_root = "/Volumes/SmarterWork/agent-work" if sys.platform == "darwin" else tempfile.gettempdir()
+if sys.platform == "darwin" and not Path(scratch_root).is_dir():
+    raise RuntimeError("External SSD is required for Cashier qualification")
+cluster = Path(tempfile.mkdtemp(prefix="cashier-pg-", dir=scratch_root))
 socket = cluster / "socket"
 socket.mkdir(mode=0o700)
 port = "55749"
@@ -301,6 +305,7 @@ try:
     require(start.returncode == 0, start.stderr)
     run("fixture", FIXTURE)
     run("shipped-migration", MIGRATION.read_text())
+    run("phase2-recovery-migration", (ROOT / "supabase/migrations/20261011143741_cashier_original_operator_can_read_committed_recovery_receip.sql").read_text())
     run("classic-ledger-oid-preserved", "SELECT function_oid='public.fn_club_trade_ledger(uuid,integer,integer)'::regprocedure::oid FROM cashier_trade_ledger_preimage;", "t")
     run("classic-ledger-dependent-view-preserved", "SELECT to_regclass('public.cashier_trade_ledger_dependency') IS NOT NULL;", "t")
     run("classic-ledger-result-shape-preserved", "SELECT pg_get_function_result('public.fn_club_trade_ledger(uuid,integer,integer)'::regprocedure);", "TABLE(id uuid, created_at timestamp with time zone, transaction_type text, amount numeric, from_user_id uuid, to_user_id uuid, notes text, metadata jsonb, from_name text, to_name text)")
@@ -356,6 +361,49 @@ try:
     refused("suspended-agent-write-refused", as_role(AGENT_A, f"SELECT public.fn_club_bank_send('{CLUB}','{PLAYER}',10,'player_wallet','No','10000000-0000-0000-0000-000000000002');"))
     run("suspended-agent-statement-refused", as_role(AGENT_A, f"SELECT public.fn_cashier_statement_scope('{CLUB}')->>'authorized';"), "false")
     run("suspended-agent-classic-empty", as_role(AGENT_A, f"SELECT count(*) FROM public.fn_club_trade_ledger('{CLUB}',50,0);"), "0")
+    run("suspended-operator-original-receipt-readable", as_role(AGENT_A,
+        f"SELECT jsonb_array_length(public.fn_cashier_recovery_receipts('{CLUB}',ARRAY['{op1}'::uuid])->'operations');"), "1")
+    run("other-operator-receipt-hidden", as_role(AGENT_B,
+        f"SELECT jsonb_array_length(public.fn_cashier_recovery_receipts('{CLUB}',ARRAY['{op1}'::uuid])->'operations');"), "0")
+    run("wrong-club-receipt-hidden", as_role(AGENT_A,
+        f"SELECT jsonb_array_length(public.fn_cashier_recovery_receipts('00000000-0000-0000-0000-0000000000c2',ARRAY['{op1}'::uuid])->'operations');"), "0")
+    run("suspended-original-replay-is-no-new-effect", as_role(AGENT_A, replay), "t\n1")
+    run("remove-operator-membership", f"UPDATE club_members SET status='left' WHERE club_id='{CLUB}' AND user_id='{AGENT_A}';")
+    # The retained money core in this small fixture is a call witness, not the
+    # real bank role validator. Assert the actual role contract it consumes.
+    run("removed-operator-bank-role-refused", as_role(AGENT_A,
+        f"SELECT public.fn_club_bank_role('{CLUB}') IS NULL;"), "t")
+    run("removed-operator-own-receipt-readable", as_role(AGENT_A,
+        f"SELECT jsonb_array_length(public.fn_cashier_recovery_receipts('{CLUB}',ARRAY['{op1}'::uuid])->'operations');"), "1")
+    run("restore-operator-membership", f"UPDATE club_members SET status='active' WHERE club_id='{CLUB}' AND user_id='{AGENT_A}';")
+    run("anonymous-recovery-door-refused", "SELECT has_function_privilege('anon','public.fn_cashier_recovery_receipts(uuid,uuid[],text[])','EXECUTE');", "f")
+    refused("anonymous-cannot-execute-recovery", "SET ROLE anon; SELECT public.fn_cashier_recovery_receipts(NULL);", "42501")
+    refused("null-recovery-club-refused", as_role(AGENT_A, "SELECT public.fn_cashier_recovery_receipts(NULL);"), "22023")
+    refused("unbounded-recovery-refused", as_role(AGENT_A,
+        f"SELECT public.fn_cashier_recovery_receipts('{CLUB}',ARRAY(SELECT gen_random_uuid() FROM generate_series(1,26)));"), "22023")
+    run("missing-receipt-remains-unknown", as_role(AGENT_A,
+        f"SELECT public.fn_cashier_recovery_receipts('{CLUB}',ARRAY[gen_random_uuid()])::text;"), '{"tickets": [], "operations": []}')
+    ticket_key = "ticket:original-issuer"
+    run("ticket-receipt-fixture", f"INSERT INTO chip_transactions(club_id,transaction_type,amount,from_user_id,to_user_id,metadata) VALUES ('{CLUB}','tournament_ticket_issue',2,'{AGENT_A}','{PLAYER}',jsonb_build_object('ticket_id',gen_random_uuid(),'idempotency_key','{ticket_key}'));")
+    run("issuer-ticket-receipt-readable", as_role(AGENT_A,
+        f"SELECT jsonb_array_length(public.fn_cashier_recovery_receipts('{CLUB}','{{}}'::uuid[],ARRAY['{ticket_key}'])->'tickets');"), "1")
+    run("other-issuer-ticket-receipt-hidden", as_role(AGENT_B,
+        f"SELECT jsonb_array_length(public.fn_cashier_recovery_receipts('{CLUB}','{{}}'::uuid[],ARRAY['{ticket_key}'])->'tickets');"), "0")
+    run("recovery-cannot-change-core-call-count", f"SELECT count(*) FROM cashier_core_calls WHERE operation_id='{op1}';", "1")
+    # Exercise the retained production bank body, rather than the accounting
+    # fixture's core-call witness, for removed-owner write refusal. Roll back
+    # this temporary body and membership change in the same private connection.
+    bank_source = (ROOT / "supabase/migrations/20260903170529_the_hierarchy_sends_are_one_journal_row_each.sql").read_text()
+    bank_start = bank_source.index("CREATE OR REPLACE FUNCTION public.fn_club_bank_send(")
+    bank_open = bank_source.index("AS $function$", bank_start) + len("AS $function$")
+    bank_end = bank_source.index(";", bank_source.index("$function$", bank_open)) + 1
+    bank_body = bank_source[bank_start:bank_end].replace("public.fn_club_bank_send(", "public.fn_club_bank_send_core_20261004(", 1)
+    run("production-bank-body-refuses-removed-operator", "BEGIN;" + bank_body +
+        f"UPDATE public.club_members SET role='co_owner' WHERE club_id='{CLUB}' AND user_id='{AGENT_A}';" +
+        as_role(AGENT_A, f"SELECT public.fn_club_bank_role('{CLUB}');") +
+        f"DELETE FROM public.club_members WHERE club_id='{CLUB}' AND user_id='{AGENT_A}';" +
+        as_role(AGENT_A, f"SELECT public.fn_club_bank_send('{CLUB}','{PLAYER}',1,'player_wallet','Withdrawn authority',gen_random_uuid())->>'success';") +
+        "ROLLBACK;", "co_owner\nfalse")
     run("restore-agent", f"UPDATE agents SET status='active' WHERE club_id='{CLUB}' AND user_id='{AGENT_A}';")
 
     run("suspend-intermediate", f"UPDATE agents SET status='suspended' WHERE club_id='{CLUB}' AND user_id='{AGENT_B}';")
@@ -465,7 +513,7 @@ try:
     refused("post-suspension-send-refused", as_role(AGENT_A, f"SELECT public.fn_club_bank_send('{CLUB}','{PLAYER}',1,'player_wallet','After Suspend','10000000-0000-0000-0000-000000000009');"))
     run("restore-agent-after-status-race", f"UPDATE agents SET status='active' WHERE club_id='{CLUB}' AND user_id='{AGENT_A}';")
 
-    hashes = run("source-binding-hashes", "SELECT p.oid::regprocedure::text||'|'||md5(p.prosrc)||'|'||md5(pg_get_functiondef(p.oid)) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname IN ('fn_cashier_member_is_active','fn_club_active_cashier_edges','fn_club_bank_role','fn_club_is_in_downline','fn_cashier_assert_active_actor','fn_cashier_agent_status_mutex','fn_cashier_balance_actor_guard','fn_cashier_operation_mutex_guard','fn_cashier_operation_intent_guard','fn_cashier_exact_intent_begin','fn_cashier_exact_intent_finish','fn_club_bank_send','fn_club_bank_claim_back','fn_club_bank_reverse','fn_admin_remove_player_chips','fn_promo_wallet_send','fn_club_promo_wallet_send','fn_agent_wallet_send','fn_agent_wallet_claim_back','fn_request_chips','fn_club_bank_send_core_20261004','fn_club_bank_claim_core_20261004','fn_club_bank_reverse_core_20261004','fn_admin_remove_chips_core_20261004','fn_promo_wallet_send_core_20261004','fn_club_promo_send_core_20261004','fn_agent_wallet_send_core_20261004','fn_agent_wallet_claim_back_core_20261004','fn_request_chips_core_20261004','fn_club_cashier_members','fn_cashier_statement_downline','fn_cashier_statement_scope','fn_club_trade_ledger') ORDER BY p.oid::regprocedure::text;")
+    hashes = run("source-binding-hashes", "SELECT p.oid::regprocedure::text||'|'||md5(p.prosrc)||'|'||md5(pg_get_functiondef(p.oid)) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname IN ('fn_cashier_recovery_receipts','fn_cashier_member_is_active','fn_club_active_cashier_edges','fn_club_bank_role','fn_club_is_in_downline','fn_cashier_assert_active_actor','fn_cashier_agent_status_mutex','fn_cashier_balance_actor_guard','fn_cashier_operation_mutex_guard','fn_cashier_operation_intent_guard','fn_cashier_exact_intent_begin','fn_cashier_exact_intent_finish','fn_club_bank_send','fn_club_bank_claim_back','fn_club_bank_reverse','fn_admin_remove_player_chips','fn_promo_wallet_send','fn_club_promo_wallet_send','fn_agent_wallet_send','fn_agent_wallet_claim_back','fn_request_chips','fn_club_bank_send_core_20261004','fn_club_bank_claim_core_20261004','fn_club_bank_reverse_core_20261004','fn_admin_remove_chips_core_20261004','fn_promo_wallet_send_core_20261004','fn_club_promo_send_core_20261004','fn_agent_wallet_send_core_20261004','fn_agent_wallet_claim_back_core_20261004','fn_request_chips_core_20261004','fn_club_cashier_members','fn_cashier_statement_downline','fn_cashier_statement_scope','fn_club_trade_ledger') ORDER BY p.oid::regprocedure::text;")
     (out / "source-binding-hashes.txt").write_text(hashes + "\n")
     results["passed"] = all(case["passed"] for case in results["cases"])
 finally:

@@ -1,3 +1,9 @@
+import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
+import CashierPendingOperations from '../components/wallet/CashierPendingOperations';
+import {
+  reserveCashierWalletOperation,
+  clearCashierWalletOperation,
+} from '../services/CashierWalletRecovery';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CASHIER — TRADE VIEW (Dan 2026-08-21, PokerBros reference build)
@@ -315,6 +321,10 @@ function CashierTradeWorkspace() {
   // can land last and paint its balances under the club you are now looking
   // at. On a page that moves chips that is not a cosmetic race.
   const loadVersion = useRef(0);
+  const transferAuthorityEpoch = useRef(0);
+  const memberAuthoritySnapshot = useRef<{ clubId: string; role: string; status: string } | null>(
+    null
+  );
   const pendingCountVersion = useRef(0);
   const heldTicketCountVersion = useRef(0);
   const reqSeqRef = useRef(0);
@@ -482,6 +492,9 @@ function CashierTradeWorkspace() {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const dialogTriggerRef = useRef<HTMLElement | null>(null);
   const dialogWasOpenRef = useRef(false);
+  const transferViewKey = JSON.stringify([user?.id, clubParam, clubUuid]);
+  const transferView = useRef({ key: transferViewKey });
+  if (transferView.current.key !== transferViewKey) transferView.current = { key: transferViewKey };
   const isMounted = useRef(true);
   useEffect(() => {
     isMounted.current = true;
@@ -751,7 +764,7 @@ function CashierTradeWorkspace() {
       const [meRes, floatRes] = await Promise.all([
         supabase
           .from('club_members')
-          .select('role, chip_balance')
+          .select('role, chip_balance, status')
           .eq('club_id', clubUuid)
           .eq('user_id', user.id)
           .maybeSingle(),
@@ -760,7 +773,7 @@ function CashierTradeWorkspace() {
         // that has not been funded, staff included.
         supabase
           .from('agents')
-          .select('agent_wallet_balance')
+          .select('agent_wallet_balance, status')
           .eq('club_id', clubUuid)
           .eq('user_id', user.id)
           .maybeSingle(),
@@ -773,7 +786,21 @@ function CashierTradeWorkspace() {
         complete = false;
         reportError(floatRes.error, 'CashierTradePage.agentWallet');
       }
-      const role = meRes.data?.role ? (meRes.data.role as string) : 'player';
+      memberAuthoritySnapshot.current = {
+        clubId: clubUuid,
+        role: String(meRes.data?.role || 'player'),
+        status: meRes.data?.status || 'active',
+      };
+      let role =
+        meRes.data && (!meRes.data.status || MEMBER_IN_CLUB.includes(meRes.data.status))
+          ? String(meRes.data.role || 'player')
+          : 'player';
+      if (
+        ['super_agent', 'agent', 'sub_agent'].includes(role) &&
+        floatRes.data?.status !== undefined &&
+        floatRes.data.status !== 'active'
+      )
+        role = 'player';
       const bal = meRes.data?.chip_balance ? Number(meRes.data.chip_balance) : 0;
       // A row that does not exist is a float of zero. A row we could not READ
       // is unknown, and stays null so the pre-flight check does not refuse a
@@ -912,6 +939,9 @@ function CashierTradeWorkspace() {
       'CHIPS_ADDED',
       'CHIPS_DISTRIBUTED',
       'CASHIER_BALANCE_CHANGED',
+      'MEMBER_ROLE_CHANGED',
+      'MEMBER_UPDATED',
+      'AGENT_UPDATED',
     ] as const;
     // Only OUR club. CHIPS_DISTRIBUTED and CASHIER_BALANCE_CHANGED both carry a
     // clubId that was thrown away, so a chip event anywhere on the platform
@@ -921,6 +951,10 @@ function CashierTradeWorkspace() {
       masterBus.subscribe(e as never, (payload: unknown) => {
         const pid = (payload as { clubId?: string } | null)?.clubId;
         if (pid && clubUuid && pid !== clubUuid) return;
+        if (e === 'MEMBER_ROLE_CHANGED' || e === 'MEMBER_UPDATED' || e === 'AGENT_UPDATED') {
+          transferAuthorityEpoch.current++;
+          setRoleResolved(false);
+        }
         loadClub();
         // The badge's own comment promised this and it was never wired: the
         // only caller was the mount effect, so an owner on the Trade tab saw
@@ -932,6 +966,85 @@ function CashierTradeWorkspace() {
     );
     return () => unsubs.forEach((u) => u());
   }, [loadClub, clubUuid, loadPendingCount, loadHeldTicketCount]);
+
+  const refreshAuthority = (payload: {
+    eventType?: string;
+    new?: { club_id?: string; role?: string; status?: string | null };
+    old?: { club_id?: string };
+  }) => {
+    const changedClub = payload.new?.club_id || payload.old?.club_id;
+    if (changedClub && changedClub !== clubUuid) return;
+    const prior = memberAuthoritySnapshot.current;
+    if (
+      payload.eventType === 'UPDATE' &&
+      prior?.clubId === clubUuid &&
+      payload.new?.role === prior.role &&
+      (payload.new.status || 'active') === prior.status
+    )
+      return;
+    transferAuthorityEpoch.current++;
+    setRoleResolved(false);
+    void loadClub();
+  };
+  useMasterBusChannel({
+    channelName: user?.id && clubUuid ? `cashier-member-authority:${user.id}:${clubUuid}` : null,
+    table: 'club_members',
+    filter: user?.id ? `user_id=eq.${user.id}` : null,
+    event: '*',
+    enabled: !!user?.id && !!clubUuid,
+    onPayload: refreshAuthority,
+    onSubscriptionStatus: (status) => {
+      if (status !== 'SUBSCRIBED' || !clubUuid || !user?.id) return;
+      // Read just the authority after subscribing. Starting a second roster
+      // load here invalidated page one while its continuation was pending.
+      const owningView = transferView.current;
+      void (async () => {
+        const { data, error } = await supabase
+          .from('club_members')
+          .select('role, status')
+          .eq('club_id', clubUuid)
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (error) {
+          reportError(error, 'CashierTradePage.subscribedAuthority');
+          if (isMounted.current && transferView.current === owningView) {
+            transferAuthorityEpoch.current++;
+            setRoleResolved(false);
+          }
+          return;
+        }
+        if (!isMounted.current || transferView.current !== owningView) return;
+        const prior = memberAuthoritySnapshot.current;
+        if (
+          prior?.clubId === clubUuid &&
+          (String(data?.role || 'player') !== prior.role ||
+            (data?.status || 'active') !== prior.status)
+        )
+          refreshAuthority({
+            eventType: 'UPDATE',
+            new: {
+              club_id: clubUuid,
+              role: String(data?.role || 'player'),
+              status: data?.status,
+            },
+          });
+      })();
+    },
+  });
+  // Agents are deliberately not published to Realtime. Refresh on explicit
+  // management events and returning to this view; each mutation rechecks the
+  // active agent inside its own database transaction.
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState !== 'hidden') void loadClub();
+    };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [loadClub]);
 
   // ── Trade record tab data ──────────────────────────────────────────────────
   // Cleared BEFORE every club load: the previous club's trades used to stay on
@@ -1565,19 +1678,13 @@ function CashierTradeWorkspace() {
       restoringTransferRecoveryRef.current = false;
       return;
     }
-    const recoveryScope = transferRecoveryScopeRef.current;
     submissionIdRef.current = null;
     opIdsRef.current = new Map();
     transferRecoveryScopeRef.current = null;
-    if (recoveryScope) {
-      clearCashierTransferRecovery(
-        recoveryScope.userId,
-        recoveryScope.clubId,
-        recoveryScope.submissionId
-      );
-      // Another browser tab may have its own unresolved batch in the same
-      // club. Retiring this tab's changed intent must reveal, not erase, it.
-      setTransferRecovery(readCashierTransferRecovery(recoveryScope.userId, recoveryScope.clubId));
+    // Editing the form retires its in-memory nonce, never an unresolved
+    // remote outcome. Keep that journal available for explicit recovery.
+    if (user?.id && clubUuid) {
+      setTransferRecovery(readCashierTransferRecovery(user.id, clubUuid));
     } else {
       setTransferRecovery(null);
     }
@@ -1712,7 +1819,10 @@ function CashierTradeWorkspace() {
       clubId: clubUuid,
       kind,
       amount: value,
-      targetIds: targets.map((target) => target.userId),
+      targetIds:
+        transferRecovery?.submissionId === submissionId
+          ? transferRecovery.targetIds
+          : targets.map((target) => target.userId),
       failures: targets.map((target) => ({
         userId: target.userId,
         name: target.name,
@@ -1720,6 +1830,19 @@ function CashierTradeWorkspace() {
       })),
       submissionId,
       opIds: Object.fromEntries(opIdsRef.current),
+      ticketNote:
+        transferRecovery?.submissionId === submissionId
+          ? transferRecovery.ticketNote
+          : 'Cashier Ticket',
+      destinations:
+        transferRecovery?.submissionId === submissionId
+          ? transferRecovery.destinations
+          : Object.fromEntries(
+              targets.map((target) => [
+                target.userId,
+                canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet',
+              ])
+            ),
       createdAt: recoveryCreatedAt,
     };
     if (!writeCashierTransferRecovery(uncertainRecovery)) {
@@ -1741,6 +1864,8 @@ function CashierTradeWorkspace() {
     setBatchProgress({ processed: 0, total: targets.length });
     let ok = 0;
     const failed: Array<{ userId: string; name: string; message: string }> = [];
+    const owningView = transferView.current;
+    const owningAuthorityEpoch = transferAuthorityEpoch.current;
     const batchStartedAt = Date.now();
     let batchFailureReason: string | undefined;
     try {
@@ -1751,13 +1876,29 @@ function CashierTradeWorkspace() {
       const batchSize = 25;
       for (let offset = 0; offset < targets.length; offset += batchSize) {
         const chunk = targets.slice(offset, offset + batchSize);
+        if (
+          !isMounted.current ||
+          transferView.current !== owningView ||
+          transferAuthorityEpoch.current !== owningAuthorityEpoch
+        ) {
+          failed.push(
+            ...targets.slice(offset).map((target) => ({
+              userId: target.userId,
+              name: target.name,
+              message: 'Not Submitted After Cashier Access Or View Changed',
+            }))
+          );
+          break;
+        }
         try {
           const items = chunk.map((target) => ({
             user_id: target.userId,
             amount: value,
             ...(kind === 'send'
               ? {
-                  destination: canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet',
+                  destination:
+                    uncertainRecovery.destinations?.[target.userId] ||
+                    (canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet'),
                   // The server's replay fingerprint includes the reason, so it
                   // cannot change between an uncertain send and its retry -
                   // never a display name (S-06). A constant is stable; op_id
@@ -1766,7 +1907,7 @@ function CashierTradeWorkspace() {
                   op_id: opIdFor(target.userId),
                 }
               : {
-                  note: `Cashier ticket for ${target.name}`,
+                  note: uncertainRecovery.ticketNote || `Cashier ticket for ${target.name}`,
                   idempotency_key: `ticket:${clubUuid}:${submissionId}:${target.userId}:${value}`,
                 }),
           }));
@@ -1808,7 +1949,7 @@ function CashierTradeWorkspace() {
             });
           }
         }
-        if (isMounted.current) {
+        if (isMounted.current && transferView.current === owningView) {
           setBatchProgress({
             processed: Math.min(offset + chunk.length, targets.length),
             total: targets.length,
@@ -1849,9 +1990,11 @@ function CashierTradeWorkspace() {
       // instead of being charged a second time.
       if (ok === targets.length) {
         clearCashierTransferRecovery(user.id, clubUuid, submissionId);
-        submissionIdRef.current = null;
-        opIdsRef.current = new Map();
-        setTransferRecovery(null);
+        if (transferView.current === owningView) {
+          submissionIdRef.current = null;
+          opIdsRef.current = new Map();
+          if (isMounted.current) setTransferRecovery(null);
+        }
       }
       const recovery: CashierTransferRecovery | null =
         failed.length > 0
@@ -1864,6 +2007,8 @@ function CashierTradeWorkspace() {
       if (isMounted.current) {
         setBusy(false);
         setBatchProgress(null);
+      }
+      if (isMounted.current && transferView.current === owningView) {
         setTransferFailures(failed);
         if (recovery) setTransferRecovery(recovery);
         // Only close on a clean batch. Closing on failure wiped the amount and
@@ -1875,6 +2020,7 @@ function CashierTradeWorkspace() {
       }
     }
 
+    if (!isMounted.current || transferView.current !== owningView) return;
     if (ok > 0) {
       // Name the counterparty on a single-target move. The Toast layer bars an
       // identical type+text for 60s, so "Sent 100.00 To 1 Player" twice in a
@@ -1895,8 +2041,8 @@ function CashierTradeWorkspace() {
       // produced no summary at all.
       toast?.error?.(
         ok > 0
-          ? `${failed.length} Of ${targets.length} Did Not Go Through`
-          : `Nothing Was Sent. ${failed.length} Failed`
+          ? `${failed.length} Of ${targets.length} Need Outcome Verification`
+          : `Transfer Outcomes Need Verification For ${failed.length} Recipients`
       );
     }
   };
@@ -1945,10 +2091,29 @@ function CashierTradeWorkspace() {
   const claimBack = async (row: ReversibleSend) => {
     if (!clubUuid || claimingId || busyRef.current) return;
     if (!requireOnline()) return;
+    const owningView = transferView.current;
+    const owningAuthority = transferAuthorityEpoch.current;
+    const current = () =>
+      isMounted.current &&
+      transferView.current === owningView &&
+      transferAuthorityEpoch.current === owningAuthority;
     busyRef.current = true;
     setClaimingId(row.transaction_id);
     try {
-      const heldOpId = claimOpIdsRef.current.get(row.transaction_id) || newOpId();
+      const operation = await reserveCashierWalletOperation(
+        user?.id || '',
+        clubUuid,
+        'fn_agent_wallet_claim_back',
+        {
+          p_club_id: clubUuid,
+          p_transaction_id: row.transaction_id,
+          p_amount: null,
+          p_reason: 'Claimed Back From The Trade Grid',
+        }
+      );
+      if (!operation) throw new Error('Cashier Safety Storage Is Unavailable. Try Again');
+      if (!current()) return;
+      const heldOpId = operation.operationId;
       claimOpIdsRef.current.set(row.transaction_id, heldOpId);
       const { data, error } = await supabase.rpc('fn_agent_wallet_claim_back', {
         p_club_id: clubUuid,
@@ -1972,6 +2137,8 @@ function CashierTradeWorkspace() {
         amount?: number;
       } | null;
       if (!res?.success) throw new Error(res?.error || 'Those Chips Could Not Be Claimed Back');
+      clearCashierWalletOperation(operation);
+      if (!current()) return;
       const claimedAmount = Number(res.amount) || 0;
       toast?.success?.(
         res.replayed
@@ -1982,6 +2149,7 @@ function CashierTradeWorkspace() {
       masterBus.emit('BALANCE_UPDATED', { source: 'cashier_trade_claim', userId: user?.id || '' });
       void loadReversible();
     } catch (e) {
+      if (!current()) return;
       reportError(e, 'CashierTradePage.claimBack');
       toast?.error?.((e as Error).message || 'Claim Back Failed');
     } finally {
@@ -2060,13 +2228,62 @@ function CashierTradeWorkspace() {
     toast,
   ]);
 
-  const reopenTransferRecovery = () => {
+  const reopenTransferRecovery = async () => {
     if (!user?.id || !clubUuid || !transferRecovery || transferRecovery.clubId !== clubUuid) return;
     const saved =
       readCashierTransferRecoveryBySubmission(user.id, clubUuid, transferRecovery.submissionId) ||
       transferRecovery;
+    // Check committed outcomes before testing today's roster or wallet balance.
+    // A demoted operator can read their own receipt without authorizing a new send.
+    const recoveryView = transferView.current;
+    const confirmedTargets = new Set<string>();
+    try {
+      for (let offset = 0; offset < saved.targetIds.length; offset += 25) {
+        const chunk = saved.targetIds.slice(offset, offset + 25);
+        const { data, error } = await supabase.rpc('fn_cashier_recovery_receipts', {
+          p_club_id: saved.clubId,
+          p_operation_ids: saved.kind === 'send' ? chunk.map((id) => saved.opIds[id]) : [],
+          p_ticket_keys:
+            saved.kind === 'ticket'
+              ? chunk.map(
+                  (id) => `ticket:${saved.clubId}:${saved.submissionId}:${id}:${saved.amount}`
+                )
+              : [],
+        });
+        if (!isMounted.current || transferView.current !== recoveryView) return;
+        if (error) throw error;
+        if (!data || !Array.isArray(data.operations) || !Array.isArray(data.tickets))
+          throw new Error('Receipt Response Missing');
+        chunk
+          .filter((id) =>
+            saved.kind === 'send'
+              ? data.operations.some(
+                  (row: { operation_id?: string; receipt?: { success?: boolean } }) =>
+                    row.operation_id === saved.opIds[id] && row.receipt?.success === true
+                )
+              : data.tickets.some(
+                  (row: { ticket_key?: string; receipt?: { success?: boolean } }) =>
+                    row.ticket_key ===
+                      `ticket:${saved.clubId}:${saved.submissionId}:${id}:${saved.amount}` &&
+                    row.receipt?.success === true
+                )
+          )
+          .forEach((id) => confirmedTargets.add(id));
+      }
+      if (confirmedTargets.size === saved.targetIds.length) {
+        clearCashierTransferRecovery(saved.userId, saved.clubId, saved.submissionId);
+        setTransferRecovery(readCashierTransferRecovery(saved.userId, saved.clubId));
+        toast?.success?.('Original Transfer Receipts Confirmed. No New Transfer Was Submitted');
+        return;
+      }
+    } catch (error) {
+      reportError(error, 'CashierTradePage.Recovery_receipts');
+      toast?.error?.('Could Not Verify Original Receipts. Retry Keys Are Preserved');
+      return;
+    }
+    const pendingTargets = saved.targetIds.filter((id) => !confirmedTargets.has(id));
     const authorized = new Set(downline.map((row) => row.userId));
-    if (saved.targetIds.some((targetId) => !authorized.has(targetId))) {
+    if (pendingTargets.some((targetId) => !authorized.has(targetId))) {
       toast?.error?.('Recipients Changed. Review The Roster Before Starting A New Transfer');
       return;
     }
@@ -2081,16 +2298,18 @@ function CashierTradeWorkspace() {
     setSearch('');
     setMineOnly(false);
     setAmount(String(saved.amount));
-    setSelected(new Set(saved.targetIds));
+    setSelected(new Set(pendingTargets));
     setTransferRecovery(saved);
     // Persisted recovery deliberately omits names and raw server messages.
     // Restore names only from the freshly authorized roster for this club.
     const names = new Map(downline.map((row) => [row.userId, row.name]));
     setTransferFailures(
-      saved.failures.map((failure) => ({
-        ...failure,
-        name: names.get(failure.userId) || 'Cashier Recipient',
-      }))
+      saved.failures
+        .filter((failure) => !confirmedTargets.has(failure.userId))
+        .map((failure) => ({
+          ...failure,
+          name: names.get(failure.userId) || 'Cashier Recipient',
+        }))
     );
     setAmountModal(saved.kind);
   };
@@ -2486,6 +2705,13 @@ function CashierTradeWorkspace() {
               </div>
             )}
           </section>
+
+          <CashierPendingOperations
+            actionClassName={styles.footerBtn}
+            key={`${user?.id}:${clubUuid}`}
+            userId={user?.id}
+            clubId={clubUuid}
+          />
 
           {tab === 'trade' && (
             <section
@@ -3526,7 +3752,7 @@ function CashierTradeWorkspace() {
                 </div>
                 {amountModal === 'diamonds' && user?.id && picked.length === 1 ? (
                   <DiamondWalletTransfer
-                    key={picked[0].userId}
+                    key={`${user?.id}:${picked[0].userId}`}
                     userId={user.id}
                     initialRecipientId={picked[0].userId}
                     initiallyOpen

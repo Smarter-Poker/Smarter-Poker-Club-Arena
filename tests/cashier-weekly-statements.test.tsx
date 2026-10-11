@@ -37,6 +37,7 @@ vi.mock('../src/core/MasterBus', () => ({
     }),
   },
 }));
+vi.mock('../src/hooks/useMasterBusChannel', () => ({ useMasterBusChannel: vi.fn() }));
 vi.mock('../src/services/UnionService', () => ({
   UnionService: { getOwnedUnions: vi.fn(async () => []) },
 }));

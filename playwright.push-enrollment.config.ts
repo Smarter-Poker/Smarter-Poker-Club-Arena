@@ -7,7 +7,9 @@ import { portFor } from './scripts/ci/e2e-port.mjs';
  * nudge policy with a recorded stand-in for the hub API. No login, no
  * production data. See tests/push-browser/push-enrollment-optin.spec.ts.
  */
-const PORT = portFor(5197);
+// Ending in 2 keeps all 300 runner offsets outside Chromium's restricted
+// ports (the old base hit IRC 6667 and 6697 on two ordinary runner slots).
+const PORT = portFor(5192);
 
 export default defineConfig({
   testDir: './tests/push-browser',

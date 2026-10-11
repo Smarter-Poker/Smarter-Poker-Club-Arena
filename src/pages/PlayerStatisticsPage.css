@@ -387,7 +387,7 @@
 
 .ps-hero {
   position: relative;
-  width: min(1180px, calc(100vw - 24px));
+  width: min(1180px, calc(100% - 24px));
   min-height: 340px;
   margin: 12px auto 16px;
   overflow: hidden;
@@ -572,7 +572,7 @@
 .ps-stale,
 .ps-empty,
 .player-stats-page > .page-skeleton {
-  width: min(1180px, calc(100vw - 24px));
+  width: min(1180px, calc(100% - 24px));
   margin-inline: auto;
 }
 

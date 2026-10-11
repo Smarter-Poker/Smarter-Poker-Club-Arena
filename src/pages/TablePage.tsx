@@ -1685,6 +1685,11 @@ function LiveTablePage({
   const lightningRoom = useLightningPoolSession(tableId);
   const lightningRoomRef = useRef(lightningRoom);
   const lightningMilestoneRef = useRef(createLightningMilestoneTracker());
+  /* Read before all named-event consumers as well as the action controls. */
+  const lightningCaps = useMemo(
+    () => lightningCapabilities(detectLightningPlatform(readLightningPlatformSignals())),
+    []
+  );
   lightningRoomRef.current = lightningRoom;
   const lightningClubId = lightningRoom?.meta?.clubId ?? null;
   const navigate = useNavigate();
@@ -23511,11 +23516,6 @@ function LiveTablePage({
     }
   }, [lightningRoom, preAction, lightningHandKeyNow]);
 
-  /* The platform's row of the Lightning capability map, read once. */
-  const lightningCaps = useMemo(
-    () => lightningCapabilities(detectLightningPlatform(readLightningPlatformSignals())),
-    []
-  );
   const lightningHero =
     tableState.heroSeat > 0 ? (tableState.players[tableState.heroSeat - 1] ?? null) : null;
   /* THE IDLE SNAPSHOT AFTER A FOLD. The engine answers a fold with stage

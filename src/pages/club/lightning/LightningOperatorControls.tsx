@@ -52,8 +52,6 @@ import {
   SWITCHABLE_FLAGS,
   confirmationMatches,
   confirmationPhrase,
-  deadlineLabel,
-  deadlineSeconds,
   drainPhaseLabel,
   fetchRolloutReadiness,
   flagLabel,
@@ -132,6 +130,7 @@ const SUCCESS_WORDS: Record<OperatorAction, string> = {
   enable_matcher_version: 'Matcher Version Enabled',
   rollback_matcher_version: 'Matcher Rolled Back',
   set_flag: 'Feature Flag Changed',
+  set_worker_mode: 'Worker Mode Changed',
 };
 
 // ─── The confirm dialog ────────────────────────────────────────────────────
@@ -141,6 +140,7 @@ export interface ControlRequest {
   /** set_flag only: which flag and the value it is set to. */
   flag?: string;
   value?: boolean;
+  mode?: 'off' | 'shadow' | 'form';
 }
 
 type DialogPhase =
@@ -243,6 +243,7 @@ export function ControlDialog({
     };
     if (VERSIONED.has(action) && version) args.version = version;
     if (action === 'set_matcher_version') args.role = role;
+    if (action === 'set_worker_mode') args.mode = request.mode;
     if (action === 'set_flag') {
       args.flag = request.flag;
       args.value = request.value;
@@ -345,6 +346,7 @@ export function ControlDialog({
         {formatPopupText(ACTION_EXPLAINERS[action])}
       </p>
       {flagLine ? <Row label="Change" value={flagLine} ink="white" /> : null}
+      {request.mode ? <Row label="Worker" value={enumLabel(request.mode)} /> : null}
 
       {phase.kind === 'done' ? (
         <DoneView result={phase.result} />
@@ -568,14 +570,8 @@ function DoneView({ result }: { result: ControlResult }) {
 // ─── The drain, live ───────────────────────────────────────────────────────
 
 export function DrainProgress({ drain }: { drain: LightningDrain }) {
-  // A second-by-second clock for the deadline, only while a drain is shown.
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-  const secs = deadlineSeconds(drain.deadlineAt, now);
-  const deadlineInk: ConsoleInk = secs === null ? 'muted' : secs <= 10 ? 'red' : 'gold';
+  // Deadline is stated at this event-owned read; no clock watcher changes state.
+  const now = Date.now();
   return (
     <Section id="lightning-drain" title="Drain Progress">
       <div role="status" aria-live="polite">
@@ -589,8 +585,10 @@ export function DrainProgress({ drain }: { drain: LightningDrain }) {
       {drain.fromMode ? <Row label="Drained From" value={modePhrase(drain.fromMode)} /> : null}
       <Row
         label="Deadline"
-        value={drain.overdue ? 'Passed' : deadlineLabel(drain.deadlineAt, now)}
-        ink={drain.overdue ? 'red' : deadlineInk}
+        value={
+          drain.overdue ? `Passed, ${stampLabel(drain.deadlineAt)}` : stampLabel(drain.deadlineAt)
+        }
+        ink={drain.overdue ? 'red' : 'gold'}
       />
       <Row label="Instances Remaining" value={count(drain.instancesRemaining)} />
       <Row label="Hands Remaining" value={count(drain.handsRemaining)} />
@@ -791,6 +789,21 @@ export default function LightningOperatorControls({
         ) : (
           <ControlWord action="freeze" onPick={pick} />
         )}
+      </div>
+
+      <Row label="Worker Mode" value={c.workerMode ? enumLabel(c.workerMode) : 'Unknown'} />
+      <div className={styles.words} role="group" aria-label="Worker Mode">
+        {(['off', 'shadow', 'form'] as const).map((mode) => (
+          <button
+            type="button"
+            key={mode}
+            className={`${styles.word} sc-ink--white`}
+            onClick={() => setRequest({ action: 'set_worker_mode', mode })}
+            disabled={frozen || c.workerMode === mode || (mode === 'off' && c.mode !== 'must_move')}
+          >
+            {mode === 'off' ? 'Worker Off' : mode === 'shadow' ? 'Shadow Worker' : 'Form Hands'}
+          </button>
+        ))}
       </div>
 
       <span className={`${styles.recordMeta} ${styles.subhead} sc-ink--muted`}>Lightning</span>

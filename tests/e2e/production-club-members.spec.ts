@@ -714,6 +714,32 @@ test.describe('Production Shark Club Players', () => {
       const close = dialog.getByRole('button', { name: 'Got It', exact: true });
       await expect(close).toBeFocused();
       await expectContainedControls(page, '.pv-dialog', '.pv-dialog button');
+      await expect
+        .poll(
+          () =>
+            close.evaluate((button) => {
+              const rect = button.getBoundingClientRect();
+              // Sample the face, retaining all four straight edges; rounded corners are void.
+              const points = [
+                [rect.width / 2, 2],
+                [2, rect.height / 2],
+                [rect.width / 2, rect.height / 2],
+                [rect.width - 2, rect.height / 2],
+                [rect.width / 2, rect.height - 2],
+                [rect.width / 4, rect.height / 4],
+                [(rect.width * 3) / 4, rect.height / 4],
+                [rect.width / 4, (rect.height * 3) / 4],
+                [(rect.width * 3) / 4, (rect.height * 3) / 4],
+              ];
+              return points.every(
+                ([x, y]) =>
+                  document.elementFromPoint(rect.left + x, rect.top + y)?.closest('button') ===
+                  button
+              );
+            }),
+          { message: 'The footer must not cover any part of the Vault Help action.' }
+        )
+        .toBe(true);
       await close.press('Tab');
       await expect(close).toBeFocused();
       await close.press('Shift+Tab');
@@ -721,6 +747,40 @@ test.describe('Production Shark Club Players', () => {
       await close.press('Escape');
       await expect(dialog).toHaveCount(0);
       await expect(help).toBeFocused();
+      const buy = page.getByRole('button', { name: 'Buy More Time Bank', exact: true });
+      await buy.click();
+      const purchase = page.getByRole('dialog', { name: 'Buy Time Bank', exact: true });
+      await expect(purchase.getByRole('spinbutton', { name: 'Quantity To Buy' })).toBeFocused();
+      const cancel = purchase.getByRole('button', { name: 'Cancel', exact: true });
+      await expect
+        .poll(
+          () =>
+            cancel.evaluate((button) => {
+              const rect = button.getBoundingClientRect();
+              // Sample the face, retaining all four straight edges; rounded corners are void.
+              const points = [
+                [rect.width / 2, 2],
+                [2, rect.height / 2],
+                [rect.width / 2, rect.height / 2],
+                [rect.width - 2, rect.height / 2],
+                [rect.width / 2, rect.height - 2],
+                [rect.width / 4, rect.height / 4],
+                [(rect.width * 3) / 4, rect.height / 4],
+                [rect.width / 4, (rect.height * 3) / 4],
+                [(rect.width * 3) / 4, (rect.height * 3) / 4],
+              ];
+              return points.every(
+                ([x, y]) =>
+                  document.elementFromPoint(rect.left + x, rect.top + y)?.closest('button') ===
+                  button
+              );
+            }),
+          { message: 'The footer must not cover any part of the Vault Cancel action.' }
+        )
+        .toBe(true);
+      await cancel.click();
+      await expect(purchase).toHaveCount(0);
+      await expect(buy).toBeFocused();
       await help.click();
       await close.click();
       await expect(dialog).toHaveCount(0);

@@ -91,6 +91,73 @@ describe('the Club Arena shows no dollar sign', () => {
     expect(r.status).toBe(0);
   });
 
+  it('fails the copy a database function writes with a dollar sign', () => {
+    /* 2026-10-11: the jackpot crossing notice, the player search labels and a
+       new club's first schedule name were all PL/pgSQL, which the gate did not
+       read. These are those three shapes, verbatim. */
+    const r = runGate({
+      'shapes.sql': [
+        'CREATE OR REPLACE FUNCTION public.f() RETURNS jsonb LANGUAGE sql AS $fn$',
+        "  SELECT jsonb_build_object('name','Daily $25 Freezeout')",
+        '$fn$;',
+        'DO $do$',
+        'BEGIN',
+        "  PERFORM 'The Bad Beat Jackpot Just Passed $' || 5;",
+        "  PERFORM concat('$', 1, '/$', 2);",
+        "  PERFORM format('Pays $%s', 5);",
+        "  EXECUTE 'SELECT ''Win $50'' FROM public.t WHERE id = $1' USING 1;",
+        'END',
+        '$do$;',
+        '',
+      ].join('\n'),
+    });
+    expect(r.status).toBe(1);
+    for (const line of [2, 6, 7, 8, 9]) {
+      expect(r.out, `shapes.sql line ${line}`).toContain(`shapes.sql:${line}:`);
+    }
+  });
+
+  it('passes the SQL machinery that spells the character without showing it', () => {
+    const r = runGate({
+      'machinery.sql': [
+        '-- a comment may say $100 Freeroll',
+        '/* and so may a block comment: $5 */',
+        'CREATE OR REPLACE FUNCTION public.g(p text) RETURNS text LANGUAGE plpgsql AS $fn$',
+        'BEGIN',
+        "  IF p ~ ('^wallet:' || p || '$') THEN RETURN replace(p, '$', ''); END IF;",
+        "  IF position('$' IN p) > 0 OR p LIKE '%$%' THEN RETURN NULL; END IF;",
+        "  EXECUTE format('SELECT %1$s FROM public.t WHERE id = $1 AND k = $2::uuid', p) USING 1, 2;",
+        "  PERFORM jsonb_path_query('{}'::jsonb, '$.a'), 'strict $.**'::jsonpath;",
+        "  PERFORM public.fn_ca_text_without_dollar('$100 Freeroll');",
+        "  PERFORM pg_temp.swap(p, $a$'Old copy said $5' ||$a$, $b$'New copy says 5 Chips' ||$b$);",
+        '  RETURN p;',
+        'END',
+        '$fn$;',
+        "COMMENT ON FUNCTION public.g(text) IS 'Was $5 once.';",
+        '',
+      ].join('\n'),
+    });
+    expect(r.out).not.toContain('FAILED');
+    expect(r.status).toBe(0);
+  });
+
+  it('reads the estate digest and every migration from its first SQL version on', async () => {
+    const gate = await import(GATE);
+    expect(gate.sourceRoots()).toEqual(['src', 'server/src', '.github/scripts']);
+    expect(gate.SQL_SINCE).toMatch(/^\d{14}$/);
+    const fixed = readFileSync(
+      join(
+        ROOT,
+        `supabase/migrations/${gate.SQL_SINCE}_the_jackpot_notice_and_search_show_no_dollar.sql`
+      ),
+      'utf8'
+    );
+    expect(gate.scanSql('m.sql', fixed)).toEqual([]);
+    expect(gate.scanSql('old.sql', "SELECT 'The Bad Beat Jackpot Just Passed $' || 5;")).toEqual([
+      'old.sql:1: The Bad Beat Jackpot Just Passed $',
+    ]);
+  });
+
   it('passes the swept tree', () => {
     const r = runGate(null);
     expect(r.out).toContain('check-ui-dollar: OK');

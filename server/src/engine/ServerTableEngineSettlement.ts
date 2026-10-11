@@ -1,3 +1,4 @@
+import { readCommittedSeatStacks } from './committedSeatStackRead.js';
 import { assertDiamondAcceptedHand } from '../domain/DiamondCashBoundary.js';
 import { diamondCashRakeFactsFor } from './diamondCashRakeFacts.js';
 import { pendingSeatMoves, type PendingSeatMove } from '../services/supabase/seatMoves.js';
@@ -2861,11 +2862,28 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
            the resulting stacks rather than incrementing engine memory from a
            response: a concurrent worker may have completed the row first, and
            its replay receipt intentionally does not claim which process did it. */
-        const { data: persistedSeats, error: persistedSeatError } = await supabase
-          .from('table_seats')
-          .select('user_id,stack')
-          .eq('table_id', this.tableId)
-          .is('left_at', null);
+        let persistedSeats: Awaited<ReturnType<typeof readCommittedSeatStacks>> = null;
+        let persistedSeatError: unknown = null;
+        try {
+          persistedSeats = await readCommittedSeatStacks({
+            read: () =>
+              supabase
+                .from('table_seats')
+                .select('user_id,stack')
+                .eq('table_id', this.tableId)
+                .is('left_at', null),
+            canReflect: () => this.lifecycleCanMutate(),
+            progress: () => this.markProgress(),
+            sleep: (ms) => this.sleep(ms),
+            report: (error, attempt) =>
+              reportError(error, 'ServerTableEngine.post_commit_stack_refresh_failed', {
+                tableId: this.tableId,
+                attempt,
+              }),
+          });
+        } catch (error) {
+          persistedSeatError = error;
+        }
         if (!this.lifecycleCanMutate()) {
           postCommitStateCanReflect = false;
         } else if (persistedSeatError) {

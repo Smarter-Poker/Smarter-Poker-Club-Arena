@@ -2892,7 +2892,18 @@ export class GameServer {
     }
     // A top-up still owns this event's entry transaction. Unrelated events
     // may start, but this event is re-read only after its real outcome settles.
-    if (mode === 'start' && this.tournamentTopUpsInFlight.has(tournamentId)) {
+    /* AND THE START IS KEPT FOR THAT MOMENT, NOT DROPPED (2026-10-11).
+       This returned and forgot the ask, so a full board waited for the next
+       poll after the top-up settled. Measured 19:00-19:50 UTC 2026-10-11:
+       61 Spins whose last seat was bought while another lane's top-up of the
+       same board was in flight, 59 of them late (lag p50 826 ms), every one
+       waiting 1.7 s for a fill that could only find the table full. The
+       start now runs the instant that top-up settles, through this same
+       door, so every gate above is asked again at that moment. */
+    const fillInFlight =
+      mode === 'start' ? this.tournamentTopUpsInFlight.get(tournamentId) : undefined;
+    if (fillInFlight) {
+      this.startWhenTopUpSettles(tournamentId, fillInFlight, description, generation);
       return Promise.resolve();
     }
 
@@ -2909,6 +2920,42 @@ export class GameServer {
     });
     this.tournamentManagerAdmissionOperations.set(tournamentId, tracked);
     return tracked;
+  }
+
+  /** Starts asked for while a top-up owned the event, keyed by that top-up. */
+  private startsAwaitingTopUp?: Map<string, Promise<void>>;
+
+  /**
+   * Run a refused start the moment the top-up that refused it settles. One
+   * waiter per top-up: the fast lane asks every second, and a second ask for
+   * the same settle is the same start. The waiter re-enters the front door,
+   * so a stopped generation, a freeze, a park or an admitted manager still
+   * refuses it there.
+   */
+  private startWhenTopUpSettles(
+    tournamentId: string,
+    topUp: Promise<void>,
+    description: string,
+    generation: number
+  ): void {
+    const waiting = (this.startsAwaitingTopUp ??= new Map());
+    if (waiting.get(tournamentId) === topUp) return;
+    waiting.set(tournamentId, topUp);
+    void topUp
+      .catch(() => undefined)
+      .then(() => {
+        if (waiting.get(tournamentId) !== topUp) return;
+        waiting.delete(tournamentId);
+        if (!this.directAdmissionIsCurrent(generation) || isMaintenanceFrozen()) return;
+        this.launchDiscoveryJob(
+          this.ensureTournamentManagerAdmission(tournamentId, 'start', description, generation),
+          'GameServer.seat_first_fast_start_failed',
+          { tournamentId }
+        );
+      })
+      .catch((error) =>
+        reportError(error, 'GameServer.seat_first_fast_start_failed', { tournamentId })
+      );
   }
 
   private async performTournamentManagerAdmission(
@@ -8012,6 +8059,17 @@ export class GameServer {
                       `[GameServer] Filled "${tournament.name}" with ${added} player(s) toward ${target} seats - running it instead of cancelling`
                     );
                   }
+                  /* A SEAT-FIRST BOARD THIS TOP-UP COMPLETED STARTS NOW
+                     (2026-10-11), exactly as the fast lane's fill does. It
+                     waited for the next fast-lane poll: 237 Spins in 50
+                     minutes, 71 late, the start 0.77 s behind the fill at
+                     p50. Seats are never unsold on a REGISTERING board, so
+                     the count this pass read plus what this top-up added is
+                     a floor; a board this cannot prove full is left to the
+                     fast lane. The ask is kept until this top-up settles. */
+                  if (isSngOrSpin && added > 0 && paidSeats + added >= target) {
+                    this.startFilledSeatFirstBoard(tournament.id, target);
+                  }
                 },
                 'GameServer.past_start_top_up_failed'
               );
@@ -10920,16 +10978,38 @@ export class GameServer {
     // Check and set with no await between, after the read: two passes that
     // both awaited the occupancy answer can never both ask for this board.
     const now = Date.now();
+    /* ONE FILLER PER BOARD (2026-10-11). The discovery walk tops up the same
+       window-closed board through launchDiscoveryTopUp, and the two lanes ran
+       side by side: one bought the last seat, the other spent 1.5 s finding
+       the table full, and the start the first one asked for was refused while
+       the second was in flight (see ensureTournamentManagerAdmission). A
+       board another lane is filling is left to it; that lane's start is kept
+       for the moment it settles. This lane's own fill holds the same claim,
+       so the walk leaves the board alone while it runs. */
+    if (this.tournamentTopUpsInFlight.has(tournamentId)) return;
     if (now - (this.lastHumanFillAt.get(tournamentId) ?? 0) < interval) return;
     this.lastHumanFillAt.set(tournamentId, now);
 
-    await this.topUpPartialSeatFirst(
-      tournamentId,
-      seats,
-      paid,
-      hasHuman ? 'a human is waiting' : 'window closed',
-      hasHuman
-    );
+    let settle!: () => void;
+    const claim = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+    this.tournamentTopUpsInFlight.set(tournamentId, claim);
+    try {
+      await this.topUpPartialSeatFirst(
+        tournamentId,
+        seats,
+        paid,
+        hasHuman ? 'a human is waiting' : 'window closed',
+        hasHuman
+      );
+    } finally {
+      // Released before it settles, so a start waiting on it finds the door open.
+      if (this.tournamentTopUpsInFlight.get(tournamentId) === claim) {
+        this.tournamentTopUpsInFlight.delete(tournamentId);
+      }
+      settle();
+    }
   }
 
   /** Last "is a human seated here" answer per seat-first game, keyed by its paid count. */

@@ -42,6 +42,7 @@
  */
 
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -1220,7 +1221,8 @@ function Overlay({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  return (
+  // Escape the isolated page stage so the dialog and backdrop cover navigation.
+  return createPortal(
     <div className="pv-overlay" onClick={onClose} role="presentation">
       <div
         ref={dialogRef}
@@ -1232,6 +1234,7 @@ function Overlay({
       >
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

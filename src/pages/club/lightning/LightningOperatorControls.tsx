@@ -211,6 +211,13 @@ export function ControlDialog({
      repeat idempotent); replaced after a refusal, which acted on nothing. */
   const requestIdRef = useRef<string>(newRequestId());
   const inFlightRef = useRef(false);
+  // An unknown response retains the complete decision, not only its UUID.
+  const sentDecisionRef = useRef<{
+    clusterId: string;
+    action: OperatorAction;
+    reason: string;
+    args: Record<string, unknown> & { request_id: string };
+  } | null>(null);
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
@@ -220,6 +227,7 @@ export function ControlDialog({
   }, []);
 
   const sending = phase.kind === 'sending';
+  const decisionLocked = sending || phase.kind === 'failed';
   const settled = phase.kind === 'done' || phase.kind === 'denied' || phase.kind === 'unavailable';
   const reasonOk = reasonIsValid(reason);
   const typedOk = !destructive || confirmationMatches(typed, phrase);
@@ -241,7 +249,19 @@ export function ControlDialog({
     }
     let answer: OperatorAnswer<ControlResult>;
     try {
-      answer = await sendOperatorControl(c.clusterId, action, reason, args);
+      const decision = sentDecisionRef.current ?? {
+        clusterId: c.clusterId,
+        action,
+        reason,
+        args,
+      };
+      sentDecisionRef.current = decision;
+      answer = await sendOperatorControl(
+        decision.clusterId,
+        decision.action,
+        decision.reason,
+        decision.args
+      );
     } finally {
       inFlightRef.current = false;
     }
@@ -253,6 +273,7 @@ export function ControlDialog({
       else toast.success(SUCCESS_WORDS[action]);
       onChanged();
     } else if (answer.status === 'refused') {
+      sentDecisionRef.current = null;
       requestIdRef.current = newRequestId();
       setPhase({ kind: 'refused', code: answer.code });
       toast.error(refusalWords(answer.code));
@@ -350,7 +371,7 @@ export function ControlDialog({
                     className={`${styles.word} ${role === r ? 'sc-ink--white' : 'sc-ink--muted'}`}
                     aria-pressed={role === r}
                     onClick={() => setRole(r)}
-                    disabled={sending}
+                    disabled={decisionLocked}
                   >
                     {r === 'live' ? 'Live Matcher' : 'Candidate'}
                   </button>
@@ -374,7 +395,7 @@ export function ControlDialog({
                       className={`${styles.word} ${version === v ? 'sc-ink--white' : 'sc-ink--muted'}`}
                       aria-pressed={version === v}
                       onClick={() => setVersion(v)}
-                      disabled={sending}
+                      disabled={decisionLocked}
                     >
                       {v}
                     </button>
@@ -393,7 +414,7 @@ export function ControlDialog({
               placeholder="Why, For The Audit Trail"
               aria-describedby="lightning-control-reason-rule"
               onChange={(e) => setReason(e.target.value)}
-              disabled={sending}
+              disabled={decisionLocked}
             />
             <span
               id="lightning-control-reason-rule"
@@ -413,7 +434,7 @@ export function ControlDialog({
                 autoComplete="off"
                 placeholder={phrase}
                 onChange={(e) => setTyped(e.target.value)}
-                disabled={sending}
+                disabled={decisionLocked}
               />
             </label>
           ) : null}

@@ -67,7 +67,8 @@ export function usePolledAnswer<T>(
   useEffect(() => {
     scopeRef.current = scope;
   }, [scope]);
-  const inFlightRef = useRef<string | null>(null);
+  const inFlightRef = useRef<{ scope: string; generation: number } | null>(null);
+  const generationRef = useRef(0);
   const answerRef = useRef<OperatorAnswer<T> | null>(null);
   const lastReadRef = useRef(0);
   const mountedRef = useRef(true);
@@ -81,22 +82,30 @@ export function usePolledAnswer<T>(
   const read = useCallback(async () => {
     const readScope = scopeRef.current;
     if (readScope === null) return;
-    if (inFlightRef.current === readScope) return;
-    inFlightRef.current = readScope;
+    const generation = generationRef.current;
+    if (inFlightRef.current?.generation === generation) return;
+    const owner = { scope: readScope, generation };
+    inFlightRef.current = owner;
     setState((s) => (s.scope === readScope ? { ...s, loading: true } : s));
     try {
       const answer = await loadRef.current();
-      if (!mountedRef.current || scopeRef.current !== readScope) return;
+      if (
+        !mountedRef.current ||
+        scopeRef.current !== readScope ||
+        generationRef.current !== generation
+      )
+        return;
       answerRef.current = answer;
       lastReadRef.current = Date.now();
       setState({ scope: readScope, answer, loading: false, refreshedAt: Date.now() });
     } finally {
-      if (inFlightRef.current === readScope) inFlightRef.current = null;
+      if (inFlightRef.current === owner) inFlightRef.current = null;
     }
   }, []);
 
   // A new scope: forget the old answer and read now.
   useEffect(() => {
+    generationRef.current += 1;
     answerRef.current = null;
     lastReadRef.current = 0;
     inFlightRef.current = null;

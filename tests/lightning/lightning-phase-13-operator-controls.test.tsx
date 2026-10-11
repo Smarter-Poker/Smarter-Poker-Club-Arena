@@ -473,11 +473,13 @@ describe('a control, from the tap to the answer', () => {
     fireEvent.click(confirmButton());
     expect(await within(dialog()).findByText(/Sending Again Is Safe/)).toBeTruthy();
     expect(confirmButton().textContent).toBe('Send Again');
+    typeReason('A different decision');
     fireEvent.click(confirmButton());
     expect(
       await within(dialog()).findByText('This Request Was Already Answered. Nothing Changed Twice.')
     ).toBeTruthy();
     expect(controlCalls()[1][1].p_args.request_id).toBe(controlCalls()[0][1].p_args.request_id);
+    expect(controlCalls()[1][1]).toEqual(controlCalls()[0][1]);
     expect(state.toast.info).toHaveBeenCalled();
   });
 

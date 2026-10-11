@@ -330,7 +330,7 @@ export default function ClubLightningOperationsPage() {
   if (clubUUID && clusterId) {
     return (
       <div className={styles.page}>
-        <LightningClusterDetail clusterId={clusterId} onBack={closeCluster} />
+        <LightningClusterDetail key={clusterId} clusterId={clusterId} onBack={closeCluster} />
       </div>
     );
   }

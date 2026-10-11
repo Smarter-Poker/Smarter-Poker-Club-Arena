@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/arena-statement-reconciles-per-journal-row (2026-10-11). Redefines fn_diamond_arena_reconciliation and adds index poker_diamond_movements_wallet_journal in 20261011192722; creates and retires nothing else.",
+  "functions": ["fn_diamond_arena_reconciliation"]
+}

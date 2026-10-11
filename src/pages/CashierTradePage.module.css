@@ -1308,3 +1308,93 @@
     margin-left: 0;
   }
 }
+
+/* Directory controls follow the established Players workspace. */
+.searchClear {
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 0;
+  background: transparent;
+  color: #45adff;
+  font-size: 12px;
+}
+.roleFilter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #9aa5b3;
+  font-size: 12px;
+}
+.roleFilter select {
+  min-height: 44px;
+  max-width: 100%;
+  background: #050607;
+  color: #e4e7ec;
+  border: 1px solid #27313c;
+  padding: 8px;
+}
+.rosterWallet {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  margin-left: auto;
+}
+.selectedContext {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+  color: #e4e7ec;
+  overflow-wrap: anywhere;
+  padding-block: 12px;
+}
+.selectedContext span {
+  color: #9aa5b3;
+}
+@media (max-width: 560px) {
+  .page .rosterWallet .rowBalance {
+    margin-left: 0;
+  }
+  .page .rosterWallet {
+    margin-left: 52px;
+    align-items: flex-start;
+  }
+}
+@media (max-width: 560px) {
+  .page .tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .page .tab {
+    min-width: 0;
+    padding: 8px 4px;
+    white-space: normal;
+  }
+  .page .strip {
+    grid-auto-flow: column;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .page .stripCell {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    border: 0;
+    padding-block: 8px;
+    min-width: 0;
+  }
+  .page .stripLabel {
+    font-size: 10px;
+    white-space: normal;
+  }
+  .page .stripValue {
+    font-size: 16px;
+    flex-wrap: wrap;
+  }
+  .page .heroCopy {
+    font-size: 14px;
+    line-height: 1.4;
+  }
+}

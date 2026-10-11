@@ -957,3 +957,47 @@ it('wires the real Trade reconcile action through refreshed authority into the v
   ]);
   expect(toastMocks.success).not.toHaveBeenCalledWith('Cashier Balances Reconciled');
 });
+
+it('Phase 4: clears search and filters, retains focus, and prunes hidden selections', async () => {
+  state.roster = [
+    player(0, 120, 'First Player'),
+    { ...player(1, 240, 'Second Agent'), role: 'agent', role_rank: 3 },
+  ];
+  mountCashier();
+  await synchronized();
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Include First Player' }));
+  fireEvent.change(screen.getByRole('combobox', { name: 'Filter Roster By Role' }), {
+    target: { value: 'agent' },
+  });
+  expect(screen.queryByRole('link', { name: 'Manage First Player' })).toBeNull();
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Send Out', exact: true })).toBeDisabled()
+  );
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'no-match' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Clear Search' }));
+  expect(screen.getByRole('searchbox')).toHaveFocus();
+  expect(screen.getByRole('combobox', { name: 'Filter Roster By Role' })).toHaveValue('agent');
+  fireEvent.click(screen.getByRole('button', { name: 'Clear Filters' }));
+  expect(screen.getByRole('link', { name: 'Manage First Player' })).toBeInTheDocument();
+  expect(screen.getByRole('searchbox')).toHaveFocus();
+});
+it('Phase 4: shows the selected identity, separate player balance and actual send destination', async () => {
+  state.roster = [{ ...player(0, 120, 'First Agent'), role: 'agent', role_rank: 3 }];
+  mountCashier();
+  await synchronized();
+  fireEvent.click(screen.getByRole('button', { name: 'Select First Agent' }));
+  const context = screen.getByRole('region', { name: 'Selected Player Wallet Context' });
+  expect(context).toHaveTextContent('First Agent');
+  expect(context).toHaveTextContent('Player Wallet: 120');
+  expect(context).toHaveTextContent('Send From Your Agent Wallet To Their Agent Wallet');
+  expect(context).toHaveTextContent('Separate From Their Agent Wallet');
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Send Ticket' }));
+  expect(context).toHaveTextContent('Ticket Funding Comes From Your Player Wallet');
+});
+it('Phase 4: places the working roster before the read-only reconciliation report', async () => {
+  mountCashier();
+  await synchronized();
+  const roster = screen.getByRole('tabpanel', { name: 'Trade' });
+  const report = screen.getByRole('region', { name: 'Reconciliation Console' });
+  expect(roster.compareDocumentPosition(report) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});

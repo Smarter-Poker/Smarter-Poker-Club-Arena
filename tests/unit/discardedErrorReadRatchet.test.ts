@@ -170,7 +170,7 @@ const BASELINE = new Map<string, number>([
   ['src/pages/MultiTablePage.tsx', 1],
   ['src/pages/FlashPoolPage.tsx', 0],
   ['src/pages/CreditAdminPanel.tsx', 0],
-  ['src/pages/ClubAnnouncementsPage.tsx', 1],
+  ['src/pages/ClubAnnouncementsPage.tsx', 0],
   ['src/components/tournament/TournamentStartingTicker.tsx', 0],
   // 2 -> 1 on 2026-10-01: the profiles read binds its error (ruling 25 moved it).
   ['src/components/social/OnlineFriendsPill.tsx', 1],

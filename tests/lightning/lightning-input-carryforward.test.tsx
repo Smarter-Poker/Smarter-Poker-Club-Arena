@@ -99,15 +99,22 @@ describe('manual Lightning navigation', () => {
 describe('optional event-owned milestone', () => {
   it('fires once at a configured boundary, ignores snapshots and replay, resets a different room', () => {
     const tracker = createLightningMilestoneTracker();
-    const event = (n: number) => ({ type: 'hand_started', hand_number: n, timestamp: 1000 + n });
+    const event = (n: number, room = 'a') => ({
+      type: 'hand_started',
+      table_id: room,
+      hand_number: n,
+      timestamp: 1000 + n,
+    });
     expect(tracker.note('a', { type: 'snapshot', hand_number: 100, timestamp: 1 }, 100)).toBe(
       false
     );
     for (let n = 1; n < 100; n++) expect(tracker.note('a', event(n), 100)).toBe(false);
     expect(tracker.note('a', event(100), 100)).toBe(true);
     for (let n = 1; n <= 100; n++) expect(tracker.note('a', event(n), 100)).toBe(false);
+    // A stale event from the old room cannot seed the replacement visit.
     expect(tracker.note('b', event(100), 100)).toBe(false);
-    for (let n = 101; n <= 200; n++) expect(tracker.note('b', event(n), 0)).toBe(false);
+    expect(tracker.note('b', event(100, 'b'), 100)).toBe(false);
+    for (let n = 101; n <= 200; n++) expect(tracker.note('b', event(n, 'b'), 0)).toBe(false);
     expect(tracker.note('b', { type: 'hand_started' }, 100)).toBe(false);
   });
   it('the maintained hand event and low-priority, muted sound are connected', () => {

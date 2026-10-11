@@ -13,6 +13,7 @@ export function createLightningMilestoneTracker() {
         started = Number(event.timestamp);
       if (
         event.type !== 'hand_started' ||
+        event.table_id !== poolSessionId ||
         !Number.isInteger(number) ||
         number <= 0 ||
         !Number.isFinite(started) ||

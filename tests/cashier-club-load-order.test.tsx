@@ -621,25 +621,27 @@ describe('CashierTradePage club load ordering', () => {
     vi.mocked(supabase.rpc).mockImplementation(
       (name: string) =>
         Promise.resolve(
-          name === 'fn_club_cashier_members_page_v3'
-            ? {
-                data: [
-                  {
-                    user_id: PLAYER_ID,
-                    name: 'Recovered Player',
-                    username: 'recovered_player',
-                    avatar_url: null,
-                    role: 'player',
-                    role_rank: 0,
-                    chip_balance: 75,
-                    is_horse: false,
-                    depth: 1,
-                    player_number: 'P-1',
-                  },
-                ],
-                error: null,
-              }
-            : { data: [], error: null }
+          name === 'fn_cashier_recovery_receipts'
+            ? { data: { operations: [], tickets: [] }, error: null }
+            : name === 'fn_club_cashier_members_page_v3'
+              ? {
+                  data: [
+                    {
+                      user_id: PLAYER_ID,
+                      name: 'Recovered Player',
+                      username: 'recovered_player',
+                      avatar_url: null,
+                      role: 'player',
+                      role_rank: 0,
+                      chip_balance: 75,
+                      is_horse: false,
+                      depth: 1,
+                      player_number: 'P-1',
+                    },
+                  ],
+                  error: null,
+                }
+              : { data: [], error: null }
         ) as never
     );
 

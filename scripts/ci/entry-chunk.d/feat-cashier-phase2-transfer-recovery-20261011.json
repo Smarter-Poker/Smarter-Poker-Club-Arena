@@ -1,0 +1,4 @@
+{
+  "_owner": "Cashier Phase 2: financialJournalKeys contains only two durable-journal prefix constants, three source lines and no imports. Global sign-out cache cleanup must recognize these keys synchronously on every route so interrupted wallet and Diamond transfer identities survive sign-out. Sharing this dependency-free module avoids importing the wallet recovery implementation into first paint. Existing bundle-size limits remain unchanged.",
+  "modules": ["src/lib/financialJournalKeys.ts"]
+}

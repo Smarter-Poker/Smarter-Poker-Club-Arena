@@ -425,7 +425,9 @@ describe('cashier Phase 4 operational resilience', () => {
     expect(page).toContain('opIds: Object.fromEntries(opIdsRef.current)');
     expect(page).toContain('Original Retry Keys Are Preserved');
     expect(page).toContain('Review And Retry');
-    expect(page).toContain('saved.failures.map((failure)');
+    expect(page).toContain('saved.failures');
+    expect(page).toContain('.filter((failure) => !confirmedTargets.has(failure.userId))');
+    expect(page).toContain("supabase.rpc('fn_cashier_recovery_receipts'");
     expect(page).toContain('opIdsRef.current = new Map()');
     expect(page).not.toContain('`${entry.userId}:${entry.message}`');
   });

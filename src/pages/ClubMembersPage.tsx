@@ -185,6 +185,12 @@ export default function ClubMembersPage() {
   const pendingPositionRef = useRef<RosterReturnPosition | null>(null);
   const positionPagesRef = useRef(0);
   const lastWrittenUrlRef = useRef<{ scope: string; query: string } | null>(null);
+  const pendingOwnUrlRef = useRef<{
+    scope: string;
+    sourceEntryKey: string;
+    sourceQuery: string;
+    targetQuery: string;
+  } | null>(null);
   const currentWorkspace: RosterWorkspace = {
     search: searchQuery.slice(0, 120),
     filter,
@@ -212,20 +218,35 @@ export default function ClubMembersPage() {
     () => setDataFreshness('stale')
   );
 
+  const pendingOwnUrl = pendingOwnUrlRef.current;
+  const awaitingOwnUrl =
+    pendingOwnUrl?.scope === exportScopeKey &&
+    pendingOwnUrl.sourceEntryKey === location.key &&
+    pendingOwnUrl.sourceQuery === searchParams.toString();
+  const acknowledgedOwnUrl =
+    pendingOwnUrl?.scope === exportScopeKey &&
+    navigationType === 'REPLACE' &&
+    pendingOwnUrl.targetQuery === searchParams.toString() &&
+    !awaitingOwnUrl;
   const externalWorkspaceUrl =
     workspaceScope === exportScopeKey &&
     lastWrittenUrlRef.current?.scope === exportScopeKey &&
-    lastWrittenUrlRef.current.query !== searchParams.toString();
+    !awaitingOwnUrl &&
+    !acknowledgedOwnUrl &&
+    (pendingOwnUrl?.scope === exportScopeKey ||
+      lastWrittenUrlRef.current.query !== searchParams.toString());
   useEffect(() => {
+    if (acknowledgedOwnUrl) pendingOwnUrlRef.current = null;
     if (!externalWorkspaceUrl) return;
+    pendingOwnUrlRef.current = null;
     // A new history entry can keep this page mounted. Its explicit query
     // must be consumed before the controls write their own replacement URL.
     setFilter(readFilter(searchParams.get('view')));
     setSortKey(readSort(searchParams.get('sort')));
     lastWrittenUrlRef.current = { scope: exportScopeKey, query: searchParams.toString() };
-  }, [exportScopeKey, externalWorkspaceUrl, searchParams]);
+  }, [acknowledgedOwnUrl, exportScopeKey, externalWorkspaceUrl, searchParams]);
   useEffect(() => {
-    if (workspaceScope !== exportScopeKey || externalWorkspaceUrl) return;
+    if (workspaceScope !== exportScopeKey || externalWorkspaceUrl || awaitingOwnUrl) return;
     const next = new URLSearchParams(searchParams);
     next.delete('q');
     if (filter === 'all') next.delete('view');
@@ -233,11 +254,24 @@ export default function ClubMembersPage() {
     if (sortKey === 'hierarchy') next.delete('sort');
     else next.set('sort', sortKey);
     lastWrittenUrlRef.current = { scope: exportScopeKey, query: next.toString() };
-    if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true });
+    if (next.toString() !== searchParams.toString()) {
+      // Only one replacement is outstanding. An urgent page-load render may
+      // still see its source URL; wait for the router's acknowledgment before
+      // writing any newer control choice.
+      pendingOwnUrlRef.current = {
+        scope: exportScopeKey,
+        sourceEntryKey: location.key,
+        sourceQuery: searchParams.toString(),
+        targetQuery: next.toString(),
+      };
+      setSearchParams(next, { replace: true });
+    }
   }, [
+    awaitingOwnUrl,
     exportScopeKey,
     externalWorkspaceUrl,
     filter,
+    location.key,
     searchParams,
     setSearchParams,
     sortKey,
@@ -249,6 +283,7 @@ export default function ClubMembersPage() {
     setLoading(true);
     setWorkspaceScope(null);
     setLoadedQuery(null);
+    pendingOwnUrlRef.current = null;
     pendingPositionRef.current = null;
     positionPagesRef.current = 0;
     const inheritedUrl =

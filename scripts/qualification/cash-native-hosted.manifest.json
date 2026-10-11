@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 199478,
-      "sha256": "ac90ff313c46cf0985726f0123c1c32a0704f29c16a330fccd1c2665bccda88b"
+      "bytes": 199770,
+      "sha256": "932cff70aec810caf8588d1a95a418dde4a657444cb6af9588ae69b05afbe8fc"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1939,6 +1939,13 @@
     "previousWorkflowPin": {
       "bytes": 199431,
       "sha256": "c7d2af346934ce21ead08551f46e2372b88bc47587cc3ac54eb0bf868ff74645"
+    }
+  },
+  "cashierWithdrawnAuthorityRecovery20261011": {
+    "reason": "Add the isolated native Cashier active-authority and original receipt qualification to existing Accounting1. Preserve every inherited check, all financial inputs, historical fingerprints and SOURCE_ONLY_UNRUN status. This workflow fingerprint is source evidence only.",
+    "previousWorkflowPin": {
+      "bytes": 199478,
+      "sha256": "ac90ff313c46cf0985726f0123c1c32a0704f29c16a330fccd1c2665bccda88b"
     }
   }
 }

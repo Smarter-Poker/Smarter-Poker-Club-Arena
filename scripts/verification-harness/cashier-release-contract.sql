@@ -57,7 +57,19 @@ BEGIN
     RAISE EXCEPTION 'cashier request-notification migration history name drift';
   END IF;
 
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc
+     WHERE oid = to_regprocedure('public.fn_cashier_recovery_receipts(uuid,uuid[],text[])')
+       AND pg_get_userbyid(proowner) = 'postgres' AND provolatile = 's'
+  ) THEN
+    RAISE EXCEPTION 'cashier original receipt recovery posture drift';
+  END IF;
+
   v_contract := jsonb_build_array(
+    jsonb_build_object(
+      'signature', 'public.fn_cashier_recovery_receipts(uuid,uuid[],text[])',
+      'hash', 'c4cf363fde8d283e3163baf5391ce87e'
+    ),
     jsonb_build_object(
       'signature', 'public.fn_agent_wallet_claim_back(uuid,uuid,numeric,text,uuid)',
       'hash', '85976e86092390fb1950b8ed31c36c0d'

@@ -63,13 +63,23 @@ export const CLUB_HOME_CACHE_PREFIX = 'club_home_cache_';
  * can never read or replay them. Only the server's answer retires them.
  */
 export const CASHIER_RECOVERY_PREFIX = 'smarter-poker:cashier-transfer-recovery:v1';
+export {
+  CASHIER_WALLET_RECOVERY_PREFIX,
+  DIAMOND_TRANSFER_RECOVERY_PREFIX,
+} from '../lib/financialJournalKeys';
+import {
+  CASHIER_WALLET_RECOVERY_PREFIX,
+  DIAMOND_TRANSFER_RECOVERY_PREFIX,
+} from '../lib/financialJournalKeys';
 export const CASHIER_REQUEST_RECOVERY_PREFIX = 'smarter-poker:cashier-chip-request:v1';
 export const UNION_WALLET_RECOVERY_PREFIX = 'smarter-poker:union-wallet-intent:v2';
 /** The unresolved-money journals the purge must leave alone; pinned by tests/unit/clearUserCaches.test.ts. */
 export const UNRESOLVED_MONEY_JOURNAL_PREFIXES: readonly string[] = [
   CASHIER_RECOVERY_PREFIX,
   CASHIER_REQUEST_RECOVERY_PREFIX,
+  CASHIER_WALLET_RECOVERY_PREFIX,
   UNION_WALLET_RECOVERY_PREFIX,
+  DIAMOND_TRANSFER_RECOVERY_PREFIX,
 ];
 
 type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS];

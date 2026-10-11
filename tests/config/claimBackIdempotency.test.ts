@@ -92,7 +92,9 @@ describe('the client asks for a claim it is allowed to make', () => {
     // The same key must survive an uncertain response. Minting inside the RPC
     // arguments made the natural retry a different operation, defeating the
     // server's replay receipt precisely when the first response was lost.
-    expect(SRC).toContain('claimOpIdsRef.current.get(row.transaction_id) || newOpId()');
+    expect(SRC).toContain('await reserveCashierWalletOperation(');
+    expect(SRC).toContain('const heldOpId = operation.operationId');
+    expect(SRC).toContain('clearCashierWalletOperation(operation)');
     expect(CLAIM_CALL).toMatch(/p_op_id:\s*heldOpId/);
     expect(SRC).toContain('claimOpIdsRef.current.delete(row.transaction_id)');
   });

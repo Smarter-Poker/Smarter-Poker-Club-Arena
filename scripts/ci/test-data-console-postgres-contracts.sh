@@ -24,3 +24,11 @@ for script in "${scripts[@]}"; do
   bash "$repo/$script"
   echo "DATA_CONSOLE_POSTGRES PASS $script"
 done
+
+# Operations readings are part of the same required Data Console native verdict.
+# Keep the existing Stats and financial-admin invocations above unchanged.
+echo 'DATA_CONSOLE_POSTGRES RUN Club Operations'
+PG_BIN="${PG_BIN:-${PG17_BINDIR:-/usr/lib/postgresql/17/bin}}" \
+  CLUB_OPERATIONS_PG_SCRATCH_PARENT="${CLUB_OPERATIONS_PG_SCRATCH_PARENT:-$DATA_CONSOLE_PG_SCRATCH_PARENT}" \
+  python3 -B "$repo/scripts/ci/test-club-operations-overview-postgres.py"
+echo 'DATA_CONSOLE_POSTGRES PASS Club Operations'

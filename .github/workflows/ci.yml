@@ -1596,12 +1596,6 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-engine-recovery-postgres.py
-      - name: Club operations overview counts and authority match their live sources
-        if: matrix.shard == 1
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-          CLUB_OPERATIONS_PG_SCRATCH_PARENT: ${{ runner.temp }}
-        run: python3 -B scripts/ci/test-club-operations-overview-postgres.py
       - name: A member's club status is changed only by the server
         if: matrix.shard == 1
         env:

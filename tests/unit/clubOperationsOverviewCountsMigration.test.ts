@@ -13,8 +13,19 @@ describe('Club Operations Qualified Count Repair', () => {
   it('runs native PostgreSQL qualification in the existing required accounting job', () => {
     const workflow = readFileSync('.github/workflows/ci.yml', 'utf8');
     expect(workflow).toMatch(
-      /Club operations overview counts and authority match their live sources[\s\S]*?if: matrix\.shard == 1[\s\S]*?run: python3 -B scripts\/ci\/test-club-operations-overview-postgres\.py/
+      /Data console native PostgreSQL contracts[\s\S]*?if: matrix\.shard == 2[\s\S]*?PG17_BINDIR: \/usr\/lib\/postgresql\/17\/bin[\s\S]*?run: npm run test:data:postgres/
     );
+    const scripts = JSON.parse(readFileSync('package.json', 'utf8')).scripts;
+    expect(scripts['test:data:postgres']).toBe(
+      'bash scripts/ci/test-data-console-postgres-contracts.sh'
+    );
+    const entry = readFileSync('scripts/ci/test-data-console-postgres-contracts.sh', 'utf8');
+    expect(entry).toContain('set -euo pipefail');
+    expect(entry).toContain('PG_BIN="${PG_BIN:-${PG17_BINDIR:-/usr/lib/postgresql/17/bin}}"');
+    expect(entry).toContain(
+      'python3 -B "$repo/scripts/ci/test-club-operations-overview-postgres.py"'
+    );
+    expect(entry.split('test-club-operations-overview-postgres.py')).toHaveLength(2);
     const harness = readFileSync('scripts/ci/test-club-operations-overview-postgres.py', 'utf8');
     expect(harness).toContain("listen_addresses=''");
     expect(harness).toContain("'--auth-host=reject'");

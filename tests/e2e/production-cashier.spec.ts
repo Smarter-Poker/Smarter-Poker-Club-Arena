@@ -190,6 +190,34 @@ test.describe('Production Cashier Certification', () => {
     await expect(selectedWallet).toContainText('Send From Your Agent Wallet To Their');
     await transferDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(transferDialog).toHaveCount(0);
+    // Preview only: certify the published individual-amount wiring without
+    // spending real chips or issuing tickets against production players.
+    const recipients = surface.locator('input[type="checkbox"][aria-label^="Include "]:enabled');
+    for (const checkbox of await surface
+      .locator('input[type="checkbox"][aria-label^="Include "]:checked')
+      .all())
+      await checkbox.uncheck();
+    await expect(recipients.nth(1)).toBeVisible();
+    await recipients.nth(0).check();
+    await recipients.nth(1).check();
+    await surface.getByRole('button', { name: 'Send Out', exact: true }).click();
+    await transferDialog.getByRole('spinbutton', { name: 'Amount Per Player' }).fill('10');
+    const individualAmounts = transferDialog.getByRole('spinbutton', { name: /^Amount For / });
+    await expect(individualAmounts).toHaveCount(2);
+    await individualAmounts.nth(1).fill('0.20');
+    await expect(transferDialog).toContainText('Total: 10.20');
+    await expect(transferDialog).toContainText('2 Recipients Ready For Server Verification');
+    await expectCashierAxeClean(page, testInfo, '[role="dialog"]', 'cashier-batch-preview');
+    await attachCashierScreenshot(page, testInfo, 'cashier-batch-individual-preview');
+    await transferDialog.getByRole('button', { name: 'Send Ticket', exact: true }).click();
+    const ticketDialog = page.getByRole('dialog', { name: 'Send Ticket', exact: true });
+    await expect(ticketDialog).toContainText('Total: 10.20');
+    await expect(ticketDialog).toContainText('Your Chips:');
+    await ticketDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    for (const checkbox of await surface
+      .locator('input[type="checkbox"][aria-label^="Include "]:checked')
+      .all())
+      await checkbox.uncheck();
     await page.setViewportSize({ width: 1440, height: 1000 });
     const directoryWidth = await surface
       .locator('[data-cashier-layout="directory"]')

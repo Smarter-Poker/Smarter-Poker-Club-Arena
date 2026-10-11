@@ -4,12 +4,20 @@
 -- cash_cluster_events joins the existing server-side Realtime publication.
 -- No grants or RLS change: only the engine receives raw records; its club event
 -- contains identifiers and event kind only, never raw payloads or cards.
+-- @live-proof: (SELECT position('lightning_drain_deadline_at' in prosrc)>0 FROM pg_proc WHERE oid='public.fn_snapshot_maintenance_thaw_targets(timestamp with time zone,numeric)'::regprocedure)
+-- @live-proof: (SELECT position('lightning_drain_deadline_at' in prosrc)>0 FROM pg_proc WHERE oid='public.fn_credit_maintenance_thaw_targets(timestamp with time zone,numeric)'::regprocedure)
 -- @live-proof: (SELECT position('lightning_drain_deadline_at' in prosrc)>0 FROM pg_proc WHERE oid='public.fn_thaw_platform_checkpointed(timestamp with time zone,numeric,text)'::regprocedure)
 -- @live-proof: (SELECT position('drain_before_worker_off' in prosrc) > 0 FROM pg_proc WHERE oid = 'public.fn_lightning_operator_control(uuid,text,text,jsonb)'::regprocedure)
 -- @live-proof: public.fn_lightning_operator_state((SELECT id FROM public.cash_games ORDER BY created_at,id LIMIT 1)) ? 'worker_mode'
 -- @live-proof: EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'cash_cluster_events')
 BEGIN;
 SET LOCAL lock_timeout = '2s';
+DO $quiescent$
+BEGIN
+ IF public.fn_platform_frozen() OR EXISTS (SELECT 1 FROM public.engine_maintenance_thaws WHERE contract_version=3 AND NOT coalesce((shifted->>'complete')::boolean,false)) THEN
+  RAISE EXCEPTION 'Lightning deadline installation requires a quiescent thaw';
+ END IF;
+END $quiescent$;
 DO $guard$
 DECLARE p regprocedure := 'public.fn_lightning_operator_control(uuid,text,text,jsonb)'::regprocedure; actual text;
 BEGIN
@@ -1009,6 +1017,504 @@ END;
 $function$
 ;$definition$;
   IF (SELECT md5(prosrc) FROM pg_proc WHERE oid=p) <> '05801f790fe39cb04a02dc55ee35f1f3' THEN RAISE EXCEPTION 'Unexpected checkpointed thaw postimage'; END IF;
+END $guard$;
+
+DO $guard$
+DECLARE p regprocedure := 'public.fn_snapshot_maintenance_thaw_targets(timestamp with time zone,numeric)'::regprocedure; actual text;
+BEGIN
+ SELECT md5(prosrc) INTO actual FROM pg_proc WHERE oid=p;
+ IF NOT (SELECT prosecdef AND proconfig=ARRAY['search_path=public, pg_temp'] AND pg_get_userbyid(proowner)='postgres' AND proacl='{postgres=X/postgres}'::aclitem[] FROM pg_proc WHERE oid=p) THEN RAISE EXCEPTION 'Unexpected fn_snapshot_maintenance_thaw_targets security configuration'; END IF;
+ IF actual='492ccb7dd2eab1034a73d4e1f997041f' THEN RETURN; END IF;
+ IF actual <> '43455b0ff86f51f524b6190fc6bf7dd2' THEN RAISE EXCEPTION 'Unexpected fn_snapshot_maintenance_thaw_targets preimage: %',actual; END IF;
+ EXECUTE $definition$CREATE OR REPLACE FUNCTION public.fn_snapshot_maintenance_thaw_targets(
+  p_freeze_started timestamptz,
+  p_initial_seconds numeric
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $function$
+DECLARE
+  v_counts jsonb := '{}'::jsonb;
+  v_n integer;
+BEGIN
+  INSERT INTO public.engine_maintenance_thaw_targets(freeze_started_at, step, target_id)
+  SELECT p_freeze_started, 'sit_out_at', s.id
+    FROM public.table_seats s
+   WHERE s.left_at IS NULL AND s.sit_out_at IS NOT NULL
+  ON CONFLICT DO NOTHING;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  v_counts := v_counts || jsonb_build_object('sit_out_at', v_n);
+
+  INSERT INTO public.engine_maintenance_thaw_targets(freeze_started_at, step, target_id)
+  SELECT p_freeze_started, 'hold_expires_at', w.id
+    FROM public.table_waitlist w
+   WHERE w.hold_expires_at > p_freeze_started
+  ON CONFLICT DO NOTHING;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  v_counts := v_counts || jsonb_build_object('hold_expires_at', v_n);
+
+  INSERT INTO public.engine_maintenance_thaw_targets(freeze_started_at, step, target_id)
+  SELECT p_freeze_started, 'addon_period_ends_at', t.id
+    FROM public.tournaments t
+   WHERE t.addon_period_ends_at > p_freeze_started
+  ON CONFLICT DO NOTHING;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  v_counts := v_counts || jsonb_build_object('addon_period_ends_at', v_n);
+
+  INSERT INTO public.engine_maintenance_thaw_targets(freeze_started_at, step, target_id)
+  SELECT p_freeze_started, 'reversible_until', c.id
+    FROM public.chip_transactions c
+   WHERE c.reversible_until > p_freeze_started
+  ON CONFLICT DO NOTHING;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  v_counts := v_counts || jsonb_build_object('reversible_until', v_n);
+
+  INSERT INTO public.engine_maintenance_thaw_targets(freeze_started_at, step, target_id)
+  SELECT p_freeze_started, 'reveal_deadline_at', a.id
+    FROM public.tournament_bounty_awards a
+   WHERE a.reveal_deadline_at > p_freeze_started
+  ON CONFLICT DO NOTHING;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  v_counts := v_counts || jsonb_build_object('reveal_deadline_at', v_n);
+
+  INSERT INTO public.engine_maintenance_thaw_targets(freeze_started_at, step, target_id)
+  SELECT p_freeze_started, 'rebuy_prompt_until', p.id
+    FROM public.tournament_players p
+   WHERE p.rebuy_prompt_until > p_freeze_started
+  ON CONFLICT DO NOTHING;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  v_counts := v_counts || jsonb_build_object('rebuy_prompt_until', v_n);
+
+  INSERT INTO public.engine_maintenance_thaw_targets(freeze_started_at, step, target_id)
+  SELECT p_freeze_started, 'bomb_pot_next_due_at', t.id
+    FROM public.tables t
+   WHERE t.bomb_pot_next_due_at IS NOT NULL
+  ON CONFLICT DO NOTHING;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  v_counts := v_counts || jsonb_build_object('bomb_pot_next_due_at', v_n);
+
+  INSERT INTO public.engine_maintenance_thaw_targets(freeze_started_at, step, target_id)
+  SELECT p_freeze_started, 'cash_stay_last_tick_at', s.id
+    FROM public.cash_player_session s
+   WHERE s.closed_at IS NULL
+     AND s.stay_running
+     AND s.stay_last_tick_at <= p_freeze_started + make_interval(secs => p_initial_seconds)
+  ON CONFLICT DO NOTHING;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  v_counts := v_counts || jsonb_build_object('cash_stay_last_tick_at', v_n);
+
+  INSERT INTO public.engine_maintenance_thaw_targets(freeze_started_at, step, target_id)
+  SELECT p_freeze_started, 'cash_rejoin_expires_at', r.id
+    FROM public.cash_rejoin_constraints r
+   WHERE r.expires_at > p_freeze_started
+  ON CONFLICT DO NOTHING;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  v_counts := v_counts || jsonb_build_object('cash_rejoin_expires_at', v_n);
+
+  INSERT INTO public.engine_maintenance_thaw_targets(freeze_started_at, step, target_id)
+  SELECT p_freeze_started, 'cluster_break_eligible_since', t.id
+    FROM public.tables t
+   WHERE t.break_eligible_since IS NOT NULL
+     AND t.break_eligible_since <= p_freeze_started + make_interval(secs => p_initial_seconds)
+     AND t.cluster_id IS NOT NULL
+  ON CONFLICT DO NOTHING;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  v_counts := v_counts || jsonb_build_object('cluster_break_eligible_since', v_n);
+
+  INSERT INTO public.engine_maintenance_thaw_targets(freeze_started_at, step, target_id)
+  SELECT p_freeze_started, 'cluster_move_expires_at', m.id
+    FROM public.cash_seat_moves m
+   WHERE m.state = 'pending' AND m.expires_at > p_freeze_started
+  ON CONFLICT DO NOTHING;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  v_counts := v_counts || jsonb_build_object('cluster_move_expires_at', v_n);
+
+  INSERT INTO public.engine_maintenance_thaw_targets(freeze_started_at, step, target_id)
+  SELECT p_freeze_started, 'level_started_at', t.id
+    FROM public.tournaments t
+   WHERE t.status = 'RUNNING'
+     AND COALESCE(t.on_break, false) = false
+     AND t.level_started_at IS NOT NULL
+  ON CONFLICT DO NOTHING;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  v_counts := v_counts || jsonb_build_object('level_started_at', v_n);
+
+  INSERT INTO public.engine_maintenance_thaw_targets(freeze_started_at, step, target_id)
+  SELECT p_freeze_started, 'reconnect_presence', p.table_id
+    FROM public.engine_presence_parked p
+   WHERE p.parked_at >= p_freeze_started - INTERVAL '20 minutes'
+     AND p.parked_at <= p_freeze_started + make_interval(secs => p_initial_seconds)
+  ON CONFLICT DO NOTHING;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  v_counts := v_counts || jsonb_build_object('reconnect_presence', v_n);
+
+  INSERT INTO public.engine_maintenance_thaw_targets(freeze_started_at, step, target_id)
+  SELECT p_freeze_started, 'reconnect_snapshots', s.id
+    FROM public.hand_state_snapshots s
+   WHERE s.is_complete = false
+     AND s.updated_at >= p_freeze_started - INTERVAL '20 minutes'
+     AND s.updated_at <= p_freeze_started + make_interval(secs => p_initial_seconds)
+  ON CONFLICT DO NOTHING;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  v_counts := v_counts || jsonb_build_object('reconnect_snapshots', v_n);
+
+  INSERT INTO public.engine_maintenance_thaw_targets(freeze_started_at, step, target_id)
+  SELECT p_freeze_started, 'lightning_drain_deadline_at', d.id
+    FROM public.lightning_cluster_drain d
+   WHERE d.completed_at IS NULL AND d.deadline_at > p_freeze_started
+  ON CONFLICT DO NOTHING;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  v_counts := v_counts || jsonb_build_object('lightning_drain_deadline_at', v_n);
+
+  UPDATE public.engine_maintenance_thaws t
+     SET shifted = t.shifted || jsonb_build_object(
+       '_targets_snapshotted', true,
+       '_target_counts', v_counts
+     )
+   WHERE t.freeze_started_at = p_freeze_started;
+  RETURN v_counts;
+END;
+$function$;$definition$;
+ IF (SELECT md5(prosrc) FROM pg_proc WHERE oid=p) <> '492ccb7dd2eab1034a73d4e1f997041f' THEN RAISE EXCEPTION 'Unexpected fn_snapshot_maintenance_thaw_targets postimage'; END IF;
+END $guard$;
+
+DO $guard$
+DECLARE p regprocedure := 'public.fn_credit_maintenance_thaw_targets(timestamp with time zone,numeric)'::regprocedure; actual text;
+BEGIN
+ SELECT md5(prosrc) INTO actual FROM pg_proc WHERE oid=p;
+ IF NOT (SELECT prosecdef AND proconfig=ARRAY['search_path=public, pg_temp'] AND pg_get_userbyid(proowner)='postgres' AND proacl='{postgres=X/postgres}'::aclitem[] FROM pg_proc WHERE oid=p) THEN RAISE EXCEPTION 'Unexpected fn_credit_maintenance_thaw_targets security configuration'; END IF;
+ IF actual='e64eadabf4292dbf6298c04dd7b1d5d5' THEN RETURN; END IF;
+ IF actual <> 'c12308b00489adce1376ba1c1e4ea9d5' THEN RAISE EXCEPTION 'Unexpected fn_credit_maintenance_thaw_targets preimage: %',actual; END IF;
+ EXECUTE $definition$CREATE OR REPLACE FUNCTION public.fn_credit_maintenance_thaw_targets(
+  p_freeze_started timestamptz,
+  p_target_seconds numeric
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $function$
+DECLARE
+  c_budget CONSTANT interval := INTERVAL '4 seconds';
+  c_steps CONSTANT text[] := ARRAY[
+    'sit_out_at','hold_expires_at','addon_period_ends_at','reversible_until',
+    'reveal_deadline_at','rebuy_prompt_until','bomb_pot_next_due_at',
+    'cash_stay_last_tick_at','cash_rejoin_expires_at','level_started_at',
+    'cluster_break_eligible_since','cluster_move_expires_at',
+    'reconnect_presence','reconnect_snapshots','lightning_drain_deadline_at'
+  ];
+  v_started timestamptz := clock_timestamp();
+  v_counts jsonb;
+  v_step text;
+  v_batch integer;
+  v_moved integer;
+  v_marked integer;
+  v_done text[] := '{}';
+  v_complete boolean;
+BEGIN
+  IF p_target_seconds IS NULL OR p_target_seconds <= 0 THEN
+    RETURN jsonb_build_object(
+      'ok', false, 'complete', false, 'reason', 'invalid_credit_target'
+    );
+  END IF;
+
+  SELECT COALESCE(t.shifted, '{}'::jsonb) INTO v_counts
+    FROM public.engine_maintenance_thaws t
+   WHERE t.freeze_started_at = p_freeze_started
+   FOR UPDATE;
+  IF NOT FOUND OR COALESCE((v_counts->>'_targets_snapshotted')::boolean, false) = false THEN
+    RETURN jsonb_build_object(
+      'ok', false, 'complete', false, 'reason', 'thaw_targets_not_snapshotted'
+    );
+  END IF;
+
+  PERFORM set_config('app.freeze_bypass', 'on', true);
+
+  FOREACH v_step IN ARRAY c_steps LOOP
+    EXIT WHEN clock_timestamp() - v_started > c_budget;
+    v_batch := CASE WHEN v_step = 'level_started_at' THEN 40 ELSE 200 END;
+    v_moved := 0;
+    v_marked := 0;
+
+    IF v_step = 'sit_out_at' THEN
+      WITH due AS MATERIALIZED (
+        SELECT x.target_id, x.credited_seconds
+          FROM public.engine_maintenance_thaw_targets x
+         WHERE x.freeze_started_at = p_freeze_started AND x.step = v_step
+           AND x.credited_seconds < p_target_seconds
+         ORDER BY x.target_id LIMIT v_batch FOR UPDATE
+      ), moved AS (
+        UPDATE public.table_seats r
+           SET sit_out_at = r.sit_out_at
+             + make_interval(secs => p_target_seconds - d.credited_seconds)
+          FROM due d WHERE r.id = d.target_id AND r.sit_out_at IS NOT NULL
+        RETURNING r.id
+      ), marked AS (
+        UPDATE public.engine_maintenance_thaw_targets x
+           SET credited_seconds = p_target_seconds
+          FROM due d
+         WHERE x.freeze_started_at = p_freeze_started AND x.step = v_step
+           AND x.target_id = d.target_id
+        RETURNING x.target_id
+      ) SELECT (SELECT count(*) FROM moved), (SELECT count(*) FROM marked)
+          INTO v_moved, v_marked;
+    ELSIF v_step = 'hold_expires_at' THEN
+      WITH due AS MATERIALIZED (
+        SELECT x.target_id, x.credited_seconds FROM public.engine_maintenance_thaw_targets x
+         WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+           AND x.credited_seconds<p_target_seconds
+         ORDER BY x.target_id LIMIT v_batch FOR UPDATE
+      ), moved AS (
+        UPDATE public.table_waitlist r SET hold_expires_at=r.hold_expires_at
+          + make_interval(secs=>p_target_seconds-d.credited_seconds)
+          FROM due d WHERE r.id=d.target_id AND r.hold_expires_at IS NOT NULL RETURNING r.id
+      ), marked AS (
+        UPDATE public.engine_maintenance_thaw_targets x SET credited_seconds=p_target_seconds
+          FROM due d WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+            AND x.target_id=d.target_id RETURNING x.target_id
+      ) SELECT (SELECT count(*) FROM moved),(SELECT count(*) FROM marked) INTO v_moved,v_marked;
+    ELSIF v_step = 'addon_period_ends_at' THEN
+      WITH due AS MATERIALIZED (
+        SELECT x.target_id,x.credited_seconds FROM public.engine_maintenance_thaw_targets x
+         WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+           AND x.credited_seconds<p_target_seconds
+         ORDER BY x.target_id LIMIT v_batch FOR UPDATE
+      ), moved AS (
+        UPDATE public.tournaments r SET addon_period_ends_at=r.addon_period_ends_at
+          + make_interval(secs=>p_target_seconds-d.credited_seconds)
+          FROM due d WHERE r.id=d.target_id AND r.addon_period_ends_at IS NOT NULL RETURNING r.id
+      ), marked AS (
+        UPDATE public.engine_maintenance_thaw_targets x SET credited_seconds=p_target_seconds
+          FROM due d WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+            AND x.target_id=d.target_id RETURNING x.target_id
+      ) SELECT (SELECT count(*) FROM moved),(SELECT count(*) FROM marked) INTO v_moved,v_marked;
+    ELSIF v_step = 'reversible_until' THEN
+      WITH due AS MATERIALIZED (
+        SELECT x.target_id,x.credited_seconds FROM public.engine_maintenance_thaw_targets x
+         WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+           AND x.credited_seconds<p_target_seconds
+         ORDER BY x.target_id LIMIT v_batch FOR UPDATE
+      ), moved AS (
+        UPDATE public.chip_transactions r SET reversible_until=r.reversible_until
+          + make_interval(secs=>p_target_seconds-d.credited_seconds)
+          FROM due d WHERE r.id=d.target_id AND r.reversible_until IS NOT NULL RETURNING r.id
+      ), marked AS (
+        UPDATE public.engine_maintenance_thaw_targets x SET credited_seconds=p_target_seconds
+          FROM due d WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+            AND x.target_id=d.target_id RETURNING x.target_id
+      ) SELECT (SELECT count(*) FROM moved),(SELECT count(*) FROM marked) INTO v_moved,v_marked;
+    ELSIF v_step = 'reveal_deadline_at' THEN
+      WITH due AS MATERIALIZED (
+        SELECT x.target_id,x.credited_seconds FROM public.engine_maintenance_thaw_targets x
+         WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+           AND x.credited_seconds<p_target_seconds
+         ORDER BY x.target_id LIMIT v_batch FOR UPDATE
+      ), moved AS (
+        UPDATE public.tournament_bounty_awards r SET reveal_deadline_at=r.reveal_deadline_at
+          + make_interval(secs=>p_target_seconds-d.credited_seconds)
+          FROM due d WHERE r.id=d.target_id AND r.reveal_deadline_at IS NOT NULL RETURNING r.id
+      ), marked AS (
+        UPDATE public.engine_maintenance_thaw_targets x SET credited_seconds=p_target_seconds
+          FROM due d WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+            AND x.target_id=d.target_id RETURNING x.target_id
+      ) SELECT (SELECT count(*) FROM moved),(SELECT count(*) FROM marked) INTO v_moved,v_marked;
+    ELSIF v_step = 'rebuy_prompt_until' THEN
+      WITH due AS MATERIALIZED (
+        SELECT x.target_id,x.credited_seconds FROM public.engine_maintenance_thaw_targets x
+         WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+           AND x.credited_seconds<p_target_seconds
+         ORDER BY x.target_id LIMIT v_batch FOR UPDATE
+      ), moved AS (
+        UPDATE public.tournament_players r SET rebuy_prompt_until=r.rebuy_prompt_until
+          + make_interval(secs=>p_target_seconds-d.credited_seconds)
+          FROM due d WHERE r.id=d.target_id AND r.rebuy_prompt_until IS NOT NULL RETURNING r.id
+      ), marked AS (
+        UPDATE public.engine_maintenance_thaw_targets x SET credited_seconds=p_target_seconds
+          FROM due d WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+            AND x.target_id=d.target_id RETURNING x.target_id
+      ) SELECT (SELECT count(*) FROM moved),(SELECT count(*) FROM marked) INTO v_moved,v_marked;
+    ELSIF v_step = 'bomb_pot_next_due_at' THEN
+      WITH due AS MATERIALIZED (
+        SELECT x.target_id,x.credited_seconds FROM public.engine_maintenance_thaw_targets x
+         WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+           AND x.credited_seconds<p_target_seconds
+         ORDER BY x.target_id LIMIT v_batch FOR UPDATE
+      ), moved AS (
+        UPDATE public.tables r SET bomb_pot_next_due_at=r.bomb_pot_next_due_at
+          + make_interval(secs=>p_target_seconds-d.credited_seconds)
+          FROM due d WHERE r.id=d.target_id AND r.bomb_pot_next_due_at IS NOT NULL RETURNING r.id
+      ), marked AS (
+        UPDATE public.engine_maintenance_thaw_targets x SET credited_seconds=p_target_seconds
+          FROM due d WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+            AND x.target_id=d.target_id RETURNING x.target_id
+      ) SELECT (SELECT count(*) FROM moved),(SELECT count(*) FROM marked) INTO v_moved,v_marked;
+    ELSIF v_step = 'cash_stay_last_tick_at' THEN
+      WITH due AS MATERIALIZED (
+        SELECT x.target_id,x.credited_seconds FROM public.engine_maintenance_thaw_targets x
+         WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+           AND x.credited_seconds<p_target_seconds
+         ORDER BY x.target_id LIMIT v_batch FOR UPDATE
+      ), moved AS (
+        UPDATE public.cash_player_session r SET stay_last_tick_at=r.stay_last_tick_at
+          + make_interval(secs=>p_target_seconds-d.credited_seconds)
+          FROM due d WHERE r.id=d.target_id RETURNING r.id
+      ), marked AS (
+        UPDATE public.engine_maintenance_thaw_targets x SET credited_seconds=p_target_seconds
+          FROM due d WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+            AND x.target_id=d.target_id RETURNING x.target_id
+      ) SELECT (SELECT count(*) FROM moved),(SELECT count(*) FROM marked) INTO v_moved,v_marked;
+    ELSIF v_step = 'cash_rejoin_expires_at' THEN
+      WITH due AS MATERIALIZED (
+        SELECT x.target_id,x.credited_seconds FROM public.engine_maintenance_thaw_targets x
+         WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+           AND x.credited_seconds<p_target_seconds
+         ORDER BY x.target_id LIMIT v_batch FOR UPDATE
+      ), moved AS (
+        UPDATE public.cash_rejoin_constraints r SET expires_at=r.expires_at
+          + make_interval(secs=>p_target_seconds-d.credited_seconds)
+          FROM due d WHERE r.id=d.target_id RETURNING r.id
+      ), marked AS (
+        UPDATE public.engine_maintenance_thaw_targets x SET credited_seconds=p_target_seconds
+          FROM due d WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+            AND x.target_id=d.target_id RETURNING x.target_id
+      ) SELECT (SELECT count(*) FROM moved),(SELECT count(*) FROM marked) INTO v_moved,v_marked;
+    ELSIF v_step = 'level_started_at' THEN
+      WITH due AS MATERIALIZED (
+        SELECT x.target_id,x.credited_seconds FROM public.engine_maintenance_thaw_targets x
+         WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+           AND x.credited_seconds<p_target_seconds
+         ORDER BY x.target_id LIMIT v_batch FOR UPDATE
+      ), moved AS (
+        UPDATE public.tournaments r SET level_started_at=r.level_started_at
+          + make_interval(secs=>p_target_seconds-d.credited_seconds)
+          FROM due d WHERE r.id=d.target_id AND r.level_started_at IS NOT NULL RETURNING r.id
+      ), marked AS (
+        UPDATE public.engine_maintenance_thaw_targets x SET credited_seconds=p_target_seconds
+          FROM due d WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+            AND x.target_id=d.target_id RETURNING x.target_id
+      ) SELECT (SELECT count(*) FROM moved),(SELECT count(*) FROM marked) INTO v_moved,v_marked;
+    ELSIF v_step = 'cluster_break_eligible_since' THEN
+      WITH due AS MATERIALIZED (
+        SELECT x.target_id,x.credited_seconds FROM public.engine_maintenance_thaw_targets x
+         WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+           AND x.credited_seconds<p_target_seconds
+         ORDER BY x.target_id LIMIT v_batch FOR UPDATE
+      ), moved AS (
+        UPDATE public.tables r SET break_eligible_since=r.break_eligible_since
+          + make_interval(secs=>p_target_seconds-d.credited_seconds)
+          FROM due d WHERE r.id=d.target_id AND r.break_eligible_since IS NOT NULL RETURNING r.id
+      ), marked AS (
+        UPDATE public.engine_maintenance_thaw_targets x SET credited_seconds=p_target_seconds
+          FROM due d WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+            AND x.target_id=d.target_id RETURNING x.target_id
+      ) SELECT (SELECT count(*) FROM moved),(SELECT count(*) FROM marked) INTO v_moved,v_marked;
+    ELSIF v_step = 'cluster_move_expires_at' THEN
+      WITH due AS MATERIALIZED (
+        SELECT x.target_id,x.credited_seconds FROM public.engine_maintenance_thaw_targets x
+         WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+           AND x.credited_seconds<p_target_seconds
+         ORDER BY x.target_id LIMIT v_batch FOR UPDATE
+      ), moved AS (
+        UPDATE public.cash_seat_moves r SET expires_at=r.expires_at
+          + make_interval(secs=>p_target_seconds-d.credited_seconds)
+          FROM due d WHERE r.id=d.target_id RETURNING r.id
+      ), marked AS (
+        UPDATE public.engine_maintenance_thaw_targets x SET credited_seconds=p_target_seconds
+          FROM due d WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+            AND x.target_id=d.target_id RETURNING x.target_id
+      ) SELECT (SELECT count(*) FROM moved),(SELECT count(*) FROM marked) INTO v_moved,v_marked;
+    ELSIF v_step = 'lightning_drain_deadline_at' THEN
+      WITH due AS MATERIALIZED (
+        SELECT x.target_id,x.credited_seconds FROM public.engine_maintenance_thaw_targets x
+         WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+           AND x.credited_seconds<p_target_seconds
+         ORDER BY x.target_id LIMIT v_batch FOR UPDATE
+      ), moved AS (
+        UPDATE public.lightning_cluster_drain r
+           SET deadline_at=r.deadline_at
+             + make_interval(secs=>p_target_seconds-d.credited_seconds)
+          FROM due d WHERE r.id=d.target_id AND r.completed_at IS NULL
+        RETURNING r.id,r.cluster_id,r.request_id,r.deadline_at
+      ), emitted AS (
+        INSERT INTO public.cash_cluster_events(game_id,kind,payload,request_id)
+        SELECT cluster_id,'lightning_drain_deadline_thawed',
+               jsonb_build_object('drain_id',id,'deadline_at',deadline_at,
+                                  'freeze_started_at',p_freeze_started),request_id FROM moved
+        RETURNING id
+      ), marked AS (
+        UPDATE public.engine_maintenance_thaw_targets x SET credited_seconds=p_target_seconds
+          FROM due d WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+            AND x.target_id=d.target_id RETURNING x.target_id
+      ) SELECT (SELECT count(*) FROM emitted),(SELECT count(*) FROM marked) INTO v_moved,v_marked;
+    ELSIF v_step = 'reconnect_presence' THEN
+      WITH due AS MATERIALIZED (
+        SELECT x.target_id,x.credited_seconds FROM public.engine_maintenance_thaw_targets x
+         WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+           AND x.credited_seconds<p_target_seconds
+         ORDER BY x.target_id LIMIT v_batch FOR UPDATE
+      ), moved AS (
+        UPDATE public.engine_presence_parked r
+           SET disconnect_states=public.fn_thaw_reconnect_states(
+             r.disconnect_states, EXTRACT(EPOCH FROM p_freeze_started)*1000,
+             EXTRACT(EPOCH FROM p_freeze_started+make_interval(secs=>p_target_seconds))*1000)
+          FROM due d WHERE r.table_id=d.target_id RETURNING r.table_id
+      ), marked AS (
+        UPDATE public.engine_maintenance_thaw_targets x SET credited_seconds=p_target_seconds
+          FROM due d WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+            AND x.target_id=d.target_id RETURNING x.target_id
+      ) SELECT (SELECT count(*) FROM moved),(SELECT count(*) FROM marked) INTO v_moved,v_marked;
+    ELSIF v_step = 'reconnect_snapshots' THEN
+      WITH due AS MATERIALIZED (
+        SELECT x.target_id,x.credited_seconds FROM public.engine_maintenance_thaw_targets x
+         WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+           AND x.credited_seconds<p_target_seconds
+         ORDER BY x.target_id LIMIT v_batch FOR UPDATE
+      ), moved AS (
+        UPDATE public.hand_state_snapshots r
+           SET disconnect_states=public.fn_thaw_reconnect_states(
+             r.disconnect_states, EXTRACT(EPOCH FROM p_freeze_started)*1000,
+             EXTRACT(EPOCH FROM p_freeze_started+make_interval(secs=>p_target_seconds))*1000)
+          FROM due d WHERE r.id=d.target_id RETURNING r.id
+      ), marked AS (
+        UPDATE public.engine_maintenance_thaw_targets x SET credited_seconds=p_target_seconds
+          FROM due d WHERE x.freeze_started_at=p_freeze_started AND x.step=v_step
+            AND x.target_id=d.target_id RETURNING x.target_id
+      ) SELECT (SELECT count(*) FROM moved),(SELECT count(*) FROM marked) INTO v_moved,v_marked;
+    END IF;
+
+    IF v_moved <> v_marked THEN
+      RAISE EXCEPTION 'MAINTENANCE_THAW_TARGET_CHANGED: % moved %, receipted %',
+        v_step, v_moved, v_marked
+        USING ERRCODE = '40001';
+    END IF;
+    IF v_marked > 0 THEN
+      v_done := array_append(v_done, v_step || ':' || v_marked::text);
+    END IF;
+  END LOOP;
+
+  SELECT NOT EXISTS (
+    SELECT 1 FROM public.engine_maintenance_thaw_targets x
+     WHERE x.freeze_started_at=p_freeze_started
+       AND x.credited_seconds<p_target_seconds
+  ) INTO v_complete;
+  IF v_complete THEN
+    v_counts := (v_counts - 'level_started_at_cursor' - 'level_started_at_so_far')
+      || COALESCE(v_counts->'_target_counts', '{}'::jsonb)
+      || jsonb_build_object('complete', true);
+  ELSE
+    v_counts := v_counts - 'complete';
+  END IF;
+  UPDATE public.engine_maintenance_thaws t
+     SET shifted=v_counts, thawed_at=clock_timestamp()
+   WHERE t.freeze_started_at=p_freeze_started;
+  RETURN jsonb_build_object(
+    'ok', true, 'complete', v_complete, 'steps_this_call', to_jsonb(v_done),
+    'elapsed_ms', round(EXTRACT(EPOCH FROM clock_timestamp()-v_started)*1000),
+    'shifted', v_counts
+  );
+END;
+$function$;$definition$;
+ IF (SELECT md5(prosrc) FROM pg_proc WHERE oid=p) <> 'e64eadabf4292dbf6298c04dd7b1d5d5' THEN RAISE EXCEPTION 'Unexpected fn_credit_maintenance_thaw_targets postimage'; END IF;
 END $guard$;
 
 DO $publication$

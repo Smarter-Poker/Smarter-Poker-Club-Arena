@@ -374,7 +374,7 @@ export default function ClubLightningOperationsPage() {
               {overview.refreshedAt
                 ? `Updated ${agoLabel(new Date(overview.refreshedAt).toISOString(), now)}`
                 : 'Reading Lightning'}
-              {', Refreshes Every 15 Seconds While Open'}
+              {', Updates On Lightning Events'}
             </p>
             {answer.data.truncated ? (
               <p className={`${styles.freshness} sc-ink--gold`}>Showing The First 200 Clusters</p>

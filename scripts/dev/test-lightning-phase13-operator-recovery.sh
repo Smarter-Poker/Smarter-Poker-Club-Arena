@@ -43,16 +43,29 @@ SELECT prosecdef,proconfig,pg_get_userbyid(proowner),proacl::text FROM pg_proc W
 SQL
 # The serving checkpointed thaw's exact preimage, from its immutable migration.
 "${PSQL[@]}" <<'SQL'
-CREATE TABLE public.engine_maintenance_thaws (freeze_started_at timestamptz PRIMARY KEY, thawed_at timestamptz DEFAULT now(), frozen_seconds numeric NOT NULL, shifted jsonb NOT NULL, thawed_by text);
+CREATE TABLE public.engine_maintenance_thaws (freeze_started_at timestamptz PRIMARY KEY, thawed_at timestamptz DEFAULT now(), frozen_seconds numeric NOT NULL, shifted jsonb NOT NULL, thawed_by text, contract_version integer);
 SQL
 python3 - "$root" "$fixture/thaw.sql" <<'PYTHON'
 import re,sys
 from pathlib import Path
 s=(Path(sys.argv[1])/'supabase/migrations/20260908032311_reconnect_allowance_survives_maintenance.sql').read_text()
+reconnect=re.search(r'CREATE OR REPLACE FUNCTION public.fn_thaw_reconnect_states.*?\$\$\s*;',s,re.S).group()
 f=re.search(r'CREATE OR REPLACE FUNCTION public.fn_thaw_platform\(.*?\$function\$\s*;',s,re.S).group().replace('FUNCTION public.fn_thaw_platform(', 'FUNCTION public.fn_thaw_platform_checkpointed(')
-Path(sys.argv[2]).write_text(f+'\nALTER FUNCTION public.fn_thaw_platform_checkpointed(timestamptz,numeric,text) OWNER TO postgres;\nREVOKE ALL ON FUNCTION public.fn_thaw_platform_checkpointed(timestamptz,numeric,text) FROM PUBLIC,anon,authenticated,service_role;')
+Path(sys.argv[2]).write_text(reconnect+'\n'+f+'\nALTER FUNCTION public.fn_thaw_platform_checkpointed(timestamptz,numeric,text) OWNER TO postgres;\nREVOKE ALL ON FUNCTION public.fn_thaw_platform_checkpointed(timestamptz,numeric,text) FROM PUBLIC,anon,authenticated,service_role;')
 PYTHON
 "${PSQL[@]}" -f "$fixture/thaw.sql"
+python3 - "$root" "$fixture/thaw-targets.sql" <<'PYTHON'
+import re,sys
+from pathlib import Path
+s=(Path(sys.argv[1])/'scripts/ci/fixtures/phase-three-current-thaw-authority.sql').read_text()
+functions=[]
+for name in ['fn_snapshot_maintenance_thaw_targets','fn_credit_maintenance_thaw_targets']:
+ f=re.search(r'CREATE OR REPLACE FUNCTION public.'+name+r'\(.*?\$function\$\s*;',s,re.S).group()
+ functions.append(f+'\nALTER FUNCTION public.'+name+'(timestamptz,numeric) OWNER TO postgres;\nREVOKE ALL ON FUNCTION public.'+name+'(timestamptz,numeric) FROM PUBLIC,anon,authenticated,service_role;')
+Path(sys.argv[2]).write_text('CREATE TABLE public.engine_maintenance_thaw_targets(freeze_started_at timestamptz, step text,target_id uuid,credited_seconds numeric DEFAULT 0,PRIMARY KEY(freeze_started_at,step,target_id));\n'+'\n'.join(functions))
+PYTHON
+"${PSQL[@]}" -f "$fixture/thaw-targets.sql"
+
 "${PSQL[@]}" <<'SQL'
 BEGIN;
 DO $$
@@ -96,6 +109,19 @@ BEGIN
 END $$;
 SQL
 "${PSQL[@]}" <<'SQL'
+ALTER TABLE public.table_seats ADD COLUMN IF NOT EXISTS sit_out_at timestamptz;
+CREATE TABLE IF NOT EXISTS public.table_waitlist(id uuid PRIMARY KEY,hold_expires_at timestamptz);
+CREATE TABLE IF NOT EXISTS public.tournaments(id uuid PRIMARY KEY);
+ALTER TABLE public.tournaments ADD COLUMN IF NOT EXISTS addon_period_ends_at timestamptz, ADD COLUMN IF NOT EXISTS level_started_at timestamptz, ADD COLUMN IF NOT EXISTS on_break boolean, ADD COLUMN IF NOT EXISTS status text;
+CREATE TABLE IF NOT EXISTS public.chip_transactions(id uuid PRIMARY KEY,reversible_until timestamptz);
+CREATE TABLE IF NOT EXISTS public.tournament_bounty_awards(id uuid PRIMARY KEY,reveal_deadline_at timestamptz);
+CREATE TABLE IF NOT EXISTS public.tournament_players(id uuid PRIMARY KEY,rebuy_prompt_until timestamptz);
+ALTER TABLE public.cash_player_session ADD COLUMN IF NOT EXISTS stay_last_tick_at timestamptz, ADD COLUMN IF NOT EXISTS stay_running boolean;
+CREATE TABLE IF NOT EXISTS public.cash_rejoin_constraints(id uuid PRIMARY KEY,expires_at timestamptz);
+ALTER TABLE public.tables ADD COLUMN IF NOT EXISTS bomb_pot_next_due_at timestamptz, ADD COLUMN IF NOT EXISTS break_eligible_since timestamptz;
+ALTER TABLE public.cash_seat_moves ADD COLUMN IF NOT EXISTS expires_at timestamptz;
+CREATE TABLE IF NOT EXISTS public.engine_presence_parked(table_id uuid PRIMARY KEY,disconnect_states jsonb,parked_at timestamptz);
+CREATE TABLE IF NOT EXISTS public.hand_state_snapshots(id uuid PRIMARY KEY,disconnect_states jsonb,is_complete boolean,updated_at timestamptz);
 DO $$
 DECLARE g uuid; f timestamptz := clock_timestamp(); deadline timestamptz; r jsonb; keys jsonb;
 BEGIN
@@ -105,10 +131,26 @@ BEGIN
  -- Other thaw steps are outside this narrow fixture and already have their keys.
  SELECT jsonb_object_agg(k,0) INTO keys FROM unnest(ARRAY['sit_out_at','hold_expires_at','addon_period_ends_at','reversible_until','reveal_deadline_at','rebuy_prompt_until','bomb_pot_next_due_at','cash_stay_last_tick_at','cash_rejoin_expires_at','level_started_at','cluster_break_eligible_since','cluster_move_expires_at','reconnect_presence','reconnect_snapshots']) k;
  INSERT INTO public.engine_maintenance_thaws(freeze_started_at,frozen_seconds,shifted) VALUES(f,300,keys);
+ PERFORM public.fn_snapshot_maintenance_thaw_targets(f,300);
  r := public.fn_thaw_platform_checkpointed(f,300,'isolated lightning deadline');
  IF (r->>'complete')::boolean IS DISTINCT FROM true OR (SELECT deadline_at FROM public.lightning_cluster_drain WHERE cluster_id=g AND completed_at IS NULL) IS DISTINCT FROM deadline+interval '300 seconds' THEN RAISE EXCEPTION 'FAIL thaw did not restore deadline: %',r; END IF;
  r := public.fn_thaw_platform_checkpointed(f,300,'repeat');
  IF r->>'reason' <> 'already_thawed' OR (SELECT deadline_at FROM public.lightning_cluster_drain WHERE cluster_id=g AND completed_at IS NULL) IS DISTINCT FROM deadline+interval '300 seconds' OR harness.evn(g,'lightning_drain_deadline_thawed') <> 1 THEN RAISE EXCEPTION 'FAIL duplicate thaw shifted again or emitted twice'; END IF;
+END $$;
+SQL
+"${PSQL[@]}" <<'SQL'
+DO $$
+DECLARE t record; r jsonb; deadline timestamptz;
+BEGIN
+ SELECT freeze_started_at INTO t FROM public.engine_maintenance_thaws WHERE thawed_by IS DISTINCT FROM 'before witness' ORDER BY freeze_started_at DESC LIMIT 1;
+ -- Mirror the real v3 wrapper marking the initial step's captured targets.
+ UPDATE public.engine_maintenance_thaw_targets SET credited_seconds=300 WHERE freeze_started_at=t.freeze_started_at AND step='lightning_drain_deadline_at';
+ UPDATE public.engine_maintenance_thaws SET shifted=shifted||'{"_targets_snapshotted":true}' WHERE freeze_started_at=t.freeze_started_at;
+ CREATE TEMP TABLE tail_before AS SELECT id,deadline_at FROM public.lightning_cluster_drain WHERE id IN (SELECT target_id FROM public.engine_maintenance_thaw_targets WHERE freeze_started_at=t.freeze_started_at);
+ r:=public.fn_credit_maintenance_thaw_targets(t.freeze_started_at,312);
+ IF (r->>'complete')::boolean IS DISTINCT FROM true OR EXISTS(SELECT 1 FROM tail_before b JOIN public.lightning_cluster_drain d USING(id) WHERE d.deadline_at IS DISTINCT FROM b.deadline_at+interval '12 seconds') THEN RAISE EXCEPTION 'FAIL tail credit: %',r; END IF;
+ r:=public.fn_credit_maintenance_thaw_targets(t.freeze_started_at,312);
+ IF EXISTS(SELECT 1 FROM tail_before b JOIN public.lightning_cluster_drain d USING(id) WHERE d.deadline_at IS DISTINCT FROM b.deadline_at+interval '12 seconds') THEN RAISE EXCEPTION 'FAIL tail credit replay'; END IF;
 END $$;
 SQL
 "${PSQL[@]}" -f "$migration"

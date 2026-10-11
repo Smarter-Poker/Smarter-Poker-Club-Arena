@@ -65,7 +65,15 @@ BEGIN
     RAISE EXCEPTION 'cashier original receipt recovery posture drift';
   END IF;
 
+  IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE oid=to_regprocedure('public.fn_cashier_conservation_report(uuid)') AND pg_get_userbyid(proowner)='postgres' AND provolatile='s') THEN
+    RAISE EXCEPTION 'cashier accounting report posture drift';
+  END IF;
+
   v_contract := jsonb_build_array(
+    jsonb_build_object(
+      'signature', 'public.fn_cashier_conservation_report(uuid)',
+      'hash', '070c95f0e89b41685aaf584068e76fce'
+    ),
     jsonb_build_object(
       'signature', 'public.fn_cashier_recovery_receipts(uuid,uuid[],text[])',
       'hash', 'c4cf363fde8d283e3163baf5391ce87e'

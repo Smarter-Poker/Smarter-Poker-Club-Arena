@@ -2,6 +2,7 @@ import {
   reserveCashierWalletOperation,
   clearCashierWalletOperation,
 } from '../services/CashierWalletRecovery';
+import CashierConservationReport from '../components/wallet/CashierConservationReport';
 import CashierPendingOperations from '../components/wallet/CashierPendingOperations';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -2469,6 +2470,16 @@ function CashierContent() {
             key={`${user?.id}:${clubId}`}
             userId={user?.id}
             clubId={clubId || null}
+          />
+
+          <CashierConservationReport
+            key={`${user?.id}:${clubId}:${userRole}`}
+            userId={user?.id}
+            clubId={clubId || null}
+            role={userRole}
+            ready={!roleUnknown}
+            getAuthorityEpoch={() => authorityEpoch.current}
+            actionClassName={styles.wordAction}
           />
 
           {/* Action Tabs */}

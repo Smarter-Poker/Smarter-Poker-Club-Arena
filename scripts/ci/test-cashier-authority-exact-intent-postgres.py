@@ -513,7 +513,82 @@ try:
     refused("post-suspension-send-refused", as_role(AGENT_A, f"SELECT public.fn_club_bank_send('{CLUB}','{PLAYER}',1,'player_wallet','After Suspend','10000000-0000-0000-0000-000000000009');"))
     run("restore-agent-after-status-race", f"UPDATE agents SET status='active' WHERE club_id='{CLUB}' AND user_id='{AGENT_A}';")
 
-    hashes = run("source-binding-hashes", "SELECT p.oid::regprocedure::text||'|'||md5(p.prosrc)||'|'||md5(pg_get_functiondef(p.oid)) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname IN ('fn_cashier_recovery_receipts','fn_cashier_member_is_active','fn_club_active_cashier_edges','fn_club_bank_role','fn_club_is_in_downline','fn_cashier_assert_active_actor','fn_cashier_agent_status_mutex','fn_cashier_balance_actor_guard','fn_cashier_operation_mutex_guard','fn_cashier_operation_intent_guard','fn_cashier_exact_intent_begin','fn_cashier_exact_intent_finish','fn_club_bank_send','fn_club_bank_claim_back','fn_club_bank_reverse','fn_admin_remove_player_chips','fn_promo_wallet_send','fn_club_promo_wallet_send','fn_agent_wallet_send','fn_agent_wallet_claim_back','fn_request_chips','fn_club_bank_send_core_20261004','fn_club_bank_claim_core_20261004','fn_club_bank_reverse_core_20261004','fn_admin_remove_chips_core_20261004','fn_promo_wallet_send_core_20261004','fn_club_promo_send_core_20261004','fn_agent_wallet_send_core_20261004','fn_agent_wallet_claim_back_core_20261004','fn_request_chips_core_20261004','fn_club_cashier_members','fn_cashier_statement_downline','fn_cashier_statement_scope','fn_club_trade_ledger') ORDER BY p.oid::regprocedure::text;")
+    # Phase 3 uses the actual active-authority producer above, with isolated
+    # baseline/ledger fixtures. No production accounts or financial writes.
+    report_club = "00000000-0000-0000-0000-0000000000c3"
+    run("conservation-fixture", f"""
+      ALTER TABLE profiles ADD COLUMN status text;
+      ALTER TABLE clubs ADD COLUMN asset text DEFAULT 'chips';
+      ALTER TABLE club_members ADD COLUMN held_chips numeric DEFAULT 0;
+      CREATE TABLE ca_treasury_baseline(club_id uuid PRIMARY KEY,opening_balance numeric,taken_at timestamptz);
+      CREATE TABLE ca_chip_baseline(club_id uuid,user_id uuid,opening_balance numeric,taken_at timestamptz,PRIMARY KEY(club_id,user_id));
+      CREATE TABLE chip_ledger(id uuid DEFAULT gen_random_uuid(),club_id uuid,from_type text,from_entity_id uuid,to_type text,to_entity_id uuid,amount numeric,created_at timestamptz,status text NOT NULL CHECK(status IN ('posted','correction','reversal')));
+      CREATE TABLE tables(id uuid PRIMARY KEY,club_id uuid,tournament_id uuid);
+      CREATE TABLE table_seats(table_id uuid,stack numeric,left_at timestamptz);
+      INSERT INTO clubs(id,owner_id,name,chip_treasury) VALUES ('{report_club}','{OWNER}','Report Club',485);
+      INSERT INTO club_members(club_id,user_id,role,status,chip_balance) VALUES
+        ('{report_club}','{OWNER}','owner','active',0),
+        ('{report_club}','{PLAYER}','player','active',90),
+        ('{report_club}','{AGENT_B}','player','active',210);
+      INSERT INTO ca_treasury_baseline VALUES ('{report_club}',500,'2026-01-02');
+      INSERT INTO ca_chip_baseline VALUES ('{report_club}','{OWNER}',0,'2026-01-02'),
+        ('{report_club}','{PLAYER}',100,'2026-01-02'),('{report_club}','{AGENT_B}',200,'2026-01-01');
+      INSERT INTO chip_ledger(club_id,from_type,from_entity_id,to_type,to_entity_id,amount,created_at,status) VALUES
+        ('{report_club}','club_treasury','{report_club}','agent_wallet','{OWNER}',20,'2026-01-03','posted'),
+        ('{report_club}','agent_wallet','{OWNER}','club_treasury','{report_club}',5,'2026-01-03','posted'),
+        ('{report_club}','player_wallet','{PLAYER}','player_wallet','{AGENT_B}',10,'2026-01-03','posted'),
+        ('{report_club}','club_treasury','{report_club}','player_wallet','{PLAYER}',400,'2026-01-01','posted'),
+        ('{CLUB}','club_treasury','{report_club}','player_wallet','{PLAYER}',99,'2026-01-03','posted'),
+        ('{report_club}','club_treasury','{report_club}','player_wallet','{PLAYER}',3,'2026-01-03','correction'),
+        ('{report_club}','player_wallet','{PLAYER}','club_treasury','{report_club}',3,'2026-01-03','reversal'),
+        ('{report_club}','player_wallet','{PLAYER}','player_wallet','{AGENT_B}',2,'2026-01-03','correction'),
+        ('{report_club}','player_wallet','{AGENT_B}','player_wallet','{PLAYER}',2,'2026-01-03','reversal');
+      INSERT INTO agents(club_id,user_id,status,agent_wallet_balance,promo_wallet_balance) VALUES ('{report_club}','{OWNER}','active',15,7);
+      INSERT INTO tables VALUES ('{report_club}','{report_club}',NULL),('{CLUB}','{report_club}','{CLUB}');
+      INSERT INTO table_seats VALUES ('{report_club}',25,NULL),('{CLUB}',999,NULL),('{report_club}',999,now());
+    """)
+    refused("conservation-ledger-pending-status-not-a-booked-leg",f"INSERT INTO chip_ledger(status) VALUES ('pending');","23514")
+    refused("conservation-ledger-null-status-refused","INSERT INTO chip_ledger(status) VALUES (NULL);","23502")
+    run("conservation-shipped-migration", (ROOT / "supabase/migrations/20261011162855_cashier_club_baseline_conservation_report.sql").read_text())
+    report_call = f"public.fn_cashier_conservation_report('{report_club}')"
+    def witness(name, expression, expected):
+        return run(name, as_role(OWNER,f"SELECT {expression} FROM (SELECT {report_call} AS r) x;"),expected)
+    witness("conservation-bank-exact", "r->'bank'->>'status'||'|'||(r->'bank'->>'actual')||'|'||(r->'bank'->>'expected')", "verified|485|485")
+    witness("conservation-individual-cutovers-and-peer-sides", "r->'players'->>'status'||'|'||(r->'players'->>'checked')||'|'||(r->'players'->>'absolute_drift')", "verified|3|0")
+    witness("conservation-inventory-no-tournament-or-exited-stacks", "r->'inventory'->>'cash_stacks'||'|'||(r->'inventory'->>'agent_wallets')||'|'||(r->'inventory'->>'promo_wallets')", "25|15|7")
+    run("conservation-correction-only-fixture",f"INSERT INTO chip_ledger(club_id,from_type,from_entity_id,to_type,to_entity_id,amount,created_at,status) VALUES ('{report_club}','club_treasury','{report_club}','player_wallet','{PLAYER}',4,'2026-01-04','correction'); UPDATE clubs SET chip_treasury=481 WHERE id='{report_club}'; UPDATE club_members SET chip_balance=94 WHERE club_id='{report_club}' AND user_id='{PLAYER}';")
+    witness("conservation-booked-correction-counts-bank-and-player", "r->'bank'->>'status'||'|'||(r->'bank'->>'expected')||'|'||(r->'players'->>'status')", "verified|481|verified")
+    run("conservation-reversal-only-fixture",f"INSERT INTO chip_ledger(club_id,from_type,from_entity_id,to_type,to_entity_id,amount,created_at,status) VALUES ('{report_club}','player_wallet','{PLAYER}','club_treasury','{report_club}',4,'2026-01-05','reversal'); UPDATE clubs SET chip_treasury=485 WHERE id='{report_club}'; UPDATE club_members SET chip_balance=90 WHERE club_id='{report_club}' AND user_id='{PLAYER}';")
+    witness("conservation-booked-reversal-counts-bank-and-player", "r->'bank'->>'status'||'|'||(r->'bank'->>'expected')||'|'||(r->'players'->>'status')", "verified|485|verified")
+
+    run("conservation-offset-fixture", f"UPDATE club_members SET chip_balance=chip_balance+CASE WHEN user_id='{PLAYER}' THEN 0.01 ELSE -0.01 END WHERE club_id='{report_club}' AND user_id IN ('{PLAYER}','{AGENT_B}');")
+    witness("conservation-opposite-cent-drifts-do-not-cancel", "r->'players'->>'status'||'|'||(r->'players'->>'mismatches')||'|'||(r->'players'->>'net_drift')||'|'||(r->'players'->>'absolute_drift')", "attention|2|0.00|0.02")
+    run("conservation-restore-exact-wallets", f"UPDATE club_members SET chip_balance=CASE WHEN user_id='{PLAYER}' THEN 90 ELSE 210 END WHERE club_id='{report_club}' AND user_id IN ('{PLAYER}','{AGENT_B}'); INSERT INTO club_members(club_id,user_id,role,status,chip_balance) VALUES ('{report_club}','{AGENT_C}','player','active',0);")
+    witness("conservation-zero-without-baseline-is-unknown", "r->'players'->>'status'||'|'||(r->'players'->>'missing')", "incomplete|1")
+    run("conservation-orphan-baseline-fixture", f"INSERT INTO ca_chip_baseline VALUES ('{report_club}',gen_random_uuid(),0,'2026-01-02');")
+    witness("conservation-orphan-position-is-unknown", "r->'players'->>'missing'", "2")
+    run("conservation-bank-baseline-removal", f"DELETE FROM ca_treasury_baseline WHERE club_id='{report_club}';")
+    witness("conservation-missing-bank-is-not-zero", "r->'bank'->>'status'||'|'||coalesce(r->'bank'->>'expected','NULL')", "incomplete|NULL")
+    run("conservation-bank-future-baseline", f"INSERT INTO ca_treasury_baseline VALUES ('{report_club}',485,now()+interval '1 day');")
+    witness("conservation-future-baseline-refused-as-coverage", "r->'bank'->>'status'", "incomplete")
+    refused("conservation-player-refused",as_role(PLAYER,f"SELECT {report_call};"))
+    refused("conservation-unaffiliated-refused",as_role(AGENT_A,f"SELECT {report_call};"))
+    refused("conservation-null-club-refused",as_role(OWNER,"SELECT public.fn_cashier_conservation_report(NULL);"),"22023")
+    refused("conservation-no-session-refused","SET ROLE authenticated; SELECT public.fn_cashier_conservation_report(NULL);")
+    run("conservation-owner-withdrawal", f"UPDATE club_members SET status='suspended' WHERE club_id='{report_club}' AND user_id='{OWNER}';")
+    refused("conservation-owner-id-cannot-bypass-suspension",as_role(OWNER,f"SELECT {report_call};"))
+    run("conservation-deleted-operator", f"UPDATE club_members SET status='active' WHERE club_id='{report_club}' AND user_id='{OWNER}'; UPDATE profiles SET status='deleted' WHERE id='{OWNER}';")
+    refused("conservation-deleted-operator-refused",as_role(OWNER,f"SELECT {report_call};"))
+    run("conservation-restore-owner",f"UPDATE profiles SET status=NULL WHERE id='{OWNER}';")
+    run("conservation-posture", "SELECT p.prosecdef||'|'||(p.provolatile='s')||'|'||r.rolname||'|'||array_to_string(p.proconfig,'|') FROM pg_proc p JOIN pg_roles r ON r.oid=p.proowner WHERE p.oid='public.fn_cashier_conservation_report(uuid)'::regprocedure;", "true|true|postgres|search_path=public, pg_temp")
+    run("conservation-anonymous-acl-refused", "SELECT has_function_privilege('anon','public.fn_cashier_conservation_report(uuid)','EXECUTE');", "f")
+    run("conservation-diamond-fixture",f"UPDATE clubs SET asset='diamonds' WHERE id='{report_club}';")
+    refused("conservation-diamond-units-not-mixed",as_role(OWNER,f"SELECT {report_call};"),"22023")
+    run("conservation-restore-chip-asset",f"UPDATE clubs SET asset='chips' WHERE id='{report_club}';")
+    run("conservation-read-only-transaction", "BEGIN READ ONLY;"+as_role(OWNER,f"SELECT {report_call}->>'scope';")+"COMMIT;", "bank_and_player_baselines")
+    run("conservation-read-only-repeat",as_role(OWNER,f"SELECT {report_call}={report_call};"),"t")
+
+    hashes = run("source-binding-hashes", "SELECT p.oid::regprocedure::text||'|'||md5(p.prosrc)||'|'||md5(pg_get_functiondef(p.oid)) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname IN ('fn_cashier_conservation_report','fn_cashier_recovery_receipts','fn_cashier_member_is_active','fn_club_active_cashier_edges','fn_club_bank_role','fn_club_is_in_downline','fn_cashier_assert_active_actor','fn_cashier_agent_status_mutex','fn_cashier_balance_actor_guard','fn_cashier_operation_mutex_guard','fn_cashier_operation_intent_guard','fn_cashier_exact_intent_begin','fn_cashier_exact_intent_finish','fn_club_bank_send','fn_club_bank_claim_back','fn_club_bank_reverse','fn_admin_remove_player_chips','fn_promo_wallet_send','fn_club_promo_wallet_send','fn_agent_wallet_send','fn_agent_wallet_claim_back','fn_request_chips','fn_club_bank_send_core_20261004','fn_club_bank_claim_core_20261004','fn_club_bank_reverse_core_20261004','fn_admin_remove_chips_core_20261004','fn_promo_wallet_send_core_20261004','fn_club_promo_send_core_20261004','fn_agent_wallet_send_core_20261004','fn_agent_wallet_claim_back_core_20261004','fn_request_chips_core_20261004','fn_club_cashier_members','fn_cashier_statement_downline','fn_cashier_statement_scope','fn_club_trade_ledger') ORDER BY p.oid::regprocedure::text;")
     (out / "source-binding-hashes.txt").write_text(hashes + "\n")
     results["passed"] = all(case["passed"] for case in results["cases"])
 finally:

@@ -121,24 +121,52 @@ describe('Promo Vault keyboard accessibility', () => {
     expect(opener).toHaveFocus();
     expect(state.rpc.mock.calls.some(([name]) => name === 'ca_promo_vault_buy')).toBe(false);
   });
-  it('keeps focus inside Grant when the picker is replaced by quantity controls', async () => {
-    const user = userEvent.setup();
-    await page();
-    const opener = screen.getByRole('button', { name: 'Grant Time Bank' });
-    await user.click(opener);
-    const dialog = within(screen.getByRole('dialog'));
-    await waitFor(() =>
-      expect(dialog.getByRole('textbox', { name: 'Search Players' })).toHaveFocus()
-    );
-    await user.click(dialog.getByRole('button', { name: /Viewer/ }));
-    await user.tab();
-    expect(dialog.getByRole('button', { name: 'Change' })).toHaveFocus();
-    await user.tab({ shift: true });
-    expect(dialog.getByRole('button', { name: 'Confirm' })).toHaveFocus();
-    await user.keyboard('{Escape}');
-    expect(opener).toHaveFocus();
-    expect(state.rpc.mock.calls.some(([name]) => name === 'ca_promo_vault_grant')).toBe(false);
-  });
+  it.each(['pointer', 'keyboard'] as const)(
+    'keeps immediate focus inside Grant across %s recipient transitions',
+    async (activation) => {
+      const user = userEvent.setup();
+      await page();
+      const opener = screen.getByRole('button', { name: 'Grant Time Bank' });
+      await user.click(opener);
+      const dialog = within(screen.getByRole('dialog'));
+      await waitFor(() =>
+        expect(dialog.getByRole('textbox', { name: 'Search Players' })).toHaveFocus()
+      );
+      const choose = dialog.getByRole('button', { name: /Viewer/ });
+      if (activation === 'pointer') await user.click(choose);
+      else {
+        choose.focus();
+        await user.keyboard('{Enter}');
+      }
+      expect(dialog.getByRole('spinbutton', { name: 'Quantity To Send' })).toHaveFocus();
+      const more = dialog.getByRole('button', { name: 'More' });
+      await user.click(more);
+      expect(more).toHaveFocus();
+      expect(dialog.getByRole('spinbutton', { name: 'Quantity To Send' })).toHaveValue(2);
+      await user.tab({ shift: true });
+      expect(dialog.getByRole('spinbutton', { name: 'Quantity To Send' })).toHaveFocus();
+      await user.tab({ shift: true });
+      expect(dialog.getByRole('button', { name: 'Fewer' })).toHaveFocus();
+      await user.tab({ shift: true });
+      expect(dialog.getByRole('button', { name: 'Change' })).toHaveFocus();
+      await user.tab({ shift: true });
+      expect(dialog.getByRole('button', { name: 'Confirm' })).toHaveFocus();
+      const change = dialog.getByRole('button', { name: 'Change' });
+      if (activation === 'pointer') await user.click(change);
+      else {
+        change.focus();
+        await user.keyboard('{Enter}');
+      }
+      expect(dialog.getByRole('textbox', { name: 'Search Players' })).toHaveFocus();
+      await user.tab({ shift: true });
+      expect(dialog.getByRole('button', { name: 'Cancel' })).toHaveFocus();
+      await user.tab();
+      expect(dialog.getByRole('textbox', { name: 'Search Players' })).toHaveFocus();
+      await user.keyboard('{Escape}');
+      expect(opener).toHaveFocus();
+      expect(state.rpc.mock.calls.some(([name]) => name === 'ca_promo_vault_grant')).toBe(false);
+    }
+  );
   it('keeps a pending purchase disabled and trapped without changing its existing Cancel behavior', async () => {
     const user = userEvent.setup();
     const pending = deferred<{ data: unknown; error: null }>();

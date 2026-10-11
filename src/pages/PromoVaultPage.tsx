@@ -41,7 +41,7 @@
  * calling them differently.
  */
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -904,6 +904,16 @@ function GrantDialog({
   );
 
   const [recipient, setRecipient] = useState<RosterMember | null>(preselected);
+  const recipientFocusPendingRef = useRef(false);
+  const recipientSearchRef = useRef<HTMLInputElement>(null);
+  const sendQuantityRef = useRef<HTMLInputElement>(null);
+  useLayoutEffect(() => {
+    // Both recipient transitions remove the focused control. Transfer focus
+    // after the replacement mounts, without restarting the dialog's trap.
+    if (!recipientFocusPendingRef.current) return;
+    recipientFocusPendingRef.current = false;
+    (recipient ? sendQuantityRef : recipientSearchRef).current?.focus();
+  }, [recipient]);
   const [search, setSearch] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [busy, setBusy] = useState(false);
@@ -955,6 +965,7 @@ function GrantDialog({
           <input
             type="text"
             className="pv-search"
+            ref={recipientSearchRef}
             placeholder={toTitleCase('search by name, username or player number')}
             aria-label="Search Players"
             value={search}
@@ -969,7 +980,10 @@ function GrantDialog({
                   key={m.user_id}
                   type="button"
                   className="pv-picker__row"
-                  onClick={() => setRecipient(m)}
+                  onClick={() => {
+                    recipientFocusPendingRef.current = true;
+                    setRecipient(m);
+                  }}
                 >
                   <RoleBadge role={m.role} size="sm" />
                   <span className="pv-picker__names">
@@ -999,7 +1013,14 @@ function GrantDialog({
             {recipient.player_number && (
               <span className="pv-chosen__number">No. {recipient.player_number}</span>
             )}
-            <button type="button" className="pv-chosen__change" onClick={() => setRecipient(null)}>
+            <button
+              type="button"
+              className="pv-chosen__change"
+              onClick={() => {
+                recipientFocusPendingRef.current = true;
+                setRecipient(null);
+              }}
+            >
               Change
             </button>
           </div>
@@ -1020,6 +1041,7 @@ function GrantDialog({
               max={maxQuantity}
               value={quantity}
               aria-label="Quantity To Send"
+              ref={sendQuantityRef}
               onChange={(e) => {
                 const next = Number(e.target.value);
                 setQuantity(

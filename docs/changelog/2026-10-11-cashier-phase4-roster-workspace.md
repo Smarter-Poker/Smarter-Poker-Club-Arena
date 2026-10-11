@@ -11,3 +11,5 @@ Six independently mounted regressions fail on the original source and pass on th
 Fresh Phase 3 verification passed 140 isolated PostgreSQL cases and 80 connected component/source cases. Both public endpoints still contained the qualified Phase 3 source, installed migration/function hashes and permissions matched, and the actual published read showed truthful incomplete baseline coverage with zero covered drift. No migration was replayed and no financial probe changed production balances.
 
 Phase 4 source and local checks are distinct from protected merge, publication and live acceptance; final provider identities and screenshots are recorded in the existing task checkpoint.
+
+Hosted qualification exposed an existing Lightning operator test race: recording the request did not mean its answer had rendered. The test now awaits the acknowledged Close button before continuing, with the same request assertions and default wait bound. No Lightning runtime behavior changed.

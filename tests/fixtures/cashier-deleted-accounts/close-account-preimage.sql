@@ -241,3 +241,6 @@ BEGIN
                             'departed_memberships', v_departed);
 END;
 $function$;
+-- Captured installed ACL: closure remains a service-only operation.
+REVOKE ALL ON FUNCTION public.fn_close_account(uuid) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_close_account(uuid) TO service_role;

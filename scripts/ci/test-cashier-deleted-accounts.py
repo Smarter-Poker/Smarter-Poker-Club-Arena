@@ -166,6 +166,8 @@ try:
         f"SELECT p.status||'/'||m.chip_balance||'/'||(SELECT chip_treasury FROM clubs)||'/'||(SELECT fn_ca_deleted_account_bank_return('{club}','{custody_user}')->>'amount') FROM profiles p JOIN club_members m ON m.user_id=p.id WHERE p.id='{custody_user}'; ROLLBACK;", 'deleted/0.00/1151.11/0')
     run('close-account-completed-approval-advances-to-wallet-check', f"BEGIN; INSERT INTO cashout_requests VALUES('{custody_user}','{active}',14.23,'approved',now()); SELECT fn_close_account('{custody_user}')->>'reason'; ROLLBACK;", 'club_chips')
     run('close-account-open-approval-still-refused', f"BEGIN; INSERT INTO cashout_requests VALUES('{custody_user}','{active}',14.23,'approved',NULL); SELECT fn_close_account('{custody_user}')->>'reason'; ROLLBACK;", 'pending_cashout')
+    run('custody-close-account-refuses-browser', f"SET ROLE authenticated; SELECT fn_close_account('{custody_user}');", error='42501')
+    run('custody-close-account-service-access-preserved', f"SET ROLE service_role; SELECT fn_close_account('{custody_user}')->>'reason';", 'club_chips')
     run('custody-trigger-refuses-browser-call', 'SET ROLE authenticated; SELECT fn_deleted_account_custody_settled();', error='42501')
     # Hold the actual wallet in another session. Wait on its explicit advisory
     # witness, not a guessed scheduling delay, then assert NOWAIT refusal.

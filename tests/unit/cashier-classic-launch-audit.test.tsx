@@ -820,3 +820,34 @@ describe('parseChipAmount (launch audit)', () => {
     expect(decimalComma.ok).toBe(false);
   });
 });
+
+it('Phase 4: hides no selected destination behind search and clearing restores results with focus', async () => {
+  start();
+  const select = await screen.findByLabelText('Send To Recipient');
+  await waitFor(() => expect((select as HTMLSelectElement).options.length).toBe(2));
+  fireEvent.change(select, { target: { value: PLAYER_ONE } });
+  expect(screen.getByRole('region', { name: 'Selected Player Wallet Context' })).toHaveTextContent(
+    'Destination: Player Wallet'
+  );
+  fireEvent.change(screen.getByLabelText('Search Recipients'), { target: { value: 'no-match' } });
+  await waitFor(() => expect(select).toHaveValue(''));
+  expect(screen.queryByRole('region', { name: 'Selected Player Wallet Context' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Clear Search' }));
+  expect(screen.getByLabelText('Search Recipients')).toHaveFocus();
+  expect((select as HTMLSelectElement).options.length).toBe(2);
+});
+it('Phase 4: never projects an agent send onto the recipient player wallet', async () => {
+  extraRecipients = [
+    { user_id: 'agent-recipient', role: 'agent', display_name: 'Agent First', chip_balance: 123 },
+  ];
+  start();
+  const select = await screen.findByLabelText('Send To Recipient');
+  await waitFor(() => expect((select as HTMLSelectElement).options.length).toBe(3));
+  fireEvent.change(select, { target: { value: 'agent-recipient' } });
+  fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '10' } });
+  expect(screen.getByRole('region', { name: 'Selected Player Wallet Context' })).toHaveTextContent(
+    'Player Wallet: 123'
+  );
+  expect(screen.getByText('Agent Wallet Receives 10 Chips')).toBeInTheDocument();
+  expect(screen.queryByText('123 → 133')).toBeNull();
+});

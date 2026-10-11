@@ -482,6 +482,7 @@ function CashierContent() {
   }, [amount, selectedRecipient]);
   const [loadingRecipients, setLoadingRecipients] = useState(false);
   const [recipientSearch, setRecipientSearch] = useState('');
+  const recipientSearchRef = useRef<HTMLInputElement>(null);
 
   const filteredRecipients = useMemo(() => {
     if (!recipientSearch.trim()) return recipients;
@@ -490,6 +491,12 @@ function CashierContent() {
       (r) => r.searchText.includes(q) || (r.id === user?.id && 'you'.includes(q))
     );
   }, [recipients, recipientSearch, user?.id]);
+
+  // A filtered-out recipient must never remain the hidden destination.
+  useEffect(() => {
+    if (selectedRecipient && !filteredRecipients.some((row) => row.id === selectedRecipient))
+      setSelectedRecipient('');
+  }, [filteredRecipients, selectedRecipient]);
 
   // Buy Chips entry point (audit s21/s34: the server-priced purchase flow
   // worked end-to-end but nothing in the UI could reach it).
@@ -2619,7 +2626,8 @@ function CashierContent() {
                   </label>
                   <input
                     id="cashier-send-search"
-                    type="text"
+                    ref={recipientSearchRef}
+                    type="search"
                     placeholder="Search Name, Number, Handle, Or Role..."
                     className={styles.input}
                     style={{ marginBottom: '8px' }}
@@ -2627,6 +2635,42 @@ function CashierContent() {
                     onChange={(e) => setRecipientSearch(e.target.value)}
                     aria-label="Search Recipients"
                   />
+                  {recipientSearch && (
+                    <button
+                      type="button"
+                      className={styles.searchClear}
+                      onClick={() => {
+                        setRecipientSearch('');
+                        recipientSearchRef.current?.focus();
+                      }}
+                    >
+                      Clear Search
+                    </button>
+                  )}
+                  <p className="sc-copy sc-ink--muted" role="status">
+                    {filteredRecipients
+                      .filter((row) => row.id !== user?.id)
+                      .length.toLocaleString()}{' '}
+                    Results
+                  </p>
+                  {selectedRecipientData && (
+                    <section
+                      className={styles.recipientContext}
+                      aria-label="Selected Player Wallet Context"
+                    >
+                      <strong>{selectedRecipientData.username}</strong>
+                      <span>Player Wallet: {chipFigure(selectedRecipientData.balance)}</span>
+                      <span>
+                        Destination:{' '}
+                        {canHoldAgentWallet(selectedRecipientData.role)
+                          ? 'Agent Wallet'
+                          : 'Player Wallet'}
+                      </span>
+                      {canHoldAgentWallet(selectedRecipientData.role) && (
+                        <span>The Player Wallet Above Is Separate From Their Agent Wallet.</span>
+                      )}
+                    </section>
+                  )}
                   {loadingRecipients ? (
                     <p className={`${styles.loading} sc-copy sc-ink--muted`} aria-busy="true">
                       Loading Recipients
@@ -2739,8 +2783,9 @@ function CashierContent() {
                         {selectedRecipientData.username}
                       </span>
                       <span className={`${styles.value} sc-ink--silver`}>
-                        {chipFigure(selectedRecipientData.balance)} →{' '}
-                        {chipFigure(selectedRecipientData.balance + typedChips)}
+                        {canHoldAgentWallet(selectedRecipientData.role)
+                          ? `Agent Wallet Receives ${chipFigure(typedChips)} Chips`
+                          : `${chipFigure(selectedRecipientData.balance)} → ${chipFigure(selectedRecipientData.balance + typedChips)}`}
                       </span>
                     </div>
                     <div className={styles.row}>
@@ -2814,7 +2859,8 @@ function CashierContent() {
                   </label>
                   <input
                     id="cashier-distribute-search"
-                    type="text"
+                    ref={recipientSearchRef}
+                    type="search"
                     placeholder="Search Name, Number, Handle, Role, Or You..."
                     className={styles.input}
                     style={{ marginBottom: '8px' }}
@@ -2822,6 +2868,39 @@ function CashierContent() {
                     onChange={(e) => setRecipientSearch(e.target.value)}
                     aria-label="Search Distribute Recipients"
                   />
+                  {recipientSearch && (
+                    <button
+                      type="button"
+                      className={styles.searchClear}
+                      onClick={() => {
+                        setRecipientSearch('');
+                        recipientSearchRef.current?.focus();
+                      }}
+                    >
+                      Clear Search
+                    </button>
+                  )}
+                  <p className="sc-copy sc-ink--muted" role="status">
+                    {filteredRecipients.length.toLocaleString()} Results
+                  </p>
+                  {selectedRecipientData && (
+                    <section
+                      className={styles.recipientContext}
+                      aria-label="Selected Player Wallet Context"
+                    >
+                      <strong>{selectedRecipientData.username}</strong>
+                      <span>Player Wallet: {chipFigure(selectedRecipientData.balance)}</span>
+                      <span>
+                        Destination:{' '}
+                        {canHoldAgentWallet(selectedRecipientData.role)
+                          ? 'Agent Wallet'
+                          : 'Player Wallet'}
+                      </span>
+                      {canHoldAgentWallet(selectedRecipientData.role) && (
+                        <span>The Player Wallet Above Is Separate From Their Agent Wallet.</span>
+                      )}
+                    </section>
+                  )}
                   {loadingRecipients ? (
                     <p className={`${styles.loading} sc-copy sc-ink--muted`} aria-busy="true">
                       Loading Recipients

@@ -336,6 +336,8 @@ function CashierTradeWorkspace() {
   const reversibleSeqRef = useRef(0);
 
   const [search, setSearch] = useState('');
+  const rosterSearchRef = useRef<HTMLInputElement>(null);
+  const [roleFilter, setRoleFilter] = useState('all');
   const [groupByRole, setGroupByRole] = useState(false);
   const [sortKey, setSortKey] = useState<'balance' | 'name'>('balance');
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -1105,6 +1107,7 @@ function CashierTradeWorkspace() {
     // to a club where you have no assigned players left the filter stuck ON
     // with the only control that clears it greyed out - reload was the way out.
     setMineOnly(false);
+    setRoleFilter('all');
     setRecordQuery('');
     setRecordDirection('all');
     setRecordsLimit(50);
@@ -1564,6 +1567,7 @@ function CashierTradeWorkspace() {
     // one an owner could not ask at all before, because an owner sees the whole
     // club and nothing on the row said which of them were theirs.
     if (mineOnly) rows = rows.filter((r) => r.isMine);
+    if (roleFilter !== 'all') rows = rows.filter((r) => r.role === roleFilter);
     const bySort = (a: DownlineRow, b: DownlineRow) =>
       sortKey === 'balance' ? b.chipBalance - a.chipBalance : a.name.localeCompare(b.name);
     // A search is a question about a NAME. Answer it by match quality first
@@ -1583,7 +1587,7 @@ function CashierTradeWorkspace() {
       rows = [...rows].sort((a, b) => roleRank(b.role as ClubRole) - roleRank(a.role as ClubRole));
     }
     return rows;
-  }, [downline, search, sortKey, groupByRole, mineOnly]);
+  }, [downline, search, sortKey, groupByRole, mineOnly, roleFilter]);
 
   const agencyBalance = useMemo(() => sumChips(recipients.map((r) => r.chipBalance)), [recipients]);
 
@@ -1640,7 +1644,7 @@ function CashierTradeWorkspace() {
 
   useEffect(() => {
     setVisibleCount(25);
-  }, [clubUuid, search, mineOnly, groupByRole, sortKey]);
+  }, [clubUuid, search, mineOnly, groupByRole, sortKey, roleFilter]);
 
   // A selection had no relationship to what was on screen. Select three
   // players, type a search, select a fourth, press Send Out - and chips went
@@ -2299,6 +2303,7 @@ function CashierTradeWorkspace() {
     };
     setSearch('');
     setMineOnly(false);
+    setRoleFilter('all');
     setAmount(String(saved.amount));
     setSelected(new Set(pendingTargets));
     setTransferRecovery(saved);
@@ -2650,66 +2655,25 @@ function CashierTradeWorkspace() {
             ))}
           </nav>
 
-          <section
-            className={`${styles.recoveryConsole} ${cashierNeedsAttention ? styles.recoveryConsoleAttention : ''}`}
-            aria-labelledby="cashier-recovery-title"
-            data-cashier-recovery="true"
-          >
-            <div className={styles.recoveryHeading}>
+          {transferRecovery && transferRecovery.clubId === clubUuid && (
+            <div className={styles.recoveryAlert} role="alert">
               <div>
-                <span className={styles.sectionEyebrow}>Operations Integrity</span>
-                <h2 className={styles.recoveryTitle} id="cashier-recovery-title">
-                  Reconciliation Console
-                </h2>
+                <strong>Transfer Recovery Required</strong>
+                <span>
+                  {transferRecovery.failures.length.toLocaleString()} Of{' '}
+                  {transferRecovery.targetIds.length.toLocaleString()} Recipients Need Attention.
+                  The Original Retry Keys Are Preserved.
+                </span>
               </div>
+              <button
+                type="button"
+                onClick={reopenTransferRecovery}
+                disabled={!isOnline || busy || loading}
+              >
+                Review And Retry
+              </button>
             </div>
-            <CashierConservationReport
-              key={`${user?.id}:${clubUuid}:${myRole}`}
-              userId={user?.id}
-              clubId={clubUuid}
-              role={myRole}
-              ready={roleResolved && !loadError && !isHydrating}
-              online={isOnline}
-              getAuthorityEpoch={() => transferAuthorityEpoch.current}
-              onRefresh={reconcileCashier}
-              actionClassName={styles.reconcileBtn}
-            />
-            <div className={styles.recoveryGrid}>
-              <div className={styles.recoveryMetric}>
-                <span>Connection</span>
-                <strong className={isOnline ? styles.integrityGood : styles.integrityBad}>
-                  {isOnline ? 'Online' : 'Offline'}
-                </strong>
-              </div>
-              <div className={styles.recoveryMetric}>
-                <span>Balances Refreshed</span>
-                <strong>{lastVerifiedLabel}</strong>
-              </div>
-              <div className={styles.recoveryMetric}>
-                <span>Action Queue</span>
-                <strong>{(pendingCount + heldTicketCount).toLocaleString()} Waiting</strong>
-              </div>
-            </div>
-            {transferRecovery && transferRecovery.clubId === clubUuid && (
-              <div className={styles.recoveryAlert} role="alert">
-                <div>
-                  <strong>Transfer Recovery Required</strong>
-                  <span>
-                    {transferRecovery.failures.length.toLocaleString()} Of{' '}
-                    {transferRecovery.targetIds.length.toLocaleString()} Recipients Need Attention.
-                    The Original Retry Keys Are Preserved.
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={reopenTransferRecovery}
-                  disabled={!isOnline || busy || loading}
-                >
-                  Review And Retry
-                </button>
-              </div>
-            )}
-          </section>
+          )}
 
           <CashierPendingOperations
             actionClassName={styles.footerBtn}
@@ -2781,17 +2745,61 @@ function CashierTradeWorkspace() {
                 </label>
                 <input
                   id="cashier-member-search"
+                  ref={rosterSearchRef}
                   type="search"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search Name, Number, Handle, Or Role"
                   aria-label={`Search ${downline.length} Member${downline.length === 1 ? '' : 's'}`}
                 />
+                {search && (
+                  <button
+                    type="button"
+                    className={styles.searchClear}
+                    onClick={() => {
+                      setSearch('');
+                      rosterSearchRef.current?.focus();
+                    }}
+                  >
+                    Clear Search
+                  </button>
+                )}
                 <span className={styles.memberCount} role="status" aria-live="polite">
                   {list.length.toLocaleString()} Results
                 </span>
               </div>
               <div className={styles.filterRow}>
+                <label className={styles.roleFilter}>
+                  Role
+                  <select
+                    aria-label="Filter Roster By Role"
+                    value={roleFilter}
+                    onChange={(event) => setRoleFilter(event.target.value)}
+                  >
+                    <option value="all">All Roles</option>
+                    {Array.from(new Set(downline.map((row) => row.role)))
+                      .sort((a, b) => roleRank(b as ClubRole) - roleRank(a as ClubRole))
+                      .map((role) => (
+                        <option key={role} value={role}>
+                          {titleCase(roleLabel(role as ClubRole))}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                {(search || mineOnly || roleFilter !== 'all') && (
+                  <button
+                    type="button"
+                    className={styles.searchClear}
+                    onClick={() => {
+                      setSearch('');
+                      setMineOnly(false);
+                      setRoleFilter('all');
+                      rosterSearchRef.current?.focus();
+                    }}
+                  >
+                    Clear Filters
+                  </button>
+                )}
                 <label className={styles.groupToggle}>
                   <input
                     type="checkbox"
@@ -2878,11 +2886,13 @@ function CashierTradeWorkspace() {
                   !clubResolveFailed &&
                   list.length === 0 && (
                     <div className={styles.empty}>
-                      {mineOnly
-                        ? 'No Players Are Assigned To You In This Club.'
-                        : search.trim()
-                          ? 'No Members Match That Search.'
-                          : 'No Members In Your Downline Yet.'}
+                      {roleFilter !== 'all'
+                        ? 'No Members Match These Filters.'
+                        : mineOnly
+                          ? 'No Players Are Assigned To You In This Club.'
+                          : search.trim()
+                            ? 'No Members Match That Search.'
+                            : 'No Members In Your Downline Yet.'}
                     </div>
                   )}
                 {/*
@@ -2938,7 +2948,10 @@ function CashierTradeWorkspace() {
                           {r.username ? ` · @${r.username}` : ''}
                         </span>
                       </Link>
-                      <span className={styles.rowBalance}>{fmt(r.chipBalance)}</span>
+                      <span className={styles.rosterWallet}>
+                        <span className={styles.rowBalance}>{fmt(r.chipBalance)}</span>
+                        <span className={styles.rowSub}>Player Wallet</span>
+                      </span>
                       {r.isSelf ? null : (
                         <button
                           type="button"
@@ -3459,6 +3472,47 @@ function CashierTradeWorkspace() {
               </div>
             </section>
           )}
+          <section
+            className={`${styles.recoveryConsole} ${cashierNeedsAttention ? styles.recoveryConsoleAttention : ''}`}
+            aria-labelledby="cashier-recovery-title"
+            data-cashier-recovery="true"
+          >
+            <div className={styles.recoveryHeading}>
+              <div>
+                <span className={styles.sectionEyebrow}>Operations Integrity</span>
+                <h2 className={styles.recoveryTitle} id="cashier-recovery-title">
+                  Reconciliation Console
+                </h2>
+              </div>
+            </div>
+            <CashierConservationReport
+              key={`${user?.id}:${clubUuid}:${myRole}`}
+              userId={user?.id}
+              clubId={clubUuid}
+              role={myRole}
+              ready={roleResolved && !loadError && !isHydrating}
+              online={isOnline}
+              getAuthorityEpoch={() => transferAuthorityEpoch.current}
+              onRefresh={reconcileCashier}
+              actionClassName={styles.reconcileBtn}
+            />
+            <div className={styles.recoveryGrid}>
+              <div className={styles.recoveryMetric}>
+                <span>Connection</span>
+                <strong className={isOnline ? styles.integrityGood : styles.integrityBad}>
+                  {isOnline ? 'Online' : 'Offline'}
+                </strong>
+              </div>
+              <div className={styles.recoveryMetric}>
+                <span>Balances Refreshed</span>
+                <strong>{lastVerifiedLabel}</strong>
+              </div>
+              <div className={styles.recoveryMetric}>
+                <span>Action Queue</span>
+                <strong>{(pendingCount + heldTicketCount).toLocaleString()} Waiting</strong>
+              </div>
+            </div>
+          </section>
         </div>
       </CashierWorkspace>
 
@@ -3755,6 +3809,29 @@ function CashierTradeWorkspace() {
                     Send Diamonds
                   </button>
                 </div>
+                {picked.length === 1 && (
+                  <section
+                    className={styles.selectedContext}
+                    aria-label="Selected Player Wallet Context"
+                  >
+                    <strong>{picked[0].name}</strong>
+                    <span>
+                      {picked[0].playerNumber ? `ID: ${picked[0].playerNumber} · ` : ''}
+                      {titleCase(roleLabel(picked[0].role as ClubRole))}
+                    </span>
+                    <span>Player Wallet: {fmt(picked[0].chipBalance)}</span>
+                    <span>
+                      {amountModal === 'send'
+                        ? `Send From Your Agent Wallet To Their ${canHoldAgentWallet(picked[0].role) ? 'Agent Wallet' : 'Player Wallet'}`
+                        : amountModal === 'ticket'
+                          ? 'Ticket Funding Comes From Your Player Wallet'
+                          : 'Diamonds Move Between Diamond Wallets'}
+                    </span>
+                    {amountModal === 'send' && canHoldAgentWallet(picked[0].role) && (
+                      <span>The Player Wallet Above Is Separate From Their Agent Wallet.</span>
+                    )}
+                  </section>
+                )}
                 {amountModal === 'diamonds' && user?.id && picked.length === 1 ? (
                   <DiamondWalletTransfer
                     key={`${user?.id}:${picked[0].userId}`}

@@ -46,7 +46,8 @@ vi.mock('../../src/hooks/useMasterBusSubscription', () => ({
   useMasterBusSubscription: vi.fn(),
   useMasterBusSubscriptions: vi.fn(),
 }));
-vi.mock('../../src/utils/clubIdResolver', () => ({
+vi.mock('../../src/utils/clubIdResolver', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/utils/clubIdResolver')>()),
   resolveClubUUID: async (id: string) => id,
   resolveClubUUIDSync: (id: string) => id,
   isUUID: (id: string) => /^[0-9a-f-]{36}$/i.test(id),

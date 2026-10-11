@@ -60,6 +60,28 @@ Object.defineProperty(window, 'localStorage', {
   value: localStorageMock,
 });
 
+// The cashier reserves durable financial identities under Web Locks. Model
+// the browser's per-name exclusion, including concurrent tabs in unit fixtures.
+const browserLockTails = new Map<string, Promise<unknown>>();
+Object.defineProperty(navigator, 'locks', {
+  configurable: true,
+  value: {
+    request: (name: string, options: unknown, callback?: () => unknown) => {
+      const action = typeof options === 'function' ? (options as () => unknown) : callback;
+      if (!action) throw new TypeError('A Web Lock Callback Is Required');
+      const prior = browserLockTails.get(name) ?? Promise.resolve();
+      const next = prior.catch(() => undefined).then(action);
+      browserLockTails.set(name, next);
+      void next
+        .finally(() => {
+          if (browserLockTails.get(name) === next) browserLockTails.delete(name);
+        })
+        .catch(() => undefined);
+      return next;
+    },
+  },
+});
+
 // Mock Supabase
 //
 // TEST-INFRA FIX 2026-08-15: `from: vi.fn()` returns UNDEFINED, so the very

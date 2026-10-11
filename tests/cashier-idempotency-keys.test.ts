@@ -97,7 +97,12 @@ describe('the trade grid spends the AGENT WALLET', () => {
     // Chips to a player land in the balance they buy in with; chips to a sub
     // agent land in the float they distribute from. fn_agent_wallet_send refuses
     // 'agent_wallet' for any role that cannot hold one, so this has to agree.
-    expect(RUN_TRANSFERS).toMatch(/destination:\s*canHoldAgentWallet\(target\.role\)/);
+    expect(RUN_TRANSFERS).toMatch(
+      /destination:\s*uncertainRecovery\.destinations\?\.\[target\.userId\]/
+    );
+    expect(RUN_TRANSFERS).toContain(
+      "canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet'"
+    );
     expect(RUN_TRANSFERS).toContain("'agent_wallet'");
     expect(RUN_TRANSFERS).toContain("'player_wallet'");
   });
@@ -129,15 +134,17 @@ describe('one op id per target, held across a failure', () => {
     expect(PAGE).not.toContain('function newSubmissionId');
   });
 
-  it('is cleared when the amount or the selection changes', () => {
+  it('resets the form intent while retaining unresolved journals after editing', () => {
     // A changed amount or selection is a NEW intent and must not replay the old
     // one. Retained across a failure, cleared on a change: both, or neither
     // protection works.
-    expect(PAGE).toContain('const recoveryScope = transferRecoveryScopeRef.current');
-    expect(PAGE).toContain('recoveryScope.submissionId');
-    expect(PAGE).toContain(
-      'readCashierTransferRecovery(recoveryScope.userId, recoveryScope.clubId)'
+    const editEffect = PAGE.slice(
+      PAGE.indexOf('if (restoringTransferRecoveryRef.current)'),
+      PAGE.indexOf('}, [amount, selected]') + 25
     );
+    expect(editEffect).toContain('submissionIdRef.current = null');
+    expect(editEffect).toContain('readCashierTransferRecovery(user.id, clubUuid)');
+    expect(editEffect).not.toContain('clearCashierTransferRecovery(');
     expect(PAGE).toMatch(/\}, \[amount, selected\]\);/);
   });
 
@@ -172,7 +179,9 @@ describe('the recipient list is the one the server will accept', () => {
 
   it('still reads the viewer own membership, which is a different question', () => {
     // Role and personal chip balance are the viewer's own row, not a roster.
-    expect(PAGE).toMatch(/\.from\('club_members'\)[\s\S]{0,120}select\('role, chip_balance'\)/);
+    expect(PAGE).toMatch(
+      /\.from\('club_members'\)[\s\S]{0,120}select\('role, chip_balance, status'\)/
+    );
   });
 });
 
@@ -191,7 +200,9 @@ describe('the ten minute rule is what the UI offers', () => {
   });
 
   it('retains one claim op id across an uncertain retry', () => {
-    expect(CLAIM).toContain('claimOpIdsRef.current.get(row.transaction_id) || newOpId()');
+    expect(CLAIM).toContain('await reserveCashierWalletOperation(');
+    expect(CLAIM).toContain('const heldOpId = operation.operationId');
+    expect(CLAIM).toContain('clearCashierWalletOperation(operation)');
     expect(CLAIM).toContain('claimOpIdsRef.current.set(row.transaction_id, heldOpId)');
     expect(CLAIM).toContain('claimOpIdsRef.current.delete(row.transaction_id)');
   });

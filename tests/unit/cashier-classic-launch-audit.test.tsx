@@ -14,7 +14,8 @@
  *   G-03  the Mint field reads grouped thousands like every other amount
  *   G-04  a failed club read says the club, not the role
  */
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { webcrypto } from 'node:crypto';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
@@ -43,7 +44,8 @@ vi.mock('../../src/stores/useWalletStore', () => ({
   useWalletStore: () => ({ loadBalances: mocks.loadBalances }),
 }));
 vi.mock('../../src/components/common/Toast', () => ({ useToast: () => mocks.toast }));
-vi.mock('../../src/hooks/useMasterBusChannel', () => ({ useMasterBusChannel: () => {} }));
+vi.mock('../../src/hooks/useMasterBusChannel', () => ({ useMasterBusChannel: vi.fn() }));
+import { useMasterBusChannel } from '../../src/hooks/useMasterBusChannel';
 vi.mock('../../src/hooks/useVisibilityRefresh', () => ({ useVisibilityRefresh: () => {} }));
 vi.mock('../../src/utils/errorReporter', () => ({
   reportError: (...args: unknown[]) => mocks.reportError(...args),
@@ -203,6 +205,8 @@ describe('Cashier Classic launch audit', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
+    localStorage.clear();
+    Object.defineProperty(globalThis, 'crypto', { configurable: true, value: webcrypto });
     mocks.walletProps.length = 0;
     rpcCalls = [];
     mintResponses = [];
@@ -580,6 +584,38 @@ describe('Cashier Classic launch audit', () => {
     await waitFor(() => expect(document.activeElement).toBe(trigger));
     expect(document.body.style.overflow).toBe('');
     expect(supabase.rpc).not.toHaveBeenCalledWith('fn_agent_wallet_send', expect.anything());
+  });
+
+  it('Phase 2: an Advanced Send keeps its original operation after edits and remount', async () => {
+    await sendTabWith('25');
+    fireEvent.click(screen.getByRole('button', { name: /Send 25 Chips To Selected Recipient/ }));
+    await waitFor(() => expect(sendCalls()).toHaveLength(1));
+    const original = sendCalls()[0][1];
+    await screen.findByText('The Cashier Refused That Send');
+    const journal = localStorage.getItem(localStorage.key(0)!);
+    expect(journal).toContain(original.p_op_id);
+    fireEvent.change(document.getElementById('cashier-send-amount')!, { target: { value: '30' } });
+    expect(localStorage.getItem(localStorage.key(0)!)).toBe(journal);
+    cleanup();
+    nowMs += 20_000;
+    await sendTabWith('25');
+    fireEvent.click(screen.getByRole('button', { name: /Send 25 Chips To Selected Recipient/ }));
+    await waitFor(() => expect(sendCalls()).toHaveLength(2));
+    expect(sendCalls()[1][1]).toEqual(original);
+  });
+  it('Phase 2: a membership event closes the open Advanced confirmation before it can send', async () => {
+    await sendTabWith('10000');
+    fireEvent.click(screen.getByRole('button', { name: /Send 10000 Chips To Selected Recipient/ }));
+    await screen.findByRole('dialog');
+    roleReads[CLUB] = playerRead;
+    const bindings = vi.mocked(useMasterBusChannel).mock.calls.map(([options]) => options);
+    const authority = bindings.find((options) => options.table === 'club_members')!;
+    await act(async () =>
+      authority.onPayload({ eventType: 'UPDATE', new: { club_id: CLUB, role: 'player' } })
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByRole('tab', { name: 'Send' })).toBeNull();
+    expect(sendCalls()).toHaveLength(0);
   });
 
   // ── G-01 ─────────────────────────────────────────────────────────────────

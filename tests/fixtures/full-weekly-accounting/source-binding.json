@@ -164,7 +164,7 @@
     "tests/fixtures/correction-document-authority/captured-references.json": "60b794f91a5d726c9302856a220b193eae52fbd95dc1e15ad4b95b312b092479",
     "tests/fixtures/correction-document-authority/captured-union-party.json": "9bc97fef36c4e3e3ec2766cb3596764513bb20fd8bce78e5fa1ee87337bb86f7",
     "tests/fixtures/correction-document-authority/regression.sql": "f70b287534ee6024469629a18fd38cb4074f528e906808c5bf6ebdb1464091f1",
-    "tests/cashier-weekly-statements.test.tsx": "ea17078ccc7576d3fd2d66cb51c175e9416e4d3e4ced93f80df87cc2d74e7229",
+    "tests/cashier-weekly-statements.test.tsx": "5d62394eda8cdf404f63bb37dbdbacb053f24d1f15d15c895706a6b8e27578fd",
     "tests/helpers/clubWeeklyStatement.ts": "7061277bbc67933e1aba5bcd76ebd3cd4fec241ffe9545c39e0b0f10806b2d21",
     "tests/unit/ClubWeeklyAccountingReader.test.ts": "a014cdab643e4adb2612f49112a4d51947c33de71c23e16757cb432bd09d8c2e",
     "tests/unit/FinancialExportService.test.ts": "a3870a8c151e21c7917687b6953dcd3d51cf82cc03071c655674111ad9556c16",
@@ -4078,6 +4078,17 @@
         "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
         "previous": "d0d1655c9145b8cb3fc874ea21784cd8cc0a9a97e9e95fc340fce3691caf51aa",
         "current": "21ca39f81153dbb7eca673eefb0a05263454bcb67dd014016a41bf0d7e36756b"
+      }
+    ]
+  },
+  "cashierSubscribedAuthorityMock20261011": {
+    "reason": "The mounted weekly statement fixture now isolates the new membership Realtime hook; its intentionally minimal auth-event bus lacks channel registration. All existing weekly accounting, authorization, ABA and detached response assertions remain unchanged and all 8 mounted weekly cases pass. Actual Realtime balance/authority behavior is tested in the connected Cashier launch audit. No captured financial SQL or runner input changes.",
+    "changes": [
+      {
+        "section": "repository_fixtures",
+        "path": "tests/cashier-weekly-statements.test.tsx",
+        "previous_sha256": "ea17078ccc7576d3fd2d66cb51c175e9416e4d3e4ced93f80df87cc2d74e7229",
+        "sha256": "5d62394eda8cdf404f63bb37dbdbacb053f24d1f15d15c895706a6b8e27578fd"
       }
     ]
   }

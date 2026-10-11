@@ -1840,6 +1840,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-cashier-deleted-accounts.py --output artifacts/cashier-deleted-accounts
+      - name: Cashier withdrawn authority retains original operation receipts
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-cashier-authority-exact-intent-postgres.py --output artifacts/cashier-authority-recovery
       - name: Cashier statements follow the trade ledger scope and export what is on screen
         if: matrix.shard == 1
         env:

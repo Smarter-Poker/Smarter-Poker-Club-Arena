@@ -93,6 +93,10 @@ import { useRecentRecipients } from '../../hooks/useRecentRecipients';
 import { fuzzyMatch } from '../../utils/fuzzyMatch';
 
 import { reportError } from '../../utils/errorReporter';
+import {
+  reserveCashierWalletOperation,
+  clearCashierWalletOperation,
+} from '../../services/CashierWalletRecovery';
 import { readCashierBalances } from '../../services/cashierBalanceRead';
 import { useVisibleRead } from '../../hooks/useVisibleRead';
 import { roleLabel, normaliseRole, roleRank } from '../../types/clubRoles';
@@ -407,6 +411,9 @@ export default function WalletCashierModal({
   const claimOpIdsRef = useRef<Map<string, string>>(new Map());
   const reverseOpIdsRef = useRef<Map<string, string>>(new Map());
   /** Beats the double tap that lands before `sending` has re-rendered. */
+  const actionViewKey = JSON.stringify([isOpen, clubId, user?.id, walletType, role]);
+  const actionView = useRef({ key: actionViewKey });
+  if (actionView.current.key !== actionViewKey) actionView.current = { key: actionViewKey };
   const busyRef = useRef(false);
 
   const viewerRole = normaliseRole(role);
@@ -743,7 +750,6 @@ export default function WalletCashierModal({
     setPromoLedgerTotals(null);
     setReversibleAnchor(null);
     opIdRef.current = newOpId();
-    busyRef.current = false;
   }, [isOpen, clubId, user?.id, walletType, role]);
 
   // Escape closes, and the page behind stops scrolling. Both are what a person
@@ -1031,9 +1037,29 @@ export default function WalletCashierModal({
 
   const doSend = async () => {
     if (!canSend || !clubUuid || !recipient || busyRef.current) return;
+    const owningView = actionView.current;
     busyRef.current = true;
     setSending(true);
     try {
+      const action =
+        tab === 'claim'
+          ? 'fn_club_bank_claim_back'
+          : walletType === 'promo_wallet'
+            ? promoSendRpc(promoSource)
+            : walletType === 'agent_wallet'
+              ? 'fn_agent_wallet_send'
+              : 'fn_club_bank_send';
+      const operation = await reserveCashierWalletOperation(user?.id || '', clubUuid, action, {
+        p_club_id: clubUuid,
+        ...(tab === 'claim'
+          ? { p_from_user_id: recipient.user_id, p_source: destination }
+          : { p_to_user_id: recipient.user_id, p_destination: destination }),
+        p_amount: amt,
+        p_reason: reason.trim() || null,
+      });
+      if (!operation) throw new Error('Cashier Safety Storage Is Unavailable. Try Again');
+      if (!isMounted.current || actionView.current !== owningView) return;
+      opIdRef.current = operation.operationId;
       let res: {
         success?: boolean;
         error?: string;
@@ -1102,6 +1128,8 @@ export default function WalletCashierModal({
         throw new Error(res?.error || 'The Cashier Refused That Movement');
       }
 
+      clearCashierWalletOperation(operation);
+      if (!isMounted.current || actionView.current !== owningView) return;
       const destLabel = DESTINATION_LABELS[destination] || 'Wallet';
       toast?.success?.(
         tab === 'claim'
@@ -1126,6 +1154,7 @@ export default function WalletCashierModal({
       setHolderNonce((n) => n + 1);
       refresh();
     } catch (e) {
+      if (!isMounted.current || actionView.current !== owningView) return;
       reportError(e, 'WalletCashierModal.send');
       toast?.error?.((e as Error).message || 'Send Failed');
       // The key is NOT rotated here. If this failed because the response was
@@ -1161,15 +1190,29 @@ export default function WalletCashierModal({
    */
   const claimBack = async (row: ReversibleSend) => {
     if (!clubUuid || claimingId || busyRef.current) return;
+    const owningView = actionView.current;
     busyRef.current = true;
     setClaimingId(row.transaction_id);
     try {
-      const opId = claimOpIdsRef.current.get(row.transaction_id) || newOpId();
+      const operation = await reserveCashierWalletOperation(
+        user?.id || '',
+        clubUuid,
+        'fn_agent_wallet_claim_back',
+        {
+          p_club_id: clubUuid,
+          p_transaction_id: row.transaction_id,
+          p_amount: null,
+          p_reason: 'Claimed Back From The Agent Wallet Cashier',
+        }
+      );
+      if (!operation) throw new Error('Cashier Safety Storage Is Unavailable. Try Again');
+      if (!isMounted.current || actionView.current !== owningView) return;
+      const opId = operation.operationId;
       claimOpIdsRef.current.set(row.transaction_id, opId);
       const { data, error } = await supabase.rpc('fn_agent_wallet_claim_back', {
         p_club_id: clubUuid,
         p_transaction_id: row.transaction_id,
-        p_amount: row.remaining,
+        p_amount: null,
         p_reason: 'Claimed Back From The Agent Wallet Cashier',
         p_op_id: opId,
       });
@@ -1178,12 +1221,15 @@ export default function WalletCashierModal({
         success?: boolean;
         error?: string;
         replayed?: boolean;
+        amount?: number;
       } | null;
       if (!res?.success) throw new Error(res?.error || 'Those Chips Could Not Be Claimed Back');
+      clearCashierWalletOperation(operation);
+      if (!isMounted.current || actionView.current !== owningView) return;
       toast?.success?.(
         res.replayed
-          ? `That Claim Had Already Gone Through. ${fmtWhole(row.remaining)} Chips Are Back In Your Agent Wallet`
-          : `Claimed ${fmtWhole(row.remaining)} Chips Back From ${row.to_name}`
+          ? `That Claim Had Already Gone Through. ${fmtWhole(Number(res.amount) || 0)} Chips Are Back In Your Agent Wallet`
+          : `Claimed ${fmtWhole(Number(res.amount) || 0)} Chips Back From ${row.to_name}`
       );
       masterBus.emit('BALANCE_UPDATED', { source: 'agent_wallet_claim', userId: user?.id || '' });
       masterBus.emit('BALANCE_UPDATED', {
@@ -1193,6 +1239,7 @@ export default function WalletCashierModal({
       claimOpIdsRef.current.delete(row.transaction_id);
       refresh();
     } catch (e) {
+      if (!isMounted.current || actionView.current !== owningView) return;
       reportError(e, 'WalletCashierModal.claimBack');
       toast?.error?.((e as Error).message || 'Claim Back Failed');
     } finally {
@@ -1203,10 +1250,19 @@ export default function WalletCashierModal({
 
   const reverse = async (row: LedgerRow) => {
     if (!clubUuid || reversingId || busyRef.current) return;
+    const owningView = actionView.current;
     busyRef.current = true;
     setReversingId(row.id);
     try {
-      const opId = reverseOpIdsRef.current.get(row.id) || newOpId();
+      const operation = await reserveCashierWalletOperation(
+        user?.id || '',
+        clubUuid,
+        'fn_club_bank_reverse',
+        { p_transaction_id: row.id, p_reason: 'Reversed From The Club Bank Cashier' }
+      );
+      if (!operation) throw new Error('Cashier Safety Storage Is Unavailable. Try Again');
+      if (!isMounted.current || actionView.current !== owningView) return;
+      const opId = operation.operationId;
       reverseOpIdsRef.current.set(row.id, opId);
       const { data, error } = await supabase.rpc('fn_club_bank_reverse', {
         p_transaction_id: row.id,
@@ -1219,11 +1275,14 @@ export default function WalletCashierModal({
         error?: string;
       } | null;
       if (!res?.success) throw new Error(res?.error || 'That Send Could Not Be Reversed');
+      clearCashierWalletOperation(operation);
+      if (!isMounted.current || actionView.current !== owningView) return;
       toast?.success?.(`Reversed ${fmtWhole(row.amount)} Chips Back Into The Club Bank`);
       masterBus.emit('BALANCE_UPDATED', { source: 'club_bank_reverse', userId: user?.id || '' });
       reverseOpIdsRef.current.delete(row.id);
       refresh();
     } catch (e) {
+      if (!isMounted.current || actionView.current !== owningView) return;
       reportError(e, 'WalletCashierModal.reverse');
       toast?.error?.((e as Error).message || 'Reversal Failed');
     } finally {

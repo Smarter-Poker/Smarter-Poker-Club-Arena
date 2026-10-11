@@ -45,6 +45,7 @@ const state = vi.hoisted(() => ({
 }));
 const toastMocks = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 
+vi.mock('../../src/hooks/useMasterBusChannel', () => ({ useMasterBusChannel: vi.fn() }));
 vi.mock('../../src/hooks/useAuthUser', () => ({
   useAuthUser: () => ({ user: { id: USER_ID }, isHydrating: false }),
 }));
@@ -87,6 +88,11 @@ vi.mock('../../src/utils/clubIdResolver', async (importOriginal) => ({
 }));
 
 import { supabase } from '../../src/lib/supabase';
+import { useMasterBusChannel } from '../../src/hooks/useMasterBusChannel';
+import {
+  writeCashierTransferRecovery,
+  readCashierTransferRecovery,
+} from '../../src/services/CashierResilience';
 import CashierTradePage from '../../src/pages/CashierTradePage';
 import { exactChipFigure, parseTradeAmount, sumChips } from '../../src/utils/cashierAmount';
 import { WalletPlate } from '../../src/pages/PlayerWalletPage';
@@ -764,4 +770,142 @@ it('keeps a late uncertain transfer in its original club instead of poisoning th
   expect(screen.getByRole('button', { name: 'Select Player 1' })).toBeEnabled();
   fireEvent.click(screen.getByRole('button', { name: 'Select Player 1' }));
   expect(await screen.findByRole('dialog', { name: /Send Out/ })).toBeInTheDocument();
+});
+
+it('Phase 2: editing an uncertain transfer preserves its original journal and honest outcome', async () => {
+  state.batch = async () => ({ data: null, error: { message: 'Connection Lost' } });
+  mountCashier();
+  await synchronized();
+  const dialog = await openSendOut('10', 1);
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+  await waitFor(() => expect(screen.getByText('Transfer Recovery Required')).toBeInTheDocument());
+  const journalKeys = Array.from(
+    { length: localStorage.length },
+    (_, i) => localStorage.key(i)!
+  ).filter((key) => key.includes('cashier-transfer-recovery'));
+  expect(journalKeys).toHaveLength(1);
+  const original = localStorage.getItem(journalKeys[0]);
+  expect(toastMocks.error.mock.calls.flat().join(' ')).not.toContain('Nothing Was Sent');
+  fireEvent.change(screen.getByRole('spinbutton', { name: 'Amount Per Player' }), {
+    target: { value: '11' },
+  });
+  await waitFor(() => expect(localStorage.getItem(journalKeys[0])).toBe(original));
+  expect(screen.getByText('Transfer Recovery Required')).toBeInTheDocument();
+});
+
+it('Phase 2: withdrawing operator role refreshes an open cashier and prevents a fresh batch', async () => {
+  mountCashier();
+  await synchronized();
+  await openSendOut('10', 1);
+  vi.mocked(supabase.from).mockImplementationOnce(
+    () =>
+      ({
+        select: () => ({
+          eq: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: { role: 'player', status: 'active' },
+                error: null,
+              }),
+            }),
+          }),
+        }),
+      }) as never
+  );
+  await act(async () =>
+    bus.emit('MEMBER_ROLE_CHANGED', { clubId: CLUB_A, userId: USER_ID, newRole: 'player' })
+  );
+  await waitFor(() =>
+    expect(screen.queryByRole('checkbox', { name: /Player 1/ })).not.toBeInTheDocument()
+  );
+  expect(state.rpcCalls.some((call) => call.name === 'fn_cashier_batch_transfer')).toBe(false);
+});
+
+it('Phase 2: a balance-only realtime update leaves the open transfer authorized', async () => {
+  mountCashier();
+  await synchronized();
+  const dialog = await openSendOut('10', 1);
+  const hook = vi
+    .mocked(useMasterBusChannel)
+    .mock.calls.map(([options]) => options)
+    .findLast((options) => options.channelName?.startsWith('cashier-member-authority:'))!;
+  await act(async () =>
+    hook.onPayload?.({
+      eventType: 'UPDATE',
+      new: {
+        club_id: CLUB_A,
+        role: 'owner',
+        status: 'active',
+        chip_balance: 490,
+      },
+      old: {},
+    } as never)
+  );
+  expect(within(dialog).getByRole('button', { name: 'Confirm' })).toBeEnabled();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+  await waitFor(() =>
+    expect(state.rpcCalls.filter((call) => call.name === 'fn_cashier_batch_transfer')).toHaveLength(
+      1
+    )
+  );
+});
+
+it('Phase 2: a partial recovery skips an already committed removed recipient and preserves the remaining original key and destination', async () => {
+  const firstId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
+  const secondId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2';
+  const submissionId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  expect(
+    writeCashierTransferRecovery({
+      version: 1,
+      userId: USER_ID,
+      clubId: CLUB_A,
+      kind: 'send',
+      amount: 10,
+      targetIds: PLAYER_IDS.slice(0, 2),
+      failures: PLAYER_IDS.slice(0, 2).map((userId) => ({
+        userId,
+        name: 'Original Recipient',
+        message: 'Unknown',
+      })),
+      submissionId,
+      opIds: { [PLAYER_IDS[0]]: firstId, [PLAYER_IDS[1]]: secondId },
+      destinations: { [PLAYER_IDS[0]]: 'player_wallet', [PLAYER_IDS[1]]: 'agent_wallet' },
+      ticketNote: 'Cashier Ticket',
+      createdAt: Date.now(),
+    })
+  ).toBe(true);
+  state.roster = [player(1, 100)]; // Today the remaining player has a different role.
+  mountCashier();
+  await synchronized();
+  const priorRpc = vi.mocked(supabase.rpc).getMockImplementation()!;
+  vi.mocked(supabase.rpc).mockImplementation((name, args) =>
+    name === 'fn_cashier_recovery_receipts'
+      ? (Promise.resolve({
+          data: {
+            operations: [{ operation_id: firstId, receipt: { success: true } }],
+            tickets: [],
+          },
+          error: null,
+        }) as never)
+      : priorRpc(name, args)
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Review And Retry' }));
+  const dialog = await screen.findByRole('dialog', { name: /Send Out/ });
+  expect(readCashierTransferRecovery(USER_ID, CLUB_A)?.targetIds).toEqual(PLAYER_IDS.slice(0, 2));
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+  await waitFor(() =>
+    expect(state.rpcCalls.filter((call) => call.name === 'fn_cashier_batch_transfer')).toHaveLength(
+      1
+    )
+  );
+  expect(
+    state.rpcCalls.find((call) => call.name === 'fn_cashier_batch_transfer')?.args.p_items
+  ).toEqual([
+    expect.objectContaining({
+      user_id: PLAYER_IDS[1],
+      amount: 10,
+      destination: 'agent_wallet',
+      op_id: secondId,
+    }),
+  ]);
 });

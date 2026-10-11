@@ -27,6 +27,9 @@ export interface CashierTransferRecovery {
   failures: CashierTransferFailure[];
   submissionId: string;
   opIds: Record<string, string>;
+  /** The server replay fingerprint must survive recipient promotion/demotion. */
+  destinations?: Record<string, 'agent_wallet' | 'player_wallet'>;
+  ticketNote?: 'Cashier Ticket';
   createdAt: number;
 }
 
@@ -105,6 +108,19 @@ const isValidRecovery = (
     return false;
   }
 
+  if (
+    row.destinations !== undefined &&
+    (!row.destinations ||
+      typeof row.destinations !== 'object' ||
+      Array.isArray(row.destinations) ||
+      Object.keys(row.destinations).length !== row.targetIds.length ||
+      row.targetIds.some(
+        (id) => !['agent_wallet', 'player_wallet'].includes(row.destinations![id])
+      ))
+  )
+    return false;
+
+  if (row.ticketNote !== undefined && row.ticketNote !== 'Cashier Ticket') return false;
   const targets = new Set(row.targetIds);
   if (targets.size !== row.targetIds.length || row.targetIds.some((id) => !UUID_PATTERN.test(id))) {
     return false;
@@ -193,7 +209,9 @@ const sameRecoveryIntent = (
   left.kind === right.kind &&
   left.amount === right.amount &&
   JSON.stringify(left.targetIds) === JSON.stringify(right.targetIds) &&
-  JSON.stringify(left.opIds) === JSON.stringify(right.opIds);
+  JSON.stringify(left.opIds) === JSON.stringify(right.opIds) &&
+  JSON.stringify(left.destinations) === JSON.stringify(right.destinations) &&
+  left.ticketNote === right.ticketNote;
 
 interface CashierRecoveryCollection {
   recoveries: CashierTransferRecovery[];

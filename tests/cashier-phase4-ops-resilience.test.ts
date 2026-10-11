@@ -395,15 +395,19 @@ describe('cashier Phase 4 operational resilience', () => {
   it('shows one reconciliation console with verified freshness evidence', () => {
     expect(page).toContain('data-cashier-recovery="true"');
     expect(page).toContain('Reconciliation Console');
-    expect(page).toContain('Reconcile Now');
+    expect(
+      readFileSync(resolve(root, 'src/components/wallet/CashierConservationReport.tsx'), 'utf8')
+    ).toContain('Reconcile Now');
     expect(page).toContain('if (complete) setLastVerifiedAt(Date.now())');
-    expect(page).toContain('Cashier Balances Reconciled');
+    expect(page).not.toContain('Cashier Balances Reconciled');
+    expect(page).toContain('CashierConservationReport');
+    expect(page).toContain('onRefresh={reconcileCashier}');
     expect(page).toContain('if (floatRes.error) {');
     expect(page).toContain("reportError(floatRes.error, 'CashierTradePage.agentWallet')");
     expect(page).toContain('checks.every((complete) => complete === true)');
     expect(page).toContain("tab === 'record' ? loadRecords()");
     expect(page).toContain("tab === 'leaderboard' ? loadInvoices()");
-    expect(page).toContain('Not Yet Verified');
+    expect(page).toContain('Not Yet Refreshed');
   });
 
   it('preserves a partial batch as a visible retryable intent', () => {

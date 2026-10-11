@@ -27,11 +27,20 @@ import {
 } from './fixtures/lightningOperatorDoors';
 
 const state = vi.hoisted(() => ({
+  changed: null as null | (() => void),
   rpc: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn() },
   reportError: vi.fn(),
 }));
 
+vi.mock('../../src/lightning/lightningOperatorEvents', () => ({
+  watchLightningOperator: (_club: string, _cluster: string, onChange: () => void) => {
+    state.changed = onChange;
+    return () => {
+      if (state.changed === onChange) state.changed = null;
+    };
+  },
+}));
 vi.mock('../../src/lib/supabase', () => ({ supabase: { rpc: state.rpc } }));
 vi.mock('../../src/components/common/Toast', () => ({ useToast: () => state.toast }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: state.reportError }));
@@ -359,7 +368,7 @@ describe('the overview page', () => {
     expect(screen.queryByText('Open Cluster')).toBeNull();
   });
 
-  it('refreshes every 15 seconds while visible, and never while hidden', async () => {
+  it('refreshes on a named engine event while visible, and reconciles events received while hidden', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     doors({ fn_lightning_operator_overview: ok(overviewAnswer()) });
     renderPage();
@@ -368,11 +377,12 @@ describe('the overview page', () => {
       state.rpc.mock.calls.filter((c) => c[0] === 'fn_lightning_operator_overview').length;
     const first = reads();
     await act(async () => {
-      vi.advanceTimersByTime(15_000);
+      state.changed?.();
     });
     await waitFor(() => expect(reads()).toBe(first + 1));
     const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
     await act(async () => {
+      state.changed?.();
       vi.advanceTimersByTime(60_000);
     });
     expect(reads()).toBe(first + 1);

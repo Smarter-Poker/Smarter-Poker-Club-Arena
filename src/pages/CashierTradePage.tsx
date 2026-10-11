@@ -1,4 +1,5 @@
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
+import CashierConservationReport from '../components/wallet/CashierConservationReport';
 import CashierPendingOperations from '../components/wallet/CashierPendingOperations';
 import {
   reserveCashierWalletOperation,
@@ -2192,7 +2193,7 @@ function CashierTradeWorkspace() {
   }, [reversible, secondsLeftFor, nowTick]);
 
   const reconcileCashier = useCallback(async () => {
-    if (!requireOnline() || reconcilingRef.current) return;
+    if (!requireOnline() || reconcilingRef.current) return false;
     reconcilingRef.current = true;
     setReconciling(true);
     try {
@@ -2205,12 +2206,13 @@ function CashierTradeWorkspace() {
         tab === 'request' ? loadRequests() : Promise.resolve(true),
         tab === 'tickets' ? loadTickets() : Promise.resolve(true),
       ]);
-      if (checks.every((complete) => complete === true))
-        toast?.success?.('Cashier Balances Reconciled');
-      else toast?.error?.('Cashier Reconciliation Needs Attention');
+      if (checks.every((complete) => complete === true)) return true;
+      toast?.error?.('Cashier Reconciliation Needs Attention');
+      return false;
     } catch (error) {
       reportError(error, 'CashierTradePage.reconcileCashier');
       toast?.error?.('Cashier Reconciliation Needs Attention');
+      return false;
     } finally {
       reconcilingRef.current = false;
       if (isMounted.current) setReconciling(false);
@@ -2424,7 +2426,7 @@ function CashierTradeWorkspace() {
                 : 'Balances Synchronized';
   const lastVerifiedLabel = lastVerifiedAt
     ? new Date(lastVerifiedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    : 'Not Yet Verified';
+    : 'Not Yet Refreshed';
   const currentClubLabel = membershipsLoading
     ? 'Loading Club'
     : titleCase(currentClub?.name || 'Club Cashier');
@@ -2660,15 +2662,18 @@ function CashierTradeWorkspace() {
                   Reconciliation Console
                 </h2>
               </div>
-              <button
-                type="button"
-                className={styles.reconcileBtn}
-                onClick={() => void reconcileCashier()}
-                disabled={!isOnline || reconciling || loading || isHydrating || !clubUuid}
-              >
-                {reconciling ? 'Reconciling...' : 'Reconcile Now'}
-              </button>
             </div>
+            <CashierConservationReport
+              key={`${user?.id}:${clubUuid}:${myRole}`}
+              userId={user?.id}
+              clubId={clubUuid}
+              role={myRole}
+              ready={roleResolved && !loadError && !isHydrating}
+              online={isOnline}
+              getAuthorityEpoch={() => transferAuthorityEpoch.current}
+              onRefresh={reconcileCashier}
+              actionClassName={styles.reconcileBtn}
+            />
             <div className={styles.recoveryGrid}>
               <div className={styles.recoveryMetric}>
                 <span>Connection</span>
@@ -2677,7 +2682,7 @@ function CashierTradeWorkspace() {
                 </strong>
               </div>
               <div className={styles.recoveryMetric}>
-                <span>Balances Verified</span>
+                <span>Balances Refreshed</span>
                 <strong>{lastVerifiedLabel}</strong>
               </div>
               <div className={styles.recoveryMetric}>

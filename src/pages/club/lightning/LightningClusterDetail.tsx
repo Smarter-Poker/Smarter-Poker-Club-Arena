@@ -19,13 +19,13 @@
  * unfreeze, Lightning on and off, the matcher version and the feature flags,
  * every one through fn_lightning_operator_control behind a confirm dialog,
  * plus the Rollout Readiness verdict. While a drain or a conversion is in
- * flight this view reads every 5 seconds instead of every 30, so the drain's
- * progress is live; the database drives the drain, this page only watches.
+ * flight, named engine events wake this view. The database drives the drain;
+ * this page observes its transaction events without polling.
  *
  * No card is ever shown (the doors redact; nothing here renders a card), and
  * horses read exactly like every other player (Law 10.5).
  */
-import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useState, type ReactNode } from 'react';
 import { SpadeConsole, type ConsoleInk } from '../../../components/console/SpadeConsole';
 import { useToast } from '../../../components/common/Toast';
 import { compactChips } from '../../../utils/format';
@@ -59,11 +59,7 @@ import {
   type OperatorAnswer,
   type SignalReviewStatus,
 } from '../../../lightning/lightningOperatorApi';
-import {
-  CLUSTER_ACTIVE_REFRESH_MS,
-  CLUSTER_REFRESH_MS,
-  usePolledAnswer,
-} from '../../../lightning/useLightningOperator';
+import { CLUSTER_REFRESH_MS, usePolledAnswer } from '../../../lightning/useLightningOperator';
 import { AnswerState, LatencyGrid, MODE_INK, count } from './lightningOperatorParts';
 import { ACTION_LABELS, isOperatorAction } from '../../../lightning/lightningOperatorControls';
 import LightningOperatorControls, {
@@ -551,34 +547,28 @@ function LatencySection({ detail }: { detail: Detail }) {
 
 export default function LightningClusterDetail({
   clusterId,
+  clubId,
   onBack,
 }: {
   clusterId: string;
+  clubId: string | null;
   onBack: () => void;
 }) {
   const [windowKey, setWindowKey] = useState<DetailWindowKey>('24h');
   const [poolSessionId, setPoolSessionId] = useState('');
   const span = DETAIL_WINDOWS.find((w) => w.key === windowKey) ?? DETAIL_WINDOWS[2];
-  /* A drain or a conversion in flight is watched every 5 seconds. Learned
-     from the last answer, so the faster loop starts on the read after one
-     begins and stops on the read after it ends. */
-  const [active, setActive] = useState(false);
-
   const read = usePolledAnswer<Detail>(
     `cluster:${clusterId}:${windowKey}`,
     () => {
       const to = new Date();
       return fetchLightningCluster(clusterId, new Date(to.getTime() - span.ms), to);
     },
-    active ? CLUSTER_ACTIVE_REFRESH_MS : CLUSTER_REFRESH_MS
+    CLUSTER_REFRESH_MS,
+    clubId
   );
   const answer = read.answer;
   const detail = answer?.status === 'ok' ? answer.data : null;
   const c = detail?.cluster ?? null;
-  const inFlight = isInFlight(c);
-  useEffect(() => {
-    setActive(inFlight);
-  }, [inFlight]);
   const badge = modeBadge(c?.mode ?? null);
   const now = read.refreshedAt ?? Date.now();
 

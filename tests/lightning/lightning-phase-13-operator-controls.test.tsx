@@ -27,11 +27,20 @@ import {
 } from './fixtures/lightningOperatorControlDoors';
 
 const state = vi.hoisted(() => ({
+  changed: null as null | (() => void),
   rpc: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },
   reportError: vi.fn(),
 }));
 
+vi.mock('../../src/lightning/lightningOperatorEvents', () => ({
+  watchLightningOperator: (_club: string, _cluster: string, onChange: () => void) => {
+    state.changed = onChange;
+    return () => {
+      if (state.changed === onChange) state.changed = null;
+    };
+  },
+}));
 vi.mock('../../src/lib/supabase', () => ({ supabase: { rpc: state.rpc } }));
 vi.mock('../../src/components/common/Toast', () => ({ useToast: () => state.toast }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: state.reportError }));
@@ -333,6 +342,27 @@ describe('the rules a control is sent under', () => {
 });
 
 describe('a control, from the tap to the answer', () => {
+  it('provides the supported shadow worker control through the audited door', async () => {
+    detailDoors();
+    renderDetail();
+    await openControl('Shadow Worker');
+    typeReason('Collect the staged calibration');
+    fireEvent.click(confirmButton());
+    await waitFor(() => expect(controlCalls()).toHaveLength(1));
+    expect(controlCalls()[0][1]).toMatchObject({
+      p_action: 'set_worker_mode',
+      p_args: { mode: 'shadow' },
+    });
+  });
+  it('keeps worker off unavailable until the cluster has returned to MUST MOVE', async () => {
+    detailDoors();
+    renderDetail();
+    expect(await screen.findByRole('button', { name: 'Worker Off' })).toHaveProperty(
+      'disabled',
+      true
+    );
+  });
+
   it('asks for a reason, sends once with a fresh request id, and shows before and after', async () => {
     detailDoors();
     renderDetail();
@@ -670,7 +700,7 @@ describe('the Cluster detail', () => {
     }
   });
 
-  it('shows the drain live, and reads every 5 seconds while it runs', async () => {
+  it('shows the drain live, and reads on its named engine event', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     doors({
       fn_lightning_operator_cluster: ok(
@@ -694,7 +724,7 @@ describe('the Cluster detail', () => {
     const first = reads();
     for (let i = 0; i < 4 && reads() <= first + 1; i += 1) {
       await act(async () => {
-        vi.advanceTimersByTime(5_100);
+        state.changed?.();
       });
       await act(async () => {
         await Promise.resolve();

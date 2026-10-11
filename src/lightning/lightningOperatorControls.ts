@@ -60,6 +60,7 @@ export const OPERATOR_ACTIONS = [
   'enable_matcher_version',
   'rollback_matcher_version',
   'set_flag',
+  'set_worker_mode',
 ] as const;
 
 export type OperatorAction = (typeof OPERATOR_ACTIONS)[number];
@@ -122,6 +123,7 @@ export const ACTION_LABELS: Record<OperatorAction, string> = {
   enable_matcher_version: 'Enable Matcher Version',
   rollback_matcher_version: 'Roll Back Matcher',
   set_flag: 'Change Feature Flag',
+  set_worker_mode: 'Set Worker Mode',
 };
 
 /** What each action does, printed in its confirm dialog. */
@@ -148,6 +150,8 @@ export const ACTION_EXPLAINERS: Record<OperatorAction, string> = {
   enable_matcher_version: 'Allows The Chosen Version To Be Used Again.',
   rollback_matcher_version: 'Returns The Live Matcher To The Previous Version.',
   set_flag: 'Changes One Feature Flag For This Cluster Only.',
+  set_worker_mode:
+    'Off Stops The Worker After A Completed Drain. Shadow Compares Without Forming Hands. Form Deals Hands Through The Validated Matcher.',
 };
 
 // ─── Feature flags (the Spec's names, mapped onto existing gates) ───────────
@@ -242,6 +246,7 @@ export interface ControlState {
   lightningEnabled: boolean | null;
   paused: boolean | null;
   joinsEnabled: boolean | null;
+  workerMode: string | null;
   drain: LightningDrain | null;
   matcher: LightningMatcherState | null;
 }
@@ -254,6 +259,7 @@ export function parseControlState(raw: unknown): ControlState | null {
     lightningEnabled: bool(r.lightning_enabled),
     paused: bool(r.paused),
     joinsEnabled: bool(r.joins_enabled),
+    workerMode: text(r.worker_mode),
     drain: parseDrain(r.drain),
     matcher: parseMatcher(r.matcher),
   };
@@ -381,6 +387,7 @@ export function stateChanges(
     ['Lightning', (s) => yesNo(s?.lightningEnabled ?? null, 'On', 'Off')],
     ['Paused', (s) => yesNo(s?.paused ?? null, 'Yes', 'No')],
     ['Joins', (s) => yesNo(s?.joinsEnabled ?? null, 'Open', 'Closed')],
+    ['Worker', (s) => (s?.workerMode ? enumLabel(s.workerMode) : 'Unknown')],
     ['Drain', (s) => drainLine(s?.drain ?? null)],
     ['Matcher', (s) => matcherLine(s?.matcher ?? null)],
   ];

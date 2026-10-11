@@ -63,7 +63,9 @@ export interface ClubEvent {
     | 'table_closed'
     | 'announcement'
     | 'tournament_starting'
-    | 'jackpot_hit';
+    | 'jackpot_hit'
+    | 'lightning_operator_changed'
+    | 'lightning_operator_resync';
   payload: unknown;
   timestamp: string;
 }

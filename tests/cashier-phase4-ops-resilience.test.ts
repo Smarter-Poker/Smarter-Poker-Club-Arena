@@ -484,3 +484,76 @@ describe('unresolved transfer identities do not expire', () => {
     );
   });
 });
+
+describe('Phase 5 durable individual batch amounts', () => {
+  it('round-trips exact amounts without changing legacy uniform journals', () => {
+    const storage = new MemoryStorage();
+    const custom = {
+      ...recovery,
+      targetAmounts: {
+        [recovery.targetIds[0]]: 0.1,
+        [recovery.targetIds[1]]: 21.05,
+      },
+    };
+    expect(writeCashierTransferRecovery(custom, storage, recovery.createdAt)).toBe(true);
+    expect(
+      readCashierTransferRecovery(recovery.userId, recovery.clubId, storage, recovery.createdAt)
+        ?.targetAmounts
+    ).toEqual(custom.targetAmounts);
+    expect(
+      writeCashierTransferRecovery(
+        { ...custom, targetAmounts: { ...custom.targetAmounts, [recovery.targetIds[1]]: 22 } },
+        storage,
+        recovery.createdAt
+      )
+    ).toBe(false);
+    expect(
+      readCashierTransferRecovery(recovery.userId, recovery.clubId, storage, recovery.createdAt)
+        ?.targetAmounts
+    ).toEqual(custom.targetAmounts);
+  });
+  it.each([0, -1, 10.005, 1_000_000_001, NaN, Infinity])(
+    'refuses invalid retained recipient value %s',
+    (value) => {
+      const storage = new MemoryStorage();
+      expect(
+        writeCashierTransferRecovery(
+          {
+            ...recovery,
+            targetAmounts: {
+              [recovery.targetIds[0]]: value,
+              [recovery.targetIds[1]]: 1,
+            },
+          },
+          storage,
+          recovery.createdAt
+        )
+      ).toBe(false);
+      expect(storage.length).toBe(0);
+    }
+  );
+  it('refuses missing or extra amounts before a retry can change the original intent', () => {
+    const storage = new MemoryStorage();
+    expect(
+      writeCashierTransferRecovery(
+        { ...recovery, targetAmounts: { [recovery.targetIds[0]]: 1 } },
+        storage,
+        recovery.createdAt
+      )
+    ).toBe(false);
+    expect(
+      writeCashierTransferRecovery(
+        {
+          ...recovery,
+          targetAmounts: {
+            [recovery.targetIds[0]]: 1,
+            [recovery.targetIds[1]]: 2,
+            '88888888-8888-4888-8888-888888888888': 3,
+          },
+        },
+        storage,
+        recovery.createdAt
+      )
+    ).toBe(false);
+  });
+});

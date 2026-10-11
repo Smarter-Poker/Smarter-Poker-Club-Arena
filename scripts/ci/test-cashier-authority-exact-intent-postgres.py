@@ -513,6 +513,41 @@ try:
     refused("post-suspension-send-refused", as_role(AGENT_A, f"SELECT public.fn_club_bank_send('{CLUB}','{PLAYER}',1,'player_wallet','After Suspend','10000000-0000-0000-0000-000000000009');"))
     run("restore-agent-after-status-race", f"UPDATE agents SET status='active' WHERE club_id='{CLUB}' AND user_id='{AGENT_A}';")
 
+    # Phase 5 qualifies the shipped bounded batch executor against the same
+    # native authority/exact-intent owner. The fixture's retained send core
+    # witnesses real agent-wallet debits/credits; it is not a production probe.
+    batch_source = (ROOT / "supabase/migrations/20260831235991_cashier_roster_ledger_batch_performance.sql").read_text()
+    batch_start = batch_source.index("create or replace function public.fn_cashier_batch_transfer(")
+    batch_end = batch_source.index("$function$;", batch_start) + len("$function$;")
+    run("batch-shipped-executor", batch_source[batch_start:batch_end] +
+        "REVOKE ALL ON FUNCTION public.fn_cashier_batch_transfer(uuid,text,jsonb,uuid) FROM PUBLIC,anon; GRANT EXECUTE ON FUNCTION public.fn_cashier_batch_transfer(uuid,text,jsonb,uuid) TO authenticated,service_role;")
+    batch_id = "30000000-0000-4000-8000-000000000001"
+    batch_op_a = "30000000-0000-4000-8000-000000000002"
+    batch_op_b = "30000000-0000-4000-8000-000000000003"
+    batch_items = json.dumps([
+        {"user_id": AGENT_B, "amount": 0.1, "destination": "agent_wallet", "reason": "Cashier Send Out", "op_id": batch_op_a},
+        {"user_id": AGENT_C, "amount": 0.2, "destination": "agent_wallet", "reason": "Cashier Send Out", "op_id": batch_op_b},
+    ])
+    batch_call = f"public.fn_cashier_batch_transfer('{CLUB}','send','{batch_items}'::jsonb,'{batch_id}')"
+    run("batch-first-individual-values", as_role(AGENT_A,
+        f"SELECT string_agg(item->>'amount',',' ORDER BY item->>'user_id') FROM jsonb_array_elements({batch_call}->'results') item;"), "0.1,0.2")
+    run("batch-identical-replay-no-new-core", as_role(AGENT_A,
+        f"SELECT bool_and((item->>'replayed')::boolean) FROM jsonb_array_elements({batch_call}->'results') item;"), "t")
+    run("batch-exact-two-receipts-one-cent-sum", f"SELECT count(*)||'|'||sum(amount) FROM chip_transactions WHERE metadata->>'op_id' IN ('{batch_op_a}','{batch_op_b}');", "2|0.3")
+    changed_items = json.loads(batch_items)
+    changed_items[0]["amount"] = 0.11
+    changed_items[1]["op_id"] = "30000000-0000-4000-8000-000000000004"
+    partial_call = f"public.fn_cashier_batch_transfer('{CLUB}','send','{json.dumps(changed_items)}'::jsonb,'{batch_id}')"
+    run("batch-partial-exact-intent-refusal-is-per-recipient", as_role(AGENT_A,
+        f"SELECT string_agg(item->>'success',',' ORDER BY item->>'user_id') FROM jsonb_array_elements({partial_call}->'results') item;"), "false,true")
+    run("batch-partial-keeps-first-original-amount", f"SELECT count(*)||'|'||sum(amount) FROM chip_transactions WHERE metadata->>'op_id'='{batch_op_a}';", "1|0.1")
+    invalid_items = json.loads(batch_items)
+    invalid_items[1]["amount"] = 0.005
+    run("batch-invalid-later-amount-refuses-entire-envelope", as_role(AGENT_A,
+        f"SELECT public.fn_cashier_batch_transfer('{CLUB}','send','{json.dumps(invalid_items)}'::jsonb,'{batch_id}')->>'success';"), "false")
+    run("batch-invalid-envelope-does-not-reach-first-core", f"SELECT count(*) FROM cashier_core_calls WHERE operation_id='{batch_op_a}';", "1")
+    refused("batch-anonymous-door-refused", "SET ROLE anon; SELECT public.fn_cashier_batch_transfer(NULL,'send','[]',NULL);", "42501")
+
     # Phase 3 uses the actual active-authority producer above, with isolated
     # baseline/ledger fixtures. No production accounts or financial writes.
     report_club = "00000000-0000-0000-0000-0000000000c3"

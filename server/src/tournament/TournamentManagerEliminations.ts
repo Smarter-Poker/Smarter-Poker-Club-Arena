@@ -54,6 +54,7 @@ import {
   requestSatelliteQualifierReceipt,
 } from './satelliteQualifierRpc.js';
 import { TournamentSweepWorkCursor } from './TournamentSweepWorkCursor.js';
+import { isBudgetYieldedRetirement } from './retirementYield.js';
 import {
   reconcileTournamentManagerWakeAcknowledgement,
   type TournamentManagerWakeReceipt,
@@ -1191,11 +1192,27 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                   break;
                 }
                 place = up;
-                reportError(
-                  new Error(
-                    `[Tournament:${this.tournamentId.slice(0, 8)}] finishing ladder exhausted downward at seed ${nextPosition} - ${bustedOrdered[i].user_id.slice(0, 8)} placed at ${place} instead. Places already handed out are one or more too high; the event will still finish but the standings need renumbering.`
-                  ),
-                  'TournamentManager.finishing_ladder_exhausted'
+                /* A LADDER THAT RUNS OUT DOWNWARD IS A FIELD THAT GREW
+                   (2026-10-11). Places are unique, and the seed is the count of
+                   players who hold none, so every place from the seed down to 2
+                   can only be taken when places were handed out while the field
+                   was smaller: a bust recorded during late registration took the
+                   place the field had then, and every later entrant moved its
+                   true place up by one. Coffee Break Freeroll 7aace408: 178
+                   entrants, busts from 17:44 while late registration ran to
+                   17:51, so the ladder ran 15 places low and ran out at seed 16
+                   at 18:06; this was reported 15 times as an error asking for a
+                   renumbering. Nobody has to renumber anything: every place
+                   handed out here is provisional, and the finish
+                   (fn_settle_tournament_places for a cash ladder, and through
+                   fn_ca_tournament_bust_at the satellite cohort, the final table
+                   deal and the bubble) derives every place again from when each
+                   bust happened before a chip is paid. 7aace408 finished with 178
+                   distinct places in bust order and its 18 prizes paid at the
+                   finish. So this is a line in the log, not an error report; a
+                   ladder with no free place at all is still critical above. */
+                console.log(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] [TournamentManager.finishing_ladder_exhausted] provisional place ${place} for ${bustedOrdered[i].user_id.slice(0, 8)} (seed ${nextPosition}): places handed out while late registration grew the field fill the ladder below the seed; the finish ranks every bust again by when it happened`
                 );
               }
 
@@ -1871,7 +1888,27 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       }
       completedWholeSweep = true;
     } catch (err) {
-      reportError(err, 'Tournament.elimination_check_error');
+      /* A BREAK RETIREMENT THAT RAN OUT OF SWEEP BUDGET HAS YIELDED, NOT FAILED
+         (2026-10-11). The retirement custody's `current()` includes
+         eliminationMutationAllowed(), so when a slow RPC spends the sweep's
+         work budget mid-retirement, assertCurrent throws
+         retirement_custody_stale (or admission_revision_stale). The custody
+         keeps its reservation for this generation to replay, and the finally
+         block below requeues the sweep because the budget expired: that is
+         the designed yield, and it was reported as
+         Tournament.elimination_check_error (18:00:43 UTC on 2026-10-11, the
+         first sweep after the thaw). Only that case is quiet here: any other
+         failure, such as the 56 fn_f06_discover_breaks timeouts of the
+         18:15-18:53 database slowdown, and a stale custody while the budget
+         still had time (a lost lease, a replaced lifecycle), is still
+         reported. */
+      if (isBudgetYieldedRetirement(err, this.running && this.eliminationWorkBudgetExpired())) {
+        console.log(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] break retirement yielded at the end of the sweep budget (${(err as Error).message}); the custody reservation is kept and the next sweep replays it`
+        );
+      } else {
+        reportError(err, 'Tournament.elimination_check_error');
+      }
       // A detached/event wake is consumable: once this invocation throws,
       // the causal work is still unresolved. Re-drive only this manager after
       // a short bounded delay. Healthy tournaments do not poll; a known failed

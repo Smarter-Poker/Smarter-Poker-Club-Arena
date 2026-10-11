@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "370df4f5225b971bc53d1b6eac0ce45d2017dd7893f7afe373185387d79daba2",
+    "scripts/ci/classify-ci-changes.mjs": "5521117f57b40e2c477458f14c2709aa2c4526ff0901f5703b6dccab169ae6d5",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
@@ -777,14 +777,25 @@
       }
     ]
   },
-  "cashierStatementDbHarnessRouting20261011": {
-    "reason": "Reviewed additive cashier statement harness routing: one new cashierStatementDbHarness selector naming scripts/ci/test-cashier-statement-db-postgres.py (the PostgreSQL 17 qualification of migration 20261011194856, the statement counts each move once), added to the existing server and tests selections, and one accounting_postgres shard 2 step that runs it. No selector is removed or narrowed; financial sources, assertions and historical evidence are unchanged. These byte bindings establish source identity only, not financial or production qualification.",
+  "cashierDbHarnessesRouting20261011": {
+    "reason": "Reviewed additive cashier database harness routing: one new cashierDbHarnesses selector naming the four cashier launch PostgreSQL 17 harnesses (chip request approval, union send, cashier arena names, finance gate) and their fixture directories, added to the existing server and tests selections, and four accounting_postgres shard 2 steps that run them. No selector is removed or narrowed; financial sources, assertions and historical evidence are unchanged. These byte bindings establish source identity only, not financial or production qualification.",
     "changes": [
       {
         "section": "repository_files",
         "path": "scripts/ci/classify-ci-changes.mjs",
         "previous": "9eef710ba89f994e5299852d62375543242c60a792dcb9ffb4601cc523d0e73c",
-        "current": "370df4f5225b971bc53d1b6eac0ce45d2017dd7893f7afe373185387d79daba2"
+        "current": "5374a01c45ef4118c957bd2613a495bad7f042655d6282e40c005efba8fc055d"
+      }
+    ]
+  },
+  "cashierStatementDbHarnessRouting20261011": {
+    "reason": "Reviewed additive cashier statement harness routing: the existing cashierDbHarnesses selector also names scripts/ci/test-cashier-statement-db-postgres.py (the PostgreSQL 17 qualification of migration 20261011194856, the statement counts each move once; its fixtures are under tests/fixtures/cashier-statements/, already selected), and one accounting_postgres shard 2 step runs it. No selector is removed or narrowed; financial sources, assertions and historical evidence are unchanged. These byte bindings establish source identity only, not financial or production qualification.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "5374a01c45ef4118c957bd2613a495bad7f042655d6282e40c005efba8fc055d",
+        "current": "5521117f57b40e2c477458f14c2709aa2c4526ff0901f5703b6dccab169ae6d5"
       }
     ]
   }

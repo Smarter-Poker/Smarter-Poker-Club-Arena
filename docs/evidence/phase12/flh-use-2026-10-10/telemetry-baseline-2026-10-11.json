@@ -1,0 +1,18 @@
+{
+  "readAt": "2026-10-11T20:56:02Z",
+  "day": "2026-10-11",
+  "phase12_applied": 1620,
+  "phase12_selection_selected": 1620,
+  "phase12_selection_controller_accepted": 1620,
+  "phase12_authority_verdict_usable": 1620,
+  "phase12_authority_worker_flh_usable": 2,
+  "phase12_authority_worker_flo8_unselected": 2,
+  "phase12_authority_worker_pineapple_unselected": 2,
+  "phase12_authority_worker_short_deck_unselected": 2,
+  "phase12_selection_none": 163248,
+  "phase12_selection_shadow_change": 3242,
+  "phase12_eligible": 146379,
+  "phase12_flh_eligible": 28039,
+  "phase12_flh_fired": 28003,
+  "phase12_variant_flh": 30032
+}

@@ -81,6 +81,12 @@ const clubCreateCapacity =
   /^(scripts\/ci\/check-club-create-capacity\.mjs$|tests\/unit\/clubCreateCapacity\.test\.ts$|\.github\/workflows\/club-create-certification\.yml$)/;
 const backedPayoutScan =
   /^(scripts\/ci\/(?:test-backed-payout-scan-postgres\.py$|fixtures\/backed-payout-scan\/)|tests\/backedPayoutScanRegression\.test\.ts$)/;
+// The cashier launch's database qualifications (2026-10-09). Each harness
+// replays one migration on PostgreSQL 17 inside accounting_postgres (shard 2)
+// against its own fixtures, so an edit to a harness or a fixture alone must
+// still run it. Add a later cashier harness by its name to both groups.
+const cashierDbHarnesses =
+  /^(scripts\/ci\/test-(?:chip-request-approval|union-send|cashier-arena-names|finance-gate|cashier-statement)-db-postgres\.py$|tests\/fixtures\/(?:chip-request-approval-db|union-send-db|cashier-arena-names-db|finance-gate-db)\/)/;
 const bbjContributionCover =
   /^(scripts\/ci\/(?:test-bbj-contribution-cover-postgres\.py$|fixtures\/bbj-contribution-cover\/)|scripts\/ops\/build-bbj-contribution-cover-concurrently\.sql$|tests\/bbjContributionCoverRegression\.test\.ts$)/;
 const scopedAuditReads =
@@ -109,12 +115,6 @@ const certificationRetirement =
 // Actual reserved cleanup/FK access must retain native concurrency qualification.
 const certificationPlayerIndex =
   /^(scripts\/(?:ci\/(?:test-certification-player-index-postgres\.py$|fixtures\/certification-player-index\/)|ops\/build-certification-player-index-concurrently\.sql$)|tests\/certificationPlayerIndexRegression\.test\.ts$)/;
-
-// The Cashier Statement's once-only counting migration (2026-10-11) is
-// qualified by its own PostgreSQL 17 harness in accounting_postgres (shard 2);
-// an edit to the harness alone must still run it. Its fixtures live under
-// tests/fixtures/cashier-statements/, which the accounting lane already admits.
-const cashierStatementDbHarness = /^scripts\/ci\/test-cashier-statement-db-postgres\.py$/;
 
 // Phase 1 customization has a two-step database cutover. Its native harness,
 // loaded fixtures, durable marker and service-role sealer are one qualification
@@ -325,6 +325,7 @@ export function classifyChangedPaths(paths) {
       matches(bbjContributionCover) ||
       matches(scopedAuditReads) ||
       matches(backedPayoutScan) ||
+      matches(cashierDbHarnesses) ||
       matches(settlementAttribution) ||
       matches(strandedPlayerRead) ||
       matches(contractIndexRecovery) ||
@@ -333,7 +334,6 @@ export function classifyChangedPaths(paths) {
       matches(certificationRetirement) ||
       matches(satelliteAuditIndex) ||
       matches(satelliteLedgerAuditIndex) ||
-      matches(cashierStatementDbHarness) ||
       matches(certificationPlayerIndex),
     tests:
       bbjFixture ||
@@ -378,6 +378,7 @@ export function classifyChangedPaths(paths) {
       matches(bbjContributionCover) ||
       matches(scopedAuditReads) ||
       matches(backedPayoutScan) ||
+      matches(cashierDbHarnesses) ||
       matches(settlementAttribution) ||
       matches(strandedPlayerRead) ||
       matches(contractIndexRecovery) ||
@@ -386,7 +387,6 @@ export function classifyChangedPaths(paths) {
       matches(certificationRetirement) ||
       matches(satelliteAuditIndex) ||
       matches(satelliteLedgerAuditIndex) ||
-      matches(cashierStatementDbHarness) ||
       matches(certificationPlayerIndex),
     phase4: phase4Changed,
     fixture: matches(fixture),

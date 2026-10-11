@@ -143,7 +143,12 @@ BEGIN
       -- accidentally copied md5(prosrc) from the native source-binding row;
       -- the post-deploy canary intentionally compares the third field, the
       -- complete callable definition including result shape and posture.
-      'hash', 'ea5a5a57ec31f396958246def887e5e6'
+      -- 20261010005048 names both sides with fn_arena_name instead of the
+      -- World Hub display name first; same rows, same posture. Both audited
+      -- bodies are valid until it is installed; an unknown third body still
+      -- fails closed. Once installed, make the replacement the hash.
+      'hash', 'ea5a5a57ec31f396958246def887e5e6',
+      'replacement_hash', 'd489a8b997a25320b0b4ec8b14a43587'
     ),
     jsonb_build_object(
       'signature', 'public.fn_club_bank_send(uuid,uuid,numeric,text,text,uuid)',
@@ -235,7 +240,12 @@ BEGIN
     ),
     jsonb_build_object(
       'signature', 'public.fn_agent_wallet_reversible(uuid)',
-      'hash', '61b3478f0332f8ee7945d6eb2810bb71'
+      -- 20261010005048 names the recipient with fn_arena_name, not the World
+      -- Hub display name first; same rows, same posture. Both audited bodies
+      -- are valid until it is installed; an unknown third body still fails
+      -- closed. Once installed, make the replacement the hash.
+      'hash', '61b3478f0332f8ee7945d6eb2810bb71',
+      'replacement_hash', '3cc86bbb6317359a7b43fc34524d5876'
     ),
     jsonb_build_object(
       'signature', 'public.fn_agent_wallet_self_stake(uuid,numeric,text,uuid)',
@@ -243,7 +253,14 @@ BEGIN
     ),
     jsonb_build_object(
       'signature', 'public.fn_respond_chip_request(uuid,text)',
-      'hash', 'f6b8bf0d7d035d063780b37ff614b068'
+      -- 20261010003544 keys an approval's send by request AND approver, so an
+      -- approver who was refused (an agent with no float) no longer leaves the
+      -- request unapprovable by anybody else. Both audited bodies (the live
+      -- 20260905040100 one and that file's) are valid until it is installed;
+      -- an unknown third body still fails closed. Once installed, make the
+      -- replacement the hash.
+      'hash', 'f6b8bf0d7d035d063780b37ff614b068',
+      'replacement_hash', '10fb3a12f5113521a2366a98af90ecbd'
     ),
     jsonb_build_object(
       'signature', 'public.fn_redeem_tournament_ticket(uuid)',

@@ -1,0 +1,31 @@
+{
+  "schema": "horse-phase13-qualification-v1",
+  "qualified": true,
+  "mode": "contract",
+  "variant": "plo8",
+  "sourceSha": "1235b47a63c439da9bdf8427148bc0818499378c",
+  "packVersion": "joint-multiway-round1-v4",
+  "contractVersion": "joint-strength-contract-v1",
+  "contractDigest": "1d0dd99be2fedd7ec50e502cf4241611818dd30aec794714808888616dc5dd96",
+  "domain": "plo8-cash-joint-multiway-after-rake-horse-population",
+  "policyDigest": "e8aca2339a576058bc265cf4966adacde209f0c51cdab8daf094acfe22102a76",
+  "policyDigestDefinition": "horse-phase13-policy-digest-v1",
+  "objectives": {
+    "cash": { "qualified": true, "status": "measured", "regressionMarginBbPer100": -10 },
+    "tournament": {
+      "status": "unavailable dependency",
+      "qualified": false,
+      "reasons": [
+        "tournament:plo8_joint_whole_tournament_outcome_model_unavailable",
+        "tournament:qualified_plo8_joint_tournament_reference_population_unavailable",
+        "tournament:plo8_joint_tournament_thresholds_not_specified"
+      ]
+    }
+  },
+  "admissionAlsoRequires": [
+    "natural completion-share evidence for the variant: on the release under admission, the share of eligible live joint decisions that complete without work_budget, insufficient_joint_samples or a joint_response_ refusal, per street and per board count, measured from natural decisions with the release unchanged throughout the window; P13.3 must state and meet its own floor for that share before admitting the variant, because this contract measures strength only for decisions that complete their fixed work"
+  ],
+  "evidencePath": "docs/evidence/phase13/1235b47a/strength-2026-10-10-plo8/strength.json",
+  "evidenceSha256": "33f5bb29997a3fdd22ecf3a85d0d2e632560fcf4a5c0ce8561ac40d48b730cdf",
+  "reasons": []
+}

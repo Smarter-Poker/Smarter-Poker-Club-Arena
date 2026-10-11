@@ -143,3 +143,42 @@ The owner amended the winning contract on October 9, 2026 ([amendment](horse-bra
 - **FLH:** the `022e1e4f` qualification no longer binds the running code (#6526 changed four Phase 12 policy files; FLH policy digest `a98910e0...` at `022e1e4f`, `1b3ca5c2...` running). The locked P12.2 FLH matrix was re-run unchanged on `c8bfc617`, whose FLH policy digest is the running one (run 37940882035, 42 of 42 shards): +1.11 [+0.70, +1.52] bb/100, 544,320 pairs, every gating cell trusted, verdict `qualified: true`, the same result as on `022e1e4f`. Selected through P12.3 once its natural completion record meets the floor.
 - **Pineapple:** run 37824406390 measured `022e1e4f`, which no longer binds the running code, so the locked matrix runs on `c8bfc617` instead.
 - **Short Deck and FLO8:** not qualified on (a); selections stay `null`.
+
+## Pineapple On The Running Source (October 10, 2026)
+
+The locked P12.2 Pineapple matrix ran unchanged on `1235b47a` (#6592), whose Phase 12 policy digests are main's (run [38005375218](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/38005375218), 195 shards, every shard counted). The earlier runs on `022e1e4f` (37824406390) and `c8bfc617` (37943679943) were cancelled before completion and measured code that no longer runs; neither is assembled. Assembled with the real assembler on a clean checkout of `1235b47a`. Cash after the published 1/2 rake, horse population:
+
+| Profile            | bb/100, 99% interval  | Interval trusted |
+| ------------------ | --------------------- | ---------------- |
+| primary (pooled)   | +1.59 [+1.00, +2.17]  | yes              |
+| 6max 2 dealt 100bb | +8.28 [+4.89, +11.67] | yes              |
+| 6max 4 dealt 100bb | +0.82 [+0.00, +1.64]  | yes              |
+| 6max 40bb          | +0.10 [-0.15, +0.35]  | no               |
+| 6max 100bb         | +0.19 [-0.03, +0.42]  | no               |
+| 6max 200bb         | +0.13 [-0.01, +0.27]  | no               |
+| 9max 100bb         | +0.00 [+0.00, +0.00]  | yes              |
+
+Condition (a): **not qualified** (`cash:profile:p12c-pineapple-6max-{40,100,200}bb:interval_not_trusted`, `cash:depth:{short,deep}:interval_not_trusted`): the same trust-check cause as Short Deck, with no cell losing. Pineapple is also below the natural completion floor (sampler budget exhausted, `docs/evidence/phase12/1235b47a/phase12-completion-2026-10-09-pineapple.json`). Selection stays `null`. Status: verified now. Evidence: `docs/evidence/phase12/1235b47a/strength-2026-10-10-pineapple/`, `docs/evidence/phase12/1235b47a/phase12-qualification-2026-10-10-pineapple.json` (`qualified: false`).
+
+## FLH Selection (October 10, 2026)
+
+- **Condition (a) on the running code:** the locked P12.2 FLH matrix re-run unchanged on `1235b47a` (run 37969578926, 42 of 42 shards): +1.11 [+0.70, +1.52] bb/100, 544,320 pairs, assembler verdict `qualified: true`. Qualification `docs/evidence/phase12/1235b47a/phase12-qualification-2026-10-09-flh.json` (`6849ff7f...`), policy digest `a55db7fe...`, unchanged on main.
+- **Natural completion floor:** predeclared window (`declaration-completion-2026-10-09-flh-amended.txt`, #6602) on release `15d25de1`, 21:02 to 22:50Z, 21:55 break excluded; the release served unchanged from 19:55:28Z to 22:55:38Z. 2,218 eligible decisions, every one completed; Wilson lower bounds preflop 0.993, flop 0.987, turn 0.985, river 0.982 against the 0.95 floor. Record `docs/evidence/phase12/15d25de1/phase12-completion-2026-10-09-flh.json` (`fcda72ee...`).
+- **Selection:** `PHASE12_PROTECTED_RELEASE_SELECTIONS.flh`, approval generation 1 (#6611), every named file shipped under `server/release-evidence/`. Withdrawal path verified in source tests (`HorsePhase12Authority.test.ts`).
+
+## FLH Natural Accepted Use (October 10 To 11, 2026)
+
+**First window (release `9f9dcc6d`), journal counts unavailable.** Release `9f9dcc6d` (contains #6611, the FLH selection) served from 2026-10-10T02:55:19Z until release `f8caac88` cut over at the 06:55Z break (deploy run 38031997124). Predeclared read-only window (`docs/evidence/phase12/flh-use-2026-10-10/declaration-flh-natural-use-2026-10-10.txt`, written before 02:15Z), 2026-10-10 03:02 to 03:50Z. The journal count was not taken until 2026-10-11 19:44 to 20:00Z, and by then it came back empty (`journal-counts.json` is `{}`): the decision journal archive is a byte-bounded ring and had already retired every segment holding that window. A 1-in-100 sample of the archive at 20:05Z (`flh-use-coverage.py`, `coverage.json`) holds decision times only from the 2026-09-25 evidence hold and from 2026-10-11 13:00Z onward. The only reading of that window is `horse_brain_telemetry` for the whole day 2026-10-10, read after the day closed (2026-10-11 19:21Z), so it covers every release of that day that contains #6611 (`9f9dcc6d`, `f8caac88`, `d026c1d3`, `0551a83c`), not the window alone: `phase12_selection_selected`, `phase12_applied`, `phase12_selection_controller_accepted` and `phase12_authority_verdict_usable` each went from 0 (baseline, 2026-10-10 02:09Z) to 1,072; `phase12_authority_worker_flh_usable` 8, and the other three variants `_unselected` 8 each. Telemetry cannot separate cash from tournament, so the first window's status is historical only.
+
+**Second window (release `f47ad93c`), verified now.** Predeclared at 2026-10-11 20:15Z, before any read (`docs/evidence/phase12/flh-use-2026-10-10/declaration-flh-natural-use-2026-10-11.txt`, same reads, same counter and same pass rule), 2026-10-11 21:02 to 21:50Z on release `f47ad93c` (contains #6611; Phase 12 policy source files identical to `1235b47a`), StartedAt 2026-10-11T17:55:32Z read before (20:56Z) and after (21:52Z), unchanged. The count ran at 21:52 to 21:55Z, while the window was still in the ring:
+
+| FLH DECIDE_FAST decisions in the window (journal, sourceRelease `f47ad93c`)   | Count |
+| ----------------------------------------------------------------------------- | ----- |
+| cash, candidate mode, authority usable, applied (the pack changed the action) | 94    |
+| cash, candidate mode, authority usable, unchanged (the pack kept the action)  | 1,954 |
+| tournament, any mode                                                          | 0     |
+| other release, segment digest mismatch, missing receipt                       | 0     |
+
+Every cash FLH decision ran in candidate mode on usable authority. No tournament FLH decision was journaled in the window, so none left shadow (tournament shadow stays verified in `HorsePhase12Authority.test.ts`). `horse_brain_telemetry` for 2026-10-11 from 20:56Z to 21:52Z (a slightly wider span than the window): `phase12_selection_selected` and `phase12_applied` 1,620 to 1,722 (+102), `phase12_selection_controller_accepted` and `phase12_authority_verdict_usable` 1,620 to 1,724 (+104; controller acceptance counts the deep second looks too), so every applied decision was accepted by the table controller. Status: **verified now** for FLH. Withdrawal path: verified in source tests (`HorsePhase12Authority.test.ts`, the committed selection with `withdrawn` set is admitted as `withdrawn`). Evidence: `docs/evidence/phase12/flh-use-2026-10-10/`.
+
+Time-gated check: the journal ring keeps only hours of decisions, so every later natural-use read must run within a few hours of its window closing.

@@ -415,14 +415,43 @@ jobs:
             git fetch --no-tags origin "$LIVE" --depth=1
           fi
           if [ -n '${{ needs.publication-gate.outputs.verification_sha }}' ]; then
-            test "$LIVE" = '${{ needs.publication-gate.outputs.client_target_sha }}'
+            RETAINED='${{ needs.publication-gate.outputs.client_target_sha }}'
             test "$HERE" = '${{ needs.publication-gate.outputs.verification_sha }}'
-            node scripts/ci/client-runtime-retention.mjs harness "$LIVE" "$HERE" \
-              retained-runtime-evidence/retained-runtime.json \
-              '${{ github.event.workflow_run.id }}' '${{ github.event.workflow_run.head_sha }}' '${{ github.repository_id }}'
-            echo "specs=$HERE" >> "$GITHUB_OUTPUT"
-            echo "Actual runtime \`$LIVE\`; complete current qualified verification source \`$HERE\`." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
+            [[ "$RETAINED" =~ ^[0-9a-f]{40}$ ]]
+            if [ "$LIVE" = "$RETAINED" ]; then
+              node scripts/ci/client-runtime-retention.mjs harness "$LIVE" "$HERE" \
+                retained-runtime-evidence/retained-runtime.json \
+                '${{ github.event.workflow_run.id }}' '${{ github.event.workflow_run.head_sha }}' '${{ github.repository_id }}'
+              echo "specs=$HERE" >> "$GITHUB_OUTPUT"
+              echo "Actual runtime \`$LIVE\`; complete current qualified verification source \`$HERE\`." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            # A LATER PUBLISH IS NOT A DEFECT IN THE RETAINED ONE (2026-10-11).
+            #
+            # This used to be a bare `test "$LIVE" = <retained runtime>`. A
+            # retaining publisher's certificate can wait behind the production
+            # lock for longer than the gap between merges, and run 38170604116
+            # started its browsers 48 minutes after publisher 38169740342
+            # retained 5c1e013, by which time production served a76ebb9, three
+            # commits later on protected main. The test exited 1 with no message
+            # and the whole lane went red ("the suite did not run") although
+            # nothing on the live site had been examined at all. That is
+            # "could not tell" reported as a defect (CLAUDE.md 10.86 rule 1).
+            #
+            # A forward protected-main release is handled exactly as a run
+            # without a retained runtime handles it: the lineage logic below
+            # aligns the specs with what production actually serves, and the
+            # release-window step classifies anything that moves after that.
+            # The retained-runtime harness proof is skipped only because it
+            # describes a runtime production no longer serves. A rollback, or a
+            # live SHA that is not a descendant of the retained runtime, is still
+            # a hard red.
+            git cat-file -e "$RETAINED^{commit}"
+            if ! git merge-base --is-ancestor "$RETAINED" "$LIVE"; then
+              echo "::error::production serves \`$LIVE\`, which is not a forward release from retained runtime \`$RETAINED\`."
+              exit 1
+            fi
+            echo "Retained runtime \`$RETAINED\` was superseded by \`$LIVE\` before the browsers started; certifying the release production actually serves." >> "$GITHUB_STEP_SUMMARY"
           fi
           RELATION=$(node scripts/ci/production-e2e-provenance.mjs lineage "$LIVE" "$HERE")
           if [ "$RELATION" = same ]; then
@@ -1203,14 +1232,43 @@ jobs:
             git fetch --no-tags origin "$LIVE" --depth=1
           fi
           if [ -n '${{ needs.publication-gate.outputs.verification_sha }}' ]; then
-            test "$LIVE" = '${{ needs.publication-gate.outputs.client_target_sha }}'
+            RETAINED='${{ needs.publication-gate.outputs.client_target_sha }}'
             test "$HERE" = '${{ needs.publication-gate.outputs.verification_sha }}'
-            node scripts/ci/client-runtime-retention.mjs harness "$LIVE" "$HERE" \
-              retained-runtime-evidence/retained-runtime.json \
-              '${{ github.event.workflow_run.id }}' '${{ github.event.workflow_run.head_sha }}' '${{ github.repository_id }}'
-            echo "specs=$HERE" >> "$GITHUB_OUTPUT"
-            echo "Actual runtime \`$LIVE\`; complete current qualified verification source \`$HERE\`." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
+            [[ "$RETAINED" =~ ^[0-9a-f]{40}$ ]]
+            if [ "$LIVE" = "$RETAINED" ]; then
+              node scripts/ci/client-runtime-retention.mjs harness "$LIVE" "$HERE" \
+                retained-runtime-evidence/retained-runtime.json \
+                '${{ github.event.workflow_run.id }}' '${{ github.event.workflow_run.head_sha }}' '${{ github.repository_id }}'
+              echo "specs=$HERE" >> "$GITHUB_OUTPUT"
+              echo "Actual runtime \`$LIVE\`; complete current qualified verification source \`$HERE\`." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            # A LATER PUBLISH IS NOT A DEFECT IN THE RETAINED ONE (2026-10-11).
+            #
+            # This used to be a bare `test "$LIVE" = <retained runtime>`. A
+            # retaining publisher's certificate can wait behind the production
+            # lock for longer than the gap between merges, and run 38170604116
+            # started its browsers 48 minutes after publisher 38169740342
+            # retained 5c1e013, by which time production served a76ebb9, three
+            # commits later on protected main. The test exited 1 with no message
+            # and the whole lane went red ("the suite did not run") although
+            # nothing on the live site had been examined at all. That is
+            # "could not tell" reported as a defect (CLAUDE.md 10.86 rule 1).
+            #
+            # A forward protected-main release is handled exactly as a run
+            # without a retained runtime handles it: the lineage logic below
+            # aligns the specs with what production actually serves, and the
+            # release-window step classifies anything that moves after that.
+            # The retained-runtime harness proof is skipped only because it
+            # describes a runtime production no longer serves. A rollback, or a
+            # live SHA that is not a descendant of the retained runtime, is still
+            # a hard red.
+            git cat-file -e "$RETAINED^{commit}"
+            if ! git merge-base --is-ancestor "$RETAINED" "$LIVE"; then
+              echo "::error::production serves \`$LIVE\`, which is not a forward release from retained runtime \`$RETAINED\`."
+              exit 1
+            fi
+            echo "Retained runtime \`$RETAINED\` was superseded by \`$LIVE\` before the browsers started; certifying the release production actually serves." >> "$GITHUB_STEP_SUMMARY"
           fi
           RELATION=$(node scripts/ci/production-e2e-provenance.mjs lineage "$LIVE" "$HERE")
           if [ "$RELATION" = same ]; then

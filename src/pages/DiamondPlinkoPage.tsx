@@ -1,3 +1,4 @@
+import GameLifetimeAverages from '../components/games/GameLifetimeAverages';
 import { useLiveBonusGuard } from '../hooks/useLiveBonusGuard';
 import { pendingBonus, PriorBonusPending } from '../services/diamondBonusRecovery';
 import { useAutoSettle, useStandingRefresh } from '../hooks/useAutoSettle';
@@ -783,6 +784,7 @@ function DiamondPlinkoGame() {
           </p>
         )}
       </GameConsole>
+      <GameLifetimeAverages clubId={uuid} revision={result?.id} />
       <GamePanel title="How To Play" pill="Rules" foot="foot">
         <p className="sc-copy">
           You Choose How Many Diamonds Each Drop Plays, From 1 To {PLINKO_MAX_DROPS} Drops Of Your

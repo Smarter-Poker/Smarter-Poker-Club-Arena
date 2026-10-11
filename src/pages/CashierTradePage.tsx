@@ -58,13 +58,13 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { roleLabel, roleRank, type ClubRole } from '../types/clubRoles';
-import { useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
-import { useCashoutScope } from '../hooks/useCashoutScope';
+import { useCashoutScope, useCashoutScopeKey } from '../hooks/useCashoutScope';
 import {
   readClubWeeklyStatements,
-  formatWeeklyChips,
+  formatWeeklyChipsForDisplay,
   CLUB_WEEKLY_STATEMENT_LIMIT,
   type ClubWeeklyStatement,
 } from '../services/ClubWeeklyAccountingReader';
@@ -86,6 +86,7 @@ import {
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
+import DiamondWalletTransfer from '../components/wallet/DiamondWalletTransfer';
 import { DEFAULT_CASHIER_WALLET, secondsLeftFromServer } from '../components/wallet/cashierModes';
 import { canSeeClubBank, canHoldAgentWallet } from '../components/wallet/walletRows';
 import { describeChipTransaction, walletRoute } from '../components/wallet/describeChipTransaction';
@@ -101,8 +102,10 @@ import {
 import { UnionService } from '../services/UnionService';
 import { unionRouteRef } from '../utils/unionIdResolver';
 import { rememberLastClub } from '../utils/clubQuickLink';
+import { CashierWorkspace } from '../components/wallet/CashierWorkspace';
 import { SpadeConsole } from '../components/console/SpadeConsole';
 import { compactChips } from '../utils/format';
+import { exactChipFigure, parseTradeAmount, sumChips } from '../utils/cashierAmount';
 import { titleCase } from '../utils/titleCase';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -213,6 +216,15 @@ type TabKey = 'trade' | 'record' | 'leaderboard' | 'request' | 'tickets';
 const fmt = compactChips;
 
 /**
+ * The ledger note on every Send Out row (regression review 2026-10-10, G-07).
+ * It was `Cashier Send Out ${submissionId}`, which printed a UUID into the
+ * recipient's ledger, CSV "Note" column and player statement. The replay
+ * fingerprint only needs a reason that is the same on a retry; a constant is.
+ * The op_id stays the identity of each send.
+ */
+const CASHIER_SEND_OUT_REASON = 'Cashier Send Out';
+
+/**
  * Add batch values in chip cents, not binary floating point. `0.10 * 3` is
  * 0.30000000000000004 in JavaScript, which used to reject a send from a wallet
  * holding exactly 0.30 even though every individual RPC amount was valid.
@@ -256,7 +268,16 @@ function txLabel(value: string | null | undefined): string {
     .join(' ');
 }
 
+// Retire dialogs and read/write refs immediately when the account or route changes.
+// Pending durable requests keep their original account, club and request identity.
 export default function CashierTradePage() {
+  const { clubId } = useParams<{ clubId: string }>();
+  const { user } = useAuthUser();
+  const key = useCashoutScopeKey(user?.id, clubId || '');
+  return <CashierTradeWorkspace key={key} />;
+}
+
+function CashierTradeWorkspace() {
   const { clubId: clubParam } = useParams<{ clubId: string }>();
   const navigate = useNavigate();
   const { user, isHydrating } = useAuthUser();
@@ -300,6 +321,8 @@ export default function CashierTradePage() {
   const ticketSeqRef = useRef(0);
   const recordSeqRef = useRef(0);
   const invoiceSeqRef = useRef(0);
+  /** Claim Back list guard (launch audit 2026-10-09, P-03): bumped with the rest. */
+  const reversibleSeqRef = useRef(0);
 
   const [search, setSearch] = useState('');
   const [groupByRole, setGroupByRole] = useState(false);
@@ -349,7 +372,9 @@ export default function CashierTradePage() {
   const [askNote, setAskNote] = useState('');
   const [recordsLoading, setRecordsLoading] = useState(false);
   const [recordsError, setRecordsError] = useState<string | null>(null);
-  const [amountModal, setAmountModal] = useState<'send' | 'ticket' | null>(null);
+  const [diamondSending, setDiamondSending] = useState(false);
+  const [claimRecipient, setClaimRecipient] = useState<string | null>(null);
+  const [amountModal, setAmountModal] = useState<'send' | 'ticket' | 'diamonds' | null>(null);
   /**
    * CLAIM BACK IS NO LONGER AN AMOUNT AGAINST A SELECTION.
    *
@@ -463,6 +488,9 @@ export default function CashierTradePage() {
     return () => {
       isMounted.current = false;
     };
+  }, []);
+  useEffect(() => {
+    document.title = 'Cashier | Smarter Poker';
   }, []);
 
   useEffect(() => {
@@ -924,6 +952,7 @@ export default function CashierTradePage() {
     ++ticketSeqRef.current;
     ++recordSeqRef.current;
     ++invoiceSeqRef.current;
+    ++reversibleSeqRef.current;
     setTab('trade');
     initialTabResolvedRef.current = false;
     setRoleResolved(false);
@@ -938,6 +967,7 @@ export default function CashierTradePage() {
     setRosterLoadingMore(false);
     setRosterWarning(null);
     setSelected(new Set());
+    setClaimRecipient(null);
     setVisibleCount(25);
     setAmountModal(null);
     setAmount('');
@@ -1094,7 +1124,11 @@ export default function CashierTradePage() {
         for (const pr of profs || []) names.set(pr.id as string, playerDisplayName(pr as any));
       }
       if (!isMounted.current || seq !== reqSeqRef.current) return false;
-      setPendingCount(visible.length);
+      // The head count is exact; this page is capped at 100. A full page says
+      // "at least 100", so it may only RAISE the badge; a short page is the
+      // whole queue and is the truth (launch audit 2026-10-09, P-17).
+      const pageComplete = (data || []).length < 100;
+      setPendingCount((held) => (pageComplete ? visible.length : Math.max(held, visible.length)));
       setRequests(
         visible.map((r) => ({
           id: r.id as string,
@@ -1275,9 +1309,11 @@ export default function CashierTradePage() {
             ? 'Request Declined'
             : 'Request Cancelled'
       );
+      // The bus event is already wired to reload this page (and its badges), so
+      // calling loadClub() here as well fired two identical paged loads at
+      // once (launch audit 2026-10-09, P-18).
       masterBus.emit('BALANCE_UPDATED', { source: 'chip_request', userId: user?.id || '' });
       loadRequests();
-      loadClub();
     } catch (e) {
       reportError(e, 'CashierTradePage.respondToRequest');
       toast?.error?.((e as Error).message || 'Could Not Answer That Request');
@@ -1293,11 +1329,12 @@ export default function CashierTradePage() {
       toast?.error?.('Choose A Club Cashier');
       return;
     }
-    const raw = Number(askAmount);
-    if (!Number.isFinite(raw) || raw <= 0) {
-      toast?.error?.('Enter A Positive Amount');
+    const parsedAsk = parseTradeAmount(askAmount);
+    if (!parsedAsk.ok) {
+      toast?.error?.(parsedAsk.error);
       return;
     }
+    const raw = parsedAsk.value;
     const v = Math.round(raw * 100) / 100;
     if (v !== raw) {
       toast?.error?.('Chips Go To Two Decimal Places');
@@ -1403,7 +1440,7 @@ export default function CashierTradePage() {
   const mineCount = useMemo(() => downline.filter((r) => r.isMine).length, [downline]);
   /** What the reader's own assigned players are holding, for the strip. */
   const mineTotal = useMemo(
-    () => downline.reduce((sum, r) => (r.isMine ? sum + (Number(r.chipBalance) || 0) : sum), 0),
+    () => sumChips(downline.filter((r) => r.isMine).map((r) => r.chipBalance)),
     [downline]
   );
 
@@ -1423,7 +1460,7 @@ export default function CashierTradePage() {
     rows = q
       ? [...rows].sort((a, b) => rosterMatchRank(b, q) - rosterMatchRank(a, q) || bySort(a, b))
       : [...rows].sort(bySort);
-    if (groupByRole) {
+    if (groupByRole && !q) {
       // ROLE_RANK from types/clubRoles, not a local map. The local one listed
       // super_agent/agent/sub_agent/admin/player and OMITTED owner and
       // co_owner, so both fell to the `?? 9` default and sorted BELOW every
@@ -1434,10 +1471,7 @@ export default function CashierTradePage() {
     return rows;
   }, [downline, search, sortKey, groupByRole, mineOnly]);
 
-  const agencyBalance = useMemo(
-    () => recipients.reduce((s, r) => s + r.chipBalance, 0),
-    [recipients]
-  );
+  const agencyBalance = useMemo(() => sumChips(recipients.map((r) => r.chipBalance)), [recipients]);
 
   /** Fast client-side ledger controls over the bounded, newest-first page. */
   const filteredRecords = useMemo(() => {
@@ -1454,19 +1488,15 @@ export default function CashierTradePage() {
   }, [records, recordDirection, recordQuery]);
 
   const recordSummary = useMemo(() => {
-    const incoming = records.reduce(
-      (sum, row) => (row.direction === 'in' ? sum + row.amount : sum),
-      0
-    );
-    const outgoing = records.reduce(
-      (sum, row) => (row.direction === 'out' ? sum + row.amount : sum),
-      0
-    );
-    const managed = records.reduce(
-      (sum, row) => (row.direction === 'managed' ? sum + row.amount : sum),
-      0
-    );
-    return { incoming, outgoing, managed, net: incoming - outgoing };
+    const amountsIn = (direction: TradeRecordRow['direction']) =>
+      records.filter((row) => row.direction === direction).map((row) => row.amount);
+    const incoming = sumChips(amountsIn('in'));
+    const outgoing = sumChips(amountsIn('out'));
+    const managed = sumChips(amountsIn('managed'));
+    // Net in cents too: 0.1 + 0.2 - 0.3 is not 0 in floating point and used to
+    // print as "+0" (P-16).
+    const net = (Math.round(incoming * 100) - Math.round(outgoing * 100)) / 100;
+    return { incoming, outgoing, managed, net };
   }, [records]);
 
   const visibleTabs = useMemo<[TabKey, string][]>(() => {
@@ -1571,21 +1601,7 @@ export default function CashierTradePage() {
   }, [user?.id, clubUuid]);
 
   /** Chips the selected players are holding right now. */
-  const pickedHeld = useMemo(
-    () => picked.reduce((sum, r) => sum + (Number(r.chipBalance) || 0), 0),
-    [picked]
-  );
-
-  const toggleSelect = (id: string) =>
-    setSelected((prev) => {
-      // Listed, searchable, never a recipient: the server refuses a send to
-      // yourself, so the row does not pretend to offer one.
-      if (id === user?.id) return prev;
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const pickedHeld = useMemo(() => sumChips(picked.map((r) => r.chipBalance)), [picked]);
 
   // ── Money actions ──────────────────────────────────────────────────────────
   const runTransfers = async (kind: 'send' | 'ticket') => {
@@ -1595,11 +1611,12 @@ export default function CashierTradePage() {
       toast?.error?.('Cashier Is Still Synchronizing. Try Again In A Moment');
       return;
     }
-    const raw = Number(amount);
-    if (!Number.isFinite(raw) || raw <= 0) {
-      toast?.error?.('Enter A Positive Amount');
+    const parsedAmount = parseTradeAmount(amount);
+    if (!parsedAmount.ok) {
+      toast?.error?.(parsedAmount.error);
       return;
     }
+    const raw = parsedAmount.value;
     // QUANTIZE. NaN, negative and zero were covered; 10.005 was not. It passed
     // straight through to club_members.chip_balance while fmt() rendered it as
     // "10.01" in the modal total AND in the receipt, and `value * targets`
@@ -1642,12 +1659,14 @@ export default function CashierTradePage() {
     const total = batchAmount(value, targets.length);
     if (kind === 'send' && agentWallet !== null && total > agentWallet) {
       toast?.error?.(
-        `Insufficient Chips: Sending ${fmt(total)} Needs More Than Your Agent Wallet Holds, ${fmt(agentWallet)}`
+        `Insufficient Chips: Sending ${exactChipFigure(total)} Needs More Than Your Agent Wallet Holds, ${exactChipFigure(agentWallet)}`
       );
       return;
     }
     if (kind === 'ticket' && total > myBalance) {
-      toast?.error?.(`Insufficient Chips: Sending ${fmt(total)} Needs More Than ${fmt(myBalance)}`);
+      toast?.error?.(
+        `Insufficient Chips: Sending ${exactChipFigure(total)} Needs More Than ${exactChipFigure(myBalance)}`
+      );
       return;
     }
     if (busyRef.current) return; // a fast double-tap must not send twice
@@ -1739,7 +1758,11 @@ export default function CashierTradePage() {
             ...(kind === 'send'
               ? {
                   destination: canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet',
-                  reason: `Cashier Send Out To ${target.name}`,
+                  // The server's replay fingerprint includes the reason, so it
+                  // cannot change between an uncertain send and its retry -
+                  // never a display name (S-06). A constant is stable; op_id
+                  // is the identity (regression review G-07).
+                  reason: CASHIER_SEND_OUT_REASON,
                   op_id: opIdFor(target.userId),
                 }
               : {
@@ -1893,12 +1916,17 @@ export default function CashierTradePage() {
    */
   const loadReversible = useCallback(async () => {
     if (!clubUuid) return;
+    // Every other loader on this page drops a stale response by sequence; this
+    // one checked only the unmount guard, so club A's slow list could land
+    // over club B's and offer A's sends against B's club id (P-03).
+    const seq = ++reversibleSeqRef.current;
+    const requestedClub = clubUuid;
     setReversibleLoading(true);
     setReversibleError(null);
     const { data, error } = await supabase.rpc('fn_agent_wallet_reversible', {
-      p_club_id: clubUuid,
+      p_club_id: requestedClub,
     });
-    if (!isMounted.current) return;
+    if (!isMounted.current || seq !== reversibleSeqRef.current) return;
     if (error) {
       reportError(error, 'CashierTradePage.loadReversible');
       // "Nothing Is Claimable" is a different statement from "we could not read
@@ -2097,7 +2125,7 @@ export default function CashierTradePage() {
     });
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (amountModal && !busy) {
+        if (amountModal && !busy && !diamondSending) {
           setAmountModal(null);
           setTransferFailures([]);
         }
@@ -2138,7 +2166,17 @@ export default function CashierTradePage() {
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [dialogOpen, amountModal, askOpen, claimOpen, receipt, busy, asking, claimingId]);
+  }, [
+    dialogOpen,
+    amountModal,
+    askOpen,
+    claimOpen,
+    receipt,
+    busy,
+    diamondSending,
+    asking,
+    claimingId,
+  ]);
 
   useEffect(() => {
     if (dialogWasOpenRef.current && !dialogOpen) {
@@ -2177,7 +2215,7 @@ export default function CashierTradePage() {
 
   return (
     <div className={styles.page} data-cashier-surface="trade">
-      <SpadeConsole
+      <CashierWorkspace
         eyebrow="Secure Cashier"
         title="Cashier"
         pill={isOnline ? 'Live Ledger' : 'Locked'}
@@ -2208,11 +2246,9 @@ export default function CashierTradePage() {
             </div>
 
             <div className={styles.heroContent}>
-              <h1 className={`${styles.heroTitle} sc-ink--silver`} id="cashier-title">
-                Every Chip.
-                <br />
-                Accounted For.
-              </h1>
+              <h2 className={`${styles.heroTitle} sc-ink--silver`} id="cashier-title">
+                Wallet Command
+              </h2>
               <p className={`${styles.heroCopy} sc-copy`}>
                 Move Chips Through The Correct Wallet, Answer Requests, Redeem Tickets, And Verify
                 Every Ledger Entry From One Secure Desk.
@@ -2255,7 +2291,7 @@ export default function CashierTradePage() {
           {pickerOpen && (
             <div
               ref={pickerRef}
-              id="cashier-club-picker"
+              id="cashier-club-picker-region"
               className={styles.picker}
               role="region"
               tabIndex={-1}
@@ -2282,7 +2318,7 @@ export default function CashierTradePage() {
                 options[nextIndex]?.focus();
               }}
             >
-              <div className={styles.pickerLabel}>OPEN CASHIER FOR</div>
+              <div className={styles.pickerLabel}>Open Cashier For</div>
               {membershipsLoading && (
                 <div className={styles.pickerStatus}>Loading Club Cashiers...</div>
               )}
@@ -2299,7 +2335,7 @@ export default function CashierTradePage() {
                 </div>
               )}
               {!membershipsLoading && !membershipsError && (
-                <div role="listbox" aria-label="Club Cashiers">
+                <div id="cashier-club-picker" role="listbox" aria-label="Club Cashiers">
                   {memberships.map((m) => (
                     <button
                       key={m.clubUuid}
@@ -2509,15 +2545,19 @@ export default function CashierTradePage() {
 
               {/* Search + filters */}
               <div className={styles.searchRow}>
+                <label className={styles.searchLabel} htmlFor="cashier-member-search">
+                  Search The Roster
+                </label>
                 <input
+                  id="cashier-member-search"
                   type="search"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search Members"
+                  placeholder="Search Name, Number, Handle, Or Role"
                   aria-label={`Search ${downline.length} Member${downline.length === 1 ? '' : 's'}`}
                 />
-                <span className={styles.memberCount} aria-hidden="true">
-                  {downline.length}
+                <span className={styles.memberCount} role="status" aria-live="polite">
+                  {list.length.toLocaleString()} Results
                 </span>
               </div>
               <div className={styles.filterRow}>
@@ -2626,28 +2666,37 @@ export default function CashierTradePage() {
                     <div
                       key={r.userId}
                       className={`${styles.row} ${r.isSelf ? styles.rowSelf : styles.selectableRow} ${selected.has(r.userId) ? styles.rowSelected : ''}`}
-                      onClick={() => toggleSelect(r.userId)}
-                      onKeyDown={(e) => {
-                        // role="checkbox" + tabIndex advertises a control. Without
-                        // this, every row was reachable by keyboard and none of them
-                        // could be selected.
-                        if (e.key === ' ' || e.key === 'Enter') {
-                          e.preventDefault();
-                          toggleSelect(r.userId);
-                        }
-                      }}
-                      role="checkbox"
-                      aria-checked={selected.has(r.userId)}
-                      aria-disabled={r.isSelf || undefined}
+                      onClick={() => navigate(`/clubs/${clubParam}/members/${r.userId}`)}
                       title={
                         r.isSelf ? 'This Is You. Chips Cannot Be Sent To Yourself.' : undefined
                       }
-                      tabIndex={0}
                     >
+                      <input
+                        type="checkbox"
+                        className={styles.batchPicker}
+                        aria-label={`Include ${r.name}`}
+                        checked={selected.has(r.userId)}
+                        disabled={r.isSelf || busy}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={() => {
+                          if (r.isSelf || r.userId === user?.id) return;
+                          setSelected((previous) => {
+                            const next = new Set(previous);
+                            if (next.has(r.userId)) next.delete(r.userId);
+                            else next.add(r.userId);
+                            return next;
+                          });
+                        }}
+                      />
                       {r.avatarUrl ? (
                         <img src={r.avatarUrl} alt="" className={styles.avatar} />
                       ) : null}
-                      <div className={styles.rowInfo}>
+                      <Link
+                        className={styles.rowInfo}
+                        to={`/clubs/${clubParam}/members/${r.userId}`}
+                        aria-label={`Manage ${r.name}`}
+                        onClick={(event) => event.stopPropagation()}
+                      >
                         <span className={styles.rowName}>
                           {r.name}
                           {r.isSelf ? <span className={styles.rowYou}>You</span> : null}
@@ -2657,15 +2706,24 @@ export default function CashierTradePage() {
                           {titleCase(roleLabel(r.role as ClubRole))}
                           {r.username ? ` · @${r.username}` : ''}
                         </span>
-                      </div>
+                      </Link>
                       <span className={styles.rowBalance}>{fmt(r.chipBalance)}</span>
                       {r.isSelf ? null : (
-                        <span
+                        <button
+                          type="button"
                           className={`${styles.checkbox} ${selected.has(r.userId) ? styles.checkboxOn : ''}`}
-                          aria-hidden="true"
+                          disabled={!isOnline || busy || cashierAuthorityBlocked}
+                          aria-label={`Select ${r.name}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            if (r.isSelf || r.userId === user?.id) return;
+                            dialogTriggerRef.current = event.currentTarget;
+                            setSelected(new Set([r.userId]));
+                            setAmountModal('send');
+                          }}
                         >
                           {selected.has(r.userId) ? 'Selected' : 'Select'}
-                        </span>
+                        </button>
                       )}
                     </div>
                   ))}
@@ -2723,6 +2781,7 @@ export default function CashierTradePage() {
                     disabled={!isOnline || busy || claimingId !== null}
                     onClick={(event) => {
                       dialogTriggerRef.current = event.currentTarget;
+                      setClaimRecipient(null);
                       setClaimOpen(true);
                     }}
                   >
@@ -2974,12 +3033,12 @@ export default function CashierTradePage() {
                         </span>
                       </div>
                       <span className={styles.rowSub}>
-                        Rake Funding {formatWeeklyChips(iv.rakeFunding)}
+                        Rake Funding {formatWeeklyChipsForDisplay(iv.rakeFunding)}
                         <br />
-                        Paid By Club {formatWeeklyChips(iv.paidByClub)}
+                        Paid By Club {formatWeeklyChipsForDisplay(iv.paidByClub)}
                       </span>
                       <span className={styles.rowBalance}>
-                        Retained {formatWeeklyChips(iv.retainedByClub)}
+                        Retained {formatWeeklyChipsForDisplay(iv.retainedByClub)}
                       </span>
                     </div>
                   ))}
@@ -3170,7 +3229,7 @@ export default function CashierTradePage() {
             </section>
           )}
         </div>
-      </SpadeConsole>
+      </CashierWorkspace>
 
       {receipt && (
         <div className={styles.modalOverlay} onClick={() => setReceipt(null)}>
@@ -3216,7 +3275,7 @@ export default function CashierTradePage() {
                     }
                   >
                     {receipt.direction === 'in' ? '+' : receipt.direction === 'out' ? '-' : ''}
-                    {fmt(receipt.amount)}
+                    {exactChipFigure(receipt.amount)}
                   </strong>
                   <small className="sc-label sc-ink--muted">Chips</small>
                 </div>
@@ -3321,10 +3380,10 @@ export default function CashierTradePage() {
               <div className={styles.glass}>
                 <input
                   type="number"
-                  inputMode="numeric"
+                  inputMode="decimal"
                   min={0}
                   value={askAmount}
-                  step="1"
+                  step="0.01"
                   aria-label="Chips Requested"
                   onChange={(e) => setAskAmount(e.target.value)}
                   placeholder="How Many Chips?"
@@ -3352,8 +3411,10 @@ export default function CashierTradePage() {
       <WalletCashierModal
         isOpen={!!activeCashier}
         onClose={() => {
+          // The modal emits its own balance bus event on every money move and
+          // that event reloads this page; a second loadClub() here doubled
+          // every paged read on a large club (P-18).
           setActiveCashier(null);
-          loadClub();
         }}
         clubId={clubUuid || clubParam || ''}
         role={myRole}
@@ -3365,7 +3426,7 @@ export default function CashierTradePage() {
         <div
           className={styles.modalOverlay}
           onClick={() => {
-            if (busy) return;
+            if (busy || diamondSending) return;
             setAmountModal(null);
             setTransferFailures([]);
           }}
@@ -3382,118 +3443,180 @@ export default function CashierTradePage() {
           >
             <SpadeConsole
               onClose={
-                busy
+                busy || diamondSending
                   ? undefined
                   : () => {
                       setAmountModal(null);
                       setTransferFailures([]);
                     }
               }
-              eyebrow={`${compactChips(picked.length)} Player${picked.length === 1 ? '' : 's'}`}
-              title={amountModal === 'send' ? 'Send Out' : 'Send Ticket'}
+              eyebrow={`${compactChips(picked.length)} Player${picked.length === 1 ? '' : 's'} · ${fmt(batchAmount(Number(amount) || 0, picked.length))} Total`}
+              title={
+                amountModal === 'send'
+                  ? 'Send Out'
+                  : amountModal === 'ticket'
+                    ? 'Send Ticket'
+                    : 'Send Diamonds'
+              }
               titleId="cashier-amount-title"
               pill={busy ? 'Working' : 'Ready'}
               pillInk={busy ? 'gold' : 'green'}
-              foot="plates"
+              foot={amountModal === 'diamonds' ? 'foot' : 'plates'}
               className={styles.console}
-              plates={{
-                secondary: {
-                  label: 'Cancel',
-                  disabled: busy,
-                  onClick: () => {
-                    setAmountModal(null);
-                    setTransferFailures([]);
-                  },
-                },
-                primary: {
-                  label:
-                    busy && batchProgress
-                      ? `${batchProgress.processed}/${batchProgress.total}`
-                      : 'Confirm',
-                  ink: 'blue',
-                  disabled: !isOnline || picked.length === 0 || cashierAuthorityBlocked,
-                  onClick: () => runTransfers(amountModal),
-                },
-              }}
+              plates={
+                amountModal === 'diamonds'
+                  ? undefined
+                  : {
+                      secondary: {
+                        label: 'Cancel',
+                        disabled: busy,
+                        onClick: () => {
+                          setAmountModal(null);
+                          setTransferFailures([]);
+                        },
+                      },
+                      primary: {
+                        label:
+                          busy && batchProgress
+                            ? `${batchProgress.processed}/${batchProgress.total}`
+                            : 'Confirm',
+                        ink: 'blue',
+                        disabled: !isOnline || picked.length === 0 || cashierAuthorityBlocked,
+                        onClick: () => void runTransfers(amountModal),
+                      },
+                    }
+              }
             >
               <div className={styles.glass}>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  step="1"
-                  aria-label="Amount Per Player"
-                  value={amount}
-                  onChange={(e) => {
-                    setAmount(e.target.value);
-                    if (transferFailures.length) setTransferFailures([]);
-                  }}
-                  placeholder={
-                    amountModal === 'ticket' ? 'Ticket Value Per Player' : 'Amount Per Player'
-                  }
-                  autoFocus
-                />
-                {/* WHO, AND WHERE IT LANDS (Dan 2026-08-25).
+                <div className={styles.modalActions} aria-label="Player Transfer Actions">
+                  <button
+                    type="button"
+                    disabled={busy || diamondSending || Boolean(transferRecovery)}
+                    onClick={() => setAmountModal('send')}
+                  >
+                    Send Out
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || diamondSending || Boolean(transferRecovery)}
+                    onClick={() => {
+                      setClaimRecipient(picked.length === 1 ? picked[0].userId : null);
+                      setAmountModal(null);
+                      setClaimOpen(true);
+                    }}
+                  >
+                    Claim Back
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || diamondSending || Boolean(transferRecovery)}
+                    onClick={() => setAmountModal('ticket')}
+                  >
+                    Send Ticket
+                  </button>
+                  <button
+                    type="button"
+                    disabled={
+                      busy || diamondSending || Boolean(transferRecovery) || picked.length !== 1
+                    }
+                    onClick={() => setAmountModal('diamonds')}
+                  >
+                    Send Diamonds
+                  </button>
+                </div>
+                {amountModal === 'diamonds' && user?.id && picked.length === 1 ? (
+                  <DiamondWalletTransfer
+                    key={picked[0].userId}
+                    userId={user.id}
+                    initialRecipientId={picked[0].userId}
+                    initiallyOpen
+                    onBusyChange={setDiamondSending}
+                    onComplete={() =>
+                      masterBus.emit('BALANCE_UPDATED', { source: 'cashier-diamonds' })
+                    }
+                  />
+                ) : (
+                  <>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      step="0.01"
+                      aria-label="Amount Per Player"
+                      value={amount}
+                      onChange={(e) => {
+                        setAmount(e.target.value);
+                        if (transferFailures.length) setTransferFailures([]);
+                      }}
+                      placeholder={
+                        amountModal === 'ticket' ? 'Ticket Value Per Player' : 'Amount Per Player'
+                      }
+                      autoFocus
+                    />
+                    {/* WHO, AND WHERE IT LANDS (Dan 2026-08-25).
                 The modal named a count and never the people; on a 375px screen
                 the selection has scrolled out of view and the user is one tap
                 from moving real money to a set they cannot see. The wallet is
                 named too, because a send to a sub agent funds the float they
                 distribute from rather than a balance they can sit down with. */}
-                {picked.length > 0 && (
-                  <div className={styles.modalTargets}>
-                    {picked.map((r) => (
-                      <div className={styles.modalTargetRow} key={r.userId}>
-                        <span>
-                          {r.name}
-                          {amountModal === 'send' && canHoldAgentWallet(r.role)
-                            ? ' (Agent Wallet)'
-                            : ''}
-                        </span>
-                        <span>{fmt(Number(amount) || 0)}</span>
+                    {picked.length > 0 && (
+                      <div className={styles.modalTargets}>
+                        {picked.map((r) => (
+                          <div className={styles.modalTargetRow} key={r.userId}>
+                            <span>
+                              {r.name}
+                              {amountModal === 'send' && canHoldAgentWallet(r.role)
+                                ? ' (Agent Wallet)'
+                                : ''}
+                            </span>
+                            <span>{exactChipFigure(Number(amount) || 0)}</span>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                )}
-                {amountModal === 'ticket' && (
-                  <div className={styles.modalHint}>
-                    Tickets Are Paid Now And Held Until The Player Redeems Them. Cancel An
-                    Unredeemed Ticket To Get The Chips Back.
-                  </div>
-                )}
-                <div className={styles.modalHint}>
-                  Total: {fmt(batchAmount(Number(amount) || 0, picked.length))} &middot;{' '}
-                  {/* THE ACCOUNT EACH ACTION SPENDS. Send Out debits the agent
+                    )}
+                    {amountModal === 'ticket' && (
+                      <div className={styles.modalHint}>
+                        Tickets Are Paid Now And Held Until The Player Redeems Them. Cancel An
+                        Unredeemed Ticket To Get The Chips Back.
+                      </div>
+                    )}
+                    <div className={styles.modalHint}>
+                      Total: {exactChipFigure(batchAmount(Number(amount) || 0, picked.length))}{' '}
+                      &middot;{' '}
+                      {/* THE ACCOUNT EACH ACTION SPENDS. Send Out debits the agent
                   wallet; a ticket escrows the caller's own chip balance. They
                   are different accounts and quoting the wrong one tells the
                   user they have money this action cannot reach. */}
-                  {amountModal === 'send'
-                    ? `Your Agent Wallet: ${agentWallet === null ? '--' : fmt(agentWallet)}`
-                    : `Your Chips: ${fmt(myBalance)}`}
-                </div>
-                {amountModal === 'send' && (
-                  <div className={styles.modalHint}>
-                    You Can Claim These Chips Back For Ten Minutes. After That The Player Must
-                    Request A Cash Out.
-                  </div>
-                )}
-                {transferFailures.length > 0 && (
-                  <div className={styles.modalFailures} role="alert">
-                    <div className={styles.modalFailuresTitle}>
-                      {transferFailures.length} Did Not Go Through
+                      {amountModal === 'send'
+                        ? `Your Agent Wallet: ${agentWallet === null ? '--' : fmt(agentWallet)}`
+                        : `Your Chips: ${fmt(myBalance)}`}
                     </div>
-                    {transferFailures.map((f) => (
-                      <div className={styles.modalFailureRow} key={f.userId}>
-                        <span>{f.name}</span>
-                        <span>{f.message}</span>
+                    {amountModal === 'send' && (
+                      <div className={styles.modalHint}>
+                        You Can Claim These Chips Back For Ten Minutes. After That The Player Must
+                        Request A Cash Out.
                       </div>
-                    ))}
-                  </div>
-                )}
-                {busy && batchProgress && (
-                  <div className={styles.modalHint} role="status" aria-live="polite">
-                    Processing {batchProgress.processed.toLocaleString()} Of{' '}
-                    {batchProgress.total.toLocaleString()} Recipients
-                  </div>
+                    )}
+                    {transferFailures.length > 0 && (
+                      <div className={styles.modalFailures} role="alert">
+                        <div className={styles.modalFailuresTitle}>
+                          {transferFailures.length} Did Not Go Through
+                        </div>
+                        {transferFailures.map((f) => (
+                          <div className={styles.modalFailureRow} key={f.userId}>
+                            <span>{f.name}</span>
+                            <span>{f.message}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {busy && batchProgress && (
+                      <div className={styles.modalHint} role="status" aria-live="polite">
+                        Processing {batchProgress.processed.toLocaleString()} Of{' '}
+                        {batchProgress.total.toLocaleString()} Recipients
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </SpadeConsole>
@@ -3552,48 +3675,54 @@ export default function CashierTradePage() {
                     </button>
                   </div>
                 )}
-                {!reversibleLoading && !reversibleError && stillClaimable.length === 0 && (
-                  <div className={styles.empty}>
-                    {
-                      'Nothing Is Still Inside Its Ten Minute Window. Ask The Player To Request A Cash Out.'
-                    }
-                  </div>
-                )}
+                {!reversibleLoading &&
+                  !reversibleError &&
+                  stillClaimable.filter(
+                    (row) => !claimRecipient || row.to_user_id === claimRecipient
+                  ).length === 0 && (
+                    <div className={styles.empty}>
+                      {
+                        'Nothing Is Still Inside Its Ten Minute Window. Ask The Player To Request A Cash Out.'
+                      }
+                    </div>
+                  )}
                 {stillClaimable.length > 0 && (
                   <div className={styles.claimList}>
-                    {stillClaimable.map((row) => {
-                      // The countdown is the DATABASE's own seconds_left, counted
-                      // down by a monotonic stopwatch rather than by the phone's
-                      // clock. The decision is never the phone's either:
-                      // fn_agent_wallet_claim_back re-checks reversible_until and
-                      // refuses a late claim outright.
-                      const left = secondsLeftFor(row);
-                      const mm = Math.floor(left / 60);
-                      // padStart on a CLOCK, not on an amount - "9:05 Left", not
-                      // "9:5". Chip figures on this page all go through fmt().
-                      const ss = String(left % 60).padStart(2, '0');
-                      return (
-                        <div className={styles.claimRow} key={row.transaction_id}>
-                          <div className={styles.rowInfo}>
-                            <span className={styles.rowName}>{row.to_name}</span>
-                            <span className={styles.rowSub}>
-                              {row.destination === 'agent_wallet'
-                                ? 'Agent Wallet'
-                                : 'Player Wallet'}{' '}
-                              &middot; {mm}:{ss} Left
-                            </span>
+                    {stillClaimable
+                      .filter((row) => !claimRecipient || row.to_user_id === claimRecipient)
+                      .map((row) => {
+                        // The countdown is the DATABASE's own seconds_left, counted
+                        // down by a monotonic stopwatch rather than by the phone's
+                        // clock. The decision is never the phone's either:
+                        // fn_agent_wallet_claim_back re-checks reversible_until and
+                        // refuses a late claim outright.
+                        const left = secondsLeftFor(row);
+                        const mm = Math.floor(left / 60);
+                        // padStart on a CLOCK, not on an amount - "9:05 Left", not
+                        // "9:5". Chip figures on this page all go through fmt().
+                        const ss = String(left % 60).padStart(2, '0');
+                        return (
+                          <div className={styles.claimRow} key={row.transaction_id}>
+                            <div className={styles.rowInfo}>
+                              <span className={styles.rowName}>{row.to_name}</span>
+                              <span className={styles.rowSub}>
+                                {row.destination === 'agent_wallet'
+                                  ? 'Agent Wallet'
+                                  : 'Player Wallet'}{' '}
+                                &middot; {mm}:{ss} Left
+                              </span>
+                            </div>
+                            <span className={styles.rowBalance}>{fmt(row.remaining)}</span>
+                            <button
+                              className={`${styles.reqBtn} ${styles.reqBtnGo}`}
+                              disabled={!isOnline || claimingId !== null}
+                              onClick={() => void claimBack(row)}
+                            >
+                              {claimingId === row.transaction_id ? 'Working...' : 'Claim Back'}
+                            </button>
                           </div>
-                          <span className={styles.rowBalance}>{fmt(row.remaining)}</span>
-                          <button
-                            className={`${styles.reqBtn} ${styles.reqBtnGo}`}
-                            disabled={!isOnline || claimingId !== null}
-                            onClick={() => void claimBack(row)}
-                          >
-                            {claimingId === row.transaction_id ? 'Working...' : 'Claim Back'}
-                          </button>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
                   </div>
                 )}
                 <div className={styles.modalActions}>

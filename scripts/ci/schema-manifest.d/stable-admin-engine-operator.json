@@ -1,0 +1,12 @@
+{
+  "_owner": "stable-admin-six-20261009",
+  "tables": ["ca_engine_operator_commands", "ca_operator_floor_hold", "ca_operator_table_closes"],
+  "functions": [
+    "fn_ca_engine_operator_command",
+    "fn_ca_operator_floor_state",
+    "fn_ca_engine_operator_observe",
+    "fn_ca_operator_finish_cash_close",
+    "fn_ca_operator_floor_entry_guard",
+    "fn_ca_engine_operator_claim_hourly"
+  ]
+}

@@ -25,8 +25,9 @@
  * Palette and tokens are ClubMembersPage's. No green, no purple.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
+import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useIsMounted } from '../hooks/useIsMounted';
@@ -98,6 +99,7 @@ export default function PlayerStatisticsPage() {
 
   const navigate = useNavigate();
   const toast = useToast();
+  const { user } = useAuthUser();
   const isMountedRef = useIsMounted();
 
   const [stats, setStats] = useState<MemberStatistics | null>(null);
@@ -120,6 +122,14 @@ export default function PlayerStatisticsPage() {
    * variant is chosen.
    */
   const [knownVariants, setKnownVariants] = useState<string[]>([]);
+  const statsAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    setStats(null);
+    setKnownVariants([]);
+    setVariant(null);
+    setNotFound(false);
+  }, [clubId, userId, user?.id]);
 
   const load = useCallback(
     async (
@@ -127,6 +137,9 @@ export default function PlayerStatisticsPage() {
       activeRange: MemberRange,
       getIsMounted?: () => boolean
     ) => {
+      statsAbortRef.current?.abort();
+      const controller = new AbortController();
+      statsAbortRef.current = controller;
       if (!clubId || !userId) {
         if ((!getIsMounted || getIsMounted()) && isMountedRef.current) {
           setNotFound(true);
@@ -135,7 +148,10 @@ export default function PlayerStatisticsPage() {
         }
         return;
       }
-      const live = () => (getIsMounted ? getIsMounted() : true) && isMountedRef.current;
+      const live = () =>
+        !controller.signal.aborted &&
+        (getIsMounted ? getIsMounted() : true) &&
+        isMountedRef.current;
 
       if (live()) {
         setLoading(true);
@@ -171,7 +187,8 @@ export default function PlayerStatisticsPage() {
           resolved,
           userId,
           activeVariant,
-          activeRange
+          activeRange,
+          controller.signal
         );
         if (!live()) return;
         setStats(result);
@@ -183,8 +200,8 @@ export default function PlayerStatisticsPage() {
           });
         }
       } catch (error) {
-        reportError(error, 'PlayerStatisticsPage.load');
         if (live()) {
+          reportError(error, 'PlayerStatisticsPage.load');
           setLoadFailed(true);
           toast.error('Failed To Load Player Statistics');
         }
@@ -192,7 +209,7 @@ export default function PlayerStatisticsPage() {
         if (live()) setLoading(false);
       }
     },
-    [clubId, userId, isMountedRef, toast]
+    [clubId, userId, user?.id, isMountedRef, toast]
   );
 
   useEffect(() => {
@@ -200,6 +217,7 @@ export default function PlayerStatisticsPage() {
     load(variant, range, () => mounted);
     return () => {
       mounted = false;
+      statsAbortRef.current?.abort();
     };
   }, [load, variant, range, reloadKey]);
 
@@ -341,7 +359,7 @@ export default function PlayerStatisticsPage() {
           {loading && stats
             ? 'Loading The Selected Range...'
             : stats?.is_overall
-              ? 'Showing Lifetime Totals'
+              ? 'Showing All Recorded Activity'
               : `Showing ${stats?.from ?? range.from ?? '?'} To ${stats?.to ?? range.to ?? '?'}`}
         </p>
       </section>

@@ -39,7 +39,7 @@ _fee_spec.loader.exec_module(FEE)
 _terminal_spec = importlib.util.spec_from_file_location('spin_paid_terminal', ROOT / 'scripts/qualification/spin-paid-terminal.py')
 TERMINAL = importlib.util.module_from_spec(_terminal_spec)
 _terminal_spec.loader.exec_module(TERMINAL)
-TERMINAL_MANIFEST_SHA256 = '2450ccac1489b9ecaca591761f4a65cb21c7f39a2862a7779728f33368aa4fe1'
+TERMINAL_MANIFEST_SHA256 = '1080aa440b5c60437c8f69ee36466ea04c87ee2506e817960699a0ffda91d375'
 _horse_spec = importlib.util.spec_from_file_location('spin_finalized_horse', ROOT / 'scripts/qualification/spin-finalized-horse-admission.py')
 HORSE = importlib.util.module_from_spec(_horse_spec)
 _horse_spec.loader.exec_module(HORSE)

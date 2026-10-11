@@ -31,6 +31,7 @@
 
 import type { IncomingMessage } from 'http';
 import { supabase } from '../services/supabase.js';
+import { playerSessionVerdict } from '../services/PlayerSessionAccess.js';
 
 const AUTH_CACHE_TTL_MS = 60_000; // 60s — tradeoff: faster response vs less-fresh revocation
 const authCache = new Map<string, { userId: string; expiresAt: number }>();
@@ -64,19 +65,26 @@ export async function authenticateRequest(
   const cached = authCache.get(token);
   const now = Date.now();
   if (cached && cached.expiresAt > now) {
-    return { userId: cached.userId };
+    const verdict = await playerSessionVerdict(cached.userId, token);
+    return verdict === 'alive' ? { userId: cached.userId } : null;
   }
 
   // Cache miss — always verify the signature via GoTrue before trusting any
   // claim. Single-flight so a concurrent burst only verifies once.
   const existing = inFlight.get(token);
-  if (existing) return existing;
+  if (existing) {
+    const identity = await existing;
+    if (!identity) return null;
+    return (await playerSessionVerdict(identity.userId, token)) === 'alive' ? identity : null;
+  }
 
   const p = verifyWithGoTrue(token).finally(() => {
     inFlight.delete(token);
   });
   inFlight.set(token, p);
-  return p;
+  const identity = await p;
+  if (!identity) return null;
+  return (await playerSessionVerdict(identity.userId, token)) === 'alive' ? identity : null;
 }
 
 // Periodic cleanup of the auth cache — keeps memory bounded under churn.

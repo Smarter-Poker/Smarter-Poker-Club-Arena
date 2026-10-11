@@ -444,6 +444,56 @@ describe('export', () => {
     expect(result.current.exportView.status).toBe('too_large');
   });
 
+  // Launch audit 2026-10-09, S-09: the server raises 55000 for four different
+  // things and every one of them was told as "expired".
+  it('an export already being prepared is busy, not expired', async () => {
+    exportRpc({
+      fn_cashier_statement_export_start: () => fail('55000', 'an export is already being prepared'),
+    });
+    const { result } = mount();
+    await waitFor(() => expect(result.current.list.status).toBe('ready'));
+    await act(async () => {
+      await result.current.prepareExport();
+    });
+    expect(result.current.exportView.status).toBe('error');
+    expect(result.current.exportView.problem).toBe('busy');
+  });
+
+  it.each(['export is unavailable', 'export metadata is invalid'])(
+    'a page read answered "%s" is gone, not expired, and offers Prepare Again',
+    async (message) => {
+      exportRpc({
+        fn_cashier_statement_export_page: () => fail('55000', message),
+      });
+      const { result } = mount();
+      await waitFor(() => expect(result.current.list.status).toBe('ready'));
+      await act(async () => {
+        await result.current.prepareExport();
+      });
+      await act(async () => {
+        await result.current.downloadExport('statement.csv');
+      });
+      expect(result.current.exportView.status).toBe('expired');
+      expect(result.current.exportView.problem).toBe('gone');
+      expect(downloads.calls).toHaveLength(0);
+    }
+  );
+
+  it('an expiry keeps the expired word', async () => {
+    exportRpc({
+      fn_cashier_statement_export_page: () => fail('55000', 'export expired; prepare a new export'),
+    });
+    const { result } = mount();
+    await waitFor(() => expect(result.current.list.status).toBe('ready'));
+    await act(async () => {
+      await result.current.prepareExport();
+    });
+    await act(async () => {
+      await result.current.downloadExport('statement.csv');
+    });
+    expect(result.current.exportView.problem).toBe('expired');
+  });
+
   it('a 42501 from the export page voids the file and clears the statement', async () => {
     exportRpc({
       fn_cashier_statement_export_page: () => fail('42501', 'export is no longer authorized'),

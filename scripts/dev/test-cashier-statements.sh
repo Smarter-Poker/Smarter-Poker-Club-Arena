@@ -117,3 +117,6 @@ python3 "$root/tests/fixtures/cashier-statements/ledger-cover-native.py"
 # Exercise the complete unchanged page/auth oracle against the totals-only
 # mirrored-movement read, including two-session snapshot and catalog guards.
 python3 "$root/tests/fixtures/cashier-statements/movement-totals-native.py"
+
+# The current default/all-scope aggregate and its guarded concurrent index.
+python3 "$root/tests/fixtures/cashier-statements/direction-totals-native.py"

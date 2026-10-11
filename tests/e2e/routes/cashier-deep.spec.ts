@@ -97,9 +97,7 @@ test.describe('Cashier Trade — deep authenticated UX', () => {
     });
     await openTradeCashier(page);
     const reconciliation = page.locator('[data-cashier-recovery="true"]');
-    const cashierStatus = page
-      .getByRole('region', { name: 'Every Chip. Accounted For.' })
-      .getByRole('status');
+    const cashierStatus = page.getByRole('region', { name: 'Wallet Command' }).getByRole('status');
     await expect(cashierStatus).toHaveText(
       /^(Balances Synchronized|Cashier Ready; Loading The Rest Of The Roster After [\d,]+ Members)$/,
       { timeout: 30_000 }

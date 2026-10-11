@@ -1,0 +1,25 @@
+CREATE ROLE anon NOLOGIN;
+CREATE ROLE authenticated NOLOGIN;
+CREATE ROLE service_role NOLOGIN;
+CREATE SCHEMA auth; CREATE SCHEMA realtime;
+CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
+CREATE FUNCTION realtime.topic() RETURNS text LANGUAGE sql STABLE AS $$ SELECT current_setting('realtime.topic',true) $$;
+CREATE TABLE public.profiles(id uuid PRIMARY KEY, is_admin boolean);
+CREATE TABLE public.club_members(club_id uuid,user_id uuid,status text);
+CREATE TABLE public.overseers(club_id uuid,user_id uuid);
+CREATE FUNCTION public.fn_union_oversees_club(club_id uuid,user_id uuid) RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT EXISTS(SELECT 1 FROM public.overseers o WHERE o.club_id=$1 AND o.user_id=$2) $$;
+CREATE TABLE public.ca_declared_money_triggers(table_name text,trigger_name text,note text,PRIMARY KEY(table_name,trigger_name));
+CREATE TABLE public.agents(id integer PRIMARY KEY,club_id uuid,user_id uuid,status text,agent_wallet_balance numeric,promo_wallet_balance numeric,unrelated text);
+CREATE TABLE realtime.messages(extension text); ALTER TABLE realtime.messages ENABLE ROW LEVEL SECURITY;
+INSERT INTO realtime.messages VALUES('broadcast'),('presence');
+CREATE TABLE public.deliveries(payload jsonb,event text,topic text,private boolean);
+CREATE FUNCTION realtime.send(payload jsonb,event text,topic text,private boolean) RETURNS void LANGUAGE plpgsql AS $$
+BEGIN IF current_setting('wallet.fail_send',true)='yes' THEN RAISE EXCEPTION 'simulated transport outage'; END IF;
+INSERT INTO public.deliveries VALUES(payload,event,topic,private); END $$;
+GRANT USAGE ON SCHEMA public,auth,realtime TO authenticated,anon;
+GRANT SELECT ON public.profiles,public.club_members,public.overseers TO authenticated;
+GRANT SELECT,INSERT ON realtime.messages TO authenticated,anon;
+INSERT INTO public.profiles VALUES('aaaaaaaa-1111-2222-3333-444444444444',false),('bbbbbbbb-1111-2222-3333-444444444444',true),('cccccccc-1111-2222-3333-444444444444',false),('dddddddd-1111-2222-3333-444444444444',false);
+INSERT INTO public.club_members VALUES('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','aaaaaaaa-1111-2222-3333-444444444444','active'),('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','dddddddd-1111-2222-3333-444444444444','left');
+INSERT INTO public.overseers VALUES('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','cccccccc-1111-2222-3333-444444444444');
+INSERT INTO public.agents VALUES(1,'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','aaaaaaaa-1111-2222-3333-444444444444','active',10,20,NULL);

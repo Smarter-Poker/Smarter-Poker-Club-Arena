@@ -13,23 +13,35 @@ poker_tournaments_unpaid_completed > 0   for: 15m   severity: critical
 ```
 
 A tournament finished in the last six hours with a non-zero prize pool and
-nothing of value was delivered against it: no cash prize on the wallet ledger
-and no satellite award. Players bought in and nobody was paid.
+nothing of value was delivered against it: no cash prize on the wallet ledger,
+no Diamond prize on the Diamond tournament ledger, and no satellite award.
+Players bought in and nobody was paid.
 
 ## What the expression measures
 
 `fn_tournament_metrics(10, 10, 6)`: `unpaid_completed` counts `tournaments`
 with `status = 'COMPLETED'`, `ended_at` in the last 6 hours,
 `coalesce(prize_pool, 0) > 0`, no `wallet_transactions` row with
-`related_entity_id` = the tournament and `category = 'prize'`, and no
-`tournament_satellite_awards` row for it. A satellite pays in a seat or a
-ticket rather than chips, and both count as payment, so a satellite in this
-number is one that failed to settle, not one that paid in kind (the rule was
-widened on 2026-09-12 after twelve false firings, all satellites).
+`related_entity_id` = the tournament and `category = 'prize'`, no
+`poker_diamond_tournament_ledger` row with `kind = 'prize'` and a
+`wallet_journal_id` (a Diamond Arena event pays in Diamonds, never on the chip
+wallet ledger), and no `tournament_satellite_awards` row for it. A satellite
+pays in a seat or a ticket rather than chips, and both count as payment, so a
+satellite in this number is one that failed to settle, not one that paid in
+kind. The rule was widened twice after false firings: on 2026-09-12 for
+satellites (twelve, all paid), and on 2026-10-09 for Diamond Arena events
+(32 between 10-07 and 10-09, all paid in full;
+`docs/changelog/2026-10-09-the-unpaid-alarm-reads-every-payout-rail.md`).
+A new way of paying a prize must be added to this count in the same change,
+or every event it pays will page the owner as unpaid;
+`tests/the-unpaid-alarm-reads-every-payout-rail.law.test.ts` pins the list.
 
 A COMPLETED non-satellite tournament requires its terminal receipt (trigger
 `non_satellite_completed_requires_terminal_receipt`), issued by the terminal
-door `fn_complete_tournament_terminal`. So a firing means one of three things:
+door `fn_complete_tournament_terminal`. Since 2026-10-09 a COMPLETED satellite
+likewise requires its `tournament_satellite_settlements` receipt with a closed
+source escrow (trigger `satellite_completed_requires_settlement_receipt`, both
+checked at COMMIT). So a firing means one of three things:
 the receipt was issued with no prize credit behind it, a path reached
 COMPLETED some other way, or the prize was written somewhere this query does
 not read (a different `category`, a missing `related_entity_id`). Step 3 below
@@ -46,6 +58,9 @@ tells the third apart from the first two.
      AND coalesce(t.prize_pool, 0) > 0
      AND NOT EXISTS (SELECT 1 FROM wallet_transactions w
                       WHERE w.related_entity_id = t.id AND w.category = 'prize')
+     AND NOT EXISTS (SELECT 1 FROM poker_diamond_tournament_ledger d
+                      WHERE d.tournament_id = t.id AND d.kind = 'prize'
+                        AND d.wallet_journal_id IS NOT NULL)
      AND NOT EXISTS (SELECT 1 FROM tournament_satellite_awards a WHERE a.tournament_id = t.id);
    ```
 2. The field and what each place was owed:

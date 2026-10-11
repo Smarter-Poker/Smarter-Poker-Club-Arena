@@ -27,10 +27,13 @@ vi.mock('../../src/lib/supabase', () => {
   };
 });
 
+const mockMintChips = vi.fn();
+
 vi.mock('../../src/services/WalletService', () => ({
   WalletService: {
     getBalances: vi.fn().mockResolvedValue([]),
     getTransactions: vi.fn().mockResolvedValue([]),
+    mintChips: (...args: unknown[]) => mockMintChips(...args),
   },
 }));
 
@@ -74,5 +77,20 @@ describe('useWalletStore', () => {
     expect(state).not.toHaveProperty('internalTransfer');
     expect(typeof state.mintChips).toBe('function');
     expect(typeof state.reset).toBe('function');
+  });
+
+  it('forwards the caller-held idempotency key to the service, never minting its own', async () => {
+    // Launch audit 2026-10-09, S-03: a key minted inside the call protects
+    // nothing against commit + lost response + retry.
+    mockMintChips.mockResolvedValueOnce({ success: true, chipsAdded: 100 });
+    const key = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const result = await useWalletStore.getState().mintChips('club-1', 100, key);
+    expect(result).toEqual({ chips: 100, success: true });
+    expect(mockMintChips).toHaveBeenCalledWith('club-1', 100, key);
+  });
+
+  it('no longer exports useTotalBalance, the three-account sum nothing should spend', async () => {
+    const mod = await import('../../src/stores/useWalletStore');
+    expect((mod as Record<string, unknown>).useTotalBalance).toBeUndefined();
   });
 });

@@ -23,12 +23,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import {
-  sliceBlockAfter,
-  sliceEnclosingBlock,
-  sliceBetween,
-  sliceCall,
-} from './helpers/sourceWindow';
+import { sliceEnclosingBlock, sliceBetween, sliceCall } from './helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 
@@ -97,16 +92,15 @@ describe('event-driven refreshes force past the window', () => {
     );
   });
 
-  it('useWallet().refresh() forces - it is the explicit "this is stale" API', () => {
-    // hooks/index.ts holds several `refresh: () =>` properties (union,
-    // wallet, settlement). Anchor on the wallet one by finding the
-    // refresh that actually calls loadBalances, rather than the first match.
-    const candidates = [...HOOKS.matchAll(/refresh: \(\) => \{/g)].map((m) => m.index ?? -1);
-    const walletRefresh = candidates
-      .map((i) => sliceBlockAfter(HOOKS.slice(i), 'refresh: () => {'))
-      .find((block) => /loadBalances\(/.test(block));
-    expect(walletRefresh, 'no refresh() calling loadBalances found').toBeDefined();
-    expect(walletRefresh!).toMatch(/loadBalances\([^)]*\{\s*force:\s*true\s*\}\)/);
+  it('useWallet is gone, so no hook can hand a page an unforced loadBalances refresh', () => {
+    // 2026-10-09 (launch audit S-11): useWallet() was dead code (no importer),
+    // summed BUSINESS + PLAYER + PROMO and re-exported retired store ops. Its
+    // refresh() forced correctly; with the hook deleted the rule it carried is
+    // now: hooks/index.ts holds no loadBalances call at all, forced or not,
+    // so every balance refresh is written at the page that means it.
+    expect(HOOKS).not.toMatch(/export function useWallet\b/);
+    expect(HOOKS).not.toMatch(/loadBalances\(/);
+    expect(HOOKS).toContain('useWallet REMOVED');
   });
 });
 

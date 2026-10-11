@@ -90,7 +90,7 @@
  *   ... --require-proof      an unverifiable migration also fails
  * Exit: 0 every migration in the window is live · 1 one is not · 2 could not ask
  */
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -324,15 +324,29 @@ export function declaredProofs(sql) {
 /** Immutable installed files cannot be edited to add markers. External proof
  * declarations bind their exact bytes, never exempt the migration from proof.
  * Validate every declaration even when the queried file is unrelated. */
+const externalProofFiles = new Map();
+function externalProofFile(path) {
+  const before = statSync(path, { bigint: true });
+  const identity = [before.dev, before.ino, before.size, before.mtimeNs, before.ctimeNs].join(':');
+  const cached = externalProofFiles.get(path);
+  if (cached?.identity === identity) return cached;
+  const bytes = readFileSync(path);
+  const after = statSync(path, { bigint: true });
+  if ([after.dev, after.ino, after.size, after.mtimeNs, after.ctimeNs].join(':') !== identity) throw Error(`external live proof migration changed while reading: ${path}`);
+  const value = { identity, text: bytes.toString('utf8'), sha256: createHash('sha256').update(bytes).digest('hex') };
+  if (externalProofFiles.size >= 4096) externalProofFiles.clear();
+  externalProofFiles.set(path, value);
+  return value;
+}
 export function externalDeclaredProofs(sql, registry, dir) {
   if (!registry || registry.schema !== 1 || Object.keys(registry).sort().join(',') !== 'entries,schema' || !Array.isArray(registry.entries)) throw Error('invalid external live proof registry');
   const seen = new Set(), result = [];
   for (const entry of registry.entries) {
     if (!entry || Object.keys(entry).sort().join(',') !== 'file,proofs,sha256' || typeof entry.file !== 'string' || !/^\d{14}_[a-z0-9_]+\.sql$/.test(entry.file) || seen.has(entry.file) || typeof entry.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(entry.sha256) || !Array.isArray(entry.proofs) || !entry.proofs.length || entry.proofs.some(p => typeof p !== 'string' || !p.trim() || !proofIsRunnable(p))) throw Error('invalid external live proof declaration');
     seen.add(entry.file);
-    const bytes = readFileSync(join(dir,entry.file));
-    if (createHash('sha256').update(bytes).digest('hex') !== entry.sha256) throw Error(`external live proof migration bytes changed: ${entry.file}`);
-    if (bytes.toString('utf8') === sql) result.push(...entry.proofs);
+    const file = externalProofFile(join(dir,entry.file));
+    if (file.sha256 !== entry.sha256) throw Error(`external live proof migration bytes changed: ${entry.file}`);
+    if (file.text === sql) result.push(...entry.proofs);
   }
   return result;
 }
@@ -390,7 +404,18 @@ export function externalDeclaredProofs(sql, registry, dir) {
  *                  stays a failure, exactly as before. Prose that parses as
  *                  SQL but names nothing real is caught here, not above.
  */
+// The grammar result depends only on the expression. External declarations
+// repeat across every migration in a scan; retain a bounded pure result cache.
+// File bytes and hashes are still read and validated on every declaration.
+const proofGrammarResults = new Map();
 export function proofIsRunnable(expr) {
+  if (proofGrammarResults.has(expr)) return proofGrammarResults.get(expr);
+  const result = proofGrammarIsRunnable(expr);
+  if (proofGrammarResults.size >= 4096) proofGrammarResults.clear();
+  proofGrammarResults.set(expr, result);
+  return result;
+}
+function proofGrammarIsRunnable(expr) {
   const s = String(expr ?? '');
   if (!s.trim()) return false;
   let depth = 0;

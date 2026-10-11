@@ -15,6 +15,7 @@ import { readPresence } from '../lib/ownProfile';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { uuid } from '../utils/uuid';
 import type { ChipTransaction } from '../types/database.types';
 import {
   CashoutReceiptChecks,
@@ -210,6 +211,11 @@ function AgentDashboardContent() {
   const toast = useToast();
   const SWR_TTL_MS = 5 * 60 * 1000; // 5-minute cache TTL
   const resolvedClubIdRef = useRef<string | null>(null);
+  // Promo grant payment identity (launch audit 2026-10-09, S-04): minted once
+  // per attempt, retained across a failure so a retry replays the same
+  // fn_promo_disburse operation, cleared after success and whenever the
+  // amount or target changes (a different grant is a different payment).
+  const promoOpIdRef = useRef<string | null>(null);
 
   // Auto-clear success
   useEffect(() => {
@@ -1684,7 +1690,10 @@ function AgentDashboardContent() {
                   className="admin-input"
                   style={{ flex: '1 1 200px' }}
                   value={creditTarget}
-                  onChange={(e) => setCreditTarget(e.target.value)}
+                  onChange={(e) => {
+                    promoOpIdRef.current = null;
+                    setCreditTarget(e.target.value);
+                  }}
                 >
                   <option value="">Select Agent...</option>
                   {agents.map((a: DownlineMember) => (
@@ -1701,7 +1710,10 @@ function AgentDashboardContent() {
                   placeholder="Amount"
                   min="1"
                   value={creditAmount}
-                  onChange={(e) => setCreditAmount(e.target.value)}
+                  onChange={(e) => {
+                    promoOpIdRef.current = null;
+                    setCreditAmount(e.target.value);
+                  }}
                 />
                 <button
                   className="admin-btn admin-btn-primary"
@@ -1721,12 +1733,15 @@ function AgentDashboardContent() {
                       // WalletService.disbursePromo resolves that and the database
                       // refuses anyone who is not that owner.
                       const resolvedClub = await resolveClubUUID(clubId || '');
+                      if (!promoOpIdRef.current) promoOpIdRef.current = uuid();
                       await WalletService.disbursePromo(
                         resolvedClub,
                         creditTarget,
                         promoAmt,
-                        'Promo granted from the club dashboard'
+                        'Promo granted from the club dashboard',
+                        promoOpIdRef.current
                       );
+                      promoOpIdRef.current = null;
                       setSuccess(`Granted ${fmtChips(promoAmt)} promo chips!`);
                       setCreditTarget('');
                       setCreditAmount('');

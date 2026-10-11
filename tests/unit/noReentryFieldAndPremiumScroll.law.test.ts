@@ -31,6 +31,13 @@ describe('the entries stats never surface a Re-Entry field', () => {
 });
 
 describe('the lobby shell keeps the scroll contract', () => {
+  it('passes vertical gestures from inner lists to the shared tab scroller', () => {
+    const code = SHELL.replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(code).toMatch(/\.details-content\s+\.tl-scroll\s*\{[^}]*overscroll-behavior-y:\s*auto/s);
+    // The modal/page boundary still contains scroll; only its nested lists yield.
+    expect(code).toMatch(/\.details-content\s*\{[^}]*overscroll-behavior:\s*contain/s);
+  });
+
   it('.details-content scrolls vertically', () => {
     // Anchored on the rule's own opening line: the selector is also quoted in
     // the comments above it, and a comment has no declarations to assert on.

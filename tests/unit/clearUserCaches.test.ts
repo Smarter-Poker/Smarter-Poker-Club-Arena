@@ -15,7 +15,11 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { clearUserCaches, CLUB_HOME_CACHE_PREFIX } from '@/utils/clearUserCaches';
+import {
+  clearUserCaches,
+  CLUB_HOME_CACHE_PREFIX,
+  UNRESOLVED_MONEY_JOURNAL_PREFIXES,
+} from '@/utils/clearUserCaches';
 import { SWR_CACHE_PREFIXES } from '@/utils/staleCacheReaper';
 import { STORAGE_KEYS } from '@/lib/storage';
 import {
@@ -55,12 +59,6 @@ describe('clearUserCaches', () => {
     localStorage.setItem('ca_saved_start_time_club-a', '1');
     localStorage.setItem('dismissed_announcements_club-a', '[]');
     localStorage.setItem('referral_club-a', 'x');
-    localStorage.setItem(`${CASHIER_RECOVERY_PREFIX}:user-a:club-a`, '{"private":true}');
-    localStorage.setItem(
-      `${CASHIER_REQUEST_RECOVERY_PREFIX}:user-a:club-a:intent-a`,
-      '{"private":true}'
-    );
-    localStorage.setItem(`${UNION_WALLET_RECOVERY_PREFIX}:user-a:union-a:chips`, '{}');
 
     clearUserCaches();
 
@@ -70,12 +68,37 @@ describe('clearUserCaches', () => {
         k.startsWith('hand_history_') ||
         k.startsWith('ca_saved_start_time_') ||
         k.startsWith('dismissed_announcements_') ||
-        k.startsWith('referral_') ||
-        k.startsWith(CASHIER_RECOVERY_PREFIX) ||
-        k.startsWith(CASHIER_REQUEST_RECOVERY_PREFIX) ||
-        k.startsWith(UNION_WALLET_RECOVERY_PREFIX)
+        k.startsWith('referral_')
     );
     expect(leftovers).toEqual([]);
+  });
+
+  it('keeps the unresolved-money journals because a sign-out must not mint a second op id for a send the server may have honoured (S-05)', () => {
+    // 2026-10-09. Until today these three prefixes were purged. An operator whose
+    // batch send committed but lost its response, who signed out and in to "fix
+    // it", lost the retained op ids and the next identical send carried new ones
+    // the server's exact-intent replay could not recognise: a double pay. The keys
+    // are user-scoped and every reader re-validates the user id before use, so
+    // another account on the same device cannot read or replay them.
+    const journals = [
+      `${CASHIER_RECOVERY_PREFIX}:user-a:club-a`,
+      `${CASHIER_RECOVERY_PREFIX}:user-a:club-a:submission-a`,
+      `${CASHIER_REQUEST_RECOVERY_PREFIX}:user-a:club-a:intent-a`,
+      `${UNION_WALLET_RECOVERY_PREFIX}:user-a:union-a:chips:sig`,
+    ];
+    for (const key of journals) localStorage.setItem(key, '{"operationId":"kept"}');
+    localStorage.setItem(`${CLUB_HOME_CACHE_PREFIX}v2_club-a`, '{}');
+
+    clearUserCaches();
+
+    for (const key of journals)
+      expect(localStorage.getItem(key), key).toBe('{"operationId":"kept"}');
+    expect(localStorage.getItem(`${CLUB_HOME_CACHE_PREFIX}v2_club-a`)).toBeNull();
+    expect(UNRESOLVED_MONEY_JOURNAL_PREFIXES).toEqual([
+      CASHIER_RECOVERY_PREFIX,
+      CASHIER_REQUEST_RECOVERY_PREFIX,
+      UNION_WALLET_RECOVERY_PREFIX,
+    ]);
   });
 
   it('empties every sessionStorage SWR cache — they outlive the session, not the tab', () => {

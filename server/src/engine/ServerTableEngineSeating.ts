@@ -1,3 +1,4 @@
+import { loadSeatedPlayers } from '../services/supabase.js';
 import { requestSeatDeparture, type AdminDepartureAuthority } from '../services/supabase/seats.js';
 /**
  * ServerTableEngine, layer 2/8 — buy-ins, cash-outs, sit-out/leave, admin locks, BB entry.
@@ -893,16 +894,12 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
        delivers to nobody; without this the correction is simply lost and the
        client's balance stays wrong until an absolute read. One frame per
        player is enough: it is the newest adjustment that matters. */
-    const delivered = this.hub.sendToUser(this.tableId, userId, frame);
-    /* Retained ONLY while undelivered. `onResync` fires on EVERY connect
-       and mux subscribe, not just a seq-gap RESYNC, so a frame kept after
-       delivery would greet this player on every reload until the hourly
-       restart - and a freshly loaded client, whose balance was just read
-       absolutely, would credit the refund a second time. Delivered once to
-       an open socket is delivered; the same-session dedupe covers a later
-       gap-RESYNC. */
-    if (delivered > 0) this.lastAddOnAdjustedByUser.delete(userId);
-    else this.lastAddOnAdjustedByUser.set(userId, frame);
+    this.lastAddOnAdjustedByUser.set(userId, frame);
+    const delivered = () => {
+      if (this.lastAddOnAdjustedByUser.get(userId) === frame)
+        this.lastAddOnAdjustedByUser.delete(userId);
+    };
+    if (this.hub.sendToUser(this.tableId, userId, frame, delivered) > 0) delivered();
   }
 
   /** An add_on_adjusted frame that found no open socket, held for the
@@ -913,9 +910,11 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
   public rePushAddOnAdjusted(userId: string): void {
     const frame = this.lastAddOnAdjustedByUser.get(userId);
     if (!frame || !this.hub || typeof this.hub.sendToUser !== 'function') return;
-    if (this.hub.sendToUser(this.tableId, userId, frame) > 0) {
-      this.lastAddOnAdjustedByUser.delete(userId);
-    }
+    const delivered = () => {
+      if (this.lastAddOnAdjustedByUser.get(userId) === frame)
+        this.lastAddOnAdjustedByUser.delete(userId);
+    };
+    if (this.hub.sendToUser(this.tableId, userId, frame, delivered) > 0) delivered();
   }
 
   /**
@@ -1936,6 +1935,36 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
   /**
    * POST /admin/pause — Bible V8 §6.17: Admin pause. Current hand finishes, then no new hands.
    */
+  protected override async closeOperatorCashAtBoundary(): Promise<void> {
+    const command = this.operatorCloseRequest;
+    if (!command || this.isTournamentTable() || !this.isBetweenHands()) return;
+    const roster = await loadSeatedPlayers(this.tableId);
+    if (!this.lifecycleCanMutate() || !this.isBetweenHands()) return;
+    this.adoptSeatRoster(roster);
+    for (const seat of [...this.seatedPlayers]) {
+      const answer = await this.leaveTable(seat.user_id, {
+        forced: true,
+        occupancyId: seat.occupancy_id,
+        seatNumber: seat.seat_number,
+        admin: {
+          actorId: command.actor_id,
+          clubId: this.tableInfo!.club_id,
+          reason: command.reason,
+        },
+      });
+      if (!answer.success || !answer.immediate) return;
+    }
+    const { data, error } = await supabase.rpc('fn_ca_operator_finish_cash_close', {
+      p_table_id: this.tableId,
+      p_operation_id: command.operation_id,
+    });
+    if (error) throw new Error('operator_cash_close_outcome_unknown');
+    // stop() joins this dealer loop. Fence it now, then let this boundary
+    // return so teardown can join the original loop without awaiting itself.
+    if (data === true)
+      void this.stop().catch((error) => reportError(error, 'operator_cash_close_stop_failed'));
+  }
+
   public adminPause(reason?: string): { success: boolean } {
     this.adminPauseLock = true;
     console.log(

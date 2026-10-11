@@ -413,7 +413,21 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
               <SpadeConsole
                 family="shark"
                 title={menuTitle}
+                /* The shark head paints a pill slot and its foot paints ONE
+                   plate; neither is ever left blank (launch audit D-14 /
+                   R-01). The plate is the directory's Close, 44px in the
+                   thumb zone beside the corner X. */
+                pill="Wallets"
+                pillInk="blue"
                 onClose={() => closeMenu(true)}
+                plates={{
+                  primary: {
+                    label: 'Close',
+                    ink: 'silver',
+                    onClick: () => closeMenu(true),
+                    'aria-label': 'Close Wallet Directory',
+                  },
+                }}
                 className={styles.cashierSwitchConsole}
               >
                 {directoryPending && (
@@ -480,13 +494,18 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
                           onSelect(club);
                         }}
                       >
-                        {club.logo_url && (
+                        {club.logo_url ? (
                           <img
                             src={club.logo_url}
                             alt=""
                             className={styles.cashierSwitchLogo}
                             loading="lazy"
                           />
+                        ) : (
+                          /* No invented mark for a club without a logo (the
+                             2026-10-03 ruling); the slot is kept so every
+                             name in the list starts on the same line. */
+                          <span className={styles.cashierSwitchLogo} aria-hidden="true" />
                         )}
                         <span className={styles.cashierSwitchItemText}>
                           <span className={styles.cashierSwitchItemName}>

@@ -25,6 +25,7 @@
  *      ten days under a header that was supposed to be watching.
  */
 import { expect, test } from '@playwright/test';
+import { visitCspRoute } from './support/cspRouteObservation';
 
 type Violation = {
   directive: string;
@@ -41,7 +42,9 @@ const ARENA_ROUTES = ['', 'clubs', 'wallet', 'profile', 'promotions'];
  * The policy is set by the World Hub for the whole origin, so a Club-Arena-only
  * sweep would certify a header that mostly governs somebody else's pages.
  */
-const HUB_ROUTES = ['/', '/diamonds', '/games'];
+// Use the World Hub's maintained Diamonds and Games navigation destinations
+// (src/config/world-footer-navigation.json); the old bare URLs return 404.
+const HUB_ROUTES = ['/', '/hub/diamond-store', '/hub/home-games'];
 
 const COLLECT = () => {
   (window as unknown as { __cspViolations?: Violation[] }).__cspViolations = [];
@@ -67,21 +70,7 @@ test.describe('the content security policy', () => {
     const origin = new URL(baseURL ?? 'https://smarter.poker/hub/club-arena/').origin;
 
     const visit = async (url: string, label: string) => {
-      try {
-        await page.goto(url, { waitUntil: 'networkidle', timeout: 60_000 });
-      } catch {
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
-      }
-      await page.waitForTimeout(3500);
-      // Lazily mounted panels fetch their own things; a viewport-height visit
-      // certifies the header against about a third of the page.
-      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {});
-      await page.waitForTimeout(2000);
-      const batch = await page
-        .evaluate(
-          () => (window as unknown as { __cspViolations?: Violation[] }).__cspViolations ?? []
-        )
-        .catch(() => [] as Violation[]);
+      const batch = await visitCspRoute(page, url, label);
       for (const v of batch) found.push({ ...v, route: label });
     };
 

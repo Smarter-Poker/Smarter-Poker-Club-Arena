@@ -318,7 +318,7 @@ describe('Create Club production certification contract', () => {
     expect(spec).toContain("name: 'Opening Welcome Package'");
     expect(spec).toContain("getByText('9 Preloaded', { exact: true })");
     expect(spec).toContain("getByText('Owner Acceptance Required', { exact: true })");
-    expect(spec).toContain("getByText('Daily 25 Freezeout · 7 PM UTC', { exact: true })");
+    expect(spec).toContain("getByText('Daily 25 Chip Freezeout · 7 PM UTC', { exact: true })");
   });
 
   it('fails closed around independent reset preimages and exact residue cleanup', () => {

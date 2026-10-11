@@ -19,6 +19,8 @@ const { resetMovedPresence } = await import('./SeatMovePresence.js');
 const TABLE = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 const USER = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const CLUB = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+const FIXTURE_SESSION = '12345678-1234-4123-8123-123456789abc';
+const FIXTURE_TOKEN = `fixture.${Buffer.from(JSON.stringify({ session_id: FIXTURE_SESSION })).toString('base64url')}.signature`;
 const host = process.env.CA_DEPARTURE_PG_HOST;
 // Opt-in: scripts/dev/probe-departure-postgres.sh owns a disposable socket-only DB.
 // These are actual cashout/credit SQL transactions, not PostgREST/browser tests.
@@ -513,6 +515,13 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
       return e;
     };
     transport.rpc.mockImplementation(async (name: string, args: any) => {
+      // This reconnect fixture explicitly owns synthetic identity/session admission.
+      // Financial and seat-move RPCs below still execute the unchanged native SQL.
+      if (name === 'fn_ca_player_session_live') {
+        expect([USER, PARTNER_USER]).toContain(args.p_user_id);
+        expect(args).toEqual({ p_user_id: args.p_user_id, p_session_id: FIXTURE_SESSION });
+        return { data: true, error: null };
+      }
       if (name === 'fn_cash_seat_move_execute') return { data: move(args.p_move_id), error: null };
       if (name === 'fn_cash_seat_move_arrivals') {
         expect(args.p_occupancy_ids).toHaveLength(1);
@@ -551,7 +560,7 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
       const wire = new EngineWebSocketServer({
         hub,
         tableExists: (id) => [TABLE, OTHER_TABLE].includes(id),
-        verifyToken: async (token) => (token === 'fixture.session.signature' ? { userId } : null),
+        verifyToken: async (token) => (token === FIXTURE_TOKEN ? { userId } : null),
         authorizeConnection: async (id, user) => ({
           allowed: id === tableId && user === userId,
           reason: 'club_member',
@@ -568,7 +577,7 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
       hub.publish(tableId, { tableId, players: roster(tableId) });
       const socket = new WebSocket(`ws://127.0.0.1:${port}/ws/table/${tableId}`, [
         'bearer',
-        'fixture.session.signature',
+        FIXTURE_TOKEN,
       ]);
       try {
         const firstMove = new Promise<void>((resolve, reject) => {

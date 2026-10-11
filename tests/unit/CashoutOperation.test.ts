@@ -282,6 +282,19 @@ describe('prepared cashout generation and exact service receipts', () => {
     expect(rpc).toHaveBeenCalledTimes(3);
   });
 
+  it('a definitive balance refusal acknowledges the generation so the next start mints a fresh id', async () => {
+    rpc.mockResolvedValueOnce({
+      data: null,
+      error: { code: '23514', message: 'cashier_wallet_balance_unverified' },
+    } as never);
+    await expect(runCashoutOperation(await start())).rejects.toThrow(
+      'Not Enough Chips For That Cashout.'
+    );
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(history().generations[0].acknowledged).toBe(true);
+    expect(history().generations[0].starts.every((item: any) => item.acknowledged)).toBe(true);
+  });
+
   it('terminal cancellation retains its operation after acknowledgment', async () => {
     rpc.mockImplementation(async (_name, args) => receipt(args, {}, 'cancellation') as never);
     const terminal = { ...intent, targetId: ID.cashout, kind: 'cashout_cancel' as const };

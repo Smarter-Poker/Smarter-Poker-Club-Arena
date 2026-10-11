@@ -1,0 +1,52 @@
+[
+  {
+    "schema": "public",
+    "name": "game_type",
+    "labels": ["NLHE", "PLO", "PLO5", "cash", "tournament", "sit_n_go"]
+  },
+  {
+    "schema": "public",
+    "name": "game_variant",
+    "labels": [
+      "nlh",
+      "flh",
+      "plo4",
+      "plo5",
+      "plo6",
+      "plo_hilo",
+      "plo8",
+      "short_deck",
+      "ofc",
+      "ofc_pineapple"
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "member_role",
+    "labels": ["owner", "admin", "agent", "member", "super_agent", "player"]
+  },
+  {
+    "schema": "public",
+    "name": "member_status",
+    "labels": ["active", "pending", "suspended", "banned"]
+  },
+  {
+    "schema": "public",
+    "name": "table_status",
+    "labels": ["waiting", "running", "paused", "closed"]
+  },
+  {
+    "schema": "public",
+    "name": "transaction_type",
+    "labels": [
+      "deposit",
+      "withdrawal",
+      "buy_in",
+      "cash_out",
+      "agent_transfer",
+      "rake",
+      "bonus",
+      "refund"
+    ]
+  }
+]

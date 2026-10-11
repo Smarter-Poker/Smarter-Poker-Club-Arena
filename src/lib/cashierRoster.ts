@@ -90,7 +90,8 @@ export const rosterRowMatches = (row: DownlineRow, query: string): boolean => {
   return (
     row.name.toLowerCase().includes(q) ||
     row.username.toLowerCase().includes(q) ||
-    (row.playerNumber || '').toLowerCase().includes(q)
+    (row.playerNumber || '').toLowerCase().includes(q) ||
+    row.role.replace(/_/g, ' ').toLowerCase().includes(q)
   );
 };
 
@@ -182,6 +183,8 @@ export function rosterMatchRank(row: DownlineRow, query: string): number {
   else if (handle.includes(q)) rank = 400;
   else if (id === q) rank = 300;
   else if (id.startsWith(q)) rank = 200;
+  else if (id.includes(q)) rank = 100;
+  else if (row.role.replace(/_/g, ' ').toLowerCase().includes(q)) rank = 50;
   if (rank === 0) return 0;
 
   // The person searching for themselves is the most common search there is,

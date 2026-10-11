@@ -664,6 +664,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // counted at the deal itself, below.
         await this.evictExpiredSitOuts({ countOrbit: false });
 
+        if (await this.passOperatorFloorBoundary()) {
+          await this.sleep(3000);
+          continue;
+        }
+
         // Bible V8 §6.17: Admin pause/maintenance lock — skip dealing
         if (this.adminPauseLock || this.maintenanceLock) {
           if (this.tableFSM.state === 'running') {
@@ -1079,11 +1084,16 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // Return through the owner's gate before using the prepared hand.
         if (this.isNextHandPaused()) {
           if (this.maintenancePaused) await this.persistPresenceForRestart('parked');
-          // The three POLLED owners have no gate to wait on. awaitPauseGate
+          // The four POLLED owners have no gate to wait on. awaitPauseGate
           // returns immediately when only one of them is raised, and this
           // branch then `continue`s - a hot spin. The gate is for the owners
           // that something in this process will release.
-          if (!this.adminPauseLock && !this.maintenanceLock && !this.dealingHaltLock)
+          if (
+            !this.adminPauseLock &&
+            !this.maintenanceLock &&
+            !this.dealingHaltLock &&
+            !this.operatorFloorPaused
+          )
             await this.awaitPauseGate();
           if (!this.running) break;
           continue;
@@ -2076,6 +2086,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   }
 
   protected async dealHand(players: SeatedPlayer[]): Promise<void> {
+    if (this.operatorClosureOnlyId) throw new Error('operator_cash_close_dealing_forbidden');
     // Resume an already-owned cancellation with the same immutable identity.
     // A lost response never permits allocation of a different hand first.
     if (this.f06CurrentPermit?.hasPreparedCancellation()) await this.cancelF06PreparedHand();
@@ -3727,7 +3738,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       json: JSON.stringify({ user_id: userId, seat_number: seat, cards }),
     };
     const handNumberAtDeal = this.handCount;
-    // Private socket delivery stays synchronous and never waits for PostgREST.
+    // Enqueue through the original private transport; dealing never awaits its session read.
     this.hub?.sendToUser(this.tableId, userId, {
       kind: 'hole_cards',
       row: {

@@ -578,6 +578,9 @@ const RANK_WORD = (r: string): string =>
 import { normalizeCards, seatPctToViewportPx } from '../utils/tableGeometry';
 import { getAnimationSpeed } from '../utils/animationSpeed';
 import { formatAwardAtUnit, formatChipAward } from '../utils/format';
+// The unit a printed amount is named in: Chips, or Diamonds at a Diamond seat.
+// Never a dollar sign (Dan 2026-10-09, check-ui-dollar.mjs).
+import { moneyWordAtUnit } from '../utils/format';
 import { bountyWinnersOf } from '../utils/bountyBroadcast';
 import { formatPopupText } from '../utils/popupStyle';
 import {
@@ -11558,7 +11561,11 @@ function LiveTablePage({
         const actorId = String((handState as Record<string, unknown>).playerId || '');
         const amount = Number((handState as Record<string, unknown>).cashoutAmount || 0);
         if (actorId === userId) {
-          if (amount > 0) toast.success(`Cashout Locked: $${amount.toLocaleString()}`, 4000);
+          if (amount > 0)
+            toast.success(
+              `Cashout Locked: ${amount.toLocaleString()} ${moneyWordAtUnit(arenaAssetUnitCents(tableStateRef.current.arenaAsset))}`,
+              4000
+            );
         } else {
           toast.info(`${who} Has Cashed Out`, 3000);
         }
@@ -11573,12 +11580,13 @@ function LiveTablePage({
         // EV CASHOUT 2026-08-28: a locked cashout pays REGARDLESS of the
         // board's outcome, and it is not "insurance paid" — label it right.
         const settledKind = String((handState as Record<string, unknown>).kind || 'insurance');
+        const payoutLabel = `${payout.toLocaleString()} ${moneyWordAtUnit(arenaAssetUnitCents(tableStateRef.current.arenaAsset))}`;
         if (settledKind === 'ev_cashout' && payout > 0) {
           setInsurancePayoutFly({ playerId: actorId, amount: payout });
           if (actorId === userId) {
-            toast.success(`Cashout Paid You $${payout.toLocaleString()}`, 5000);
+            toast.success(`Cashout Paid You ${payoutLabel}`, 5000);
           } else {
-            toast.info(`Cashout Paid ${settledName} $${payout.toLocaleString()}`, 4000);
+            toast.info(`Cashout Paid ${settledName} ${payoutLabel}`, 4000);
           }
           return;
         }
@@ -11589,9 +11597,9 @@ function LiveTablePage({
           // flight; the toast names who it paid.
           setInsurancePayoutFly({ playerId: actorId, amount: payout });
           if (actorId === userId) {
-            toast.success(`Insurance Paid You $${payout.toLocaleString()}`, 5000);
+            toast.success(`Insurance Paid You ${payoutLabel}`, 5000);
           } else {
-            toast.info(`Insurance Paid ${settledName} $${payout.toLocaleString()}`, 4000);
+            toast.info(`Insurance Paid ${settledName} ${payoutLabel}`, 4000);
           }
         }
         return;
@@ -12427,10 +12435,10 @@ function LiveTablePage({
       // the bounty-adjusted stacks arrive via the follow-up state broadcast.
       if (eventType === 'seven_deuce_bounty') {
         const collected = Number((handState as any).total_collected ?? 0);
-        const amountLabel = `$${collected.toLocaleString(undefined, {
+        const amountLabel = `${collected.toLocaleString(undefined, {
           minimumFractionDigits: 2,
           maximumFractionDigits: 2,
-        })}`;
+        })} ${moneyWordAtUnit(arenaAssetUnitCents(tableStateRef.current.arenaAsset))}`;
         setAnnouncement({ type: 'seven_deuce_bounty', data: { amount: amountLabel } });
         return;
       }
@@ -15699,7 +15707,9 @@ function LiveTablePage({
   useMasterBusSubscription('RAKEBACK_DISTRIBUTED', (payload: any) => {
     if (payload.tableId !== tableId) return;
     if (payload.distributions && payload.distributions[userId]) {
-      toast?.success?.(`Received +$${payload.distributions[userId].toFixed(2)} rakeback!`);
+      toast?.success?.(
+        `Received +${payload.distributions[userId].toFixed(2)} ${moneyWordAtUnit(arenaAssetUnitCents(tableStateRef.current.arenaAsset))} Rakeback!`
+      );
     }
   });
 
@@ -25128,7 +25138,7 @@ function LiveTablePage({
                             <span className="community-area__run-equity">
                               {board.sharePct}%
                               {board.shareAmount > 0
-                                ? ` (${tableState.isTournament ? '' : '$'}${board.shareAmount.toLocaleString()})`
+                                ? ` (${board.shareAmount.toLocaleString()})`
                                 : ''}
                             </span>
                           )}

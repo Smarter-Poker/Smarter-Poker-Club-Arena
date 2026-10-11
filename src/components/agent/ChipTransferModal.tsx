@@ -220,12 +220,28 @@ export default function ChipTransferModal({
       setSenderRoleFailed(false);
 
       if (CLUB_BANK_ROLES.includes(normaliseRole(role))) {
-        const { data: bank, error: bankErr } = await supabase
-          .from('clubs')
-          .select('chip_treasury')
-          .eq('id', resolvedId)
-          .maybeSingle();
-        if (!bankErr) setSenderBalance(Number(bank?.chip_treasury ?? 0) || 0);
+        // The treasury is read through the role-checked money panel (launch
+        // audit 2026-10-09, S-05), the same read cashierBalanceRead uses. A
+        // direct clubs.chip_treasury select is an RLS-dependent table read that
+        // can answer null for a role the panel would serve. A refusal
+        // ({authorized:false}), an error or a non-numeric figure leaves the
+        // balance UNKNOWN, never 0, and Confirm stays closed.
+        const { data: panelData, error: panelErr } = await supabase.rpc('fn_club_money_panel', {
+          p_club_id: resolvedId,
+        });
+        const panel = Array.isArray(panelData) ? panelData[0] : panelData;
+        const figure =
+          !panelErr &&
+          panel &&
+          typeof panel === 'object' &&
+          (panel as { authorized?: unknown }).authorized === true
+            ? (panel as { club_treasury?: unknown }).club_treasury
+            : null;
+        // Number(null) is 0: an absent figure must stay unknown.
+        const treasury =
+          figure === null || figure === undefined || figure === '' ? NaN : Number(figure);
+        if (panelErr) reportError(panelErr, 'ChipTransferModal.sender_treasury_read');
+        setSenderBalance(Number.isFinite(treasury) ? treasury : null);
       } else {
         const { data: float_, error: floatErr } = await supabase
           .from('agents')
@@ -853,7 +869,12 @@ export default function ChipTransferModal({
             className="transfer-btn"
             onClick={handleTransfer}
             disabled={
-              isLoading || !selectedRecipient || !amount || !senderKnown || !selectedRecipientData
+              isLoading ||
+              !selectedRecipient ||
+              !amount ||
+              !senderKnown ||
+              senderBalance === null ||
+              !selectedRecipientData
             }
           >
             {isLoading ? 'Processing...' : 'Confirm Transfer'}

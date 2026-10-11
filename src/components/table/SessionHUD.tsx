@@ -230,7 +230,7 @@ export const SessionHUD: React.FC<SessionHUDProps> = ({
           <div className="sh-qstat">
             <span className={`sh-qstat-value ${plClass}`}>{formatPL(profitPerHour)}</span>
             <span className="sh-qstat-label">
-              {arenaAsset === 'diamonds' ? 'Diamonds/Hr' : '$/Hr'}
+              {arenaAsset === 'diamonds' ? 'Diamonds/Hr' : 'Chips/Hr'}
             </span>
           </div>
           <div className="sh-qstat">

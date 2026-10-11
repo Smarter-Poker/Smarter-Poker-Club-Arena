@@ -1,3 +1,7 @@
+// Synthetic transport identities explicitly retain a live durable session.
+vi.mock('../services/PlayerSessionAccess.js', () => ({
+  playerSessionVerdict: vi.fn(async () => 'alive'),
+}));
 /**
  * Roadmap batch 6 (2026-08-21) — /ws/multi multiplexed transport.
  *
@@ -33,8 +37,9 @@ function makeFakeWs() {
     readyState: 1,
     bufferedAmount: 0,
     sent,
-    send(data: string) {
+    send(data: string, complete?: (error?: Error) => void) {
       sent.push(data);
+      complete?.();
     },
     close: vi.fn(),
     on(event: string, cb: Handler) {
@@ -171,6 +176,7 @@ describe('EngineWebSocketServer /ws/multi', () => {
     ws.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
     await flush();
     expect(hub.subscribe).toHaveBeenCalledTimes(1);
+    await flush();
     expect(hub.resync).toHaveBeenCalledTimes(1);
   });
 
@@ -200,6 +206,7 @@ describe('EngineWebSocketServer /ws/multi', () => {
       []
     );
     socket.emitMessage({ type: 'RESYNC', tableId: T1 });
+    await flush();
     expect(h.resync).toHaveBeenCalledOnce();
     socket.emitMessage({ type: 'UNSUBSCRIBE', tableId: T1 });
     expect(h.unsubscribe).toHaveBeenCalledOnce();
@@ -282,6 +289,7 @@ describe('EngineWebSocketServer /ws/multi', () => {
         socket.sent.map((raw) => JSON.parse(raw)).filter((msg) => msg.type === 'ERROR')
       ).toEqual([]);
       socket.emitMessage({ type: 'RESYNC', tableId: T1 });
+      await flush();
       expect(h.resync).toHaveBeenCalledOnce();
     }
   );
@@ -543,6 +551,7 @@ describe('EngineWebSocketServer /ws/multi', () => {
     hub.resync.mockClear();
     ws.emitMessage({ type: 'RESYNC', tableId: T1 });
     ws.emitMessage({ type: 'RESYNC', tableId: T2 }); // never subscribed
+    await flush();
     expect(hub.resync).toHaveBeenCalledTimes(1);
     expect(hub.resync.mock.calls[0][0]).toBe(T1);
   });
@@ -688,6 +697,7 @@ describe('EngineWebSocketServer subscription phase evidence', () => {
     await flush();
     expect(records()).toHaveLength(1);
     expect(hub.subscribe).toHaveBeenCalledOnce();
+    await flush();
     expect(hub.resync).toHaveBeenCalledOnce();
   });
 
@@ -889,6 +899,7 @@ describe('engine resync failure isolation', () => {
     await flush();
     expect(() => ws.emitMessage({ type: 'RESYNC', tableId: T1 })).not.toThrow();
     ws.emitMessage({ type: 'RESYNC', tableId: T1 });
+    await flush();
     expect(hub.resync).toHaveBeenCalledTimes(2);
     expect(onResync).toHaveBeenCalledTimes(3);
     expect(ws.close).not.toHaveBeenCalled();
@@ -909,6 +920,7 @@ describe('engine resync failure isolation', () => {
       internal.handleMuxSubscribe(internal.connections.get(ws), T1)
     ).resolves.toBeUndefined();
     expect(hub.subscribe).toHaveBeenCalledOnce();
+    await flush();
     expect(hub.resync).toHaveBeenCalledOnce();
     ws.emitClose();
   });

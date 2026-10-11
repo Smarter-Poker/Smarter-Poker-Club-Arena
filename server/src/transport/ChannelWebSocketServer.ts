@@ -1,3 +1,6 @@
+import { reportError } from '../services/errorReporter.js';
+import { AuthorizedPrivateSend } from './AuthorizedPrivateSend.js';
+import { playerSessionVerdict } from '../services/PlayerSessionAccess.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * ChannelWebSocketServer — WebSocket transport for /ws/channel
@@ -114,6 +117,7 @@ interface PendingHandReplay {
 }
 
 interface ConnectionState {
+  sessionRead?: Promise<boolean>;
   handReplays: Map<string, PendingHandReplay>;
   clubJoins: Map<string, PendingClubJoin>;
   userId: string;
@@ -158,12 +162,73 @@ type InboundMessage =
 // be refused with a close code the browser can read, and an auth outage can
 // be told apart from it.
 async function verifyToken(token: string): Promise<TokenVerdict> {
-  return verifySupabaseToken(supabase.auth, token);
+  const verdict = await verifySupabaseToken(supabase.auth, token);
+  if (!verdict.userId) return verdict;
+  const session = await playerSessionVerdict(verdict.userId, token);
+  return session === 'alive'
+    ? verdict
+    : {
+        denied: session === 'revoked' ? 'invalid' : 'unavailable',
+        code: session === 'revoked' ? 'session_not_found' : 'session_check_unavailable',
+      };
 }
 
 // ─── ChannelWebSocketServer ───────────────────────────────────────────────────
 
 export class ChannelWebSocketServer {
+  /** Close only the target's definitively revoked sessions; active hands retain normal disconnect handling. */
+  public async revokePlayerSessions(userId: string, isCurrent = () => true): Promise<void> {
+    for (const [ws, connection] of Array.from(this.connections)) {
+      if (this.closing || !isCurrent()) return;
+      if (connection.userId !== userId) continue;
+      const token = connection.token;
+      if ((await playerSessionVerdict(userId, token)) !== 'revoked') continue;
+      if (
+        this.closing ||
+        !isCurrent() ||
+        this.connections.get(ws) !== connection ||
+        connection.token !== token
+      )
+        continue;
+      try {
+        ws.close(4401, 'auth:session_not_found');
+      } catch {
+        /* normal close cleanup owns presence */
+      }
+    }
+  }
+  public async revalidatePlayerSessions(isCurrent = () => true): Promise<void> {
+    const users = new Set(Array.from(this.connections.values(), (connection) => connection.userId));
+    for (const userId of users) {
+      if (this.closing || !isCurrent()) return;
+      await this.revokePlayerSessions(userId, isCurrent);
+    }
+  }
+  private async sessionCanReceive(conn: ConnectionState): Promise<boolean> {
+    if (this.closing || this.connections.get(conn.ws) !== conn) return false;
+    if (conn.sessionRead) return conn.sessionRead;
+    const token = conn.token;
+    const check = (async () => {
+      const verdict = await playerSessionVerdict(conn.userId, token);
+      if (this.closing || this.connections.get(conn.ws) !== conn || conn.token !== token)
+        return false;
+      if (verdict === 'revoked') {
+        try {
+          conn.ws.close(4401, 'auth:session_not_found');
+        } catch {
+          /* normal cleanup owns presence */
+        }
+      }
+      return verdict === 'alive';
+    })();
+    conn.sessionRead = check;
+    try {
+      return await check;
+    } finally {
+      if (conn.sessionRead === check) conn.sessionRead = undefined;
+    }
+  }
+
   private wss: WebSocketServer;
   private connections: Map<WebSocket, ConnectionState> = new Map();
   private heartbeatTimer: NodeJS.Timeout | null = null;
@@ -311,7 +376,22 @@ export class ChannelWebSocketServer {
       nextReauthAt: staggeredReauthAt(REAUTH_INTERVAL_MS),
     };
     this.connections.set(ws, conn);
-    channelHub.addConnection(userId, ws);
+    const privateSend = new AuthorizedPrivateSend({
+      current: () =>
+        !this.closing && this.connections.get(ws) === conn && ws.readyState === WebSocket.OPEN,
+      authorize: () => this.sessionCanReceive(conn),
+      send: (data, complete) => ws.send(data, complete),
+      buffered: () => ws.bufferedAmount,
+      retire: () => {
+        try {
+          ws.close(CLOSE_RATE_LIMITED, 'private backpressure - reconnect');
+        } finally {
+          this.onClose(ws);
+        }
+      },
+      error: (error) => reportError(error, 'ChannelWS.private_send'),
+    });
+    channelHub.addConnection(userId, ws, (data) => privateSend.enqueue(data));
 
     ws.on('message', (raw) => this.onMessage(conn, raw));
     ws.on('close', () => this.onClose(ws));
@@ -384,6 +464,9 @@ export class ChannelWebSocketServer {
     const hit = this.clubMembershipCache.get(key);
     let member: boolean;
     try {
+      if (!(await this.sessionCanReceive(conn)))
+        throw new Error('player session authority unavailable');
+      if (!this.clubJoinIsCurrent(conn, clubId, pending)) return;
       if (hit && Date.now() - hit.readAt < CLUB_MEMBERSHIP_TTL_MS) {
         member = hit.member;
       } else {
@@ -419,6 +502,10 @@ export class ChannelWebSocketServer {
       return;
     }
     if (!this.clubJoinIsCurrent(conn, clubId, pending)) return;
+    if (!(await this.sessionCanReceive(conn)) || !this.clubJoinIsCurrent(conn, clubId, pending)) {
+      this.cancelClubJoin(conn, clubId);
+      return;
+    }
     conn.clubJoins.delete(clubId);
     if (!member) {
       // Revalidation can revoke a previously granted feed. A confirmed denial
@@ -674,6 +761,8 @@ export class ChannelWebSocketServer {
   ): Promise<void> {
     const { userId } = conn;
     try {
+      if (!(await this.sessionCanReceive(conn)) || !this.handReplayIsCurrent(conn, handId, replay))
+        return;
       const { data: rows, error } = await supabase
         .from('hand_history')
         .select(
@@ -684,7 +773,12 @@ export class ChannelWebSocketServer {
         .abortSignal(replay.abort.signal)
         .maybeSingle();
 
-      if (!this.handReplayIsCurrent(conn, handId, replay)) return;
+      if (
+        !this.handReplayIsCurrent(conn, handId, replay) ||
+        !(await this.sessionCanReceive(conn)) ||
+        !this.handReplayIsCurrent(conn, handId, replay)
+      )
+        return;
 
       if (error || !rows) {
         channelHub.sendWs(conn.ws, {
@@ -745,7 +839,12 @@ export class ChannelWebSocketServer {
       // Subsequent frames: one per action, with delay
       for (let i = 0; i < actions.length; i++) {
         await this.waitForHandReplayFrame(replay);
-        if (!this.handReplayIsCurrent(conn, handId, replay)) return;
+        if (
+          !this.handReplayIsCurrent(conn, handId, replay) ||
+          !(await this.sessionCanReceive(conn)) ||
+          !this.handReplayIsCurrent(conn, handId, replay)
+        )
+          return;
 
         channelHub.sendWs(conn.ws, {
           type: 'HAND_REPLAY_EVENT',

@@ -11,7 +11,12 @@ import {
   type AdmittedAgentCashoutStart,
 } from './AgentWalletIntent';
 import { resolveClubUUIDStrict } from '../utils/strictClubIdResolver';
-import { cashoutService, captureCashoutAccountGuard, type CashoutRequest } from './CashoutService';
+import {
+  cashoutService,
+  captureCashoutAccountGuard,
+  CashoutRefusedError,
+  type CashoutRequest,
+} from './CashoutService';
 
 export type CashoutKind = AgentCashoutIntent['kind'];
 export interface CashoutOperationIntent<K extends CashoutKind = CashoutKind> {
@@ -389,7 +394,18 @@ export async function runCashoutOperation<K extends CashoutKind>(
         submission = { result: current, isCurrent: captured.isCurrent };
         submissions.set(key, submission);
       }
-      const result = await submission.result;
+      let result: Awaited<typeof submission.result>;
+      try {
+        result = await submission.result;
+      } catch (error) {
+        // A definitive refusal rolled the whole transaction back, so the server
+        // never kept this operation id. Acknowledge the generation so the next
+        // edit mints a fresh id instead of replaying a receipt lookup forever.
+        if (error instanceof CashoutRefusedError && captured.isCurrent()) {
+          await acknowledgeAgentCashoutStart(admitted);
+        }
+        throw error;
+      }
       assertCurrent(captured.isCurrent);
       // This acknowledges operation coordination only. The service returned the
       // canonical financial outcome; a storage failure must not erase that fact.

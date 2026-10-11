@@ -106,9 +106,7 @@ describe('the production realtime certificate covers every live-game lane', () =
     expect(tournamentHelper).toContain('did not resubscribe after network restoration');
     expect(tournamentHelper).toContain('did not recover exactly one multiplexed transport');
     expect(tournamentHelper).toContain('const caseStartedAt = Date.now()');
-    expect(tournamentHelper).toContain(
-      'const observationDeadline = caseStartedAt + testInfo.timeout'
-    );
+    expect(tournamentHelper).toContain('observationDeadline: caseStartedAt + testInfo.timeout');
     expect(tournamentHelper.match(/remainingObservationMs\(observationDeadline\)/g)).toHaveLength(
       2
     );

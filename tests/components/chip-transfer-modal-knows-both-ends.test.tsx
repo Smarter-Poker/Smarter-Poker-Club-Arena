@@ -45,8 +45,14 @@ const db = vi.hoisted(() => ({
     },
     error: null,
   } as { data: unknown; error: unknown },
-  pinnedDelayMs: 0,
+  pinnedRead: null as Promise<void> | null,
   clubOwner: '47965354-0e56-43ef-931c-ddaab82af765' as string | null,
+  /* fn_club_money_panel is the role-checked treasury read a bank-role sender
+     spends against (launch audit 2026-10-09). The clubs table is never asked. */
+  moneyPanel: { data: { authorized: true, club_treasury: 1000000 }, error: null } as {
+    data: unknown;
+    error: unknown;
+  },
 }));
 
 vi.mock('../../src/hooks/useAuthUser', () => ({
@@ -89,11 +95,9 @@ function chainFor(table: string) {
       filters['eq:user_id'] === AGENT &&
       selectArg.includes('users:user_id')
     ) {
-      if (db.pinnedDelayMs) await new Promise((r) => setTimeout(r, db.pinnedDelayMs));
+      if (db.pinnedRead) await db.pinnedRead;
       return db.pinned;
     }
-    if (table === 'clubs' && selectArg.includes('chip_treasury'))
-      return { data: { chip_treasury: 1000000 }, error: null };
     if (table === 'clubs' && selectArg.includes('owner_id'))
       return { data: { owner_id: db.clubOwner }, error: null };
     if (table === 'clubs') return { data: { name: 'Deep Stack Society' }, error: null };
@@ -130,8 +134,10 @@ beforeEach(() => {
     if (name === 'fn_club_bank_send' || name === 'fn_agent_wallet_send') {
       return Promise.resolve({ data: confirmedReceipt(args), error: null });
     }
+    if (name === 'fn_club_money_panel') return Promise.resolve(db.moneyPanel);
     return Promise.resolve({ data: [], error: null });
   });
+  db.moneyPanel = { data: { authorized: true, club_treasury: 1000000 }, error: null };
   db.senderRole = { data: { role: 'owner' }, error: null };
   db.pinned = {
     data: {
@@ -143,7 +149,7 @@ beforeEach(() => {
     },
     error: null,
   };
-  db.pinnedDelayMs = 0;
+  db.pinnedRead = null;
   db.clubOwner = SENDER;
 });
 
@@ -170,7 +176,13 @@ describe('funding a named recipient', () => {
     await act(async () => {
       fireEvent.click(confirmButton());
     });
-    await waitFor(() => expect(rpcMock).toHaveBeenCalled());
+    // Treasury reads also call rpcMock. Await the actual send and its mounted
+    // completion so this test cannot leave a transfer entering the next case.
+    await waitFor(() =>
+      expect(rpcMock.mock.calls.filter((c) => String(c[0]).endsWith('_send'))).toHaveLength(1)
+    );
+    await waitFor(() => expect(screen.getByText('Transferred 250 To Rook')).toBeTruthy());
+    await waitFor(() => expect(screen.getByLabelText('Amount')).toHaveValue(null));
     const [fn, args] = rpcMock.mock.calls.find((c) => String(c[0]).endsWith('_send'))!;
     expect(fn).toBe('fn_club_bank_send');
     expect(args).toMatchObject({
@@ -181,7 +193,10 @@ describe('funding a named recipient', () => {
   });
 
   it('keeps Confirm closed, and sends nothing, while the recipient is still unknown', async () => {
-    db.pinnedDelayMs = 400;
+    let finishRecipientRead!: () => void;
+    db.pinnedRead = new Promise<void>((resolve) => {
+      finishRecipientRead = resolve;
+    });
     render(<ChipTransferModal isOpen onClose={() => {}} clubId={CLUB} recipientId={AGENT} />);
     fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '250' } });
     // Before the read lands the button is disabled; a click must not send.
@@ -190,9 +205,12 @@ describe('funding a named recipient', () => {
       fireEvent.click(confirmButton());
     });
     expect(rpcMock.mock.calls.filter((c) => String(c[0]).endsWith('_send'))).toHaveLength(0);
-    await waitFor(() => expect((confirmButton() as HTMLButtonElement).disabled).toBe(false), {
-      timeout: 2000,
+    // The read remains unresolved until this explicit release, independent of
+    // runner speed or an elapsed delay.
+    await act(async () => {
+      finishRecipientRead();
     });
+    await waitFor(() => expect((confirmButton() as HTMLButtonElement).disabled).toBe(false));
   });
 
   it('names a recipient who is not a member and never sends', async () => {
@@ -242,6 +260,39 @@ describe('the sender role', () => {
     await waitFor(() =>
       expect(rpcMock.mock.calls.some((c) => c[0] === 'fn_agent_wallet_send')).toBe(true)
     );
+  });
+});
+
+describe('the bank-role sender balance comes from the money panel (launch audit 2026-10-09)', () => {
+  it('reads club_treasury through fn_club_money_panel and never from the clubs table', async () => {
+    render(<ChipTransferModal isOpen onClose={() => {}} clubId={CLUB} recipientId={AGENT} />);
+    await waitFor(() => expect(screen.getByText('1,000,000')).toBeTruthy());
+    expect(rpcMock.mock.calls.some((c) => c[0] === 'fn_club_money_panel')).toBe(true);
+    const clubSelects = fromMock.mock.calls.filter((c) => c[0] === 'clubs');
+    expect(clubSelects.length).toBeGreaterThan(0);
+    expect(rpcMock.mock.calls.find((c) => c[0] === 'fn_club_money_panel')![1]).toEqual({
+      p_club_id: CLUB,
+    });
+  });
+
+  it.each([
+    ['a refusal', { data: { authorized: false, reason: 'not_staff' }, error: null }],
+    ['an error', { data: null, error: { code: 'PGRST301', message: 'boom' } }],
+    ['a non-numeric figure', { data: { authorized: true, club_treasury: null }, error: null }],
+  ])('%s leaves the balance Unknown, never 0, and keeps Confirm closed', async (_label, answer) => {
+    db.moneyPanel = answer;
+    render(<ChipTransferModal isOpen onClose={() => {}} clubId={CLUB} recipientId={AGENT} />);
+    await waitFor(() => expect(screen.getByText('Your Club Bank:')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Agent Wallet')).toBeTruthy());
+    await waitFor(() =>
+      expect(rpcMock.mock.calls.some((c) => c[0] === 'fn_club_money_panel')).toBe(true)
+    );
+    expect(screen.getByText('Unknown')).toBeTruthy();
+    expect(screen.queryByText('0')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '10' } });
+    await act(async () => {});
+    expect((confirmButton() as HTMLButtonElement).disabled).toBe(true);
+    expect(rpcMock.mock.calls.filter((c) => String(c[0]).endsWith('_send'))).toHaveLength(0);
   });
 });
 
@@ -348,6 +399,7 @@ describe.each(['agent', 'owner'])('durable %s send', (senderRole) => {
     db.senderRole = { data: { role: senderRole }, error: null };
     let rejectSend!: (error: Error) => void;
     rpcMock.mockImplementation((name: string, args: Record<string, unknown>) => {
+      if (name === 'fn_club_money_panel') return Promise.resolve(db.moneyPanel);
       if (!name.endsWith('_send')) return Promise.resolve({ data: [], error: null });
       if (sends().length === 1)
         return new Promise((_resolve, reject) => {
@@ -379,6 +431,7 @@ describe.each(['agent', 'owner'])('durable %s send', (senderRole) => {
     db.senderRole = { data: { role: senderRole }, error: null };
     let resolveSend!: (value: unknown) => void;
     rpcMock.mockImplementation((name: string) => {
+      if (name === 'fn_club_money_panel') return Promise.resolve(db.moneyPanel);
       if (!name.endsWith('_send')) return Promise.resolve({ data: [], error: null });
       return new Promise((resolve) => {
         resolveSend = resolve;
@@ -421,10 +474,12 @@ describe.each(['agent', 'owner'])('durable %s send', (senderRole) => {
   it('retains identity after a malformed success and coalesces repeated clicks', async () => {
     db.senderRole = { data: { role: senderRole }, error: null };
     rpcMock.mockImplementation((name: string) =>
-      Promise.resolve({
-        data: name.endsWith('_send') ? { success: true } : [],
-        error: null,
-      })
+      name === 'fn_club_money_panel'
+        ? Promise.resolve(db.moneyPanel)
+        : Promise.resolve({
+            data: name.endsWith('_send') ? { success: true } : [],
+            error: null,
+          })
     );
     render(<ChipTransferModal isOpen onClose={() => {}} clubId={CLUB} recipientId={AGENT} />);
     await fill();

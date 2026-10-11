@@ -296,8 +296,10 @@
   background: rgba(13, 18, 24, 0.7);
 }
 
+/* 44px: the thumb target the Cashier sheets hold everywhere else (launch
+   audit 2026-10-09, P-11). */
 .vault-btn.small {
-  min-height: 34px;
+  min-height: 44px;
   padding: 0 12px;
   font-size: 0.7rem;
 }
@@ -562,7 +564,7 @@
 }
 
 .wallet-plate__cta {
-  min-height: 40px;
+  min-height: 44px;
   padding: 0 14px;
   border: 1px solid rgba(0, 212, 255, 0.55);
   border-radius: 6px;

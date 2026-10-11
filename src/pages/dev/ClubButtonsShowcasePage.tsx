@@ -44,7 +44,7 @@ const utilityControls: Array<{ icon: ClubIconName; label: string }> = [
   { icon: 'info', label: 'Info' },
 ];
 
-const moneyValues = ['$0.00', '$9.99', '$480.00', '$12,850', '$1,376,644.87', '$123,456,789.99'];
+const moneyValues = ['0.00', '9.99', '480.00', '12,850', '1,376,644.87', '123,456,789.99'];
 
 export default function ClubButtonsShowcasePage() {
   const [mode, setMode] = useState<ClubButtonsMode>('arena');
@@ -166,21 +166,21 @@ export default function ClubButtonsShowcasePage() {
             <ArenaWalletRow
               icon="bank"
               label="Club Bank"
-              value="$1,376,644.87"
+              value="1,376,644.87"
               dataState="updating"
             />
-            <ArenaWalletRow icon="wallet" label="Promo Wallet" value="$18,250.00" />
+            <ArenaWalletRow icon="wallet" label="Promo Wallet" value="18,250.00" />
             <ArenaWalletRow
               icon="treasury"
               label="Rake Treasury"
-              value="$186,440.22"
+              value="186,440.22"
               dataState="stale"
               sublabel="Last update 4m ago"
             />
             <ArenaWalletRow
               icon="spade"
               label="Back Up BBJ Wallet With A Very Long Name"
-              value="$123,456,789.99"
+              value="123,456,789.99"
             />
             <ArenaWalletRow icon="treasury" label="Unknown Balance" dataState="loading" />
             <ArenaWalletRow icon="wallet" label="Disconnected Wallet" dataState="offline" />
@@ -193,7 +193,7 @@ export default function ClubButtonsShowcasePage() {
             <h2 id="values-title">Numbers Never Resize The Shell</h2>
           </div>
           <div className="cb-showcase__value-grid">
-            <ArenaValueDisplay value="$2,460.75" label="Currency" />
+            <ArenaValueDisplay value="2,460.75" label="Currency" />
             <ArenaValueDisplay value="125,500" label="Chips" tone="gold" />
             <ArenaValueDisplay value="42 BB" label="Big Blinds" />
             <ArenaValueDisplay value="1,250" label="Players" tone="green" />
@@ -236,7 +236,7 @@ export default function ClubButtonsShowcasePage() {
             <dl className="cb-showcase__facts">
               <div>
                 <dt>Buy-In</dt>
-                <dd>$150 + $15</dd>
+                <dd>150 + 15</dd>
               </div>
               <div>
                 <dt>Players</dt>
@@ -244,7 +244,7 @@ export default function ClubButtonsShowcasePage() {
               </div>
               <div>
                 <dt>Prize Pool</dt>
-                <dd>$24,750</dd>
+                <dd>24,750</dd>
               </div>
               <div>
                 <dt>Start Time</dt>
@@ -285,7 +285,7 @@ export default function ClubButtonsShowcasePage() {
             {[320, 375, 390, 430].map((width) => (
               <div key={width} className="cb-showcase__device" style={{ width }}>
                 <small>{width}px</small>
-                <ArenaWalletRow icon="bank" label="Club Bank" value="$123,456,789.99" />
+                <ArenaWalletRow icon="bank" label="Club Bank" value="123,456,789.99" />
                 <ArenaActionButton label="Join Table" />
               </div>
             ))}
@@ -301,9 +301,9 @@ export default function ClubButtonsShowcasePage() {
           <ArenaModalFrame title="Tournament Registration" onClose={() => setModalOpen(false)}>
             <div className="cb-showcase__modal-content">
               <p>Buy-In Amount</p>
-              <strong>$150.00</strong>
+              <strong>150.00</strong>
               <span>Your Balance</span>
-              <b>$1,376,644.87</b>
+              <b>1,376,644.87</b>
               <div>
                 <ArenaActionButton
                   label="Cancel"

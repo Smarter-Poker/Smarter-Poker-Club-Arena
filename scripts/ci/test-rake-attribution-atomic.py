@@ -188,13 +188,14 @@ try:
     INSERT INTO probe_locks VALUES(1,0),(2,0);
     CREATE TABLE probe_policy(mode text); INSERT INTO probe_policy VALUES('lock');
     CREATE SEQUENCE probe_attempt;
+    CREATE SEQUENCE probe_release_timeout;
     CREATE FUNCTION credit_club_rake_to_treasury(uuid,numeric) RETURNS void LANGUAGE sql AS $$ INSERT INTO probe_credits VALUES($1,$2); $$;
     CREATE FUNCTION increment_union_wallet(uuid,numeric,uuid,text) RETURNS jsonb LANGUAGE plpgsql AS $$ BEGIN INSERT INTO probe_credits VALUES($3,$2); RETURN jsonb_build_object('success',true); END; $$;
     CREATE FUNCTION fn_poker_diamond_tournament(uuid) RETURNS boolean LANGUAGE sql AS $$ SELECT mode='diamond' FROM probe_policy; $$;
     CREATE FUNCTION fn_poker_diamond_tournament_settle_fee(uuid,text) RETURNS jsonb LANGUAGE plpgsql AS $$ BEGIN INSERT INTO probe_credits VALUES($1,7); RETURN jsonb_build_object('amount',7); END; $$;
     CREATE FUNCTION fn_poker_diamond_tournament_close_custody(uuid) RETURNS jsonb LANGUAGE sql AS $$ SELECT jsonb_build_object('closed',true,'still_held',0); $$;
     CREATE FUNCTION fn_attribute_tournament_rake(uuid) RETURNS jsonb LANGUAGE plpgsql AS $$
-    DECLARE n integer; m text;
+    DECLARE n integer; m text; release_deadline timestamptz;
     BEGIN
       n:=nextval('probe_attempt'); SELECT mode INTO m FROM probe_policy;
       INSERT INTO probe_attribution VALUES(n);
@@ -206,7 +207,24 @@ try:
       IF m='empty' THEN RETURN jsonb_build_object('ok',true,'members',0,'attributed_users',0); END IF;
       IF m='zero' THEN RETURN jsonb_build_object('ok',true,'members',3,'attributed_users',0); END IF;
       UPDATE probe_locks SET n=probe_locks.n+1 WHERE id=1;
-      UPDATE probe_locks SET n=probe_locks.n+1 WHERE id=2;
+      BEGIN
+        UPDATE probe_locks SET n=probe_locks.n+1 WHERE id=2;
+      EXCEPTION WHEN lock_not_available THEN
+        IF m='release' AND n=1 THEN
+          -- This fixture latch follows a genuine55P03. Hold that error until
+          -- the peer has committed the row release, then re-raise unchanged.
+          PERFORM nextval('probe_release_timeout');
+          release_deadline:=clock_timestamp()+interval '5 seconds';
+          LOOP
+            EXIT WHEN pg_try_advisory_xact_lock(55796,23105);
+            IF clock_timestamp()>=release_deadline THEN
+              RAISE EXCEPTION 'owned release latch deadline exceeded';
+            END IF;
+            PERFORM pg_sleep(0.001);
+          END LOOP;
+        END IF;
+        RAISE;
+      END;
       RETURN jsonb_build_object('ok',true,'members',3,'attributed_users',3);
     END; $$;''')
 
@@ -225,13 +243,14 @@ try:
     check('candidate exact replay accepted', sql("SELECT md5(pg_get_functiondef('fn_settle_tournament_rake(uuid,text)'::regprocedure));")==after_hash)
     deadlock(True)
     persistent_timeout(True)
-    reset()
+    reset('release')
     peer=child()
-    send(peer, "BEGIN; UPDATE probe_locks SET n=n+1 WHERE id=2; SELECT 'held';")
+    send(peer, "DO $$ BEGIN PERFORM pg_advisory_lock(55796,23105); END $$; BEGIN; UPDATE probe_locks SET n=n+1 WHERE id=2; SELECT 'held';")
     assert line(peer)=='held'
-    # Arm the existing lock-holder session before the caller. Starting a new
-    # psql for each poll can miss the 100ms first retry sleep on a busy runner.
+    # Wait for a persistent, peer-owned latch after the real first timeout.
+    # This does not depend on catching a transient production retry sleep.
     send(peer, """SET application_name='rake-lock-release-observer';
+    SELECT 'observer-armed';
     DO $$
     DECLARE deadline timestamptz := clock_timestamp()+interval '5 seconds';
     BEGIN
@@ -242,26 +261,33 @@ try:
           WHERE application_name='rake-atomic-release'
             AND state='active'
             AND wait_event='PgSleep'
+            AND (SELECT is_called AND last_value=1 FROM probe_release_timeout)
+            AND EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory'
+              AND pid=pg_backend_pid() AND classid=55796 AND objid=23105
+              AND objsubid=2 AND granted)
         );
         IF clock_timestamp() >= deadline THEN
-          RAISE EXCEPTION 'first retry sleep not observed';
+          RAISE EXCEPTION 'first real timeout latch not observed';
         END IF;
         PERFORM pg_sleep(0.001);
       END LOOP;
     END
     $$;
     COMMIT;
+    DO $$ BEGIN
+      IF NOT pg_advisory_unlock(55796,23105) THEN
+        RAISE EXCEPTION 'owned timeout latch was not held';
+      END IF;
+    END $$;
     SELECT 'released';""")
-    deadline=time.monotonic()+5
-    while sql("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='rake-lock-release-observer' AND state='active' AND wait_event='PgSleep');")!='t':
-        assert time.monotonic()<deadline, 'retry observer did not become active'
-        time.sleep(.01)
+    assert line(peer)=='observer-armed'
     caller=child()
     send(caller, f"SET application_name='rake-atomic-release'; SET lock_timeout='50ms'; SELECT fn_settle_tournament_rake('{uid(1)}','native-lock-release');")
     assert line(peer)=='released'
     finish(peer)
     result=json.loads(line(caller))
     finish(caller)
+    check('release latch follows exactly one genuine55P03', sql("SELECT is_called AND last_value=1 FROM probe_release_timeout;")=='t')
     check('real released timeout succeeds on second attempt', result['attributed'] and result['attribution_attempts']==2)
     check('real released timeout has one credit and attribution', state()['credit_rows']==1 and state()['attempt_writes']==1)
     for mode,code,attempts in [('permanent','23514',1),('debug','XX000',1),('synthetic_deadlock','40P01',4),('decline','P0404',1),('null','P0404',1),('zero','P0404',1)]:

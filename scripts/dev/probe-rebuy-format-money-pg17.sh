@@ -34,7 +34,17 @@ for required in "$bootstrap" "$installed" "$probe"; do
 done
 
 # A short socket directory: a Unix socket path is limited to ~100 bytes.
-probe_root="$(mktemp -d /tmp/ca-rebuy-format.XXXXXX)"
+if [[ "$(uname -s)" == Darwin ]]; then
+  probe_parent="${TMPDIR:?Set TMPDIR to an owned scratch directory on the external SSD.}"
+else
+  probe_parent="${TMPDIR:-${RUNNER_TEMP:-/tmp}}"
+fi
+if [[ ! -d "$probe_parent" || ! -w "$probe_parent" ]]; then
+  echo 'TMPDIR must be an existing writable owned scratch directory.' >&2
+  exit 2
+fi
+probe_parent="$(cd "$probe_parent" && pwd -P)"
+probe_root="$(mktemp -d "${probe_parent}/ca-rebuy-format.XXXXXX")"
 cluster_dir="${probe_root}/cluster"
 port="$((38432 + ($$ % 10000)))"
 
@@ -43,10 +53,14 @@ cleanup() {
     "${pg17_bin}/pg_ctl" -D "$cluster_dir" -m immediate stop >/dev/null 2>&1 || true
   fi
   case "$probe_root" in
-    /tmp/ca-rebuy-format.*) find "$probe_root" -depth -delete ;;
+    "${probe_parent}"/ca-rebuy-format.*) find "$probe_root" -depth -delete ;;
   esac
 }
 trap cleanup EXIT
+if (( ${#probe_root} + 16 >= 104 )); then
+  echo 'TMPDIR is too long for PostgreSQL Unix socket names. Choose a shorter owned directory.' >&2
+  exit 2
+fi
 
 # The postmaster refuses to start multithreaded without a valid locale.
 export LC_ALL=C LANG=C

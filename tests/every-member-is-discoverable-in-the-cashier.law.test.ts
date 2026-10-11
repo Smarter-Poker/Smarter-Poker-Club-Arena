@@ -104,7 +104,8 @@ describe('every member is discoverable in the cashier', () => {
     expect(page).not.toMatch(/user_id\)\s*!==\s*(viewerId|user\.id)/);
     expect(page).toContain('downline.filter((r) => rosterRowMatches(r, search))');
     // The self row is refused as a recipient at the one place selection happens.
-    expect(page).toContain('if (id === user?.id) return prev;');
+    expect(page).toContain('if (r.isSelf || r.userId === user?.id) return;');
+    expect(page).toContain('{r.isSelf ? null : (');
     // And the "Available" count is recipients, not rows.
     expect(page).toContain(
       'const recipients = useMemo(() => downline.filter((r) => !r.isSelf), [downline]);'

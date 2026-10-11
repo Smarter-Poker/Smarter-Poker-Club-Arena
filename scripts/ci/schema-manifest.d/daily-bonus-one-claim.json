@@ -1,0 +1,4 @@
+{
+  "_owner": "feat/daily-bonus-one-claim-20261010",
+  "functions": ["fn_ca_daily_bonus_pick_tiles", "fn_ca_daily_bonus_claim_all"]
+}

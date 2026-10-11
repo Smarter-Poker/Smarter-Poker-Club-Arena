@@ -1420,6 +1420,29 @@ jobs:
           PG17_BINDIR: /usr/lib/postgresql/17/bin
           MANAGED_GAME_PG_SCRATCH_PARENT: ${{ runner.temp }}
         run: bash scripts/dev/test-managed-game-one-door-postgres.sh
+      - name: Stable Admin floor and maintenance owners qualify on native PostgreSQL 17
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          node --test scripts/qualification/stable-admin-close-selector/source.test.mjs
+          node scripts/qualify-stable-admin-floor.mjs
+          node scripts/qualify-stable-admin-close-selector.mjs
+      - name: Stable Admin original cancellation and emergency-stop writers qualify on native PostgreSQL 17
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          STABLE_CANCEL_POSTGRES_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: node scripts/qualify-stable-admin-cancel-stops-pg17.mjs
+      - name: Stable Admin cancellation preserves the reviewed settlement lane
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          STABLE_CANCEL_POSTGRES_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: node scripts/qualify-stable-admin-cancel-lane-pg17.mjs
       - name: Build the matching native PostgreSQL isolation test tool
         id: pg17_isolation_tool
         if: (matrix.shard == 3 || matrix.shard == 4)
@@ -1499,6 +1522,10 @@ jobs:
       - name: Player search enforces global discovery and private account boundaries
         if: matrix.shard == 4
         run: python3 scripts/ci/test-player-search-privacy-postgres.py
+
+      - name: Player Command totals remain exact through writes and concurrent initialization
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-player-command-hand-totals.py
 
       - name: Satellite conservation keeps exact results through an online source index
         if: matrix.shard == 4
@@ -1751,6 +1778,25 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase11-remediation.sh
+      - name: Lightning Phase 13 rollout controls pause, close joins, drain to MUST-MOVE with every hand settled, freeze, roll back the matcher and answer a readiness verdict (production bodies, real chain)
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-lightning-phase13-rollout-drain.sh
+      - name: Lightning Phase 12 load, stress and chaos rig over the chain through Phase 13 (operator doors, remediation and the rollout drain applied twice)
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          LIGHTNING_CHAOS_PROFILE: ci
+          LIGHTNING_P12_EXTRA: >-
+            scripts/dev/fixtures/lightning-phase13-operator-ground.sql
+            supabase/migrations/20261009144343_lightning_phase_12_operator_dashboard_and_alerting.sql
+            supabase/migrations/20261009151825_lightning_phase_12_load_chaos_the_pass_forms_under_surge.sql
+            supabase/migrations/20261009181945_lightning_phase_11_remediation_integrity_signals_are_fair_an.sql
+            supabase/migrations/20261009235505_lightning_phase_13_rollout_drain_and_rollback.sql
+            supabase/migrations/20261010054420_lightning_phase_12_load_chaos_stale_groups_preserve_remainin.sql
+          LIGHTNING_P12_SUPERSEDED: 20261008161509_lightning_phase_11_integrity_telemetry_and_the_shadow_matche.sql#10
+        run: bash scripts/dev/test-lightning-phase12-load-chaos.sh
       - name: Credit invoices bill only uninvoiced drawn debt
         if: matrix.shard == 1
         env:
@@ -1774,6 +1820,11 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
           TMPDIR: /tmp
         run: bash scripts/dev/test-xid-restorer-reads-xmax.sh
+      - name: Funding recovery index preserves exact installation guards
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-funding-recovery-cover.py
       - name: Credit payments preserve scope cents replay and delivery atomicity
         if: matrix.shard == 1
         env:
@@ -1784,6 +1835,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-agent-accounting-statements.sh
+      - name: Deleted cashier accounts conserve their bank returns
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-cashier-deleted-accounts.py --output artifacts/cashier-deleted-accounts
       - name: Cashier statements follow the trade ledger scope and export what is on screen
         if: matrix.shard == 1
         env:
@@ -2067,6 +2123,11 @@ jobs:
           path: ${{ runner.temp }}/original-paid-custody/
           if-no-files-found: error
           retention-days: 7
+      - name: Agent wallet signals preserve scoped access
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-agent-wallet-postgres.py
       - name: Profile appearance signals preserve scoped access
         if: matrix.shard == 1
         env:
@@ -3387,7 +3448,7 @@ jobs:
           # The JSON report beside the line reporter feeds the flaky-case
           # summary step below: these suites have run with one retry since
           # before 2026-09-26, and a case that passed only on retry is named.
-          PLAYWRIGHT_JSON_OUTPUT_NAME="$RUNNER_TEMP/css-beats-report.json" npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/css/diamond-wheel-reveal.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line,json --retries=1
+          PLAYWRIGHT_JSON_OUTPUT_NAME="$RUNNER_TEMP/css-beats-report.json" npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/css/diamond-wheel-reveal.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/css/club-members-containment.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line,json --retries=1
 
       # The CSS Beat suites run with one retry: a case that passed only on
       # retry is named, never counted as clean.

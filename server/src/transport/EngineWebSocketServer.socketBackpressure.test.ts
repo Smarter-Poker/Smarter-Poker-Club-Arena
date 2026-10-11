@@ -1,3 +1,7 @@
+// Synthetic transport identities explicitly retain a live durable session.
+vi.mock('../services/PlayerSessionAccess.js', () => ({
+  playerSessionVerdict: vi.fn(async () => 'alive'),
+}));
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
@@ -318,6 +322,7 @@ describe('the physical socket owns its hard backpressure fence', () => {
         ws = new FakeWs();
         sockets.push(ws);
         f.inner.onUpgraded(ws, {}, 'hero', TABLE_A, '192.0.2.1');
+        await flush();
       }
       expect(f.onConnect).not.toHaveBeenCalled();
       expect(f.server.connectionCount()).toBe(0);

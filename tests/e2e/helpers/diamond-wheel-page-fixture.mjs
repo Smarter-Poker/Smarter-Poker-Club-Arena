@@ -13,7 +13,7 @@ export function diamondWheelPageFixture() {
     const receipt = receipts.find((r) => r.outcome.kind === 'chips');
     const state = {
       ok: true,
-      contract_version: 3,
+      contract_version: 4,
       available: true,
       frozen: false,
       segments: receipt.segments,
@@ -31,6 +31,7 @@ export function diamondWheelPageFixture() {
       },
     };
     const stubs = {
+      supabase: `export const supabase={rpc:async()=>({data:{ok:true,games:['wheel','mines','crossing','crash','plinko'].map(game=>({game,rounds:0,losses:0,average_return:null,average_safe_steps:null,average_before_loss:null,average_crash:null}))},error:null})};`,
       DiamondReplayService: `export const DiamondReplayService={list:async()=>[]}; export const bonusReplayTitle=()=> 'Diamond Plinko';`,
       ClubArenaWelcomeModal: `export default()=>null;export const useClubArenaWelcome=()=>({isReady:false,showWelcome:false,acceptWelcome:()=>{}});`,
       CompleteProfileModal: `export default()=>null;export const useCompleteProfile=()=>({isReady:false,showProfileModal:false,profileStatus:'complete',finishProfile:()=>{}});`,
@@ -52,11 +53,12 @@ export function diamondWheelPageFixture() {
       // empty and both money doors refuse.
       DiamondWheelService: `const state=${JSON.stringify(state)};export class WheelReceiptUnverified extends Error{};
         export const CARD_NOT_PICKED='That Card Could Not Be Turned Over';
+        export const parseWheelSpinReceipt=()=>{throw Error('This Layout Fixture Cannot Wager')};
         export const readWheelPendingCard=()=>null;
         export const saveWheelPendingCard=()=>{};
         export const clearWheelPendingCard=()=>{};
         export default {
-        getStateV2:async()=>({...state,available:!location.search.includes('paused'),reason:'Local Connection Is Paused'}),
+        getStateV2:async(_club,entry=100)=>({...state,max_funded_entry:location.search.includes('limited')?1277:2500,available:!location.search.includes('paused')&&(!location.search.includes('limited')||entry<=1277),reason:location.search.includes('paused')?'Local Connection Is Paused':'The Host Must Fund Every Prize Before A Spin'}),
         welcomeState:async()=>({available:true,enabled:true,price:100}),
         dailyBonusState:async()=>({available:true,ticket_count:2}), history:async()=>[],
         commit:async()=>({ok:true,commit_id:'d1000000-0000-4000-8000-000000000001',server_seed_hash:'a'.repeat(64)}),

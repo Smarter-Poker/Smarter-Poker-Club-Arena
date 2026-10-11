@@ -236,14 +236,20 @@ function allMigrations(): Migration[] {
     .map((m) => ({ ...m, sql: stripComments(readFileSync(join(MIG_DIR, m.file), 'utf8')) }));
 }
 
+// Immutable inputs within this test run: parse every retained source once.
+// Re-reading and re-parsing the entire migration estate for each caller could
+// exceed the test budget before any assertion ran. All definitions stay covered.
+let definitionsByName: Map<string, FnDef> | undefined;
 function latestDefinition(name: string): FnDef | undefined {
-  let latest: FnDef | undefined;
-  for (const m of allMigrations()) {
-    for (const d of functionDefinitions(m.sql, m.file, m.version)) {
-      if (d.name === name || d.name === `public.${name}`) latest = d;
+  if (!definitionsByName) {
+    definitionsByName = new Map();
+    for (const m of allMigrations()) {
+      for (const d of functionDefinitions(m.sql, m.file, m.version)) {
+        definitionsByName.set(d.name.replace(/^public\./, ''), d);
+      }
     }
   }
-  return latest;
+  return definitionsByName.get(name);
 }
 
 const INSERTS_JOURNAL = /insert\s+into\s+(public\.)?diamond_transactions\b/i;

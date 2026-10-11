@@ -118,7 +118,7 @@ export function BBJHitNotification({
       aria-live="polite"
       /* BBJ audit 2026-09-05: this interpolated `money` - the FORMATTER - so a
          screen reader heard the function's source instead of the amount. */
-      aria-label={`Bad Beat Jackpot Hit. ${winnerName} Won ${amountText} Dollars On ${tableName}.`}
+      aria-label={`Bad Beat Jackpot Hit. ${winnerName} Won ${amountText} Chips On ${tableName}.`}
     >
       {!reduced && (
         <div className="bbj-hit__burst" aria-hidden="true">
@@ -148,7 +148,7 @@ export function BBJHitNotification({
         disabled={!onObserve}
       >
         <span className="bbj-hit__title">Bad Beat Jackpot</span>
-        <span className="bbj-hit__amount">${amountText}</span>
+        <span className="bbj-hit__amount">{amountText}</span>
         <span className="bbj-hit__who">{winnerName}</span>
         <span className="bbj-hit__where">
           {tableName}

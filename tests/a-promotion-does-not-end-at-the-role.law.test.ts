@@ -42,13 +42,14 @@ describe('an agent promoted with no chips is offered the chips', () => {
       /import ChipTransferModal from '\.\.\/components\/agent\/ChipTransferModal';/
     );
     expect(MEMBER_PAGE).toMatch(/Fund Them Now\?/);
-    expect(MEMBER_PAGE).toMatch(/Their Agent Wallet Is Empty/);
+    expect(MEMBER_PAGE).toMatch(/Review Their Agent Wallet/);
+    expect(MEMBER_PAGE).not.toMatch(/Their Agent Wallet Is Empty/);
   });
 
-  it('asks only after an AGENT promotion, and only when the wallet is empty', () => {
+  it('offers funding after an AGENT promotion when the wallet is empty or unreadable', () => {
     expect(MEMBER_PAGE).toMatch(/if \(isAgentRole\(newRole\)\) \{/);
     expect(MEMBER_PAGE).toMatch(/\.select\('agent_wallet_balance'\)/);
-    expect(MEMBER_PAGE).toMatch(/if \(float_ <= 0\) \{/);
+    expect(MEMBER_PAGE).toMatch(/if \(float_ === null \|\| float_ <= 0\) \{/);
     expect(MEMBER_PAGE).toMatch(/setFundPrompt\(\{ role: newRole \}\)/);
   });
 

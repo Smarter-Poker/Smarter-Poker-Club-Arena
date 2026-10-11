@@ -1,0 +1,10 @@
+[
+  {
+    "proname": "fn_ca_house_board_allows_automation",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_house_board_allows_automation(p_club_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  -- DERIVED FIRST: the platform club is the house board, and always will be, without anybody\n  -- remembering to add it to a list. This is the half that cannot rot.\n  SELECT COALESCE((SELECT c.is_platform FROM public.clubs c WHERE c.id = p_club_id), false)\n     -- LEGACY, AND IT IS DEBT: four chip house boards that predate clubs.is_platform and carry no\n     -- flag of their own. Give them one and these four lines delete themselves.\n     OR p_club_id = ANY (ARRAY[\n          'a41434bb-8d0c-400a-8f0d-e8b3d65afed4'::uuid,   -- Club JAQK\n          'a0000000-0000-0000-0000-000000000001'::uuid,   -- SHARK CLUB\n          'fade0000-0000-0000-0000-000000000001'::uuid,   -- Midway Union\n          '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3'::uuid    -- Deep Stack Society\n        ]);\n$function$\n"
+  },
+  {
+    "proname": "fn_ca_is_fixture_account",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_is_fixture_account(p_user_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT p_user_id IS NOT NULL\n    AND NOT EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = p_user_id AND COALESCE(p.is_horse, false))\n    AND (\n      p_user_id::text LIKE '00000000-0000-0000-0000-%'\n      OR EXISTS (SELECT 1 FROM public.ca_cert_accounts c WHERE c.user_id = p_user_id AND c.active)\n      OR EXISTS (SELECT 1 FROM auth.users u WHERE u.id = p_user_id AND u.email LIKE '%.invalid')\n    );\n$function$\n"
+  }
+]

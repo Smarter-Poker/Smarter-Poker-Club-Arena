@@ -14,7 +14,7 @@
  * side too, this just avoids showing buttons that would fail.
  */
 
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   UnionOpsService,
@@ -592,7 +592,8 @@ function SettlementConfirm({
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [onCancel]);
-  useEffect(() => {
+  // The portal must lock its page before the committed dialog can be painted.
+  useLayoutEffect(() => {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {

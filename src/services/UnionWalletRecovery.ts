@@ -34,8 +34,18 @@ export interface UnionWalletRecoveryStorage {
   removeItem(key: string): void;
 }
 
-/** Account-scoped financial intent; its prefix is shared with the sign-out purge. */
-const MAX_AGE_MS = 24 * 60 * 60 * 1000;
+/**
+ * Account-scoped financial intent. The prefix is declared beside the sign-out
+ * purge, which deliberately leaves it alone (clearUserCaches, S-05).
+ *
+ * NO AGE-BASED EVICTION (2026-10-09, audit S-10). A 24h MAX_AGE used to make
+ * readRecord return null for an older record, so reserveUnionWalletOperation
+ * minted a NEW operation id for the SAME unresolved intent: a union owner
+ * retrying a lost-response send a day later paid twice. The server's op-claim
+ * replay is the only authority that retires an intent; this mirrors
+ * CashierResilience, which has never evicted by age. Only a future-dated
+ * record (clock skew beyond FUTURE_SKEW_MS) is treated as malformed.
+ */
 const FUTURE_SKEW_MS = 5 * 60 * 1000;
 const MAX_SIGNATURE_LENGTH = 512;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -104,7 +114,7 @@ function readRecord(
          Do not erase it and mint a different key: fail closed for this click. */
       return undefined;
     }
-    if (now - Number(parsed.createdAt) > MAX_AGE_MS) return null;
+    // However old, the record stays until the server answers for its op id.
     return parsed as UnionWalletIntentRecord;
   } catch {
     // The caller treats an unreadable store as unavailable and fails closed.

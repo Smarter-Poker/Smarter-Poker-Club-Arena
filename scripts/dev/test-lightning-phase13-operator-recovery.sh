@@ -154,5 +154,13 @@ BEGIN
 END $$;
 SQL
 "${PSQL[@]}" -f "$migration"
+python3 - "$migration" "$fixture/forward-proofs.sql" <<'PYTHON'
+import sys
+from pathlib import Path
+proofs=[line.split('-- @live-proof: ',1)[1] for line in Path(sys.argv[1]).read_text().splitlines() if line.startswith('-- @live-proof: ')]
+assert len(proofs)==6
+Path(sys.argv[2]).write_text('\n'.join("DO $$ BEGIN IF ("+expr+") IS DISTINCT FROM true THEN RAISE EXCEPTION 'FAIL forward live proof "+str(n)+"'; END IF; END $$;" for n,expr in enumerate(proofs,1)))
+PYTHON
+"${PSQL[@]}" -f "$fixture/forward-proofs.sql"
 "${PSQL[@]}" -c "DELETE FROM harness.lp8 WHERE phase='own'" -f "$fixture/own-proofs-eval.sql" -f "$fixture/own-proofs.sql"
 echo 'PASS: worker off refuses before completed drain, preserves dealt hands and stacks, admits after real settlement and MUST MOVE, receipts expose mode, request replay, publication, idempotent frozen-deadline restoration, prior proofs and exact reapplication'

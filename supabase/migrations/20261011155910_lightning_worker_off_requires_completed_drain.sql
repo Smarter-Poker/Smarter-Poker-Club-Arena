@@ -1525,4 +1525,12 @@ BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.cash_cluster_events;
   END IF;
 END $publication$;
+-- Explicit existing privileges; preimage checks above reject any unexpected ACL.
+REVOKE ALL ON FUNCTION public.fn_lightning_operator_control(uuid,text,text,jsonb) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.fn_lightning_operator_control(uuid,text,text,jsonb) TO authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_lightning_operator_state(uuid) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_lightning_operator_state(uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_thaw_platform_checkpointed(timestamptz,numeric,text) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_snapshot_maintenance_thaw_targets(timestamptz,numeric) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_credit_maintenance_thaw_targets(timestamptz,numeric) FROM PUBLIC,anon,authenticated,service_role;
 COMMIT;

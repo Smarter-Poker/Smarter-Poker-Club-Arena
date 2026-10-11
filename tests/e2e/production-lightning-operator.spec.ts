@@ -1,7 +1,7 @@
 /** Read-only Lightning cold loads. Never submit an operator decision. */
 import { expect, test } from '@playwright/test';
 
-const club = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
+const club = process.env.E2E_TEMPLATE_CLUB_ID || '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3';
 const overviewRpc = '/rest/v1/rpc/fn_lightning_operator_overview';
 const clusterRpc = '/rest/v1/rpc/fn_lightning_operator_cluster';
 

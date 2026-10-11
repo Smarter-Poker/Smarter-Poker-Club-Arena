@@ -485,12 +485,13 @@ function CashierContent() {
   const recipientSearchRef = useRef<HTMLInputElement>(null);
 
   const filteredRecipients = useMemo(() => {
-    if (!recipientSearch.trim()) return recipients;
+    const candidates = action === 'send' ? recipients.filter((r) => r.id !== user?.id) : recipients;
+    if (!recipientSearch.trim()) return candidates;
     const q = recipientSearch.trim().toLowerCase();
-    return recipients.filter(
+    return candidates.filter(
       (r) => r.searchText.includes(q) || (r.id === user?.id && 'you'.includes(q))
     );
-  }, [recipients, recipientSearch, user?.id]);
+  }, [recipients, recipientSearch, user?.id, action]);
 
   // A filtered-out recipient must never remain the hidden destination.
   useEffect(() => {

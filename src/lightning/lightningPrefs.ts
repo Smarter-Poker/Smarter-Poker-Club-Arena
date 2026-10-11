@@ -11,6 +11,7 @@
  * remembered Cluster is offered as a door; the buy-in confirmation of the
  * existing join flow is the only way in, every time.
  */
+import type { LightningShortcutModifier } from './lightningShortcuts';
 export const LIGHTNING_PREFS_STORAGE_KEY = 'ca.lightning.prefs.v1';
 
 export interface LightningPrefs {
@@ -21,6 +22,9 @@ export interface LightningPrefs {
   tableCount: number;
   statsVisible: boolean;
   preferFoldWatch: boolean;
+  shortcutModifier: LightningShortcutModifier;
+  /** Optional cue every N newly dealt hands during this room visit; zero is off. */
+  milestoneHands: number;
 }
 
 export const LIGHTNING_PREFS_DEFAULTS: Readonly<LightningPrefs> = Object.freeze({
@@ -30,9 +34,12 @@ export const LIGHTNING_PREFS_DEFAULTS: Readonly<LightningPrefs> = Object.freeze(
   tableCount: 1,
   statsVisible: false,
   preferFoldWatch: false,
+  shortcutModifier: 'shift',
+  milestoneHands: 0,
 });
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+let pagePrefs: LightningPrefs | null = null;
 
 function clean(raw: unknown): LightningPrefs {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
@@ -47,21 +54,30 @@ function clean(raw: unknown): LightningPrefs {
     tableCount: Number.isInteger(count) && count >= 1 && count <= 4 ? count : 1,
     statsVisible: r.statsVisible === true,
     preferFoldWatch: r.preferFoldWatch === true,
+    shortcutModifier:
+      r.shortcutModifier === 'off' || r.shortcutModifier === 'alt_shift'
+        ? r.shortcutModifier
+        : 'shift',
+    milestoneHands: [100, 250, 500].includes(Number(r.milestoneHands))
+      ? Number(r.milestoneHands)
+      : 0,
   };
 }
 
 export function readLightningPrefs(): LightningPrefs {
   try {
-    if (typeof localStorage === 'undefined') return { ...LIGHTNING_PREFS_DEFAULTS };
+    if (typeof localStorage === 'undefined') return pagePrefs ?? { ...LIGHTNING_PREFS_DEFAULTS };
     const raw = localStorage.getItem(LIGHTNING_PREFS_STORAGE_KEY);
-    return raw ? clean(JSON.parse(raw)) : { ...LIGHTNING_PREFS_DEFAULTS };
+    pagePrefs = raw ? clean(JSON.parse(raw)) : { ...LIGHTNING_PREFS_DEFAULTS };
+    return pagePrefs;
   } catch {
-    return { ...LIGHTNING_PREFS_DEFAULTS };
+    return pagePrefs ?? { ...LIGHTNING_PREFS_DEFAULTS };
   }
 }
 
 export function writeLightningPrefs(patch: Partial<LightningPrefs>): LightningPrefs {
   const next = clean({ ...readLightningPrefs(), ...patch });
+  pagePrefs = next;
   try {
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem(LIGHTNING_PREFS_STORAGE_KEY, JSON.stringify(next));

@@ -315,6 +315,60 @@ test.describe('Production Shark Club Players', () => {
     expect(probe.criticalConsoleErrorCount).toBe(0);
   });
 
+  test('restores the roster workspace and virtual position after visiting a Player Record', async ({
+    page,
+  }) => {
+    const probe = observeMembersPath(page);
+    await openMembers(page, probe);
+    const sort = page.getByRole('combobox', { name: 'Sort Players' });
+    await completeNextPageRead(probe, () => sort.selectOption('name'), 'workspace name sort');
+    await page.locator('.members-columns summary').click();
+    const fees = page.getByRole('checkbox', { name: 'Fees', exact: true });
+    await fees.uncheck();
+    await page.locator('.members-columns summary').click();
+    const viewport = page.locator('.members-viewport');
+    await viewport.evaluate((node) => {
+      node.scrollTop = 448;
+      node.dispatchEvent(new Event('scroll'));
+    });
+    await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBe(448);
+    const directory = page.getByRole('list', { name: 'Club Member Directory' });
+    const row = directory.getByRole('listitem').nth(5);
+    const alias = ((await row.locator('.member-alias').textContent()) || '').trim();
+    expect(alias).not.toBe('');
+    await row.getByRole('button').click();
+    await expect(page.getByRole('heading', { name: 'Player Record', exact: true })).toBeVisible();
+    await expect(page.locator('#mm-player-name')).toContainText(alias);
+    await page.locator('.mm-back').click();
+    await expect(sort).toHaveValue('name');
+    await expect
+      .poll(() => viewport.evaluate((node) => node.scrollTop), { timeout: 30_000 })
+      .toBe(448);
+    await page.locator('.members-columns summary').click();
+    await expect(fees).not.toBeChecked();
+    await page.locator('.members-columns summary').click();
+    await expect(page.getByRole('region', { name: 'Selected Players' })).toHaveCount(0);
+
+    const search = page.getByRole('searchbox', { name: 'Search Club Members' });
+    await completeNextPageRead(probe, () => search.fill(alias), 'workspace saved search');
+    await expect(directory.getByRole('listitem').first().locator('.member-alias')).toContainText(
+      alias
+    );
+    await directory.getByRole('listitem').first().getByRole('button').click();
+    await expect(page.getByRole('heading', { name: 'Player Record', exact: true })).toBeVisible();
+    await expect(page.locator('#mm-player-name')).toContainText(alias);
+    await page.locator('.mm-back').click();
+    await expect(search).toHaveValue(alias);
+    await expect(sort).toHaveValue('name');
+    await expect(directory.getByRole('listitem').first().locator('.member-alias')).toContainText(
+      alias
+    );
+    expect(probe.responseFailures).toEqual([]);
+    expect(probe.requestFailureCount).toBe(0);
+    expect(probe.pageErrorCount).toBe(0);
+    expect(probe.criticalConsoleErrorCount).toBe(0);
+  });
+
   test('keeps roster surfaces and controls inside the actual page at desktop and phone widths', async ({
     page,
   }) => {

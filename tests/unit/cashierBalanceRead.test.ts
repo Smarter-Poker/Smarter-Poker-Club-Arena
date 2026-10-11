@@ -62,11 +62,14 @@ describe('readCashierBalances reads club money through the role-checked panel (S
     const snapshot = await readCashierBalances(CLUB, USER, 'club_bank', signal);
     expect(state.rpcCalls).toEqual([['fn_club_money_panel', { p_club_id: CLUB }]]);
     expect(state.fromCalls).not.toContain('clubs');
+    // `credit` joined the snapshot in the 2026-10-09 merge (audit C2-1): the
+    // Club Bank is never lent a credit line, so it is 0 here.
     expect(snapshot).toEqual({
       clubId: CLUB,
       name: 'Deep Stack Society',
       inUnion: false,
       bank: 1234.56,
+      credit: 0,
       promoPot: 78.9,
       promoFloat: null,
       hasFloat: null,

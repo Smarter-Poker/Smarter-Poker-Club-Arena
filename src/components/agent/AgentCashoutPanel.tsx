@@ -35,7 +35,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { cashoutService, CashoutRequest } from '../../services/CashoutService';
-import { CashoutReceiptChecks, useCashoutReceiptChecks } from '../wallet/CashoutReceiptChecks';
+import {
+  outcomeNeedsReceiptCheck,
+  CashoutReceiptChecks,
+  useCashoutReceiptChecks,
+} from '../wallet/CashoutReceiptChecks';
 import { useCashoutScope, useCashoutScopeKey } from '../../hooks/useCashoutScope';
 import {
   runCashoutOperation,
@@ -59,6 +63,13 @@ import { reportError } from '../../utils/errorReporter';
 import { SpadeConsole } from '../console/SpadeConsole';
 
 import { safeErrorMessage } from '../../utils/safeErrorMessage';
+
+/**
+ * The amount about to move prints exactly: whole when it is whole, to two
+ * places when it is not. A bare `toLocaleString()` printed 18,400.50 as
+ * "18,400.5" (launch audit R-10).
+ */
+const TWO_PLACES = { minimumFractionDigits: 2, maximumFractionDigits: 2 } as const;
 
 interface AgentCashoutPanelProps {
   clubId?: string;
@@ -147,7 +158,7 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
       if (current()) {
         rowsScope.current = isCurrent;
         setCashouts([]);
-        setError(safeErrorMessage(err, 'Failed to load cashout requests'));
+        setError(safeErrorMessage(err, 'Failed To Load Cashout Requests'));
       }
     }
     if (current()) {
@@ -307,7 +318,7 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
       void loadCashouts();
       onCashoutProcessed?.();
     } catch (err) {
-      if (checkingOutcome && start && isCurrent())
+      if (checkingOutcome && start && isCurrent() && outcomeNeedsReceiptCheck(err))
         receiptChecks.retain(
           `${cashout.id}:${action}`,
           cashout.amount,
@@ -460,7 +471,9 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
                     separators, never an abbreviation. */}
                 <span className="acp-amount">
                   <span className="acp-amount-value sc-ink--silver">
-                    {cashout.amount.toLocaleString()}
+                    {Number.isInteger(cashout.amount)
+                      ? cashout.amount.toLocaleString()
+                      : cashout.amount.toLocaleString(undefined, TWO_PLACES)}
                   </span>
                   <span className="acp-amount-label sc-label sc-ink--blue">Chips</span>
                 </span>

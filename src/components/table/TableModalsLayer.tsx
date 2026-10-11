@@ -1145,6 +1145,10 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         onAddChips={onAddChips}
         currentStack={heroStack}
         accountBalance={accountBalance}
+        /* The in-table Retry for an unread balance (cashier launch B-1). The
+           buy-in sheet already had it; without it here the top-up sheet sat on
+           "Balance Unavailable" with no way forward but closing. */
+        onRetryBalance={onRetryAccountBalance}
         maxBuyIn={maxBuyIn}
         maxStack={maxBuyIn}
       />

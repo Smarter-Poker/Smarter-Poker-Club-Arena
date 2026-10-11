@@ -143,9 +143,9 @@
     "tests/unit/CreditRequestLegacyCaller.test.ts": "ef6f8458a54ce3b5e646d831c176f279456e8f59598616e20dbb3a9dbc7f2e7b",
     "tests/unit/CreditRequestService.test.ts": "47bc48d13b54901999a6a58b36a93edb79e4f2d057427a4a6d622ff009d7c0c3",
     "tests/components/agent-cashout-scope.test.tsx": "58f7be7a87a7f3f4d5f585ea0c297f7fe0fc9b64fc67a02d6edc2a81d36f9446",
-    "tests/unit/CashoutService.test.ts": "6f4cff8796499a4ea8e550d30da4aed45d067d4be18030688a17a2f4ca1e303d",
+    "tests/unit/CashoutService.test.ts": "528149522222b33c55598df5b1ece548928b27f364241c5912ff3b1b05c01449",
     "tests/config/roleScopedCashier.test.ts": "a233e4072262ad4356b705c37db292d78f49dd613506e0d6c13b92fb787eb4d8",
-    "tests/cashout-escrow-flow.test.ts": "b466fd8beffb58c9ab0674db9a10a2ae6f9126def2e3c42a08401f9c5382d019",
+    "tests/cashout-escrow-flow.test.ts": "8b7c9e4943ac8bc8fc4e8f7c2bfd22e54fb15a19b35188ab0ffb797f54efb327",
     "tests/fixtures/cashier-document-authority/captured-legacy-route-catalog.json": "edef6d6318f142277069de1fead9cbfe8ea732cc5d774987d8f4894bdc06807f",
     "tests/fixtures/cashier-document-authority/captured-preimages.sql": "1219fa1b0c4ab26bf155f3c58d3f4c7f5fd108940c1780c5047f61d88727412a",
     "tests/unit/leaveClubReleasesEscrow.test.ts": "4faed6fab4a8eac765219b794e555edf9186064bc19b7ba02c8bc9f0572c1fca",
@@ -157,7 +157,7 @@
     "tests/unit/CashoutRequestModal.test.tsx": "01dce8b14e1793534c604d17fe6566c0a30c643b9a3590fc1d3203a906cf7d04",
     "tests/fixtures/cashier-document-authority/README.md": "fe65d50c5ed2aa2507e0ed8cc1149c4c9dbcc12d55cca1822352c4aa05ec8580",
     "tests/fixtures/cashier-document-authority/captured-cashier-catalog.json": "4037cbccb52b206a4f1a1b158b055cb7cc8819cd14241d0becb74127819328c2",
-    "tests/unit/CashoutOperation.test.ts": "9bc670edbf3eec0132eb45d6d070ee20d8936225af7af0d06fdb76532bb50a7f",
+    "tests/unit/CashoutOperation.test.ts": "ae28da4c627e0ecf78a3d8308f0ce0316d8f34be31efa2d486f86abd989957ea",
     "tests/fixtures/correction-document-authority/README.md": "836d767a54efa8c0a1d21f940100c993ace55cc84053cf529db88ff0ec8d4054",
     "tests/fixtures/correction-document-authority/captured-dependencies.json": "a3f2ca823f8d17df8429aed4973a8258595b6ed4e5a2da8585dddac78795e3f5",
     "tests/fixtures/correction-document-authority/captured-preimages.sql": "cb9ace1e960450ac78fc2de96c785fe97856da1e8fcfd0a3244480d5bb08fa25",
@@ -4091,6 +4091,29 @@
         "sha256": "5d62394eda8cdf404f63bb37dbdbacb053f24d1f15d15c895706a6b8e27578fd"
       }
     ]
+  },
+  "cashierScreenResiduals20261011": {
+    "base_commit": "5c1e013bd",
+    "source_branch": "agent/cowork/fix/cashier-screens-residual",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/cashout-escrow-flow.test.ts",
+        "previous_sha256": "b466fd8beffb58c9ab0674db9a10a2ae6f9126def2e3c42a08401f9c5382d019",
+        "sha256": "8b7c9e4943ac8bc8fc4e8f7c2bfd22e54fb15a19b35188ab0ffb797f54efb327"
+      },
+      {
+        "path": "tests/unit/CashoutOperation.test.ts",
+        "previous_sha256": "9bc670edbf3eec0132eb45d6d070ee20d8936225af7af0d06fdb76532bb50a7f",
+        "sha256": "ae28da4c627e0ecf78a3d8308f0ce0316d8f34be31efa2d486f86abd989957ea"
+      },
+      {
+        "path": "tests/unit/CashoutService.test.ts",
+        "previous_sha256": "6f4cff8796499a4ea8e550d30da4aed45d067d4be18030688a17a2f4ca1e303d",
+        "sha256": "528149522222b33c55598df5b1ece548928b27f364241c5912ff3b1b05c01449"
+      }
+    ],
+    "reason": "Cashier screen residuals, 2026-10-11 (docs/changelog/2026-10-11-cashier-screen-residuals.md). Three repository test bindings move; no accounting component, SQL, captured catalog fixture, limit or native assertion changed. tests/unit/CashoutService.test.ts: ADDITIVE only; a 23514 is a definitive refusal only for the transition's named pre-write tokens (CASHOUT_DEFINITIVE_23514), so new cases pin that receipt re-read, write-assert and constraint 23514s stay CashoutOutcomeUnknownError with the same operation id and no bus event, and that cashier_escrow_unverified / cashier_legacy_hold_unverified stay definitive for approval and decline. tests/unit/CashoutOperation.test.ts: ADDITIVE only; one describe pins that a definitive refusal acknowledges its generation and a repeatable request re-prepares a fresh id, that a second tap on the same preparation never re-sends the refused id while its own uncertainty survives another tab, that an operation conflict settles too, and that 57014/40001/non-pre-write 23514/transport failures keep the generation. tests/cashout-escrow-flow.test.ts: the AgentCashoutPanel load-failure fallback is pinned in Title Case ('Failed To Load Cashout Requests'); the lower-case literal it pinned was the defect. Every other assertion in the three files is unchanged.",
+    "verification": "Each sha256 is hashlib.sha256(path.read_bytes()).hexdigest() of the file on disk after the repository's prettier pass; each previous_sha256 is the value this binding held at origin/main 5c1e013bd. The diffs were read in full before restamping. The three files pass under npx vitest run, and python3 scripts/ci/verify-source-bindings.py plus tests/every-pinned-source-stays-bound.law.test.ts are run after this restamp. No production object was read, created or changed."
   },
   "cashierStatementDbHarnessRouting20261011": {
     "reason": "Reviewed additive cashier statement harness routing: one new cashierStatementDbHarness selector naming scripts/ci/test-cashier-statement-db-postgres.py (the PostgreSQL 17 qualification of migration 20261011194856, the statement counts each move once), added to the existing server and tests selections, and one accounting_postgres shard 2 step that runs it. No selector is removed or narrowed; financial sources, assertions and historical evidence are unchanged. These byte bindings establish source identity only, not financial or production qualification.",

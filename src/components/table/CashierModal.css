@@ -2,11 +2,15 @@
    TABLE CASHIER - on Dan's October 9 purchase chassis (PurchaseConsole)
 
    The frame is painted (cash-purchase-v2/chassis.png, laid out by
-   AddOnModal.css). This sheet owns only the scrim, the centring and the
-   refusal ink; every row, the amount field and the quick amounts are
-   positioned on the art by the purchase console. The riveted-console rules
-   that used to live here were dead since the chassis arrived and are gone
-   (launch audit D-17). No hover state.
+   AddOnModal.css): every row, the amount field, the quick amounts and the two
+   money plates are positioned on the art by the purchase console. This sheet
+   owns only the scrim, the centring and the refusal ink. Nothing prints below
+   the frame any more (launch audit R-05): the refusal, an unread balance and a
+   stack at the table maximum share the status line inside it, and the Retry
+   for an unread balance is the painted money plate. The riveted-console rules,
+   the Recent list and the Retry word that used to live here styled markup this
+   modal no longer renders (launch audit D-17, audit C2-17) and are gone.
+   No hover state.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .cashier-overlay {
@@ -33,8 +37,22 @@
 /* The refusal, printed on the status line inside the frame, in the schema's
    red where the line is otherwise green. */
 .cashier-error {
-  padding-top: 1cqw;
+  padding-top: 0.6cqw;
   color: #ff5b6e;
   font-size: 2.8cqw;
-  line-height: 1.3;
+  line-height: 1.2;
+}
+
+/* TWO LINES FIT THE PAINTED WELL (measured 2026-10-09 at 393px). The refusal
+   and the table-maximum sentence wrap to two lines, and they sat left-aligned
+   on the well's bottom rim: its zone is 18.5cqw tall, and the amount's line
+   box (10cqw digits at the font's own leading, 11.7cqw) plus two 2.8cqw lines
+   at 1.3 and a 1cqw pad came to 20cqw. The digits' box is now the digits, the
+   status lines are centred at 1.2, and the whole stack is 17.3cqw. */
+[role='dialog'] .cashier-dialog .addon-console__timer > span {
+  text-align: center;
+  line-height: 1.2;
+}
+[role='dialog'] .cashier-dialog .purchase-console__amount.purchase-console__amount {
+  line-height: 1 !important;
 }

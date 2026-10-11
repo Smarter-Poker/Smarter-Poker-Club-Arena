@@ -101,6 +101,41 @@ describe('the Diamond Arena reconciles', () => {
     }
   });
 
+  it('the statement reconciles each journal row against ALL of its legs, not one leg at a time', () => {
+    // 20261011192722. A tournament prize is ONE arena_withdraw journal row paid
+    // from every entrant's custody, and a satellite seat's reserve and release
+    // net to ONE zero row. Comparing a single leg with the whole row told 379 of
+    // 418 arena players that correct payouts "Do Not Reconcile". The latest
+    // definition must compare the row with the signed sum of every leg that
+    // points at it, and must never go back to the one-leg comparison.
+    const defining = migrations().filter((f) =>
+      readFileSync(resolve(MIG, f), 'utf8').includes(
+        'CREATE OR REPLACE FUNCTION public.fn_diamond_arena_reconciliation'
+      )
+    );
+    const latest = defining[defining.length - 1];
+    expect(latest >= '20261011192722').toBe(true);
+    const src = read(`supabase/migrations/${latest}`);
+    const body = src.slice(
+      src.indexOf('CREATE OR REPLACE FUNCTION public.fn_diamond_arena_reconciliation'),
+      src.indexOf(
+        '$function$;',
+        src.indexOf('CREATE OR REPLACE FUNCTION public.fn_diamond_arena_reconciliation')
+      )
+    );
+    expect(body).toContain(
+      'JOIN public.poker_diamond_movements m ON m.wallet_journal_id = mine.journal_id'
+    );
+    expect(body).toContain('j.amount <> legs.moved');
+    expect(body).not.toContain('j.amount <> -m.amount');
+    expect(body).not.toContain('j.amount <> m.amount');
+    // House legs stay excluded on both sides of the comparison.
+    expect(body.split("m.destination_account <> 'house'").length - 1).toBeGreaterThanOrEqual(2);
+    // Still read only and own-user only.
+    expect(body).toContain("RAISE EXCEPTION 'arena_reconciliation_is_own_only'");
+    expect(body).not.toMatch(/\b(INSERT|UPDATE|DELETE)\b/);
+  });
+
   it('the wallet shows the statement on the Ledger tab and never a balance it did not read', () => {
     const page = read('src/pages/PlayerWalletPage.tsx');
     const component = read('src/components/wallet/DiamondArenaStatement.tsx');

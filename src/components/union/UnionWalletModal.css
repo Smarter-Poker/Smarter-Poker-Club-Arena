@@ -94,7 +94,8 @@
 .uwm-tab {
   appearance: none;
   flex: 0 1 auto;
-  min-width: 0;
+  /* 44px across as well as down (cashier launch B-3: measured narrower at 393). */
+  min-width: 44px;
   min-height: 44px;
   margin: 0;
   padding: 1.2cqw 0;
@@ -147,6 +148,7 @@
 .uwm-kind {
   appearance: none;
   min-height: 44px;
+  min-width: 44px;
   margin: 0;
   padding: 0;
   border: 0;
@@ -179,6 +181,7 @@
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
+  min-height: 44px;
   margin: 0;
   padding: 2.4cqw 1cqw;
   border: 0 !important;

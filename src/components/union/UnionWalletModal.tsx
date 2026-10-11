@@ -47,6 +47,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { reportError } from '../../utils/errorReporter';
 import { fmt } from '../../utils/format';
 import { unionApi } from '../../services/UnionApiService';
+import { classifyCashierRpcFailure } from '../../services/CashierResilience';
 import {
   clearUnionWalletOperation,
   reserveUnionWalletOperation,
@@ -150,6 +151,29 @@ const apiNote = (s: string) => s.replace(/[;'"\\]/g, '').slice(0, 500);
 
 const definitiveRefusal = (message: string): Error & { definitive: true } =>
   Object.assign(new Error(message), { definitive: true as const });
+
+/**
+ * A RESOLVED `error` IS NOT ALWAYS A REFUSAL (cashier launch round 2,
+ * 2026-10-09; .agent-logs/C5-probe-union-transport). supabase-js does not
+ * reject when fetch() fails: it resolves `{ data: null, error: { code: '' },
+ * status: 0 }`, and a gateway 5xx, a 408/409/425/429 or an abort can arrive
+ * after the function committed. Every one of those used to be thrown as
+ * `definitiveRefusal`, which retired the operation id, so the operator's retry
+ * of a send the server had already made went out under a NEW id and moved the
+ * money twice. Only a SQL refusal carried on a 4xx is definitive (the shared
+ * cashier classifier, launch brief rule 8); anything else keeps the id, and the
+ * server answers the repeat with the original receipt (`replayed`).
+ */
+const UNION_OUTCOME_UNKNOWN =
+  'Outcome Not Yet Confirmed. Repeat The Same Move To Confirm It; It Cannot Run Twice.';
+const rpcFailure = (
+  error: { message?: string } | null,
+  status: number | null | undefined,
+  refusal: string
+): Error =>
+  classifyCashierRpcFailure(error, status) === 'refused'
+    ? definitiveRefusal(error?.message || refusal)
+    : new Error(UNION_OUTCOME_UNKNOWN);
 
 /** Ledger money: whole chips print whole (5,000), cents print only when held (32,482.58). */
 const money = (n: number | null | undefined) =>
@@ -520,7 +544,7 @@ export function UnionWalletModal({
     try {
       if (mode === 'send') {
         if (target.type === 'member') {
-          const { data, error } = await supabase.rpc('fn_union_send_to_member', {
+          const { data, error, status } = await supabase.rpc('fn_union_send_to_member', {
             p_union_id: unionId,
             p_target_user_id: target.data.user_id,
             p_kind: kind,
@@ -535,7 +559,7 @@ export function UnionWalletModal({
             wallet_after?: number;
             destination?: string;
           };
-          if (error) throw definitiveRefusal(error.message || 'Union Send Failed');
+          if (error) throw rpcFailure(error, status, 'Union Send Failed');
           if (!res.success) throw definitiveRefusal(res.error || 'Union Send Failed');
           const who = target.data.display_name || target.data.username;
           const landed =
@@ -601,7 +625,11 @@ export function UnionWalletModal({
           const pr = clubPullRoute(walletKey);
           if (pr.kind === 'refused') throw new Error(pr.reason);
           const isPromoPull = pr.kind === 'promo';
-          const { data: cbRes, error: cbErr } = await supabase.rpc(
+          const {
+            data: cbRes,
+            error: cbErr,
+            status: cbStatus,
+          } = await supabase.rpc(
             isPromoPull ? 'fn_union_clawback_promo_from_club' : 'fn_union_clawback_from_club',
             {
               p_union_id: unionId,
@@ -613,7 +641,7 @@ export function UnionWalletModal({
               p_op_id: opId,
             }
           );
-          if (cbErr) throw definitiveRefusal(cbErr.message || 'Clawback Failed');
+          if (cbErr) throw rpcFailure(cbErr, cbStatus, 'Clawback Failed');
           const cb = (cbRes ?? {}) as {
             success?: boolean;
             error?: string;

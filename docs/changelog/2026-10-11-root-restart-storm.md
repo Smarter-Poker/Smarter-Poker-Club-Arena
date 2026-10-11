@@ -25,3 +25,13 @@ Regression: original source fails the new real postHandTasks test on PGRST002 an
 Readback: screenshot tournament completed 18:14:04 UTC, escrow closed with exact zero, 182 gross in = 12.80 fee +169.20 prize out. Current absent-player detector returned no rows. Incident still open; existing resolver requires two subsequent detector runs, so absence now alone is not a safe general closure. Diamond credited transaction c60e21d9-8117-4cbc-8051-3ec8eed4c274 is a single 8080 diamond transfer with exact daily reference, arithmetic verified; burn/source readback remains pending.
 
 Resumption policy reader 2026-10-11T19:04:58.749Z same version2.9/hashes.
+
+## Alert repair and trigger evidence
+
+Owner relay original migration 20261007000420, lines152-156, picks original title after annotations/event summary, discarding the original notification message. Reserved migration20261011190747 adds nonblank original message before legacy title, with exact live function preimage md5 279c02581cb2d16436f528710046fe3b and explicit refusal on changed/duplicate preimage. No recipient, pager, notification quota, financial writer or scheduled work changes. Source reread: yes. Isolated PostgreSQL17 actual trigger reproduces bad baseline and passes message, blank/null fallback, annotation/event priority, truncation, repeat suppression and second-apply refusal. Retained test runs in existing required accounting shard1.
+
+Diamond full settled-day readback: 6600 entry +3500 bonus =10100 net; 20% burn2020; exactly8080credited, pending0, prizes/inventory0. Statement is correct.
+
+Database interruption trigger identified: cron job477 postgrest-pool-renew-10m fires :02/:12/:22/:32/:42/:52; 18:42:00.380934 run aligns with 18:42:00.400027 schema reload, reinitialized40-connection pool and~32s cache/pool unavailability. It was added after measured database memory exhaustion on Oct3/4. No safe removal before native lifetime/memory bound verification; do not replace a table storm with a whole-database OOM. PostgREST12 docs native pool lifetime1800s is not in-database/reloadable; management API route exposes only limited settings. Existing scheduled renewal preserved while original hand barrier repair removes its proven destructive engine consequence. Host memory file read denied; no claim of current headroom verification.
+
+Full suite first run mixed old imported helper with new validation test during edits:1failed helperboolean case,1271passed,1skipped; final focused validation31passed. Exact committed-tree full suite rerunning. Initial wrong-root test invocation found no tests, corrected to server project and passed.

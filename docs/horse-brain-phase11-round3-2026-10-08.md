@@ -176,3 +176,15 @@ The first predeclared natural window (release `c1deef24`, 15:02 to 15:50Z; recor
 | PLO6 | +3.68 [+2.89, +4.47] bb/100, 2,519,424 pairs                 | 0.998, 0.990, 0.990, 0.989                           | **selected** (approval generation 1) |
 
 The completion record writers now refuse a window spelled in any form other than the canonical `toISOString` form admission reads (the first records used `...:00Z`, which `isoMs` refuses as `completion_window_invalid`); the records used for selection carry `...:00.000Z`.
+
+## PLO8, PLO5 And PLO6 Natural Accepted Use (October 9 To 10, 2026)
+
+Release `1406d401` (#6604, the PLO8, PLO5 and PLO6 selections) served from 2026-10-09T22:55:38Z. Predeclared read-only window (`/Volumes/SmarterArchives/agent-evidence/horse-brain-select-20261009/omaha-use/declaration-phase11-natural-use-2026-10-09.txt`, written before 23:38Z), 2026-10-10 00:02 to 00:50Z, release unchanged (StartedAt read before and after):
+
+| Phase 11 DECIDE_FAST decisions in the window (journal, sourceRelease `1406d401`) | PLO5   | PLO6   | PLO8  |
+| -------------------------------------------------------------------------------- | ------ | ------ | ----- |
+| cash, candidate mode, authority usable, applied (the pack changed the action)    | 200    | 141    | 139   |
+| cash, candidate mode, authority usable, unchanged (the pack kept the action)     | 5,836  | 4,937  | 3,129 |
+| tournament, shadow mode (Phase 7 keeps the tournament objective)                 | 19,870 | 19,621 | 0     |
+
+Every cash decision of each pack ran in candidate mode on usable authority, and no tournament decision left shadow. `horse_brain_telemetry` from the baseline (2026-10-09 23:38Z) to 2026-10-10 00:54Z: `phase11_selection_selected`, `phase11_applied` and `phase11_selection_controller_accepted` each rose by 640 (2026-10-09: 277 to 394; 2026-10-10: 0 to 523), so every applied decision was accepted by the table controller. Status: **verified now** for PLO8, PLO5 and PLO6. Withdrawal path: verified in source tests (`HorsePhase11Authority.test.ts`, each committed selection with `withdrawn` set is admitted as `withdrawn`).

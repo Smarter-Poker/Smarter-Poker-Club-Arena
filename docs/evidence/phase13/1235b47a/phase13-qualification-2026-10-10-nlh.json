@@ -1,0 +1,36 @@
+{
+  "schema": "horse-phase13-qualification-v1",
+  "qualified": false,
+  "mode": "contract",
+  "variant": "nlh",
+  "sourceSha": "1235b47a63c439da9bdf8427148bc0818499378c",
+  "packVersion": "joint-multiway-round1-v4",
+  "contractVersion": "joint-strength-contract-v1",
+  "contractDigest": "1d0dd99be2fedd7ec50e502cf4241611818dd30aec794714808888616dc5dd96",
+  "domain": "nlh-cash-joint-multiway-after-rake-horse-population",
+  "policyDigest": "45b1812a5ba63d6b1fe2f34e92cd28b8d3e426927d0595f4049303c83bf1c83f",
+  "policyDigestDefinition": "horse-phase13-policy-digest-v1",
+  "objectives": {
+    "cash": { "qualified": false, "status": "measured", "regressionMarginBbPer100": -10 },
+    "tournament": {
+      "status": "unavailable dependency",
+      "qualified": false,
+      "reasons": [
+        "tournament:nlh_joint_whole_tournament_outcome_model_unavailable",
+        "tournament:qualified_nlh_joint_tournament_reference_population_unavailable",
+        "tournament:nlh_joint_tournament_thresholds_not_specified"
+      ]
+    }
+  },
+  "admissionAlsoRequires": [
+    "natural completion-share evidence for the variant: on the release under admission, the share of eligible live joint decisions that complete without work_budget, insufficient_joint_samples or a joint_response_ refusal, per street and per board count, measured from natural decisions with the release unchanged throughout the window; P13.3 must state and meet its own floor for that share before admitting the variant, because this contract measures strength only for decisions that complete their fixed work"
+  ],
+  "evidencePath": "docs/evidence/phase13/1235b47a/strength-2026-10-10-nlh/strength.json",
+  "evidenceSha256": "54ca0c4cecbc34170fad4ad3da6660dcc5124cbb2f35b3a00b3d082e7b6f9ee4",
+  "reasons": [
+    "cash:profile:p13c-nlh-3dealt-100bb:interval_not_trusted",
+    "cash:profile:p13c-nlh-bomb1-6max-100bb:regression_margin_exceeded",
+    "cash:position:small_blind:regression_margin_exceeded",
+    "cash:position:big_blind:regression_margin_exceeded"
+  ]
+}

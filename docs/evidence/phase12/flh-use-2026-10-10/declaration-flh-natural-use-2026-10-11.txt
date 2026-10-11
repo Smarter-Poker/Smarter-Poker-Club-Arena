@@ -1,0 +1,30 @@
+Horse Brain Phase 12: FLH Natural Accepted Use, Second Predeclaration
+====================================================================
+Declared 2026-10-11 20:15Z, before reading anything below.
+
+Why a second window: the first predeclared window (declaration-flh-natural-use-2026-10-10.txt,
+2026-10-10 03:02 to 03:50Z on release 9f9dcc6d) was read on 2026-10-11 19:44 to 20:00Z and the
+journal count came back empty: the decision journal archive is a byte-bounded ring and had already
+retired every segment holding that window (a 1-in-100 sample of the archive at 20:05Z holds decision
+times only from the 2026-09-25 evidence hold and from 2026-10-11 13:00Z onward). That first
+window's journal counts are unavailable; its whole-day telemetry is recorded as read.
+
+Release: f47ad93ce25b54e98d4c8c0a952a87f1482aff99, serving since 2026-10-11T17:55:32Z
+(contains 27a5ffba, #6611, the FLH selection; its Phase 12 policy source files are identical to
+1235b47a). If it is replaced before 21:50Z, the window moves to the first full hour (:02 to :50)
+of the next release containing 27a5ffba with the same Phase 12 digests.
+
+Window: [2026-10-11T21:02:00.000Z, 2026-10-11T21:50:00.000Z).
+
+Reads (read-only):
+1. public.horse_brain_telemetry, every feature beginning phase12_, day 2026-10-11, read once
+   before 21:02Z (baseline) and once after 21:50Z.
+2. Engine journal archive segments (closed files, sha256-name verified), DECIDE_FAST decision
+   records with gameVariant flh, decisionTimeMs in the window, sourceRelease exactly that release:
+   counts of decision.remainingVariantPolicy by gameMode, mode, authority.state, applied and
+   changed (flh-use-count.py, unchanged), read promptly after 21:50Z.
+3. Container StartedAt and release label before and after the window.
+
+Pass (unchanged): cash FLH decisions are candidate mode with usable authority, applied decisions
+exist and are controller-accepted (telemetry), tournament FLH decisions stay shadow. Every count
+is recorded whatever it shows.

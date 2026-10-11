@@ -168,8 +168,28 @@ test.describe('Production Cashier Certification', () => {
     await expect(rosterSearch).toBeVisible();
     await rosterSearch.fill('cashier-no-member-9284176');
     await expect(page.getByText('No Members Match That Search.', { exact: true })).toBeVisible();
-    await rosterSearch.fill('');
+    await page.getByRole('button', { name: 'Clear Search', exact: true }).click();
+    await expect(rosterSearch).toHaveValue('');
+    await expect(rosterSearch).toBeFocused();
     await expect(page.getByText('No Members Match That Search.', { exact: true })).toHaveCount(0);
+    const roleFilter = page.getByRole('combobox', { name: 'Filter Roster By Role' });
+    await roleFilter.selectOption('player');
+    await expect(roleFilter).toHaveValue('player');
+    await page.getByRole('button', { name: 'Clear Filters', exact: true }).click();
+    await expect(roleFilter).toHaveValue('all');
+    await expect(rosterSearch).toBeFocused();
+    const nativeSelect = surface.getByRole('button', { name: /^Select / }).first();
+    await expect(nativeSelect).toBeVisible();
+    await nativeSelect.click();
+    const transferDialog = page.getByRole('dialog', { name: 'Send Out', exact: true });
+    const selectedWallet = transferDialog.getByRole('region', {
+      name: 'Selected Player Wallet Context',
+    });
+    await expect(selectedWallet).toBeVisible();
+    await expect(selectedWallet).toContainText('Player Wallet:');
+    await expect(selectedWallet).toContainText('Send From Your Agent Wallet To Their');
+    await transferDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(transferDialog).toHaveCount(0);
     await page.setViewportSize({ width: 1440, height: 1000 });
     const directoryWidth = await surface
       .locator('[data-cashier-layout="directory"]')

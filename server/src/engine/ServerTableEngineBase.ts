@@ -6129,6 +6129,9 @@ export abstract class ServerTableEngineBase {
     notifyOwner = true,
     recoveryEventClass?: EngineRecoveryEventClass
   ): void {
+    // Nested settlement catches and late watchdog callbacks describe the same
+    // dead generation. Preserve its first cause and emit exactly one kill.
+    if (this.terminal) return;
     const diagnosticReason: LifecycleDetail['reason'] =
       reason === 'cash_lease_proof_expired' ||
       reason === 'tournament_lease_proof_expired' ||

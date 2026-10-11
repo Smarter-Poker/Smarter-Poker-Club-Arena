@@ -336,9 +336,20 @@ test.describe('Production Shark Club Players', () => {
     const row = directory.getByRole('listitem').nth(5);
     const alias = ((await row.locator('.member-alias').textContent()) || '').trim();
     expect(alias).not.toBe('');
-    await row.getByRole('button').click();
+    // Locator clicks can scroll a nested roster before its click handler saves
+    // the return position. Activate the actual button from keyboard focus while
+    // preserving the position this case is intended to verify.
+    await row.getByRole('button').evaluate((node) => node.focus({ preventScroll: true }));
+    await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBe(448);
+    await page.keyboard.press('Enter');
     await expect(page.getByRole('heading', { name: 'Player Record', exact: true })).toBeVisible();
     await expect(page.locator('#mm-player-name')).toContainText(alias);
+    const savedPositions = await page.evaluate(() =>
+      Object.keys(sessionStorage)
+        .filter((key) => key.startsWith('roster_position_v1_'))
+        .map((key) => JSON.parse(sessionStorage.getItem(key)!).viewportTop)
+    );
+    expect(savedPositions).toEqual([448]);
     await page.locator('.mm-back').click();
     await expect(sort).toHaveValue('name');
     await expect

@@ -123,7 +123,7 @@ try:
     run('close-account-preimage', (root / 'tests/fixtures/cashier-deleted-accounts/close-account-preimage.sql').read_text())
     run('close-account-baseline-blocks-completed-approval', f"BEGIN; INSERT INTO cashout_requests VALUES('{custody_user}','{active}',14.23,'approved',now()); SELECT fn_close_account('{custody_user}')->>'reason'; ROLLBACK;", 'pending_cashout')
     run('custody-preimage-source-is-exact', "SELECT md5(prosrc) FROM pg_proc WHERE oid='fn_close_account(uuid)'::regprocedure;", '2a65f0150ab9365424754d3096ab3c41')
-    run('custody-changed-preimage-refuses-atomically', "BEGIN; CREATE OR REPLACE FUNCTION fn_close_account(uuid) RETURNS jsonb LANGUAGE sql AS $$ SELECT '{}'::jsonb $$;" + (root / 'supabase/migrations/20261011051132_deleted_account_closure_waits_for_chip_custody.sql').read_text(), error='account_close_custody_preimage_changed')
+    run('custody-changed-preimage-refuses-atomically', "BEGIN; CREATE OR REPLACE FUNCTION fn_close_account(p_user_id uuid) RETURNS jsonb LANGUAGE sql AS $$ SELECT '{}'::jsonb $$;" + (root / 'supabase/migrations/20261011051132_deleted_account_closure_waits_for_chip_custody.sql').read_text(), error='account_close_custody_preimage_changed')
     run('custody-refused-install-leaves-no-trigger', "SELECT count(*) FROM pg_trigger WHERE tgname='trg_deleted_account_custody_settled';", '0')
     run('custody-transition-install', (root / 'supabase/migrations/20261011051132_deleted_account_closure_waits_for_chip_custody.sql').read_text())
     obligations = {

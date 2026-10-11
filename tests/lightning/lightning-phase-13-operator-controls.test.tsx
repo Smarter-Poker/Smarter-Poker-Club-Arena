@@ -570,7 +570,8 @@ describe('a control, from the tap to the answer', () => {
       p_action: 'set_matcher_version',
       p_args: { version: 'm2', role: 'live' },
     });
-    fireEvent.click(within(dialog()).getByText('Close'));
+    // The recorded request precedes its answer; close only the acknowledged dialog.
+    fireEvent.click(await within(dialog()).findByText('Close', { exact: true }));
 
     const autoRebuy = document.querySelector('[data-flag="lightning_auto_rebuy"]') as HTMLElement;
     fireEvent.click(within(autoRebuy).getByRole('button', { name: 'Turn On' }));

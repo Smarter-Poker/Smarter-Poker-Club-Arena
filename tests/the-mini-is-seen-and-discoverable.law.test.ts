@@ -581,7 +581,10 @@ describe('a club without a union owns its mini switch (Dan 2026-09-11)', () => {
     expect(panel).toMatch(
       /if \(!res\.ok\) \{[\s\S]{0,160}?toast\.error\(refusalText\(res\.reason\)/
     );
-    expect(read('src/pages/ClubSettingsPage.tsx')).toContain('<BBJMiniPanel clubId={clubId}');
+    expect(read('src/pages/ClubSettingsPage.tsx')).toContain('<BBJMiniPanel clubId={clubUUID}');
+    expect(read('src/pages/ClubSettingsPage.tsx')).toContain(
+      'resolvedClubIdentity.route === clubId'
+    );
   });
 
   it('a switched-off mini is still written down, through the reason the engine already records', () => {

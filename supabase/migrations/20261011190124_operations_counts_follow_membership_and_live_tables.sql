@@ -1,3 +1,4 @@
+-- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.ca_club_operations_overview(uuid)'::regprocedure) = 'f37429f441b5a31bceb13700d6b8d015' AND (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.ca_club_activity(uuid,integer)'::regprocedure) = 'c9d199dd6f2a4be40aa3846acabb5c98' AND (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_club_bomb_pot_report(uuid,integer)'::regprocedure) = 'db2daf3cd7367513cf219d75ea1377ba' AND (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_ca_bomb_pot_rollup_day(uuid,date)'::regprocedure) = 'f8b2e4eda1ee5c7d75243f1448566ea2' AND (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.ca_club_dashboard_stats(uuid)'::regprocedure) = '0d64c2d9d5f63a68418ce21c4442b8f0'
 -- Qualified club operations overview, activity and bomb-pot reporting repairs.
 -- Version reserved by scripts/new-migration.mjs; exact live preimages read 2026-10-11.
 -- Personnel readings follow the maintained roster. Financial sums stay unchanged.

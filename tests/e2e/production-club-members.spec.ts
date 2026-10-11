@@ -177,7 +177,10 @@ async function completeNextPageRead(
     .toBe(0);
   expect(probe.responseFailures).toEqual([]);
   expect(probe.requestFailureCount).toBe(0);
-  expect(probe.requestAbortCount).toBe(0);
+  expect(
+    probe.requestAbortCount,
+    `Roster request timeline: ${JSON.stringify(probe.timeline)}`
+  ).toBe(0);
 }
 
 async function attachMembersProbe(page: Page, probe: MembersProbe, testInfo: TestInfo) {
@@ -236,14 +239,19 @@ async function openMembers(page: Page, probe: MembersProbe): Promise<number> {
   await expect(page.getByText('Could Not Load The Roster.', { exact: true })).toHaveCount(0);
   expect(probe.responseFailures).toEqual([]);
   expect(probe.requestFailureCount).toBe(0);
-  expect(probe.requestAbortCount).toBe(0);
+  expect(
+    probe.requestAbortCount,
+    `Roster request timeline: ${JSON.stringify(probe.timeline)}`
+  ).toBe(0);
   expect(probe.pageErrorCount).toBe(0);
   expect(probe.criticalConsoleErrorCount).toBe(0);
   return Date.now() - startedAt;
 }
 
 test.describe('Production Shark Club Players', () => {
-  test.describe.configure({ mode: 'serial', timeout: 120_000 });
+  // Each case receives its own browser context and performs only reads. Keep
+  // one worker in the workflow, but report every case when a sibling fails.
+  test.describe.configure({ mode: 'default', timeout: 120_000 });
 
   test.afterEach(async ({ page }, testInfo) => {
     const probe = observedMembersPaths.get(page);
@@ -310,7 +318,10 @@ test.describe('Production Shark Club Players', () => {
     await expect(page).toHaveURL(/\/clubs\/shark-club\/members\/[0-9a-f-]{36}(?:[/?#]|$)/i);
     expect(probe.responseFailures).toEqual([]);
     expect(probe.requestFailureCount).toBe(0);
-    expect(probe.requestAbortCount).toBe(0);
+    expect(
+      probe.requestAbortCount,
+      `Roster request timeline: ${JSON.stringify(probe.timeline)}`
+    ).toBe(0);
     expect(probe.pageErrorCount).toBe(0);
     expect(probe.criticalConsoleErrorCount).toBe(0);
   });
@@ -443,7 +454,10 @@ test.describe('Production Shark Club Players', () => {
     if (originalViewport) await page.setViewportSize(originalViewport);
     expect(probe.responseFailures).toEqual([]);
     expect(probe.requestFailureCount).toBe(0);
-    expect(probe.requestAbortCount).toBe(0);
+    expect(
+      probe.requestAbortCount,
+      `Roster request timeline: ${JSON.stringify(probe.timeline)}`
+    ).toBe(0);
     expect(probe.pageErrorCount).toBe(0);
     expect(probe.criticalConsoleErrorCount).toBe(0);
   });
@@ -491,7 +505,10 @@ test.describe('Production Shark Club Players', () => {
     ).toEqual([]);
     expect(probe.responseFailures).toEqual([]);
     expect(probe.requestFailureCount).toBe(0);
-    expect(probe.requestAbortCount).toBe(0);
+    expect(
+      probe.requestAbortCount,
+      `Roster request timeline: ${JSON.stringify(probe.timeline)}`
+    ).toBe(0);
     expect(probe.pageErrorCount).toBe(0);
     expect(probe.criticalConsoleErrorCount).toBe(0);
   });
@@ -600,7 +617,10 @@ test.describe('Production Shark Club Players', () => {
     ).toEqual([]);
     expect(probe.responseFailures).toEqual([]);
     expect(probe.requestFailureCount).toBe(0);
-    expect(probe.requestAbortCount).toBe(0);
+    expect(
+      probe.requestAbortCount,
+      `Roster request timeline: ${JSON.stringify(probe.timeline)}`
+    ).toBe(0);
     expect(probe.pageErrorCount).toBe(0);
     expect(probe.criticalConsoleErrorCount).toBe(0);
   });

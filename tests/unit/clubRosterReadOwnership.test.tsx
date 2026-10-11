@@ -81,6 +81,141 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+it('lets a healthy current page finish before consuming a coalesced structural invalidation', async () => {
+  const finish: Array<() => void> = [];
+  f.page.mockImplementation((_club: string, query: { search: string; signal: AbortSignal }) => {
+    f.searches.push(query.search);
+    return new Promise((resolve, reject) => {
+      const aborted = () => {
+        f.aborts++;
+        reject(new DOMException('Aborted', 'AbortError'));
+      };
+      query.signal.addEventListener('abort', aborted, { once: true });
+      finish.push(() => {
+        query.signal.removeEventListener('abort', aborted);
+        resolve({ items: [], next_cursor: null, has_more: false, filtered_total: 0 });
+      });
+    });
+  });
+  render(
+    <MemoryRouter initialEntries={['/clubs/shark-club/members']}>
+      <Routes>
+        <Route path="/clubs/:clubId/members" element={<ClubMembersPage />} />
+      </Routes>
+    </MemoryRouter>
+  );
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  act(() => {
+    f.channel!.onPayload({ eventType: 'INSERT', new: {} });
+    f.channel!.onPayload({ eventType: 'INSERT', new: {} });
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1200);
+  });
+  expect(f.aborts).toBe(0);
+  expect(f.searches).toEqual(['']);
+  // Reverting an uncommitted search still belongs to the current healthy
+  // request; it must not turn the queued event into an immediate replacement.
+  const search = screen.getByRole('searchbox', { name: 'Search Club Members' });
+  fireEvent.change(search, { target: { value: 'A' } });
+  fireEvent.change(search, { target: { value: '' } });
+  expect(f.aborts).toBe(0);
+  expect(f.searches).toEqual(['']);
+  await act(async () => {
+    finish[0]();
+  });
+  expect(f.searches).toEqual(['', '']);
+  expect(f.summary).toHaveBeenCalledTimes(2);
+  await act(async () => {
+    finish[1]();
+  });
+  expect(f.aborts).toBe(0);
+  expect(f.searches).toEqual(['', '']);
+});
+
+it('cancels an obsolete query and consumes its queued structural invalidation in the new query', async () => {
+  const finish: Array<() => void> = [];
+  f.page.mockImplementation((_club: string, query: { search: string; signal: AbortSignal }) => {
+    f.searches.push(query.search);
+    return new Promise((resolve, reject) => {
+      const aborted = () => {
+        f.aborts++;
+        reject(new DOMException('Aborted', 'AbortError'));
+      };
+      query.signal.addEventListener('abort', aborted, { once: true });
+      finish.push(() => {
+        query.signal.removeEventListener('abort', aborted);
+        resolve({ items: [], next_cursor: null, has_more: false, filtered_total: 0 });
+      });
+    });
+  });
+  render(
+    <MemoryRouter initialEntries={['/clubs/shark-club/members']}>
+      <Routes>
+        <Route path="/clubs/:clubId/members" element={<ClubMembersPage />} />
+      </Routes>
+    </MemoryRouter>
+  );
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  act(() => {
+    f.channel!.onPayload({ eventType: 'INSERT', new: {} });
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1200);
+  });
+  fireEvent.change(screen.getByRole('searchbox', { name: 'Search Club Members' }), {
+    target: { value: 'A' },
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(260);
+  });
+  expect(f.aborts).toBe(1);
+  expect(f.searches).toEqual(['', 'A']);
+  await act(async () => {
+    finish[0]();
+    finish[1]();
+  });
+  expect(f.searches).toEqual(['', 'A']);
+  expect(f.summary).toHaveBeenCalledTimes(2);
+});
+
+it('does not automatically retry a failed page to consume a queued structural invalidation', async () => {
+  let fail!: (error: Error) => void;
+  f.page.mockImplementation(
+    () =>
+      new Promise((_resolve, reject) => {
+        fail = reject;
+      })
+  );
+  render(
+    <MemoryRouter initialEntries={['/clubs/shark-club/members']}>
+      <Routes>
+        <Route path="/clubs/:clubId/members" element={<ClubMembersPage />} />
+      </Routes>
+    </MemoryRouter>
+  );
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  act(() => {
+    f.channel!.onPayload({ eventType: 'INSERT', new: {} });
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1200);
+  });
+  await act(async () => {
+    fail(new Error('Read deadline expired'));
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5000);
+  });
+  expect(f.page).toHaveBeenCalledTimes(1);
+});
+
 it('does not start an obsolete structural read just before a pending search debounce completes', async () => {
   render(
     <MemoryRouter initialEntries={['/clubs/shark-club/members']}>

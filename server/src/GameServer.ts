@@ -1,3 +1,5 @@
+import { readPendingOperatorCashClose } from './services/operatorCashClose.js';
+import { type OperatorCommand, acknowledgeMaintenance } from './maintenance/OperatorCommands.js';
 import {
   findMixedF06Transfer,
   admitMixedF06Transfer,
@@ -3513,11 +3515,81 @@ export class GameServer {
     this.maintenanceBreak.replay(tableId);
   }
 
+  private async resumePendingOperatorCashCloses(generation: number): Promise<void> {
+    const { data, error } = await supabase
+      .from('ca_operator_table_closes')
+      .select('table_id')
+      .eq('status', 'pending');
+    if (error || !Array.isArray(data)) throw new Error('operator_cash_close_targets_unknown');
+    for (const row of data) {
+      if (!this.dealerAdmissionIsCurrent(generation)) return;
+      if (!(await this.ensureCashTableEngine(row.table_id)))
+        reportError(
+          new Error('operator_cash_close_dealer_unconfirmed'),
+          'GameServer.operator_cash_close_startup_refused',
+          { tableId: row.table_id }
+        );
+    }
+  }
+
+  async applyOperatorFloorCommand(command: OperatorCommand) {
+    // Persisted state was committed first; each original dealer reads its own
+    // hold and closes only after its settlement barrier. No second dealer.
+    const settled = await Promise.allSettled(
+      [...this.tableEngines.values()].map((engine) => engine.refreshOperatorFloor())
+    );
+    if (command.action === 'close_cash') {
+      const { data, error } = await supabase
+        .from('ca_operator_table_closes')
+        .select('table_id')
+        .eq('operation_id', command.id)
+        .eq('status', 'pending');
+      if (error || !Array.isArray(data)) throw new Error('operator_close_targets_unknown');
+      let unconfirmed = false;
+      for (const row of data) {
+        try {
+          if (!(await this.ensureCashTableEngine(row.table_id))) unconfirmed = true;
+        } catch (admissionError) {
+          unconfirmed = true;
+          reportError(admissionError, 'GameServer.operator_cash_close_admission_unknown', {
+            tableId: row.table_id,
+          });
+        }
+      }
+      if (unconfirmed) throw new Error('operator_cash_close_dealer_unconfirmed');
+    }
+    return {
+      observed: settled.filter((result) => result.status === 'fulfilled').length,
+      unknown: settled.filter((result) => result.status === 'rejected').length,
+      source: 'original_table_dealers',
+    };
+  }
+
+  async endOperatorMaintenance(command: OperatorCommand) {
+    const announcement = Date.parse(command.announced_at ?? '');
+    if (!Number.isFinite(announcement) || Date.now() < announcement + 420_000)
+      throw new Error('maintenance_original_deadline_not_reached');
+    const state = this.maintenanceBreak.snapshot();
+    if (state.active && state.breakEndsAt !== announcement + 420_000)
+      throw new Error('maintenance_owner_identity_changed');
+    if (state.active) await this.maintenanceBreak.end();
+    return this.maintenanceBreak.snapshot();
+  }
+
   requestMaintenanceRecoveryWindow(announcedAt: number) {
     return this.maintenanceBreak.requestRecoveryWindow(announcedAt);
   }
 
   private readonly maintenanceBreak = new MaintenanceBreak({
+    claimOperatorAnnouncement: async (announcedAt) => {
+      const { data, error } = await supabase.rpc('fn_ca_engine_operator_claim_hourly', {
+        p_announced_at: new Date(announcedAt).toISOString(),
+      });
+      if (error) throw new Error('operator_announcement_claim_unknown');
+      return data;
+    },
+    observeOperatorAnnouncement: (operationId, announcedAt) =>
+      acknowledgeMaintenance(operationId, announcedAt, 'active'),
     assertRecoveryWindowContract: bindToProcessRoot(async () => {
       const { data, error } = await supabase.rpc('fn_engine_recovery_window_contract');
       if (error || data !== 'engine-recovery-window-v1') {
@@ -4140,6 +4212,11 @@ export class GameServer {
       this.handOutboxListener.start();
 
       if (!this.publishDealerPrerequisitesReady(generation)) return;
+      // Finite startup recovery uses the original dealer, not a repair interval.
+      this.launchServerLifecycleJob(
+        this.resumePendingOperatorCashCloses(generation),
+        'GameServer.operator_cash_close_startup_unknown'
+      );
       this.leaderBootComplete = true;
       console.log('[GameServer] Running. All services started.');
     } else if (testTableId) {
@@ -10959,7 +11036,7 @@ export class GameServer {
    * Measured on production over 24 hours: all 17,636 Spins overran their own
    * reveal window (lag p50 838 ms, p90 2,020 ms, p99 6,018 ms), and every one
    * was a horse-filled board. The reveal is anchored to the last payment plus
-   * SPIN_REVEAL.LEAD_IN_MS (one second), and about 0.85 s of that is the start
+   * SPIN_REVEAL.LEAD_IN_MS (one second then, two since 2026-10-09), and about 0.85 s of that is the start
    * work itself. The rest was detection: the last seat is bought by this
    * lane's fill job, and nothing told the start path, so the board waited for
    * the next discoverSeatFirstStarts pass (one second of sleep plus about
@@ -11584,6 +11661,7 @@ export class GameServer {
       return 'not_wakeable';
     }
 
+    let closureOperationId: string | undefined;
     try {
       // Both discovery and direct wake use this path. A disabled arena must
       // not acquire a lease or construct an engine merely to refuse its start.
@@ -11591,10 +11669,17 @@ export class GameServer {
     } catch (policyError) {
       if (!this.dealerAdmissionIsCurrent(generation)) return 'not_wakeable';
       if (policyError instanceof DiamondCashPolicyClosedError && policyError.tableId === tableId) {
-        return 'policy_closed';
+        try {
+          closureOperationId = (await readPendingOperatorCashClose(tableId)) ?? undefined;
+        } catch (closeError) {
+          reportError(closeError, 'GameServer.cash_close_authority_unknown', { tableId });
+          return 'retryable_failure';
+        }
+        if (!closureOperationId) return 'policy_closed';
+      } else {
+        reportError(policyError, 'GameServer.cash_table_play_eligibility_unavailable', { tableId });
+        return 'retryable_failure';
       }
-      reportError(policyError, 'GameServer.cash_table_play_eligibility_unavailable', { tableId });
-      return 'retryable_failure';
     }
     if (!this.dealerAdmissionIsCurrent(generation)) return 'not_wakeable';
 
@@ -11686,6 +11771,7 @@ export class GameServer {
     }
 
     const engine = new ServerTableEngine(tableId, {
+      closureOperationId,
       scope: 'cash',
       verified: true,
       generation: lease.leaseGeneration,

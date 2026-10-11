@@ -1,3 +1,7 @@
+// Explicit live durable grant for synthetic membership/recovery fixtures.
+vi.mock('../services/PlayerSessionAccess.js', () => ({
+  playerSessionVerdict: vi.fn(async () => 'alive'),
+}));
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const readMember = vi.hoisted(() => vi.fn());
@@ -8,6 +12,7 @@ vi.mock('../services/supabase.js', () => ({
   },
   default: {},
 }));
+import { playerSessionVerdict } from '../services/PlayerSessionAccess.js';
 import { ChannelWebSocketServer } from './ChannelWebSocketServer.js';
 import { channelHub } from '../hub/ChannelHub.js';
 
@@ -18,8 +23,9 @@ class FakeWs {
   on(event: string, callback: (arg?: unknown) => void) {
     this.handlers.set(event, callback);
   }
-  send(raw: string) {
+  send(raw: string, complete?: (error?: Error) => void) {
     this.sent.push(JSON.parse(raw));
+    complete?.();
   }
   close() {
     this.readyState = 3;
@@ -52,13 +58,13 @@ const join = { type: 'JOIN_CLUB', clubId: club };
 const leave = { type: 'LEAVE_CLUB', clubId: club };
 const member = { data: { user_id: 'member' }, error: null };
 async function flush() {
-  await Promise.resolve();
-  await Promise.resolve();
+  await vi.advanceTimersByTimeAsync(0);
 }
 
 beforeEach(() => {
   vi.useFakeTimers();
   readMember.mockReset().mockResolvedValue(member);
+  vi.mocked(playerSessionVerdict).mockResolvedValue('alive');
   server = new ChannelWebSocketServer();
   sockets = [];
   user = 'club-recovery-' + ++serial;
@@ -79,6 +85,7 @@ describe('club subscriptions survive temporary reads without reviving retired in
     expect(channelHub.isInClub(user, club)).toBe(false);
     await vi.advanceTimersByTimeAsync(2500);
     expect(channelHub.isInClub(user, club)).toBe(true);
+    await flush();
     expect(readMember).toHaveBeenCalledTimes(2);
   });
   it('retries a rejected read but never grants unknown membership', async () => {
@@ -94,6 +101,7 @@ describe('club subscriptions survive temporary reads without reviving retired in
     socket().receive(join);
     await flush();
     await vi.advanceTimersByTimeAsync(120000);
+    await flush();
     expect(readMember).toHaveBeenCalledOnce();
     expect(channelHub.isInClub(user, club)).toBe(false);
   });
@@ -104,6 +112,7 @@ describe('club subscriptions survive temporary reads without reviving retired in
     ws.receive(join);
     ws.receive(join);
     ws.receive(join);
+    await flush();
     expect(readMember).toHaveBeenCalledOnce();
     read.resolve(member);
     await flush();
@@ -138,6 +147,7 @@ describe('club subscriptions survive temporary reads without reviving retired in
     if (action === 'leave') ws.receive(leave);
     else ws.close();
     await vi.advanceTimersByTimeAsync(120000);
+    await flush();
     expect(readMember).toHaveBeenCalledOnce();
   });
   it('retains only the latest presence while membership is pending', async () => {
@@ -181,10 +191,13 @@ describe('club subscriptions survive temporary reads without reviving retired in
     await vi.advanceTimersByTimeAsync(900);
     ws.receive(join);
     ws.receive(join);
+    await flush();
     expect(readMember).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(100);
+    await flush();
     expect(readMember).toHaveBeenCalledTimes(2);
     await vi.advanceTimersByTimeAsync(119000);
+    await flush();
     expect(readMember).toHaveBeenCalledTimes(8);
     expect(channelHub.isInClub(user, club)).toBe(false);
   });
@@ -198,9 +211,11 @@ describe('club subscriptions survive temporary reads without reviving retired in
     readMember.mockResolvedValue({ data: null, error: null });
     ws.receive(join);
     await flush();
+    await flush();
     expect(readMember).toHaveBeenCalledTimes(2);
     expect(channelHub.isInClub(user, club)).toBe(false);
     await vi.advanceTimersByTimeAsync(60000);
+    await flush();
     expect(readMember).toHaveBeenCalledTimes(2);
   });
 
@@ -209,6 +224,7 @@ describe('club subscriptions survive temporary reads without reviving retired in
     readMember.mockReturnValueOnce(oldRead.promise);
     const ws = socket();
     ws.receive(join);
+    await flush(); // The old membership read has actually begun.
     ws.receive(leave);
     ws.receive(join);
     await flush();
@@ -218,6 +234,7 @@ describe('club subscriptions survive temporary reads without reviving retired in
     ws.receive(join);
     await flush();
     expect(channelHub.isInClub(user, club)).toBe(true);
+    await flush();
     expect(readMember).toHaveBeenCalledTimes(2);
   });
 
@@ -228,12 +245,14 @@ describe('club subscriptions survive temporary reads without reviving retired in
       vi.setSystemTime(Date.now() + 1001);
       ws.receive({ type: 'JOIN_CLUB', clubId: pendingClub(i) });
     }
+    await flush();
     expect(readMember).toHaveBeenCalledTimes(64);
     expect(ws.sent).toContainEqual(
       expect.objectContaining({ type: 'CHANNEL_ERROR', code: 'CLUB_JOIN_LIMIT' })
     );
     ws.receive({ type: 'LEAVE_CLUB', clubId: pendingClub(0) });
     ws.receive({ type: 'JOIN_CLUB', clubId: pendingClub(64) });
+    await flush();
     expect(readMember).toHaveBeenCalledTimes(65);
   });
 
@@ -241,6 +260,7 @@ describe('club subscriptions survive temporary reads without reviving retired in
     const ws = socket();
     ws.receive({ type: 'JOIN_CLUB', clubId: 'not-a-uuid' });
     await vi.advanceTimersByTimeAsync(120000);
+    await flush();
     expect(readMember).not.toHaveBeenCalled();
     expect(ws.sent).toContainEqual(
       expect.objectContaining({ type: 'CHANNEL_ERROR', code: 'INVALID_CLUB_ID' })
@@ -276,4 +296,51 @@ describe('tournament presentation on the authenticated channel', () => {
     expect(replacement.sent.at(-1).event.payload).toEqual({ handForHand: null });
     expect(observe).toHaveBeenCalledTimes(3);
   });
+});
+
+describe('delayed channel private authority', () => {
+  it.each(['revoked', 'unknown'] as const)(
+    'does not admit membership after a delayed %s session',
+    async (verdict) => {
+      const read = deferred();
+      readMember.mockReturnValue(read.promise);
+      const ws = socket();
+      ws.receive(join);
+      await flush();
+      vi.mocked(playerSessionVerdict).mockResolvedValue(verdict);
+      read.resolve(member);
+      await flush();
+      expect(channelHub.clubSubscriberCount(club)).toBe(0);
+      expect(ws.readyState).toBe(verdict === 'revoked' ? 3 : 1);
+    }
+  );
+  it.each(['revoked', 'unknown'] as const)(
+    'refuses a financial push under current %s authority',
+    async (verdict) => {
+      const ws = socket();
+      vi.mocked(playerSessionVerdict).mockResolvedValue(verdict);
+      channelHub.sendToUser(user, {
+        type: 'FINANCIAL_UPDATE',
+        userId: user,
+        walletType: 'PLAYER',
+        available: 50,
+        total: 50,
+      });
+      await flush();
+      expect(ws.sent.some((frame) => frame.type === 'FINANCIAL_UPDATE')).toBe(false);
+      expect(ws.readyState).toBe(verdict === 'revoked' ? 3 : 1);
+      if (verdict === 'unknown') {
+        vi.mocked(playerSessionVerdict).mockResolvedValue('alive');
+        channelHub.sendToUser(user, {
+          type: 'FINANCIAL_UPDATE',
+          userId: user,
+          walletType: 'PLAYER',
+          available: 50,
+          total: 50,
+        });
+        await flush();
+        expect(ws.sent.filter((frame) => frame.type === 'FINANCIAL_UPDATE')).toHaveLength(1);
+      }
+    }
+  );
 });

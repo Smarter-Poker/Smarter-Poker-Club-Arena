@@ -1,3 +1,9 @@
+import {
+  choiceNextOdds,
+  choiceLossGuarantee,
+  roadSurvivesV5,
+} from '../utils/choiceProgressiveGuarantee';
+import GameLifetimeAverages from '../components/games/GameLifetimeAverages';
 import { useLiveBonusGuard } from '../hooks/useLiveBonusGuard';
 import { pendingBonus, PriorBonusPending } from '../services/diamondBonusRecovery';
 import { useBonusBudget } from '../hooks/useBonusBudget';
@@ -709,12 +715,19 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const roadEnd =
     game === 'crossing' && round?.proof && ladder
       ? ladder.filter((target) =>
-          roadSurvives(
-            BigInt(round.proof!.road_roll),
-            target,
-            round.bet_chips,
-            round.minimum_payout_chips ?? 0
-          )
+          round.payout_version === 5
+            ? roadSurvivesV5(
+                BigInt(round.proof!.road_roll),
+                ladder.map((multiplier) => (round.bet_chips * multiplier) / 100),
+                ladder.indexOf(target) + 1,
+                round.minimum_payout_chips ?? 0
+              )
+            : roadSurvives(
+                BigInt(round.proof!.road_roll),
+                target,
+                round.bet_chips,
+                round.minimum_payout_chips ?? 0
+              )
         ).length
       : null;
   const roadMultiplier = ladder && roadEnd !== null && roadEnd > 0 ? ladder[roadEnd - 1] : 0;
@@ -852,12 +865,32 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   // on screen until its receipt has taken the player back to the wheel.
   const boardRound = viewOpen ? view : sceneRound;
   const guaranteedChips = boardRound
-    ? (boardRound.minimum_payout_chips ?? 0)
+    ? boardRound.payout_version === 5
+      ? choiceLossGuarantee(
+          boardRound.prizes,
+          boardRound.picked.length - (boardRound.status === 'lost' ? 1 : 0),
+          boardRound.minimum_payout_chips ?? 0
+        )
+      : (boardRound.minimum_payout_chips ?? 0)
     : earned.quote
       ? earned.quote.minimumPayoutChips
       : earned.ready && !earned.award
         ? standardFloor
         : null;
+  const nextOdds =
+    (!view || viewOpen) && prizes.length
+      ? choiceNextOdds(
+          game,
+          picks,
+          prizes,
+          boardRound?.minimum_payout_chips ??
+            earned.quote?.minimumPayoutChips ??
+            standardFloor ??
+            0,
+          boardRound?.payout_version ?? 5,
+          Number(boardRound?.mode ?? mode)
+        )
+      : null;
   const guaranteedSuper = boardRound ? upgraded : earned.quote?.guarantee === 'super';
   const promise = earned.quote ? guaranteeCopy(game, earned.quote) : null;
   // The finished round's receipt is on screen, taking the player back to the
@@ -895,7 +928,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           .join(' ')
       : null;
   return (
-    <div className={`${styles.page} ${styles.fullscreenPage}`}>
+    <div className={`${styles.page} ${styles.fullscreenPage} ${styles.choicePage}`}>
       <button
         type="button"
         className={styles.back}
@@ -1069,6 +1102,18 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
             sceneRound && sceneRound.status !== 'open' ? sceneRound.payout_chips : undefined
           }
         />
+        <div className={styles.choiceRisk}>
+          {nextOdds && (
+            <p className="sc-copy">
+              {game === 'mines'
+                ? `Next Tile: ${nextOdds.loss.toFixed(1)}% Mine · ${nextOdds.safe.toFixed(1)}% Diamond`
+                : `Next Street: ${nextOdds.safe.toFixed(1)}% Safe Crossing · ${nextOdds.loss.toFixed(1)}% Car Hit`}
+            </p>
+          )}
+          {guaranteedChips !== null && (
+            <p className="sc-copy">A Loss Pays At Least {gameChips(guaranteedChips)} Chips.</p>
+          )}
+        </div>
         <div className={styles.readout} aria-live="polite" aria-atomic="true">
           {crossingSpoken ? <p className="sr-only">{crossingSpoken}</p> : null}
           {error ? (
@@ -1131,6 +1176,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           )}
         </div>
       </GameConsole>
+      <GameLifetimeAverages clubId={uuid} revision={round ? `${round.id}:${round.status}` : null} />
       <GamePanel
         title="Your Game"
         pill="Rules"
@@ -1151,7 +1197,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         <p className="sc-copy">
           One Setting For Every Round. Nobody Picks A Difficulty; It Is Built Into The Payout. Any
           Loss, And Any Round You Do Not Cash Out, Pays At Least The Guaranteed Minimum Shown Before
-          You Start.
+          You Start. New Rounds Keep At Least Half The Last Safe Prize.
         </p>
         <p className="sc-copy">
           Your Round Is Saved If You Leave. Reaching The Round Limit Books Your Win Automatically.

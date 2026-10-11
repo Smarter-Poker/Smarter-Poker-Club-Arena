@@ -1,0 +1,7 @@
+{
+  "preimage": "3e35a7d66eda27cb40fc9c8c6db269f5",
+  "postimage": "a5f6ef6dc123d31aa6586bffe9452ba8",
+  "old": "'atomic_cancel_tournament','fn_award_satellite_seat'",
+  "new": "'atomic_cancel_tournament','fn_ca_operator_cancel_tournament','fn_award_satellite_seat'",
+  "migration": "supabase/migrations/20261010060243_the_operator_cancel_wrapper_is_a_reviewed_rare_authority.sql"
+}

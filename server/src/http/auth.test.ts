@@ -3,6 +3,10 @@ import type { IncomingMessage } from 'http';
 
 // Mock the Supabase client BEFORE importing the module under test.
 const getUser = vi.fn();
+const sessionVerdict = vi.fn();
+vi.mock('../services/PlayerSessionAccess.js', () => ({
+  playerSessionVerdict: (...args: unknown[]) => sessionVerdict(...args),
+}));
 vi.mock('../services/supabase.js', () => ({
   supabase: { auth: { getUser: (t: string) => getUser(t) } },
 }));
@@ -24,6 +28,7 @@ function forgedToken(payload: Record<string, unknown>): string {
 describe('authenticateRequest - signature verification', () => {
   beforeEach(() => {
     getUser.mockReset();
+    sessionVerdict.mockReset().mockResolvedValue('alive');
   });
 
   it('rejects a forged token even with a valid-looking sub/exp (signature never checked before)', async () => {
@@ -70,6 +75,24 @@ describe('authenticateRequest - signature verification', () => {
     expect(r2).toEqual({ userId: 'burst-user' });
     expect(r3).toEqual({ userId: 'burst-user' });
     expect(getUser).toHaveBeenCalledTimes(1);
+  });
+
+  it('a cached signature never bypasses a newly revoked session', async () => {
+    getUser.mockResolvedValue({ data: { user: { id: 'revoked-user' } }, error: null });
+    const token = forgedToken({ sub: 'revoked-user', exp: 9_999_999_999 });
+    expect(await authenticateRequest(req(token))).toEqual({ userId: 'revoked-user' });
+    sessionVerdict.mockResolvedValue('revoked');
+    expect(await authenticateRequest(req(token))).toBeNull();
+    expect(getUser).toHaveBeenCalledTimes(1);
+  });
+
+  it('an unavailable session check refuses an action without caching a denial', async () => {
+    getUser.mockResolvedValue({ data: { user: { id: 'uncertain-user' } }, error: null });
+    const token = forgedToken({ sub: 'uncertain-user', exp: 9_999_999_999 });
+    sessionVerdict.mockResolvedValue('unknown');
+    expect(await authenticateRequest(req(token))).toBeNull();
+    sessionVerdict.mockResolvedValue('alive');
+    expect(await authenticateRequest(req(token))).toEqual({ userId: 'uncertain-user' });
   });
 
   it('returns null when no Authorization header is present', async () => {

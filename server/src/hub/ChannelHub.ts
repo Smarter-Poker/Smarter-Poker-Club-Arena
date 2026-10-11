@@ -114,6 +114,7 @@ export class ChannelHub {
   // permanently. A user is now allowed several sockets; subscriptions are
   // torn down only when the LAST one closes.
   private connections: Map<string, Set<WebSocket>> = new Map();
+  private privateSenders = new WeakMap<WebSocket, (data: string) => void>();
 
   /** Cap per user — bounds a leak or a hostile client, generous for real use. */
   private static readonly MAX_SOCKETS_PER_USER = 8;
@@ -153,7 +154,8 @@ export class ChannelHub {
    * Register a new authenticated connection. A user may hold several live
    * sockets (tabs/devices); beyond MAX_SOCKETS_PER_USER the OLDEST is closed.
    */
-  addConnection(userId: string, ws: WebSocket): void {
+  addConnection(userId: string, ws: WebSocket, sendPrivate?: (data: string) => void): void {
+    if (sendPrivate) this.privateSenders.set(ws, sendPrivate);
     let set = this.connections.get(userId);
     if (!set) {
       set = new Set();
@@ -188,6 +190,7 @@ export class ChannelHub {
   removeConnection(userId: string, closingWs?: WebSocket): void {
     const set = this.connections.get(userId);
     if (closingWs) {
+      this.privateSenders.delete(closingWs);
       // Late close of a socket that is no longer registered (already evicted,
       // or torn down by a previous full removal) — nothing to do. This is the
       // same reconnect-race guard as before, generalised to the multi-socket
@@ -422,7 +425,10 @@ export class ChannelHub {
   sendWs(ws: WebSocket, msg: OutboundMessage): void {
     if (ws.readyState !== 1 /* ws.OPEN */) return;
     try {
-      ws.send(JSON.stringify(msg));
+      const privateSend = this.privateSenders.get(ws);
+      if (privateSend && (msg.type === 'FINANCIAL_UPDATE' || msg.type === 'HAND_REPLAY_EVENT'))
+        privateSend(JSON.stringify(msg));
+      else ws.send(JSON.stringify(msg));
     } catch {
       /* swallow — transport error handled by ws.on('error') */
     }
@@ -452,7 +458,10 @@ export class ChannelHub {
         if (ws.readyState !== 1 /* ws.OPEN */) continue;
         try {
           data ??= JSON.stringify(msg);
-          ws.send(data);
+          const privateSend = this.privateSenders.get(ws);
+          if (privateSend && (msg.type === 'FINANCIAL_UPDATE' || msg.type === 'HAND_REPLAY_EVENT'))
+            privateSend(data);
+          else ws.send(data);
         } catch {
           /* swallow - transport error handled by ws.on('error') */
         }

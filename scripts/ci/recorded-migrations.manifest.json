@@ -627,6 +627,94 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
       "refusedBy": [],
       "liveVerdict": "Reconciliation of 2026-10-07. Installed with no file in this repository or on any remote branch of either repository. md5 read live the same day from public.fn_ca_migration_text(20261007002846) equals the file md5 (1697 bytes). The only file-text finding was the 60-character name rule, which applies to new work; the ledger row already exists under this 61-character name, so the version ties the row to this file."
+    },
+    {
+      "version": "20261010012101",
+      "name": "the_unpaid_tournament_alarm_reads_the_diamond_book",
+      "file": "supabase/migrations/20261010012101_the_unpaid_tournament_alarm_reads_the_diamond_book.sql",
+      "md5": "7e4e9ea7c1c18c04bf9b1fca1505aec1",
+      "appliedToProductionAt": "2026-10-10T01:21:01Z",
+      "recoveredOn": "2026-10-10",
+      "recoveredFrom": "The applying session's own text, which is what public.fn_ca_migration_text(version).body returns: octet_length 9790 and md5 compared equal before commit, with no trailing newline appended. Applied through the Supabase MCP on the owner's explicit approval of 2026-10-09 (\"Yes, apply all 3\"), then recorded here in the same session.",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": ["check-definer-authorization: anon rule (fn_tournament_metrics)"],
+      "liveVerdict": "Production read 2026-10-10 01:34 UTC. The anon finding is not true of production: the file is CREATE OR REPLACE of an existing function, which keeps its ACL, and fn_tournament_metrics(integer,integer,integer) reads live as {postgres=X/postgres,service_role=X/postgres}; has_function_privilege('anon',...) and ('authenticated',...) are both false, and fn_definer_exposure_audit() does not list it. It is engine telemetry read by the service-role TournamentMetrics collector. Live after apply: unpaid_completed is 0 for 6 hours and for 168 hours, and the 49 TournamentCompletedUnpaid inbox rows read verified_fixed."
+    },
+    {
+      "version": "20261010012144",
+      "name": "a_satellite_completes_only_with_its_settlement_receipt",
+      "file": "supabase/migrations/20261010012144_a_satellite_completes_only_with_its_settlement_receipt.sql",
+      "md5": "e190e8d82b31858df7abc01bcc46b69b",
+      "appliedToProductionAt": "2026-10-10T01:21:44Z",
+      "recoveredOn": "2026-10-10",
+      "recoveredFrom": "The applying session's own text, which is what public.fn_ca_migration_text(version).body returns: octet_length 6859 and md5 compared equal before commit, with no trailing newline appended. Applied through the Supabase MCP on the owner's explicit approval of 2026-10-09 (\"Yes, apply all 3\"), then recorded here in the same session.",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": [
+        "check-money-trigger-declared: satellite_completed_requires_settlement_receipt on public.tournaments, declared in the next migration instead of this one"
+      ],
+      "liveVerdict": "Production read 2026-10-10 01:34 UTC. The money-trigger finding WAS true when this ran: the trigger went live undeclared at 01:21:44 UTC. It was closed at 01:26:36 UTC by 20261010012636 the_satellite_lock_is_a_declared_money_trigger: ca_declared_money_triggers now holds ('tournaments','satellite_completed_requires_settlement_receipt') and fn_undeclared_money_triggers() no longer lists it (its one remaining row, club_wallets.poker_arena_no_chip_rake, predates this change and is not part of it). UndeclaredTriggerOnAMoneyTable was already firing for that older row, so the five minutes added no new page. The trigger function's ACL is {postgres=X/postgres}: anon, authenticated and service_role cannot execute it, and fn_definer_exposure_audit() does not list it. The trigger reads enabled, DEFERRABLE INITIALLY DEFERRED; non_satellite_completed_requires_terminal_receipt reads enabled; aaa_guard_atomic_satellite_completion stays disabled."
+    },
+    {
+      "version": "20261010012636",
+      "name": "the_satellite_lock_is_a_declared_money_trigger",
+      "file": "supabase/migrations/20261010012636_the_satellite_lock_is_a_declared_money_trigger.sql",
+      "md5": "5e54b8d8809fc24b8c339b8af997c432",
+      "appliedToProductionAt": "2026-10-10T01:26:36Z",
+      "recoveredOn": "2026-10-10",
+      "recoveredFrom": "Decoded from production's own base64 of public.fn_ca_migration_text(version).body in the shell, never pasted through a JSON tool boundary: octet_length 1560 and md5 compared equal before commit, with no trailing newline appended.",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": [],
+      "liveVerdict": "Production read 2026-10-10 01:34 UTC. Data only: one ca_declared_money_triggers row, declared_at 2026-10-10 01:26:36 UTC, and its proof that fn_undeclared_money_triggers() no longer lists the trigger. No file-text guard raised a finding."
+    },
+    {
+      "version": "20261010051104",
+      "name": "the_diamond_rake_guard_is_a_declared_money_trigger",
+      "file": "supabase/migrations/20261010051104_the_diamond_rake_guard_is_a_declared_money_trigger.sql",
+      "md5": "147919c89400eeff4e7a321b5f6c2f91",
+      "appliedToProductionAt": "2026-10-10T05:11:04Z",
+      "recoveredOn": "2026-10-10",
+      "recoveredFrom": "Decoded in the shell from production's own base64 of public.fn_ca_migration_text(version).body (base64 is ASCII, so no tool boundary can alter a byte of it): octet_length 1699 and md5 compared equal before commit, with no trailing newline appended.",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": [],
+      "liveVerdict": "Production read 2026-10-10 05:11 UTC. Data only: one ca_declared_money_triggers row (club_wallets, poker_arena_no_chip_rake), declared_at 2026-10-10 05:11:04 UTC, and its proof that fn_undeclared_money_triggers() then lists nothing. The trigger it declares is unchanged: BEFORE INSERT OR UPDATE on club_wallets, rake_records, rake_attributions and rake_distribution_legs, enabled, executing fn_ca_reject_diamond_chip_rake_row(). No file-text guard raised a finding."
+    },
+    {
+      "version": "20261010191226",
+      "name": "return_existing_deleted_shark_club_cash_custody_to_the_main_bank",
+      "file": "supabase/migrations/20261010191226_return_existing_deleted_shark_club_cash_custody_to_the_main_bank.sql",
+      "md5": "effe55c9c476f62dafe0bb613bc7e067",
+      "appliedToProductionAt": "2026-10-10T19:12:26Z",
+      "recoveredOn": "2026-10-10",
+      "recoveredFrom": "The applying session original immutable SQL bytes. Read-only schema_migrations statements joined with newline have the exact same md5 as this file, including its existing trailing newline, verified 2026-10-10 19:33 UTC. No SQL edits, name changes, ledger rewrites or replay.",
+      "refusedBy": [
+        "check-new-migration-version-collisions: installed name exceeds the new-file 60-character limit"
+      ],
+      "liveVerdict": "Already installed under the exact version and full original name; production statements md5 equals file md5. Exact-board settlement d51aa23ba8af0e9143c38c86bfac3627 returned 8,940,782.63 to Shark Club main bank, ledger/receipt/bank totals identical, repeat zero, resolved financial alert retains full account/source board. This data migration creates no function or trigger; no browser grant or recurring writer. All ordinary migration guards already passed. Preserving the installed identity through the existing verified recording path."
+    },
+    {
+      "version": "20261010192048",
+      "name": "return_remaining_deleted_account_club_cash_custody_to_jaqk_main_bank",
+      "file": "supabase/migrations/20261010192048_return_remaining_deleted_account_club_cash_custody_to_jaqk_main_bank.sql",
+      "md5": "a172a616495c51ac0ca4fe9b20ea6f7a",
+      "appliedToProductionAt": "2026-10-10T19:20:48Z",
+      "recoveredOn": "2026-10-10",
+      "recoveredFrom": "The applying session original immutable SQL bytes. Read-only schema_migrations statements joined with newline have the exact same md5 as this file, including its existing trailing newline, verified 2026-10-10 19:33 UTC. No SQL edits, name changes, ledger rewrites or replay.",
+      "refusedBy": [
+        "check-new-migration-version-collisions: installed name exceeds the new-file 60-character limit"
+      ],
+      "liveVerdict": "Already installed under the exact version and full original name; production statements md5 equals file md5. Exact-board settlement 28969489aa8a9434428f74c32058de3b returned 4,536,780.11 to JAQK main bank, ledger/receipt/bank totals identical, repeat zero, resolved financial alert retains full account/source board. This data migration creates no function or trigger; no browser grant or recurring writer. All ordinary migration guards already passed. Preserving the installed identity through the existing verified recording path."
+    },
+    {
+      "version": "20261010061706",
+      "name": "the_paid_entry_restriction_guard_is_a_declared_money_trigger",
+      "file": "supabase/migrations/20261010061706_the_paid_entry_restriction_guard_is_a_declared_money_trigger.sql",
+      "md5": "f7e1dfbfdbe3037d015a73255f58228d",
+      "appliedToProductionAt": "2026-10-10T06:17:06Z",
+      "recoveredOn": "2026-10-11",
+      "recoveredFrom": "public.fn_ca_migration_text(version), UTF8 base64, byte for byte",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": [],
+      "liveVerdict": "Read live 2026-10-11T14:35:10Z: tournament_players.zz_restriction_tourney_paid_guard is declared; fn_undeclared_money_triggers() returns no rows. Existing data-only declaration, no money moved and no trigger created. Production body MD5 f7e1dfbfdbe3037d015a73255f58228d, 1882 bytes. Recording only; do not replay."
     }
   ]
 }

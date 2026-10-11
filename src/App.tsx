@@ -22,6 +22,7 @@ import TournamentRankingHost from './components/tournament/TournamentRankingHost
 import TournamentAutoSeat from './components/tournament/TournamentAutoSeat';
 import { MEDIA_BASE } from './utils/mediaBase';
 import { supabase } from './lib/supabase';
+import { installPlayerSessionRevocationEvents } from './lib/sessionRevoked';
 import { realtimeChannelService } from './services/RealtimeChannelService';
 import { OfflineQueueService } from './services/OfflineQueueService';
 import GlobalWaitlistListener from './components/common/GlobalWaitlistListener';
@@ -393,6 +394,7 @@ function FullApp() {
      run a days-old bundle while production serves the fix. Applies the update
      only away from a table and only with the tab visible; see the hook. */
   useShellUpdateGate();
+  useEffect(() => installPlayerSessionRevocationEvents(), []);
   /* DIAMOND ARENA IS LIGHT, AND ONLY DIAMOND ARENA (Dan 2026-09-11). The
      scheme is published on `<html>` from HERE because this is the one place
      that already holds both inputs the answer needs, and it holds them for

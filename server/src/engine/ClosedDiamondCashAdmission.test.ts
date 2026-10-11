@@ -147,6 +147,10 @@ async function settleMicrotasks() {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  vi.spyOn(supabase, 'rpc').mockResolvedValue({
+    data: { hold: null, close: null },
+    error: null,
+  } as any);
   engines.created.length = 0;
   engines.start.mockReset();
   engines.stop.mockReset();
@@ -163,7 +167,7 @@ beforeEach(() => {
   } as any);
   engines.start.mockImplementation(async (engine: any) => {
     try {
-      await loadTable(engine.tableId);
+      await loadTable(engine.tableId, engine.authority?.closureOperationId);
       engine.running = true;
       engine.resolveReady(true);
     } catch (error) {
@@ -426,4 +430,123 @@ describe('closed Diamond cash admission', () => {
     );
     expect(server.directTableRecoveryTimers.size).toBe(1);
   });
+});
+
+describe('durable operator closure uses the original nonplaying cash dealer', () => {
+  const OPERATION = '5344da38-f244-42e8-a5b8-94e1f8e8f1e1';
+  function closeReceipt(operationId = OPERATION) {
+    return {
+      data: {
+        hold: null,
+        close: { table_id: TABLE, status: 'pending', operation_id: operationId },
+      },
+      error: null,
+    };
+  }
+  it('admits a disabled Diamond table only for its independently reverified pending closure', async () => {
+    database(row, () => ({ data: { club_id: ARENA, cash_games_enabled: false }, error: null }));
+    vi.mocked(supabase.rpc).mockResolvedValue(closeReceipt() as any);
+    const server = bareServer();
+    await expect(server.ensureCashTableEngineAdmission(TABLE)).resolves.toBe('ready');
+    expect(leases.claimTableLease).toHaveBeenCalledOnce();
+    expect(engines.created).toHaveLength(1);
+    expect(engines.created[0].authority).toMatchObject({
+      scope: 'cash',
+      verified: true,
+      closureOperationId: OPERATION,
+    });
+    expect(supabase.rpc).toHaveBeenCalledTimes(2);
+  });
+  it('a changed durable identity refuses startup and releases the original lease', async () => {
+    database(row, () => ({ data: { club_id: ARENA, cash_games_enabled: false }, error: null }));
+    vi.mocked(supabase.rpc)
+      .mockResolvedValueOnce(closeReceipt() as any)
+      .mockResolvedValueOnce({ data: { hold: null, close: null }, error: null } as any);
+    const server = bareServer();
+    await expect(server.ensureCashTableEngineAdmission(TABLE)).resolves.toBe('retryable_failure');
+    await settleMicrotasks();
+    expect(engines.created).toHaveLength(1);
+    expect(engines.created[0].running).toBe(false);
+    expect(leases.releaseTables).toHaveBeenCalled();
+  });
+  it('unknown closure authority cannot acquire a lease', async () => {
+    database(row, () => ({ data: { club_id: ARENA, cash_games_enabled: false }, error: null }));
+    vi.mocked(supabase.rpc).mockResolvedValue({ data: null, error: { message: 'offline' } } as any);
+    await expect(bareServer().ensureCashTableEngineAdmission(TABLE)).resolves.toBe(
+      'retryable_failure'
+    );
+    expect(leases.claimTableLease).not.toHaveBeenCalled();
+  });
+});
+
+it('closure-only admission preserves the retained-hand hold before lookup or lease', async () => {
+  const server = bareServer();
+  server.retainedHandHolds = new Map([[TABLE, { code: 'held', until: Date.now() + 60000 }]]);
+  const from = database(row, () => ({
+    data: { club_id: ARENA, cash_games_enabled: false },
+    error: null,
+  }));
+  await expect(server.ensureCashTableEngineAdmission(TABLE)).resolves.toBe('retained_hand_refused');
+  expect(from).not.toHaveBeenCalled();
+  expect(leases.claimTableLease).not.toHaveBeenCalled();
+});
+it('the floor command reports unconfirmed admission instead of successful zero observations', async () => {
+  const server = bareServer();
+  server.ensureCashTableEngine = vi.fn(async () => false);
+  const chain: any = { select: vi.fn(), eq: vi.fn() };
+  chain.select.mockReturnValue(chain);
+  chain.eq
+    .mockReturnValueOnce(chain)
+    .mockResolvedValueOnce({ data: [{ table_id: TABLE }], error: null });
+  vi.spyOn(supabase, 'from').mockReturnValue(chain);
+  await expect(
+    server.applyOperatorFloorCommand({ id: TABLE, action: 'close_cash' })
+  ).rejects.toThrow('operator_cash_close_dealer_unconfirmed');
+  expect(server.ensureCashTableEngine).toHaveBeenCalledOnce();
+  expect(server.ensureCashTableEngine).toHaveBeenCalledWith(TABLE);
+});
+it('the finite startup owner resumes persisted targets and stops admission after shutdown', async () => {
+  const server = bareServer();
+  server.ensureCashTableEngine = vi.fn(async () => {
+    server.running = false;
+    return true;
+  });
+  const chain: any = { select: vi.fn(), eq: vi.fn() };
+  chain.select.mockReturnValue(chain);
+  chain.eq.mockResolvedValue({ data: [{ table_id: TABLE }, { table_id: ARENA }], error: null });
+  vi.spyOn(supabase, 'from').mockReturnValue(chain);
+  await server.resumePendingOperatorCashCloses(7);
+  expect(server.ensureCashTableEngine).toHaveBeenCalledOnce();
+  expect(server.ensureCashTableEngine).toHaveBeenCalledWith(TABLE);
+});
+
+it('one refused cash target does not strand later targets in the same accepted operation', async () => {
+  const server = bareServer();
+  server.ensureCashTableEngine = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+  const chain: any = { select: vi.fn(), eq: vi.fn() };
+  chain.select.mockReturnValue(chain);
+  chain.eq
+    .mockReturnValueOnce(chain)
+    .mockResolvedValueOnce({ data: [{ table_id: TABLE }, { table_id: ARENA }], error: null });
+  vi.spyOn(supabase, 'from').mockReturnValue(chain);
+  await expect(
+    server.applyOperatorFloorCommand({ id: TABLE, action: 'close_cash' })
+  ).rejects.toThrow('operator_cash_close_dealer_unconfirmed');
+  expect(server.ensureCashTableEngine.mock.calls).toEqual([[TABLE], [ARENA]]);
+});
+
+it.each([
+  { is_deleted: true },
+  { game_type: 'other' },
+  { tournament_id: GENERATION },
+  { status: 'closed' },
+])('independent closure startup refuses an invalid table identity %j', async (changed) => {
+  database({ ...row, ...changed }, () => ({
+    data: { club_id: ARENA, cash_games_enabled: false },
+    error: null,
+  }));
+  await expect(loadTable(TABLE, GENERATION)).rejects.toThrow(
+    'operator_cash_close_authority_changed'
+  );
+  expect(supabase.rpc).not.toHaveBeenCalled();
 });

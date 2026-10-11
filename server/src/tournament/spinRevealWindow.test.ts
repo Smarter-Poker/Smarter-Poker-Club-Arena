@@ -94,7 +94,7 @@ describe('the regression itself - the old hold-based form is not equivalent', ()
 
   it('the two agree once the start is genuinely late', () => {
     const anchor = 1_000_000;
-    for (const elapsed of [1001, 5_000, 13_700, 60_000]) {
+    for (const elapsed of [SPIN_REVEAL.LEAD_IN_MS + 1, 5_000, 13_700, 60_000]) {
       const now = anchor + elapsed;
       expect(oldFormWouldReanchor(now, anchor)).toBe(true);
       expect(spinRevealWouldSkipABeat({ now, revealAt: revealAtFor(anchor) })).toBe(true);

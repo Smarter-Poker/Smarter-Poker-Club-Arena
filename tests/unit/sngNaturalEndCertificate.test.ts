@@ -389,7 +389,8 @@ describe('the certificate spec wires these classifiers without a retry-to-green'
     expect(tournament).toContain(
       'if (!(error instanceof NaturalCompletionDuringObservation)) throw error;'
     );
-    expect(tournament).toContain('remainingMs: observationDeadline - Date.now()');
+    expect(tournament).toContain('remainingMs: caseStartedAt + testInfo.timeout - Date.now()');
+    expect(tournament).toContain('observationDeadline: caseStartedAt + testInfo.timeout');
     expect(tournament).toContain('deadline: observationDeadline');
     // Unproven failures are rethrown as they were, after their evidence is attached.
     expect(tournament).toContain('throw original;');

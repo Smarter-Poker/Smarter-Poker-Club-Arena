@@ -23,13 +23,14 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 import haptic from '../../services/HapticService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import { compactChips } from '../../utils/format';
 import { titleCase } from '../../utils/titleCase';
+import { cashierDestination } from '../../utils/cashierDestination';
 import {
   eligibleQuickLinkClubs,
   clubParamToUuid,
@@ -52,6 +53,7 @@ interface CashierClubSwitcherProps {
 
 export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwitcherProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuthUser();
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -192,9 +194,15 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
       closeMenu(false);
       if (club.id === currentClub?.id) return;
       haptic.light();
-      navigate(`/clubs/${club.slug || club.id}/cashier`);
+      const slug = club.slug || club.id;
+      // Literal targets, one per declared route, so check-route-targets can
+      // match each of them against src/App.tsx.
+      const destination = cashierDestination(location.pathname);
+      if (destination === 'cashier-classic') navigate(`/clubs/${slug}/cashier-classic`);
+      else if (destination === 'cashier/statements') navigate(`/clubs/${slug}/cashier/statements`);
+      else navigate(`/clubs/${slug}/cashier`);
     },
-    [closeMenu, currentClub, navigate]
+    [closeMenu, currentClub, navigate, location.pathname]
   );
 
   const handleMenuKeyDown = useCallback(

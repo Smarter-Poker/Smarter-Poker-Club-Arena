@@ -43,9 +43,14 @@ const MUST_CONTAIN: Array<[file: string, needle: string, why: string]> = [
   // granting moved wholesale. The CAPABILITY is what this pins, so it follows
   // the code to its new file rather than being deleted along with the old one.
   [
-    'src/pages/MemberManagementPage.tsx',
+    'src/services/ClubRosterService.ts',
     'ca_club_grantable_roles',
-    'the member page asks the server what it may offer',
+    'the member service asks the server what it may offer',
+  ],
+  [
+    'src/pages/MemberManagementPage.tsx',
+    'ClubRosterService.getGrantableRoles(',
+    'the member page invokes the bounded server grant reader',
   ],
   [
     'src/pages/MemberManagementPage.tsx',

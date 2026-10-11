@@ -1,3 +1,5 @@
+import { AuthorizedPrivateSend } from './AuthorizedPrivateSend.js';
+import { playerSessionVerdict } from '../services/PlayerSessionAccess.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * EngineWebSocketServer — native WebSocket transport for authoritative state
@@ -302,6 +304,8 @@ interface ConnectionState {
    * session revoked AFTER the upgrade.
    */
   token: string;
+  privateSend?: AuthorizedPrivateSend;
+  sessionRead?: Promise<boolean>;
   /** Epoch ms of the next re-auth. Staggered at connect, see REAUTH_INTERVAL_MS. */
   nextReauthAt: number;
   /** Single-table path: the table from the upgrade URL. Mux path: ''. */
@@ -369,14 +373,28 @@ async function defaultVerifyToken(token: string): Promise<TokenVerdict> {
   if (!token) return { denied: 'invalid', code: 'missing' };
   const hit = tokenCache.get(token);
   if (hit && Date.now() - hit.verifiedAt < TOKEN_CACHE_TTL_MS) {
-    return { userId: hit.userId };
+    const session = await playerSessionVerdict(hit.userId, token);
+    return session === 'alive'
+      ? { userId: hit.userId }
+      : {
+          denied: session === 'revoked' ? 'invalid' : 'unavailable',
+          code: session === 'revoked' ? 'session_not_found' : 'session_check_unavailable',
+        };
   }
   if (hit) tokenCache.delete(token);
   // 2026-09-04: the verdict says WHY (see wsHelpers). Only successes are
   // cached, as before - a 30s cache of "invalid" would lock a player out for
   // 30s after they sign back in.
   const verdict = await verifySupabaseToken(supabase.auth, token);
-  if (verdict.userId) cacheToken(token, verdict.userId);
+  if (verdict.userId) {
+    const session = await playerSessionVerdict(verdict.userId, token);
+    if (session !== 'alive')
+      return {
+        denied: session === 'revoked' ? 'invalid' : 'unavailable',
+        code: session === 'revoked' ? 'session_not_found' : 'session_check_unavailable',
+      };
+    cacheToken(token, verdict.userId);
+  }
   return verdict;
 }
 
@@ -455,9 +473,64 @@ export function refuseProtocol(
 // ─── EngineWebSocketServer ────────────────────────────────────────────────────
 
 export class EngineWebSocketServer {
+  /** Close only the target's definitively revoked sessions; active hands retain normal disconnect handling. */
+  public async revokePlayerSessions(userId: string, isCurrent = () => true): Promise<void> {
+    for (const [ws, connection] of Array.from(this.connections)) {
+      if (this.closing || !isCurrent()) return;
+      if (connection.userId !== userId) continue;
+      const token = connection.token;
+      if ((await playerSessionVerdict(userId, token)) !== 'revoked') continue;
+      if (
+        this.closing ||
+        !isCurrent() ||
+        this.connections.get(ws) !== connection ||
+        connection.token !== token
+      )
+        continue;
+      try {
+        ws.close(4401, 'auth:session_not_found');
+      } catch {
+        /* normal close cleanup owns presence */
+      }
+    }
+  }
+  /** Reconcile missed revocations only on the original subscription recovery event. */
+  public async revalidatePlayerSessions(isCurrent = () => true): Promise<void> {
+    const users = new Set(Array.from(this.connections.values(), (connection) => connection.userId));
+    for (const userId of users) {
+      if (this.closing || !isCurrent()) return;
+      await this.revokePlayerSessions(userId, isCurrent);
+    }
+  }
+  private async sessionCanReceive(conn: ConnectionState): Promise<boolean> {
+    if (this.closing || this.connections.get(conn.ws) !== conn) return false;
+    if (conn.sessionRead) return conn.sessionRead;
+    const token = conn.token;
+    const check = (async () => {
+      const verdict = await playerSessionVerdict(conn.userId, token);
+      if (this.closing || this.connections.get(conn.ws) !== conn || conn.token !== token)
+        return false;
+      if (verdict === 'revoked') {
+        try {
+          conn.ws.close(4401, 'auth:session_not_found');
+        } catch {
+          /* normal cleanup owns presence */
+        }
+      }
+      return verdict === 'alive';
+    })();
+    conn.sessionRead = check;
+    try {
+      return await check;
+    } finally {
+      if (conn.sessionRead === check) conn.sessionRead = undefined;
+    }
+  }
+
   private wss: WebSocketServer;
   private connections: Map<WebSocket, ConnectionState> = new Map();
   private heartbeatTimer: NodeJS.Timeout | null = null;
+  private closing = false;
   /** Last time the heartbeat interval actually got CPU time. */
   private lastHeartbeatSweepAt = Date.now();
   private readonly hub: TableStateHub;
@@ -752,6 +825,7 @@ export class EngineWebSocketServer {
    * heartbeat interval.
    */
   async close(): Promise<void> {
+    this.closing = true;
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
@@ -930,6 +1004,16 @@ export class EngineWebSocketServer {
       clientIp,
     };
     this.connections.set(ws, conn);
+    const privateSend = new AuthorizedPrivateSend({
+      current: () => !this.closing && this.connectionCanWrite(conn),
+      authorize: () => this.sessionCanReceive(conn),
+      send: (data, complete) => ws.send(data, complete),
+      buffered: () => ws.bufferedAmount,
+      retire: () =>
+        this.retireConnection(conn, CLOSE_RATE_LIMITED, 'private backpressure - reconnect'),
+      error: (error) => reportError(error, 'EngineWS.private_send'),
+    });
+    conn.privateSend = privateSend;
 
     // HubSubscriber adapter: ws already matches the shape almost exactly,
     // but we need a stable .id field and a numeric readyState.
@@ -947,6 +1031,7 @@ export class EngineWebSocketServer {
       get bufferedAmount() {
         return ws.bufferedAmount;
       },
+      sendPrivate: (data, delivered) => conn.privateSend?.enqueue(data, delivered),
       send(data: string) {
         ws.send(data);
       },
@@ -959,24 +1044,19 @@ export class EngineWebSocketServer {
     (ws as unknown as { __sub: HubSubscriber }).__sub = subscriber;
     this.hub.subscribe(tableId, subscriber);
     if (!this.connectionCanWrite(conn)) return;
-    // FIX 2 (2026-07-24): a fresh (re)connect gets the public SNAPSHOT above;
-    // ask the engine to also re-deliver this player's hole cards for the
-    // current hand so a reconnecting player isn't left blind.
-    // 2026-08-22 review: these callbacks reach into engine code and MUST NOT
-    // be able to abort the wiring below — a throw here used to leave the
-    // socket in this.connections and subscribed to the hub with NO close
-    // handler: a permanent leak the sweeps could never collect.
-    try {
-      this.resyncPlayer(tableId, userId);
-      // Presence belongs only to a physical connection that remains usable.
-      if (this.connectionCanWrite(conn)) this.notifyConnect(tableId, userId, conn.platform);
-    } catch {
-      /* engine wiring must never take down the transport */
-    }
-
+    // Wire lifecycle handlers before asynchronous admission or private delivery.
     ws.on('message', (raw) => this.onMessage(conn, raw));
     ws.on('close', () => this.onClose(ws));
     ws.on('error', () => this.onClose(ws));
+    // The upgrade's earlier verdict can expire during authorization/table wake.
+    // Recheck the registered connection before any initial private replay.
+    void this.sessionCanReceive(conn)
+      .then((allowed) => {
+        if (!allowed || !this.connectionCanWrite(conn)) return;
+        this.resyncPlayer(tableId, userId);
+        if (this.connectionCanWrite(conn)) this.notifyConnect(tableId, userId, conn.platform);
+      })
+      .catch((error) => reportError(error, 'EngineWS.initial_private_replay', { tableId }));
   }
 
   // ─── Roadmap batch 6: mux connection lifecycle ──────────────────────────
@@ -1006,6 +1086,16 @@ export class EngineWebSocketServer {
       subs: new Map(),
     };
     this.connections.set(ws, conn);
+    const privateSend = new AuthorizedPrivateSend({
+      current: () => !this.closing && this.connectionCanWrite(conn),
+      authorize: () => this.sessionCanReceive(conn),
+      send: (data, complete) => ws.send(data, complete),
+      buffered: () => ws.bufferedAmount,
+      retire: () =>
+        this.retireConnection(conn, CLOSE_RATE_LIMITED, 'private backpressure - reconnect'),
+      error: (error) => reportError(error, 'EngineWS.private_send'),
+    });
+    conn.privateSend = privateSend;
     ws.on('message', (raw) => this.onMessage(conn, raw));
     ws.on('close', () => this.onClose(ws));
     ws.on('error', () => this.onClose(ws));
@@ -1129,6 +1219,12 @@ export class EngineWebSocketServer {
     const existing = conn.subs.get(tableId);
     if (typeof existing === 'symbol') return; // in flight - first one wins
     if (existing) {
+      if (
+        !(await this.sessionCanReceive(conn)) ||
+        !this.connectionCanWrite(conn) ||
+        conn.subs.get(tableId) !== existing
+      )
+        return;
       // Idempotent: already subscribed. Re-ack + resync so a client retry
       // converges instead of erroring.
       if (!this.sendControl(conn, { type: 'SUBSCRIBED', tableId })) return;
@@ -1171,6 +1267,7 @@ export class EngineWebSocketServer {
     try {
       const viewerAccess = await this.authorizeConnection(tableId, conn.userId);
       timing.authorityReturnedAtMs = elapsed();
+      if (!isCurrent() || !(await this.sessionCanReceive(conn)) || !isCurrent()) return;
       const banned = viewerAccess.banned;
       // UNSUBSCRIBE, close, or a new attempt may have won during the await.
       // Neither a stale success nor a stale refusal belongs to that attempt.
@@ -1233,6 +1330,8 @@ export class EngineWebSocketServer {
       }
       // The socket may have closed while the async gates ran.
       if (!isCurrent()) return;
+      // Table wake may outlive the durable grant checked before that await.
+      if (!isCurrent() || !(await this.sessionCanReceive(conn)) || !isCurrent()) return;
       this.logConnectionAudit(conn.userId, tableId, conn.clientIp);
       const ws = conn.ws;
       // eslint-disable-next-line @typescript-eslint/no-this-alias
@@ -1246,6 +1345,8 @@ export class EngineWebSocketServer {
         get bufferedAmount() {
           return ws.bufferedAmount;
         },
+        sendPrivate: (data, delivered) =>
+          conn.privateSend?.enqueue(data, delivered, () => conn.subs?.get(tableId) === subscriber),
         send(data: string) {
           ws.send(data);
           if (measuringInitialFrames && timing.firstHubFrameQueuedAtMs === null) {
@@ -1285,6 +1386,9 @@ export class EngineWebSocketServer {
       conn.subs.delete(tableId);
       this.sendMuxError(conn, tableId, 'SUB_FAILED', 'Subscribe failed');
     } finally {
+      // An unknown grant is not a settled subscription. Release only this
+      // pending attempt so a later explicit retry can recheck authority.
+      if (typeof owned === 'symbol' && conn.subs?.get(tableId) === owned) conn.subs.delete(tableId);
       measuringInitialFrames = false;
       // Private replay/presence callbacks can retire an admitted connection.
       // Observe final ownership without invoking another admission/cleanup gate.
@@ -1338,11 +1442,15 @@ export class EngineWebSocketServer {
         if (!tableId || !conn.subs) return;
         const sub = conn.subs.get(tableId);
         if (sub && typeof sub !== 'symbol') {
-          this.hub.resync(tableId, sub);
-          if (this.connectionCanWrite(conn)) {
-            this.notifyAlive(tableId, conn.userId);
-            this.resyncPlayer(tableId, conn.userId);
-          }
+          void this.sessionCanReceive(conn)
+            .then((allowed) => {
+              if (!allowed || !this.connectionCanWrite(conn) || conn.subs?.get(tableId) !== sub)
+                return;
+              this.hub.resync(tableId, sub);
+              this.notifyAlive(tableId, conn.userId);
+              this.resyncPlayer(tableId, conn.userId);
+            })
+            .catch((error) => reportError(error, 'EngineWS.authorized_resync', { tableId }));
         }
         return;
       }
@@ -1415,13 +1523,18 @@ export class EngineWebSocketServer {
         return;
       case 'RESYNC': {
         const sub = (conn.ws as unknown as { __sub: HubSubscriber }).__sub;
-        this.hub.resync(conn.tableId, sub);
         // FIX 2 (2026-07-24): re-deliver hole cards alongside the public
         // snapshot — the RESYNC snapshot only carries scrubbed public state.
-        if (this.connectionCanWrite(conn)) {
-          this.notifyAlive(conn.tableId, conn.userId);
-          this.resyncPlayer(conn.tableId, conn.userId);
-        }
+        void this.sessionCanReceive(conn)
+          .then((allowed) => {
+            if (!allowed || !this.connectionCanWrite(conn)) return;
+            this.hub.resync(conn.tableId, sub);
+            this.notifyAlive(conn.tableId, conn.userId);
+            this.resyncPlayer(conn.tableId, conn.userId);
+          })
+          .catch((error) =>
+            reportError(error, 'EngineWS.authorized_resync', { tableId: conn.tableId })
+          );
         return;
       }
       case 'RENDER_ACK':

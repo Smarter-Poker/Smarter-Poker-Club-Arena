@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { supabase } from '../src/lib/supabase';
@@ -736,10 +736,18 @@ describe('CashierTradePage club load ordering', () => {
       </MemoryRouter>
     );
 
-    const player = await screen.findByRole('checkbox', { name: /Storage Guard Player/ });
+    const player = await screen.findByRole('button', { name: 'Select Storage Guard Player' });
     await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
+    expect(screen.getByRole('link', { name: 'Manage Storage Guard Player' })).toHaveAttribute(
+      'href',
+      `/clubs/${CLUB_ID}/members/${PLAYER_ID}`
+    );
     fireEvent.click(player);
-    fireEvent.click(screen.getByRole('button', { name: 'Send Out' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send Diamonds' })).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Send Ticket' })
+    ).toBeInTheDocument();
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Amount Per Player' }), {
       target: { value: '10' },
     });

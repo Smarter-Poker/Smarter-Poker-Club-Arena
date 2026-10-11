@@ -19,6 +19,9 @@ vi.mock('../../src/core/IdentityDNA', () => ({
 }));
 // Exercises the mounted form, real prepared wrapper and strict receipt service.
 // The lock shim remains a unit boundary; native browser storage is separate.
+const realtime = vi.hoisted(() => ({
+  subs: [] as Array<{ filter: Record<string, unknown>; handler: (payload: unknown) => void }>,
+}));
 vi.mock('../../src/lib/supabase', () => ({ supabase: { rpc: vi.fn() } }));
 vi.mock('../../src/core/MasterBus', () => ({
   masterBus: {
@@ -30,7 +33,8 @@ vi.mock('../../src/core/MasterBus', () => ({
       };
     }),
     getOrCreateChannel: () => ({
-      on() {
+      on(_event: string, filter: Record<string, unknown>, handler: (payload: unknown) => void) {
+        realtime.subs.push({ filter, handler });
         return this;
       },
       subscribe: vi.fn(),
@@ -533,4 +537,28 @@ it('an unknown lookup cannot reach settlement preflight or payment from the moun
   expect(checkSettlementLock).not.toHaveBeenCalled();
   expect(rpc).not.toHaveBeenCalled();
   expect(complete).not.toHaveBeenCalled();
+});
+it('G-02: listens to this player only and reloads only for a row of this club', async () => {
+  realtime.subs.length = 0;
+  await mount();
+  await waitFor(() => expect(realtime.subs.length).toBeGreaterThan(0));
+  const sub = realtime.subs[realtime.subs.length - 1];
+  expect(sub.filter).toEqual(
+    expect.objectContaining({ table: 'cashout_requests', filter: `player_id=eq.${ID.player}` })
+  );
+  expect(String(sub.filter.filter)).not.toContain('club_id');
+  const reads = vi.mocked(cashoutService.getPlayerCashouts);
+  await waitFor(() => expect(reads).toHaveBeenCalled());
+  await act(async () => {});
+  const before = reads.mock.calls.length;
+
+  // The player's cashout in another club does not reload this club's sheet.
+  await act(async () => sub.handler({ new: { club_id: 'another-club' }, old: {} }));
+  expect(reads.mock.calls.length).toBe(before);
+  // A row of this club does.
+  await act(async () => sub.handler({ new: { club_id: ID.club }, old: {} }));
+  await waitFor(() => expect(reads.mock.calls.length).toBe(before + 1));
+  // A DELETE whose club is not on the payload is not known to be another club's.
+  await act(async () => sub.handler({ new: {}, old: { id: 'gone' } }));
+  await waitFor(() => expect(reads.mock.calls.length).toBe(before + 2));
 });

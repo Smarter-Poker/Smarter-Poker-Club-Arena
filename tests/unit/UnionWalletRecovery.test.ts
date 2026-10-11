@@ -57,6 +57,23 @@ describe('Union Wallet intent recovery', () => {
     ).toBe(OP_B);
   });
 
+  it('never expires an unknown-outcome intent by age, so a day-old retry keeps its op id (S-10)', () => {
+    // 2026-10-09. A 24h MAX_AGE made readRecord drop the record and mint a new
+    // operation id for the same intent; a union owner retrying a lost-response
+    // send the next day paid twice. CashierResilience never evicted by age.
+    const storage = new MemoryStorage();
+    const DAY = 24 * 60 * 60 * 1000;
+
+    expect(reserveUnionWalletOperation(scope(), storage, NOW, () => OP_A)).toBe(OP_A);
+    expect(reserveUnionWalletOperation(scope(), storage, NOW + DAY + 1, () => OP_B)).toBe(OP_A);
+    expect(reserveUnionWalletOperation(scope(), storage, NOW + 400 * DAY, () => OP_B)).toBe(OP_A);
+    expect(storage.values.size).toBe(1);
+    // Only the server's confirmation retires it, however old it is.
+    clearUnionWalletOperation(scope(), OP_A, storage, NOW + 400 * DAY);
+    expect(storage.values.size).toBe(0);
+    expect(reserveUnionWalletOperation(scope(), storage, NOW + 400 * DAY, () => OP_B)).toBe(OP_B);
+  });
+
   it('isolates recovery records by authenticated user', () => {
     const storage = new MemoryStorage();
 

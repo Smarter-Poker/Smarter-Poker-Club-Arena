@@ -10,10 +10,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
+  userId: 'first',
   emit: vi.fn(),
   reportError: vi.fn(),
 }));
 
+vi.mock('../../src/stores/useUserStore', () => ({
+  useUserStore: { getState: () => ({ user: { id: mocks.userId } }) },
+}));
 vi.mock('../../src/lib/supabase', () => ({ supabase: { rpc: mocks.rpc } }));
 vi.mock('../../src/core/MasterBus', () => ({ masterBus: { emit: mocks.emit } }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: mocks.reportError }));
@@ -279,6 +283,86 @@ describe('DailyBonusService', () => {
 
   it('prices diamonds at one cent each', () => {
     expect(diamondsToCentsLabel(5)).toBe('5¢');
-    expect(diamondsToCentsLabel(125)).toBe('$1.25');
+    expect(diamondsToCentsLabel(125)).toBe('1.25 USD');
   });
+});
+
+it('claims all through one server request with a stable identity and no caller reward amounts', async () => {
+  mocks.rpc.mockReset();
+  mocks.emit.mockReset();
+  const receipt = {
+    success: true,
+    results: [{ success: true, granted: { kind: 'throwables', quantity: 2 } }],
+    status: STATUS,
+  };
+  mocks.rpc.mockResolvedValue({ data: receipt, error: null });
+  await dailyBonusService.claimAll('2026-10-10');
+  const args = mocks.rpc.mock.calls[0][1];
+  expect(mocks.rpc.mock.calls[0][0]).toBe('fn_ca_daily_bonus_claim_all');
+  expect(Object.keys(args).sort()).toEqual(['p_bonus_date', 'p_request_id']);
+  await dailyBonusService.claimAll('2026-10-10');
+  expect(mocks.rpc.mock.calls[1][1].p_request_id).toBe(args.p_request_id);
+});
+it('refuses a missing batch receipt instead of announcing success', async () => {
+  mocks.rpc.mockResolvedValue({ data: { success: true }, error: null });
+  await expect(dailyBonusService.claimAll('2026-10-10')).rejects.toThrow(
+    'Could Not Read The Bonus Receipt'
+  );
+});
+it('does not announce a replay as another reward', async () => {
+  mocks.emit.mockReset();
+  mocks.rpc.mockResolvedValue({
+    data: {
+      success: true,
+      results: [
+        {
+          success: true,
+          idempotent: true,
+          granted: { kind: 'diamonds', diamonds: 5, balance_after: 5 },
+        },
+      ],
+      status: STATUS,
+    },
+    error: null,
+  });
+  await dailyBonusService.claimAll('2026-10-10');
+  expect(mocks.emit.mock.calls.filter(([event]) => event === 'DAILY_REWARD_CLAIMED')).toHaveLength(
+    0
+  );
+});
+it('a single-tile compatibility replay does not announce or add the already credited reward', async () => {
+  mocks.emit.mockReset();
+  mocks.rpc.mockResolvedValue({
+    data: {
+      success: true,
+      idempotent: true,
+      granted: { kind: 'diamonds', diamonds: 5, balance_after: 5 },
+    },
+    error: null,
+  });
+  await dailyBonusService.claim('2026-10-10', 1);
+  expect(mocks.emit).not.toHaveBeenCalled();
+});
+it('a delayed reward receipt cannot announce or update the next account', async () => {
+  mocks.emit.mockReset();
+  mocks.userId = 'first';
+  let deliver!: (value: unknown) => void;
+  mocks.rpc.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        deliver = resolve;
+      })
+  );
+  const claim = dailyBonusService.claimAll('2026-10-10');
+  mocks.userId = 'second';
+  deliver({
+    data: {
+      success: true,
+      results: [{ success: true, granted: { kind: 'diamonds', diamonds: 5, balance_after: 5 } }],
+      status: STATUS,
+    },
+    error: null,
+  });
+  expect((await claim).success).toBe(true);
+  expect(mocks.emit).not.toHaveBeenCalled();
 });

@@ -18,7 +18,9 @@ vi.mock('../services/supabase/client.js', () => ({
         };
       throw new Error('Unexpected database read in pause fixture');
     }),
-    rpc: vi.fn(() => {
+    rpc: vi.fn((name: string) => {
+      if (name === 'fn_ca_operator_floor_state')
+        return Promise.resolve({ data: { hold: null, close: null }, error: null });
       throw new Error('Unexpected database RPC in pause fixture');
     }),
   },
@@ -160,6 +162,16 @@ describe('a pause arriving during prepared-hand rest', () => {
     expect(engine.dealHand).not.toHaveBeenCalled();
     expect(engine.adminPauseLock).toBe(true);
     expect(engine.sleep).toHaveBeenCalledWith(3000);
+  });
+
+  it('honors a global floor hold arriving during the prepared rest', async () => {
+    const { engine } = loopAtRest((e) => {
+      e.operatorFloorPaused = true;
+    });
+    engine.refreshOperatorFloor = vi.fn(async () => {});
+    await engine.dealingLoop();
+    expect(engine.awaitNextHandRest).toHaveBeenCalledOnce();
+    expect(engine.dealHand).not.toHaveBeenCalled();
   });
 
   it('allows the next shared hand after the ordinary hand-for-hand re-arm', async () => {

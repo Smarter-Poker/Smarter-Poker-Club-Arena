@@ -141,6 +141,11 @@ describe('the harness asserts the outcome the specification requires', () => {
     expect(HARNESS).toContain('RETRY_BUDGET response=% attempts=%');
     expect(HARNESS).toContain('ROLLBACK;\nBUDGET_CASES');
     expect(HARNESS).toContain('zero-attempt starvation still fails');
+    expect(HARNESS).toContain('MIXED_RETRY_BUDGET');
+    expect(HARNESS).toContain('semantic-only starvation concealed');
+    expect(HARNESS).toContain('semantic tail starvation concealed');
+    expect(HARNESS).toContain('unexpected retry concealed');
+    expect(HARNESS).toContain("r -> 'retries' -> -1 ->> 'reason'");
   });
   it('only retryable error classes are tolerated, and they are reported', () => {
     expect(HARNESS).toContain("p_allowed_states text[] DEFAULT ARRAY['40P01', '55P03', '40001']");

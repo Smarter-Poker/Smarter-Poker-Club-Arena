@@ -1,0 +1,9 @@
+# Private delivery rechecks the original session
+
+The second Stable Admin audit reproduced private hand META/ACTION delivery after logout during a database read or frame delay, and mux admission after logout during table wake. A real table hub also sent hole cards while initial session authority remained unknown; channel financial pushes and delayed club membership had the same final-delivery gap. These are source countercases with isolated identities, not production player fixtures.
+
+The original transports now recheck session and request identity after asynchronous boundaries. A bounded ordered queue on each original physical socket checks fresh durable authority before private card, replay and financial frames enter the socket. Unknown authority does not sign out a player and permits later explicit recovery; definitive revocation retains the existing same-socket 4401 close. Mux unsubscribe/replacement invalidates its queued frames. Public state and original money, seat and settlement owners remain unchanged.
+
+An asynchronous enqueue is not delivery. The original add-on presentation owner retains its newest adjustment until an actual socket-send acknowledgment, and an old acknowledgment cannot erase a newer adjustment. Queue bounds include the pending grant, physical socket buffer, byte total and frame count. Failure/backpressure never supplies a successful acknowledgment.
+
+Actual protected-source countercases and focused final qualification are archived under `stable-admin-scope-audit-20261010/second-audit/ca`. The first club harness used a nonexistent count method; its failure is retained separately, and the corrected actual subscriber-count cases reproduce both denied grants before and pass after. The maintained tests run in the existing server-shard workflow. Final required checks, protected integration, certified engine activation and affected live proof remain pending.

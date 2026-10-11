@@ -60,6 +60,7 @@ import {
   type UnionSendKind,
 } from './unionWalletRoutes';
 import { SpadeConsole } from '../console/SpadeConsole';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { enumToTitleCase, titleCase } from '../../utils/titleCase';
 import './UnionWalletModal.css';
 
@@ -102,6 +103,16 @@ const ROLE_ORDER: Record<string, number> = {
 };
 
 const LEDGER_PAGE = 40;
+/**
+ * HOW AN AMOUNT MAY BE SPELLED (launch audit D-07 / D-15). The RPC takes
+ * hundredths from a member send, whole chips from a club send and whole
+ * diamonds; `Number()` alone accepted "10.005" (sent verbatim), "1e3" (a
+ * thousand the typist never saw written out) and anything over the balance
+ * (the plate lit, the server refused). The spelling is checked before the
+ * value is.
+ */
+const CENT_AMOUNT = /^\d+(\.\d{1,2})?$/;
+const WHOLE_AMOUNT = /^\d+$/;
 
 interface LedgerRow {
   id: string;
@@ -198,6 +209,9 @@ export function UnionWalletModal({
   const [ledgerTotals, setLedgerTotals] = useState<LedgerTotals | null>(null);
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [ledgerError, setLedgerError] = useState<string | null>(null);
+  /** Newest ledger request wins (launch audit D-06): a page still travelling
+      for the previous wallet must not paint under the next wallet's eyebrow. */
+  const ledgerSeq = useRef(0);
 
   const chipSource = walletKey === 'rake' ? 'rake' : walletKey === 'promo' ? 'promo' : 'chips';
 
@@ -215,8 +229,19 @@ export function UnionWalletModal({
       if (e.key === 'Escape') requestClose();
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    /* The page behind stops scrolling while the sheet is up, as every other
+       money dialog already does (launch audit D-11). */
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
   }, [isOpen, requestClose]);
+
+  /* Tab stays inside the sheet, focus lands on its first control and returns
+     to the wallet row that opened it (launch audit D-11). */
+  const panelRef = useFocusTrap<HTMLDivElement>(isOpen);
 
   const readOnly = walletKey === 'spin_reserve';
 
@@ -232,8 +257,10 @@ export function UnionWalletModal({
     setLiveBalance(balance);
     setKind(walletKey === 'promo' ? 'promo' : 'chips');
     setLedger([]);
+    setLedgerTotal(0);
     setLedgerTotals(null);
     setLedgerError(null);
+    ++ledgerSeq.current;
 
     if (readOnly) {
       void supabase
@@ -254,8 +281,9 @@ export function UnionWalletModal({
       setRoster([]);
       setClubs([]);
       setLoading(false);
+      const reserveVersion = directoryLoadVersion;
       return () => {
-        if (isCurrent()) ++directoryLoadVersion.current;
+        if (isCurrent()) ++reserveVersion.current;
       };
     }
     setReserveLedger([]);
@@ -304,9 +332,13 @@ export function UnionWalletModal({
        wipe the success notice and the picked target the moment a send lands.
        The live figure comes from the send's own response instead. */
 
+    const version = directoryLoadVersion;
     return () => {
-      if (isCurrent()) ++directoryLoadVersion.current;
+      if (isCurrent()) ++version.current;
     };
+    /* `balance` is deliberately left out (see above); `readOnly` is derived
+       from `walletKey`, which is a dependency. */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, unionId, walletKey, user?.id, directoryReload]);
 
   /**
@@ -317,6 +349,8 @@ export function UnionWalletModal({
    */
   const loadLedger = useCallback(
     async (offset: number) => {
+      const seq = ++ledgerSeq.current;
+      const current = () => seq === ledgerSeq.current;
       setLedgerLoading(true);
       setLedgerError(null);
       try {
@@ -328,6 +362,7 @@ export function UnionWalletModal({
           p_wallet: UNION_WALLET_COLUMN[walletKey],
         });
         if (error) throw error;
+        if (!current()) return;
         const res = (Array.isArray(data) ? data[0] : data) as {
           authorized?: boolean;
           error?: string;
@@ -348,9 +383,9 @@ export function UnionWalletModal({
         setLedger((prev) => (offset === 0 ? res.rows || [] : [...prev, ...(res.rows || [])]));
       } catch (e) {
         reportError(e, 'UnionWalletModal.ledger_load_failed');
-        setLedgerError('Could Not Load The Ledger.');
+        if (current()) setLedgerError('Could Not Load The Ledger.');
       } finally {
-        setLedgerLoading(false);
+        if (current()) setLedgerLoading(false);
       }
     },
     [unionId, walletKey]
@@ -392,8 +427,37 @@ export function UnionWalletModal({
         ? pullRoute.reason
         : null;
 
+  /**
+   * The sentence that refuses the typed amount, or null when it may go. One
+   * reading for the plate, the blurb and the send itself, so the plate can
+   * never be lit for a figure the send would refuse.
+   *  - diamonds and club sends move in whole units (the union-wallet API
+   *    contract FLOORS a club amount: 250.5 would leave as 250 while this
+   *    screen subtracted 250.5);
+   *  - a member send is hundredths, spelled plainly (no exponent, no third
+   *    decimal, which the RPC would otherwise take verbatim);
+   *  - a send never exceeds the wallet, so "Would Hold" is never negative.
+   */
+  const amountRefusal = useMemo((): string | null => {
+    const text = amount.trim();
+    if (text === '' || !target || mode === 'ledger') return null;
+    const amt = Number(text);
+    if (!Number.isFinite(amt) || amt <= 0) return 'Enter An Amount Greater Than Zero.';
+    if (kind === 'diamonds') {
+      if (!WHOLE_AMOUNT.test(text)) return 'Diamonds Must Be A Whole Number.';
+    } else if (target.type === 'club') {
+      if (!WHOLE_AMOUNT.test(text)) return 'Club Sends Move In Whole Chips.';
+    } else if (!CENT_AMOUNT.test(text)) {
+      return 'Enter An Amount In Whole Cents.';
+    }
+    if (mode === 'send' && amt > liveBalance)
+      return `This Wallet Only Holds ${money(liveBalance)}.`;
+    return null;
+  }, [amount, target, mode, kind, liveBalance]);
+
   const send = useCallback(async () => {
-    const amt = Number(amount);
+    const text = amount.trim();
+    const amt = Number(text);
     if (
       !target ||
       mode === 'ledger' ||
@@ -403,16 +467,8 @@ export function UnionWalletModal({
       busyRef.current
     )
       return;
-    if (kind === 'diamonds' && amt !== Math.floor(amt)) {
-      setNotice({ ok: false, text: 'Diamonds Must Be A Whole Number.' });
-      return;
-    }
-    /* The union-wallet API contract (PositiveChipAmount) FLOORS a club
-       amount. 250.5 would leave as 250 while this screen subtracted 250.5,
-       so a club send is whole chips here, before anything is sent. A member
-       send goes straight to the RPC, which accepts hundredths. */
-    if (target.type === 'club' && !Number.isInteger(amt)) {
-      setNotice({ ok: false, text: 'Club Sends Move In Whole Chips.' });
+    if (amountRefusal) {
+      setNotice({ ok: false, text: amountRefusal });
       return;
     }
     if (mode === 'pull' && target.type === 'member') {
@@ -479,8 +535,8 @@ export function UnionWalletModal({
             wallet_after?: number;
             destination?: string;
           };
-          if (error) throw definitiveRefusal(error.message || 'union send failed');
-          if (!res.success) throw definitiveRefusal(res.error || 'union send failed');
+          if (error) throw definitiveRefusal(error.message || 'Union Send Failed');
+          if (!res.success) throw definitiveRefusal(res.error || 'Union Send Failed');
           const who = target.data.display_name || target.data.username;
           const landed =
             res.destination === 'promo_float'
@@ -557,7 +613,7 @@ export function UnionWalletModal({
               p_op_id: opId,
             }
           );
-          if (cbErr) throw definitiveRefusal(cbErr.message || 'Clawback failed');
+          if (cbErr) throw definitiveRefusal(cbErr.message || 'Clawback Failed');
           const cb = (cbRes ?? {}) as {
             success?: boolean;
             error?: string;
@@ -580,7 +636,7 @@ export function UnionWalletModal({
               }
               return;
             }
-            const msg = cb.error || 'Clawback failed';
+            const msg = cb.error || 'Clawback Failed';
             throw definitiveRefusal(
               msg.includes('insufficient club promo')
                 ? 'The Club Promo Wallet Does Not Hold That Much.'
@@ -629,6 +685,7 @@ export function UnionWalletModal({
     walletKey,
     onSent,
     user?.id,
+    amountRefusal,
   ]);
 
   if (!isOpen) return null;
@@ -637,6 +694,7 @@ export function UnionWalletModal({
   const sendDisabled =
     !target ||
     !(Number(amount) > 0) ||
+    Boolean(amountRefusal) ||
     !user?.id ||
     loading ||
     Boolean(directoryError) ||
@@ -706,7 +764,7 @@ export function UnionWalletModal({
       aria-label={`${walletLabel} Cashier`}
       onClick={requestClose}
     >
-      <div className="uwm-dialog" onClick={(e) => e.stopPropagation()}>
+      <div ref={panelRef} className="uwm-dialog" onClick={(e) => e.stopPropagation()}>
         <SpadeConsole
           onClose={requestClose}
           className="uwm-console"
@@ -979,7 +1037,12 @@ export function UnionWalletModal({
                       onChange={(e) => setAmount(e.target.value)}
                       aria-label={mode === 'pull' ? 'Chips To Pull Back' : 'Amount To Send'}
                     />
-                    {Number(amount) > 0 && target && (
+                    {amount.trim() !== '' && target && amountRefusal && (
+                      <div className="uwm-blurb sc-ink--red" role="alert">
+                        {amountRefusal}
+                      </div>
+                    )}
+                    {Number(amount) > 0 && target && !amountRefusal && (
                       <div className="uwm-blurb">
                         {mode === 'pull'
                           ? `Pulling ${money(Number(amount))} From ${targetName}. This Wallet Would Hold ${money(liveBalance + Number(amount))} Afterwards.`

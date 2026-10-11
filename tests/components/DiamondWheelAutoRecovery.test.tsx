@@ -58,6 +58,11 @@ vi.mock('../../src/services/SoundService', () => ({
 }));
 vi.mock('../../src/services/HapticService', () => ({ triggerHaptic: vi.fn() }));
 import DiamondWheelPage from '../../src/pages/DiamondWheelPage';
+import {
+  WheelBatchService,
+  type PaidWheelBatch,
+  type PendingWheelBatch,
+} from '../../src/services/WheelBatchService';
 const sample = receipts.find((r) => r.kind === 'wheel' && r.value.outcome?.kind === 'chips')!.value;
 const bonusSample = receipts.find(
   (r) =>
@@ -156,6 +161,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  vi.restoreAllMocks();
   vi.resetAllMocks();
   localStorage.clear();
   sessionStorage.clear();
@@ -313,14 +319,17 @@ describe('automatic spins and player-owned recovery', () => {
     fireEvent.click(within(stopped).getByRole('button', { name: 'Continue' }));
     expect(screen.getByText('The Host Must Fund Every Prize Before A Spin')).toBeInTheDocument();
   });
-  it('refreshes a paused wheel without placing a spin and obtains its missing ticket', async () => {
+  it('omits the retired refresh action and reads current readiness on return without placing a spin', async () => {
     backend.state.mockResolvedValueOnce({
       ...state,
       available: false,
       reason: 'The Wheel Is Paused',
     });
     render(<DiamondWheelPage />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Refresh Wheel' }));
+    await screen.findByRole('button', { name: 'Prizes & More' });
+    expect(screen.queryByRole('button', { name: 'Refresh Wheel' })).not.toBeInTheDocument();
+    cleanup();
+    render(<DiamondWheelPage />);
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Spin 100', exact: true })).toBeEnabled()
     );
@@ -341,18 +350,15 @@ describe('automatic spins and player-owned recovery', () => {
     expect(backend.spin).not.toHaveBeenCalled();
     expect(backend.commit).toHaveBeenCalledTimes(1);
   });
-  it('keeps a real maintenance pause after refresh and enables play only after thaw', async () => {
+  it('keeps a real maintenance pause and rereads thaw on return without placing a spin', async () => {
     backend.state.mockResolvedValue({ ...state, frozen: true });
     render(<DiamondWheelPage />);
-    const refresh = await screen.findByRole('button', { name: 'Refresh Wheel' });
-    fireEvent.click(refresh);
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Refresh Wheel' })).toBeEnabled()
-    );
+    await screen.findByRole('button', { name: 'Prizes & More' });
     expect(screen.getByRole('button', { name: 'Spin 100', exact: true })).toBeDisabled();
     expect(screen.getByText('The Platform Is In Its Maintenance Break')).toBeInTheDocument();
     backend.state.mockResolvedValue(state);
-    fireEvent.click(refresh);
+    cleanup();
+    render(<DiamondWheelPage />);
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Spin 100', exact: true })).toBeEnabled()
     );
@@ -797,5 +803,98 @@ describe('a failed read never leaves a spinner', () => {
     expect(await screen.findByText(/^You Won \S+ Chips?$/)).toBeInTheDocument();
     expect(backend.toast.success).not.toHaveBeenCalled();
     expect(backend.toast.info).not.toHaveBeenCalled();
+  });
+});
+
+function prepaidFixture(request: PendingWheelBatch, bonus = false): PaidWheelBatch {
+  const receipts = Array.from({ length: request.spins }, (_, index) => ({
+    ...receiptFrom(index === 0 && bonus ? bonusSample : sample, {
+      commitId: `d1000000-0000-4000-8000-00000000030${index}`,
+      commitHash: 'a'.repeat(64),
+      clientSeed: `${request.seed}:${index + 1}`,
+      entryDiamonds: request.entryDiamonds,
+    }),
+    contract_version: 4,
+    auto_run: { run_id: RUN_ID, spins: request.spins, spins_done: index + 1 },
+  }));
+  return {
+    request_id: request.requestId,
+    run_id: RUN_ID,
+    spins: request.spins,
+    entry_diamonds: request.entryDiamonds,
+    total_cost_diamonds: request.spins * request.entryDiamonds,
+    client_seed: request.seed,
+    receipts,
+    tickets: receipts.map((r) => ({
+      commit_id: r.fairness.commit_id,
+      server_seed_hash: r.fairness.server_seed_hash,
+    })),
+  };
+}
+describe('complete prepaid runs', () => {
+  it('keeps spinning after Not Now and never requests another paid spin', async () => {
+    backend.state.mockResolvedValue({ ...state, contract_version: 4 });
+    const begin = vi
+      .spyOn(WheelBatchService, 'begin')
+      .mockImplementation(async (p) => prepaidFixture(p, true));
+    await readyOnFakeTimers();
+    await startAuto();
+    await land();
+    const offer = screen.getByRole('dialog', { name: 'Bonus Game Won' });
+    await tick(1200);
+    expect(backend.spin).not.toHaveBeenCalled();
+    fireEvent.click(within(offer).getByRole('button', { name: 'Not Now' }));
+    await tick(1200);
+    for (let index = 1; index < 5; index++) {
+      await land();
+      await tick(1200);
+    }
+    expect(begin).toHaveBeenCalledTimes(1);
+    expect(backend.spin).not.toHaveBeenCalled();
+    expect(backend.runEnd).toHaveBeenCalledWith(RUN_ID);
+    expect(screen.getByRole('dialog', { name: 'Run Complete' })).toBeInTheDocument();
+  });
+  it('resumes the remaining receipt presentation after an explicitly chosen bonus game returns', async () => {
+    let paid: PaidWheelBatch;
+    backend.state.mockResolvedValue({ ...state, contract_version: 4 });
+    const begin = vi.spyOn(WheelBatchService, 'begin').mockImplementation(async (p) => {
+      paid = prepaidFixture(p, true);
+      return paid;
+    });
+    const read = vi.spyOn(WheelBatchService, 'read').mockImplementation(async () => paid!);
+    await readyOnFakeTimers();
+    await startAuto();
+    await land();
+    backend.state.mockResolvedValue({
+      ...state,
+      contract_version: 4,
+      auto_run: { run_id: RUN_ID, spins: 5, spins_done: 5 },
+      pending_awards: [paid!.receipts[0].bonus],
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Play Next Saved Game' }));
+    await tick(0);
+    expect(backend.navigate).toHaveBeenCalledTimes(1);
+    cleanup();
+    backend.state.mockResolvedValue({
+      ...state,
+      contract_version: 4,
+      auto_run: { run_id: RUN_ID, spins: 5, spins_done: 5 },
+      pending_awards: [],
+    });
+    render(<DiamondWheelPage />);
+    await tick(0);
+    await tick(1200);
+    for (let index = 1; index < 5; index++) {
+      await land();
+      await tick(1200);
+    }
+    expect(read).toHaveBeenCalledWith(
+      RUN_ID,
+      'player',
+      state.player ? 'd1000000-0000-4000-8000-000000000003' : ''
+    );
+    expect(begin).toHaveBeenCalledTimes(1);
+    expect(backend.spin).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: 'Run Complete' })).toBeInTheDocument();
   });
 });

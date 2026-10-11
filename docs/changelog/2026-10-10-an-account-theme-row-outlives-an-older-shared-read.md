@@ -1,0 +1,5 @@
+# An accepted account theme row outlives an older shared read
+
+A newly mounted table can join the same account theme read that another table started before a newer live row arrived. Its own hook revision has not changed, so the former guard admitted that older shared response and replaced both its paint and the account cache. The query now records the account revision when it starts; every subscriber checks that same revision before hydration and resolves the accepted cache when refusing an older response. Server version ordering, deletion reconciliation, optimistic writes and rollback remain intact.
+
+The production gameplay attachment records a durable Carbon Red row and its websocket delivery while both table roots remain Classic Green. The new regression reproduces a connected source defect; that attachment does not establish the precise request/cache/callback sequence behind the production failure. Its failure-only safe evidence now includes bounded account-cache version snapshots without identities, sessions or arbitrary localStorage contents. The existing60-second browser assertion is unchanged. Local and protected/live qualification are separate.

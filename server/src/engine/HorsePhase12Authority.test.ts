@@ -115,30 +115,54 @@ function expectedKey(identity: Record<string, unknown>): string {
   return createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
 }
 
-describe('P12.3 null proof: no Phase 12 authority is selected today', () => {
-  it('the committed release selections are all null and the running digest is the P12.2 contract digest', () => {
-    expect(PHASE12_PROTECTED_RELEASE_SELECTIONS).toEqual({
-      short_deck: null,
-      pineapple: null,
-      flh: null,
-      flo8: null,
-    });
+describe('P12.3 committed selections: every pack qualified on condition (a) whose completion record meets the floor', () => {
+  const selected = HORSE_PHASE12_VARIANTS.filter(
+    (v) => PHASE12_PROTECTED_RELEASE_SELECTIONS[v] !== null
+  );
+  const unselected = HORSE_PHASE12_VARIANTS.filter(
+    (v) => PHASE12_PROTECTED_RELEASE_SELECTIONS[v] === null
+  );
+
+  it('FLH is selected on its 1235b47a matrix; Short Deck, Pineapple and FLO8 stay null; the running digest is the P12.2 contract digest', () => {
     expect(Object.isFrozen(PHASE12_PROTECTED_RELEASE_SELECTIONS)).toBe(true);
+    expect([...HORSE_PHASE12_VARIANTS]).toEqual(['short_deck', 'pineapple', 'flh', 'flo8']);
+    expect(selected).toEqual(['flh']);
     expect(PHASE12_RUNNING_CONTRACT_DIGEST).toBe(remainingVariantStrengthContractDigest());
     expect(PHASE12_RUNNING_CONTRACT_DIGEST).toMatch(/^[0-9a-f]{64}$/);
-    expect([...HORSE_PHASE12_VARIANTS]).toEqual(['short_deck', 'pineapple', 'flh', 'flo8']);
     for (const variant of HORSE_PHASE12_VARIANTS) {
+      const selection = PHASE12_PROTECTED_RELEASE_SELECTIONS[variant];
       const release = admitHorsePhase12ReleaseAuthority(variant);
-      expect(release, variant).toEqual({
-        status: 'refused',
-        reason: 'unselected',
-        transient: false,
+      if (selection === null) {
+        expect(release, variant).toEqual({
+          status: 'refused',
+          reason: 'unselected',
+          transient: false,
+        });
+        expect(selectedHorsePhase12Authority(variant, release)).toBeNull();
+        continue;
+      }
+      expect(selection, variant).toMatchObject({
+        schema: 'horse-qualified-authority-selection-v1',
+        phase: 'phase12',
+        variant,
+        packVersion: REMAINING_VARIANT_PACKS[variant].version,
+        contractDigest: PHASE12_RUNNING_CONTRACT_DIGEST,
+        approvalGeneration: 1,
+        expiresAt: null,
+        withdrawn: null,
       });
-      expect(selectedHorsePhase12Authority(variant, release)).toBeNull();
+      expect(release.status, variant).toBe('admitted');
+      expect(selectedHorsePhase12Authority(variant, release), variant).toMatchObject({
+        phase: 'phase12',
+        sourceSha: selection.sourceSha,
+        continuationVersion: REMAINING_VARIANT_PACKS[variant].version,
+        evidenceSha256: selection.qualificationSha256,
+        approvalGeneration: 1,
+      });
     }
   });
 
-  it('with every selection null, admission returns unselected before any evidence file is read', () => {
+  it('an unselected pack returns unselected before any evidence file is read', () => {
     const reads: string[] = [];
     const tripwire: HorseAuthorityEvidenceReader = {
       read(path) {
@@ -146,13 +170,11 @@ describe('P12.3 null proof: no Phase 12 authority is selected today', () => {
         throw Object.assign(new Error('read'), { code: 'EACCES' });
       },
     };
-    for (const variant of HORSE_PHASE12_VARIANTS) {
+    for (const variant of unselected) {
       expect(
         admitHorsePhase12ReleaseAuthority(variant, P12_TEST_NOW, undefined, tripwire),
         variant
       ).toEqual({ status: 'refused', reason: 'unselected', transient: false });
-      // The running policy digest is not needed either: a value that could
-      // never pass is never reached.
       expect(
         admitHorsePhase12QualifiedAuthority(variant, null, tripwire, P12_TEST_NOW, null, null)
       ).toEqual({ status: 'refused', reason: 'unselected', transient: false });
@@ -179,11 +201,13 @@ describe('P12.3 null proof: no Phase 12 authority is selected today', () => {
     ).toMatchObject({ status: 'refused', reason: 'contract_unavailable' });
   });
 
-  it('every live main-scheduler gate is unselected and accepts no receipt', () => {
+  it('each live main-scheduler gate is usable exactly when its pack is selected; an unselected gate accepts no receipt', () => {
     for (const variant of HORSE_PHASE12_VARIANTS) {
       const gate = liveHorsePhase12Authorities[variant];
       gate.refresh();
-      expect(gate.mainState(), variant).toBe('unselected');
+      const isSelected = PHASE12_PROTECTED_RELEASE_SELECTIONS[variant] !== null;
+      expect(gate.mainState(), variant).toBe(isSelected ? 'usable' : 'unselected');
+      if (isSelected) continue;
       const worker = new HorseQualifiedAuthorityHolder(
         `p123-null-${variant}`,
         REMAINING_VARIANT_PACKS[variant].version
@@ -196,28 +220,40 @@ describe('P12.3 null proof: no Phase 12 authority is selected today', () => {
     }
   });
 
-  // A MEASURED PACK IS NOT A PROMOTED PACK (2026-10-05), as Phase 11 learned
-  // the same day. This case first pinned "no completion record at all", the
-  // state before the P12.3 window was read. The closure commits a completion
-  // record for every pack, each below the floor. The hazard was never a record
-  // existing; it is a pack being SELECTED without review. So a completion
-  // record is admitted only while its own variant is unpromoted: select one and
-  // this case fails until somebody updates it deliberately.
-  it('while the selections are null, nothing is promoted: no qualification says qualified:true, and a completion record exists only for an unpromoted pack', () => {
-    expect(Object.values(PHASE12_PROTECTED_RELEASE_SELECTIONS).every((s) => s === null)).toBe(true);
+  it('withdrawal is a committed record: a selection with withdrawn set is a withdrawal, never a selection', () => {
+    for (const variant of selected) {
+      const withdrawn = {
+        ...PHASE12_PROTECTED_RELEASE_SELECTIONS[variant]!,
+        withdrawn: { at: '2026-10-10T00:00:00.000Z', reason: 'condition_b_lost_after_rake' },
+      };
+      const release = admitHorsePhase12ReleaseAuthority(variant, Date.now(), withdrawn);
+      expect(release, variant).toEqual({
+        status: 'withdrawn',
+        approvalGeneration: 1,
+        reason: 'release_condition_b_lost_after_rake',
+      });
+      expect(selectedHorsePhase12Authority(variant, release)).toBeNull();
+    }
+  });
+
+  // A MEASURED PACK IS NOT A PROMOTED PACK (2026-10-05), kept since the FLH
+  // selection (2026-10-10): a qualification that says qualified:true is
+  // exactly the one its pack's selection names.
+  it('the only qualified:true qualification of each pack is the one its selection names', () => {
     const dir = fileURLToPath(new URL('../../../docs/evidence/phase12/', import.meta.url));
     const files = existsSync(dir)
       ? readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.json'))
       : [];
     for (const file of files) {
       const parsed = JSON.parse(readFileSync(`${dir}${file}`, 'utf8')) as Record<string, unknown>;
-      if (parsed.schema === HORSE_PHASE12_QUALIFICATION_SCHEMA)
-        expect(parsed.qualified, file).not.toBe(true);
-      if (parsed.schema === HORSE_PHASE12_COMPLETION_SCHEMA) {
+      if (parsed.schema === HORSE_PHASE12_QUALIFICATION_SCHEMA && parsed.qualified === true) {
         const variant = parsed.variant as keyof typeof PHASE12_PROTECTED_RELEASE_SELECTIONS;
-        expect(HORSE_PHASE12_VARIANTS as readonly string[], file).toContain(variant);
-        expect(PHASE12_PROTECTED_RELEASE_SELECTIONS[variant] ?? null, file).toBeNull();
+        expect(PHASE12_PROTECTED_RELEASE_SELECTIONS[variant]?.qualificationPath, file).toBe(
+          `docs/evidence/phase12/${file}`
+        );
       }
+      if (parsed.schema === HORSE_PHASE12_COMPLETION_SCHEMA)
+        expect(HORSE_PHASE12_VARIANTS as readonly string[], file).toContain(parsed.variant);
     }
   });
 });
@@ -852,8 +888,11 @@ describe('P12.3 one pack never admits another', () => {
           P12_TEST_CONTRACT_DIGEST
         )
       ).toMatchObject({ status: 'refused', reason: 'continuation_mismatch' });
-      // The release path for another pack still reads its own null selection.
-      expect(admitHorsePhase12ReleaseAuthority(other, P12_TEST_NOW)).toMatchObject({
+      // The release path for another pack reads only its own selection: with
+      // that selection null, the Short Deck files do not admit it.
+      expect(
+        admitHorsePhase12ReleaseAuthority(other, P12_TEST_NOW, null, p12Reader('short_deck'))
+      ).toMatchObject({
         reason: 'unselected',
       });
     }

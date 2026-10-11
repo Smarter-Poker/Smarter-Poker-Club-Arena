@@ -1,3 +1,7 @@
+// Synthetic transport identities explicitly retain a live durable session.
+vi.mock('../services/PlayerSessionAccess.js', () => ({
+  playerSessionVerdict: vi.fn(async () => 'alive'),
+}));
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type ReadRequest = { handId: string; signal?: AbortSignal };
@@ -26,6 +30,7 @@ vi.mock('../services/supabase.js', () => ({
   default: {},
 }));
 
+import { playerSessionVerdict } from '../services/PlayerSessionAccess.js';
 import { ChannelWebSocketServer } from './ChannelWebSocketServer.js';
 
 class FakeWs {
@@ -35,8 +40,9 @@ class FakeWs {
   on(event: string, callback: (arg?: unknown) => void) {
     this.handlers.set(event, callback);
   }
-  send(raw: string) {
+  send(raw: string, complete?: (error?: Error) => void) {
     this.sent.push(JSON.parse(raw));
+    complete?.();
   }
   close() {
     this.readyState = 3;
@@ -55,7 +61,12 @@ function deferred() {
   return { promise, resolve };
 }
 function hand(userId: string, actions: unknown[] = [{ action: 'check' }]) {
-  return { id: 'hand', players: [{ userId }], actions, ended_at: '2026-09-13T12:00:00Z' };
+  return {
+    id: 'hand',
+    players: [{ userId, cards: ['As', 'Ks'] }],
+    actions,
+    ended_at: '2026-09-13T12:00:00Z',
+  };
 }
 function request(ws: FakeWs, handId = 'hand') {
   ws.receive({ type: 'REQUEST_HAND_REPLAY', handId });
@@ -89,6 +100,7 @@ function holdReads() {
 beforeEach(() => {
   vi.useFakeTimers();
   readHand.mockReset();
+  vi.mocked(playerSessionVerdict).mockResolvedValue('alive');
   server = new ChannelWebSocketServer();
   sockets = [];
   outstanding = [];
@@ -109,6 +121,7 @@ describe('hand replay work belongs to its initiating connection', () => {
     holdReads();
     const ws = socket();
     for (let i = 0; i < 30; i++) request(ws);
+    await flush();
     expect(readHand).toHaveBeenCalledTimes(1);
     outstanding[0].resolve({ data: hand(user, Array(10).fill({ action: 'check' })), error: null });
     await flush();
@@ -116,13 +129,15 @@ describe('hand replay work belongs to its initiating connection', () => {
     expect(vi.getTimerCount()).toBe(1);
     vi.setSystemTime(Date.now() + 1001);
     for (let i = 0; i < 10; i++) request(ws);
+    await flush();
     expect(readHand).toHaveBeenCalledTimes(1);
   });
 
-  it('bounds distinct requests per connection without starting excess reads', () => {
+  it('bounds distinct requests per connection without starting excess reads', async () => {
     holdReads();
     const ws = socket();
     for (let i = 0; i < 30; i++) request(ws, `hand-${i}`);
+    await flush();
     expect(readHand).toHaveBeenCalledTimes(4);
     expect(
       ws.sent.some((frame) => frame.type === 'CHANNEL_ERROR' && frame.code === 'REPLAY_LIMIT')
@@ -135,15 +150,18 @@ describe('hand replay work belongs to its initiating connection', () => {
       const ws = socket(`${user}-${owner}`);
       for (let i = 0; i < 4; i++) request(ws, `hand-${i}`);
     }
+    await flush();
     expect(readHand).toHaveBeenCalledTimes(64);
     for (const ws of sockets) ws.close();
     const replacement = socket(`${user}-replacement`);
     request(replacement);
+    await flush();
     expect(readHand).toHaveBeenCalledTimes(64);
     expect(replacement.sent.some((frame) => frame.code === 'REPLAY_LIMIT')).toBe(true);
     outstanding[0].resolve({ data: null, error: null });
     await flush();
     request(replacement);
+    await flush();
     expect(readHand).toHaveBeenCalledTimes(65);
   });
 
@@ -165,6 +183,7 @@ describe('hand replay work belongs to its initiating connection', () => {
     holdReads();
     const requester = socket();
     request(requester);
+    await flush();
     const sentRead = readHand.mock.calls[0][0] as ReadRequest;
     requester.close();
     const replacement = socket();
@@ -195,11 +214,13 @@ describe('hand replay work belongs to its initiating connection', () => {
     holdReads();
     const requester = socket();
     request(requester);
+    await flush();
     // A close handshake is not completion; simulate one that stays OPEN.
     requester.close = () => {};
     await server.close();
     expect((readHand.mock.calls[0][0] as ReadRequest).signal?.aborted).toBe(true);
     request(requester, 'new-after-shutdown');
+    await flush();
     expect(readHand).toHaveBeenCalledTimes(1);
     outstanding[0].resolve({ data: hand(user), error: null });
     await flush();
@@ -223,6 +244,7 @@ describe('hand replay work belongs to its initiating connection', () => {
     holdReads();
     const requester = socket();
     request(requester);
+    await flush();
     requester.handlers.get('error')?.(new Error('transport lost'));
     expect(requester.readyState).toBe(1);
     expect((readHand.mock.calls[0][0] as ReadRequest).signal?.aborted).toBe(true);
@@ -242,6 +264,7 @@ describe('hand replay work belongs to its initiating connection', () => {
     request(ws);
     await flush();
     await vi.advanceTimersByTimeAsync(200);
+    await flush();
     expect(readHand).toHaveBeenCalledTimes(2);
     expect(replayFrames(ws).map((frame) => frame.event?.frame)).toEqual([
       'META',
@@ -270,6 +293,7 @@ describe('hand replay work belongs to its initiating connection', () => {
       expect(vi.getTimerCount()).toBe(0);
       request(ws);
       await flush();
+      await flush();
       expect(readHand).toHaveBeenCalledTimes(2);
     }
   );
@@ -285,6 +309,7 @@ describe('hand replay work belongs to its initiating connection', () => {
     request(ws);
     await flush();
     await vi.advanceTimersByTimeAsync(200);
+    await flush();
     expect(readHand).toHaveBeenCalledTimes(2);
     expect(replayFrames(ws).at(-1)?.event?.frame).toBe('END');
   });
@@ -302,5 +327,31 @@ describe('hand replay work belongs to its initiating connection', () => {
     expect(new Set(replayFrames(second).map((frame) => frame.handId))).toEqual(
       new Set(['second-hand'])
     );
+  });
+});
+
+describe('second audit: durable session expires during private replay', () => {
+  it.each(['revoked', 'unknown'] as const)(
+    'does not release cards after a delayed %s verdict',
+    async (verdict) => {
+      holdReads();
+      const ws = socket();
+      request(ws);
+      await flush();
+      vi.mocked(playerSessionVerdict).mockResolvedValue(verdict);
+      outstanding[0].resolve({ data: hand(user), error: null });
+      await flush();
+      expect(replayFrames(ws)).toEqual([]);
+      expect(ws.readyState).toBe(verdict === 'revoked' ? 3 : 1);
+    }
+  );
+  it('does not emit later action frames after the durable session is revoked', async () => {
+    const ws = socket();
+    request(ws);
+    await flush();
+    expect(replayFrames(ws).map((frame) => frame.event?.frame)).toEqual(['META']);
+    vi.mocked(playerSessionVerdict).mockResolvedValue('revoked');
+    await vi.advanceTimersByTimeAsync(200);
+    expect(replayFrames(ws).map((frame) => frame.event?.frame)).toEqual(['META']);
   });
 });

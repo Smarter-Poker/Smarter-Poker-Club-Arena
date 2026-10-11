@@ -74,6 +74,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
 import { reportError } from '../utils/errorReporter';
 import { formatPopupText } from '../utils/popupStyle';
+import { CashierWorkspace } from '../components/wallet/CashierWorkspace';
 import { SpadeConsole } from '../components/console/SpadeConsole';
 import { compactChips } from '../utils/format';
 import { enumToTitleCase, titleCase } from '../utils/titleCase';
@@ -92,6 +93,7 @@ interface Transaction {
 
 interface Recipient {
   id: string;
+  searchText: string;
   username: string;
   role: string;
   balance: number;
@@ -115,29 +117,77 @@ export const MAX_CHIP_AMOUNT = 1_000_000_000_000;
  * two cashiers disagreed about what a chip IS: an operator could send 0.50
  * from one screen and be refused it on the other.
  *
- * The bound and the exponent rule stay: `parseFloat` accepted "1e9", which is
- * a billion chips from four keystrokes, and the ceiling mirrors the database's
- * own AMOUNT_EXCEEDS_LIMIT guard.
+ * THE SHAPE IS CHECKED ON THE STRING, NOT THE FLOAT (launch audit
+ * 2026-10-09, P-14 / P-20). This used to say the exponent rule "stays" while
+ * `Number('1e9')` passed straight through: a billion chips from four
+ * keystrokes was still accepted. Digits, an optional point and at most two
+ * decimals are the only spelling of a chip amount; "1e9", "-5", "+5", ".5"
+ * and "100abc" are all refused by the same rule. The ceiling still mirrors
+ * the database's own AMOUNT_EXCEEDS_LIMIT guard.
+ *
+ * Two decimals are enforced on the spelling too. The arithmetic test
+ * `Math.round(value * 100) !== value * 100` refused 9,175 of the first
+ * 100,000 cent values ("1.10", "0.07", "0.55": binary floats, so 1.10 * 100 is
+ * 110.00000000000001) with "Chips go to two decimal places" - amounts the
+ * ledger column holds exactly. A regex on the typed text cannot be fooled by
+ * float rounding.
+ *
+ * Thousands separators: "1,000" in its conventional grouping is read as one
+ * thousand. Any other comma is refused with a message that names the comma,
+ * because "Please enter a valid amount" blamed the sign.
  */
 export function parseChipAmount(
   raw: string
 ): { ok: true; value: number } | { ok: false; error: string } {
   const trimmed = (raw ?? '').trim();
   if (!trimmed) return { ok: false, error: 'Please enter an amount' };
-  const value = Number(trimmed);
-  if (!Number.isFinite(value) || value <= 0) {
-    return { ok: false, error: 'Please enter a valid amount' };
+  const grouped = /^\d{1,3}(,\d{3})+(\.\d{1,2})?$/.test(trimmed);
+  const spelled = grouped ? trimmed.replace(/,/g, '') : trimmed;
+  if (spelled.includes(',')) {
+    return { ok: false, error: 'Enter The Amount Without Commas' };
   }
   // numeric(20,2): more than two decimals cannot be stored exactly, and the
   // difference between what the operator typed and what the ledger keeps is
   // money created or destroyed.
-  if (Math.round(value * 100) !== value * 100) {
+  if (/^\d+\.\d{3,}$/.test(spelled)) {
     return { ok: false, error: 'Chips go to two decimal places' };
+  }
+  if (!/^\d+(\.\d{1,2})?$/.test(spelled)) {
+    return { ok: false, error: 'Please enter a valid amount' };
+  }
+  const value = Number(spelled);
+  if (!Number.isFinite(value) || value <= 0) {
+    return { ok: false, error: 'Please enter a valid amount' };
   }
   if (value > MAX_CHIP_AMOUNT) {
     return { ok: false, error: 'Amount exceeds the maximum transfer limit' };
   }
   return { ok: true, value };
+}
+
+/** The Mint field takes whole chips, and "100.00" is not how a whole chip is typed. */
+export const WHOLE_CHIPS = /^\d+$/;
+
+/**
+ * The Mint field's reader (regression review 2026-10-10, G-03). It accepts
+ * exactly the spellings parseChipAmount accepts, conventional thousands
+ * grouping included, and then requires whole chips: "1,000" is one thousand
+ * here too, where the Mint branch used to test the raw text against
+ * WHOLE_CHIPS and refuse it as "Mint Whole Chips Only", blaming the wrong
+ * thing. "1.5" and "100.00" are still not whole chips.
+ */
+export function parseWholeChipAmount(
+  raw: string
+): { ok: true; value: number } | { ok: false; error: string } {
+  const parsed = parseChipAmount(raw);
+  if (!parsed.ok) return parsed;
+  // parseChipAmount accepted the text, so any comma in it is conventional
+  // grouping and stripping it leaves the digits that were typed.
+  const spelled = (raw ?? '').trim().replace(/,/g, '');
+  if (!WHOLE_CHIPS.test(spelled) || !Number.isInteger(parsed.value)) {
+    return { ok: false, error: 'Mint Whole Chips Only' };
+  }
+  return parsed;
 }
 
 /**
@@ -225,7 +275,7 @@ function CashierContent() {
      (myClubChips, what a cashout debits) or the agent wallet (myAgentWallet,
      what a send debits). Leaving it destructured is an invitation to reach for
      it again. */
-  const { mintChips, loadBalances } = useWalletStore();
+  const { loadBalances } = useWalletStore();
   // The live diamonds-per-chip rate fn_mint_chips_from_diamonds charges at.
   const { diamondsPerChip: mintRate, failed: mintRateFailed } = useBridgeRate();
   const toast = useToast();
@@ -277,6 +327,15 @@ function CashierContent() {
    */
   const sendOpIdRef = useRef<string>(newOpId());
   const promoOpIdRef = useRef<string>(newOpId());
+  /**
+   * The Mint tab's p_op_id (launch audit 2026-10-09, S-03). This tab used to
+   * mint through WalletService.mintChips, which minted a FRESH
+   * X-Idempotency-Key inside every call: a mint that committed and lost its
+   * response, followed by the natural retry, burned the diamonds twice. Same
+   * pattern as ChipMintModal now: minted once per attempt, held across a
+   * failure, cleared only when a mint lands or the amount changes.
+   */
+  const mintOpIdRef = useRef<string | null>(null);
   const RATE_LIMIT_MS = 2000;
 
   // Connection status: track realtime channel health
@@ -306,6 +365,14 @@ function CashierContent() {
     recipientId: string;
     recipientName: string;
   }>({ show: false, value: 0, recipientId: '', recipientName: '' });
+
+  /* High-value Send confirm dialog focus management (launch audit 2026-10-09,
+     P-05): the dialog element takes focus, Tab is trapped inside it, Escape
+     closes it unless a send is in flight, and focus returns to the word
+     control that opened it. Ported from CashierTradePage. */
+  const sendDialogRef = useRef<HTMLDivElement | null>(null);
+  const sendDialogTriggerRef = useRef<HTMLElement | null>(null);
+  const sendDialogWasOpenRef = useRef(false);
 
   const isMounted = useIsMounted();
 
@@ -361,8 +428,19 @@ function CashierContent() {
     };
   }, []);
 
-  // Role state
-  const [userRole, setUserRole] = useState<string>('member');
+  // Role state. 'player' is the one spelling of "not yet known" - the club
+  // switch reset below uses it too, and canSend/canMint/canDistribute all
+  // read it as no permission.
+  const [userRole, setUserRole] = useState<string>('player');
+  /**
+   * The role read FAILED (launch audit 2026-10-09, P-01). Not null means the
+   * viewer's role in this club is unknown: no tab set is rendered, nothing
+   * auto-selects and DynamicWallet keeps its skeleton, because an owner whose
+   * club_members read timed out is not a plain member - they are a person we
+   * could not identify yet. The Trade page already treats this class of
+   * failure as a failure ("A failure has to look like a failure").
+   */
+  const [contextError, setContextError] = useState<string | null>(null);
   // Dan 2026-08-23: the Club Bank row opens the Club Bank Cashier here too, so
   // the control means the same thing on every surface it appears on.
   const [activeCashier, setActiveCashier] = useState<
@@ -394,6 +472,7 @@ function CashierContent() {
   useEffect(() => {
     sendOpIdRef.current = newOpId();
     promoOpIdRef.current = newOpId();
+    mintOpIdRef.current = null;
   }, [amount, selectedRecipient]);
   const [loadingRecipients, setLoadingRecipients] = useState(false);
   const [recipientSearch, setRecipientSearch] = useState('');
@@ -402,10 +481,7 @@ function CashierContent() {
     if (!recipientSearch.trim()) return recipients;
     const q = recipientSearch.trim().toLowerCase();
     return recipients.filter(
-      (r) =>
-        r.username.toLowerCase().includes(q) ||
-        r.role.toLowerCase().includes(q) ||
-        (r.id === user?.id && 'you'.includes(q))
+      (r) => r.searchText.includes(q) || (r.id === user?.id && 'you'.includes(q))
     );
   }, [recipients, recipientSearch, user?.id]);
 
@@ -490,6 +566,7 @@ function CashierContent() {
     setShowCashoutModal(false);
     setSendConfirm({ show: false, value: 0, recipientId: '', recipientName: '' });
     setLoadingContext(true);
+    setContextError(null);
     setUserRole('player');
     setIsInUnion(false);
     setIsUnionOwner(false);
@@ -592,6 +669,11 @@ function CashierContent() {
     if (!clubId || !user?.id) return;
     const myVersion = contextVersionRef.current;
     const stale = () => contextVersionRef.current !== myVersion;
+    /* WHICH READ FAILED IS SAID (regression review 2026-10-10, G-04). A
+       failed `clubs` read hides the cashier too (union_id gates Mint and the
+       distribute route), but the role read succeeded, so it must not be
+       reported as one. */
+    let failedRead: 'role' | 'club' = 'role';
     try {
       const resolvedId = await resolveClubUUID(clubId);
       if (!isMounted.current || stale()) return;
@@ -638,9 +720,22 @@ function CashierContent() {
       ]);
       if (!isMounted.current || stale()) return;
 
-      const role = memberResult?.data?.role || 'member';
+      /* `retryFetch` RETURNS a result with `.error` set rather than throwing.
+         Reading only `.data` rendered an owner, admin or agent whose role read
+         failed as a plain member - no Send, Distribute or Mint tab, an empty
+         recipient list, a one-row wallet - with nothing on screen saying
+         anything had failed. A role we could not read is unknown, not
+         'member'. (Launch audit 2026-10-09, P-01.) */
+      if (memberResult?.error) throw memberResult.error;
+      if (clubResult?.error) {
+        failedRead = 'club';
+        throw clubResult.error;
+      }
+
+      const role = memberResult?.data?.role || 'player';
       setUserRole(role);
       setClubName(clubResult?.data?.name || '');
+      setContextError(null);
       // A row that does not exist is a float of zero. A row we could not READ
       // is unknown, and stays null so the pre-flight check below cannot refuse
       // a send the server would have allowed.
@@ -688,12 +783,107 @@ function CashierContent() {
         setIsUnionOwner(false);
       }
     } catch (e) {
-      reportError(e, 'CashierPage.then');
-      // Keep defaults
+      reportError(e, 'CashierPage.loadUserContext');
+      if (isMounted.current && !stale()) {
+        setContextError(
+          failedRead === 'club'
+            ? 'The Club Could Not Be Read.'
+            : 'Your Cashier Role Could Not Be Read.'
+        );
+      }
     } finally {
-      if (isMounted.current) setLoadingContext(false);
+      /* A STALE LOAD MUST NOT CLEAR THE NEXT CLUB'S LOADING STATE (launch
+         audit 2026-10-09, P-02). Switch A -> B while A's role read is in
+         flight: A's response is discarded above as stale, but this finally
+         used to run regardless and set loadingContext=false while B was still
+         loading. The tab clamp then ran against the player tab set and moved
+         an owner from Send to Buy-In, and DynamicWallet painted the one-row
+         player wallet for them. */
+      if (isMounted.current && !stale()) setLoadingContext(false);
     }
   };
+
+  /** The Retry word control under the role-read failure. */
+  const retryUserContext = () => {
+    contextVersionRef.current += 1;
+    setContextError(null);
+    setMessage(null);
+    setLoadingContext(true);
+    void loadUserContext();
+  };
+
+  /** True until the viewer's role in this club is actually known. */
+  const roleUnknown = loadingContext || contextError !== null;
+
+  /** The typed amount read by the one rule that moves money (G-01). */
+  const typedAmount = parseChipAmount(amount);
+  const typedChips = typedAmount.ok ? typedAmount.value : null;
+
+  const closeSendConfirm = useCallback(() => {
+    setSendConfirm({ show: false, value: 0, recipientId: '', recipientName: '' });
+  }, []);
+
+  /**
+   * SEND CONFIRM DIALOG KEYBOARD AND SCROLL (launch audit 2026-10-09, P-05).
+   * The >=10K confirm was a div with role="dialog" on the OVERLAY (whose click
+   * closes it), no focus move, no Tab trap, no Escape and no focus return, so a
+   * keyboard user could Tab behind it and had no way out but Cancel. Same
+   * effect as CashierTradePage: focus lands on the dialog, Tab cycles inside
+   * it, Escape closes it unless the send is in flight, body scroll is locked,
+   * and focus goes back to the Confirm Send control that opened it.
+   */
+  useEffect(() => {
+    if (!sendConfirm.show) return;
+    const frame = window.requestAnimationFrame(() => {
+      const dialog = sendDialogRef.current;
+      if (dialog && !dialog.contains(document.activeElement)) dialog.focus();
+    });
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (!isProcessing) closeSendConfirm();
+        return;
+      }
+      if (e.key !== 'Tab' || !sendDialogRef.current) return;
+      const focusable = Array.from(
+        sendDialogRef.current.querySelectorAll<HTMLElement>(
+          'a[href], button:not(:disabled), input:not(:disabled):not([tabindex="-1"]), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+        )
+      );
+      if (!focusable.length) {
+        e.preventDefault();
+        sendDialogRef.current.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (!sendDialogRef.current.contains(active)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (e.shiftKey && (active === first || active === sendDialogRef.current)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [sendConfirm.show, isProcessing, closeSendConfirm]);
+
+  useEffect(() => {
+    if (sendDialogWasOpenRef.current && !sendConfirm.show) {
+      window.requestAnimationFrame(() => sendDialogTriggerRef.current?.focus());
+    }
+    sendDialogWasOpenRef.current = sendConfirm.show;
+  }, [sendConfirm.show]);
 
   // Load recipients when "Send" or "Distribute" tab is active
   // MUST include userRole + isUnionOwner — loadRecipients uses them for role-based filtering
@@ -861,14 +1051,13 @@ function CashierContent() {
         members = collected as unknown as RecipientRow[];
       }
 
-      // Batch-fetch display names from profiles for members without display_name
-      // PERF 2026-08-23: both lookups below derive from `members` and neither
-      // depends on the other, yet they ran in series - and the display-name
-      // fetch ran one chunk at a time, so a 588-member club paid three round
-      // trips before the agents query had even started. They are all issued
-      // together now; the consuming loops are unchanged.
-      const needNames = members.filter((m) => !m.display_name && !m.nickname).map((m) => m.user_id);
+      // Read authoritative profile status for every member, including members
+      // whose membership already supplies a name. Name spelling never means deleted.
+      // Profile and commission chunks remain independent concurrent reads.
+      const needNames = members.map((m) => m.user_id);
       const profileMap: Record<string, string> = {};
+      const profileSearchMap: Record<string, string> = {};
+      const deletedRecipientIds = new Set<string>();
       const CHUNK_SIZE = 200;
       const nameChunks: string[][] = [];
       for (let i = 0; i < needNames.length; i += CHUNK_SIZE) {
@@ -887,24 +1076,12 @@ function CashierContent() {
             () =>
               supabase
                 .from('profiles')
-                .select(`id, ${PLAYER_NAME_COLUMNS}`)
+                .select(`id, status, player_number, ${PLAYER_NAME_COLUMNS}`)
                 .in('id', chunk)
                 .then((r) => r),
             { maxRetries: 2, isMountedRef: isMounted }
           )
         )
-      ).then(
-        (r) => r,
-        (error) => {
-          reportError(error, 'CashierPage.loadRecipients.names');
-          return [] as Array<{
-            data: Array<{
-              id: string;
-              display_name: string | null;
-              username: string | null;
-            }> | null;
-          }>;
-        }
       );
 
       const agentsPromise =
@@ -930,10 +1107,15 @@ function CashierContent() {
       const [nameResults, agentResult] = await Promise.all([namesPromise, agentsPromise]);
       if (!isMounted.current || stale()) return;
 
-      for (const { data: profiles } of nameResults) {
+      for (const { data: profiles, error: profileError } of nameResults) {
+        if (profileError) throw profileError;
         if (profiles) {
           for (const p of profiles) {
             profileMap[p.id] = playerDisplayName(p);
+            profileSearchMap[p.id] = [profileMap[p.id], p.username, p.alias, p.player_number]
+              .filter((value) => value !== null && value !== undefined)
+              .join(' ');
+            if (p.status === 'deleted') deletedRecipientIds.add(p.id);
           }
         }
       }
@@ -951,9 +1133,20 @@ function CashierContent() {
       }
 
       const list: Recipient[] = members
-        .filter((m) => m.user_id)
+        .filter((m) => m.user_id && !deletedRecipientIds.has(m.user_id))
         .map((m) => ({
           id: m.user_id,
+          searchText: [
+            m.display_name,
+            m.nickname,
+            profileSearchMap[m.user_id],
+            m.user_id,
+            m.role,
+            enumToTitleCase(m.role),
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase(),
           username: m.display_name || m.nickname || profileMap[m.user_id] || 'Player',
           role: m.role,
           balance: m.chip_balance || 0,
@@ -968,19 +1161,25 @@ function CashierContent() {
             member: 2,
             player: 2,
           };
-          return (order[a.role] || 3) - (order[b.role] || 3);
+          return (order[a.role] ?? 3) - (order[b.role] ?? 3);
         });
 
       if (isMounted.current) {
         setRecipients(list);
+        setSelectedRecipient((current) => (list.some((r) => r.id === current) ? current : ''));
         // Update cache
         recipientsCacheRef.current = { data: list, ts: Date.now(), clubId };
       }
     } catch (err: unknown) {
+      if (!isMounted.current || stale()) return;
+      // A failed status read cannot leave a previously verified recipient payable.
+      recipientsCacheRef.current = null;
+      setRecipients([]);
+      setSelectedRecipient('');
       reportError(err, 'CashierPage.Failed_to_load_recipients');
       toast.error(err instanceof Error ? err.message : 'Failed to load eligible recipients');
     }
-    if (isMounted.current) setLoadingRecipients(false);
+    if (isMounted.current && !stale()) setLoadingRecipients(false);
   };
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1293,7 +1492,7 @@ function CashierContent() {
             if (isMounted.current) setRealtimeStatus('error');
           }
           if (status === 'TIMED_OUT') {
-            console.warn('[CashierPage] Realtime channel timed out');
+            reportError('Realtime channel timed out', 'CashierPage._Realtime_channel_timed_out');
             if (isMounted.current) setRealtimeStatus('reconnecting');
           }
         });
@@ -1338,11 +1537,16 @@ function CashierContent() {
     const t: CashierAction[] = [];
     if (canSend) t.push('send');
     if (canDistribute) t.push('distribute');
-    t.push('buyin', 'cashout');
+    // Buy-In only routes the player to a table, so it is only a tab when the
+    // URL names one (launch audit 2026-10-09, P-06). Without `?table=` the
+    // panel took an amount, printed Confirm Buy-In and then said "No table
+    // selected": a dead end dressed as a live control.
+    if (tableId) t.push('buyin');
+    t.push('cashout');
     if (canMint) t.push('mint');
     t.push('history');
     return t;
-  }, [canSend, canDistribute, canMint]);
+  }, [canSend, canDistribute, canMint, tableId]);
 
   // `action` defaults to 'send', but a plain player has no Send tab. Left
   // unclamped the tablist had no selected tab (every roving tabindex was -1,
@@ -1353,9 +1557,9 @@ function CashierContent() {
   // window moved an owner off Send onto Buy-In and left them there once the
   // real role arrived. Only correct an impossible tab once the role is known.
   useEffect(() => {
-    if (loadingContext) return;
+    if (roleUnknown) return;
     if (tabs.length > 0 && !tabs.includes(action)) setAction(tabs[0]);
-  }, [tabs, action, loadingContext]);
+  }, [tabs, action, roleUnknown]);
 
   const tabLabels: Record<CashierAction, string> = {
     send: 'Send',
@@ -1397,24 +1601,28 @@ function CashierContent() {
     return recipients.find((r) => r.id === selectedRecipient);
   }, [recipients, selectedRecipient]);
 
-  // ── Keyboard navigation for tabs (Arrow Left/Right) ──
+  // ── Keyboard navigation for tabs (Arrow Left/Right, Home/End) ──
+  const tabNavRef = useRef<HTMLElement | null>(null);
   const handleTabKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-        e.preventDefault();
-        const idx = tabs.indexOf(action);
-        const next =
-          e.key === 'ArrowRight'
-            ? tabs[(idx + 1) % tabs.length]
-            : tabs[(idx - 1 + tabs.length) % tabs.length];
-        setAction(next);
-        setMessage(null);
-        // Focus the new tab button
-        const btn = document.querySelector(
-          `[aria-controls="cashier-panel-${next}"]`
-        ) as HTMLElement;
-        btn?.focus();
-      }
+      if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(e.key)) return;
+      e.preventDefault();
+      const idx = Math.max(0, tabs.indexOf(action));
+      const next =
+        e.key === 'Home'
+          ? tabs[0]
+          : e.key === 'End'
+            ? tabs[tabs.length - 1]
+            : e.key === 'ArrowRight'
+              ? tabs[(idx + 1) % tabs.length]
+              : tabs[(idx - 1 + tabs.length) % tabs.length];
+      if (!next) return;
+      setAction(next);
+      setMessage(null);
+      // Focus the new tab button, found inside this tablist rather than
+      // wherever document.querySelector happens to land first.
+      const btn = tabNavRef.current?.querySelector<HTMLElement>(`#cashier-tab-${next}`);
+      btn?.focus();
     },
     [tabs, action]
   );
@@ -1457,11 +1665,27 @@ function CashierContent() {
     const cashoutActionToken = action === 'cashout' && !tableId ? Symbol('cashout-action') : null;
     if (cashoutActionToken) cashoutActionInFlight.current = cashoutActionToken;
     try {
-      // Chips are whole units. `parseFloat` alone accepted 0.5 and 1e9: the
-      // per-club ledger column is an integer, so a fractional amount is rounded
-      // on write while the sending side is debited the exact decimal — money
-      // created or destroyed by rounding. Reject anything that is not a
-      // positive whole number up front.
+      // A chip goes to two decimal places (club_members.chip_balance is
+      // numeric(20,2)); parseChipAmount holds that rule, the exponent rule and
+      // the ceiling. Cashouts have their own validator. The Mint tab alone
+      // takes whole chips, checked in its branch below.
+      /* THE TYPED TEXT IS ALWAYS READ (regression review 2026-10-10, G-01).
+         The high-value Send confirm hands back the figure it showed, and this
+         used to validate only String(override.value): "1e9" typed into the
+         field became 1000000000 before parseChipAmount ever saw the spelling.
+         The typed amount is now checked on its spelling here too, and must be
+         the figure the dialog confirmed. */
+      if (override?.value !== undefined && action !== 'cashout') {
+        const typed = parseChipAmount(amount);
+        if (!typed.ok) {
+          setMessage({ type: 'error', text: typed.error });
+          return;
+        }
+        if (typed.value !== override.value) {
+          setMessage({ type: 'error', text: 'The Amount Changed. Confirm The Send Again' });
+          return;
+        }
+      }
       const input = override?.value !== undefined ? String(override.value) : amount;
       const cashoutAmount = action === 'cashout' ? validateCashoutAmount(input) : null;
       const parsed = cashoutAmount
@@ -1649,37 +1873,98 @@ function CashierContent() {
           notifyWalletChange(recipientIdForAction, value);
         } else if (action === 'mint') {
           // ─── MINT CHIPS ───
-          // The mint route mints whole chips (its contract floors the amount),
-          // so 1.5 would be charged and credited as 1 while this page said 1.5.
-          if (!Number.isInteger(value)) {
-            if (isMounted.current) setMessage({ type: 'error', text: 'Mint Whole Chips Only' });
+          // Whole chips, checked on the spelling: "100.00" is not how a whole
+          // chip is typed, and 1.5 would be charged and credited as something
+          // other than what this page said.
+          const whole = parseWholeChipAmount(input);
+          if (!whole.ok || whole.value !== value) {
+            if (isMounted.current)
+              setMessage({ type: 'error', text: whole.ok ? 'Mint Whole Chips Only' : whole.error });
             if (isMounted.current) setIsProcessing(false);
             return;
           }
-          lastActionRef.current = now;
-          const mintResult = await mintChips(clubId!, value);
-          if (!mintResult.success) {
-            // The store catches everything and returns success:false, so the
-            // real reason ("Minting is locked for clubs in a union — only the
-            // Union owner can mint", auth errors, economy caps) was replaced by
-            // "try again", which is the wrong advice for a union-locked club.
+          /**
+           * ONE MINT PATH (launch audit 2026-10-09, S-03). This tab used to go
+           * through WalletService.mintChips -> /api/club-arena/mint-chips with
+           * a fresh X-Idempotency-Key minted INSIDE every call, so a mint that
+           * committed and lost its response was retried as a second mint. It
+           * now makes the same call ChipMintModal makes: fn_mint_chips_from_
+           * diamonds, which takes an advisory lock on p_op_id before deducting
+           * anything and replays the original receipt for a key it has seen.
+           * The key is held in mintOpIdRef across a failure and cleared only
+           * when a mint lands or the amount changes. The union lock (a club in
+           * a union cannot mint; only the union owner can) is the server's
+           * rule and is not re-implemented here.
+           *
+           * The RPC prices in diamonds: chips x diamondsPerChip. The rate is a
+           * whole number of diamonds per chip (useBridgeRate refuses anything
+           * else), so whole chips always price to whole diamonds, and the
+           * server's round(diamonds / rate, 2) is exactly the chips typed.
+           */
+          if (!mintRate) {
             if (isMounted.current)
               setMessage({
                 type: 'error',
-                text: safeErrorMessage(mintResult.error, 'Minting failed. Please try again.'),
+                text: mintRateFailed
+                  ? 'Mint Rate Unavailable. Refresh To Try Again.'
+                  : 'Reading Mint Rate. Try Again In A Moment.',
               });
             if (isMounted.current) setIsProcessing(false);
             return;
           }
-          // chip_ledger narration REMOVED (2026-08-15): chip_ledger is the
-          // legacy ledger and is now server-owned (client INSERT revoked, the
-          // open forge policy dropped). mintChips' server RPC writes the
-          // authoritative wallet_transactions row; a client-authored audit row
-          // was forgeable narration, not a record.
-
-          if (isMounted.current)
-            setMessage({ type: 'success', text: `Minted ${chipFigure(value)} chips` });
+          const diamondsRequired = value * mintRate;
+          if (!Number.isSafeInteger(diamondsRequired) || diamondsRequired <= 0) {
+            if (isMounted.current)
+              setMessage({ type: 'error', text: 'That Mint Does Not Price To Whole Diamonds' });
+            if (isMounted.current) setIsProcessing(false);
+            return;
+          }
+          lastActionRef.current = now;
+          if (!mintOpIdRef.current) mintOpIdRef.current = newOpId();
+          try {
+            const resolvedForMint = (await resolveClubUUID(clubId!)) || clubId!;
+            const { data: mintData, error: mintError } = await supabase.rpc(
+              'fn_mint_chips_from_diamonds',
+              {
+                p_club_id: resolvedForMint,
+                p_diamonds: diamondsRequired,
+                p_op_id: mintOpIdRef.current,
+              }
+            );
+            if (mintError) throw mintError;
+            const mintRes = (Array.isArray(mintData) ? mintData[0] : mintData) as {
+              success?: boolean;
+              error?: string;
+              replayed?: boolean;
+              scope?: string;
+              chips?: number;
+            } | null;
+            if (!mintRes?.success) throw new Error(mintRes?.error || 'Mint Refused');
+            // Landed. The next press is a new mint, so it needs a new key.
+            mintOpIdRef.current = null;
+            const minted = Number(mintRes.chips) || value;
+            const bank = mintRes.scope === 'union' ? 'Union Bank' : 'Club Bank';
+            if (isMounted.current)
+              setMessage({
+                type: 'success',
+                text: mintRes.replayed
+                  ? `That Mint Had Already Gone Through. ${chipFigure(minted)} Chips Are In The ${bank}`
+                  : `Minted ${chipFigure(minted)} Chips Into The ${bank}`,
+              });
+          } catch (mintErr) {
+            reportError(mintErr, 'CashierPage.mint');
+            // The key is kept: the retry of this exact mint must present the
+            // same p_op_id so the server replays instead of minting again.
+            if (isMounted.current)
+              setMessage({
+                type: 'error',
+                text: safeErrorMessage(mintErr, 'Minting Failed. Please Try Again.'),
+              });
+            if (isMounted.current) setIsProcessing(false);
+            return;
+          }
           loadBalances(user.id);
+          masterBus.emit('BALANCE_UPDATED', { source: 'chip_mint', userId: user.id });
           notifyWalletChange(user.id, value);
         } else if (action === 'buyin') {
           // ─── TABLE BUY-IN ───
@@ -1967,7 +2252,7 @@ function CashierContent() {
   if (!clubId) {
     return (
       <StandardContentLayout className={styles.page}>
-        <SpadeConsole
+        <CashierWorkspace
           eyebrow="Club Arena Cashier"
           title="Cashier"
           subtitle="Club Wallet Access"
@@ -1997,14 +2282,14 @@ function CashierContent() {
               </p>
             )}
           </div>
-        </SpadeConsole>
+        </CashierWorkspace>
       </StandardContentLayout>
     );
   }
 
   return (
     <StandardContentLayout className={styles.page}>
-      {/* ── Wallet Display — a separate approved master, never nested in the console. ── */}
+      {/* ── Wallet Display: compact live balances using the cashier directory layout. ── */}
       {user?.id && clubId && (
         <div className={styles.walletHeader}>
           <DynamicWallet
@@ -2028,7 +2313,7 @@ function CashierContent() {
             // it lands, normaliseRole reads it as 'player' and the panel would
             // show one row and then pop three more in underneath. The skeleton
             // holds instead.
-            roleReady={!loadingContext}
+            roleReady={!roleUnknown}
             onBuyDiamonds={() => navigate(withClubContext('/vip', clubId))}
             // Dan 2026-08-23: clicking Club Bank opens the Club Bank Cashier.
             // It opens the SAME modal here as it does in the lobby - an earlier
@@ -2070,7 +2355,7 @@ function CashierContent() {
         </>
       )}
 
-      <SpadeConsole
+      <CashierWorkspace
         eyebrow="Club Arena Cashier"
         title="Cashier"
         subtitle={titleCase(clubName || 'Club Wallet')}
@@ -2099,29 +2384,36 @@ function CashierContent() {
             </p>
           )}
 
-          <nav
-            className={styles.tabNav}
-            role="tablist"
-            aria-label="Cashier Actions"
-            onKeyDown={handleTabKeyDown}
-          >
-            {tabs.map((act) => (
-              <button
-                key={act}
-                role="tab"
-                tabIndex={action === act ? 0 : -1}
-                aria-selected={action === act}
-                aria-controls={`cashier-panel-${act}`}
-                className={`${styles.tab} ${action === act ? 'sc-ink--blue' : 'sc-ink--muted'}`}
-                onClick={() => {
-                  setAction(act);
-                  setMessage(null);
-                }}
-              >
-                {tabLabels[act]}
-              </button>
-            ))}
-          </nav>
+          {/* No tab set while the role is unknown: an owner whose role read
+            failed must not be handed the player tabs (P-01). */}
+          {!contextError && (
+            <nav
+              ref={tabNavRef}
+              className={styles.tabNav}
+              role="tablist"
+              aria-label="Cashier Actions"
+              aria-busy={roleUnknown || undefined}
+              onKeyDown={handleTabKeyDown}
+            >
+              {tabs.map((act) => (
+                <button
+                  key={act}
+                  id={`cashier-tab-${act}`}
+                  role="tab"
+                  tabIndex={action === act ? 0 : -1}
+                  aria-selected={action === act}
+                  aria-controls={`cashier-panel-${act}`}
+                  className={`${styles.tab} ${action === act ? 'sc-ink--blue' : 'sc-ink--muted'}`}
+                  onClick={() => {
+                    setAction(act);
+                    setMessage(null);
+                  }}
+                >
+                  {tabLabels[act]}
+                </button>
+              ))}
+            </nav>
+          )}
 
           {/* Financial Quick Links — visible to owners/admins/agents */}
           {canSend && clubId && (
@@ -2172,12 +2464,27 @@ function CashierContent() {
             </p>
           )}
 
+          {/* The role read failed: say so, offer Retry, render no money panel. */}
+          {contextError && !loadingContext && (
+            <p className="sc-copy sc-ink--red" role="alert">
+              {contextError}{' '}
+              <button type="button" className={styles.wordInline} onClick={retryUserContext}>
+                Retry
+              </button>
+            </p>
+          )}
+
           {/* ═══ SEND CHIPS ═══ */}
           {/* `canSend` guard added: `action` defaults to 'send', so a plain player
             — who has no Send tab at all — was shown a fully rendered Send Chips
             panel with a permanently empty recipient dropdown. */}
-          {action === 'send' && canSend && (
-            <section className={styles.panel} id="cashier-panel-send" role="tabpanel">
+          {action === 'send' && canSend && !roleUnknown && (
+            <section
+              className={styles.panel}
+              id="cashier-panel-send"
+              role="tabpanel"
+              aria-labelledby="cashier-tab-send"
+            >
               <h2 className={`${styles.panelTitle} sc-ink--silver`}>Send Chips</h2>
               <div className={styles.stack}>
                 {/* Names the ACCOUNT and the SCOPE, both of which this line used to
@@ -2195,10 +2502,13 @@ function CashierContent() {
 
                 {/* Recipient Select */}
                 <div className={styles.formGroup}>
-                  <label className="sc-label sc-ink--blue">SEND TO:</label>
+                  <label className="sc-label sc-ink--blue" htmlFor="cashier-send-search">
+                    Send To
+                  </label>
                   <input
+                    id="cashier-send-search"
                     type="text"
-                    placeholder="Search Member, Role Or (You)..."
+                    placeholder="Search Name, Number, Handle, Or Role..."
                     className={styles.input}
                     style={{ marginBottom: '8px' }}
                     value={recipientSearch}
@@ -2217,43 +2527,46 @@ function CashierContent() {
                       aria-label="Send To Recipient"
                     >
                       <option value="">Select Recipient</option>
-                      {filteredRecipients.map((r) => {
-                        const isSelf = r.id === user?.id;
-                        const isAgent = ['agent', 'super_agent', 'sub_agent'].includes(r.role);
-                        const roleTag =
-                          r.role === 'owner'
-                            ? 'OWNER'
-                            : r.role === 'co_owner'
-                              ? 'CO-OWNER'
-                              : r.role === 'admin'
-                                ? 'ADMIN'
-                                : r.role === 'super_agent'
-                                  ? 'SA'
-                                  : r.role === 'agent'
-                                    ? 'AGT'
-                                    : r.role === 'sub_agent'
-                                      ? 'SUB'
-                                      : '';
-                        const commInfo =
-                          isAgent && r.commissionRate
-                            ? ` ${(r.commissionRate * 100).toFixed(1)}%`
-                            : '';
-                        const typeInfo = isAgent ? (r.isPrepaid ? ' PP' : ' CR') : '';
-                        return (
-                          <option key={r.id} value={r.id}>
-                            {isSelf ? '(YOU) ' : ''}
-                            {roleTag ? `[${roleTag}${commInfo}${typeInfo}] ` : ''}
-                            {r.username} (Bal: {chipFigure(r.balance)})
-                          </option>
-                        );
-                      })}
+                      {/* fn_agent_wallet_send refuses a self-send, so the viewer
+                        is never offered here (P-07). Distribute keeps them:
+                        fn_club_bank_send funds an owner's own float. */}
+                      {filteredRecipients
+                        .filter((r) => r.id !== user?.id)
+                        .map((r) => {
+                          const isAgent = ['agent', 'super_agent', 'sub_agent'].includes(r.role);
+                          const roleTag =
+                            r.role === 'owner'
+                              ? 'Owner'
+                              : r.role === 'co_owner'
+                                ? 'Co-Owner'
+                                : r.role === 'admin'
+                                  ? 'Admin'
+                                  : r.role === 'super_agent'
+                                    ? 'SA'
+                                    : r.role === 'agent'
+                                      ? 'AGT'
+                                      : r.role === 'sub_agent'
+                                        ? 'SUB'
+                                        : '';
+                          const commInfo =
+                            isAgent && r.commissionRate
+                              ? ` ${(r.commissionRate * 100).toFixed(1)}%`
+                              : '';
+                          const typeInfo = isAgent ? (r.isPrepaid ? ' PP' : ' CR') : '';
+                          return (
+                            <option key={r.id} value={r.id}>
+                              {roleTag ? `[${roleTag}${commInfo}${typeInfo}] ` : ''}
+                              {r.username} (Bal: {chipFigure(r.balance)})
+                            </option>
+                          );
+                        })}
                     </select>
                   )}
                 </div>
 
                 <div className={styles.formGroup}>
                   <label className="sc-label sc-ink--blue" htmlFor="cashier-send-amount">
-                    AMOUNT:
+                    Amount
                   </label>
                   <input
                     id="cashier-send-amount"
@@ -2262,10 +2575,10 @@ function CashierContent() {
                     placeholder="0"
                     value={amount}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)}
-                    min={1}
-                    step={1}
+                    min={0.01}
+                    step={0.01}
                     max={MAX_CHIP_AMOUNT}
-                    inputMode="numeric"
+                    inputMode="decimal"
                   />
                 </div>
 
@@ -2300,33 +2613,30 @@ function CashierContent() {
                   two lines described a movement between two accounts neither of
                   which was involved. Suppressed entirely while the float is
                   unknown rather than projecting a subtraction from nothing. */}
-                {selectedRecipientData &&
-                  amount &&
-                  parseFloat(amount) > 0 &&
-                  myAgentWallet !== null && (
-                    <div className={styles.rows}>
-                      <div className={styles.row}>
-                        <span className="sc-label sc-ink--blue">Your Agent Wallet</span>
-                        <span className={`${styles.value} sc-ink--silver`}>
-                          {chipFigure(myAgentWallet)} →{' '}
-                          {chipFigure(Math.max(0, myAgentWallet - parseFloat(amount)))}
-                        </span>
-                      </div>
-                      <div className={styles.row}>
-                        <span className="sc-label sc-ink--blue">
-                          {selectedRecipientData.username}
-                        </span>
-                        <span className={`${styles.value} sc-ink--silver`}>
-                          {chipFigure(selectedRecipientData.balance)} →{' '}
-                          {chipFigure(selectedRecipientData.balance + parseFloat(amount))}
-                        </span>
-                      </div>
-                      <div className={styles.row}>
-                        <span className="sc-label sc-ink--blue">Claim Back Window</span>
-                        <span className={`${styles.value} sc-ink--silver`}>Ten Minutes</span>
-                      </div>
+                {selectedRecipientData && typedChips !== null && myAgentWallet !== null && (
+                  <div className={styles.rows}>
+                    <div className={styles.row}>
+                      <span className="sc-label sc-ink--blue">Your Agent Wallet</span>
+                      <span className={`${styles.value} sc-ink--silver`}>
+                        {chipFigure(myAgentWallet)} →{' '}
+                        {chipFigure(Math.max(0, myAgentWallet - typedChips))}
+                      </span>
                     </div>
-                  )}
+                    <div className={styles.row}>
+                      <span className="sc-label sc-ink--blue">
+                        {selectedRecipientData.username}
+                      </span>
+                      <span className={`${styles.value} sc-ink--silver`}>
+                        {chipFigure(selectedRecipientData.balance)} →{' '}
+                        {chipFigure(selectedRecipientData.balance + typedChips)}
+                      </span>
+                    </div>
+                    <div className={styles.row}>
+                      <span className="sc-label sc-ink--blue">Claim Back Window</span>
+                      <span className={`${styles.value} sc-ink--silver`}>Ten Minutes</span>
+                    </div>
+                  </div>
+                )}
 
                 {message && (
                   <div
@@ -2337,11 +2647,20 @@ function CashierContent() {
                 )}
 
                 <button
+                  type="button"
                   className={`${styles.wordAction} sc-ink--white`}
                   aria-label={`Send ${amount || '0'} Chips To Selected Recipient`}
-                  onClick={() => {
-                    const value = parseFloat(amount);
-                    if (!isNaN(value) && value >= 10000 && selectedRecipientData) {
+                  onClick={(event) => {
+                    // The spelling rule, never parseFloat (G-01): "1e9" is
+                    // refused here, not turned into a billion-chip confirm.
+                    const parsed = parseChipAmount(amount);
+                    if (!parsed.ok) {
+                      setMessage({ type: 'error', text: parsed.error });
+                      return;
+                    }
+                    const value = parsed.value;
+                    if (value >= 10000 && selectedRecipientData) {
+                      sendDialogTriggerRef.current = event.currentTarget;
                       setSendConfirm({
                         show: true,
                         value,
@@ -2354,15 +2673,20 @@ function CashierContent() {
                   }}
                   disabled={isProcessing || cooldown > 0 || !amount || !selectedRecipient}
                 >
-                  {isProcessing ? 'Processing...' : 'CONFIRM SEND'}
+                  {isProcessing ? 'Processing...' : 'Confirm Send'}
                 </button>
               </div>
             </section>
           )}
 
           {/* ═══ DISTRIBUTE CHIPS ═══ */}
-          {action === 'distribute' && canDistribute && (
-            <section className={styles.panel} id="cashier-panel-distribute" role="tabpanel">
+          {action === 'distribute' && canDistribute && !roleUnknown && (
+            <section
+              className={styles.panel}
+              id="cashier-panel-distribute"
+              role="tabpanel"
+              aria-labelledby="cashier-tab-distribute"
+            >
               <h2 className={`${styles.panelTitle} sc-ink--silver`}>Distribute Chips</h2>
               <div className={styles.stack}>
                 <div className="sc-copy">
@@ -2373,10 +2697,13 @@ function CashierContent() {
 
                 {/* Player Selector */}
                 <div className={styles.formGroup}>
-                  <label className="sc-label sc-ink--blue">Recipient</label>
+                  <label className="sc-label sc-ink--blue" htmlFor="cashier-distribute-search">
+                    Recipient
+                  </label>
                   <input
+                    id="cashier-distribute-search"
                     type="text"
-                    placeholder="Search Member, Role Or (You)..."
+                    placeholder="Search Name, Number, Handle, Role, Or You..."
                     className={styles.input}
                     style={{ marginBottom: '8px' }}
                     value={recipientSearch}
@@ -2397,7 +2724,7 @@ function CashierContent() {
                       <option value="">Select Player...</option>
                       {filteredRecipients.map((r) => (
                         <option key={r.id} value={r.id}>
-                          {r.id === user?.id ? '(YOU) ' : ''}
+                          {r.id === user?.id ? '(You) ' : ''}
                           {r.username} ({enumToTitleCase(r.role)}) - {chipFigure(r.balance)} Chips
                         </option>
                       ))}
@@ -2417,10 +2744,10 @@ function CashierContent() {
                     placeholder="Enter Chip Amount"
                     value={amount}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)}
-                    min={1}
-                    step={1}
+                    min={0.01}
+                    step={0.01}
                     max={MAX_CHIP_AMOUNT}
-                    inputMode="numeric"
+                    inputMode="decimal"
                   />
                 </div>
 
@@ -2554,35 +2881,15 @@ function CashierContent() {
                       startCooldown();
                       lastDistributeRef.current = Date.now();
                     } catch (err: unknown) {
+                      // The live RPCs (fn_club_bank_send / fn_agent_wallet_send)
+                      // return a sentence in `error`. The substring remaps that
+                      // used to sit here ('Rate limit', 'Insufficient promo',
+                      // 'Player not found', 'Agent not found') belonged to the
+                      // removed promo route and could relabel a club-bank
+                      // refusal as a promo one. The server's reason is printed.
                       const msg =
                         (err instanceof Error ? err.message : String(err)) || 'Distribution failed';
-                      if (msg.includes('Rate limit')) {
-                        if (isMounted.current)
-                          setMessage({
-                            type: 'error',
-                            text: 'Too many distributions - please wait 60 seconds',
-                          });
-                      } else if (msg.includes('Insufficient promo')) {
-                        if (isMounted.current)
-                          setMessage({
-                            type: 'error',
-                            text: 'Insufficient promo balance for this distribution',
-                          });
-                      } else if (msg.includes('Player not found')) {
-                        if (isMounted.current)
-                          setMessage({
-                            type: 'error',
-                            text: 'Player is not a member of this club',
-                          });
-                      } else if (msg.includes('Agent not found')) {
-                        if (isMounted.current)
-                          setMessage({
-                            type: 'error',
-                            text: 'Your agent record was not found - contact club owner',
-                          });
-                      } else {
-                        if (isMounted.current) setMessage({ type: 'error', text: msg });
-                      }
+                      if (isMounted.current) setMessage({ type: 'error', text: msg });
                     } finally {
                       if (isMounted.current) setIsProcessing(false);
                     }
@@ -2592,15 +2899,20 @@ function CashierContent() {
                     ? 'Distributing...'
                     : cooldown > 0
                       ? `Wait ${cooldown}s`
-                      : `Distribute ${amount ? chipFigure(parseFloat(amount)) : '0'} Chips`}
+                      : `Distribute ${typedChips !== null ? chipFigure(typedChips) : '0'} Chips`}
                 </button>
               </div>
             </section>
           )}
 
           {/* ═══ BUY-IN / CASH-OUT / MINT ═══ */}
-          {(action === 'buyin' || action === 'cashout' || action === 'mint') && (
-            <section className={styles.panel} id={`cashier-panel-${action}`} role="tabpanel">
+          {(action === 'buyin' || action === 'cashout' || action === 'mint') && !roleUnknown && (
+            <section
+              className={styles.panel}
+              id={`cashier-panel-${action}`}
+              role="tabpanel"
+              aria-labelledby={`cashier-tab-${action}`}
+            >
               <h2 className={`${styles.panelTitle} sc-ink--silver`}>
                 {action === 'cashout' && cashoutConfirmationVisible
                   ? 'Escrow Verification'
@@ -2659,7 +2971,7 @@ function CashierContent() {
                       }}
                       disabled={isProcessing}
                     >
-                      CANCEL
+                      Cancel
                     </button>
                     <button
                       className={`${styles.wordAction} sc-ink--white`}
@@ -2668,7 +2980,7 @@ function CashierContent() {
                         isProcessing || !isCashoutStartCurrent(cashoutConfirm.start ?? null)
                       }
                     >
-                      {isProcessing ? 'Processing...' : 'CONFIRM SECURE CASHOUT'}
+                      {isProcessing ? 'Processing...' : 'Confirm Secure Cashout'}
                     </button>
                   </div>
                 </div>
@@ -2737,8 +3049,12 @@ function CashierContent() {
 
                   <div className={styles.formGroup}>
                     <label className="sc-label sc-ink--blue" htmlFor="cashier-amount">
-                      {action === 'mint' ? 'CHIPS TO MINT:' : 'AMOUNT:'}
+                      {action === 'mint' ? 'Chips To Mint' : 'Amount'}
                     </label>
+                    {/* Mint takes whole chips (a digit keypad is right); every
+                      other amount goes to two decimals, so the phone keypad
+                      must have a decimal key and the browser must not flag
+                      12.34 as invalid (P-04). */}
                     <input
                       id="cashier-amount"
                       className={styles.input}
@@ -2748,10 +3064,10 @@ function CashierContent() {
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                         setAmount(e.target.value)
                       }
-                      min={1}
-                      step={1}
+                      min={action === 'mint' ? 1 : 0.01}
+                      step={action === 'mint' ? 1 : 0.01}
                       max={MAX_CHIP_AMOUNT}
-                      inputMode="numeric"
+                      inputMode={action === 'mint' ? 'numeric' : 'decimal'}
                     />
                   </div>
 
@@ -2819,12 +3135,12 @@ function CashierContent() {
                     {isProcessing
                       ? 'Processing...'
                       : action === 'buyin'
-                        ? 'CONFIRM BUY-IN'
+                        ? 'Confirm Buy-In'
                         : action === 'cashout'
                           ? tableId
-                            ? 'CONFIRM CASH-OUT'
-                            : 'CHECK OR REQUEST CASHOUT'
-                          : 'CONFIRM MINT'}
+                            ? 'Confirm Cash-Out'
+                            : 'Check Or Request Cashout'
+                          : 'Confirm Mint'}
                   </button>
 
                   {tableId && (
@@ -2836,8 +3152,13 @@ function CashierContent() {
           )}
 
           {/* ═══ TRANSACTION HISTORY ═══ */}
-          {action === 'history' && (
-            <section className={styles.panel} id="cashier-panel-history" role="tabpanel">
+          {action === 'history' && !roleUnknown && (
+            <section
+              className={styles.panel}
+              id="cashier-panel-history"
+              role="tabpanel"
+              aria-labelledby="cashier-tab-history"
+            >
               <h2 className={`${styles.panelTitle} sc-ink--silver`}>Transaction History</h2>
               <div className={styles.txContainer}>
                 {/* Filters */}
@@ -2846,6 +3167,8 @@ function CashierContent() {
                     (f) => (
                       <button
                         key={f}
+                        type="button"
+                        aria-pressed={txFilter === f}
                         className={`${styles.txFilterBtn} ${txFilter === f ? 'sc-ink--blue' : 'sc-ink--muted'}`}
                         onClick={() => {
                           setTxFilter(f);
@@ -2953,7 +3276,7 @@ function CashierContent() {
             </section>
           )}
         </div>
-      </SpadeConsole>
+      </CashierWorkspace>
 
       {/* Cashout Request Modal — Full step tracker UX */}
       {clubId && user?.id && (
@@ -2977,14 +3300,19 @@ function CashierContent() {
       {sendConfirm.show && (
         <div
           className={styles.modalOverlay}
-          onClick={() =>
-            setSendConfirm({ show: false, value: 0, recipientId: '', recipientName: '' })
-          }
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="send-confirm-title"
+          onClick={() => {
+            if (!isProcessing) closeSendConfirm();
+          }}
         >
-          <div className={styles.consoleDialog} onClick={(e) => e.stopPropagation()}>
+          <div
+            ref={sendDialogRef}
+            className={styles.consoleDialog}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="send-confirm-title"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+          >
             <SpadeConsole
               onClose={
                 isProcessing

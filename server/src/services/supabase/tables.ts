@@ -1,3 +1,4 @@
+import { readPendingOperatorCashClose } from '../operatorCashClose.js';
 /**
  * Supabase helpers — table + seat reads and stack/chip syncing.
  *
@@ -19,7 +20,7 @@ import {
   assertDiamondCashSettingsOpen,
   assertDiamondTournamentSettingsOpen,
 } from '../cashTablePlayEligibility.js';
-import type { WakeableCashTableRow } from '../onDemandTableWake.js';
+import { isWakeableCashTable, type WakeableCashTableRow } from '../onDemandTableWake.js';
 
 export interface CashTablePlayRow extends WakeableCashTableRow {
   id?: unknown;
@@ -50,14 +51,14 @@ export async function assertCashTablePlayEnabled(tableId: string, table: CashTab
 /**
  * Load table info from database
  */
-export async function loadTable(tableId: string) {
+export async function loadTable(tableId: string, closureOperationId?: string) {
   const rowRead = supabase
     .from('tables')
     .select(
       // RAKE-AUDIT 2026-07-24: bbj_percent added — the FIX-A2 BBJ gate reads
       // tableInfo.bbj_percent, but this select never fetched it, so the gate
       // saw `undefined ?? 0` and disabled the BBJ fee on every table.
-      'id, club_id, union_id, status, is_template, arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id), small_blind, big_blind, game_variant, max_players, ante, game_type, tournament_id, action_time_seconds, rake_percent, rake_cap_bb, big_blind_ante_enabled, straddle_enabled, straddle_type, max_straddles, auto_utg_straddle, voluntary_straddle, run_it_twice_enabled, run_it_twice, allow_run_it_twice, insurance_enabled, auto_muck_enabled, show_hand_enabled, allow_rabbit_hunt, disconnect_timeout_seconds, max_consecutive_timeouts, prefer_check_over_fold, time_bank_max_uses, time_bank_enabled, ante_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_next_due_at, bomb_pot_sched_state, bomb_pot_button_policy, bomb_pot_announce_seconds, wait_for_big_blind, seven_deuce_enabled, seven_deuce_amount, name, min_buy_in, max_buy_in, bbj_percent, all_in_or_fold, auto_start_players, run_it_mode, is_anonymous, ban_chat, restrict_observers, cap_enabled, cap_bb, pineapple_holdem, nit_game, maintain_percent_min, maintain_hands, career_percent_min, cluster_id, role, main_index, lifecycle, dealing_halted_at, dealing_halted_reason'
+      'id, club_id, union_id, status, is_deleted, is_template, arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id), small_blind, big_blind, game_variant, max_players, ante, game_type, tournament_id, action_time_seconds, rake_percent, rake_cap_bb, big_blind_ante_enabled, straddle_enabled, straddle_type, max_straddles, auto_utg_straddle, voluntary_straddle, run_it_twice_enabled, run_it_twice, allow_run_it_twice, insurance_enabled, auto_muck_enabled, show_hand_enabled, allow_rabbit_hunt, disconnect_timeout_seconds, max_consecutive_timeouts, prefer_check_over_fold, time_bank_max_uses, time_bank_enabled, ante_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_next_due_at, bomb_pot_sched_state, bomb_pot_button_policy, bomb_pot_announce_seconds, wait_for_big_blind, seven_deuce_enabled, seven_deuce_amount, name, min_buy_in, max_buy_in, bbj_percent, all_in_or_fold, auto_start_players, run_it_mode, is_anonymous, ban_chat, restrict_observers, cap_enabled, cap_bb, pineapple_holdem, nit_game, maintain_percent_min, maintain_hands, career_percent_min, cluster_id, role, main_index, lifecycle, dealing_halted_at, dealing_halted_reason'
     )
     .eq('id', tableId)
     .maybeSingle();
@@ -76,6 +77,12 @@ export async function loadTable(tableId: string) {
     throw new Error(`Failed to load table ${tableId}: ${msg}`);
   }
   if (!data) throw new Error(`Table ${tableId} not found`);
+  if (
+    closureOperationId &&
+    (!isWakeableCashTable(data) ||
+      (await readPendingOperatorCashClose(tableId)) !== closureOperationId)
+  )
+    throw new Error('operator_cash_close_authority_changed');
   const arena = parseTableArenaIdentity(data);
   if (arena.asset === 'diamonds') {
     assertDiamondTable(data);
@@ -92,7 +99,7 @@ export async function loadTable(tableId: string) {
       .maybeSingle();
     if (tournamentTable) {
       assertDiamondTournamentSettingsOpen(tableId, arena.id, settings.data, settings.error);
-    } else {
+    } else if (!closureOperationId) {
       assertDiamondCashSettingsOpen(tableId, arena.id, settings.data, settings.error);
     }
   }

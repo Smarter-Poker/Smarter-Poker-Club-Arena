@@ -215,9 +215,15 @@ describe('the club Promo Wallet cashier stands at the right account', () => {
   });
 
   it('reads BOTH accounts on open, so the switch never shows a fabricated balance', () => {
-    expect(stripComments(read('src/services/cashierBalanceRead.ts'))).toMatch(
-      /select\('id, name, union_id, chip_treasury, promo_balance'\)/
-    );
+    // 2026-10-09 (S-07): the pot and the treasury now come from the role-checked
+    // fn_club_money_panel (club_promo_wallet / club_treasury), not from a direct
+    // clubs.promo_balance / chip_treasury select that every API caller can read.
+    const balanceRead = stripComments(read('src/services/cashierBalanceRead.ts'));
+    expect(balanceRead).toContain("supabase.rpc('fn_club_money_panel', { p_club_id: uuid })");
+    expect(balanceRead).toContain('amount(money.club_promo_wallet)');
+    expect(balanceRead).toContain('amount(money.club_treasury)');
+    expect(balanceRead).not.toMatch(/from\('clubs'\)/);
+    expect(balanceRead).toMatch(/select\('agent_wallet_balance, promo_wallet_balance'\)/);
     expect(cashier).toContain('setPromoPot(');
     expect(cashier).toContain('setPromoFloat(');
     expect(cashier).toMatch(/setBank\(promoSource === 'club_pot' \? promoPot : promoFloat\)/);

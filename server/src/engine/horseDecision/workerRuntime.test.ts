@@ -126,6 +126,7 @@ import { restoreFastRandom, saveFastRandom, seedFastRandom } from '../HorseEval.
 import {
   admitHorsePhase12QualifiedAuthority,
   admitHorsePhase12ReleaseAuthority,
+  PHASE12_PROTECTED_RELEASE_SELECTIONS,
 } from '../HorsePhase12Authority.js';
 import {
   P12_TEST_CONTRACT_DIGEST,
@@ -4158,36 +4159,41 @@ describe('P12.3 worker-owned Short Deck/Pineapple/FLH/FLO8 authority (the Phase 
   const CHANGED_TOURNAMENT = ['short_deck', 'flh', 'flo8'] as const;
 
   it.each(LIVE_STATES)(
-    'live behaviour is unchanged today: %s %s %s with %i seats (seed %i) executes the same action as before P12.3',
+    'live behaviour under the committed selections: %s %s %s with %i seats (seed %i)',
     async (variant, format, street, seats, seed, eligible, changed, baseAction) => {
       const r = request(format, variant, street, seats);
       const live = await decideThrough(r, (v) => admitHorsePhase12ReleaseAuthority(v), false, seed);
       const reference = await decideThrough(r, undefined, true, seed);
-      expect(live.h.decisionOpts[0].phase12Remaining).toBe('shadow');
-      expect(act(live.decision)).toEqual(baseAction);
+      const selected = PHASE12_PROTECTED_RELEASE_SELECTIONS[variant] !== null;
+      const candidate = selected && format === 'cash';
+      expect(live.h.decisionOpts[0].phase12Remaining).toBe(candidate ? 'candidate' : 'shadow');
       expect(act(reference.decision)).toEqual(baseAction);
       expect(reference.decision.remainingVariantPolicy).toBeUndefined();
       const receipt = live.decision.remainingVariantPolicy!;
       expect(receipt).toMatchObject({
         variant,
-        mode: 'shadow',
+        mode: candidate ? 'candidate' : 'shadow',
         eligible,
-        applied: false,
-        authorityVerdict: null,
-        selectionRefusal: null,
+        applied: candidate && changed,
         authority: {
-          state: 'unselected',
-          reason: 'unselected',
-          authorityKey: null,
+          state: selected ? 'usable' : 'unselected',
           continuationVersion: REMAINING_VARIANT_PACKS[variant].version,
         },
       });
+      if (!selected)
+        expect(receipt).toMatchObject({
+          authorityVerdict: null,
+          selectionRefusal: null,
+          authority: { reason: 'unselected', authorityKey: null },
+        });
       expect(receipt.changed).toBe(changed);
-      expect(receipt.selection).toBe(changed ? 'shadow_change' : 'none');
+      if (candidate && changed) expect(act(live.decision)).not.toEqual(baseAction);
+      else expect(act(live.decision)).toEqual(baseAction);
+      if (!candidate) expect(receipt.selection).toBe(changed ? 'shadow_change' : 'none');
       expect(receipt.finalAction).toBe(live.decision.action);
       for (const pack of ['short_deck', 'pineapple', 'flh', 'flo8'] as const)
         expect(live.result.phase12Authority?.[pack]).toMatchObject({
-          state: 'unselected',
+          state: PHASE12_PROTECTED_RELEASE_SELECTIONS[pack] === null ? 'unselected' : 'usable',
           continuationVersion: REMAINING_VARIANT_PACKS[pack].version,
         });
       expect(horseDecisionReceiptIsValid(structuredClone(live.decision), variant)).toBe(true);

@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { reportError } from '../utils/errorReporter';
 
 export type CashierOperationEvent =
   | 'roster_page_succeeded'
@@ -84,9 +85,11 @@ export function recordCashierOperation(operation: CashierOperation): void {
     // The database derives user_id from auth.uid(), validates this club scope,
     // and derives sample_weight. Neither identity nor SLO weighting is trusted
     // to a browser-provided row anymore.
+    // A refused telemetry row is itself worth a report (it means the sampled
+    // SLO feed is blind), but never a console line in a player's devtools.
     void Promise.resolve(supabase.rpc('fn_record_cashier_operation', args))
       .then(({ error }) => {
-        if (error) console.debug('[cashier-telemetry] RPC refused', error.message);
+        if (error) reportError(error, 'CashierOperationsTelemetry.record');
       })
       .catch(() => undefined);
   } catch {

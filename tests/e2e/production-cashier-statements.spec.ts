@@ -96,9 +96,11 @@ test.describe('Cashier Statements - authenticated production route', () => {
     // (b) Exactly one SpadeConsole chassis carries the page.
     const surface = page.locator('[data-cashier-surface="statements"]');
     await expect(surface).toBeVisible({ timeout: 60_000 });
-    await expect(surface.locator('.sc')).toHaveCount(1);
-    await expect(surface.locator('.sc__eyebrow')).toHaveText('Full Statement');
-    await expect(surface.locator('.sc__title')).toHaveText('Cashier');
+    await expect(surface.locator('[data-cashier-layout="directory"]')).toHaveCount(1);
+    await expect(surface.locator('.cashier-workspace__eyebrow')).toHaveText('Full Statement');
+    await expect(surface.getByRole('heading', { name: 'Cashier', exact: true })).toHaveText(
+      'Cashier'
+    );
     await expect(
       surface.getByRole('button', { name: 'Back To Cashier', exact: true })
     ).toBeVisible();
@@ -122,7 +124,7 @@ test.describe('Cashier Statements - authenticated production route', () => {
       contentType: 'application/json',
     });
 
-    const pill = surface.locator('.sc__pill');
+    const pill = surface.locator('.cashier-workspace__status');
     const totals = surface.locator('[aria-label="Statement Totals"]');
     const exportSection = surface.locator('section[aria-labelledby="statement-export-title"]');
     const exportWord = exportSection.getByRole('button', { name: 'Export CSV', exact: true });

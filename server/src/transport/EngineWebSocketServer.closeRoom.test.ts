@@ -1,3 +1,7 @@
+// Synthetic transport identities explicitly retain a live durable session.
+vi.mock('../services/PlayerSessionAccess.js', () => ({
+  playerSessionVerdict: vi.fn(async () => 'alive'),
+}));
 /**
  * Lightning Phase 6 remediation (2026-10-01): closeRoom(tableId, reason)
  * closes every socket on an ended Lightning room. A single-table socket is

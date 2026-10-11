@@ -31,7 +31,9 @@ vi.mock('../services/supabase/client.js', () => ({
     from: vi.fn(() => {
       throw new Error('Unmodeled database read in idle-sweep fixture');
     }),
-    rpc: vi.fn(() => {
+    rpc: vi.fn((name) => {
+      if (name === 'fn_ca_operator_floor_state')
+        return Promise.resolve({ data: { hold: null, close: null }, error: null });
       throw new Error('Unmodeled database RPC in idle-sweep fixture');
     }),
   },

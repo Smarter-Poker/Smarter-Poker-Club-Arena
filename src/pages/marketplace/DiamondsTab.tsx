@@ -247,7 +247,7 @@ export default function DiamondsTab({
           Purchase Diamonds For Cash Games, Tournaments, VIP Perks, Exclusive Rewards, And Premium
           Smarter.Poker Upgrades.
         </p>
-        <p className={styles.promoBonus}>5% Bonus Diamonds On $100+ Purchases</p>
+        <p className={styles.promoBonus}>5% Bonus Diamonds On 100+ USD Purchases</p>
       </div>
 
       {/* ── Wallet balance ─────────────────────────────────────────────── */}
@@ -271,7 +271,7 @@ export default function DiamondsTab({
               className={`${styles.card} ${pkg.popular ? styles.cardPopular : ''} ${disabled ? styles.cardDisabled : ''}`}
               onClick={() => handleBuy(pkg)}
               disabled={disabled}
-              aria-label={`Buy ${totalDiamonds.toLocaleString()} Diamonds For $${pkg.priceUsd.toFixed(2)}`}
+              aria-label={`Buy ${totalDiamonds.toLocaleString()} Diamonds For ${pkg.priceUsd.toFixed(2)} USD`}
               aria-busy={isRedirecting}
             >
               {pkg.popular && <span className={styles.popularBadge}>Popular</span>}
@@ -290,7 +290,7 @@ export default function DiamondsTab({
                   <span className={styles.pkgLabel}>Diamonds</span>
                   <span className={styles.pkgAmount}>{totalDiamonds.toLocaleString()}</span>
                   <span className={styles.pkgSub}>
-                    {formatPopupText(pkg.name)} - ${pkg.priceUsd.toFixed(2)}
+                    {formatPopupText(pkg.name)} - {pkg.priceUsd.toFixed(2)} USD
                   </span>
                 </div>
               </div>

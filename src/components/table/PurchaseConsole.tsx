@@ -89,9 +89,13 @@ export function PurchaseConsole({
           disabled={closeDisabled}
         />
       </div>
-      <div className="addon-console__messages" aria-live="polite">
-        {messages}
-      </div>
+      {/* Only a caller with something to say below the art gets the slot; the
+          table cashier prints inside its frame and passes nothing. */}
+      {messages !== undefined && (
+        <div className="addon-console__messages" aria-live="polite">
+          {messages}
+        </div>
+      )}
     </>
   );
 }

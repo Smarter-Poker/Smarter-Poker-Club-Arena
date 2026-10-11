@@ -62,6 +62,7 @@ export function WheelExperience({
   onFinished,
   size,
   runMode = false,
+  prepaidRun = false,
   fitViewport = false,
 }: {
   segments: WheelSegment[];
@@ -73,6 +74,8 @@ export function WheelExperience({
   size: number;
   /** A run the player started: prizes go to the tally, no reveal opens per spin. */
   runMode?: boolean;
+  /** All outcomes in this explicitly selected paid batch are already sealed. */
+  prepaidRun?: boolean;
   fitViewport?: boolean;
 }) {
   /* The phase belongs to one spin. A new spinKey starts at 'primary' in the
@@ -207,7 +210,7 @@ export function WheelExperience({
             onLanded={() => {
               if (receipt?.outcome.kind === 'nothing') finish();
               else if (receipt?.outcome.kind === 'upgrade' && receipt.secondary && runMode)
-                setPhase('awaitUpgrade');
+                setPhase(prepaidRun ? 'secondary' : 'awaitUpgrade');
               else if (runMode) finish();
               else setPhase('prize');
             }}

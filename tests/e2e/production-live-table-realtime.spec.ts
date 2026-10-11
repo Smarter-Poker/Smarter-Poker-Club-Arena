@@ -898,7 +898,6 @@ async function certifyReadOnlyTournamentFormat(
   // existing runner's hard case limit and one fixed observation deadline;
   // live poker events still must satisfy the unchanged silence limit.
   const caseStartedAt = Date.now();
-  const observationDeadline = caseStartedAt + testInfo.timeout;
   /* A heads-up Sit & Go can finish its last hand while the browser watches
      it; an MTT board can close after balancing. Read durable facts for all
      tournament formats. Every unproven failure retains its evidence. */
@@ -916,7 +915,7 @@ async function certifyReadOnlyTournamentFormat(
       try {
         await observeTournamentBoard(attemptPage, request, testInfo, gameFormat, {
           caseStartedAt,
-          observationDeadline,
+          observationDeadline: caseStartedAt + testInfo.timeout,
           boardReader,
           hudReader,
           watched,
@@ -926,9 +925,11 @@ async function certifyReadOnlyTournamentFormat(
       } catch (error) {
         if (!(error instanceof NaturalCompletionDuringObservation)) throw error;
         endings.push(error.evidence);
+        // The HUD already sized the actual case timeout from its admitted
+        // clock. Reselection shares that deadline; it never resets the case.
         const decision = decideReselection({
           reselectionsUsed: attempt,
-          remainingMs: observationDeadline - Date.now(),
+          remainingMs: caseStartedAt + testInfo.timeout - Date.now(),
         });
         if (!decision.reselect) {
           throw Object.assign(
@@ -1361,8 +1362,47 @@ async function observeTournamentBoard(
       hudBaseline = hudClock.levelIndex;
       hudSince = hudClock.observedAt;
       const transition = await waitForSharedNaturalLevel(
-        () =>
-          sharedNaturalLevel(hudLevels, peerLevels, hudClock!.tournamentId, hudBaseline, hudSince),
+        () => {
+          // Keep the existing continuity guards active during the long HUD
+          // witness. A board that closes must reach the durable classifier
+          // now, rather than after the entire blind-level observation.
+          const ownership = classifyUnsubscribes(
+            journal.matchingFrames({
+              direction: 'sent',
+              tableId: candidate.id,
+              type: 'UNSUBSCRIBE',
+              since: navigationStartedAt,
+            }),
+            journal.matchingFrames({
+              direction: 'sent',
+              tableId: candidate.id,
+              type: 'SUBSCRIBE',
+              since: navigationStartedAt,
+            }),
+            preOutageTransports[0]!,
+            progressStartedAt
+          );
+          expect(
+            ownership.violations,
+            `${candidate.name} was unsubscribed while under observation`
+          ).toEqual([]);
+          expect(
+            journal.matchingFrames({
+              direction: 'received',
+              tableId: candidate.id,
+              type: 'ERROR',
+              since: navigationStartedAt,
+            }),
+            `${candidate.name} received an engine refusal`
+          ).toHaveLength(0);
+          return sharedNaturalLevel(
+            hudLevels,
+            peerLevels,
+            hudClock!.tournamentId,
+            hudBaseline,
+            hudSince
+          );
+        },
         hudEventObservationMs(hudClock, mttDeadline),
         hudObservation.signal
       );

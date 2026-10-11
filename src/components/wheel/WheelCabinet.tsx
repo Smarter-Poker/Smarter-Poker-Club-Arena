@@ -14,6 +14,7 @@ export function WheelCabinet({
   bays,
   primary,
   secondary,
+  batch,
   setup,
   navigation,
   notice,
@@ -27,6 +28,7 @@ export function WheelCabinet({
   bays: DeckBay[];
   primary?: PlateButtonProps;
   secondary?: PlateButtonProps;
+  batch?: PlateButtonProps;
   setup?: ReactNode;
   navigation?: ReactNode;
   notice?: ReactNode;
@@ -61,6 +63,17 @@ export function WheelCabinet({
               >
                 {secondary.label}
                 <TapHaptic disabled={secondary.disabled} radius="4px" />
+              </button>
+            )}
+            {batch && (
+              <button
+                type="button"
+                className={styles.secondary}
+                onClick={batch.onClick}
+                disabled={batch.disabled}
+              >
+                {batch.label}
+                <TapHaptic disabled={batch.disabled} radius="4px" />
               </button>
             )}
             {primary && (
@@ -112,10 +125,12 @@ export function WheelPrizeGallery({ segments }: { segments: WheelSegment[] }) {
 
 export function WheelEntry({
   value,
+  fundedMaximum,
   disabled,
   onChange,
 }: {
   value: number;
+  fundedMaximum?: number;
   disabled: boolean;
   onChange: (value: number) => void;
 }) {
@@ -134,7 +149,13 @@ export function WheelEntry({
         disabled={disabled}
         onChange={(e) => onChange(e.target.valueAsNumber)}
       />
-      <span id="diamond-spin-range">25 To 2,500</span>
+      <span id="diamond-spin-range">
+        {fundedMaximum != null && fundedMaximum < 2500
+          ? fundedMaximum >= 25
+            ? `Funded To ${fundedMaximum.toLocaleString()}`
+            : 'Host Funding Needed'
+          : '25 To 2,500'}
+      </span>
       <div className={styles.presets}>
         {[25, 100, 500, 1000, 2500].map((amount) => (
           <button

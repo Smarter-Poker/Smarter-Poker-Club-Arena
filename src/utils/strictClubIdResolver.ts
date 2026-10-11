@@ -24,7 +24,10 @@ export class ClubResolutionError extends Error {
  * Network-only half of strict club resolution. Kept behind a dynamic import so
  * route retry machinery is downloaded only when an uncached alias needs it.
  */
-export async function resolveClubUUIDStrict(clubIdParam: string): Promise<string> {
+export async function resolveClubUUIDStrict(
+  clubIdParam: string,
+  signal?: AbortSignal
+): Promise<string> {
   if (isUUID(clubIdParam)) return clubIdParam;
   const cached = resolveClubUUIDSync(clubIdParam);
   if (cached) return cached;
@@ -46,7 +49,7 @@ export async function resolveClubUUIDStrict(clubIdParam: string): Promise<string
         if (result.error) throw result.error;
         return result.data as { id: string } | null;
       },
-      { attempts: 3, timeoutMs: 8_000 }
+      { attempts: 3, timeoutMs: 8_000, signal }
     );
   } catch (error) {
     reportError(error, 'clubIdResolver.resolveClubUUIDStrict', { clubIdParam });

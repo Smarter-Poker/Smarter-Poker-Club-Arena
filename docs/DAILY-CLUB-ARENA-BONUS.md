@@ -1,9 +1,25 @@
 # Daily Club Arena Bonus
 
-A reward sheet every player sees on entering Club Arena, every day: one tile
-per reward, each tile claimed by hand (PokerBros style), gone at midnight
-America/Chicago. Dan, 2026-09-07. Plan: the "Daily Club Arena Bonus" artifact
+A reward sheet every player sees on entering Club Arena, every day: one row
+per reward, one Claim All action, reset at midnight
+America/Chicago. Dan, updated 2026-10-10. Plan: the "Daily Club Arena Bonus" artifact
 in Dan's Claude gallery; rulings and live state below are the source of truth.
+
+## Current upgrade (Dan, 2026-10-10)
+
+Claim once to accept all eligible rewards. No cash equivalent labels appear
+in the sheet. Diamonds use a blue faceted 3D render with subtle motion.
+Reward types rotate daily: each corresponding slot excludes yesterday's
+type, including after a streak reset. New selections are saved when the day
+opens; existing saved offers and claims remain immutable.
+
+`fn_ca_daily_bonus_claim_all(date,uuid,jsonb)` owns one transaction and the
+same per-player lock as canonical claims. It delegates each available slot
+to `fn_ca_daily_bonus_claim`, preserving caps, freeze, eligibility, VIP and
+award journals. Replays return durable claims without a second award. The
+private selector uses maintained calendar quantities and reproduces tomorrow's
+preview; it never accepts a caller-supplied amount. Historical phase records
+below describe the earlier per-tile interface.
 
 ## Rulings (Dan, 2026-09-05 to 2026-09-07)
 

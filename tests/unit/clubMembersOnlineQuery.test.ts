@@ -35,6 +35,7 @@ import { existsSync, readFileSync, statSync } from 'fs';
 import { resolve } from 'path';
 
 const PAGE = readFileSync(resolve(__dirname, '../../src/pages/ClubMembersPage.tsx'), 'utf8');
+const WORKSPACE = readFileSync(resolve(__dirname, '../../src/lib/rosterWorkspace.ts'), 'utf8');
 const CSS = readFileSync(resolve(__dirname, '../../src/pages/ClubMembersPage.css'), 'utf8');
 /**
  * The stylesheet MINUS its comments.
@@ -250,7 +251,10 @@ describe('Players tab operational continuity', () => {
     expect(PAGE_CODE).toContain("readFilter(searchParams.get('view'))");
     expect(PAGE_CODE).toContain("readSort(searchParams.get('sort'))");
     expect(PAGE_CODE).toContain("next.delete('q')");
-    expect(PAGE_CODE).toContain('rosterSearchKey(user.id, id)');
+    expect(PAGE_CODE).toContain('readRosterWorkspace(user.id, id)');
+    expect(WORKSPACE).toContain('sessionStorage.getItem(rosterWorkspaceKey(viewer, club))');
+    expect(WORKSPACE).toContain('sessionStorage.getItem(rosterSearchKey(viewer, club))');
+    expect(WORKSPACE).not.toContain('localStorage');
     expect(PAGE_CODE).toContain('setSearchParams(next, { replace: true })');
   });
 

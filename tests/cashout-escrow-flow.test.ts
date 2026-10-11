@@ -38,8 +38,6 @@ const rpc = vi.mocked(supabase.rpc);
 const push = vi.mocked(pushNotificationService.sendToUser);
 const current = () => true;
 const intent = { clubId: ID.club, playerId: ID.player, amount: 250, isCurrent: current };
-const accept = (payload: Record<string, unknown>) =>
-  rpc.mockResolvedValueOnce({ data: { success: true, ...payload }, error: null } as never);
 const receipt = (kind: FixtureCashoutKind, replayed = false) =>
   rpc.mockResolvedValueOnce({ data: cashoutV2Receipt(kind, { replayed }), error: null } as never);
 const ROOT = resolve(__dirname, '..');
@@ -206,10 +204,11 @@ describe('an empty queue and a broken queue are different answers', () => {
 
 // ───────────────────────────────────────────────────────────────────────────
 describe('browser expiry cannot report scheduler success', () => {
-  it('refuses the service-only operation without invoking an old RPC', async () => {
-    await expect(cashoutService.expireStale(72)).rejects.toThrow(
-      /Browser Cashout Expiry Is Retired/
-    );
+  // 2026-10-09 (S-11): the throw-only expireStale stub is gone; the browser has
+  // no expiry method at all now, which is a stronger form of the same rule.
+  it('has no browser expiry method, so no old RPC can be invoked', () => {
+    expect((cashoutService as unknown as Record<string, unknown>).expireStale).toBeUndefined();
+    expect(SERVICE).not.toMatch(/async expireStale|rpc\('fn_expire_stale_cashouts'/);
     expect(rpc).not.toHaveBeenCalled();
   });
   it('retains expired as a historical request status', () => {
@@ -219,26 +218,25 @@ describe('browser expiry cannot report scheduler success', () => {
 
 // ───────────────────────────────────────────────────────────────────────────
 describe('the agent may never take chips outside the two ways Dan allows', () => {
-  it('the blanket removal is still a flat refusal', async () => {
-    await expect(cashoutService.removeChipsFromPlayer('a1', 'p1', 'club-1', 10)).rejects.toThrow(
-      /cannot remove chips/i
+  // 2026-10-09 (S-08/S-11): removeChipsFromPlayer, claimBackSend and
+  // adminRemovePlayerChips were deleted from the service. Nothing in src called
+  // them, and the two live ones minted `opId || newOpId()` when a caller forgot
+  // the key. The claw back and staff pull live on the cashier pages with their
+  // own retained op ids (tests/cashier-idempotency-keys.test.ts pins those).
+  it('the service has no removal, claw back or staff pull of its own any more', () => {
+    const service = cashoutService as unknown as Record<string, unknown>;
+    expect(service.removeChipsFromPlayer).toBeUndefined();
+    expect(service.claimBackSend).toBeUndefined();
+    expect(service.adminRemovePlayerChips).toBeUndefined();
+    expect(service.sendChipsToPlayer).toBeUndefined();
+    expect(SERVICE).not.toMatch(
+      /rpc\('fn_(admin_remove_player_chips|agent_wallet_claim_back|agent_wallet_send)'/
     );
+    expect(SERVICE).not.toMatch(
+      /async (sendChipsToPlayer|claimBackSend|adminRemovePlayerChips|removeChipsFromPlayer|completeCashout|expireStale)\(/
+    );
+    expect(SERVICE).not.toContain('|| newOpId()');
     expect(rpc).not.toHaveBeenCalled();
-  });
-
-  it('the clawback is anchored on a TRANSACTION and carries the caller op id', async () => {
-    accept({ amount: 100, agent_wallet_after: 900 });
-    await cashoutService.claimBackSend('club-1', 'tx-1', undefined, undefined, 'op-cb');
-    const args = rpc.mock.calls[0][1];
-    expect(args.p_transaction_id).toBe('tx-1');
-    expect(args.p_op_id).toBe('op-cb');
-    expect(args).not.toHaveProperty('p_player_id');
-  });
-
-  it('staff keep their own pull, which is a different function entirely', async () => {
-    rpc.mockResolvedValueOnce({ data: { success: true, removed: 50, balance_after: 10 } });
-    await cashoutService.adminRemovePlayerChips('club-1', 'p1', 50, 'audit');
-    expect(rpc.mock.calls[0][0]).toBe('fn_admin_remove_player_chips');
   });
 });
 

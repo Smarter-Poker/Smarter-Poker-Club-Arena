@@ -9,6 +9,22 @@
       "file": "supabase/migrations/20261004002615_a_certification_fixture_never_queues_in_front_of_the_platfor.sql",
       "sameBytes": false,
       "basis": "Same change, and the applied SQL is byte-identical to this file's executable body. The file is 9503 bytes; its first 2290 are the comment header the Supabase MCP strips when it applies, and the remaining 7213 bytes from BEGIN; to COMMIT; hash to 0fd3c7f9e195a0964aaad2bef916d0d8, which is exactly md5 of production's statements for 20261004002905 (verified read-only 2026-10-04, joined by newlines with no trailing newline). sameBytes is false only because of that stripped header. Same declared objects on both sides: the one DO $subs$ block that rewrites the advisory-gate wait in fn_ca_prepare_post_reset_welcome_certification_fixture and the three fn_ca_prepare_unused_welcome_certification_board_{leases,games,origins} preparers, each guarded by the same pre-image and post-image md5 pins and the same privilege assertions. Applied 2026-10-04 00:29:05 UTC from this file's own session, which had reserved version 20261004002615 through new-migration.mjs. The only divergence is the 60-character filename truncation: the stem ends 'platfor' and the recorded name ends 'platform', so the name key in check-applied-migrations-are-recorded misses by one character while check-migrations-are-live already matches it on its 55-character prefix."
+    },
+    {
+      "appliedVersion": "20261010092525",
+      "appliedName": "wheel_batches_commit_every_paid_spin_atomically_and_retain_order",
+      "appliedMd5": "cb463f43a21e0279799da8b583cb004c",
+      "file": "supabase/migrations/20261010084125_wheel_batches_commit_every_paid_spin_atomically_and_retain_o.sql",
+      "sameBytes": true,
+      "basis": "Read-only production recovery 2026-10-11: public.fn_ca_migration_text applied SQL bytes are byte-identical to the existing authored source file (31977 bytes, MD5 cb463f43a21e0279799da8b583cb004c). Same declared objects and executable SQL, including preimage and postcondition assertions. Supabase recorded the apply-time version and untruncated name; the source retained its reserved version and truncated filename. No new SQL is introduced and the installed migration must not be replayed."
+    },
+    {
+      "appliedVersion": "20261010103543",
+      "appliedName": "choice_losses_keep_half_the_last_prize_and_games_show_lifetime",
+      "appliedMd5": "3152fe965f368e7352b4aa206b321125",
+      "file": "supabase/migrations/20261010083333_choice_losses_keep_half_the_last_prize_and_games_show_lifeti.sql",
+      "sameBytes": true,
+      "basis": "Read-only production recovery 2026-10-11: public.fn_ca_migration_text applied SQL bytes are byte-identical to the existing authored source file (19453 bytes, MD5 3152fe965f368e7352b4aa206b321125). Same declared objects and executable SQL, including preimage and postcondition assertions. Supabase recorded the apply-time version and untruncated name; the source retained its reserved version and truncated filename. No new SQL is introduced and the installed migration must not be replayed."
     }
   ],
   "superseded": [

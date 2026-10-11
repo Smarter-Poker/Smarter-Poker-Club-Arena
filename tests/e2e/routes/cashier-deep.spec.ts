@@ -86,9 +86,7 @@ test.describe('Cashier Trade — deep authenticated UX', () => {
     }
   });
 
-  test('reconciliation reaches a verified state with no hidden resource errors', async ({
-    page,
-  }) => {
+  test('balance refresh reaches a ready state with no hidden resource errors', async ({ page }) => {
     const errors: Array<{ text: string; url: string }> = [];
     page.on('console', (message) => {
       if (message.type() === 'error') {
@@ -102,7 +100,7 @@ test.describe('Cashier Trade — deep authenticated UX', () => {
       /^(Balances Synchronized|Cashier Ready; Loading The Rest Of The Roster After [\d,]+ Members)$/,
       { timeout: 30_000 }
     );
-    await expect(reconciliation.getByText('Not Yet Verified', { exact: true })).toHaveCount(0);
+    await expect(reconciliation.getByText('Not Yet Refreshed', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Something went wrong', { exact: false })).toHaveCount(0);
 
     const critical = errors.filter(

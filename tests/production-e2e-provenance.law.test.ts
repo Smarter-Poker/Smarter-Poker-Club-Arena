@@ -547,3 +547,116 @@ describe('production E2E uses exact trusted provenance', () => {
     });
   });
 });
+
+// Run 38170604116 (2026-10-11): a retaining publisher's certificate started
+// its browsers 48 minutes after the publish, production had moved three
+// protected-main commits forward, and a bare `test "$LIVE" = <retained>` sent
+// the whole client lane red before one page was opened. A later release is a
+// thing to align with, not a defect; only a non-forward move stays red.
+describe('a retained runtime superseded before the browsers start', () => {
+  const STEP = '- name: Take the specs from the commit production is actually serving';
+  const workflow = readFileSync(
+    resolve(process.cwd(), '.github/workflows/post-deploy-e2e.yml'),
+    'utf8'
+  );
+  const alignSteps = (): string[] => {
+    const out: string[] = [];
+    let at = workflow.indexOf(STEP);
+    while (at >= 0) {
+      const body = workflow.slice(at, workflow.indexOf('\n      - name:', at + STEP.length));
+      const script = body.slice(body.indexOf('run: |') + 'run: |'.length);
+      out.push(
+        script
+          .split('\n')
+          .map((line) => line.replace(/^ {10}/, ''))
+          .join('\n')
+      );
+      at = workflow.indexOf(STEP, at + STEP.length);
+    }
+    return out;
+  };
+
+  it('is present in both browser lanes, with no bare equality against the retained runtime', () => {
+    const steps = alignSteps();
+    expect(steps).toHaveLength(2);
+    for (const step of steps) {
+      expect(step).not.toContain(
+        'test "$LIVE" = \'${{ needs.publication-gate.outputs.client_target_sha }}\''
+      );
+      expect(step).toContain('git merge-base --is-ancestor "$RETAINED" "$LIVE"');
+    }
+  });
+
+  const git = (cwd: string, ...args: string[]) => {
+    const r = spawnSync('git', args, {
+      cwd,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 't',
+        GIT_AUTHOR_EMAIL: 't@example.invalid',
+        GIT_COMMITTER_NAME: 't',
+        GIT_COMMITTER_EMAIL: 't@example.invalid',
+      },
+    });
+    if (r.status !== 0) throw new Error(r.stderr);
+    return r.stdout.trim();
+  };
+  const commit = (cwd: string, label: string) => {
+    writeFileSync(join(cwd, 'tests/e2e/spec.txt'), label);
+    git(cwd, 'add', '-A');
+    git(cwd, 'commit', '-q', '-m', label);
+    return git(cwd, 'rev-parse', 'HEAD');
+  };
+
+  const runAlign = (step: string, live: string, here: string, retained: string, cwd: string) => {
+    const script = step
+      .replaceAll('${{ steps.live.outputs.sha }}', live)
+      .replaceAll('${{ needs.publication-gate.outputs.verification_sha }}', here)
+      .replaceAll('${{ needs.publication-gate.outputs.client_target_sha }}', retained)
+      .replace(/\$\{\{[^}]*\}\}/g, 'x')
+      .replaceAll('node scripts/ci/production-e2e-provenance.mjs', `node ${CLI}`)
+      .replaceAll('node scripts/ci/client-runtime-retention.mjs harness', 'true');
+    const output = join(cwd, '..', 'output');
+    const summary = join(cwd, '..', 'summary');
+    writeFileSync(output, '');
+    writeFileSync(summary, '');
+    const r = spawnSync('bash', ['-c', script], {
+      cwd,
+      encoding: 'utf8',
+      env: { ...process.env, GITHUB_OUTPUT: output, GITHUB_STEP_SUMMARY: summary },
+    });
+    return { ...r, output: readFileSync(output, 'utf8') };
+  };
+
+  it('aligns with a forward release, keeps the exact retained path, and refuses a rollback', () => {
+    const root = mkdtempSync(join(tmpdir(), 'retained-superseded-'));
+    const repo = join(root, 'repo');
+    try {
+      spawnSync('mkdir', ['-p', join(repo, 'tests/e2e')]);
+      git(repo, 'init', '-q');
+      const before = commit(repo, 'before');
+      const retained = commit(repo, 'retained');
+      const here = commit(repo, 'verification');
+      const later = commit(repo, 'later');
+      git(repo, 'checkout', '-q', here);
+
+      for (const step of alignSteps()) {
+        const forward = runAlign(step, later, here, retained, repo);
+        expect(forward.status, forward.stderr + forward.stdout).toBe(0);
+        expect(forward.output).toContain(`specs=${later}`);
+        git(repo, 'checkout', '-q', here, '--', 'tests/e2e');
+
+        const exact = runAlign(step, retained, here, retained, repo);
+        expect(exact.status, exact.stderr + exact.stdout).toBe(0);
+        expect(exact.output).toContain(`specs=${here}`);
+
+        const rollback = runAlign(step, before, here, retained, repo);
+        expect(rollback.status).toBe(1);
+        expect(rollback.stdout).toContain('not a forward release from retained runtime');
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

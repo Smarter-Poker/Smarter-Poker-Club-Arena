@@ -829,6 +829,44 @@ describe('a refusal the server rolled back is definitive, not unknown (S-01)', (
     rpc.mockResolvedValueOnce({ data: null, error: { message: 'v2 missing' } } as never);
     await expect(request()).rejects.toBeInstanceOf(CashoutOutcomeUnknownError);
   });
+  // 2026-10-09, S-01 follow-up: 23514 is definitive only for the transition's
+  // own pre-write refusals. fn_cashier_operation_receipt raises the same code
+  // while re-reading the receipt of an operation that ALREADY committed (the
+  // replay branch), and the write asserts raise it too; neither may settle.
+  it.each([
+    'cashier_request_receipt_mismatch',
+    'cashier_hold_request_mismatch',
+    'cashier_pending_request_mismatch',
+    'cashier_terminal_receipt_missing',
+    'cashier_terminal_request_mismatch',
+    'cashier_document_delivery_missing',
+    'cashier_document_provenance_mismatch',
+    'cashier_legacy_operation_unverified',
+    'cashier_wallet_write_missing',
+    'cashier_event_write_missing',
+    'new row for relation "club_members" violates check constraint "chip_balance_nonnegative"',
+  ])('keeps a 23514 that is not a pre-write refusal unknown: %s', async (message) => {
+    refusal('23514', message);
+    const error = await request().catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(CashoutOutcomeUnknownError);
+    expect(error).not.toBeInstanceOf(CashoutRefusedError);
+    expect(error).toMatchObject({ operationId: ID.operation });
+    expect(masterBus.emit).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['cashier_escrow_unverified', 'approval'],
+    ['cashier_legacy_hold_unverified', 'decline'],
+  ] as const)('keeps the pre-write escrow refusal %s definitive for %s', async (token, kind) => {
+    signIn(ID.agent);
+    refusal('23514', token);
+    await expect(act(kind)).rejects.toMatchObject({
+      name: 'CashoutRefusedError',
+      definitive: true,
+      code: '23514',
+      token,
+      message: 'That Cashout Was Refused.',
+    });
+  });
 });
 
 describe('request read scope and unavailable data', () => {

@@ -103,11 +103,14 @@ export class CashoutOutcomeUnknownError extends Error {
 }
 
 /**
- * A refusal the server raised and rolled back (2026-10-09, S-01). Nothing moved,
- * no event row exists for the op id, so the outcome is DEFINITIVE: the caller
- * may acknowledge the durable generation and let the next edit mint a new id,
- * instead of replaying the receipt lookup for an operation the server never kept.
- * Only transport throws, 57014, 40001, 08xxx and unrecognised codes stay unknown.
+ * A refusal the server raised and rolled back (2026-10-09, S-01). This call
+ * moved nothing and the server kept no event for its op id (for 22023
+ * cashier_operation_conflict the id already belongs to a different intent), so
+ * the outcome is DEFINITIVE: CashoutOperation acknowledges the durable
+ * generation and the next attempt mints a new id, instead of replaying the
+ * receipt lookup for an operation the server never kept. Transport throws,
+ * 57014, 40001, 08xxx, unrecognised codes and every 23514 outside
+ * CASHOUT_DEFINITIVE_23514 stay CashoutOutcomeUnknownError.
  */
 export class CashoutRefusedError extends Error {
   readonly definitive = true as const;
@@ -127,15 +130,36 @@ export class CashoutRefusedError extends Error {
   }
 }
 
-/** RAISE tokens of fn_cashier_cashout_transition (component33, live 2026-09-14). */
-const CASHOUT_REFUSAL_WORDS: Record<string, string> = {
+/**
+ * The 23514 RAISE tokens of fn_cashier_cashout_transition (component33, live
+ * 2026-09-14) that are definitive refusals. Each is raised before anything is
+ * written, and all but cashier_club_unavailable only after the replay branch
+ * found no event for this op id.
+ *
+ * 23514 is NOT definitive by code alone (2026-10-09, S-01 follow-up): the same
+ * SQLSTATE is raised by fn_cashier_operation_receipt while it re-reads the
+ * receipt of an operation that ALREADY COMMITTED (the replay branch returns
+ * through it), by the delivery and document asserts it calls, and by the
+ * integrity asserts around the writes. Settling the generation on one of those
+ * would treat committed money as never kept, so they stay unknown: the same op
+ * id is kept and only an exact receipt lookup may resolve it.
+ */
+const CASHOUT_DEFINITIVE_23514: Readonly<Record<string, string>> = {
   cashier_wallet_balance_unverified: 'Not Enough Chips For That Cashout.',
   cashier_pending_request_exists: 'You Already Have A Pending Cashout.',
   cashier_request_already_terminal: 'That Cashout Was Already Decided.',
+  cashier_club_unavailable: 'That Cashout Was Refused.',
+  cashier_escrow_unverified: 'That Cashout Was Refused.',
+  cashier_legacy_hold_unverified: 'That Cashout Was Refused.',
+  cashier_journal_is_suppressed: 'That Cashout Was Refused.',
 };
-const CASHOUT_REFUSAL_CODES: Record<string, string> = {
+/**
+ * 22023 and 42501 are never raised while replaying a committed operation of
+ * the same intent: the replay branch either returns the receipt or raises
+ * 22023 cashier_operation_conflict, whose id belongs to another intent for good.
+ */
+const CASHOUT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   '22023': 'That Cashout Request Is Not Valid.',
-  '23514': 'That Cashout Was Refused.',
   '42501': 'You Are Not Allowed To Do That Here.',
 };
 function definitiveCashoutRefusal(
@@ -144,14 +168,20 @@ function definitiveCashoutRefusal(
 ): CashoutRefusedError | null {
   if (!objectValue(error) || typeof error.code !== 'string') return null;
   const code = error.code.trim();
-  const words = CASHOUT_REFUSAL_CODES[code];
-  if (!words) return null;
   const text = [error.message, error.details, error.hint]
     .filter((part): part is string => typeof part === 'string')
     .join(' ');
   const token = /\bcashier_[a-z0-9_]+\b/.exec(text)?.[0] ?? null;
-  const message = (code === '23514' && token && CASHOUT_REFUSAL_WORDS[token]) || words;
-  return new CashoutRefusedError(message, code, token, context);
+  const words =
+    code === '23514'
+      ? token !== null && Object.prototype.hasOwnProperty.call(CASHOUT_DEFINITIVE_23514, token)
+        ? CASHOUT_DEFINITIVE_23514[token]
+        : undefined
+      : Object.prototype.hasOwnProperty.call(CASHOUT_REFUSAL_CODES, code)
+        ? CASHOUT_REFUSAL_CODES[code]
+        : undefined;
+  if (!words) return null;
+  return new CashoutRefusedError(words, code, token, context);
 }
 
 let cashoutAccount: string | null | undefined;

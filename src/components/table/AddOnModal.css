@@ -260,6 +260,19 @@
   top: 4.8%;
   height: 8.4%;
 }
+/* THE CLOSE IS 44px TO THE THUMB ACROSS TOO (2026-10-09, D-09 verified at
+   393px: the painted close is 10% of the canvas wide, 38px on a phone). The
+   art does not move: an invisible hit area grows the target around it, the
+   way SpadeConsole's own corner close does. */
+.addon-console__close::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+  transform: translate(-50%, -50%);
+}
 .purchase-console__presets {
   position: absolute;
   left: 10.7%;

@@ -5,6 +5,19 @@ import {
   assertCashoutStartCurrent,
   type CashoutStart,
 } from '../../services/CashoutOperation';
+import { CashoutRefusedError } from '../../services/CashoutService';
+
+/**
+ * A DEFINITIVE REFUSAL HAS NO RECEIPT TO CHECK (cashier screens, 2026-10-11).
+ * CashoutRefusedError means the server refused and rolled back: nothing was
+ * written, and the refusal sentence is already on screen. Retaining a receipt
+ * check for it printed "The Outcome Is Unconfirmed" under a refusal, two
+ * contradicting answers for one tap. Every other failure (a lost response, a
+ * timeout, a dropped connection) may have committed and still gets the check.
+ */
+export function outcomeNeedsReceiptCheck(err: unknown): boolean {
+  return !(err instanceof CashoutRefusedError);
+}
 
 interface RetainedCheck {
   key: string;

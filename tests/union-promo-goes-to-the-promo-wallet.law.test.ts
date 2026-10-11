@@ -223,7 +223,11 @@ describe('the club Promo Wallet cashier stands at the right account', () => {
     expect(balanceRead).toContain('amount(money.club_promo_wallet)');
     expect(balanceRead).toContain('amount(money.club_treasury)');
     expect(balanceRead).not.toMatch(/from\('clubs'\)/);
-    expect(balanceRead).toMatch(/select\('agent_wallet_balance, promo_wallet_balance'\)/);
+    // Both promo accounts are still read on open; the agents select also
+    // carries the credit line since the 2026-10-09 merge (audit C2-1).
+    expect(balanceRead).toContain(
+      "'agent_wallet_balance, promo_wallet_balance, is_prepaid, credit_limit, credit_used'"
+    );
     expect(cashier).toContain('setPromoPot(');
     expect(cashier).toContain('setPromoFloat(');
     expect(cashier).toMatch(/setBank\(promoSource === 'club_pot' \? promoPot : promoFloat\)/);

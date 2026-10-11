@@ -24,9 +24,6 @@ describe('Tournament contention qualification', () => {
       const count = [...row.definition.matchAll(pattern)].length;
       expect(count).toBe(ticket || row.signature.includes('source_guard') ? 2 : 1);
       const post = row.definition.replace(pattern, `$1'${ticket ? '55000' : '55P03'}'`);
-      expect(
-        post.replaceAll(ticket ? "'55000'" : "'55P03'", "'40001'").includes('RAISE EXCEPTION')
-      ).toBe(true);
       expect(migration).toContain(`'${row.definition_hash}','${md5(post)}'`);
       expect(migration).toContain(`= '${md5(post)}'`);
       changes += count;

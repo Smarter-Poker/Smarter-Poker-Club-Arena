@@ -32,7 +32,7 @@ cmd = [str(pg/'psql'), '-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=v
        '-h', str(socket), '-p', port, '-U', 'postgres', '-d', 'postgres']
 rows = json.loads((ROOT/'scripts/dev/fixtures/tournament-lane-contention-preimages.json').read_text())
 migration = (ROOT/'supabase/migrations/20261011185301_busy_tournament_lanes_return_lock_contention_to_their_caller.sql').read_text()
-require_hash = 'e9094e105d8e337435f47cc17f9b5fb868b6ff9b8c32f51018ac5ef44c13a3b8'
+require_hash = 'df3d0304216f0e463a0794bf637e420177f83334ae7d5999b283130971334050'
 if hashlib.sha256(migration.encode()).hexdigest() != require_hash:
     raise RuntimeError('qualified migration bytes changed')
 results = {'passed': False, 'cases': []}

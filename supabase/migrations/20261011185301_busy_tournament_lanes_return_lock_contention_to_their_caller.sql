@@ -65,4 +65,3 @@ BEGIN
  END LOOP;
 END $install$;
 COMMIT;
-

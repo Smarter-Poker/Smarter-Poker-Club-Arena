@@ -17,6 +17,7 @@ INDEXED_RESET_HAND_CHECKS_MIGRATION = ROOT / 'supabase/migrations/20261002165000
 CURRENT_BBJ_PROMO_HISTORY_MIGRATION = ROOT / 'supabase/migrations/20261002172627_welcome_reset_optional_bbj_promo_history.sql'
 COMPLETE_RESET_GRAPH_MIGRATION = ROOT / 'supabase/migrations/20261003021809_welcome_reset_complete_package_graph.sql'
 SATELLITE_TARGET_UUID_MIGRATION = ROOT / 'supabase/migrations/20261003035741_satellite_target_is_a_uuid_not_text_in_the_welcome_reset_gra.sql'
+PARTLY_OPENED_BOARD_MIGRATION = ROOT / 'supabase/migrations/20261011193040_a_partly_opened_welcome_board_is_still_an_unused_welcome_boa.sql'
 DERIVED_TABLE_CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261002021610_welcome_certification_retires_package_derived_cash_tables.sql'
 AUTHORITATIVE_LEASE_REPAIR_MIGRATION = ROOT / 'supabase/migrations/20261002030900_welcome_certification_reads_the_authoritative_engine_lease.sql'
 CONTROLLER_PROVENANCE_REPAIR_MIGRATION = ROOT / 'supabase/migrations/20261002051400_welcome_certification_accepts_its_controller_created_tables.sql'
@@ -63,6 +64,7 @@ results = {'migrations': [
     POST_RESET_UUID_ORDER_MIGRATION.name, POST_RESET_ATOMIC_BOARD_MIGRATION.name,
     POST_RESET_SPIN_RETURN_MIGRATION.name, INCREMENTAL_BOARD_CLEANUP_MIGRATION.name,
     COMPLETE_RESET_GRAPH_MIGRATION.name, SATELLITE_TARGET_UUID_MIGRATION.name,
+    PARTLY_OPENED_BOARD_MIGRATION.name,
 ], 'cases': [], 'passed': False}
 
 def command(argv, sql=None):
@@ -594,6 +596,11 @@ $restore$;
     run('reinstall-complete-reset-graph',COMPLETE_RESET_GRAPH_MIGRATION.read_text())
     run('install-satellite-target-uuid',SATELLITE_TARGET_UUID_MIGRATION.read_text())
     run('reinstall-satellite-target-uuid',SATELLITE_TARGET_UUID_MIGRATION.read_text())
+    # WELCOME_HARNESS_SKIP_PARTLY_OPENED_BOARD=1 reproduces the pre-repair
+    # behaviour: the partly-opened-board cases below must then fail.
+    if os.environ.get('WELCOME_HARNESS_SKIP_PARTLY_OPENED_BOARD') != '1':
+        run('install-partly-opened-board',PARTLY_OPENED_BOARD_MIGRATION.read_text())
+        run('reinstall-partly-opened-board',PARTLY_OPENED_BOARD_MIGRATION.read_text())
     run('install-post-reset-fixture-builder',r"""
 CREATE FUNCTION test_shape_post_reset_welcome_fixture(
   p_club uuid,p_owner uuid,p_board_count integer DEFAULT 12,
@@ -1099,6 +1106,64 @@ SELECT (SELECT chip_treasury FROM clubs WHERE id='{c32}'),
        (SELECT count(*) FROM club_welcome_reset_receipts WHERE club_id='{c33}'),
        (SELECT count(*) FROM club_welcome_package_items WHERE club_id='{c33}' AND retired_at IS NULL);
 """,'100000.00|1|99700.00|0|10')
+    # A brand-new club's welcome board opens a few games per engine tick, so
+    # Retire Club can be opened while only some of the twelve exist. A partly
+    # opened, unused board is still the welcome board (20261011193040); a
+    # duplicate name is still a look-alike and still refused. Every case runs
+    # in a rolled-back transaction so the cases after it see c33 unchanged.
+    _partly_opened_board = f"""
+INSERT INTO tournaments(id,club_id,name,game_type,variant,tournament_type,buy_in_amount,buy_in_fee,
+ max_players,min_players,table_size,starting_chips,current_players,status) VALUES
+ ('00000000-0000-4000-a033-000000000003','{c33}','NLH Heads-Up 1','NLH','sng','SNG',0.95,0.05,2,2,2,1000,0,'REGISTERING'),
+ ('00000000-0000-4000-a033-000000000004','{c33}','PLO4 Heads-Up 1','PLO4','sng','SNG',0.95,0.05,2,2,2,1000,0,'REGISTERING'),
+ ('00000000-0000-4000-a033-000000000007','{c33}','1 Chip Spin NLH','NLH','spin','SPIN',1,0,3,3,3,300,0,'REGISTERING'),
+ ('00000000-0000-4000-a033-000000000008','{c33}','1 Chip Spin PLO4','PLO4','spin','SPIN',1,0,3,3,3,300,0,'REGISTERING'),
+ ('00000000-0000-4000-a033-000000000011','{c33}','1 Chip Deep Stack Spin NLH','NLH','spin','SPIN',1,0,3,3,3,1000,0,'REGISTERING');
+"""
+    run('partly-opened-board-can-reset',f"""
+BEGIN;
+SET request.jwt.claim.sub='{owner32}';
+{_partly_opened_board}
+SELECT fn_get_club_welcome_package_reset_impact('{c33}')->>'can_reset',
+       COALESCE(fn_get_club_welcome_package_reset_impact('{c33}')->>'reason','none'),
+       jsonb_array_length(fn_get_club_welcome_package_reset_impact('{c33}')->'tournament_ids');
+ROLLBACK;
+""",'true|none|5')
+    run('partly-opened-board-unwinds-every-opened-game',f"""
+BEGIN;
+SET request.jwt.claim.sub='{owner32}';
+{_partly_opened_board}
+CREATE TEMP TABLE partly_opened_reset AS
+SELECT fn_remove_first_club_welcome_games(
+  '{c33}','00000000-0000-4000-f033-000000000001') AS result;
+SELECT result->>'ok',jsonb_array_length(result#>'{{removed,tournament_ids}}'),
+       (SELECT count(*) FROM tournaments WHERE club_id='{c33}' AND status='CANCELLED'),
+       (SELECT count(*) FROM tournaments WHERE club_id='{c33}' AND status<>'CANCELLED'),
+       (SELECT count(*) FROM club_welcome_package_items WHERE club_id='{c33}' AND retired_at IS NULL),
+       (SELECT count(*) FROM club_welcome_reset_receipts WHERE club_id='{c33}')
+  FROM partly_opened_reset;
+ROLLBACK;
+""",'true|5|5|0|0|1')
+    run('partly-opened-board-duplicate-still-refused',f"""
+BEGIN;
+SET request.jwt.claim.sub='{owner32}';
+{_partly_opened_board}
+INSERT INTO tournaments(id,club_id,name,game_type,variant,tournament_type,buy_in_amount,buy_in_fee,
+ max_players,min_players,table_size,starting_chips,current_players,status)
+VALUES('00000000-0000-4000-a033-000000000018','{c33}','NLH Heads-Up 1','NLH','sng','SNG',
+       0.95,0.05,2,2,2,1000,0,'REGISTERING');
+SELECT fn_get_club_welcome_package_reset_impact('{c33}')->>'can_reset',
+       fn_get_club_welcome_package_reset_impact('{c33}')->>'reason',
+       fn_remove_first_club_welcome_games(
+         '{c33}','00000000-0000-4000-f033-000000000002')->>'reason';
+ROLLBACK;
+""",'false|package_economics_not_pristine|WELCOME_PACKAGE_BOARD_LINEAGE_AMBIGUOUS')
+    run('partly-opened-board-checks-leave-no-trace',f"""
+SELECT (SELECT count(*) FROM tournaments WHERE club_id='{c33}'),
+       (SELECT count(*) FROM club_welcome_reset_receipts WHERE club_id='{c33}'),
+       (SELECT count(*) FROM club_welcome_package_items WHERE club_id='{c33}' AND retired_at IS NULL),
+       (SELECT chip_treasury FROM clubs WHERE id='{c33}');
+""",'0|0|10|99700.00')
     run('complete-reset-graph-isolated-spawn-teardown',f"""
 DELETE FROM tournament_schedule_spawns
  WHERE tournament_id IN (SELECT id FROM tournaments WHERE club_id='{c32}');

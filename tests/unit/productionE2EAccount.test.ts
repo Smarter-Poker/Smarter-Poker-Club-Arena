@@ -678,6 +678,59 @@ describe('post-deploy production account', () => {
     expect(wait).not.toHaveBeenCalledWith(10_000);
   });
 
+  it('waits out the raised form of the freeze refusal too (run 38148991448)', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-raised-freeze-'));
+    const env = environment(directory);
+    const record = {
+      id: USER_ID,
+      email: 'ca-customization-cert-postdeploy-raised@example.invalid',
+    };
+    let sweepAttempts = 0;
+    let freezeReads = 0;
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes('/rest/v1/rpc/cleanup_reserved_certification_account')) {
+        sweepAttempts += 1;
+        return sweepAttempts === 1
+          ? Response.json(
+              {
+                code: 'P0001',
+                message:
+                  'PLATFORM_FROZEN: the platform is on a scheduled maintenance break. DELETE on chip_transactions was refused; it will succeed when play resumes.',
+              },
+              { status: 400 }
+            )
+          : Response.json({ success: true });
+      }
+      if (url.includes('/rest/v1/engine_maintenance_break')) {
+        return Response.json([
+          {
+            phase: 'counting_down',
+            break_started_at: new Date(Date.now() - 60_000).toISOString(),
+            break_ends_at: new Date(Date.now() + 300_000).toISOString(),
+            enforce_freeze: true,
+          },
+        ]);
+      }
+      if (url.includes('/rest/v1/rpc/fn_platform_frozen')) {
+        freezeReads += 1;
+        return Response.json(freezeReads === 1);
+      }
+      if (url.includes(`/auth/v1/admin/users/${USER_ID}`)) {
+        return new Response(null, { status: 404 });
+      }
+      return new Response('unexpected request', { status: 500 });
+    });
+    const wait = vi.fn().mockResolvedValue(undefined);
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await expect(
+      cleanupProductionE2EAccount({ environment: env, fetchImpl: fetchMock, wait, record })
+    ).resolves.toBe(true);
+    expect(sweepAttempts).toBe(2);
+    expect(freezeReads).toBe(2);
+  });
+
   it('refuses honestly when the freeze outlives the budget the break row gave it', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-frozen-'));
     const env = environment(directory);
@@ -734,6 +787,102 @@ describe('certification-club retirement transport contract', () => {
   };
   const clubId = '11111111-1111-4111-8111-111111111111';
   const reason = 'ui-cert-cleanup';
+
+  it('waits out a raised freeze refusal, then retires the fixture club (run 38161401967)', async () => {
+    const frozen = Object.assign(
+      new Error(
+        'PLATFORM_FROZEN: the platform is on a scheduled maintenance break. DELETE on chip_transactions was refused; it will succeed when play resumes.'
+      ),
+      { code: 'P0001' }
+    );
+    const result = { success: true, chips_retired: 100000 };
+    let doorCalls = 0;
+    const query = vi.fn(async (sql: string) => {
+      if (sql.startsWith('SELECT public.fn_ca_retire_welcome_certification_club')) {
+        doorCalls += 1;
+        if (doorCalls === 1) throw frozen;
+        return { rows: [{ result }] };
+      }
+      return { rows: [] };
+    });
+    const client = {
+      connect: vi.fn().mockResolvedValue(undefined),
+      query,
+      end: vi.fn().mockResolvedValue(undefined),
+    };
+    let freezeReads = 0;
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes('/rest/v1/engine_maintenance_break')) {
+        return Response.json([
+          {
+            phase: 'counting_down',
+            break_started_at: new Date(Date.now() - 60_000).toISOString(),
+            break_ends_at: new Date(Date.now() + 300_000).toISOString(),
+            enforce_freeze: true,
+          },
+        ]);
+      }
+      if (url.includes('/rest/v1/rpc/fn_platform_frozen')) {
+        freezeReads += 1;
+        return Response.json(freezeReads === 1);
+      }
+      return new Response('unexpected request', { status: 500 });
+    });
+    const wait = vi.fn().mockResolvedValue(undefined);
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await expect(
+      retireCertificationClubWithRetry({
+        configuration,
+        clubId,
+        reason,
+        environment: { DATABASE_URL: 'postgresql://certification.invalid/club_arena' },
+        databaseClientFactory: vi.fn().mockResolvedValue(client),
+        fetchImpl: fetchMock,
+        wait,
+      })
+    ).resolves.toEqual(result);
+    expect(doorCalls).toBe(2);
+    expect(freezeReads).toBe(2);
+    expect(wait).toHaveBeenCalledWith(PLATFORM_FREEZE_POLL_MS);
+    // The refused attempt rolled back; only the second one committed.
+    expect(query.mock.calls.filter(([sql]) => sql === 'ROLLBACK')).toHaveLength(1);
+    expect(query.mock.calls.filter(([sql]) => sql === 'COMMIT')).toHaveLength(1);
+  });
+
+  it('never waits on a refusal that is not the freeze', async () => {
+    const failure = Object.assign(new Error('WELCOME_CERTIFICATION_FIXTURE_IS_PROTECTED'), {
+      code: '55000',
+    });
+    const query = vi.fn(async (sql: string) => {
+      if (sql.startsWith('SELECT')) throw failure;
+      return { rows: [] };
+    });
+    const client = {
+      connect: vi.fn().mockResolvedValue(undefined),
+      query,
+      end: vi.fn().mockResolvedValue(undefined),
+    };
+    const fetchMock = vi.fn();
+    const wait = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      retireCertificationClubWithRetry({
+        configuration,
+        clubId,
+        reason,
+        environment: { DATABASE_URL: 'postgresql://certification.invalid/club_arena' },
+        databaseClientFactory: vi.fn().mockResolvedValue(client),
+        fetchImpl: fetchMock,
+        wait,
+      })
+    ).rejects.toBe(failure);
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('fn_platform_frozen'),
+      expect.anything()
+    );
+  });
 
   it('uses one direct transaction with separate local settings before the retirement SELECT', async () => {
     const result = { success: true, chips_retired: 100000 };

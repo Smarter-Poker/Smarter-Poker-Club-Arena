@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "5374a01c45ef4118c957bd2613a495bad7f042655d6282e40c005efba8fc055d",
+    "scripts/ci/classify-ci-changes.mjs": "0ddedc8a6b6c8c91efdff7ed503482aa3b846440abfe72317098a5b1182bdcd3",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
@@ -785,6 +785,17 @@
         "path": "scripts/ci/classify-ci-changes.mjs",
         "previous": "9eef710ba89f994e5299852d62375543242c60a792dcb9ffb4601cc523d0e73c",
         "current": "5374a01c45ef4118c957bd2613a495bad7f042655d6282e40c005efba8fc055d"
+      }
+    ]
+  },
+  "phase13EvidenceRouting20261011": {
+    "reason": "Reviewed additive routing: one new committedEvidence selector (any path under docs/evidence/) added to the existing server and tests selections, because server and client tests read committed evidence from disk and #6687 changed only docs/evidence/phase13/ and skipped them. tests/unit/fixtureNativeCi.test.ts gains one additive describe pinning that routing. No selector is removed or narrowed; financial sources, assertions and historical evidence are unchanged. These byte bindings establish source identity only, not financial or production qualification. docs/changelog/2026-10-11-a-qualified-record-is-not-a-promotion.md",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "5374a01c45ef4118c957bd2613a495bad7f042655d6282e40c005efba8fc055d",
+        "current": "0ddedc8a6b6c8c91efdff7ed503482aa3b846440abfe72317098a5b1182bdcd3"
       }
     ]
   }

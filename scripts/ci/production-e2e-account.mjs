@@ -50,6 +50,26 @@ const CERTIFICATION_CLUB_NAME_PREFIXES = ['Crest Cert ', 'Preset Crest Cert '];
 const PLATFORM_FREEZE_MAX_WAITS = 2;
 
 /**
+ * A freeze reaches this script two ways. A guarded door that knows about the
+ * break answers `{ reason: 'platform_is_frozen' }`; a door that writes an
+ * append-only journal is stopped one level lower by the freeze trigger, which
+ * RAISES "PLATFORM_FROZEN: the platform is on a scheduled maintenance break.
+ * ... it will succeed when play resumes." Both mean "wait for the thaw", not
+ * "the fixture is broken". 2026-10-11 runs 38148991448 (account sweep) and
+ * 38161401967 (two fixture clubs) failed red on the raised form while the
+ * scheduled break ran; a later run retired the same clubs untouched.
+ */
+export const isPlatformFreezeRefusal = (error) => {
+  if (!error) return false;
+  const message = `${error?.message || ''} ${error?.body?.message || ''}`;
+  return (
+    String(error.code || error?.body?.code || '') === '55006' ||
+    /PLATFORM_FROZEN/.test(message) ||
+    /platform is on a scheduled maintenance break/i.test(message)
+  );
+};
+
+/**
  * Wait for the freeze to END. Never a tick count: 0 of the 435 breaks measured
  * between 2026-09-16 and 2026-09-30 finished inside the 370s this loop used to
  * allow. `scripts/ci/platform-freeze-window.mjs` carries the whole measurement
@@ -211,12 +231,18 @@ export async function cleanupProductionE2EAccount({
   const configuration = requireEnvironment(environment);
   let result;
   for (let freezesWaited = 0; ; ) {
-    result = await serviceRequest(
-      configuration,
-      '/rest/v1/rpc/cleanup_reserved_certification_account',
-      { method: 'POST', body: JSON.stringify({ p_user_id: account.id }) },
-      fetchImpl
-    );
+    try {
+      result = await serviceRequest(
+        configuration,
+        '/rest/v1/rpc/cleanup_reserved_certification_account',
+        { method: 'POST', body: JSON.stringify({ p_user_id: account.id }) },
+        fetchImpl
+      );
+    } catch (error) {
+      if (!isPlatformFreezeRefusal(error)) throw error;
+      // The raised form of the same refusal: one transaction, rolled back.
+      result = { success: false, reason: 'platform_is_frozen' };
+    }
     if (result?.success === true || result?.reason === 'auth_soft_delete_required') break;
     if (result?.reason !== 'platform_is_frozen') {
       throw new Error(
@@ -658,6 +684,35 @@ export async function retireCertificationClubWithRetry({
       await client.end();
     }
   };
+  // The retirement door is one all-or-nothing transaction, so a freeze refusal
+  // committed nothing and the same call is safe once the break ends.
+  const retireThroughTheFreeze = async () => {
+    for (let freezesWaited = 0; ; ) {
+      try {
+        return await retire();
+      } catch (error) {
+        if (!isPlatformFreezeRefusal(error)) throw error;
+        if (freezesWaited >= PLATFORM_FREEZE_MAX_WAITS) {
+          throw new Error(
+            `Retirement of certification club ${clubId} was refused for the platform freeze ` +
+              `across ${freezesWaited} complete freezes, which is more than section 13 schedules.`
+          );
+        }
+        freezesWaited += 1;
+        console.log(
+          `[production-e2e-account] the platform freeze refused retirement of ${clubId}; ` +
+            'waiting for the thaw.'
+        );
+        const thaw = await waitOutPlatformFreeze(configuration, fetchImpl, wait);
+        if (thaw.outcome !== 'thawed') {
+          throw new Error(
+            `Retirement of certification club ${clubId} was refused for the freeze; ` +
+              describeThaw(thaw)
+          );
+        }
+      }
+    }
+  };
   const retirementFailureMessage = (error) => String(error?.body?.message || error?.message || '');
   const hasFreshUnmaterializedScheduleClaim = async () => {
     const items = await serviceRequest(
@@ -705,7 +760,7 @@ export async function retireCertificationClubWithRetry({
   try {
     for (;;) {
       try {
-        result = await retryTransient(retire, {
+        result = await retryTransient(retireThroughTheFreeze, {
           wait,
           label: `retirement of certification club ${clubId}`,
         });

@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 199822,
-      "sha256": "4eaa992ee411f465b3ff794c2ffce13ed08a2d69fac86a52cc4f6118c378072d"
+      "bytes": 200101,
+      "sha256": "6ef7bf5fde393d85b93cee328829cb86da2d569e7069f2b12692a0805ca34896"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1971,6 +1971,13 @@
     "protectedWorkflowPin": {
       "bytes": 199774,
       "sha256": "15679c47528669fdd53c1677120db79c376b6f10410d2b144c562bf1793c11e6"
+    }
+  },
+  "ownerAlertFindingRegression20261011": {
+    "reason": "Add the actual owner-alert trigger regression to the existing required Accounting1 lane. Preserve all cash inputs, assertions, historical fingerprints and qualification status. Fingerprint renewal is source integrity only, not financial qualification.",
+    "previousWorkflowPin": {
+      "bytes": 199822,
+      "sha256": "4eaa992ee411f465b3ff794c2ffce13ed08a2d69fac86a52cc4f6118c378072d"
     }
   }
 }

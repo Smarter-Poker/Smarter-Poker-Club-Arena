@@ -10,6 +10,7 @@ const recipient = '10000000-0000-0000-0000-000000000002';
 beforeEach(() => {
   cleanup();
   sessionStorage.clear();
+  localStorage.clear();
   vi.clearAllMocks();
   mocks.from.mockImplementation((table: string) => {
     const q: any = {
@@ -63,6 +64,7 @@ it('retains one request across a lost response and remount', async () => {
   await screen.findByRole('button', { name: 'Retry This Transfer' });
   const first = mocks.rpc.mock.calls[0][1];
   view.unmount();
+  sessionStorage.clear(); // Closing the tab must not erase the retry key.
   render(<DiamondWalletTransfer userId={sender} onComplete={() => {}} />);
   fireEvent.click(screen.getByRole('button', { name: 'Retry This Transfer' }));
   await waitFor(() => expect(mocks.rpc).toHaveBeenCalledTimes(2));
@@ -85,7 +87,7 @@ it('does not present a mismatched receipt as success', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Confirm Transfer' }));
   await screen.findByText(/Transfer Not Yet Confirmed/);
   expect(done).not.toHaveBeenCalled();
-  expect(sessionStorage.getItem('diamond-transfer:' + sender)).toBeTruthy();
+  expect(localStorage.getItem('diamond-transfer:' + sender)).toBeTruthy();
 });
 it('allows editing after a definitive database refusal', async () => {
   mocks.rpc.mockResolvedValue({
@@ -96,7 +98,7 @@ it('allows editing after a definitive database refusal', async () => {
   await review();
   fireEvent.click(screen.getByRole('button', { name: 'Confirm Transfer' }));
   await screen.findByRole('button', { name: 'Review Transfer' });
-  expect(sessionStorage.getItem('diamond-transfer:' + sender)).toBeNull();
+  expect(localStorage.getItem('diamond-transfer:' + sender)).toBeNull();
 });
 
 it('rejects an amount outside the database integer contract before creating a request', () => {
@@ -128,7 +130,7 @@ it('preserves a lost-response identity through session refusal and returns its o
   // request is kept and the page is handed to lib/sessionRevoked.
   await screen.findByText(/Your Session Has Ended\. Sign In Again, Then Retry This Transfer/);
   await waitFor(() => expect(mocks.probe).toHaveBeenCalledWith('money:diamond_transfer'));
-  expect(sessionStorage.getItem('diamond-transfer:' + sender)).toBeTruthy();
+  expect(localStorage.getItem('diamond-transfer:' + sender)).toBeTruthy();
   expect(done).not.toHaveBeenCalled();
   view.unmount();
   mocks.rpc.mockResolvedValueOnce({
@@ -145,7 +147,7 @@ it('preserves a lost-response identity through session refusal and returns its o
   fireEvent.click(screen.getByRole('button', { name: 'Retry This Transfer' }));
   await waitFor(() => expect(done).toHaveBeenCalledOnce());
   expect(mocks.rpc.mock.calls.map((call) => call[1])).toEqual([original, original, original]);
-  expect(sessionStorage.getItem('diamond-transfer:' + sender)).toBeNull();
+  expect(localStorage.getItem('diamond-transfer:' + sender)).toBeNull();
 });
 
 it('opens the cashier recipient preset without a lookup or transfer', () => {
@@ -179,7 +181,7 @@ it('sends only one request when two clicks arrive before React renders busy', as
     button.click();
     button.click();
   });
-  expect(mocks.rpc).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(mocks.rpc).toHaveBeenCalledTimes(1));
   expect(screen.getByRole('button', { name: 'Send Diamonds' })).toBeDisabled();
   await act(async () => complete({ data: null, error: { message: 'Connection Lost' } }));
 });
@@ -206,4 +208,81 @@ it('does not review or disclose a deleted friend', async () => {
   expect(screen.queryByText('Deleted Friend')).toBeNull();
   expect(mocks.from).toHaveBeenCalledTimes(1);
   expect(mocks.rpc).not.toHaveBeenCalled();
+});
+
+it('refuses a corrupted saved identity without verifying or sending a new request', () => {
+  localStorage.setItem('diamond-transfer:' + sender, '{broken');
+  render(<DiamondWalletTransfer userId={sender} initiallyOpen onComplete={() => {}} />);
+  expect(screen.getByText(/Saved Transfer Could Not Be Read/)).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Review Transfer' })).toBeDisabled();
+  expect(mocks.rpc).not.toHaveBeenCalled();
+});
+it('recovers an older session-only request with the exact original key', async () => {
+  const key = '30000000-0000-0000-0000-000000000003';
+  sessionStorage.setItem(
+    'diamond-transfer:' + sender,
+    JSON.stringify({ recipient, name: 'Legacy Friend', amount: 25, key })
+  );
+  mocks.rpc.mockResolvedValue({ data: null, error: { message: 'Connection Lost' } });
+  render(<DiamondWalletTransfer userId={sender} onComplete={() => {}} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Retry This Transfer' }));
+  await waitFor(() =>
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      'send_wallet_diamond_transfer',
+      expect.objectContaining({ p_reference_id: key })
+    )
+  );
+  expect(JSON.parse(localStorage.getItem('diamond-transfer:' + sender)!)).toEqual({
+    recipient,
+    name: 'This Player',
+    amount: 25,
+    key,
+  });
+});
+
+it('fails closed before sending when storage silently discards its durable key', async () => {
+  vi.spyOn(localStorage, 'setItem').mockImplementationOnce(() => {});
+  render(<DiamondWalletTransfer userId={sender} onComplete={() => {}} />);
+  await review();
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm Transfer' }));
+  await screen.findByText(/No New Request Was Submitted/);
+  expect(mocks.rpc).not.toHaveBeenCalled();
+});
+
+it("a delayed original receipt cannot delete another tab's newer request", async () => {
+  let complete!: (value: unknown) => void;
+  mocks.rpc.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        complete = resolve;
+      })
+  );
+  const done = vi.fn();
+  render(<DiamondWalletTransfer userId={sender} onComplete={done} />);
+  await review();
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm Transfer' }));
+  await waitFor(() => expect(mocks.rpc).toHaveBeenCalledOnce());
+  const original = mocks.rpc.mock.calls[0][1];
+  const newer = {
+    recipient,
+    name: 'This Player',
+    amount: 26,
+    key: '30000000-0000-0000-0000-000000000003',
+  };
+  localStorage.setItem('diamond-transfer:' + sender, JSON.stringify(newer));
+  const { act } = await import('@testing-library/react');
+  await act(async () =>
+    complete({
+      data: {
+        success: true,
+        sender_id: sender,
+        recipient_id: recipient,
+        amount: 25,
+        request_id: original.p_reference_id,
+      },
+      error: null,
+    })
+  );
+  expect(done).toHaveBeenCalledOnce();
+  expect(JSON.parse(localStorage.getItem('diamond-transfer:' + sender)!)).toEqual(newer);
 });

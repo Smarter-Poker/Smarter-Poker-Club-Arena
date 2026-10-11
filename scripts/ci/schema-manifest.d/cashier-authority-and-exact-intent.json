@@ -26,7 +26,8 @@
     "fn_agent_wallet_send",
     "fn_agent_wallet_claim_back",
     "fn_request_chips",
-    "fn_request_chips_core_20261004"
+    "fn_request_chips_core_20261004",
+    "fn_cashier_recovery_receipts"
   ],
   "columns": {
     "cashier_rpc_operation_intents": [

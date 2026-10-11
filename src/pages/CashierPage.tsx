@@ -1,3 +1,8 @@
+import {
+  reserveCashierWalletOperation,
+  clearCashierWalletOperation,
+} from '../services/CashierWalletRecovery';
+import CashierPendingOperations from '../components/wallet/CashierPendingOperations';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CASHIER PAGE — Universal Chip Transfer Hub (Facebook Dark)
@@ -598,6 +603,14 @@ function CashierContent() {
   // declaration order: with the bump below the loadUserContext effect, each
   // mount and club switch captured the version, bumped it, and then threw
   // its own role read away as stale, so staff saw the player Cashier.
+  const transferBusy = useRef(false);
+  const authorityEpoch = useRef(0);
+  const memberAuthoritySnapshot = useRef<{ clubId: string; role: string; status: string } | null>(
+    null
+  );
+  const transferView = useRef({ userId: user?.id, clubId });
+  if (transferView.current.userId !== user?.id || transferView.current.clubId !== clubId)
+    transferView.current = { userId: user?.id, clubId };
   const contextVersionRef = useRef(0);
   useEffect(() => {
     contextVersionRef.current += 1;
@@ -685,7 +698,7 @@ function CashierContent() {
           () =>
             supabase
               .from('club_members')
-              .select('role')
+              .select('role, status')
               .eq('club_id', resolvedId)
               .eq('user_id', user.id)
               .maybeSingle()
@@ -710,7 +723,7 @@ function CashierContent() {
           () =>
             supabase
               .from('agents')
-              .select('agent_wallet_balance')
+              .select('agent_wallet_balance, status')
               .eq('club_id', resolvedId)
               .eq('user_id', user.id)
               .maybeSingle()
@@ -732,7 +745,17 @@ function CashierContent() {
         throw clubResult.error;
       }
 
-      const role = memberResult?.data?.role || 'player';
+      memberAuthoritySnapshot.current = {
+        clubId: resolvedId || clubId,
+        role: memberResult?.data?.role || 'player',
+        status: memberResult?.data?.status || 'active',
+      };
+      let role =
+        memberResult?.data?.status && !['active', 'approved'].includes(memberResult.data.status)
+          ? 'player'
+          : memberResult?.data?.role || 'player';
+      if (isAgentRole(role) && floatResult?.data?.status && floatResult.data.status !== 'active')
+        role = 'player';
       setUserRole(role);
       setClubName(clubResult?.data?.name || '');
       setContextError(null);
@@ -809,6 +832,7 @@ function CashierContent() {
     setContextError(null);
     setMessage(null);
     setLoadingContext(true);
+    setSendConfirm({ show: false, value: 0, recipientId: '', recipientName: '' });
     void loadUserContext();
   };
 
@@ -1320,6 +1344,48 @@ function CashierContent() {
     loadTransactions();
   }, [user?.id, loadBalances, loadTransactions]);
 
+  const refreshCashierAuthority = useCallback(
+    (payload?: unknown) => {
+      const change = payload as
+        | {
+            clubId?: string;
+            eventType?: string;
+            new?: { club_id?: string; role?: string; status?: string | null };
+            old?: { club_id?: string };
+          }
+        | undefined;
+      const prior = memberAuthoritySnapshot.current;
+      const changedClub = change?.clubId || change?.new?.club_id || change?.old?.club_id;
+      if (changedClub && prior && changedClub !== prior.clubId) return;
+      if (
+        change?.eventType === 'UPDATE' &&
+        prior &&
+        change.new?.role === prior.role &&
+        (change.new.status || 'active') === prior.status
+      )
+        return;
+      authorityEpoch.current += 1;
+      contextVersionRef.current += 1;
+      setLoadingContext(true);
+      setSendConfirm({ show: false, value: 0, recipientId: '', recipientName: '' });
+      void loadUserContext();
+    },
+    [loadUserContext]
+  );
+  useMasterBusChannel({
+    channelName: user?.id && clubId ? `advanced-cashier-authority-${user.id}-${clubId}` : null,
+    table: 'club_members',
+    filter: user?.id ? `user_id=eq.${user.id}` : null,
+    event: '*',
+    enabled: !!user?.id && !!clubId,
+    onPayload: refreshCashierAuthority,
+    onSubscriptionStatus: (status) => {
+      if (status === 'SUBSCRIBED') refreshCashierAuthority();
+    },
+  });
+  useMasterBusSubscriptions(['MEMBER_ROLE_CHANGED', 'AGENT_UPDATED'], refreshCashierAuthority);
+  useVisibilityRefresh(refreshCashierAuthority);
+
   // Wallets channel
   const handleWalletUpdate = useCallback(
     (payload: { eventType: string }) => {
@@ -1661,7 +1727,16 @@ function CashierContent() {
   };
 
   const handleAction = async (override?: { value?: number; recipientId?: string }) => {
-    if (cashoutActionInFlight.current || cashoutBusy.current) return;
+    if (cashoutActionInFlight.current || cashoutBusy.current || transferBusy.current) return;
+    const isTransfer = action === 'send';
+    if (isTransfer && (!canSend || roleUnknown)) return;
+    if (isTransfer) transferBusy.current = true;
+    const owningView = transferView.current;
+    const owningAuthority = authorityEpoch.current;
+    const transferCurrent = () =>
+      isMounted.current &&
+      transferView.current === owningView &&
+      authorityEpoch.current === owningAuthority;
     const cashoutActionToken = action === 'cashout' && !tableId ? Symbol('cashout-action') : null;
     if (cashoutActionToken) cashoutActionInFlight.current = cashoutActionToken;
     try {
@@ -1833,17 +1908,25 @@ function CashierContent() {
           }
 
           const resolvedForTransfer = (await resolveClubUUID(clubId!)) || clubId!;
-          const { data: sendData, error: sendError } = await supabase.rpc('fn_agent_wallet_send', {
+          const sendArgs = {
             p_club_id: resolvedForTransfer,
             p_to_user_id: recipientIdForAction,
             p_amount: value,
             p_destination: canHoldAgentWallet(recipient?.role) ? 'agent_wallet' : 'player_wallet',
-            p_reason: `Cashier Send To ${recipient?.username || 'Member'}`,
-            // Per-INTENT key (see sendOpIdRef). A key minted inside the call
-            // protects nothing: the dangerous shape is commit + lost response +
-            // user retry, and that retry must present the SAME key so the
-            // server replays instead of debiting again. The 30-line note above
-            // this call claimed that was already true. It was not.
+            p_reason: 'Cashier Send',
+          };
+          const operation = await reserveCashierWalletOperation(
+            user.id,
+            resolvedForTransfer,
+            'fn_agent_wallet_send',
+            sendArgs
+          );
+          if (!operation)
+            throw new Error('Transfer Identity Could Not Be Saved. No Request Was Submitted');
+          if (!transferCurrent()) return;
+          sendOpIdRef.current = operation.operationId;
+          const { data: sendData, error: sendError } = await supabase.rpc('fn_agent_wallet_send', {
+            ...sendArgs,
             p_op_id: sendOpIdRef.current,
           });
           if (sendError) throw sendError;
@@ -1858,6 +1941,8 @@ function CashierContent() {
             throw new Error(sendRes?.error || 'The Cashier Refused That Send');
           }
 
+          clearCashierWalletOperation(operation);
+          if (!transferCurrent()) return;
           if (isMounted.current)
             setMessage({
               type: 'success',
@@ -2078,7 +2163,13 @@ function CashierContent() {
         }
         setAmount('');
       } catch (error: unknown) {
-        if (cashoutStart ? isCashoutStartCurrent(cashoutStart) : isMounted.current)
+        if (
+          cashoutStart
+            ? isCashoutStartCurrent(cashoutStart)
+            : isTransfer
+              ? transferCurrent()
+              : isMounted.current
+        )
           setMessage({
             type: 'error',
             text:
@@ -2089,6 +2180,10 @@ function CashierContent() {
       if (isMounted.current) setIsProcessing(false);
       startCooldown(); // Rate limit
     } finally {
+      if (isTransfer) {
+        transferBusy.current = false;
+        if (isMounted.current) setIsProcessing(false);
+      }
       if (cashoutActionToken && cashoutActionInFlight.current === cashoutActionToken) {
         cashoutActionInFlight.current = null;
       }
@@ -2369,6 +2464,11 @@ function CashierContent() {
 
           {/* ── Club context bar — which club's cashier, with multi-club switcher ── */}
           {clubId && <CashierClubSwitcher clubId={clubId} clubName={clubName} />}
+          <CashierPendingOperations
+            key={`${user?.id}:${clubId}`}
+            userId={user?.id}
+            clubId={clubId || null}
+          />
 
           {/* Action Tabs */}
           {/* Connection status indicator */}
@@ -2771,6 +2871,13 @@ function CashierContent() {
                     }
                     const value = parsed.value;
                     if (!user?.id || !selectedRecipient) return;
+                    if (transferBusy.current || roleUnknown || !canDistribute) return;
+                    const owningView = transferView.current;
+                    const owningAuthority = authorityEpoch.current;
+                    const transferCurrent = () =>
+                      isMounted.current &&
+                      transferView.current === owningView &&
+                      authorityEpoch.current === owningAuthority;
 
                     // DISTRIBUTE RATE LIMIT — prevent rapid-fire distributions (10s cooldown)
                     const now = Date.now();
@@ -2784,6 +2891,7 @@ function CashierContent() {
                       return;
                     }
 
+                    transferBusy.current = true;
                     setIsProcessing(true);
                     setMessage(null);
 
@@ -2797,6 +2905,7 @@ function CashierContent() {
                               type: 'error',
                               text: `Chip movements are frozen during settlement (${lockResult.reason || 'settlement in progress'}). Please try again after settlement completes.`,
                             });
+                          transferBusy.current = false;
                           if (isMounted.current) setIsProcessing(false);
                           return;
                         }
@@ -2834,18 +2943,36 @@ function CashierContent() {
                       const viaClubBank =
                         ['owner', 'co_owner', 'admin', 'super_agent'].includes(userRole) ||
                         isUnionOwner;
+                      const transferAction = viaClubBank
+                        ? 'fn_club_bank_send'
+                        : 'fn_agent_wallet_send';
+                      const distArgs = {
+                        p_club_id: resolvedForDistribute,
+                        p_to_user_id: selectedRecipient,
+                        p_amount: value,
+                        p_destination: canHoldAgentWallet(recipientRow?.role)
+                          ? 'agent_wallet'
+                          : 'player_wallet',
+                        p_reason: viaClubBank
+                          ? 'Distributed From The Club Bank'
+                          : 'Distributed From The Agent Wallet',
+                      };
+                      const operation = await reserveCashierWalletOperation(
+                        user.id,
+                        resolvedForDistribute,
+                        transferAction,
+                        distArgs
+                      );
+                      if (!operation)
+                        throw new Error(
+                          'Transfer Identity Could Not Be Saved. No Request Was Submitted'
+                        );
+                      if (!transferCurrent()) return;
+                      promoOpIdRef.current = operation.operationId;
                       const { data: distData, error: distError } = await supabase.rpc(
-                        viaClubBank ? 'fn_club_bank_send' : 'fn_agent_wallet_send',
+                        transferAction,
                         {
-                          p_club_id: resolvedForDistribute,
-                          p_to_user_id: selectedRecipient,
-                          p_amount: value,
-                          p_destination: canHoldAgentWallet(recipientRow?.role)
-                            ? 'agent_wallet'
-                            : 'player_wallet',
-                          p_reason: viaClubBank
-                            ? 'Distributed From The Club Bank'
-                            : 'Distributed From The Agent Wallet',
+                          ...distArgs,
                           p_op_id: promoOpIdRef.current,
                         }
                       );
@@ -2857,6 +2984,8 @@ function CashierContent() {
                       if (!distRes?.success) {
                         throw new Error(distRes?.error || 'The Cashier Refused That Distribution');
                       }
+                      clearCashierWalletOperation(operation);
+                      if (!transferCurrent()) return;
                       const recipient = recipientRow;
                       if (isMounted.current)
                         setMessage({
@@ -2889,8 +3018,9 @@ function CashierContent() {
                       // refusal as a promo one. The server's reason is printed.
                       const msg =
                         (err instanceof Error ? err.message : String(err)) || 'Distribution failed';
-                      if (isMounted.current) setMessage({ type: 'error', text: msg });
+                      if (transferCurrent()) setMessage({ type: 'error', text: msg });
                     } finally {
+                      transferBusy.current = false;
                       if (isMounted.current) setIsProcessing(false);
                     }
                   }}

@@ -19,6 +19,8 @@ import {
   clearUserCaches,
   CLUB_HOME_CACHE_PREFIX,
   UNRESOLVED_MONEY_JOURNAL_PREFIXES,
+  CASHIER_WALLET_RECOVERY_PREFIX,
+  DIAMOND_TRANSFER_RECOVERY_PREFIX,
 } from '@/utils/clearUserCaches';
 import { SWR_CACHE_PREFIXES } from '@/utils/staleCacheReaper';
 import { STORAGE_KEYS } from '@/lib/storage';
@@ -85,6 +87,8 @@ describe('clearUserCaches', () => {
       `${CASHIER_RECOVERY_PREFIX}:user-a:club-a:submission-a`,
       `${CASHIER_REQUEST_RECOVERY_PREFIX}:user-a:club-a:intent-a`,
       `${UNION_WALLET_RECOVERY_PREFIX}:user-a:union-a:chips:sig`,
+      `${CASHIER_WALLET_RECOVERY_PREFIX}:user-a:club-a:action:digest`,
+      `${DIAMOND_TRANSFER_RECOVERY_PREFIX}user-a`,
     ];
     for (const key of journals) localStorage.setItem(key, '{"operationId":"kept"}');
     localStorage.setItem(`${CLUB_HOME_CACHE_PREFIX}v2_club-a`, '{}');
@@ -97,7 +101,9 @@ describe('clearUserCaches', () => {
     expect(UNRESOLVED_MONEY_JOURNAL_PREFIXES).toEqual([
       CASHIER_RECOVERY_PREFIX,
       CASHIER_REQUEST_RECOVERY_PREFIX,
+      CASHIER_WALLET_RECOVERY_PREFIX,
       UNION_WALLET_RECOVERY_PREFIX,
+      DIAMOND_TRANSFER_RECOVERY_PREFIX,
     ]);
   });
 

@@ -747,6 +747,7 @@ function ItemTile({
 }) {
   const color = itemColor(item);
   const meta = itemMeta(item);
+  const tileAction = item.quantity > 0 ? 'Grant' : canManage ? 'Buy' : 'Check Availability For';
 
   return (
     <div
@@ -757,7 +758,7 @@ function ItemTile({
         type="button"
         className="pv-tile__face"
         onClick={() => onOpen(item)}
-        aria-label={`Grant ${item.label}${meta ? `, ${meta}` : ''}`}
+        aria-label={`${tileAction} ${item.label}${meta ? `, ${meta}` : ''}`}
       >
         <span className="pv-tile__icon" aria-hidden="true">
           {ITEM_GLYPH[item.icon_key ?? ''] ?? '◇'}

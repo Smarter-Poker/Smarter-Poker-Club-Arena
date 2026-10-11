@@ -85,6 +85,55 @@ async function page() {
   return view;
 }
 describe('Promo Vault keyboard accessibility', () => {
+  it('names an admin zero-stock tile Buy and restores it after cancelling without a purchase', async () => {
+    const user = userEvent.setup();
+    state.rpc.mockImplementation(async (name: string) => ({
+      data: name === 'ca_promo_vault_catalog' ? [{ ...catalog[0], quantity: 0 }] : [],
+      error: null,
+    }));
+    state.roster.mockResolvedValue([
+      { user_id: 'viewer', role: 'admin', alias: 'Viewer', username: 'viewer' },
+    ]);
+    await page();
+    const opener = screen.getByRole('button', { name: 'Buy Time Bank', exact: true });
+    await user.click(opener);
+    const dialog = within(screen.getByRole('dialog', { name: 'Buy Time Bank' }));
+    await waitFor(() =>
+      expect(dialog.getByRole('spinbutton', { name: 'Quantity To Buy' })).toHaveFocus()
+    );
+    await user.click(dialog.getByRole('button', { name: 'Cancel' }));
+    expect(opener).toHaveFocus();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(
+      state.rpc.mock.calls.some(([name]) =>
+        ['ca_promo_vault_buy', 'ca_promo_vault_grant'].includes(name)
+      )
+    ).toBe(false);
+  });
+  it('names a read-only zero-stock tile Check Availability and reports no stock without mutation', async () => {
+    const user = userEvent.setup();
+    state.rpc.mockImplementation(async (name: string) => ({
+      data: name === 'ca_promo_vault_catalog' ? [{ ...catalog[0], quantity: 0 }] : [],
+      error: null,
+    }));
+    state.roster.mockResolvedValue([
+      { user_id: 'viewer', role: 'player', alias: 'Viewer', username: 'viewer' },
+    ]);
+    await page();
+    const tile = screen.getByRole('button', {
+      name: 'Check Availability For Time Bank',
+      exact: true,
+    });
+    await user.click(tile);
+    expect(tile).toHaveFocus();
+    expect(state.toast.info).toHaveBeenCalledWith('The Vault Holds None Of This Item Yet');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(
+      state.rpc.mock.calls.some(([name]) =>
+        ['ca_promo_vault_buy', 'ca_promo_vault_grant'].includes(name)
+      )
+    ).toBe(false);
+  });
   it('focuses Help, contains both Tab directions and restores the opener after Escape', async () => {
     const user = userEvent.setup();
     await page();

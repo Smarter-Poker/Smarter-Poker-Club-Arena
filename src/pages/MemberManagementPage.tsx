@@ -1172,7 +1172,11 @@ function RoleSection({
     // Choosing or cancelling a role removes the focused button from the DOM.
     // Keep keyboard navigation in the same role interaction after each render.
     if (confirmRole) {
-      roleConfirmationRef.current?.querySelector<HTMLElement>('input, button')?.focus();
+      roleConfirmationRef.current
+        ?.querySelector<HTMLElement>(
+          'input:not([disabled]):not([tabindex="-1"]), button:not([disabled]):not([tabindex="-1"])'
+        )
+        ?.focus();
     } else if (cancelledRoleRef.current) {
       roleButtonsRef.current.get(cancelledRoleRef.current)?.focus();
       cancelledRoleRef.current = null;

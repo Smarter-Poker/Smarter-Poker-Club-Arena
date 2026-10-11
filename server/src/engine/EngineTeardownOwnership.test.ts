@@ -369,8 +369,10 @@ describe('table-engine lifecycle ownership', () => {
     const restart = vi.fn();
     engine.onRestartRequired(restart);
 
+    const recovery = vi.spyOn(engine as any, 'recordRecoveryEvent');
     engine.killForRestartPublic('dealing_loop_threw');
     engine.killForRestartPublic('watchdog_duplicate');
+    expect(recovery).toHaveBeenCalledOnce();
     expect(restart).not.toHaveBeenCalled();
     await Promise.resolve();
     expect(restart).toHaveBeenCalledOnce();

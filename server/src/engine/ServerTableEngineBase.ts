@@ -1,3 +1,4 @@
+import { isPreExecutionDbUnavailable } from './committedSeatStackRead.js';
 import { randomUUID } from 'node:crypto';
 import { positionLabelsFor } from './presentation/projectHandState.js';
 import { custodyJSON } from '../tournament/mixedF06Custody.js';
@@ -3553,7 +3554,9 @@ export abstract class ServerTableEngineBase {
        */
       let tableData: unknown;
       let haltReadSeq = 0;
+      const startReadDeadline = Date.now() + 60_000;
       for (let attempt = 1; ; attempt++) {
+        if (!this.lifecycleCanMutate()) return;
         try {
           // Sequenced BEFORE the request goes out (see beginDealingHaltRead).
           haltReadSeq = this.beginDealingHaltRead();
@@ -3564,14 +3567,20 @@ export abstract class ServerTableEngineBase {
         } catch (err) {
           if (
             !ServerTableEngineBase.isTransientDbError(err) ||
-            attempt >= ServerTableEngineBase.START_LOAD_ATTEMPTS
+            Date.now() >= startReadDeadline ||
+            (attempt >= ServerTableEngineBase.START_LOAD_ATTEMPTS &&
+              !isPreExecutionDbUnavailable(err))
           ) {
             throw err;
           }
-          if (!this.running) return;
-          const backoff = Math.min(500 * 2 ** (attempt - 1), 8_000);
+          if (!this.lifecycleCanMutate()) return;
+          const backoff = Math.min(
+            500 * 2 ** Math.min(attempt - 1, 4),
+            8_000,
+            Math.max(0, startReadDeadline - Date.now())
+          );
           console.warn(
-            `[ServerTableEngine:${this.tableId}] loadTable blipped on start (attempt ${attempt}/${ServerTableEngineBase.START_LOAD_ATTEMPTS}) - retrying in ${backoff}ms`
+            `[ServerTableEngine:${this.tableId}] loadTable blipped on start (attempt ${attempt}, ${Math.max(0, startReadDeadline - Date.now())}ms budget left) - retrying in ${backoff}ms`
           );
           await this.sleep(backoff);
         }
@@ -5923,6 +5932,7 @@ export abstract class ServerTableEngineBase {
    * places that must agree cannot agree while only one of them has the list.
    */
   protected static isTransientDbError(err: unknown): boolean {
+    if (isPreExecutionDbUnavailable(err)) return true;
     const msg =
       err instanceof Error
         ? err.message
@@ -6129,6 +6139,9 @@ export abstract class ServerTableEngineBase {
     notifyOwner = true,
     recoveryEventClass?: EngineRecoveryEventClass
   ): void {
+    // Nested settlement catches and late watchdog callbacks describe the same
+    // dead generation. Preserve its first cause and emit exactly one kill.
+    if (this.terminal) return;
     const diagnosticReason: LifecycleDetail['reason'] =
       reason === 'cash_lease_proof_expired' ||
       reason === 'tournament_lease_proof_expired' ||

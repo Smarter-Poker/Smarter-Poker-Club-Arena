@@ -1778,6 +1778,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase11-remediation.sh
+      - name: Tournament lane contention returns promptly without weakening hand fences
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/dev/test-tournament-lane-contention.py --output "$RUNNER_TEMP/tournament-lane-contention"
       - name: Lightning Phase 13 rollout controls pause, close joins, drain to MUST-MOVE with every hand settled, freeze, roll back the matcher and answer a readiness verdict (production bodies, real chain)
         if: matrix.shard == 1
         env:

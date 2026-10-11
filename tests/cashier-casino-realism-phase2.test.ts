@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { cashierBatchAmounts } from '../src/utils/cashierBatch';
 
 const ROOT = resolve(__dirname, '..');
 const PAGE = readFileSync(resolve(ROOT, 'src/pages/CashierTradePage.tsx'), 'utf8');
@@ -30,9 +31,18 @@ describe('cashier phase 2 reports trustworthy operational state', () => {
 
 describe('cashier phase 2 hardens money intent math and retries', () => {
   it('computes batch totals in chip cents everywhere the total is used', () => {
-    expect(PAGE).toMatch(/const batchAmount = \(amountPerTarget: number, targetCount: number\)/);
-    expect(PAGE).toContain('const total = batchAmount(value, targets.length)');
-    expect(PAGE).toContain('fmt(batchAmount(Number(amount) || 0, picked.length))');
+    expect(cashierBatchAmounts(['a', 'b', 'c'], '0.10', {})).toEqual({
+      ok: true,
+      amounts: { a: 0.1, b: 0.1, c: 0.1 },
+      total: 0.3,
+    });
+    expect(cashierBatchAmounts(['a', 'b'], '0.10', { b: '0.20' })).toEqual({
+      ok: true,
+      amounts: { a: 0.1, b: 0.2 },
+      total: 0.3,
+    });
+    expect(PAGE).toContain('const total = parsedAmount.total');
+    expect(PAGE).toContain('fmt(previewTotal)');
   });
 
   it('retains a claim idempotency key until the server confirms success', () => {

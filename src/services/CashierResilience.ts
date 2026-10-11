@@ -24,6 +24,8 @@ export interface CashierTransferRecovery {
   kind: 'send' | 'ticket';
   amount: number;
   targetIds: string[];
+  /** Exact per-recipient intent. Absent on older uniform-amount journals. */
+  targetAmounts?: Record<string, number>;
   failures: CashierTransferFailure[];
   submissionId: string;
   opIds: Record<string, string>;
@@ -121,6 +123,24 @@ const isValidRecovery = (
     return false;
 
   if (row.ticketNote !== undefined && row.ticketNote !== 'Cashier Ticket') return false;
+  if (
+    row.targetAmounts !== undefined &&
+    (!row.targetAmounts ||
+      typeof row.targetAmounts !== 'object' ||
+      Array.isArray(row.targetAmounts) ||
+      Object.keys(row.targetAmounts).length !== row.targetIds.length ||
+      row.targetIds.some((id) => {
+        const amount = row.targetAmounts![id];
+        return (
+          typeof amount !== 'number' ||
+          !Number.isFinite(amount) ||
+          amount <= 0 ||
+          amount > 1e9 ||
+          Math.round(amount * 100) / 100 !== amount
+        );
+      }))
+  )
+    return false;
   const targets = new Set(row.targetIds);
   if (targets.size !== row.targetIds.length || row.targetIds.some((id) => !UUID_PATTERN.test(id))) {
     return false;
@@ -208,6 +228,10 @@ const sameRecoveryIntent = (
 ): boolean =>
   left.kind === right.kind &&
   left.amount === right.amount &&
+  left.targetIds.every(
+    (id) =>
+      (left.targetAmounts?.[id] ?? left.amount) === (right.targetAmounts?.[id] ?? right.amount)
+  ) &&
   JSON.stringify(left.targetIds) === JSON.stringify(right.targetIds) &&
   JSON.stringify(left.opIds) === JSON.stringify(right.opIds) &&
   JSON.stringify(left.destinations) === JSON.stringify(right.destinations) &&

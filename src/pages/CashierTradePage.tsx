@@ -119,6 +119,12 @@ import { SpadeConsole } from '../components/console/SpadeConsole';
 import { compactChips } from '../utils/format';
 import { exactChipFigure, parseTradeAmount, sumChips } from '../utils/cashierAmount';
 import { titleCase } from '../utils/titleCase';
+import {
+  cashierBatchAmounts,
+  cashierBatchAcknowledgement,
+  cashierBatchReceiptText,
+  type CashierBatchReceiptRow,
+} from '../utils/cashierBatch';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -235,14 +241,6 @@ const fmt = compactChips;
  * The op_id stays the identity of each send.
  */
 const CASHIER_SEND_OUT_REASON = 'Cashier Send Out';
-
-/**
- * Add batch values in chip cents, not binary floating point. `0.10 * 3` is
- * 0.30000000000000004 in JavaScript, which used to reject a send from a wallet
- * holding exactly 0.30 even though every individual RPC amount was valid.
- */
-const batchAmount = (amountPerTarget: number, targetCount: number) =>
-  (Math.round(amountPerTarget * 100) * targetCount) / 100;
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -438,6 +436,11 @@ function CashierTradeWorkspace() {
   >([]);
   const [transferRecovery, setTransferRecovery] = useState<CashierTransferRecovery | null>(null);
   const [amount, setAmount] = useState('');
+  const [recipientAmounts, setRecipientAmounts] = useState<Record<string, string>>({});
+  const [batchReceipt, setBatchReceipt] = useState<{
+    batchId: string;
+    rows: CashierBatchReceiptRow[];
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{ processed: number; total: number } | null>(
     null
@@ -1710,7 +1713,12 @@ function CashierTradeWorkspace() {
     } else {
       setTransferRecovery(null);
     }
-  }, [amount, selected]);
+  }, [amount, recipientAmounts, selected]);
+
+  useEffect(() => {
+    setRecipientAmounts({});
+    setBatchReceipt(null);
+  }, [user?.id, clubUuid]);
 
   useEffect(() => {
     if (!user?.id || !clubUuid) return;
@@ -1731,6 +1739,21 @@ function CashierTradeWorkspace() {
 
   /** Chips the selected players are holding right now. */
   const pickedHeld = useMemo(() => sumChips(picked.map((r) => r.chipBalance)), [picked]);
+  const batchPlan = useMemo(
+    () =>
+      cashierBatchAmounts(
+        picked.map((row) => row.userId),
+        amount,
+        recipientAmounts
+      ),
+    [picked, amount, recipientAmounts]
+  );
+  const previewTotal = batchPlan.ok ? batchPlan.total : 0;
+
+  const transferDestination = (target: DownlineRow): 'agent_wallet' | 'player_wallet' =>
+    (transferRecovery?.submissionId === submissionIdRef.current
+      ? transferRecovery.destinations?.[target.userId]
+      : undefined) || (canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet');
 
   // ── Money actions ──────────────────────────────────────────────────────────
   const runTransfers = async (kind: 'send' | 'ticket') => {
@@ -1740,12 +1763,17 @@ function CashierTradeWorkspace() {
       toast?.error?.('Cashier Is Still Synchronizing. Try Again In A Moment');
       return;
     }
-    const parsedAmount = parseTradeAmount(amount);
+    if (picked.length === 0) {
+      toast?.error?.('Selection Changed. Pick The Players Again');
+      setAmountModal(null);
+      return;
+    }
+    const parsedAmount = batchPlan;
     if (!parsedAmount.ok) {
       toast?.error?.(parsedAmount.error);
       return;
     }
-    const raw = parsedAmount.value;
+    const raw = parsedAmount.amounts[picked[0]?.userId];
     // QUANTIZE. NaN, negative and zero were covered; 10.005 was not. It passed
     // straight through to club_members.chip_balance while fmt() rendered it as
     // "10.01" in the modal total AND in the receipt, and `value * targets`
@@ -1785,7 +1813,19 @@ function CashierTradeWorkspace() {
      * here: an owner with a large treasury and an unfunded agent wallet sailed
      * past the old check and collected N server refusals instead.
      */
-    const total = batchAmount(value, targets.length);
+    if (targets.some((target) => target.isSelf || target.userId === user.id)) {
+      toast?.error?.('Choose Another Active Member');
+      return;
+    }
+    if (!canHoldAgentWallet(myRole)) {
+      toast?.error?.('Your Cashier Authority Is No Longer Active');
+      return;
+    }
+    if (kind === 'send' && agentWallet === null) {
+      toast?.error?.('Agent Wallet Could Not Be Verified');
+      return;
+    }
+    const total = parsedAmount.total;
     if (kind === 'send' && agentWallet !== null && total > agentWallet) {
       toast?.error?.(
         `Insufficient Chips: Sending ${exactChipFigure(total)} Needs More Than Your Agent Wallet Holds, ${exactChipFigure(agentWallet)}`
@@ -1840,7 +1880,11 @@ function CashierTradeWorkspace() {
       userId: user.id,
       clubId: clubUuid,
       kind,
-      amount: value,
+      amount: transferRecovery?.submissionId === submissionId ? transferRecovery.amount : value,
+      targetAmounts:
+        transferRecovery?.submissionId === submissionId
+          ? transferRecovery.targetAmounts
+          : parsedAmount.amounts,
       targetIds:
         transferRecovery?.submissionId === submissionId
           ? transferRecovery.targetIds
@@ -1885,6 +1929,22 @@ function CashierTradeWorkspace() {
     setBusy(true);
     setBatchProgress({ processed: 0, total: targets.length });
     let ok = 0;
+    const receiptRows: CashierBatchReceiptRow[] = targets.map((target) => ({
+      userId: target.userId,
+      name: target.name,
+      amount: parsedAmount.amounts[target.userId],
+      destination:
+        kind === 'ticket'
+          ? 'Tournament Ticket'
+          : uncertainRecovery.destinations?.[target.userId] === 'agent_wallet'
+            ? 'Agent Wallet'
+            : 'Player Wallet',
+      outcome: 'Not Submitted',
+      reference:
+        kind === 'send'
+          ? opIdFor(target.userId)
+          : `ticket:${clubUuid}:${submissionId}:${target.userId}:${parsedAmount.amounts[target.userId]}`,
+    }));
     const failed: Array<{ userId: string; name: string; message: string }> = [];
     const owningView = transferView.current;
     const owningAuthorityEpoch = transferAuthorityEpoch.current;
@@ -1913,9 +1973,12 @@ function CashierTradeWorkspace() {
           break;
         }
         try {
+          for (const target of chunk)
+            receiptRows.find((row) => row.userId === target.userId)!.outcome =
+              'Outcome Needs Verification';
           const items = chunk.map((target) => ({
             user_id: target.userId,
-            amount: value,
+            amount: parsedAmount.amounts[target.userId],
             ...(kind === 'send'
               ? {
                   destination:
@@ -1930,7 +1993,7 @@ function CashierTradeWorkspace() {
                 }
               : {
                   note: uncertainRecovery.ticketNote || `Cashier ticket for ${target.name}`,
-                  idempotency_key: `ticket:${clubUuid}:${submissionId}:${target.userId}:${value}`,
+                  idempotency_key: `ticket:${clubUuid}:${submissionId}:${target.userId}:${parsedAmount.amounts[target.userId]}`,
                 }),
           }));
           const { data, error } = await supabase.rpc('fn_cashier_batch_transfer', {
@@ -1942,22 +2005,29 @@ function CashierTradeWorkspace() {
           if (error) throw error;
           const envelope = data as {
             success?: boolean;
+            batch_id?: string;
             error?: string;
             results?: Array<{ user_id?: string; success?: boolean; error?: string }>;
           } | null;
-          if (!envelope?.success || !Array.isArray(envelope.results)) {
+          if (
+            envelope?.success !== true ||
+            !Array.isArray(envelope.results) ||
+            (envelope.batch_id !== undefined && envelope.batch_id !== submissionId)
+          ) {
             throw new Error(envelope?.error || 'Batch Was Refused');
           }
 
-          const byUser = new Map(envelope.results.map((result) => [result.user_id, result]));
           for (const target of chunk) {
-            const result = byUser.get(target.userId);
-            if (result?.success) ok++;
+            const result = cashierBatchAcknowledgement(envelope.results, target.userId);
+            const receiptRow = receiptRows.find((row) => row.userId === target.userId)!;
+            receiptRow.outcome = result.outcome;
+            if (result.reference) receiptRow.reference = result.reference;
+            if (result.outcome === 'Confirmed') ok++;
             else {
               failed.push({
                 userId: target.userId,
                 name: target.name,
-                message: result?.error || 'Transfer Failed',
+                message: result.message || 'Outcome Needs Verification',
               });
             }
           }
@@ -2031,6 +2101,18 @@ function CashierTradeWorkspace() {
         setBatchProgress(null);
       }
       if (isMounted.current && transferView.current === owningView) {
+        setBatchReceipt((previous) => ({
+          batchId: submissionId,
+          rows:
+            previous?.batchId === submissionId
+              ? [
+                  ...previous.rows.filter(
+                    (row) => !receiptRows.some((current) => current.userId === row.userId)
+                  ),
+                  ...receiptRows,
+                ]
+              : receiptRows,
+        }));
         setTransferFailures(failed);
         if (recovery) setTransferRecovery(recovery);
         // Only close on a clean batch. Closing on failure wiped the amount and
@@ -2038,6 +2120,7 @@ function CashierTradeWorkspace() {
         if (failed.length === 0) {
           setAmountModal(null);
           setAmount('');
+          setRecipientAmounts({});
         }
       }
     }
@@ -2051,8 +2134,8 @@ function CashierTradeWorkspace() {
       const who = targets.length === 1 ? targets[0].name : `${ok} Player${ok === 1 ? '' : 's'}`;
       toast?.success?.(
         kind === 'send'
-          ? `Sent ${fmt(value)} To ${who} From Your Agent Wallet`
-          : `Issued ${ok} Ticket${ok === 1 ? '' : 's'} Worth ${fmt(value)} Each To ${who}`
+          ? `Sent ${exactChipFigure(sumChips(receiptRows.filter((row) => row.outcome === 'Confirmed').map((row) => row.amount)))} Total To ${who} From Your Agent Wallet`
+          : `Issued ${ok} Ticket${ok === 1 ? '' : 's'} To ${who}. Review The Exact Values In Your Batch Receipt`
       );
       // The bus event is already wired to reload this page, so calling
       // loadClub() as well fired two identical loads at once.
@@ -2269,7 +2352,8 @@ function CashierTradeWorkspace() {
           p_ticket_keys:
             saved.kind === 'ticket'
               ? chunk.map(
-                  (id) => `ticket:${saved.clubId}:${saved.submissionId}:${id}:${saved.amount}`
+                  (id) =>
+                    `ticket:${saved.clubId}:${saved.submissionId}:${id}:${saved.targetAmounts?.[id] ?? saved.amount}`
                 )
               : [],
         });
@@ -2287,13 +2371,32 @@ function CashierTradeWorkspace() {
               : data.tickets.some(
                   (row: { ticket_key?: string; receipt?: { success?: boolean } }) =>
                     row.ticket_key ===
-                      `ticket:${saved.clubId}:${saved.submissionId}:${id}:${saved.amount}` &&
+                      `ticket:${saved.clubId}:${saved.submissionId}:${id}:${saved.targetAmounts?.[id] ?? saved.amount}` &&
                     row.receipt?.success === true
                 )
           )
           .forEach((id) => confirmedTargets.add(id));
       }
       if (confirmedTargets.size === saved.targetIds.length) {
+        setBatchReceipt({
+          batchId: saved.submissionId,
+          rows: saved.targetIds.map((id) => ({
+            userId: id,
+            name: downline.find((row) => row.userId === id)?.name || 'Cashier Recipient',
+            amount: saved.targetAmounts?.[id] ?? saved.amount,
+            destination:
+              saved.kind === 'ticket'
+                ? 'Tournament Ticket'
+                : saved.destinations?.[id] === 'agent_wallet'
+                  ? 'Agent Wallet'
+                  : 'Player Wallet',
+            outcome: 'Confirmed',
+            reference:
+              saved.kind === 'send'
+                ? saved.opIds[id]
+                : `ticket:${saved.clubId}:${saved.submissionId}:${id}:${saved.targetAmounts?.[id] ?? saved.amount}`,
+          })),
+        });
         clearCashierTransferRecovery(saved.userId, saved.clubId, saved.submissionId);
         setTransferRecovery(readCashierTransferRecovery(saved.userId, saved.clubId));
         toast?.success?.('Original Transfer Receipts Confirmed. No New Transfer Was Submitted');
@@ -2305,6 +2408,25 @@ function CashierTradeWorkspace() {
       return;
     }
     const pendingTargets = saved.targetIds.filter((id) => !confirmedTargets.has(id));
+    setBatchReceipt({
+      batchId: saved.submissionId,
+      rows: saved.targetIds.map((id) => ({
+        userId: id,
+        name: downline.find((row) => row.userId === id)?.name || 'Cashier Recipient',
+        amount: saved.targetAmounts?.[id] ?? saved.amount,
+        destination:
+          saved.kind === 'ticket'
+            ? 'Tournament Ticket'
+            : saved.destinations?.[id] === 'agent_wallet'
+              ? 'Agent Wallet'
+              : 'Player Wallet',
+        outcome: confirmedTargets.has(id) ? 'Confirmed' : 'Outcome Needs Verification',
+        reference:
+          saved.kind === 'send'
+            ? saved.opIds[id]
+            : `ticket:${saved.clubId}:${saved.submissionId}:${id}:${saved.targetAmounts?.[id] ?? saved.amount}`,
+      })),
+    });
     const authorized = new Set(downline.map((row) => row.userId));
     if (pendingTargets.some((targetId) => !authorized.has(targetId))) {
       toast?.error?.('Recipients Changed. Review The Roster Before Starting A New Transfer');
@@ -2322,6 +2444,13 @@ function CashierTradeWorkspace() {
     setMineOnly(false);
     setRoleFilter('all');
     setAmount(String(saved.amount));
+    setRecipientAmounts(
+      saved.targetAmounts
+        ? Object.fromEntries(
+            Object.entries(saved.targetAmounts).map(([id, value]) => [id, String(value)])
+          )
+        : {}
+    );
     setSelected(new Set(pendingTargets));
     setTransferRecovery(saved);
     // Persisted recovery deliberately omits names and raw server messages.
@@ -2698,6 +2827,57 @@ function CashierTradeWorkspace() {
             userId={user?.id}
             clubId={clubUuid}
           />
+
+          {batchReceipt && (
+            <section
+              className={styles.sectionShell}
+              aria-label="Batch Transfer Receipt"
+              aria-live="polite"
+            >
+              <h2>Batch Transfer Receipt</h2>
+              <p>
+                Confirmed Total:{' '}
+                {exactChipFigure(
+                  sumChips(
+                    batchReceipt.rows
+                      .filter((row) => row.outcome === 'Confirmed')
+                      .map((row) => row.amount)
+                  )
+                )}{' '}
+                Chips
+              </p>
+              <div className={styles.batchReceiptList}>
+                {batchReceipt.rows.map((row) => (
+                  <div className={styles.batchReceiptRow} key={row.userId}>
+                    <strong>{row.name}</strong>
+                    <span>
+                      {exactChipFigure(row.amount)} Chips · {row.destination}
+                    </span>
+                    <span>{row.outcome}</span>
+                    <span>Reference: {row.reference}</span>
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                className={styles.footerBtn}
+                onClick={async () => {
+                  const copied = await copyCashierText(
+                    cashierBatchReceiptText(
+                      batchReceipt.rows,
+                      batchReceipt.batchId,
+                      currentClub?.name || 'Club Cashier'
+                    )
+                  );
+                  if (copied) toast?.success?.('Batch Receipt Copied');
+                  else toast?.error?.('Batch Receipt Could Not Be Copied');
+                }}
+              >
+                Copy Batch Receipt
+              </button>
+              <p>Unconfirmed Outcomes Must Be Verified Before Starting A New Transfer.</p>
+            </section>
+          )}
 
           {tab === 'trade' && (
             <section
@@ -3752,7 +3932,7 @@ function CashierTradeWorkspace() {
                       setTransferFailures([]);
                     }
               }
-              eyebrow={`${compactChips(picked.length)} Player${picked.length === 1 ? '' : 's'} · ${fmt(batchAmount(Number(amount) || 0, picked.length))} Total`}
+              eyebrow={`${compactChips(picked.length)} Player${picked.length === 1 ? '' : 's'} · ${fmt(previewTotal)} Total`}
               title={
                 amountModal === 'send'
                   ? 'Send Out'
@@ -3783,7 +3963,12 @@ function CashierTradeWorkspace() {
                             ? `${batchProgress.processed}/${batchProgress.total}`
                             : 'Confirm',
                         ink: 'blue',
-                        disabled: !isOnline || picked.length === 0 || cashierAuthorityBlocked,
+                        disabled:
+                          !isOnline ||
+                          picked.length === 0 ||
+                          cashierAuthorityBlocked ||
+                          (amountModal === 'send' && agentWallet === null) ||
+                          !canHoldAgentWallet(myRole),
                         onClick: () => void runTransfers(amountModal),
                       },
                     }
@@ -3839,14 +4024,15 @@ function CashierTradeWorkspace() {
                     <span>Player Wallet: {fmt(picked[0].chipBalance)}</span>
                     <span>
                       {amountModal === 'send'
-                        ? `Send From Your Agent Wallet To Their ${canHoldAgentWallet(picked[0].role) ? 'Agent Wallet' : 'Player Wallet'}`
+                        ? `Send From Your Agent Wallet To Their ${transferDestination(picked[0]) === 'agent_wallet' ? 'Agent Wallet' : 'Player Wallet'}`
                         : amountModal === 'ticket'
                           ? 'Ticket Funding Comes From Your Player Wallet'
                           : 'Diamonds Move Between Diamond Wallets'}
                     </span>
-                    {amountModal === 'send' && canHoldAgentWallet(picked[0].role) && (
-                      <span>The Player Wallet Above Is Separate From Their Agent Wallet.</span>
-                    )}
+                    {amountModal === 'send' &&
+                      transferDestination(picked[0]) === 'agent_wallet' && (
+                        <span>The Player Wallet Above Is Separate From Their Agent Wallet.</span>
+                      )}
                   </section>
                 )}
                 {amountModal === 'diamonds' && user?.id && picked.length === 1 ? (
@@ -3868,9 +4054,15 @@ function CashierTradeWorkspace() {
                       min={0}
                       step="0.01"
                       aria-label="Amount Per Player"
-                      value={amount}
+                      value={
+                        picked.length === 1
+                          ? (recipientAmounts[picked[0].userId] ?? amount)
+                          : amount
+                      }
+                      disabled={busy}
                       onChange={(e) => {
                         setAmount(e.target.value);
+                        setRecipientAmounts({});
                         if (transferFailures.length) setTransferFailures([]);
                       }}
                       placeholder={
@@ -3890,11 +4082,33 @@ function CashierTradeWorkspace() {
                           <div className={styles.modalTargetRow} key={r.userId}>
                             <span>
                               {r.name}
-                              {amountModal === 'send' && canHoldAgentWallet(r.role)
+                              {amountModal === 'send' && transferDestination(r) === 'agent_wallet'
                                 ? ' (Agent Wallet)'
                                 : ''}
                             </span>
-                            <span>{exactChipFigure(Number(amount) || 0)}</span>
+                            {picked.length > 1 ? (
+                              <input
+                                type="number"
+                                inputMode="decimal"
+                                min={0}
+                                step="0.01"
+                                aria-label={`Amount For ${r.name}`}
+                                aria-invalid={!batchPlan.ok && batchPlan.userId === r.userId}
+                                disabled={busy}
+                                value={recipientAmounts[r.userId] ?? amount}
+                                onChange={(event) => {
+                                  setRecipientAmounts((previous) => ({
+                                    ...previous,
+                                    [r.userId]: event.target.value,
+                                  }));
+                                  setTransferFailures([]);
+                                }}
+                              />
+                            ) : (
+                              <span>
+                                {exactChipFigure(batchPlan.ok ? batchPlan.amounts[r.userId] : 0)}
+                              </span>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -3906,8 +4120,7 @@ function CashierTradeWorkspace() {
                       </div>
                     )}
                     <div className={styles.modalHint}>
-                      Total: {exactChipFigure(batchAmount(Number(amount) || 0, picked.length))}{' '}
-                      &middot;{' '}
+                      Total: {exactChipFigure(previewTotal)} &middot;{' '}
                       {/* THE ACCOUNT EACH ACTION SPENDS. Send Out debits the agent
                   wallet; a ticket escrows the caller's own chip balance. They
                   are different accounts and quoting the wrong one tells the
@@ -3922,10 +4135,21 @@ function CashierTradeWorkspace() {
                         Request A Cash Out.
                       </div>
                     )}
+                    <div className={styles.modalHint} role="status">
+                      {!batchPlan.ok
+                        ? `Amount For ${picked.find((row) => row.userId === batchPlan.userId)?.name || 'Cashier Recipient'}: ${batchPlan.error}`
+                        : cashierAuthorityBlocked || !canHoldAgentWallet(myRole)
+                          ? 'Cashier Access Must Be Verified Before Sending'
+                          : amountModal === 'send' && agentWallet === null
+                            ? 'Agent Wallet Could Not Be Verified'
+                            : batchPlan.total > (amountModal === 'send' ? agentWallet! : myBalance)
+                              ? 'Insufficient Chips In The Funding Wallet'
+                              : `${picked.length} Recipients Ready For Server Verification`}
+                    </div>
                     {transferFailures.length > 0 && (
                       <div className={styles.modalFailures} role="alert">
                         <div className={styles.modalFailuresTitle}>
-                          {transferFailures.length} Did Not Go Through
+                          {transferFailures.length} Need Outcome Verification
                         </div>
                         {transferFailures.map((f) => (
                           <div className={styles.modalFailureRow} key={f.userId}>

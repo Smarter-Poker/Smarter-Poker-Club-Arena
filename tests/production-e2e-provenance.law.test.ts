@@ -587,12 +587,22 @@ describe('a retained runtime superseded before the browsers start', () => {
     }
   });
 
+  // A git hook runs this suite with GIT_DIR, GIT_INDEX_FILE and friends set
+  // for the repository being pushed. The fixture must never inherit them.
+  const isolatedEnv = (): NodeJS.ProcessEnv => {
+    const env = { ...process.env };
+    for (const name of spawnSync('git', ['rev-parse', '--local-env-vars'], { encoding: 'utf8' })
+      .stdout.trim()
+      .split(/\s+/))
+      delete env[name];
+    return env;
+  };
   const git = (cwd: string, ...args: string[]) => {
     const r = spawnSync('git', args, {
       cwd,
       encoding: 'utf8',
       env: {
-        ...process.env,
+        ...isolatedEnv(),
         GIT_AUTHOR_NAME: 't',
         GIT_AUTHOR_EMAIL: 't@example.invalid',
         GIT_COMMITTER_NAME: 't',
@@ -624,7 +634,7 @@ describe('a retained runtime superseded before the browsers start', () => {
     const r = spawnSync('bash', ['-c', script], {
       cwd,
       encoding: 'utf8',
-      env: { ...process.env, GITHUB_OUTPUT: output, GITHUB_STEP_SUMMARY: summary },
+      env: { ...isolatedEnv(), GITHUB_OUTPUT: output, GITHUB_STEP_SUMMARY: summary },
     });
     return { ...r, output: readFileSync(output, 'utf8') };
   };

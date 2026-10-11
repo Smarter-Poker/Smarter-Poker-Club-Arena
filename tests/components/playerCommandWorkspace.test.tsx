@@ -62,6 +62,10 @@ function Harness() {
       </output>
       <button onClick={() => navigate('/clubs/club-a/members')}>Club A</button>
       <button onClick={() => navigate('/clubs/club-b/members')}>Club B</button>
+      <button onClick={() => navigate('/clubs/club-a/members?view=agents&sort=name')}>
+        Linked Agents
+      </button>
+      <button onClick={() => navigate(-1)}>History Back</button>
       <Routes>
         <Route path="/clubs/:clubId/members" element={<ClubMembersPage />} />
         <Route
@@ -196,6 +200,40 @@ it('restores the virtual roster position after opening a real roster row and ret
     1476
   );
   expect(screen.queryByRole('button', { name: /^Open Player 0,/ })).not.toBeInTheDocument();
+});
+it('honors explicit same-club navigation and restores the prior URL on history Back', async () => {
+  render(tree());
+  await settle();
+  fireEvent.click(screen.getByRole('button', { name: 'Linked Agents' }));
+  await settle();
+  expect(sort()).toHaveValue('name');
+  expect(screen.getByRole('button', { name: 'Agents', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+  expect(screen.getByTestId('location').textContent).toContain('?view=agents&sort=name');
+  fireEvent.click(screen.getByRole('button', { name: 'History Back' }));
+  await settle();
+  expect(sort()).toHaveValue('hierarchy');
+  expect(screen.getByRole('button', { name: 'All Players', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+  expect(screen.getByTestId('location').textContent).toBe('/clubs/club-a/members');
+});
+it('restores a legal near-end position in a shorter roster viewport', async () => {
+  vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(9841);
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(602);
+  const view = render(tree());
+  await settle();
+  const viewport = view.container.querySelector('.members-viewport') as HTMLDivElement;
+  fireEvent.scroll(viewport, { target: { scrollTop: 9200 } });
+  fireEvent.click(screen.getAllByRole('button', { name: /^Open Player / })[0]);
+  fireEvent.click(screen.getByRole('button', { name: 'Back To Roster' }));
+  await settle();
+  expect((view.container.querySelector('.members-viewport') as HTMLDivElement).scrollTop).toBe(
+    9200
+  );
 });
 it('never restores selected members or export actions after leaving the roster', async () => {
   render(tree());

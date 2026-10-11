@@ -211,8 +211,20 @@ export default function ClubMembersPage() {
     () => setDataFreshness('stale')
   );
 
+  const externalWorkspaceUrl =
+    workspaceScope === exportScopeKey &&
+    lastWrittenUrlRef.current?.scope === exportScopeKey &&
+    lastWrittenUrlRef.current.query !== searchParams.toString();
   useEffect(() => {
-    if (workspaceScope !== exportScopeKey) return;
+    if (!externalWorkspaceUrl) return;
+    // A new history entry can keep this page mounted. Its explicit query
+    // must be consumed before the controls write their own replacement URL.
+    setFilter(readFilter(searchParams.get('view')));
+    setSortKey(readSort(searchParams.get('sort')));
+    lastWrittenUrlRef.current = { scope: exportScopeKey, query: searchParams.toString() };
+  }, [exportScopeKey, externalWorkspaceUrl, searchParams]);
+  useEffect(() => {
+    if (workspaceScope !== exportScopeKey || externalWorkspaceUrl) return;
     const next = new URLSearchParams(searchParams);
     next.delete('q');
     if (filter === 'all') next.delete('view');
@@ -221,7 +233,15 @@ export default function ClubMembersPage() {
     else next.set('sort', sortKey);
     lastWrittenUrlRef.current = { scope: exportScopeKey, query: next.toString() };
     if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true });
-  }, [exportScopeKey, filter, searchParams, setSearchParams, sortKey, workspaceScope]);
+  }, [
+    exportScopeKey,
+    externalWorkspaceUrl,
+    filter,
+    searchParams,
+    setSearchParams,
+    sortKey,
+    workspaceScope,
+  ]);
 
   useEffect(() => {
     let active = true;
@@ -777,7 +797,9 @@ export default function ClubMembersPage() {
       dataFreshness !== 'fresh'
     )
       return;
-    const requiredRows = Math.ceil((position.viewportTop + 696) / ROW_HEIGHT);
+    const node = virtual.containerRef.current;
+    const viewportHeight = node?.clientHeight || 696;
+    const requiredRows = Math.ceil((position.viewportTop + viewportHeight) / ROW_HEIGHT);
     if (hasMore && members.length < requiredRows) {
       if (positionPagesRef.current >= Math.ceil(requiredRows / PAGE_SIZE)) {
         pendingPositionRef.current = null;
@@ -787,11 +809,10 @@ export default function ClubMembersPage() {
       void loadMore();
       return;
     }
-    const node = virtual.containerRef.current;
     if (node) {
       node.scrollTop = Math.min(
         position.viewportTop,
-        Math.max(0, members.length * ROW_HEIGHT - 696)
+        Math.max(0, node.scrollHeight - viewportHeight)
       );
       node.dispatchEvent(new Event('scroll'));
     }

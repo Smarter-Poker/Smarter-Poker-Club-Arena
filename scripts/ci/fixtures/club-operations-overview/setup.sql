@@ -46,3 +46,26 @@ INSERT INTO hand_history VALUES ('00000000-0000-0000-0000-000000000201',NULL,999
 INSERT INTO club_announcements VALUES ('00000000-0000-0000-0000-000000000211','00000000-0000-0000-0000-000000000001','Welcome',NULL,NULL,now()-interval '1 second','00000000-0000-0000-0000-000000000001',NULL,true),('00000000-0000-0000-0000-000000000212','00000000-0000-0000-0000-000000000001','Hidden',NULL,NULL,now(),NULL,NULL,false);
 UPDATE profiles SET alias='Fixture Alias',avatar_url='fixture.png' WHERE id='00000000-0000-0000-0000-000000000001';
 UPDATE tables SET name='Fixture Table',created_at=now()-interval '2 seconds',created_by='00000000-0000-0000-0000-000000000001',is_deleted=false WHERE id='00000000-0000-0000-0000-000000000011';
+-- Personnel attribution follows the maintained roster, including shared tables.
+ALTER TABLE profiles ADD COLUMN status text;
+UPDATE profiles SET status='deleted' WHERE id='00000000-0000-0000-0000-000000000008';
+ALTER TABLE table_seats ADD COLUMN club_id uuid;
+UPDATE table_seats SET club_id='00000000-0000-0000-0000-000000000001';
+INSERT INTO tables(id,club_id,status) VALUES('00000000-0000-0000-0000-000000000014','00000000-0000-0000-0000-000000000002','running');
+INSERT INTO table_seats(table_id,user_id,left_at,club_id) VALUES('00000000-0000-0000-0000-000000000014','00000000-0000-0000-0000-000000000005',NULL,'00000000-0000-0000-0000-000000000001'),('00000000-0000-0000-0000-000000000012','00000000-0000-0000-0000-000000000005',NULL,'00000000-0000-0000-0000-000000000001');
+ALTER TABLE clubs ADD COLUMN owner_id uuid;
+UPDATE clubs SET owner_id='00000000-0000-0000-0000-000000000001' WHERE id='00000000-0000-0000-0000-000000000001';
+ALTER TABLE hand_history ADD COLUMN bomb_pot jsonb,ADD COLUMN rake_amount numeric,ADD COLUMN players jsonb;
+CREATE TABLE bomb_pot_award_units(hand_history_id uuid,user_id uuid,created_at timestamptz);
+CREATE TABLE ca_club_bomb_pot_complete(club_id uuid,day date,rows_written integer,hands_read bigint,computed_at timestamptz,PRIMARY KEY(club_id,day));
+CREATE TABLE ca_club_bomb_pot_daily(club_id uuid,day date,table_id uuid,trigger_reason text,board_count integer,variant text,hands bigint,seats_sum numeric,pot_sum numeric,rake_sum numeric,ante_sum numeric,scoops bigint,splits bigint,unrecorded bigint);
+INSERT INTO hand_history(id,table_id,pot_size,big_blind,created_at,bomb_pot,rake_amount,players)
+ SELECT lpad((300+i)::text,32,'0')::uuid,'00000000-0000-0000-0000-000000000011',i*100,100,
+ ((now() AT TIME ZONE 'UTC')::date-2)::timestamptz+i*interval '1 hour',
+ '{"trigger_reason":"timer","board_count":2,"variant":"plo","ante_amount":2}',i,'[1,2,3]' FROM generate_series(1,3)i;
+INSERT INTO hand_history(id,table_id,pot_size,big_blind,created_at,bomb_pot,rake_amount,players) VALUES
+ ('00000000-0000-0000-0000-000000000304','00000000-0000-0000-0000-000000000011',400,100,(now() AT TIME ZONE 'UTC')::date+interval '1 minute','{"trigger_reason":"timer","board_count":2,"variant":"plo","ante_amount":2}',4,'[1,2]'),
+ ('00000000-0000-0000-0000-000000000399','00000000-0000-0000-0000-000000000014',9999,100,((now() AT TIME ZONE 'UTC')::date-3)::timestamptz,'{"trigger_reason":"timer","board_count":2,"variant":"plo","ante_amount":2}',999,'[1]'),
+ ('00000000-0000-0000-0000-000000000398',NULL,9999,100,now(),'{"trigger_reason":"timer","board_count":2,"variant":"plo","ante_amount":2}',999,'[1]');
+INSERT INTO bomb_pot_award_units VALUES('00000000-0000-0000-0000-000000000301','00000000-0000-0000-0000-000000000001',((now() AT TIME ZONE 'UTC')::date-2)::timestamptz+interval '2 hours'),('00000000-0000-0000-0000-000000000301','00000000-0000-0000-0000-000000000001',((now() AT TIME ZONE 'UTC')::date-2)::timestamptz+interval '2 hours'),('00000000-0000-0000-0000-000000000302','00000000-0000-0000-0000-000000000001',((now() AT TIME ZONE 'UTC')::date-2)::timestamptz+interval '3 hours'),('00000000-0000-0000-0000-000000000302','00000000-0000-0000-0000-000000000007',((now() AT TIME ZONE 'UTC')::date-2)::timestamptz+interval '3 hours');
+CREATE TABLE ca_club_tournament_daily(club_id uuid,stat_date date,fee numeric);

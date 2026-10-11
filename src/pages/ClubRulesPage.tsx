@@ -51,16 +51,30 @@ export default function ClubRulesPage() {
   const [userRole, setUserRole] = useState<ClubRole>('player');
   const [loadError, setLoadError] = useState(false);
   const loadingRef = useRef(false);
+  const scopeKey = `${clubId || ''}:${user?.id || ''}`;
+  const activeScopeRef = useRef(scopeKey);
+  activeScopeRef.current = scopeKey;
+  const requestVersionRef = useRef(0);
 
   // ── CRITICAL: Reset per-club state when navigating between clubs ──
   useEffect(() => {
+    activeScopeRef.current = scopeKey;
+    requestVersionRef.current += 1;
+    setLoading(true);
+    setRules('');
+    setEditValue('');
+    setClubName('');
     setIsAdmin(false);
     setUserRole('player');
     setIsEditing(false);
     setSaving(false);
     setLoadError(false);
     loadingRef.current = false;
-  }, [clubId]);
+    return () => {
+      requestVersionRef.current += 1;
+      if (activeScopeRef.current === scopeKey) activeScopeRef.current = '';
+    };
+  }, [scopeKey]);
 
   useEffect(() => {
     let isMounted = true;
@@ -101,7 +115,7 @@ export default function ClubRulesPage() {
       isMounted = false;
       masterBus.removeRegisteredChannel(channelKey);
     };
-  }, [clubId, isEditing]);
+  }, [clubId, user?.id, isEditing]);
 
   // ── Bus Listener: reload rules if another admin updates the club ──
   useEffect(() => {
@@ -120,8 +134,15 @@ export default function ClubRulesPage() {
   }, [clubId, user?.id, isEditing]);
 
   const loadRules = async (getIsMounted?: () => boolean) => {
+    if (activeScopeRef.current !== scopeKey || (getIsMounted && !getIsMounted())) return;
     if (loadingRef.current) return;
     loadingRef.current = true;
+    const requestScope = scopeKey;
+    const requestId = ++requestVersionRef.current;
+    const isCurrent = () =>
+      activeScopeRef.current === requestScope &&
+      requestVersionRef.current === requestId &&
+      (!getIsMounted || getIsMounted());
     setLoadError(false);
     setLoading(true);
     try {
@@ -129,7 +150,7 @@ export default function ClubRulesPage() {
       const { column: clubCol, value: clubVal } = resolveClubIdFilter(clubId!);
 
       // SWR: show cached rules instantly
-      const swrKey = `rules_cache_${clubId}`;
+      const swrKey = `rules_cache_${user?.id || 'signed-out'}_${clubId}`;
       try {
         const cached = sessionStorage.getItem(swrKey);
         if (cached) {
@@ -153,7 +174,7 @@ export default function ClubRulesPage() {
         .eq(clubCol, clubVal)
         .maybeSingle();
 
-      if (getIsMounted && !getIsMounted()) return;
+      if (!isCurrent()) return;
       if (clubErr) throw clubErr;
 
       let adminFromOwner = false;
@@ -189,12 +210,13 @@ export default function ClubRulesPage() {
           .eq('user_id', user?.id)
           .maybeSingle();
 
-        if (getIsMounted && !getIsMounted()) return;
+        if (!isCurrent()) return;
         /* Fails closed either way, but a staff member who is told nothing about
            why their Edit button vanished will try again and again. */
         if (membershipErr) reportError(membershipErr, 'ClubRulesPage.role_lookup_failed');
 
-        if (isClubStaff(membership?.role)) {
+        setIsAdmin(!membershipErr && isClubStaff(membership?.role));
+        if (!membershipErr && isClubStaff(membership?.role)) {
           setIsAdmin(true);
           // isClubStaff narrows nothing for the compiler, and the cast used to
           // exclude co_owner - a co-owner would have been admitted here and
@@ -203,18 +225,20 @@ export default function ClubRulesPage() {
         }
       }
     } catch (err) {
-      if (getIsMounted && !getIsMounted()) return;
+      if (!isCurrent()) return;
       reportError(err, 'ClubRulesPage.Failed_to_load_rules');
       setLoadError(true);
       toast.error('Failed to load rules');
     } finally {
-      loadingRef.current = false;
-      if (!getIsMounted || getIsMounted()) setLoading(false);
+      if (requestVersionRef.current === requestId) loadingRef.current = false;
+      if (isCurrent()) setLoading(false);
     }
   };
 
   const handleSave = async () => {
     if (!clubId) return;
+    const actionScope = scopeKey;
+    const isCurrent = () => activeScopeRef.current === actionScope;
     setSaving(true);
     try {
       /**
@@ -244,6 +268,7 @@ export default function ClubRulesPage() {
          mentions - club_members - and fail the branch for a column that table
          has never had. The column list is the function's return type; it does
          not belong in the client at all. */
+      if (!isCurrent()) return;
       const { data: saved, error } = await supabase
         .rpc('fn_set_club_rules', {
           p_club_id: resolvedForSave,
@@ -251,6 +276,7 @@ export default function ClubRulesPage() {
         })
         .maybeSingle();
 
+      if (!isCurrent()) return;
       if (error) throw error;
       if (!saved) {
         // No row means the write did not happen. Never paint it as if it did.
@@ -267,10 +293,11 @@ export default function ClubRulesPage() {
       toast.success('Club Rules Updated');
       masterBus.emit('CLUB_UPDATED', { clubId });
     } catch (err) {
+      if (!isCurrent()) return;
       reportError(err, 'ClubRulesPage.Failed_to_save_rules');
       toast.error('Failed to save rules');
     } finally {
-      setSaving(false);
+      if (isCurrent()) setSaving(false);
     }
   };
 

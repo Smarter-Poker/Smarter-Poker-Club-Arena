@@ -22,6 +22,8 @@ describe('Club Operations failure receipts', () => {
     const toast = { error: vi.fn(), success: vi.fn() };
     const save = handler('ClubRulesPage.tsx', 'handleSave', '/* THE CONSOLE', {
       clubId: 'club-a',
+      scopeKey: 'club-a:user',
+      activeScopeRef: { current: 'club-a:user' },
       setSaving,
       toast,
       resolveClubUUIDStrict: vi.fn().mockResolvedValue('uuid-a'),
@@ -50,6 +52,9 @@ describe('Club Operations failure receipts', () => {
     const toast = { error: vi.fn() };
     const load = handler('ClubAnnouncementsPage.tsx', 'loadAnnouncements', 'const handlePost', {
       clubId: 'club-a',
+      scopeKey: 'club-a:user',
+      activeScopeRef: { current: 'club-a:user' },
+      requestVersionRef: { current: 0 },
       user: null,
       loadingRef: { current: false },
       setLoadError,
@@ -144,5 +149,98 @@ describe('Blacklist scope isolation', () => {
     await pending;
     expect(insert).not.toHaveBeenCalled();
     expect(context.setAdding.mock.calls).toEqual([[true]]);
+  });
+});
+
+describe('Rules and announcements route/account isolation', () => {
+  it('does not read or paint the former account cache after delayed club resolution', async () => {
+    let resolve!: (id: string) => void;
+    const activeScopeRef = { current: 'club-a:account-a' };
+    const getItem = vi.fn();
+    const setLoading = vi.fn();
+    const load = handler('ClubAnnouncementsPage.tsx', 'loadAnnouncements', 'const handlePost', {
+      clubId: 'club-a',
+      user: { id: 'account-a' },
+      scopeKey: 'club-a:account-a',
+      activeScopeRef,
+      requestVersionRef: { current: 0 },
+      loadingRef: { current: false },
+      setLoadError: vi.fn(),
+      setLoading,
+      resolveClubUUID: () =>
+        new Promise<string>((done) => {
+          resolve = done;
+        }),
+      sessionStorage: { getItem },
+    });
+    const pending = load();
+    activeScopeRef.current = 'club-b:account-b';
+    resolve('uuid-a');
+    await pending;
+    expect(getItem).not.toHaveBeenCalled();
+    expect(setLoading.mock.calls).toEqual([[true]]);
+  });
+
+  it('ignores a previous club Rules response even with a still-mounted callback', async () => {
+    let settle!: (result: unknown) => void;
+    const query: Record<string, unknown> = {};
+    for (const method of ['select', 'eq']) query[method] = () => query;
+    query.maybeSingle = () =>
+      new Promise((done) => {
+        settle = done;
+      });
+    const activeScopeRef = { current: 'club-a:account-a' };
+    const setRules = vi.fn();
+    const load = handler('ClubRulesPage.tsx', 'loadRules', 'const handleSave', {
+      clubId: 'club-a',
+      user: { id: 'account-a' },
+      scopeKey: 'club-a:account-a',
+      activeScopeRef,
+      requestVersionRef: { current: 0 },
+      loadingRef: { current: false },
+      setLoadError: vi.fn(),
+      setLoading: vi.fn(),
+      setRules,
+      resolveClubIdFilter: () => ({ column: 'slug', value: 'club-a' }),
+      sessionStorage: { getItem: () => null },
+      supabase: { from: () => query },
+    });
+    const pending = load(() => true);
+    activeScopeRef.current = 'club-b:account-b';
+    settle({
+      data: { name: 'Former Club', settings: { rules_text: 'Private Rules' } },
+      error: null,
+    });
+    await pending;
+    expect(setRules).not.toHaveBeenCalled();
+  });
+
+  it('clears protected content on scope reset and never uses unowned legacy cache keys', () => {
+    for (const file of ['ClubAnnouncementsPage.tsx', 'ClubRulesPage.tsx']) {
+      const source = readFileSync(`src/pages/${file}`, 'utf8');
+      const start = source.indexOf('useEffect(() => {\n    activeScopeRef.current = scopeKey;');
+      const end = source.indexOf('}, [scopeKey]);', start);
+      const effect = source.slice(start, end + '}, [scopeKey]);'.length);
+      const setters = [...new Set(effect.match(/set[A-Z]\w+/g))];
+      const context: Record<string, unknown> = {
+        scopeKey: 'club-b:account-b',
+        activeScopeRef: { current: 'club-a:account-a' },
+        requestVersionRef: { current: 1 },
+        loadingRef: { current: true },
+        useEffect: (callback: () => void) => callback(),
+      };
+      for (const setter of setters) context[setter] = vi.fn();
+      const js = ts.transpileModule(effect, {
+        compilerOptions: { target: ts.ScriptTarget.ES2022 },
+      }).outputText;
+      new Function(...Object.keys(context), js)(...Object.values(context));
+      if (file.includes('Announcements')) {
+        expect(context.setAnnouncements).toHaveBeenCalledWith([]);
+        expect(source).toContain("ann_cache_${user?.id || 'signed-out'}_${resolvedId}");
+      } else {
+        expect(context.setRules).toHaveBeenCalledWith('');
+        expect(source).toContain("rules_cache_${user?.id || 'signed-out'}_${clubId}");
+      }
+    }
   });
 });

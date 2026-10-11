@@ -57,9 +57,17 @@ export default function ClubAnnouncementsPage() {
   const [userRole, setUserRole] = useState<ClubRole>('player');
   const [loadError, setLoadError] = useState(false);
   const loadingRef = useRef(false);
+  const scopeKey = `${clubId || ''}:${user?.id || ''}`;
+  const activeScopeRef = useRef(scopeKey);
+  activeScopeRef.current = scopeKey;
+  const requestVersionRef = useRef(0);
 
   // ── CRITICAL: Reset per-club state when navigating between clubs ──
   useEffect(() => {
+    activeScopeRef.current = scopeKey;
+    requestVersionRef.current += 1;
+    setLoading(true);
+    setAnnouncements([]);
     setIsAdmin(false);
     setClubName('');
     setUserRole('player');
@@ -70,7 +78,11 @@ export default function ClubAnnouncementsPage() {
     setDeleteTarget(null);
     setLoadError(false);
     loadingRef.current = false;
-  }, [clubId]);
+    return () => {
+      requestVersionRef.current += 1;
+      if (activeScopeRef.current === scopeKey) activeScopeRef.current = '';
+    };
+  }, [scopeKey]);
 
   useEffect(() => {
     if (clubId) {
@@ -125,7 +137,7 @@ export default function ClubAnnouncementsPage() {
         masterBus.removeRegisteredChannel(channelKey);
       };
     }
-  }, [clubId]);
+  }, [clubId, user?.id]);
 
   // ── Bus Listeners: cross-page event reactivity ──
   useEffect(() => {
@@ -150,17 +162,25 @@ export default function ClubAnnouncementsPage() {
       unsubJoined();
       unsubAnnouncement();
     };
-  }, [clubId]);
+  }, [clubId, user?.id]);
 
   const loadAnnouncements = async (getIsMounted?: () => boolean) => {
     if (!clubId) return;
+    if (activeScopeRef.current !== scopeKey || (getIsMounted && !getIsMounted())) return;
     if (loadingRef.current) return;
     loadingRef.current = true;
+    const requestScope = scopeKey;
+    const requestId = ++requestVersionRef.current;
+    const isCurrent = () =>
+      activeScopeRef.current === requestScope &&
+      requestVersionRef.current === requestId &&
+      (!getIsMounted || getIsMounted());
     setLoadError(false);
-    if (!getIsMounted || getIsMounted()) setLoading(true);
+    if (isCurrent()) setLoading(true);
     try {
       const resolvedId = await resolveClubUUID(clubId);
-      const swrKey = `ann_cache_${resolvedId}`;
+      if (!isCurrent()) return;
+      const swrKey = `ann_cache_${user?.id || 'signed-out'}_${resolvedId}`;
 
       // SWR: show cached announcements instantly
       try {
@@ -185,7 +205,7 @@ export default function ClubAnnouncementsPage() {
         .order('created_at', { ascending: false })
         .limit(200);
 
-      if (getIsMounted && !getIsMounted()) return;
+      if (!isCurrent()) return;
       if (error) throw error;
       if (data) {
         // Batch-fetch author profiles separately (safe, no FK hint)
@@ -198,7 +218,7 @@ export default function ClubAnnouncementsPage() {
               .select('id, username')
               .in('id', authorIds);
             if (profileError) reportError(profileError, 'ClubAnnouncementsPage.author_profiles');
-            if (getIsMounted && !getIsMounted()) return;
+            if (!isCurrent()) return;
             if (profs) for (const p of profs) authorMap[p.id] = p.username || 'Admin';
           } catch (e) {
             reportError(e, 'ClubAnnouncementsPage.Set');
@@ -231,7 +251,7 @@ export default function ClubAnnouncementsPage() {
           .select('name')
           .eq('id', resolvedId)
           .maybeSingle();
-        if (getIsMounted && !getIsMounted()) return;
+        if (!isCurrent()) return;
         if (clubErr) reportError(clubErr, 'ClubAnnouncementsPage.club_name');
         if (club?.name) setClubName(club.name);
       } catch (e) {
@@ -250,7 +270,7 @@ export default function ClubAnnouncementsPage() {
           .eq('user_id', user.id)
           .maybeSingle();
 
-        if (getIsMounted && !getIsMounted()) return;
+        if (!isCurrent()) return;
         const memberRole = membership?.role || '';
         if (membershipErr) reportError(membershipErr, 'ClubAnnouncementsPage.role_lookup_failed');
         setIsAdmin(['owner', 'co_owner', 'admin'].includes(memberRole));
@@ -259,21 +279,25 @@ export default function ClubAnnouncementsPage() {
         }
       }
     } catch (error) {
+      if (!isCurrent()) return;
       reportError(error, 'ClubAnnouncementsPage.Failed_to_load_announcements');
       setLoadError(true);
-      if (!getIsMounted || getIsMounted()) toast.error('Failed to load announcements');
+      if (isCurrent()) toast.error('Failed to load announcements');
     } finally {
-      loadingRef.current = false;
-      if (!getIsMounted || getIsMounted()) setLoading(false);
+      if (requestVersionRef.current === requestId) loadingRef.current = false;
+      if (isCurrent()) setLoading(false);
     }
   };
 
   const handlePost = async () => {
     if (!newTitle.trim() || !newContent.trim() || !clubId || !user?.id) return;
 
+    const actionScope = scopeKey;
+    const isCurrent = () => activeScopeRef.current === actionScope;
     setPosting(true);
     try {
       const resolvedId = await resolveClubUUID(clubId);
+      if (!isCurrent()) return;
       const { error } = await supabase.from('club_announcements').insert({
         club_id: resolvedId,
         author_id: user.id,
@@ -282,6 +306,7 @@ export default function ClubAnnouncementsPage() {
         is_pinned: false,
       });
 
+      if (!isCurrent()) return;
       if (!error && clubId) {
         setNewTitle('');
         setNewContent('');
@@ -293,17 +318,21 @@ export default function ClubAnnouncementsPage() {
         toast.error('Failed to post announcement');
       }
     } catch (error) {
+      if (!isCurrent()) return;
       reportError(error, 'ClubAnnouncementsPage.Failed_to_post_announcement');
       // 2026-08-28: this catch was error reporting-only. A thrown failure (network,
       // resolveClubUUID) left the composer open with no success and no error
       // — the user could not tell whether the post landed. The in-band error
       // branch above already toasts; a thrown one must too.
       toast.error('Failed to post announcement');
+    } finally {
+      if (isCurrent()) setPosting(false);
     }
-    setPosting(false);
   };
 
   const handleTogglePin = async (id: string, currentlyPinned: boolean) => {
+    const actionScope = scopeKey;
+    const isCurrent = () => activeScopeRef.current === actionScope;
     try {
       /* `.select('id')`: an UPDATE that RLS refuses matches zero rows and
          returns 204 with no error, so this used to reload the list and toast
@@ -315,6 +344,7 @@ export default function ClubAnnouncementsPage() {
         .eq('id', id)
         .select('id');
 
+      if (!isCurrent()) return;
       if (error) {
         toast.error('Failed to update pin status');
       } else if (!pinned || pinned.length === 0) {
@@ -325,6 +355,7 @@ export default function ClubAnnouncementsPage() {
         toast.success(currentlyPinned ? 'Announcement unpinned' : 'Announcement pinned');
       }
     } catch (err) {
+      if (!isCurrent()) return;
       reportError(err, 'ClubAnnouncementsPage.Failed_to_toggle_pin');
       toast.error('Failed to update pin status');
     }
@@ -341,11 +372,14 @@ export default function ClubAnnouncementsPage() {
     if (!deleteTarget) return;
     const id = deleteTarget;
     setDeleteTarget(null);
+    const actionScope = scopeKey;
+    const isCurrent = () => activeScopeRef.current === actionScope;
     try {
       // SECURITY: Scope delete to club to prevent cross-club deletion
       let delQuery = supabase.from('club_announcements').delete().eq('id', id);
       if (clubId) {
         const resolvedId = await resolveClubUUID(clubId);
+        if (!isCurrent()) return;
         delQuery = delQuery.eq('club_id', resolvedId);
       }
       /* Same reason as the pin above, and worse here: the line that removed the
@@ -353,6 +387,7 @@ export default function ClubAnnouncementsPage() {
          vanished from the operator's screen and stayed live for every player. */
       const { data: deleted, error } = await delQuery.select('id');
 
+      if (!isCurrent()) return;
       if (error) {
         toast.error('Failed to delete announcement');
       } else if (!deleted || deleted.length === 0) {
@@ -364,6 +399,7 @@ export default function ClubAnnouncementsPage() {
         if (clubId) masterBus.emit('ANNOUNCEMENT_CHANGED', { clubId, action: 'deleted' });
       }
     } catch (err) {
+      if (!isCurrent()) return;
       reportError(err, 'ClubAnnouncementsPage.Failed_to_delete_announcement');
       toast.error('Failed to delete announcement');
     }

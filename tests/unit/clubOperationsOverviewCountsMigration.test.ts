@@ -24,28 +24,39 @@ describe('Club Operations Qualified Count Repair', () => {
   it('pins both the observed complete definition and body, and requires the exact postimage', () => {
     expect(sql).toContain('ff2f0b8132efc1c1091594d230c990d6');
     expect(sql).toContain('56fce10a30115b2d8b84891229af5de7');
-    expect(sql).toContain('0cc301a559126c36a249454976733a4c');
+    expect(sql).toContain('f37429f441b5a31bceb13700d6b8d015');
     expect(sql.match(/BEGIN;/g)).toHaveLength(1);
     expect(sql).toContain("BEGIN;\nSET LOCAL lock_timeout = '3s';");
     expect(sql.match(/COMMIT;/g)).toHaveLength(1);
-    expect(sql.match(/must occur exactly once/g)).toHaveLength(6);
-    expect(replacements).toHaveLength(6);
+    expect(sql.match(/must occur exactly once/g)).toHaveLength(12);
+    expect(replacements).toHaveLength(12);
   });
   it('new-member counts exclude membership requests without changing wallet sums', () => {
-    expect(replacements[0][2]).toContain("NOT IN ('banned', 'suspended', 'pending')");
+    expect(replacements[0][2]).toContain(
+      "coalesce(cm.status, 'approved') IN ('active', 'approved')"
+    );
+    expect(replacements[0][2]).toContain("pr.status = 'deleted'");
+    expect(replacements[0][2]).toContain('count(DISTINCT cm.user_id)');
     expect(replacements[0][2]).toContain("cm.created_at > now() - interval '7 days'");
+    const financial = /coalesce\(sum\(cm\.chip_balance\)[\s\S]*?, 0\)/;
+    expect(replacements[0][2].match(financial)?.[0]).toBe(replacements[0][1].match(financial)?.[0]);
     expect(
-      replacements.every(
-        (pair) => !/sum\(|chip_balance|chip_treasury|settlement_locked/.test(pair[1] + pair[2])
-      )
+      replacements
+        .slice(1)
+        .every(
+          (pair) => !/sum\(|chip_balance|chip_treasury|settlement_locked/.test(pair[1] + pair[2])
+        )
     ).toBe(true);
   });
   it('presence counts require a live seat or an accepted membership with canonical profile presence', () => {
-    expect(replacements[1][2]).toContain("t.status IN ('running', 'waiting', 'active')");
-    expect(replacements[1][2]).toContain('ts.left_at IS NULL AND ts.user_id IS NOT NULL');
-    expect(replacements[1][2]).toContain('UNION');
+    expect(replacements[1][2]).toContain("t.status IN ('running', 'waiting')");
+    expect(replacements[1][2]).toContain('ts.left_at IS NULL');
+    expect(replacements[1][2]).toContain('ts.user_id IS NOT NULL');
+    expect(replacements[1][2]).toContain('t.club_id = p_club_id OR ts.club_id = p_club_id');
+    expect(replacements[1][2]).toContain('count(DISTINCT ts.user_id)');
+    expect(replacements[2][2]).toContain('UNION');
     expect(replacements[2][2]).toContain(
-      "coalesce(cm.status, 'active') IN ('active', 'approved', 'automatic')"
+      "coalesce(cm.status, 'approved') IN ('active', 'approved')"
     );
     expect(replacements[2][2]).toContain('EXISTS (SELECT 1 FROM public.profiles pp');
     expect(
@@ -77,6 +88,37 @@ describe('Club Operations Qualified Count Repair', () => {
     expect(replacements[5][2]).toBe(
       'WHERE hh.table_id = ANY(ARRAY(SELECT t.id FROM tables t WHERE t.club_id = p_club_id))'
     );
+  });
+  it('bomb reporting changes only club scoping in both live reads and catchup rollup', () => {
+    expect(sql).toContain('a37016388c8957533a8a7f1e0b610065');
+    expect(sql).toContain('78e78fee19b842a9b54ed9703784551e');
+    expect(sql).toContain('db2daf3cd7367513cf219d75ea1377ba');
+    expect(sql).toContain('f8b2e4eda1ee5c7d75243f1448566ea2');
+    for (const pair of replacements.slice(6, 8)) {
+      expect(pair[1]).toMatch(
+        /^JOIN public\.tables t ON t\.id = h\.table_id\n +WHERE t\.club_id = p_club_id$/
+      );
+      expect(pair[2]).toBe(
+        'WHERE h.table_id = ANY(ARRAY(SELECT t.id FROM public.tables t WHERE t.club_id = p_club_id))'
+      );
+    }
+  });
+  it('the full dashboard shares only the roster personnel definitions', () => {
+    expect(sql).toContain('f82002cb3b36a4454a9f6e17af141985');
+    expect(sql).toContain('e9df60b641c83580253c29cac60f53bd');
+    expect(sql).toContain('0d64c2d9d5f63a68418ce21c4442b8f0');
+    expect(replacements.slice(8)).toHaveLength(4);
+    for (const pair of replacements.slice(8)) {
+      expect(pair[2]).toContain("coalesce(cm.status, 'approved') IN ('active', 'approved')");
+      expect(pair[2]).toContain("pr.status = 'deleted'");
+      expect(pair[1] + pair[2]).not.toMatch(
+        /rake_today|rake_week|daily_series|tournament_fees|active_tables|total_tables/
+      );
+    }
+    expect(replacements[8][2]).toContain('count(DISTINCT cm.user_id)');
+    expect(replacements[9][2]).toContain('t.club_id = p_club_id OR ts.club_id = p_club_id');
+    expect(replacements[10][2]).toContain("cm.created_at > now() - interval '7 days'");
+    expect(replacements[11][2]).toContain('count(DISTINCT ts.user_id)');
   });
   it('reuses the maintained function definition, preserving owner, grants, security and financial authorization', () => {
     expect(sql).toContain('EXECUTE v_definition;');

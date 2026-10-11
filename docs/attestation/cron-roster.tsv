@@ -3,8 +3,8 @@
 # A change here is a change to what this platform runs on a timer. Never edit a
 # line to make a check pass: tests/the-scheduled-work-roster-is-pinned.law.test.ts
 # pins the count, and the count is supposed to be argued about.
-# observed_at: 2026-10-07T03:46:42Z
-# active: 129
+# observed_at: 2026-10-11T19:22:34Z
+# active: 132
 # retained-inactive: 2	the two bust sweeps restored disabled by 20260910073355
 # 2026-09-20: 135 -> 132. union-seat-provenance-heal, ca-bbj-repair-unbanked-15m
 # and reconcile-club-table-counts-nightly were retired by migration
@@ -91,6 +91,21 @@
 #     recorded as applied whose job went missing. This file is the only place in
 #     the estate that could have seen either case, which is why both are written
 #     down rather than reconciled quietly.
+# 2026-10-11: 129 -> 132 active, retained-inactive unchanged at 2. Read live
+# from cron.job and fn_ca_cron_health('24 hours') at the observed_at above:
+# 132 active, the same 132 rows. Every previously pinned schedule is unchanged.
+# THREE APPEARED, each scheduled by a merged migration in this repo:
+#   ca-bound-outside-snapshots-1m  * * * * *  scheduled by
+#     20261006170925 a_long_outside_snapshot_does_not_stall_the_tables
+#     (PR #6407). It bounds outside snapshot readers so a long one cannot
+#     stall the tables; it repairs nothing.
+#   ca-tournament-dark-while-running-5m  3-59/5 * * * *  scheduled by
+#     20261008113537 a_running_tournament_that_deals_nothing_is_paged_within_twen.
+#     It pages; it repairs nothing.
+#   ca-terminal-receipt-replay-daily  37 4 * * *  scheduled by
+#     20261008140859 every_terminal_receipt_of_the_day_is_replayed_and_a_refusal_is_paged.
+#     It replays receipts read-only and pages a refusal; it repairs nothing.
+# Other owners' work: listed here, not judged here.
 # jobname	schedule
 # 2026-10-04: 125 -> 126. postgrest-pool-renew-10m was scheduled by migration
 # the_api_pool_is_renewed_before_it_outgrows_the_host: PostgREST's pool
@@ -123,6 +138,7 @@
 bbj-rollup-catchup	45 * * * *
 ca-alarm-drill-weekly	7 11 * * 1
 ca-bbj-threshold-notify-5m	*/5 * * * *
+ca-bound-outside-snapshots-1m	* * * * *
 ca-break-scorecard	12 * * * *
 ca-burnin-gate-hourly	58 * * * *
 ca-cash-pot-conservation-hourly	34 */6 * * *
@@ -170,7 +186,9 @@ ca-settlement-correctness-30m	15 * * * *
 ca-stats-witness-audit-15m	9,24,39,54 * * * *
 ca-supply-snapshot-hourly	5 * * * *
 ca-suspense-regression-15m	*/15 * * * *
+ca-terminal-receipt-replay-daily	37 4 * * *
 ca-tournament-conservation-10m	*/10 * * * *
+ca-tournament-dark-while-running-5m	3-59/5 * * * *
 ca-tournament-finished-not-completed-5m	*/5 * * * *
 ca-trial-balance-hourly	20 * * * *
 ca-uncollected-entry-check-hourly	47 * * * *

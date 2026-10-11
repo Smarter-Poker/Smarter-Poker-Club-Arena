@@ -126,6 +126,25 @@ try:
     run('custody-changed-preimage-refuses-atomically', "BEGIN; CREATE OR REPLACE FUNCTION fn_close_account(p_user_id uuid) RETURNS jsonb LANGUAGE sql AS $$ SELECT '{}'::jsonb $$;" + (root / 'supabase/migrations/20261011051132_deleted_account_closure_waits_for_chip_custody.sql').read_text(), error='account_close_custody_preimage_changed')
     run('custody-refused-install-leaves-no-trigger', "SELECT count(*) FROM pg_trigger WHERE tgname='trg_deleted_account_custody_settled';", '0')
     run('custody-transition-install', (root / 'supabase/migrations/20261011051132_deleted_account_closure_waits_for_chip_custody.sql').read_text())
+    def busy_bank(name, expected_error, timeout=''):
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(command, cmd, f"BEGIN; SELECT 1 FROM clubs WHERE id='{club}' FOR UPDATE; SELECT pg_advisory_xact_lock(77112); SELECT pg_sleep(1); COMMIT;")
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                witness = command(cmd, "SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND objid=77112 AND granted);")
+                if witness.returncode == 0 and witness.stdout.strip() == 't':
+                    break
+                time.sleep(0.01)
+            else:
+                raise RuntimeError('Concurrent custody bank witness never acquired')
+            run(name, timeout + delete_status, error=expected_error)
+            result = future.result()
+            if result.returncode:
+                raise RuntimeError(result.stderr)
+    busy_bank('baseline-custody-waits-behind-bank', '57014', "SET statement_timeout='80ms';")
+    run('custody-bank-lock-refinement', (root / 'supabase/migrations/20261011051848_deleted_account_custody_takes_bank_locks_without_waiting.sql').read_text())
+    busy_bank('custody-busy-bank-refuses-without-waiting', 'could not obtain lock on row')
+    run('custody-busy-bank-refusal-is-atomic', f"SELECT p.status||'/'||m.chip_balance||'/'||(SELECT chip_treasury FROM clubs) FROM profiles p JOIN club_members m ON m.user_id=p.id WHERE p.id='{custody_user}';", 'active/11.11/1140')
     obligations = {
         'live-seat': seat,
         'registered-tournament': f"INSERT INTO tournaments VALUES('{tournament}','RUNNING'); INSERT INTO tournament_players VALUES('{tournament}','{custody_user}','registered');",

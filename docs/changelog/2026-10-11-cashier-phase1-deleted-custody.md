@@ -19,7 +19,8 @@ only that predicate.
 
 Horses and humans use the same rule; no scheduled repair or engine restart is added.
 
-The trigger uses the existing user table-cap lock and locks wallet rows NOWAIT.
+The trigger uses the existing user table-cap lock, then locks club banks and
+wallet rows NOWAIT in that order.
 A concurrent custody operation refuses deletion atomically rather than waiting
 behind its inverse profile/wallet lock order. The caller may retry deletion after
 that operation settles; no financial request is replayed by the guard.
@@ -28,6 +29,8 @@ Regression qualification extends the existing mandatory native deleted-account
 CI lane. It reproduces direct deletion with a live seat before installation,
 then checks every protected custody status, unchanged balances on refusal,
 settled custody and exact-cent bank return/replay, browser ACL refusal and a
-real two-session credit/deletion conflict. Ordinary profile edits are unaffected.
+real two-session credit/deletion and bank/deletion conflicts. The busy-bank
+regression reproduces a waiting deletion before the lock refinement, then
+requires immediate row-lock refusal and unchanged custody after it. Ordinary profile edits are unaffected.
 Production financial fault tests are excluded; installation and readback are
 recorded separately in the task checkpoint.

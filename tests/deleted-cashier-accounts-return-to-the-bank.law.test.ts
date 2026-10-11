@@ -67,6 +67,8 @@ describe('deleted cashier accounts return to the bank', () => {
     expect(native).toContain('close-account-baseline-blocks-completed-approval');
     expect(native).toContain('close-account-open-approval-still-refused');
     expect(native).toContain('custody-changed-preimage-refuses-atomically');
+    expect(native).toContain('baseline-custody-waits-behind-bank');
+    expect(native).toContain('custody-busy-bank-refuses-without-waiting');
   });
   it('enforces native database concurrency and conservation qualification in required CI', () => {
     const workflow = readFileSync('.github/workflows/ci.yml', 'utf8');

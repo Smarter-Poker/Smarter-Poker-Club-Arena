@@ -703,6 +703,18 @@
         "check-new-migration-version-collisions: installed name exceeds the new-file 60-character limit"
       ],
       "liveVerdict": "Already installed under the exact version and full original name; production statements md5 equals file md5. Exact-board settlement 28969489aa8a9434428f74c32058de3b returned 4,536,780.11 to JAQK main bank, ledger/receipt/bank totals identical, repeat zero, resolved financial alert retains full account/source board. This data migration creates no function or trigger; no browser grant or recurring writer. All ordinary migration guards already passed. Preserving the installed identity through the existing verified recording path."
+    },
+    {
+      "version": "20261010061706",
+      "name": "the_paid_entry_restriction_guard_is_a_declared_money_trigger",
+      "file": "supabase/migrations/20261010061706_the_paid_entry_restriction_guard_is_a_declared_money_trigger.sql",
+      "md5": "f7e1dfbfdbe3037d015a73255f58228d",
+      "appliedToProductionAt": "2026-10-10T06:17:06Z",
+      "recoveredOn": "2026-10-11",
+      "recoveredFrom": "public.fn_ca_migration_text(version), UTF8 base64, byte for byte",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": [],
+      "liveVerdict": "Read live 2026-10-11T14:35:10Z: tournament_players.zz_restriction_tourney_paid_guard is declared; fn_undeclared_money_triggers() returns no rows. Existing data-only declaration, no money moved and no trigger created. Production body MD5 f7e1dfbfdbe3037d015a73255f58228d, 1882 bytes. Recording only; do not replay."
     }
   ]
 }

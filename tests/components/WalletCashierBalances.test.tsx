@@ -118,12 +118,12 @@ describe('the open cashier reads the balances that changed elsewhere', () => {
   });
 
   it('shows a concurrent club-bank withdrawal without reopening or a row event', async () => {
-    const view = render(<WalletCashierModal {...base} walletType="club_bank" />);
+    render(<WalletCashierModal {...base} walletType="club_bank" />);
     await flush();
-    expect(view.container.querySelector('.cbc-bank strong')).toHaveTextContent('100');
+    expect(document.querySelector('.cbc-bank strong')).toHaveTextContent('100');
     fixture.bank = 70;
     await act(() => vi.advanceTimersByTimeAsync(8_000));
-    expect(view.container.querySelector('.cbc-bank strong')).toHaveTextContent('70');
+    expect(document.querySelector('.cbc-bank strong')).toHaveTextContent('70');
     expect(fixture.channel).not.toHaveBeenCalled();
     expect(fixture.rpc.mock.calls.every(([name]) => name === 'fn_club_cashier_members')).toBe(true);
     expect(fixture.reads.every((read) => read.filters.id === CLUB && read.table === 'clubs')).toBe(
@@ -132,12 +132,12 @@ describe('the open cashier reads the balances that changed elsewhere', () => {
   });
 
   it('updates the viewer’s agent float using both club and user filters', async () => {
-    const view = render(<WalletCashierModal {...base} role="agent" walletType="agent_wallet" />);
+    render(<WalletCashierModal {...base} role="agent" walletType="agent_wallet" />);
     await flush();
-    expect(view.container.querySelector('.cbc-bank strong')).toHaveTextContent('40');
+    expect(document.querySelector('.cbc-bank strong')).toHaveTextContent('40');
     fixture.agent = 19;
     await act(() => vi.advanceTimersByTimeAsync(8_000));
-    expect(view.container.querySelector('.cbc-bank strong')).toHaveTextContent('19');
+    expect(document.querySelector('.cbc-bank strong')).toHaveTextContent('19');
     for (const read of fixture.reads.filter((r) => r.table === 'agents')) {
       expect(read.filters).toEqual({
         club_id: CLUB,
@@ -147,21 +147,21 @@ describe('the open cashier reads the balances that changed elsewhere', () => {
   });
 
   it('keeps the club promo pot separate from the viewer’s promo float', async () => {
-    const view = render(<WalletCashierModal {...base} walletType="promo_wallet" />);
+    render(<WalletCashierModal {...base} walletType="promo_wallet" />);
     await flush();
-    expect(view.container.querySelector('.cbc-bank strong')).toHaveTextContent('25');
+    expect(document.querySelector('.cbc-bank strong')).toHaveTextContent('25');
     fixture.pot = 31;
     fixture.float = 99;
     await act(() => vi.advanceTimersByTimeAsync(8_000));
-    expect(view.container.querySelector('.cbc-bank strong')).toHaveTextContent('31');
+    expect(document.querySelector('.cbc-bank strong')).toHaveTextContent('31');
   });
 
   it('shows unavailable after a refused refresh, never the previous spendable number or zero', async () => {
-    const view = render(<WalletCashierModal {...base} walletType="club_bank" />);
+    render(<WalletCashierModal {...base} walletType="club_bank" />);
     await flush();
     fixture.failure = true;
     await act(() => vi.advanceTimersByTimeAsync(8_000));
-    expect(view.container.querySelector('.cbc-bank strong')).toHaveTextContent('Unavailable');
+    expect(document.querySelector('.cbc-bank strong')).toHaveTextContent('Unavailable');
   });
 
   it('stops all balance reads when the cashier closes', async () => {

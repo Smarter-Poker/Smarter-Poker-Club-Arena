@@ -585,6 +585,9 @@ import { formatAwardAtUnit, formatChipAward } from '../utils/format';
 // The unit a printed amount is named in: Chips, or Diamonds at a Diamond seat.
 // Never a dollar sign (Dan 2026-10-09, check-ui-dollar.mjs).
 import { moneyWordAtUnit } from '../utils/format';
+// Its own line: the import above is pinned as the pot-win label's formatter
+// (tests/unit/knockoutBountyIsSharedAndExact.test.ts).
+import { compactChips } from '../utils/format';
 import { bountyWinnersOf } from '../utils/bountyBroadcast';
 import { formatPopupText } from '../utils/popupStyle';
 import {
@@ -5096,6 +5099,14 @@ function LiveTablePage({
         void handleSitOut();
         break;
       case 'REBUY':
+        /* A SPECTATOR HAS NO SEAT TO TOP UP (audit C2-17). The tab bar offers
+           this item to everyone at the table, and for a spectator the sheet
+           opened only for the engine to answer "Player not seated". The seat's
+           own header control already asked; this asks the same question. */
+        if (tableState.heroSeat <= 0) {
+          toast.info('Take A Seat To Top Up.');
+          break;
+        }
         /* THE TAB BAR'S TOP UP ITEM WAS DEAD AT A DIAMOND SEAT (2026-09-12).
            This refused every non-chip asset, and `createDefaultMenuSections`
            renders the item unconditionally because the tab bar does not know
@@ -8223,7 +8234,10 @@ function LiveTablePage({
           toast.info(
             topUpAsset === 'diamonds'
               ? `${applied.toLocaleString()} ${applied === 1 ? 'Diamond Lands' : 'Diamonds Land'} When This Hand Ends, And Are Taken Then. Keep Them Settled Until It Does.`
-              : `${applied.toFixed(2)} Lands When This Hand Ends. If The Pot Puts You Over The Table Maximum, The Difference Returns To Your Wallet.`
+              : /* A chip figure off the felt is compactChips, with its unit
+                   (audit C2-17): this printed "500.00 Lands When...". The unit
+                   is topUpUnits, the one asset-keyed unit this handler names. */
+                `Your Top-Up Of ${compactChips(applied)} ${topUpUnits} Lands When This Hand Ends. If The Pot Puts You Over The Table Maximum, The Difference Returns To Your Wallet.`
           );
         }
       }
@@ -24318,8 +24332,10 @@ function LiveTablePage({
                          the custody door refuses a tournament table outright.
                          Offering the control there would promise a seat
                          something no writer can give it. */
+                      /* Never to a spectator (audit C2-17): there is no seat to
+                         top up, and the engine refuses one that is not seated. */
                       ...(tableState.arenaAsset === 'diamonds'
-                        ? !canTopUpSeat
+                        ? !canTopUpSeat || tableState.heroSeat <= 0
                           ? []
                           : [
                               {
@@ -24346,14 +24362,16 @@ function LiveTablePage({
                                   onClick: handleTournamentAddOn,
                                 },
                               ]
-                            : [
-                                {
-                                  id: 'rebuy',
-                                  label: 'Top Up',
-                                  icon: <RebuyIcon />,
-                                  onClick: () => setShowCashier(true),
-                                },
-                              ]),
+                            : tableState.heroSeat > 0
+                              ? [
+                                  {
+                                    id: 'rebuy',
+                                    label: 'Top Up',
+                                    icon: <RebuyIcon />,
+                                    onClick: () => setShowCashier(true),
+                                  },
+                                ]
+                              : []),
                       ...(tableState.arenaAsset === 'chips'
                         ? [
                             {

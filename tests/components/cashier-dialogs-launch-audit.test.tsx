@@ -6,6 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * half of tests/cashier-dialogs-launch-audit.law.test.ts. Each case renders
  * the real dialog against a scripted Supabase and proves the fixed behaviour,
  * not the source text.
+ *
+ * MERGED 2026-10-09 with the first cashier swarm (audit C2-17): the Club Bank
+ * cashier renders into <body> now (clear of <main>'s isolated stacking
+ * context), so its text and panels are read from the document rather than
+ * the render container, and its balances print the house way (compactChips:
+ * 1,000 is "1K", 9,500 is "9.5K"). What each case requires is unchanged.
  */
 
 const USER = '11111111-1111-4111-8111-111111111111';
@@ -140,6 +146,7 @@ const snapshot = (name = 'Test Club') => ({
   name,
   inUnion: false,
   bank: 10000,
+  credit: 0,
   promoPot: 0,
   promoFloat: null,
   hasFloat: null,
@@ -281,9 +288,9 @@ describe('D-16: an agent without a float row is told so', () => {
       promoFloat: 0,
       hasFloat: false,
     });
-    const { view } = await openCashier({ walletType: 'agent_wallet', role: 'agent' });
+    await openCashier({ walletType: 'agent_wallet', role: 'agent' });
     await waitFor(() => expect(screen.getByText('No Agent Float Yet')).toBeTruthy());
-    expect(view.container.textContent).not.toContain('Unavailable');
+    expect(document.body.textContent).not.toContain('Unavailable');
     expect(screen.getByText('No Agent Float Yet').tagName).toBe('STRONG');
   });
 });
@@ -293,7 +300,7 @@ describe('D-03: nothing from the previous club survives a reopen', () => {
     const { view } = await openCashier();
     fireEvent.click(screen.getByText('Transaction Ledger'));
     await waitFor(() => expect(screen.getByText('Test Club')).toBeTruthy());
-    await waitFor(() => expect(view.container.textContent).toContain('9,500'));
+    await waitFor(() => expect(document.body.textContent).toContain('Bank After 9.5K'));
 
     // Club B: balances and ledger never answer, so whatever prints is a leak.
     fx.balances.mockReturnValue(new Promise(() => {}));
@@ -308,10 +315,10 @@ describe('D-03: nothing from the previous club survives a reopen', () => {
       />
     );
     await settle();
-    expect(view.container.textContent).not.toContain('Test Club');
-    expect(view.container.textContent).toContain('Club Arena');
-    expect(view.container.textContent).not.toContain('9,500');
-    expect(view.container.textContent).not.toContain('-500');
+    expect(document.body.textContent).not.toContain('Test Club');
+    expect(document.body.textContent).toContain('Club Arena');
+    expect(document.body.textContent).not.toContain('9.5K');
+    expect(document.body.textContent).not.toContain('-500');
   });
 });
 
@@ -333,7 +340,7 @@ describe('D-04: the holder figure follows the roster after a claim', () => {
     fireEvent.click(screen.getByText('Player Wallet', { selector: '.cbc-seg button' }));
     const player = await screen.findByText('Fish Finder');
     fireEvent.click(player);
-    await waitFor(() => expect(screen.getByText(/Holds 1,000 In That Wallet/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Holds 1K In That Wallet/)).toBeTruthy());
 
     fireEvent.change(screen.getByLabelText('Chips To Claim Back'), { target: { value: '500' } });
     await settle();
@@ -466,14 +473,14 @@ describe('D-11: focus is moved in, kept in and returned', () => {
 
   it('the cashier hands the keyboard to the stacked mint and takes it back', async () => {
     const opener = trigger();
-    const { view } = await openCashier();
-    const panel = view.container.querySelector('.cbc-panel')!;
+    await openCashier();
+    const panel = document.querySelector('.cbc-panel')!;
     await waitFor(() => expect(panel.contains(document.activeElement)).toBe(true));
     fireEvent.click(screen.getByText('Mint Chips Into The Club Bank'));
     const input = await screen.findByLabelText('Diamonds To Convert');
     await waitFor(() => expect(document.activeElement).toBe(input));
     fireEvent.keyDown(document, { key: 'Tab' });
-    expect(view.container.querySelector('.cmm-panel')!.contains(document.activeElement)).toBe(true);
+    expect(document.querySelector('.cmm-panel')!.contains(document.activeElement)).toBe(true);
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(panel.contains(document.activeElement)).toBe(true));
     opener.remove();
@@ -490,7 +497,7 @@ describe('G-05: the cashier keeps its trap under the stacked mint', () => {
     document.body.appendChild(opener);
     opener.focus();
     const { view, onClose } = await openCashier();
-    const panel = view.container.querySelector('.cbc-panel')!;
+    const panel = document.querySelector('.cbc-panel')!;
     await waitFor(() => expect(panel.contains(document.activeElement)).toBe(true));
     let openerFocused = 0;
     opener.addEventListener('focus', () => {
@@ -505,7 +512,7 @@ describe('G-05: the cashier keeps its trap under the stacked mint', () => {
     expect(openerFocused).toBe(0);
 
     // Both traps are active; only the top one (the mint) acts on Tab.
-    const mintPanel = view.container.querySelector('.cmm-panel')!;
+    const mintPanel = document.querySelector('.cmm-panel')!;
     const mintFocusable = mintPanel.querySelectorAll<HTMLElement>(FOCUSABLE);
     // A Tab from the mint's first control is the browser's to move; the
     // cashier's trap underneath does not drag focus back to itself.
@@ -519,7 +526,7 @@ describe('G-05: the cashier keeps its trap under the stacked mint', () => {
     expect(document.activeElement).toBe(mintFocusable[mintFocusable.length - 1]);
 
     fireEvent.keyDown(document, { key: 'Escape' });
-    await waitFor(() => expect(view.container.querySelector('.cmm-panel')).toBeNull());
+    await waitFor(() => expect(document.querySelector('.cmm-panel')).toBeNull());
     await settle();
     await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
     expect(document.activeElement).toBe(mintControl);

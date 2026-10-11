@@ -30,6 +30,7 @@ import { canHoldAgentWallet } from './walletRows';
 import { titleCase, enumToTitleCase } from '../../utils/titleCase';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
+import { presentChipTransaction } from './describeChipTransaction';
 import './WalletCashierModal.css';
 
 const PAGE = 40;
@@ -155,9 +156,12 @@ const TX_TYPE_LABELS: Record<string, string> = {
   rakeback: 'Rakeback',
   bbj_promo_sweep: 'BBJ Promo Sweep',
   promo_closed_on_union_join: 'Promo Wallet Closed On Union Join',
-  /* Never 'Horse ...': a statement line may not say which member is a horse
-     (Dan 2026-09-14, tests/a-horse-is-never-named.law.test.ts). */
-  horse_treasury_funding: 'Treasury Funding',
+  /* A treasury-funded seat reads exactly as the human Club Bank send it is
+     (Dan 2026-09-14, tests/a-horse-is-never-named.law.test.ts; cashier launch
+     decision 2026-10-09): a label of its own, even "Treasury Funding", was a
+     word only those rows ever printed. Rows also pass through
+     presentChipTransaction, which drops the writer's note. */
+  horse_treasury_funding: 'Club Bank Send',
   union_hold: 'Union Hold',
   union_pnl_collect: 'Union PnL Collected',
   union_pnl_payout: 'Union PnL Payout',
@@ -246,7 +250,7 @@ export default function PlayerWalletModal({ isOpen, onClose, clubId }: PlayerWal
            is a duplicated line on a financial statement, not just a console
            warning. De-duplicated by id on append. */
         setRows((prev) => {
-          const next = res.rows || [];
+          const next = (res.rows || []).map(presentChipTransaction);
           if (offset === 0) return next;
           const seen = new Set(prev.map((r) => r.id));
           return [...prev, ...next.filter((r) => !seen.has(r.id))];

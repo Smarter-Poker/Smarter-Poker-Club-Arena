@@ -639,3 +639,31 @@ export async function copyCashierText(text: string): Promise<boolean> {
     return false;
   }
 }
+
+export type CashierRpcFailure = 'refused' | 'unknown';
+
+/**
+ * Was this failed RPC a definitive refusal, or might it have committed?
+ *
+ * Cashier launch brief, rule 8: a key is held across an ambiguous failure (no
+ * HTTP status, an empty code, an abort, a 5xx, a 408/409/425/429, a PostgREST
+ * transport code) and rotated only on a definitive outcome, which for an error
+ * means a real SQL refusal carried on a 4xx. When in doubt this answers
+ * 'unknown': holding a key is always safe, minting a second one is not.
+ */
+export function classifyCashierRpcFailure(
+  error: unknown,
+  status?: number | null
+): CashierRpcFailure {
+  const shaped = (error && typeof error === 'object' ? error : {}) as {
+    code?: unknown;
+    name?: unknown;
+  };
+  const code = typeof shaped.code === 'string' ? shaped.code.trim() : '';
+  const httpStatus = Number(status);
+  if (!code || shaped.name === 'AbortError') return 'unknown';
+  if (/^PGRST00[0-3]$/i.test(code)) return 'unknown';
+  if (!Number.isFinite(httpStatus) || httpStatus < 400 || httpStatus >= 500) return 'unknown';
+  if ([408, 409, 425, 429].includes(httpStatus)) return 'unknown';
+  return 'refused';
+}

@@ -96,7 +96,12 @@ import WalletCashierModal from '../components/wallet/WalletCashierModal';
 import DiamondWalletTransfer from '../components/wallet/DiamondWalletTransfer';
 import { DEFAULT_CASHIER_WALLET, secondsLeftFromServer } from '../components/wallet/cashierModes';
 import { canSeeClubBank, canHoldAgentWallet } from '../components/wallet/walletRows';
-import { describeChipTransaction, walletRoute } from '../components/wallet/describeChipTransaction';
+import {
+  describeChipTransaction,
+  presentChipTransaction,
+  thirdPartySender,
+  walletRoute,
+} from '../components/wallet/describeChipTransaction';
 import styles from './CashierTradePage.module.css';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import {
@@ -1159,7 +1164,13 @@ function CashierTradeWorkspace() {
       }>;
       setRecordsHasMore((data || []).length > recordsLimit);
       setRecords(
-        pageRows.map((r) => {
+        pageRows.map((raw) => {
+          // A HORSE IS NEVER NAMED (cashier launch round 3, contract 2). A
+          // treasury-funded seat is presented as the Club Bank send it is
+          // BEFORE anything reads its kind, note or metadata, so its label,
+          // route, sentence, receipt, search and copied text are a human
+          // send's. Never dropped: its amount counts in every total.
+          const r = presentChipTransaction(raw);
           const out = r.from_user_id === user.id;
           const incoming = r.to_user_id === user.id;
           const managed = !out && !incoming;
@@ -1173,11 +1184,17 @@ function CashierTradeWorkspace() {
             type: (r.transaction_type as string) || 'transfer',
             amount: Number(r.amount) || 0,
             direction: managed ? ('managed' as const) : out ? ('out' as const) : ('in' as const),
+            // A third party reads a Club Bank send by the pot that paid,
+            // never its operator: a send nobody pressed reads the same.
             counterparty: managed
-              ? `${r.from_name || 'A Member'} To ${r.to_name || 'A Member'}`
+              ? `${thirdPartySender(r, r.from_name)} To ${r.to_name || 'A Member'}`
               : otherName || 'Club',
             route: walletRoute(r),
-            narrative: describeChipTransaction(r, nameOf, user.id),
+            // The receipt's summary prints the receipt's own exact figure, so
+            // the sentence and the headline above it never disagree (C1-14).
+            narrative: describeChipTransaction(r, nameOf, user.id, (figure) =>
+              exactChipFigure(Number(figure) || 0)
+            ),
           };
         })
       );

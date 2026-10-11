@@ -6,7 +6,12 @@
  * Premium cashier modal for:
  * - Adding chips during play (up to the table maximum)
  * - Balance display
- * - Transaction history
+ *
+ * EVERYTHING IT SAYS IS PRINTED INSIDE THE PAINTED FRAME (launch audit R-05,
+ * 2026-10-09): the refusal, the cap sentence, an unread balance and a stack
+ * already at the table maximum share the status line under the amount. The
+ * "Recent" list that printed on bare black below the art is gone with the
+ * `transactions` prop no caller ever passed.
  *
  * CHIP CONTINUITY (Operation Table Stakes, Slice 0, 2026-09-04): the second
  * tab is gone. Chips on a cash table stay on the table until the player leaves
@@ -25,14 +30,6 @@ import { safeErrorMessage } from '../../utils/safeErrorMessage';
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
-
-export interface CashierTransaction {
-  id: string;
-  type: 'add' | 'withdraw';
-  amount: number;
-  timestamp: Date;
-  balance: number;
-}
 
 export interface CashierModalProps {
   isOpen: boolean;
@@ -54,9 +51,15 @@ export interface CashierModalProps {
   currentStack: number;
   /** null = unknown (a failed read). Nothing can be added until it is known. */
   accountBalance: number | null;
+  /**
+   * Re-read the balance after a failed read (audit C2-17). While the balance
+   * is Unavailable nothing can be added, so the money plate inside the frame
+   * offers this instead of a dead "Add 0"; without it the sheet had no way
+   * forward but closing.
+   */
+  onRetryBalance?: () => void;
   maxBuyIn: number;
   maxStack: number; // Max stack allowed at table
-  transactions?: CashierTransaction[];
   currency?: string;
   isProcessing?: boolean;
   /** Diamonds are whole units: every amount this modal offers or accepts is an
@@ -69,7 +72,9 @@ export interface CashierModalProps {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // EXACT precision — no abbreviations, no rounding. `currency` is accepted for
-// the callers' sake (the unit prints beside the figure, never inside it).
+// the callers' sake (the unit prints beside the figure, never inside it, and
+// tests/run-it-multiple-times-tells-the-truth.law.test.ts pins the balance
+// call that passes it); launch audit D-17 marks it unread.
 function formatAmount(amount: number, _currency: string = ''): string {
   if (Math.abs(amount - Math.round(amount)) < 0.005) {
     return Math.round(amount).toLocaleString('en-US');
@@ -121,6 +126,7 @@ export function CashierModal({
   onAddChips,
   currentStack,
   accountBalance,
+  onRetryBalance,
   maxBuyIn,
   maxStack,
   currency = '',
@@ -165,7 +171,9 @@ export function CashierModal({
     const spaceInStack = maxStack - currentStack;
     // An unknown balance affords nothing - and says "Unavailable", not 0.
     if (accountBalance === null) return 0;
-    return Math.min(spaceInStack, accountBalance, maxBuyIn);
+    // NEVER NEGATIVE (audit C2-17). A stack already above the table maximum -
+    // a pot won past it - has no room at all; it printed "Available To Add: -40".
+    return Math.max(0, Math.min(spaceInStack, accountBalance, maxBuyIn));
   }, [currentStack, maxStack, accountBalance, maxBuyIn]);
 
   const activeMax = canAddAmount;
@@ -339,10 +347,16 @@ export function CashierModal({
   };
   const unit = currency || 'Chips';
   const balanceValue = balanceKnown ? formatAmount(accountBalance, currency) : 'Unavailable';
+  /** The stack already fills the table maximum, so there is no room to add into (audit C2-17). */
+  const atTableMax = balanceKnown && currentStack >= maxStack;
+  /** An unread balance affords nothing: the money plate offers the re-read instead. */
+  const offerRetry = !balanceKnown && onRetryBalance !== undefined;
   /* Everything the sheet has to say is printed INSIDE the painted frame
-     (launch audit R-05): the refusal, the cap sentence and the ceiling share
-     the status line under the amount, so nothing sits on bare black below
-     the art. */
+     (launch audit R-05): the refusal, the cap sentence, an unread balance
+     (R-14: it said "Available To Add: 0 Chips" under "Add-On Available"), a
+     stack already at the table maximum (audit C2-17) and the ceiling share the
+     status line under the amount, so nothing sits on bare black below the
+     art. */
   const statusLine = submitError ? (
     <span className="cashier-error" role="alert" aria-live="assertive">
       {submitError}
@@ -353,6 +367,8 @@ export function CashierModal({
     </span>
   ) : !balanceKnown ? (
     <span role="status">Balance Unavailable</span>
+  ) : atTableMax ? (
+    <span role="status">Your Stack Is At The Table Maximum, So There Is Nothing To Add.</span>
   ) : (
     <span>
       Available To Add: {formatAmount(canAddAmount)} {unit}
@@ -441,7 +457,16 @@ export function CashierModal({
             onClick: closeTopUp,
             disabled: busy || isProcessing,
           }}
-          primary={{ label: confirmLabel, onClick: handleConfirm, disabled: confirmDisabled }}
+          primary={
+            /* THE WAY BACK FROM AN UNREAD BALANCE (audit C2-17), on the painted
+               money plate inside the frame rather than a word printed below it
+               (launch audit R-05). Nothing can be added until the balance is
+               known, so the plate re-reads it instead of offering a dead
+               "Add 0". */
+            offerRetry
+              ? { label: 'Retry', onClick: onRetryBalance, disabled: busy || isProcessing }
+              : { label: confirmLabel, onClick: handleConfirm, disabled: confirmDisabled }
+          }
           onClose={closeTopUp}
           closeDisabled={busy || isProcessing}
           amountControls={

@@ -14,7 +14,11 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { cashoutService, CashoutRequest } from '../../services/CashoutService';
-import { CashoutReceiptChecks, useCashoutReceiptChecks } from './CashoutReceiptChecks';
+import {
+  outcomeNeedsReceiptCheck,
+  CashoutReceiptChecks,
+  useCashoutReceiptChecks,
+} from './CashoutReceiptChecks';
 import { useCashoutScope, useCashoutScopeKey } from '../../hooks/useCashoutScope';
 import {
   runCashoutOperation,
@@ -50,6 +54,12 @@ const presetFigure = (cents: string): string => {
     ? n.toLocaleString('en-US')
     : n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
+/**
+ * The exact figures on this sheet (the balance and each pending request) print
+ * whole when they are whole and to two places when they are not: a bare
+ * `toLocaleString()` printed 18,400.50 as "18,400.5 Chips" (launch audit R-10).
+ */
+const TWO_PLACES = { minimumFractionDigits: 2, maximumFractionDigits: 2 } as const;
 // Haptic feedback for mobile-first financial interactions
 const triggerHaptic = (pattern: number | number[] = 10) => {
   try {
@@ -541,7 +551,7 @@ function CashoutRequestContent({
       void loadPendingCashouts();
       onComplete?.();
     } catch (err) {
-      if (checkingOutcome && start && isCurrent())
+      if (checkingOutcome && start && isCurrent() && outcomeNeedsReceiptCheck(err))
         receiptChecks.retain(cashout.id, cashout.amount, 'Cashout Cancellation', start);
       if (isCurrent() && (!start || isCashoutStartCurrent(start))) {
         setSuccess(false);
@@ -651,7 +661,13 @@ function CashoutRequestContent({
           <div className="cro-row">
             <span className="sc-label sc-ink--blue">Available Balance</span>
             <strong className={`cro-value ${balanceAvailable ? 'sc-ink--silver' : 'sc-ink--red'}`}>
-              {balanceAvailable ? `${currentBalance!.toLocaleString()} Chips` : 'Unavailable'}
+              {balanceAvailable
+                ? `${
+                    Number.isInteger(currentBalance)
+                      ? currentBalance!.toLocaleString()
+                      : currentBalance!.toLocaleString(undefined, TWO_PLACES)
+                  } Chips`
+                : 'Unavailable'}
             </strong>
           </div>
 
@@ -680,7 +696,10 @@ function CashoutRequestContent({
                 <div key={cashout.id} className="cro-pending">
                   <div className="cro-row cro-row--plain">
                     <strong className="cro-value sc-ink--gold">
-                      {cashout.amount.toLocaleString()} Chips
+                      {Number.isInteger(cashout.amount)
+                        ? cashout.amount.toLocaleString()
+                        : cashout.amount.toLocaleString(undefined, TWO_PLACES)}{' '}
+                      Chips
                     </strong>
                     <span className="cro-when sc-ink--muted">
                       {titleCase(formatRelativeShort(cashout.createdAt))}

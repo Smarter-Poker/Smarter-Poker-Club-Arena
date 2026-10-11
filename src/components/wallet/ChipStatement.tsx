@@ -66,16 +66,25 @@ function statementPlates(opts: {
       onClick: opts.refresh,
       'aria-label': opts.refreshLabel ?? 'Refresh The Statement',
     },
+    /* Only a statement that loaded can be "Up To Date" (round 2, 2026-10-09):
+       while it loads, after a refusal or a failed read, there is nothing to
+       claim, so the plate names its control and stays dark. */
     primary: {
-      label: opts.loadingMore
-        ? 'Loading...'
-        : opts.hasMore
-          ? 'Load Earlier Movements'
-          : 'Up To Date',
+      label: !opts.earlier
+        ? 'Earlier Movements'
+        : opts.loadingMore
+          ? 'Loading...'
+          : opts.hasMore
+            ? 'Load Earlier Movements'
+            : 'Up To Date',
       ink: canLoadEarlier ? ('white' as const) : ('muted' as const),
       disabled: !canLoadEarlier,
       onClick: opts.earlier,
-      'aria-label': opts.hasMore ? 'Load Earlier Movements' : 'Every Movement Is Shown',
+      'aria-label': !opts.earlier
+        ? 'Earlier Movements'
+        : opts.hasMore
+          ? 'Load Earlier Movements'
+          : 'Every Movement Is Shown',
     },
   };
 }
@@ -162,7 +171,10 @@ const CATEGORY_LABEL: Record<string, string> = {
   overlay: 'Overlay',
   adjustment: 'Adjustment',
   correction: 'Correction',
-  horse_funding: 'Table Funding',
+  /* A treasury-funded seat reads as the club funding a member, the human
+     line's own words: a label of its own was printed only on those rows
+     (tests/a-horse-is-never-named.law.test.ts, cashier launch B-5). */
+  horse_funding: 'Chips From The Club',
   player_funding: 'Chips From The Club',
   transfer: 'Transfer',
   cashout: 'Cash-Out',

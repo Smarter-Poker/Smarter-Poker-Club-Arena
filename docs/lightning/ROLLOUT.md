@@ -18,7 +18,7 @@ The state on 2026-10-09: all 166 Clusters `must_move`, `lightning_enabled` false
 
 **Go / No-Go Evidence**
 
-- Every Lightning migration applied, every live proof true except the documented expected-false list (`bin/proofs.sh` over each file), and `fn_lightning_rollout_readiness` reporting `migrations.missing = []` and every `invariants` key true.
+- Every Lightning migration applied, every live proof true except the documented expected-false list (`bin/proofs.sh` over each file), and `fn_lightning_rollout_readiness` reporting `migrations.missing = []` and its evaluated invariants (`seven_tables`, `anti_manipulation`, `law_10_5`, `no_anon_door`) true. `proofs_evaluated_in_sql` must remain false: the readiness call does not evaluate live proofs. Separate exact installed-migration proof readback is required; the readiness badge cannot replace it.
 - The Phase 13 engine and client releases live and verified (engine `/health` liveness ok, latest `table-socket-probe` ok, build-info SHAs containing the merges).
 - `lightning-alert-sweep-1m` active and no open `lightning_alerts`, `lightning_formation` or `lightning_settlement` page.
 - The harness evidence of the phase: `scripts/dev/test-lightning-phase13-rollout-drain.sh` and the Phase 12 load, stress and chaos rig over the Phase 13 chain green in CI.

@@ -166,3 +166,11 @@ describe('real preferences surface', () => {
     expect(writeLightningPrefs({ milestoneHands: -1 })).toMatchObject({ milestoneHands: 0 });
   });
 });
+
+// The Stage 0 checklist must retain separate proof authority.
+it('readiness evidence never claims its unevaluated proofs passed', () => {
+  const plan = readFileSync(resolve(__dirname, '../../docs/lightning/ROLLOUT.md'), 'utf8');
+  expect(plan).toContain('`proofs_evaluated_in_sql` must remain false');
+  expect(plan).toContain('Separate exact installed-migration proof readback is required');
+  expect(plan).not.toContain('every `invariants` key true');
+});

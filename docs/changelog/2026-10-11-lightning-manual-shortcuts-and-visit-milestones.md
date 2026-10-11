@@ -15,3 +15,5 @@ Validation: focused actual keyboard listener, pure decision selection, named-eve
 Real-time law: triggered by hand_started discrete WS event, no snapshot diff.
 
 Final local candidate:141focused cases passed; TypeScript app compilation passed; all four copy gates passed. Final painted Device badge and both configured fields rendered at375/393/1440, every button/select remained within the viewport. Source reread and diff check clean. Temporary harness removed after evidence capture.
+
+The Stage 0 written checklist previously required every invariant key true, contradicting the installed readiness contract's explicit proofs_evaluated_in_sql=false. The checklist now names the four evaluated invariants and still requires separate exact installed-proof readback. A regression retains this boundary; no readiness or rollout gate is weakened.

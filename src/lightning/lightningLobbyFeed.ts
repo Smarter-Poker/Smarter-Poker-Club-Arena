@@ -26,7 +26,13 @@ export async function fetchLightningLobbyState(
     (lobby.data as { lightning?: unknown } | null)?.lightning ?? null
   );
   if (!state || !health) return state;
-  return { ...state, poolStatus: health.status, poolPlayers: health.players };
+  return {
+    ...state,
+    poolStatus: health.status,
+    poolPlayers: health.players,
+    /* LIGHTNING PHASE 13: the pool door's own joins flag wins over the lobby's. */
+    ...(health.joinsEnabled !== undefined ? { joinsEnabled: health.joinsEnabled } : {}),
+  };
 }
 
 /** How often a visible board re-reads a Lightning Cluster's pool (a modest 30 s). */

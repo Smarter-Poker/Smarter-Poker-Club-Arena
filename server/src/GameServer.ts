@@ -88,6 +88,7 @@ import {
 } from './services/supabase.js';
 import { HorseFleetManager } from './services/HorseFleetManager.js';
 import { ClusterController } from './cluster/ClusterController.js';
+import { LightningOperatorEvents } from './lightning/LightningOperatorEvents.js';
 import { LightningSupervisor } from './lightning/LightningSupervisor.js';
 import type { PresenceTableReport } from './lightning/LightningPresence.js';
 import { LightningHosting, LightningRegistry } from './lightning/LightningRegistry.js';
@@ -3410,11 +3411,15 @@ export class GameServer {
     // settled boundary; the database validates and moves every chip.
     autoRebuy: new LightningAutoRebuyExecutor(),
   });
+  private lightningOperatorEvents = new LightningOperatorEvents();
   private lightningSupervisor = new LightningSupervisor({
     presenceSource: () => this.lightningPresenceReports(),
     hosting: this.lightningHosting,
     // Ended pool sessions: their rooms' sockets are closed (every 5 s).
     sweepRooms: () => this.lightningRooms.sweepEndedRooms(),
+    // Lightning Phase 13: a drained, reverting or paused Cluster's rooms are
+    // told so (lightning_cluster_status), once per change and on RESYNC.
+    clusterStatus: (clusterId, status) => this.lightningRooms.setClusterStatus(clusterId, status),
   });
   /* Lightning Phase 12 (surge protection): a room's first socket is a player
      arriving in the pool, so their Cluster's worker forms within the admission
@@ -4113,6 +4118,8 @@ export class GameServer {
       // Lightning 2.0: the shadow matcher workers, beside the Cluster
       // controller, behind the same leader gate. Dark until a Cluster qualifies.
       this.lightningSupervisor.start();
+      this.lightningOperatorEvents.start();
+      this.lightningOperatorEvents.start();
       // Lightning Phase 9 remediation: a restart loses the registry's socket
       // counts, so a player who left BEFORE the restart would never be
       // reported disconnected and their open pool session would sit until
@@ -4339,6 +4346,7 @@ export class GameServer {
         ['HorseFleetManager', () => this.horseFleet.stop()],
         ['ClusterController', () => this.clusterController.stop()],
         ['LightningSupervisor', () => this.lightningSupervisor.stop()],
+        ['LightningOperatorEvents', () => this.lightningOperatorEvents.stop()],
         // Phase 9 remediation: the presence reporter is flushed and stopped
         // with the other producers, and a reconciliation pass that has not
         // run yet never runs into a shutdown.

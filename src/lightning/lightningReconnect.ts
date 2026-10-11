@@ -55,6 +55,14 @@ export const LIGHTNING_STOP_PLAYING_EXIT_REASON = 'stop_playing';
 export const LIGHTNING_RG_LIMIT_EXIT_REASON = 'rg_limit';
 /** The responsible-gaming ending's words. Popup rules: Title Case, no em dashes. */
 export const LIGHTNING_RG_LIMIT_TITLE = 'Your Responsible Gaming Limit Ended This Session';
+/**
+ * LIGHTNING PHASE 13: an operator's EMERGENCY DRAIN ended the session, after
+ * the hand in play settled. The Cluster is back in MUST MOVE and the seat and
+ * every chip are kept.
+ */
+export const LIGHTNING_DRAINED_EXIT_REASON = 'lightning_drained';
+/** The drain's words. Popup rules: Title Case, no em dashes. */
+export const LIGHTNING_DRAINED_TITLE = 'Lightning Has Ended For This Game';
 
 /** The ended notice's line: how it ended, and where the player's seat is. */
 export function lightningSessionEndText(end: {
@@ -64,14 +72,18 @@ export function lightningSessionEndText(end: {
   stopped?: boolean;
   /** LIGHTNING PHASE 12: a responsible-gaming limit ended it (exit_reason rg_limit). */
   rgLimit?: boolean;
+  /** LIGHTNING PHASE 13: an operator's drain ended it (exit_reason lightning_drained). */
+  drained?: boolean;
 }): string {
-  const lead = end.rgLimit
-    ? `${LIGHTNING_RG_LIMIT_TITLE}.`
-    : end.stopped
-      ? `${LIGHTNING_STOPPED_TITLE}.`
-      : end.timedOut
-        ? `${LIGHTNING_TIMED_OUT_TITLE}.`
-        : `${LIGHTNING_SESSION_OVER_TEXT}.`;
+  const lead = end.drained
+    ? `${LIGHTNING_DRAINED_TITLE}.`
+    : end.rgLimit
+      ? `${LIGHTNING_RG_LIMIT_TITLE}.`
+      : end.stopped
+        ? `${LIGHTNING_STOPPED_TITLE}.`
+        : end.timedOut
+          ? `${LIGHTNING_TIMED_OUT_TITLE}.`
+          : `${LIGHTNING_SESSION_OVER_TEXT}.`;
   return end.seatTableId ? `${lead} Your Seat Is Ready At Your Table.` : lead;
 }
 
@@ -185,6 +197,8 @@ export type LightningReconnectVerdict =
       stopped: boolean;
       /** LIGHTNING PHASE 12: a responsible-gaming limit ended it (exit_reason rg_limit). */
       rgLimit: boolean;
+      /** LIGHTNING PHASE 13: an operator's drain ended it (exit_reason lightning_drained). */
+      drained?: boolean;
       seatTableId: string | null;
     }
   /** Nothing to say (nothing readable). */
@@ -229,6 +243,8 @@ export function lightningReconnectVerdict(
     timedOut: reason === LIGHTNING_DISCONNECT_EXPIRED_EXIT_REASON,
     stopped: reason === LIGHTNING_STOP_PLAYING_EXIT_REASON,
     rgLimit: reason === LIGHTNING_RG_LIMIT_EXIT_REASON,
+    // Only when it happened, so every earlier ending reads exactly as before.
+    ...(reason === LIGHTNING_DRAINED_EXIT_REASON ? { drained: true } : {}),
     seatTableId: state.seatTableId,
   };
 }
@@ -240,6 +256,8 @@ export interface LightningSessionEnd {
   stopped: boolean;
   /** LIGHTNING PHASE 12: a responsible-gaming limit ended it (exit_reason rg_limit). */
   rgLimit: boolean;
+  /** LIGHTNING PHASE 13: an operator's drain ended it (exit_reason lightning_drained). */
+  drained?: boolean;
   /** The seat the player still holds, when one remains. */
   seatTableId: string | null;
 }
@@ -301,6 +319,7 @@ export function useLightningSessionEnd(input: {
             timedOut: verdict.timedOut,
             stopped: verdict.stopped,
             rgLimit: verdict.rgLimit,
+            ...(verdict.drained === true ? { drained: true } : {}),
             seatTableId: verdict.seatTableId,
           });
         }

@@ -107,6 +107,8 @@ export class LoadEngine {
       frozen: () => false,
       hosting: this.hosting,
       sweepRooms: () => this.registry.sweepEndedRooms(),
+      // LIGHTNING PHASE 13: a held Cluster's rooms are told, exactly as GameServer wires it.
+      clusterStatus: (clusterId, status) => this.registry.setClusterStatus(clusterId, status),
       frontTable: async (c) => world.clusters.get(c)?.frontTable ?? null,
       workerOptions: {
         formationGate: this.gate,

@@ -107,10 +107,16 @@ describe('discovery includes the Clusters draining out of Lightning', () => {
       { clusterId: B, draining: true },
     ]);
     expect(db.calls).toContainEqual(['select', 'id, cluster_mode, lightning_enabled']);
-    expect(db.calls).toContainEqual(['in', 'cluster_mode', ['lightning', 'pending_off']]);
+    // Widened by Lightning Phase 13: the operator's draining and paused modes
+    // hold a worker too (LightningPhase13RolloutDrain.test.ts).
+    const modes = db.calls.find((c) => c[0] === 'in' && c[1] === 'cluster_mode')?.[2];
+    expect(modes).toEqual(expect.arrayContaining(['lightning', 'pending_off']));
     // No flag filter: a Cluster switched off mid-hand must not drop out.
     expect(db.calls.filter((c) => c[0] === 'eq')).toEqual([]);
-    expect([...LIGHTNING_WORKER_CLUSTER_MODES]).toEqual(['lightning', 'pending_off']);
+    expect([...LIGHTNING_WORKER_CLUSTER_MODES]).toEqual(
+      expect.arrayContaining(['lightning', 'pending_off'])
+    );
+    expect([...LIGHTNING_WORKER_CLUSTER_MODES].slice(0, 2)).toEqual(['lightning', 'pending_off']);
   });
 
   it('a lightning Cluster forms only with lightning_enabled exactly true; otherwise it drains', () => {

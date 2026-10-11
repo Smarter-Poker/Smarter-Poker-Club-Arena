@@ -57,6 +57,18 @@
  * re-asked under the same request id, and nothing economic is ever formed
  * ahead of a pass: prewarming stops at the room and the table shell.
  *
+ * HOLDS (Lightning Phase 13, 2026-10-09). An operator's PAUSE, an operator's
+ * DRAIN (cluster_mode `draining`), Lightning switched off and `pending_off`
+ * are all one thing to this worker: a HOLD. A held worker forms nothing and
+ * calls nothing - no matcher, no match_and_form, no admission or wake pass -
+ * while every hand already dealt plays on to settlement under its own host.
+ * The hold takes effect on the next pass after the supervisor's next mode or
+ * config read; a pass already in flight finishes (and the database refuses its
+ * formation anyway). A DRAINING worker reports its progress - the hands still
+ * in the air - once per keepalive interval, and the supervisor stops it the
+ * moment its Cluster reaches MUST MOVE. Resume lifts a pause and the worker
+ * forms again from its next pass, in the mode it was paused from.
+ *
  * THE LATENCY LEDGER (Lightning Phase 12). Each pass ticks the Cluster's
  * LightningLatencyLedger (window roll and its one flush in flight), after
  * the pass's own work is decided and without reading anything back.
@@ -105,6 +117,19 @@ export const LIGHTNING_PLATFORMS_RETRY_MS = 10 * 60_000;
 export const LIGHTNING_ADMISSION_COALESCE_MS = 250;
 /** A saturated pass is followed at once by another, at most this many times in a row. */
 export const LIGHTNING_SURGE_MAX_BACK_TO_BACK = 8;
+/**
+ * LIGHTNING PHASE 13: why a worker is not forming. `pending_off` is the
+ * automatic reversion, `switched_off` Lightning disabled on a live Cluster,
+ * `draining` the operator's EMERGENCY DRAIN, `paused` the operator's PAUSE.
+ */
+export type LightningWorkerHold = 'pending_off' | 'switched_off' | 'draining' | 'paused';
+export const LIGHTNING_WORKER_HOLDS: readonly LightningWorkerHold[] = [
+  'pending_off',
+  'switched_off',
+  'draining',
+  'paused',
+];
+
 /** The stopped_reason values that mean the batch was cut short with players still waiting. */
 const SATURATED_STOP_REASONS = new Set(['max_hands', 'time_budget']);
 
@@ -145,6 +170,17 @@ export interface LightningClusterWorkerDeps {
   latency?: LightningLatencyLedger;
   /** LIGHTNING PHASE 12: the process-wide one-formation-per-Cluster gate. */
   formationGate?: LightningFormationGate;
+  /**
+   * LIGHTNING PHASE 13: the hands of this Cluster still being dealt here (the
+   * drain's progress report). Read only while held; never decides anything.
+   */
+  handsInFlight?: () => number;
+  /**
+   * LIGHTNING PHASE 13: a held pass on the way out of Lightning (a drain or a
+   * reversion) found no hand of the Cluster left in the air here: the
+   * Cluster is about to be MUST MOVE, so the supervisor looks again soon.
+   */
+  onHeldIdle?: () => void;
   /** How long a match_and_form call may go unanswered (tests shorten it). */
   formTimeoutMs?: number;
 }
@@ -157,6 +193,8 @@ export type LightningWorkerPassResult =
       formed?: number;
       /** The database cut the batch short with players still waiting (surge). */
       saturated?: boolean;
+      /** LIGHTNING PHASE 13: a draining pass's progress - the hands still in the air here. */
+      handsInFlight?: number;
     };
 
 const consoleLogger: LightningWorkerLogger = {
@@ -186,8 +224,11 @@ export class LightningClusterWorker {
   /** The request id of a forming pass whose outcome is unknown: retried as-is. */
   private pendingRequestId: string | null = null;
   private wakeRequested = false;
-  /** `pending_off`: form nothing, call nothing; the hands in the air settle. */
-  private draining = false;
+  /**
+   * `pending_off` (and every Phase 13 hold): form nothing, call nothing; the
+   * hands in the air settle.
+   */
+  private hold: LightningWorkerHold | null = null;
   private lastDrainLogAtMs = 0;
   /** LIGHTNING PHASE 11: observes each live pass after it returned; never consulted. */
   private readonly shadow: LightningShadowRunner;
@@ -257,8 +298,18 @@ export class LightningClusterWorker {
     return this.passes;
   }
 
+  /** Not forming: any hold (pending_off, switched off, an operator drain or pause). */
   get isDraining(): boolean {
-    return this.draining;
+    return this.currentHold !== null;
+  }
+
+  /**
+   * LIGHTNING PHASE 13: why this worker is not forming, or null when it forms.
+   * The supervisor's word on the mode, or the config's own pause marker.
+   */
+  get currentHold(): LightningWorkerHold | null {
+    if (this.hold) return this.hold;
+    return this.config.rollout?.paused === true ? 'paused' : null;
   }
 
   /**
@@ -267,13 +318,31 @@ export class LightningClusterWorker {
    * flight finishes (and the database refuses its formation anyway).
    */
   setDraining(draining: boolean): void {
-    if (draining === this.draining) return;
-    this.draining = draining;
+    this.setHold(draining ? 'pending_off' : null);
+  }
+
+  /**
+   * LIGHTNING PHASE 13: the supervisor's word on the Cluster's hold. Null
+   * forms again (a resume, or a conversion that turned back to lightning).
+   */
+  setHold(hold: LightningWorkerHold | null): void {
+    const next = hold && LIGHTNING_WORKER_HOLDS.includes(hold) ? hold : null;
+    if (next === this.hold) return;
+    const was = this.hold;
+    this.hold = next;
     this.lastDrainLogAtMs = 0;
+    if (next === 'pending_off' || (next === null && was === 'pending_off')) {
+      this.logger.log(
+        next
+          ? `[Lightning:${this.clusterId}] pending_off - forming stopped; hands in the air play on to settlement`
+          : `[Lightning:${this.clusterId}] back to lightning - forming resumes`
+      );
+      return;
+    }
     this.logger.log(
-      draining
-        ? `[Lightning:${this.clusterId}] pending_off - forming stopped; hands in the air play on to settlement`
-        : `[Lightning:${this.clusterId}] back to lightning - forming resumes`
+      next
+        ? `[Lightning:${this.clusterId}] ${next} - forming stopped; hands in the air play on to settlement`
+        : `[Lightning:${this.clusterId}] ${was ?? 'hold'} lifted - forming resumes`
     );
   }
 
@@ -364,7 +433,7 @@ export class LightningClusterWorker {
    */
   admit(): void {
     if (!this.running || this.stopped || this.config.workerMode !== 'form') return;
-    if (this.draining) return;
+    if (this.isDraining) return;
     if (this.inFlight) {
       this.wakeRequested = true;
       return;
@@ -379,8 +448,8 @@ export class LightningClusterWorker {
    */
   wake(): void {
     if (!this.running || this.stopped || this.config.workerMode !== 'form') return;
-    // A draining Cluster forms nothing, so a freed player is no reason to run.
-    if (this.draining) return;
+    // A draining (or held) Cluster forms nothing, so a freed player is no reason to run.
+    if (this.isDraining) return;
     if (this.inFlight) {
       this.wakeRequested = true;
       return;
@@ -409,7 +478,7 @@ export class LightningClusterWorker {
   private async runPass(): Promise<LightningWorkerPassResult> {
     const mode = this.config.workerMode;
     if (mode === 'off') return { outcome: 'off' };
-    if (this.draining) return this.drainPass();
+    if (this.isDraining) return this.drainPass();
     if (mode === 'form' && this.deps.startHand) return this.formPass();
     if (mode === 'form') {
       if (this.failureLog.shouldLog('form')) {
@@ -558,13 +627,39 @@ export class LightningClusterWorker {
    * keepalive interval, that the worker is alive and why it is not forming.
    */
   private drainPass(): LightningWorkerPassResult {
+    const hold = this.currentHold ?? 'pending_off';
     const nowMs = this.now().getTime();
+    // LIGHTNING PHASE 13: an operator drain reports its progress every pass
+    // (the hands still in the air here); every other hold reports nothing.
+    let handsInFlight: number | undefined;
+    if (hold !== 'paused') {
+      try {
+        const n = Number(this.deps.handsInFlight?.() ?? 0);
+        handsInFlight = Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+      } catch {
+        handsInFlight = 0;
+      }
+      if (handsInFlight === 0) {
+        try {
+          this.deps.onHeldIdle?.();
+        } catch {
+          // a hint must never take a pass down
+        }
+      }
+    }
     if (nowMs - this.lastDrainLogAtMs >= this.config.keepaliveIntervalMs) {
       this.lastDrainLogAtMs = nowMs;
       this.logger.log(
-        `[Lightning:${this.clusterId}] draining (pending_off): forming nothing until the Cluster is MUST MOVE`
+        hold === 'pending_off' || hold === 'switched_off'
+          ? `[Lightning:${this.clusterId}] draining (pending_off): forming nothing until the Cluster is MUST MOVE`
+          : hold === 'draining'
+            ? `[Lightning:${this.clusterId}] draining (operator drain): forming nothing; ` +
+              `hands_in_flight=${handsInFlight ?? 0}; the worker stops when the Cluster is MUST MOVE`
+            : `[Lightning:${this.clusterId}] paused by its operator: forming nothing until it resumes`
       );
     }
+    if (hold === 'draining') return { outcome: 'skipped', reason: 'draining', handsInFlight };
+    if (hold === 'paused') return { outcome: 'skipped', reason: 'paused' };
     return { outcome: 'skipped', reason: 'pending_off' };
   }
 

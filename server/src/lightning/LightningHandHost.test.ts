@@ -470,6 +470,9 @@ describe('the phase 6 contracts: frozen settlement, the room snapshot, pre-actio
         variant: 'nlh',
         // On the turn whenever fold is legal; before it only while facing a bet.
         fast_fold_available: onTurn ? true : st.currentBet - me.bet > 0,
+        // Lightning Phase 13: both controls offered while no flag says otherwise.
+        fast_fold_enabled: true,
+        fold_watch_enabled: true,
       });
       expect(JSON.stringify(snap)).not.toContain(formed.instanceId);
     }

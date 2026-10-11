@@ -56,7 +56,7 @@ describe('operator transaction event bridge', () => {
     await events.stop();
     expect(f.db.removeChannel).toHaveBeenCalledOnce();
   });
-  it('discards a lookup completed after stop and reports subscription failure', async () => {
+  it('discards a lookup completed after stop', async () => {
     const f = fixture();
     let resolve!: (v: any) => void;
     f.lookup.mockImplementation(

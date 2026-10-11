@@ -39,7 +39,7 @@ export class LightningOperatorEvents {
           subscription.set(1);
           for (const clubId of new Set(this.clubs.values()))
             this.send(clubId, { type: 'lightning_operator_resync' });
-        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
           subscription.set(0);
           reportError(new Error(status), 'LightningOperatorEvents.subscription');
         }

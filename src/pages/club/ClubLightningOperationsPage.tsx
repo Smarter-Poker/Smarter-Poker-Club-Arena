@@ -30,7 +30,7 @@
  * beneath a Cluster's name; the controls themselves live in the Cluster
  * detail (LightningOperatorControls), one confirm dialog per action.
  *
- * Auto-refresh: every 15 s while the tab is visible, never while hidden, and
+ * Named transaction events refresh visible views; hidden views retain a dirty marker, and
  * never again after the door answers "not available yet" or "not
  * authorized" (useLightningOperator).
  */
@@ -283,11 +283,7 @@ export default function ClubLightningOperationsPage() {
     OVERVIEW_REFRESH_MS
   );
 
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 15_000);
-    return () => clearInterval(timer);
-  }, []);
+  const now = overview.refreshedAt ?? Date.now();
 
   const openCluster = (id: string) => setParams({ cluster: id });
   const closeCluster = () => setParams({});
@@ -330,7 +326,12 @@ export default function ClubLightningOperationsPage() {
   if (clubUUID && clusterId) {
     return (
       <div className={styles.page}>
-        <LightningClusterDetail key={clusterId} clusterId={clusterId} onBack={closeCluster} />
+        <LightningClusterDetail
+          key={clusterId}
+          clusterId={clusterId}
+          clubId={clubUUID}
+          onBack={closeCluster}
+        />
       </div>
     );
   }

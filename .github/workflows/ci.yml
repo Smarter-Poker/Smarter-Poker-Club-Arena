@@ -1782,7 +1782,7 @@ jobs:
         if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
-        run: bash scripts/dev/test-lightning-phase13-rollout-drain.sh
+        run: bash scripts/dev/test-lightning-phase13-operator-recovery.sh
       - name: Lightning Phase 12 load, stress and chaos rig over the chain through Phase 13 (operator doors, remediation and the rollout drain applied twice)
         if: matrix.shard == 1
         env:

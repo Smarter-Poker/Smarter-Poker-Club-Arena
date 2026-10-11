@@ -1,0 +1,11 @@
+# Club Operations Audit And Mobile Enhancement
+
+The overview formerly overflowed large bank balances and counted the Finance overview's rolled-up queue again when computing its group total. It now uses the approved console artwork, compact balances, two-column phone readings, readable tool rows and one count per real destination. Finance and Control retain readings with their original timestamp when refresh fails and expose manual refresh.
+
+Overview reads are scoped to viewer, club and authorization epoch. Account/role changes invalidate shared readings and late responses; denied and malformed readings cannot become successful zero values. Permission-filtered tool links remain available during a reading failure.
+
+The guarded database repair preserves the existing function's authorization, owner, grants and financial sums. Accepted new-member and live-presence predicates now agree with their connected sources. Cash rake comes independently from `ca_club_rake_daily`, so an absent local hand summary cannot erase attributed club revenue. Integrity counts include platform flags attached to club members, matching the review tool.
+
+Announcements report failed reads; a rules save without an authoritative receipt exits its saving state; blacklist reads and action receipts cannot cross club/account boundaries. The activity feed retains and labels stale events after a failed refresh, offers Retry, and distinguishes failure from an empty history. The activity query scopes hands through the existing per-table index before ordering, preserving all event criteria. Settings supplies the resolved UUID to the Mini Jackpot reader.
+
+Regression protection includes component/lifecycle/handler tests and an isolated socket-only PostgreSQL 17 qualification enforced in the existing accounting job. Production financial writes are not used for testing. Publication and installed-state evidence are recorded separately in the task checkpoint.

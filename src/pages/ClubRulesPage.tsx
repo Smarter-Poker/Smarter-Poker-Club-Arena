@@ -269,8 +269,9 @@ export default function ClubRulesPage() {
     } catch (err) {
       reportError(err, 'ClubRulesPage.Failed_to_save_rules');
       toast.error('Failed to save rules');
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   };
 
   /* THE CONSOLE (2026-09-04). The rules sat in a rounded navy card under a

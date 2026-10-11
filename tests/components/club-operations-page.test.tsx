@@ -196,10 +196,17 @@ describe('the operations workspace reads the club', () => {
     expect(screen.getByText('226')).toBeTruthy();
     expect(screen.getByText('113 Running, 113 Waiting')).toBeTruthy();
     // Numeric-as-string from PostgREST still renders as money, not as NaN.
-    expect(screen.getByText('126,140.93')).toBeTruthy();
-    expect(screen.getByText('2,096,087.81')).toBeTruthy();
-    expect(screen.getByText('4,418,693.40 In Member Wallets')).toBeTruthy();
+    expect(screen.getByText('126.1K')).toBeTruthy();
+    expect(screen.getByText('2M')).toBeTruthy();
+    expect(screen.getByText('4.4M In Member Wallets')).toBeTruthy();
     expect(screen.queryByText(/NaN/)).toBeNull();
+  });
+
+  it('counts each finance queue once in its group summary', async () => {
+    rpcMock.mockResolvedValue({ data: payload(), error: null });
+    mount();
+    await waitFor(() => expect(screen.getByText('9 Waiting')).toBeTruthy());
+    expect(screen.queryByText('18 Waiting')).toBeNull();
   });
 
   it('withholds the money tiles from a staff member without finance access', async () => {
@@ -212,7 +219,7 @@ describe('the operations workspace reads the club', () => {
     mount();
     await waitFor(() => expect(screen.getByText('Hands Today')).toBeTruthy());
     expect(screen.queryByText('Club Bank')).toBeNull();
-    expect(screen.queryByText('Fees Today')).toBeNull();
+    expect(screen.queryByText('Cash Rake Today')).toBeNull();
   });
 
   it('lists what is waiting and links each line to the tool that owns it', async () => {

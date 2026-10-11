@@ -186,16 +186,19 @@ export default function ClubAnnouncementsPage() {
         .limit(200);
 
       if (getIsMounted && !getIsMounted()) return;
-      if (!error && data) {
+      if (error) throw error;
+      if (data) {
         // Batch-fetch author profiles separately (safe, no FK hint)
         const authorIds = [...new Set(data.map((a: any) => a.author_id).filter(Boolean))];
         const authorMap: Record<string, string> = {};
         if (authorIds.length > 0) {
           try {
-            const { data: profs } = await supabase
+            const { data: profs, error: profileError } = await supabase
               .from('profiles')
               .select('id, username')
               .in('id', authorIds);
+            if (profileError) reportError(profileError, 'ClubAnnouncementsPage.author_profiles');
+            if (getIsMounted && !getIsMounted()) return;
             if (profs) for (const p of profs) authorMap[p.id] = p.username || 'Admin';
           } catch (e) {
             reportError(e, 'ClubAnnouncementsPage.Set');

@@ -85,6 +85,33 @@ async function page() {
   return view;
 }
 describe('Promo Vault keyboard accessibility', () => {
+  it.each([
+    ['How The Promo Vault Works', 'Got It'],
+    ['Buy More Time Bank', 'Cancel'],
+    ['Grant Time Bank', 'Cancel'],
+  ])(
+    'portals %s outside the page stacking context and removes it on close',
+    async (name, close) => {
+      const user = userEvent.setup();
+      const view = await page();
+      const opener = screen.getByRole('button', { name, exact: true });
+      await user.click(opener);
+      const dialogNode = screen.getByRole('dialog');
+      const overlay = dialogNode.parentElement;
+      expect(overlay).toHaveClass('pv-overlay');
+      expect(overlay?.parentElement).toBe(document.body);
+      expect(view.container).not.toContainElement(dialogNode);
+      await user.click(within(dialogNode).getByRole('button', { name: close, exact: true }));
+      expect(opener).toHaveFocus();
+      expect(overlay).not.toBeInTheDocument();
+      expect(
+        state.rpc.mock.calls.some(([rpc]) =>
+          ['ca_promo_vault_buy', 'ca_promo_vault_grant'].includes(rpc)
+        )
+      ).toBe(false);
+    }
+  );
+
   it('names an admin zero-stock tile Buy and restores it after cancelling without a purchase', async () => {
     const user = userEvent.setup();
     state.rpc.mockImplementation(async (name: string) => ({

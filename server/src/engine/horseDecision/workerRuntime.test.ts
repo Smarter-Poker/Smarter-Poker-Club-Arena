@@ -448,14 +448,14 @@ describe('Phase 13 cross-board worker boundary', () => {
       });
       expect(copy.decision.jointPolicy?.finalAction).toBe(copy.decision.action);
       expect(copy.decision.jointPolicy?.completedSamples).toBeGreaterThanOrEqual(0);
-      // A contended test runner may exhaust the production deadline; it may
-      // never forge an offline clock or serialize private opponent deals.
-      expect([
-        'work_budget',
-        'insufficient_joint_samples',
-        'joint_samples_unavailable',
-        'joint_cash_action_distribution',
-      ]).toContain(copy.decision.jointPolicy?.reason);
+      // No clock decides the joint work (2026-10-11), so even a contended
+      // runner prices the full declared population: never work_budget, never
+      // a population cut short. It may never forge an offline clock or
+      // serialize private opponent deals.
+      expect(['joint_samples_unavailable', 'joint_cash_action_distribution']).toContain(
+        copy.decision.jointPolicy?.reason
+      );
+      expect(copy.decision.jointPolicy?.sampleBudgetExhausted).toBe(false);
       expect(JSON.stringify(copy.decision.jointPolicy)).not.toMatch(
         /"rank"|"suit"|originalHands|availableCards/
       );

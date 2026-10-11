@@ -71,7 +71,7 @@ import {
 import { horsePhase13PolicyDigest } from './HorsePhase13PolicyDigest.js';
 import { JOINT_VARIANTS, type JointVariant } from './multiway/JointInputBinding.js';
 import { evaluateJointLivePolicy, JOINT_LIVE_DOMAIN } from './multiway/JointLivePolicy.js';
-import { jointFullSamples, jointRequestedSamples } from './multiway/JointSampleAcquisition.js';
+import { jointFullSamples } from './multiway/JointSampleAcquisition.js';
 import { jointPolicyFixture } from './multiway/JointRangeFixture.test-support.js';
 import { REMAINING_VARIANT_PACKS } from './remainingVariants/RemainingVariantPolicyPack.js';
 import { equityGovernor } from './EquityLoadGovernor.js';
@@ -1370,18 +1370,19 @@ describe('P13.3 natural completion share: what a record counts', () => {
     expect(horsePhase13CompletionOutcome('plo4', value)).toBe(expected);
   });
 
-  it('the full sample count is the governor-off request of the live acquisition', () => {
-    for (const dealt of [3, 4]) {
+  it('the full sample count is the matrix count and the live request at any load', () => {
+    for (const dealt of [3, 4])
       expect(jointFullSamples(dealt)).toBe(JOINT_LIVE_DOMAIN.defaultSamples);
-      expect(jointRequestedSamples(dealt, 1)).toBe(jointFullSamples(dealt));
-      expect(jointRequestedSamples(dealt, 0.999)).toBeLessThan(jointFullSamples(dealt));
-      expect(jointRequestedSamples(dealt, 0.5)).toBe(8);
-    }
-    for (const dealt of [5, 9]) {
+    for (const dealt of [5, 9])
       expect(jointFullSamples(dealt)).toBe(JOINT_LIVE_DOMAIN.largeTableSamples);
-      expect(jointRequestedSamples(dealt, 1)).toBe(jointFullSamples(dealt));
-      // The minimum equals the large-table count: the governor cannot reduce it.
-      expect(jointRequestedSamples(dealt, 0)).toBe(JOINT_LIVE_DOMAIN.minSamples);
+    // 2026-10-11: the governor never scales the joint request (the #6592 rule).
+    for (const scale of [1, 0.6, 0.35, 0]) {
+      vi.spyOn(equityGovernor, 'current').mockReturnValue(scale);
+      const { hero, state, baseline } = jointPolicyFixture('plo8', 1, 'cash', 'flop');
+      const r = evaluateJointLivePolicy(hero, state, baseline, 'shadow', () => 0).receipt;
+      vi.restoreAllMocks();
+      expect(r.requestedSamples, String(scale)).toBe(jointFullSamples(r.dealtPlayers));
+      expect(r.completedSamples, String(scale)).toBe(r.requestedSamples);
     }
   });
 
@@ -1413,32 +1414,36 @@ describe('P13.3 natural completion share: what a record counts', () => {
         expect(horsePhase13CompletionOutcome(variant, ok), `${street} ${ok.reason}`).toBe(
           'completed'
         );
+        // 2026-10-11: the live decision is the measured policy whatever the
+        // clock or the load. A slow clock, a deadline that would have fallen
+        // between samples, and a loaded governor each give the fixed-clock
+        // receipt, with only latencyMs measured differently.
+        const sameWork = (r: Record<string, any>) => ({ ...r, latencyMs: 0 });
         let t = 0;
-        const slow = live(variant, street, () => (t += 5));
-        expect(slow).toMatchObject({ eligible: true, reason: 'work_budget' });
+        const realSlow = live(variant, street, () => (t += 5));
+        const realLate = live(variant, street, stepClock(3, 3));
+        vi.spyOn(equityGovernor, 'current').mockReturnValue(0.5);
+        const realLoaded = live(variant, street, () => 0);
+        vi.restoreAllMocks();
+        for (const real of [realSlow, realLate, realLoaded]) {
+          expect(sameWork(real), street).toEqual(sameWork(ok));
+          expect(horsePhase13CompletionOutcome(variant, real), street).toBe('completed');
+        }
+        expect(realSlow.latencyMs).toBeGreaterThan(JOINT_LIVE_DOMAIN.liveBudgetMs);
+        // Receipts as earlier releases journaled them still count by name.
+        const slow = { ...ok, reason: 'work_budget', fired: false };
         expect(horsePhase13CompletionOutcome(variant, slow)).toBe('work_budget');
-        // The sampler's deadline is spent before its first sample: no
-        // population, and the policy stays inside its own budget.
-        // (Reads: the wrapper's start, the acquisition's start, then the
-        // sampler's deadline checks.)
-        const none = live(variant, street, stepClock(2, 3));
-        expect(none.reason, street).toBe('joint_samples_unavailable');
+        const none = { ...ok, reason: 'joint_samples_unavailable', fired: false };
         expect(horsePhase13CompletionOutcome(variant, none), street).toBe('sample_unavailable');
-        // The deadline arrives after a few samples: cut short.
-        let cut: Record<string, any> = none;
-        for (let reads = 3; reads < 400 && !(cut.completedSamples > 0); reads++)
-          cut = live(variant, street, stepClock(reads, 3));
-        expect(cut.sampleBudgetExhausted, street).toBe(true);
-        expect(cut.completedSamples, street).toBeGreaterThan(0);
+        const cut = {
+          ...ok,
+          sampleBudgetExhausted: true,
+          completedSamples: ok.requestedSamples - 1,
+        };
         expect(horsePhase13CompletionOutcome(variant, cut), street).toBe(
           'sampler_budget_exhausted'
         );
-        // Under load the governor halves the request; every requested sample
-        // completes, and it is still not the measured policy.
-        vi.spyOn(equityGovernor, 'current').mockReturnValue(0.5);
-        const reduced = live(variant, street, () => 0);
-        vi.restoreAllMocks();
-        expect(reduced).toMatchObject({ requestedSamples: 8, completedSamples: 8 });
+        const reduced = { ...ok, requestedSamples: 8, completedSamples: 8 };
         expect(horsePhase13CompletionOutcome(variant, reduced), street).toBe('governor_reduced');
         // The response model's named refusal (forged reason on a real receipt;
         // the live sample cap keeps the branch limit out of natural reach).
@@ -1470,7 +1475,9 @@ describe('P13.3 natural completion share: what a record counts', () => {
       expect(threeRiver.boardCount).toBe(3);
       expect(horsePhase13CompletionOutcome(variant, threeRiver)).toBe('completed');
       let late = 0;
-      const threeSlow = live(variant, 'flop', () => (late += 5), 3);
+      const threeFlop = live(variant, 'flop', () => (late += 5), 3);
+      expect(horsePhase13CompletionOutcome(variant, threeFlop)).toBe('completed');
+      const threeSlow = { ...threeFlop, reason: 'work_budget', fired: false };
       expect(horsePhase13CompletionOutcome(variant, threeSlow)).toBe('work_budget');
       seen.push(bombPreflop, bombTurn, threeRiver, threeSlow);
       // A tournament decision is never counted (Pineapple is refused before it

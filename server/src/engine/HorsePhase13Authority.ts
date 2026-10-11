@@ -202,6 +202,14 @@ export const HORSE_PHASE13_COMPLETION_SCHEMA = 'horse-phase13-completion-v1';
  *    The live wrapper executes the baseline for all of them; v1 counted them
  *    as completed (or, for the model defects, as `responseBranchUnavailable`).
  *
+ * Since 2026-10-11 (docs/changelog/2026-10-11-phase13-live-work-is-the-measured-work.md)
+ * the live source does exactly the matrix's fixed work: the request is always
+ * the full count and no clock cuts the sampler or the pricing, so a decision
+ * of that source is never `workBudget`, `samplerBudgetExhausted` or
+ * `governorReduced`. The fields and the definition stay as they are: they
+ * still classify receipts of earlier releases, and a nonzero count on a new
+ * release would name a regression.
+ *
  * v1 to v2 (audit 2026-10-06): Diamond decisions are excluded by name instead
  * of counted in the NLH cells, `analysisUnavailable` is a seventh cell field
  * and `fired` is read, and the record carries `excluded`. A v1 record is

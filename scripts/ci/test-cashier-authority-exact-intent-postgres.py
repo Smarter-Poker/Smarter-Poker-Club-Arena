@@ -571,6 +571,10 @@ try:
     witness("conservation-missing-bank-is-not-zero", "r->'bank'->>'status'||'|'||coalesce(r->'bank'->>'expected','NULL')", "incomplete|NULL")
     run("conservation-bank-future-baseline", f"INSERT INTO ca_treasury_baseline VALUES ('{report_club}',485,now()+interval '1 day');")
     witness("conservation-future-baseline-refused-as-coverage", "r->'bank'->>'status'", "incomplete")
+    for bank_role in ("admin", "co_owner"):
+        run("conservation-active-"+bank_role+"-fixture",f"UPDATE club_members SET role='{bank_role}' WHERE club_id='{report_club}' AND user_id='{PLAYER}';")
+        run("conservation-active-"+bank_role+"-accepted",as_role(PLAYER,f"SELECT {report_call}->>'scope';"),"bank_and_player_baselines")
+    run("conservation-restore-player-role",f"UPDATE club_members SET role='player' WHERE club_id='{report_club}' AND user_id='{PLAYER}';")
     refused("conservation-player-refused",as_role(PLAYER,f"SELECT {report_call};"))
     refused("conservation-unaffiliated-refused",as_role(AGENT_A,f"SELECT {report_call};"))
     refused("conservation-null-club-refused",as_role(OWNER,"SELECT public.fn_cashier_conservation_report(NULL);"),"22023")

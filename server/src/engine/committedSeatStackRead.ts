@@ -6,14 +6,24 @@ export type StackReadResult = {
   error: unknown;
 };
 
+/** These API failures happen before SQL execution. Recognise the exact
+ * wrapped messages too: loadTable preserves the message but drops the code. */
+export function isPreExecutionDbUnavailable(error: unknown): boolean {
+  const value = error as { code?: unknown; message?: unknown } | null;
+  if (['PGRST001', 'PGRST002', 'PGRST003'].includes(String(value?.code))) return true;
+  if (value?.code) return false;
+  return /Could not query the database for the schema cache|Timed out acquiring connection from connection pool|Database connection error/i.test(
+    String(value?.message ?? error)
+  );
+}
+
 export function transientStackReadError(error: unknown): boolean {
   const value = error as { code?: unknown; message?: unknown } | null;
   const code = value?.code;
-  if (
-    ['PGRST001', 'PGRST002', 'PGRST003', '57014', '08000', '08003', '08006'].includes(String(code))
-  )
-    return true;
-  return /supabase_timeout|fetch failed|Failed to fetch|network|connection reset|socket hang up|schema cache|timed out acquiring connection/i.test(
+  if (isPreExecutionDbUnavailable(error)) return true;
+  if (String(code).startsWith('PGRST') || code === '42501') return false;
+  if (['57014', '08000', '08003', '08006'].includes(String(code))) return true;
+  return /supabase_timeout|fetch failed|Failed to fetch|network|connection reset|socket hang up|timed out acquiring connection/i.test(
     String(value?.message ?? error)
   );
 }

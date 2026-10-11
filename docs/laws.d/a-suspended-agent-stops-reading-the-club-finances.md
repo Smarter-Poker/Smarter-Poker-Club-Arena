@@ -1,0 +1,3 @@
+# tests/a-suspended-agent-stops-reading-the-club-finances.db.law.test.ts
+
+ca_can_view_club_finances, the gate in front of a club's finance reports, exports and rate-audit policies, admits a staff membership (owner, co-owner, admin, super agent) only when fn_cashier_member_is_active calls it active, the same rule fn_club_bank_role and every money door use, so a super agent the club suspended, one with no active agents row in that club, or a staff member whose membership is not active or approved stops reading the books (migration 20261010010632, md5-pinned over production's live text; qualified by scripts/ci/test-finance-gate-db-postgres.py as the session user PostgREST uses).

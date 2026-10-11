@@ -56,16 +56,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 200396,
-      "sha256": "c1226635ef54d42b27b7784c0bf02cda1392c89235b36474a9d35740cbda3168"
+      "bytes": 201506,
+      "sha256": "261f67772c608e7ccf0485788ef6dafffa88dffa9cbfb62d2aaa5a18914cf1b5"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 33920,
-      "sha256": "9eef710ba89f994e5299852d62375543242c60a792dcb9ffb4601cc523d0e73c"
+      "bytes": 34539,
+      "sha256": "5374a01c45ef4118c957bd2613a495bad7f042655d6282e40c005efba8fc055d"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -1986,5 +1986,32 @@
       "bytes": 199822,
       "sha256": "4eaa992ee411f465b3ff794c2ffce13ed08a2d69fac86a52cc4f6118c378072d"
     }
+  },
+  "cashierDbHarnessesRouting20261011": {
+    "reason": "Reviewed additive cashier database harness routing: one new cashierDbHarnesses selector naming the four cashier launch PostgreSQL 17 harnesses (chip request approval, union send, cashier arena names, finance gate) and their fixture directories, added to the existing server and tests selections, and four accounting_postgres shard 2 steps that run them. No selector is removed or narrowed; financial sources, assertions and historical evidence are unchanged. These byte bindings establish source identity only, not financial or production qualification. Re-integrated on current main after the tournament lane contention workflow change.",
+    "changes": [
+      {
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 200396,
+          "sha256": "c1226635ef54d42b27b7784c0bf02cda1392c89235b36474a9d35740cbda3168"
+        },
+        "current": {
+          "bytes": 201506,
+          "sha256": "261f67772c608e7ccf0485788ef6dafffa88dffa9cbfb62d2aaa5a18914cf1b5"
+        }
+      },
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 33920,
+          "sha256": "9eef710ba89f994e5299852d62375543242c60a792dcb9ffb4601cc523d0e73c"
+        },
+        "current": {
+          "bytes": 34539,
+          "sha256": "5374a01c45ef4118c957bd2613a495bad7f042655d6282e40c005efba8fc055d"
+        }
+      }
+    ]
   }
 }

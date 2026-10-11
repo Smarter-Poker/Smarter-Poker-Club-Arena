@@ -2005,6 +2005,24 @@ class SoundService {
   /**
    * Chat Message Received — gentle notification ping
    */
+  /** Optional Lightning visit milestone, below deals, clocks and decisions. */
+  playLightningMilestone() {
+    if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
+    const t = this.ctx!.currentTime;
+    const osc = this.ctx!.createOscillator();
+    const gain = this.ctx!.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(660, t);
+    osc.frequency.exponentialRampToValueAtTime(880, t + 0.08);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.05, t + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+    osc.connect(gain);
+    gain.connect(this.out);
+    osc.start(t);
+    osc.stop(t + 0.17);
+  }
+
   playChatMessage() {
     if (!this.shouldPlay('ui', 'chat') || !this.ensureContext()) return;
 

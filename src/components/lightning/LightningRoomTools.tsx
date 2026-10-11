@@ -36,6 +36,7 @@ import {
   useLightningSessionStats,
 } from './useLightningSessionData';
 import LightningCloseX from './LightningCloseX';
+import LightningPreferences from './LightningPreferences';
 import './LightningSession.css';
 
 export interface LightningRoomToolsProps {
@@ -56,6 +57,7 @@ export default function LightningRoomTools({
   const toast = useToast();
   const [statsOpen, setStatsOpen] = useState(() => readLightningPrefs().statsVisible);
   const [recentOpen, setRecentOpen] = useState(false);
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [replay, setReplay] = useState<string | null>(null);
   const [previousBusy, setPreviousBusy] = useState(false);
   /* The numbers refresh once per hand: when a NEW hand reaches the felt (the
@@ -174,6 +176,13 @@ export default function LightningRoomTools({
               : LIGHTNING_STOP_STOPPING_TEXT
             : LIGHTNING_STOP_PLAYING_LABEL}
         </button>
+        <button
+          type="button"
+          className="lightning-room-tools__btn"
+          onClick={() => setPreferencesOpen(true)}
+        >
+          Preferences
+        </button>
       </div>
       {statsOpen ? (
         <section
@@ -215,6 +224,7 @@ export default function LightningRoomTools({
       {replay ? (
         <LightningHandReplayModal handHistoryId={replay} onClose={() => setReplay(null)} />
       ) : null}
+      {preferencesOpen ? <LightningPreferences onClose={() => setPreferencesOpen(false)} /> : null}
     </>
   );
 }

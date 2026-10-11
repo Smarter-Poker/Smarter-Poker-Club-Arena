@@ -59,6 +59,8 @@
  */
 
 import { useEffect, useRef } from 'react';
+import { readLightningPrefs } from '../lightning/lightningPrefs';
+import { lightningShortcut } from '../lightning/lightningShortcuts';
 
 export interface UseTableKeyboardOptions {
   /**
@@ -130,6 +132,14 @@ export function tableSizingOwnsNumberRow(): boolean {
   return false;
 }
 
+/** New navigation gestures respect the same active-table modal/sizing owner. */
+export function tableBlocksLightningNavigation(): boolean {
+  for (const ref of mountedTableKeyboards) {
+    if (ref.current.isActive && (ref.current.isModalOpen || ref.current.isSizingOpen)) return true;
+  }
+  return false;
+}
+
 export function useTableKeyboard(options: UseTableKeyboardOptions): void {
   // Store all options in a ref — updated every render, always fresh in the listener
   const optionsRef = useRef(options);
@@ -171,25 +181,34 @@ export function useTableKeyboard(options: UseTableKeyboardOptions): void {
         opts.onClosePanel?.();
         return;
       }
+      if (
+        (opts.onLightningFold || opts.onLightningFoldWatch) &&
+        document.querySelector('[aria-modal="true"]')
+      )
+        return;
 
       // ── Lightning keys: Shift+F / Shift+V, before the single-letter row ──
+      const shortcut = lightningShortcut(e, readLightningPrefs().shortcutModifier);
       if (
         !opts.isSpectator &&
         !opts.isModalOpen &&
-        e.shiftKey &&
-        !e.ctrlKey &&
-        !e.metaKey &&
-        !e.altKey &&
-        (key === 'f' || key === 'v') &&
+        (shortcut === 'fold' || shortcut === 'watch') &&
         (opts.onLightningFold || opts.onLightningFoldWatch)
       ) {
-        const run = key === 'f' ? opts.onLightningFold : opts.onLightningFoldWatch;
+        const run = shortcut === 'fold' ? opts.onLightningFold : opts.onLightningFoldWatch;
         if (run) {
           e.preventDefault();
           run();
         }
         return;
       }
+      // In a Lightning room a rejected modifier chord must not become a
+      // different single-letter action, including held keys and disabled shortcuts.
+      if (
+        (opts.onLightningFold || opts.onLightningFoldWatch) &&
+        (e.shiftKey || e.altKey || e.ctrlKey || e.metaKey || e.repeat || e.isComposing)
+      )
+        return;
 
       // ── Toggle keys: always active (unless spectator) ──
       if (!opts.isSpectator) {

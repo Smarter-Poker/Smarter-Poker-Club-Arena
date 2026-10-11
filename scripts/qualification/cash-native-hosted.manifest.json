@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 200101,
-      "sha256": "6ef7bf5fde393d85b93cee328829cb86da2d569e7069f2b12692a0805ca34896"
+      "bytes": 200396,
+      "sha256": "c1226635ef54d42b27b7784c0bf02cda1392c89235b36474a9d35740cbda3168"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1975,6 +1975,13 @@
   },
   "ownerAlertFindingRegression20261011": {
     "reason": "Add the actual owner-alert trigger regression to the existing required Accounting1 lane. Preserve all cash inputs, assertions, historical fingerprints and qualification status. Fingerprint renewal is source integrity only, not financial qualification.",
+    "previousWorkflowPin": {
+      "bytes": 199822,
+      "sha256": "4eaa992ee411f465b3ff794c2ffce13ed08a2d69fac86a52cc4f6118c378072d"
+    }
+  },
+  "tournamentLaneContention20261011": {
+    "reason": "Add isolated F06 lock-contention regression to accounting shard one. Existing cash execution, financial sources, assertions and qualification status are unchanged. This workflow fingerprint refresh is not runtime qualification.",
     "previousWorkflowPin": {
       "bytes": 199822,
       "sha256": "4eaa992ee411f465b3ff794c2ffce13ed08a2d69fac86a52cc4f6118c378072d"

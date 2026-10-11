@@ -1,0 +1,11 @@
+# Player Command structural refresh ownership
+
+A membership event's existing 1,200 ms coalescing timer could replace and abort a healthy roster page request for the same query. A real `ClubMembersPage` regression reproduced one abort before the first deferred page completed. The timer now retains one summary invalidation while that page is active. A fulfilled, still-current directory read publishes its result before consuming the invalidation once. A committed new query consumes the same invalidation through its own read; reverting an uncommitted search does not cancel the healthy request.
+
+A failed or timed-out directory read does not automatically replay to consume queued work. The visible deliberate retry path remains responsible for that next attempt. Account, club, query, offline and unmount cancellation retain their existing ownership rules. This change adds no polling, repair loop, database writes or financial mutations.
+
+The production roster journey on published revision `d24bc826e5ac03039c7a0f84f1789b42147888c9` reported one aborted request during the All Players action. Its exact cause has not been established from the retained failure. The production test now includes its existing request timeline in every strict zero-abort assertion's failure message; the assertions are unchanged. The reproduced structural-timer defect is a matching source path, not proof of that production event's origin.
+
+The five read-only production cases now use independent default-mode browser contexts so a failed first case does not prevent the other four from executing. Execution remains one worker with zero retries; failures still fail the check. No workflow or production-write behavior changes.
+
+Verification: the new healthy-read/coalescence regression failed before the source repair with one abort instead of zero. Focused real-component cases also cover queued invalidation transfer to a changed query and absence of automatic retry after failure. Existing search ownership and workspace history, pagination, account/club isolation and return-position cases remain in the same focused validation. Protected checks, publication and production verification are separate remaining delivery states at this source handoff.

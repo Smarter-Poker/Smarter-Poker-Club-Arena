@@ -171,6 +171,7 @@ export default function ClubMembersPage() {
   const forceNextSummaryRef = useRef(false);
   const requestEpochRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  const activePageReadRef = useRef<AbortController | null>(null);
   const exportAbortRef = useRef<AbortController | null>(null);
   const exportScopeKey = `${routeClub}:${user?.id ?? ''}`;
   const exportScopeRef = useRef({ key: exportScopeKey });
@@ -384,6 +385,7 @@ export default function ClubMembersPage() {
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
+      activePageReadRef.current = controller;
       moreAbortRef.current?.abort();
       setLoading(true);
       setLoadError(false);
@@ -415,6 +417,7 @@ export default function ClubMembersPage() {
         limit: PAGE_SIZE,
         signal: controller.signal,
       }).finally(() => {
+        if (activePageReadRef.current === controller) activePageReadRef.current = null;
         if (isCurrent()) {
           setLoading(false);
           setIsRefreshing(false);
@@ -511,6 +514,17 @@ export default function ClubMembersPage() {
       ) {
         writeRosterCache(user.id, resolvedClubId, membersRef.current, summaryResult.value);
       }
+      // A structural event may arrive after this read started. Preserve its
+      // invalidation, but let the healthy page publish before reading again.
+      // Query changes already consume the same flag in their own first read.
+      if (
+        isCurrent() &&
+        pageResult.status === 'fulfilled' &&
+        forceNextSummaryRef.current &&
+        !searchSettlingRef.current
+      ) {
+        void latestLoadRef.current({ forceSummary: true });
+      }
     },
     [debouncedSearch, exportScopeKey, filter, resolvedClubId, sortKey, user?.id, workspaceScope]
   );
@@ -563,7 +577,12 @@ export default function ClubMembersPage() {
   useEffect(() => {
     // Reverting to the already committed query can cancel the debounce without
     // changing loadFirstPage. That still owes the deferred structural read.
-    if (searchQuery !== debouncedSearch || !forceNextSummaryRef.current) return;
+    if (
+      searchQuery !== debouncedSearch ||
+      !forceNextSummaryRef.current ||
+      activePageReadRef.current
+    )
+      return;
     forceNextSummaryRef.current = false;
     void latestLoadRef.current({ forceSummary: true });
   }, [debouncedSearch, searchQuery]);
@@ -601,7 +620,7 @@ export default function ClubMembersPage() {
       // The pending query owns its next read. Starting the old search here
       // would be aborted as soon as its debounce commits. Carry the structural
       // summary invalidation into that same new query instead.
-      if (searchSettlingRef.current) {
+      if (searchSettlingRef.current || activePageReadRef.current) {
         forceNextSummaryRef.current = true;
         return;
       }

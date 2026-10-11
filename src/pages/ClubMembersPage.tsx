@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import {
+  useLocation,
+  useNavigate,
+  useNavigationType,
+  useParams,
+  useSearchParams,
+} from 'react-router-dom';
 import { sizedStorageUrl, generateAvatarSvg } from '../utils/avatarGenerator';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useDebounce } from '../hooks/useDebounce';
@@ -27,18 +33,25 @@ import ClubRosterService, {
   type RosterSort,
   type RosterSummary,
 } from '../services/ClubRosterService';
-import {
-  purgeRosterCache,
-  readRosterCache,
-  rosterSearchKey,
-  writeRosterCache,
-} from '../lib/rosterCache';
+import { purgeRosterCache, readRosterCache, writeRosterCache } from '../lib/rosterCache';
 import { RosterSummaryCoordinator, settleRosterReadsIndependently } from '../lib/rosterLoadPolicy';
+import {
+  ROSTER_ROW_HEIGHT,
+  defaultRosterWorkspace,
+  readRosterWorkspace,
+  writeRosterWorkspace,
+  writeRosterReturnPosition,
+  takeRosterReturnPosition,
+  sameRosterQuery,
+  type RosterColumn,
+  type RosterReturnPosition,
+  type RosterWorkspace,
+} from '../lib/rosterWorkspace';
 import './ClubMembersPage.css';
 
 const ROSTER_OPERATIONS_ART = `${import.meta.env.BASE_URL}images/club-members/roster-ledger-desk-v2.webp`;
 const PAGE_SIZE = 80;
-const ROW_HEIGHT = 123;
+const ROW_HEIGHT = ROSTER_ROW_HEIGHT;
 
 const FILTER_LABEL: Record<RosterFilter, string> = {
   all: 'All Players',
@@ -62,7 +75,7 @@ const SORT_LABEL: Record<RosterSort, string> = {
   fees: 'Fees',
 };
 
-type OptionalColumn = 'downlines' | 'wallets' | 'fees' | 'activity';
+type OptionalColumn = RosterColumn;
 type SummaryFreshness = 'loading' | 'fresh' | 'stale' | 'failed';
 type RosterLoadOptions = { forceSummary?: boolean };
 
@@ -80,11 +93,15 @@ const DEFAULT_SUMMARY: RosterSummary = {
 };
 
 function readFilter(value: string | null): RosterFilter {
-  return value && value in FILTER_LABEL ? (value as RosterFilter) : 'all';
+  return value && Object.prototype.hasOwnProperty.call(FILTER_LABEL, value)
+    ? (value as RosterFilter)
+    : 'all';
 }
 
 function readSort(value: string | null): RosterSort {
-  return value && value in SORT_LABEL ? (value as RosterSort) : 'hierarchy';
+  return value && Object.prototype.hasOwnProperty.call(SORT_LABEL, value)
+    ? (value as RosterSort)
+    : 'hierarchy';
 }
 
 function chips(value: number | null): string {
@@ -106,6 +123,8 @@ export default function ClubMembersPage() {
   const { user } = useAuthUser();
   const toast = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
+  const navigationType = useNavigationType();
 
   const [resolvedClubId, setResolvedClubId] = useState<string | null>(null);
   const [summary, setSummary] = useState<RosterSummary>(DEFAULT_SUMMARY);
@@ -143,7 +162,10 @@ export default function ClubMembersPage() {
   const [lastSuccessfulSyncAt, setLastSuccessfulSyncAt] = useState<number | null>(null);
   const [resolutionAttempt, setResolutionAttempt] = useState(0);
 
-  const debouncedSearch = useDebounce(searchQuery, 260);
+  const [hydratedSearch, setHydratedSearch] = useState<string | null>('');
+  const pendingSearch = useDebounce(searchQuery, 260);
+  // Hydration is already validated and committed. Only typed edits owe a debounce.
+  const debouncedSearch = searchQuery === hydratedSearch ? searchQuery : pendingSearch;
   const searchSettlingRef = useRef(false);
   searchSettlingRef.current = searchQuery !== debouncedSearch;
   const forceNextSummaryRef = useRef(false);
@@ -157,6 +179,17 @@ export default function ClubMembersPage() {
   if (exportScopeRef.current.key !== exportScopeKey) {
     exportScopeRef.current = { key: exportScopeKey };
   }
+  const [workspaceScope, setWorkspaceScope] = useState<string | null>(null);
+  const [loadedQuery, setLoadedQuery] = useState<RosterWorkspace | null>(null);
+  const pendingPositionRef = useRef<RosterReturnPosition | null>(null);
+  const positionPagesRef = useRef(0);
+  const lastWrittenUrlRef = useRef<{ scope: string; query: string } | null>(null);
+  const currentWorkspace: RosterWorkspace = {
+    search: searchQuery.slice(0, 120),
+    filter,
+    sort: sortKey,
+    columns: [...columns],
+  };
   const moreAbortRef = useRef<AbortController | null>(null);
   const moreRef = useRef(false);
   const membersRef = useRef<RosterMember[]>([]);
@@ -179,18 +212,29 @@ export default function ClubMembersPage() {
   );
 
   useEffect(() => {
+    if (workspaceScope !== exportScopeKey) return;
     const next = new URLSearchParams(searchParams);
     next.delete('q');
     if (filter === 'all') next.delete('view');
     else next.set('view', filter);
     if (sortKey === 'hierarchy') next.delete('sort');
     else next.set('sort', sortKey);
+    lastWrittenUrlRef.current = { scope: exportScopeKey, query: next.toString() };
     if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true });
-  }, [filter, searchParams, setSearchParams, sortKey]);
+  }, [exportScopeKey, filter, searchParams, setSearchParams, sortKey, workspaceScope]);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
+    setWorkspaceScope(null);
+    setLoadedQuery(null);
+    pendingPositionRef.current = null;
+    positionPagesRef.current = 0;
+    const inheritedUrl =
+      lastWrittenUrlRef.current?.scope !== exportScopeKey &&
+      lastWrittenUrlRef.current?.query === searchParams.toString();
+    const explicitFilter = !inheritedUrl && searchParams.has('view');
+    const explicitSort = !inheritedUrl && searchParams.has('sort');
     exportAbortRef.current?.abort();
     exportAbortRef.current = null;
     setIsExporting(false);
@@ -237,32 +281,43 @@ export default function ClubMembersPage() {
     void resolveClubUUIDStrict(routeClub)
       .then((id) => {
         if (!active) return;
-        setResolvedClubId(id);
+        const saved = user?.id ? readRosterWorkspace(user.id, id) : null;
+        const workspace = saved ?? defaultRosterWorkspace();
+        if (explicitFilter) workspace.filter = readFilter(searchParams.get('view'));
+        if (explicitSort) workspace.sort = readSort(searchParams.get('sort'));
+        setFilter(workspace.filter);
+        setSortKey(workspace.sort);
+        setColumns(new Set(workspace.columns));
+        setHydratedSearch(workspace.search);
+        setSearchQuery(workspace.search);
         if (user?.id) {
-          try {
-            const rawSearch = sessionStorage.getItem(rosterSearchKey(user.id, id));
-            const savedSearch = rawSearch ? (JSON.parse(rawSearch) as string) : '';
-            if (savedSearch) setSearchQuery(savedSearch.slice(0, 120));
-            if (filter === 'all' && sortKey === 'hierarchy' && !savedSearch) {
-              const cached = readRosterCache(user.id, id);
-              if (cached) {
-                membersRef.current = cached.rows;
-                setMembers(cached.rows);
-                directoryAvailableRef.current = true;
-                setDirectoryAvailable(true);
-                summaryAvailableRef.current = true;
-                setSummary(cached.summary);
-                setSummaryAvailable(true);
-                setSummaryFreshness('stale');
-                setFilteredTotal(cached.summary.counts.total);
-                setLastSuccessfulSyncAt(cached.cachedAt);
-                setDataFreshness('stale');
-              }
+          const position = takeRosterReturnPosition(user.id, id, location.key);
+          if (
+            navigationType === 'POP' &&
+            position &&
+            sameRosterQuery(position.workspace, workspace)
+          ) {
+            pendingPositionRef.current = position;
+          }
+          if (workspace.filter === 'all' && workspace.sort === 'hierarchy' && !workspace.search) {
+            const cached = readRosterCache(user.id, id);
+            if (cached) {
+              membersRef.current = cached.rows;
+              setMembers(cached.rows);
+              directoryAvailableRef.current = true;
+              setDirectoryAvailable(true);
+              summaryAvailableRef.current = true;
+              setSummary(cached.summary);
+              setSummaryAvailable(true);
+              setSummaryFreshness('stale');
+              setFilteredTotal(cached.summary.counts.total);
+              setLastSuccessfulSyncAt(cached.cachedAt);
+              setDataFreshness('stale');
             }
-          } catch {
-            // Session storage is optional.
           }
         }
+        setWorkspaceScope(exportScopeKey);
+        setResolvedClubId(id);
       })
       .catch((error) => {
         reportError(error, 'ClubMembersPage.resolveClub');
@@ -277,24 +332,32 @@ export default function ClubMembersPage() {
     return () => {
       active = false;
     };
-    // Filter and sort are intentionally not reset when the same URL re-resolves.
+    // Each resolved account/club hydrates its own validated workspace.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolutionAttempt, routeClub, user?.id]);
 
   useEffect(() => {
-    if (!resolvedClubId || !user?.id) return;
-    try {
-      const key = rosterSearchKey(user.id, resolvedClubId);
-      if (searchQuery) sessionStorage.setItem(key, JSON.stringify(searchQuery.slice(0, 120)));
-      else sessionStorage.removeItem(key);
-    } catch {
-      // Search continuity is optional; unlike URL state it never leaves the tab.
-    }
-  }, [resolvedClubId, searchQuery, user?.id]);
+    if (!resolvedClubId || !user?.id || workspaceScope !== exportScopeKey) return;
+    writeRosterWorkspace(user.id, resolvedClubId, {
+      search: searchQuery.slice(0, 120),
+      filter,
+      sort: sortKey,
+      columns: [...columns],
+    });
+  }, [
+    columns,
+    exportScopeKey,
+    filter,
+    resolvedClubId,
+    searchQuery,
+    sortKey,
+    user?.id,
+    workspaceScope,
+  ]);
 
   const loadFirstPage = useCallback(
     async (options: RosterLoadOptions = {}) => {
-      if (!resolvedClubId) return;
+      if (!resolvedClubId || workspaceScope !== exportScopeKey || searchSettlingRef.current) return;
       const forceSummary = options.forceSummary === true || forceNextSummaryRef.current;
       forceNextSummaryRef.current = false;
       const epoch = ++requestEpochRef.current;
@@ -377,6 +440,7 @@ export default function ClubMembersPage() {
         },
         onPage: (page) => {
           if (!isCurrent()) return;
+          setLoadedQuery({ search: debouncedSearch, filter, sort: sortKey, columns: [] });
           const nextRows = wallets.reconcile(page.items, walletRevision);
           membersRef.current = nextRows;
           setMembers(nextRows);
@@ -428,7 +492,7 @@ export default function ClubMembersPage() {
         writeRosterCache(user.id, resolvedClubId, membersRef.current, summaryResult.value);
       }
     },
-    [debouncedSearch, filter, resolvedClubId, sortKey, user?.id]
+    [debouncedSearch, exportScopeKey, filter, resolvedClubId, sortKey, user?.id, workspaceScope]
   );
 
   useEffect(() => {
@@ -662,11 +726,15 @@ export default function ClubMembersPage() {
         membersRef.current = next;
         return next;
       });
+      if (page.items.length === 0 || JSON.stringify(page.next_cursor) === JSON.stringify(cursor)) {
+        pendingPositionRef.current = null;
+      }
       setCursor(page.next_cursor);
       setHasMore(page.has_more);
       setFilteredTotal(page.filtered_total);
     } catch (error) {
       if (!abortLike(error)) {
+        pendingPositionRef.current = null;
         reportError(error, 'ClubMembersPage.loadMore');
         toast.error('Could Not Load More Players');
       }
@@ -687,7 +755,68 @@ export default function ClubMembersPage() {
     resetVirtual();
   }, [debouncedSearch, filter, resetVirtual, sortKey]);
   useEffect(() => {
-    if (hasMore && virtual.endIndex >= members.length - 8) void loadMore();
+    const position = pendingPositionRef.current;
+    if (!position) return;
+    if (loadError || accessDenied || dataFreshness === 'failed') {
+      pendingPositionRef.current = null;
+      return;
+    }
+    if (
+      workspaceScope !== exportScopeKey ||
+      !sameRosterQuery(position.workspace, currentWorkspace)
+    ) {
+      pendingPositionRef.current = null;
+      return;
+    }
+    if (
+      searchQuery !== debouncedSearch ||
+      loading ||
+      isLoadingMore ||
+      !loadedQuery ||
+      !sameRosterQuery(loadedQuery, currentWorkspace) ||
+      dataFreshness !== 'fresh'
+    )
+      return;
+    const requiredRows = Math.ceil((position.viewportTop + 696) / ROW_HEIGHT);
+    if (hasMore && members.length < requiredRows) {
+      if (positionPagesRef.current >= Math.ceil(requiredRows / PAGE_SIZE)) {
+        pendingPositionRef.current = null;
+        return;
+      }
+      positionPagesRef.current += 1;
+      void loadMore();
+      return;
+    }
+    const node = virtual.containerRef.current;
+    if (node) {
+      node.scrollTop = Math.min(
+        position.viewportTop,
+        Math.max(0, members.length * ROW_HEIGHT - 696)
+      );
+      node.dispatchEvent(new Event('scroll'));
+    }
+    window.scrollTo({ top: position.windowTop, behavior: 'instant' });
+    pendingPositionRef.current = null;
+  }, [
+    accessDenied,
+    dataFreshness,
+    debouncedSearch,
+    exportScopeKey,
+    filter,
+    hasMore,
+    isLoadingMore,
+    loadError,
+    loadMore,
+    loadedQuery,
+    loading,
+    members.length,
+    searchQuery,
+    sortKey,
+    workspaceScope,
+  ]);
+  useEffect(() => {
+    if (!pendingPositionRef.current && hasMore && virtual.endIndex >= members.length - 8)
+      void loadMore();
   }, [hasMore, loadMore, members.length, virtual.endIndex]);
 
   // Default WAL old images cannot identify an off-page promotion. The
@@ -753,9 +882,32 @@ export default function ClubMembersPage() {
 
   const openMember = useCallback(
     (userId: string) => {
-      if (routeClub) navigate(`/clubs/${routeClub}/members/${userId}`);
+      if (!routeClub || workspaceScope !== exportScopeKey) return;
+      if (resolvedClubId && user?.id) {
+        writeRosterWorkspace(user.id, resolvedClubId, currentWorkspace);
+        writeRosterReturnPosition(user.id, resolvedClubId, {
+          version: 1,
+          entryKey: location.key,
+          workspace: currentWorkspace,
+          viewportTop: virtual.containerRef.current?.scrollTop ?? 0,
+          windowTop: window.scrollY,
+        });
+      }
+      navigate(`/clubs/${routeClub}/members/${userId}`);
     },
-    [navigate, routeClub]
+    [
+      columns,
+      exportScopeKey,
+      filter,
+      location.key,
+      navigate,
+      resolvedClubId,
+      routeClub,
+      searchQuery,
+      sortKey,
+      user?.id,
+      workspaceScope,
+    ]
   );
 
   const handleExport = useCallback(async () => {
@@ -918,7 +1070,10 @@ export default function ClubMembersPage() {
             maxLength={120}
             autoComplete="off"
             spellCheck={false}
-            onChange={(event) => setSearchQuery(event.target.value)}
+            onChange={(event) => {
+              setHydratedSearch(null);
+              setSearchQuery(event.target.value);
+            }}
           />
         </label>
 
@@ -1077,7 +1232,14 @@ export default function ClubMembersPage() {
         ) : members.length === 0 ? (
           <EmptyRoster filter={filter} searchQuery={searchQuery} />
         ) : (
-          <div ref={virtual.containerRef} className="members-viewport" style={{ height: 696 }}>
+          <div
+            ref={virtual.containerRef}
+            className="members-viewport"
+            style={{ height: 696 }}
+            onScroll={() => {
+              pendingPositionRef.current = null;
+            }}
+          >
             <div aria-hidden="true" style={{ height: virtual.paddingTop }} />
             {virtual.visibleItems.map((member, index) => (
               <MemberRow

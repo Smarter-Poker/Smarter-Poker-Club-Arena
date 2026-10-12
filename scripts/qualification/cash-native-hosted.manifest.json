@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 213137,
-      "sha256": "082ed78d4eeb84e5eea8a463ebab39d6cddcedaa1831da8d13393810e351cccb"
+      "bytes": 214051,
+      "sha256": "160ed76613500d82d0fe1637fa7b9c3687d1629888065c29f153f48dfb6a55ee"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -2923,6 +2923,55 @@
     "combinedWorkflowPin": {
       "bytes": 213137,
       "sha256": "082ed78d4eeb84e5eea8a463ebab39d6cddcedaa1831da8d13393810e351cccb"
+    }
+  },
+  "originalPosthandEscrowNative20261012": {
+    "reason": "Add actual original posthand escrow PostgreSQL17 qualification and always artifact in existing Accounting3. Preserve every prior native lane and historical pin. SQL/native and public financial projection qualification distinct from production installation or retention permission.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 209558,
+        "sha256": "d37c75bdf8c9f04a356363c8cff9b919f66f0a1640d7748c40f29cc40bd5aea9"
+      }
+    }
+  },
+  "originalPosthandEscrowProtectedMainIntegration20261012": {
+    "reason": "Preserve protected f209 all native qualification lanes and additive histories while integrating one new original posthand escrow probe. Financial SQL/native inputs unchanged. Workflow fingerprint is not installation proof.",
+    "previousBranchWorkflowPin": {
+      "bytes": 210472,
+      "sha256": "2ac563308b4b2a1f2a0bc3a4179d945a96a72d6719160a9c9f66fdb929cf753a"
+    },
+    "protectedMainWorkflowPin": {
+      "bytes": 210534,
+      "sha256": "f121396e2a47265ac66b95be65b77b88ed4aa128ec8f4230eb28458628cc8631"
+    }
+  },
+  "scopedLaunchUnplayedMainIntegration20261012": {
+    "reason": "Preserve protected original unplayed escrow qualification and balanced existing Lightning suites. Refresh combined fingerprints only; retain financial inputs, assertions and historical evidence. Not runtime certification.",
+    "previous_pins": {
+      "/files/.github/workflows/ci.yml/bytes": {
+        "ours": 213137,
+        "incoming": 211448
+      },
+      "/files/.github/workflows/ci.yml/sha256": {
+        "ours": "082ed78d4eeb84e5eea8a463ebab39d6cddcedaa1831da8d13393810e351cccb",
+        "incoming": "65ab5c875b5514f798b5ff5cc2e9764a89babf5ea27d1c00c704b59a175755a9"
+      },
+      "/files/scripts/ci/classify-ci-changes.mjs/bytes": {
+        "ours": 36407,
+        "incoming": 36221
+      },
+      "/files/scripts/ci/classify-ci-changes.mjs/sha256": {
+        "ours": "2851a30b77a4373a8854b67f80395feb92308b7660de6c74e8abd8e6ff1fefbd",
+        "incoming": "431c3a4c70a1d0e278b5a1e96b113f423d57428f1bf30da672690ce44baa3123"
+      },
+      "/files/tests/unit/fixtureNativeCi.test.ts/bytes": {
+        "ours": 110992,
+        "incoming": 108840
+      },
+      "/files/tests/unit/fixtureNativeCi.test.ts/sha256": {
+        "ours": "b7d700836f7d4a4d19df0b2321b9d5fb743d9e5f5645f30ae40e66bda79afb51",
+        "incoming": "fb94dda014bd29ec71e87a50affd1049df971691e6d1da7469948e74ad50fc62"
+      }
     }
   }
 }

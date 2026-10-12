@@ -20,6 +20,7 @@ import { masterBus } from '../core/MasterBus';
 import { supabase } from '../lib/supabase';
 import { isAuthzError } from '../utils/clubDashboard';
 import { reportError } from '../utils/errorReporter';
+import { useUserStore } from '../stores/useUserStore';
 import { useVisibilityRefresh } from './useVisibilityRefresh';
 
 export type ClubOperationsAlertSeverity = 'critical' | 'warning' | 'info';
@@ -115,7 +116,6 @@ const BUS_EVENTS = [
   'TABLE_LEFT',
   'TABLE_CREATED',
   'CHIPS_ADDED',
-  'MEMBER_ROLE_CHANGED',
   'AGENT_UPDATED',
 ] as const;
 
@@ -143,7 +143,7 @@ const num = (value: unknown): number => {
 
 /** PostgREST returns numeric as a string. Every count is normalised here so no
  *  consumer has to remember, and a missing key reads as 0 rather than NaN. */
-function normalise(raw: unknown): ClubOperationsOverview | null {
+function normalise(raw: unknown, requestedClub: string): ClubOperationsOverview | null {
   if (!raw || typeof raw !== 'object') return null;
   const row = raw as Record<string, unknown>;
   const club = (row.club || {}) as Record<string, unknown>;
@@ -151,11 +151,65 @@ function normalise(raw: unknown): ClubOperationsOverview | null {
   const kpis = (row.kpis || {}) as Record<string, unknown>;
   const counts = (row.counts || {}) as Record<string, unknown>;
   const alerts = Array.isArray(row.alerts) ? row.alerts : [];
+  const object = (value: unknown): value is Record<string, unknown> =>
+    !!value && typeof value === 'object' && !Array.isArray(value);
+  const coreKpis = [
+    'members',
+    'members_pending',
+    'members_new_7d',
+    'online_now',
+    'seated_now',
+    'live_tables',
+    'running_tables',
+    'waiting_tables',
+    'tournaments_registering',
+    'tournaments_running',
+    'hands_today',
+  ];
+  const coreCounts = [
+    'members',
+    'members_pending',
+    'reports_open',
+    'disputes_open',
+    'disputes_aged',
+    'blacklist_active',
+    'blacklist_expired',
+    'chip_requests_pending',
+    'cashouts_pending',
+    'credit_requests_pending',
+    'tickets_outstanding',
+    'anti_cheat_flags_open',
+  ];
+  const numeric = (value: unknown) =>
+    (typeof value === 'number' || (typeof value === 'string' && value.trim() !== '')) &&
+    Number.isFinite(Number(value));
+  if (
+    !object(row.club) ||
+    club.id !== requestedClub ||
+    !object(row.viewer) ||
+    !object(row.kpis) ||
+    !object(row.counts) ||
+    !Array.isArray(row.alerts) ||
+    typeof row.generated_at !== 'string' ||
+    !Number.isFinite(Date.parse(row.generated_at)) ||
+    typeof viewer.is_platform_staff !== 'boolean' ||
+    typeof viewer.can_view_finance !== 'boolean' ||
+    typeof viewer.can_control_club !== 'boolean' ||
+    coreKpis.some((key) => !numeric(kpis[key])) ||
+    coreCounts.some((key) => !numeric(counts[key])) ||
+    ['invoices_open', 'invoices_overdue'].some(
+      (key) => !(key in counts) || (counts[key] !== null && !numeric(counts[key]))
+    )
+  )
+    return null;
 
   const financeKpis: Partial<ClubOperationsKpis> = {};
-  if (kpis.rake_today !== undefined) financeKpis.rake_today = num(kpis.rake_today);
-  if (kpis.club_bank !== undefined) financeKpis.club_bank = num(kpis.club_bank);
-  if (kpis.member_chips !== undefined) financeKpis.member_chips = num(kpis.member_chips);
+  if (viewer.can_view_finance === true && kpis.rake_today != null && numeric(kpis.rake_today))
+    financeKpis.rake_today = num(kpis.rake_today);
+  if (viewer.can_view_finance === true && kpis.club_bank != null && numeric(kpis.club_bank))
+    financeKpis.club_bank = num(kpis.club_bank);
+  if (viewer.can_view_finance === true && kpis.member_chips != null && numeric(kpis.member_chips))
+    financeKpis.member_chips = num(kpis.member_chips);
 
   return {
     generated_at:
@@ -197,8 +251,8 @@ function normalise(raw: unknown): ClubOperationsOverview | null {
       chip_requests_pending: num(counts.chip_requests_pending),
       cashouts_pending: num(counts.cashouts_pending),
       credit_requests_pending: num(counts.credit_requests_pending),
-      invoices_open: counts.invoices_open === null ? null : num(counts.invoices_open),
-      invoices_overdue: counts.invoices_overdue === null ? null : num(counts.invoices_overdue),
+      invoices_open: counts.invoices_open == null ? null : num(counts.invoices_open),
+      invoices_overdue: counts.invoices_overdue == null ? null : num(counts.invoices_overdue),
       tickets_outstanding: num(counts.tickets_outstanding),
       anti_cheat_flags_open: num(counts.anti_cheat_flags_open),
     },
@@ -222,39 +276,69 @@ function normalise(raw: unknown): ClubOperationsOverview | null {
 
 /* One in-flight read per club, shared by every consumer. The rail and the
    page mount together; without this they would each poll the same club. */
-const inflight = new Map<string, Promise<ClubOperationsOverview>>();
-const shared = new Map<string, { at: number; value: ClubOperationsOverview }>();
+interface OverviewReading {
+  at: number;
+  value: ClubOperationsOverview;
+}
+const inflight = new Map<string, Promise<OverviewReading>>();
+const shared = new Map<string, OverviewReading>();
+let scopeVersion = 0;
+const scopeListeners = new Set<() => void>();
+let scopeSubscriptionsStarted = false;
+
+function invalidateScope() {
+  scopeVersion += 1;
+  inflight.clear();
+  shared.clear();
+  scopeListeners.forEach((listener) => listener());
+}
+
+function observeScope() {
+  if (scopeSubscriptionsStarted) return;
+  scopeSubscriptionsStarted = true;
+  // The cache outlives routes, so identity/permission invalidation must too.
+  masterBus.subscribe('AUTH_STATE_CHANGED', invalidateScope);
+  masterBus.subscribe('MEMBER_ROLE_CHANGED', invalidateScope);
+}
 
 /** Exported for tests: forget every shared answer. */
 export function resetClubOperationsOverviewCache(): void {
-  inflight.clear();
-  shared.clear();
+  invalidateScope();
 }
 
-async function readOverview(clubUUID: string, force: boolean): Promise<ClubOperationsOverview> {
+async function readOverview(
+  clubUUID: string,
+  scope: string,
+  force: boolean
+): Promise<OverviewReading> {
+  const version = scopeVersion;
   if (!force) {
-    const cached = shared.get(clubUUID);
-    if (cached && Date.now() - cached.at < SHARE_MS) return cached.value;
+    const cached = shared.get(scope);
+    if (cached && Date.now() - cached.at < SHARE_MS) return cached;
   }
-  const pending = inflight.get(clubUUID);
+  const pending = inflight.get(scope);
   if (pending) return pending;
 
   const request = (async () => {
     const { data, error: rpcError } = await supabase.rpc('ca_club_operations_overview', {
       p_club_id: clubUUID,
     });
-    if (rpcError) throw rpcError;
-    const next = normalise(data);
+    if (rpcError) {
+      if (isAuthzError(rpcError)) shared.delete(scope);
+      throw rpcError;
+    }
+    const next = normalise(data, clubUUID);
     if (!next) throw new Error('The club operations overview returned no readable payload.');
-    shared.set(clubUUID, { at: Date.now(), value: next });
-    return next;
+    const reading = { at: Date.now(), value: next };
+    if (version === scopeVersion) shared.set(scope, reading);
+    return reading;
   })();
 
-  inflight.set(clubUUID, request);
+  inflight.set(scope, request);
   try {
     return await request;
   } finally {
-    inflight.delete(clubUUID);
+    if (inflight.get(scope) === request) inflight.delete(scope);
   }
 }
 
@@ -265,6 +349,10 @@ async function readOverview(clubUUID: string, force: boolean): Promise<ClubOpera
 export function useClubOperationsOverview(
   clubUUID: string | null | undefined
 ): ClubOperationsOverviewState {
+  const viewerId = useUserStore((state) => state.user?.id || null);
+  const [scopeEpoch, setScopeEpoch] = useState(scopeVersion);
+  const scope = `${viewerId || 'unresolved'}:${scopeEpoch}:${clubUUID || ''}`;
+  const currentScopeRef = useRef(scope);
   const [overview, setOverview] = useState<ClubOperationsOverview | null>(null);
   const [loading, setLoading] = useState(Boolean(clubUUID));
   const [error, setError] = useState<string | null>(null);
@@ -272,6 +360,22 @@ export function useClubOperationsOverview(
   const [refreshedAt, setRefreshedAt] = useState<number | null>(null);
   const requestRef = useRef(0);
   const clubRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    observeScope();
+    const changed = () => {
+      requestRef.current += 1;
+      setOverview(null);
+      setRefreshedAt(null);
+      setDenied(false);
+      setError(null);
+      setScopeEpoch(scopeVersion);
+    };
+    scopeListeners.add(changed);
+    return () => {
+      scopeListeners.delete(changed);
+    };
+  }, []);
 
   /**
    * @param silent do not show the loading state (a background refresh).
@@ -286,14 +390,14 @@ export function useClubOperationsOverview(
       const requestId = ++requestRef.current;
       if (!silent) setLoading(true);
       try {
-        const next = await readOverview(clubUUID, force);
+        const next = await readOverview(clubUUID, scope, force);
         // A later request has already answered. Dropping this one keeps an
         // out-of-order reply from overwriting fresher numbers.
         if (requestId !== requestRef.current) return;
-        setOverview(next);
+        setOverview(next.value);
         setDenied(false);
         setError(null);
-        setRefreshedAt(Date.now());
+        setRefreshedAt(next.at);
       } catch (loadError) {
         if (requestId !== requestRef.current) return;
         if (isAuthzError(loadError)) {
@@ -308,13 +412,14 @@ export function useClubOperationsOverview(
         if (requestId === requestRef.current) setLoading(false);
       }
     },
-    [clubUUID]
+    [clubUUID, scope]
   );
 
   // A club change must not leave the previous club's numbers on screen for a
   // beat: they are indistinguishable from this club's numbers.
   useEffect(() => {
-    if (clubRef.current !== (clubUUID || null)) {
+    if (clubRef.current !== (clubUUID || null) || currentScopeRef.current !== scope) {
+      currentScopeRef.current = scope;
       clubRef.current = clubUUID || null;
       requestRef.current += 1;
       setOverview(null);
@@ -323,7 +428,7 @@ export function useClubOperationsOverview(
       setRefreshedAt(null);
       setLoading(Boolean(clubUUID));
     }
-  }, [clubUUID]);
+  }, [clubUUID, scope]);
 
   useEffect(() => {
     if (!clubUUID) return;
@@ -361,7 +466,7 @@ export function useClubOperationsOverview(
   }, [clubUUID, load]);
 
   const revalidate = useCallback(() => {
-    void load({ silent: true, force: true });
+    return load({ silent: true, force: true });
   }, [load]);
   useVisibilityRefresh(revalidate);
 

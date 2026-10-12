@@ -123,6 +123,32 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('the rake snapshot on a union', () => {
+  it('lets an in-flight snapshot finish through repeated ledger refreshes', async () => {
+    let resolveRead!: (value: unknown) => void;
+    const pending = new Promise((resolve) => {
+      resolveRead = resolve;
+    });
+    rpcMock.mockImplementation((fn: string) =>
+      fn === 'ca_rake_snapshot' ? pending : Promise.resolve({ data: null, error: null })
+    );
+    const props = { clubId: null, unionId: UNION_ID, userId: USER_ID, scopes: ['union'] as const };
+    const { rerender } = render(
+      <RakeSnapshotPanel {...props} scopes={['union']} refreshToken={1} />
+    );
+    await waitFor(() => expect(asked()).toHaveLength(1));
+    for (const refreshToken of [2, 3, 4]) {
+      rerender(<RakeSnapshotPanel {...props} scopes={['union']} refreshToken={refreshToken} />);
+    }
+    expect(asked()).toHaveLength(1);
+    await act(async () =>
+      resolveRead({ data: payload('club', [clubRow(CLUB_A, 'SHARK CLUB')]), error: null })
+    );
+    expect(await screen.findByRole('button', { name: /SHARK CLUB/ })).toBeInTheDocument();
+    expect(screen.queryByText('Reading Rollups')).not.toBeInTheDocument();
+    rerender(<RakeSnapshotPanel {...props} scopes={['union']} refreshToken={5} />);
+    await waitFor(() => expect(asked()).toHaveLength(2));
+  });
+
   it('reads the union when there is no club at all', async () => {
     rpcMock.mockImplementation((fn: string) =>
       fn === 'ca_rake_snapshot'
@@ -142,6 +168,64 @@ describe('the rake snapshot on a union', () => {
     expect(calls[0].p_union_id, 'the union was not passed down').toBe(UNION_ID);
     expect(calls[0].p_club_id, 'a union page must not invent a club').toBeNull();
     expect(calls[0].p_scope).toBe('union');
+  });
+
+  it('starts a new reporting question and rejects the old response', async () => {
+    let resolveOld!: (value: unknown) => void;
+    const oldRead = new Promise((resolve) => {
+      resolveOld = resolve;
+    });
+    rpcMock.mockImplementation((fn: string, args: { p_union_id?: string }) => {
+      if (fn !== 'ca_rake_snapshot') return Promise.resolve({ data: null, error: null });
+      if (args.p_union_id === UNION_ID) return oldRead;
+      return Promise.resolve({
+        data: payload('club', [clubRow(CLUB_A, 'Current Club')]),
+        error: null,
+      });
+    });
+    const { rerender } = render(
+      <RakeSnapshotPanel clubId={null} unionId={UNION_ID} userId={USER_ID} scopes={['union']} />
+    );
+    await waitFor(() => expect(asked()).toHaveLength(1));
+    rerender(
+      <RakeSnapshotPanel clubId={null} unionId="new-union" userId={USER_ID} scopes={['union']} />
+    );
+    expect(await screen.findByRole('button', { name: /Current Club/ })).toBeInTheDocument();
+    await act(async () =>
+      resolveOld({ data: payload('club', [clubRow(CLUB_A, 'Old Club')]), error: null })
+    );
+    expect(screen.queryByRole('button', { name: /Old Club/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Current Club/ })).toBeInTheDocument();
+  });
+
+  it('releases a failed read so the operator can retry', async () => {
+    rpcMock.mockImplementationOnce(() =>
+      Promise.resolve({ data: null, error: new Error('Snapshot Refused') })
+    );
+    rpcMock.mockImplementation(() =>
+      Promise.resolve({ data: payload('club', [clubRow(CLUB_A, 'Recovered Club')]), error: null })
+    );
+    const { rerender } = render(
+      <RakeSnapshotPanel
+        clubId={null}
+        unionId={UNION_ID}
+        userId={USER_ID}
+        scopes={['union']}
+        refreshToken={1}
+      />
+    );
+    await waitFor(() => expect(screen.queryByText('Reading Rollups')).not.toBeInTheDocument());
+    rerender(
+      <RakeSnapshotPanel
+        clubId={null}
+        unionId={UNION_ID}
+        userId={USER_ID}
+        scopes={['union']}
+        refreshToken={2}
+      />
+    );
+    expect(await screen.findByRole('button', { name: /Recovered Club/ })).toBeInTheDocument();
+    expect(asked()).toHaveLength(2);
   });
 
   it('opens only the member clubs the server says will open', async () => {

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   getClubOperationBadge,
@@ -10,9 +10,12 @@ import { useCommunityOverview } from '../../hooks/useCommunityOverview';
 import {
   useClubOperationsOverview,
   type ClubOperationsAlert,
+  type ClubOperationsOverviewState,
 } from '../../hooks/useClubOperationsOverview';
 import { withClubContext } from '../../utils/clubScopedPath';
-import { formatChips, formatInt } from '../../utils/clubDashboard';
+import { formatInt } from '../../utils/clubDashboard';
+import { compactChips } from '../../utils/format';
+import { freshnessLabel } from '../../utils/clubOperationsFreshness';
 import { mediaUrl } from '../../utils/mediaBase';
 import { LEGAL_CENTER, LEGAL_CENTER_ENTRIES } from '../legalCenterContent';
 import styles from './ArenaWorkspacePages.module.css';
@@ -44,6 +47,7 @@ function WorkspacePage({
   readings,
   alerts,
   liveLine = 'Live Systems Remain Authoritative',
+  readingState,
 }: {
   eyebrow: string;
   title: string;
@@ -53,12 +57,29 @@ function WorkspacePage({
   readings?: WorkspaceReading[];
   alerts?: WorkspaceAlert[];
   liveLine?: string;
+  readingState?: ClubOperationsOverviewState;
 }) {
   /* The club source the section rail beside this grid reads, so a card and
      the rail tab for the same page carry the same club. Paths that are not
      about one club (legal, help, friends, a /clubs/... tool) come back from
      withClubContext untouched. */
   const { routeClubId } = useClubWorkspace();
+  const [now, setNow] = useState(() => Date.now());
+  const hasReadingState = Boolean(readingState);
+  useEffect(() => {
+    if (!hasReadingState) return;
+    const timer = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(timer);
+  }, [hasReadingState]);
+  const status = readingState
+    ? freshnessLabel({
+        error: !!readingState.error,
+        denied: readingState.denied,
+        loading: readingState.loading,
+        refreshedAt: readingState.refreshedAt,
+        now,
+      })
+    : liveLine;
   /* A <section>, not a <main>. AppLayout already renders <main
      id="main-content"> around the router outlet, so every one of these pages
      was shipping two main landmarks and an ambiguous skip link. */
@@ -70,13 +91,29 @@ function WorkspacePage({
           <h1>{title}</h1>
           <p>{description}</p>
           <span className={styles.liveLine}>
-            <span aria-hidden="true" /> {liveLine}
+            <span aria-hidden="true" /> {status}
           </span>
         </div>
         <div className={styles.artFrame} aria-hidden="true">
           <img src={mediaUrl(art)} alt="" />
         </div>
       </header>
+
+      {readingState && (
+        <button
+          type="button"
+          className={styles.readingsRefresh}
+          onClick={readingState.refresh}
+          disabled={
+            readingState.loading ||
+            readingState.denied ||
+            (!readingState.overview && !readingState.error)
+          }
+          aria-label="Refresh Club Readings"
+        >
+          {readingState.loading ? 'Reading' : 'Refresh'}
+        </button>
+      )}
 
       {readings && readings.length > 0 && (
         <section className={styles.readings} aria-label={`${title} Readings`}>
@@ -154,7 +191,7 @@ function WorkspacePage({
 function useClubWorkspaceGroup(group: ClubOperationGroupId) {
   const { clubId = '' } = useParams();
   const access = useClubWorkspace();
-  const { overview } = useClubOperationsOverview(
+  const readingState = useClubOperationsOverview(
     access.isClubStaff &&
       !access.loading &&
       !access.error &&
@@ -162,6 +199,7 @@ function useClubWorkspaceGroup(group: ClubOperationGroupId) {
       ? access.clubUUID
       : null
   );
+  const { overview } = readingState;
   const items = useMemo(
     () => getClubOperationGroups(clubId, access).find((entry) => entry.id === group)?.items || [],
     [access, clubId, group]
@@ -198,7 +236,7 @@ function useClubWorkspaceGroup(group: ClubOperationGroupId) {
     [items, overview]
   );
 
-  return { links, alerts, overview };
+  return { links, alerts, overview, readingState };
 }
 
 export function RewardsWorkspacePage() {
@@ -415,19 +453,19 @@ export function LegalWorkspacePage() {
 }
 
 export function ClubFinanceWorkspacePage() {
-  const { links, alerts, overview } = useClubWorkspaceGroup('finance');
+  const { links, alerts, overview, readingState } = useClubWorkspaceGroup('finance');
   const kpis = overview?.kpis;
   const counts = overview?.counts;
   const readings: WorkspaceReading[] = [];
   if (kpis) {
     if (typeof kpis.club_bank === 'number') {
-      readings.push({ label: 'Club Bank', value: formatChips(kpis.club_bank) });
+      readings.push({ label: 'Club Bank', value: compactChips(kpis.club_bank) });
     }
     if (typeof kpis.member_chips === 'number') {
-      readings.push({ label: 'Member Wallets', value: formatChips(kpis.member_chips) });
+      readings.push({ label: 'Member Wallets', value: compactChips(kpis.member_chips) });
     }
     if (typeof kpis.rake_today === 'number') {
-      readings.push({ label: 'Fees Today', value: formatChips(kpis.rake_today) });
+      readings.push({ label: 'Cash Rake Today', value: compactChips(kpis.rake_today) });
     }
     readings.push({ label: 'Hands Today', value: formatInt(kpis.hands_today) });
   }
@@ -446,6 +484,7 @@ export function ClubFinanceWorkspacePage() {
       liveLine={
         readings.length > 0 ? 'Read Live From This Club' : 'Live Systems Remain Authoritative'
       }
+      readingState={readingState}
       readings={readings}
       alerts={alerts}
       links={links}
@@ -454,7 +493,7 @@ export function ClubFinanceWorkspacePage() {
 }
 
 export function ClubControlWorkspacePage() {
-  const { links, alerts, overview } = useClubWorkspaceGroup('control');
+  const { links, alerts, overview, readingState } = useClubWorkspaceGroup('control');
   const kpis = overview?.kpis;
   const counts = overview?.counts;
   const readings: WorkspaceReading[] = [];
@@ -479,6 +518,7 @@ export function ClubControlWorkspacePage() {
       liveLine={
         readings.length > 0 ? 'Read Live From This Club' : 'Live Systems Remain Authoritative'
       }
+      readingState={readingState}
       readings={readings}
       alerts={alerts}
       links={links}

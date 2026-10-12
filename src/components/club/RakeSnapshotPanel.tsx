@@ -238,6 +238,7 @@ export default function RakeSnapshotPanel({
   const [exportAnnouncement, setExportAnnouncement] = useState('');
 
   const version = useRef(0);
+  const activeHeadRead = useRef<{ question: string; generation: number } | null>(null);
   const cancelled = useRef(false);
   const exportAbortControllerRef = useRef<AbortController | null>(null);
   const exportGenerationRef = useRef(0);
@@ -260,6 +261,8 @@ export default function RakeSnapshotPanel({
     cancelled.current = false;
     return () => {
       cancelled.current = true;
+      version.current += 1;
+      activeHeadRead.current = null;
       exportGenerationRef.current += 1;
       exportAbortControllerRef.current?.abort();
       exportAbortControllerRef.current = null;
@@ -326,6 +329,7 @@ export default function RakeSnapshotPanel({
     const hadIdentity = viewIdentityRef.current.length > 0;
     viewIdentityRef.current = nextIdentity;
     version.current += 1;
+    activeHeadRead.current = null;
     cursor.current = 0;
     expanded.current = false;
     if (hadIdentity) {
@@ -416,7 +420,13 @@ export default function RakeSnapshotPanel({
     async (quiet = false) => {
       // A union page has no club, and that is not a reason not to read.
       if (!clubId && !unionId) return;
+      // Ledger events can arrive faster than this read completes. The same
+      // question must finish before a refresh can replace it; otherwise every
+      // response becomes obsolete and the initial totals never leave loading.
+      const question = `${userId ?? ''}:${contextId ?? ''}:${cacheKey}`;
+      if (activeHeadRead.current?.question === question) return;
       const mine = ++version.current;
+      activeHeadRead.current = { question, generation: mine };
       if (!quiet) setLoading(true);
       setError(null);
       setPageError(null);
@@ -461,6 +471,7 @@ export default function RakeSnapshotPanel({
         setError(describeRakeSnapshotError(e));
         reportError(e, 'RakeSnapshotPanel.load');
       } finally {
+        if (activeHeadRead.current?.generation === mine) activeHeadRead.current = null;
         if (!cancelled.current && mine === version.current) setLoading(false);
       }
     },

@@ -227,17 +227,11 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* max(), because this box answers to two masters and only one of them scales
-     with the felt. The literal is the TEXT floor — the name and stack are sized
-     in rem and do not shrink or grow with the table, so the box can never be
-     narrower than they need, and that floor is genuinely viewport-keyed (the
-     rungs at 640 / 480 / 380 below are the same number for smaller type). The
-     proportional term is the AVATAR, which does scale now: 1.143 is 96/84, the
-     ratio this rule and the old full-size slot already stood in.
-     Consequence, and the reason it is max() and not clamp(): nothing gets
-     narrower than it is today at any width, and the box grows only when a
-     bigger felt would otherwise push the avatar out through its sides. */
-  width: max(96px, calc(var(--seat-avatar-full) * 1.143));
+  /* A full-width plate makes both the name and chip count readable. The
+     minimum grows on phones; the avatar term still follows the real felt.
+     The corresponding marker keep-outs are in tableGeometry.ts. */
+  --seat-plate-min-width: 98px;
+  width: max(var(--seat-plate-min-width), calc(var(--seat-avatar-full) * 1.143));
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition:
@@ -704,7 +698,11 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: var(--space-sm) 10px var(--space-xs);
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 54px;
+  justify-content: center;
+  padding: 8px 6px;
   background: var(--seat-bg, rgba(15, 20, 35, 0.92));
   border-radius: var(--radius-md);
   border: 1.5px solid var(--seat-border, rgba(255, 255, 255, 0.08));
@@ -725,7 +723,7 @@
 }
 
 .seat__name {
-  font-size: var(--font-xs);
+  font-size: 0.875rem;
   font-weight: var(--weight-semibold);
   /* --seat-text, not --text-primary: the plate is dark in EVERY interface
      theme (see the light-mode note in design-tokens.css), so its text must
@@ -736,7 +734,7 @@
   /* Dan 2026-08-30: never "..." - the TSX cuts names at a character budget
      (limitSeatName), so anything that still overflows clips silently. */
   text-overflow: clip;
-  max-width: 76px;
+  max-width: 100%;
   text-align: center;
   line-height: 1.3;
 }
@@ -769,7 +767,7 @@
    `.toLocaleString()` in SeatSlot.tsx (`formatStack`), never `.padStart()`.
    ═══════════════════════════════════════════════════════════════════════════ */
 .seat__stack {
-  font-size: 0.6875rem;
+  font-size: 1rem;
   font-weight: 700;
   color: var(--stack-healthy, #f3f4f6);
   font-family: var(--sp-amount-font);
@@ -1296,7 +1294,7 @@
   --seat-avatar-size: calc(var(--seat-avatar-base, 84px) * var(--seat-avatar-hero-ratio, 1.3333));
   /* Must clear the wider avatar. 96/84 = 128/112 = 8/7, so deriving keeps the
      name box in the same proportion to the art at every breakpoint. */
-  width: calc(var(--seat-avatar-size) * 8 / 7) !important;
+  width: max(var(--seat-plate-min-width), calc(var(--seat-avatar-size) * 8 / 7)) !important;
 }
 
 /* ── 2026-08-28: THREE `!important` HERO RUNGS DELETED HERE ────────────────
@@ -1334,6 +1332,9 @@
 }
 
 .seat--hero .seat__info {
+  /* Keep the taller plate wider than the old text box while preserving the
+     rotated-card corner clearance beside the larger hero avatar. */
+  width: min(100%, max(100px, calc(var(--seat-avatar-size) * 0.95)));
   border-color: rgba(255, 215, 0, 0.25);
 }
 
@@ -3529,19 +3530,21 @@
      including this one. What stays is the TEXT floor, which does not scale with
      the felt because rem does not. */
   .seat {
-    width: max(88px, calc(var(--seat-avatar-full) * 1.143));
+    --seat-plate-min-width: 112px;
+    width: max(var(--seat-plate-min-width), calc(var(--seat-avatar-full) * 1.143));
   }
 
   .seat__info {
-    min-width: 64px;
-    padding: 7px 8px 3px;
+    min-width: 0;
+    min-height: 48px;
+    padding: 7px 8px;
   }
   .seat__name {
-    font-size: 0.625rem;
-    max-width: 66px;
+    font-size: 0.75rem;
+    max-width: 100%;
   }
   .seat__stack {
-    font-size: 0.625rem;
+    font-size: 0.875rem;
   }
 
   /* `.seat__card { width: 28px; height: 38px }` DELETED 2026-08-28 — dead on
@@ -3592,7 +3595,8 @@
      coefficients on the base `.seat` rule come from. So this breakpoint renders
      what it always rendered; it just no longer has to say so. */
   .seat {
-    width: max(80px, calc(var(--seat-avatar-full) * 1.143));
+    --seat-plate-min-width: 104px;
+    width: max(var(--seat-plate-min-width), calc(var(--seat-avatar-full) * 1.143));
   }
 
   /* The per-breakpoint --sp-wrap-overlap rung that was here is DELETED
@@ -3601,15 +3605,16 @@
      and needs no rung. */
 
   .seat__info {
-    min-width: 58px;
-    padding: 6px 6px 3px;
+    min-width: 0;
+    min-height: 48px;
+    padding: 7px 8px;
   }
   .seat__name {
-    font-size: 0.5625rem;
-    max-width: 58px;
+    font-size: 0.75rem;
+    max-width: 100%;
   }
   .seat__stack {
-    font-size: 0.5625rem;
+    font-size: 0.875rem;
   }
 
   /* `.seat__card { width: 24px; height: 34px }` DELETED 2026-08-28 — see the
@@ -3648,20 +3653,22 @@
      That is the one place a proportion is deliberately overruled, and it is
      overruled in the direction of the smallest screen. */
   .seat {
-    width: max(72px, calc(var(--seat-avatar-full) * 1.143));
+    --seat-plate-min-width: 100px;
+    width: max(var(--seat-plate-min-width), calc(var(--seat-avatar-full) * 1.143));
   }
 
   .seat__info {
-    min-width: 52px;
-    padding: 5px 5px 2px;
+    min-width: 0;
+    min-height: 48px;
+    padding: 7px 8px;
     border-radius: 6px;
   }
   .seat__name {
-    font-size: 0.5rem;
-    max-width: 50px;
+    font-size: 0.75rem;
+    max-width: 100%;
   }
   .seat__stack {
-    font-size: 0.5rem;
+    font-size: 0.875rem;
   }
 
   /* `.seat__card { width: 22px; height: 30px }` DELETED 2026-08-28 — see the
@@ -3900,6 +3907,9 @@
    Targeting `.seat` inside the wrapper (0,2,0) puts the cap above the
    responsive `.seat` rules (0,1,0) at every width. */
 .seat-wrapper--top .seat {
+  /* Centering the taller plate otherwise lifts the unchanged avatar into
+     the banner. Keep its crown at the previously clear top position. */
+  top: 12px;
   /* min(), not a ratio. This is a CLEARANCE against the BBJ banner, and the
      banner does not scale with the viewport, so neither may its ceiling.
      (It is no longer one number: since 2026-09-11 --sp-bbj-h is the nameplate
@@ -4692,7 +4702,10 @@
     /* The pair and every PLO hand share one size, capped to the fan's lane. */
     --sp-card2-w: min(
       clamp(50px, calc(var(--table-w, 380px) * 0.139), 100px),
-      calc((100vw - var(--seat-avatar-size) * 8 / 7 - 36px) / 4.5)
+      calc(
+        (100vw - max(var(--seat-plate-min-width), calc(var(--seat-avatar-size) * 8 / 7)) - 36px) /
+          4.5
+      )
     );
   }
 
@@ -4701,7 +4714,10 @@
   .seat__cards--hero.seat__cards--revealed:has(> :nth-child(6)) {
     --sp-hero-card-w: min(
       var(--sp-cardrev-w, 44px),
-      calc((100vw - var(--seat-avatar-size) * 8 / 7 - 36px) / (2 * var(--sp-hfan-n, 4)) - 1px)
+      calc(
+        (100vw - max(var(--seat-plate-min-width), calc(var(--seat-avatar-size) * 8 / 7)) - 36px) /
+          (2 * var(--sp-hfan-n, 4)) - 1px
+      )
     );
   }
 }

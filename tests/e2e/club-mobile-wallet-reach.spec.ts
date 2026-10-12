@@ -17,9 +17,8 @@ const walletCss = readFileSync('src/components/wallet/DynamicWallet.css', 'utf8'
 
 test.use({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true });
 
-test('Share owns 44px and collapsed wallet controls are not exposed', async ({ page }) => {
-  await page.setContent(
-    `
+function lobbyFixture(): string {
+  return `
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       * { box-sizing: border-box; }
@@ -62,8 +61,7 @@ test('Share owns 44px and collapsed wallet controls are not exposed', async ({ p
             </div>
             <div class="club-identity__footer">
               <span class="club-identity__playing" style="left: 56.1941%; top: 56.5476%; width: 11.6220%; height: 9.2262%"><strong>7</strong></span>
-              <button class="club-identity__invite" type="button" aria-label="Share And Invite" style="left: 63.2184%; top: 69.3452%; width: 20.7536%; height: 9.8214%"><span class="club-identity__invite-text"><span>Share &amp; Invite</span></span></button>
-              <button class="club-identity__share" type="button" aria-label="Copy referral link" style="left: 67.9438%; top: 27.9762%; width: 14.4317%; height: 28.8690%"></button>
+              <button class="club-identity__share" type="button" aria-label="Share And Invite" title="Copy Referral Link" style="left: 67.9438%; top: 27.9762%; width: 14.4317%; height: 28.8690%"><span class="club-identity__invite" style="left: -32.7434%; top: 143.2990%; width: 143.8053%; height: 34.0206%"><span class="club-identity__invite-text"><span>Share &amp; Invite</span></span></span></button>
             </div>
           </section>
           <button class="lobby-bbj" type="button">Bad Beat Jackpot</button>
@@ -85,8 +83,11 @@ test('Share owns 44px and collapsed wallet controls are not exposed', async ({ p
         </div>
       </div>
     </main>
-  `
-  );
+  `;
+}
+
+test('Share owns 44px and collapsed wallet controls are not exposed', async ({ page }) => {
+  await page.setContent(lobbyFixture());
 
   /* MEASURE THE RUN, DO NOT SAMPLE THREE POINTS (rewritten 2026-09-03).
    *
@@ -106,7 +107,7 @@ test('Share owns 44px and collapsed wallet controls are not exposed', async ({ p
    * cannot be satisfied by luck - and it still fails the original regression,
    * a 12px glyph owning only its painted box.
    */
-  const share = page.getByRole('button', { name: 'Copy referral link' });
+  const share = page.getByRole('button', { name: 'Share And Invite', exact: true });
   const reach = await share.evaluate((button) => {
     const box = button.getBoundingClientRect();
     const x = Math.round(box.left + box.width / 2);
@@ -138,3 +139,62 @@ test('Share owns 44px and collapsed wallet controls are not exposed', async ({ p
   await expect(page.getByText('Diamond Wallet')).toBeVisible();
   await expect(page.getByText('Player Wallet')).toBeVisible();
 });
+
+/* EVERY CONTROL ON THE CARD ANSWERS TO A THUMB, AT 375 AND 393 (2026-10-12).
+ *
+ * PR #6705 turned the blue plate under PLAYING NOW into a second button,
+ * "Share & Invite", 24px below the copy frame's centre at 375px. The
+ * post-deploy sweep (mobile-tap-targets.spec.ts) then failed on every run:
+ * `button.club-identity__invite "Share & Invite" box 7px, reachable 0px`.
+ * Its own 44px ::after was clipped by the `overflow: hidden` every printed
+ * zone carries, and the copy frame's band covered the top of the plate.
+ *
+ * This replays that sweep's exact rule on the real stylesheets, before merge:
+ * from each control's centre, walk 4px at a time up to 20px each way and
+ * require every probe to land on the control. The two ID lines are excluded
+ * by selector exactly as the sweep excludes them (KNOWN_DESIGN_LIMITED). */
+for (const width of [375, 393]) {
+  test(`every control on the club card answers to a thumb at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 812 });
+    await page.setContent(lobbyFixture());
+
+    const results = await page.evaluate(() => {
+      const REACH = 20;
+      const card = document.querySelector('.club-identity')!;
+      return [...card.querySelectorAll('button, a[href], [role="button"]')]
+        .filter((el) => !el.matches('.club-identity__line'))
+        .map((el) => {
+          const b = el.getBoundingClientRect();
+          const cx = b.left + b.width / 2;
+          const cy = b.top + b.height / 2;
+          let reach = 0;
+          for (let d = 0; d <= REACH; d += 4) {
+            const owns = (t: Element | null) =>
+              !!t && (t === el || el.contains(t) || t.contains(el));
+            if (!owns(document.elementFromPoint(cx, cy - d))) break;
+            if (!owns(document.elementFromPoint(cx, cy + d))) break;
+            reach = d;
+          }
+          return {
+            control: `${el.tagName.toLowerCase()}.${String(el.className).split(' ')[0]}`,
+            name: el.getAttribute('aria-label'),
+            reachablePx: reach * 2,
+          };
+        });
+    });
+
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.filter((r) => r.reachablePx < 40)).toEqual([]);
+
+    /* The plate still reads "Share & Invite", and pressing the words shares:
+       the centre of the painted plate belongs to a Share And Invite control. */
+    const plate = page.locator('.club-identity__invite');
+    await expect(plate).toHaveText('Share & Invite');
+    const hit = await plate.evaluate((node) => {
+      const b = node.getBoundingClientRect();
+      const t = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+      return t?.closest('button')?.getAttribute('aria-label') ?? null;
+    });
+    expect(hit).toBe('Share And Invite');
+  });
+}

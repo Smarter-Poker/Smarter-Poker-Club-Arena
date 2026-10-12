@@ -317,6 +317,7 @@ import {
   chipCollectOffsetPx,
   POT_ANCHOR_PCT,
   seatPodPx,
+  fitSeatToViewport,
 } from '../components/table/tableGeometry';
 import PreActionBar from '../components/table/PreActionBar';
 import LightningFoldBar from '../components/table/LightningFoldBar';
@@ -13344,7 +13345,7 @@ function LiveTablePage({
               // lobby destination, including the persisted last entered club.
               const viewerClubId =
                 unionName && clubName === unionName
-                  ? await resolveLobbyClubId(lobbyClubArgs)
+                  ? await resolveLobbyClubId({ ...lobbyClubArgs, unionId: clubData.union_id })
                   : null;
               if (
                 unionName &&
@@ -20163,7 +20164,19 @@ function LiveTablePage({
     [tableState.blinds, tableState.gameType]
   );
 
-  const seatPositions = useMemo(() => seatRotationMap.map((s) => s.pos), [seatRotationMap]);
+  const seatViewportWidth = typeof window === 'undefined' ? 1024 : window.innerWidth;
+  const seatPositions = useMemo(() => {
+    const canvasLeft = tableScalerRef.current?.getBoundingClientRect().left;
+    return seatRotationMap.map(({ pos }) =>
+      fitSeatToViewport(
+        pos,
+        scalerSize,
+        seatViewportWidth,
+        seatPodPx(seatViewportWidth, pos.y >= 100 && pos.x === 50, scalerSize.w),
+        canvasLeft
+      )
+    );
+  }, [seatRotationMap, scalerSize, seatViewportWidth]);
   // Published for the deferred chip flights; the ref is declared far above
   // (see seatPositionsRef) so the event handlers can read it.
   seatPositionsRef.current = seatPositions;
@@ -25950,7 +25963,8 @@ function LiveTablePage({
             // index means a different chair on every ring.
             const seatPod = seatPodPx(
               typeof window === 'undefined' ? Infinity : window.innerWidth,
-              pos.y >= 100 && pos.x === 50
+              pos.y >= 100 && pos.x === 50,
+              scalerSize.w
             );
             const dx = 50 - pos.x;
             const dy = 50 - pos.y;

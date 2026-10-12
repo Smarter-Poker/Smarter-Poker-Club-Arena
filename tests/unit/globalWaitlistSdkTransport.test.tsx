@@ -245,11 +245,16 @@ it('delivers real SDK row updates through the mounted listener, bus, service and
     await act(async () => {
       queue.update(true);
     });
-    await screen.findByText('Seat Held');
-    await screen.findByText('Local Queue Table');
-    await expect.poll(() => state.toast.success.mock.calls.length).toBe(1);
+    // Dan 2026-10-12: a held seat raises no popup. The offer still travels the
+    // bus, and the place-in-line card it replaces is taken away, not turned
+    // into a "Seat Held" card; no toast is raised.
+    await expect
+      .poll(() => offers)
+      .toContainEqual({ tableId, tableName: '', holdExpiresAt: firstDeadline });
+    await expect.poll(() => screen.queryByText('#1')).toBeNull();
+    expect(screen.queryByText('Seat Held')).toBeNull();
+    expect(state.toast.success).not.toHaveBeenCalled();
     expect(screen.getByTestId('location').textContent).toBe('/lobby');
-    expect(offers).toContainEqual({ tableId, tableName: '', holdExpiresAt: firstDeadline });
     const offerCount = offers.length;
     const readCount = queue.reads.length;
     await act(async () => {
@@ -257,7 +262,7 @@ it('delivers real SDK row updates through the mounted listener, bus, service and
     });
     await expect.poll(() => queue.reads.length).toBeGreaterThan(readCount);
     expect(offers).toHaveLength(offerCount);
-    expect(state.toast.success).toHaveBeenCalledTimes(1);
+    expect(state.toast.success).not.toHaveBeenCalled();
 
     const movedDeadline = new Date(Date.now() + 360_000).toISOString();
     queue.patch({ hold_expires_at: movedDeadline });
@@ -267,25 +272,25 @@ it('delivers real SDK row updates through the mounted listener, bus, service and
     await expect
       .poll(() => offers.at(-1))
       .toEqual({ tableId, tableName: '', holdExpiresAt: movedDeadline });
-    expect(state.toast.success).toHaveBeenCalledTimes(1);
-    // Deterministic local clock only: after the old deadline, the actual banner
-    // still displays the reseeded hold. No production clock or offer is changed.
-    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(Date.parse(firstDeadline) + 1_000);
-    try {
-      mounted.rerender(<MountedQueue />);
-      expect(screen.getByText('Seat Held')).toBeTruthy();
-    } finally {
-      dateNow.mockRestore();
-    }
+    expect(state.toast.success).not.toHaveBeenCalled();
+    expect(screen.queryByText('Seat Held')).toBeNull();
 
     mounted.unmount();
     await expect.poll(() => queue.channels.size).toBe(0);
     masterBus.reset();
     await queue.reloadClient();
+    const reloadOffers: unknown[] = [];
+    const unlistenReload = masterBus.subscribe('WAITLIST_SEAT_OFFERED', (event) =>
+      reloadOffers.push(event.payload)
+    );
     mounted = render(<MountedQueue />);
-    await screen.findByText('Seat Held');
     await expect.poll(() => queue.channels.size).toBe(2);
-    expect(state.toast.success).toHaveBeenCalledTimes(1);
+    // The reload re-reads the live hold and re-announces it on the bus, still
+    // with no card and no toast.
+    await expect.poll(() => reloadOffers.length).toBeGreaterThan(0);
+    unlistenReload();
+    expect(screen.queryByText('Seat Held')).toBeNull();
+    expect(state.toast.success).not.toHaveBeenCalled();
     expect(screen.getByTestId('location').textContent).toBe('/lobby');
     expect(queue.writes).toEqual([]);
     expect(queue.sent.length).toBe(5);

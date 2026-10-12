@@ -14,11 +14,9 @@
  */
 
 import { useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { masterBus } from '../../core/MasterBus';
-import { useToast } from './Toast';
 import { reportError } from '../../utils/errorReporter';
 import { decideSeatOffer, holdDeadline } from './waitlistSeatOffer';
 
@@ -29,8 +27,6 @@ const BACKOFF_DELAYS = [1000, 2000, 4000, 8000, 16000, 30000]; // Exponential ba
 
 export default function GlobalWaitlistListener() {
   const { user } = useAuthUser();
-  const navigate = useNavigate();
-  const toast = useToast();
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCountRef = useRef(0);
   const cleanedUpRef = useRef(false);
@@ -292,7 +288,7 @@ export default function GlobalWaitlistListener() {
         }, delay);
       }
     });
-  }, [user?.id, navigate, toast, refreshQueuePosition]);
+  }, [user?.id, refreshQueuePosition]);
 
   /**
    * Keep `watchedTableIdsRef` in step with the user's actual waitlist, and
@@ -429,16 +425,15 @@ export default function GlobalWaitlistListener() {
                remember showing, not `old.status`, which an RLS-enabled table
                does not reliably send (see offeredHoldsRef). Three outcomes:
 
-                 nothing remembered      -> a new offer. Banner, name, toast.
-                 remembered, new deadline -> the thaw moved the hold. Re-emit so
-                                             the countdown re-seeds, no toast:
-                                             the player already has this offer.
+                 nothing remembered      -> a new offer. Tell the bus once.
+                 remembered, new deadline -> the thaw moved the hold. Re-emit
+                                             with the new deadline.
                  remembered, same deadline -> a duplicate or an unrelated touch
                                              on the row. Ignored.
 
                The third case is new protection: a redelivery, or any other
                UPDATE that leaves the row notified with the same deadline, used
-               to reach the offer branch and toast again. */
+               to reach the offer branch and announce it again. */
             const decision = decideSeatOffer({
               eventType: (payload as WaitlistPayload).eventType,
               row: newRow,
@@ -462,39 +457,14 @@ export default function GlobalWaitlistListener() {
                 holdExpiresAt: deadline,
               });
 
-              if (decision.action === 'offer') {
-                /* Name the table. The banner card is otherwise anonymous -
-                   "Seat Held 0:47" with no indication of WHERE - and a player
-                   queued on more than one table cannot tell which seat is
-                   being held. One small read, only when an offer actually
-                   arrives, and the card still renders immediately if it
-                   fails: the emit happened first with no name, and the name
-                   follows if it resolves. */
-                void supabase
-                  .from('tables')
-                  .select('name')
-                  .eq('id', offeredTableId)
-                  .maybeSingle()
-                  .then(({ data }) => {
-                    if (data?.name) {
-                      masterBus.emit('WAITLIST_SEAT_OFFERED', {
-                        tableId: offeredTableId,
-                        tableName: String(data.name),
-                        holdExpiresAt: deadline,
-                      });
-                    }
-                  });
-                /* 60 SECONDS, NOT 15 (Dan 2026-08-30): the seat is now HELD for
-                   this player for 60s (fn_offer_open_seat + atomic_table_buyin
-                   SEAT_RESERVED guard), so the popup lives exactly as long as
-                   the hold. Tapping it lands on the table with the buy-in
-                   screen already open (?buyin=1). */
-                toast.success(
-                  'A Seat Just Opened For You. It Is Held For 60 Seconds. Tap Here To Take It.',
-                  60000,
-                  () => navigate(`/table/${offeredTableId}?buyin=1`)
-                );
-              }
+              /* NO "SEAT HELD" POPUP (Dan 2026-10-12): "there is not point to
+                 have a pop up with 'This seat is reserved click to take it.'
+                 That's already assumed and doesn't need a pop up." The sixty
+                 second "A Seat Just Opened For You ... Tap Here To Take It"
+                 toast is gone, and so is the banner card it fed. The hold
+                 itself is untouched on the server; the buy-in sheet counts it
+                 down, and a player waiting elsewhere is told by the "Seat
+                 Open" notification fn_offer_open_seat writes (bell and push). */
             }
             void refreshWatchedTables();
             masterBus.emit('WAITLIST_CHANGED', undefined as void);

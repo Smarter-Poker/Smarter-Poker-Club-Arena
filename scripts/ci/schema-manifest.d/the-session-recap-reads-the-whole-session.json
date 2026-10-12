@@ -1,0 +1,6 @@
+{
+  "_owner": "diamond-arena-matches-club-arena-phase-1. Applied to production as migration 20261012062409_the_session_recap_reads_the_whole_session_from_the_server: the caller's own open-session facts at one cash table (chips or Diamonds), and fn_my_cash_session_baseline extended to Diamond seats.",
+  "tables": [],
+  "functions": ["fn_my_table_session_facts", "fn_my_cash_session_baseline"],
+  "columns": {}
+}

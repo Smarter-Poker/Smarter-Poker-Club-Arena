@@ -1,8 +1,8 @@
 /**
  * THE DIAMOND ARENA ROUTE ON A PHONE (D8, 2026-09-20)
  *
- * `/hub/club-arena/clubs/diamond-arena` is the one room in this app that is
- * light rather than black, and it is the room a player reaches from the wallet
+ * `/hub/club-arena/clubs/diamond-arena` is black like every other room in this
+ * app (Dan 2026-10-12), and it is the room a player reaches from the wallet
  * while funded play is still switched off. What has to hold on the narrowest
  * phone we support, in both orientations:
  *
@@ -10,12 +10,10 @@
  *   2. asking for the arena without a session does not LOSE the arena: the
  *      sign-in bounce carries the route back, so the selection survives the
  *      door;
- *   3. on the arena, the light scheme is published on its own attribute
- *      (`data-arena-scheme`) and not by rewriting the player's `data-theme`;
+ *   3. on the arena, no light room is published: the retired
+ *      `data-arena-scheme` attribute is absent and the ground is black;
  *   4. controls match the current server switches, a refresh keeps the arena,
- *      and walking back out takes the scheme away again. A scheme that is
- *      applied but never removed reads as correct on the arena and turns the
- *      chip estate white.
+ *      and walking in and out never turns any room white.
  *
  * THREE OUTCOMES, NOT TWO. `ci.yml` runs this suite against production SIGNED
  * OUT and holds no credentials, by design; `post-deploy-e2e.yml` runs it with
@@ -101,11 +99,11 @@ async function horizontalOverflow(page: Page): Promise<{ root: number; body: num
   }));
 }
 
-test('the stylesheet keys the light room on the attribute this spec reads', () => {
-  /* Static, so it certifies on every run including the signed-out one: the
-     attribute asserted below is the one the published scheme block selects. */
-  const css = readFileSync('src/styles/club-engine.css', 'utf8');
-  expect(css).toContain(`html[${SCHEME_ATTR}='light']`);
+test('no stylesheet keeps a light room for the arena', () => {
+  /* Static, so it certifies on every run including the signed-out one. */
+  for (const sheet of ['src/styles/club-engine.css', 'src/pages/ClubHomePage.css']) {
+    expect(readFileSync(sheet, 'utf8')).not.toContain(`[${SCHEME_ATTR}='light']`);
+  }
 });
 
 for (const [orientation, viewport] of ORIENTATIONS) {
@@ -133,12 +131,10 @@ for (const [orientation, viewport] of ORIENTATIONS) {
       );
     });
 
-    test('publishes the light scheme on its own attribute and leaves the player theme alone', async ({
-      page,
-    }) => {
+    test('is black like the club arena and leaves the player theme alone', async ({ page }) => {
       const { onArena, why } = await openArena(page);
       test.skip(!onArena, why);
-      expect(await scheme(page)).toBe('light');
+      expect(await scheme(page)).toBeNull();
       /* The scheme says where you are. `data-theme` says what you prefer, and
          walking into a room may not rewrite it. */
       const theme = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
@@ -280,19 +276,19 @@ test.describe('the Diamond Arena selection survives the browser', () => {
   test('a refresh on the route keeps the arena', async ({ page }) => {
     const { onArena, why } = await openArena(page);
     test.skip(!onArena, why);
-    expect(await scheme(page)).toBe('light');
+    expect(await scheme(page)).toBeNull();
     await page.reload({ waitUntil: 'domcontentloaded' });
     await waitForPaint(page);
     /* A cold load of the same URL has to reach the same verdict: the attribute
        comes from the pathname, so it cannot depend on having navigated here. */
-    expect(await scheme(page)).toBe('light');
+    expect(await scheme(page)).toBeNull();
     expect(new URL(page.url()).pathname).toContain(ARENA_PATH);
   });
 
-  test('going back to the arena restores it, and leaving it takes it away', async ({ page }) => {
+  test('walking in and out of the arena never paints a room white', async ({ page }) => {
     const { onArena, why } = await openArena(page);
     test.skip(!onArena, why);
-    expect(await scheme(page)).toBe('light');
+    expect(await scheme(page)).toBeNull();
 
     await page.goto(AWAY_ROUTE, { waitUntil: 'domcontentloaded' });
     await waitForPaint(page);
@@ -304,6 +300,6 @@ test.describe('the Diamond Arena selection survives the browser', () => {
     await page.goBack({ waitUntil: 'domcontentloaded' });
     await waitForPaint(page);
     expect(new URL(page.url()).pathname).toContain(ARENA_PATH);
-    expect(await scheme(page)).toBe('light');
+    expect(await scheme(page)).toBeNull();
   });
 });

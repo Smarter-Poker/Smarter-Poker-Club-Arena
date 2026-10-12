@@ -561,7 +561,7 @@ export const FELT_TEXT_BAND = {
   topOfFeltYPct: 56,
   logoAspect: 900 / 116,
   logoToMetaGapPx: 6,
-  lineHeightPx: 11,
+  lineHeightPx: 14,
   lines: 3,
   lineGapPx: 1,
 } as const;

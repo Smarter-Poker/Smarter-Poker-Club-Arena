@@ -86,7 +86,7 @@ test.describe('rotation keeps the page, its state and its layout', () => {
       );
       expect(
         await page.evaluate(() => document.documentElement.getAttribute('data-arena-scheme'))
-      ).toBe('light');
+      ).toBeNull();
       expect(new URL(page.url()).pathname).toBe(`/hub/club-arena/${LOBBY}`);
     }
   });

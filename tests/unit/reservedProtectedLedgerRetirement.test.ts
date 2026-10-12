@@ -96,7 +96,7 @@ describe('reserved protected ledger actors reach supported Auth retirement', () 
       RESERVED_CERTIFICATION_ACCOUNT_ID: id,
       RESERVED_CERTIFICATION_ACCOUNT_EMAIL: email,
       SUPABASE_URL: 'https://isolated.invalid',
-      SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_fixture',
+      SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_test',
     };
     const fetchImpl = vi.fn().mockResolvedValue({ status: 200, json: async () => ({ id, email }) });
     const cleanup = vi.fn().mockResolvedValue(true);

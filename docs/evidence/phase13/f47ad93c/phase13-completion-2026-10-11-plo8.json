@@ -1,0 +1,93 @@
+{
+  "schema": "horse-phase13-completion-v1",
+  "definition": "horse-phase13-completion-definition-v2",
+  "variant": "plo8",
+  "packVersion": "joint-multiway-round1-v4",
+  "releaseSha": "f47ad93ce25b54e98d4c8c0a952a87f1482aff99",
+  "policyDigestDefinition": "horse-phase13-policy-digest-v1",
+  "policyDigest": "e8aca2339a576058bc265cf4966adacde209f0c51cdab8daf094acfe22102a76",
+  "gameMode": "cash",
+  "window": {
+    "from": "2026-10-11T20:02:00.000Z",
+    "to": "2026-10-11T20:50:00.000Z",
+    "releaseUnchanged": true,
+    "source": "engine.smarter.poker horse-decisions archive segments (archive, archive-shard-1), closed segment files, sha256-name verified, read-only under nice 19 / ionice idle (199485 segments read, stage 1 2026-10-11T20:52:55Z to 20:55:22Z); release f47ad93ce25b54e98d4c8c0a952a87f1482aff99 StartedAt 2026-10-11T17:55:32.90787101Z read at 19:26:56Z, 19:44:43Z and 20:50:47Z (container label and /health releaseSha), no auto-deploy run between; predeclared in declaration-completion-2026-10-11-p13-plo8.txt (2026-10-11 19:27Z)"
+  },
+  "streets": {
+    "preflop": {
+      "eligible": 835,
+      "completed": 765,
+      "workBudget": 2,
+      "samplerBudgetExhausted": 5,
+      "sampleUnavailable": 2,
+      "governorReduced": 61,
+      "responseBranchUnavailable": 0,
+      "analysisUnavailable": 0
+    },
+    "flop": {
+      "eligible": 213,
+      "completed": 106,
+      "workBudget": 87,
+      "samplerBudgetExhausted": 2,
+      "sampleUnavailable": 0,
+      "governorReduced": 18,
+      "responseBranchUnavailable": 0,
+      "analysisUnavailable": 0
+    },
+    "turn": {
+      "eligible": 151,
+      "completed": 55,
+      "workBudget": 84,
+      "samplerBudgetExhausted": 1,
+      "sampleUnavailable": 0,
+      "governorReduced": 11,
+      "responseBranchUnavailable": 0,
+      "analysisUnavailable": 0
+    },
+    "river": {
+      "eligible": 96,
+      "completed": 45,
+      "workBudget": 47,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 4,
+      "responseBranchUnavailable": 0,
+      "analysisUnavailable": 0
+    }
+  },
+  "boardCounts": {
+    "1": {
+      "eligible": 1007,
+      "completed": 841,
+      "workBudget": 88,
+      "samplerBudgetExhausted": 5,
+      "sampleUnavailable": 2,
+      "governorReduced": 71,
+      "responseBranchUnavailable": 0,
+      "analysisUnavailable": 0
+    },
+    "2": {
+      "eligible": 288,
+      "completed": 130,
+      "workBudget": 132,
+      "samplerBudgetExhausted": 3,
+      "sampleUnavailable": 0,
+      "governorReduced": 23,
+      "responseBranchUnavailable": 0,
+      "analysisUnavailable": 0
+    },
+    "3": {
+      "eligible": 0,
+      "completed": 0,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0,
+      "responseBranchUnavailable": 0,
+      "analysisUnavailable": 0
+    }
+  },
+  "excluded": {
+    "diamond": 0
+  }
+}

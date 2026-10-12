@@ -43,8 +43,39 @@ Decisions facing a wager are unchanged (host p50 1.15 ms PLO8, 0.59 ms NLH). Abo
 
 ## Records
 
-Every change here is a Phase 13 policy source file, so every Phase 13 policy digest changes (PLO8 e8aca2339a57... on 1235b47a to 4bf6b5034c1a... on this source). The qualified PLO8 matrix (run 38011357161, measured on 1235b47a) must be re-run on the new source before the PLO8 selection, and a new predeclared natural completion window read on a release with the new digest. Phase 10, 11 and 12 digests are unchanged.
+Every change here is a Phase 13 policy source file, so every Phase 13 policy digest changes (PLO8 e8aca2339a57... on 1235b47a; the final value on the integrated source is in the table below). The qualified PLO8 matrix (run 38011357161, measured on 1235b47a) must be re-run on the new source before the PLO8 selection, and a new predeclared natural completion window read on a release with the new digest. Phase 10, 11 and 12 digests are unchanged.
 
 The P13.2 contract's `policy_clock_and_sampling` entry described the old live clock in its `live` text. That one text field now states the live source as it is (the matrix's fixed work, its declared limits, no clock or governor cut); every other field of `JOINT_STRENGTH_CONTRACT` is byte-identical, and the version stays `joint-strength-contract-v1` as in the round 3 revision. The contract digest moves from 1d0dd99be2fedd7e... to 0cd88d970c600fb6..., so the PLO8 re-run is assembled under the new contract.
 
 Tests: `JointSampleAcquisition.test.ts`, `JointLivePolicy.test.ts`, `HorsePhase13Authority.test.ts` and `workerRuntime.test.ts` now pin that a slow clock, a late deadline and a loaded governor each give the fixed-clock receipt.
+
+## Final Digests On The Integrated Source
+
+This change is integrated, unpushed, with the Phase 12 round 4 change (exact sampler kernels, one contract per pack) on branch `agent/claude-horse-brain/p13-work-budget-20261011`, rebased onto `origin/main` `e5303503`. Phase 10 and Phase 11 equal `origin/main`.
+
+| Phase | Pack or variant  | Digest                                     | Value                                                            |
+| ----- | ---------------- | ------------------------------------------ | ---------------------------------------------------------------- |
+| 10    | PLO4             | policy (equals main)                       | 7f7968b11afd353646de507a381c188f131f241191ad1eb6fb33f563fb0ceadb |
+| 10    | PLO4             | contract                                   | 83ab185b2a2df72876b73d61ece6ea8c2f03f364ce252deecbfcde392ae5f838 |
+| 11    | PLO5             | policy (equals main)                       | 9d5b1ed11d1ec000ae84ceb3cd1c0ff6df36d573e7371e8d9b74a0f151cda5ba |
+| 11    | PLO6             | policy (equals main)                       | 2f3c66713a7d3d237d9fe7e4e0461da9d36d0bd3a8f51078ed1271099c139df0 |
+| 11    | PLO8             | policy (equals main)                       | db899eb1b9fb64061f55816f31c82cb282b10d14eae0e669d6bd16320eefa62f |
+| 11    | PLO5, PLO6, PLO8 | contract                                   | 5b93ae20962ff79798b998f437ed43d2bd224a64995d86e34ed63d7bb22057fc |
+| 12    | Short Deck       | policy                                     | 87db1f17b03e4a8b8f4325f9389f66b0200228fbf6b42df891baef341b1fd340 |
+| 12    | Short Deck       | contract                                   | 6c50e71707addc7b9f740493840e5d59053773d63ea7af5cdf33a6108036b16f |
+| 12    | Crazy Pineapple  | policy                                     | ee16b3cf1e05969d6fcccb23b774b295e6a3ffb829d5ab9374b2245f50ffc005 |
+| 12    | Crazy Pineapple  | contract                                   | 6c50e71707addc7b9f740493840e5d59053773d63ea7af5cdf33a6108036b16f |
+| 12    | FLH              | policy                                     | d1c536a9f1b6889478da2ad4c5d5d985a130a47fb794169ddf6f420a6ccde8fb |
+| 12    | FLH              | contract                                   | fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0 |
+| 12    | FLO8             | policy                                     | 663a3ae7bca1729cdbcaf8b170646f4c0815fc69cb5739a47249023678d18a98 |
+| 12    | FLO8             | contract                                   | 6c50e71707addc7b9f740493840e5d59053773d63ea7af5cdf33a6108036b16f |
+| 13    | NLH              | policy                                     | 1a6a831343bb4ca7f60aca2067df02090df5c68d39fc493cbb521b066dc3d87d |
+| 13    | PLO4             | policy                                     | 9c6afc09f81d400b913f63e663ad35bcf65661a441a04fbfcf3fe2305853aefa |
+| 13    | PLO5             | policy                                     | af2b49e8c364a80089327e8a39ff7bbc318038c9a9b54794239200d0895ad837 |
+| 13    | PLO6             | policy                                     | 95ba3d1afed28e0fb62acc839f54238b18543f352b2c6ca82b33aacdf2c32d05 |
+| 13    | PLO8             | policy                                     | ca120931043d80031982abae93276023e59947e280792246c8de7ea83ba0fc26 |
+| 13    | FLO8             | policy                                     | d2dbd6590ddbb1648843c2461161ea2d21f37f24d25ff8e1d0941cde2a53f11a |
+| 13    | FLH              | policy                                     | 4d9cb504bbc30d70a033e4385c1f35efcecccea1796252624d5ac044cbfe6904 |
+| 13    | Crazy Pineapple  | policy                                     | 769e86b32e41f97e543098bc5e246fd6d65056f82ff61f8fee01b9fee1bb3cb1 |
+| 13    | Short Deck       | policy                                     | 0a8205ec01ad65538107da2f9835f50caabbed8078b4d027531024f9abaaa555 |
+| 13    | all nine         | contract (PHASE13_RUNNING_CONTRACT_DIGEST) | 0cd88d970c600fb64933337672af349e9d106402d4edfcc3510e1f26374741f8 |

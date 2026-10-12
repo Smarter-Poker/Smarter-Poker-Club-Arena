@@ -1,5 +1,16 @@
 {
   "schemaVersion": 1,
+  "accountingShardOneExecutionBudget20261012": {
+    "reason": "Run38315293246 accounting shard1 passed every active suite and finalized its final receipt, then the 40min job cap canceled cleanup. Give only shard1 50min; other shards stay40. Financial assertions, suite/SQL deadlines, routing, required join and SOURCE_ONLY_UNRUN unchanged. This current workflow fingerprint is input identity only, not financial qualification.",
+    "previousWorkflowPin": {
+      "bytes": 210534,
+      "sha256": "f121396e2a47265ac66b95be65b77b88ed4aa128ec8f4230eb28458628cc8631"
+    },
+    "currentWorkflowPin": {
+      "bytes": 210879,
+      "sha256": "ca3e9233802e0eb14f4e4f4c6b78f4e9e170b84ca47ff39250de2823172ddf42"
+    }
+  },
   "diamondCurrentMainInputMerge20261012": {
     "reason": "Preserve both Diamond completion and protected-main f209c11306 input routing, workflow and all audit records. Refresh active source identity only; historical pins, financial sources/assertions and qualification states unchanged. No financial certificate restamp.",
     "changes": {
@@ -112,8 +123,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 210534,
-      "sha256": "f121396e2a47265ac66b95be65b77b88ed4aa128ec8f4230eb28458628cc8631"
+      "bytes": 210879,
+      "sha256": "ca3e9233802e0eb14f4e4f4c6b78f4e9e170b84ca47ff39250de2823172ddf42"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,

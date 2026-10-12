@@ -1294,7 +1294,11 @@ jobs:
     # Run 35276340849 reached V31 after 26m13s and exhausted the 30m job cap.
     # V31 passed in 4m31s in 35276304884. Keep room for hosted runtime variance;
     # every case, statement, cleanup deadline and required gate stays unchanged.
-    timeout-minutes: 40
+    # Run 38315293246 shard 1 passed its last suite and uploaded its receipt
+    # at 40m04s but was cancelled during cleanup at 40m07s; comparable
+    # 38307542756 shard 1 passed in 37m12s. Give only this shard 10m headroom.
+    # Financial assertions, per-step deadlines and the required join are unchanged.
+    timeout-minutes: ${{ matrix.shard == 1 && 50 || 40 }}
     # ── FOUR SHARDS, EVERY CASE (2026-09-26) ─────────────────────────────────
     #
     # This job was the critical path of every server-touching pull request:

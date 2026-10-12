@@ -56,8 +56,13 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
+<<<<<<< HEAD
       "bytes": 205043,
       "sha256": "9ff1e635df3746666ac70c01e36032d3105c8bf5998c1d7c3c9e87fb7ab4e9fc"
+=======
+      "bytes": 205794,
+      "sha256": "e85cb68743eb7bc58e6b3c089e3f731ba0ae9a96cc9ef3b4b055d7e031fb518d"
+>>>>>>> origin/main
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -2296,6 +2301,7 @@
       "sha256": "526ce2cb5ae8c17319b7181238858a9d820a4609f4a90f7572c19d316d552ee9"
     }
   },
+<<<<<<< HEAD
   "playerCommandHistoryRecoveryIntegration20261012": {
     "reason": "Preserve both history and native recovery enforcement, independent historical audit records and qualification status. Refresh only reviewed active workflow/classifier/test and nested source binding hashes; this is source identity, not financial or live qualification.",
     "changes": [
@@ -2348,5 +2354,46 @@
         }
       }
     ]
+=======
+  "originalUnchangedStackQualification20261012": {
+    "reason": "Add directly triggered isolated PG17 original unchanged-stack qualification and always-retained native transcript in accounting shard3. Existing financial qualification components/assertions/captured fixtures/status unchanged. Workflow byte pin refresh alone does not prove native or production behavior.",
+    "previousWorkflowPin": {
+      "bytes": 202788,
+      "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
+    }
+  },
+  "originalUnchangedStackIntegration20261012": {
+    "reason": "Integrate protected main42c1242f9a; preserve both original unchanged-stack native CI/artifact step and only-staff-remove-member native routing. Existing component/status/assertions and all historical pin audits preserved. Source fingerprint is not runtime certification.",
+    "previousBranchWorkflowPin": {
+      "bytes": 203714,
+      "sha256": "427e04cfde3bf981af4c0ec25a2b867ca5f4fea330cff5ab44ee315e9f6491c1"
+    },
+    "previousMainWorkflowPin": {
+      "bytes": 203003,
+      "sha256": "1699ddcbdafde77bbb538e632911eb11663486d78a99571e67006ae4f4004995"
+    }
+  },
+  "originalUnchangedStackInventorySealIntegration20261012": {
+    "reason": "Integrate protected inventory-seal qualification and port correction a8f059e341; retain original unchanged-stack, inventory-seal and staff-removal native invocations and all prior source pin history. No financial assertion, fixture, component or qualification status changes. Source identity is not production proof.",
+    "previousBranchWorkflowPin": {
+      "bytes": 203929,
+      "sha256": "77c6cf8ca6bb10527be78116fb9f839912130d9b54bda2982e65e2525c6be97b"
+    },
+    "previousMainWorkflowPin": {
+      "bytes": 203929,
+      "sha256": "4c8baf0332e0a416f9d4c07e8b2c4cfddac492d6c51ec22cfe2c37ff9077d059"
+    }
+  },
+  "originalUnchangedStackRecoveryIntegration20261012": {
+    "reason": "Integrate protected main8f0f61c53f recovery export and completed-subject verification changes. Preserve original unchanged-stack and inventory-seal native invocations and every historical audit pin. No financial qualification or production certification follows from source identity.",
+    "previousBranchWorkflowPin": {
+      "bytes": 204855,
+      "sha256": "95cf03c1d3c625501a600dad225e898e2cf4193b7c541e7ae8fa3c1c1d4693c0"
+    },
+    "previousMainWorkflowPin": {
+      "bytes": 204868,
+      "sha256": "526ce2cb5ae8c17319b7181238858a9d820a4609f4a90f7572c19d316d552ee9"
+    }
+>>>>>>> origin/main
   }
 }

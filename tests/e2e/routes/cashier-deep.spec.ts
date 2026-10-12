@@ -19,6 +19,8 @@ async function openTradeCashier(page: Page) {
   await page.goto(`clubs/${CLUB_ID}/cashier`, { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/, { timeout: 30_000 });
   await expect(page.locator('[data-cashier-surface="trade"]')).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('[data-cashier-mode="simple"]')).toBeVisible();
+  await page.getByRole('button', { name: /^Advanced(?: \([\d,]+\))?$/ }).click();
   const tablist = page.getByRole('tablist', { name: 'Cashier Actions' });
   await expect(tablist).toBeVisible();
   await expect(tablist).toHaveAttribute('aria-busy', 'false', { timeout: 30_000 });

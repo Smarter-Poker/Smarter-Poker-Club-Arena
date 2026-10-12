@@ -235,6 +235,7 @@ try:
         assert query('SELECT count(*) FROM public.ca_test_account_ledger_actor_archive;') == '0'
         print('certification-retirement-archive-order-acceptance-passed')
         runpy.run_path(str(FIXTURE/'qualify-protected-club.py'))['qualify'](ROOT, FIXTURE, query)
+        runpy.run_path(str(FIXTURE/'qualify-protected-ledger.py'))['qualify'](ROOT, FIXTURE, query)
     print('certification-retirement-native-acceptance-passed')
 finally:
     if start_attempted and (data/'postmaster.pid').exists():

@@ -1426,3 +1426,143 @@
     line-height: 1.4;
   }
 }
+
+.modeToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.modeToolbar > span {
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+.modeToggle {
+  min-height: 44px;
+  padding: 8px 12px;
+  color: var(--ink-blue);
+  font-size: 14px;
+}
+.page [hidden] {
+  display: none;
+}
+.page.simple {
+  min-height: calc(100dvh - 140px);
+  padding: 8px 8px calc(var(--bottom-nav-clearance, 86px) + 110px);
+}
+.page.simple .hero {
+  display: block;
+  padding: 0;
+}
+.page.simple .heroContent,
+.page.simple .heroMetrics,
+.page.simple .strip,
+.page.simple .filterRow,
+.page.simple .recoveryConsole,
+.page.simple .sectionEyebrow,
+.page.simple .glass .rowSub:not(.simpleId) {
+  display: none;
+}
+.page.simple .sectionHeading {
+  gap: 8px;
+  padding: 4px 0;
+}
+.page.simple .sectionHeading h2 {
+  font-size: 18px;
+}
+.page.simple .sectionHeading > span {
+  font-size: 11px;
+}
+.page.simple .searchRow {
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+.page.simple .searchLabel {
+  display: none;
+}
+.page.simple .searchRow input {
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  font-size: 16px;
+}
+.page.simple .memberCount {
+  flex: 0 0 auto;
+}
+.page.simple .glass .row {
+  flex-wrap: nowrap;
+  gap: 8px;
+  padding: 8px;
+  min-height: 68px;
+}
+.page.simple .glass .avatar {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+}
+.page.simple .glass .rowInfo {
+  flex: 1;
+  min-width: 0;
+}
+.page.simple .glass .rowName {
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+.page.simple .glass .rosterWallet {
+  margin: 0;
+  align-items: flex-end;
+  flex: 0 0 auto;
+}
+.page.simple .glass .rowBalance {
+  font-size: 16px;
+  margin: 0;
+}
+.page.simple .glass .checkbox {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  font-size: 11px;
+}
+.page.simple .glass .batchPicker {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+}
+.page.simple .dock {
+  position: fixed;
+  left: max(12px, calc((100vw - 1356px) / 2));
+  right: max(12px, calc((100vw - 1356px) / 2));
+  bottom: var(--bottom-nav-stack-base, 86px);
+  z-index: 5;
+  padding: 8px;
+  background: #080b0f;
+}
+.page.simple .footerBtn {
+  min-height: 48px;
+  font-size: 16px;
+}
+.page.simple .glass .rowInfo .simpleId {
+  display: block;
+  font-size: 12px;
+}
+
+.simpleStatus {
+  font-size: 12px;
+  color: var(--ink-muted);
+  margin-top: 4px;
+}
+/* The full operations rail belongs to Advanced; the global navigation remains. */
+:global(body:has([data-cashier-mode='simple']) nav[aria-label='Club Operations Sections']) {
+  display: none;
+}
+
+.recipientPicker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.page.simple .glass .recipientPicker {
+  width: 44px;
+  min-height: 44px;
+}

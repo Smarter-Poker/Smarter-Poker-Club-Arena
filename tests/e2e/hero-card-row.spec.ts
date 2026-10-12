@@ -416,6 +416,14 @@ for (const width of [320, 375, 393, 430, 768, 1440]) {
     });
     const initial = await page.locator('.table-scaler').boundingBox();
     expect(initial).not.toBeNull();
+    expect(await page.locator('.table-scaler').evaluate((e) => getComputedStyle(e).marginTop)).toBe(
+      '0px'
+    );
+    expect(
+      await page
+        .locator('.table-scaler')
+        .evaluate((e) => getComputedStyle(e).getPropertyValue('--sp-table-ar-h').trim())
+    ).toBe('1000');
     if (width <= 480) expect(initial!.width).toBeGreaterThanOrEqual(width - 2);
     for (const seats of [2, 3])
       for (const n of [4, 5, 6])

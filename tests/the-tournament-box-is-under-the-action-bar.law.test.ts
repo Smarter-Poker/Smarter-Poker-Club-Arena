@@ -57,10 +57,14 @@ describe('the box is not on the felt', () => {
     expect(mount).toMatch(/onToggleCollapsed=\{toggleTournamentDock\}/);
   });
 
-  it('the dock is pinned to the foot of the viewport, above the home indicator', () => {
+  it('the dock reaches the foot and paints behind the home indicator', () => {
     const dock = rule(DOCK_CSS, '.tournament-dock {');
     expect(dock).toMatch(/position:\s*fixed/);
-    expect(dock).toMatch(/bottom:\s*env\(safe-area-inset-bottom, 0px\)/);
+    expect(dock).toMatch(/bottom:\s*0/);
+    expect(dock).toMatch(/padding-bottom:\s*env\(safe-area-inset-bottom, 0px\)/);
+    expect(dock).toContain(
+      'height: calc(var(--sp-tdock-now, 50px) + env(safe-area-inset-bottom, 0px))'
+    );
     expect(dock).toMatch(/left:\s*0/);
     expect(dock).toMatch(/right:\s*0/);
     expect(dock).not.toMatch(/(^|[\s;{])top:/);

@@ -56,16 +56,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 201986,
-      "sha256": "70182295f44701aa2d944934ba0df8305ffbfcbf3f566ceeb4188b222f1e9e24"
+      "bytes": 202255,
+      "sha256": "411591715d2f8c87f06b43cf17980ecc4a5d3b968db1178d4510394c456761e5"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 35404,
-      "sha256": "2d37e03faf5316d995a622969520f6ec080460fa5565c0be8ee2c674d60f3340"
+      "bytes": 35431,
+      "sha256": "89fc5f840a12fe52e11da8990ce81952a41d5fdb97607c9fe18005cf27326e0d"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -2068,8 +2068,8 @@
       }
     ]
   },
-  "tournamentChatDefaultDbHarnessRouting20261012": {
-    "reason": "Reviewed additive tournament chat default harness routing: the existing cashierDbHarnesses selector also names scripts/ci/test-tournament-chat-default-db-postgres.py (the PostgreSQL 17 qualification of migration 20261012040851, tournament chat is off by default) and its fixture directory tests/fixtures/tournament-chat-default-db/, and one accounting_postgres shard 2 step runs it. No selector is removed or narrowed; financial sources, assertions and historical evidence are unchanged. These byte bindings establish source identity only, not financial or production qualification.",
+  "cashierHorseReadsDbHarnessRouting20261012": {
+    "reason": "Reviewed additive cashier database harness routing: the existing cashierDbHarnesses selector also names scripts/ci/test-horse-reads-db-postgres.py and tests/fixtures/horse-reads-db/, and one accounting_postgres shard 2 step runs that PostgreSQL 17 harness, which qualifies 20261012040542_a_treasury_funded_seat_reads_as_a_club_bank_send. No selector is removed or narrowed; financial sources, assertions and historical evidence are unchanged. These byte bindings establish source identity only, not financial or production qualification.",
     "changes": [
       {
         "path": ".github/workflows/ci.yml",
@@ -2078,8 +2078,8 @@
           "sha256": "fdf8dbc6c7aef852279b7060d938e04f862880aab144407eb4b64ada104aafe1"
         },
         "current": {
-          "bytes": 201986,
-          "sha256": "70182295f44701aa2d944934ba0df8305ffbfcbf3f566ceeb4188b222f1e9e24"
+          "bytes": 202012,
+          "sha256": "feab95aa345126b3daa88312a7dee708039cf63bc9391180dad18f39b684c2ac"
         }
       },
       {
@@ -2089,8 +2089,35 @@
           "sha256": "d23683095f969adc3d9fdb2d0ca4feadb6bb1afaaf762a0b1e1823bdbd95bdb7"
         },
         "current": {
-          "bytes": 35404,
-          "sha256": "2d37e03faf5316d995a622969520f6ec080460fa5565c0be8ee2c674d60f3340"
+          "bytes": 35380,
+          "sha256": "717e43470db486c77e6995c2b94ca040a01472cc09035b1222b5dc12bbcbdd98"
+        }
+      }
+    ]
+  },
+  "tournamentChatDefaultDbHarnessRouting20261012": {
+    "reason": "Reviewed additive tournament chat default harness routing: the existing cashierDbHarnesses selector also names scripts/ci/test-tournament-chat-default-db-postgres.py (the PostgreSQL 17 qualification of migration 20261012040851, tournament chat is off by default) and its fixture directory tests/fixtures/tournament-chat-default-db/, and one accounting_postgres shard 2 step runs it. No selector is removed or narrowed; financial sources, assertions and historical evidence are unchanged. These byte bindings establish source identity only, not financial or production qualification.",
+    "changes": [
+      {
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 202012,
+          "sha256": "feab95aa345126b3daa88312a7dee708039cf63bc9391180dad18f39b684c2ac"
+        },
+        "current": {
+          "bytes": 202255,
+          "sha256": "411591715d2f8c87f06b43cf17980ecc4a5d3b968db1178d4510394c456761e5"
+        }
+      },
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 35380,
+          "sha256": "717e43470db486c77e6995c2b94ca040a01472cc09035b1222b5dc12bbcbdd98"
+        },
+        "current": {
+          "bytes": 35431,
+          "sha256": "89fc5f840a12fe52e11da8990ce81952a41d5fdb97607c9fe18005cf27326e0d"
         }
       }
     ]

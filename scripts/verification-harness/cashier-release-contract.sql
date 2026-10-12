@@ -143,12 +143,15 @@ BEGIN
       -- accidentally copied md5(prosrc) from the native source-binding row;
       -- the post-deploy canary intentionally compares the third field, the
       -- complete callable definition including result shape and posture.
-      -- 20261010005048 names both sides with fn_arena_name instead of the
-      -- World Hub display name first; same rows, same posture. Both audited
-      -- bodies are valid until it is installed; an unknown third body still
-      -- fails closed. Once installed, make the replacement the hash.
-      'hash', 'ea5a5a57ec31f396958246def887e5e6',
-      'replacement_hash', 'd489a8b997a25320b0b4ec8b14a43587'
+      -- 20261010005048 (installed) names both sides with fn_arena_name
+      -- instead of the World Hub display name first. 20261012040542 prints a
+      -- treasury-funded seat as the Club Bank send it is and names a send's
+      -- operator only to the operator and the member paid; same rows, same
+      -- posture. Both audited bodies are valid until it is installed; an
+      -- unknown third body still fails closed. Once installed, make the
+      -- replacement the hash.
+      'hash', 'd489a8b997a25320b0b4ec8b14a43587',
+      'replacement_hash', '1b1312459ecc90069375d8bcdb3127ca'
     ),
     jsonb_build_object(
       'signature', 'public.fn_club_bank_send(uuid,uuid,numeric,text,text,uuid)',
@@ -274,7 +277,10 @@ BEGIN
       'signature', 'public.fn_club_bank_ledger(uuid,integer,integer,text[])',
       -- Its live body is the 20260903121500 DO-block rewrite pinned by md5 in
       -- 20261006005823, not the last CREATE (20260823170000).
-      'hash', '39ff91f5cc60c6300942f51e4ab2c3bb'
+      -- 20261012040542 lists, filters and counts a treasury-funded seat as a
+      -- Club Bank send; the live body stays valid until it is installed.
+      'hash', '39ff91f5cc60c6300942f51e4ab2c3bb',
+      'replacement_hash', 'f17eb94522c177856683617945d9f371'
     ),
     jsonb_build_object(
       'signature', 'public.fn_promo_wallet_ledger(text,uuid,integer,integer,text)',
@@ -286,7 +292,10 @@ BEGIN
     ),
     jsonb_build_object(
       'signature', 'public.fn_ca_chip_statement_page(text,uuid,jsonb,integer)',
+      -- 20261012040542 prints a funded seat's treasury leg as table funding
+      -- with no description; the live body stays valid until it is installed.
       'hash', 'c706109ed8dab335912f046aaa6ee215',
+      'replacement_hash', 'd513f6f312b29835cc5e74aa8ff00ce0',
       'search_path', 'search_path=public'
     ),
     jsonb_build_object(

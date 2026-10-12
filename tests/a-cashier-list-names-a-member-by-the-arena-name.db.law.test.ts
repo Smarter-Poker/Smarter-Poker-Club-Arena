@@ -48,12 +48,16 @@ describe('a cashier list names a member by the arena name', () => {
   });
 
   it('names both sides of every Trade record row with fn_arena_name, and leaves a side with no profile unnamed', () => {
-    for (const p of ['pf', 'pt']) {
-      // One per role branch: staff, the agent's downline, the member's own rows.
-      expect(trade.body.split(`CASE WHEN ${p}.id IS NOT NULL THEN ${arena(p)} END`)).toHaveLength(
-        4
-      );
-    }
+    const body = squash(trade.body);
+    // One per role branch: staff, the agent's downline, the member's own rows.
+    // The sender side is also unnamed for a Club Bank send (20261012040542:
+    // the Club Bank is its sender), so it is matched up to the THEN.
+    expect(body.split(`CASE WHEN pt.id IS NOT NULL THEN ${arena('pt')} END`)).toHaveLength(4);
+    expect(
+      body.match(
+        /CASE WHEN pf\.id IS NOT NULL (AND [^;]*? )?THEN public\.fn_arena_name\(pf\.alias, pf\.username, pf\.display_name, pf\.first_name, pf\.last_name, pf\.full_name\) END/g
+      )
+    ).toHaveLength(3);
     expect(trade.body).not.toMatch(/coalesce\(\s*p[ft]\.alias\s*,\s*p[ft]\.display_name/i);
   });
 

@@ -91,11 +91,12 @@
   position: fixed;
   left: 0;
   right: 0;
-  bottom: env(safe-area-inset-bottom, 0px);
+  bottom: 0;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   /* Above the two bottom rows (--z-action-panel, 100) it sits beneath, below
      every sheet and modal on the page. */
   z-index: 101;
-  height: var(--sp-tdock-now, 50px);
+  height: calc(var(--sp-tdock-now, 50px) + env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
   box-sizing: border-box;

@@ -31,6 +31,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { WheelPrizeArt } from '../wheel/WheelPrizeArt';
 import { SpadeConsole } from '../console/SpadeConsole';
 import './TournamentWinnerOverlay.css';
 import { formatPrizeAtUnit, moneySuffixAtUnit } from '../../utils/format';
@@ -170,6 +171,13 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
         pillInk="gold"
         foot="foot"
       >
+        {unitCents != null && (
+          <div className="winnerAwardArt trophy-bounce" aria-hidden="true">
+            <WheelPrizeArt
+              segment={{ kind: unitCents === 100 ? 'diamonds' : 'chips', multiplier: 3 }}
+            />
+          </div>
+        )}
         {prize > 0 && unitCents != null && (
           <div className="winnerPrize prize-counter">
             {/* To the cent (2026-09-09): this is the banner shown at the

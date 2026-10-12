@@ -25,9 +25,17 @@ vi.mock('../../src/services/HandHistoryService', () => ({
     getHand: (...args: unknown[]) => state.getHand(...args),
   },
 }));
-vi.mock('../../src/services/HandNotesService', () => ({
-  handNotesService: { listFor: async () => new Map() },
-}));
+vi.mock('../../src/services/HandNotesService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/services/HandNotesService')>();
+  return {
+    ...actual,
+    handNotesService: {
+      ...actual.handNotesService,
+      listFor: async () => new Map(),
+      getOne: async () => ({ ok: true, note: null }),
+    },
+  };
+});
 vi.mock('../../src/services/HandFlagService', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/services/HandFlagService')>();
   return {
@@ -89,6 +97,10 @@ describe('Hand archive request ownership', () => {
     state.getHand.mockResolvedValue(rows('linked', 1)[0]);
     render(<HandHistoryPage />);
     await waitFor(() => expect(document.getElementById('hand-linked-0')).toBeTruthy());
+    await screen.findByRole('button', { name: 'Flag This Hand' });
+    await waitFor(() =>
+      expect(screen.getByRole('textbox', { name: 'Your Note On This Hand' })).not.toBeDisabled()
+    );
     expect(state.getHand).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('button', { name: /Retry/ })).toBeTruthy();
   });

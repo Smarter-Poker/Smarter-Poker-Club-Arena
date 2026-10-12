@@ -18,3 +18,10 @@ The production schema export completed during launch-reset preparation. Full
 production recovery, accounting cutoff, closing journal, reset/undo and live
 cutover remain separate unqualified acceptance items. See the native export
 runbook for the exact distinction; this change does not certify a launch reset.
+
+The required local release check exposed a repeated immutable Git-tree scan
+that exceeded its existing test budget during concurrent object reads. The
+producer reader now scans that same tree once for all requested names and
+refuses unreadable objects rather than reporting them absent. Existing producer
+semantics and the test deadline remain intact; the exact old unreadable-commit
+counterexample and the corrected real-Git regression were verified.

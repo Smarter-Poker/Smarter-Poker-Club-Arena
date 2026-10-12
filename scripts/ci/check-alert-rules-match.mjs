@@ -369,21 +369,37 @@ export function haveCommit(sha, cwd = process.cwd()) {
  * that registers no child series until its first observation.
  */
 export function producedAtBuild(names, sha, cwd = process.cwd()) {
-  const out = new Map();
-  for (const name of names) {
-    let hit = '';
-    try {
-      hit = execFileSync(
-        'git',
-        ['grep', '-l', '--fixed-strings', '-e', name, sha, '--', 'server', 'src'],
-        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], cwd, env: gitEnv() }
-      ).trim();
-    } catch {
-      hit = ''; // git grep exits 1 for "no match"; that is an answer, not an error
-    }
-    out.set(name, hit.length > 0);
+  if (!names.length) return new Map();
+  let hits = '';
+  try {
+    // Scan the immutable tree once. One full scan per metric multiplied Git
+    // object reads and exceeded the required check's budget under concurrent IO.
+    hits = execFileSync(
+      'git',
+      [
+        'grep',
+        '-h',
+        '--fixed-strings',
+        ...names.flatMap((name) => ['-e', name]),
+        sha,
+        '--',
+        'server',
+        'src',
+      ],
+      {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        cwd,
+        env: gitEnv(),
+        maxBuffer: 16 * 1024 * 1024,
+      }
+    );
+  } catch (error) {
+    // Exit 1 means no match. A failed object read is UNKNOWN, never absence.
+    if (error.status !== 1)
+      throw new Error('Metric producers in the selected build could not be read');
   }
-  return out;
+  return new Map(names.map((name) => [name, hits.includes(name)]));
 }
 
 async function main() {

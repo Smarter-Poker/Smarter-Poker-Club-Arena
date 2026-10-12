@@ -231,6 +231,57 @@ describe('Cashier Classic launch audit', () => {
     document.body.style.overflow = '';
   });
 
+  it.each([
+    ['Send', 'Amount', '10.005', 'Chips Go To Two Decimal Places'],
+    ['Distribute', 'Amount', '10.005', 'Chips Go To Two Decimal Places'],
+    ['Mint', 'Chips To Mint', '1.5', 'Mint Whole Chips Only'],
+    ['Cash-Out', 'Amount', '10.005', 'Chips Go To Two Decimal Places'],
+  ])(
+    'Phase 7: %s exposes and clears the amount refusal before submitting',
+    async (tab, label, invalid, message) => {
+      start();
+      await screen.findByRole('tab', { name: 'Send', selected: true });
+      fireEvent.click(screen.getByRole('tab', { name: tab, exact: true }));
+      const field = await screen.findByRole('spinbutton', { name: label, exact: true });
+      expect(field).toHaveAttribute('aria-invalid', 'false');
+      fireEvent.change(field, { target: { value: invalid } });
+      expect(field).toHaveAttribute('aria-invalid', 'true');
+      expect(field).toHaveAccessibleDescription(message);
+      expect(screen.getByRole('status', { name: 'Amount Validation' })).toHaveTextContent(message);
+      expect(
+        rpcCalls.some(([name]) =>
+          [
+            'fn_agent_wallet_send',
+            'fn_club_bank_send',
+            'fn_mint_chips_from_diamonds',
+            'fn_request_cashout',
+          ].includes(name)
+        )
+      ).toBe(false);
+      fireEvent.change(field, { target: { value: '10' } });
+      expect(field).toHaveAttribute('aria-invalid', 'false');
+      expect(screen.queryByRole('status', { name: 'Amount Validation' })).toBeNull();
+    }
+  );
+
+  it('Phase 7: correcting a submitted invalid amount retires only its stale validation message', async () => {
+    start();
+    await screen.findByRole('tab', { name: 'Send', selected: true });
+    const recipient = await screen.findByLabelText('Send To Recipient');
+    await waitFor(() => expect((recipient as HTMLSelectElement).options.length).toBe(2));
+    fireEvent.change(recipient, { target: { value: PLAYER_ONE } });
+    const field = screen.getByRole('spinbutton', { name: 'Amount', exact: true });
+    fireEvent.change(field, { target: { value: '10.005' } });
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Send 10.005 Chips To Selected Recipient' })
+    );
+    expect(screen.getAllByText('Chips Go To Two Decimal Places')).toHaveLength(1);
+    fireEvent.change(field, { target: { value: '10' } });
+    expect(screen.queryByText('Chips Go To Two Decimal Places')).toBeNull();
+    expect(field).toHaveAttribute('aria-invalid', 'false');
+    expect(rpcCalls.some(([name]) => name === 'fn_agent_wallet_send')).toBe(false);
+  });
+
   // ── P-01 ─────────────────────────────────────────────────────────────────
   it('P-01: a failed role read shows an error with Retry and never the player tab set', async () => {
     roleReads[CLUB] = () => Promise.resolve({ data: null, error: { code: '57014' } });

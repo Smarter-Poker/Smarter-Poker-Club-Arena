@@ -1416,3 +1416,51 @@ it('Phase 5: editing one individual amount creates a new intent without erasing 
     recoveries.find((row) => row.submissionId === next.args.p_batch_id)?.targetAmounts
   ).toEqual({ [PLAYER_IDS[0]]: 10, [PLAYER_IDS[1]]: 21.05 });
 });
+
+it.each(['send', 'ticket'] as const)(
+  'Phase 7: associates a single %s amount refusal with its field',
+  async (mode) => {
+    state.roster = [player(0, 75)];
+    mountCashier();
+    await synchronized();
+    const dialog = await openSendOut('10.005', 1);
+    if (mode === 'ticket')
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Send Ticket', exact: true }));
+    const field = screen.getByRole('spinbutton', { name: 'Amount Per Player' });
+    expect(field).toHaveAttribute('aria-invalid', 'true');
+    expect(field).toHaveAccessibleDescription(
+      /Enter The Amount As Digits, With Up To Two Decimals/
+    );
+    expect(state.rpcCalls.some((call) => call.name === 'fn_cashier_batch_transfer')).toBe(false);
+    fireEvent.change(field, { target: { value: '0.20' } });
+    expect(field).toHaveAttribute('aria-invalid', 'false');
+    expect(field).toHaveAccessibleDescription(/Recipients Ready For Server Verification/);
+  }
+);
+
+it('Phase 7: the native player composer traps both Tab directions and returns focus on Escape', async () => {
+  state.roster = [player(0, 75)];
+  mountCashier();
+  await synchronized();
+  const trigger = screen.getByRole('button', { name: 'Select Player 1', exact: true });
+  trigger.focus();
+  fireEvent.click(trigger);
+  const dialog = await screen.findByRole('dialog', { name: 'Send Out', exact: true });
+  const field = within(dialog).getByRole('spinbutton', { name: 'Amount Per Player' });
+  fireEvent.change(field, { target: { value: '10' } });
+  await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+  expect(document.body.style.overflow).toBe('hidden');
+  const controls = dialog.querySelectorAll<HTMLElement>(
+    'button:not(:disabled), input:not(:disabled)'
+  );
+  controls[controls.length - 1].focus();
+  fireEvent.keyDown(document, { key: 'Tab' });
+  expect(document.activeElement).toBe(controls[0]);
+  fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+  expect(document.activeElement).toBe(controls[controls.length - 1]);
+  fireEvent.keyDown(document, { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(trigger));
+  expect(document.body.style.overflow).not.toBe('hidden');
+  expect(state.rpcCalls.some((call) => call.name === 'fn_cashier_batch_transfer')).toBe(false);
+});

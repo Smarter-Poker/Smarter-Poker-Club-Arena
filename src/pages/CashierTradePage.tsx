@@ -1749,6 +1749,12 @@ function CashierTradeWorkspace() {
     [picked, amount, recipientAmounts]
   );
   const previewTotal = batchPlan.ok ? batchPlan.total : 0;
+  const uniformAmountValue =
+    picked.length === 1 ? (recipientAmounts[picked[0].userId] ?? amount) : amount;
+  const uniformAmountInvalid =
+    uniformAmountValue.trim() !== '' &&
+    !batchPlan.ok &&
+    (picked.length === 1 || recipientAmounts[batchPlan.userId] === undefined);
 
   const transferDestination = (target: DownlineRow): 'agent_wallet' | 'player_wallet' =>
     (transferRecovery?.submissionId === submissionIdRef.current
@@ -4049,11 +4055,9 @@ function CashierTradeWorkspace() {
                       min={0}
                       step="0.01"
                       aria-label="Amount Per Player"
-                      value={
-                        picked.length === 1
-                          ? (recipientAmounts[picked[0].userId] ?? amount)
-                          : amount
-                      }
+                      aria-invalid={uniformAmountInvalid}
+                      aria-describedby="cashier-amount-validation"
+                      value={uniformAmountValue}
                       disabled={busy}
                       onChange={(e) => {
                         setAmount(e.target.value);
@@ -4089,6 +4093,7 @@ function CashierTradeWorkspace() {
                                 step="0.01"
                                 aria-label={`Amount For ${r.name}`}
                                 aria-invalid={!batchPlan.ok && batchPlan.userId === r.userId}
+                                aria-describedby="cashier-amount-validation"
                                 disabled={busy}
                                 value={recipientAmounts[r.userId] ?? amount}
                                 onChange={(event) => {
@@ -4130,7 +4135,7 @@ function CashierTradeWorkspace() {
                         Request A Cash Out.
                       </div>
                     )}
-                    <div className={styles.modalHint} role="status">
+                    <div id="cashier-amount-validation" className={styles.modalHint} role="status">
                       {!batchPlan.ok
                         ? `Amount For ${picked.find((row) => row.userId === batchPlan.userId)?.name || 'Cashier Recipient'}: ${batchPlan.error}`
                         : cashierAuthorityBlocked || !canHoldAgentWallet(myRole)

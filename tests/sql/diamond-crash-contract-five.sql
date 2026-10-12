@@ -1,7 +1,7 @@
 \set ON_ERROR_STOP on
 -- Private, synthetic PostgreSQL only. Actual JWT role, real wheel spins and the
 -- real Crash starter, decider, cash-out and receipt after migration
--- 20261012114801 (Dan, 2026-10-12): contract 5 never crashes before 1.25x,
+-- 20261012140447 (Dan, 2026-10-12): contract 5 never crashes before 1.25x,
 -- opens cash-out at 1.26x, pays back the round's own return R at every target
 -- (chosen from its floor for a 2.9x average, 0.95 to 1.20), gives every flight
 -- a 20x cap and climbs at k = 0.08; a round sealed under contract 4 keeps its

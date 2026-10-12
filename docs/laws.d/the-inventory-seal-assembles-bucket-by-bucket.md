@@ -1,0 +1,3 @@
+# tests/the-inventory-seal-assembles-bucket-by-bucket.law.test.ts
+
+The inventory seal assembles its week bucket by bucket (2026-10-12): fn_union_pnl_inventory_seal_advance writes a closed week's checkpoint rows one bucket (one source, the first two hex digits of row_id) at a time, at most 400,000 rows or 75 seconds a call, records each bucket in the unlogged union_pnl_inventory_seal_buckets, and writes the checkpoint row last in a call of its own with the bucket-by-bucket rows hash of 20261012113248, so no single transaction writes a whole week (more WAL than Realtime's 1.5 GB cutoff); a restarted week drops its partial assembly, a verify writes nothing.

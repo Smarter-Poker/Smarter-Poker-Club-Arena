@@ -360,7 +360,7 @@ run_game_probe diamond-choice-progressive-loss 'NOTICE:  PASS Progressive choice
 # contract-5 migration, then the money paths that changed: the Crash probes
 # and the contract-five probe itself.
 "${diamond_psql[@]}" -f "$root/supabase/migrations/20260925215112_diamond_crash_climbs_at_a_pace_that_fits_a_twenty_five_times.sql"
-"${diamond_psql[@]}" -f "$root/supabase/migrations/20261012114801_crash_never_ends_before_1_25x_averages_2_9x_and_flies_to_20x.sql"
+"${diamond_psql[@]}" -f "$root/supabase/migrations/20261012140447_crash_never_ends_before_1_25x_averages_2_9x_and_flies_to_20x.sql"
 "${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
 run_game_probe diamond-crash-contract-five 'NOTICE:  PASS Crash contract five: 20x clamp and 0.08 pace for crash only, every target 1.26x to 20x worth at most its return within one roll and a 2.9x average on the half, two-thirds and smallest floors, 1.20 on the clamped floor, sealed survival in band:'
 run_game_probe diamond-crash-clicked-multiplier 'NOTICE:  PASS Crash clicked multiplier: exact 2.57x, no late rescue, auto and cap preserved, future and foreign requests refused, one payout on replay'

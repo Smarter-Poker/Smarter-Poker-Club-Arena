@@ -1127,6 +1127,64 @@ const TTL_MS = 20_000;
 const STALE_MS = HORSE_TOURNAMENT_CONTEXT_STALE_MS;
 const MAX_CACHED = 500;
 
+/**
+ * A DATABASE STALL IS ONE REPORT, AND IT IS NOT ASKED AGAIN EVERY TWENTY
+ * SECONDS (2026-10-12).
+ *
+ * During a Postgres stall every live tournament's refresh timed out on its own
+ * twenty-second clock, and each one filed TournamentBrainContext.refresh: 1,284
+ * lines in five hours on engine b4475501, 491 of them in the single minute of
+ * 11:31 UTC. Each timed-out read also kept running in the database after this
+ * process stopped waiting for it, and the next attempt twenty seconds later
+ * stacked a fresh set of reads on top - more load on the very stall that caused
+ * the timeout.
+ *
+ * So a refresh that TIMED OUT waits longer before the next one (40 s, then
+ * 80 s, back to the normal 20 s after a success), and failures are reported
+ * once per minute with the count the minute held. The last known context is
+ * kept and labelled stale exactly as before; a refresh that failed fast (an
+ * error answer, not a timeout) keeps the normal interval.
+ */
+const TIMEOUT_BACKOFF_STEPS = 2;
+const REFRESH_FAILURE_REPORT_WINDOW_MS = 60_000;
+
+export function refreshIntervalAfterTimeouts(timeoutStreak: number): number {
+  const steps = Math.max(0, Math.min(TIMEOUT_BACKOFF_STEPS, Math.floor(timeoutStreak) || 0));
+  return TTL_MS * 2 ** steps;
+}
+
+interface RefreshFailureWindow {
+  startedAt: number;
+  suppressed: number;
+  tournaments: Set<string>;
+}
+
+let refreshFailureWindow: RefreshFailureWindow | null = null;
+
+/** One report per minute; the minute's other failures are counted into it. */
+export function noteTournamentContextRefreshFailure(
+  error: unknown,
+  tournamentId: string,
+  nowMs: number = Date.now()
+): void {
+  const open = refreshFailureWindow;
+  if (open && nowMs - open.startedAt < REFRESH_FAILURE_REPORT_WINDOW_MS) {
+    open.suppressed += 1;
+    open.tournaments.add(tournamentId);
+    return;
+  }
+  const previous =
+    open && open.suppressed > 0
+      ? {
+          previousWindowFailures: open.suppressed,
+          previousWindowTournaments: open.tournaments.size,
+        }
+      : undefined;
+  refreshFailureWindow = { startedAt: nowMs, suppressed: 0, tournaments: new Set() };
+  if (previous) reportError(error, 'TournamentBrainContext.refresh', { tournamentId, ...previous });
+  else reportError(error, 'TournamentBrainContext.refresh', { tournamentId });
+}
+
 interface CacheEntry {
   cacheId: string;
   ctx: TournamentBrainContext | null;
@@ -1136,6 +1194,8 @@ interface CacheEntry {
   lastFailureIssue: string | null;
   inFlight: boolean;
   generation: number;
+  /** Consecutive refreshes that timed out; reset by a published context. */
+  timeoutStreak?: number;
 }
 
 const cache = new Map<string, CacheEntry>();
@@ -1189,7 +1249,10 @@ export function refreshTournamentBrainContext(tournamentId: string): TournamentB
   // leave it null forever after the first attempt. The stuck guard lets a later
   // call retry while Phase 6 exposes the incomplete state in the snapshot.
   const stuck = e.inFlight && now - e.lastAttemptAt > STUCK_MS;
-  if ((!e.inFlight || stuck) && now - e.lastAttemptAt > TTL_MS) {
+  if (
+    (!e.inFlight || stuck) &&
+    now - e.lastAttemptAt > refreshIntervalAfterTimeouts(e.timeoutStreak ?? 0)
+  ) {
     e.inFlight = true;
     e.lastAttemptAt = now;
     e.generation += 1;
@@ -1315,6 +1378,7 @@ export function getTournamentBrainContextSnapshot(
 /** Test hook. */
 export function __clearTournamentBrainCache(): void {
   cache.clear();
+  refreshFailureWindow = null;
 }
 
 async function withRefreshTimeout<T>(operation: PromiseLike<T>): Promise<T> {
@@ -1786,12 +1850,13 @@ async function refresh(
     e.source = source;
     e.lastSuccessAt = readCompletedAtMs;
     e.lastFailureIssue = null;
+    e.timeoutStreak = 0;
   } catch (error) {
-    reportError(error, 'TournamentBrainContext.refresh');
+    const timedOut = error instanceof Error && error.message.includes('timed out');
+    noteTournamentContextRefreshFailure(error, tournamentId);
+    if (ownsEntry()) e.timeoutStreak = timedOut ? (e.timeoutStreak ?? 0) + 1 : 0;
     publishFailure(
-      error instanceof Error && error.message.includes('timed out')
-        ? 'tournament_context_refresh_timed_out'
-        : 'tournament_context_refresh_failed'
+      timedOut ? 'tournament_context_refresh_timed_out' : 'tournament_context_refresh_failed'
     );
     // Keep the last known context. The snapshot labels it stale once its
     // freshness boundary is crossed; a failed first read remains incomplete.

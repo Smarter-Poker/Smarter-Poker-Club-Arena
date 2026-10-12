@@ -337,6 +337,8 @@ describe('every widget in the bottom-left HUD corner is the same tile', () => {
     }
     // And the phone reserve is still the proportional clamp, not a flat number
     // sized to the tile.
-    expect(TABLE_CSS).toMatch(/--sp-hero-clear:\s*clamp\(50px,\s*14\.6vw,\s*68px\)/);
+    // October 12: seven pixels pay for the enlarged player plate, not HUD tiles.
+    // The existing browser checks retain both reserve/plate bounds.
+    expect(TABLE_CSS).toMatch(/--sp-hero-clear:\s*clamp\(57px,\s*calc\(14\.6vw \+ 7px\),\s*75px\)/);
   });
 });

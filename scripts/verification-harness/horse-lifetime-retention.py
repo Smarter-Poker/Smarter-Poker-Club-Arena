@@ -8,7 +8,7 @@ MIG='supabase/migrations/20261012171722_horse_hand_retention_preserves_lifetime_
 FIX='scripts/verification-harness/fixtures/horse-lifetime-retention'
 U="d1000000-0000-4000-8000-000000000001"
 H="d2000000-0000-4000-8000-000000000001"
-def qualify(e,template,connected=True):
+def qualify(e,template,connected=True,keep_template=False):
  root=e.root; passed=[]; db=e.database(template)
  paths=[root/MIG,Path(__file__),*(root/FIX).iterdir()]
  e.report.setdefault('source_sha256',{}).update({str(p.relative_to(root)):sha(p) for p in paths})
@@ -87,5 +87,6 @@ def qualify(e,template,connected=True):
   e.sql(cash,"SET request.jwt.claim.role='service_role';SET app.smarter_data_actor='service';SELECT sp_prune_hand_history(250);",label='lifetime-connected-repeat');check(cash,'SELECT '+rpc+"#>>'{lifetime,hands}';",'connected-repeat-keeps-exact-count','1');e.discard(cash)
  _,catalog,_=e.sql(case,"SELECT jsonb_agg(jsonb_build_object('signature',p.oid::regprocedure::text,'md5',md5(pg_get_functiondef(p.oid)),'owner',pg_get_userbyid(p.proowner),'acl',p.proacl::text,'secdef',p.prosecdef,'config',p.proconfig) ORDER BY p.oid::regprocedure::text) FROM pg_proc p WHERE p.oid=ANY(ARRAY['public.ca_player_stats_full(uuid,integer,text,text)'::regprocedure,'public.fn_ca_hand_player_row_takes_its_hands_asset()'::regprocedure,'public.sp_prune_hand_history(integer)'::regprocedure,'smarter_private.archive_pruned_hand_index(uuid[])'::regprocedure]);",label='lifetime-postimages')
  e.report['lifetime_qualified_postimage']=json.loads(catalog);e.report['lifetime_proven']=passed
- e.discard(case);e.discard(db)
- return passed
+ e.discard(case)
+ if keep_template:return db
+ e.discard(db);return passed

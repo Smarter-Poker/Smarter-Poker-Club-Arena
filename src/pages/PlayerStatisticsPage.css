@@ -837,3 +837,29 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Definitions use the existing card, inks and text flow. */
+.ps-metric-guide {
+  margin: 0 0 0.75rem;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--ca-text-dim);
+  overflow-wrap: anywhere;
+}
+.ps-metric-guide summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: list-item;
+  align-content: center;
+  color: var(--ca-cyan);
+}
+.ps-metric-guide p {
+  margin: 0.5rem 0;
+}
+.ps-range__draft {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--ca-cyan);
+  overflow-wrap: anywhere;
+}

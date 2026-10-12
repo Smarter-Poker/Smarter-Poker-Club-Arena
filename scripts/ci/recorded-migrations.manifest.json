@@ -820,6 +820,19 @@
         "retention config source contract: observes existing pruner budget without redefining retention policy"
       ],
       "liveVerdict": "Production read2026-10-12: exact ledger/file md5 eed8b99890d22ec62e5bb2ac50a95b38; original job117 activeTRUE at every-minute cadence, original command96244362bf46b39e75ef1100b1372203/ownerpostgres/database/node/port preserved according to applying operation readback and native15 least-privilege qualification. Migration observes the existing twenty-second budget and250-row cap and does not redefine the configured eight-day retention policy. The earlier reserved174649 SQL never installed; only actual81304 is recorded here. This records immutable installed SQL and grants no bypass for new SQL."
+    },
+    {
+      "version": "20261012190754",
+      "name": "horse_adaptive_retention_commits_a_larger_time_bounded_original_pass",
+      "file": "supabase/migrations/20261012190754_horse_adaptive_retention_commits_a_larger_time_bounded_original_pass.sql",
+      "md5": "c7605a77c0613ab6d0193598c08879bf",
+      "appliedToProductionAt": "2026-10-12T19:07:54Z",
+      "recoveredOn": "2026-10-12",
+      "recoveredFrom": "Exact qualified applying-session source; schema_migrations statement digest c7605a77c0613ab6d0193598c08879bf verified19:08:03UTC. Immutable bytes restamped to actual installed version without replay.",
+      "refusedBy": [
+        "check-definer-authorization: CREATE OR REPLACE preserves existing engine-only prune ACL, absent from replacement body"
+      ],
+      "liveVerdict": "Production19:08:03UTC fn_prune_horse_adaptive_journal() md5ae358dd5be5586e0fbdf44f083afe92d ownerpostgres SECURITY DEFINER search_path pg_catalog/public/smarter_private lock_timeout2s ACLpostgres/service_role only anon/authenticated false; original privateactivation ACLpostgres only, pairconstraints and nullable cursors read back. Native27 qualifies exact SQL,250 cap,16MiB,time,originalhelperidentity,protectedprefix/restart/rollback. ActivationFALSE pending exact versioned serving consumer proof; no installed replay."
     }
   ]
 }

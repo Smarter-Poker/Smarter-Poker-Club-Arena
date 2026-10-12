@@ -2,7 +2,7 @@
 from pathlib import Path
 import hashlib,json,subprocess,time
 from satellite_qualifier_fixture import module,sha,lit
-MIGRATION=Path('supabase/migrations/20261012185848_horse_adaptive_retention_commits_a_larger_time_bounded_original_pass.sql')
+MIGRATION=Path('supabase/migrations/20261012190754_horse_adaptive_retention_commits_a_larger_time_bounded_original_pass.sql')
 def qualify(e,template):
  root=Path(__file__).resolve().parents[2];checks=[];base=e.database(template)
  old=module(e.root/'scripts/ci/test-hand-submission-retention-disposal.py','capacity_original')

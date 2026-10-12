@@ -231,13 +231,29 @@ test.describe('Production Cashier Certification', () => {
     await expect(nativeSelect).toBeVisible();
     await nativeSelect.click();
     const transferDialog = page.getByRole('dialog', { name: 'Send Out', exact: true });
+    const singleAmount = transferDialog.getByRole('spinbutton', { name: 'Amount Per Player' });
+    await singleAmount.fill('10.005');
+    await expect(singleAmount).toHaveAttribute('aria-invalid', 'true');
+    await expect(singleAmount).toHaveAccessibleDescription(
+      /Enter The Amount As Digits, With Up To Two Decimals/
+    );
+    await singleAmount.fill('0.20');
+    await expect(singleAmount).toHaveAttribute('aria-invalid', 'false');
     const selectedWallet = transferDialog.getByRole('region', {
       name: 'Selected Player Wallet Context',
     });
     await expect(selectedWallet).toBeVisible();
     await expect(selectedWallet).toContainText('Player Wallet:');
     await expect(selectedWallet).toContainText('Send From Your Agent Wallet To Their');
+    const confirm = transferDialog.getByRole('button', { name: 'Confirm', exact: true });
+    const close = transferDialog.getByRole('button', { name: 'Close', exact: true });
+    await confirm.focus();
+    await page.keyboard.press('Tab');
+    await expect(close).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(confirm).toBeFocused();
     await transferDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(nativeSelect).toBeFocused();
     await expect(transferDialog).toHaveCount(0);
     // Preview only: certify the published individual-amount wiring without
     // spending real chips or issuing tickets against production players.
@@ -429,6 +445,7 @@ test.describe('Production Cashier Certification', () => {
   test('certifies the Advanced Cashier and an open wallet without moving money', async ({
     page,
   }, testInfo) => {
+    test.setTimeout(150_000);
     const clubId = process.env.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID;
     await page.setViewportSize({ width: 393, height: 852 });
     await page.goto(`clubs/${clubId}/cashier-classic`, {
@@ -463,6 +480,60 @@ test.describe('Production Cashier Certification', () => {
     await expect(page.locator('main .dw__bbj-shell')).not.toBeVisible();
     await attachCashierScreenshot(page, testInfo, 'advanced-cashier');
 
+    // Exercise every amount rail this real identity may use, without submitting.
+    // Mounted tests cover all four actions even when production rights differ.
+    const advancedTabs = page.getByRole('tablist', { name: 'Cashier Actions' });
+    const observedAmountRails: string[] = [];
+    for (const width of [375, 393]) {
+      await page.setViewportSize({ width, height: 852 });
+      for (const rail of ['Send', 'Distribute', 'Mint', 'Cash-Out']) {
+        const tab = advancedTabs.getByRole('tab', { name: rail, exact: true });
+        if ((await tab.count()) === 0) continue;
+        await tab.click();
+        const field = console.getByRole('spinbutton', {
+          name: rail === 'Mint' ? 'Chips To Mint' : 'Amount',
+          exact: true,
+        });
+        await expect(field).toBeVisible();
+        await expect(field).toHaveAttribute('inputmode', rail === 'Mint' ? 'numeric' : 'decimal');
+        await field.fill(rail === 'Mint' ? '1.5' : '10.005');
+        await expect(field).toHaveAttribute('aria-invalid', 'true');
+        await expect(field).toHaveAccessibleDescription(
+          rail === 'Mint' ? 'Mint Whole Chips Only' : 'Chips Go To Two Decimal Places'
+        );
+        await expect(console.getByRole('status', { name: 'Amount Validation' })).toBeVisible();
+        const bounds = await field.boundingBox();
+        expect(bounds).not.toBeNull();
+        expect(bounds!.height).toBeGreaterThanOrEqual(44);
+        expect(bounds!.width).toBeGreaterThanOrEqual(44);
+        const geometry = await page.evaluate(() => ({
+          width: document.documentElement.clientWidth,
+          scroll: document.documentElement.scrollWidth,
+        }));
+        expect(geometry.scroll).toBeLessThanOrEqual(geometry.width);
+        await field.fill('10');
+        await expect(field).toHaveAttribute('aria-invalid', 'false');
+        await expect(console.getByRole('status', { name: 'Amount Validation' })).toHaveCount(0);
+        await field.fill('');
+        observedAmountRails.push(`${width}:${rail}`);
+      }
+      await expectCashierAxeClean(page, testInfo, 'main', `advanced-amounts-${width}`);
+    }
+    expect(observedAmountRails).toContain('375:Send');
+    expect(observedAmountRails).toContain('393:Send');
+    await testInfo.attach('advanced-phone-amount-rails.json', {
+      body: JSON.stringify({ observedAmountRails, physicalPhone: false }, null, 2),
+      contentType: 'application/json',
+    });
+    // The tab set remains keyboard operable after the phone passes.
+    const sendTab = advancedTabs.getByRole('tab', { name: 'Send', exact: true });
+    await sendTab.focus();
+    await page.keyboard.press('End');
+    await expect(advancedTabs.getByRole('tab').last()).toBeFocused();
+    await page.keyboard.press('Home');
+    await expect(advancedTabs.getByRole('tab').first()).toBeFocused();
+    await sendTab.click();
+
     await agentWallet.click();
     const dialog = page.getByRole('dialog', { name: 'Agent Wallet Cashier' });
     await expect(dialog).toBeVisible({ timeout: 30_000 });
@@ -471,6 +542,7 @@ test.describe('Production Cashier Certification', () => {
     await attachCashierScreenshot(page, testInfo, 'agent-wallet-cashier');
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
+    await expect(agentWallet).toBeFocused();
   });
 
   test('records the maintained live role matrix constraint without impersonation', async ({

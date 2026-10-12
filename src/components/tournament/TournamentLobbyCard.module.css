@@ -27,13 +27,13 @@
 .tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 1.4cqw 4cqw;
+  gap: calc(1.4 * var(--tournament-unit, 1cqw)) calc(4 * var(--tournament-unit, 1cqw));
   margin: 0;
-  padding: 1cqw 0.5cqw 0;
+  padding: calc(1 * var(--tournament-unit, 1cqw)) calc(0.5 * var(--tournament-unit, 1cqw)) 0;
 }
 
 .tag {
-  font-size: 2.5cqw;
+  font-size: calc(2.5 * var(--tournament-unit, 1cqw));
   white-space: nowrap;
 }
 
@@ -46,9 +46,9 @@
 .row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 3cqw;
+  gap: calc(3 * var(--tournament-unit, 1cqw));
   align-items: baseline;
-  padding: 2.2cqw 0.5cqw;
+  padding: calc(2.2 * var(--tournament-unit, 1cqw)) calc(0.5 * var(--tournament-unit, 1cqw));
   border-top: 1px solid #000;
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
@@ -60,7 +60,7 @@
    either: the label takes its own line and the value wraps under it. */
 .rowStacked {
   grid-template-columns: minmax(0, 1fr);
-  gap: 1.2cqw;
+  gap: calc(1.2 * var(--tournament-unit, 1cqw));
 }
 
 .rowStacked .value {
@@ -70,11 +70,11 @@
 
 .value {
   display: flex;
-  gap: 2cqw;
+  gap: calc(2 * var(--tournament-unit, 1cqw));
   align-items: baseline;
   justify-self: end;
   min-width: 0;
-  font-size: 3.8cqw;
+  font-size: calc(3.8 * var(--tournament-unit, 1cqw));
   font-weight: 800;
   letter-spacing: 0.02em;
   text-align: right;
@@ -85,7 +85,7 @@
 
 .gtd {
   flex: 0 0 auto;
-  font-size: 2.4cqw;
+  font-size: calc(2.4 * var(--tournament-unit, 1cqw));
   font-weight: 800;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -98,4 +98,8 @@
 .levelValue {
   display: block;
   white-space: normal;
+}
+
+.card[data-unframed] {
+  --tournament-unit: 4px;
 }

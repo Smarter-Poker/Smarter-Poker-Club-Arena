@@ -52,3 +52,27 @@
     padding-left: 12px !important;
   }
 }
+
+/* Play Records are normal documents, with records separated by simple rules. */
+:is(.hand-history-page, .session-history-page) {
+  width: min(100%, 1200px);
+  margin-inline: auto;
+  padding: 20px 20px var(--bottom-nav-clearance, 112px);
+}
+:is(.hand-history-page, .session-history-page)
+  :is(.summary-stat, .hand-card, .sh-stat-card, .sh-mini-stat, .sh-session-card) {
+  background: transparent !important;
+  border: 0 !important;
+  border-top: 1px solid rgb(154 165 179 / 20%) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+:is(.hand-history-page, .session-history-page) :is(.hh-filters, .sh-aggregate) {
+  background: transparent !important;
+  border: 0 !important;
+}
+@media (max-width: 620px) {
+  :is(.hand-history-page, .session-history-page) {
+    padding: 12px 16px var(--bottom-nav-clearance, 100px);
+  }
+}

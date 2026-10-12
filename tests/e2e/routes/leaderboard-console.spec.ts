@@ -87,8 +87,8 @@ async function expectLeaderboardNamesToStartEachWordWithACapital(
   expect(lowercaseWordStarts, `${state}: every name word starts with a capital`).toEqual([]);
 }
 
-for (const width of [393, 1440]) {
-  test(`Leaderboard Console Is Painted And Reachable At ${width}px`, async ({ page }, testInfo) => {
+for (const width of [375, 393, 430, 1440]) {
+  test(`Leaderboards Are Unframed And Reachable At ${width}px`, async ({ page }, testInfo) => {
     const keep = (name: string) =>
       page.screenshot({
         path: testInfo.outputPath(`leaderboard-${name}-${width}.png`),
@@ -124,18 +124,8 @@ for (const width of [393, 1440]) {
       timeout: 30000,
     });
     const firstReadyMs = Date.now() - started;
-    // The painted art is fetched by CSS once the console renders; give the
-    // three default slices time to finish before reading the timeline.
-    await page.waitForFunction(
-      () =>
-        performance
-          .getEntriesByType('resource')
-          .filter((entry) =>
-            /\/spade-console-v1\/(top|mid|bottom-foot)\.png$/.test(new URL(entry.name).pathname)
-          ).length >= 3,
-      null,
-      { timeout: 15000 }
-    );
+    // The normal page heading is visible before reading the loading timeline.
+    await expect(board.getByRole('heading', { name: 'Leaderboards', level: 1 })).toBeVisible();
     const firstLoad = await page.evaluate(() => {
       const navigation = performance.getEntriesByType('navigation')[0] as
         | PerformanceNavigationTiming
@@ -196,17 +186,10 @@ for (const width of [393, 1440]) {
       firstLoad.transferBytes,
       'the full leaderboard route should stay below 12 MiB'
     ).toBeLessThan(12 * 1024 * 1024);
-    // The board painted from the real art and the real route chunk.
+    // The owner's normal page retains the real route chunk and live rankings.
     expect(firstLoad.leaderboardChunks.map(([name]) => name).join(' ')).toMatch(/LeaderboardPage-/);
-    expect(firstLoad.consoleArt.map(([name]) => name).sort()).toEqual(
-      expect.arrayContaining(['bottom-foot.png', 'mid.png', 'top.png'])
-    );
-
-    await expect(board.locator('.sc')).toHaveCount(1);
-    await expect(board.locator('.sc__head')).toHaveCSS(
-      'background-image',
-      /spade-console-v1\/top\.png/
-    );
+    await expect(board.locator('.sc')).toHaveCount(0);
+    await expect(board.locator('.club-page-section')).toHaveCount(1);
     await expect(board.getByRole('heading', { name: 'Leaderboards', level: 1 })).toBeAttached();
     await expect(board.getByRole('tab', { name: 'Rankings' })).toHaveAttribute(
       'aria-selected',
@@ -254,13 +237,13 @@ for (const width of [393, 1440]) {
     await expectLeaderboardNamesToStartEachWordWithACapital(page, '.entry-name', 'Rankings');
 
     const geometry = await board.evaluate((root) => ({
-      width: root.querySelector('.sc')!.getBoundingClientRect().width,
+      width: root.querySelector('.club-page-section')!.getBoundingClientRect().width,
       overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
-      clipped: [...root.querySelectorAll<HTMLElement>('.sc-zone > span')]
+      clipped: [...root.querySelectorAll<HTMLElement>('.club-page-heading h1')]
         .filter((el) => el.scrollWidth > el.clientWidth + 2)
         .map((el) => el.textContent),
     }));
-    expect(geometry.width).toBeLessThanOrEqual(1000);
+    expect(geometry.width).toBeLessThanOrEqual(1200);
     expect(geometry.overflow).toBe(false);
     expect(geometry.clipped).toEqual([]);
     await expect(board.locator('.lb-hero, .podium-crown, .podium-bar, .empty-icon')).toHaveCount(0);

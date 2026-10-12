@@ -25,16 +25,24 @@ for (const width of [375, 393, 1280]) {
         document.documentElement.style.setProperty('--ca-bottom-chrome-h', `${value}px`);
         (document.querySelector('#global-footer') as HTMLElement).style.height = `${value}px`;
       }, height);
-      const hit = await page
-        .getByRole('button', { name: 'Register', exact: true })
-        .evaluate((el) => {
-          const rect = el.getBoundingClientRect();
-          const top = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
-          const footer = document.querySelector('#global-footer')!.getBoundingClientRect();
-          return { reachable: top === el, bottom: rect.bottom, footerTop: footer.top };
-        });
-      expect(hit.reachable, `Register is intercepted with ${height}px of footer`).toBe(true);
-      expect(hit.bottom).toBeLessThanOrEqual(hit.footerTop);
+      // Mobile viewport and live footer changes can finish layout after setContent.
+      // Require the rendered hit target and clearance together, retaining both
+      // guards and a five-second budget inside the sixty-second case deadline.
+      await expect(async () => {
+        const hit = await page
+          .getByRole('button', { name: 'Register', exact: true })
+          .evaluate((el) => {
+            const rect = el.getBoundingClientRect();
+            const top = document.elementFromPoint(
+              rect.x + rect.width / 2,
+              rect.y + rect.height / 2
+            );
+            const footer = document.querySelector('#global-footer')!.getBoundingClientRect();
+            return { reachable: top === el, bottom: rect.bottom, footerTop: footer.top };
+          });
+        expect(hit.reachable, `Register is intercepted with ${height}px of footer`).toBe(true);
+        expect(hit.bottom).toBeLessThanOrEqual(hit.footerTop);
+      }).toPass({ timeout: 5_000 });
       await page.getByRole('button', { name: 'Register', exact: true }).click();
       await expect(page.locator('output')).toHaveText('Opened');
     }

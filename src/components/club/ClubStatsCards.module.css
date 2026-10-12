@@ -94,3 +94,31 @@
   font-size: 0.85rem;
   padding: 12px 0;
 }
+
+/* A compact live reading strip on the redesigned club dashboard. */
+.grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px;
+}
+.card {
+  align-items: flex-start;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid rgb(154 165 179 / 20%);
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  padding: 16px 0;
+}
+.iconWrap {
+  display: none;
+}
+.label {
+  text-align: left;
+  color: #9aa5b3;
+  font-size: 14px;
+}
+.value {
+  color: #e4e7ec;
+  font-size: 28px;
+}

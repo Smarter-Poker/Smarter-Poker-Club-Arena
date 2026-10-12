@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 208650,
-      "sha256": "726fc785d4c857df179022236ca835b70891a323ba25f306a1ccd2f6d59b8000"
+      "bytes": 209626,
+      "sha256": "193e61fdf98e93dcef7ae20fbc5fe447d4048a1e8605a452aa239f4a75e0f7dc"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -2398,6 +2398,39 @@
     "combinedWorkflowPin": {
       "bytes": 208650,
       "sha256": "726fc785d4c857df179022236ca835b70891a323ba25f306a1ccd2f6d59b8000"
+    }
+  },
+  "inventoryCommittedPages20261012": {
+    "reason": "Add required Accounting3 native actual-deferred-FK fail-before/pass-after proof. Preserve all existing financial inputs, assertions and qualification status. Source fingerprint is not production proof.",
+    "previousWorkflowPin": {
+      "bytes": 205794,
+      "sha256": "e85cb68743eb7bc58e6b3c089e3f731ba0ae9a96cc9ef3b4b055d7e031fb518d"
+    }
+  },
+  "inventoryRetentionMainIntegration20261012": {
+    "reason": "Preserve all protected retention, original-stack, inventory-seal and new committed-page native qualification. Refresh only exact combined workflow source identity; preserve historical pins, financial inputs/assertions and qualification status.",
+    "previousCommittedPageWorkflowPin": {
+      "bytes": 206770,
+      "sha256": "92db31450a1ff6b93168e418e38eee09b4ecc79ca693d48a969a1e4da18b59fa"
+    },
+    "protectedMainRetentionWorkflowPin": {
+      "bytes": 208650,
+      "sha256": "726fc785d4c857df179022236ca835b70891a323ba25f306a1ccd2f6d59b8000"
+    }
+  },
+  "diamondInventoryMainIntegration20261012": {
+    "reason": "Preserve protected main committed-inventory native qualification beside Diamond acceptance. Refresh only current integrated workflow input fingerprint, retaining financial inputs, historical pins, assertions and qualification statuses. This is source binding, not runtime or production certification.",
+    "previousDiamondWorkflowPin": {
+      "bytes": 208650,
+      "sha256": "726fc785d4c857df179022236ca835b70891a323ba25f306a1ccd2f6d59b8000"
+    },
+    "protectedMainWorkflowPin": {
+      "bytes": 209626,
+      "sha256": "193e61fdf98e93dcef7ae20fbc5fe447d4048a1e8605a452aa239f4a75e0f7dc"
+    },
+    "combinedWorkflowPin": {
+      "bytes": 209626,
+      "sha256": "193e61fdf98e93dcef7ae20fbc5fe447d4048a1e8605a452aa239f4a75e0f7dc"
     }
   }
 }

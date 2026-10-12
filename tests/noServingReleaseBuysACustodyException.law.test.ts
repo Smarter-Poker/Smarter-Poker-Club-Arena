@@ -175,6 +175,9 @@ describe('2. every bank or custody reason refuses, whoever is serving', () => {
     );
   });
 
+  // Isolated SSD runs on 2026-10-12 took 5.3-7.4 seconds. Keep all assertions
+  // and allow bounded headroom for Git/filesystem work, rather than timing out
+  // after the check already completed its synchronous work.
   it('refuses each one alone and beside a preparation reason, with the database proof saying no hand', () => {
     for (const reason of CUSTODY_REASONS) {
       for (const releaseSha of SERVING) {
@@ -188,8 +191,7 @@ describe('2. every bank or custody reason refuses, whoever is serving', () => {
         }
       }
     }
-  });
-
+  }, 30_000);
   it('still admits the preparation reasons alone, so the refusals above are not a broken harness', () => {
     const result = run(CERTIFICATE, { f06_preparation_stuck: 13 }, RETIRED);
     expect(result.status, result.stderr).toBe(0);

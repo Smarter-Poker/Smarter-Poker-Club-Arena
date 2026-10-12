@@ -1,0 +1,9 @@
+# Inventory pages commit before their immutable header
+
+The installed bucket assembler returned after writing partial checkpoint children, but the real deferred foreign keys require a checkpoint header at transaction commit. The earlier isolated fixture omitted those foreign keys, so its equivalence result did not prove a partial production commit. The new native fixture retains that failure at 430,000 rows.
+
+Fresh migration `20261012200734` preserves both installed predecessor files and history. It stores bounded pages in private logged build tables, resumes from their durable cursor after interruption, and exposes them through the maintained readers only after independent source equality, hash validation and one immutable header publication. The original population function and financial issue semantics remain unchanged. The installation refuses a frozen platform, an active original writer, changed predecessor history, changed function dependencies or missing deferred constraints.
+
+The finite PostgreSQL 17 qualification compares 60,000 original rows and their header with the published result, tests rollback, crash recovery, duplicate/concurrent calls, hidden partial pages, corrupt input refusal, five nonempty source populations, and encoded compressed/oversized row limits. The existing required Accounting3 lane runs and retains it. These measurements are isolated qualification, not production latency or weekly financial certification. The old fixture's narrow historical result remains retained.
+
+Read and changed: new migration, actual deferred-FK fixture, native runner, required accounting invocation, additive workflow fingerprint, private object declarations and this regression law. Exact local compiler/protected provider/installation/live results are recorded in the retained task checkpoint as they complete. No engine runtime, wallet, payment, seat, settled outcome, historical header or original inventory event is rewritten.

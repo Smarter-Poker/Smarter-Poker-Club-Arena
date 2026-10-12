@@ -1,0 +1,50 @@
+{
+  "schema": "horse-phase12-completion-v1",
+  "definition": "horse-phase12-completion-definition-v1",
+  "variant": "flh",
+  "packVersion": "fixed-limit-holdem-round3-v1",
+  "releaseSha": "9d5674639f2bd091f2386c75cbd87bec419c5dcd",
+  "policyDigestDefinition": "horse-phase12-policy-digest-v1",
+  "policyDigest": "d1c536a9f1b6889478da2ad4c5d5d985a130a47fb794169ddf6f420a6ccde8fb",
+  "gameMode": "cash",
+  "window": {
+    "from": "2026-10-12T05:02:00.000Z",
+    "to": "2026-10-12T05:50:00.000Z",
+    "releaseUnchanged": true,
+    "source": "engine.smarter.poker horse-decisions archive segments (archive, archive-shard-1), closed segment files, read-only; release 9d5674639f2bd091f2386c75cbd87bec419c5dcd StartedAt 2026-10-12T04:55:45.77811695Z read at 2026-10-12T05:00:03Z and 2026-10-12T05:50:41Z (unchanged); predeclared in /Volumes/SmarterArchives/agent-evidence/horse-brain-select-20261009/round4-live/declaration-completion-round4-2026-10-12.txt (sha256 536f9663f9ef1b4da035ee09cec57fc98e2436d923a06ccbaf271336552c939a, written 2026-10-12T04:21:54Z)"
+  },
+  "streets": {
+    "preflop": {
+      "eligible": 505,
+      "completed": 504,
+      "workBudget": 1,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0
+    },
+    "flop": {
+      "eligible": 239,
+      "completed": 238,
+      "workBudget": 1,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0
+    },
+    "turn": {
+      "eligible": 178,
+      "completed": 178,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0
+    },
+    "river": {
+      "eligible": 130,
+      "completed": 130,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0
+    }
+  }
+}

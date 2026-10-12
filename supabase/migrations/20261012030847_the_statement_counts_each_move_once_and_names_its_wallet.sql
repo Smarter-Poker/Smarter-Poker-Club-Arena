@@ -1,4 +1,4 @@
--- 20261011194856_the_statement_counts_each_move_once_and_names_its_wallet.sql
+-- 20261012030847_the_statement_counts_each_move_once_and_names_its_wallet.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
 -- remote branch, so it cannot collide with another agent's in-flight work.
@@ -9,22 +9,25 @@
 -- read through the one owner-only row query fn_cashier_statement_rows) printed
 -- some moves twice, counted a cash out against the player twice, charged the
 -- operator for every Club Bank send, named every horse, printed real names and
--- printed storage paths as names. Production's live body (md5 8a47b11b861fef1357ae8749d1370a11,
--- installed by 20261010011934_cashier_totals_count_directional_ranges_without_rescanning,
--- #6615, read back read-only on 2026-10-11) was reproduced byte for byte in a
+-- printed storage paths as names. Production's live body (md5 b1f42803af9196e322159660ff6f9e57,
+-- installed by 20261011225840_cashier_totals_read_the_range_as_concurrent_slices,
+-- #6688, read back read-only on 2026-10-12 03:04 UTC) was reproduced byte for byte in a
 -- private PostgreSQL 17 copy of the statement fixture; the regression
 -- tests/fixtures/cashier-statements/db-one-move-once.sql fails there and
 -- passes all of its assertions after this file.
 --
--- REBASED (2026-10-11). This file was first written as 20261009223439 against
--- the body before #6615 (md5 72d29ab402ff75ae3f240ce40a750437). #6615 then
--- installed a fast path for the default all-scope totals (one directional
--- range per source, minus the omitted legs in $19). This file is that live
--- body with the changes below and nothing else: #6615's fast path is kept,
--- its omitted set ($19) gains the mirrored legs of 1, and its receipt range
--- is split by the viewer's side so a receipt's kind decides its direction
--- (2 and 3) exactly as on every other path. The default totals still read
--- one range per source plus the viewer's own receipts.
+-- REBASED TWICE. This file was first written as 20261009223439 against the
+-- body before #6615 (md5 72d29ab402ff75ae3f240ce40a750437), then as
+-- 20261011194856 against #6615's body (md5 8a47b11b861fef1357ae8749d1370a11).
+-- #6615 installed a fast path for the default all-scope totals (one
+-- directional range per source, minus the omitted legs in $19); #6688
+-- (20261011225840) then cut each of those ranges into at most 16 concurrent
+-- slices. This file is that live body with the changes below and nothing
+-- else: the sliced fast path is kept; each slice now counts only the receipts
+-- the viewer is not a side of (managed, from the club-time range), the
+-- viewer's own receipts are added once from the (club, user, time) indexes
+-- so a receipt's kind decides its direction (2 and 3) exactly as on every
+-- other path, and the omitted set ($19) gains the mirrored legs of 1.
 --
 -- 1. ONE MOVE, ONE ENTRY. A door that writes a receipt also journals the same
 --    move as a chip_ledger leg in the same transaction (same club, the
@@ -45,7 +48,7 @@
 --    see 3, is not a side). A prize, spin, buy-in or bounty leg is never
 --    read against a receipt. The idempotency and restore rules are unchanged.
 --    Pages, exports and the self and downline totals probe per leg; the
---    all-scope totals (the filtered path and #6615's default fast path
+--    all-scope totals (the filtered path and the default fast path (#6615, sliced by #6688)
 --    alike) subtract the mirrored legs, read first into $19 from the small
 --    partial index idx_chip_ledger_statement_mirror_legs (the legs of those categories,
 --    ~280 a day), so the aggregate stays a parallel index-only scan.
@@ -64,7 +67,7 @@
 --    The pot is printed as the side (club_treasury, promo_wallet or
 --    union_wallet, the chip_ledger account types), the member keeps the in or
 --    the out, and the operator who pressed the button reads managed. The
---    all-scope totals (#6615's default fast path included) now read the
+--    all-scope totals (the default fast path (#6615, sliced by #6688) included) now read the
 --    receipts a viewer is a side of from the (club, user, time) covering
 --    indexes, which carry the kind; every other receipt is managed and is
 --    still counted from the club-time index (idx_chip_tx_club_time_totals).
@@ -96,13 +99,11 @@
 -- QUALIFICATION: scripts/ci/test-cashier-statement-db-postgres.py (PostgreSQL
 -- 17): the live body reproduced (md5), the regression failing before and
 -- passing after, totals equal to their own pages for every viewer, scope and
--- filter (the default totals take #6615's fast path, the filtered ones the
+-- filter (the default totals take #6688's sliced fast path, the filtered ones the
 -- per-branch path, and both agree with the rows), every other statement
 -- function byte-identical, rollback and replay refusal, and the all-scope
 -- totals plan (index-only scans, #6615's direction cover, the new index).
--- #6615's own native qualification
--- (tests/fixtures/cashier-statements/direction-totals-native.py) runs on the
--- rebased body as well.
+-- #6615's and #6688's own qualifications run unchanged on main.
 --
 -- LOCKING: the index is built CONCURRENTLY, alone, before BEGIN (the
 -- apply-merged-migration installer sends it on its own and reads it back
@@ -110,7 +111,7 @@
 -- before and after, with lock_timeout 2s.
 --
 -- @live-proof: (SELECT count(*) FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid WHERE c.relname = 'idx_chip_ledger_statement_mirror_legs' AND i.indisvalid) = 1
--- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_cashier_statement_rows(uuid,uuid,text,timestamptz,timestamptz,jsonb,timestamptz,text,uuid,integer)'::regprocedure)) = '88cb4d660916a2c78b9cf7333c5b3b45')
+-- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_cashier_statement_rows(uuid,uuid,text,timestamptz,timestamptz,jsonb,timestamptz,text,uuid,integer)'::regprocedure)) = '8cab96c15ba360fb34c13f0afd3378b8')
 
 -- The legs a receipt writer journals, by club and instant: the all-scope
 -- totals read the mirrored ones from here instead of the heap.
@@ -130,7 +131,7 @@ SET LOCAL statement_timeout = '60s';
 DO $pre$
 BEGIN
   IF md5(pg_get_functiondef('public.fn_cashier_statement_rows(uuid,uuid,text,timestamptz,timestamptz,jsonb,timestamptz,text,uuid,integer)'::regprocedure))
-       IS DISTINCT FROM '8a47b11b861fef1357ae8749d1370a11' THEN
+       IS DISTINCT FROM 'b1f42803af9196e322159660ff6f9e57' THEN
     RAISE EXCEPTION 'fn_cashier_statement_rows is not the live text this migration was written against (md5 %)',
       md5(pg_get_functiondef('public.fn_cashier_statement_rows(uuid,uuid,text,timestamptz,timestamptz,jsonb,timestamptz,text,uuid,integer)'::regprocedure))
       USING ERRCODE = '55000';
@@ -174,6 +175,11 @@ DECLARE
   v_branch text;
   v_sql text;
   v_omitted uuid[] := '{}'::uuid[];
+  v_bounds timestamptz[];
+  v_slices integer;
+  v_slice integer;
+  v_ranged text[] := ARRAY[]::text[];
+  v_workers text;
   v_receipt_directions text[];
   v_receipt_direction text;
   v_mirror_probe text;
@@ -671,11 +677,44 @@ $sql$;
   END IF;
 
   IF v_totals_only AND p_scope='all' AND v_wallet IS NULL AND v_direction IS NULL AND v_state IS NULL AND p_filters->>'operation' IS NULL AND v_counterparty_id IS NULL AND v_counterparty_pattern IS NULL AND p_filters->>'reference' IS NULL THEN
+    -- A COLD TOTAL WAS ONE LEAF CHAIN PER SOURCE (2026-10-11). A btree range
+    -- scan reads its leaf pages one after another, because each page names
+    -- the next, and a parallel index scan hands those pages out in the same
+    -- order, so its workers wait on the one chain (measured on production: 7
+    -- participants, 0.65 ms a page, the same as one). A busy club's week is
+    -- ~7,000 such pages, grown by page splits and scattered on disk, so a cold
+    -- default total took ~3.8 s and crossed the 8 s statement timeout when the
+    -- disk was busy. Each source range is now cut into at most 16 consecutive
+    -- slices of at least 12 hours. Every slice is its own range scan, so a
+    -- Parallel Append reads several chains at once. The slices partition
+    -- [p_from, p_to) exactly (first bound p_from, last bound p_to, strictly
+    -- increasing), so each row is still read once and the sums are unchanged.
+    v_slices := least(16, greatest(1, ceil(extract(epoch FROM p_to - p_from) / 43200.0)::integer));
+    SELECT array_agg(CASE WHEN g = v_slices THEN p_to
+                          ELSE p_from + make_interval(secs => (extract(epoch FROM p_to - p_from) * g / v_slices)::double precision)
+                     END ORDER BY g)
+      INTO v_bounds
+      FROM generate_series(0, v_slices) g;
+    FOR v_slice IN 1..v_slices LOOP
+      v_ranged := v_ranged
+        || replace(replace($slice$SELECT 'managed'::text direction,amount FROM public.chip_transactions WHERE club_id=$1 AND created_at >= @LO@ AND created_at < @HI@ AND from_user_id IS DISTINCT FROM $2 AND to_user_id IS DISTINCT FROM $2$slice$, '@LO@', '$20[' || v_slice || ']'), '@HI@', '$20[' || (v_slice + 1) || ']')
+        || replace(replace($slice$SELECT CASE WHEN to_entity_id=$2 AND from_entity_id IS DISTINCT FROM $2 THEN 'in' WHEN from_entity_id=$2 AND to_entity_id IS DISTINCT FROM $2 THEN 'out' ELSE 'managed' END direction,amount FROM public.chip_ledger WHERE club_id=$1 AND created_at >= @LO@ AND created_at < @HI@ AND status='posted' AND category=ANY($17)$slice$, '@LO@', '$20[' || v_slice || ']'), '@HI@', '$20[' || (v_slice + 1) || ']');
+    END LOOP;
     -- A receipt the viewer is not a side of is managed whatever its kind, so
-    -- it is still counted from the club-time range; the viewer's own receipts
-    -- come from the (club, user, time) indexes, which carry the kind that
-    -- decides their direction (a cash out, a pot; 2026-10-11).
-    v_sql := replace($narrow$WITH raw_totals AS (SELECT direction,coalesce(sum(abs(amount)) FILTER (WHERE amount <> 'NaN'::numeric),0) amount,count(*) n,count(amount) nn,count(*) FILTER (WHERE amount='NaN'::numeric) nc FROM (SELECT 'managed'::text direction,amount FROM public.chip_transactions WHERE club_id=$1 AND created_at >= $3 AND created_at < $4 AND from_user_id IS DISTINCT FROM $2 AND to_user_id IS DISTINCT FROM $2 UNION ALL SELECT @DIRECTION@ direction,ct.amount FROM public.chip_transactions ct WHERE ct.club_id=$1 AND ct.from_user_id=$2 AND ct.created_at >= $3 AND ct.created_at < $4 UNION ALL SELECT @DIRECTION@ direction,ct.amount FROM public.chip_transactions ct WHERE ct.club_id=$1 AND ct.to_user_id=$2 AND ct.from_user_id IS DISTINCT FROM $2 AND ct.created_at >= $3 AND ct.created_at < $4 UNION ALL SELECT CASE WHEN to_entity_id=$2 AND from_entity_id IS DISTINCT FROM $2 THEN 'in' WHEN from_entity_id=$2 AND to_entity_id IS DISTINCT FROM $2 THEN 'out' ELSE 'managed' END direction,amount FROM public.chip_ledger WHERE club_id=$1 AND created_at >= $3 AND created_at < $4 AND status='posted' AND category=ANY($17)) ranged GROUP BY direction), omitted AS (SELECT direction,coalesce(sum(abs(amount)) FILTER (WHERE amount <> 'NaN'::numeric),0) amount,count(*) n,count(amount) nn,count(*) FILTER (WHERE amount='NaN'::numeric) nc FROM (SELECT CASE WHEN to_entity_id=$2 AND from_entity_id IS DISTINCT FROM $2 THEN 'in' WHEN from_entity_id=$2 AND to_entity_id IS DISTINCT FROM $2 THEN 'out' ELSE 'managed' END direction,amount FROM public.chip_ledger WHERE club_id=$1 AND created_at >= $3 AND created_at < $4 AND status='posted' AND category=ANY($17) AND id=ANY($19)) removed GROUP BY direction) SELECT NULL::timestamptz,NULL::text,NULL::uuid,r.direction,CASE WHEN r.nc-coalesce(o.nc,0)>0 THEN 'NaN'::numeric WHEN r.nn-coalesce(o.nn,0)=0 THEN NULL::numeric ELSE r.amount-coalesce(o.amount,0) END,jsonb_build_object('count',r.n-coalesce(o.n,0)) FROM raw_totals r LEFT JOIN omitted o USING(direction) WHERE r.n-coalesce(o.n,0)>0$narrow$, '@DIRECTION@', v_receipt_direction);
+    -- the slices above count it from the club-time range; the viewer's own
+    -- receipts come once from the (club, user, time) indexes, which carry the
+    -- kind that decides their direction (a cash out, a pot; 2026-10-11).
+    v_ranged := v_ranged
+      || replace($own$SELECT @DIRECTION@ direction,ct.amount FROM public.chip_transactions ct WHERE ct.club_id=$1 AND ct.from_user_id=$2 AND ct.created_at >= $3 AND ct.created_at < $4$own$, '@DIRECTION@', v_receipt_direction)
+      || replace($own$SELECT @DIRECTION@ direction,ct.amount FROM public.chip_transactions ct WHERE ct.club_id=$1 AND ct.to_user_id=$2 AND ct.from_user_id IS DISTINCT FROM $2 AND ct.created_at >= $3 AND ct.created_at < $4$own$, '@DIRECTION@', v_receipt_direction);
+    v_sql := $narrow$WITH raw_totals AS (SELECT direction,coalesce(sum(abs(amount)) FILTER (WHERE amount <> 'NaN'::numeric),0) amount,count(*) n,count(amount) nn,count(*) FILTER (WHERE amount='NaN'::numeric) nc FROM ($narrow$ || array_to_string(v_ranged, ' UNION ALL ') || $narrow$) ranged GROUP BY direction), omitted AS (SELECT direction,coalesce(sum(abs(amount)) FILTER (WHERE amount <> 'NaN'::numeric),0) amount,count(*) n,count(amount) nn,count(*) FILTER (WHERE amount='NaN'::numeric) nc FROM (SELECT CASE WHEN to_entity_id=$2 AND from_entity_id IS DISTINCT FROM $2 THEN 'in' WHEN from_entity_id=$2 AND to_entity_id IS DISTINCT FROM $2 THEN 'out' ELSE 'managed' END direction,amount FROM public.chip_ledger WHERE club_id=$1 AND created_at >= $3 AND created_at < $4 AND status='posted' AND category=ANY($17) AND id=ANY($19)) removed GROUP BY direction) SELECT NULL::timestamptz,NULL::text,NULL::uuid,r.direction,CASE WHEN r.nc-coalesce(o.nc,0)>0 THEN 'NaN'::numeric WHEN r.nn-coalesce(o.nn,0)=0 THEN NULL::numeric ELSE r.amount-coalesce(o.amount,0) END,jsonb_build_object('count',r.n-coalesce(o.n,0)) FROM raw_totals r LEFT JOIN omitted o USING(direction) WHERE r.n-coalesce(o.n,0)>0$narrow$;
+    -- More chains run at once only if more participants may join: up to six
+    -- workers (the server default is two) for this one statement, put back
+    -- right after it, so no page or export plan ever sees the change.
+    v_workers := current_setting('max_parallel_workers_per_gather');
+    IF v_workers::integer BETWEEN 1 AND 5 THEN
+      PERFORM set_config('max_parallel_workers_per_gather', '6', true);
+    END IF;
   END IF;
 
   RETURN QUERY EXECUTE v_sql
@@ -700,7 +739,12 @@ $sql$;
                 'transfer', 'player_funding', 'agent_funding', 'overlay', 'reversal',
                 'correction', 'adjustment', 'leaderboard_payout']::text[],  -- $17
           p_filters ->> 'reference',                  -- $18
-          v_omitted;                                  -- $19 (totals, scope all)
+          v_omitted,                                  -- $19 (totals, scope all)
+          v_bounds;                                   -- $20 (default total slice bounds)
+
+  IF v_workers IS NOT NULL THEN
+    PERFORM set_config('max_parallel_workers_per_gather', v_workers, true);
+  END IF;
 END;
 $function$;
 
@@ -712,7 +756,7 @@ REVOKE ALL ON FUNCTION public.fn_cashier_statement_rows(uuid,uuid,text,timestamp
 -- SECURITY DEFINER helper that no browser role can execute.
 DO $post$
 BEGIN
-  IF md5(pg_get_functiondef('public.fn_cashier_statement_rows(uuid,uuid,text,timestamptz,timestamptz,jsonb,timestamptz,text,uuid,integer)'::regprocedure)) IS DISTINCT FROM '88cb4d660916a2c78b9cf7333c5b3b45' THEN
+  IF md5(pg_get_functiondef('public.fn_cashier_statement_rows(uuid,uuid,text,timestamptz,timestamptz,jsonb,timestamptz,text,uuid,integer)'::regprocedure)) IS DISTINCT FROM '8cab96c15ba360fb34c13f0afd3378b8' THEN
     RAISE EXCEPTION 'fn_cashier_statement_rows is not the reviewed text (md5 %)',
       md5(pg_get_functiondef('public.fn_cashier_statement_rows(uuid,uuid,text,timestamptz,timestamptz,jsonb,timestamptz,text,uuid,integer)'::regprocedure)) USING ERRCODE = '55000';
   END IF;

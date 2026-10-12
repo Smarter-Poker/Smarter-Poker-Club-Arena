@@ -37,7 +37,7 @@ const HARNESSES = [
   [
     'test-cashier-statement-db-postgres.py',
     'cashier-statements/db-one-move-once.sql',
-    '20261011194856_the_statement_counts_each_move_once_and_names_its_wallet.sql',
+    '20261012030847_the_statement_counts_each_move_once_and_names_its_wallet.sql',
   ],
 ] as const;
 

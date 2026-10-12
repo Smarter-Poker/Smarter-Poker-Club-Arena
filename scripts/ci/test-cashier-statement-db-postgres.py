@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Qualify 20261011194856_the_statement_counts_each_move_once_and_names_its_wallet
+"""Qualify 20261012030847_the_statement_counts_each_move_once_and_names_its_wallet
 on a private PostgreSQL 17 cluster (127.0.0.1, a free port or $CS_DB_PORT,
 trust auth, a temporary data directory under $TMPDIR). Nothing here reaches
 production.
 
-1. Production's live statement row body (sliced from 20261010011934, #6615,
-   the file that installed it) is reproduced byte for byte: its md5 must
-   equal the preimage the migration pins (8a47b11b..., read back from
-   production). The fixture carries production's fn_arena_name and statement
+1. Production's live statement row body (sliced from 20261011225840, #6688,
+   the file that installed it over #6615) is reproduced byte for byte: its
+   md5 must equal the preimage the migration pins (b1f42803..., read back
+   from production on 2026-10-12). The fixture carries production's fn_arena_name and statement
    indexes, #6615's direction cover included (db-production-shape.sql).
 2. FAIL BEFORE: tests/fixtures/cashier-statements/db-one-move-once.sql fails
    on the live body; the maintained oracle regression.sql passes on it.
@@ -18,7 +18,7 @@ production.
    statement function is byte-identical; owner, ACL, definer and search_path
    are unchanged; the totals equal their own unlimited page for every viewer,
    scope and filter (the default all-scope totals take #6615's directional
-   fast path, every filtered one the per-branch path; both are checked, the
+   fast path, read as #6688's concurrent slices, every filtered one the per-branch path; both are checked, the
    NaN and omission boundaries of #6615 included); no entry appears or
    disappears on the maintained
    fixture, and a direction changes only on the receipts the fix names.
@@ -39,9 +39,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 FIX = ROOT / "tests/fixtures/cashier-statements"
-MIG = ROOT / "supabase/migrations/20261011194856_the_statement_counts_each_move_once_and_names_its_wallet.sql"
-# The file that installed production's live body: #6615's directional totals.
-LIVE_SOURCE = ROOT / "supabase/migrations/20261010011934_cashier_totals_count_directional_ranges_without_rescanning.sql"
+MIG = ROOT / "supabase/migrations/20261012030847_the_statement_counts_each_move_once_and_names_its_wallet.sql"
+# The file that installed production's live body: #6688's concurrent slices
+# of #6615's directional totals.
+LIVE_SOURCE = ROOT / "supabase/migrations/20261011225840_cashier_totals_read_the_range_as_concurrent_slices.sql"
 BASE = ROOT / "supabase/migrations/20260923131325_cashier_statements_read_every_wallet_in_one_keyset.sql"
 # CI installs PostgreSQL 17 at the Debian path; a Mac has it under Homebrew.
 PG = Path(os.environ.get("PG_BIN") or next((p for p in ("/usr/lib/postgresql/17/bin", "/opt/homebrew/opt/postgresql@17/bin")
@@ -222,7 +223,7 @@ try:
     require(len(failed) > 0 and "the player's totals count each move once, where its chips moved" in failed
             and "the owner paid and received nothing personally" in failed,
             f"on production's live body {len(failed)} of {len(failed) + len(passed)} db-one-move-once.sql assertions fail, "
-            "the default all-scope totals (#6615's fast path) among them")
+            "the default all-scope totals (#6615's fast path, sliced by #6688) among them")
     q("postgres", "CREATE DATABASE oracle_before TEMPLATE before OWNER postgres", user="fixture_bootstrap")
     maintained_oracle("oracle_before", [])
     before = {(v, s, f): entries("before", 100, v, s, f) for v, s in VIEWERS for f in ['{}', '{"wallet":"bank"}', '{"counterparty":"%_"}']}

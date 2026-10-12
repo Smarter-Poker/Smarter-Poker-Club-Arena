@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "5521117f57b40e2c477458f14c2709aa2c4526ff0901f5703b6dccab169ae6d5",
+    "scripts/ci/classify-ci-changes.mjs": "d23683095f969adc3d9fdb2d0ca4feadb6bb1afaaf762a0b1e1823bdbd95bdb7",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
@@ -788,14 +788,25 @@
       }
     ]
   },
+  "phase13EvidenceRouting20261011": {
+    "reason": "Reviewed additive routing: one new committedEvidence selector (any path under docs/evidence/) added to the existing server and tests selections, because server and client tests read committed evidence from disk and #6687 changed only docs/evidence/phase13/ and skipped them. tests/unit/fixtureNativeCi.test.ts gains one additive describe pinning that routing. No selector is removed or narrowed; financial sources, assertions and historical evidence are unchanged. These byte bindings establish source identity only, not financial or production qualification. docs/changelog/2026-10-11-a-qualified-record-is-not-a-promotion.md",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "5374a01c45ef4118c957bd2613a495bad7f042655d6282e40c005efba8fc055d",
+        "current": "0ddedc8a6b6c8c91efdff7ed503482aa3b846440abfe72317098a5b1182bdcd3"
+      }
+    ]
+  },
   "cashierStatementDbHarnessRouting20261011": {
     "reason": "Reviewed additive cashier statement harness routing: the existing cashierDbHarnesses selector also names scripts/ci/test-cashier-statement-db-postgres.py (the PostgreSQL 17 qualification of migration 20261011194856, the statement counts each move once; its fixtures are under tests/fixtures/cashier-statements/, already selected), and one accounting_postgres shard 2 step runs it. No selector is removed or narrowed; financial sources, assertions and historical evidence are unchanged. These byte bindings establish source identity only, not financial or production qualification.",
     "changes": [
       {
         "section": "repository_files",
         "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": "5374a01c45ef4118c957bd2613a495bad7f042655d6282e40c005efba8fc055d",
-        "current": "5521117f57b40e2c477458f14c2709aa2c4526ff0901f5703b6dccab169ae6d5"
+        "previous": "0ddedc8a6b6c8c91efdff7ed503482aa3b846440abfe72317098a5b1182bdcd3",
+        "current": "d23683095f969adc3d9fdb2d0ca4feadb6bb1afaaf762a0b1e1823bdbd95bdb7"
       }
     ]
   }

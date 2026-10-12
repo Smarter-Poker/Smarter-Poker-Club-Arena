@@ -55,6 +55,7 @@ export default function ClubActivityFeed({
 }: ClubActivityFeedProps) {
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [filter, setFilter] = useState<ActivityType | 'all'>('all');
   // Keyed by activity id, NOT by list index: the rendered list is the FILTERED
   // array, so index-keyed visibility left rows stuck at opacity 0 whenever a
@@ -65,8 +66,18 @@ export default function ClubActivityFeed({
   // Track stagger timeouts for cleanup on unmount
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const loadingRef = useRef(false);
+  const requestVersionRef = useRef(0);
+  const scopeKey = `${clubId}:${limit}`;
+  const activeScopeRef = useRef(scopeKey);
+  activeScopeRef.current = scopeKey;
 
   useEffect(() => {
+    activeScopeRef.current = scopeKey;
+    loadingRef.current = false;
+    setActivities([]);
+    setLoadError(false);
+    setVisibleIds(new Set());
+    setFilter('all');
     loadActivities(true);
 
     // Bus events that imply new activity
@@ -87,6 +98,8 @@ export default function ClubActivityFeed({
     }, POLL_INTERVAL_MS);
 
     return () => {
+      requestVersionRef.current += 1;
+      if (activeScopeRef.current === scopeKey) activeScopeRef.current = '';
       unsubs.forEach((unsub) => unsub());
       clearInterval(interval);
       staggerTimersRef.current.forEach((t) => clearTimeout(t));
@@ -98,16 +111,20 @@ export default function ClubActivityFeed({
   const loadActivities = async (withSpinner: boolean) => {
     if (loadingRef.current) return;
     loadingRef.current = true;
+    const requestScope = scopeKey;
+    const requestId = ++requestVersionRef.current;
+    const isCurrent = () =>
+      isMounted.current &&
+      activeScopeRef.current === requestScope &&
+      requestVersionRef.current === requestId;
     if (withSpinner) setLoading(true);
     try {
       // Resolve club UUID — clubId prop may be an integer club code from URL.
       // resolveClubUUID returns its input unchanged when it cannot resolve, and
       // feeding a non-uuid to a uuid-typed RPC throws 22P02, so bail instead.
       const resolvedUuid = await resolveClubUUID(clubId);
-      if (!isUUID(resolvedUuid)) {
-        if (isMounted.current) setActivities([]);
-        return;
-      }
+      if (!isCurrent()) return;
+      if (!isUUID(resolvedUuid)) throw new Error('Club Activity Requires A Valid Club');
 
       const { data, error } = await supabase.rpc('ca_club_activity', {
         p_club_id: resolvedUuid,
@@ -126,14 +143,15 @@ export default function ClubActivityFeed({
         userAvatar: a.avatar_url,
       }));
 
-      if (!isMounted.current) return;
+      if (!isCurrent()) return;
+      setLoadError(false);
       setActivities(items);
       if (withSpinner) {
         setVisibleIds(new Set());
         staggerTimersRef.current.forEach((t) => clearTimeout(t));
         staggerTimersRef.current = items.map((item, i) =>
           setTimeout(() => {
-            if (isMounted.current) {
+            if (isCurrent()) {
               setVisibleIds((prev) => new Set(prev).add(item.id));
             }
           }, i * 60)
@@ -149,14 +167,17 @@ export default function ClubActivityFeed({
       if (!isAuthzError(error)) {
         reportError(error, 'ClubActivityFeed.Failed_to_load_activities');
       }
-      if (isMounted.current) setActivities([]);
+      if (isCurrent()) {
+        setLoadError(true);
+        if (isAuthzError(error)) setActivities([]);
+      }
     } finally {
       // MUST be finally. These two lines used to sit after the try/catch, so
       // the early `return` on an unresolvable club id skipped them: loadingRef
       // stayed true forever, every later call bailed at the in-flight guard,
       // and the feed sat on "Loading activity..." permanently.
-      loadingRef.current = false;
-      if (isMounted.current && withSpinner) setLoading(false);
+      if (requestVersionRef.current === requestId) loadingRef.current = false;
+      if (isCurrent() && withSpinner) setLoading(false);
     }
   };
 
@@ -207,11 +228,28 @@ export default function ClubActivityFeed({
         )}
       </div>
 
+      {loadError && !loading && (
+        <div className={styles.empty} role="alert">
+          {activities.length > 0
+            ? 'Activity Could Not Refresh. Showing The Last Loaded Events.'
+            : 'Activity Could Not Be Loaded.'}
+          <button
+            type="button"
+            className={styles.filterSelect}
+            onClick={() => void loadActivities(true)}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       <div className={styles.list}>
         {loading ? (
           <div className={styles.loading}>Loading Activity...</div>
         ) : filteredActivities.length === 0 ? (
-          <div className={styles.empty}>No Activity Yet</div>
+          loadError ? null : (
+            <div className={styles.empty}>No Activity Yet</div>
+          )
         ) : (
           filteredActivities.map((activity) => (
             <div

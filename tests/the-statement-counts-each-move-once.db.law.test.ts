@@ -14,16 +14,18 @@
  * profiles when tests/theArenaIsAlwaysTheAlias.law.test.ts measured it) and
  * printed storage paths as names.
  *
- * Migration 20261011194856 (first written as 20261009223439 over md5
- * 72d29ab4..., rebased on 2026-10-11 onto #6615's live body, md5 8a47b11b...)
+ * Migration 20261012030847 (first written as 20261009223439 over md5
+ * 72d29ab4..., rebased onto #6615's body, md5 8a47b11b..., and again on
+ * 2026-10-12 onto #6688's live body, md5 b1f42803...)
  * rebuilds the body from production's live text by counted substitutions,
  * pinned by md5 before and after, and
  * scripts/ci/test-cashier-statement-db-postgres.py qualifies it on PostgreSQL
  * 17 (tests/fixtures/cashier-statements/db-one-move-once.sql fails 21 of 31
- * on the live body and passes 31 after). #6615's default all-scope fast path
- * is kept; its receipt range is split by the viewer's side so a cash out or a
- * pot is counted by its kind there too, and its omitted set carries the
- * mirrored legs. This law pins the shapes that fail silently:
+ * on the live body and passes 31 after). #6615's default all-scope fast path,
+ * read as #6688's concurrent slices, is kept; each slice counts only the
+ * receipts the viewer is not a side of, the viewer's own receipts are added
+ * once so a cash out or a pot is counted by its kind there too, and its
+ * omitted set carries the mirrored legs. This law pins the shapes that fail silently:
  * the answer stays plausible, the double count or the leak comes back, and
  * nothing goes red.
  *
@@ -36,11 +38,11 @@ import { classifyChangedPaths } from '../scripts/ci/classify-ci-changes.mjs';
 import { migrationNames, migrationText } from './helpers/migrationCorpus';
 import { sliceBetween } from './helpers/sourceWindow';
 
-const FILE = '20261011194856_the_statement_counts_each_move_once_and_names_its_wallet.sql';
-/** #6615, the file that installed the live body this one replaces. */
-const LIVE_SOURCE = '20261010011934_cashier_totals_count_directional_ranges_without_rescanning.sql';
+const FILE = '20261012030847_the_statement_counts_each_move_once_and_names_its_wallet.sql';
+/** #6688, the file that installed the live body this one replaces. */
+const LIVE_SOURCE = '20261011225840_cashier_totals_read_the_range_as_concurrent_slices.sql';
 const INDEX = 'idx_chip_ledger_statement_mirror_legs';
-const PRE = '8a47b11b861fef1357ae8749d1370a11';
+const PRE = 'b1f42803af9196e322159660ff6f9e57';
 const SIG =
   'public.fn_cashier_statement_rows(uuid,uuid,text,timestamptz,timestamptz,jsonb,timestamptz,text,uuid,integer)';
 const PAIRABLE =
@@ -75,12 +77,14 @@ describe('the statement counts each move once and names its wallet', () => {
   it('is the newest definition of the row query, and sorts after the body it replaces', () => {
     expect(NEWEST).toBe(FILE);
     expect(FILE > LIVE_SOURCE).toBe(true);
-    expect(migrationNames()).not.toContain(
-      '20261009223439_the_statement_counts_each_move_once_and_names_its_wallet.sql'
-    );
+    for (const superseded of ['20261009223439', '20261011194856']) {
+      expect(migrationNames()).not.toContain(
+        `${superseded}_the_statement_counts_each_move_once_and_names_its_wallet.sql`
+      );
+    }
   });
 
-  it("keeps #6615's default fast path, with the viewer's receipts directed by their kind", () => {
+  it("keeps #6688's sliced default fast path, with the viewer's receipts directed by their kind", () => {
     for (const body of [ROWS, NEWEST_ROWS]) {
       const fast = squash(
         sliceBetween(
@@ -89,11 +93,18 @@ describe('the statement counts each move once and names its wallet', () => {
           'RETURN QUERY EXECUTE v_sql'
         )
       );
-      expect(fast).toContain('v_sql := replace($narrow$WITH raw_totals AS');
-      expect(fast).toContain("$narrow$, '@DIRECTION@', v_receipt_direction);");
+      // #6688's slices stay: both sources, slice by slice, with parallel workers.
+      expect(fast.match(/'\$20\[' \|\| v_slice \|\| '\]'/g)).toHaveLength(2);
       expect(fast).toContain(
-        "SELECT 'managed'::text direction,amount FROM public.chip_transactions WHERE club_id=$1 AND created_at >= $3 AND created_at < $4 AND from_user_id IS DISTINCT FROM $2 AND to_user_id IS DISTINCT FROM $2"
+        "FROM ($narrow$ || array_to_string(v_ranged, ' UNION ALL ') || $narrow$) ranged GROUP BY direction"
       );
+      expect(fast).toContain("PERFORM set_config('max_parallel_workers_per_gather', '6', true);");
+      // Each slice counts only the receipts the viewer is not a side of.
+      expect(fast).toContain(
+        "$slice$SELECT 'managed'::text direction,amount FROM public.chip_transactions WHERE club_id=$1 AND created_at >= @LO@ AND created_at < @HI@ AND from_user_id IS DISTINCT FROM $2 AND to_user_id IS DISTINCT FROM $2$slice$"
+      );
+      // The viewer's own receipts are added once, directed by their kind.
+      expect(fast.match(/\$own\$, '@DIRECTION@', v_receipt_direction\)/g)).toHaveLength(2);
       expect(fast).toContain(
         'SELECT @DIRECTION@ direction,ct.amount FROM public.chip_transactions ct WHERE ct.club_id=$1 AND ct.from_user_id=$2 AND ct.created_at >= $3 AND ct.created_at < $4'
       );

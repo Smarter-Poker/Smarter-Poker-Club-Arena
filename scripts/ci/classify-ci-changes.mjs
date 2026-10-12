@@ -265,6 +265,16 @@ export function classifyChangedPaths(paths) {
   // deliberately outside the application suites otherwise - this one directory
   // is test input, so it is named, exactly as docs/agent-policy/ already is.
   const lawRegistry = matches(/^docs\/laws\.d\//);
+  // DOCS/EVIDENCE IS TEST INPUT TOO (2026-10-11). Server tests read committed
+  // evidence from disk - HorsePhase13Authority.test.ts walks
+  // docs/evidence/phase13/, and the phase8-14 authority and strength-assembly
+  // tests read their own directories - and several tests/ laws read it as
+  // well. #6687 changed only docs/ (a Phase 13 PLO8 qualification record), so
+  // it classified as docs-only, skipped every reader of the file it had just
+  // added, and main went red on the next pull request that ran the server
+  // shards. The whole directory, not a list of phases: the next phase must be
+  // admitted by where it is written, not by somebody remembering to name it.
+  const committedEvidence = matches(/^docs\/evidence\//);
   // The ranking inverse and reminder pg dependencies are executable accounting
   // inputs outside scripts/dev. Their changes also need the routing laws.
   const tournamentAccountingInput = matches(
@@ -288,6 +298,7 @@ export function classifyChangedPaths(paths) {
     src: broad || cashLobbyBrowser || buildProvenance || matches(/^src\//),
     server:
       broad ||
+      committedEvidence ||
       bbjFixture ||
       chipStoreCoverage ||
       diamondGames ||
@@ -342,6 +353,7 @@ export function classifyChangedPaths(paths) {
       instructionOnlyPaths(paths) ||
       paths.some((p) => p.startsWith('docs/agent-policy/')) ||
       lawRegistry ||
+      committedEvidence ||
       broad ||
       matches(satelliteQualifiers) ||
       matches(breakfastWitness) ||

@@ -37,6 +37,7 @@ import { HORSE_PHASE12_QUALIFICATION_KEYS } from './HorsePhase12Authority.js';
 import {
   HorsePhase8AuthorityGate,
   HorseQualifiedAuthorityHolder,
+  repositoryEvidenceReader,
   type HorseAuthorityAdmission,
   type HorseAuthorityEvidenceReader,
 } from './HorseQualifiedAuthority.js';
@@ -203,15 +204,79 @@ describe('P13.3 null proof: no Phase 13 authority is selected today', () => {
   // The Phase 12 corrected null proof: a completion record may exist only
   // while its own variant is unpromoted. Select one and this case fails until
   // somebody updates it deliberately.
-  it('while the selections are null, nothing is promoted: no qualification says qualified:true, and a completion record exists only for an unpromoted variant', () => {
+  //
+  // Updated deliberately on 2026-10-11 after #6687 committed
+  // docs/evidence/phase13/1235b47a/phase13-qualification-2026-10-10-plo8.json,
+  // a genuine P13.2 measurement that says qualified:true (the PLO8 cash
+  // objective qualified; the tournament objective is unavailable). Until then
+  // this case refused any qualified:true record. A qualification record is a
+  // measurement, not a promotion: nothing reaches the live owner without a
+  // PHASE13_PROTECTED_RELEASE_SELECTIONS entry AND a natural completion record
+  // meeting the floor. So a qualified:true record is accepted here only when
+  // (i) its variant's selection is still null, (ii) it still names the
+  // admission requirement the running code honours - `admissionAlsoRequires`,
+  // non-empty and equal to the running contract's
+  // `liveConditions.admissionAlsoRequires`, which admission demands verbatim
+  // and then satisfies only from the completion record - and (iii) the running
+  // admission refuses it: the committed release admits nothing for that
+  // variant, and even a hypothetical selection of this exact record without a
+  // completion record is refused `completion_evidence_missing`. Selecting the
+  // variant still fails this case until somebody updates it deliberately.
+  it('while the selections are null, nothing is promoted: a qualification saying qualified:true belongs to an unselected variant that admission still refuses, and a completion record exists only for an unpromoted variant', () => {
     const dir = fileURLToPath(new URL('../../../docs/evidence/phase13/', import.meta.url));
     const files = existsSync(dir)
       ? readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.json'))
       : [];
+    const requires = horsePhase13ContractAdmissionRequires();
+    expect(requires?.length).toBeGreaterThan(0);
     for (const file of files) {
-      const parsed = JSON.parse(readFileSync(`${dir}${file}`, 'utf8')) as Record<string, unknown>;
-      if (parsed.schema === HORSE_PHASE13_QUALIFICATION_SCHEMA)
-        expect(parsed.qualified, file).not.toBe(true);
+      const raw = readFileSync(`${dir}${file}`);
+      const parsed = JSON.parse(raw.toString('utf8')) as Record<string, unknown>;
+      if (parsed.schema === HORSE_PHASE13_QUALIFICATION_SCHEMA && parsed.qualified === true) {
+        const variant = parsed.variant as JointVariant;
+        // (i) nothing is promoted for the variant this record measured.
+        expect(HORSE_PHASE13_VARIANTS as readonly string[], file).toContain(variant);
+        expect(PHASE13_PROTECTED_RELEASE_SELECTIONS[variant] ?? null, file).toBeNull();
+        // (ii) it names the unmet requirement admission honours, verbatim.
+        expect(Array.isArray(parsed.admissionAlsoRequires), file).toBe(true);
+        expect((parsed.admissionAlsoRequires as unknown[]).length, file).toBeGreaterThan(0);
+        expect(parsed.admissionAlsoRequires, file).toEqual(requires);
+        // (iii) the running admission refuses it.
+        const released = admitHorsePhase13ReleaseAuthority(variant);
+        expect(released, file).toMatchObject({ status: 'refused', reason: 'unselected' });
+        expect(selectedHorsePhase13Authority(variant, released), file).toBeNull();
+        const hypothetical = admitHorsePhase13QualifiedAuthority(
+          variant,
+          {
+            schema: 'horse-qualified-authority-selection-v1',
+            phase: 'phase13',
+            variant,
+            sourceSha: parsed.sourceSha as string,
+            packVersion: HORSE_PHASE13_PACK_VERSION,
+            contractVersion: HORSE_PHASE13_CONTRACT_VERSION,
+            contractDigest: parsed.contractDigest as string,
+            domain: jointStrengthDomain(variant),
+            qualificationPath: `docs/evidence/phase13/${file}`,
+            qualificationSha256: createHash('sha256').update(raw).digest('hex'),
+            completionPath: null,
+            completionSha256: null,
+            approvalGeneration: 1,
+            issuedAt: P13_TEST_ISSUED_AT,
+            expiresAt: null,
+            withdrawn: null,
+          },
+          repositoryEvidenceReader,
+          P13_TEST_NOW,
+          parsed.contractDigest as string,
+          parsed.policyDigest as string
+        );
+        expect(hypothetical, file).toEqual({
+          status: 'refused',
+          reason: 'completion_evidence_missing',
+          transient: false,
+        });
+        expect(selectedHorsePhase13Authority(variant, hypothetical), file).toBeNull();
+      }
       if (parsed.schema === HORSE_PHASE13_COMPLETION_SCHEMA) {
         const variant = parsed.variant as JointVariant;
         expect(HORSE_PHASE13_VARIANTS as readonly string[], file).toContain(variant);

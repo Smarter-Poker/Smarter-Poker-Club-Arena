@@ -17,20 +17,23 @@ wrong person:
 
 ## What changed
 
-Migration `20261011194856_the_statement_counts_each_move_once_and_names_its_wallet`.
-It was first written as `20261009223439` against the body before #6615; #6615
-(`20261010011934`) then installed a fast path for the default all-scope totals,
-so the file was rebased onto production's live body (md5
-`8a47b11b861fef1357ae8749d1370a11`) and re-reserved to a version after it.
+Migration `20261012030847_the_statement_counts_each_move_once_and_names_its_wallet`.
+It was first written as `20261009223439` against the body before #6615, then
+as `20261011194856` against #6615's body (`20261010011934`, md5
+`8a47b11b861fef1357ae8749d1370a11`). #6688 (`20261011225840`) then installed
+the default total as concurrent slices, so the file was rebased again onto
+production's live body (md5 `b1f42803af9196e322159660ff6f9e57`, read back
+2026-10-12 03:04 UTC) and re-reserved to a version after it.
 
 - Every path (pages, exports, filtered totals and #6615's default fast path)
   leaves out a leg its receipt already shows, and counts a receipt where its
   chips move: a cash out's hold is the player's out, the approval the
   approver's in, a refund the player's in; a pot (Club Bank, promo, union) is
   the side of a pot send, not the operator.
-- #6615's fast path keeps one directional range per source. The receipts the
-  viewer is not a side of are still counted from `idx_chip_tx_club_time_totals`;
-  the viewer's own receipts are read from the (club, user, time) indexes,
+- The default fast path (#6615, read as #6688's concurrent slices) keeps its
+  slices and parallel workers. Each slice now counts only the receipts the
+  viewer is not a side of (managed, from `idx_chip_tx_club_time_totals`); the
+  viewer's own receipts are added once from the (club, user, time) indexes,
   which carry the kind; the mirrored legs join the omitted set `$19`.
 - New partial index `idx_chip_ledger_statement_mirror_legs`, built
   CONCURRENTLY before the transaction.
@@ -48,11 +51,12 @@ byte; `db-one-move-once.sql` fails 21 of 31 on it and passes 31 of 31 after;
 totals equal their own unlimited page for every viewer, scope and filter,
 including #6615's NaN and omission boundaries; drift, invalid index, replay and
 browser-role installs refused; plan index-only with no sequential scan.
-`scripts/dev/test-cashier-statements.sh` (#6615's own qualification) still passes.
+`scripts/dev/test-cashier-statements.sh` (#6615's own qualification) still passes;
+#6688's law test is unchanged and passes.
 
 ## Installation
 
 Not installed by this merge. Dispatch Apply Merged Migration once for this
 file, starting at least 12 minutes before :50 UTC (the index builds first).
-Post-install md5 of `fn_cashier_statement_rows`: `88cb4d660916a2c78b9cf7333c5b3b45`.
+Post-install md5 of `fn_cashier_statement_rows`: `8cab96c15ba360fb34c13f0afd3378b8`.
 Both `-- @live-proof:` lines must read true afterwards.

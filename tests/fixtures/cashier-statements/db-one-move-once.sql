@@ -1,6 +1,6 @@
 -- The statement counts each move once and names its wallet (2026-10-09).
--- Regression for migration 20261011194856 (first written as 20261009223439,
--- rebased onto #6615's live body on 2026-10-11). Runs on the cashier statement
+-- Regression for migration 20261012030847 (first written as 20261009223439,
+-- rebased onto #6615's body, then onto #6688's live body on 2026-10-12). Runs on the cashier statement
 -- fixture (bootstrap.sql, baseline.sql, 20260923131325) after the effective
 -- production row body is installed; scripts/ci/test-cashier-statement-db-postgres.py
 -- runs it once on production's live body (where it must FAIL) and once after

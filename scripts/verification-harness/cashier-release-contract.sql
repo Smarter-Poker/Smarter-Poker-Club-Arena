@@ -179,9 +179,9 @@ BEGIN
     -- The private row query fn_cashier_statement_rows is not listed: this loop
     -- requires browser EXECUTE, which that owner-only helper must never have.
     -- Its body is pinned by md5 in the migrations that replace it (live:
-    -- 20261010011934, #6615, 8a47b11b861fef1357ae8749d1370a11; next:
-    -- 20261011194856, the statement counts each move once,
-    -- 88cb4d660916a2c78b9cf7333c5b3b45), and the doors below, which call it,
+    -- 20261011225840, #6688, b1f42803af9196e322159660ff6f9e57; next:
+    -- 20261012030847, the statement counts each move once,
+    -- 8cab96c15ba360fb34c13f0afd3378b8), and the doors below, which call it,
     -- are unchanged by both.
     jsonb_build_object(
       'signature', 'public.fn_cashier_statement_scope(uuid)',

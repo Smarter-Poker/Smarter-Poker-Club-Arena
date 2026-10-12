@@ -15,7 +15,7 @@
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "supabase/migrations/20260918122532_five_original_spin_standings_retain_their_recorded_cash_outc.sql": "9f6e0b02abea54394d317c6d20f8e47ae10edefc9ba6c12f6542c23daf4540c4",
     ".prettierignore": "09ce1f38a5e012220b004ee809caf9fdcf0e61d9d72e924fd82341de73d53874",
-    "tests/unit/fixtureNativeCi.test.ts": "de6f003caff7c9b5e4652b8c072fe145591cafc1b02fbc9836ad11f5fe628154",
+    "tests/unit/fixtureNativeCi.test.ts": "1e9a652b80aa851fb95d7780aeb6b62d360a7b61192c27edd9112ecd0b636392",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536"
   },
   "restamp_audit": [
@@ -222,6 +222,17 @@
         "path": "tests/unit/fixtureNativeCi.test.ts",
         "previous": "8181a10a7d67b8e5c7dc3bc79f0a7959ff630257622f5a9cb333e053b6beed93",
         "current": "de6f003caff7c9b5e4652b8c072fe145591cafc1b02fbc9836ad11f5fe628154"
+      }
+    ]
+  },
+  "phase13EvidenceRouting20261011": {
+    "reason": "Reviewed additive routing: one new committedEvidence selector (any path under docs/evidence/) added to the existing server and tests selections, because server and client tests read committed evidence from disk and #6687 changed only docs/evidence/phase13/ and skipped them. tests/unit/fixtureNativeCi.test.ts gains one additive describe pinning that routing. No selector is removed or narrowed; financial sources, assertions and historical evidence are unchanged. These byte bindings establish source identity only, not financial or production qualification. docs/changelog/2026-10-11-a-qualified-record-is-not-a-promotion.md",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": "de6f003caff7c9b5e4652b8c072fe145591cafc1b02fbc9836ad11f5fe628154",
+        "current": "1e9a652b80aa851fb95d7780aeb6b62d360a7b61192c27edd9112ecd0b636392"
       }
     ]
   }

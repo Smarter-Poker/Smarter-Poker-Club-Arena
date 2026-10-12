@@ -1481,6 +1481,24 @@ describe('memory observation rules keep their existing monitoring regression che
   });
 });
 
+describe('committed evidence reaches the server and client tests that read it', () => {
+  // #6687 added docs/evidence/phase13/1235b47a/phase13-qualification-2026-10-10-plo8.json
+  // alone, classified as docs-only, and skipped HorsePhase13Authority.test.ts,
+  // the server test that reads that directory. Main went red on the next PR.
+  it.each([
+    'docs/evidence/phase13/1235b47a/phase13-qualification-2026-10-10-plo8.json',
+    'docs/evidence/phase12/phase12-qualification-2026-10-05-flh.json',
+    'docs/evidence/phase15/a-future-phase.json',
+  ])('selects server and client tests when only %s changes', (path) => {
+    expect(classifyChangedPaths([path]).server).toBe(true);
+    expect(classifyChangedPaths([path]).tests).toBe(true);
+  });
+  it('keeps other documentation outside the server suites', () => {
+    expect(classifyChangedPaths(['docs/changelog/2026-10-11-a-note.md']).server).toBe(false);
+    expect(classifyChangedPaths(['docs/evidence-notes.md']).server).toBe(false);
+  });
+});
+
 describe('Horse League priority fixture stays in the existing server verification', () => {
   it.each([
     'scripts/qualification/horse-league-process-priority-native.mjs',

@@ -64,8 +64,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 34557,
-      "sha256": "5521117f57b40e2c477458f14c2709aa2c4526ff0901f5703b6dccab169ae6d5"
+      "bytes": 35353,
+      "sha256": "d23683095f969adc3d9fdb2d0ca4feadb6bb1afaaf762a0b1e1823bdbd95bdb7"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -160,8 +160,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 104655,
-      "sha256": "de6f003caff7c9b5e4652b8c072fe145591cafc1b02fbc9836ad11f5fe628154"
+      "bytes": 105657,
+      "sha256": "1e9a652b80aa851fb95d7780aeb6b62d360a7b61192c27edd9112ecd0b636392"
     }
   },
   "nativePgCron": {
@@ -2014,6 +2014,33 @@
       }
     ]
   },
+  "phase13EvidenceRouting20261011": {
+    "reason": "Reviewed additive routing: one new committedEvidence selector (any path under docs/evidence/) added to the existing server and tests selections, because server and client tests read committed evidence from disk and #6687 changed only docs/evidence/phase13/ and skipped them. tests/unit/fixtureNativeCi.test.ts gains one additive describe pinning that routing. No selector is removed or narrowed; financial sources, assertions and historical evidence are unchanged. These byte bindings establish source identity only, not financial or production qualification. docs/changelog/2026-10-11-a-qualified-record-is-not-a-promotion.md",
+    "changes": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 34539,
+          "sha256": "5374a01c45ef4118c957bd2613a495bad7f042655d6282e40c005efba8fc055d"
+        },
+        "current": {
+          "bytes": 35335,
+          "sha256": "0ddedc8a6b6c8c91efdff7ed503482aa3b846440abfe72317098a5b1182bdcd3"
+        }
+      },
+      {
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": {
+          "bytes": 104655,
+          "sha256": "de6f003caff7c9b5e4652b8c072fe145591cafc1b02fbc9836ad11f5fe628154"
+        },
+        "current": {
+          "bytes": 105657,
+          "sha256": "1e9a652b80aa851fb95d7780aeb6b62d360a7b61192c27edd9112ecd0b636392"
+        }
+      }
+    ]
+  },
   "cashierStatementDbHarnessRouting20261011": {
     "reason": "Reviewed additive cashier statement harness routing: the existing cashierDbHarnesses selector also names scripts/ci/test-cashier-statement-db-postgres.py (the PostgreSQL 17 qualification of migration 20261011194856, the statement counts each move once; its fixtures are under tests/fixtures/cashier-statements/, already selected), and one accounting_postgres shard 2 step runs it. No selector is removed or narrowed; financial sources, assertions and historical evidence are unchanged. These byte bindings establish source identity only, not financial or production qualification.",
     "changes": [
@@ -2031,12 +2058,12 @@
       {
         "path": "scripts/ci/classify-ci-changes.mjs",
         "previous": {
-          "bytes": 34539,
-          "sha256": "5374a01c45ef4118c957bd2613a495bad7f042655d6282e40c005efba8fc055d"
+          "bytes": 35335,
+          "sha256": "0ddedc8a6b6c8c91efdff7ed503482aa3b846440abfe72317098a5b1182bdcd3"
         },
         "current": {
-          "bytes": 34557,
-          "sha256": "5521117f57b40e2c477458f14c2709aa2c4526ff0901f5703b6dccab169ae6d5"
+          "bytes": 35353,
+          "sha256": "d23683095f969adc3d9fdb2d0ca4feadb6bb1afaaf762a0b1e1823bdbd95bdb7"
         }
       }
     ]

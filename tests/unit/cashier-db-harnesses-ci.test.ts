@@ -34,6 +34,11 @@ const HARNESSES = [
     'finance-gate-db/scenario.sql',
     '20261010010632_a_suspended_agent_stops_reading_the_club_finances.sql',
   ],
+  [
+    'test-cashier-statement-db-postgres.py',
+    'cashier-statements/db-one-move-once.sql',
+    '20261012030847_the_statement_counts_each_move_once_and_names_its_wallet.sql',
+  ],
 ] as const;
 
 type Step = { name?: string; if?: string; run?: string; env?: Record<string, string> };

@@ -161,12 +161,16 @@ test('Insurance remains recoverable after rejection and is single-flight at 375p
   await expect(decline).toBeVisible();
 
   // Same-frame double activation reproduces the gap React state alone leaves.
-  await insure.evaluate((button) => {
+  const disabledWhilePending = await insure.evaluate(async (button) => {
     (button as HTMLButtonElement).click();
     (button as HTMLButtonElement).click();
+    // React flushes the discrete activation before the fixture's rejection timer.
+    // Capture this pending state before another browser round trip can outlast it.
+    await Promise.resolve();
+    return (button as HTMLButtonElement).disabled;
   });
+  expect(disabledWhilePending).toBe(true);
   await expect(page.getByTestId('insurance-request-count')).toHaveText('1');
-  await expect(insure).toBeDisabled();
 
   await expect(page.getByTestId('insurance-status')).toHaveText(
     'Insurance Request Rejected. Please Try Again.'

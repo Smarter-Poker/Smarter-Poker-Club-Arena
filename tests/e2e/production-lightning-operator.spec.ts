@@ -180,7 +180,14 @@ for (const width of [393, 1440]) {
     });
     expect(build.ok()).toBe(true);
     const provenance = await build.json();
-    if (process.env.LIVE_SHA)
-      expect(provenance.ca_sha ?? provenance.sha ?? provenance.commit).toBe(process.env.LIVE_SHA);
+    // Which release this ran against is decided by the release bracket the
+    // workflow reads around this whole spec ("Classify the release the
+    // Lightning operator certificate ran against"), not by an equality here:
+    // a forward publish mid-run is an UNKNOWN non-verdict there, and a
+    // rollback or off-lineage SHA is a hard red there. This read only proves
+    // the served bundle names one full release SHA, and records it.
+    const served = provenance.ca_sha;
+    expect(served, 'build-info.json must name one full ca_sha').toMatch(/^[0-9a-f]{40}$/);
+    info.annotations.push({ type: 'served-release', description: served });
   });
 }

@@ -39,6 +39,7 @@ def main():
   yes(legacy,"SELECT NOT EXISTS(SELECT 1 FROM horse_adaptive_observation_journal WHERE hand_id='"+old.HAND_ID+"') AND NOT EXISTS(SELECT 1 FROM horse_adaptive_observation_batches WHERE canonical_payload LIKE '%"+old.HAND_ID+"%') AND EXISTS(SELECT 1 FROM horse_adaptive_observation_journal WHERE hand_id='"+otherhand+"');",'exact-membership-protects-legacy-mismatched-clocks');e.discard(legacy)
   e.sql(base,file=ROOT/MIGRATION,label='exact-adaptive-migration');code,_,err=e.sql(base,file=ROOT/MIGRATION,label='replay-refused',check=False);assert code!=0 and 'ADAPTIVE_RETENTION_PREIMAGE_CHANGED' in err;checks.append('migration-replay-refused')
   review=module(ROOT/'scripts/verification-harness/horse-review-raw-retention.py','review_raw_proof');review.qualify(e,base)
+  snapshots=module(ROOT/'scripts/verification-harness/horse-snapshot-retention.py','snapshot_retention_proof');snapshots.qualify(e,base)
   after=e.database(base);e.sql(after,seed,label='after-seed');journal(after)
   # Disabled until a serving new consumer is proven. Original request compaction
   # remains eligible and captures its durable exact classification certificate.

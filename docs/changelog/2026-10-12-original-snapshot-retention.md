@@ -1,0 +1,7 @@
+# Snapshot retention requires original completed settlement
+
+The installed two-minute snapshot pruner deleted completed snapshots after six hours and incomplete snapshots after thirty days, except reserved F06 permits. Completion and age are insufficient evidence of successful settlement. The same owner now requires an immutable original horse-only successful settlement certificate after eight days, original snapshot horse flags, and no current financial, projection, dispute, F06, movement or tournament custody hold. Its original twenty-second budget remains, with rounds limited to 250 and indexed original table/hand certificate lookup.
+
+Incomplete snapshots remain readable by the original crash recovery consumer. Human, mixed, unknown, malformed, young, unqualified and currently held originals remain protected. No scheduler, table reset, financial write or new release path is added. This stronger retention preserves more snapshot rows than the earlier six-hour policy; it does not promise that allocated disk shrinks.
+
+The native qualification applies the exact read-only captured installed preimage, proves the old incomplete deletion, then verifies qualified disposal, exact recovery and original-row preservation, current reserved/BBJ/projection/knockout holds, rollback, duplicates, metadata and migration replay refusal. Source installation and restoration of paused existing job119 belong to the parent operation owner.

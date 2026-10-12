@@ -179,7 +179,9 @@ it('captures filter/search/sort when requested even if controls change before th
   await ready();
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: '  Player  ' } });
   fireEvent.click(screen.getByRole('button', { name: 'Agents', exact: true }));
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'name' } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Sort Players' }), {
+    target: { value: 'name' },
+  });
   await act(async () => {
     await vi.advanceTimersByTimeAsync(300);
   });

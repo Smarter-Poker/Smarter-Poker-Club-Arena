@@ -36,8 +36,11 @@ vi.mock('../../src/hooks/useMasterBusChannel', () => ({
   },
 }));
 vi.mock('../../src/hooks/useMasterBusBroadcastChannel', () => ({
-  useMasterBusBroadcastChannel: (options: { onPayload: (value: unknown) => void }) => {
-    state.walletChannel = options;
+  useMasterBusBroadcastChannel: (options: {
+    event: string;
+    onPayload: (value: unknown) => void;
+  }) => {
+    if (options.event === 'wallet_changed') state.walletChannel = options;
   },
 }));
 vi.mock('../../src/hooks/useAuthUser', () => ({

@@ -56,4 +56,19 @@ describe('disaster recovery is documented and wired', () => {
     expect(t).toMatch(/server\/\.env/);
     expect(t).toMatch(/only one disk|single copy|Hetzner disk only/i);
   });
+
+  it('native recovery qualification runs in the existing required accounting jobs', () => {
+    const workflow = readFileSync(root('.github/workflows/ci.yml'), 'utf8');
+    expect(workflow).toContain(
+      'python3 -B -m unittest discover -s scripts/ci -p test_native_supabase_export.py'
+    );
+    expect(workflow).toContain('python3 -B scripts/dr/build-native-export-client.py');
+    expect(workflow).toContain('pkg-config libssl-dev libzstd-dev');
+    const guide = readFileSync(root('docs/dr/NATIVE-LOGICAL-EXPORT.md'), 'utf8');
+    expect(guide).toContain('restore_qualified: false');
+    expect(guide).toContain('pre-execution external-effect containment');
+    const builder = readFileSync(root('scripts/dr/build-native-export-client.py'), 'utf8');
+    expect(builder).toContain("'production_restore_qualified': False");
+    expect(builder).toContain('actual-restore-qualification');
+  });
 });

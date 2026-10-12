@@ -424,29 +424,8 @@ function NotificationFeed({ userId }: { userId: string | null }) {
   // list as it stood an hour ago.
   useVisibilityRefresh(() => refresh());
 
-  /* ── Clear the header badge on open ──────────────────────────────── */
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const { data, error: sessionError } = await supabase.auth.getSession();
-        if (sessionError) throw sessionError;
-        const token = data?.session?.access_token;
-        if (!token || cancelled || !userId || data?.session?.user.id !== userId) return;
-        await fetch('/api/notifications/mark-seen', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({}),
-        });
-      } catch {
-        // Badge cosmetics. Never worth surfacing.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [userId]);
+  // Viewing the inbox preserves unread signals. Only confirmed explicit read
+  // actions may change persisted read state or clear the unread badge.
 
   // Events invalidate the canonical feed. Raw event rows have not passed
   // through its destination resolver and must not overwrite resolved rows.

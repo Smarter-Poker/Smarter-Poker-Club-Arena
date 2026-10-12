@@ -130,5 +130,8 @@
   font-size: 4.2cqw;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: right;
 }

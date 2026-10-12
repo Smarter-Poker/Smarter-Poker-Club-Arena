@@ -240,6 +240,15 @@ describe('rakeback readiness closes on the Pacific accounting calendar', () => {
 });
 
 describe('RakebackPage presents automatic weekly settlement, never a claim', () => {
+  it('prints each financial summary once and keeps the settlement explanation', async () => {
+    await openPage([period('ready', 'club-ready', '2026-09-08', 20)]);
+    expect(screen.getAllByText('Recent Earnings')).toHaveLength(1);
+    expect(screen.getAllByText('Latest Period Rate')).toHaveLength(1);
+    expect(screen.getAllByText('Next Ready Period')).toHaveLength(1);
+    expect(screen.getByText('Recent Pending Earnings: 20')).toBeInTheDocument();
+    expect(fixture.rpc).not.toHaveBeenCalled();
+  });
+
   it('offers no claim action and calls no retired claim RPC for a ready period', async () => {
     const view = await openPage([period('ready', 'club-ready', '2026-09-08', 20)]);
     expect(readyValue()).toBe('20');

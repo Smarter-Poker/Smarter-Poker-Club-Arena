@@ -385,6 +385,7 @@ import {
   HEADS_UP_STACKS,
 } from '../config/headsUpSpec.js';
 import { secureRandomInt } from '../engine/CryptoRandom.js';
+import { HorseEntryRefusalBackoff, databaseDidNotAnswer } from './horseEntryRefusalBackoff.js';
 
 /**
  * THE ONE MAP FROM A CONFIG'S VARIANT KEY TO THE `tournaments.game_type` VALUE.
@@ -3003,6 +3004,8 @@ export class TournamentRecurringService {
    */
   private readonly lifecycleJobs = new Set<Promise<unknown>>();
   private lifecycleGeneration = 0;
+  /** Horse entries that came back as an error wait before they are offered again. */
+  private readonly horseEntryBackoff = new HorseEntryRefusalBackoff();
   private stopOperation: Promise<void> | null = null;
 
   // RETIRED 2026-08-19. Scheduled tournaments are created BY the union, not
@@ -7167,6 +7170,12 @@ export class TournamentRecurringService {
         // that crosses :53 stops here and the next tick finishes it.
         if (isMaintenanceFrozen()) break;
         if (this.lifecycleGeneration !== generation || this.stopOperation) break;
+        // A horse whose last entry into this event came back as an error
+        // waits out its jittered backoff (horseEntryRefusalBackoff.ts).
+        if (!this.horseEntryBackoff.shouldAttempt(tournamentId, horse.id)) {
+          failures.set('entry_refusal_backoff', (failures.get('entry_refusal_backoff') || 0) + 1);
+          continue;
+        }
         const { data: res, error: regError } = await supabase.rpc(
           'fn_register_horse_for_tournament',
           {
@@ -7181,8 +7190,16 @@ export class TournamentRecurringService {
 
         if (regError) {
           failures.set(regError.message, (failures.get(regError.message) || 0) + 1);
+          this.horseEntryBackoff.refused(tournamentId, horse.id);
+          // The database did not answer: every further call would be one more
+          // request queued on a pool that is not serving. The next pass asks.
+          if (databaseDidNotAnswer(regError)) {
+            failures.set('pass_stopped_database_unanswered', 1);
+            break;
+          }
           continue;
         }
+        this.horseEntryBackoff.settled(tournamentId, horse.id);
         const ok = (res as { ok?: boolean } | null)?.ok === true;
         if (ok) {
           registered++;

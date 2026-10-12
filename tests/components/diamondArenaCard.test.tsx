@@ -1,16 +1,4 @@
-/**
- * THE DIAMOND ARENA IS A CLUB CARD, WITH A CLOCK ON IT.
- *
- * Dan, 2026-09-09: "THE DIAMOND ARENA CARD HAS TO LOOK AND FEEL EXACTLY LIKE
- * THE CLUB ARENA CARDS DO, SAME SQUARE SHAPE, ON THE BOTTOM HAVE AN ACTIVE
- * PLAYERS TAB, AND NEXT FREE ROLL STARTS IN X:XX TIMER." And, on review:
- * "IT SHOULDN'T SAY AUTOMATIC ENTRY ANYWHERE."
- *
- * The card used to be a 2:3 poster dropped into the carousel between two
- * four-zone club cards. These pins keep it on the club chassis, keep the two
- * figures on its rail, keep the countdown honest, and keep the words Dan
- * struck off it.
- */
+/** Diamond frame, preserved live count and honest freeroll states. */
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, act, waitFor } from '@testing-library/react';
 import DiamondArenaCard, {
@@ -131,7 +119,7 @@ describe('the ACTIVE figure is real or it is unknown', () => {
 });
 
 describe('DiamondArenaCard', () => {
-  it('is the club card chassis: four zones, two figures on the rail', () => {
+  it('owns a diamond crest, centered house name and two live figures', () => {
     const { container } = render(
       <DiamondArenaCard
         activePlayers={1284}
@@ -139,7 +127,12 @@ describe('DiamondArenaCard', () => {
       />
     );
     expect(container.querySelector('.club-card-panel.club-card-panel--arena')).not.toBeNull();
-    expect(container.querySelector('.club-card-id-plate')).not.toBeNull();
+    expect(container.querySelector('.sc--crest-diamond')).not.toBeNull();
+    expect(container.querySelector('.sc__title')?.textContent?.trim()).toBe('SMARTER.POKER');
+    expect(container.querySelector('.sc__pill')).toBeNull();
+    expect(container.querySelector('.club-card-viewport img')?.getAttribute('src')).toContain(
+      'cards/diamond-arena-square.jpg'
+    );
     expect(container.querySelector('.club-card-viewport img')).not.toBeNull();
     expect(container.querySelector('.club-card-name-plate')?.textContent).toBe('DIAMOND ARENA');
     expect(container.querySelectorAll('.club-card-stats-row .club-card-stat')).toHaveLength(2);

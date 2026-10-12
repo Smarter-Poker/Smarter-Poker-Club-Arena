@@ -6,8 +6,9 @@ run-name: Horse Phase 12 ${{ inputs.variant }} strength league ${{ inputs.source
 #
 # Runs every shard the locked contract requires for ONE pack (Short Deck,
 # Crazy Pineapple, FLH or FLO8; server/src/benchmark/
-# RemainingVariantStrengthContract.ts,
-# REMAINING_VARIANT_STRENGTH_CONTRACT.packs.<variant>): the pack's cash
+# RemainingVariantStrengthContract.ts, the pack section of the contract
+# remainingVariantStrengthContractFor(<variant>) names: since round 4, FLH the
+# frozen contract v1 and the other packs contract v2): the pack's cash
 # profiles (six-max at 2, 4 and 6 dealt and 40, 100 and 200 BB, the seat
 # ceiling, and 1,000 BB for FLH and FLO8) x that pack's three held-out seeds x
 # the profile shard count, one shard per job and one job per runner, at most
@@ -120,7 +121,7 @@ jobs:
           }));
           if (include.length !== pack.matrix.requiredShards) throw new Error('matrix size');
           if (include.length > c.REMAINING_VARIANT_MATRIX_JOB_CEILING) throw new Error('matrix above the job ceiling');
-          console.log(JSON.stringify({ contract: c.REMAINING_VARIANT_STRENGTH_CONTRACT.version, digest: c.remainingVariantStrengthContractDigest(), variant, packVersion: pack.candidate.packVersion, shards: include.length }));
+          console.log(JSON.stringify({ contract: c.remainingVariantStrengthContractFor(variant).version, digest: c.remainingVariantStrengthContractDigest(variant), variant, packVersion: pack.candidate.packVersion, shards: include.length }));
           process.stdout.write('MATRIX=' + JSON.stringify({ include }) + '\n');
           TS
           npx tsx "$RUNNER_TEMP/plan.mts" | tee "$RUNNER_TEMP/plan.txt"

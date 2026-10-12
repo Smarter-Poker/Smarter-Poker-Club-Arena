@@ -29,9 +29,9 @@ process.env.EQUITY_GOVERNOR = 'off';
 process.env.SUPABASE_URL = 'https://supabase.invalid';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'phase12-strength-offline-placeholder';
 const {
-  REMAINING_VARIANT_STRENGTH_CONTRACT,
   isRemainingVariantStrengthVariant,
   remainingVariantStrengthContractDigest,
+  remainingVariantStrengthContractFor,
   remainingVariantStrengthPack,
   remainingVariantStrengthProfile,
   remainingVariantStrengthShardKey,
@@ -121,8 +121,8 @@ async function main(): Promise<number> {
     dirty: Boolean(dirty),
     trackedDiffSha256: createHash('sha256').update(diff).digest('hex'),
     ...source,
-    contractVersion: REMAINING_VARIANT_STRENGTH_CONTRACT.version,
-    contractDigest: remainingVariantStrengthContractDigest(),
+    contractVersion: remainingVariantStrengthContractFor(variant).version,
+    contractDigest: remainingVariantStrengthContractDigest(variant),
     packVersion: pack.candidate.packVersion,
     profileId: profile.id,
     seed,

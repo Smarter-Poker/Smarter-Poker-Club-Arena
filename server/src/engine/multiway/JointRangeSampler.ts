@@ -54,6 +54,27 @@ export interface JointOpponentRange {
 const clamp = (n: number) => Math.max(0, Math.min(1, n));
 const stages = ['preflop', 'flop', 'turn', 'river'];
 const key = (card: Card) => card.rank + ':' + card.suit;
+const RANK_CODES: ReadonlyMap<string, number> = new Map(
+  [...'23456789TJQKA'].map((rank, i) => [rank, i])
+);
+const SUIT_CODES: ReadonlyMap<string, number> = new Map(
+  ['hearts', 'diamonds', 'clubs', 'spades'].map((suit, i) => [suit, i])
+);
+/** A board's score-cache key: a number that two boards share exactly when
+ * they hold the same cards in the same order (the length, then each card as
+ * one of 52 codes, in base 64), and the joined card text otherwise. A number
+ * and a text never compare equal, so the two forms cannot collide. */
+function boardKey(board: Card[]): number | string {
+  if (board.length > 7) return board.map(key).join(',');
+  let value = board.length;
+  for (const card of board) {
+    const rank = RANK_CODES.get(card.rank);
+    const suit = SUIT_CODES.get(card.suit);
+    if (rank === undefined || suit === undefined) return board.map(key).join(',');
+    value = value * 64 + rank * 4 + suit;
+  }
+  return value;
+}
 
 function structuralQuality(variant: string, cards: Card[]): number {
   if (variant === 'plo4') return plo4HandShape(cards).quality;
@@ -91,19 +112,39 @@ function decisionStrengthFromFacts(
   // Qualification on a partial board needs exactly two distinct low hole
   // ranks and three other low board ranks. The river-only scorer assumes
   // five board cards and must never receive a flop or turn.
-  const lowRanks = (values: Card[]) => [
-    ...new Set(
-      values
-        .map((c) => (c.rank === 'A' ? 1 : '23456789TJQKA'.indexOf(c.rank) + 2))
-        .filter((v) => v <= 8)
-    ),
-  ];
-  const holeLows = rules.splitLow8OrBetter ? lowRanks(cards) : [];
-  const boardLows = rules.splitLow8OrBetter ? lowRanks(board) : [];
-  const lowQualifies = holeLows.some((a, i) =>
-    holeLows.slice(i + 1).some((b) => boardLows.filter((v) => v !== a && v !== b).length >= 3)
-  );
+  const lowQualifies = rules.splitLow8OrBetter && lowQualifiesOn(cards, board);
   return clamp(shape * 0.25 + (category / 8) * 0.6 + Number(lowQualifies) * 0.15);
+}
+
+/** The distinct low ranks (ace as 1, any rank at most 8) among `cards`, as
+ * bits of a mask. A rank the table does not know reads as 1, as indexOf's -1
+ * plus 2 always has. */
+function lowRankMask(cards: Card[]): number {
+  let mask = 0;
+  for (const c of cards) {
+    const v = c.rank === 'A' ? 1 : '23456789TJQKA'.indexOf(c.rank) + 2;
+    if (v <= 8) mask |= 1 << v;
+  }
+  return mask;
+}
+
+function bitCount(mask: number): number {
+  let n = 0;
+  for (let m = mask; m; m &= m - 1) n++;
+  return n;
+}
+
+/** Whether two distinct low hole ranks a and b leave at least three board low
+ * ranks other than a and b: the same sets, compared as bit masks. */
+export function lowQualifiesOn(cards: Card[], board: Card[]): boolean {
+  const hole = lowRankMask(cards);
+  const lows = lowRankMask(board);
+  for (let a = 1; a <= 8; a++) {
+    if (!(hole & (1 << a))) continue;
+    for (let b = a + 1; b <= 8; b++)
+      if (hole & (1 << b) && bitCount(lows & ~(1 << a) & ~(1 << b)) >= 3) return true;
+  }
+  return false;
 }
 
 export function buildJointOpponentRanges(
@@ -247,8 +288,8 @@ export function sampleJointRanges(
   // score instead of evaluating all Omaha combinations twice. Partial boards
   // have different keys, so no future rank can enter a current response.
   const shapes = new WeakMap<Card[], number>();
-  const highs = new WeakMap<Card[], Map<string, number>>();
-  const lows = new WeakMap<Card[], Map<string, number | null>>();
+  const highs = new WeakMap<Card[], Map<number | string, number>>();
+  const lows = new WeakMap<Card[], Map<number | string, number | null>>();
   const shapeFor = (cards: Card[]) => {
     let value = shapes.get(cards);
     if (value === undefined) {
@@ -258,10 +299,10 @@ export function sampleJointRanges(
     return value;
   };
   const highFor = (cards: Card[], board: Card[]) => {
-    const boardKey = board.map(key).join(',');
+    const cardsOnBoard = boardKey(board);
     let cache = highs.get(cards);
     if (!cache) highs.set(cards, (cache = new Map()));
-    let value = cache.get(boardKey);
+    let value = cache.get(cardsOnBoard);
     if (value === undefined) {
       value =
         rules.holeCardsUse === 'exactly_two'
@@ -269,20 +310,20 @@ export function sampleJointRanges(
             ? scoreOmahaHi(cards, board)
             : scoreOmahaHiPartial(cards, board)
           : scoreHoldem([...cards, ...board], cards.length + board.length, rules.deckSize === 36);
-      cache.set(boardKey, value);
+      cache.set(cardsOnBoard, value);
     }
     return value;
   };
   const lowFor = (cards: Card[], board: Card[]) => {
     if (!rules.splitLow8OrBetter) return null;
-    const boardKey = board.map(key).join(',');
+    const cardsOnBoard = boardKey(board);
     let cache = lows.get(cards);
     if (!cache) lows.set(cards, (cache = new Map()));
-    if (!cache.has(boardKey)) {
+    if (!cache.has(cardsOnBoard)) {
       const value = scoreOmahaLow(cards, board);
-      cache.set(boardKey, Number.isFinite(value) ? value : null);
+      cache.set(cardsOnBoard, Number.isFinite(value) ? value : null);
     }
-    return cache.get(boardKey)!;
+    return cache.get(cardsOnBoard)!;
   };
   let stream = ((options.seed ?? saveFastRandom()) ^ 0x51a7e13) >>> 0;
   for (const card of layout.physicalKnownCards)

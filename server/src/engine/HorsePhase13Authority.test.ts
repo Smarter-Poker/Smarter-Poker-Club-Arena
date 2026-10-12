@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   admitHorsePhase13QualifiedAuthority,
   admitHorsePhase13ReleaseAuthority,
+  HORSE_PHASE13_COMPLETION_ADMISSION,
   HORSE_PHASE13_COMPLETION_DEFINITION,
   HORSE_PHASE13_COMPLETION_FLOOR,
   HORSE_PHASE13_COMPLETION_MIN_ELIGIBLE_PER_STREET,
@@ -17,6 +18,8 @@ import {
   HORSE_PHASE13_QUALIFICATION_SCHEMA,
   HORSE_PHASE13_VARIANTS,
   horsePhase13AdmittedMode,
+  horsePhase13BoardCountAdmitted,
+  horsePhase13CompletionAdmittedBoardCounts,
   horsePhase13CompletionBoardCounts,
   horsePhase13CompletionCounts,
   horsePhase13CompletionExclusions,
@@ -71,13 +74,18 @@ import {
 import { horsePhase13PolicyDigest } from './HorsePhase13PolicyDigest.js';
 import { JOINT_VARIANTS, type JointVariant } from './multiway/JointInputBinding.js';
 import { evaluateJointLivePolicy, JOINT_LIVE_DOMAIN } from './multiway/JointLivePolicy.js';
-import { jointFullSamples, jointRequestedSamples } from './multiway/JointSampleAcquisition.js';
+import { jointFullSamples } from './multiway/JointSampleAcquisition.js';
 import { jointPolicyFixture } from './multiway/JointRangeFixture.test-support.js';
 import { REMAINING_VARIANT_PACKS } from './remainingVariants/RemainingVariantPolicyPack.js';
 import { equityGovernor } from './EquityLoadGovernor.js';
 import { KNOWN_VARIANTS } from './VariantRules.js';
 
 const V: JointVariant = 'plo4';
+/** An admitted Phase 13 authority's board-count admission, every board count. */
+const ALL_BOARDS = Object.freeze({
+  phase: 'phase13' as const,
+  admittedBoardCounts: Object.freeze([1, 2, 3]),
+});
 const json = (value: unknown) => Buffer.from(JSON.stringify(value, null, 2) + '\n');
 
 /** Admit `variant` from a selection over in-memory files. */
@@ -841,32 +849,6 @@ describe('P13.3 admission refuses by name unless the variant qualifies and compl
       'completion_below_floor',
     ],
     [
-      'no three-board decision at all, every street clearing the floor',
-      () =>
-        withCompletion({
-          boardCounts: { '1': p13Street(600), '2': p13Street(200), '3': p13Street(0) },
-        }),
-      'completion_below_floor',
-    ],
-    [
-      'two-board hands whose response model refused on 32 of 400, every street clearing the floor',
-      () =>
-        withCompletion({
-          streets: {
-            preflop: p13Street(1000, 0, 0, 0, 0, 8),
-            flop: p13Street(1000, 0, 0, 0, 0, 8),
-            turn: p13Street(1000, 0, 0, 0, 0, 8),
-            river: p13Street(1000, 0, 0, 0, 0, 8),
-          },
-          boardCounts: {
-            '1': p13Street(3200),
-            '2': p13Street(400, 0, 0, 0, 0, 32),
-            '3': p13Street(400),
-          },
-        }),
-      'completion_below_floor',
-    ],
-    [
       'board counts that do not total the streets',
       () =>
         withCompletion({
@@ -996,6 +978,7 @@ describe('P13.3 admission refuses by name unless the variant qualifies and compl
         issuedAt: P13_TEST_ISSUED_AT,
         expiresAt: null,
         contractDigest: P13_TEST_CONTRACT_DIGEST,
+        admittedBoardCounts: [1, 2, 3],
       };
       expect(authority).toEqual({
         ...identity,
@@ -1003,6 +986,7 @@ describe('P13.3 admission refuses by name unless the variant qualifies and compl
           ...identity,
           completionDefinition: HORSE_PHASE13_COMPLETION_DEFINITION,
           completionFloor: HORSE_PHASE13_COMPLETION_FLOOR,
+          completionAdmission: HORSE_PHASE13_COMPLETION_ADMISSION,
         }),
       });
       const c2 = p13CompletionBytes(variant, { releaseSha: 'd'.repeat(40) });
@@ -1014,6 +998,86 @@ describe('P13.3 admission refuses by name unless the variant qualifies and compl
       expect(other?.authorityKey).not.toBe(authority!.authorityKey);
     }
   );
+
+  // HORSE_PHASE13_COMPLETION_ADMISSION v1 (October 11, 2026): a board count
+  // whose cell does not clear the floor is not admitted, and the candidate
+  // never acts there; it no longer refuses the board counts that do clear it.
+  // Production has never dealt a three-board joint decision.
+  it.each([
+    [
+      'no three-board decision at all, every street clearing the floor',
+      () =>
+        withCompletion({
+          boardCounts: { '1': p13Street(600), '2': p13Street(200), '3': p13Street(0) },
+        }),
+      [1, 2],
+    ],
+    [
+      'two-board hands whose response model refused on 32 of 400, every street clearing the floor',
+      () =>
+        withCompletion({
+          streets: {
+            preflop: p13Street(1000, 0, 0, 0, 0, 8),
+            flop: p13Street(1000, 0, 0, 0, 0, 8),
+            turn: p13Street(1000, 0, 0, 0, 0, 8),
+            river: p13Street(1000, 0, 0, 0, 0, 8),
+          },
+          boardCounts: {
+            '1': p13Street(3200),
+            '2': p13Street(400, 0, 0, 0, 0, 32),
+            '3': p13Street(400),
+          },
+        }),
+      [1, 3],
+    ],
+    [
+      'only one-board hands, every street clearing the floor',
+      () =>
+        withCompletion({
+          boardCounts: { '1': p13Street(800), '2': p13Street(0), '3': p13Street(0) },
+        }),
+      [1],
+    ],
+    ['every board count clearing the floor', () => withCompletion({}), [1, 2, 3]],
+  ] as const)('%s admits exactly the board counts that cleared it', (_name, run, counts) => {
+    const authority = selectedHorsePhase13Authority(V, run());
+    expect(authority?.admittedBoardCounts).toEqual(counts);
+    for (const n of [1, 2, 3])
+      expect(horsePhase13BoardCountAdmitted(authority, n), String(n)).toBe(
+        (counts as readonly number[]).includes(n)
+      );
+  });
+
+  it('a street below the floor admits no board count, whatever the board cells say', () => {
+    const admission = withCompletion({
+      streets: { ...p13CompletionObject(V).streets, river: p13Street(200, 15) },
+    });
+    expect(admission).toEqual({
+      status: 'refused',
+      reason: 'completion_below_floor',
+      transient: false,
+    });
+    expect(
+      horsePhase13CompletionAdmittedBoardCounts({
+        streets: { ...p13CompletionObject(V).streets, river: p13Street(200, 15) },
+        boardCounts: p13CompletionObject(V).boardCounts,
+      } as never)
+    ).toEqual([]);
+  });
+
+  it('the admitted board counts are bound into the authority key', () => {
+    const all = selectedHorsePhase13Authority(V, withCompletion({}));
+    const some = selectedHorsePhase13Authority(
+      V,
+      withCompletion({
+        boardCounts: { '1': p13Street(600), '2': p13Street(200), '3': p13Street(0) },
+      })
+    );
+    expect(all?.authorityKey).toMatch(/^[0-9a-f]{64}$/);
+    expect(some?.authorityKey).toMatch(/^[0-9a-f]{64}$/);
+    expect(some?.authorityKey).not.toBe(all?.authorityKey);
+    expect(Object.isFrozen(some?.admittedBoardCounts)).toBe(true);
+  });
 
   it('an all-complete street of exactly the minimum size passes; one decision fewer does not', () => {
     expect(HORSE_PHASE13_COMPLETION_MIN_ELIGIBLE_PER_STREET).toBe(127);
@@ -1165,13 +1229,66 @@ describe('P13.3 one variant never admits another', () => {
           gameMode,
           variant,
           asset: undefined,
+          boardCount: undefined,
           packVariant: packVariant as JointVariant | null,
           verdict,
+          authority: ALL_BOARDS,
           callerMode,
         })
       ).toBe(expected);
     }
   );
+
+  // HORSE_PHASE13_COMPLETION_ADMISSION v1: candidate only on an admitted board count.
+  it.each([
+    [[1, 2], 1, 'candidate'],
+    [[1, 2], undefined, 'candidate'],
+    [[1, 2], null, 'candidate'],
+    [[1, 2], 2, 'candidate'],
+    [[1, 2], 3, 'shadow'],
+    [[1], 2, 'shadow'],
+    [[2, 3], 1, 'shadow'],
+    [[2, 3], undefined, 'shadow'],
+    [[], 1, 'shadow'],
+    [[1, 2, 3], 4, 'shadow'],
+    [[1, 2, 3], '1', 'shadow'],
+  ] as const)(
+    'usable PLO8 authority admitting boards %j runs a %s-board cash decision in %s mode',
+    (admitted, boardCount, expected) => {
+      expect(
+        horsePhase13AdmittedMode({
+          gameMode: 'cash',
+          variant: 'plo8',
+          asset: undefined,
+          boardCount,
+          packVariant: 'plo8',
+          verdict: 'usable',
+          authority: { phase: 'phase13', admittedBoardCounts: admitted },
+          callerMode: undefined,
+        })
+      ).toBe(expected);
+    }
+  );
+
+  it.each([
+    ['no authority', null],
+    ['an authority of another phase', { phase: 'phase12', admittedBoardCounts: [1, 2, 3] }],
+    ['an authority without admitted board counts', { phase: 'phase13' }],
+  ] as const)('%s never admits a candidate, even with a usable verdict', (_name, authority) => {
+    expect(
+      horsePhase13AdmittedMode({
+        gameMode: 'cash',
+        variant: 'plo8',
+        asset: undefined,
+        boardCount: 1,
+        packVariant: 'plo8',
+        verdict: 'usable',
+        authority: authority as never,
+        callerMode: undefined,
+      })
+    ).toBe('shadow');
+    expect(horsePhase13BoardCountAdmitted(authority as never, 1)).toBe(false);
+  });
 
   // Audit 2026-10-06: the P13.2 contract excludes Diamond NLH from the
   // qualified domain, so no Phase 13 authority covers a Diamond decision.
@@ -1192,8 +1309,10 @@ describe('P13.3 one variant never admits another', () => {
           gameMode: 'cash',
           variant: 'nlh',
           asset,
+          boardCount: 1,
           packVariant: 'nlh',
           verdict: 'usable',
+          authority: ALL_BOARDS,
           callerMode,
         })
       ).toBe(expected);
@@ -1370,18 +1489,19 @@ describe('P13.3 natural completion share: what a record counts', () => {
     expect(horsePhase13CompletionOutcome('plo4', value)).toBe(expected);
   });
 
-  it('the full sample count is the governor-off request of the live acquisition', () => {
-    for (const dealt of [3, 4]) {
+  it('the full sample count is the matrix count and the live request at any load', () => {
+    for (const dealt of [3, 4])
       expect(jointFullSamples(dealt)).toBe(JOINT_LIVE_DOMAIN.defaultSamples);
-      expect(jointRequestedSamples(dealt, 1)).toBe(jointFullSamples(dealt));
-      expect(jointRequestedSamples(dealt, 0.999)).toBeLessThan(jointFullSamples(dealt));
-      expect(jointRequestedSamples(dealt, 0.5)).toBe(8);
-    }
-    for (const dealt of [5, 9]) {
+    for (const dealt of [5, 9])
       expect(jointFullSamples(dealt)).toBe(JOINT_LIVE_DOMAIN.largeTableSamples);
-      expect(jointRequestedSamples(dealt, 1)).toBe(jointFullSamples(dealt));
-      // The minimum equals the large-table count: the governor cannot reduce it.
-      expect(jointRequestedSamples(dealt, 0)).toBe(JOINT_LIVE_DOMAIN.minSamples);
+    // 2026-10-11: the governor never scales the joint request (the #6592 rule).
+    for (const scale of [1, 0.6, 0.35, 0]) {
+      vi.spyOn(equityGovernor, 'current').mockReturnValue(scale);
+      const { hero, state, baseline } = jointPolicyFixture('plo8', 1, 'cash', 'flop');
+      const r = evaluateJointLivePolicy(hero, state, baseline, 'shadow', () => 0).receipt;
+      vi.restoreAllMocks();
+      expect(r.requestedSamples, String(scale)).toBe(jointFullSamples(r.dealtPlayers));
+      expect(r.completedSamples, String(scale)).toBe(r.requestedSamples);
     }
   });
 
@@ -1413,32 +1533,36 @@ describe('P13.3 natural completion share: what a record counts', () => {
         expect(horsePhase13CompletionOutcome(variant, ok), `${street} ${ok.reason}`).toBe(
           'completed'
         );
+        // 2026-10-11: the live decision is the measured policy whatever the
+        // clock or the load. A slow clock, a deadline that would have fallen
+        // between samples, and a loaded governor each give the fixed-clock
+        // receipt, with only latencyMs measured differently.
+        const sameWork = (r: Record<string, any>) => ({ ...r, latencyMs: 0 });
         let t = 0;
-        const slow = live(variant, street, () => (t += 5));
-        expect(slow).toMatchObject({ eligible: true, reason: 'work_budget' });
+        const realSlow = live(variant, street, () => (t += 5));
+        const realLate = live(variant, street, stepClock(3, 3));
+        vi.spyOn(equityGovernor, 'current').mockReturnValue(0.5);
+        const realLoaded = live(variant, street, () => 0);
+        vi.restoreAllMocks();
+        for (const real of [realSlow, realLate, realLoaded]) {
+          expect(sameWork(real), street).toEqual(sameWork(ok));
+          expect(horsePhase13CompletionOutcome(variant, real), street).toBe('completed');
+        }
+        expect(realSlow.latencyMs).toBeGreaterThan(4);
+        // Receipts as earlier releases journaled them still count by name.
+        const slow = { ...ok, reason: 'work_budget', fired: false };
         expect(horsePhase13CompletionOutcome(variant, slow)).toBe('work_budget');
-        // The sampler's deadline is spent before its first sample: no
-        // population, and the policy stays inside its own budget.
-        // (Reads: the wrapper's start, the acquisition's start, then the
-        // sampler's deadline checks.)
-        const none = live(variant, street, stepClock(2, 3));
-        expect(none.reason, street).toBe('joint_samples_unavailable');
+        const none = { ...ok, reason: 'joint_samples_unavailable', fired: false };
         expect(horsePhase13CompletionOutcome(variant, none), street).toBe('sample_unavailable');
-        // The deadline arrives after a few samples: cut short.
-        let cut: Record<string, any> = none;
-        for (let reads = 3; reads < 400 && !(cut.completedSamples > 0); reads++)
-          cut = live(variant, street, stepClock(reads, 3));
-        expect(cut.sampleBudgetExhausted, street).toBe(true);
-        expect(cut.completedSamples, street).toBeGreaterThan(0);
+        const cut = {
+          ...ok,
+          sampleBudgetExhausted: true,
+          completedSamples: ok.requestedSamples - 1,
+        };
         expect(horsePhase13CompletionOutcome(variant, cut), street).toBe(
           'sampler_budget_exhausted'
         );
-        // Under load the governor halves the request; every requested sample
-        // completes, and it is still not the measured policy.
-        vi.spyOn(equityGovernor, 'current').mockReturnValue(0.5);
-        const reduced = live(variant, street, () => 0);
-        vi.restoreAllMocks();
-        expect(reduced).toMatchObject({ requestedSamples: 8, completedSamples: 8 });
+        const reduced = { ...ok, requestedSamples: 8, completedSamples: 8 };
         expect(horsePhase13CompletionOutcome(variant, reduced), street).toBe('governor_reduced');
         // The response model's named refusal (forged reason on a real receipt;
         // the live sample cap keeps the branch limit out of natural reach).
@@ -1470,7 +1594,9 @@ describe('P13.3 natural completion share: what a record counts', () => {
       expect(threeRiver.boardCount).toBe(3);
       expect(horsePhase13CompletionOutcome(variant, threeRiver)).toBe('completed');
       let late = 0;
-      const threeSlow = live(variant, 'flop', () => (late += 5), 3);
+      const threeFlop = live(variant, 'flop', () => (late += 5), 3);
+      expect(horsePhase13CompletionOutcome(variant, threeFlop)).toBe('completed');
+      const threeSlow = { ...threeFlop, reason: 'work_budget', fired: false };
       expect(horsePhase13CompletionOutcome(variant, threeSlow)).toBe('work_budget');
       seen.push(bombPreflop, bombTurn, threeRiver, threeSlow);
       // A tournament decision is never counted (Pineapple is refused before it

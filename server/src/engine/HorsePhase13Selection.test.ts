@@ -42,6 +42,12 @@ const usableAuthority = (continuationVersion: string) => ({
   expiresAt: null,
   mainGeneration: null,
 });
+/** A usable Phase 13 authority's board-count admission (HorseQualifiedAuthority):
+ * every board count, or only the ones named. */
+const admitting = (admittedBoardCounts: readonly number[] = [1, 2, 3]) => ({
+  phase: 'phase13' as const,
+  admittedBoardCounts,
+});
 const act = (d: { action: string; amount?: number | null }) => ({
   action: d.action,
   amount: d.amount ?? null,
@@ -114,8 +120,10 @@ describe('P13.3 worker-owned Phase 13 mode', () => {
           gameMode: 'cash',
           variant,
           asset: undefined,
+          boardCount: 1,
           packVariant: variant,
           verdict: 'usable',
+          authority: admitting(),
           ...over,
         });
       expect(mode({})).toBe('candidate');
@@ -133,6 +141,13 @@ describe('P13.3 worker-owned Phase 13 mode', () => {
       expect(mode({ callerMode: 'off' })).toBe('off');
       expect(mode({ callerMode: 'candidate', verdict: 'missing_receipt' })).toBe('shadow');
       expect(mode({ callerMode: 'shadow' })).toBe('candidate');
+      // HORSE_PHASE13_COMPLETION_ADMISSION: candidate only on a board count the
+      // usable authority admitted; any other board count stays shadow.
+      for (const boardCount of [undefined, null, 1, 2, 3])
+        expect(mode({ boardCount }), String(boardCount)).toBe('candidate');
+      expect(mode({ boardCount: 3, authority: admitting([1, 2]) })).toBe('shadow');
+      expect(mode({ boardCount: 2, authority: admitting([1, 2]) })).toBe('candidate');
+      expect(mode({ authority: null })).toBe('shadow');
     }
   );
   it('an unknown variant is never a candidate', () => {
@@ -142,8 +157,10 @@ describe('P13.3 worker-owned Phase 13 mode', () => {
         gameMode: 'cash',
         variant: 'stud',
         asset: undefined,
+        boardCount: 1,
         packVariant: null,
         verdict: 'usable',
+        authority: admitting(),
       })
     ).toBe('shadow');
   });
@@ -160,8 +177,10 @@ describe('P13.3 a live joint selection at the worker boundary', () => {
         gameMode: 'cash',
         variant,
         asset: undefined,
+        boardCount: SELECTED_SPOT[variant].boards,
         packVariant: variant,
         verdict: 'usable',
+        authority: admitting(),
       });
       const selected = decide(variant, mode);
       const reference = decide(variant, 'off');
@@ -329,4 +348,29 @@ describe('P13.3 a Diamond decision never crosses as a Phase 13 selection (audit 
     // An applied receipt without a bound chip objective is refused too.
     expect(horsePhase13SelectionIsValid({ ...forged, inputs: null }, decision)).toBe(false);
   });
+});
+
+describe('P13.3 board-count admission at the worker boundary', () => {
+  it.each(HORSE_PHASE13_VARIANTS)(
+    'a %s candidate on a board count the authority did not admit stays shadow and plays the reference',
+    (variant) => {
+      const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+      onTestFinished(() => clock.mockRestore());
+      const spot = SELECTED_SPOT[variant];
+      const mode = horsePhase13AdmittedMode({
+        callerMode: undefined,
+        gameMode: 'cash',
+        variant,
+        asset: undefined,
+        boardCount: spot.boards,
+        packVariant: variant,
+        verdict: 'usable',
+        authority: admitting([1, 2, 3].filter((n) => n !== spot.boards)),
+      });
+      expect(mode).toBe('shadow');
+      const unadmitted = decide(variant, mode);
+      expect(unadmitted.jointPolicy).toMatchObject({ mode: 'shadow', applied: false });
+      expect(act(unadmitted)).toEqual(act(decide(variant, 'off')));
+    }
+  );
 });

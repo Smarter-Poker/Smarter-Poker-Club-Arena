@@ -385,6 +385,7 @@ import {
   HEADS_UP_STACKS,
 } from '../config/headsUpSpec.js';
 import { secureRandomInt } from '../engine/CryptoRandom.js';
+import { HorseEntryRefusalBackoff, databaseDidNotAnswer } from './horseEntryRefusalBackoff.js';
 
 /**
  * THE ONE MAP FROM A CONFIG'S VARIANT KEY TO THE `tournaments.game_type` VALUE.
@@ -3003,6 +3004,8 @@ export class TournamentRecurringService {
    */
   private readonly lifecycleJobs = new Set<Promise<unknown>>();
   private lifecycleGeneration = 0;
+  /** Horse entries that came back as an error wait before they are offered again. */
+  private readonly horseEntryBackoff = new HorseEntryRefusalBackoff();
   private stopOperation: Promise<void> | null = null;
 
   // RETIRED 2026-08-19. Scheduled tournaments are created BY the union, not
@@ -5544,6 +5547,22 @@ export class TournamentRecurringService {
       // the fleet idled beyond the page. The fleet is ~600 rows of ids; just
       // read all of it keyset-paged (fetchAllRows, the same pattern
       // HorseFleetManager.seedAllTables uses) and filter/shuffle in memory.
+      /* A BENCHED HORSE IS NOT A FREE HORSE (2026-10-12). This read took
+         every is_horse profile, including the 62 identities retired on
+         2026-10-06 (horse_status 'disabled', profile status 'deleted', zero
+         chips in every club wallet). A benched horse is never seated
+         anywhere, so it is never busy, so it was ALWAYS in the free pool:
+         as the live fleet filled its games the free pool became mostly
+         benched horses, and every seat-first fill offered them to the seat
+         door, which refused each one for insufficient_balance. Measured on
+         engine 0a8f92f4, 00:06 to 03:06 UTC on 2026-10-12: 5,288 of those
+         refusals, 9 SEAT-FIRST BOARD STUCK reports, Spins sitting 15 to 30
+         minutes for their third seat and one cancelled with its two paid
+         entrants refunded. 'disabled' is the one status that stops a horse
+         playing (HorseFleetManager reads the fleet the same way), so the
+         seat-first pool now reads only horses that can play. This is fleet
+         state, not a horse-versus-human rule: an active horse is offered
+         exactly as before. */
       const fleetPage = await viaTopUpPass(
         pass,
         'horse-fleet',
@@ -5554,6 +5573,7 @@ export class TournamentRecurringService {
                 .from('profiles')
                 .select('id')
                 .eq('is_horse', true)
+                .neq('horse_status', 'disabled')
                 .order('id', { ascending: true })
                 .limit(want);
               if (cursor) q = q.gt('id', cursor);
@@ -6105,7 +6125,7 @@ export class TournamentRecurringService {
         const { data: tRow, error: tErr } = await supabase
           .from('tournaments')
           .select(
-            'variant, max_players, format_contract, club_id, start_time, created_at, prize_pool_finalized, current_players'
+            'variant, max_players, format_contract, club_id, start_time, created_at, prize_pool_finalized, current_players, status'
           )
           .eq('id', tournamentId)
           .maybeSingle();
@@ -6138,6 +6158,27 @@ export class TournamentRecurringService {
            status column says; it needs the finish path, never a fill. Said
            once per row per process, with the state that recovery needs. */
         if ((tRow as { prize_pool_finalized?: boolean | null }).prize_pool_finalized === true) {
+          /* A RUNNING EVENT WHOSE LATE REGISTRATION HAS CLOSED IS WHERE IT
+             SHOULD BE (2026-10-12). The overlay guard and the freeroll filler
+             list a RUNNING event for 30 and 20 minutes after its start, which
+             outlasts a 25 minute late registration, so they ask here for an
+             event that has just finalized its pool on time. Late Night PKO
+             d4a393c0 (asked 27 minutes after it started) and a0feb545 (29
+             minutes) were each reported as an error, and each finished with
+             every place filled and its whole pool paid. The fill is still
+             refused, exactly as before; it is reported only for the case this
+             report was written for, a pool that finalized while the row still
+             reads as registering. */
+          const status = String((tRow as { status?: string | null }).status ?? '').toUpperCase();
+          if (status === 'RUNNING') {
+            if (!this.finalizedPoolTopUpsRefused.has(tournamentId)) {
+              this.finalizedPoolTopUpsRefused.add(tournamentId);
+              console.log(
+                `[TournamentRecurring] top-up for ${tournamentId.slice(0, 8)} skipped: it is running and its late registration has closed`
+              );
+            }
+            return 0;
+          }
           if (!this.finalizedPoolTopUpsRefused.has(tournamentId)) {
             this.finalizedPoolTopUpsRefused.add(tournamentId);
             reportError(
@@ -7167,6 +7208,12 @@ export class TournamentRecurringService {
         // that crosses :53 stops here and the next tick finishes it.
         if (isMaintenanceFrozen()) break;
         if (this.lifecycleGeneration !== generation || this.stopOperation) break;
+        // A horse whose last entry into this event came back as an error
+        // waits out its jittered backoff (horseEntryRefusalBackoff.ts).
+        if (!this.horseEntryBackoff.shouldAttempt(tournamentId, horse.id)) {
+          failures.set('entry_refusal_backoff', (failures.get('entry_refusal_backoff') || 0) + 1);
+          continue;
+        }
         const { data: res, error: regError } = await supabase.rpc(
           'fn_register_horse_for_tournament',
           {
@@ -7181,8 +7228,16 @@ export class TournamentRecurringService {
 
         if (regError) {
           failures.set(regError.message, (failures.get(regError.message) || 0) + 1);
+          this.horseEntryBackoff.refused(tournamentId, horse.id);
+          // The database did not answer: every further call would be one more
+          // request queued on a pool that is not serving. The next pass asks.
+          if (databaseDidNotAnswer(regError)) {
+            failures.set('pass_stopped_database_unanswered', 1);
+            break;
+          }
           continue;
         }
+        this.horseEntryBackoff.settled(tournamentId, horse.id);
         const ok = (res as { ok?: boolean } | null)?.ok === true;
         if (ok) {
           registered++;

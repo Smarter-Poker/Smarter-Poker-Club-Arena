@@ -82,6 +82,9 @@ export function choiceNextOdds(
   mines = 6
 ) {
   if (safeSteps >= prizes.length) return null;
+  // CONTRACT 6 (Dan, 2026-10-11): Donkey Cross flips a fair coin on every
+  // street, the first one included. Exactly half, every time.
+  if (game === 'crossing' && version === 6) return { safe: 50, loss: 50 };
   if (safeSteps === 0 && version >= 4) return { safe: 100, loss: 0 };
   let safe: number;
   if (game === 'mines') safe = (100 * (25 - mines - safeSteps)) / (25 - safeSteps);

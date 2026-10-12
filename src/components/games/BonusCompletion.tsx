@@ -39,7 +39,14 @@ export default function BonusCompletion({
   figure,
   cap,
   stakeChips,
+  headline,
 }: {
+  /**
+   * One line said on its own, in gold, above the detail: for Donkey Cross, how
+   * far the donkey would have got after the player booked the win (Dan,
+   * 2026-10-11). Absent: nothing extra is shown.
+   */
+  headline?: string;
   /** The route's club id, used for navigation. */
   clubId: string;
   /** The club's UUID, used to read the wheel's waiting awards. Absent: no read. */
@@ -183,6 +190,12 @@ export default function BonusCompletion({
               <WheelPrizeArt segment={{ kind: 'chips' }} className={styles.art} />
             )}
           </div>
+          {headline ? (
+            // A block of its own, above the receipt's sentence and read with it.
+            <div className="sc-copy sc-copy--center sc-ink--gold" data-receipt-headline="true">
+              <strong>{headline}</strong>
+            </div>
+          ) : null}
           <p className="sc-copy sc-copy--center" role="status">
             {`${big ? 'Big Win. ' : ''}${chips > 0 ? 'Your Prize Is Booked.' : 'No Chips Won This Round.'} ${detail}`}
             {proof ? ` ${proof}` : ''}

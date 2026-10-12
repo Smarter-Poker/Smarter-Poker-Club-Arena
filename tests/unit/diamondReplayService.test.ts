@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import receipts from '../fixtures/diamond-spins/wheel-v3-postgres-receipts.json';
+import coinReceipts from '../fixtures/diamond-spins/crossing-coin-postgres-receipts.json';
 import {
   DiamondReplayService,
   bonusReplayTitle,
@@ -141,6 +142,45 @@ describe('completed Diamond replay parsing', () => {
     { ...crossing, data: { ...crossing.data, picked: [0, 2] } },
   ])('rejects invalid or contradictory replay %#', (value) => {
     expect(() => parseBonusReplay(value)).toThrow(/Replay Could Not Be Read/);
+  });
+  /**
+   * CONTRACT 6 (Donkey Cross's fair coin, 2026-10-11). Real replays from the
+   * installed migration carry every street's coin and the road's own ladder,
+   * and their road end is the first smash among those coins. A replay whose
+   * coins and road end disagree is refused.
+   */
+  describe('a contract-6 road replay', () => {
+    const coinReplay = (kind: string) =>
+      structuredClone(
+        (coinReceipts as { kind: string; value: Record<string, any> }[]).find(
+          (r) => r.kind === `${kind}_replay`
+        )!.value
+      );
+    it.each(['cashed_ran_on', 'cashed_next_hit', 'lost_street_one', 'lost_later'])(
+      '%s reads, with its coins, its street and its own ladder',
+      (kind) => {
+        const replay = parseBonusReplay(coinReplay(kind));
+        if (replay.game !== 'crossing') throw new Error('not a road');
+        expect(replay.data.payout_version).toBe(6);
+        expect(replay.data.road_end).toBe(
+          replay.data.coins!.indexOf(false) < 0
+            ? replay.data.coins!.length
+            : replay.data.coins!.indexOf(false)
+        );
+        expect(replay.data.street_multipliers![0]).toBeCloseTo(1.1, 4);
+      }
+    );
+    it('refuses a moved road end, a flipped coin, or a missing ladder', () => {
+      const moved = coinReplay('cashed_ran_on');
+      moved.data.road_end += 1;
+      expect(() => parseBonusReplay(moved)).toThrow(/Replay Could Not Be Read/);
+      const flipped = coinReplay('cashed_ran_on');
+      flipped.data.coins[1] = false;
+      expect(() => parseBonusReplay(flipped)).toThrow(/Replay Could Not Be Read/);
+      const bare = coinReplay('cashed_ran_on');
+      delete bare.data.street_multipliers;
+      expect(() => parseBonusReplay(bare)).toThrow(/Replay Could Not Be Read/);
+    });
   });
   it('accepts the persisted elapsed time of a Crash settled after a long offline delay', () => {
     const replay = { ...crash, data: { ...crash.data, elapsed_ms: 2147483647 } };

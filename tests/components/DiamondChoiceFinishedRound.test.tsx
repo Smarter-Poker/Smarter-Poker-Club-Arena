@@ -27,6 +27,7 @@ import DiamondChoicePage from '../../src/pages/DiamondChoicePage';
 import type ChoiceScene from '../../src/components/games/ChoiceScene';
 import { CHOICE_MODE } from '../../src/utils/diamondChoiceMath';
 import fixtures from '../fixtures/diamond-spins/local-postgres-receipts.json';
+import coinReceipts from '../fixtures/diamond-spins/crossing-coin-postgres-receipts.json';
 
 const backend = vi.hoisted(() => ({
   state: vi.fn(),
@@ -327,6 +328,51 @@ describe('a finished round reopened from its wheel link', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(text()).toContain('Win This Game On Diamond Spins To Play.');
     expect(backend.navigate).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A BOOKED COIN ROAD SAYS HOW FAR IT WOULD HAVE GOT (Dan, 2026-10-11: "WHEN A
+ * USER 'BOOKS THE WIN' IT SHOULD SHOW THEM HOW FAR THEY 'WOULD OF GOTTEN'").
+ * The round is a real contract-6 receipt from the installed migration
+ * (tests/fixtures/diamond-spins/crossing-coin-postgres-receipts.json): booked
+ * at street 2, its sealed coins carry the donkey to street 5.
+ */
+describe('a booked Donkey Cross round under the fair coin', () => {
+  const ranOn = {
+    ...(coinReceipts as { kind: string; value: Record<string, unknown> }[]).find(
+      (r) => r.kind === 'cashed_ran_on'
+    )!.value,
+    // This page's club and award; everything sealed is the real receipt's.
+    club_id: CLUB,
+    award_id: AWARD_ID,
+  };
+  it('shows how far the donkey would have got, on the console and on the receipt', async () => {
+    backend.search.value = `?wheelAward=${AWARD_ID}`;
+    backend.awardState.mockResolvedValue({
+      enabled: true,
+      award: { ...award('crossing', AWARD_ID, 'redeemed'), result: ranOn },
+      gameState: null,
+      quote: null,
+    });
+    backend.state.mockResolvedValue(
+      state('crossing', {
+        history: [ranOn],
+        payout_version: 6,
+        max_steps: 9,
+        prizes: [1.1, 1.65, 2.47, 3.7, 5.55, 8.32, 12.48, 18.72, 20],
+      })
+    );
+    render(<DiamondChoicePage game="crossing" />);
+    await settle();
+    await revealEnds();
+    const headline = 'You Would Have Got To Street 5 At 5.57x, Then Been Hit On Street 6';
+    expect(text()).toContain(headline);
+    expect(text()).toContain('Sealed Coins: 1 Safe · 2 Safe · 3 Safe · 4 Safe · 5 Safe · 6 Hit');
+    const receipt = screen.getByRole('dialog', { name: '41.25 Chips' });
+    expect(receipt.querySelector('[data-receipt-headline]')?.textContent).toBe(headline);
+    // The odds a coin road prints are a fair coin, never the old ladder's.
+    expect(text()).not.toMatch(/31\.\d% Safe Crossing/);
   });
 });
 

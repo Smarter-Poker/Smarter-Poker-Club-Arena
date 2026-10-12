@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import type { BonusGame, PlinkoBall } from './DiamondBonusService';
 import { MINE_COUNTS, ROAD_LADDERS } from '../utils/diamondChoiceMath';
+import { roadCoinEnd } from '../utils/roadCoin';
 import { diamondGameTitle } from '../utils/diamondGameTitles';
 
 export interface BonusReplaySummary {
@@ -50,6 +51,11 @@ export type BonusReplay = ReplayBase &
           prizes: number[];
           mine_cells: number[] | null;
           road_end: number | null;
+          /** Contract 6 roads only: the sealed coin of every street (true = safe). */
+          payout_version?: 6;
+          coins?: boolean[];
+          /** Contract 6 roads only: each street's prize over the stake (1.1 = 1.10x). */
+          street_multipliers?: number[];
         };
       }
   );
@@ -166,7 +172,21 @@ export function parseBonusReplay(value: unknown): BonusReplay {
           d.picked.some((n, i) => n !== i) ||
           (d.status === 'lost'
             ? d.road_end !== d.picked.length - 1
-            : d.road_end < d.picked.length)))
+            : d.road_end < d.picked.length))) ||
+      // A contract-6 road names its coins and its own ladder, and the road end
+      // is the first smash among those coins.
+      (r.game === 'crossing' &&
+        d.payout_version !== undefined &&
+        (d.payout_version !== 6 ||
+          !Array.isArray(d.coins) ||
+          d.coins.length !== d.prizes.length ||
+          !d.coins.every((c) => typeof c === 'boolean') ||
+          d.road_end !== roadCoinEnd(d.coins) ||
+          !Array.isArray(d.street_multipliers) ||
+          d.street_multipliers.length !== d.prizes.length ||
+          !d.street_multipliers.every(
+            (m, i) => finite(m) && m > 0 && (i === 0 || m >= d.street_multipliers![i - 1])
+          )))
     )
       throw new Error('This Bonus Replay Could Not Be Read');
   }

@@ -63,6 +63,15 @@ function claim(rows = Array.from({ length: 160 }, (_, i) => row(i))) {
     evidenceDigest: hash(rows.join('\n')),
   };
 }
+function statisticsClaim() {
+  const c = claim();
+  return {
+    ...c,
+    version: 2,
+    statistics: [],
+    evidenceDigest: hash(c.rows.join('\n') + '\n--statistics-v1--\n'),
+  };
+}
 function report(c = claim()) {
   const r = buildJournaledOpponentReport(c, token, source);
   expect(r.status).toBe('prepared');
@@ -213,6 +222,7 @@ describe('journal population model consumer', () => {
     ).toMatchObject({ reason: 'incomplete_window' });
   });
   it.each([
+    'version',
     'actorKey',
     'scopeKey',
     'evidenceDigest',
@@ -301,7 +311,7 @@ describe('journal population model consumer', () => {
     mock.rpc.mockImplementation((name, args) => ({
       abortSignal: vi.fn(async () =>
         name.includes('claim')
-          ? { data: { ...claim(), leaseToken: args.p_lease_token }, error: null }
+          ? { data: { ...statisticsClaim(), leaseToken: args.p_lease_token }, error: null }
           : {
               data: { version: 1, status: 'recorded', reportDigest: hash(args.p_report) },
               error: null,
@@ -310,8 +320,8 @@ describe('journal population model consumer', () => {
     }));
     expect(await processJournaledOpponentModels()).toBe('recorded');
     expect(mock.rpc.mock.calls.map((c) => c[0])).toEqual([
-      'fn_claim_horse_journaled_model',
-      'fn_finish_horse_journaled_model',
+      'fn_claim_horse_journaled_model_statistics',
+      'fn_finish_horse_journaled_model_statistics',
     ]);
     const submitted = JSON.parse(mock.rpc.mock.calls[1][1].p_report);
     expect(submitted).toMatchObject({
@@ -327,7 +337,7 @@ describe('journal population model consumer', () => {
       mock.rpc.mockImplementation((name, args) => ({
         abortSignal: async () => {
           if (name.includes('claim'))
-            return { data: { ...claim(), leaseToken: args.p_lease_token }, error: null };
+            return { data: { ...statisticsClaim(), leaseToken: args.p_lease_token }, error: null };
           if (mode === 'throw') throw Error('network');
           return {
             data: {

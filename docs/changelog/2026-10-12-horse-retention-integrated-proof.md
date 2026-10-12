@@ -1,0 +1,7 @@
+# Integrated horse retention proof
+
+Old hosted candidate e4e911 failed its isolated PostgreSQL startup because the Unix socket path exceeded107bytes. The maintained request/key harnesses now put Linux sockets under the short platform temporary path; Mac sockets remain under owned externalSSD folders. This changes no production behavior or qualification assertions. Actual installed classification version61152 is wired into the adaptive harness.
+
+The same candidate's immutable anchored migration54646 could not declare an object or prove its preserved config read from file text. Four already-installed anchored migrations now use the existing recording manifest, bound to their exact unchanged source MD5 and production history readback. SQL bytes and native assertions remain unchanged; source mutation rearms the existing strict guards. The actual public.fn_ca_migration_text returns raw source MD5, verified for54646, unlike manually adding an extra newline.
+
+Root integrated adaptive native34assertions passed,165focused server cases passed and server TypeScript passed on4b35aad28 plus corrected path binding. The two existing retention jobs remain temporarily held until qualified compact accepted-stat basis and lifetime-count safeguards are installed/read back. No financial restoration or replay of installed migrations occurred. This entry records validation and a temporary hold, not completed publication or physical disk reclamation.

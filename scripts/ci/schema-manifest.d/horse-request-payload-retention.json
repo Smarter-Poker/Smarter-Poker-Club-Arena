@@ -1,0 +1,8 @@
+{
+  "_owner": "fix/horse-retention-payload-20261012",
+  "_comment": "Candidate source declarations; production installation/readback recorded separately, not asserted by this fragment.",
+  "functions": [
+    "smarter_private.horse_request_payload_disposable",
+    "smarter_private.compact_settled_horse_requests"
+  ]
+}

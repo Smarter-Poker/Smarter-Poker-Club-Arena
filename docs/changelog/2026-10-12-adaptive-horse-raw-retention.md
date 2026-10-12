@@ -1,0 +1,11 @@
+# Adaptive raw facts follow the original hand's qualified retention
+
+The journal retained original hand UUIDs and public context/action tuples for 32 days, including duplicated recovery batches. The owner requires settled horse-only hand data to expire after eight days, while every original human or mixed hand stays. Actor origin cannot classify the original dealt roster.
+
+The existing qualified request-disposal transaction now captures an immutable classification and completion certificate before erasing the request. The existing journal retention owner consumes at most 25 certificates per pass after its versioned consumer is explicitly enabled. Original node, sequence and UUID tuples become action counts grouped at their exact timestamps, with hashed hand, session and scope keys. Minimal observation/payload hash fences and historical batch digests remain. Protected tuples stay byte-identical. Unfinished or quarantined work, current reports and settlement/F06/BBJ/outbox obligations preserve the original. No new job or scheduler is added.
+
+The new snapshot and fitter consume derived statistics directly. They preserve the exact moving 30-day cutoff, represented-observation limits, per-hand decay means, session maxima, holdout separation and interval math. Version 2 reports declare the distinct population and evidence digest; they retain no policy activation or causal-EV authority. Partially retired batch recovery returns `retention_compacted`. An exact replay can acknowledge its historical receipt; a different payload or new batch cannot reinsert retired raw facts.
+
+Install the guarded migration once. Deploy the changed consumer through the owning engine route, verify the exact serving release and version 2 claim/finish, then call the postgres-only enablement operation with that serving SHA. Installation leaves the compactor disabled. Independent request cleanup continues and captures certificates meanwhile. Qualified certificates are processed by the existing retention owner; historical erasure without a retained classification certificate remains unqualified backlog.
+
+Native PostgreSQL 17 and focused consumer evidence are recorded in the owning checkpoint. Source qualification is distinct from protected merge, installation, enablement, backlog completion and physical storage reclamation.

@@ -24,7 +24,7 @@ for name,digest in fixture_hashes.items():
  if hashlib.sha256((FIX/name).read_bytes()).hexdigest()!=digest:raise AssertionError('Original fixture fingerprint changed: '+name)
 meta=json.loads((FIX/'original-authorities.json').read_text())
 functions=meta['functions'];seen=set(meta['seen']);selected=set(meta['selected']);triggered=set(meta['triggered']);triggers=meta['triggers']
-names=['reset-undo-component/closing-contract.sql', 'accounting-component/boundary.sql', 'accounting-component/treasury-selftest-wiring.sql', 'accounting-component/reporting-boundary.sql', 'accounting-component/source-wiring.sql', 'accounting-component/consumer-wiring.sql', 'accounting-component/hand-stats-wiring.sql', 'accounting-component/accounting-owner-wiring.sql', 'accounting-component/reporting-wiring.sql', 'accounting-component/fact-projection-wiring.sql', 'accounting-component/reporting-extra-wiring.sql', 'accounting-component/union-reporting-wiring.sql', 'accounting-component/commission-assertion-wiring.sql', 'cashier-cutoff-component/cashier-cutoff.sql', 'accounting-component/activation.sql', 'accounting-component/invoice-visibility.sql', 'incident-component.sql', 'reset-undo-component/balance-contract.sql', 'reset-undo-component/velocity-wiring.sql', 'reset-undo-component/bbj-reporting.sql', 'floor-component/scoped-floor.sql', 'accounting-component/floor-admission-component.sql']
+names=['reset-undo-component/closing-contract.sql', 'accounting-component/boundary.sql', 'accounting-component/treasury-selftest-wiring.sql', 'accounting-component/reporting-boundary.sql', 'accounting-component/source-wiring.sql', 'accounting-component/consumer-wiring.sql', 'accounting-component/hand-stats-wiring.sql', 'accounting-component/accounting-owner-wiring.sql', 'accounting-component/reporting-wiring.sql', 'accounting-component/fact-projection-wiring.sql', 'accounting-component/reporting-extra-wiring.sql', 'accounting-component/union-reporting-wiring.sql', 'accounting-component/commission-assertion-wiring.sql', 'cashier-cutoff-component/cashier-cutoff.sql', 'accounting-component/activation.sql', 'accounting-component/invoice-visibility.sql', 'incident-component.sql', 'reset-undo-component/balance-contract.sql', 'reset-undo-component/velocity-wiring.sql', 'reset-undo-component/bbj-reporting.sql', 'floor-component/scoped-floor.sql', 'accounting-component/floor-original-acl.sql', 'accounting-component/floor-admission-component.sql', 'accounting-component/original-reader-acl.sql']
 mapping=json.loads(args.component_map.read_text()) if args.component_map else {}
 if not args.candidate_migration and not args.component_root and not mapping:parser.error('component root or explicit component map required')
 if args.candidate_migration and (args.component_root or mapping):parser.error('Choose assembled candidate or component paths, not both')
@@ -107,7 +107,22 @@ with tempfile.TemporaryDirectory(prefix='fb-',dir=BASE) as folder:
   pinned=json.loads((FIX/'live-selected-catalog.json').read_text())
   expected=pinned['live'] if 'live' in pinned else pinned
   assert original_catalog==expected,'Original native catalog no longer matches independently read production fingerprints'
+  # Model current production creation defaults only after restoring original
+  # objects and their archived ACLs. Current defaults do not retroactively
+  # grant legacy routines to anon/authenticated/service_role.
+  defaults=meta['current_function_default_privileges']
+  assert defaults['owner']=='postgres' and defaults['schema']=='public'
+  run(q,"ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO anon,authenticated,service_role; ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENCES TO anon,authenticated,service_role; ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT,INSERT,UPDATE,DELETE,REFERENCES,TRIGGER,MAINTAIN ON TABLES TO anon,authenticated; ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES TO service_role;")
+  original_function_oids=run(q,"SELECT string_agg(p.oid::text,',') FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname IN('public','smarter_private');")
   for p in components:run(q,component_sources[p])
+  role_helper_names=['fn_ca_launch_accounting_cutoff','fn_ca_launch_accounting_start','fn_ca_launch_accounting_accepts','fn_ca_launch_accounting_waived']
+  service_entry_names=['fn_ca_launch_reset_assert_drained','fn_ca_launch_reset_capture','fn_ca_launch_reset_execute','fn_ca_launch_reset_undo','fn_ca_launch_operator_command']
+  new_acl=json.loads(run(q,"SELECT jsonb_agg(jsonb_build_object('name',p.proname,'role',r,'execute',has_function_privilege(r,p.oid,'EXECUTE'))) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace CROSS JOIN unnest(ARRAY['anon','authenticated','service_role'])r WHERE n.nspname IN('public','smarter_private') AND p.oid NOT IN("+original_function_oids+");"))
+  for grant in new_acl:
+   expected=grant['role']!='anon' if grant['name'] in role_helper_names else grant['role']=='service_role' if grant['name'] in service_entry_names else False
+   assert grant['execute']==expected,'New function privilege differs from scoped authority: '+str(grant)
+  assert run(q,"SELECT bool_and(NOT has_table_privilege(r,c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN')) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN unnest(ARRAY['anon','authenticated','service_role'])r WHERE n.nspname='public' AND c.relname LIKE 'ca_launch_%' AND c.relkind IN('r','v');")=='t','Private launch store inherited production client-role privilege'
+
   op='10000000-0000-0000-0000-000000000099'
   prefix=f"SET request.jwt.claims='{{\"role\":\"service_role\",\"sub\":\"{actor}\"}}';"
   # Use the original Mint to consume almost all of its normal rolling ceiling.

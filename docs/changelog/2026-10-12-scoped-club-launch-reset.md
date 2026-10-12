@@ -45,3 +45,11 @@ verifies TLS and preserves an unknown transport outcome for durable readback.
 Production
 completion requires protected integration, exact installation readback, the
 self-aborting live recovery rehearsal, durable execution and live verification.
+
+Production default privileges grant browser roles separately from PUBLIC.
+The accounting helpers explicitly revoke anonymous execution, and original
+operator readers retain their recorded private access. The native regression
+uses those production defaults so future changes cannot reopen these helpers.
+The new tournament admission trigger declares itself in the existing financial
+registry. The schema fragment records promised declarations until exact
+installation is verified; it makes no live-schema claim.

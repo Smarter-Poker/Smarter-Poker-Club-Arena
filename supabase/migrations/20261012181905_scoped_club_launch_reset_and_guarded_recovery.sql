@@ -7,6 +7,8 @@ SET LOCAL lock_timeout='4s';
 -- Scoped launch closing testimony. This component DOES NOT execute a reset.
 -- Parent integration must reserve the migration version, qualify the complete
 -- capture/reset/undo transaction, then install once through the protected route.
+
+
 DO $qualified_originals$
 DECLARE r record; observed text; expected jsonb := '{"fn_invoice_accounting_ledger_transfer(uuid)":"1be0fb4e2dfa9f0ca31613a8b5c6c14b","fn_satellite_transfer_ledger_is_immutable()":"5de9ef6b567d2b40f01060ce583350f0","fn_terminal_tournament_evidence_is_immutable()":"5eb12239ece45d08eb32dbaa9e3028dd","fn_cancelled_tournament_evidence_is_immutable()":"55061034adb7416d401622572397c7d2","fn_ca_leg_accounts(timestamp with time zone,timestamp with time zone)":"2bce91eca31c328175d430f78273ab76","fn_ca_leg_accounts_since_snapshot(timestamp with time zone,pg_snapshot)":"7aaf8013079ea67adfc18a26691bf8a6","fn_ca_leg_accounts_since_snapshot_for(timestamp with time zone,pg_snapshot,uuid[])":"0aa811df7bbdb1716dec7f6793c1f42e"}'::jsonb;
 BEGIN
@@ -248,7 +250,7 @@ CREATE FUNCTION public.fn_ca_launch_accounting_waived(p_kind text,p_id uuid,p_en
  LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,public AS $$
  SELECT COALESCE(isfinite(p_end) AND p_end<=public.fn_ca_launch_accounting_cutoff(p_kind,p_id),false)
 $$;
-REVOKE ALL ON FUNCTION public.fn_ca_launch_accounting_cutoff(text,uuid),public.fn_ca_launch_accounting_start(text,uuid,timestamptz),public.fn_ca_launch_accounting_accepts(uuid,timestamptz),public.fn_ca_launch_accounting_waived(text,uuid,timestamptz) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.fn_ca_launch_accounting_cutoff(text,uuid),public.fn_ca_launch_accounting_start(text,uuid,timestamptz),public.fn_ca_launch_accounting_accepts(uuid,timestamptz),public.fn_ca_launch_accounting_waived(text,uuid,timestamptz) FROM PUBLIC,anon;
 GRANT EXECUTE ON FUNCTION public.fn_ca_launch_accounting_cutoff(text,uuid),public.fn_ca_launch_accounting_start(text,uuid,timestamptz),public.fn_ca_launch_accounting_accepts(uuid,timestamptz),public.fn_ca_launch_accounting_waived(text,uuid,timestamptz) TO authenticated,service_role;
 COMMENT ON TABLE public.ca_launch_accounting_archives IS 'Immutable launch preimages retained online for seven years; owner-directed waiver is not payment, certification or deletion of original journal/hand history.';
 CREATE FUNCTION public.fn_ca_launch_accounting_archive_immutable() RETURNS trigger
@@ -1229,6 +1231,9 @@ CREATE OR REPLACE VIEW public.agent_commissions_unsettled WITH (security_invoker
            FROM public.agent_commission_settlements s
           WHERE ((s.club_id = ac.club_id) AND (s.user_id = ac.user_id) AND (ac.created_at >= s.period_start) AND (ac.created_at < s.period_end))))));
 
+-- Preserve original absence of pre-login execution; CREATE OR REPLACE retains other ACL entries.
+REVOKE EXECUTE ON FUNCTION public.fn_agent_unsettled_commission(uuid,uuid),public.fn_cash_rakeback_period_basis(uuid,date,date,uuid[]) FROM PUBLIC,anon;
+
 -- Component: cashier-cutoff-component/cashier-cutoff.sql
 -- Scoped launch boundary. No compensation, custody bypass or financial rewrite.
 CREATE FUNCTION public.fn_ca_launch_cashier_request_boundary() RETURNS trigger
@@ -1592,6 +1597,8 @@ REVOKE ALL ON FUNCTION public.fn_ca_launch_incident_undo(uuid) FROM PUBLIC,anon,
 -- Component: reset-undo-component/balance-contract.sql
 -- Source component, not independently installable. Integrate after closing and
 -- accounting components. Exact-candidate real-trigger qualification is required.
+
+
 DO $qualified_originals$
 DECLARE r record; observed text; expected jsonb := '{"fn_ca_mint(text,text,uuid,numeric,text,text,text)":"da9429ce6483c47c7d536582433a1edd","fn_ca_emergency_issuance_guard()":"ad9f6b99951af4374934a526fe52660e","fn_ca_issuance_leg_is_registered()":"abdf1fd11d589957da51f8bd7554324d","fn_ca_mint_issued_24h(text,uuid)":"e0bf5ff9e14f1d9d070fde617b85ea7c"}'::jsonb;
 BEGIN
@@ -1985,6 +1992,7 @@ GRANT EXECUTE ON FUNCTION public.fn_ca_launch_reset_undo(uuid,text) TO service_r
 
 -- Component: reset-undo-component/velocity-wiring.sql
 -- Exact existing observer wiring, no threshold or ordinary-Mint exception change.
+
 CREATE FUNCTION public.fn_ca_launch_velocity_receipt(p_leg uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public,pg_temp AS $$
 SELECT EXISTS (
@@ -4264,6 +4272,10 @@ BEGIN
   'request_state',request_state,'request_recorded',true);
 END $$;
 
+-- Preserve original absence of pre-login execution; CREATE OR REPLACE retains other ACL entries.
+REVOKE EXECUTE ON FUNCTION public.fn_union_credit_risk_check(),public.fn_union_governance_check() FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_union_club_invoice(uuid,timestamptz,timestamptz) FROM PUBLIC,anon;
+
 -- Component: accounting-component/fact-projection-wiring.sql
 DO $guard$ BEGIN IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='fn_club_member_play_totals_insert' AND md5(p.prosrc)='ea2f75bd25c52d9e0ac3edb8966add70')<>1 THEN RAISE EXCEPTION 'launch_boundary_source_changed: fn_club_member_play_totals_insert'; END IF; END $guard$;
 CREATE OR REPLACE FUNCTION public.fn_club_member_play_totals_insert() RETURNS trigger
@@ -5303,6 +5315,9 @@ BEGIN
     jsonb_build_object('rows','[]'::jsonb,'total',0,'total_direct',0,'total_commission',NULL));
 END;
 $$;
+
+-- Preserve original absence of pre-login execution; CREATE OR REPLACE retains other ACL entries.
+REVOKE EXECUTE ON FUNCTION public.fn_ca_club_rake_daily_compute(timestamptz,timestamptz,uuid[]) FROM PUBLIC,anon;
 
 -- Component: accounting-component/union-reporting-wiring.sql
 DO $guard$ BEGIN IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='trg_union_rake_weekly' AND md5(p.prosrc)='35dbcba12e3c197de1997339e45d0276')<>1 THEN RAISE EXCEPTION 'launch_boundary_source_changed: trg_union_rake_weekly'; END IF; END $guard$;
@@ -6357,6 +6372,8 @@ END $$;
 -- Component: reset-undo-component/bbj-reporting.sql
 -- Scope-local launch statistics from retained immutable BBJ testimony.
 -- Monetary reconciliation and cumulative allocation carry are unchanged.
+
+
 DO $qualified_originals$
 DECLARE signature text; expected text; observed text;
 BEGIN
@@ -6405,6 +6422,8 @@ END $reporters$;
 -- Component: floor-component/scoped-floor.sql
 -- Scope the existing operator and original dealers to the authorized four clubs.
 -- No new engine, publisher, dealer, watcher or refund path is introduced.
+
+
 DO $guard$ BEGIN
 IF md5(pg_get_functiondef('public.fn_ca_engine_operator_command(uuid,uuid,text,text,text)'::regprocedure)) IS DISTINCT FROM '40c186edc95844d580834f047e252ce4' THEN RAISE EXCEPTION 'launch_operator_original_changed: fn_ca_engine_operator_command(uuid,uuid,text,text,text)'; END IF;
 IF md5(pg_get_functiondef('public.fn_ca_operator_floor_entry_guard()'::regprocedure)) IS DISTINCT FROM 'dde0cb0fb86c41b94ce8b531355759bb' THEN RAISE EXCEPTION 'launch_operator_original_changed: fn_ca_operator_floor_entry_guard()'; END IF;
@@ -6636,6 +6655,12 @@ BEGIN
 END $$;
 REVOKE ALL ON FUNCTION public.fn_ca_launch_operator_command(uuid,uuid,text,text,uuid) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_ca_launch_operator_command(uuid,uuid,text,text,uuid) TO service_role;
+
+-- Component: accounting-component/floor-original-acl.sql
+-- Preserve the original floor readers' absence of pre-login execution.
+
+REVOKE EXECUTE ON FUNCTION public.fn_ca_operator_floor_state(uuid),public.fn_ca_lock_tournament_seat_acquisition(uuid,uuid,uuid) FROM PUBLIC,anon;
+
 -- Component: accounting-component/floor-admission-component.sql
 -- Finish the same scoped park at the actual tournament creation/launch write edges.
 -- Existing started/played events keep original completion, seats and rebuy authorities.
@@ -6693,6 +6718,7 @@ BEGIN
 END $$;
 REVOKE ALL ON FUNCTION public.fn_ca_launch_tournament_admission_guard() FROM PUBLIC,anon,authenticated,service_role;
 -- Run after original union ownership/format stamping; do not alter any original guard.
+INSERT INTO public.ca_declared_money_triggers(table_name,trigger_name,note) VALUES('tournaments','zzzzzzzz_launch_tournament_admission','Owner scoped launch hold: refuse new tournament creation and first start after original ownership stamping; already played games retain original finish and payout authorities');
 CREATE TRIGGER zzzzzzzz_launch_tournament_admission BEFORE INSERT OR UPDATE OF club_id,union_id,status,started_at,spin_multiplier ON public.tournaments FOR EACH ROW EXECUTE FUNCTION public.fn_ca_launch_tournament_admission_guard();
 
 DO $guard$ BEGIN IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='fn_begin_tournament_launch_before_lease_generation' AND md5(p.prosrc)='6cc03b69671fc2a1aa6c998717d513af')<>1 THEN RAISE EXCEPTION 'launch_admission_source_changed: fn_begin_tournament_launch_before_lease_generation'; END IF; END $guard$;
@@ -7335,4 +7361,59 @@ BEGIN
     'owner_id', v_owner, 'source_wallet_after', v_wallet_after);
 END;
 $$;
+
+-- Component: accounting-component/original-reader-acl.sql
+-- Exact original browser ACL preservation, verified against production catalog.
+
+REVOKE EXECUTE ON FUNCTION public.apply_rakeback_player_stats(uuid,uuid,uuid,integer,numeric) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.ca_rebuild_club_member_stats_table(uuid) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.ca_refresh_reporting_rollups_base(date,date) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_accounting_document_immutable() FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_accrue_cash_hand_commissions(uuid) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_agent_downline_rake(uuid,uuid,timestamp with time zone,timestamp with time zone,text,integer) FROM PUBLIC,anon;
+REVOKE EXECUTE ON FUNCTION public.fn_agent_unsettled_commission(uuid,uuid) FROM PUBLIC,anon;
+REVOKE EXECUTE ON FUNCTION public.fn_assert_cash_commission_period(uuid,uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_begin_tournament_launch_before_lease_generation(uuid,uuid,timestamp with time zone) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_ca_club_rake_daily_compute(timestamp with time zone,timestamp with time zone,uuid[]) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_ca_club_rake_daily_user_apply(uuid[]) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_ca_club_rake_daily_user_rebuild_day(uuid,date,uuid) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_ca_engine_operator_command(uuid,uuid,text,text,text) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_ca_lock_tournament_seat_acquisition(uuid,uuid,uuid) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_ca_operator_floor_entry_guard() FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_ca_operator_floor_state(uuid) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_ca_rake_by_agent(uuid,date,date,integer,integer,text,text) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[]) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_cash_rakeback_period_basis(uuid,date,date,uuid[]) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_club_member_play_totals_delete() FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_club_member_play_totals_insert() FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_club_member_play_totals_update() FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_club_money_panel(uuid) FROM PUBLIC,anon;
+REVOKE EXECUTE ON FUNCTION public.fn_club_rake_rollup_day(uuid,date) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_club_table_daily_refresh_day(date) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_fold_hand_winnings() FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_process_cash_accounting_source(uuid) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_project_hand_side_effects_after_post_commit_20260908(uuid) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_rakeback_recompute_periods(uuid,date,date,uuid[]) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_rakeback_split_counts(uuid,timestamp with time zone,timestamp with time zone,timestamp with time zone,timestamp with time zone) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_refresh_player_stats(timestamp with time zone) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_settle_accounting_commission_stage(text,uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_settle_accounting_rakeback_stage(text,uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_settlement_floor_refuses_owed_agent_commission() FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_spin_draw_and_settle_atomic(uuid,uuid,uuid,jsonb) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_spin_settle_game(uuid,uuid,numeric,integer,numeric,numeric) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_sync_profile_total_hands() FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_union_club_invoice(uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_union_credit_risk_check() FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_union_governance_check() FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_union_settle_player_pnl(uuid,timestamp with time zone,timestamp with time zone,boolean) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_union_settlement_cascade(uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_union_treasury_selftest() FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_union_weekly_rakeback_close(uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.refresh_player_stats() FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.trg_ca_reporting_rake_insert() FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.trg_ca_reporting_wallet_insert() FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.trg_hand_history_club_member_stats() FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.trg_tournament_completed_stats() FROM PUBLIC,anon,authenticated;
+REVOKE EXECUTE ON FUNCTION public.trg_union_rake_weekly() FROM PUBLIC,anon,authenticated;
+
 COMMIT;

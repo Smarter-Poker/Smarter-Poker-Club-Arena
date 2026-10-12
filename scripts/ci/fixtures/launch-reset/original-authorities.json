@@ -1288,5 +1288,27 @@
     "fn_spin_settle_game": [
       "04f8b7b5c166fc2a393d08d8bbb9be8413c2bea995f17f47534867a4701123ee"
     ]
-  }
+  },
+  "current_function_default_privileges": {
+    "owner": "postgres",
+    "schema": "public",
+    "object_type": "f",
+    "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+    "observation": "Configured read-only production pg_default_acl on 2026-10-12",
+    "apply_after_original_objects": true
+  },
+  "current_public_default_privileges": [
+    {
+      "object_type": "f",
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "object_type": "S",
+      "acl": "{postgres=rwU/postgres,anon=rwU/postgres,authenticated=rwU/postgres,service_role=rwU/postgres}"
+    },
+    {
+      "object_type": "r",
+      "acl": "{postgres=arwdDxtm/postgres,anon=arwdxtm/postgres,authenticated=arwdxtm/postgres,service_role=arwdDxtm/postgres}"
+    }
+  ]
 }

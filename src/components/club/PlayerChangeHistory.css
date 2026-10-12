@@ -1,0 +1,87 @@
+.player-history {
+  min-width: 0;
+  width: 100%;
+  color: var(--ca-text, var(--members-text, #f4f7fa));
+}
+.player-history summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: list-item;
+  align-content: center;
+  color: var(--ca-cyan, var(--members-cyan, #00d4ff));
+  font-weight: 700;
+}
+.player-history__body {
+  min-width: 0;
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+.player-history__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+}
+.player-history__controls label {
+  display: grid;
+  min-width: 0;
+  max-width: 100%;
+  flex: 1 1 150px;
+  gap: 4px;
+}
+.player-history__controls input,
+.player-history__controls select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 44px;
+  font: inherit;
+  font-size: 16px;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--ca-border, #27313c);
+}
+.player-history__controls select option {
+  color: #f4f7fa;
+  background: #05070a;
+}
+.player-history button {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--ca-cyan, var(--members-cyan, #00d4ff));
+  font: inherit;
+  cursor: pointer;
+}
+.player-history button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.player-history :focus-visible {
+  outline: 2px solid var(--ca-cyan, var(--members-cyan, #00d4ff));
+  outline-offset: 2px;
+}
+.player-history__entries {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0;
+}
+.player-history__entries li {
+  padding: 12px 0;
+  border-top: 1px solid #27313c;
+  overflow-wrap: anywhere;
+}
+.player-history__entries time {
+  display: block;
+  color: var(--ca-text-dim, var(--members-text-dim, #9ba8b5));
+}
+.player-history__entries p {
+  margin: 6px 0;
+}
+.player-history__entries small {
+  display: block;
+  color: var(--ca-text-dim, var(--members-text-dim, #9ba8b5));
+}

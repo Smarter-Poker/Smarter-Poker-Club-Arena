@@ -1354,3 +1354,82 @@
     transform: rotate(360deg);
   }
 }
+
+/* Player Command is a directory first; the desk illustration no longer sets
+   its height or forces the operator to scroll before reaching the search. */
+.club-members-page:not(.diamond-players) .members-hero {
+  min-height: 0;
+  background: #000;
+  border: 0;
+  box-shadow: none;
+  padding: 20px 0;
+}
+.club-members-page:not(.diamond-players) .members-hero__art {
+  display: none;
+}
+.club-members-page:not(.diamond-players) .members-hero__content {
+  position: relative;
+  padding: 0;
+  gap: 20px;
+}
+.club-members-page:not(.diamond-players) .members-hero__copy {
+  padding: 0;
+}
+.club-members-page:not(.diamond-players) .members-hero__copy h1 {
+  font-size: clamp(30px, 4vw, 44px);
+}
+.club-members-page:not(.diamond-players) .members-console {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding-inline: 0;
+}
+.club-members-page:not(.diamond-players) .members-summary-shell {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+.members-applicants {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  color: #45adff;
+  font-weight: 700;
+  text-decoration: none;
+}
+.members-applicants:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: 3px;
+}
+@media (max-width: 620px) {
+  .club-members-page:not(.diamond-players) .members-hero__content {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .club-members-page:not(.diamond-players) .members-filters {
+    flex-wrap: wrap;
+  }
+}
+
+.members-view-filter {
+  display: grid;
+  gap: 8px;
+  width: min(100%, 360px);
+  color: #9aa5b3;
+  font-size: 14px;
+}
+.members-view-filter select {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid rgb(154 165 179 / 35%);
+  background: #0a0b0d;
+  color: #e4e7ec;
+  font:
+    16px/1.3 Inter,
+    sans-serif;
+}
+.members-view-filter select:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: 3px;
+}

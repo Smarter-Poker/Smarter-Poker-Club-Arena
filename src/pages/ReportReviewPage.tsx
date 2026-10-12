@@ -10,7 +10,7 @@ import {
 import { useParams } from 'react-router-dom';
 import ClubIntegrityHeader from '../components/club/ClubIntegrityHeader';
 import { useToast } from '../components/common/Toast';
-import { SpadeConsole } from '../components/console/SpadeConsole';
+import { ClubPageSection as SpadeConsole } from '../components/club/ClubPageSection';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { supabase } from '../lib/supabase';
 import { resolveClubUUIDStrict } from '../utils/clubIdResolver';
@@ -320,6 +320,7 @@ export default function ReportReviewPage() {
   return (
     <div className="report-review-page">
       <ClubIntegrityHeader
+        compact
         clubId={clubId}
         active="reports"
         eyebrow="Case Intake / Conduct Signals"
@@ -332,7 +333,7 @@ export default function ReportReviewPage() {
         ]}
       />
 
-      <main className="report-workspace">
+      <section className="report-workspace">
         <SpadeConsole
           className="report-console"
           family="spade"
@@ -437,7 +438,7 @@ export default function ReportReviewPage() {
             )}
           </div>
         </SpadeConsole>
-      </main>
+      </section>
 
       {selectedReport && selectedReport.viewKey === viewKey && (
         <div

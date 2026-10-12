@@ -741,6 +741,7 @@ export default function TournamentResultsPage() {
       }}
     >
       <CasinoSurfaceHeader
+        unframed
         crest="vip"
         eyebrow="Play & Review / Results"
         title="Tournament Archive"

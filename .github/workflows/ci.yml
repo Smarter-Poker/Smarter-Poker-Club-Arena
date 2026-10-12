@@ -2357,6 +2357,26 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Inventory pages commit before their immutable checkpoint header
+        id: inventory_committed_pages
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          INVENTORY_SEAL_SCRATCH: ${{ runner.temp }}/inventory-committed-pages
+        run: |
+          set -euo pipefail
+          mkdir -p "$INVENTORY_SEAL_SCRATCH"
+          python3 scripts/dev/test-inventory-seal-committed-pages.py \
+            2>&1 | tee "$INVENTORY_SEAL_SCRATCH/native.log"
+      - name: Retain committed-page inventory qualification
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.inventory_committed_pages.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: inventory-committed-pages-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/inventory-committed-pages/
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Tournament blinds publish atomically across the field
         if: matrix.shard == 3
         env:

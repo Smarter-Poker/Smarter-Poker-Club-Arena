@@ -15,6 +15,7 @@ interface IntegrityMetric {
 }
 
 interface ClubIntegrityHeaderProps {
+  compact?: boolean;
   clubId?: string;
   active: ClubIntegrityPageId;
   eyebrow: string;
@@ -25,6 +26,7 @@ interface ClubIntegrityHeaderProps {
 }
 
 export default function ClubIntegrityHeader({
+  compact = false,
   clubId,
   active,
   eyebrow,
@@ -37,7 +39,7 @@ export default function ClubIntegrityHeader({
   const navigation = clubId ? getClubIntegrityNavigation(clubId, access) : [];
 
   return (
-    <header className={styles.header}>
+    <header className={styles.header} data-compact={compact || undefined}>
       <div className={styles.hero}>
         <div className={styles.copy}>
           <div className={styles.signal} aria-hidden="true">

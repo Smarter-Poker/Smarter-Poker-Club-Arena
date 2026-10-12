@@ -1,4 +1,5 @@
 import { useId, type ReactNode } from 'react';
+import { ClubPageSection } from '../club/ClubPageSection';
 import { formatPopupText } from '../../utils/popupStyle';
 import {
   SpadeConsole,
@@ -23,6 +24,7 @@ export interface RewardMetric {
 type RewardArt = 'diamonds' | 'vault' | 'vip' | 'missions' | 'market';
 
 interface RewardsSurfaceHeaderProps {
+  unframed?: boolean;
   eyebrow: string;
   title: string;
   description: string;
@@ -97,6 +99,7 @@ function pillFromStatus(status: string): { text: string; ink: ConsoleInk } {
  * is the emblem; there is no art panel, no gradient, no conduit.
  */
 export default function RewardsSurfaceHeader({
+  unframed = false,
   eyebrow,
   title,
   description,
@@ -117,6 +120,34 @@ export default function RewardsSurfaceHeader({
   const fromStatus = pillFromStatus(status);
   const pillText = pill ? formatPopupText(pill) : fromStatus.text;
   const ink = pillInk ?? (pill ? 'blue' : fromStatus.ink);
+
+  if (unframed) {
+    return (
+      <ClubPageSection
+        title={formatPopupText(title)}
+        titleAs="h1"
+        titleId={titleId}
+        eyebrow={formatPopupText(eyebrowFamily)}
+        pill={pillText}
+        pillInk={ink}
+        plates={plates}
+      >
+        <p className={styles.summaryDescription}>{formatPopupText(description)}</p>
+        {metrics.length > 0 && (
+          <dl className={styles.summaryMetrics} aria-label={`${title} Live Summary`}>
+            {metrics.map((metric) => (
+              <div key={metric.label}>
+                <dt>{formatPopupText(metric.label)}</dt>
+                <dd>{metric.value}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+        {actions && <div className={styles.summaryActions}>{actions}</div>}
+        {children}
+      </ClubPageSection>
+    );
+  }
 
   // A summary introduces a page; it does not need a second decorative console.
   // Content-bearing consoles retain their native painted chassis below.

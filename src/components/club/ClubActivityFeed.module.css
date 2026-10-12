@@ -92,3 +92,21 @@
   flex-shrink: 0;
   white-space: nowrap;
 }
+
+.feed[data-plain] {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.feed[data-plain] .header {
+  padding: 0 0 12px;
+}
+.feed[data-plain] .item {
+  padding-inline: 0;
+}
+.feed[data-plain] .empty {
+  text-align: left;
+  padding: 16px 0;
+}

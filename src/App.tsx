@@ -278,6 +278,8 @@ const ClubFinanceWorkspacePage = lazyWithRetry(() =>
     default: module.ClubFinanceWorkspacePage,
   }))
 );
+const ClubApplicantsPage = lazyWithRetry(() => import('./pages/ClubApplicantsPage'));
+
 const ClubControlWorkspacePage = lazyWithRetry(() =>
   import('./pages/workspaces/ArenaWorkspacePages').then((module) => ({
     default: module.ClubControlWorkspacePage,
@@ -1525,6 +1527,18 @@ function FullApp() {
                       <PageErrorBoundary pageName="Achievements">
                         <AchievementsPage />
                       </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/applicants"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Applicants">
+                          <ClubApplicantsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />

@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Actual fixed file reader on isolated native files; no host or provider calls."""
 import importlib.util
+import base64
+import contextlib
+import io
 import ast
 import json
 import os
@@ -226,6 +229,70 @@ class ReaderTests(unittest.TestCase):
         self.assertNotIn('MESSAGE', json.dumps(after))
         self.assertNotIn('secret fixture', json.dumps(after))
         self.assertEqual(R.validate_reply(after, REQUEST), after)
+
+    def test_real_v255_profile_passes_actual_handler_and_discards_sequence_metadata(self):
+        result, row = self.witness_fixture()
+        row.update({'__SEQNUM': '18446744073709551615', '__SEQNUM_ID': 'a' * 32})
+        self.result.write_text(json.dumps(result))
+        with patch.object(R, 'bounded_journal', return_value=types.SimpleNamespace(returncode=0, stdout=json.dumps(row).encode())):
+            answer = R.remote(REQUEST)
+        self.assertEqual(answer['emergencyBasis']['signs']['liveness'], 'dead')
+        self.assertNotIn('__SEQNUM', json.dumps(answer))
+        self.assertEqual(R.validate_reply(answer, REQUEST), answer)
+
+    def test_sequence_pair_must_be_complete_typed_positive_uint64_and_native_id(self):
+        result, row = self.witness_fixture()
+        pair = {'__SEQNUM': '1', '__SEQNUM_ID': 'a' * 32}
+        mutations = [{'__SEQNUM': '1'}, {'__SEQNUM_ID': 'a' * 32}]
+        mutations += [{**pair, '__SEQNUM': x} for x in [0, True, [], '0', '-1', '01', '18446744073709551616', '1' * 21]]
+        mutations += [{**pair, '__SEQNUM_ID': x} for x in [None, [], 'g' * 32, 'a' * 31]]
+        mutations += [{**pair, 'secret': 'never-export'}]
+        for mutation in mutations:
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                R.reason_from_rows(json.dumps({**row, **mutation}).encode(), REQUEST, WINDOW, result)
+
+    def test_refusal_protocol_exports_only_literal_codes_never_exception_detail(self):
+        for error, expected in [(ValueError('Recovery journal fields refused'), ('journal', 'fields_refused')),
+                                (ValueError('/private/secret unknown'), ('remote', 'evidence_refused'))]:
+            answer = R.refusal(REQUEST, error)
+            refusal = R.validate_refusal(answer, REQUEST)
+            self.assertEqual((refusal.phase, refusal.code), expected)
+            self.assertNotIn('secret', json.dumps(answer))
+        answer = R.refusal(REQUEST, ValueError('Recovery journal fields refused'))
+        for mutation in [{'runKey': '1-1'}, {'releaseSha': 'b' * 40}, {'readOnly': 1},
+                         {'schema': 'other'}, {'code': '/private/secret'}, {'phase': []},
+                         {'raw': 'never export'}, {'phase': 'remote'}]:
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                R.validate_refusal({**answer, **mutation}, REQUEST)
+
+    def test_actual_remote_main_emits_only_bounded_refusal_on_native_failure(self):
+        encoded = base64.b64encode(json.dumps(REQUEST).encode()).decode()
+        output = io.StringIO()
+        self.window.write_text(json.dumps({**WINDOW, 'secret': 'never-export'}))
+        with patch.object(R.sys, 'argv', ['reader', '--remote', encoded]), contextlib.redirect_stdout(output), self.assertRaises(SystemExit) as exit_code:
+            R.main()
+        self.assertEqual(exit_code.exception.code, 1)
+        exported = json.loads(output.getvalue())
+        self.assertNotIn('secret', output.getvalue())
+        self.assertEqual(R.validate_refusal(exported, REQUEST).code, 'evidence_refused')
+
+    def test_actual_client_rejects_untrusted_failure_output_and_preserves_scoped_code(self):
+        event = self.root / 'event.json'
+        event.write_text(json.dumps({'action': 'audit-production-integrity', 'client_payload': {'release_recovery_observation': REQUEST}}))
+        environment = {'GITHUB_EVENT_NAME': 'repository_dispatch', 'GITHUB_EVENT_PATH': str(event),
+                       'HETZNER_HOST': 'configured.example', 'HETZNER_SSH_PRIVATE_KEY': 'opaque-test-key',
+                       'HETZNER_HOST_KEY': 'opaque-test-pin', 'RUNNER_TEMP': str(self.root)}
+        known = R.refusal(REQUEST, ValueError('Recovery journal fields refused'))
+        for payload, exception in [(json.dumps(known).encode(), R.ScopedRefusal),
+                                   (b'raw private host failure', ValueError),
+                                   (json.dumps({**known, 'releaseSha': 'b' * 40}).encode(), ValueError),
+                                   (b'x' * 4097, ValueError)]:
+            def execute(args, **kwargs):
+                return types.SimpleNamespace(returncode=0) if args[0] == 'ssh-keygen' else types.SimpleNamespace(returncode=1, stdout=payload, stderr=b'never-export-secret')
+            with patch.dict(os.environ, environment), patch.object(R.subprocess, 'run', execute), self.assertRaises(exception) as failed:
+                R.main()
+            self.assertNotIn('secret', str(failed.exception))
+            self.assertEqual(list(self.root.glob('release-recovery-read-*')), [])
 
     def test_wrong_invocation_unit_time_cause_and_extra_journal_fields_refused(self):
         result, row = self.witness_fixture()

@@ -1,8 +1,10 @@
 """Guarded existing-job cadence qualification with the real native pg_cron API.
 No production connection or schedule is used. Original activation is preserved.
 """
-import json,subprocess,shlex,time
+import json,subprocess,shlex,time,sys
 from pathlib import Path
+sys.dont_write_bytecode=True
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'scripts/ci'))
 from satellite_qualifier_fixture import module,sha,lit
 MIG=Path('supabase/migrations/20261012181304_existing_horse_retention_cadence_follows_measured_bounded_wo.sql')
 COMMAND="\nselect case\n         when pg_try_advisory_lock(hashtext('sp-prune-hand-history'))\n           then (select set_config('statement_timeout','30s',true) is not null\n                    and public.sp_prune_hand_history(5000) >= 0)::text\n         else 'skipped: previous run still in progress'\n       end;\n"
@@ -11,8 +13,18 @@ def qualify(parent,template):
  # focused authority fixture in its own tiny cluster, without changing the
  # financial world's roles or rebuilding that already qualified world.
  _,definition,_=parent.sql(template,"SELECT pg_get_functiondef('public.sp_prune_hand_history(integer)'::regprocedure);",label='cadence-real-original-prune-source')
- out=parent.output/'cadence-provider';out.mkdir(exist_ok=False)
- native=module(parent.root/'scripts/ci/test-mtt-unlimited.py','cadence_native_owner')
+ report=qualify_definition(parent.root,parent.output/'cadence-provider',parent.pg,definition,parent.socket.parent)
+ parent.report['source_sha256'].update(report['source_sha256'])
+ for key in ['retention_cadence_proven','retention_cadence_native','retention_subminute_proven','retention_subminute_native']:parent.report[key]=report[key]
+ return report['retention_cadence_proven']
+
+def qualify_definition(root,out,pg,definition,socket_parent):
+ """Same focused provider fixture from an explicit captured prune definition.
+ Connected CI obtains this definition from its already qualified real world;
+ the standalone entry point records the exact supplied source hash instead.
+ """
+ out.mkdir(exist_ok=False)
+ native=module(root/'scripts/ci/test-mtt-unlimited.py','cadence_native_owner')
  class CadenceExecution(native.Execution):
   def start(self):
    _,version,_=self.run('postgres-version',[self.pg/'postgres','--version']);assert ' 17.' in version
@@ -21,12 +33,12 @@ def qualify(parent,template):
    self.start_attempted=True
    self.run('start',[self.pg/'pg_ctl','-D',self.cluster,'-l',self.output/'postgres.log','-o',opts,'-w','start'])
    self.run('nonbootstrap-postgres-role',[self.pg/'psql','-X','-qAt','-h',str(self.socket),'-p',self.port,'-U','supabase_admin','-d','postgres','-v','ON_ERROR_STOP=1','-c','CREATE ROLE postgres LOGIN SUPERUSER CREATEDB CREATEROLE;'])
- e=CadenceExecution(parent.root,out,parent.pg,out,60,socket_parent=str(parent.socket.parent))
+ e=CadenceExecution(root,out,pg,out,60,socket_parent=str(socket_parent))
  try:
-  e.start();result=_qualify(e,definition);e.report['status']='passed'
-  parent.report['source_sha256'].update(e.report['source_sha256'])
-  for key in ['retention_cadence_proven','retention_cadence_native']:parent.report[key]=e.report[key]
-  return result
+  e.start();result=_qualify(e,definition)
+  successor=module(root/'scripts/verification-harness/horse-retention-subminute-cadence.py','original_retention_subminute')
+  successor.qualify(e);e.report['status']='passed'
+  return e.report
  except BaseException as ex:e.report.update(status='failed',failure=repr(ex));raise
  finally:
   e.close();(out/'result.json').write_text(json.dumps(e.report,indent=2))
@@ -94,3 +106,14 @@ def _qualify(e,definition):
  yes("SELECT active AND md5(command)='96244362bf46b39e75ef1100b1372203' AND schedule='* * * * *' FROM cron.job WHERE jobid=117;",'native-final-active-command-readback')
  e.report['retention_cadence_proven']=passed;e.report['retention_cadence_native']={'extension_version':version.strip(),'actual_C_API':True,'scheduler_execution_disabled':True,'production_capacity_verified':False,'one_instance_contract_source':'https://github.com/citusdata/pg_cron#how-pg_cron-works'}
  return passed
+
+if __name__=='__main__':
+ import argparse,hashlib,sys
+ parser=argparse.ArgumentParser();parser.add_argument('--evidence',type=Path,required=True);parser.add_argument('--pg-bin',type=Path,required=True);parser.add_argument('--prune-source',type=Path,required=True);parser.add_argument('--socket-parent',type=Path,required=True)
+ args=parser.parse_args();root=Path(__file__).resolve().parents[2]
+ try:
+  report=qualify_definition(root,args.evidence.resolve(),args.pg_bin.resolve(),args.prune_source.read_text(),args.socket_parent.resolve())
+  report['captured_prune_source_sha256']=hashlib.sha256(args.prune_source.read_bytes()).hexdigest()
+  (args.evidence/'result.json').write_text(json.dumps(report,indent=2)+'\n');print(report['status'],len(report['retention_cadence_proven']),len(report['retention_subminute_proven']))
+ except BaseException as exc:
+  print(repr(exc));sys.exit(1)

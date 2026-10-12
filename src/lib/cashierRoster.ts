@@ -192,3 +192,20 @@ export function rosterMatchRank(row: DownlineRow, query: string): number {
   if (row.isSelf) rank += 1000;
   return rank;
 }
+
+/** Search the complete authorized roster, then rank before the chosen sort. */
+export function sortCashierRosterMatches(
+  rows: DownlineRow[],
+  query: string,
+  bySort: (a: DownlineRow, b: DownlineRow) => number
+): DownlineRow[] {
+  const q = query.trim();
+  if (!q) return [...rows].sort(bySort);
+  // Score once per member, rather than normalizing every field on each
+  // comparison. Rank zero is exactly the search predicate's no-match result.
+  return rows
+    .map((row) => ({ row, rank: rosterMatchRank(row, q) }))
+    .filter(({ rank }) => rank > 0)
+    .sort((a, b) => b.rank - a.rank || bySort(a.row, b.row))
+    .map(({ row }) => row);
+}

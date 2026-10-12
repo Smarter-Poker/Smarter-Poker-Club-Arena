@@ -102,7 +102,8 @@ describe('every member is discoverable in the cashier', () => {
     const page = read('src/pages/CashierTradePage.tsx');
     expect(page).toContain('setDownline(mapCashierRoster(dl, user.id))');
     expect(page).not.toMatch(/user_id\)\s*!==\s*(viewerId|user\.id)/);
-    expect(page).toContain('downline.filter((r) => rosterRowMatches(r, search))');
+    expect(page).toContain('let rows = downline;');
+    expect(page).toContain('sortCashierRosterMatches(rows, search, bySort)');
     // The self row is refused as a recipient at the one place selection happens.
     expect(page).toContain('if (r.isSelf || r.userId === user?.id) return;');
     expect(page).toContain('{r.isSelf ? null : (');
@@ -256,6 +257,9 @@ describe('every member is discoverable in the cashier', () => {
 
   it('the trade page sorts a search by rank before the chosen sort', () => {
     const page = read('src/pages/CashierTradePage.tsx');
-    expect(page).toContain('rosterMatchRank(b, q) - rosterMatchRank(a, q) || bySort(a, b)');
+    expect(page).toContain('sortCashierRosterMatches(rows, search, bySort)');
+    const helper = read('src/lib/cashierRoster.ts');
+    expect(helper).toContain('rank: rosterMatchRank(row, q)');
+    expect(helper).toContain('b.rank - a.rank || bySort(a.row, b.row)');
   });
 });

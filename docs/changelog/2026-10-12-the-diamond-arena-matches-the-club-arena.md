@@ -150,3 +150,13 @@ canonical clone. SSD disk7s4 mounted with space. Owner of this follow-up is
 Codex 01a13096 on branch `fix/diamond-recap-seated-reload-01a13096`, base
 `8ab126a4ab2a64bf0ee578a119698da2ca92bcb5`, private checkout under
 /Volumes/SmarterWork/agent-work/diamond-arena-ui-resume-01a13096/repo.
+
+Final runtime source build passed at `4792e55d50381e32222d21c8480f08b64510d447`
+with behind-main=0 after integrating protected main. The first completed
+pre-push refused one stale structural test in sessionBuyInTotal.test.ts:
+it required the removed per-table latch. All other selected tests passed
+(3,186 source contracts and 556 related tests). Its contract is updated to
+pin the occupied account/table key, stable effect dependencies, late-answer
+identity/cleanup guard and unchanged baseline application. This updates the
+mechanism without removing the once-per-session or stale-answer protection.
+The follow-up submission retains the full normal hook and required CI.

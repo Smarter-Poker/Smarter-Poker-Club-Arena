@@ -23,10 +23,12 @@ describe('a session result counts what was bought in', () => {
     }
   });
 
-  it('the table page asks once per table and applies the answer', () => {
+  it('the table page asks once per occupied account/table session and applies the answer', () => {
     const src = readFileSync(join(__dirname, '..', '..', 'src', 'pages', 'TablePage.tsx'), 'utf8');
     expect(src).toContain("supabase.rpc('fn_my_cash_session_baseline', { p_table_id: askedFor })");
-    expect(src).toContain('sessionBaselineAskedRef.current !== askedFor');
+    expect(src).toContain('}, [sessionRestoreKey]);');
+    expect(src).toContain('`${tableId}:${userId}`');
+    expect(src).toContain('error || !active || sessionBaselineTableRef.current !== askedKey');
     expect(src).toContain('totalBuyInRef.current = sessionBuyInTotal({');
   });
 

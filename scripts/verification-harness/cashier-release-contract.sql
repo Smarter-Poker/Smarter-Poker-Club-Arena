@@ -176,9 +176,13 @@ BEGIN
     ),
     -- Phase 5 cross-wallet statement doors, recorded version 20260923150831
     -- (file 20260923131325_cashier_statements_read_every_wallet_in_one_keyset).
-    -- The private row query fn_cashier_statement_rows (md5
-    -- d6152f4bb944489aa4e1dfaf5417fc00) is not listed: this loop requires
-    -- browser EXECUTE, which that owner-only helper must never have.
+    -- The private row query fn_cashier_statement_rows is not listed: this loop
+    -- requires browser EXECUTE, which that owner-only helper must never have.
+    -- Its body is pinned by md5 in the migrations that replace it (live:
+    -- 20261011225840, #6688, b1f42803af9196e322159660ff6f9e57; next:
+    -- 20261012030847, the statement counts each move once,
+    -- 8cab96c15ba360fb34c13f0afd3378b8), and the doors below, which call it,
+    -- are unchanged by both.
     jsonb_build_object(
       'signature', 'public.fn_cashier_statement_scope(uuid)',
       'hash', 'c8137ef74e0e7ccfb05b94697b3fb122'

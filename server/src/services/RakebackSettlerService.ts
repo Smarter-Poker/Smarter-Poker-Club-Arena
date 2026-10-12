@@ -35,6 +35,7 @@ import {
   type CashSourceReceipt,
 } from './cashSourceReceipts.js';
 import { SETTLER_READ_HORIZON_RPC, readSettlerHorizon } from './rakebackReadHorizon.js';
+import { pacificAccountingWeek } from './pacificAccountingWeek.js';
 
 const SETTLEMENT_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 /**
@@ -376,6 +377,44 @@ async function confirmDeferredPeriodRequest(
  * DB_TIMEOUT_MS is deliberately NOT raised: the client budget protects every
  * other engine call, and a bigger number would only move the cliff.
  */
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  A CLOSED WEEK'S PAGE IS ITS CLOSE'S WORK (2026-10-12)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * The settler held its watermark at 2026-10-12T06:51:48Z from 07:02 UTC on.
+ * Its last page straddled the week boundary: 302 buckets of the week that
+ * closed at 07:00 UTC (2026-10-12 00:00 America/Los_Angeles), for Club JAQK and
+ * SHARK CLUB. Every page call of that closed week went to the calculator's
+ * evidence path, whose checkpoint had been invalidated (the clubs scope digest
+ * changes whenever any club is created), so each call re-read the whole week
+ * from its first batch, ran into the function's 300 s statement_timeout and
+ * rolled back. 140 failures a cycle, every cycle; the cursor never moved, and
+ * the union weekly close refused the week because the settler had not reached
+ * its end (settler_lag, weekly_rake_source_not_fully_accrued).
+ *
+ * A page recompute of a closed week can never be what certifies it. The close
+ * (fn_prepare_accounting_week) recomputes EVERY club of its scope for the week
+ * from source, and reuses only a whole-period receipt that is complete and
+ * ready; a page call writes status 'pending', which it never reuses. So a page
+ * of a closed week is redundant work the close does anyway. The settler now
+ * leaves it to the close: it counts the group as deferred, sends nothing and
+ * holds no lock, exactly as it already does for an open week that is known to
+ * be refused. Sources, commissions and the cursor are unchanged.
+ *
+ * A week ends at 00:00 America/Los_Angeles on the day after period_end, the
+ * same instant the database reads ((period_end + 1)::timestamp AT TIME ZONE
+ * 'America/Los_Angeles'), read through pacificAccountingWeek, the helper that
+ * names every credit's week. An unreadable period_end answers false: the page
+ * is sent as before.
+ */
+export function periodWeekHasClosed(periodEnd: string, nowMs: number): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(periodEnd) || !Number.isFinite(nowMs)) return false;
+  // The week that holds "now" starts after period_end exactly when that week
+  // has ended: both are Pacific calendar dates, so they compare as strings.
+  return pacificAccountingWeek(new Date(nowMs)).periodStart > periodEnd;
+}
+
 export const PERIOD_RECOMPUTE_SERVER_BUDGET_MS = 300_000;
 export const PERIOD_RECEIPT_READBACK_SLACK_MS = 15_000;
 export const PERIOD_RECEIPT_READBACK_INTERVAL_MS = 5_000;
@@ -2009,6 +2048,17 @@ export class RakebackSettlerService {
       // per (club, week) instead of a truncated download.
       for (const g of groups.values()) {
         const weekKey = `${g.club_id}|${g.period_start}`;
+        // A CLOSED WEEK'S PAGE IS ITS CLOSE'S WORK (2026-10-12): see
+        // periodWeekHasClosed. The close recomputes every club-week from source.
+        if (periodWeekHasClosed(g.period_end, Date.now())) {
+          deferredPeriods++;
+          this.openWeekIncomplete.delete(weekKey);
+          console.log(
+            `[RakebackSettler] period recompute for ${g.club_id} ${g.period_start} not sent: the week ended ` +
+              `${g.period_end} and its weekly close recomputes every club-week of it from source`
+          );
+          continue;
+        }
         const stillIncomplete = this.openWeekIncomplete.get(weekKey);
         if (stillIncomplete !== undefined && stillIncomplete >= 1) {
           deferredPeriods++;

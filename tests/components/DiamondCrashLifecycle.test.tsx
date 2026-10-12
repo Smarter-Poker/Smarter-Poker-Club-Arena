@@ -280,7 +280,9 @@ describe('Crash settles one displayed round once', () => {
       maximumFractionDigits: 2,
     });
     const receipt = screen.getByRole('dialog', { name: `${amount} Chips` });
-    expect(receipt).toHaveTextContent('The Flight Crashed At');
+    // A booked win's receipt reveals where the sealed flight was going.
+    expect(receipt).toHaveTextContent('It Would Have Crashed At 2.32x.');
+    expect(receipt).not.toHaveTextContent('The Flight Crashed At');
     fireEvent.animationEnd(receipt.querySelector('[data-motion="keep"]')!);
     // Games can never auto start (R1): two idle minutes and the receipt is still up.
     await act(async () => {
@@ -292,6 +294,39 @@ describe('Crash settles one displayed round once', () => {
     expect(backend.navigate).toHaveBeenCalledWith(
       '/clubs/00000000-0000-0000-0000-000000000003/wheel',
       { replace: true }
+    );
+  });
+  it('while it climbs, prints the average crash of the round on the table (Dan, 2026-10-12)', async () => {
+    backend.getState.mockResolvedValueOnce({ ...state, open_round: open });
+    render(<DiamondCrashPage />);
+    await act(async () => {});
+    expect(screen.getByRole('button', { name: 'Book The Win' })).toBeEnabled();
+    // The fixture is a round sealed before any floor: no minimum, a 0.80 return
+    // and a 1000x cap. Its own terms average 1 + 0.8 ln(1000 / 1) = 6.5x, and
+    // that is what it prints: computed from the round, never typed.
+    expect(readout()).toHaveTextContent('Average Crash 6.5x.');
+  });
+  it('after a booked win, says where the sealed flight would have crashed (Dan, 2026-10-12)', async () => {
+    // The fixture booked 1.28x on a flight sealed at 2.32x. The point is in the
+    // settled receipt only: the open round never carried it.
+    expect(open.fairness).not.toHaveProperty('crash_cents');
+    backend.crashSettle.mockResolvedValueOnce(settled);
+    await mountOpen();
+    const line = document.querySelector('[data-would-have-crashed]');
+    expect(line).toHaveTextContent('It Would Have Crashed At 2.32x.');
+    expect(line?.textContent).not.toMatch(/\u2014/);
+  });
+  it('says a booked flight sealed at the cap would have reached it (Dan, 2026-10-12)', async () => {
+    const atCap = {
+      ...settled,
+      cap_cents: 2000,
+      outcome: { ...settled.outcome, crash_cents: 2000 },
+      fairness: { ...settled.fairness, crash_cents: 2000 },
+    };
+    backend.crashSettle.mockResolvedValueOnce(atCap);
+    await mountOpen();
+    expect(document.querySelector('[data-would-have-crashed]')).toHaveTextContent(
+      'It Would Have Reached 20x.'
     );
   });
   it('never starts a round by itself: two idle minutes on the entry screen start nothing (R1)', async () => {
@@ -483,7 +518,7 @@ describe('Crash settles one displayed round once', () => {
       older.resolve({ ...state, bets: [{ bet_diamonds: 150, cap_cents: 150, playable: true }] });
     });
     expect(screen.getByRole('button', { name: 'Start 200' })).toBeEnabled();
-    expect(screen.getByText(/Every Round Is Capped At 50\.00x/)).toBeInTheDocument();
+    expect(screen.getByText(/Up To 50x\./)).toBeInTheDocument();
   });
   it('does not let an old poll overwrite a new round after cashout', async () => {
     const poll = deferred<typeof settled>();
@@ -700,10 +735,31 @@ describe('Crash shows its guarantee before the round starts', () => {
     expect(guaranteedBay()).toHaveTextContent('0.50 Chips');
     expect(guaranteedBay()).not.toHaveAttribute('data-ink', 'gold');
     expect(readout()).toHaveTextContent('Pays At Least 0.50 Chips On Any Loss.');
-    expect(readout()).toHaveTextContent('Every Round Is Capped At 1000.00x.');
+    expect(readout()).toHaveTextContent('Up To 1000x.');
+    // THE AVERAGE CRASH (Dan, 2026-10-12): computed from THIS round's own terms
+    // before Start - its stake, the half it keeps, the contract it will be
+    // sealed under and its cap - never typed. This server does not say which
+    // contract it deals, so it is still contract 4: 1.1 + 0.3 ln(999.5 / 0.6)
+    // at this fixture's 1000x cap.
+    expect(readout()).toHaveTextContent('Average Crash 3.3x.');
     fireEvent.change(screen.getByLabelText('Entry Diamonds'), { target: { value: '250' } });
     await act(async () => {});
     expect(guaranteedBay()).toHaveTextContent('1.25 Chips');
+  });
+
+  it('prints the contract-5 average when the server says it deals contract 5 at 20x (Dan, 2026-10-12)', async () => {
+    backend.getState.mockResolvedValue({
+      ...state,
+      config: { ...state.config, max_multiplier_cents: 2000, growth_k: 0.08, payout_version: 5 },
+      bets: [{ bet_diamonds: 100, cap_cents: 2000, playable: true }],
+    });
+    render(<DiamondCrashPage />);
+    await act(async () => {});
+    // Contract 5 chooses this round's return (1.006430 at half the stake) so its
+    // 20x-capped average is 2.9x; the exact sealed-hundredth mean is 2.8968.
+    expect(readout()).toHaveTextContent('Average Crash 2.9x.');
+    expect(readout()).toHaveTextContent('Up To 20x.');
+    expect(readout().textContent).not.toMatch(/\u2014/);
   });
 
   it('keeps the recent crash points above the curve, coloured by band', async () => {

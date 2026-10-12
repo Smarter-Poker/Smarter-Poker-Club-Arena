@@ -30,6 +30,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'fs';
 import { resolve } from 'path';
+import { crashReturnPpmV5 } from '../src/utils/diamondGamesFairness';
 
 const DIR = resolve(__dirname, '..', 'supabase/migrations');
 const files = readdirSync(DIR);
@@ -703,5 +704,115 @@ describe('wheel v4 is still exactly 80 percent, and no prize may repeat', () => 
     expect(mirror.WHEEL_V4_WEIGHTS).toEqual(v4Model().map((r) => r.weight));
     expect(mirror.WHEEL_V4_FOLLOW.map((row) => [...row])).toEqual(v4Follow());
     expect(mirror.WHEEL_V4_TOTAL).toBe(100000);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  CRASH PLAYS FOR A 2.9x AVERAGE, UP TO 1.20 BACK (owner rulings 2026-10-12,
+ *  migration 20261012114801)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Dan: "CRASH CAN BE A 5% HOUSE EDGE GAME. MAKE IT BETTER OVERALL FOR THE
+ * PLAYERS." and "CRASH CAN GO NEGATIVE, IT CAN PAY OUT UP TO 120% SINCE THE
+ * OTHER ARE ALREADY SUPER PROFITABLE." The wheel's own table, weights, matrix
+ * and reservations do not move: its published table still sums to 0.8 (the
+ * pins above), because it prices every bonus game at 0.8 of its stake when it
+ * DRAWS it. What changes is what a Crash award is worth when it is PLAYED: R of
+ * its stake, R chosen per round for a 2.9x average (fn_crash_return_ppm_v5):
+ * 1.006430 at half the stake, 1.022420 at the 13/25 floor the smallest odd entry
+ * rounds up to, 1.137983 for a Super award with the add-on (two thirds).
+ *
+ * Values are in U = one sixty-millionth of an entry. Crash is 11,950 of the main
+ * wheel's 100,000 on a stake of one entry; the Upgrade is 1,000 of it and deals
+ * Super Crash, a two-entry stake, on 20,000 of its own 100,000 (an upper bound
+ * after an ordinary Crash, where the cross-tier rule removes it). The result
+ * holds exactly through the no-repeat matrix because the matrix is stationary
+ * (its columns sum to the base law, pinned above).
+ *
+ * THE ADD-ON. A Crash award may be played on its base plus one more entry the
+ * player pays for. At these returns that extra entry is worth R or more to the
+ * player, so the WORST case for the house is every award buying it, and that
+ * is what is bounded too: the wheel then takes in 1.1215 entries a spin and
+ * pays back 0.845800 of them. Either way the wheel pays back less than it takes
+ * in, so no owner decision is needed for the wheel itself.
+ */
+describe('Crash at its 2.9x return keeps the wheel under 0.85 and the house keeps more than it pays', () => {
+  const U_PER_ENTRY = 60000000n;
+  const STANDARD = BigInt(crashReturnPpmV5(1, 0.5));
+  const ODD_SMALLEST = BigInt(crashReturnPpmV5(0.25, 0.13));
+  const SUPER_ADD_ON = BigInt(crashReturnPpmV5(0.75, 0.5));
+  /** A row's value in U, with Crash played at `ordinary` (ppm) on its one-entry stake. */
+  const playedValue = (r: V4Row, ordinary: bigint) =>
+    r.game === 'crash'
+      ? ordinary * 60n
+      : r.kind === 'upgrade'
+        ? // 4 entries, of which Super Crash (2 entries of stake on 20,000 of 100,000)
+          // is now played at its own return instead of 0.8.
+          BigInt(Math.round(Number(r.sixths) * 10)) * 1000000n + 24n * (STANDARD - 800000n)
+        : BigInt(Math.round(Number(r.sixths) * 10)) * 1000000n;
+
+  it("the returns are the contract's, and every one is at most 1.20", () => {
+    expect(STANDARD).toBe(1006430n);
+    expect(ODD_SMALLEST).toBe(1022420n);
+    expect(SUPER_ADD_ON).toBe(1137983n);
+    for (const r of [STANDARD, ODD_SMALLEST, SUPER_ADD_ON]) expect(r).toBeLessThanOrEqual(1200000n);
+  });
+
+  it('the wheel is still drawn at 0.8, and played it pays back 0.825494, at most 0.827405, in integers', () => {
+    const model = v4Model();
+    expect(model.find((r) => r.game === 'crash')!.weight).toBe(11950);
+    expect(model.find((r) => r.kind === 'upgrade')!.weight).toBe(1000);
+    const drawn = model.reduce(
+      (s, r) => s + BigInt(r.weight) * BigInt(Math.round(Number(r.sixths) * 10)) * 1000000n,
+      0n
+    );
+    expect(drawn).toBe((8n * 100000n * U_PER_ENTRY) / 10n);
+    const space = 100000n * U_PER_ENTRY;
+    const typical = model.reduce((s, r) => s + BigInt(r.weight) * playedValue(r, STANDARD), 0n);
+    // typical / space = 0.825494105 exactly.
+    expect(typical * 1000000000n).toBe(825494105n * space);
+    const worst = model.reduce((s, r) => s + BigInt(r.weight) * playedValue(r, ODD_SMALLEST), 0n);
+    expect(worst * 100000000n).toBe(82740491n * space);
+    expect(worst).toBeLessThan(space);
+    // The migration states the figures it is held to here, and its SQL touches
+    // nothing the wheel draws or reserves with.
+    const five = latest('crash_never_ends_before_1_25x_averages_2_9x_and_flies_to_20x');
+    expect(five.sql).toContain('0.825494');
+    expect(five.sql).toContain('0.845800');
+    const code = five.sql.replace(/^--.*$/gm, '');
+    expect(code).not.toMatch(
+      /fn_wheel_spin_v2|fn_wheel_v4_model|fn_wheel_v4_follow_model|fn_wheel_state_v2|fn_diamond_game_cap_cents\(p_cfg/
+    );
+  });
+
+  it('even if every Crash award buys the add-on, the wheel pays back 0.845800 of what it takes in', () => {
+    const model = v4Model();
+    const space = 100000n * U_PER_ENTRY;
+    const crashW = BigInt(model.find((r) => r.game === 'crash')!.weight);
+    const superW = (BigInt(model.find((r) => r.kind === 'upgrade')!.weight) * 20000n) / 100000n;
+    const typical = model.reduce((s, r) => s + BigInt(r.weight) * playedValue(r, STANDARD), 0n);
+    // The add-on doubles an ordinary stake (L stays half) and makes a Super stake
+    // three entries at two thirds; each costs the player one more entry.
+    const value =
+      typical +
+      crashW * (2n * STANDARD - STANDARD) * 60n +
+      superW * (3n * SUPER_ADD_ON - 2n * STANDARD) * 60n;
+    const takenIn = space + (crashW + superW) * U_PER_ENTRY;
+    expect((value * 1000000n) / takenIn).toBe(845799n);
+    expect(value).toBeLessThan(takenIn);
+  });
+
+  it('no conditional expectation after any prize reaches the entry with Crash at its return', () => {
+    const model = v4Model();
+    const F = v4Follow();
+    for (let i = 0; i < 12; i += 1) {
+      const value = F[i].reduce(
+        (sum, w, j) => sum + BigInt(w) * playedValue(model[j], ODD_SMALLEST),
+        0n
+      );
+      // value / (W[i] x 60,000,000) is the expectation in entries; it stays below one.
+      expect(value).toBeLessThan(BigInt(model[i].weight) * U_PER_ENTRY);
+    }
   });
 });

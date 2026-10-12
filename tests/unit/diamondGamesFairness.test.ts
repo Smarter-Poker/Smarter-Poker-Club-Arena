@@ -26,8 +26,16 @@ import { describe, expect, it } from 'vitest';
 import {
   PLINKO_SLOT_WEIGHTS,
   PLINKO_WEIGHT_TOTAL,
+  awardAverageCrash,
   awardInstantCrashChances,
+  averageRangeLabel,
+  crashAverageFromShare,
+  crashAverageLabel,
+  crashAverageMultiplier,
+  crashCapLabel,
   crashInstantChance,
+  crashReturnPpm,
+  crashWouldHaveLabel,
   crashMissChance,
   crashMultiplierCents,
   crashPointCentsFromRoll,
@@ -208,11 +216,23 @@ describe('crash odds: the guaranteed minimum is paid for out of them', () => {
   });
 
   it('covers every stake a wheel award can be played at, and refuses an impossible one', () => {
-    // CONTRACT 4 is what a new award is sealed with, so it is what the lobby
-    // prices: the floor is half the stake, or for a Super award what the player
-    // PAID, and the round has to reach 1.11x before a cash-out can bind.
-    const ordinary = awardInstantCrashChances(1, 100);
-    const superAward = awardInstantCrashChances(2, 100);
+    // CONTRACT 5 is what a new award is sealed with from 2026-10-12, so it is
+    // the default: the point floored at 1.25x, the cash-out opening at 1.26x, on
+    // the same half (or paid) floor contract 4 keeps, at the round's own return
+    // (chosen for a 2.9x average): 1.022420 at the 13/25 the smallest odd entry
+    // keeps, 1.006430 at half, 1.137983 at a Super add-on's two thirds.
+    const now = awardInstantCrashChances(1, 100);
+    expect(now).toEqual(awardInstantCrashChances(1, 100, 5));
+    // 1 - (1.022420 - 0.52)/(1.26 - 0.52), and 1 - (1.006430 - 0.5)/(1.26 - 0.5).
+    expect(1 / now.least).toBeCloseTo(1 / (1 - 0.50242 / 0.74), 9);
+    expect(1 / now.most).toBeCloseTo(1 / (1 - 0.50643 / 0.76), 9);
+    expect(oneInRangeLabel(now)).toBe('1 In 3 To 3.1');
+    expect(oneInRangeLabel(awardInstantCrashChances(2, 100))).toBe('1 In 3 To 4.9');
+    // CONTRACT 4, which every round sealed from 2026-09-21 to 2026-10-12 carries:
+    // the floor is half the stake, or for a Super award what the player PAID,
+    // and the round has to reach 1.11x before a cash-out can bind.
+    const ordinary = awardInstantCrashChances(1, 100, 4);
+    const superAward = awardInstantCrashChances(2, 100, 4);
     // An ordinary award keeps half its stake, rounded up to the cent, so a small
     // odd entry (25 diamonds keeps 13) dies before 1.11x a shade more often.
     expect(1 / ordinary.least).toBeCloseTo(1.9677, 4);
@@ -247,5 +267,31 @@ describe('multiplier labels', () => {
     expect(multiplierLabel(2025)).toBe('20.25x');
     expect(multiplierLabel(65)).toBe('0.65x');
     expect(multiplierLabel(100000)).toBe('1000x');
+  });
+
+  it("prints the round's true average and its cap, and after a booked win where it would have gone (Dan, 2026-10-12)", () => {
+    // "Average Crash 2.9x" from the round's own terms: the exact sealed-hundredth mean.
+    expect(crashAverageLabel(crashAverageMultiplier(1, 0.5, 5, 2000))).toBe('Average Crash 2.9x');
+    expect(crashAverageLabel(crashAverageMultiplier(3, 2, 5, 2000))).toBe('Average Crash 2.9x');
+    // Every award the lobby can price averages 2.9x under contract 5.
+    expect(averageRangeLabel(awardAverageCrash(1, 100, 5, 2000))).toBe('2.9x');
+    expect(averageRangeLabel(awardAverageCrash(2, 100, 5, 2000))).toBe('2.9x');
+    // The lobby's floating-point walk agrees with the exact count to far below a decimal.
+    for (const [bet, floor] of [
+      [1, 0.5],
+      [3, 2],
+      [0.25, 0.13],
+      [1, 0.79],
+    ] as const) {
+      const exact = crashAverageMultiplier(bet, floor, 5, 2000);
+      const fast = crashAverageFromShare(floor / bet, crashReturnPpm(bet, floor, 5), 125, 2000);
+      expect(Math.abs(exact - fast)).toBeLessThan(1e-7);
+    }
+    expect(crashCapLabel(2000)).toBe('Up To 20x');
+    expect(crashCapLabel(2500)).toBe('Up To 25x');
+    expect(crashWouldHaveLabel(437, 2000)).toBe('It Would Have Crashed At 4.37x');
+    expect(crashWouldHaveLabel(130, 2000)).toBe('It Would Have Crashed At 1.30x');
+    expect(crashWouldHaveLabel(2000, 2000)).toBe('It Would Have Reached 20x');
+    expect(crashWouldHaveLabel(2600, 2000)).toBe('It Would Have Reached 20x');
   });
 });

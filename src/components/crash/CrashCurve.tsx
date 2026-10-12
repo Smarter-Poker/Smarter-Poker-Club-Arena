@@ -64,9 +64,9 @@
  * HOW HIGH IT WOULD HAVE GONE (Dan: "if a user books the win it should show
  * them how high it would have gone"). Once a booked round's replay reaches
  * the sealed crash point, a plate in the lower third of the frame says "It
- * Would Have Gone To 4.62x" over "You Booked 2.57x" (or that it crashed right
- * after the booking, or that it would have booked at the max first). It is
- * shown by the frame loop, like the hero, so nothing re-renders for it.
+ * Would Have Crashed At 4.62x" over "You Booked 2.57x" (or "It Would Have
+ * Reached 20.00x" when the sealed point is at or past the cap). It is shown by
+ * the frame loop, like the hero, so nothing re-renders for it.
  */
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
@@ -144,19 +144,11 @@ function wouldHaveGone(
       sub: 'The Most Any Round Pays',
     };
   const booked = `You Booked ${tickerLabel(cashoutCents)}`;
-  if (crashCents > capCents)
-    return {
-      title: `It Would Have Gone To The ${tickerLabel(capCents)} Max`,
-      figure: tickerLabel(capCents),
-      sub: booked,
-    };
-  if (crashCents <= cashoutCents + 1)
-    return {
-      title: 'It Crashed Right After You Booked',
-      figure: tickerLabel(crashCents),
-      sub: booked,
-    };
-  return { title: 'It Would Have Gone To', figure: tickerLabel(crashCents), sub: booked };
+  // Dan, 2026-10-12: "IF THEY 'BOOK THE WIN' ... IT SHOULD SHOW HOW FAR 'IT WOULD
+  // OF GONE'": the sealed point the flight went on to, or the cap it reached.
+  if (crashCents >= capCents)
+    return { title: 'It Would Have Reached', figure: tickerLabel(capCents), sub: booked };
+  return { title: 'It Would Have Crashed At', figure: tickerLabel(crashCents), sub: booked };
 }
 /** The multiplier lines the glass can print; the ones inside the axis are shown. */
 const MULTIPLIER_TICKS = [100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000];

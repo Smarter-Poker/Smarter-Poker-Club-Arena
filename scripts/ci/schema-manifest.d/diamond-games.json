@@ -23,6 +23,8 @@
     "fn_diamond_game_commit",
     "fn_diamond_game_cap_cents",
     "fn_crash_point_cents",
+    "fn_crash_point_cents_v5",
+    "fn_crash_return_ppm_v5",
     "fn_crash_multiplier_cents",
     "fn_diamond_game_prize_leg",
     "fn_diamond_game_take_bet",

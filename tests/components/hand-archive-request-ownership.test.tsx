@@ -28,9 +28,13 @@ vi.mock('../../src/services/HandHistoryService', () => ({
 vi.mock('../../src/services/HandNotesService', () => ({
   handNotesService: { listFor: async () => new Map() },
 }));
-vi.mock('../../src/services/HandFlagService', () => ({
-  handFlagService: { mineFor: async () => new Map() },
-}));
+vi.mock('../../src/services/HandFlagService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/services/HandFlagService')>();
+  return {
+    ...actual,
+    handFlagService: { ...actual.handFlagService, mineFor: async () => new Map() },
+  };
+});
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../../src/components/rewards/RewardsSurfaceHeader', () => ({
   default: () => <h1>Hand Archive</h1>,

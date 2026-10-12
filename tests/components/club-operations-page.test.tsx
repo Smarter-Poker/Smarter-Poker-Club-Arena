@@ -229,14 +229,14 @@ describe('the operations workspace reads the club', () => {
     const cashierAlert = screen.getByText('Chip Requests Waiting').closest('a');
     expect(cashierAlert?.getAttribute('href')).toBe('/clubs/deep-stack-society-11192/cashier');
     const playersAlert = screen.getByText('Membership Requests Waiting').closest('a');
-    expect(playersAlert?.getAttribute('href')).toBe('/clubs/deep-stack-society-11192/members');
+    expect(playersAlert?.getAttribute('href')).toBe('/clubs/deep-stack-society-11192/applicants');
   });
 
   it('badges the tool that has work waiting and leaves the others alone', async () => {
     rpcMock.mockResolvedValue({ data: payload(), error: null });
     mount();
     await waitFor(() => expect(screen.getByText('Chip Requests Waiting')).toBeTruthy());
-    expect(screen.getByLabelText('3 Waiting')).toBeTruthy();
+    expect(screen.getAllByLabelText('3 Waiting')).toHaveLength(2);
     // The cashier is one desk for three queues: 4 chip requests, 3 cash outs
     // and 2 credit requests. A badge of 4 would send an operator to a tile
     // reading 4 with 9 things behind it.

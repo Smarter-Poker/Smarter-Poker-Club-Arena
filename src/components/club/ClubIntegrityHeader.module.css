@@ -342,3 +342,39 @@
     scroll-behavior: auto;
   }
 }
+
+.header[data-compact] {
+  background: #000;
+  border: 0;
+}
+.header[data-compact] .hero {
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+  padding: 24px 20px 16px;
+  gap: 16px;
+}
+.header[data-compact] .hero::before,
+.header[data-compact] .hero::after,
+.header[data-compact] .visual,
+.header[data-compact] .signal {
+  display: none;
+}
+.header[data-compact] .eyebrow {
+  margin-top: 0;
+}
+.header[data-compact] .copy h1 {
+  font-size: clamp(28px, 4vw, 40px);
+}
+.header[data-compact] .metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+}
+.header[data-compact] .caseRail {
+  background: transparent;
+}
+@media (max-width: 620px) {
+  .header[data-compact] .hero {
+    padding-inline: 16px;
+  }
+}

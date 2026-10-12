@@ -71,6 +71,7 @@ import {
 } from '../../lib/pushNudgePolicy';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { usePromptTurn } from '../../lib/promptLane';
+import { SpadeConsole } from '../console/SpadeConsole';
 import './FirstRunPushPrompt.css';
 
 /**
@@ -365,72 +366,67 @@ export default function FirstRunPushPrompt() {
     <div
       className={modal ? 'ca-push-prompt' : 'ca-push-prompt ca-push-prompt--card'}
       role="dialog"
+      data-popup-chassis="none"
       aria-modal={modal ? 'true' : 'false'}
       aria-label="Enable Notifications"
       data-push-nudge={moment}
       onClick={modal ? handleDismiss : undefined}
     >
       <div className="ca-push-prompt__sheet" onClick={(e) => e.stopPropagation()}>
-        {state === 'success' ? (
-          <>
-            <h3 className="ca-push-prompt__title">You Are All Set</h3>
-            <p className="ca-push-prompt__body">Notifications Are On For This Device.</p>
-          </>
-        ) : state === 'install' ? (
-          <>
-            <h3 className="ca-push-prompt__title">Add Smarter Poker To Your Home Screen</h3>
-            <p className="ca-push-prompt__body">
-              Apple Devices Can Only Send Notifications From An Installed App. In Safari, Tap Share,
-              Then Add To Home Screen, Then Open Smarter Poker From There.
-            </p>
+        <SpadeConsole
+          title={
+            state === 'success'
+              ? 'You Are All Set'
+              : state === 'install'
+                ? 'Add To Home Screen'
+                : state === 'blocked'
+                  ? 'Notifications Are Blocked'
+                  : copy.title
+          }
+          eyebrow="Club Arena Notifications"
+          titleId="push-prompt-title"
+          pill={state === 'success' ? 'Enabled' : busy ? 'Working' : 'Your Choice'}
+          pillInk={state === 'blocked' ? 'red' : 'blue'}
+          family={state === 'install' || state === 'blocked' ? 'shark' : 'spade'}
+          onClose={busy ? undefined : handleDismiss}
+          plates={
+            state === 'ask'
+              ? {
+                  secondary: { label: 'Not Now', onClick: handleDismiss, disabled: busy },
+                  primary: {
+                    label: busy ? 'Enabling...' : 'Enable',
+                    onClick: handleEnable,
+                    disabled: busy,
+                    ink: 'white',
+                  },
+                }
+              : state === 'install' || state === 'blocked'
+                ? { primary: { label: 'Got It', onClick: handleDismiss } }
+                : undefined
+          }
+        >
+          <p className="ca-push-prompt__body">
+            {state === 'success'
+              ? 'Notifications Are On For This Device.'
+              : state === 'install'
+                ? 'In Safari, Tap Share, Then Add To Home Screen. Open Smarter Poker From There To Enable Notifications.'
+                : state === 'blocked'
+                  ? isIos() && !isIosStandalonePwa()
+                    ? 'On IPhone And IPad, Add Smarter Poker To Your Home Screen First. Tap Share, Then Add To Home Screen, Then Open It From There.'
+                    : 'Open Your Browser Site Settings For Smarter Poker, Switch Notifications To Allow, Then Reload This Page.'
+                  : copy.body}
+          </p>
+          {state === 'install' && (
             <p className="ca-push-prompt__note">
-              If You Are Using Chrome Or Firefox, Open This Page In Safari First.
+              Using Chrome Or Firefox? Open This Page In Safari First.
             </p>
-            <div className="ca-push-prompt__actions">
-              <button type="button" className="ca-push-prompt__btn" onClick={handleDismiss}>
-                Got It
-              </button>
-            </div>
-          </>
-        ) : state === 'blocked' ? (
-          <>
-            <h3 className="ca-push-prompt__title">Notifications Are Blocked</h3>
-            <p className="ca-push-prompt__body">
-              {isIos() && !isIosStandalonePwa()
-                ? 'On IPhone And IPad, Add Smarter Poker To Your Home Screen First. Tap Share, Then Add To Home Screen, Then Open It From There.'
-                : 'Open Your Browser Site Settings For Smarter Poker, Switch Notifications To Allow, Then Reload This Page.'}
+          )}
+          {error && (
+            <p className="ca-push-prompt__error" role="alert">
+              {error}
             </p>
-            <div className="ca-push-prompt__actions">
-              <button type="button" className="ca-push-prompt__btn" onClick={handleDismiss}>
-                Got It
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <h3 className="ca-push-prompt__title">{copy.title}</h3>
-            <p className="ca-push-prompt__body">{copy.body}</p>
-            {error && <p className="ca-push-prompt__error">{error}</p>}
-            <div className="ca-push-prompt__actions">
-              <button
-                type="button"
-                className="ca-push-prompt__btn ca-push-prompt__btn--ghost"
-                onClick={handleDismiss}
-                disabled={busy}
-              >
-                Not Now
-              </button>
-              <button
-                type="button"
-                className="ca-push-prompt__btn"
-                onClick={handleEnable}
-                disabled={busy}
-              >
-                {busy ? 'Enabling...' : 'Enable'}
-              </button>
-            </div>
-          </>
-        )}
+          )}
+        </SpadeConsole>
       </div>
     </div>
   );

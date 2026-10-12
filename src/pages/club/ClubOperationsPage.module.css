@@ -224,3 +224,32 @@
 .group :global(.sc__body) {
   gap: 0;
 }
+
+/* Owner's October 12 direction: a normal page, with no console chassis. */
+.page {
+  max-width: 1200px;
+  padding: 24px 20px 112px;
+  background: #000;
+}
+.hero,
+.group {
+  max-width: none;
+}
+.hero :global(.club-page-body),
+.group :global(.club-page-body) {
+  gap: 0;
+}
+.hero .pulse {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.groups {
+  gap: 24px;
+}
+@media (max-width: 620px) {
+  .page {
+    padding: 16px 16px 100px;
+  }
+  .hero .pulse {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

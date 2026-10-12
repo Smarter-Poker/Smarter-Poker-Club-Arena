@@ -105,6 +105,8 @@ const RENDER_EXEMPT: Record<string, string> = {
   'src/pages/SearchPage.tsx': 'fn_search_players returns the arena name',
   'src/components/union/UnionWalletModal.tsx': 'fn_union_player_directory returns the arena name',
   'src/pages/UnionDashboardPage.tsx': 'fn_union_player_directory returns the arena name',
+  'src/pages/ClubApplicantsPage.tsx':
+    'fn_list_pending_members resolves the arena alias server-side',
   'src/pages/ClubDetailPage.tsx': 'fn_list_pending_members returns the arena name',
   'src/pages/club/ClubDashboard.tsx': 'ca_club_members / ca_club_top_players return the arena name',
   'src/pages/AntiCheatPage.tsx': 'reads a map already built through playerDisplayName',

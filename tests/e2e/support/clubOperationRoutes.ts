@@ -9,6 +9,7 @@ export const ADMIN_CLUB_OPERATION_ROUTES = [
   { id: 'overview', label: 'Overview', suffix: 'operations', marker: 'Club Operations' },
   { id: 'dashboard', label: 'Dashboard', suffix: 'dashboard-full', marker: 'New Table' },
   { id: 'players', label: 'Players', suffix: 'members', marker: 'Player Command' },
+  { id: 'applicants', label: 'Applicants', suffix: 'applicants', marker: 'Applicants' },
   { id: 'agents', label: 'Agent Team', suffix: 'agents', marker: 'Agent Management' },
   { id: 'reports', label: 'Reports', suffix: 'reports', marker: 'Player Report Review' },
   { id: 'hand-review', label: 'Hand Review', suffix: 'hand-review', marker: 'Open A Hand' },

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Link,
   useLocation,
   useNavigate,
   useNavigationType,
@@ -1117,8 +1118,14 @@ export default function ClubMembersPage() {
         />
         <div className="members-hero__content">
           <div className="members-hero__copy">
-            <span className="members-eyebrow">Club Personnel Vault</span>
+            <span className="members-eyebrow">Club Players</span>
             <h1 id="members-page-title">Player Command</h1>
+            {summary.capabilities.can_manage_members && (
+              <Link className="members-applicants" to={`/clubs/${routeClubId}/applicants`}>
+                Review Applicants
+              </Link>
+            )}
+
             <p>
               Find Any Member, Read Their Live Club Status, And Open The Controls Behind Their Seat.
             </p>
@@ -1154,7 +1161,7 @@ export default function ClubMembersPage() {
       <section className="members-console" aria-labelledby="members-directory-title">
         <div className="members-console__heading">
           <div>
-            <span className="members-eyebrow">Pit Tape Directory</span>
+            <span className="members-eyebrow">Member Directory</span>
             <h2 id="members-directory-title">Find A Player</h2>
           </div>
           <span className="members-result-count" aria-live="polite">
@@ -1182,19 +1189,20 @@ export default function ClubMembersPage() {
         </label>
 
         <div className="members-filter-rail" role="group" aria-label="Saved Roster Views">
-          <div className="members-filters">
-            {filters.map((value) => (
-              <button
-                key={value}
-                type="button"
-                className={filter === value ? 'active' : ''}
-                aria-pressed={filter === value}
-                onClick={() => setFilter(value)}
-              >
-                {FILTER_LABEL[value]}
-              </button>
-            ))}
-          </div>
+          <label className="members-view-filter">
+            <span>Filter Players</span>
+            <select
+              aria-label="Filter Players"
+              value={filter}
+              onChange={(event) => setFilter(event.target.value as RosterFilter)}
+            >
+              {filters.map((value) => (
+                <option key={value} value={value}>
+                  {FILTER_LABEL[value]}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
         <div className="members-toolbar">

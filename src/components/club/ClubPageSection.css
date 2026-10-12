@@ -1,0 +1,100 @@
+.club-page-section {
+  container-type: inline-size;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 20px 0;
+  color: #e4e7ec;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  border-bottom: 1px solid rgb(154 165 179 / 20%);
+}
+.club-page-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.club-page-heading > div {
+  flex: 1;
+  min-width: 0;
+}
+.club-page-heading h1,
+.club-page-heading h2 {
+  margin: 0;
+  font:
+    700 clamp(24px, 3vw, 36px)/1.15 'Roboto Condensed',
+    sans-serif;
+  overflow-wrap: anywhere;
+}
+.club-page-eyebrow {
+  margin: 0 0 6px;
+  color: #45adff;
+  font-size: 13px;
+}
+.club-page-subtitle {
+  margin: 8px 0 0;
+  color: #9aa5b3;
+  font-size: 15px;
+}
+.club-page-status {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.club-page-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.club-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 20px;
+}
+.club-page-action {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 0;
+  background: transparent;
+  color: #45adff;
+  font:
+    700 16px/1.25 'Roboto Condensed',
+    sans-serif;
+  text-decoration: none;
+  cursor: pointer;
+}
+.club-page-action:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.club-page-action:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: 2px;
+}
+.club-page-section .sc-copy {
+  font-size: 16px;
+  line-height: 1.5;
+  text-shadow: none;
+}
+.club-page-section .sc-label {
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  white-space: normal;
+}
+.club-page-section [class*='sc-ink--'] {
+  text-shadow: none;
+}
+@media (max-width: 620px) {
+  .club-page-section {
+    padding: 16px 0;
+  }
+  .club-page-actions > * {
+    flex: 1;
+  }
+}

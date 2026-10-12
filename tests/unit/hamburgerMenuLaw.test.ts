@@ -114,7 +114,7 @@ describe('3. every menu destination is actually connected to a route', () => {
     expect(MENU).toContain('handleNavigate(`/clubs/${clubId}/settings`)');
     expect(MENU).not.toContain('handleNavigate(`/invite/${clubId}`)');
     expect(APP).toContain('path="clubs/:clubId/settings"');
-    expect(CLUB_SETTINGS).toContain('<h3>Share Club</h3>');
+    expect(CLUB_SETTINGS).toContain('<h3 id="settings-sharing">Share Club</h3>');
     expect(CLUB_SETTINGS).toContain('Copy Invite Link');
   });
 });

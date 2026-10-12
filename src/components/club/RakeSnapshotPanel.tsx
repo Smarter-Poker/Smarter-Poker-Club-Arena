@@ -62,6 +62,7 @@ import {
 } from '../../utils/rakeSnapshotExport';
 import { uuid } from '../../utils/uuid';
 import { SpadeConsole } from '../console/SpadeConsole';
+import { ClubPageSection } from './ClubPageSection';
 import { titleCase } from '../../utils/titleCase';
 import { compactChips } from '../../utils/format';
 import styles from './RakeSnapshotPanel.module.css';
@@ -167,6 +168,7 @@ interface Crumb {
 }
 
 export interface RakeSnapshotPanelProps {
+  unframed?: boolean;
   /**
    * The club this panel reports on, or null on the union page - a union owner
    * has a union and need not have a club at all.
@@ -189,6 +191,7 @@ export interface RakeSnapshotPanelProps {
 }
 
 export default function RakeSnapshotPanel({
+  unframed = false,
   clubId,
   unionId = null,
   userId = null,
@@ -916,8 +919,10 @@ export default function RakeSnapshotPanel({
   const seriesUnit = snapshot?.series_bucket ?? 'day';
   const wordInk = (active: boolean) => (active ? 'sc-ink--white' : 'sc-ink--muted');
 
+  const Section = unframed ? ClubPageSection : SpadeConsole;
   return (
-    <SpadeConsole
+    <Section
+      data-unframed={unframed || undefined}
       eyebrow="Operator Snapshot"
       title="Rake Produced"
       titleId="rake-snapshot-title"
@@ -1500,6 +1505,6 @@ export default function RakeSnapshotPanel({
             ? `Compared Against ${snapshot.previous_range.start} - ${snapshot.previous_range.end} UTC`
             : 'No Snapshot Loaded'}
       </p>
-    </SpadeConsole>
+    </Section>
   );
 }

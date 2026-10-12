@@ -481,7 +481,7 @@ test.describe('Production Cashier Certification', () => {
     await attachCashierScreenshot(page, testInfo, 'advanced-cashier');
 
     // Exercise every amount rail this real identity may use, without submitting.
-    // Mounted tests cover all four roles/actions even when production rights differ.
+    // Mounted tests cover all four actions even when production rights differ.
     const advancedTabs = page.getByRole('tablist', { name: 'Cashier Actions' });
     const observedAmountRails: string[] = [];
     for (const width of [375, 393]) {

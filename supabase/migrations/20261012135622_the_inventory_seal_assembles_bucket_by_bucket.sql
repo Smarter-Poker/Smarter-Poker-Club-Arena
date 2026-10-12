@@ -839,6 +839,21 @@ $function$
 $definition$;
 END $callers$;
 
+-- Preserve the production operator-only ACL explicitly for source qualification.
+REVOKE ALL ON FUNCTION public.fn_union_pnl_inventory_checkpoint_due() FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_union_pnl_inventory_checkpoint_due() TO service_role;
+
+REVOKE ALL ON FUNCTION public.fn_union_pnl_inventory_checkpoint_seal(timestamptz,boolean) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_union_pnl_inventory_checkpoint_seal(timestamptz,boolean) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_union_pnl_inventory_seal_advance(timestamptz,boolean) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_union_pnl_inventory_seal_advance(timestamptz,boolean) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_union_pnl_inventory_seal_in_progress() FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_union_pnl_inventory_seal_in_progress() TO service_role;
+REVOKE ALL ON FUNCTION public.fn_union_pnl_inventory_layer_state(timestamptz,timestamptz,timestamptz,timestamptz) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_union_pnl_inventory_layer_state(timestamptz,timestamptz,timestamptz,timestamptz) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_union_pnl_inventory_state(timestamptz,timestamptz) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_union_pnl_prove_opening_registrations(uuid,timestamptz) FROM PUBLIC,anon,authenticated,service_role;
+
 DO $post$
 DECLARE r record;
 BEGIN

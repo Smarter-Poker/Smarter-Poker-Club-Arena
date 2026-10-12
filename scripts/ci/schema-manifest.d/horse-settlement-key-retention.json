@@ -1,5 +1,11 @@
 {
   "_owner": "fix/horse-settlement-key-retention-20261012",
-  "_comment": "Candidate source declarations; installation and retained provenance dependency qualified separately.",
-  "functions": ["smarter_private.horse_settlement_original_result", "smarter_private.compact_horse_settlement_keys"]
+  "_comment": "Installed 20261012161313 with exact seven-function readback and native qualification; retained provenance remains the resolver dependency. This fragment records object names, not financial qualification.",
+  "tables": ["smarter_private.horse_settlement_key_certificates"],
+  "functions": [
+    "smarter_private.horse_settlement_original_result",
+    "smarter_private.compact_horse_settlement_keys",
+    "smarter_private.horse_settlement_certificate_immutable",
+    "smarter_private.horse_settlement_key_guard"
+  ]
 }

@@ -357,6 +357,7 @@ export default function PlayerStatisticsPage() {
             a new range or variant loads the figures below are dimmed. */}
         <p
           className="ps-range__caption"
+          role="status"
           aria-label="Displayed Performance Scope"
           aria-live="polite"
         >

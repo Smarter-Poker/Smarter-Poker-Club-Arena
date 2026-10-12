@@ -1268,7 +1268,7 @@ export default function ClubMembersPage() {
         </div>
 
         {summary.capabilities.can_export && (
-          <p className="members-count" aria-label="Export Scope">
+          <p className="members-count" role="note" aria-label="Export Scope">
             <strong>Export Scope: </strong>
             <span>
               {selected.size

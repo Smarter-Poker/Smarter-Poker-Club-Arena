@@ -31,3 +31,5 @@
 **TypeScript:** Pending root exact-candidate validation.
 
 **Delivery Boundary:** Root owns the maintained production Record/Statistics journey, required final checks, protected delivery, publication and cold live proof. Local components do not certify the production database or release. No live financial, note or role writes were performed.
+
+Root final accessibility validation strengthens the existing real-component and production checks to query semantic roles rather than accepting aria-label text on an unnamed paragraph. Displayed read captions are named status roles; export context is a named note. Five strengthened component checks failed before the roles were added; the same assertions are retained for the corrected candidate. No financial or request behavior changed.

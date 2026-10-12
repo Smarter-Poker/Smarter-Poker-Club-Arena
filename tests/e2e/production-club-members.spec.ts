@@ -339,9 +339,9 @@ test.describe('Production Shark Club Players', () => {
     await expect(page).toHaveURL(/[?&]sort=name(?:&|$)/);
     await expect(directory.getByRole('listitem').first()).toBeVisible({ timeout: 30_000 });
 
-    await expect(
-      page.getByText('All Matching Players Across Every Page', { exact: true })
-    ).toBeVisible();
+    await expect(page.getByRole('note', { name: 'Export Scope' })).toContainText(
+      'All Matching Players Across Every Page'
+    );
     const exportResponse = page.waitForResponse((response) =>
       response.url().includes('/rpc/ca_club_members_export')
     );
@@ -594,7 +594,9 @@ test.describe('Production Shark Club Players', () => {
       timeout: 45_000,
     });
     await expect(page.locator('#mm-player-name')).toBeVisible();
-    await expect(page.locator('.mm-range__caption[aria-live]')).toContainText('Recorded Activity');
+    await expect(page.getByRole('status', { name: 'Displayed Activity Scope' })).toContainText(
+      'Recorded Activity'
+    );
     const activityGuide = page.locator('[aria-label="Activity Metric Definitions"]');
     await activityGuide.locator('summary').click();
     await expect(activityGuide).toContainText('Signed Hand Results, Not Gross Prizes');
@@ -638,7 +640,9 @@ test.describe('Production Shark Club Players', () => {
     await page.getByRole('button', { name: 'Select', exact: true }).click();
     await page.locator('.mm-range__custom input[type="date"]').first().fill('2026-01-01');
     await expect(page.locator('.mm-range__draft')).toContainText('Draft Dates Not Applied');
-    await expect(page.locator('.mm-range__caption[aria-live]')).toContainText('Recorded Activity');
+    await expect(page.getByRole('status', { name: 'Displayed Activity Scope' })).toContainText(
+      'Recorded Activity'
+    );
     for (const width of [375, 393, 768]) {
       await page.setViewportSize({ width, height: 812 });
       await expectContainedControls(
@@ -700,7 +704,9 @@ test.describe('Production Shark Club Players', () => {
       await expect(control).toHaveAttribute('aria-pressed', 'true');
     }
     await expect(page.locator('.ps-range__custom input[type="date"]')).toHaveCount(2);
-    await expect(page.locator('.ps-range__caption[aria-live]')).toContainText('UTC');
+    await expect(page.getByRole('status', { name: 'Displayed Performance Scope' })).toContainText(
+      'UTC'
+    );
     const performanceGuide = page.locator('[aria-label="Performance Metric Definitions"]');
     await performanceGuide.locator('summary').click();
     await expect(performanceGuide).toContainText('Hands With A Positive Net Result');

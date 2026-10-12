@@ -118,7 +118,9 @@ it('explains all matching exports and annotates every returned server row with e
   f.export.mockResolvedValue(receipt);
   render(tree());
   await ready();
-  expect(screen.getByText('All Matching Players Across Every Page')).toBeInTheDocument();
+  expect(screen.getByRole('note', { name: 'Export Scope' })).toHaveTextContent(
+    'All Matching Players Across Every Page'
+  );
   fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
   await act(async () => {
     await Promise.resolve();

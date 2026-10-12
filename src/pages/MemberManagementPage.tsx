@@ -713,6 +713,7 @@ export default function MemberManagementPage() {
               new range loads the figures are dimmed and say so. */}
             <p
               className="mm-range__caption"
+              role="status"
               aria-label="Displayed Activity Scope"
               aria-live="polite"
             >

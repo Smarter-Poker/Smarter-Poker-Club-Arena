@@ -183,9 +183,9 @@ it.each(['record', 'statistics'] as const)(
   async (kind) => {
     const read = kind === 'record' ? state.getMemberDetail : state.getMemberStatistics;
     const view = render(kind === 'record' ? <MemberManagementPage /> : <PlayerStatisticsPage />);
-    const caption = await screen.findByLabelText(
-      kind === 'record' ? 'Displayed Activity Scope' : 'Displayed Performance Scope'
-    );
+    const caption = await screen.findByRole('status', {
+      name: kind === 'record' ? 'Displayed Activity Scope' : 'Displayed Performance Scope',
+    });
     await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
     const originalScope = caption.textContent;
     expect(
@@ -234,7 +234,7 @@ it.each(['all', null])(
   async (returnedVariant) => {
     state.getMemberStatistics.mockResolvedValueOnce({ ...statistics, variant: returnedVariant });
     render(<PlayerStatisticsPage />);
-    const caption = await screen.findByLabelText('Displayed Performance Scope');
+    const caption = await screen.findByRole('status', { name: 'Displayed Performance Scope' });
     await waitFor(() => expect(caption).toHaveTextContent('All Variants'));
     const priorScope = caption.textContent;
     state.getMemberStatistics.mockRejectedValueOnce(new Error('Unavailable'));

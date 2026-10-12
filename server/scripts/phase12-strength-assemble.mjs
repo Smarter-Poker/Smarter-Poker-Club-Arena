@@ -167,7 +167,9 @@ export function inspectAttempts({ variant, runsDir, development = false, defecti
   const reasons = [];
   if (!contract.isRemainingVariantStrengthVariant(variant)) return { reasons: ['unknown_variant'] };
   const mode = development ? 'development' : 'contract';
-  const digest = contract.remainingVariantStrengthContractDigest();
+  // Each pack runs its own contract (round 4: FLH the frozen v1, the others v2).
+  const digest = contract.remainingVariantStrengthContractDigest(variant);
+  const version = contract.remainingVariantStrengthContractFor(variant).version;
   const pack = contract.remainingVariantStrengthPack(variant);
   const required = contract.remainingVariantStrengthRequiredShards(variant);
   const requiredKeys = new Set(required.map((r) => r.key));
@@ -261,10 +263,7 @@ export function inspectAttempts({ variant, runsDir, development = false, defecti
           development ? `not_development_mode:${a.name}` : `not_contract_mode:${a.name}:${m.mode}`
         );
       if (m.dirty !== false) reasons.push(`dirty_checkout:${a.name}`);
-      if (
-        m.contractDigest !== digest ||
-        m.contractVersion !== contract.REMAINING_VARIANT_STRENGTH_CONTRACT.version
-      )
+      if (m.contractDigest !== digest || m.contractVersion !== version)
         reasons.push(`contract_mismatch:${a.name}`);
       if (m.packVersion !== pack.candidate.packVersion)
         reasons.push(`pack_version_mismatch:${a.name}`);
@@ -403,8 +402,8 @@ export async function assemble(options) {
     phase: 'P12.2',
     variant,
     mode: development ? 'development' : 'contract',
-    contract: contract.REMAINING_VARIANT_STRENGTH_CONTRACT,
-    contractDigest: contract.remainingVariantStrengthContractDigest(),
+    contract: contract.remainingVariantStrengthContractFor(variant),
+    contractDigest: contract.remainingVariantStrengthContractDigest(variant),
     domain: pack.domain,
     verdictFunctions:
       'summarizeRemainingVariantStrength and remainingVariantStrengthShardReasons, server/src/benchmark/RemainingVariantStrengthContract.ts',
@@ -474,7 +473,7 @@ export async function assemble(options) {
     variant,
     sourceSha: head,
     packVersion: first.packVersion,
-    contractVersion: contract.REMAINING_VARIANT_STRENGTH_CONTRACT.version,
+    contractVersion: contract.remainingVariantStrengthContractFor(variant).version,
     contractDigest: strength.contractDigest,
     domain: pack.domain,
     policyDigest,
@@ -488,7 +487,7 @@ export async function assemble(options) {
       tournament: verdict.tournament,
     },
     admissionAlsoRequires:
-      contract.REMAINING_VARIANT_STRENGTH_CONTRACT.liveConditions.admissionAlsoRequires,
+      contract.remainingVariantStrengthContractFor(variant).liveConditions.admissionAlsoRequires,
     evidencePath,
     evidenceSha256: sha256(strengthText),
     reasons: development

@@ -129,7 +129,7 @@ import {
   PHASE12_PROTECTED_RELEASE_SELECTIONS,
 } from '../HorsePhase12Authority.js';
 import {
-  P12_TEST_CONTRACT_DIGEST,
+  p12TestContractDigest,
   P12_TEST_NOW,
   p12CompletionBytes,
   p12CompletionObject,
@@ -4223,7 +4223,7 @@ describe('P12.3 worker-owned Short Deck/Pineapple/FLH/FLO8 authority (the Phase 
         p12Selection('flh', q, c),
         p12Reader('flh', q, c),
         P12_TEST_NOW,
-        P12_TEST_CONTRACT_DIGEST
+        p12TestContractDigest('flh')
       );
   };
   it.each([

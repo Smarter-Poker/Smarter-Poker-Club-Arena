@@ -1,0 +1,13 @@
+# Original adaptive membership lookup stays inside its original hand set
+
+The existing registration helper's retired-member existence test chose a full certificate scan even for an empty batch. A live read-only plan filtered168000unretired certificates,28084cached blocks in199.137ms. The existing250candidate fetch used its maintained pending index in3.198ms and was not this defect.
+
+The forward guarded migration changes only that existence predicate. Validated original distinct SHA digests drive existing unique certificate-key probes, with the exact digest+batch membership and retired_at still required. A retention_compacted prestate conservatively retains the original membership-based predicate. Validation, null canonical handling, row locks, ready no-op, one-set insertion, sanitizer, original digests, grants and retention barriers remain unchanged. The existing horse-adaptive-statistics-retention schema fragment already declares this exact private helper; no table/index/API is added.
+
+All24 existing membership native assertions now execute against this final successor. The same mandatory adaptive CLI adds focused lookup qualification before its unchanged27capacity phase, whose returned template carries the actual new helper. Local focused qualification uses setup-only ancestors, avoiding another unchanged34case run.
+
+Planner evidence uses genuinely admitted empty and64hand nonempty observations. Synthetic volume is confined to a separately discarded physical-plan clone:20000unretired certificates and200000memberships are not claimed to be qualified accounting/retirement authority or production throughput. Actual retirement proofs use the unchanged original admission and retirement owners. The focused cases cover real retired/human/unknown inputs, exact batch mismatch, flagged stale members, ready-compacted replay, original24rollback/concurrency/invalid/replay/ACL guards and reverse substitution of every remaining helper source byte.
+
+Equivalence is for original-owner reachable states. Registration commits membership and ready atomically under the original batch lock; retirement requires all legacy membership ready; ready registration returns before lookup; future append's AFTER INSERT registers canonical input before its final sanitizer. Arbitrarily corrupt unflagged/nonready rows containing unrelated prior private members are explicitly not claimed equivalent. Flagged stale prestates retain the exact old predicate.
+
+Database installation, protected integration and live backlog/capacity verification remain operation-owner work. No production writes, DDL, activation, cap/budget changes, new jobs, financial writes or unrelated tests occurred in this qualification.

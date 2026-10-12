@@ -3,7 +3,7 @@ from pathlib import Path
 import json, subprocess, time
 from satellite_qualifier_fixture import sha, lit
 
-MIGRATION = Path('supabase/migrations/20261012195926_existing_horse_retention_uses_a_supported_thirty_second_interval.sql')
+MIGRATION = Path('supabase/migrations/20261012200422_existing_horse_retention_runs_each_thirty_seconds.sql')
 
 def qualify(e):
     migration = MIGRATION

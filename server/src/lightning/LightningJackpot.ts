@@ -17,6 +17,10 @@
  *   - detection: detectBBJHit, and only when it refuses, detectMiniBBJHit,
  *     gated on the table's bbj_percent > 0, a showdown of two or more and a
  *     winner, with the final board parsed by the same pattern;
+ *   - near misses (2026-10-12): when neither hits, detectBBJNearMiss and -
+ *     only when the main said nothing - detectMiniBBJNearMiss, written through
+ *     the same recordBBJNearMiss row and announced with the same
+ *     bbj_near_miss event, fire-and-forget;
  *   - payout: processBBJPayout / processMiniBBJPayout - the write-ahead claim,
  *     the retries, the queue, the freeze deferral and the one idempotency key
  *     (pool, table, hand) - for a cash hand at a club, never a diamond one;
@@ -38,7 +42,9 @@
  */
 import {
   detectBBJHit,
+  detectBBJNearMiss,
   detectMiniBBJHit,
+  detectMiniBBJNearMiss,
   getFullRakeConfig,
   getTierIdForBB,
 } from '../config/RakeConfig.js';
@@ -82,17 +88,40 @@ export interface LightningJackpotDeps {
   /** Injected for tests; the physical payout doors otherwise. */
   payMain?: typeof processBBJPayout;
   payMini?: typeof processMiniBBJPayout;
+  /** Injected for tests; the physical near-miss writer otherwise. */
+  recordNearMiss?: typeof recordBBJNearMiss;
 }
 
 export type LightningJackpotVerdict = 'none' | 'main' | 'mini';
 
 const BOARD_CARD = /^(10|[2-9]|[TJQKA])(hearts|diamonds|clubs|spades)$/;
 
+/**
+ * A near miss on a Lightning hand: the reason, the player and the sentence,
+ * exactly the shape the physical table writes to `bbj_near_misses`.
+ */
+export interface LightningNearMiss {
+  reason: string;
+  userId?: string;
+  handName?: string;
+  message?: string;
+}
+
 /** The physical hit check, unchanged in its inputs. Pure. */
 export function detectLightningJackpot(hand: LightningJackpotHand): {
   verdict: LightningJackpotVerdict;
   main?: ReturnType<typeof detectBBJHit>;
   mini?: ReturnType<typeof detectMiniBBJHit>;
+  /**
+   * LIGHTNING HANDS RECORD NEAR MISSES TOO (2026-10-12). Only the hit
+   * detectors ran here, so a Lightning hand that made a qualifying hand and
+   * missed on one gate left no row - the near-miss log, which exists to tell
+   * "no qualifying hand happened" from "one happened and a gate refused it",
+   * could not say either for a Lightning hand. The physical order, unchanged:
+   * the main near miss, and the mini's only when the main said nothing.
+   * Display and record only; never consulted for a payout.
+   */
+  nearMiss?: LightningNearMiss;
 } {
   const percent = hand.bbjPercent ?? 100;
   if (!(percent > 0) || hand.showdown.length < 2 || hand.winnerIds.length === 0)
@@ -126,7 +155,60 @@ export function detectLightningJackpot(hand: LightningJackpotHand): {
     hand.dealtInPlayerIds,
     { doubleBoard: false, board }
   );
-  return mini.hit ? { verdict: 'mini', mini } : { verdict: 'none' };
+  if (mini.hit) return { verdict: 'mini', mini };
+  return { verdict: 'none', nearMiss: lightningNearMiss(hand, showdown, board) };
+}
+
+/**
+ * The physical settlement's near-miss step, with the same arguments. A
+ * failure here returns no near miss rather than throwing: a cosmetic record
+ * must never break the hand.
+ */
+function lightningNearMiss(
+  hand: LightningJackpotHand,
+  showdown: Parameters<typeof detectBBJHit>[0],
+  board: Array<{ rank: string; suit: string }>
+): LightningNearMiss | undefined {
+  try {
+    const main = detectBBJNearMiss(
+      showdown,
+      hand.winnerIds,
+      hand.variant,
+      hand.potSize,
+      hand.bigBlind,
+      hand.dealtInPlayerIds.length,
+      board,
+      { doubleBoard: false }
+    );
+    if (main.nearMiss && main.reason) {
+      return {
+        reason: main.reason,
+        userId: main.userId,
+        handName: main.handName,
+        message: main.message,
+      };
+    }
+    const mini = detectMiniBBJNearMiss(
+      showdown,
+      hand.winnerIds,
+      hand.variant,
+      hand.potSize,
+      hand.bigBlind,
+      hand.dealtInPlayerIds.length,
+      { doubleBoard: false, board }
+    );
+    if (mini.nearMiss && mini.reason) {
+      return {
+        reason: mini.reason,
+        userId: mini.userId,
+        handName: mini.handName,
+        message: mini.message,
+      };
+    }
+  } catch {
+    /* A near miss is display and record only; it must never break the hand. */
+  }
+  return undefined;
 }
 
 /**
@@ -151,7 +233,10 @@ export async function settleLightningJackpot(
     deps.logger.error(`[LightningJackpot:${hand.hostTableId}] hit check failed`, err);
     return 'none';
   }
-  if (found.verdict === 'none') return 'none';
+  if (found.verdict === 'none') {
+    if (found.nearMiss) recordLightningNearMiss(hand, found.nearMiss, deps, emitAll);
+    return 'none';
+  }
   const payable = hand.asset !== 'diamonds' && !!hand.clubId;
   const dealt = hand.dealtInPlayerIds;
 
@@ -322,4 +407,50 @@ export async function settleLightningJackpot(
     deps.logger.error(`[LightningJackpot:${hand.hostTableId}] mini jackpot payout threw`, err);
   }
   return 'mini';
+}
+
+/**
+ * Write the near miss and tell the table, exactly as the physical settlement
+ * does: the same `recordBBJNearMiss` row, fire-and-forget, and the same
+ * `bbj_near_miss` event to every participant's room. Nothing here can throw
+ * into the hand.
+ */
+function recordLightningNearMiss(
+  hand: LightningJackpotHand,
+  nearMiss: LightningNearMiss,
+  deps: LightningJackpotDeps,
+  emitAll: (payload: Record<string, unknown>) => void
+): void {
+  const record = deps.recordNearMiss ?? recordBBJNearMiss;
+  try {
+    void Promise.resolve(
+      record({
+        tableId: hand.hostTableId,
+        clubId: hand.clubId,
+        handNumber: hand.handNumber,
+        variant: hand.variant,
+        bigBlind: hand.bigBlind,
+        potSize: hand.potSize,
+        playersDealt: hand.dealtInPlayerIds.length,
+        userId: nearMiss.userId,
+        handName: nearMiss.handName,
+        reason: nearMiss.reason,
+        message: nearMiss.message,
+      })
+    ).catch(() => undefined);
+  } catch {
+    /* fire-and-forget: a failed record never breaks the hand */
+  }
+  try {
+    emitAll({
+      type: 'bbj_near_miss',
+      hand_number: hand.handNumber,
+      user_id: nearMiss.userId,
+      hand_name: nearMiss.handName,
+      reason: nearMiss.reason,
+      message: nearMiss.message,
+    });
+  } catch (err) {
+    deps.logger.error(`[LightningJackpot:${hand.hostTableId}] near-miss emit failed`, err);
+  }
 }

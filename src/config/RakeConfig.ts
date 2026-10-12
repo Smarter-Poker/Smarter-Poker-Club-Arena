@@ -289,7 +289,7 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
   nlh: {
     label: 'NLH / FLH',
     minLosingHand: 'AAAJJ',
-    description: 'Full House (Aces Full Of Jacks) Or Better Must LOSE To Quads Or Straight Flush',
+    description: 'Aces Full Of Jacks+, Ace In Hand, Both Cards Play, Must LOSE To Quads Or Better',
     rules: [
       'AAAJJ+ must lose to Quads or Straight Flush',
       'Player holding Full House must have at least one Ace in their hole cards (dealt cards)',
@@ -302,7 +302,7 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
   flh: {
     label: 'NLH / FLH',
     minLosingHand: 'AAAJJ',
-    description: 'Full House (Aces Full Of Jacks) Or Better Must LOSE To Quads Or Straight Flush',
+    description: 'Aces Full Of Jacks+, Ace In Hand, Both Cards Play, Must LOSE To Quads Or Better',
     rules: [
       'AAAJJ+ must lose to Quads or Straight Flush',
       'Player holding Full House must have at least one Ace in their hole cards (dealt cards)',

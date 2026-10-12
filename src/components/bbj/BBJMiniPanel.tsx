@@ -157,8 +157,9 @@ export default function BBJMiniPanel({ clubId, canEdit }: Props) {
             to be the bar their tables actually apply. */}
         A Second, Smaller Jackpot For The Bad Beats The Main Rule Turns Away. The Losing Hand Bar
         Depends On The Game: Aces Full Or Better In Hold’em, Quad Tens Or Better In PLO5 And FLO5,
-        Quad Deuces In Pineapple, And Any Quads In The Other Omaha Games. It Pays A Flat Amount Set
-        By The Stakes, Out Of The Jackpot’s Backup Pool. No Extra Fee Is Taken For It.
+        Quad Deuces In Pineapple, And Any Quads In The Other Omaha Games. In Hold’em And Pineapple,
+        Both Hole Cards Must Play. It Pays A Flat Amount Set By The Stakes, Out Of The Jackpot’s
+        Backup Pool. No Extra Fee Is Taken For It.
       </small>
 
       {mini.isUnionPool && (

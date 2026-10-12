@@ -65,9 +65,13 @@ function enginesReasons(): string[] {
        gate; both the main and the mini set live inside them. */
     if (
       r.startsWith('mini_') ||
-      ['not_enough_players', 'pot_too_small', 'winner_not_quads', 'both_cards_must_play'].includes(
-        r
-      )
+      [
+        'not_enough_players',
+        'pot_too_small',
+        'double_board',
+        'winner_not_quads',
+        'both_cards_must_play',
+      ].includes(r)
     ) {
       out.add(r);
     }
@@ -82,6 +86,7 @@ describe('the near-miss log has a reader', () => {
        spelled out so the diff says which gate changed. */
     expect(enginesReasons()).toEqual([
       'both_cards_must_play',
+      'double_board',
       'mini_both_cards_must_play',
       'mini_double_board',
       'mini_loser_below_bar',

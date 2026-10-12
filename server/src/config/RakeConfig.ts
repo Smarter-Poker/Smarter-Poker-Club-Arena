@@ -24,7 +24,8 @@
  *   - 3+ players must be dealt in preflop (FIX 145)
  *   - Not available for Double/Triple Board games
  *   - If run it multiple times, only first runout counts
- *   - If multiple losers qualify, prize split proportionally
+ *   - If multiple losers qualify, the STRONGEST losing hand takes it (no split;
+ *     BBJ_RULES.splitIfMultipleQualify is false)
  *
  * QUALIFYING HANDS (minimum losing hand):
  *   NLH/FLH: AAAJJ (full house, Aces full of Jacks)
@@ -174,7 +175,7 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
   nlh: {
     label: 'NLH / FLH',
     minLosingHand: 'AAAJJ',
-    description: 'Full House (Aces Full Of Jacks) Or Better Must LOSE To Quads Or Straight Flush',
+    description: 'Aces Full Of Jacks+, Ace In Hand, Both Cards Play, Must LOSE To Quads Or Better',
     rules: [
       'AAAJJ+ must lose to Quads or Straight Flush',
       'Player holding Full House must have at least one Ace in their hole cards (dealt cards)',
@@ -187,7 +188,7 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
   flh: {
     label: 'NLH / FLH',
     minLosingHand: 'AAAJJ',
-    description: 'Full House (Aces Full Of Jacks) Or Better Must LOSE To Quads Or Straight Flush',
+    description: 'Aces Full Of Jacks+, Ace In Hand, Both Cards Play, Must LOSE To Quads Or Better',
     rules: [
       'AAAJJ+ must lose to Quads or Straight Flush',
       'Player holding Full House must have at least one Ace in their hole cards (dealt cards)',
@@ -409,6 +410,53 @@ export const BBJ_RULES = {
   splitIfMultipleQualify: false,
   requireBothHoleCards: true,
 } as const;
+
+/**
+ * THE VARIANT A HAND IS JUDGED BY IS THE ONE IT WAS DEALT AS (2026-10-12).
+ *
+ * Settlement used to read the TABLE's game_variant. A bomb pot can deal a
+ * different game (an NLH bomb on a PLO table, a PLO4/5/6 bomb on an NLH
+ * table) and the Pineapple switch deals an NLH table as pineapple, so the
+ * jackpot was applying one game's rule to another game's cards: an NLH bomb
+ * pot on a PLO table was judged as plo4, and a board-quads hand where neither
+ * player's two cards played paid the MAIN jackpot. The dealt variant wins;
+ * the table's dealt game is the fallback only when the hand's is unknown.
+ * Lower-cased, because BBJ_QUALIFYING_HANDS is keyed that way.
+ */
+export function bbjJudgedVariant(
+  dealtVariant: string | null | undefined,
+  tableVariant: string | null | undefined
+): string {
+  const dealt = typeof dealtVariant === 'string' ? dealtVariant.trim() : '';
+  if (dealt) return dealt.toLowerCase();
+  const table = typeof tableVariant === 'string' ? tableVariant.trim() : '';
+  return (table || 'nlh').toLowerCase();
+}
+
+/**
+ * ONLY THE FIRST RUNOUT COUNTS (BBJ_RULES.onlyFirstRunout), FOR THE WINNERS
+ * TOO (2026-10-12).
+ *
+ * The showdown and the board settlement hands the detectors were already board
+ * one's. The winner list was not: on a run-it-multiple-times hand it held
+ * everyone paid on ANY run, and a loser is "anyone not a winner", so a player
+ * who lost board one with a qualifying hand and won run two was never judged.
+ * When the runout recorded board one's own winners for THIS hand, the jackpot
+ * uses those; otherwise (a single-run hand, or a stale record from an earlier
+ * hand) it uses the hand's winner list unchanged. Side pots and hi-lo low
+ * halves are treated exactly as a single-run hand treats them - board one's
+ * record carries everyone board one paid.
+ */
+export function bbjFirstRunoutWinnerIds(
+  handNumber: number,
+  boardOne: { handNumber: number; ids: readonly string[] } | null | undefined,
+  handWinnerIds: readonly string[]
+): string[] {
+  if (boardOne && boardOne.handNumber === handNumber && boardOne.ids.length > 0) {
+    return [...boardOne.ids];
+  }
+  return [...handWinnerIds];
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // LOOKUP FUNCTIONS
@@ -686,10 +734,10 @@ export interface BBJDetectionResult {
  * - 3+ players must be dealt in preflop (FIX 145)
  * - Not available for Double/Triple Board games
  * - If run it multiple times, only first runout counts
- * - If multiple losers qualify, prize split proportionally
+ * - If multiple losers qualify, the STRONGEST losing hand takes it (no split)
  *
  * @param showdownResults - Array of { userId, handRanking, handName, kickers, holeCards }
- * @param winnerId - The user ID of the hand winner
+ * @param winnerId - The hand winner, or all of them (board one's only on a multi-run hand)
  * @param variant - Game variant (nlh, plo4, plo5, etc.)
  * @param potSize - Pot size in chips/dollars
  * @param bigBlind - Big blind amount
@@ -747,6 +795,14 @@ export function detectBBJHit(
    * evaluation — and settlement passes board one's cards to match. It is
    * asserted by construction rather than by a condition. Saying so here is the
    * point: the next person to read the rule should not have to re-derive that.
+   *
+   * CORRECTION 2026-10-12: the showdown and the board were board one's, but
+   * the WINNER IDS were not. The run-it-twice path put everyone paid on ANY
+   * run into `currentHandWinnerIds`, so a player who lost board one with a
+   * qualifying hand and won run two was counted as a winner and never judged
+   * as a loser. Settlement now passes board one's winners only
+   * (`bbjEligibleWinnerIds`); the rule is still enforced by the caller, and
+   * `winnerId` must be board one's winners on a multi-run hand.
    */
   context?: { doubleBoard?: boolean }
 ): BBJDetectionResult {
@@ -814,7 +870,10 @@ export function detectBBJHit(
     // blind demonstrably costs real money. If the board is missing, that is a
     // bug upstream to fix, not a payout to wave through.
     if (!communityCards || communityCards.length < 5) return false;
-    if (hole.length < 2) return false;
+    // EXACTLY two (2026-10-12): the test below drops each of hole[0] and
+    // hole[1] in turn and never looks at a third card, so a three-card hold'em
+    // hand would be judged on two of its cards and the third ignored.
+    if (hole.length !== 2) return false;
     return bothHoleCardsPlay(hole, communityCards, shortDeck);
   };
 
@@ -900,7 +959,8 @@ export type BBJNearMissReason =
   | 'winner_not_quads'
   | 'both_cards_must_play'
   | 'pot_too_small'
-  | 'not_enough_players';
+  | 'not_enough_players'
+  | 'double_board';
 
 export interface BBJNearMissResult {
   nearMiss: boolean;
@@ -920,12 +980,25 @@ export function detectBBJNearMiss(
     kickers: number[];
     holeCards?: Array<{ rank: string; suit: string }>;
   }>,
-  winnerId: string,
+  /**
+   * The pot winner, or ALL of them on a chopped pot - the same contract as
+   * detectBBJHit (2026-10-12).
+   *
+   * This took a single id and settlement passed `currentHandWinnerIds[0]`, so
+   * on a chop the co-winner was filed as a LOSER. Board K K K K 2 with two
+   * players splitting produced a `both_cards_must_play` row and a table toast
+   * for a player who had not lost at all, and that bogus main near miss then
+   * suppressed the mini's. Winners and losers are now chosen exactly as the
+   * hit detector chooses them, so the two can never name different people.
+   */
+  winnerId: string | string[],
   variant: string,
   potSize: number,
   bigBlind: number,
   numPlayersDealt: number,
-  communityCards?: Array<{ rank: string; suit: string }>
+  communityCards?: Array<{ rank: string; suit: string }>,
+  /** The same context detectBBJHit takes; `doubleBoard` is its own gate. */
+  context?: { doubleBoard?: boolean }
 ): BBJNearMissResult {
   const none: BBJNearMissResult = { nearMiss: false };
 
@@ -933,8 +1006,18 @@ export function detectBBJNearMiss(
   const qualifying = BBJ_QUALIFYING_HANDS[normalizedVariant];
   if (!qualifying || qualifying.eligible === false || !qualifying.minLosingHand) return none;
 
-  const winner = showdownResults.find((r) => r.userId === winnerId);
-  const losers = showdownResults.filter((r) => r.userId !== winnerId);
+  const winnerIds = Array.isArray(winnerId) ? winnerId.filter(Boolean) : [winnerId];
+  const winnerIdSet = new Set(winnerIds);
+  const losers = showdownResults.filter((r) => !winnerIdSet.has(r.userId));
+  const winner = showdownResults
+    .filter((r) => winnerIdSet.has(r.userId))
+    .reduce<(typeof showdownResults)[number] | undefined>((best, r) => {
+      if (!best) return r;
+      if (r.handRanking > best.handRanking) return r;
+      if (r.handRanking === best.handRanking && compareKickers(r.kickers, best.kickers) > 0)
+        return r;
+      return best;
+    }, undefined);
   if (!winner || losers.length === 0) return none;
 
   // Find the strongest loser who met the qualifying HAND bar (ignoring every
@@ -981,6 +1064,19 @@ export function detectBBJNearMiss(
     };
   }
 
+  /* THE DOUBLE-BOARD GATE, IN THE SAME PLACE detectBBJHit HAS IT (2026-10-12).
+     Without it a double-board hand that cleared every other MAIN condition
+     came back "no near miss" - read by settlement as "nothing to say" - and
+     the mini's near miss then filed it as `mini_double_board`, a hand that
+     had cleared the MAIN bar recorded as one that nearly took the Mini. */
+  if (BBJ_RULES.excludeDoubleBoard && context?.doubleBoard === true) {
+    return {
+      ...base,
+      reason: 'double_board',
+      message: `So close! ${best.handName} would have qualified, but double-board hands do not qualify.`,
+    };
+  }
+
   if (winner.handRanking < HAND_RANK.FOUR_OF_A_KIND) {
     return {
       ...base,
@@ -990,19 +1086,17 @@ export function detectBBJNearMiss(
   }
 
   // Both-cards-play (hold'em family only; Omaha is game-enforced).
-  const needBothCards =
-    BBJ_RULES.requireBothHoleCards &&
-    (normalizedVariant === 'nlh' ||
-      normalizedVariant === 'flh' ||
-      normalizedVariant === 'pineapple');
+  const needBothCards = bothCardsRuleApplies(normalizedVariant);
   if (needBothCards && communityCards && communityCards.length >= 5) {
     // needBothCards is true only for nlh/flh/pineapple, so short-deck
-    // evaluation never applies on this branch.
+    // evaluation never applies on this branch. EXACTLY two hole cards, as the
+    // hit detector requires (2026-10-12): a hold'em hand of any other size is
+    // refused, never judged on its first two cards.
     const loserOk =
-      (best.holeCards || []).length >= 2 &&
+      (best.holeCards || []).length === 2 &&
       bothHoleCardsPlay(best.holeCards || [], communityCards, false);
     const winnerOk =
-      (winner.holeCards || []).length >= 2 &&
+      (winner.holeCards || []).length === 2 &&
       bothHoleCardsPlay(winner.holeCards || [], communityCards, false);
     if (!loserOk || !winnerOk) {
       return {
@@ -1041,6 +1135,12 @@ function bothHoleCardsPlay(
   board: Array<{ rank: string; suit: string }>,
   shortDeck: boolean
 ): boolean {
+  /* EXACTLY TWO HOLE CARDS (2026-10-12). The loop below drops hole[0] and
+     hole[1] and nothing else, so with three or more cards the "full" hand is
+     built from every card while the partials ignore the rest - the answer is
+     about a different hand from the one the player holds. Every caller is a
+     hold'em-family check, where showdown is two cards; anything else refuses. */
+  if (hole.length !== 2) return false;
   const toCard = (c: { rank: string; suit: string }) => ({ rank: c.rank, suit: c.suit });
   const full = evaluateHand(hole.map(toCard) as never, board.map(toCard) as never, shortDeck);
   for (let drop = 0; drop < 2; drop++) {
@@ -1094,7 +1194,9 @@ function bothCardsPlayOrRefuse(
 ): boolean {
   if (!bothCardsRuleApplies(normalizedVariant)) return true;
   if (!board || board.length < 5) return false;
-  if (hole.length < 2) return false;
+  // Hold'em-family showdown is exactly two hole cards; anything else is
+  // refused rather than judged on whichever two happen to come first.
+  if (hole.length !== 2) return false;
   return bothHoleCardsPlay(hole, board, normalizedVariant === 'short_deck');
 }
 
@@ -1271,7 +1373,10 @@ function isQuadsOfRankOrBetter(
 function isAcesFullOrBetter(handRanking: number, kickers: number[]): boolean {
   if (handRanking > HAND_RANK.FULL_HOUSE) return true;
   if (handRanking < HAND_RANK.FULL_HOUSE) return false;
-  // Full house kickers are [tripRank, pairRank]; A = 14.
+  // kickers[0] is the TRIP rank in both encodings the evaluator and the
+  // fixtures use ([14, 14, 14, 11, 11] and the short [14, 11]); A = 14. The
+  // pair is never read here - the mini takes any aces full - and where a pair
+  // matters, read it with fullHousePairRank, never kickers[1].
   return kickers.length >= 1 && kickers[0] >= RANK_VALUES.A;
 }
 
@@ -1282,9 +1387,11 @@ function isAcesFullOrBetter(handRanking: number, kickers: number[]): boolean {
    had already cleared the MAIN hand bar. So the mini - which exists precisely
    to catch the beats the main turns away - had NO near-miss record at all.
    Measured on production that day: 50 near misses in seven days, ZERO of them
-   about the mini, and 13 of the 50 were `both_cards_must_play`, a rule the
-   mini DROPS. Nobody could say how often the mini nearly fired, or why it did
-   not, which makes its rate unmeasurable and its tuning guesswork.
+   about the mini, and 13 of the 50 were `both_cards_must_play` - a rule the
+   mini dropped at the time and, since Dan's 2026-10-11 ruling ("BOTH cards
+   must play for BBJ or Mini BBJ"), applies exactly as the main does. Nobody
+   could say how often the mini nearly fired, or why it did not, which made its
+   rate unmeasurable and its tuning guesswork.
 
    This mirrors `detectMiniBBJHit` gate for gate and reports the FIRST unmet
    condition, in the order a player would ask about. Every reason is prefixed

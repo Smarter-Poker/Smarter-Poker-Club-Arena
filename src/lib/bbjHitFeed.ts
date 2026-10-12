@@ -89,9 +89,14 @@ const ENRICH_RETRY_MS = 300;
 
 async function enrich(poolId: string): Promise<Record<string, unknown> | null> {
   for (let attempt = 1; attempt <= 2; attempt++) {
+    /* p_kind 'main': this enriches a MAIN jackpot's announcement (a mini never
+       reaches announce()), and "the newest payout on the pool" can be a Mini
+       paid in the same moment - which would put the Mini's players and hands on
+       the main jackpot's takeover. */
     const { data, error } = await supabase.rpc('fn_bbj_recent_hits', {
       p_pool_id: poolId,
       p_limit: 1,
+      p_kind: 'main',
     });
     if (error) {
       reportError(error, 'bbjHitFeed.enrich_failed', { poolId, attempt });

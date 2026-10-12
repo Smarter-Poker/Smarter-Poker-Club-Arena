@@ -104,7 +104,7 @@ describe('the two RakeConfigs agree on the copy a player reads', () => {
 
   it('the engine copy is Title Cased, which is what closed the drift', () => {
     expect(SERVER_RAKE).toContain(
-      "description: 'Full House (Aces Full Of Jacks) Or Better Must LOSE To Quads Or Straight Flush'"
+      "description: 'Aces Full Of Jacks+, Ace In Hand, Both Cards Play, Must LOSE To Quads Or Better'"
     );
     expect(SERVER_RAKE).toContain("description: 'Four Of A Kind (Kings) Or Better Must LOSE'");
     expect(SERVER_RAKE).toContain("label: 'PLO8 (Hi-Lo 8 Or Better)'");

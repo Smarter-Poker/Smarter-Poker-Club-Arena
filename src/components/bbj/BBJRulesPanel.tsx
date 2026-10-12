@@ -25,6 +25,7 @@ import {
 } from '../../config/RakeConfig';
 import {
   getBBJMiniQualifyingInfo,
+  miniRequiresBothHoleCards,
   BBJ_MINI_SPLIT,
   BBJ_MINI_SPLIT_PERCENT,
 } from '../../config/bbjMini';
@@ -186,8 +187,10 @@ export function BBJRulesPanel({ poolAmount = 0, mini = null }: BBJRulesPanelProp
             The Main Rule Turns Away. The Losing Hand Bar Depends On The Game And Is Listed Below:
             Aces Full Or Better In Hold’em, Quad Tens Or Better In PLO5 And FLO5, Quad Deuces In
             Pineapple, And Any Quads In The Other Omaha Games. The Winner Must Still Hold Quads Or
-            Better; The Same Pot, Player And Board Conditions Apply. It Is Paid From The Backup Pool
-            And Pauses While That Reserve Is At Its Floor. One Hand Pays One Jackpot, Never Both.
+            Better. In Hold’em And Pineapple, Both Hole Cards Must Play, For The Losing Hand And The
+            Winning Hand Alike. The Same Pot, Player And Board Conditions Apply. It Is Paid From The
+            Backup Pool And Pauses While That Reserve Is At Its Floor. One Hand Pays One Jackpot,
+            Never Both.
           </p>
 
           <table className="bbj-rules__table">
@@ -203,7 +206,15 @@ export function BBJRulesPanel({ poolAmount = 0, mini = null }: BBJRulesPanelProp
                 return (
                   <tr key={row.key} className={info.eligible ? '' : 'is-ineligible'}>
                     <td>{row.games}</td>
-                    <td>{info.eligible ? titleCase(info.shortLabel) : 'Mini Not Available'}</td>
+                    <td>
+                      {info.eligible ? titleCase(info.shortLabel) : 'Mini Not Available'}
+                      {/* Both hole cards play for the mini too (Dan 2026-10-11).
+                          Hold'em family only: Omaha plays exactly two by its
+                          own rules, so the row would say nothing new there. */}
+                      {info.eligible && miniRequiresBothHoleCards(row.key) && (
+                        <span className="bbj-rules__money-sub">Both Hole Cards Must Play</span>
+                      )}
+                    </td>
                   </tr>
                 );
               })}

@@ -1,5 +1,46 @@
 {
   "schemaVersion": 1,
+  "diamondCompletionInputRouting20261012": {
+    "reason": "Reviewed additive Diamond jackpot JSON, exact session-recap SQL and must-move fixture routing into the existing required Diamond SQL acceptance lane. Refresh only current input fingerprints; financial SQL, assertions, fixed input inventories, historical pins and qualification statuses remain unchanged. This input declaration is not native execution, financial certification, installation or publication.",
+    "previousCurrentClassifierPin": {
+      "bytes": 35991,
+      "sha256": "d064527051d9ca3b8687b8414144a81008571552ab3d73f104ee462c0dac2a80"
+    },
+    "currentClassifierPin": {
+      "bytes": 36133,
+      "sha256": "5c5de06d630dce62812f574dcbbb11f622f73c167c25d8847a320da5735d107a"
+    }
+  },
+  "diamondRetentionMainIntegration20261012": {
+    "reason": "Preserve protected main horse retention qualifications and Diamond acceptance together. Refresh only current integrated workflow input fingerprint; preserve financial inputs, historical pins, assertions and qualification statuses. This is source binding, not runtime or production certification.",
+    "previousDiamondWorkflowPin": {
+      "bytes": 205794,
+      "sha256": "e85cb68743eb7bc58e6b3c089e3f731ba0ae9a96cc9ef3b4b055d7e031fb518d"
+    },
+    "protectedMainWorkflowPin": {
+      "bytes": 208650,
+      "sha256": "726fc785d4c857df179022236ca835b70891a323ba25f306a1ccd2f6d59b8000"
+    },
+    "combinedWorkflowPin": {
+      "bytes": 208650,
+      "sha256": "726fc785d4c857df179022236ca835b70891a323ba25f306a1ccd2f6d59b8000"
+    }
+  },
+  "diamondInventoryMainIntegration20261012": {
+    "reason": "Preserve protected main committed-inventory native qualification beside Diamond acceptance. Refresh only current integrated workflow input fingerprint, retaining financial inputs, historical pins, assertions and qualification statuses. This is source binding, not runtime or production certification.",
+    "previousDiamondWorkflowPin": {
+      "bytes": 208650,
+      "sha256": "726fc785d4c857df179022236ca835b70891a323ba25f306a1ccd2f6d59b8000"
+    },
+    "protectedMainWorkflowPin": {
+      "bytes": 209626,
+      "sha256": "193e61fdf98e93dcef7ae20fbc5fe447d4048a1e8605a452aa239f4a75e0f7dc"
+    },
+    "combinedWorkflowPin": {
+      "bytes": 209626,
+      "sha256": "193e61fdf98e93dcef7ae20fbc5fe447d4048a1e8605a452aa239f4a75e0f7dc"
+    }
+  },
   "leaderboardPlainPartitionRegression20261008": {
     "reason": "Enforce the native PG17 plain partition regression in the existing Accounting4 lane alongside all retained restore controls. Preserve concurrent main additions, financial inputs, historical pins and qualification status. Source fingerprint refresh is not actual Auth or financial qualification.",
     "previousWorkflowPin": {
@@ -2279,17 +2320,6 @@
       "sha256": "526ce2cb5ae8c17319b7181238858a9d820a4609f4a90f7572c19d316d552ee9"
     }
   },
-  "diamondCompletionInputRouting20261012": {
-    "reason": "Reviewed additive Diamond jackpot JSON, exact session-recap SQL and must-move fixture routing into the existing required Diamond SQL acceptance lane. Refresh only current input fingerprints; financial SQL, assertions, fixed input inventories, historical pins and qualification statuses remain unchanged. This input declaration is not native execution, financial certification, installation or publication.",
-    "previousCurrentClassifierPin": {
-      "bytes": 35991,
-      "sha256": "d064527051d9ca3b8687b8414144a81008571552ab3d73f104ee462c0dac2a80"
-    },
-    "currentClassifierPin": {
-      "bytes": 36133,
-      "sha256": "5c5de06d630dce62812f574dcbbb11f622f73c167c25d8847a320da5735d107a"
-    }
-  },
   "horseRequestRetentionIntegration20261012": {
     "reason": "Add the native eight-day settled horse request regression to existing Accounting3 alongside unchanged financial qualifications. Refresh only current workflow source fingerprint; preserve all historical pins and qualification outcomes.",
     "previousWorkflowPin": {
@@ -2385,21 +2415,6 @@
       "sha256": "726fc785d4c857df179022236ca835b70891a323ba25f306a1ccd2f6d59b8000"
     }
   },
-  "diamondRetentionMainIntegration20261012": {
-    "reason": "Preserve protected main horse retention qualifications and Diamond acceptance together. Refresh only current integrated workflow input fingerprint; preserve financial inputs, historical pins, assertions and qualification statuses. This is source binding, not runtime or production certification.",
-    "previousDiamondWorkflowPin": {
-      "bytes": 205794,
-      "sha256": "e85cb68743eb7bc58e6b3c089e3f731ba0ae9a96cc9ef3b4b055d7e031fb518d"
-    },
-    "protectedMainWorkflowPin": {
-      "bytes": 208650,
-      "sha256": "726fc785d4c857df179022236ca835b70891a323ba25f306a1ccd2f6d59b8000"
-    },
-    "combinedWorkflowPin": {
-      "bytes": 208650,
-      "sha256": "726fc785d4c857df179022236ca835b70891a323ba25f306a1ccd2f6d59b8000"
-    }
-  },
   "inventoryCommittedPages20261012": {
     "reason": "Add required Accounting3 native actual-deferred-FK fail-before/pass-after proof. Preserve all existing financial inputs, assertions and qualification status. Source fingerprint is not production proof.",
     "previousWorkflowPin": {
@@ -2416,21 +2431,6 @@
     "protectedMainRetentionWorkflowPin": {
       "bytes": 208650,
       "sha256": "726fc785d4c857df179022236ca835b70891a323ba25f306a1ccd2f6d59b8000"
-    }
-  },
-  "diamondInventoryMainIntegration20261012": {
-    "reason": "Preserve protected main committed-inventory native qualification beside Diamond acceptance. Refresh only current integrated workflow input fingerprint, retaining financial inputs, historical pins, assertions and qualification statuses. This is source binding, not runtime or production certification.",
-    "previousDiamondWorkflowPin": {
-      "bytes": 208650,
-      "sha256": "726fc785d4c857df179022236ca835b70891a323ba25f306a1ccd2f6d59b8000"
-    },
-    "protectedMainWorkflowPin": {
-      "bytes": 209626,
-      "sha256": "193e61fdf98e93dcef7ae20fbc5fe447d4048a1e8605a452aa239f4a75e0f7dc"
-    },
-    "combinedWorkflowPin": {
-      "bytes": 209626,
-      "sha256": "193e61fdf98e93dcef7ae20fbc5fe447d4048a1e8605a452aa239f4a75e0f7dc"
     }
   }
 }

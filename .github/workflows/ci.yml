@@ -1890,6 +1890,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-cashier-statement-db-postgres.py
+      - name: Tournament chat is off by default, Spins and Sit N Gos keep chat
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-tournament-chat-default-db-postgres.py
       - name: Accounting agreement changes preserve immutable observed history
         if: matrix.shard == 1
         env:

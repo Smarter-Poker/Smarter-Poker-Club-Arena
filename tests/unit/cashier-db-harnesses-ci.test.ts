@@ -39,6 +39,11 @@ const HARNESSES = [
     'cashier-statements/db-one-move-once.sql',
     '20261012030847_the_statement_counts_each_move_once_and_names_its_wallet.sql',
   ],
+  [
+    'test-tournament-chat-default-db-postgres.py',
+    'tournament-chat-default-db/fixture.sql',
+    '20261012040851_tournament_chat_is_off_by_default.sql',
+  ],
 ] as const;
 
 type Step = { name?: string; if?: string; run?: string; env?: Record<string, string> };

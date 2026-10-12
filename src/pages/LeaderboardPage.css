@@ -18,24 +18,24 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
-.leaderboard-page .sc__body {
+.leaderboard-page .club-page-body {
   font:
     400 clamp(13px, 3.5cqw, 17px)/1.5 Inter,
     sans-serif;
 }
-.leaderboard-page .sc__body :is(h2, h3, p, dl) {
+.leaderboard-page .club-page-body :is(h2, h3, p, dl) {
   margin: 0;
 }
-.leaderboard-page .sc__body :is(h2, h3, strong) {
+.leaderboard-page .club-page-body :is(h2, h3, strong) {
   color: #e4e7ec;
   text-shadow: 0 1px 1px #050607;
 }
-.leaderboard-page .sc__body h2 {
+.leaderboard-page .club-page-body h2 {
   font:
     700 clamp(19px, 4.8cqw, 26px)/1.18 'Roboto Condensed',
     sans-serif;
 }
-.leaderboard-page .sc__body button {
+.leaderboard-page .club-page-body button {
   min-height: 44px;
   min-width: 44px;
   padding: 8px 4px;
@@ -49,15 +49,15 @@
   cursor: pointer;
   text-align: left;
 }
-.leaderboard-page .sc__body button:disabled {
+.leaderboard-page .club-page-body button:disabled {
   opacity: 0.4;
   cursor: default;
 }
-.leaderboard-page .sc__body :is(button, [role='button'], select):focus-visible {
+.leaderboard-page .club-page-body :is(button, [role='button'], select):focus-visible {
   outline: 2px solid #45adff;
   outline-offset: 3px;
 }
-.leaderboard-page .sc__body button:active {
+.leaderboard-page .club-page-body button:active {
   color: #f4f7fb;
 }
 .leaderboard-page .lb-live-rail {
@@ -133,10 +133,10 @@
 .leaderboard-page .lb-control-actions {
   font-size: 0.9em;
 }
-.leaderboard-page .sc__body :is(.tab-btn, .lb-filter-chip, .scope-toggle button) {
+.leaderboard-page .club-page-body :is(.tab-btn, .lb-filter-chip, .scope-toggle button) {
   color: #9aa5b3;
 }
-.leaderboard-page .sc__body :is(.tab-btn, .lb-filter-chip, .scope-toggle button).active {
+.leaderboard-page .club-page-body :is(.tab-btn, .lb-filter-chip, .scope-toggle button).active {
   color: #45adff;
   text-decoration: underline;
   text-underline-offset: 7px;
@@ -508,5 +508,20 @@
 @keyframes lb-console-loading {
   to {
     opacity: 0.5;
+  }
+}
+
+/* The owner removed the outer console; rankings use the document width. */
+.leaderboard-page {
+  width: min(100%, 1200px);
+  margin-inline: auto;
+  padding: 20px 20px var(--bottom-nav-clearance, 112px);
+}
+.leaderboard-page .lb-console {
+  max-width: none;
+}
+@media (max-width: 620px) {
+  .leaderboard-page {
+    padding: 12px 16px 100px;
   }
 }

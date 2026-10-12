@@ -915,3 +915,101 @@
     animation: none;
   }
 }
+
+/* October 12 owner direction: readable club administration, no bulky panels. */
+.club-settings-page {
+  background: #000;
+  color: #e4e7ec;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+}
+.club-settings-heading {
+  width: min(100%, 1120px);
+  margin: 0 auto;
+  padding: 24px 20px 0;
+}
+.club-settings-heading h1 {
+  margin: 8px 0;
+  font-size: clamp(30px, 4vw, 44px);
+}
+.club-settings-heading p {
+  color: #9aa5b3;
+}
+.club-settings-heading nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+.club-settings-heading a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: #45adff;
+  text-decoration: none;
+}
+.club-settings-page .settings-content {
+  max-width: 1120px;
+  margin-inline: auto;
+  padding: 20px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 24px 40px;
+}
+.club-settings-page .settings-section {
+  min-width: 0;
+  background: transparent !important;
+  border: 0 !important;
+  border-top: 1px solid rgb(154 165 179 / 20%) !important;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  padding: 20px 0;
+  margin: 0;
+}
+.club-settings-page .settings-section h3 {
+  font-size: 22px;
+  color: #e4e7ec;
+  border: 0;
+  letter-spacing: 0;
+  text-transform: none;
+  scroll-margin-top: 150px;
+}
+.club-settings-page .settings-content > :not(.settings-section) {
+  grid-column: 1/-1;
+}
+.club-settings-page .form-group input,
+.club-settings-page .form-group textarea {
+  border-width: 1px;
+  border-radius: 0;
+  background: #0a0b0d;
+  box-shadow: none;
+}
+.club-settings-page .setting-description {
+  line-height: 1.5;
+}
+.club-settings-page .settings-save-bar {
+  grid-column: 1/-1;
+}
+@media (max-width: 760px) {
+  .club-settings-page .settings-content {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 16px;
+    gap: 20px;
+  }
+  .club-settings-heading {
+    padding-inline: 16px;
+  }
+}
+
+.club-settings-page .settings-section > button {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  color: #45adff !important;
+  font-size: 16px;
+  min-height: 44px;
+  padding-inline: 0 !important;
+}
+.club-settings-page .danger-zone button {
+  color: #ff5b6e !important;
+}

@@ -374,10 +374,6 @@ export default function FindPlayerModal({
               },
             }}
           >
-            <p className={`sc-copy sc-copy--center ${styles.copy}`}>
-              Find Any Player, See Who Is Playing, And Open Their Live Game.
-            </p>
-
             {showAccessRules && (
               <section className={styles.rules} aria-label="Player Search Access Rules">
                 <p className={`sc-copy ${styles.copy}`}>
@@ -394,7 +390,7 @@ export default function FindPlayerModal({
             {/* A groove cut into the glass, not a bordered well. */}
             <div className={styles.field}>
               <label className="sc-label sc-ink--blue" htmlFor="find-player-query">
-                Player Name, Poker Alias, Or Number
+                Name, Alias Or Number
               </label>
               <input
                 id="find-player-query"
@@ -421,7 +417,7 @@ export default function FindPlayerModal({
                   // and the dialog cannot both react to the same keypress.
                 }}
                 onFocus={() => suggestions.length && setShowSuggestions(true)}
-                aria-label="Player Name, Poker Alias, Or Number"
+                aria-label="Name, Alias Or Number"
                 aria-autocomplete="list"
                 aria-expanded={showSuggestions}
                 autoFocus
@@ -464,37 +460,40 @@ export default function FindPlayerModal({
             )}
 
             {/* The three filters: lit words, never a drawn select. */}
-            <div className={styles.filters}>
-              <WordFilter
-                label="Network"
-                groupLabel="Player Search Network"
-                options={SCOPE_OPTIONS}
-                value={scope}
-                onChange={setScope}
-              />
-              <WordFilter
-                label="Status"
-                groupLabel="Player Search Status"
-                options={PRESENCE_OPTIONS}
-                value={presence}
-                onChange={setPresence}
-              />
-              <WordFilter
-                label="Sort"
-                groupLabel="Player Search Sort"
-                options={SORT_OPTIONS}
-                value={sort}
-                onChange={setSort}
-              />
-              <div className={styles.fact}>
-                <span className="sc-label sc-ink--blue">Directory</span>
-                <span className={`${styles.factValue} sc-ink--silver`}>
-                  {total
-                    ? `${total} Eligible Match${total === 1 ? '' : 'Es'}`
-                    : 'Global Player Directory'}
-                </span>
+            <details className={styles.filterDetails}>
+              <summary>Filters</summary>
+              <div className={styles.filters}>
+                <WordFilter
+                  label="Network"
+                  groupLabel="Player Search Network"
+                  options={SCOPE_OPTIONS}
+                  value={scope}
+                  onChange={setScope}
+                />
+                <WordFilter
+                  label="Status"
+                  groupLabel="Player Search Status"
+                  options={PRESENCE_OPTIONS}
+                  value={presence}
+                  onChange={setPresence}
+                />
+                <WordFilter
+                  label="Sort"
+                  groupLabel="Player Search Sort"
+                  options={SORT_OPTIONS}
+                  value={sort}
+                  onChange={setSort}
+                />
+                <div className={styles.fact}>
+                  <span className="sc-label sc-ink--blue">Directory</span>
+                  <span className={`${styles.factValue} sc-ink--silver`}>
+                    {total
+                      ? `${total} Eligible Match${total === 1 ? '' : 'Es'}`
+                      : 'Global Player Directory'}
+                  </span>
+                </div>
               </div>
-            </div>
+            </details>
 
             <div className={styles.results} aria-live="polite" aria-busy={isSearching}>
               {error && <p className={`sc-copy sc-ink--red ${styles.copy}`}>{titleCase(error)}</p>}
@@ -656,8 +655,7 @@ export default function FindPlayerModal({
               )}
               {!error && !isSearching && !lastCompletedQueryRef.current && (
                 <p className={`sc-copy sc-copy--center sc-ink--muted ${styles.copy}`}>
-                  Search By Alias, Display Name, Or Player Number. Close Matches Appear After{' '}
-                  {FUZZY_MIN_CHARS} Letters - Spelling Does Not Have To Be Exact.
+                  Enter A Name Or Player Number.
                 </p>
               )}
             </div>

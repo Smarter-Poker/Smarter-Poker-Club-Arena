@@ -72,7 +72,9 @@ describe('Club Data touch targets', () => {
     expect(rule('.toolSearch input')).toMatch(/min-height:\s*44px/);
     expect(rule('.toolSearch input')).toMatch(/font-size:\s*16px/);
     expect(rule('.toolSort select')).toMatch(/min-height:\s*44px/);
-    expect(rule('.toolSort select')).toMatch(/font-size:\s*max\(16px,\s*3\.2cqw\)/);
+    expect(rule('.toolSort select')).toMatch(
+      /font-size:\s*max\(16px,\s*calc\(3\.2\s*\*\s*var\(--rake-unit,\s*1cqw\)\)\)/
+    );
   });
 
   it('wraps completed exports and narrow reporting windows inside their consoles', () => {

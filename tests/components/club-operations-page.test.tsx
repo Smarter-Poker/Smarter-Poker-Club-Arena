@@ -236,7 +236,7 @@ describe('the operations workspace reads the club', () => {
     rpcMock.mockResolvedValue({ data: payload(), error: null });
     mount();
     await waitFor(() => expect(screen.getByText('Chip Requests Waiting')).toBeTruthy());
-    expect(screen.getByLabelText('3 Waiting')).toBeTruthy();
+    expect(screen.getAllByLabelText('3 Waiting')).toHaveLength(2);
     // The cashier is one desk for three queues: 4 chip requests, 3 cash outs
     // and 2 credit requests. A badge of 4 would send an operator to a tile
     // reading 4 with 9 things behind it.

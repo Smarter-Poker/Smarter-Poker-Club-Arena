@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import ClubControlActions from '../../components/club/ClubControlActions';
 import { Link, useParams } from 'react-router-dom';
 import {
   getClubOperationBadge,
@@ -48,6 +49,8 @@ function WorkspacePage({
   alerts,
   liveLine = 'Live Systems Remain Authoritative',
   readingState,
+  children,
+  compact = false,
 }: {
   eyebrow: string;
   title: string;
@@ -58,6 +61,8 @@ function WorkspacePage({
   alerts?: WorkspaceAlert[];
   liveLine?: string;
   readingState?: ClubOperationsOverviewState;
+  children?: ReactNode;
+  compact?: boolean;
 }) {
   /* The club source the section rail beside this grid reads, so a card and
      the rail tab for the same page carry the same club. Paths that are not
@@ -86,7 +91,15 @@ function WorkspacePage({
   return (
     <section
       className={styles.page}
-      data-workspace={title === 'Rewards Center' ? 'rewards' : undefined}
+      data-workspace={
+        compact
+          ? title === 'Club Control'
+            ? 'club-control'
+            : 'play-records'
+          : title === 'Rewards Center'
+            ? 'rewards'
+            : undefined
+      }
     >
       <header className={styles.hero}>
         <div className={styles.heroCopy}>
@@ -160,6 +173,7 @@ function WorkspacePage({
         </section>
       )}
 
+      {children}
       <section className={styles.grid} aria-label={`${title} Tools`}>
         {links.map((item, index) => (
           <Link
@@ -402,6 +416,7 @@ export function PlayWorkspacePage() {
     <WorkspacePage
       eyebrow="Poker Command Circuit"
       title="Play & Review"
+      compact
       description="Move From Live Competition Into Results, Hands, Sessions, And Rankings Without Crossing Disconnected History Surfaces."
       art="assets/club-buttons/lobby/shark-club-championship-ad-v2.png"
       links={[
@@ -516,6 +531,7 @@ export function ClubControlWorkspacePage() {
     <WorkspacePage
       eyebrow="House Circuit"
       title="Club Control"
+      compact
       description="Policy, Communications, Campaigns, Identity, And Permissions In One Governed Workspace."
       art="assets/club-buttons/lobby/lobby-command-chassis-v2.png"
       liveLine={
@@ -525,6 +541,8 @@ export function ClubControlWorkspacePage() {
       readings={readings}
       alerts={alerts}
       links={links}
-    />
+    >
+      <ClubControlActions />
+    </WorkspacePage>
   );
 }

@@ -128,6 +128,7 @@ export default function ClubSettingsPage() {
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   /**
    * The two rake fields are held as RAW TEXT while the owner types and only
    * parsed/clamped on blur. See the onBlur handlers for why: clamping a
@@ -830,7 +831,7 @@ export default function ClubSettingsPage() {
   };
 
   const saveSettings = async () => {
-    if (!isOwner) return;
+    if (!isOwner || savingRef.current) return;
     if (formError) {
       toast.error(formError);
       return;
@@ -849,6 +850,7 @@ export default function ClubSettingsPage() {
         .trim()
         .slice(0, LOBBY_MESSAGE_MAX),
     };
+    savingRef.current = true;
     setSaving(true);
     try {
       // Upload the pending logo first so the row update carries its URL.
@@ -1012,6 +1014,7 @@ export default function ClubSettingsPage() {
       // toast - skipped this line and left `saving` stuck true: Save
       // permanently disabled with a spinner, Remove Logo disabled with it, and
       // no way out but a reload.
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -1280,6 +1283,18 @@ export default function ClubSettingsPage() {
 
   return (
     <div className="club-settings-page">
+      <header className="club-settings-heading">
+        <p>{savedClubName}</p>
+        <h1>Club Settings</h1>
+        <p>Manage Your Club Identity, Joining Policy And Operating Settings.</p>
+        <nav aria-label="Settings Sections">
+          <a href="#settings-identity">Identity</a>
+          <a href="#settings-privacy">Joining Policy</a>
+          <a href="#settings-sharing">Invites</a>
+          <a href="#settings-history">Activity</a>
+          <a href="#settings-ownership">Ownership</a>
+        </nav>
+      </header>
       <div className="settings-content">
         {/* Non-owners used to get a page of silently disabled inputs with no
             explanation — every control looked broken. Say why, once. */}
@@ -1307,7 +1322,7 @@ export default function ClubSettingsPage() {
             border: '1px solid #333',
           }}
         >
-          <h3>Share Club</h3>
+          <h3 id="settings-sharing">Share Club</h3>
           <p className="setting-description" style={{ marginBottom: 16 }}>
             Invite Players To Join Your Club By Sharing Your Unique Referral Link.
           </p>
@@ -1440,7 +1455,7 @@ export default function ClubSettingsPage() {
         )}
 
         <section className="settings-section">
-          <h3>Basic Information</h3>
+          <h3 id="settings-identity">Basic Information</h3>
           <div className="form-group">
             <label htmlFor="club-name">Club Name</label>
             <input
@@ -1634,7 +1649,7 @@ export default function ClubSettingsPage() {
 
         {/* Privacy */}
         <section className="settings-section">
-          <h3>Privacy</h3>
+          <h3 id="settings-privacy">Privacy</h3>
           <div className="toggle-row">
             <div className="toggle-info">
               <span className="toggle-label">Public Club</span>
@@ -1820,7 +1835,7 @@ export default function ClubSettingsPage() {
             owner-only, so a staff member who could read the log never saw it. */}
         {canSeeAuditLog && clubId && (
           <section className="settings-section audit-section">
-            <h3>Admin Activity Log</h3>
+            <h3 id="settings-history">Admin Activity Log</h3>
             <AuditLog clubId={clubId} />
           </section>
         )}
@@ -1847,7 +1862,7 @@ export default function ClubSettingsPage() {
         {/* Ownership - Owner Only */}
         {isOwner && (
           <section className="settings-section handover-section">
-            <h3>Ownership</h3>
+            <h3 id="settings-ownership">Ownership</h3>
             <div className="danger-item">
               <div className="danger-info">
                 <span className="danger-label">Hand Over This Club</span>

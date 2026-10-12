@@ -160,7 +160,9 @@ describe('Leaderboard Page Recovery States', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Retry Club List' }));
 
-    await waitFor(() => expect(screen.getByText('The Club')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText('The Club', { selector: '.lb-club-readout' })).toBeInTheDocument()
+    );
     expect(screen.queryByText('Your Club List Could Not Be Loaded.')).not.toBeInTheDocument();
   });
 
@@ -184,7 +186,7 @@ describe('Leaderboard Page Recovery States', () => {
       resolveMemberships(memberships);
     });
 
-    expect(screen.getByText('The Club')).toBeInTheDocument();
+    expect(screen.getByText('The Club', { selector: '.lb-club-readout' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Retry Club List' })).not.toBeInTheDocument();
   });
 
@@ -463,7 +465,9 @@ describe('Leaderboard Page Recovery States', () => {
   it('Clears An Unavailable Club Deep Link Instead Of Loading That Club', async () => {
     renderPage('/leaderboard?club=not-a-member-club');
 
-    expect(await screen.findByText('The Club')).toBeInTheDocument();
+    expect(
+      await screen.findByText('The Club', { selector: '.lb-club-readout' })
+    ).toBeInTheDocument();
     await waitFor(() => expect(screen.getByTestId('current-search')).toHaveTextContent(''));
     expect(h.toastError).toHaveBeenCalledWith(
       'That Club Leaderboard Is Not Available To You. Showing Your Clubs Instead.'

@@ -670,3 +670,161 @@ describe('a retained runtime superseded before the browsers start', () => {
     }
   });
 });
+
+// Runs 38206133852 and 38244592617 (2026-10-12): the Lightning operator spec
+// compared build-info.json with the SHA recorded at the start of the job and
+// failed whenever production published a LATER protected-main commit while
+// its browsers ran. That is could-not-tell (CLAUDE.md 10.86 rule 1). The step
+// is now bracketed by two build-info reads and classified by the same
+// `bracket` classifier as the Phase 1 journeys: exact verifies, a forward move
+// is an UNKNOWN non-verdict, a rollback or off-lineage SHA is a named red.
+describe('the Lightning operator certificate classifies a release that moved under it', () => {
+  const workflow = readFileSync(
+    resolve(process.cwd(), '.github/workflows/post-deploy-e2e.yml'),
+    'utf8'
+  );
+  const stepBody = (name: string): string => {
+    const at = workflow.indexOf(`- name: ${name}`);
+    expect(at, `step "${name}" must exist`).toBeGreaterThanOrEqual(0);
+    return workflow.slice(at, workflow.indexOf('\n      - name:', at + name.length));
+  };
+  const scriptOf = (body: string): string =>
+    body
+      .slice(body.indexOf('run: |') + 'run: |'.length)
+      .split('\n')
+      .map((line) => line.replace(/^ {10}/, ''))
+      .join('\n');
+  const certify = stepBody('Certify the authenticated Lightning operator cold loads');
+  const classify = stepBody('Classify the release the Lightning operator certificate ran against');
+
+  it('brackets its own browsers with two build-info reads and hands the spec no LIVE_SHA', () => {
+    const before = certify.indexOf('read_release release-bracket/lightning-before.json');
+    const run = certify.indexOf(
+      'npx playwright test tests/e2e/production-lightning-operator.spec.ts'
+    );
+    const after = certify.indexOf('read_release release-bracket/lightning-after.json');
+    expect(before).toBeGreaterThan(0);
+    expect(run).toBeGreaterThan(before);
+    expect(after).toBeGreaterThan(run);
+    // The browser verdict is preserved through the closing read.
+    expect(certify).toContain('rc=$?');
+    expect(certify).toContain('exit $rc');
+    expect(certify).not.toContain('LIVE_SHA');
+    expect(classify).toContain('EXPECTED_LIVE_SHA: ${{ steps.live.outputs.sha }}');
+    expect(classify).toContain(
+      'production-e2e-provenance.mjs bracket "$EXPECTED_LIVE_SHA" \\\n            release-bracket/lightning-before.json release-bracket/lightning-after.json'
+    );
+  });
+
+  it('keeps no bare SHA equality in the spec itself', () => {
+    const spec = readFileSync(
+      resolve(process.cwd(), 'tests/e2e/production-lightning-operator.spec.ts'),
+      'utf8'
+    );
+    expect(spec).not.toMatch(/toBe\(\s*process\.env\.LIVE_SHA\s*\)/);
+    expect(spec).not.toContain('LIVE_SHA');
+  });
+
+  // A git hook runs this suite with GIT_DIR, GIT_INDEX_FILE and friends set
+  // for the repository being pushed. The fixture must never inherit them.
+  const isolatedEnv = (): NodeJS.ProcessEnv => {
+    const env = { ...process.env };
+    for (const name of spawnSync('git', ['rev-parse', '--local-env-vars'], { encoding: 'utf8' })
+      .stdout.trim()
+      .split(/\s+/))
+      delete env[name];
+    return env;
+  };
+  const git = (cwd: string, ...args: string[]) => {
+    const r = spawnSync('git', args, {
+      cwd,
+      encoding: 'utf8',
+      env: {
+        ...isolatedEnv(),
+        GIT_AUTHOR_NAME: 't',
+        GIT_AUTHOR_EMAIL: 't@example.invalid',
+        GIT_COMMITTER_NAME: 't',
+        GIT_COMMITTER_EMAIL: 't@example.invalid',
+      },
+    });
+    if (r.status !== 0) throw new Error(r.stderr);
+    return r.stdout.trim();
+  };
+  const commit = (cwd: string, label: string) => {
+    writeFileSync(join(cwd, 'marker.txt'), label);
+    git(cwd, 'add', '-A');
+    git(cwd, 'commit', '-q', '-m', label);
+    return git(cwd, 'rev-parse', 'HEAD');
+  };
+
+  const runClassify = (cwd: string, expected: string, before: string, after: string) => {
+    spawnSync('mkdir', ['-p', join(cwd, 'release-bracket')]);
+    writeFileSync(
+      join(cwd, 'release-bracket/lightning-before.json'),
+      JSON.stringify({ ca_sha: before })
+    );
+    writeFileSync(
+      join(cwd, 'release-bracket/lightning-after.json'),
+      JSON.stringify({ ca_sha: after })
+    );
+    const script = scriptOf(classify)
+      .replaceAll('timeout 30s git fetch --no-tags origin main', 'true')
+      .replaceAll('node scripts/ci/production-e2e-provenance.mjs', `node ${CLI}`);
+    const output = join(cwd, '..', 'output');
+    const summary = join(cwd, '..', 'summary');
+    writeFileSync(output, '');
+    writeFileSync(summary, '');
+    const r = spawnSync('bash', ['-c', script], {
+      cwd,
+      encoding: 'utf8',
+      env: {
+        ...isolatedEnv(),
+        EXPECTED_LIVE_SHA: expected,
+        GITHUB_OUTPUT: output,
+        GITHUB_STEP_SUMMARY: summary,
+      },
+    });
+    return {
+      ...r,
+      output: readFileSync(output, 'utf8'),
+      summary: readFileSync(summary, 'utf8'),
+    };
+  };
+
+  it('verifies an exact release, calls a forward publish UNKNOWN, and refuses a rollback or an off-line SHA by name', () => {
+    const root = mkdtempSync(join(tmpdir(), 'lightning-release-'));
+    const repo = join(root, 'repo');
+    try {
+      spawnSync('mkdir', ['-p', repo]);
+      git(repo, 'init', '-q');
+      const earlier = commit(repo, 'earlier');
+      const recorded = commit(repo, 'recorded');
+      const later = commit(repo, 'later');
+
+      const exact = runClassify(repo, recorded, recorded, recorded);
+      expect(exact.status, exact.stderr + exact.stdout).toBe(0);
+      expect(exact.output).toContain('certified=true');
+      expect(exact.stdout).not.toContain('UNKNOWN');
+
+      const forward = runClassify(repo, recorded, recorded, later);
+      expect(forward.status, forward.stderr + forward.stdout).toBe(0);
+      expect(forward.output).not.toContain('certified=true');
+      expect(forward.stdout).toContain(
+        `::warning::UNKNOWN: production advanced during certification (superseded ${later})`
+      );
+      expect(forward.summary).toContain('NON-VERDICT: production advanced from');
+
+      const rollback = runClassify(repo, recorded, recorded, earlier);
+      expect(rollback.status).toBe(1);
+      expect(rollback.stdout).toContain('::error::Lightning operator release mismatch');
+      expect(rollback.stderr).toContain('not a forward release');
+
+      const offLine = runClassify(repo, recorded, recorded, 'f'.repeat(40));
+      expect(offLine.status).toBe(1);
+      expect(offLine.stdout).toContain('::error::Lightning operator release mismatch');
+      expect(offLine.stderr).toContain('does not resolve');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

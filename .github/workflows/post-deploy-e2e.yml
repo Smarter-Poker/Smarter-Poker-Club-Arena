@@ -577,7 +577,24 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
+      # WHICH RELEASE DID THE LIGHTNING OPERATOR CERTIFICATE RUN AGAINST?
+      #
+      # Until 2026-10-12 the spec compared build-info.json against the SHA this
+      # job recorded at its start and failed on any difference. The publisher
+      # fires on every merge, so a forward publish while the browsers ran sent
+      # this step red with no defect on the live site (runs 38206133852 and
+      # 38244592617: production had advanced to a later protected-main commit).
+      # That is "could not tell" (CLAUDE.md 10.86 rule 1), not a failure.
+      #
+      # The step now reads build-info.json immediately before and after its own
+      # browsers, and the step below classifies that bracket with the same
+      # `bracket` classifier the Phase 1 journeys use: both reads on the
+      # recorded SHA certifies; a later commit on protected main is an UNKNOWN
+      # non-verdict; a rollback or an off-lineage SHA is still a hard red.
+      # LIVE_SHA is deliberately no longer passed to the spec, so a spec taken
+      # from an older deployed commit cannot re-introduce the bare comparison.
       - name: Certify the authenticated Lightning operator cold loads
+        id: lightning_operator
         if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
         env:
           BASE_URL: https://smarter.poker/hub/club-arena/
@@ -585,11 +602,66 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
           E2E_REQUIRE_AUTH: '1'
-          LIVE_SHA: ${{ steps.live.outputs.sha }}
           PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-report/lightning-operator.json
-        run: >-
-          npx playwright test tests/e2e/production-lightning-operator.spec.ts
-          --project=chromium --reporter=line,json --workers=1 --retries=0
+        run: |
+          set +e
+          mkdir -p release-bracket
+          read_release () {
+            curl -fsS --max-time 20 -H 'Cache-Control: no-cache' \
+              "https://smarter.poker/hub/club-arena/build-info.json?bracket=$RANDOM" > "$1" 2>/dev/null \
+              || : > "$1"
+          }
+          read_release release-bracket/lightning-before.json
+          npx playwright test tests/e2e/production-lightning-operator.spec.ts \
+            --project=chromium --reporter=line,json --workers=1 --retries=0
+          rc=$?
+          read_release release-bracket/lightning-after.json
+          exit $rc
+
+      - name: Classify the release the Lightning operator certificate ran against
+        id: lightning_release
+        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
+        env:
+          EXPECTED_LIVE_SHA: ${{ steps.live.outputs.sha }}
+        run: |
+          set -uo pipefail
+          echo 'certified=false' >> "$GITHUB_OUTPUT"
+          if ! [[ "$EXPECTED_LIVE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The recorded live SHA is malformed."
+            exit 1
+          fi
+          # Production may have moved past this checkout's view of main while
+          # the browsers ran. Refresh only trusted main, never an arbitrary SHA.
+          if ! timeout 30s git fetch --no-tags origin main; then
+            echo "::warning::UNKNOWN: protected-main history was unreadable, so the Lightning operator release is unknown."
+            echo "NON-VERDICT: protected-main history was unreadable; the Lightning operator certificate certifies no release." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          STATUS=0
+          BRACKET="$(node scripts/ci/production-e2e-provenance.mjs bracket "$EXPECTED_LIVE_SHA" \
+            release-bracket/lightning-before.json release-bracket/lightning-after.json)" || STATUS=$?
+          case "$STATUS" in
+            0)
+              echo 'certified=true' >> "$GITHUB_OUTPUT"
+              echo "Production served \`$EXPECTED_LIVE_SHA\` before and after the Lightning operator certificate." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            3)
+              case "$BRACKET" in
+                superseded\ *)
+                  echo "::warning::UNKNOWN: production advanced during certification ($BRACKET). The Lightning operator certificate could not certify one exact release; it is not a report of a defect."
+                  echo "NON-VERDICT: production advanced from \`$EXPECTED_LIVE_SHA\` during the Lightning operator certificate ($BRACKET)." >> "$GITHUB_STEP_SUMMARY"
+                  ;;
+                *)
+                  echo "::warning::UNKNOWN: production build-info.json could not be read around the Lightning operator certificate ($BRACKET)."
+                  echo "NON-VERDICT: the Lightning operator release bracket was unreadable ($BRACKET); it certifies no release." >> "$GITHUB_STEP_SUMMARY"
+                  ;;
+              esac
+              ;;
+            *)
+              echo "::error::Lightning operator release mismatch: production left \`$EXPECTED_LIVE_SHA\` around the Lightning operator certificate for a release that is not a forward publish on this lineage."
+              exit 1
+              ;;
+          esac
 
       - name: Certify the authenticated production Cashier
         if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'

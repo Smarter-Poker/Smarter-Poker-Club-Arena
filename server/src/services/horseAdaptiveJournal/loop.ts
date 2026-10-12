@@ -66,7 +66,14 @@ export const COMMITMENT_AUDIT_STEP_ALLOWANCE_MS = 1000;
 /** A single serial consumer. One claim and at most one bounded prune per
  * cycle; never imports this loop into the table's action or decision worker. */
 export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Promise<void> {
-  let nextPruneAt = 0;
+  const pruneTasks = [
+    d.prune,
+    ...(d.pruneCaptures ? [d.pruneCaptures] : []),
+    ...(d.pruneDiscovery ? [d.pruneDiscovery] : []),
+  ];
+  // Each original owner keeps its own deadline. An idle or failed sibling
+  // must not postpone a bounded adaptive pass with membership still pending.
+  const nextPruneAt = pruneTasks.map(() => 0);
   let nextHealthAt = 0;
   let failures = 0;
   let captureFailures = 0;
@@ -222,15 +229,18 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
     }
     if (signal.aborted) return;
     let retention: JournalCycle['retention'] = 'skipped';
-    if (d.now() >= nextPruneAt) {
+    let duePrune = -1;
+    for (let offset = 0; offset < pruneTasks.length; offset++) {
+      const index = (pruneIndex + offset) % pruneTasks.length;
+      if (d.now() >= nextPruneAt[index]) {
+        duePrune = index;
+        break;
+      }
+    }
+    if (duePrune >= 0) {
+      pruneIndex = (duePrune + 1) % pruneTasks.length;
       try {
-        const tasks = [
-          d.prune,
-          ...(d.pruneCaptures ? [d.pruneCaptures] : []),
-          ...(d.pruneDiscovery ? [d.pruneDiscovery] : []),
-        ];
-        const task = tasks[pruneIndex % tasks.length];
-        pruneIndex = (pruneIndex + 1) % tasks.length;
+        const task = pruneTasks[duePrune];
         const r = await task();
         retention = r.status;
         const atLimit =
@@ -245,10 +255,10 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
                 ('retiredHands' in r && r.retiredHands === 25) ||
                 ('statisticsExpired' in r && r.statisticsExpired === 1000) ||
                 ('membershipPending' in r && r.membershipPending === true));
-        nextPruneAt = d.now() + (atLimit ? 5000 : 60000);
+        nextPruneAt[duePrune] = d.now() + (atLimit ? 5000 : 60000);
       } catch {
         retention = 'unknown';
-        nextPruneAt = d.now() + 60000;
+        nextPruneAt[duePrune] = d.now() + 60000;
       }
     }
     if (signal.aborted) return;

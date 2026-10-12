@@ -753,3 +753,10 @@ $function$;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO service_role;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO authenticated;
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO service_role;
+-- Exact registry shape needed by the declaration preceding the new writer.
+CREATE TABLE public.ca_money_rpc_registry (
+  proname text PRIMARY KEY,
+  status text NOT NULL DEFAULT 'approved',
+  notes text,
+  added_at timestamptz NOT NULL DEFAULT now()
+);

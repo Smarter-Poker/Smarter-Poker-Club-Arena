@@ -100,6 +100,22 @@ describe('the union owner is a member of every club in the union', () => {
       );
   });
 
+  it('registers only the zero-chip membership writer before its creation', () => {
+    const registry = MIG.indexOf('INSERT INTO public.ca_money_rpc_registry (proname,status,notes)');
+    expect(registry).toBeGreaterThan(-1);
+    expect(registry).toBeLessThan(
+      MIG.indexOf('CREATE OR REPLACE FUNCTION public.fn_union_owner_holds_membership(')
+    );
+    expect(MIG).toContain("VALUES ('fn_union_owner_holds_membership','approved',");
+    expect(MIG).toContain('ON CONFLICT (proname) DO NOTHING;');
+    expect(MIG).toContain('UNION_OWNER_MEMBERSHIP_REGISTRY_CHANGED');
+    expect(MIG.match(/INSERT INTO public\.ca_money_rpc_registry/g)).toHaveLength(1);
+    const runner = read('scripts/ci/test-stranded-satellite-part2-postgres.py');
+    expect(runner).toContain(
+      'REFUSED: fn_union_owner_holds_membership writes balance columns and is not in ca_money_rpc_registry'
+    );
+  });
+
   it('shows a club owner the refusal in words', () => {
     const errors = read('src/utils/safeErrorMessage.ts');
     expect(errors).toContain("'The Union Owner Must Stay A Member Of Every Club In The Union.'");

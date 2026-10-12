@@ -1,6 +1,7 @@
 -- @live-proof: (SELECT count(*) FROM pg_trigger WHERE tgrelid='public.tournaments'::regclass AND tgname='zz_closed_target_pays_its_satellite_tickets' AND NOT tgisinternal)=1
 -- @live-proof: strpos(pg_get_functiondef('public.fn_ca_satellite_entry_ticket_is_guarded()'::regprocedure),'app.ca_closed_target_ticket_cash')>0
 -- @live-proof: to_regprocedure('public.fn_ca_pay_closed_target_ticket_in_cash(uuid,text)') IS NOT NULL AND NOT has_function_privilege('authenticated','public.fn_ca_pay_closed_target_ticket_in_cash(uuid,text)','EXECUTE')
+-- @live-proof: EXISTS (SELECT 1 FROM public.ca_money_rpc_registry WHERE proname='fn_ca_pay_closed_target_ticket_in_cash' AND status='approved')
 --
 -- A CLOSED TARGET PAYS ITS SATELLITE TICKETS IN CASH (2026-10-12).
 --
@@ -53,6 +54,23 @@
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '120s';
+
+-- The live CREATE FUNCTION event guard requires a money writer to be
+-- registered before it exists, in this same transaction. Do not replace a
+-- preexisting registry decision or broaden the declaration to other doors.
+INSERT INTO public.ca_money_rpc_registry (proname,status,notes)
+VALUES ('fn_ca_pay_closed_target_ticket_in_cash','approved',
+ 'Pays one direct satellite ticket from its own escrow to its holder in the ticket club only after the target closes; exact award and escrow-issue leg required; durable ticket idempotency key, one named chip ledger leg, ticket redemption plus chip and wallet receipts, exact balance delta, browser execution revoked.')
+ON CONFLICT (proname) DO NOTHING;
+DO $registry$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.ca_money_rpc_registry
+                  WHERE proname='fn_ca_pay_closed_target_ticket_in_cash'
+                    AND status='approved') THEN
+    RAISE EXCEPTION 'CLOSED_TARGET_TICKET_CASH_REGISTRY_CHANGED';
+  END IF;
+END
+$registry$;
 
 DO $preimage$
 DECLARE

@@ -7,6 +7,7 @@ selection, preimage refusal and transaction rollback, not production payment
 execution. No connection or credentials for production are used.
 """
 import os
+import json
 import re
 import shutil
 import socket
@@ -57,15 +58,15 @@ CREATE TABLE public.chip_ledger_idem(idempotency_key text PRIMARY KEY,leg_id uui
 CREATE TABLE public.payment_calls(ticket_id uuid);
 INSERT INTO public.tournaments VALUES('00000000-0000-0000-0000-000000000001','COMPLETED',true),
  ('00000000-0000-0000-0000-000000000002','REGISTERING',false);
-CREATE FUNCTION public.fn_ca_pay_closed_target_ticket_in_cash(p_id uuid,p_source text)
+CREATE FUNCTION public.fn_ca_pay_closed_target_ticket_in_cash(p_ticket_id uuid,p_source text)
 RETURNS jsonb LANGUAGE plpgsql AS $$
 DECLARE amount numeric;
 BEGIN
- INSERT INTO public.payment_calls VALUES(p_id);
- SELECT value INTO amount FROM public.tournament_tickets WHERE id=p_id;
- INSERT INTO public.chip_ledger VALUES(p_id,amount,'escrow','player_wallet','ticket_redeem');
- INSERT INTO public.chip_ledger_idem VALUES('ticket:'||p_id::text||':closed-target-cash',p_id);
- UPDATE public.tournament_tickets SET status='redeemed',redeemed_at=transaction_timestamp() WHERE id=p_id;
+ INSERT INTO public.payment_calls VALUES(p_ticket_id);
+ SELECT value INTO amount FROM public.tournament_tickets WHERE id=p_ticket_id;
+ INSERT INTO public.chip_ledger VALUES(p_ticket_id,amount,'escrow','player_wallet','ticket_redeem');
+ INSERT INTO public.chip_ledger_idem VALUES('ticket:'||p_ticket_id::text||':closed-target-cash',p_ticket_id);
+ UPDATE public.tournament_tickets SET status='redeemed',redeemed_at=transaction_timestamp() WHERE id=p_ticket_id;
  RETURN jsonb_build_object('ok',true,'replayed',false,'amount',amount);
 END $$;
 """
@@ -91,6 +92,38 @@ try:
     started = True
     check(q('SHOW server_version_num;').startswith('17'), 'PostgreSQL 17')
     q(fixture + closed + seed)
+    # Install the exact live catalog guard and its two helpers. Creating the
+    # actual cash door tests declaration authority without running payments.
+    guards = json.loads((ROOT / 'tests/fixtures/stranded-satellite-money-registry.json').read_text())
+    q("CREATE TABLE public.ca_money_rpc_registry(proname text PRIMARY KEY,status text NOT NULL DEFAULT 'approved',notes text,added_at timestamptz NOT NULL DEFAULT now()); CREATE TABLE public.tournament_satellite_awards(id uuid);")
+    q('\n'.join(row['definition'] + ';' for row in guards['functions']))
+    for row in guards['functions']:
+        check(q("SELECT md5(pg_get_functiondef('public." + row['proname'] + "(" + ('text' if row['proname'] == 'fn_ca_money_rpc_writes_balances' else '') + ")'::regprocedure));") == row['md5'], 'exact live ' + row['proname'])
+    q("CREATE EVENT TRIGGER ab_ca_money_rpc_registered ON ddl_command_end WHEN TAG IN ('CREATE FUNCTION') EXECUTE FUNCTION public.fn_ca_money_rpc_registry_guard();")
+    cash_start = rule.index('CREATE OR REPLACE FUNCTION public.fn_ca_pay_closed_target_ticket_in_cash(')
+    cash = rule[cash_start:rule.index('$function$;', cash_start) + len('$function$;')]
+    q('BEGIN; ' + cash + ' COMMIT;', 'REFUSED: fn_ca_pay_closed_target_ticket_in_cash writes balance columns and is not in ca_money_rpc_registry')
+    check(q("SELECT count(*) FROM public.ca_money_rpc_registry;") == '0', 'unregistered actual writer refused atomically')
+    registry_start = rule.index('INSERT INTO public.ca_money_rpc_registry (proname,status,notes)')
+    registry_end = rule.index('$registry$;', registry_start) + len('$registry$;')
+    q('BEGIN; ' + rule[registry_start:registry_end] + cash + ' COMMIT;')
+    check(q("SELECT status FROM public.ca_money_rpc_registry WHERE proname='fn_ca_pay_closed_target_ticket_in_cash';") == 'approved', 'actual writer creates after its scoped registry declaration')
+    q("UPDATE public.ca_money_rpc_registry SET status='retired' WHERE proname='fn_ca_pay_closed_target_ticket_in_cash';")
+    q('BEGIN; ' + rule[registry_start:registry_end] + cash + ' COMMIT;', 'CLOSED_TARGET_TICKET_CASH_REGISTRY_CHANGED')
+    check(q("SELECT status FROM public.ca_money_rpc_registry WHERE proname='fn_ca_pay_closed_target_ticket_in_cash';") == 'retired', 'different registry decision preserved and refused')
+    union = (ROOT / 'supabase/migrations/20261012112707_the_union_owner_is_a_member_of_every_club.sql').read_text()
+    q('CREATE TABLE public.club_members(id uuid,chip_balance numeric);')
+    union_start = union.index('CREATE OR REPLACE FUNCTION public.fn_union_owner_holds_membership(')
+    union_door = union[union_start:union.index('$function$;', union_start) + len('$function$;')]
+    q('BEGIN; ' + union_door + ' COMMIT;', 'REFUSED: fn_union_owner_holds_membership writes balance columns and is not in ca_money_rpc_registry')
+    check(q("SELECT count(*) FROM public.ca_money_rpc_registry WHERE proname='fn_union_owner_holds_membership';") == '0', 'unregistered zero-chip membership writer refused atomically')
+    union_registry = union.index('INSERT INTO public.ca_money_rpc_registry (proname,status,notes)')
+    union_registry_end = union.index('$registry$;', union_registry) + len('$registry$;')
+    q('BEGIN; ' + union[union_registry:union_registry_end] + union_door + ' COMMIT;')
+    check(q("SELECT status FROM public.ca_money_rpc_registry WHERE proname='fn_union_owner_holds_membership';") == 'approved', 'actual zero-chip membership writer creates after registration')
+    # Restore the explicit receipt-only payment fixture for cohort tests.
+    fixture_door = fixture[fixture.index('CREATE FUNCTION public.fn_ca_pay_closed_target_ticket_in_cash('):]
+    q(fixture_door.replace('CREATE FUNCTION', 'CREATE OR REPLACE FUNCTION', 1))
     # Reconstruct only the actual old defect: identical lower and upper bounds.
     before = re.sub(r'DO \$preimage\$.*?\$preimage\$;\n', '', sql, flags=re.S)
     before = before.replace("created_at>='2026-09-12 19:00:00+00'", "created_at>='2026-09-17 21:45:00+00'")

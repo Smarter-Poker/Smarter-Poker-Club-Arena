@@ -28,3 +28,15 @@ shard. The source law also checks all five intervals for gaps or overlaps.
 
 Production installation and financial readback remain with the Diamond Wallet
 delivery owner. This correction performs no production writes.
+
+The base satellite installation then failed in the live CREATE FUNCTION money
+registry guard: the new cash door was not registered before its definition.
+The same live classifier also identifies the new union-owner zero-chip member
+INSERT as a balance writer. Both migrations remain uninstalled. Each now
+declares only its exact new writer as approved before CREATE, with the gates
+and journal or zero-chip semantics recorded. A conflicting registry decision
+is preserved and refused. The native qualification recreates production's
+exact registry guard and two classifier helpers, reproduces both unregistered
+CREATE refusals and proves the declarations permit both actual function
+definitions. The union's existing native behavioral qualification remains
+required. No payment body, member role, disciplinary rule or amount changes.

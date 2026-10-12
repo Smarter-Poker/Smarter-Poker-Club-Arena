@@ -64,8 +64,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 35480,
-      "sha256": "1fc422b810641eee2149abbdbbf5ddf50c54e87162fbea82f22456c506bd712d"
+      "bytes": 35573,
+      "sha256": "192ab33e7da85d929b59be391fde51e29e346fc8c041b88f47efd92a103e2b1c"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -2161,6 +2161,13 @@
     "previousWorkflowPin": {
       "bytes": 202788,
       "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
+    }
+  },
+  "satelliteAndUnionMoneyRegistryRegression20261012": {
+    "reason": "Enforce real catalog money-registry CREATE refusal/pass regression and cohort qualification for standalone runner or captured guard fixture edits. Only current classifier source fingerprint changes; financial inputs, historical pins and qualification status remain unchanged.",
+    "previousClassifierPin": {
+      "bytes": 35480,
+      "sha256": "1fc422b810641eee2149abbdbbf5ddf50c54e87162fbea82f22456c506bd712d"
     }
   }
 }

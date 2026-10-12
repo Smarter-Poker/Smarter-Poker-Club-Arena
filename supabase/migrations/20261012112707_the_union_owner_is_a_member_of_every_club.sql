@@ -75,6 +75,7 @@
 -- CREATE OR REPLACE, and the backfill only touches a pair still missing.
 --
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_require_explicit_club_membership_source()'::regprocedure)) = 'f694fef84a37560028281eead6f45257')
+-- @live-proof: EXISTS (SELECT 1 FROM public.ca_money_rpc_registry WHERE proname='fn_union_owner_holds_membership' AND status='approved')
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_enforce_four_club_limit()'::regprocedure)) = '7c79db5e707510912f4fa3c6f9ff7cb5')
 -- @live-proof: (SELECT count(*) = 3 FROM pg_trigger t WHERE t.tgenabled = 'O' AND ((t.tgrelid = 'public.union_clubs'::regclass AND t.tgname = 'trg_union_owner_joins_every_club') OR (t.tgrelid = 'public.unions'::regclass AND t.tgname = 'trg_union_new_owner_joins_every_club') OR (t.tgrelid = 'public.club_members'::regclass AND t.tgname = 'trg_union_owner_membership_is_kept')))
 -- @live-proof: (SELECT to_regprocedure('public.fn_union_owner_holds_membership(uuid,uuid)') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.union_clubs uc JOIN public.unions u ON u.id = uc.union_id JOIN public.clubs c ON c.id = uc.club_id WHERE uc.club_id <> uc.union_id AND NOT COALESCE(c.is_union, false) AND c.asset IS DISTINCT FROM 'diamonds' AND NOT EXISTS (SELECT 1 FROM public.club_members cm WHERE cm.club_id = uc.club_id AND cm.user_id = u.owner_id AND cm.membership_lifecycle_status = 'active' AND COALESCE(cm.status, 'active') IN ('active', 'approved') AND COALESCE(cm.is_active, true))))
@@ -193,6 +194,23 @@ END
 $cap$;
 
 -- 1. The one door that makes the union owner a member of one club.
+-- The live catalog classifier sees the zero-chip membership INSERT as a
+-- balance writer. Register exactly this door before CREATE in the same
+-- transaction, preserving any existing registry decision rather than
+-- broadening a money allowlist.
+INSERT INTO public.ca_money_rpc_registry (proname,status,notes)
+VALUES ('fn_union_owner_holds_membership','approved',
+ 'Makes the union owner an active club member in the same union join or ownership-change transaction; existing active role kept, banned or suspended membership refused, explicit union_owner_membership source required, personal-cap exception scoped to that source, new membership starts with zero chips and no money movement or payout.')
+ON CONFLICT (proname) DO NOTHING;
+DO $registry$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.ca_money_rpc_registry
+                  WHERE proname='fn_union_owner_holds_membership'
+                    AND status='approved') THEN
+    RAISE EXCEPTION 'UNION_OWNER_MEMBERSHIP_REGISTRY_CHANGED';
+  END IF;
+END
+$registry$;
 CREATE OR REPLACE FUNCTION public.fn_union_owner_holds_membership(p_union_id uuid, p_club_id uuid)
 RETURNS text
 LANGUAGE plpgsql

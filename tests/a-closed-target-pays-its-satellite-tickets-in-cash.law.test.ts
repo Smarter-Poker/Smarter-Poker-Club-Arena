@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { classifyChangedPaths } from '../scripts/ci/classify-ci-changes.mjs';
 
 // A SATELLITE SEAT IS SEAT OR CASH (2026-10-12). A direct satellite ticket held
 // for a winner at the four-table cap admits its holder to ONE target. When that
@@ -44,6 +45,40 @@ describe('a closed target pays its satellite tickets in cash', () => {
     expect(ddl).toMatch(
       /INSERT INTO public\.ca_declared_money_triggers \(table_name, trigger_name, note\)\nSELECT 'tournaments','zz_closed_target_pays_its_satellite_tickets'/
     );
+  });
+
+  it('registers only the actual money writer before CREATE without replacing a prior decision', () => {
+    const registry = ddl.indexOf('INSERT INTO public.ca_money_rpc_registry (proname,status,notes)');
+    expect(registry).toBeGreaterThan(-1);
+    expect(registry).toBeLessThan(
+      ddl.indexOf('CREATE OR REPLACE FUNCTION public.fn_ca_pay_closed_target_ticket_in_cash(')
+    );
+    expect(ddl).toContain("VALUES ('fn_ca_pay_closed_target_ticket_in_cash','approved',");
+    expect(ddl).toContain('ON CONFLICT (proname) DO NOTHING;');
+    expect(ddl).toContain('CLOSED_TARGET_TICKET_CASH_REGISTRY_CHANGED');
+    expect(ddl.match(/INSERT INTO public\.ca_money_rpc_registry/g)).toHaveLength(1);
+    const runner = readFileSync(
+      root('scripts/ci/test-stranded-satellite-part2-postgres.py'),
+      'utf8'
+    );
+    expect(runner).toContain('tests/fixtures/stranded-satellite-money-registry.json');
+    expect(runner).toContain('CREATE EVENT TRIGGER ab_ca_money_rpc_registered');
+    expect(runner).toContain(
+      'REFUSED: fn_ca_pay_closed_target_ticket_in_cash writes balance columns and is not in ca_money_rpc_registry'
+    );
+    const capture = JSON.parse(
+      readFileSync(root('tests/fixtures/stranded-satellite-money-registry.json'), 'utf8')
+    );
+    expect(capture.functions.map((row: { md5: string }) => row.md5)).toEqual([
+      '53e86c9945bde2a5830232f59a365fdd',
+      '03928ac3da782be33306c2e07b0b8977',
+      '1b13d12e02c7f7b719fcfae4153dcb1f',
+    ]);
+    for (const path of [
+      'scripts/ci/test-stranded-satellite-part2-postgres.py',
+      'tests/fixtures/stranded-satellite-money-registry.json',
+    ])
+      expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
   });
 
   it('fires in the transaction that finalizes, finishes or cancels the target', () => {

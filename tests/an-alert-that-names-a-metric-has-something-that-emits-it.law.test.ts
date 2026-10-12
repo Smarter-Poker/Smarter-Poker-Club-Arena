@@ -365,6 +365,9 @@ describe('an alert that names a metric has something that emits it', () => {
     try {
       expect(haveCommit('HEAD', dir)).toBe(true);
       expect(haveCommit('0123456789abcdef0123456789abcdef01234567', dir)).toBe(false);
+      expect(() =>
+        producedAtBuild(['poker_missing'], '0123456789abcdef0123456789abcdef01234567', dir)
+      ).toThrow('Metric producers in the selected build could not be read');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

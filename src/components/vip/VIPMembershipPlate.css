@@ -1,245 +1,100 @@
-/* VIP membership facts remain live HTML inside independent approved painted
-   objects. The surrounding Shark panel uses its native top, repeatable middle,
-   and bottom slices; it is not a CSS-drawn frame or a connected console. */
-
+/* Membership facts need no decorative crest, points cells or nested frames.
+   Actual benefits and the approved gold card remain on the VIP page. */
 .vmp {
-  --vmp-copy: #eef6fb;
-  --vmp-steel: #c3d1da;
-  --vmp-muted: #91a3af;
-  --vmp-dim: #708591;
-  --vmp-blue: #45c8ff;
-  --vmp-gold: #e0bc68;
   width: 100%;
-  margin: 0 0 0.9rem;
-  color: var(--vmp-copy);
-  container-type: inline-size;
+  margin: 0 0 24px;
+  color: #eef6fb;
   font-family: Inter, Arial, sans-serif;
 }
-
-.vmp__cap,
-.vmp__foot {
-  width: 100%;
-  display: block;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: 100% 100%;
-  pointer-events: none;
-}
-
-.vmp__cap {
-  aspect-ratio: 900 / 143;
-  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/top.png');
-}
-
 .vmp__body {
-  margin-block: -1px;
-  padding: clamp(10px, 2.7cqw, 26px) clamp(16px, 5cqw, 48px);
-  background: #03070b url('/assets/club-buttons/lobby/shark-panel-v1/mid.png') center / 100% auto
-    repeat-y;
+  padding: 0;
 }
-
-.vmp__foot {
-  aspect-ratio: 900 / 139;
-  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/bottom.png');
-}
-
 .vmp__head {
-  display: flex;
-  flex-wrap: wrap;
-  gap: clamp(14px, 2.5cqw, 24px);
-  align-items: flex-start;
-  justify-content: space-between;
-  padding-bottom: 0.9rem;
+  padding-bottom: 16px;
 }
-
 .vmp__identity {
-  min-width: min(100%, 190px);
-  display: flex;
-  flex: 1 1 190px;
-  flex-direction: column;
-  gap: 0.28rem;
-  padding: 0.45rem 0.2rem;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
 }
-
 .vmp__eyebrow,
 .vmp__title {
   color: #acd9ee;
-  font-family: 'Roboto Condensed', Inter, Arial, sans-serif;
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  line-height: 1.2;
-  text-transform: capitalize;
+  font:
+    700 13px/1.4 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.04em;
 }
-
 .vmp__grade {
-  color: var(--vmp-copy);
-  font-family: 'Roboto Condensed', Inter, Arial, sans-serif;
-  font-size: clamp(1.45rem, 5cqw, 2rem);
-  font-weight: 800;
-  letter-spacing: 0.025em;
-  line-height: 1.05;
-  text-shadow: 0 2px 3px #000;
+  font:
+    800 clamp(24px, 4vw, 32px)/1.2 'Roboto Condensed',
+    sans-serif;
+  overflow-wrap: anywhere;
 }
-
 .vmp__grade[data-status='vip'],
 .vmp__grade[data-status='lifetime'] {
-  color: var(--vmp-gold);
+  color: #ffd700;
 }
-
 .vmp__term {
-  color: var(--vmp-muted);
-  font-size: 0.78rem;
-  line-height: 1.4;
+  color: #a7b7c1;
+  font-size: 14px;
+  line-height: 1.5;
 }
-
-.vmp__points {
-  min-width: min(100%, 300px);
-  display: grid;
-  flex: 1 1 400px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.45rem;
-  margin: 0;
-}
-
-.vmp__points div,
-.vmp__included li {
-  min-width: 0;
-  aspect-ratio: 1800 / 386;
-  display: flex;
-  justify-content: center;
-  flex-direction: column;
-  padding: 4% 11%;
-  background: #03070b url('/assets/club-buttons/wallet-row-shell-e7964bb1791f.webp') center / 100%
-    100% no-repeat;
-}
-
-.vmp__points dt {
-  color: var(--vmp-dim);
-  font-family: 'Roboto Condensed', Inter, Arial, sans-serif;
-  font-size: clamp(0.58rem, 1.7cqw, 0.68rem);
-  font-weight: 700;
-  letter-spacing: 0.055em;
-  line-height: 1;
-  text-transform: capitalize;
-}
-
-.vmp__points dd {
-  margin: 0.2rem 0 0;
-  color: var(--vmp-copy);
-  font-family: 'Roboto Condensed', Inter, Arial, sans-serif;
-  font-size: clamp(0.95rem, 2.7cqw, 1.2rem);
-  font-variant-numeric: tabular-nums;
-  font-weight: 800;
-}
-
-.vmp__unit {
-  color: var(--vmp-dim);
-  font-size: 0.68rem;
-  font-weight: 700;
-}
-
 .vmp__section {
-  margin-top: 0.95rem;
+  margin-top: 16px;
 }
-
 .vmp__title {
-  margin: 0 0 0.6rem;
+  margin: 0 0 12px;
 }
-
-.vmp__allowances,
-.vmp__included {
+.vmp__allowances {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 24px;
   margin: 0;
   padding: 0;
-  gap: 0.55rem;
   list-style: none;
 }
-
-.vmp__allowances {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.vmp__included {
-  grid-template-columns: 1fr;
-}
-
 .vmp__allowance {
+  display: grid;
+  gap: 8px;
   min-width: 0;
-  aspect-ratio: 1000 / 246;
-  display: flex;
-  justify-content: center;
-  flex-direction: column;
-  gap: 0.28rem;
-  padding: 4% 12%;
-  background: #03070b url('/assets/club-buttons/action-primary-shell.webp') center / 100% 100%
-    no-repeat;
+  padding: 16px 0;
+  border-top: 1px solid #26333d;
 }
-
-.vmp__allowanceLabel,
-.vmp__includedLabel {
-  color: var(--vmp-steel);
-  font-size: clamp(0.67rem, 1.8cqw, 0.78rem);
-  font-weight: 800;
+.vmp__allowanceLabel {
+  color: #c3d1da;
+  font-size: 14px;
+  line-height: 1.4;
 }
-
 .vmp__allowanceValue {
-  color: var(--vmp-copy);
-  font-family: 'Roboto Condensed', Inter, Arial, sans-serif;
-  font-size: clamp(0.95rem, 2.8cqw, 1.22rem);
-  font-variant-numeric: tabular-nums;
-  font-weight: 800;
+  font:
+    800 20px/1.3 'Roboto Condensed',
+    sans-serif;
 }
-
 .vmp__allowanceOf {
-  color: var(--vmp-dim);
-  font-family: inherit;
-  font-size: 0.66rem;
-  font-weight: 700;
-  letter-spacing: 0.025em;
-  text-transform: capitalize;
+  color: #91a3af;
+  font:
+    400 13px/1.4 Inter,
+    sans-serif;
 }
-
 .vmp__meter {
-  width: 78%;
-  height: 3px;
   display: block;
+  width: 100%;
+  height: 3px;
   overflow: hidden;
   background: #182732;
 }
-
 .vmp__meterFill {
-  height: 100%;
   display: block;
-  background: var(--vmp-blue);
+  height: 100%;
+  background: #45c8ff;
   transition: width 0.4s ease-out;
 }
-
-.vmp__included li {
-  gap: 0.16rem;
-}
-
-.vmp__includedOtherwise {
-  color: var(--vmp-dim);
-  font-size: clamp(0.6rem, 1.65cqw, 0.7rem);
-}
-
-[data-theme='light'] .vmp {
-  --vmp-copy: #f2f8fb;
-  --vmp-steel: #d4e0e7;
-  --vmp-muted: #a7b7c1;
-  --vmp-dim: #8ea1ad;
-  --vmp-blue: #62d2ff;
-  --vmp-gold: #e6c776;
-}
-
 @media (max-width: 520px) {
-  .vmp__points,
   .vmp__allowances {
     grid-template-columns: 1fr;
   }
 }
-
 @media (prefers-reduced-motion: reduce) {
   .vmp__meterFill {
     transition: none;

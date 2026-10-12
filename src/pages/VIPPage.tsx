@@ -1,5 +1,5 @@
 /**
- *  VIP PAGE — VIP Tier Progression, Benefits, and Rewards Marketplace
+ *  VIP PAGE: Membership, Benefits And Diamond Activity
  */
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
@@ -22,7 +22,6 @@ import { VIPCardsModal } from '../components/vip/VIPCardsModal';
 import { VIPPerksGrid, type VIPPerk } from '../components/vip/VIPPerksGrid';
 import { DiamondTopUpModal } from '../components/vip/DiamondTopUpModal';
 import { VIPMembershipPlate } from '../components/vip/VIPMembershipPlate';
-import { RewardsMarketplace, Reward } from '../components/vip/RewardsMarketplace';
 import { VIPActivityHistory, type DiamondActivity } from '../components/vip/VIPActivityHistory';
 import { readBalanceAfter } from '../utils/readBalanceAfter';
 import { useToast } from '../components/common/Toast';
@@ -91,40 +90,18 @@ export default function VIPPage() {
     return () => document.body.classList.remove('marketplace-color-scope');
   }, []);
 
-  /* VIP POINTS - ONLY THE TWO FIGURES THE PLATFORM ACTUALLY COMPUTES.
-     `monthly` and `activeStreak` used to sit in this object too, and NOTHING
-     ever wrote either one. `vip_points` has exactly four columns (user_id,
-     current_points, lifetime_points, updated_at), so the read below could
-     never have filled them, and no other writer existed anywhere in src/.
-     They reached the screen as their own initial state: every player was
-     shown a confident "0" and "0 Days" for two figures the platform does
-     not calculate.
-
-     Deleted rather than given the "Unavailable" treatment `current` and
-     `lifetime` get. That word means "the read could not answer THIS TIME",
-     which invites a player to refresh; these two had no source to read
-     from at all, so the honest act is to stop making the claim. Removing
-     them from the state shape (not merely from the JSX) is deliberate:
-     it is what stops the zero being reintroduced by the next reader.
-     docs/changelog/2026-09-30-the-vip-page-stops-inventing-two-figures.md */
-  const [vipPoints, setVipPoints] = useState({
-    current: 0,
-    lifetime: 0,
-  });
-
   const [recentDiamondActivities, setRecentDiamondActivities] = useState<DiamondActivity[]>([]);
   const [diamondActivityState, setDiamondActivityState] = useState<'loading' | 'ready' | 'error'>(
     'loading'
   );
   /* CLAUDE.md 10.86 rule 1: "I could not tell" is a distinct outcome and must
-     have its own name. The balance and the points figures were both read with
+     have its own name. The balance was read with
      the error discarded, so a failed read landed on the player as a confident
-     zero - the estate's signature failure mode, on a money surface. These two
+     zero - the estate's signature failure mode, on a money surface. These
      states are what keep an unreadable figure apart from a real zero. */
   const [diamondBalanceState, setDiamondBalanceState] = useState<'loading' | 'ready' | 'error'>(
     'loading'
   );
-  const [vipPointsState, setVipPointsState] = useState<'loading' | 'ready' | 'error'>('loading');
 
   const membershipPerks = useMemo(() => {
     const isLifetime = vipGrade === 'lifetime';
@@ -253,13 +230,6 @@ export default function VIPPage() {
     return unsubDiamond;
   }, [user?.id]);
 
-  // Removed 2026-08-28: a VIP_POINTS_UPDATED listener lived here, but NOTHING
-  // emits that event on the client bus — points are awarded server-side
-  // (rake settlement), so the handler could never run and "live" VIP points
-  // silently did not exist. Found when noDeadBusSubscriptions learned to see
-  // subscribeDebounced. If live points are wanted, they need a server->client
-  // bridge (tournamentEventBridge pattern), not a dead subscription.
-
   // Every account or visibility refresh gets a generation. Late responses
   // from account A cannot paint account B or leave it stuck in loading state.
   const loadGenerationRef = useRef(0);
@@ -286,7 +256,6 @@ export default function VIPPage() {
         setRecentDiamondActivities([]);
         setDiamondActivityState('loading');
         setDiamondBalanceState('loading');
-        setVipPointsState('loading');
       }
       try {
         const vipStatus = await vipService.checkVIPStatus(requestedUserId);
@@ -315,25 +284,6 @@ export default function VIPPage() {
         } else {
           setDiamonds(Number(profData?.diamonds ?? 0));
           setDiamondBalanceState('ready');
-        }
-
-        const { data: vp, error: vpError } = await supabase
-          .from('vip_points')
-          .select('current_points, lifetime_points')
-          .eq('user_id', requestedUserId)
-          .maybeSingle();
-        if (!isCurrent()) return;
-        if (vpError) {
-          reportError(vpError, 'VIPPage.Vip_points_load_failed', { userId: requestedUserId });
-          setVipPoints((prev) => ({ ...prev, current: 0, lifetime: 0 }));
-          setVipPointsState('error');
-        } else {
-          setVipPoints((prev) => ({
-            ...prev,
-            current: Number(vp?.current_points || 0),
-            lifetime: Number(vp?.lifetime_points || 0),
-          }));
-          setVipPointsState('ready');
         }
 
         /* Diamonds live in diamond_transactions. Read both transaction type
@@ -393,7 +343,6 @@ export default function VIPPage() {
           // Whatever threw, every figure this load owns is unread. None of
           // them may be left reading as a settled zero.
           setDiamondBalanceState('error');
-          setVipPointsState('error');
           toast.error('Failed To Load VIP Status');
         }
       } finally {
@@ -426,11 +375,9 @@ export default function VIPPage() {
       throwables: { used: 0, limit: 0 },
     });
     setDiamonds(0);
-    setVipPoints({ current: 0, lifetime: 0 });
     setRecentDiamondActivities([]);
     setDiamondActivityState('loading');
     setDiamondBalanceState('loading');
-    setVipPointsState('loading');
     setStateUserId(undefined);
     setLoading(true);
 
@@ -514,15 +461,11 @@ export default function VIPPage() {
       <div className="vip-page">
         <RewardsSurfaceHeader
           eyebrow="Rewards Circuit / VIP"
-          title="VIP Command Deck"
-          description="Track Live Membership Status, Review Earned Privileges, And Redeem VIP Rewards Through The Existing Protected Reward Services."
+          title="VIP Membership"
+          description="Manage Your Membership And Included Benefits."
           art="vip"
           status="VIP TELEMETRY // SYNCING"
           crest="vip"
-          /* Two further metrics, "Monthly" and "Active Streak", used to sit
-             beside this one in both header states. Neither had a writer.
-             See the vipPoints comment above. */
-          metrics={[{ label: 'Current Points', value: 'Syncing', tone: 'attention' }]}
         />
         <div className="loading-state">
           <PageSkeleton variant="stats" />
@@ -535,106 +478,18 @@ export default function VIPPage() {
     <div className="vip-page">
       <RewardsSurfaceHeader
         eyebrow="Rewards Circuit / VIP"
-        title="VIP Command Deck"
-        description="Track Live Membership Status, Review Earned Privileges, And Redeem VIP Rewards Through The Existing Protected Reward Services."
+        title="VIP Membership"
+        description="Manage Your Membership And Included Benefits."
         art="vip"
         status="VIP TELEMETRY // LIVE"
         crest="vip"
-        metrics={[
-          {
-            label: 'Current Points',
-            // A points read that failed says so. It never borrows the look of a
-            // player who has spent every point they earned.
-            value: vipPointsState === 'error' ? 'Unavailable' : vipPoints.current.toLocaleString(),
-            tone: 'attention',
-          },
-        ]}
       />
-      {/* MEMBERSHIP, ALLOWANCES, POINTS.
+      {/* MEMBERSHIP AND ALLOWANCES.
           Replaces VIPStatsHeader + TierProgressionCard + VIPBenefitsGrid, all
           three deleted with src/constants/vipTiers.ts on 2026-09-05. See the
           header of VIPMembershipPlate for what those three were promising. */}
       {vipEntranceComplete && (
-        <VIPMembershipPlate
-          status={vipGrade}
-          expiresAt={vipExpiresAt}
-          limits={monthlyLimits}
-          points={vipPoints}
-          pointsState={vipPointsState}
-        />
-      )}
-
-      {/* Rewards Marketplace */}
-      {vipEntranceComplete && (
-        <RewardsMarketplace
-          currentPoints={vipPoints.current}
-          onRedeem={async (reward: Reward) => {
-            if (!user?.id) {
-              toast.error('Please Sign In To Redeem Rewards.');
-              return;
-            }
-            // Real spend AND a real grant. `p_reward_id` is what makes this
-            // honest: without it the RPC charged whatever `p_cost` the browser
-            // sent (so a 5,000-point pass cost one point) and granted nothing
-            // at all. With it, vip_reward_catalog prices the reward and the
-            // cosmetic lands in the live entitlement ledgers. p_cost is still
-            // sent for the audit trail; the server ignores it for catalog
-            // rewards. Migration 20260825_vip_reward_catalog.
-            const { data, error } = await supabase.rpc('fn_redeem_vip_points', {
-              p_cost: reward.pointsCost,
-              p_reason: `Reward: ${reward.name}`,
-              p_reward_id: reward.id,
-            });
-            // Refusals come back as `{ success: false, error }` with NO
-            // postgres error, so both halves must be checked.
-            if (error || !data?.success) {
-              toast.error(
-                data?.error === 'insufficient_points'
-                  ? 'Not Enough VIP Points For This Reward.'
-                  : data?.error === 'already_owned'
-                    ? 'You Already Own This Reward.'
-                    : data?.error === 'sold_out'
-                      ? 'That Reward Is Sold Out.'
-                      : 'Redemption Failed. Please Try Again.'
-              );
-              return;
-            }
-            setVipPoints((prev) => ({ ...prev, current: Number(data.balance ?? prev.current) }));
-            if (data.status === 'granted') {
-              const granted = data.granted as
-                | { type?: string; theme_id?: string; avatar_id?: string }
-                | undefined;
-              masterBus.emit('COSMETIC_OWNERSHIP_CHANGED', {
-                userId: user.id,
-                category: granted?.type === 'avatar' ? 'avatar' : 'theme_id',
-                assetId: granted?.avatar_id || granted?.theme_id,
-                source: 'vip-reward',
-              });
-              masterBus.emit('ENTITLEMENTS_CHANGED', {
-                userId: user.id,
-                category: granted?.type === 'avatar' ? 'avatar' : 'table_skin',
-                assetId: granted?.avatar_id || granted?.theme_id,
-                source: 'vip-reward',
-              });
-            }
-            // Say what actually happened: a cosmetic is yours now, a physical
-            // or tournament reward still needs somebody to fulfil it.
-            toast.success(
-              data.status === 'granted'
-                ? `Unlocked: ${reward.name}`
-                : `Claimed: ${reward.name}. Your Club Will Fulfil This.`
-            );
-          }}
-        />
-      )}
-
-      {/* Activity History */}
-      {vipEntranceComplete && (
-        <VIPActivityHistory
-          activities={recentDiamondActivities}
-          state={diamondActivityState}
-          onRetry={() => void loadVIPStatus()}
-        />
+        <VIPMembershipPlate status={vipGrade} expiresAt={vipExpiresAt} limits={monthlyLimits} />
       )}
 
       {/* THE CARD, AND ONLY WHAT IT ACTUALLY BUYS.
@@ -708,6 +563,15 @@ export default function VIPPage() {
 
           <VIPPerksGrid perks={membershipPerks} />
         </section>
+      )}
+
+      {/* Activity History */}
+      {vipEntranceComplete && (
+        <VIPActivityHistory
+          activities={recentDiamondActivities}
+          state={diamondActivityState}
+          onRetry={() => void loadVIPStatus()}
+        />
       )}
 
       {/* Diamond Balance */}

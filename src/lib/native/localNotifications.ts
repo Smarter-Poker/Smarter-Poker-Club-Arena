@@ -23,7 +23,6 @@ import { arenaDisplayText } from '../arenaDisplay/text';
 /* The worker's labels, without the emoji it prefixed them with (10.7). */
 const TITLES: Record<string, string> = {
   BALANCE_UPDATED: 'Balance Updated',
-  VIP_POINTS_UPDATED: 'VIP Points Updated',
   CLUB_JOINED: 'Club Joined',
   CLUB_LEFT: 'Left Club',
   TABLE_SEATED: 'Seated At Table',

@@ -80,11 +80,10 @@ describe('a public asset url names a file that ships', () => {
   });
 
   it('the wallet row shell points at its sealed file', () => {
-    for (const file of [
-      'src/components/vip/VIPMembershipPlate.css',
-      'src/pages/VIPPage.css',
-      'src/pages/MarketplacePage.module.css',
-    ]) {
+    expect(
+      readFileSync(join(ROOT, 'src/components/vip/VIPMembershipPlate.css'), 'utf8')
+    ).not.toContain('wallet-row-shell');
+    for (const file of ['src/pages/VIPPage.css', 'src/pages/MarketplacePage.module.css']) {
       const css = readFileSync(join(ROOT, file), 'utf8');
       expect(css, file).toContain('/assets/club-buttons/wallet-row-shell-e7964bb1791f.webp');
       expect(css, file).not.toContain('/assets/club-buttons/wallet-row-shell.webp');

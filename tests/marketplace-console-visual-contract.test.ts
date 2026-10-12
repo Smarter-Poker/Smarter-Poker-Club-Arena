@@ -398,66 +398,21 @@ describe('Marketplace Console Visual Contract', () => {
     );
   });
 
-  it('renders the VIP membership plate from painted masters without generic typography', () => {
+  it('keeps membership facts free of redundant frames and point balances', () => {
     const source = text('src/components/vip/VIPMembershipPlate.tsx');
     const css = text('src/components/vip/VIPMembershipPlate.css');
-
-    expect(source).toContain('className="vmp__cap"');
-    expect(source).toContain('className="vmp__body"');
-    expect(source).toContain('className="vmp__foot"');
-    expect(css).toContain('shark-panel-v1/top.png');
-    expect(css).toContain('shark-panel-v1/mid.png');
-    expect(css).toContain('shark-panel-v1/bottom.png');
-    expect(css).toContain('wallet-row-shell-e7964bb1791f.webp');
-    expect(css).toContain('action-primary-shell.webp');
-    expect(css).toContain('aspect-ratio: 900 / 143');
-    expect(css).toContain('aspect-ratio: 900 / 139');
-    expect(css).toContain('aspect-ratio: 1800 / 386');
-    expect(css).toContain('aspect-ratio: 1000 / 246');
-    expect(css).not.toMatch(/(?:linear|radial)-gradient/i);
-    expect(css).not.toMatch(/ui-monospace|JetBrains|Courier|Rajdhani|monospace/i);
-    expect(css).not.toContain(':hover');
-    expect(css).not.toMatch(/#4ade80|#22c55e|#15803d/i);
+    expect(source).not.toContain('vmp__cap');
+    expect(source).not.toContain('vmp__foot');
+    expect(source).not.toContain('vmp__points');
+    expect(css).not.toContain('background-image');
+    expect(css).not.toContain('aspect-ratio');
+    expect(source).toContain('role="meter"');
   });
 
-  it('keeps VIP rewards on honest previews and painted master controls', () => {
-    const source = text('src/components/vip/RewardsMarketplace.tsx');
-    const css = text('src/components/vip/RewardsMarketplace.css');
-
-    expect(source).toContain('import { formatPopupText }');
-    expect(source).toContain('grant_type, grant_ref');
-    expect(source).toContain('normalizeThemePresetId(reward.grantRef)');
-    expect(source).toContain('src={resolveSkin(themeId)}');
-    expect(source).toContain('onError={() => setThemePreviewFailed(true)}');
-    expect(source).toContain('default-avatar.png');
-    expect(source).toContain('className="reward-preview__avatar-art"');
-    expect(source).toContain('<AvatarCosmetics frame={frame.id} still />');
-    expect(source).toContain('Preview Unavailable');
-    expect(source).toContain('{formatPopupText(featuredReward.name)}');
-    expect(source).toContain('{formatPopupText(featuredReward.description)}');
-    expect(source).toContain('{formatPopupText(reward.name)}');
-    expect(source).toContain('{formatPopupText(reward.description)}');
-    expect(source).not.toMatch(/[★◆♛◐▲◈]/u);
-    expect(source).not.toMatch(/[–—]/u);
-    expect(source).not.toContain('reward-icon-box');
-    expect(source).not.toContain('featured-icon');
-    expect(source).not.toContain('ClubIcon');
-
-    expect(css).toContain('shark-panel-v1/button-primary.png');
-    expect(css).toContain('shark-panel-v1/button-secondary.png');
-    expect(css).toContain('wallet-row-shell.png');
-    expect(css).toContain('club-utility-shell.webp');
-    expect(css).toContain('club-nav-shell.webp');
-    expect(css).toContain("[data-theme='light'] .rewards-marketplace");
-    expect(css).toMatch(/\.reward-card\s*\{[\s\S]*?border-radius:\s*0/);
-    expect(css).toMatch(/\.category-tab\s*\{[\s\S]*?border-radius:\s*0/);
-    expect(css).not.toMatch(/(?:linear|radial)-gradient/i);
-    expect(css).not.toContain('clip-path:');
-    expect(css).not.toContain(':hover');
-    expect(css).not.toMatch(/#4ade80|#22c55e|#15803d|#8b5cf6|#a855f7|rgba\(155,\s*89,\s*182/i);
-    expect(css).not.toContain('.reward-icon-box');
-    expect(css).not.toContain('.featured-icon');
-    expect(css).not.toContain('.card-glow');
+  it('does not retain an unauthorized points storefront', () => {
+    expect(existsSync(resolve(root, 'src/components/vip/RewardsMarketplace.tsx'))).toBe(false);
+    expect(text('src/pages/VIPPage.tsx')).not.toContain('fn_redeem_vip_points');
+    expect(text('src/pages/VIPPage.tsx')).not.toContain('vip_points');
   });
 
   it('keeps VIP activity summaries and timeline rows on painted master surfaces', () => {

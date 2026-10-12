@@ -44,7 +44,7 @@
  *
  * VIP members own every `vip`-tier cosmetic outright. That is not an invention:
  * `VIPBenefitsGrid.tsx:57` has been promising "Exclusive avatar frames &
- * badges" to paying members, and `RewardsMarketplace.tsx` has been listing an
+ * badges" to paying members, and the retired points catalog listed an
  * `avatar-gold-frame` reward, since long before any code could render one.
  *
  * THE UI IS NOT THE GUARD. The database puts the same rule in a BEFORE UPDATE

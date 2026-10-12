@@ -412,3 +412,87 @@
     padding-inline: 10px;
   }
 }
+
+/* The page has one readable column; the gold membership card owns its art.
+   No Shark panel surrounds cards or painted benefit rows. */
+.vip-page {
+  max-width: 1180px;
+  margin-inline: auto;
+  padding: clamp(16px, 3vw, 32px);
+  padding-bottom: max(112px, calc(90px + env(safe-area-inset-bottom)));
+  background: #000;
+}
+.vip-card-section {
+  margin: 24px 0;
+  padding: 0;
+  background: transparent;
+}
+.vip-section {
+  padding-inline: 0;
+}
+.vip-card-active {
+  padding: 0;
+  min-width: 0;
+}
+.vip-card-info {
+  min-width: 0;
+}
+.vip-card-tier {
+  font-size: 20px;
+}
+.vip-card-expiry {
+  font-size: 14px;
+  line-height: 1.5;
+}
+.diamond-balance {
+  background: transparent;
+  padding: 20px 0;
+  overflow: visible;
+  border-top: 1px solid #26333d;
+}
+.diamond-balance__icon {
+  display: none;
+}
+.purchase-card {
+  min-width: 0;
+  padding: 20px 0;
+  background: transparent;
+  border-top: 1px solid #26333d;
+  overflow: visible;
+}
+.vip-extend-btn,
+.diamond-buy-btn,
+.purchase-btn {
+  background-color: transparent;
+  width: 174px;
+  max-width: 100%;
+  aspect-ratio: 348 / 114;
+  min-height: 44px;
+  padding: 10px 24px;
+  line-height: 1.3;
+}
+.purchase-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+}
+@media (max-width: 800px) {
+  .vip-card-active {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+  .vip-card-info {
+    text-align: center;
+  }
+}
+@media (max-width: 600px) {
+  .diamond-balance {
+    grid-template-columns: 1fr;
+  }
+  .diamond-balance__actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .diamond-buy-btn {
+    width: 100%;
+    font-size: 12px;
+    padding-inline: 20px;
+  }
+}

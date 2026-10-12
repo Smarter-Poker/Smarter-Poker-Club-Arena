@@ -157,8 +157,8 @@
     touch-action: manipulation;
   }
 
-  .vip-table th,
-  .vip-table td {
+  .diamond-table th,
+  .diamond-table td {
     white-space: nowrap;
   }
 }
@@ -226,14 +226,14 @@
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
-/* ── VIP Points Table ──────────────────────────────────────────────────────── */
-.vip-table {
+/* ── Diamond Activity Table ──────────────────────────────────────────────────────── */
+.diamond-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
 }
 
-.vip-table thead th {
+.diamond-table thead th {
   text-align: left;
   font-size: 11px;
   font-weight: 600;
@@ -244,13 +244,13 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.vip-table tbody td {
+.diamond-table tbody td {
   padding: 10px 12px;
   color: #e2e8f0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.03);
 }
 
-.vip-type-badge {
+.diamond-type-badge {
   display: inline-block;
   padding: 2px 8px;
   border-radius: 4px;
@@ -258,23 +258,23 @@
   font-weight: 600;
 }
 
-.vip-type-badge.rake {
+.diamond-type-badge.rake {
   background: rgba(34, 197, 94, 0.15);
   color: #22c55e;
 }
-.vip-type-badge.bonus {
+.diamond-type-badge.bonus {
   background: rgba(59, 130, 246, 0.15);
   color: #3b82f6;
 }
-.vip-type-badge.promo {
+.diamond-type-badge.promo {
   background: rgba(168, 85, 247, 0.15);
   color: #a855f7;
 }
-.vip-type-badge.tournament {
+.diamond-type-badge.tournament {
   background: rgba(245, 158, 11, 0.15);
   color: #f59e0b;
 }
-.vip-type-badge.adjustment {
+.diamond-type-badge.adjustment {
   background: rgba(239, 68, 68, 0.15);
   color: #ef4444;
 }

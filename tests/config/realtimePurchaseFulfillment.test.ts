@@ -20,7 +20,6 @@ const TABLE = read('src/pages/TablePage.tsx');
 const THROWS = read('src/components/table/ThrowableSelector.tsx');
 const THROW_SERVICE = read('src/services/ThrowableService.ts');
 const EMOJIS = read('src/components/table/EmojiPicker.tsx');
-const REWARDS = read('src/components/vip/RewardsMarketplace.tsx');
 const VIP_PAGE = read('src/pages/VIPPage.tsx');
 
 describe('atomic club-shop fulfillment', () => {
@@ -37,8 +36,8 @@ describe('atomic club-shop fulfillment', () => {
     expect(MIGRATION).toContain('SET is_active = false');
     expect(MIGRATION).toContain("grant_type = 'manual'");
     expect(MIGRATION).toContain('Active shop item has no executable grant');
-    expect(REWARDS).toContain("row.grant_type === 'theme' || row.grant_type === 'avatar'");
-    expect(REWARDS).not.toContain("id: 'merch-hoodie'");
+    expect(VIP_PAGE).not.toContain('RewardsMarketplace');
+    expect(VIP_PAGE).not.toContain('fn_redeem_vip_points');
   });
 
   it('checks durable permanent entitlements before allowing another charge', () => {

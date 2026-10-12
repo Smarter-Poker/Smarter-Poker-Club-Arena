@@ -95,7 +95,11 @@ import { useToast } from '../components/common/Toast';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
 import DiamondWalletTransfer from '../components/wallet/DiamondWalletTransfer';
 import { DEFAULT_CASHIER_WALLET, secondsLeftFromServer } from '../components/wallet/cashierModes';
-import { canSeeClubBank, canHoldAgentWallet } from '../components/wallet/walletRows';
+import {
+  canSeeClubBank,
+  canHoldAgentWallet,
+  holdsPlayerWallet,
+} from '../components/wallet/walletRows';
 import {
   describeChipTransaction,
   presentChipTransaction,
@@ -452,6 +456,23 @@ function CashierTradeWorkspace() {
   const [activeCashier, setActiveCashier] = useState<
     'club_bank' | 'promo_wallet' | 'agent_wallet' | null
   >(null);
+  /**
+   * THE OWNER FUNDS THEIR OWN PLAYER WALLET (Dan 2026-10-11: "CLUB OWNERS CAN
+   * PLAY AND HAVE CHIPS SENT TO THEIR PLAYER WALLETS. THEY CURRENTLY AREN'T
+   * SELECTABLE TO RECEIVE CHIPS").
+   *
+   * Send Out spends the caller's agent wallet through fn_agent_wallet_send,
+   * which refuses a self-send and pays a staff recipient into their float, so
+   * the owner's own row cannot be a Send Out target. The Club Bank can pay
+   * it: fn_club_bank_send has no self guard and credits the player wallet of
+   * an owner or co-owner as asked. So the owner's own row opens the Club Bank
+   * cashier on their own player wallet - the same audited path, one
+   * chip_transactions row, one retry key - rather than a new money route.
+   */
+  const [cashierPreset, setCashierPreset] = useState<{
+    recipientId: string;
+    destination: 'player_wallet';
+  } | null>(null);
   // Guards a double-submit that beats the re-render `busy` depends on.
   const busyRef = useRef(false);
   /**
@@ -531,6 +552,7 @@ function CashierTradeWorkspace() {
 
   useEffect(() => {
     if (!isOnline) setActiveCashier(null);
+    if (!isOnline) setCashierPreset(null);
   }, [isOnline]);
 
   // ── Resolve club uuid from the route param ─────────────────────────────────
@@ -1096,6 +1118,7 @@ function CashierTradeWorkspace() {
     setAmountModal(null);
     setAmount('');
     setActiveCashier(null);
+    setCashierPreset(null);
     setTransferFailures([]);
     setTransferRecovery(null);
     submissionIdRef.current = null;
@@ -2585,6 +2608,11 @@ function CashierTradeWorkspace() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   const cashierAuthorityBlocked = busy || loading || !roleResolved || !!loadError;
+  /** Whether the viewer's own row offers "Fund Me" (see cashierPreset). */
+  // Not inside a union house: fn_has_player_wallet gives nobody a player wallet
+  // in a union, so the chips would land in a balance no table reads.
+  const selfCanFundPlayerWallet =
+    currentClub?.entityType === 'club' && canSeeClubBank(myRole) && holdsPlayerWallet(myRole);
 
   return (
     <div className={styles.page} data-cashier-surface="trade">
@@ -3107,7 +3135,11 @@ function CashierTradeWorkspace() {
                       className={`${styles.row} ${r.isSelf ? styles.rowSelf : styles.selectableRow} ${selected.has(r.userId) ? styles.rowSelected : ''}`}
                       onClick={() => navigate(`/clubs/${clubParam}/members/${r.userId}`)}
                       title={
-                        r.isSelf ? 'This Is You. Chips Cannot Be Sent To Yourself.' : undefined
+                        r.isSelf
+                          ? selfCanFundPlayerWallet
+                            ? 'This Is You. Fund Your Player Wallet From The Club Bank With Fund Me.'
+                            : 'This Is You. Chips Cannot Be Sent To Yourself.'
+                          : undefined
                       }
                     >
                       <input
@@ -3150,7 +3182,32 @@ function CashierTradeWorkspace() {
                         <span className={styles.rowBalance}>{fmt(r.chipBalance)}</span>
                         <span className={styles.rowSub}>Player Wallet</span>
                       </span>
-                      {r.isSelf ? null : (
+                      {r.isSelf ? (
+                        /* The owner's own row: Send Out cannot pay it (see
+                           cashierPreset), the Club Bank can. Offered only to
+                           a role that both spends the bank and holds a
+                           player wallet - owner, co-owner, super agent. */
+                        selfCanFundPlayerWallet ? (
+                          <button
+                            type="button"
+                            className={styles.checkbox}
+                            disabled={!isOnline || cashierAuthorityBlocked}
+                            aria-label="Send Chips From The Club Bank To My Player Wallet"
+                            title="Send Chips From The Club Bank To Your Own Player Wallet So You Can Play"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              if (!user?.id) return;
+                              setCashierPreset({
+                                recipientId: user.id,
+                                destination: 'player_wallet',
+                              });
+                              setActiveCashier('club_bank');
+                            }}
+                          >
+                            Fund Me
+                          </button>
+                        ) : null
+                      ) : (
                         <button
                           type="button"
                           className={`${styles.checkbox} ${selected.has(r.userId) ? styles.checkboxOn : ''}`}
@@ -3898,10 +3955,13 @@ function CashierTradeWorkspace() {
           // that event reloads this page; a second loadClub() here doubled
           // every paged read on a large club (P-18).
           setActiveCashier(null);
+          setCashierPreset(null);
         }}
         clubId={clubUuid || clubParam || ''}
         role={myRole}
         walletType={activeCashier || DEFAULT_CASHIER_WALLET}
+        initialRecipientId={cashierPreset?.recipientId ?? null}
+        initialDestination={cashierPreset?.destination ?? null}
       />
 
       {/* Amount modal */}

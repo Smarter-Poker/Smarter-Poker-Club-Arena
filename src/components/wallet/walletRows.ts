@@ -62,6 +62,20 @@ export function canHoldAgentWallet(role: unknown): boolean {
 }
 
 /**
+ * Who holds a PLAYER wallet in a chip club (Dan 2026-09-02): "ALL CLUB OWNERS
+ * AND CO-OWNERS SHOULD HAVE A PLAYER WALLET (ADMIN'S SHOULD NOT)". Everyone
+ * else plays out of one too. Mirrors fn_has_player_wallet and the admin
+ * refusal inside fn_club_bank_send, so a cashier never offers a player-wallet
+ * credit the server will refuse, and never hides one it will accept.
+ *
+ * Deliberately NOT the complement of canHoldAgentWallet: an owner, co-owner or
+ * super agent holds BOTH wallets, which is why a send to them has to ask which.
+ */
+export function holdsPlayerWallet(role: unknown): boolean {
+  return normaliseRole(role) !== 'admin';
+}
+
+/**
  * Which rows a club-scoped wallet shows, in display order. The Diamonds row is
  * not listed: every role has one and the component renders it unconditionally
  * above these.
@@ -100,7 +114,7 @@ export function clubWalletRows(
   // BUT NOW I'M SEEING THE VALUE IN IT." An admin runs the club's money and
   // never plays out of it; everyone else, owners included, has the one wallet
   // that actually buys into a game.
-  if (r !== 'admin') rows.push('player_wallet');
+  if (holdsPlayerWallet(r)) rows.push('player_wallet');
 
   // And the rest if applicable
   if (canSeeClubBank(r)) {

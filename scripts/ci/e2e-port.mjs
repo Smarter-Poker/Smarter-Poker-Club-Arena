@@ -35,27 +35,56 @@
 
 const SLOTS = 300; // 300 * 10 = a 3000-port window above the base
 
+// Fetch standard port blocking, verified 2026-10-12:
+// https://fetch.spec.whatwg.org/#port-blocking
+// A bound TCP listener on 6697 was still unreadable by the readiness fetch.
+// Skip the entire ten-port block, keeping adjacent bases such as 5188/5189
+// adjacent and preserving each surface's distinct final digit.
+const RESTRICTED_BLOCKS = new Set(
+  [
+    0, 1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95, 101,
+    102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135, 137, 139, 143, 161, 179, 389, 427,
+    465, 512, 513, 514, 515, 526, 530, 531, 532, 540, 548, 554, 556, 563, 587, 601, 636, 989, 990,
+    993, 995, 1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667,
+    6668, 6669, 6679, 6697, 10080,
+  ].map((port) => Math.floor(port / 10))
+);
+
+function readablePort(base, offset) {
+  let port = base + offset * 10;
+  // Each iteration advances to a different block. At most this finite set
+  // can be refused; this is allocation arithmetic, not a server repair loop.
+  for (let attempt = 0; attempt <= RESTRICTED_BLOCKS.size; attempt++) {
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new RangeError('Preview port must be an integer between 1 and 65535.');
+    }
+    if (!RESTRICTED_BLOCKS.has(Math.floor(port / 10))) return port;
+    port += 10;
+  }
+  throw new RangeError('No Fetch-readable preview port in the allocation window.');
+}
+
 export function portFor(base) {
   // CA_E2E_PORT_OFFSET is the explicit override, for anyone who needs to pin
   // a port by hand (debugging a hung preview, say).
   const explicit = process.env.CA_E2E_PORT_OFFSET;
   if (explicit !== undefined && explicit !== '') {
     const n = Number(explicit);
-    if (Number.isFinite(n)) return base + Math.trunc(n) * 10;
+    if (Number.isFinite(n)) return readablePort(base, Math.trunc(n));
   }
 
   // Only self-hosted runners share a host. A GitHub-hosted runner has the VM
   // to itself, and `runner.environment` is not visible here, but its
   // RUNNER_NAME is a per-run throwaway anyway, so hashing it is harmless.
   const id = process.env.RUNNER_NAME || '';
-  if (!id) return base;
+  if (!id) return readablePort(base, 0);
 
   let h = 2166136261;
   for (let i = 0; i < id.length; i++) {
     h ^= id.charCodeAt(i);
     h = Math.imul(h, 16777619) >>> 0;
   }
-  return base + (h % SLOTS) * 10;
+  return readablePort(base, h % SLOTS);
 }
 
 // CLI: `node scripts/ci/e2e-port.mjs 4173`

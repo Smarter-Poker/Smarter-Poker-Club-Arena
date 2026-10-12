@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 203178,
-      "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+      "bytes": 204104,
+      "sha256": "e5d5d5cf627d9c76645259024280ec94acf8c3b6f62e97ee8418a87f714da3e5"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -2224,5 +2224,38 @@
         }
       }
     ]
+  },
+  "inventorySealNativeQualification20261012": {
+    "reason": "Add exact bucketed inventory seal PostgreSQL17 equivalence to existing required Accounting3. Preserve every financial source, assertion, historical pin and SOURCE_ONLY_UNRUN status. Workflow fingerprint refresh is source identity only, not cash execution or production certification.",
+    "previousWorkflowPin": {
+      "bytes": 202788,
+      "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
+    }
+  },
+  "inventorySealCurrentMainIntegration20261012": {
+    "reason": "Preserve current main member-removal qualification and candidate inventory-seal native qualification together. Source identity only; financial inputs, historical pins and SOURCE_ONLY_UNRUN remain unchanged.",
+    "previousCandidateWorkflowPin": {
+      "bytes": 203714,
+      "sha256": "68ec0a94cbe906ff36162e004227766cdec8daf80023551b6693b46ceec1d559"
+    },
+    "previousCurrentMainWorkflowPin": {
+      "bytes": 203003,
+      "sha256": "1699ddcbdafde77bbb538e632911eb11663486d78a99571e67006ae4f4004995"
+    }
+  },
+  "playerCommandHistoryInventoryIntegration20261012": {
+    "reason": "Preserve protected inventory, club-removal and history qualification routes and their immutable historical receipts. Refresh only current integrated workflow fingerprint; financial inputs, assertions and qualification status remain unchanged.",
+    "previousCandidateWorkflowPin": {
+      "bytes": 203178,
+      "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+    },
+    "previousMainWorkflowPin": {
+      "bytes": 203929,
+      "sha256": "4c8baf0332e0a416f9d4c07e8b2c4cfddac492d6c51ec22cfe2c37ff9077d059"
+    },
+    "currentWorkflowPin": {
+      "bytes": 204104,
+      "sha256": "e5d5d5cf627d9c76645259024280ec94acf8c3b6f62e97ee8418a87f714da3e5"
+    }
   }
 }

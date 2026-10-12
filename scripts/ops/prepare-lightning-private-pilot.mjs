@@ -1,5 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import { supabaseServerHeaders } from '../ci/supabase-auth-headers.mjs';
 
 export const PILOT = Object.freeze({
@@ -39,6 +40,20 @@ export function assertPilotGame(game, clubId) {
   }
 }
 
+function assertPilotRoster(members) {
+  if (
+    !Array.isArray(members) ||
+    members.length !== 1 ||
+    members[0].user_id !== PILOT.ownerId ||
+    members[0].status !== 'active' ||
+    members[0].role !== 'owner'
+  ) {
+    throw new Error(
+      'Existing Pilot Participants Require Explicit Recovery; No Qualification Receipt Issued'
+    );
+  }
+}
+
 export function selectPilotGame(games, clubId) {
   if (!Array.isArray(games) || games.some((game) => game.club_id !== clubId)) {
     throw new Error('Pilot Game Readback Scope Is Invalid');
@@ -60,8 +75,48 @@ export function pilotServiceFetch(key, fetchImpl = fetch) {
     });
 }
 
-export async function preparePilot(env = process.env) {
-  const { createClient } = await import('@supabase/supabase-js');
+function assertPilotControlReceipt(row, clusterId, action, requestId, target) {
+  const state = (s) =>
+    s &&
+    typeof s === 'object' &&
+    !Array.isArray(s) &&
+    typeof s.cluster_mode === 'string' &&
+    s.cluster_mode.trim().length > 0 &&
+    typeof s.lightning_enabled === 'boolean';
+  const event = row?.event_id;
+  const audited =
+    (typeof event === 'number' && Number.isSafeInteger(event) && event > 0) ||
+    (typeof event === 'string' && /^[1-9]\d*$/.test(event));
+  const already = row?.already === true;
+  const legacyWindow =
+    action === 'set_shadow_window' &&
+    row?.replayed === true &&
+    row?.idempotent === true &&
+    row?.after?.shadow_window_ms === undefined;
+  const actual =
+    action === 'set_shadow_window' ? row?.after?.shadow_window_ms : row?.after?.integrity_telemetry;
+  if (
+    !row ||
+    row.ok !== true ||
+    row.cluster_id !== clusterId ||
+    row.action !== action ||
+    row.request_id !== requestId ||
+    typeof row.idempotent !== 'boolean' ||
+    !state(row.before) ||
+    !state(row.after) ||
+    (row.replayed !== undefined && typeof row.replayed !== 'boolean') ||
+    (row.already !== undefined && typeof row.already !== 'boolean') ||
+    (already ? row.idempotent !== true || event !== null : !audited) ||
+    (already && !isDeepStrictEqual(row.before, row.after)) ||
+    (!legacyWindow && actual !== target) ||
+    (legacyWindow && !already && row.detail?.shadow_window_ms !== target)
+  ) {
+    throw new Error('Pilot Control Receipt Is Missing Or Does Not Match The Requested Operation');
+  }
+}
+
+export async function preparePilot(env = process.env, clientFactory) {
+  const createClient = clientFactory ?? (await import('@supabase/supabase-js')).createClient;
   if (
     env.SP_EMAIL?.toLowerCase() !== PILOT.ownerEmail ||
     !env.SP_PASS ||
@@ -120,14 +175,7 @@ export async function preparePilot(env = process.env) {
       await admin.from('club_members').select('user_id,status,role').eq('club_id', club.id),
       'Pilot Roster'
     );
-    if (
-      members.length !== 1 ||
-      members[0].user_id !== PILOT.ownerId ||
-      members[0].status !== 'active' ||
-      members[0].role !== 'owner'
-    ) {
-      throw new Error('Existing Pilot Participants Require Explicit Recovery; No State Changed');
-    }
+    assertPilotRoster(members);
     let games = must(
       await admin.from('cash_games').select('*').eq('club_id', club.id),
       'Pilot Games'
@@ -168,7 +216,16 @@ export async function preparePilot(env = process.env) {
       }),
       'Pilot Calibration Window'
     );
+    if (result?.code === 'REQUEST_IN_PROGRESS')
+      throw new Error('Pilot Calibration Window Is Still In Progress; Retry The Same Operation ID');
     if (result?.ok !== true) throw new Error(`Pilot Window Refused: ${result?.code || 'Unknown'}`);
+    assertPilotControlReceipt(
+      result,
+      game.id,
+      'set_shadow_window',
+      'aaf6c3a2-b098-4d65-8e47-647a6834900b',
+      60000
+    );
     const telemetry = must(
       await player.rpc('fn_lightning_operator_control', {
         p_cluster_id: game.id,
@@ -179,8 +236,19 @@ export async function preparePilot(env = process.env) {
       }),
       'Pilot Integrity Telemetry'
     );
+    if (telemetry?.code === 'REQUEST_IN_PROGRESS')
+      throw new Error(
+        'Pilot Integrity Telemetry Is Still In Progress; Retry The Same Operation ID'
+      );
     if (telemetry?.ok !== true)
       throw new Error(`Pilot Integrity Refused: ${telemetry?.code || 'Unknown'}`);
+    assertPilotControlReceipt(
+      telemetry,
+      game.id,
+      'set_integrity_telemetry',
+      'b5e5c106-183e-4f9c-a37b-d72189567369',
+      true
+    );
     const config = must(
       await admin.rpc('fn_lightning_config', { p_cluster_id: game.id }),
       'Pilot Config Readback'
@@ -194,6 +262,20 @@ export async function preparePilot(env = process.env) {
     ) {
       throw new Error('Pilot Configuration Readback Mismatch');
     }
+    // Cached operation receipts prove the original decision. They do not prove
+    // that a later operator has left the game and admission state unchanged.
+    const currentGame = must(
+      await admin.from('cash_games').select('*').eq('id', game.id).maybeSingle(),
+      'Pilot Final Game Readback'
+    );
+    assertPilotGame(currentGame, club.id);
+    if (currentGame.id !== game.id) throw new Error('Pilot Final Game Identity Mismatch');
+    assertPilotRoster(
+      must(
+        await admin.from('club_members').select('user_id,status,role').eq('club_id', club.id),
+        'Pilot Final Roster Readback'
+      )
+    );
     const receipt = {
       clubId: club.id,
       clusterId: game.id,

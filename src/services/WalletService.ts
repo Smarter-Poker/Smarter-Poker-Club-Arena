@@ -827,7 +827,7 @@ export const WalletService = {
    */
   async readPlayerBalance(
     userId: string,
-    opts?: { clubId?: string | null; tableId?: string | null }
+    opts?: { clubId?: string | null; tableId?: string | null; tournamentId?: string | null }
   ): Promise<{ balance: number | null; source: 'rpc' | 'wallet' | 'failed' }> {
     // UNION LAW (Dan 2026-08-20): under club-scoped chips a player spends the
     // chips of the club they entered through, not the global player wallet.
@@ -846,6 +846,11 @@ export const WalletService = {
               p_user_id: userId,
               p_club_id: clubId,
               p_table_id: opts?.tableId ?? null,
+              /* A TOURNAMENT ENTRY IS READ BY TOURNAMENT (2026-10-12). Asked by
+                 the tournament's club, a union event read the union's house
+                 wallet (0 for Dan) while the entry is charged to a member
+                 club. The server resolves the wallet the entry will spend. */
+              p_tournament_id: opts?.tournamentId ?? null,
             })
             .then((result) => result),
         { maxRetries: 4, baseDelayMs: 500 }

@@ -261,4 +261,80 @@ SQL
 "${PSQL[@]}" -f "$integrity_migration"
 echo 'PASS: missing integrity door reproduced; authenticated typed dark-cluster activation, real hand drain, running-worker refusal, persisted dashboard/receipt settings, one event under replay, unchanged money/stacks and exact three-function migration reapplication'
 
+# Request UUID ownership must span Clusters, not only their individual row locks.
+request_race() {
+  python3 - "$pgbin/psql" "$fixture/socket" "$port" "$1" <<'PYTHON'
+import json,subprocess,sys,time,uuid,selectors
+psql,socket,port,stage=sys.argv[1:]
+args=[psql,'-X','-qAt','-v','ON_ERROR_STOP=1','-h',socket,'-p',port,'-d','postgres']
+def q(sql): return subprocess.check_output(args+['-c',sql],text=True).strip()
+def ctl(caller,g,rid,value=True,reason='global request qualification'):
+ return "SELECT harness.ctl('%s','%s','set_integrity_telemetry','{\"value\":%s}','%s','%s');"%(caller,g,str(value).lower(),reason,rid)
+def dark():
+ return q("DO $$ DECLARE g uuid:=harness.lc('global request qualification'); BEGIN PERFORM harness.must(harness.ctl('admin',g,'drain'),'race drain'); PERFORM public.fn_cash_cluster_lightning_drive(g); PERFORM harness.must(harness.ctl('admin',g,'set_worker_mode','{\"mode\":\"off\"}'),'race off'); INSERT INTO harness.p13(k,game) VALUES('request-race-'||g,g); END $$; SELECT game FROM harness.p13 WHERE k LIKE 'request-race-%' ORDER BY ctid DESC LIMIT 1;")
+def one(same,rollback=False):
+ g1=dark();g2=g1 if same else dark();rid=str(uuid.uuid4());label='request-race-'+rid
+ money=[q("SELECT harness.money('%s'),harness.stacks('%s');"%(g,g)) for g in {g1,g2}]
+ first=subprocess.Popen(args,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,bufsize=1)
+ second=None
+ try:
+  first.stdin.write("SET application_name='%s-first'; BEGIN; %s\n"%(label,ctl('admin',g1,rid)));first.stdin.flush()
+  readable=selectors.DefaultSelector();readable.register(first.stdout,selectors.EVENT_READ)
+  if not readable.select(10): raise AssertionError('first request failed to return within test deadline')
+  original=json.loads(first.stdout.readline());assert original['ok'] is True
+  second=subprocess.Popen(args+['-c',"SET application_name='%s-second'; %s"%(label,ctl('admin',g2,rid))],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+  if stage=='before':
+   deadline=time.monotonic()+10
+   while q("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='%s-second' AND wait_event_type='Lock');"%label)!='t':
+    if second.poll() is not None: raise AssertionError('second backend finished before encountering the identity collision')
+    if time.monotonic()>=deadline: raise AssertionError('second backend did not reach duplicate request lock')
+    time.sleep(.01)
+  else:
+   out,err=second.communicate(timeout=10);assert second.returncode==0,err
+   pending=json.loads(out);assert pending.get('code')=='REQUEST_IN_PROGRESS',pending
+   assert pending.get('request_id')==rid
+   assert q("SELECT count(*) FROM public.lightning_operator_request WHERE request_id='%s';"%rid)=='0'
+   # Another operation has independent ownership and must remain usable.
+   if not same:
+    independent=json.loads(q("SELECT harness.ctl('admin','%s','set_shadow_window','{\"shadow_window_ms\":120000}');"%g2));assert independent['ok'] is True
+  first.stdin.write(('ROLLBACK;' if rollback else 'COMMIT;')+'\n\\q\n');first.stdin.flush();first.communicate(timeout=10);assert first.returncode==0
+  if stage=='before':
+   out,err=second.communicate(timeout=10);assert second.returncode==0,err;assert json.loads(out)['ok'] is True
+   assert q("SELECT count(*) FROM public.cash_cluster_events WHERE request_id='%s' AND kind='operator_set_integrity_telemetry';"%rid)=='2'
+   assert q("SELECT count(*) FROM public.lightning_operator_request WHERE request_id='%s';"%rid)=='1'
+   assert q("SELECT public.fn_lightning_config('%s')->>'integrity_telemetry';"%g2)=='true'
+   print('REPRODUCED: two Clusters committed two changes/events under one global request UUID and only one receipt')
+  else:
+   retry=json.loads(q(ctl('owner' if same else 'admin',g2,rid,True if rollback else False,'authorized cross-operator replay' if same else 'global request qualification')))
+   if rollback:
+    assert retry.get('ok') is True and retry.get('replayed') is not True and retry['event_id']!=original['event_id'],retry
+    assert q("SELECT public.fn_lightning_config('%s')->>'integrity_telemetry';"%g2)=='true'
+   elif same:
+    assert retry.get('replayed') is True and retry['event_id']==original['event_id'] and retry['after']==original['after'],retry
+    assert q("SELECT args->>'value' FROM public.lightning_operator_request WHERE request_id='%s';"%rid)=='true'
+    assert q("SELECT (e.payload->>'actor') IS NOT DISTINCT FROM r.actor::text FROM public.cash_cluster_events e JOIN public.lightning_operator_request r USING(request_id) WHERE r.request_id='%s';"%rid)=='t'
+   else:
+    assert retry.get('code')=='INVALID_ARGS',retry
+    assert q("SELECT public.fn_lightning_config('%s')->>'integrity_telemetry';"%g2)=='false'
+   assert q("SELECT count(*) FROM public.cash_cluster_events WHERE request_id='%s' AND kind='operator_set_integrity_telemetry';"%rid)=='1'
+   assert q("SELECT count(*) FROM public.lightning_operator_request WHERE request_id='%s';"%rid)=='1'
+   assert json.loads(q(ctl('stranger',g1,rid))).get('code')=='NOT_AUTHORIZED'
+   assert [q("SELECT harness.money('%s'),harness.stacks('%s');"%(g,g)) for g in {g1,g2}]==money
+   print('PASS: global request ownership, %s replay/conflict, authenticated receipt, independent operation, one event/receipt and unchanged money/stacks'%('rollback recovery' if rollback else 'same-Cluster authorized cross-operator' if same else 'cross-Cluster'))
+ finally:
+  for p in [first,second]:
+   if p and p.poll() is None: p.kill();p.communicate()
+one(False)
+if stage=='after':
+ one(True)
+ one(True,rollback=True)
+PYTHON
+}
+request_race before
+request_migration="$root/supabase/migrations/20261012143829_lightning_operator_request_ownership_is_global.sql"
+"${PSQL[@]}" -f "$request_migration"
+request_race after
+"${PSQL[@]}" -f "$request_migration"
+echo 'PASS: exact global-request migration reapplication and original operator security configuration'
+
 node --test "$root/scripts/ops/prepare-lightning-private-pilot.test.mjs"

@@ -22,7 +22,7 @@
  *   max(raw, 110) >= x iff raw >= x, so every cash-out target still returns
  *   exactly 0.80B; the ship can never explode until after 1.10x. A receipt
  *   says which floor it was sealed under through payout_version.
- *   CONTRACT 5 (Dan, 2026-10-12, migration 20261012114801): "THE GAME SHOULD
+ *   CONTRACT 5 (Dan, 2026-10-12, migration 20261012140447): "THE GAME SHOULD
  *   NEVER CRASH BEFORE 1.25X", "CRASH CAN BE A 5% HOUSE EDGE GAME", "THE
  *   'AVERAGE CRASH' IS BETWEEN 2.4 -3.0X" and "IT CAN PAY OUT UP TO 120%". The
  *   floor is 125 (1.25x), cash out opens at 1.26x, the cap is 20x, and
@@ -60,7 +60,7 @@ import { MAX_DIAMOND_SPIN, MIN_DIAMOND_SPIN } from './bonusGameBudget';
 const TWO_48 = 281474976710656n;
 
 /** The contract every crash round sealed since 2026-10-12 carries (migration
- * 20261012114801). Rounds sealed under 4 and earlier keep their own rules. */
+ * 20261012140447). Rounds sealed under 4 and earlier keep their own rules. */
 export const CRASH_PAYOUT_VERSION = 5;
 /** The contract that first floored the point (1.10x) and stated its floors on every receipt. */
 export const CRASH_FLOORED_VERSION = 4;

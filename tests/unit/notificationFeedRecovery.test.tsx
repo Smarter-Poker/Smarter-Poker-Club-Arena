@@ -534,6 +534,14 @@ describe('The mounted notification feed owns recovery and account state', () => 
     await flush();
     expect(screen.getByRole('heading', { name: `${heading} Notifications` })).not.toBeNull();
   });
+  it.each([null, undefined])('preserves an undated canonical signal: %s', async (createdAt) => {
+    feeds.push(response([{ ...row('undated', 'Undated Signal'), created_at: createdAt }]));
+    mount();
+    await flush();
+    expect(screen.queryByText('Undated Signal', { exact: false })).not.toBeNull();
+    expect(screen.getByRole('heading', { name: 'Earlier Notifications' })).not.toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
   it.each(['message', 'type'])(
     'retains confirmed rows when a successful feed contains malformed %s',
     async (field) => {

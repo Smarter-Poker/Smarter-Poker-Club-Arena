@@ -94,7 +94,7 @@ interface FeedNotification {
   data?: Record<string, unknown> | null;
   read?: boolean | null;
   is_read?: boolean | null;
-  created_at: string;
+  created_at?: string | null;
   actor_name?: string | null;
   actor_avatar_url?: string | null;
   /** Destination, resolved server-side by the one canonical resolver. */
@@ -107,12 +107,19 @@ interface FeedNotification {
 function isFeedRow(value: unknown): value is FeedNotification {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const row = value as Record<string, unknown>;
-  if (typeof row.id !== 'string' || !row.id.trim() || typeof row.created_at !== 'string')
-    return false;
+  if (typeof row.id !== 'string' || !row.id.trim()) return false;
   return (
-    ['type', 'title', 'message', 'actor_name', 'actor_avatar_url', 'link', 'action_url'].every(
-      (key) => row[key] == null || typeof row[key] === 'string'
-    ) && ['read', 'is_read'].every((key) => row[key] == null || typeof row[key] === 'boolean')
+    [
+      'type',
+      'title',
+      'message',
+      'created_at',
+      'actor_name',
+      'actor_avatar_url',
+      'link',
+      'action_url',
+    ].every((key) => row[key] == null || typeof row[key] === 'string') &&
+    ['read', 'is_read'].every((key) => row[key] == null || typeof row[key] === 'boolean')
   );
 }
 
@@ -254,7 +261,11 @@ const destinationOf = (n: FeedNotification): string | null =>
   n.link || n.action_url || (typeof n.data?.action_url === 'string' ? n.data.action_url : null);
 
 /** Day bucket for the rail headings. Local time, because that is the clock the player reads. */
-function dayBucket(iso: string, now = new Date()): 'Today' | 'Yesterday' | 'This Week' | 'Earlier' {
+function dayBucket(
+  iso: string | null | undefined,
+  now = new Date()
+): 'Today' | 'Yesterday' | 'This Week' | 'Earlier' {
+  if (!iso) return 'Earlier';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return 'Earlier';
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();

@@ -34,6 +34,7 @@ describe('Player Command history qualification stays connected', () => {
   it.each([
     'scripts/ci/test-player-command-history.py',
     'scripts/qualification/player-command-history.sql',
+    'supabase/migrations/20261012220618_player_history_authorizes_realtime_join_check_rows.sql',
     'supabase/migrations/20261012144105_player_command_history_reads_sanitized_staff_scope.sql',
   ])('selects accounting and its source checks for %s', (path) => {
     expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });

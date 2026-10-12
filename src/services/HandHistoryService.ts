@@ -410,6 +410,8 @@ class HandHistoryServiceClass {
        * statement of the same thing.
        */
       asset?: 'diamonds' | null;
+      /** Archive Reads Expose Failure Separately From A Successfully Empty History. */
+      throwOnError?: boolean;
     } = {}
   ): Promise<HandRecord[]> {
     // BUG 021 Layer D (2026-04-16): Supabase JS `.contains('column', [{key: val}])` serializes
@@ -428,7 +430,10 @@ class HandHistoryServiceClass {
         p_offset: offset,
       });
       if (error || !data) {
-        if (error) reportError(error, 'HandHistoryService.getPlayerHands_club_query');
+        if (error) {
+          if (opts.throwOnError) throw error;
+          reportError(error, 'HandHistoryService.getPlayerHands_club_query');
+        }
         return [];
       }
       return this.mapPlayerHandRows(
@@ -452,7 +457,10 @@ class HandHistoryServiceClass {
       : query.limit(limit));
 
     if (error || !data) {
-      if (error) reportError(error, 'HandHistoryService.getPlayerHands_hand_history_query');
+      if (error) {
+        if (opts.throwOnError) throw error;
+        reportError(error, 'HandHistoryService.getPlayerHands_hand_history_query');
+      }
       return [];
     }
 

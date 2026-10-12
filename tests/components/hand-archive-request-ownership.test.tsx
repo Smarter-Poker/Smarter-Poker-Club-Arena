@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({
   userId: 'a',
   search: '',
+  refresh: null as null | (() => void),
   getHand: vi.fn(),
   getHands: vi.fn(),
   toast: { error: vi.fn(), success: vi.fn() },
@@ -18,7 +19,14 @@ vi.mock('../../src/components/common/Toast', () => ({ useToast: () => state.toas
 vi.mock('../../src/lib/supabase', () => ({ supabase: {} }));
 vi.mock('../../src/hooks/useVisibilityRefresh', () => ({ useVisibilityRefresh: vi.fn() }));
 vi.mock('../../src/utils/retryFetch', () => ({ retryFetch: (fn: () => unknown) => fn() }));
-vi.mock('../../src/core/MasterBus', () => ({ masterBus: { subscribeDebounced: () => () => {} } }));
+vi.mock('../../src/core/MasterBus', () => ({
+  masterBus: {
+    subscribeDebounced: (event: string, callback: () => void) => {
+      if (event === 'HAND_COMPLETED') state.refresh = callback;
+      return () => {};
+    },
+  },
+}));
 vi.mock('../../src/services/HandHistoryService', () => ({
   handHistoryService: {
     getPlayerHands: (...args: unknown[]) => state.getHands(...args),
@@ -53,6 +61,12 @@ vi.mock('../../src/lib/handHistoryAdapter', () => ({
 vi.mock('../../src/components/handdetail/HandDetailView', () => ({
   default: () => <div>Hand Details</div>,
 }));
+vi.mock('../../src/components/handdetail/HandFlagControl', () => ({
+  default: () => <div>Hand Flag</div>,
+}));
+vi.mock('../../src/components/handdetail/HandNoteEditor', () => ({
+  default: () => <div>Hand Note</div>,
+}));
 import HandHistoryPage from '../../src/pages/HandHistoryPage';
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -74,11 +88,28 @@ function rows(prefix: string, count: number) {
 beforeEach(() => {
   state.userId = 'a';
   state.search = '';
+  state.refresh = null;
   state.getHand.mockReset();
   state.getHands.mockReset();
   state.toast.error.mockReset();
 });
 describe('Hand archive request ownership', () => {
+  it('coalesces refreshes while a same-account first read is pending', async () => {
+    const pending = deferred<unknown[]>();
+    state.getHands.mockReturnValue(pending.promise);
+    render(<HandHistoryPage />);
+    await waitFor(() => expect(state.getHands).toHaveBeenCalledTimes(1));
+    expect(state.refresh).toBeTypeOf('function');
+    act(() => {
+      state.refresh?.();
+      state.refresh?.();
+    });
+    expect(state.getHands).toHaveBeenCalledTimes(1);
+    await act(async () => pending.resolve([]));
+    expect(await screen.findByText('No Hands Recorded Yet')).toBeTruthy();
+    expect(screen.queryByRole('status', { name: 'Loading content' })).toBeNull();
+  });
+
   it('shows a linked hand even when the archive list fails, without repeated lookups', async () => {
     state.search = '?hand=linked-0';
     state.getHands.mockRejectedValue(new Error('Archive Unavailable'));

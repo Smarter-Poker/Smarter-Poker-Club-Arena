@@ -194,6 +194,8 @@ export default function HandHistoryPage() {
   const [shareHand, setShareHand] = useState<ShareableHand | null>(null);
   const [visible, setVisible] = useState<Record<string, boolean>>({});
   const firstPageSequenceRef = useRef(0);
+  const firstReadPendingRef = useRef<{ scope: string; sequence: number } | null>(null);
+  const firstLoadedScopeRef = useRef<string | null>(null);
   const evidenceCursorRef = useRef<StatsEvidenceCursor | null>(null);
   const requestKeyRef = useRef(archiveScope);
   requestKeyRef.current = archiveScope;
@@ -210,6 +212,8 @@ export default function HandHistoryPage() {
 
   useEffect(() => {
     firstPageSequenceRef.current += 1;
+    firstReadPendingRef.current = null;
+    firstLoadedScopeRef.current = null;
     moreSequenceRef.current += 1;
     morePendingRef.current = false;
     evidenceCursorRef.current = null;
@@ -231,12 +235,18 @@ export default function HandHistoryPage() {
   }, [archiveScope, userId]);
 
   const loadFirstPage = useCallback(async () => {
-    if (!userId) return;
+    if (
+      !userId ||
+      requestKeyRef.current !== archiveScope ||
+      firstReadPendingRef.current?.scope === archiveScope
+    )
+      return;
     const requestSequence = ++firstPageSequenceRef.current;
+    firstReadPendingRef.current = { scope: archiveScope, sequence: requestSequence };
     moreSequenceRef.current += 1;
     morePendingRef.current = false;
     setLoadingMore(false);
-    setLoading(true);
+    setLoading(firstLoadedScopeRef.current !== archiveScope);
     setLoadFailed(false);
     const requestKey = archiveScope;
     try {
@@ -275,6 +285,7 @@ export default function HandHistoryPage() {
               handHistoryService.getPlayerHands(userId, PAGE_SIZE, {
                 asset: arenaAssetScope,
                 clubId: statsDrilldown.clubId,
+                throwOnError: true,
               }),
             { maxRetries: 2, isMountedRef: isMounted }
           );
@@ -286,6 +297,7 @@ export default function HandHistoryPage() {
         return;
       setRows(data);
       setLoadedScope(requestKey);
+      firstLoadedScopeRef.current = requestKey;
       evidenceCursorRef.current = page?.next_cursor ?? null;
       setHasMore(page ? page.has_more : data.length === PAGE_SIZE);
     } catch (error) {
@@ -299,6 +311,8 @@ export default function HandHistoryPage() {
       toast.error('Could Not Load Hand History');
       setLoadFailed(true);
     } finally {
+      if (firstReadPendingRef.current?.sequence === requestSequence)
+        firstReadPendingRef.current = null;
       if (
         requestKeyRef.current === requestKey &&
         firstPageSequenceRef.current === requestSequence
@@ -367,6 +381,7 @@ export default function HandHistoryPage() {
                 offset: rows.length,
                 asset: arenaAssetScope,
                 clubId: statsDrilldown.clubId,
+                throwOnError: true,
               }),
             { maxRetries: 2, isMountedRef: isMounted }
           );

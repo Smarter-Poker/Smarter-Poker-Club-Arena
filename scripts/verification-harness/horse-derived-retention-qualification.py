@@ -42,5 +42,7 @@ def qualify(e,template):
  life=lifetime.qualify(e,snapshotted,connected=True,keep_template=True)
  batch=module(root/'scripts/verification-harness/horse-fact-card-batch.py','derived_fact_batch_proof')
  batch.qualify(e,life)
+ cadence=module(root/'scripts/verification-harness/horse-retention-cadence.py','derived_retention_cadence')
+ cadence.qualify(e,life)
  e.discard(life)
  e.discard(snapshotted);e.discard(reviewed);e.discard(captured);e.discard(base)

@@ -2108,5 +2108,9 @@ ALTER FUNCTION smarter_private.original_erased_cash_receivables(uuid,timestamptz
 ALTER FUNCTION smarter_private.original_erased_cash_discharge_returns(uuid,timestamptz,timestamptz) OWNER TO postgres;REVOKE ALL ON FUNCTION smarter_private.original_erased_cash_discharge_returns(uuid,timestamptz,timestamptz) FROM PUBLIC,anon,authenticated,service_role;
 ALTER FUNCTION smarter_private.original_restoration_cash_returns(uuid,timestamptz,timestamptz) OWNER TO postgres;REVOKE ALL ON FUNCTION smarter_private.original_restoration_cash_returns(uuid,timestamptz,timestamptz) FROM PUBLIC,anon,authenticated,service_role;
 ALTER FUNCTION public.fn_union_pnl_inventory_as_of_admitted(timestamptz) OWNER TO postgres;REVOKE ALL ON FUNCTION public.fn_union_pnl_inventory_as_of_admitted(timestamptz) FROM PUBLIC,anon,authenticated,service_role;
+-- Preserve the actual installed postgres-only consumer ACL; no browser or service grant.
+REVOKE ALL ON FUNCTION public.fn_union_pnl_boundary(uuid,timestamptz) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_union_pnl_original_flow_evidence(uuid,timestamptz,timestamptz) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_union_pnl_evidence_report(uuid,timestamptz,timestamptz) FROM PUBLIC,anon,authenticated,service_role;
 DO $post$BEGIN IF smarter_private.original_inventory_proof_sources_match() IS DISTINCT FROM true OR(SELECT count(*) FROM smarter_private.original_inventory_restoration_cases) IS DISTINCT FROM 245::bigint OR EXISTS(SELECT FROM smarter_private.original_inventory_restoration_certificates) OR EXISTS(SELECT FROM smarter_private.original_erased_cash_base_discharges) THEN RAISE EXCEPTION 'original_inventory_install_postimage_refused' USING ERRCODE='55000';END IF;END$post$;
 COMMIT;

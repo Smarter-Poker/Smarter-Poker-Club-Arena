@@ -70,7 +70,7 @@
     "scripts/qualification/original-seven-discharge/original-seven.jsonb": "80b91a2a3b69d56e29374050c11dd7c2d8cec1f8b4e8a80566f2bf351054cad9",
     "scripts/qualification/original-seven-discharge/run-native.py": "4b42bf21c16f3d9e40fcff5acb915519ca67e1acd0930f4e5c9a33521b5d6a46",
     "scripts/qualification/original-seven-discharge/test-discharge.py": "0c6f69bfb71fa9eee39d1e9eb1d4b7850271cdc22d316ff2d8e862823fc5950f",
-    "supabase/migrations/20261012224150_original_retirement_evidence_certifies_finite_inventory_boun.sql": "5564cdd1b0f7a17326b666cefae71575c10c7462f5aff170f58f372686100a34",
+    "supabase/migrations/20261012224150_original_retirement_evidence_certifies_finite_inventory_boun.sql": "9b432155ce4819117f2f3f4054642d1c95e78eab331b63f90932d22d66c59be8",
     "tests/an-original-inventory-gap-needs-its-financial-evidence.law.test.ts": "41d5ea3494ca813cf47c708433afa3aa804b825d643345d997f3029b6507faed"
   }
 }

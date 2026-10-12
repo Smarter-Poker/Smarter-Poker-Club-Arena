@@ -8,90 +8,39 @@
  * v2.0: Supports multiple simultaneous waitlists with stacked display.
  */
 
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 
 interface WaitlistInfo {
   tableId: string;
   position: number;
   tableName: string;
-  /**
-   * Set only while an EXCLUSIVE seat hold is live (Dan 2026-08-30: sixty
-   * seconds to get to the seat). An ISO instant rather than a duration, so a
-   * backgrounded tab resumes on the real remaining time instead of restarting
-   * the clock.
-   */
-  holdExpiresAt?: string | null;
 }
 
-/** Whole seconds left until an ISO instant. Never negative. */
-function secondsLeft(iso: string | null | undefined): number {
-  if (!iso) return 0;
-  const ms = new Date(iso).getTime() - Date.now();
-  return Number.isFinite(ms) ? Math.max(0, Math.ceil(ms / 1000)) : 0;
-}
-
+/**
+ * NO "SEAT HELD" POPUP (Dan 2026-10-12): "there is not point to have a pop up
+ * with 'This seat is reserved click to take it.' That's already assumed and
+ * doesn't need a pop up."
+ *
+ * This banner used to turn a held seat into a card - "Seat Held, Tap To Take
+ * It" - on top of whatever the player was looking at, including the very
+ * buy-in sheet the hold had just opened (the sheet already counts the hold
+ * down in its own pill). It now shows one thing only: a real place in line.
+ * A held seat is not a place in line, so its card is removed when the hold
+ * arrives. A player who was waiting elsewhere still hears about the seat
+ * through the "Seat Open" notification fn_offer_open_seat writes (bell and
+ * push), and the hold itself is unchanged on the server.
+ */
 export default function WaitlistBanner() {
   const [waitlistEntries, setWaitlistEntries] = useState<Map<string, WaitlistInfo>>(new Map());
-  const navigate = useNavigate();
 
-  /**
-   * ONE TICK FOR THE WHOLE BANNER, and only while something is actually
-   * counting down. A timer per entry would multiply renders for no gain, and
-   * a timer that runs when no hold is live is a wakeup every second for a
-   * component showing a static number.
-   */
-  const [, setTick] = useState(0);
-  const hasLiveHold = Array.from(waitlistEntries.values()).some(
-    (e) => secondsLeft(e.holdExpiresAt) > 0
-  );
-  useEffect(() => {
-    if (!hasLiveHold) return;
-    const id = setInterval(() => {
-      /* AND DROP A HOLD THAT HAS RUN OUT. Without this the card fell through
-         to the "You Are #N In Line" branch carrying the offer's position of
-         0, and rendered the literal nonsense "You Are #0 In Line" - then
-         froze there, because the tick stops once no hold is live. An expired
-         offer is not a queue position: fn_offer_open_seat sets that row to
-         'expired', so the player really is out of the line, and the honest
-         thing is to take the card away. The offer-expired notification is
-         what tells them why. */
-      setWaitlistEntries((prev) => {
-        let changed = false;
-        const next = new Map(prev);
-        for (const [key, entry] of prev) {
-          if (entry.holdExpiresAt && secondsLeft(entry.holdExpiresAt) <= 0) {
-            next.delete(key);
-            changed = true;
-          }
-        }
-        return changed ? next : prev;
-      });
-      setTick((t) => t + 1);
-    }, 1000);
-    return () => clearInterval(id);
-  }, [hasLiveHold]);
-
-  /**
-   * THE SEAT OFFER. Before this, the banner DELETED the badge the moment the
-   * player was offered a seat: WAITLIST_POSITION_CHANGED reports position 0
-   * for a 'notified' row, and position 0 was treated as "seated or removed".
-   * So the one moment that is actually urgent - a seat held for you, right
-   * now, for sixty seconds - was the moment the UI went blank.
-   */
   useMasterBusSubscription('WAITLIST_SEAT_OFFERED', (payload) => {
-    const { tableId, tableName, holdExpiresAt } = payload || ({} as any);
+    const { tableId } = payload || ({} as any);
     if (!tableId) return;
     setWaitlistEntries((prev) => {
+      if (!prev.has(tableId)) return prev;
       const next = new Map(prev);
-      const existing = next.get(tableId);
-      next.set(tableId, {
-        tableId,
-        position: 0,
-        tableName: tableName || existing?.tableName || '',
-        holdExpiresAt: holdExpiresAt ?? null,
-      });
+      next.delete(tableId);
       return next;
     });
   });
@@ -101,18 +50,11 @@ export default function WaitlistBanner() {
     setWaitlistEntries((prev) => {
       const next = new Map(prev);
       if (position && position > 0) {
-        next.set(tableId, { tableId, position, tableName, holdExpiresAt: null });
+        next.set(tableId, { tableId, position, tableName });
       } else {
-        /* Position 0 means seated, removed - OR being offered a seat right
-           now. Deleting unconditionally is what used to blank the banner at
-           the only moment it mattered, so a live hold survives; anything
-           else is still cleared. */
-        const existing = next.get(tableId);
-        if (existing && secondsLeft(existing.holdExpiresAt) > 0) {
-          next.set(tableId, { ...existing, position: 0 });
-        } else {
-          next.delete(tableId);
-        }
+        /* Position 0 means seated, removed, or holding a seat: none of them
+           is a place in line. */
+        next.delete(tableId);
       }
       return next;
     });
@@ -126,14 +68,8 @@ export default function WaitlistBanner() {
     });
   };
 
-  /* BELT AND BRACES. The prune above removes a lapsed offer on the next tick,
-     but a tick can be missed - a backgrounded tab, a throttled timer - and the
-     one thing that must never appear is a card claiming a position the player
-     does not hold. An entry is renderable only if it has a real queue position
-     or a hold that is still running. */
-  const entries = Array.from(waitlistEntries.values()).filter(
-    (e) => e.position > 0 || secondsLeft(e.holdExpiresAt) > 0
-  );
+  /* A card never claims a position the player does not hold. */
+  const entries = Array.from(waitlistEntries.values()).filter((e) => e.position > 0);
 
   if (entries.length === 0) return null;
 
@@ -169,163 +105,112 @@ export default function WaitlistBanner() {
         maxWidth: 'min(90vw, 420px)',
       }}
     >
-      {entries.map((entry, index) => {
-        const left = secondsLeft(entry.holdExpiresAt);
-        const held = left > 0;
-        return (
+      {entries.map((entry, index) => (
+        <div
+          key={entry.tableId}
+          className="waitlist-banner-card"
+          data-testid="waitlist-banner-card"
+          style={{
+            background:
+              'linear-gradient(135deg, rgba(0, 20, 40, 0.95) 0%, rgba(10, 30, 60, 0.95) 100%)',
+            backdropFilter: 'blur(20px) saturate(1.5)',
+            WebkitBackdropFilter: 'blur(20px) saturate(1.5)',
+            border: '1px solid rgba(0, 212, 255, 0.3)',
+            cursor: 'default',
+            borderRadius: 14,
+            padding: '10px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            boxShadow:
+              '0 8px 32px rgba(0, 0, 0, 0.5), 0 0 20px rgba(0, 212, 255, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+            animation: `animationsWaitlistSlideUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) ${index * 100}ms both`,
+            minWidth: 260,
+          }}
+        >
+          {/* Pulsing dot indicator */}
           <div
-            key={entry.tableId}
-            className={`waitlist-banner-card${held ? ' waitlist-banner-card--held' : ''}`}
-            data-testid="waitlist-banner-card"
-            onClick={held ? () => navigate(`/table/${entry.tableId}?buyin=1`) : undefined}
-            role={held ? 'button' : undefined}
-            tabIndex={held ? 0 : undefined}
-            onKeyDown={
-              held
-                ? (e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      navigate(`/table/${entry.tableId}?buyin=1`);
-                    }
-                  }
-                : undefined
-            }
-            aria-label={held ? 'Your Seat Is Held. Tap To Take It.' : undefined}
             style={{
-              background:
-                'linear-gradient(135deg, rgba(0, 20, 40, 0.95) 0%, rgba(10, 30, 60, 0.95) 100%)',
-              backdropFilter: 'blur(20px) saturate(1.5)',
-              WebkitBackdropFilter: 'blur(20px) saturate(1.5)',
-              border: held
-                ? `1px solid ${left <= 10 ? 'rgba(255, 92, 92, 0.85)' : 'rgba(0, 212, 255, 0.85)'}`
-                : '1px solid rgba(0, 212, 255, 0.3)',
-              cursor: held ? 'pointer' : 'default',
-              borderRadius: 14,
-              padding: '10px 20px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-              boxShadow:
-                '0 8px 32px rgba(0, 0, 0, 0.5), 0 0 20px rgba(0, 212, 255, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
-              animation: `animationsWaitlistSlideUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) ${index * 100}ms both`,
-              minWidth: 260,
+              width: 10,
+              height: 10,
+              borderRadius: '50%',
+              background: '#00d4ff',
+              boxShadow: '0 0 8px rgba(0, 212, 255, 0.6)',
+              animation: 'animationsWaitlistPulse 1.5s ease-in-out infinite',
+              flexShrink: 0,
             }}
-          >
-            {/* Pulsing dot indicator */}
+          />
+
+          <div style={{ flex: 1 }}>
             <div
               style={{
-                width: 10,
-                height: 10,
-                borderRadius: '50%',
-                background: held && left <= 10 ? '#ff5c5c' : '#00d4ff',
-                boxShadow:
-                  held && left <= 10
-                    ? '0 0 8px rgba(255, 92, 92, 0.7)'
-                    : '0 0 8px rgba(0, 212, 255, 0.6)',
-                animation: 'animationsWaitlistPulse 1.5s ease-in-out infinite',
-                flexShrink: 0,
+                fontSize: '0.72rem',
+                fontWeight: 800,
+                color: '#e0e8f0',
+                lineHeight: 1.3,
               }}
-            />
-
-            <div style={{ flex: 1 }}>
-              <div
+            >
+              You Are{' '}
+              <span
                 style={{
-                  fontSize: '0.72rem',
-                  fontWeight: 800,
-                  color: '#e0e8f0',
-                  lineHeight: 1.3,
+                  color: '#00d4ff',
+                  fontSize: '0.85rem',
                 }}
               >
-                {held ? (
-                  /* THE CLOCK IS INTERNAL (Dan 2026-09-23: 'THE "SEAT HELD" SHOULD
-                     BE AN "INTERNAL CLOCK" NOT A FORWARD FACING CLOCK COUNTING
-                     DOWN'). The hold still expires on the server's instant -
-                     the tick above drops the card at zero and the dot and
-                     border turn red inside the last ten seconds - but the
-                     number itself is not printed. A player is told the seat is
-                     held and what to do about it, not read a countdown. */
-                  <>
-                    Seat Held{' '}
-                    <span
-                      style={{
-                        color: left <= 10 ? '#ff5c5c' : '#00d4ff',
-                      }}
-                    >
-                      Tap To Take It
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    You Are{' '}
-                    <span
-                      style={{
-                        color: '#00d4ff',
-                        fontSize: '0.85rem',
-                      }}
-                    >
-                      #{entry.position}
-                    </span>{' '}
-                    In Line
-                  </>
-                )}
-              </div>
-              {/* An offer card arrives before the table name is known, and an
-                  empty line just adds a gap under the countdown. */}
-              {entry.tableName ? (
-                <div
-                  style={{
-                    fontSize: '0.62rem',
-                    color: '#6a7a8a',
-                    marginTop: 2,
-                  }}
-                >
-                  {entry.tableName}
-                </div>
-              ) : null}
+                #{entry.position}
+              </span>{' '}
+              In Line
             </div>
+            {/* An empty line would only add a gap under the position. */}
+            {entry.tableName ? (
+              <div
+                style={{
+                  fontSize: '0.62rem',
+                  color: '#6a7a8a',
+                  marginTop: 2,
+                }}
+              >
+                {entry.tableName}
+              </div>
+            ) : null}
+          </div>
 
-            {/* Close button */}
-            {/* 2026-08-28: was a 22x22 tap target with no accessible name —
+          {/* Close button */}
+          {/* 2026-08-28: was a 22x22 tap target with no accessible name —
               half the 44px floor, and a screen reader announced nothing.
               Painted size is unchanged; the hit area is expanded to 44x44
               with a pseudo-element, the pattern ActionPanel already uses for
               its raise-adjust buttons. */}
-            <button
-              onClick={(e) => {
-                // The card itself navigates while a hold is live; dismissing
-                // must not also open the table.
-                e.stopPropagation();
-                dismiss(entry.tableId);
-              }}
-              aria-label={
-                entry.tableName
-                  ? `Dismiss The Waitlist Notice For ${entry.tableName}`
-                  : 'Dismiss The Waitlist Notice'
-              }
-              className="waitlist-banner__dismiss"
-              style={{
-                background: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                borderRadius: '50%',
-                width: 22,
-                height: 22,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                color: '#5a6a7a',
-                fontSize: '0.65rem',
-                flexShrink: 0,
-                transition: 'all 0.2s',
-                position: 'relative',
-              }}
-              title="Dismiss"
-            >
-              <span aria-hidden="true">&times;</span>
-            </button>
-          </div>
-        );
-      })}
+          <button
+            onClick={() => dismiss(entry.tableId)}
+            aria-label={
+              entry.tableName
+                ? `Dismiss The Waitlist Notice For ${entry.tableName}`
+                : 'Dismiss The Waitlist Notice'
+            }
+            className="waitlist-banner__dismiss"
+            style={{
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: '50%',
+              width: 22,
+              height: 22,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              color: '#5a6a7a',
+              fontSize: '0.65rem',
+              flexShrink: 0,
+              transition: 'all 0.2s',
+              position: 'relative',
+            }}
+            title="Dismiss"
+          >
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+      ))}
 
       <style>{`
                 /* 44x44 hit area around the 22px dismiss dot (2026-08-28). */

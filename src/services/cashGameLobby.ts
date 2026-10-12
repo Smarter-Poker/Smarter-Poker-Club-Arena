@@ -411,6 +411,15 @@ export function joinGameRefusalText(err: unknown): string {
   if (code === 'GAME_BARRED') {
     return cashBuyInRefusalText(msg) || 'You Cannot Rejoin This Game Yet.';
   }
+  /* NO CHAIR IS HELD FOR A PLAYER WHO CANNOT PAY FOR IT (Dan 2026-10-12). The
+     door raises `INSUFFICIENT_CHIPS:<least buy-in>` before it holds anything,
+     and the figure is the answer, so it is said. */
+  if (code === 'INSUFFICIENT_CHIPS') {
+    const need = Number(msg.split(':')[1]);
+    return Number.isFinite(need) && need > 0
+      ? `Not Enough Chips. You Need At Least ${need.toLocaleString('en-US', { maximumFractionDigits: 2 })} Chips To Join This Game.`
+      : 'Not Enough Chips To Join This Game.';
+  }
   return 'The Game Could Not Seat You Right Now.';
 }
 

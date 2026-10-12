@@ -56,16 +56,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 202788,
-      "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
+      "bytes": 203727,
+      "sha256": "07d0f8a812e7f8be47e8cdf2fdecc85721fdcb805c24d01444f2b64c3cef8d17"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 35480,
-      "sha256": "1fc422b810641eee2149abbdbbf5ddf50c54e87162fbea82f22456c506bd712d"
+      "bytes": 35938,
+      "sha256": "f048bf089bf24cad2a38f7b536485dbd9f34f5db4a7f44a89ea1563a8e34dc09"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -160,8 +160,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 105657,
-      "sha256": "1e9a652b80aa851fb95d7780aeb6b62d360a7b61192c27edd9112ecd0b636392"
+      "bytes": 105731,
+      "sha256": "14a67e65f162b0c02c406ae9b24726852f5d5678c28f01ba861633b9c6ea9682"
     }
   },
   "nativePgCron": {
@@ -2155,5 +2155,22 @@
         }
       }
     ]
+  },
+  "nativeRecoveryExport20261012": {
+    "reason": "Add the native read-only export/restore fixture to existing accounting shards1/4 and classify every maintained tool input. Refresh only these reviewed workflow/classifier fingerprints; retained financial source pins, assertions and SOURCE_ONLY_UNRUN status remain unchanged. This is not financial or full production recovery qualification.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 202788,
+        "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "bytes": 35480,
+        "sha256": "1fc422b810641eee2149abbdbbf5ddf50c54e87162fbea82f22456c506bd712d"
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "bytes": 105657,
+        "sha256": "1e9a652b80aa851fb95d7780aeb6b62d360a7b61192c27edd9112ecd0b636392"
+      }
+    }
   }
 }

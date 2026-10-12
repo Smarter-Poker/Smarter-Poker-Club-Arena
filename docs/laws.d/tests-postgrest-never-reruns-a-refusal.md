@@ -1,0 +1,3 @@
+# tests/postgrest-never-reruns-a-refusal.law.test.ts
+
+Every custom SQLSTATE 40001 raise in public and smarter_private was read and sorted by whether a re-run of the same request can clear it (20261012061427): busy lanes and in-flight requests now raise 55P03, every other refusal 55000, and only fifteen sites in nine functions keep 40001, each with a written reason. PostgREST 14 re-runs 40001 without limit on a pooled connection, which is how one refusal exhausted the database pool on 2026-10-06 and 2026-10-11. The law pins the recorded bytes, the 186 site inventory, the kept set the migration proves on the live catalog, and the one caller that now waits on 55P03.

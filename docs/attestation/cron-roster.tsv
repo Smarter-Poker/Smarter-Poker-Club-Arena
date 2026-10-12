@@ -3,8 +3,8 @@
 # A change here is a change to what this platform runs on a timer. Never edit a
 # line to make a check pass: tests/the-scheduled-work-roster-is-pinned.law.test.ts
 # pins the count, and the count is supposed to be argued about.
-# observed_at: 2026-10-11T19:22:34Z
-# active: 132
+# observed_at: 2026-10-12T11:16:28Z
+# active: 135
 # retained-inactive: 2	the two bust sweeps restored disabled by 20260910073355
 # 2026-09-20: 135 -> 132. union-seat-provenance-heal, ca-bbj-repair-unbanked-15m
 # and reconcile-club-table-counts-nightly were retired by migration
@@ -106,6 +106,30 @@
 #     20261008140859 every_terminal_receipt_of_the_day_is_replayed_and_a_refusal_is_paged.
 #     It replays receipts read-only and pages a refusal; it repairs nothing.
 # Other owners' work: listed here, not judged here.
+# 2026-10-12: 132 -> 135 active, retained-inactive unchanged at 2. Read live
+# from cron.job at the observed_at above: 135 active, 2 inactive. Four rows
+# moved; three appeared and one was rescheduled:
+# THREE APPEARED, all one-shots for 2026-10-12 that unschedule themselves:
+#   dss-midway-go-live          0 17 12 10 *
+#   dss-midway-go-live-retry-1  5 17 12 10 *
+#   dss-midway-go-live-retry-2  20 17 12 10 *
+#     Each runs public.ops_dss_midway_go_live() (Deep Stack Society joins
+#     Midway Union at 12:00 PM Central, 17:00 UTC) if it is still before
+#     18:00 UTC, then cron.unschedule()s its own row. The function and its
+#     self-unschedule were installed by applied migration 20261012040553
+#     ops_dss_joins_midway_union_at_noon_20261012; no applied migration's
+#     statements contain a cron.schedule for any of the three names, so the
+#     rows themselves were scheduled outside the migration ledger. Their next
+#     fire after today is 2027-10-12. Once they have run (17:00-17:20 UTC
+#     today) this roster is expected to return to 132, and that move is a
+#     second reviewed edit of this file, not something to reconcile quietly.
+#     Another owner's work; listed here, not judged here.
+# ONE RESCHEDULED:
+#   game-management-events-retention  17 4 * * *  ->  7,17,27,37,47 * * * *,
+#     moved by applied migration 20261007102247
+#     the_game_management_health_counts_what_it_can_read_in_time with
+#     cron.alter_job: the daily 5,000-row prune could not keep up with
+#     200,000-600,000 rows a day. Retention pruning; it repairs nothing.
 # jobname	schedule
 # 2026-10-04: 125 -> 126. postgrest-pool-renew-10m was scheduled by migration
 # the_api_pool_is_renewed_before_it_outgrows_the_host: PostgREST's pool
@@ -205,8 +229,11 @@ daily-missions-retention-daily	23 5 * * *
 daily-missions-reward-expiry	7 0 * * *
 db-saturation-selftest	7,37 * * * *
 diamond-spin-daily-settlement	5 5,6 * * *
+dss-midway-go-live	0 17 12 10 *
+dss-midway-go-live-retry-1	5 17 12 10 *
+dss-midway-go-live-retry-2	20 17 12 10 *
 flag-garbage-tournaments	15 3 * * *
-game-management-events-retention	17 4 * * *
+game-management-events-retention	7,17,27,37,47 * * * *
 hand-history-compact	0,5,10,15,20,25,30,35,40,45,50,55 * * * *
 hand-history-compact-vacuum	2,12,22,32,42,52 * * * *
 home-game-auto-complete	17 * * * *

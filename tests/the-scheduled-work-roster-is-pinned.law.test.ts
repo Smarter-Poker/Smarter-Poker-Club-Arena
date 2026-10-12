@@ -121,8 +121,15 @@ const ROSTER = join(ROOT, 'docs', 'attestation', 'cron-roster.tsv');
  * ca-tournament-dark-while-running-5m (20261008113537) and
  * ca-terminal-receipt-replay-daily (20261008140859), each scheduled by a merged
  * migration. The roster header names all three.
+ * 132 -> 135 active on 2026-10-12, read live from cron.job: three self-
+ * unscheduling one-shots for 2026-10-12 17:00-17:20 UTC (dss-midway-go-live,
+ * dss-midway-go-live-retry-1, dss-midway-go-live-retry-2), which run
+ * ops_dss_midway_go_live() from applied migration 20261012040553 and were
+ * scheduled outside the migration ledger; and game-management-events-retention
+ * rescheduled by applied migration 20261007102247. Once the one-shots have run
+ * the count is expected back at 132, which is a second reviewed move.
  */
-const ACTIVE_JOBS = 132;
+const ACTIVE_JOBS = 135;
 const RETAINED_INACTIVE = 2;
 const TOTAL_JOBS = ACTIVE_JOBS + RETAINED_INACTIVE;
 
@@ -148,8 +155,8 @@ describe('the scheduled-work roster is pinned', () => {
     expect(Number(headerValue('retained-inactive'))).toBe(RETAINED_INACTIVE);
   });
 
-  it('134 total is 132 active plus the two rows cron.job keeps inactive', () => {
-    expect(TOTAL_JOBS).toBe(134);
+  it('137 total is 135 active plus the two rows cron.job keeps inactive', () => {
+    expect(TOTAL_JOBS).toBe(137);
     // The two bust sweeps 20260910073355 restored disabled are both of them
     // again: union-weekly-rakeback-close was the third until 20261003101805
     // re-armed jobid 272, and it is now an ACTIVE row of the body instead.

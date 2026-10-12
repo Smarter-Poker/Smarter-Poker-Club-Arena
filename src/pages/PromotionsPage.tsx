@@ -23,6 +23,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import DiamondsToChipsButton from '../components/games/DiamondsToChipsButton';
 import { reportError } from '../utils/errorReporter';
+import RewardsOverlayPortal from '../components/rewards/RewardsOverlayPortal';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import { publicOrigin } from '../lib/appBase';
 
@@ -531,13 +532,15 @@ export default function PromotionsPage() {
       />
 
       {/* Referral Modal */}
-      <ReferralModal
-        isOpen={showReferral}
-        onClose={() => setShowReferral(false)}
-        referralCode={referralCode}
-        referralLink={referralLink}
-        totalReferrals={0}
-      />
+      <RewardsOverlayPortal>
+        <ReferralModal
+          isOpen={showReferral}
+          onClose={() => setShowReferral(false)}
+          referralCode={referralCode}
+          referralLink={referralLink}
+          totalReferrals={0}
+        />
+      </RewardsOverlayPortal>
     </StandardContentLayout>
   );
 }

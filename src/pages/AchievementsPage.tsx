@@ -64,6 +64,7 @@ import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import { SpadeConsole, type ConsoleInk } from '../components/console/SpadeConsole';
 import { reportError } from '../utils/errorReporter';
 import { ErrorState } from '../components/common/EmptyState';
+import RewardsOverlayPortal from '../components/rewards/RewardsOverlayPortal';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 
 type SortMode = 'default' | 'rarity' | 'progress' | 'recent';
@@ -835,127 +836,133 @@ export default function AchievementsPage() {
         </AchievementGrid>
       )}
 
-      {/* Achievement Detail Bottom Sheet */}
-      <BottomSheet
-        isOpen={!!selectedAchievement}
-        onClose={() => setSelectedAchievement(null)}
-        detent="half"
-      >
-        {selectedAchievement && (
-          <div className="ach-detail">
-            <span className={`ach-detail__icon sc-ink--${RARITY_INK[selectedAchievement.rarity]}`}>
-              {selectedAchievement.icon}
-            </span>
-            <h2 className="ach-detail__name sc-ink--silver">{selectedAchievement.name}</h2>
-            <p className="sc-copy sc-copy--center">{selectedAchievement.description}</p>
+      <RewardsOverlayPortal>
+        {/* Achievement Detail Bottom Sheet */}
+        <BottomSheet
+          isOpen={!!selectedAchievement}
+          onClose={() => setSelectedAchievement(null)}
+          detent="half"
+        >
+          {selectedAchievement && (
+            <div className="ach-detail">
+              <span
+                className={`ach-detail__icon sc-ink--${RARITY_INK[selectedAchievement.rarity]}`}
+              >
+                {selectedAchievement.icon}
+              </span>
+              <h2 className="ach-detail__name sc-ink--silver">{selectedAchievement.name}</h2>
+              <p className="sc-copy sc-copy--center">{selectedAchievement.description}</p>
 
-            <div
-              className="ach-meter"
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={Math.round(selectedAchievement.progress)}
-              aria-label="Achievement Progress"
-            >
               <div
-                className="ach-meter__fill"
-                style={{ width: `${selectedAchievement.progress}%` }}
-              />
-            </div>
+                className="ach-meter"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(selectedAchievement.progress)}
+                aria-label="Achievement Progress"
+              >
+                <div
+                  className="ach-meter__fill"
+                  style={{ width: `${selectedAchievement.progress}%` }}
+                />
+              </div>
 
-            <div className="ach-row ach-row--flush">
-              <span className="ach-row__label sc-label sc-ink--blue">
-                {Math.round(selectedAchievement.progress)}% Complete
-              </span>
-              <span className={`ach-row__value sc-ink--${RARITY_INK[selectedAchievement.rarity]}`}>
-                {selectedAchievement.requirement}
-              </span>
-            </div>
-
-            {!selectedAchievement.unlocked && selectedAchievement.progress > 0 && (
-              <p className="ach-detail__note sc-label sc-ink--blue">
-                Almost There. {100 - Math.round(selectedAchievement.progress)}% Remaining!
-              </p>
-            )}
-
-            {selectedAchievement.unlocked ? (
-              <>
-                <p className="ach-detail__note sc-label sc-ink--green">
-                  Unlocked On{' '}
-                  {new Date(selectedAchievement.unlockedAt || Date.now()).toLocaleDateString()}
-                </p>
-                {/* One action, so it is a lit word on the glass: the console
-                    foot paints BOTH plates and a lone one reads broken. */}
-                <button
-                  type="button"
-                  className="ach-word sc-ink--white"
-                  onClick={async () => {
-                    const ach = selectedAchievement;
-                    const shareText = `I just unlocked "${ach.name}" on Club Arena! ${ach.description}`;
-                    try {
-                      if (navigator.share) {
-                        await navigator.share({
-                          title: `Achievement: ${ach.name}`,
-                          text: shareText,
-                          url: 'https://smarter.poker',
-                        });
-                      } else {
-                        await navigator.clipboard.writeText(shareText);
-                        toast?.success('Achievement copied to clipboard!');
-                      }
-                    } catch (_err) {
-                      // User cancelled share or clipboard failed — show share card fallback
-                      setSelectedAchievement(null);
-                      setTimeout(() => setSharingAchievement(ach), 300);
-                    }
-                  }}
+              <div className="ach-row ach-row--flush">
+                <span className="ach-row__label sc-label sc-ink--blue">
+                  {Math.round(selectedAchievement.progress)}% Complete
+                </span>
+                <span
+                  className={`ach-row__value sc-ink--${RARITY_INK[selectedAchievement.rarity]}`}
                 >
-                  Share Achievement
-                </button>
-              </>
-            ) : (
-              <p className="ach-detail__note sc-label sc-ink--red">
-                Keep Playing To Unlock This Badge!
-              </p>
-            )}
+                  {selectedAchievement.requirement}
+                </span>
+              </div>
+
+              {!selectedAchievement.unlocked && selectedAchievement.progress > 0 && (
+                <p className="ach-detail__note sc-label sc-ink--blue">
+                  Almost There. {100 - Math.round(selectedAchievement.progress)}% Remaining!
+                </p>
+              )}
+
+              {selectedAchievement.unlocked ? (
+                <>
+                  <p className="ach-detail__note sc-label sc-ink--green">
+                    Unlocked On{' '}
+                    {new Date(selectedAchievement.unlockedAt || Date.now()).toLocaleDateString()}
+                  </p>
+                  {/* One action, so it is a lit word on the glass: the console
+                      foot paints BOTH plates and a lone one reads broken. */}
+                  <button
+                    type="button"
+                    className="ach-word sc-ink--white"
+                    onClick={async () => {
+                      const ach = selectedAchievement;
+                      const shareText = `I just unlocked "${ach.name}" on Club Arena! ${ach.description}`;
+                      try {
+                        if (navigator.share) {
+                          await navigator.share({
+                            title: `Achievement: ${ach.name}`,
+                            text: shareText,
+                            url: 'https://smarter.poker',
+                          });
+                        } else {
+                          await navigator.clipboard.writeText(shareText);
+                          toast?.success('Achievement copied to clipboard!');
+                        }
+                      } catch (_err) {
+                        // User cancelled share or clipboard failed — show share card fallback
+                        setSelectedAchievement(null);
+                        setTimeout(() => setSharingAchievement(ach), 300);
+                      }
+                    }}
+                  >
+                    Share Achievement
+                  </button>
+                </>
+              ) : (
+                <p className="ach-detail__note sc-label sc-ink--red">
+                  Keep Playing To Unlock This Badge!
+                </p>
+              )}
+            </div>
+          )}
+        </BottomSheet>
+
+        {/* New Achievement Unlock Popup + Confetti */}
+        <ConfettiEffect active={!!newUnlock} />
+        {newUnlock && (
+          <div className="unlock-popup" role="status" aria-live="polite">
+            <div className="unlock-content">
+              <span className={`unlock-icon sc-ink--${RARITY_INK[newUnlock.rarity]}`}>
+                {newUnlock.icon}
+              </span>
+              <span className="unlock-text">
+                <span className="unlock-label sc-label sc-ink--gold">Achievement Unlocked!</span>
+                <span className="unlock-name sc-ink--silver">{newUnlock.name}</span>
+              </span>
+            </div>
+            <button
+              type="button"
+              className="unlock-dismiss sc-ink--muted"
+              aria-label="Dismiss"
+              onClick={() => setNewUnlock(null)}
+            >
+              ✕
+            </button>
           </div>
         )}
-      </BottomSheet>
-
-      {/* New Achievement Unlock Popup + Confetti */}
-      <ConfettiEffect active={!!newUnlock} />
-      {newUnlock && (
-        <div className="unlock-popup" role="status" aria-live="polite">
-          <div className="unlock-content">
-            <span className={`unlock-icon sc-ink--${RARITY_INK[newUnlock.rarity]}`}>
-              {newUnlock.icon}
-            </span>
-            <span className="unlock-text">
-              <span className="unlock-label sc-label sc-ink--gold">Achievement Unlocked!</span>
-              <span className="unlock-name sc-ink--silver">{newUnlock.name}</span>
-            </span>
-          </div>
-          <button
-            type="button"
-            className="unlock-dismiss sc-ink--muted"
-            aria-label="Dismiss"
-            onClick={() => setNewUnlock(null)}
-          >
-            ✕
-          </button>
-        </div>
-      )}
-      {/* Achievement Share Card Modal */}
-      {sharingAchievement && (
-        <AchievementShareCard
-          icon={sharingAchievement.icon}
-          name={sharingAchievement.name}
-          description={sharingAchievement.description}
-          rarity={sharingAchievement.rarity}
-          unlockedAt={sharingAchievement.unlockedAt}
-          onClose={() => setSharingAchievement(null)}
-        />
-      )}
+        {/* Achievement Share Card Modal */}
+        {sharingAchievement && (
+          <AchievementShareCard
+            icon={sharingAchievement.icon}
+            name={sharingAchievement.name}
+            description={sharingAchievement.description}
+            rarity={sharingAchievement.rarity}
+            unlockedAt={sharingAchievement.unlockedAt}
+            onClose={() => setSharingAchievement(null)}
+          />
+        )}
+      </RewardsOverlayPortal>
     </StandardContentLayout>
   );
 }

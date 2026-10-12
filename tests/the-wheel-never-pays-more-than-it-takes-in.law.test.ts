@@ -430,8 +430,18 @@ describe('the wheel is fair by construction and closed to the browser', () => {
  *   - a three-times card is covered before the seed is read and stays reserved
  *     against both the owner's custody and the wheel's float until it is picked,
  *     so a prize that pays three entries can never be drawn unbacked.
+ *
+ * AMENDED 2026-10-12 (owner request, Dan: "THE VIP WHEEL THAT ONLY AWARDS
+ * DIAMONDS, CHIPS OR BONUS GAMES SHOULD BE THE SAME WHEEL THAT NON VIP MEMBERS
+ * GET. THERE SHOULDN'T BE A DIFFERENCE."). There is one table now, the one a VIP
+ * was dealt, for every player: ords 3, 6 and 9 are 0.2x, 0.25x and 0.3x chips
+ * and nobody wins an item. The weights and the matrix did not move, so the
+ * payback is the same exact 0.8 and the mix is a game half the time and instant
+ * chips the other half. The table is read from the migration that installs it
+ * (`oneTable`); the matrix and the money gates from the one that installed them.
  */
 const v4 = latest('diamond_wheel_v4_draws_a_different_prize');
+const oneTable = latest('_one_wheel_for_everyone');
 
 type V4Row = {
   ord: number;
@@ -440,18 +450,14 @@ type V4Row = {
   game: string | null;
   multiplier: string;
   sixths: string;
-  vipLabel: string;
-  vipKind: string;
-  vipMultiplier: string;
-  vipSixths: string;
   weight: number;
 };
 
 /** Read the installed model straight out of the migration: no retyped numbers. */
 function v4Model(): V4Row[] {
   const rows = [
-    ...v4.sql.matchAll(
-      /^ \((\d+),'([^']*)','([^']*)',(NULL|'[a-z]+'),([\d.]+),([\d.]+),'([^']*)','([^']*)',([\d.]+),([\d.]+),(\d+)\),?$/gm
+    ...oneTable.sql.matchAll(
+      /^ \((\d+),'([^']*)','([^']*)',(NULL|'[a-z]+'),([\d.]+),([\d.]+),(\d+)\),?$/gm
     ),
   ].map((m) => ({
     ord: Number(m[1]),
@@ -460,14 +466,41 @@ function v4Model(): V4Row[] {
     game: m[4] === 'NULL' ? null : m[4].slice(1, -1),
     multiplier: m[5],
     sixths: m[6],
-    vipLabel: m[7],
-    vipKind: m[8],
-    vipMultiplier: m[9],
-    vipSixths: m[10],
-    weight: Number(m[11]),
+    weight: Number(m[7]),
   }));
   expect(rows).toHaveLength(12);
   return rows;
+}
+
+/** The two tables 20260922194123 installed, so the swap can be proved value neutral. */
+function v4RetiredTables(): { standard: V4Row[]; vip: V4Row[] } {
+  const rows = [
+    ...v4.sql.matchAll(
+      /^ \((\d+),'([^']*)','([^']*)',(NULL|'[a-z]+'),([\d.]+),([\d.]+),'([^']*)','([^']*)',([\d.]+),([\d.]+),(\d+)\),?$/gm
+    ),
+  ];
+  expect(rows).toHaveLength(12);
+  const game = (g: string) => (g === 'NULL' ? null : g.slice(1, -1));
+  return {
+    standard: rows.map((m) => ({
+      ord: Number(m[1]),
+      label: m[2],
+      kind: m[3],
+      game: game(m[4]),
+      multiplier: m[5],
+      sixths: m[6],
+      weight: Number(m[11]),
+    })),
+    vip: rows.map((m) => ({
+      ord: Number(m[1]),
+      label: m[7],
+      kind: m[8],
+      game: game(m[4]),
+      multiplier: m[9],
+      sixths: m[10],
+      weight: Number(m[11]),
+    })),
+  };
 }
 
 /** And the installed follow-up matrix, as twelve rows of twelve. */
@@ -485,72 +518,93 @@ function v4Follow(): number[][] {
 const tenths = (sixths: string) => BigInt(Math.round(Number(sixths) * 10));
 
 describe('wheel v4 is still exactly 80 percent, and no prize may repeat', () => {
-  it('the published table is twelve weights out of 100,000, standard and VIP', () => {
+  it('the published table is twelve weights out of 100,000, and one table for everyone', () => {
     const model = v4Model();
     expect(model.map((r) => r.ord)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
     expect(model.reduce((sum, r) => sum + r.weight, 0)).toBe(100000);
     expect(model.map((r) => r.label)).toEqual([
       'Diamond Plinko',
       '1x Chips',
-      'Throwables',
+      '0.2x Chips',
       'Diamond Crash',
       'Diamonds',
-      'Time Bank',
+      '0.25x Chips',
       'Donkey Cross',
       '2x Chips',
-      'Rabbit Hunt',
+      '0.3x Chips',
       'Diamond Mines',
       '3x Chips',
       'Upgrade',
     ]);
-    // R13: a game half the time, instant chips three tenths, an item a fifth.
+    // A game half the time and instant chips the other half: the 20% that was
+    // an item is the three chip cards now, for every player (2026-10-12).
     const bucket = (kinds: string[]) =>
       model.filter((r) => kinds.includes(r.kind)).reduce((sum, r) => sum + r.weight, 0);
     expect(bucket(['bonus', 'upgrade', 'diamonds'])).toBe(50000);
-    expect(bucket(['chips'])).toBe(30000);
-    expect(bucket(['throwables', 'time_bank', 'rabbit_hunt'])).toBe(20000);
+    expect(bucket(['chips'])).toBe(50000);
+    expect(bucket(['throwables', 'time_bank', 'rabbit_hunt'])).toBe(0);
+    // ONE TABLE: the model ignores who is asking, and the spin and the state no
+    // longer ask. Both are patched against md5-pinned live preimages.
+    expect(oneTable.sql).toContain('SELECT o::smallint,l,k,g,m,s,w');
+    expect(oneTable.sql).not.toMatch(/CASE WHEN p_vip/);
+    expect(oneTable.sql).toContain("'  v_vip:=true;'");
+    expect(oneTable.sql).toContain("' vip:=true;'");
+    expect(oneTable.sql).toContain(
+      "('fn_wheel_spin_v2(uuid,uuid,text,integer,text,uuid)','3a5c2e4182a60bf90c3f011dac16d99d')"
+    );
+    expect(oneTable.sql).toContain(
+      "('fn_wheel_state_v2(uuid,integer)','b6c4224bcbd24cf0571b9096477d8d64')"
+    );
   });
 
-  it('EXACTLY 0.8 of the entry, in integers, on both tables and at every stake', () => {
+  it('EXACTLY 0.8 of the entry, in integers, at every stake', () => {
     const model = v4Model();
     // sum(weight * value) where value is carried in tenths of a sixth: the
     // payback is 0.8 when that sum is 100000 * 6 * 0.8 * 10 = 4,800,000.
-    const standard = model.reduce((sum, r) => sum + BigInt(r.weight) * tenths(r.sixths), 0n);
-    const vip = model.reduce((sum, r) => sum + BigInt(r.weight) * tenths(r.vipSixths), 0n);
-    expect(standard).toBe(4800000n);
-    expect(vip).toBe(4800000n);
+    const total = model.reduce((sum, r) => sum + BigInt(r.weight) * tenths(r.sixths), 0n);
+    expect(total).toBe(4800000n);
     // And therefore exactly four fifths of every permitted entry, with no
     // remainder at all: in tenths of a diamond the payback is 8 x the stake.
     for (const stake of [25, 26, 27, 99, 100, 333, 2499, 2500]) {
-      expect((standard * BigInt(stake) * 10n) % 6000000n).toBe(0n);
-      expect((standard * BigInt(stake) * 10n) / 6000000n).toBe(8n * BigInt(stake));
-      expect((vip * BigInt(stake) * 10n) / 6000000n).toBe(8n * BigInt(stake));
+      expect((total * BigInt(stake) * 10n) % 6000000n).toBe(0n);
+      expect((total * BigInt(stake) * 10n) / 6000000n).toBe(8n * BigInt(stake));
     }
+    // The migration refuses to install a table that is not exactly this.
+    expect(oneTable.sql).toContain(
+      '(SELECT sum(weight*value_sixths) FROM public.fn_wheel_v4_model(false))<>480000'
+    );
   });
 
-  it('R2: a VIP table has no items, and the swap is worth the same 5000', () => {
+  it('nobody wins an item, and the swap from the item table is worth the same 5000', () => {
     const model = v4Model();
     expect(
       model.filter((r) => ['throwables', 'time_bank', 'rabbit_hunt'].includes(r.kind))
-    ).toHaveLength(3);
-    expect(
-      model.filter((r) => ['throwables', 'time_bank', 'rabbit_hunt'].includes(r.vipKind))
     ).toHaveLength(0);
-    expect(model.filter((r) => r.vipKind === 'chips')).toHaveLength(6);
+    expect(model.filter((r) => r.kind === 'chips')).toHaveLength(6);
+    // The one table IS the VIP table the 2026-09-21 migration installed, row for row.
+    const retired = v4RetiredTables();
+    expect(model).toEqual(retired.vip);
+    expect(
+      retired.standard.filter((r) => ['throwables', 'time_bank', 'rabbit_hunt'].includes(r.kind))
+    ).toHaveLength(3);
     const swapped = model.filter((r) => [3, 6, 9].includes(r.ord));
-    expect(swapped.map((r) => r.vipLabel)).toEqual(['0.2x Chips', '0.25x Chips', '0.3x Chips']);
-    // 0.2*6667 + 0.25*6666 + 0.3*6667 = 5000, and the items it replaces are
+    expect(swapped.map((r) => r.label)).toEqual(['0.2x Chips', '0.25x Chips', '0.3x Chips']);
+    // 0.2*6667 + 0.25*6666 + 0.3*6667 = 5000, and the items it replaces were
     // 0.25 * (6667 + 6666 + 6667) = 5000 as well. Integers, in hundredths.
     const hundredths = (m: string) => BigInt(Math.round(Number(m) * 100));
-    expect(swapped.reduce((s, r) => s + BigInt(r.weight) * hundredths(r.vipMultiplier), 0n)).toBe(
-      500000n
-    );
     expect(swapped.reduce((s, r) => s + BigInt(r.weight) * hundredths(r.multiplier), 0n)).toBe(
       500000n
     );
-    // R13: an item is a quarter of the entry now, where v3 paid half.
-    expect(swapped.every((r) => r.multiplier === '0.25')).toBe(true);
-    expect(v4.sql).toContain("v_price*.25/100,cm.server_seed,'wheel-v4-item:'");
+    const items = retired.standard.filter((r) => [3, 6, 9].includes(r.ord));
+    expect(items.reduce((s, r) => s + BigInt(r.weight) * hundredths(r.multiplier), 0n)).toBe(
+      500000n
+    );
+    // The model guard before every draw now refuses an item for EVERYBODY, and
+    // the item prices no longer gate the spin or the state.
+    expect(oneTable.sql).toContain(
+      "'   OR EXISTS(SELECT 1 FROM public.fn_wheel_v4_model(v_vip) WHERE kind IN(''throwables'',''time_bank'',''rabbit_hunt'')) THEN'"
+    );
+    expect(oneTable.sql).toContain("position('feature_pricing actual' in src)>0");
   });
 
   it('R12: the follow-up matrix is symmetric, hollow, and preserves the law', () => {
@@ -576,14 +630,12 @@ describe('wheel v4 is still exactly 80 percent, and no prize may repeat', () => 
   it('R12: no conditional expectation, after any prize, ever reaches the entry', () => {
     const model = v4Model();
     const F = v4Follow();
-    for (const table of ['sixths', 'vipSixths'] as const) {
-      for (let i = 0; i < 12; i += 1) {
-        const value = F[i].reduce((sum, w, j) => sum + BigInt(w) * tenths(model[j][table]), 0n);
-        // value / (W[i] * 60) is the expectation in entries. It must stay below
-        // one, which is the whole point: a no-repeat rule must not become a
-        // free spin after an expensive one.
-        expect(value).toBeLessThan(BigInt(model[i].weight) * 60n);
-      }
+    for (let i = 0; i < 12; i += 1) {
+      const value = F[i].reduce((sum, w, j) => sum + BigInt(w) * tenths(model[j].sixths), 0n);
+      // value / (W[i] * 60) is the expectation in entries. It must stay below
+      // one, which is the whole point: a no-repeat rule must not become a
+      // free spin after an expensive one.
+      expect(value).toBeLessThan(BigInt(model[i].weight) * 60n);
     }
   });
 

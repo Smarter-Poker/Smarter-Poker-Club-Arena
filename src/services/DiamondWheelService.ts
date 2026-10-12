@@ -349,7 +349,12 @@ export interface WheelSpinResult {
   contract_version?: WheelContractVersion;
   /** The draw model this receipt was produced by, from contract 4 on. */
   model?: string;
-  /** Whether the server drew this spin from the VIP table (owner ruling R2). */
+  /**
+   * Whether the server drew this spin from the item-free table (Diamonds,
+   * chips, Upgrade and bonus games only). Once that was the VIP table (owner
+   * ruling R2); since 2026-10-12 every player is dealt it, so every new receipt
+   * says true and only a receipt sealed before then can say false.
+   */
   vip?: boolean;
   segments?: WheelSegment[];
   ok: boolean;

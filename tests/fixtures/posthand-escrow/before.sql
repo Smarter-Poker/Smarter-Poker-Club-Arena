@@ -1,0 +1,2 @@
+DO $test$BEGIN IF (SELECT fn_union_pnl_cash_outcome_accepted(o) FROM union_pnl_cash_outcomes o WHERE hand_number=31008564) IS DISTINCT FROM false OR public.fn_pnl_cash_hand_evidence('1c531058-25b9-4aad-b4f0-1641d1d085ea',31008564)->>'status' IS DISTINCT FROM 'blocked' THEN RAISE EXCEPTION 'actual original financial counterexample no longer blocked';END IF;RAISE NOTICE 'FAIL-BEFORE original fourth cash acceptance/basis blocked';END $test$;
+\ir hand-lines-before.sql

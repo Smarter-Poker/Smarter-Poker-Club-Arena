@@ -6,6 +6,55 @@ import { resolve } from 'node:path';
 
 const CSS = readFileSync(resolve(process.cwd(), 'src/pages/ClubMembersPage.css'), 'utf8');
 
+for (const width of [375, 393]) {
+  test(`Simple roster fields avoid phone zoom and fit at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 812 });
+    await page.setContent(`
+      <style>${CSS}
+        *, *::before, *::after { box-sizing: border-box; }
+        html, body { margin: 0; background: #000; }
+        .application-shell { width: calc(100% - 32px); margin: auto; }
+      </style>
+      <main class="application-shell"><section class="club-members-page members-simple">
+        <section class="members-console">
+          <label class="members-search"><input type="search" aria-label="Search Club Members" /></label>
+          <div class="members-toolbar">
+            <button class="members-group-role">Group By Role</button>
+            <label class="members-sort"><span class="members-sort__label">Sort By</span>
+              <select aria-label="Sort Players"><option>Role Hierarchy</option></select></label>
+            <button class="members-refresh">Refresh</button>
+          </div>
+        </section>
+      </section></main>`);
+    for (const field of [page.getByRole('searchbox'), page.getByRole('combobox')]) {
+      expect(
+        await field.evaluate((element) => parseFloat(getComputedStyle(element).fontSize))
+      ).toBe(16);
+    }
+    const toolbar = await page.locator('.members-toolbar').boundingBox();
+    expect(toolbar).not.toBeNull();
+    for (const control of [
+      page.getByRole('button', { name: 'Group By Role' }),
+      page.getByRole('combobox'),
+      page.getByRole('button', { name: 'Refresh' }),
+    ]) {
+      const box = await control.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.height).toBeGreaterThanOrEqual(44);
+      expect(box!.x).toBeGreaterThanOrEqual(toolbar!.x - 0.5);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(toolbar!.x + toolbar!.width + 0.5);
+      expect(
+        await control.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)
+      ).toBe(true);
+    }
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+      )
+    ).toBeLessThanOrEqual(1);
+  });
+}
+
 for (const width of [1449, 375, 393]) {
   test(`roster surfaces and controls fit their containing page at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 812 });

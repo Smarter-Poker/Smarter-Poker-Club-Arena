@@ -1,5 +1,20 @@
 {
   "schemaVersion": 1,
+  "diamondEscrowMainInputMerge20261012": {
+    "reason": "Preserve peer original escrow qualification and Diamond bounded shard1 execution budget together. Current workflow identity only; historical financial inputs/assertions, audit records and SOURCE_ONLY_UNRUN preserved. No financial certificate restamp.",
+    "ownWorkflowPin": {
+      "bytes": 210879,
+      "sha256": "ca3e9233802e0eb14f4e4f4c6b78f4e9e170b84ca47ff39250de2823172ddf42"
+    },
+    "mainWorkflowPin": {
+      "bytes": 211448,
+      "sha256": "65ab5c875b5514f798b5ff5cc2e9764a89babf5ea27d1c00c704b59a175755a9"
+    },
+    "currentWorkflowPin": {
+      "bytes": 211793,
+      "sha256": "34279424b88ba53aaa89d870a0b1bba1c0621bc27bb8287b9046775d66dfa236"
+    }
+  },
   "diamondBudgetMainInputMerge20261012": {
     "reason": "Preserve current protected-main078c2e21ab history metadata inputs and reviewed Diamond shard1 job budget together. Only current input identity changes; all historical audit records, financial source pins/assertions and qualification states unchanged. No financial certification restamp."
   },
@@ -126,8 +141,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 210879,
-      "sha256": "ca3e9233802e0eb14f4e4f4c6b78f4e9e170b84ca47ff39250de2823172ddf42"
+      "bytes": 211793,
+      "sha256": "34279424b88ba53aaa89d870a0b1bba1c0621bc27bb8287b9046775d66dfa236"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -2656,5 +2671,25 @@
   },
   "phase4PrivateJoinSourceAudit": {
     "reason": "One additive history migration routing case; existing fixture now reproduces actual Realtime default-false join denial before correction and verifies authority afterward. Only current routing-test and nested binding hashes change; historical pins and financial assertions are untouched."
+  },
+  "originalPosthandEscrowNative20261012": {
+    "reason": "Add actual original posthand escrow PostgreSQL17 qualification and always artifact in existing Accounting3. Preserve every prior native lane and historical pin. SQL/native and public financial projection qualification distinct from production installation or retention permission.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 209558,
+        "sha256": "d37c75bdf8c9f04a356363c8cff9b919f66f0a1640d7748c40f29cc40bd5aea9"
+      }
+    }
+  },
+  "originalPosthandEscrowProtectedMainIntegration20261012": {
+    "reason": "Preserve protected f209 all native qualification lanes and additive histories while integrating one new original posthand escrow probe. Financial SQL/native inputs unchanged. Workflow fingerprint is not installation proof.",
+    "previousBranchWorkflowPin": {
+      "bytes": 210472,
+      "sha256": "2ac563308b4b2a1f2a0bc3a4179d945a96a72d6719160a9c9f66fdb929cf753a"
+    },
+    "protectedMainWorkflowPin": {
+      "bytes": 210534,
+      "sha256": "f121396e2a47265ac66b95be65b77b88ed4aa128ec8f4230eb28458628cc8631"
+    }
   }
 }

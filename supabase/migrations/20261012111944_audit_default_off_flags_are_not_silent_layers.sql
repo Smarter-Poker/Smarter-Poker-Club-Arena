@@ -162,4 +162,11 @@ begin
   return v;
 end $function$;
 
+-- Operator/engine telemetry: already closed live; stated here so the
+-- migration is self-describing and the definer-authorization check passes.
+REVOKE ALL ON FUNCTION public.fn_audit_layer_silence(date) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_audit_layer_silence(date) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_audit_league_pooled_findings(date) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_audit_league_pooled_findings(date) TO service_role;
+
 COMMIT;

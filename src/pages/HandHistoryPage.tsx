@@ -289,6 +289,7 @@ export default function HandHistoryPage() {
                 asset: arenaAssetScope,
                 clubId: statsDrilldown.clubId,
                 throwOnError: true,
+                indexedArchive: true,
               }),
             { maxRetries: 2, isMountedRef: isMounted }
           );
@@ -394,6 +395,7 @@ export default function HandHistoryPage() {
                 asset: arenaAssetScope,
                 clubId: statsDrilldown.clubId,
                 throwOnError: true,
+                indexedArchive: true,
               }),
             { maxRetries: 2, isMountedRef: isMounted }
           );

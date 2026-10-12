@@ -1,4 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
+import { readFile } from 'node:fs/promises';
 import { expect, test, type Page, type Request, type TestInfo } from '@playwright/test';
 
 const MEMBERS_PATH = 'clubs/shark-club/members';
@@ -272,8 +273,9 @@ async function expectContainedControls(page: Page, frameSelector: string, select
 }
 
 test.describe('Production Shark Club Players', () => {
-  // Each case receives its own browser context and performs only reads. Keep
-  // one worker in the workflow, but report every case when a sibling fails.
+  // Each case receives its own browser context. Only the roster export creates
+  // its established audit receipt; no financial or member changes are submitted.
+  // Keep one worker, but report every case when a sibling fails.
   test.describe.configure({ mode: 'default', timeout: 120_000 });
 
   test.afterEach(async ({ page }, testInfo) => {
@@ -336,6 +338,49 @@ test.describe('Production Shark Club Players', () => {
     await completeNextPageRead(probe, () => sort.selectOption('name'), 'name sort');
     await expect(page).toHaveURL(/[?&]sort=name(?:&|$)/);
     await expect(directory.getByRole('listitem').first()).toBeVisible({ timeout: 30_000 });
+
+    await expect(page.getByRole('note', { name: 'Export Scope' })).toContainText(
+      'All Matching Players Across Every Page'
+    );
+    const exportResponse = page.waitForResponse((response) =>
+      response.url().includes('/rpc/ca_club_members_export')
+    );
+    const exportDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Export CSV', exact: true }).click();
+    const response = await exportResponse;
+    expect(response.ok()).toBe(true);
+    const receipt = await response.json();
+    expect(receipt.success).toBe(true);
+    expect(receipt.row_count).toBeGreaterThan(0);
+    const requestScope = response.request().postDataJSON();
+    expect(requestScope).toMatchObject({ p_filter: 'all', p_sort: 'name', p_user_ids: null });
+    const download = await exportDownload;
+    const downloadPath = await download.path();
+    expect(downloadPath).toBeTruthy();
+    const csv = await readFile(downloadPath!, 'utf8');
+    const header = csv
+      .replace(/^\uFEFF/, '')
+      .split('\r\n')[0]
+      .split(',');
+    for (const field of [
+      'export_club_id',
+      'export_scope',
+      'export_filter',
+      'export_sort',
+      'export_row_count',
+      'export_requested_at_utc',
+      'export_completed_at_utc',
+      'export_audit_id',
+      'export_activity_period',
+      'export_units',
+    ]) {
+      expect(header).toContain(field);
+    }
+    expect(csv).toContain(requestScope.p_club_id);
+    expect(csv).toContain(receipt.audit_id);
+    expect(csv).toContain('all_matching');
+    expect(csv).toContain('All Recorded Activity');
+    expect(csv).toContain('Club Chips');
 
     await directory.getByRole('listitem').first().getByRole('button').click();
     await expect(page).toHaveURL(/\/clubs\/shark-club\/members\/[0-9a-f-]{36}(?:[/?#]|$)/i);
@@ -549,6 +594,12 @@ test.describe('Production Shark Club Players', () => {
       timeout: 45_000,
     });
     await expect(page.locator('#mm-player-name')).toBeVisible();
+    await expect(page.getByRole('status', { name: 'Displayed Activity Scope' })).toContainText(
+      'Recorded Activity'
+    );
+    const activityGuide = page.locator('[aria-label="Activity Metric Definitions"]');
+    await activityGuide.locator('summary').click();
+    await expect(activityGuide).toContainText('Signed Hand Results, Not Gross Prizes');
 
     const credentialArt = page.locator('.mm-credential__art');
     await expect(credentialArt).toBeVisible();
@@ -587,6 +638,11 @@ test.describe('Production Shark Club Players', () => {
       }
     }
     await page.getByRole('button', { name: 'Select', exact: true }).click();
+    await page.locator('.mm-range__custom input[type="date"]').first().fill('2026-01-01');
+    await expect(page.locator('.mm-range__draft')).toContainText('Draft Dates Not Applied');
+    await expect(page.getByRole('status', { name: 'Displayed Activity Scope' })).toContainText(
+      'Recorded Activity'
+    );
     for (const width of [375, 393, 768]) {
       await page.setViewportSize({ width, height: 812 });
       await expectContainedControls(
@@ -596,6 +652,11 @@ test.describe('Production Shark Club Players', () => {
       );
       await expectContainedControls(page, '.member-mgmt-page', '.mm-nav__row');
       await expectContainedControls(page, '.member-mgmt-page', '.member-mgmt-page > *');
+      await expectContainedControls(
+        page,
+        '.mm-metric-guide',
+        '.mm-metric-guide summary, .mm-metric-guide p'
+      );
     }
     await page.getByRole('button', { name: 'Overall', exact: true }).click();
     if (originalViewport) await page.setViewportSize(originalViewport);
@@ -643,6 +704,14 @@ test.describe('Production Shark Club Players', () => {
       await expect(control).toHaveAttribute('aria-pressed', 'true');
     }
     await expect(page.locator('.ps-range__custom input[type="date"]')).toHaveCount(2);
+    await expect(page.getByRole('status', { name: 'Displayed Performance Scope' })).toContainText(
+      'UTC'
+    );
+    const performanceGuide = page.locator('[aria-label="Performance Metric Definitions"]');
+    await performanceGuide.locator('summary').click();
+    await expect(performanceGuide).toContainText('Hands With A Positive Net Result');
+    await page.locator('.ps-range__custom input[type="date"]').first().fill('2026-01-01');
+    await expect(page.locator('.ps-range__draft')).toContainText('Draft Dates Not Applied');
 
     for (const width of [375, 393, 768]) {
       await page.setViewportSize({ width, height: 812 });
@@ -653,6 +722,11 @@ test.describe('Production Shark Club Players', () => {
       );
       await expect(page.getByRole('combobox', { name: 'Game', exact: true })).toBeVisible();
       await expectContainedControls(page, '.player-stats-page', '.player-stats-page > *');
+      await expectContainedControls(
+        page,
+        '.ps-metric-guide',
+        '.ps-metric-guide summary, .ps-metric-guide p'
+      );
     }
     if (originalViewport) await page.setViewportSize(originalViewport);
 

@@ -225,25 +225,25 @@ export function mapRosterRow(row: Record<string, unknown>): RosterMember {
 }
 
 export interface MemberRange {
-  /** ISO date, yyyy-mm-dd. Both null means Overall (lifetime). */
+  /** UTC calendar date, yyyy-mm-dd, inclusive at both ends. Both null means all recorded activity. */
   from: string | null;
   to: string | null;
 }
 
 export const RANGE_OVERALL: MemberRange = { from: null, to: null };
 
-/** The last N days inclusive of today, as the RPCs want it. */
+/** The last N UTC calendar days inclusive of today, matching the RPC day buckets. */
 export function lastDaysRange(days: number): MemberRange {
   const to = new Date();
-  const from = new Date();
-  from.setDate(from.getDate() - (days - 1));
+  const from = new Date(to);
+  from.setUTCDate(from.getUTCDate() - (days - 1));
   return { from: isoDate(from), to: isoDate(to) };
 }
 
 export function isoDate(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 }
 

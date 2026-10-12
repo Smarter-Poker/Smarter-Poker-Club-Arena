@@ -711,13 +711,26 @@ export default function MemberManagementPage() {
             {/* The caption names the range the numbers BELONG to, which is the
               one the server answered for, not the tab just pressed. While a
               new range loads the figures are dimmed and say so. */}
-            <p className="mm-range__caption" aria-live="polite">
+            <p
+              className="mm-range__caption"
+              role="status"
+              aria-label="Displayed Activity Scope"
+              aria-live="polite"
+            >
               {loading
                 ? 'Loading The Selected Range...'
                 : detail!.range.is_overall
                   ? 'Showing All Recorded Activity'
-                  : `Showing ${detail!.range.from ?? '?'} To ${detail!.range.to ?? '?'}`}
+                  : `Showing ${detail!.range.from ?? '?'} To ${detail!.range.to ?? '?'} UTC`}
             </p>
+            <p className="mm-range__caption">
+              UTC Dates Include Both From And To. Custom Dates Need Confirm.
+            </p>
+            {rangeMode === 'custom' && (customFrom !== range.from || customTo !== range.to) && (
+              <p className="mm-range__draft" role="status">
+                Draft Dates Not Applied. Confirm To Update The Displayed Range.
+              </p>
+            )}
           </section>
         )}
 
@@ -729,6 +742,26 @@ export default function MemberManagementPage() {
             aria-busy={loading}
           >
             <h2 className="mm-card__title">Activity</h2>
+            <details className="mm-metric-guide" aria-label="Activity Metric Definitions">
+              <summary>Metric Definitions</summary>
+              <p>
+                Hand Counts And Fees Come From Recorded Hands In This Club. Total Fee Is Cash Rake
+                Paid; MTT Fee Is Tournament-Hand Rake Paid.
+              </p>
+              <p>
+                Total Winnings Is The Cash Net Result; MTT Winnings Is The Tournament-Hand Net
+                Result. These Are Signed Hand Results, Not Gross Prizes Or Wallet Balances.
+              </p>
+              <p>
+                Claimed Back Counts Incoming Rakeback And Commission Transactions. Sent Out Counts
+                Outgoing Transfer, Send And Distribution Transactions In The Displayed UTC Window.
+              </p>
+              <p>Fees, Net Results And Transaction Totals Use Club Chips.</p>
+              <p>
+                Overall Means All Currently Recorded Activity. Older Activity May No Longer Be
+                Retained. Wallets And Downline Counts Are Current, Not Date-Filtered.
+              </p>
+            </details>
             {/* The RPC splits hands by tournament_id, and every other pair on
               this card is shown as cash / MTT. "Hands" was the cash half
               labelled as the whole; mtt_hands was fetched and never drawn. */}

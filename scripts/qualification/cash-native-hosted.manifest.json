@@ -56,16 +56,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 206555,
-      "sha256": "f2504b65e74d074429292523a06f5d40e111f2e43f53e2fccf920f83573fd819"
+      "bytes": 207494,
+      "sha256": "e9a6e5f34b4469db7b3d5d9861760fd00b5619dec08940e674daa9b69fa24bdd"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 35533,
-      "sha256": "6afe9dd3d84c639d8995271514bc1195202f2e930835137edcb7e0d73bf946ec"
+      "bytes": 35991,
+      "sha256": "d064527051d9ca3b8687b8414144a81008571552ab3d73f104ee462c0dac2a80"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -160,8 +160,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 105657,
-      "sha256": "1e9a652b80aa851fb95d7780aeb6b62d360a7b61192c27edd9112ecd0b636392"
+      "bytes": 105731,
+      "sha256": "14a67e65f162b0c02c406ae9b24726852f5d5678c28f01ba861633b9c6ea9682"
     }
   },
   "nativePgCron": {
@@ -2253,6 +2253,59 @@
     "previousProtectedMainWorkflowPin": {
       "bytes": 203929,
       "sha256": "4c8baf0332e0a416f9d4c07e8b2c4cfddac492d6c51ec22cfe2c37ff9077d059"
+    }
+  },
+  "nativeRecoveryExport20261012": {
+    "reason": "Add the native read-only export/restore fixture to existing accounting shards1/4 and classify every maintained tool input. Refresh only these reviewed workflow/classifier fingerprints; retained financial source pins, assertions and SOURCE_ONLY_UNRUN status remain unchanged. This is not financial or full production recovery qualification.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 202788,
+        "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "bytes": 35480,
+        "sha256": "1fc422b810641eee2149abbdbbf5ddf50c54e87162fbea82f22456c506bd712d"
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "bytes": 105657,
+        "sha256": "1e9a652b80aa851fb95d7780aeb6b62d360a7b61192c27edd9112ecd0b636392"
+      }
+    },
+    "currentMainPreviousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 203003,
+        "sha256": "1699ddcbdafde77bbb538e632911eb11663486d78a99571e67006ae4f4004995"
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "bytes": 35533,
+        "sha256": "6afe9dd3d84c639d8995271514bc1195202f2e930835137edcb7e0d73bf946ec"
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "bytes": 105657,
+        "sha256": "1e9a652b80aa851fb95d7780aeb6b62d360a7b61192c27edd9112ecd0b636392"
+      }
+    }
+  },
+  "nativeRecoveryCurrentMainIntegration20261012": {
+    "reason": "Preserve current main inventory-seal and existing required fixture qualification beside native recovery tooling. Refresh actual combined workflow source identity only; all financial inputs, historical pins and qualification status remain unchanged.",
+    "currentWorkflowPin": {
+      "bytes": 204868,
+      "sha256": "526ce2cb5ae8c17319b7181238858a9d820a4609f4a90f7572c19d316d552ee9"
+    }
+  },
+  "retentionCapacityMainIntegration20261012": {
+    "reason": "Preserve current protected native recovery export qualification and earlier inventory seal beside original retention qualification. Only combined workflow identity is refreshed; financial source inputs, historical pins, assertions and qualification status remain unchanged.",
+    "previousRetainedWorkflowPin": {
+      "bytes": 206555,
+      "sha256": "f2504b65e74d074429292523a06f5d40e111f2e43f53e2fccf920f83573fd819"
+    },
+    "protectedMainWorkflowPin": {
+      "bytes": 204868,
+      "sha256": "526ce2cb5ae8c17319b7181238858a9d820a4609f4a90f7572c19d316d552ee9"
+    },
+    "combinedWorkflowPin": {
+      "bytes": 207494,
+      "sha256": "e9a6e5f34b4469db7b3d5d9861760fd00b5619dec08940e674daa9b69fa24bdd"
     }
   }
 }

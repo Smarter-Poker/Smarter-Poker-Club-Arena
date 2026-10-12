@@ -1358,6 +1358,12 @@ jobs:
               done
               if [[ ! -x /usr/lib/postgresql/17/bin/pg_config ||
                     ! -f /usr/include/postgresql/17/server/postgres.h ]]; then pg_ci_build_tools_ready=false; fi
+              if [[ "$PG_CI_SHARD" == 4 ]]; then
+                pg_ci_build_packages+=(pkg-config libssl-dev libzstd-dev)
+                if ! command -v pkg-config >/dev/null || ! pkg-config --exists libzstd openssl; then
+                  pg_ci_build_tools_ready=false
+                fi
+              fi
               ;;
             *) echo 'Unknown accounting shard' >&2; exit 1 ;;
           esac
@@ -1390,6 +1396,17 @@ jobs:
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
           sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17 postgresql-17-cron ${pg_ci_build_packages[@]+"${pg_ci_build_packages[@]}"}
+      - name: Native recovery export preserves credentials and refuses incomplete artifacts
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+          NATIVE_PG_SOCKET_ROOT: ${{ runner.temp }}
+        run: python3 -B -m unittest discover -s scripts/ci -p test_native_supabase_export.py
+      - name: Native recovery metadata client preserves the actual full archive
+        if: matrix.shard == 4
+        timeout-minutes: 8
+        run: python3 -B scripts/dr/build-native-export-client.py --scratch "${{ runner.temp }}" --pg-bin /usr/lib/postgresql/17/bin
       - name: Owner alerts preserve the actual finding through the real PostgreSQL trigger
         if: matrix.shard == 1
         env:

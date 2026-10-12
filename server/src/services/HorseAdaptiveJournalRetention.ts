@@ -9,7 +9,7 @@ export async function pruneAdaptiveJournal() {
     const { data, error } = await supabase
       .rpc('fn_prune_horse_adaptive_journal')
       .abortSignal(AbortSignal.timeout(ADAPTIVE_JOURNAL_LIMITS.timeoutMs));
-    if (error || data?.version !== 1) return unknown();
+    if (error || ![1, 2].includes(data?.version)) return unknown();
     if (data.status === 'unavailable' && data.reason === 'capacity_busy')
       return Object.freeze({ status: 'unavailable' as const, reason: 'capacity_busy' });
     if (
@@ -19,7 +19,18 @@ export async function pruneAdaptiveJournal() {
       ) ||
       data.completedWork > 100 ||
       data.batches > 100 ||
-      data.observations > 1000
+      data.observations > (data.version === 2 ? 25 * 4096 : 1000) ||
+      (data.version === 2 &&
+        (!Number.isSafeInteger(data.retiredHands) ||
+          data.retiredHands < 0 ||
+          data.retiredHands > 25 ||
+          !Number.isSafeInteger(data.statisticsExpired) ||
+          data.statisticsExpired < 0 ||
+          data.statisticsExpired > 1000 ||
+          !Number.isSafeInteger(data.membershipsRegistered) ||
+          data.membershipsRegistered < 0 ||
+          data.membershipsRegistered > 25 ||
+          typeof data.membershipPending !== 'boolean'))
     )
       return unknown();
     return Object.freeze({
@@ -27,6 +38,14 @@ export async function pruneAdaptiveJournal() {
       completedWork: data.completedWork as number,
       batches: data.batches as number,
       observations: data.observations as number,
+      ...(data.version === 2
+        ? {
+            retiredHands: data.retiredHands as number,
+            statisticsExpired: data.statisticsExpired as number,
+            membershipsRegistered: data.membershipsRegistered as number,
+            membershipPending: data.membershipPending as boolean,
+          }
+        : {}),
     });
   } catch {
     // A committed prune may have lost its reply. Re-running is bounded and

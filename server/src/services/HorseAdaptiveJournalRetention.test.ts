@@ -57,6 +57,47 @@ describe('bounded journal retention receipt', () => {
     });
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
   });
+  it('keeps versioned raw-row counts exact and reports the bounded hand/statistic limits', async () => {
+    mocks.reply.mockResolvedValue({
+      data: {
+        version: 2,
+        status: 'pruned',
+        completedWork: 0,
+        batches: 0,
+        observations: 4096,
+        retiredHands: 1,
+        statisticsExpired: 1000,
+        membershipsRegistered: 25,
+        membershipPending: true,
+      },
+      error: null,
+    });
+    expect(await pruneAdaptiveJournal()).toEqual({
+      status: 'pruned',
+      completedWork: 0,
+      batches: 0,
+      observations: 4096,
+      retiredHands: 1,
+      statisticsExpired: 1000,
+      membershipsRegistered: 25,
+      membershipPending: true,
+    });
+    mocks.reply.mockResolvedValue({
+      data: {
+        version: 2,
+        status: 'pruned',
+        completedWork: 0,
+        batches: 0,
+        observations: 4096,
+        retiredHands: 26,
+        statisticsExpired: 0,
+        membershipsRegistered: 0,
+        membershipPending: false,
+      },
+      error: null,
+    });
+    expect(await pruneAdaptiveJournal()).toEqual({ status: 'unknown' });
+  });
   it.each(['error', 'throw'])('keeps a lost committed reply unknown: %s', async (mode) => {
     if (mode === 'error')
       mocks.reply.mockResolvedValue({ data: null, error: new Error('lost reply') });

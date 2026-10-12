@@ -1,3 +1,4 @@
+import { adaptiveHandDigest } from './HorseAdaptiveStatistics.js';
 import { createHash } from 'node:crypto';
 import {
   buildScopedOpponentModel,
@@ -41,7 +42,10 @@ export function buildJournaledOpponentStudy(input: Omit<JournaledOpponentModelIn
     training,
     holdout,
     predictiveDiagnostic: Object.freeze({
-      population: 'journaled_qualified_observations' as const,
+      population:
+        input.statistics === undefined
+          ? ('journaled_qualified_observations' as const)
+          : ('journaled_qualified_observations_and_disposed_statistics' as const),
       sourceCoverage: 'not_established' as const,
       activationAuthorized: false as const,
       validation: validateModels(input, (partition) =>
@@ -75,7 +79,22 @@ function validateModels(
         : o.origin !== 'horse_policy')
     )
       continue;
-    (o.partition === 'training' ? trainingHands : holdoutHands).add(o.handId);
+    (o.partition === 'training' ? trainingHands : holdoutHands).add(
+      input.statistics === undefined ? o.handId : adaptiveHandDigest(o.handId)
+    );
+  }
+  for (const s of input.statistics ?? []) {
+    if (
+      s.scopeKey !== input.scopeKey ||
+      s.actorKey !== input.opponentKey ||
+      s.observedAtMs < input.window.fromMs ||
+      s.observedAtMs >= input.window.toMs ||
+      (input.cohort === 'human'
+        ? s.origin !== 'player' && s.origin !== 'pre_action'
+        : s.origin !== 'horse_policy')
+    )
+      continue;
+    (s.partition === 'training' ? trainingHands : holdoutHands).add(s.handDigest);
   }
   for (const id of trainingHands) if (holdoutHands.has(id)) return refusal('partition_overlap');
 

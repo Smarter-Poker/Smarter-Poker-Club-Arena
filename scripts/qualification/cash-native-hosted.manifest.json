@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 204491,
-      "sha256": "1a26c373256db12024f2711c4081c3083314827846f8d9a7c8a6fdea09b2ce53"
+      "bytes": 205414,
+      "sha256": "3e8d21bf217ff96930b6c299b842bf845198ec17813209494e50ec5a58c9511c"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -2168,6 +2168,24 @@
     "previousWorkflowPin": {
       "bytes": 203617,
       "sha256": "2d30f85bad3a22e2c5081fe6e5e0423a9ad219d7753f8f7b7ee4387292d800d7"
+    }
+  },
+  "adaptiveStatisticsRetention20261012": {
+    "reason": "Reviewed additive adaptive retirement native qualification in existing required accounting shard three. Preserve all cash inputs, assertions, historical pins and SOURCE_ONLY_UNRUN status. This workflow fingerprint is source binding, not production or financial qualification.",
+    "previousWorkflowPin": {
+      "bytes": 203617,
+      "sha256": "2d30f85bad3a22e2c5081fe6e5e0423a9ad219d7753f8f7b7ee4387292d800d7"
+    }
+  },
+  "combinedHorseRetentionWorkflow20261012": {
+    "reason": "Preserve request, settlement/cash, and adaptive native qualifications together in existing Accounting3. Only the integrated workflow fingerprint changes; retain every financial source, assertion, historical pin and qualification status.",
+    "previousRootWorkflowPin": {
+      "bytes": 204491,
+      "sha256": "1a26c373256db12024f2711c4081c3083314827846f8d9a7c8a6fdea09b2ce53"
+    },
+    "previousAdaptiveWorkflowPin": {
+      "bytes": 204540,
+      "sha256": "9115c4963648902efcb6ea9cda5cb5e529622a3054107f2c0e1ad51a1d49ccb2"
     }
   }
 }

@@ -239,7 +239,12 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
             ? r.members === 512 || r.segments === 128 || r.epochs === 1
             : 'requests' in r
               ? r.requests === 100 || r.sliceReceipts === 1000
-              : r.completedWork === 100 || r.batches === 100 || r.observations === 1000);
+              : r.completedWork === 100 ||
+                r.batches === 100 ||
+                r.observations === 1000 ||
+                ('retiredHands' in r && r.retiredHands === 25) ||
+                ('statisticsExpired' in r && r.statisticsExpired === 1000) ||
+                ('membershipPending' in r && r.membershipPending === true));
         nextPruneAt = d.now() + (atLimit ? 5000 : 60000);
       } catch {
         retention = 'unknown';

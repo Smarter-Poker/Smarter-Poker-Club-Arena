@@ -2157,6 +2157,20 @@ jobs:
           path: artifacts/horse-settlement-key-retention/
           if-no-files-found: error
           retention-days: 7
+      - name: Adaptive raw horse facts become exact sufficient statistics after qualified retention
+        id: horse_adaptive_statistics_retention
+        if: matrix.shard == 3
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/verification-harness/horse-adaptive-statistics-retention.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/horse-adaptive-statistics-retention
+      - name: Retain adaptive raw retirement and consumer proof
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.horse_adaptive_statistics_retention.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: horse-adaptive-statistics-retention-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/horse-adaptive-statistics-retention/
+          if-no-files-found: error
+          retention-days: 7
       - name: Retain original horse payload expiration proof
         if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.horse_request_retention.outcome)
         uses: actions/upload-artifact@v4

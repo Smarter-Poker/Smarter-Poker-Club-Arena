@@ -102,6 +102,27 @@ describe('isolated journal serial loop', () => {
     expect(completed).toHaveBeenCalledTimes(7);
     expect(completed.mock.calls[1][0]).toEqual({ work: 'completed', retention: 'skipped' });
   });
+  it('revisits the capped versioned hand pass using the existing retention deadline', async () => {
+    const ctl = new AbortController();
+    let now = 0,
+      cycles = 0;
+    const prunedAt: number[] = [];
+    await runJournalLoop(ctl.signal, {
+      processWork: async () => ({ status: 'completed', batchKey: 'a'.repeat(64) }),
+      prune: async () => {
+        prunedAt.push(now);
+        return { ...empty(), observations: 400, retiredHands: 25, statisticsExpired: 0 };
+      },
+      now: () => now,
+      started: vi.fn(),
+      completed: vi.fn(),
+      wait: async (ms) => {
+        now += ms;
+        if (++cycles === 7) ctl.abort();
+      },
+    });
+    expect(prunedAt).toEqual([0, 5000]);
+  });
   it('keeps thrown work/prune failures bounded and unknown', async () => {
     const ctl = new AbortController();
     const completed = vi.fn();

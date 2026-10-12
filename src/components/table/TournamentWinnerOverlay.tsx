@@ -102,8 +102,9 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
 
   // Animate prize amount
   useEffect(() => {
-    setDisplayPrize(0);
     if (!isWinner || !visible || prize <= 0) return;
+    // Dismissal stops the odometer; its last value stays truthful during the fade.
+    setDisplayPrize(0);
 
     let stopped = false;
     let frameId = 0;

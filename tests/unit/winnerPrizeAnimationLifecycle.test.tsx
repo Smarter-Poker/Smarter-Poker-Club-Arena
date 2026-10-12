@@ -117,6 +117,19 @@ describe('winner prize animation ownership', () => {
     expect(frames.size).toBe(0);
     expect(screen.queryByRole('dialog')).toBeNull();
   });
+  it('keeps the earned amount on the glass throughout its dismissal fade', () => {
+    const onDismiss = vi.fn();
+    render(<TournamentWinnerOverlay {...props} onDismiss={onDismiss} />);
+    tick(1500);
+    expect(screen.getByText('Prize: 100')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(screen.getByText('Prize: 100')).toBeTruthy();
+    act(() => vi.advanceTimersByTime(499));
+    expect(screen.getByText('Prize: 100')).toBeTruthy();
+    expect(onDismiss).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(1));
+    expect(onDismiss).toHaveBeenCalledOnce();
+  });
   it('stops on dismissal and calls its continuation once', () => {
     const onDismiss = vi.fn();
     render(<TournamentWinnerOverlay {...props} onDismiss={onDismiss} />);

@@ -156,6 +156,8 @@ function mountCashier() {
 }
 
 async function synchronized() {
+  const advanced = screen.queryByRole('button', { name: /^Advanced(?: \([\d,]+\))?$/ });
+  if (advanced) fireEvent.click(advanced);
   await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
 }
 
@@ -1463,4 +1465,36 @@ it('Phase 7: the native player composer traps both Tab directions and returns fo
   await waitFor(() => expect(document.activeElement).toBe(trigger));
   expect(document.body.style.overflow).not.toBe('hidden');
   expect(state.rpcCalls.some((call) => call.name === 'fn_cashier_batch_transfer')).toBe(false);
+});
+
+describe('Simple Cashier Default', () => {
+  it('defaults to the compact roster, keeps all three actions, and restores Advanced tools', async () => {
+    const { container } = mountCashier();
+    await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
+    expect(container.querySelector('[data-cashier-mode="simple"]')).not.toBeNull();
+    expect(screen.queryByRole('tablist', { name: 'Cashier Actions' })).toBeNull();
+    for (const name of ['Claim Back', 'Send Ticket', 'Send Out']) {
+      expect(screen.getByRole('button', { name, exact: true })).toBeInTheDocument();
+    }
+    expect(screen.getByPlaceholderText('Search Name Or ID')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Manage Player 1' })).toHaveTextContent('ID: P-1');
+    expect(
+      within(screen.getByRole('link', { name: 'Manage Player 1' }).parentElement!).getByText('75', {
+        exact: true,
+      })
+    ).toBeInTheDocument();
+    const css = readFileSync('src/pages/CashierTradePage.module.css', 'utf8');
+    expect(css).toContain('.page.simple .glass .rowSub:not(.simpleId)');
+    expect(css).not.toContain('.page.simple .rowSub:not(.simpleId)');
+    fireEvent.click(screen.getByRole('button', { name: /^Advanced/ }));
+    expect(screen.getByRole('tablist', { name: 'Cashier Actions' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reconcile Now' })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('combobox', { name: /Role/ }), {
+      target: { value: 'agent' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Simple', exact: true }));
+    expect(container.querySelector('[data-cashier-mode="simple"]')).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /^Advanced/ }));
+    expect(screen.getByRole('combobox', { name: /Role/ })).toHaveValue('all');
+  });
 });

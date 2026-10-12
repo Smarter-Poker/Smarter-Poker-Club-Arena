@@ -305,6 +305,7 @@ function CashierTradeWorkspace() {
   const [membershipsReload, setMembershipsReload] = useState(0);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [tab, setTab] = useState<TabKey>('trade');
+  const [advanced, setAdvanced] = useState(false);
 
   const [myRole, setMyRole] = useState<string>('player');
   const [roleResolved, setRoleResolved] = useState(false);
@@ -2622,8 +2623,13 @@ function CashierTradeWorkspace() {
     currentClub?.entityType === 'club' && canSeeClubBank(myRole) && holdsPlayerWallet(myRole);
 
   return (
-    <div className={styles.page} data-cashier-surface="trade">
+    <div
+      className={`${styles.page} ${!advanced ? styles.simple : ''}`}
+      data-cashier-surface="trade"
+      data-cashier-mode={advanced ? 'advanced' : 'simple'}
+    >
       <CashierWorkspace
+        compact={!advanced}
         eyebrow="Secure Cashier"
         title="Cashier"
         pill={isOnline ? 'Live Ledger' : 'Locked'}
@@ -2632,7 +2638,33 @@ function CashierTradeWorkspace() {
         className={styles.console}
       >
         <div className={styles.glass}>
-          <section className={styles.hero} aria-labelledby="cashier-title">
+          <div className={styles.modeToolbar}>
+            <span>{advanced ? 'Advanced Cashier' : 'Simple Cashier'}</span>
+            <button
+              type="button"
+              className={styles.modeToggle}
+              aria-pressed={advanced}
+              onClick={() => {
+                if (advanced) {
+                  setTab('trade');
+                  setRoleFilter('all');
+                  setMineOnly(false);
+                  setGroupByRole(false);
+                }
+                setAdvanced((value) => !value);
+              }}
+            >
+              {advanced ? 'Simple' : 'Advanced'}
+              {!advanced && pendingCount + heldTicketCount > 0
+                ? ` (${(pendingCount + heldTicketCount).toLocaleString()})`
+                : ''}
+            </button>
+          </div>
+          <section
+            className={styles.hero}
+            aria-labelledby={advanced ? 'cashier-title' : undefined}
+            aria-label={advanced ? undefined : 'Club Cashier'}
+          >
             <div className={styles.header}>
               <button
                 ref={entityButtonRef}
@@ -2653,22 +2685,28 @@ function CashierTradeWorkspace() {
               </button>
             </div>
 
-            <div className={styles.heroContent}>
-              <h2 className={`${styles.heroTitle} sc-ink--silver`} id="cashier-title">
-                Wallet Command
-              </h2>
-              <p className={`${styles.heroCopy} sc-copy`}>
-                Move Chips Through The Correct Wallet, Answer Requests, Redeem Tickets, And Verify
-                Every Ledger Entry From One Secure Desk.
-              </p>
-              <div
-                className={`${styles.securityLine} ${cashierNeedsAttention && !loading && !isHydrating ? styles.securityDotWarning : ''}`}
-                role="status"
-              >
+            {!advanced && (
+              <div className={styles.simpleStatus} role="status">
                 {cashierSyncMessage}
               </div>
-            </div>
-
+            )}
+            {advanced && (
+              <div className={styles.heroContent}>
+                <h2 className={`${styles.heroTitle} sc-ink--silver`} id="cashier-title">
+                  Wallet Command
+                </h2>
+                <p className={`${styles.heroCopy} sc-copy`}>
+                  Move Chips Through The Correct Wallet, Answer Requests, Redeem Tickets, And Verify
+                  Every Ledger Entry From One Secure Desk.
+                </p>
+                <div
+                  className={`${styles.securityLine} ${cashierNeedsAttention && !loading && !isHydrating ? styles.securityDotWarning : ''}`}
+                  role="status"
+                >
+                  {cashierSyncMessage}
+                </div>
+              </div>
+            )}
             <div className={styles.heroMetrics} aria-label="Current Cashier Balances">
               <div className={styles.heroMetric}>
                 <span className={styles.heroMetricLabel}>Club Chips</span>
@@ -2778,6 +2816,7 @@ function CashierTradeWorkspace() {
 
           {/* Tabs */}
           <nav
+            hidden={!advanced}
             className={styles.tabs}
             role="tablist"
             aria-label="Cashier Actions"
@@ -2919,15 +2958,15 @@ function CashierTradeWorkspace() {
             <section
               id="cashier-panel-trade"
               className={styles.sectionShell}
-              role="tabpanel"
-              aria-labelledby="cashier-tab-trade"
+              role={advanced ? 'tabpanel' : 'region'}
+              aria-labelledby={advanced ? 'cashier-tab-trade' : 'trade-workspace-title'}
               tabIndex={0}
             >
               <div className={styles.sectionHeading}>
                 <div>
                   <span className={styles.sectionEyebrow}>Distribution Desk</span>
                   <h2 className={styles.sectionTitle} id="trade-workspace-title">
-                    Select Recipients
+                    {advanced ? 'Select Recipients' : 'Players'}
                   </h2>
                 </div>
                 <span className={styles.sectionMeta}>
@@ -2982,7 +3021,9 @@ function CashierTradeWorkspace() {
                   type="search"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search Name, Number, Handle, Or Role"
+                  placeholder={
+                    advanced ? 'Search Name, Number, Handle, Or Role' : 'Search Name Or ID'
+                  }
                   aria-label={`Search ${downline.length} Member${downline.length === 1 ? '' : 's'}`}
                 />
                 {search && (
@@ -3149,23 +3190,28 @@ function CashierTradeWorkspace() {
                           : undefined
                       }
                     >
-                      <input
-                        type="checkbox"
-                        className={styles.batchPicker}
-                        aria-label={`Include ${r.name}`}
-                        checked={selected.has(r.userId)}
-                        disabled={r.isSelf || busy}
+                      <label
+                        className={styles.recipientPicker}
                         onClick={(event) => event.stopPropagation()}
-                        onChange={() => {
-                          if (r.isSelf || r.userId === user?.id) return;
-                          setSelected((previous) => {
-                            const next = new Set(previous);
-                            if (next.has(r.userId)) next.delete(r.userId);
-                            else next.add(r.userId);
-                            return next;
-                          });
-                        }}
-                      />
+                      >
+                        <input
+                          type="checkbox"
+                          className={styles.batchPicker}
+                          aria-label={`Include ${r.name}`}
+                          checked={selected.has(r.userId)}
+                          disabled={r.isSelf || busy}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={() => {
+                            if (r.isSelf || r.userId === user?.id) return;
+                            setSelected((previous) => {
+                              const next = new Set(previous);
+                              if (next.has(r.userId)) next.delete(r.userId);
+                              else next.add(r.userId);
+                              return next;
+                            });
+                          }}
+                        />
+                      </label>
                       {r.avatarUrl ? (
                         <img src={r.avatarUrl} alt="" className={styles.avatar} />
                       ) : null}
@@ -3179,10 +3225,20 @@ function CashierTradeWorkspace() {
                           {r.name}
                           {r.isSelf ? <span className={styles.rowYou}>You</span> : null}
                         </span>
-                        <span className={styles.rowSub}>
-                          {r.playerNumber ? `ID: ${r.playerNumber} · ` : ''}
-                          {titleCase(roleLabel(r.role as ClubRole))}
-                          {r.username ? ` · @${r.username}` : ''}
+                        <span className={`${styles.rowSub} ${styles.simpleId}`}>
+                          {!advanced ? (
+                            r.playerNumber ? (
+                              `ID: ${r.playerNumber}`
+                            ) : (
+                              'ID Unavailable'
+                            )
+                          ) : (
+                            <>
+                              {r.playerNumber ? `ID: ${r.playerNumber} · ` : ''}
+                              {titleCase(roleLabel(r.role as ClubRole))}
+                              {r.username ? ` · @${r.username}` : ''}
+                            </>
+                          )}
                         </span>
                       </Link>
                       <span className={styles.rosterWallet}>
@@ -3243,6 +3299,7 @@ function CashierTradeWorkspace() {
                   </button>
                 )}
                 <button
+                  hidden={!advanced}
                   className={styles.classicLink}
                   onClick={() => navigate(`/clubs/${clubParam}/cashier-classic`)}
                 >

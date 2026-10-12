@@ -9,3 +9,5 @@ Change: qualify request-only erasure to an empty JSON object after an exact matc
 No balances or money rows change. No scheduler, watcher or repeated repair job is added. Legacy receipts without completion proof stay retained; they cannot be represented as safely deleted. The comprehensive remaining-data/backlog/reclamation plan is docs/HORSE-HAND-RETENTION-PLAN.md.
 
 Qualification: exact installed prune preimage captured read-only, original recorded disposal migrations exercised in native PostgreSQL17, candidate must demonstrate fail-before/pass-after plus replay/refusal/human/unknown/age/unfinished boundaries. Existing required CI carries the native harness. Actual evidence and installation are recorded in the task checkpoint separately.
+
+A qualified follow-up bounds each candidate iteration to250. The first scheduled5000-row batch took58seconds; the bound preserves the original20second work budget and all eligibility guards. Native qualification of both installed migrations passes30assertions. A production call still requesting5000 completed in about21seconds and pruned1500eligible rows through the capped iterations.

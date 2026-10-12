@@ -10,6 +10,7 @@ ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'scripts/ci'))
 from satellite_qualifier_fixture import module,sha
 MIGRATION=Path('supabase/migrations/20261012153428_settled_horse_request_payloads_age_out_with_their_history.sql')
+BOUND=Path('supabase/migrations/20261012154646_horse_history_retention_bounds_each_compaction_batch.sql')
 PRUNE=Path('scripts/verification-harness/horse-request-retention-prune-preimage.sql')
 def main():
  p=argparse.ArgumentParser();p.add_argument('--evidence',type=Path,required=True);p.add_argument('--pg-bin',type=Path,required=True);a=p.parse_args()
@@ -20,7 +21,7 @@ def main():
  old=module(ROOT/'scripts/ci/test-hand-submission-retention-disposal.py','horse_request_old')
  doors=module(ROOT/'scripts/ci/test-hand-submission-disposal.py','horse_request_doors')
  e=native.Execution(ROOT,out,a.pg_bin.resolve(),out,300,socket_parent=str(sock))
- e.report['source_sha256']={str(x):sha(ROOT/x) for x in [MIGRATION,PRUNE,Path(__file__).relative_to(ROOT),old.WORLD]}
+ e.report['source_sha256']={str(x):sha(ROOT/x) for x in [MIGRATION,BOUND,PRUNE,Path(__file__).relative_to(ROOT),old.WORLD]}
  try:
   e.start();base=e.database();e.sql(base,file=ROOT/old.WORLD,label='existing-original-world')
   e.sql(base,"ALTER TABLE public.tournaments ADD COLUMN bounty_pool numeric, ADD COLUMN bounty_pool_paid numeric; CREATE TABLE public.tournament_escrow(tournament_id uuid,closed_at timestamptz);",label='current-retention-schema-supplement')
@@ -39,9 +40,12 @@ def main():
   e.sql(base,file=ROOT/MIGRATION,label='exact-candidate-migration')
   code,_,err=e.sql(base,file=ROOT/MIGRATION,label='replay-refused',check=False)
   assert code!=0 and 'HORSE_REQUEST_RETENTION_ALREADY_INSTALLED' in err
+  e.sql(base,file=ROOT/BOUND,label='exact-bounded-batch-migration')
+  _,definition,_=e.sql(base,"SELECT pg_get_functiondef('public.sp_prune_hand_history(integer)'::regprocedure);",label='bounded-batch-source');assert definition.count('LIMIT LEAST(GREATEST(p_batch,1),250)')==1 and 'LIMIT p_batch' not in definition
+  code,_,err=e.sql(base,file=ROOT/BOUND,label='bounded-migration-replay-refused',check=False);assert code!=0 and 'HORSE_RETENTION_BATCH_SOURCE_CHANGED_OR_ALREADY_INSTALLED' in err
   after=e.database(base);e.sql(after,seed,label='after-seed')
   _,original_identity,_=e.sql(after,"SELECT to_jsonb(s)-'request' FROM smarter_private.hand_submissions s;",label='original-identity')
-  e.sql(after,old.AUTHORITY+'SELECT public.sp_prune_hand_history(10);',label='after-prune')
+  e.sql(after,old.AUTHORITY+'SELECT public.sp_prune_hand_history(5000);',label='after-prune')
   _,actual,_=e.sql(after,"SELECT request='{}'::jsonb AND request_hash IS NOT NULL FROM smarter_private.hand_submissions;",label='after-erasure')
   assert actual.strip()=='t'
   _,final_identity,_=e.sql(after,"SELECT to_jsonb(s)-'request' FROM smarter_private.hand_submissions s;",label='retained-identity');assert json.loads(final_identity)==json.loads(original_identity)
@@ -75,7 +79,7 @@ def main():
   _,actual,_=e.sql(case,"SELECT smarter_private.f06_movement_boundary_retained('"+old.TABLE+"'::uuid,"+str(old.HAND_NUMBER)+");",label='real-movement-boundary-is-held');assert actual.strip()=='t'
   e.sql(case,old.AUTHORITY+'SELECT public.sp_prune_hand_history(10);',label='movement-boundary-prune')
   _,actual,_=e.sql(case,"SELECT EXISTS(SELECT 1 FROM public.hand_history) AND EXISTS(SELECT 1 FROM smarter_private.hand_submissions WHERE request<>'{}'::jsonb);",label='movement-boundary-retained');assert actual.strip()=='t';e.discard(case)
-  e.discard(base);e.report['proven']=['fail-before-payload-retained','pass-after-payload-erased','identity-and-hash-preserved','resume-remains-closed','compaction-idempotent','installed-migration-replay-refused','forbidden-identity-change','forbidden-payload-restoration','forbidden-delete','forbidden-truncate','human-retained','unknown-player-retained','young-hand-retained','incomplete-postcommit-retained','reported-hand-retained','reserved-permit-retained','recently-settled-old-hand-retained','exact-eight-day-boundary-retained','mixed-human-retained','unpaid-tournament-retained','open-escrow-retained','unqualified-erasure-refused','unauthorized-helper-refused','legacy-completion-unknown-retained','hash-mismatch-retained','malformed-age-retained','real-movement-boundary-retained'];e.report['status']='passed'
+  e.discard(base);e.report['proven']=['fail-before-payload-retained','pass-after-payload-erased','identity-and-hash-preserved','resume-remains-closed','compaction-idempotent','installed-migration-replay-refused','forbidden-identity-change','forbidden-payload-restoration','forbidden-delete','forbidden-truncate','human-retained','unknown-player-retained','young-hand-retained','incomplete-postcommit-retained','reported-hand-retained','reserved-permit-retained','recently-settled-old-hand-retained','exact-eight-day-boundary-retained','mixed-human-retained','unpaid-tournament-retained','open-escrow-retained','unqualified-erasure-refused','unauthorized-helper-refused','legacy-completion-unknown-retained','hash-mismatch-retained','malformed-age-retained','real-movement-boundary-retained','bounded-candidate-source','bounded-migration-replay-refused','large-requested-batch-preserves-qualification'];e.report['status']='passed'
  except BaseException as exc:e.report['failure']=repr(exc)
  finally:
   try:e.close()

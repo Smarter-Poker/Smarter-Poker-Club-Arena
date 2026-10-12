@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "scope": "finite245 original financial native inputs; no production qualification claim",
   "sourceFiles": {
-    "docs/laws.d/an-original-inventory-gap-needs-its-financial-evidence.md": "f128e3ba2bf282d11e11562dea739ef493180aafe4d2cf47309796d2a0d99254",
+    "docs/laws.d/an-original-inventory-gap-needs-its-financial-evidence.md": "3854819f49da8f1261ef82b3202808106a8f022c6460256997f855a8400fc7bb",
     "scripts/ci/schema-manifest.d/original-inventory-restoration.json": "3112ff264d2224f7c6bb68ee8265ca601e0261408c6bfca07479c4d3d56bee31",
     "scripts/qualification/original-retirement-boundary/README.md": "101bb1e1da4c3e09bcfd11601cb7d152b4776659e0c9cacf35810e056240eb42",
     "scripts/qualification/original-retirement-boundary/actual-b9-current-seven-report-native.sql": "fd52c9443fb4e74031540c19de9bae762768e5862da3dc13c13d4684efb75f53",
@@ -29,8 +29,8 @@
     "scripts/qualification/original-retirement-boundary/fixtures/before-original33-cross-union.sql": "b9a650c6e6b1d382ddc5b8c94234913e2b1abf32e06d9e13cf379939d3a236b7",
     "scripts/qualification/original-retirement-boundary/fixtures/fourth-qualified-native-eleven-creates.sql": "e00b61c9d8ad0c0df9112a52bd707932211d22f7ff795fc4a3a1df49cbd84345",
     "scripts/qualification/original-retirement-boundary/fixtures/inventory245-actual-cache-functions.json": "b5f48ff6c0a0b9618b323b873059c0656fa96c586efd6af94b6bef02d78143a5",
-    "scripts/qualification/original-retirement-boundary/fixtures/inventory245-installer-cash-outcomes-type.json": "877eb5a1d428d825ab7a07b0506cfb48132531fe42e439eb3ab284323b295c50",
-    "scripts/qualification/original-retirement-boundary/fixtures/inventory245-installer-six-current-preimages.json": "b6e1242d094517f66bc5ed2827631a3d5c60d7847818e4934d99e1ac955308da",
+    "scripts/qualification/original-retirement-boundary/fixtures/inventory245-installer-cash-outcomes-type.json": "f3f3346a5a27e81352d1e9d9282fe9ef2a490012c656e1cb6ea75412a735cd55",
+    "scripts/qualification/original-retirement-boundary/fixtures/inventory245-installer-six-current-preimages.json": "26c0f8e72c900a0e17fc186a71d0b3c92f945155055bdc0635eb3d879afa4411",
     "scripts/qualification/original-retirement-boundary/fixtures/original-Oct12-active-checkpoint-rows.jsonb": "341e61c930dfa5fa3a21ffb2f110f468b82f3fccd2ccdf0c1b5052671dfbb248",
     "scripts/qualification/original-retirement-boundary/fixtures/original-Oct12-checkpoint-issues.jsonb": "a4fa371bc4cd512bfcc83a0106302a517bcb1d1332683e7bb040107a37e00323",
     "scripts/qualification/original-retirement-boundary/fixtures/original-Oct12-raw-inventory-from-5f50.jsonb": "d3ccf27f2c1eca7e92b7a3a0827d0037ee729031999fb7eacdffd3351c183b97",
@@ -66,11 +66,40 @@
     "scripts/qualification/original-seven-discharge/fixtures/actual-seven-source-rows.sql": "7eadd917b06af29bfe8f94e196dfb2be05b7feb377e924632864347d214a6599",
     "scripts/qualification/original-seven-discharge/fixtures/actual-seven-source-schema.sql": "68f37d5899b86933fae20d82993ed7d82c05c9b7ed27236c408988413327737f",
     "scripts/qualification/original-seven-discharge/fixtures/bootstrap-complete.sql": "4f47860421ccc2b6e4471be22b70805f1fefb48d5519abaad3a849b2d0c84e53",
-    "scripts/qualification/original-seven-discharge/monetary-function-pins.json": "99a375c932bc40cde7476f3a8c2f67b7d96dc061f8c391063a6c01f2821ab29e",
+    "scripts/qualification/original-seven-discharge/monetary-function-pins.json": "ee285f556a3e247c7052f3122ec6ebabc7a0a2a4e09875e2b830c5a44892cbb2",
     "scripts/qualification/original-seven-discharge/original-seven.jsonb": "80b91a2a3b69d56e29374050c11dd7c2d8cec1f8b4e8a80566f2bf351054cad9",
     "scripts/qualification/original-seven-discharge/run-native.py": "4b42bf21c16f3d9e40fcff5acb915519ca67e1acd0930f4e5c9a33521b5d6a46",
     "scripts/qualification/original-seven-discharge/test-discharge.py": "0c6f69bfb71fa9eee39d1e9eb1d4b7850271cdc22d316ff2d8e862823fc5950f",
     "supabase/migrations/20261012224150_original_retirement_evidence_certifies_finite_inventory_boun.sql": "d7edee654ddc9b4c28f072cf45473d3c7dbfc5a9408d4fbca92e65e8fdaa20c6",
     "tests/an-original-inventory-gap-needs-its-financial-evidence.law.test.ts": "41d5ea3494ca813cf47c708433afa3aa804b825d643345d997f3029b6507faed"
+  },
+  "normalMergeFormatterAudit": {
+    "reason": "Normal merge hook formatted four owned JSON/Markdown inputs; independently compared parsed JSON/body strings and prose words to exact qualified1834368c. No original economic value, SQL function body, assertion or status changed.",
+    "changes": [
+      {
+        "path": "docs/laws.d/an-original-inventory-gap-needs-its-financial-evidence.md",
+        "previousSHA256": "f128e3ba2bf282d11e11562dea739ef493180aafe4d2cf47309796d2a0d99254",
+        "currentSHA256": "3854819f49da8f1261ef82b3202808106a8f022c6460256997f855a8400fc7bb",
+        "change": "normal formatter whitespace only; parsed original financial objects/body strings unchanged"
+      },
+      {
+        "path": "scripts/qualification/original-retirement-boundary/fixtures/inventory245-installer-cash-outcomes-type.json",
+        "previousSHA256": "877eb5a1d428d825ab7a07b0506cfb48132531fe42e439eb3ab284323b295c50",
+        "currentSHA256": "f3f3346a5a27e81352d1e9d9282fe9ef2a490012c656e1cb6ea75412a735cd55",
+        "change": "normal formatter whitespace only; parsed original financial objects/body strings unchanged"
+      },
+      {
+        "path": "scripts/qualification/original-retirement-boundary/fixtures/inventory245-installer-six-current-preimages.json",
+        "previousSHA256": "b6e1242d094517f66bc5ed2827631a3d5c60d7847818e4934d99e1ac955308da",
+        "currentSHA256": "26c0f8e72c900a0e17fc186a71d0b3c92f945155055bdc0635eb3d879afa4411",
+        "change": "normal formatter whitespace only; parsed original financial objects/body strings unchanged"
+      },
+      {
+        "path": "scripts/qualification/original-seven-discharge/monetary-function-pins.json",
+        "previousSHA256": "99a375c932bc40cde7476f3a8c2f67b7d96dc061f8c391063a6c01f2821ab29e",
+        "currentSHA256": "ee285f556a3e247c7052f3122ec6ebabc7a0a2a4e09875e2b830c5a44892cbb2",
+        "change": "normal formatter whitespace only; parsed original financial objects/body strings unchanged"
+      }
+    ]
   }
 }

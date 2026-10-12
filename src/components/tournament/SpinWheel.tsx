@@ -402,6 +402,10 @@ export default function SpinWheel({
   /** Index of the currently lit segment; -1 = nothing lit yet. */
   const [litIndex, setLitIndex] = useState(-1);
   const [displayPrize, setDisplayPrize] = useState(0);
+  const [rotorTiming, setRotorTiming] = useState<{ duration: number; elapsed: number }>({
+    duration: CHASE_MS,
+    elapsed: 0,
+  });
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const rafRef = useRef<number | null>(null);
   const onDoneRef = useRef(onDone);
@@ -525,6 +529,7 @@ export default function SpinWheel({
     const countdownMs = (reduced ? 200 : COUNTDOWN_FROM * COUNTDOWN_STEP_MS) * speed;
     const chaseMs = (reduced ? 400 : CHASE_MS) * speed;
     const resultAtMs = leadInMs + countdownMs + chaseMs;
+    setRotorTiming({ duration: chaseMs, elapsed: Math.max(0, elapsed - leadInMs - countdownMs) });
     /* A reconnect at the result boundary must never paint a private countdown
        for one frame. useLayoutEffect applies this before browser paint. */
     const resultOnly = sharedClock && elapsed >= Math.max(0, resultAtMs - 250);
@@ -800,8 +805,26 @@ export default function SpinWheel({
                 className="sw__svg"
                 viewBox={`0 0 ${SW_VIEWBOX} ${SW_VIEWBOX}`}
                 aria-hidden="true"
+                data-motion="keep"
+                style={
+                  {
+                    '--sw-turn': `${CHASE_LOOPS * 360 - (targetIndex * 360) / order.length}deg`,
+                    '--sw-spin-ms': `${rotorTiming.duration}ms`,
+                    '--sw-elapsed': `${-rotorTiming.elapsed}ms`,
+                  } as React.CSSProperties
+                }
               >
                 <defs>
+                  <linearGradient id="swMetal" x1="0" y1="0" x2="1" y2="1">
+                    <stop stopColor="#e4e7ec" />
+                    <stop offset=".35" stopColor="#9aa5b3" />
+                    <stop offset="1" stopColor="#050607" />
+                  </linearGradient>
+                  <radialGradient id="swGlass" cx=".25" cy=".1" r=".9">
+                    <stop stopColor="#9aa5b3" stopOpacity=".5" />
+                    <stop offset=".35" stopColor="#050607" />
+                    <stop offset="1" stopColor="#000" />
+                  </radialGradient>
                   {/* Two blur radii on purpose. The travelling chase light is
                       allowed to bloom; the winner's outline is NOT, because a
                       wide blur bleeds onto its neighbours and Dan's note was
@@ -848,7 +871,16 @@ export default function SpinWheel({
                         .filter(Boolean)
                         .join(' ')}
                     >
-                      <path className="sw__seg-face" d={wedgePath(i, order.length)} />
+                      <path
+                        className="sw__seg-metal"
+                        d={wedgePath(i, order.length)}
+                        fill="url(#swMetal)"
+                      />
+                      <path
+                        className="sw__seg-face"
+                        d={wedgePath(i, order.length, SW_R - 4)}
+                        fill="url(#swGlass)"
+                      />
                       <text className="sw__seg-label" x={label.x} y={label.y + 7}>
                         {tier.multiplier}
                       </text>
@@ -902,6 +934,18 @@ export default function SpinWheel({
                 )}
               </svg>
 
+              <img
+                className="sw__housing"
+                src={`${import.meta.env.BASE_URL}assets/diamond-spins/wheel-chrome-housing-v1.png`}
+                alt=""
+                draggable={false}
+              />
+              <img
+                className="sw__selector"
+                src={`${import.meta.env.BASE_URL}assets/diamond-spins/wheel-selector-pointer-v2.webp`}
+                alt=""
+                draggable={false}
+              />
               <div className="sw__gloss" aria-hidden="true" />
               <div className="sw__hub">
                 {phase === 'result' ? (

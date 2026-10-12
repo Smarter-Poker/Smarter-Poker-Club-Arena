@@ -234,6 +234,25 @@ describe('the chase is honest', () => {
 });
 
 describe('sequence', () => {
+  it('uses the Diamond Spins housing and rotates the server winner beneath the pointer', () => {
+    const { container } = render(<SpinWheel data={SPIN} onDone={() => {}} playSounds={false} />);
+    act(() => {
+      vi.advanceTimersByTime(LEAD_IN_MS + COUNTDOWN_MS + 50);
+    });
+    expect(container.querySelector('.sw__housing')?.getAttribute('src')).toContain(
+      'diamond-spins/wheel-chrome-housing-v1.png'
+    );
+    expect(container.querySelector('.sw__selector')?.getAttribute('src')).toContain(
+      'wheel-selector-pointer-v2.webp'
+    );
+    const rotor = container.querySelector('.sw__svg') as SVGElement;
+    const turn = parseFloat(rotor.style.getPropertyValue('--sw-turn'));
+    const order = buildWheelOrder(SPIN.tiers);
+    const target = order.findIndex((t) => t.multiplier === SPIN.multiplier);
+    expect((turn + (target * 360) / order.length) % 360).toBeCloseTo(0, 6);
+    expect(parseFloat(rotor.style.getPropertyValue('--sw-spin-ms'))).toBe(CHASE_MS);
+  });
+
   it('renders nothing until a draw arrives', () => {
     const { container } = render(<SpinWheel data={null} onDone={() => {}} />);
     expect(container.firstChild).toBeNull();

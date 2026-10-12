@@ -40,7 +40,8 @@ describe('Lifetime VIP Time Bank Display', () => {
     );
 
     expect(screen.getByRole('status', { name: 'Unlimited Lifetime VIP Time Banks' })).toBeTruthy();
-    expect(container.textContent).toContain('VIP');
+    expect(container.querySelector('.tbc-count-overlay')).toBeNull();
+    expect(container.textContent).not.toContain('VIP');
     expect(screen.queryByRole('button')).toBeNull();
     expect(onClick).not.toHaveBeenCalled();
   });

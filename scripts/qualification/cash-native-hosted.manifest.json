@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 202788,
-      "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
+      "bytes": 203050,
+      "sha256": "7241e2dca5c0a02816840f23f2220614f0f0343b251fe7eb45b480ba7c0daa86"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -2155,5 +2155,12 @@
         }
       }
     ]
+  },
+  "strandedSatellitePartTwoInterval20261012": {
+    "reason": "Run the native part-two cohort and preimage-refusal regression in existing Accounting4. Financial inputs, assertions, historical pins and qualification status remain unchanged; workflow fingerprint refresh is not production financial qualification.",
+    "previousWorkflowPin": {
+      "bytes": 202788,
+      "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
+    }
   }
 }

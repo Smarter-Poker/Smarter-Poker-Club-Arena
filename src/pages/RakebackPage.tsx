@@ -283,31 +283,10 @@ export default function RakebackPage() {
           { label: 'Next Ready Period', value: readyAmount.toLocaleString(), tone: 'attention' },
         ]}
       />
-      <div className="rakeback-summary">
-        <div className="summary-card main">
-          <span className="card-icon"></span>
-          <div className="card-content">
-            <span className="card-value">{totalEarned.toLocaleString()}</span>
-            <span className="card-label">Recent Earnings</span>
-          </div>
-        </div>
-        <div className="summary-row">
-          <div className="summary-card">
-            <span className="card-value">{rateLabel(currentRate)}</span>
-            <span className="card-label">Latest Period Rate</span>
-          </div>
-          <div className="summary-card pending">
-            <span className="card-value">{readyAmount.toLocaleString()}</span>
-            <span className="card-label">Next Ready Period</span>
-            <p className="card-label">Recent Pending Earnings: {pendingAmount.toLocaleString()}</p>
-            <p className="card-label">
-              Estimate For One Period. The Automatic Run May Settle More Periods.
-            </p>
-            <p className="card-label settlement-schedule">
-              Settled Automatically Every Monday At 4:00 AM Central Time.
-            </p>
-          </div>
-        </div>
+      <div className="rakeback-settlement-note">
+        <p>Recent Pending Earnings: {pendingAmount.toLocaleString()}</p>
+        <p>Estimate For One Period. The Automatic Run May Settle More Periods.</p>
+        <p>Settled Automatically Every Monday At 4:00 AM Central Time.</p>
       </div>
 
       {/* Rakeback Chart */}
@@ -327,7 +306,7 @@ export default function RakebackPage() {
                 }}
                 formatter={(value) => [`${Number(value || 0).toLocaleString()}`, 'Rakeback']}
               />
-              <Bar dataKey="earned" fill="var(--accent-success)" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="earned" fill="var(--realism-cyan, #00d4ff)" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>

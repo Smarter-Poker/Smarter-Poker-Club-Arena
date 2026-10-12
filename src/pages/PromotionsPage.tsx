@@ -4,7 +4,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { readClubContextParam } from '../utils/clubScopedPath';
+import { readClubContextParam, withClubContext } from '../utils/clubScopedPath';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusSubscriptions } from '../hooks/useMasterBusSubscription';
@@ -26,6 +26,7 @@ import { reportError } from '../utils/errorReporter';
 import RewardsOverlayPortal from '../components/rewards/RewardsOverlayPortal';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import { publicOrigin } from '../lib/appBase';
+import { useReferralCount } from '../hooks/useReferralCount';
 
 interface Promotion {
   id: string;
@@ -71,7 +72,12 @@ export default function PromotionsPage() {
   // inviter. Both halves now come from the same place the rest of the app
   // shares from: the real player_number, on the real invite route.
   const [playerNumber, setPlayerNumber] = useState<string | null>(null);
+  const [profileOwner, setProfileOwner] = useState<string | null>(null);
+  const totalReferrals = useReferralCount(user?.id ?? null);
   useEffect(() => {
+    let cancelled = false;
+    setPlayerNumber(null);
+    setProfileOwner(user?.id ?? null);
     if (!user?.id) return;
     (async () => {
       try {
@@ -80,7 +86,7 @@ export default function PromotionsPage() {
           .select('player_number')
           .eq('id', user.id)
           .maybeSingle();
-        if (!isMounted.current) return;
+        if (!isMounted.current || cancelled) return;
         /* THE ERROR IS READ, because the fallback below is the exact bug the
            comment on this block describes. `error` was never destructured, so
            a failed read left `playerNumber` null and `referralCode` fell back
@@ -96,12 +102,15 @@ export default function PromotionsPage() {
         reportError(e, 'PromotionsPage.referral_code_lookup');
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [user?.id, isMounted]);
 
   /* NO user.id FALLBACK. A player number is the only thing redemption
      recognises; sharing an account id produced a link that always refused. If
      the number is not known the link is simply not offered. */
-  const referralCode = playerNumber || '';
+  const referralCode = profileOwner === user?.id ? playerNumber || '' : '';
   const referralLink =
     clubId && referralCode
       ? `${publicOrigin()}/hub/club-arena/invite/${clubId}?ref=${referralCode}`
@@ -364,7 +373,7 @@ export default function PromotionsPage() {
           primary: {
             label: 'Daily Bonus',
             ink: 'white',
-            onClick: () => navigate('/bonuses'),
+            onClick: () => navigate(withClubContext('/bonuses', clubId)),
           },
         }}
       >
@@ -538,7 +547,7 @@ export default function PromotionsPage() {
           onClose={() => setShowReferral(false)}
           referralCode={referralCode}
           referralLink={referralLink}
-          totalReferrals={0}
+          totalReferrals={totalReferrals}
         />
       </RewardsOverlayPortal>
     </StandardContentLayout>

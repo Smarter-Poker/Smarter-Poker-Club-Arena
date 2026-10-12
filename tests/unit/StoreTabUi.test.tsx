@@ -131,6 +131,20 @@ function renderStoreWithBalance(balance: number) {
 }
 
 describe('StoreTab purchase experience', () => {
+  it('keeps confirmation outside the isolated storefront and restores its trigger without purchasing', () => {
+    const rendered = renderStore();
+    const trigger = screen.getByRole('button', { name: BUY_BUTTON });
+    trigger.focus();
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole('dialog', { name: 'Confirm Purchase' });
+    expect(rendered.container.contains(dialog)).toBe(false);
+    expect(document.body.contains(dialog)).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Close Purchase' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    expect(callClubArenaApiMock).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     callClubArenaApiMock.mockReset();
     toastSuccessMock.mockReset();

@@ -229,7 +229,7 @@ describe('the operations workspace reads the club', () => {
     const cashierAlert = screen.getByText('Chip Requests Waiting').closest('a');
     expect(cashierAlert?.getAttribute('href')).toBe('/clubs/deep-stack-society-11192/cashier');
     const playersAlert = screen.getByText('Membership Requests Waiting').closest('a');
-    expect(playersAlert?.getAttribute('href')).toBe('/clubs/deep-stack-society-11192/members');
+    expect(playersAlert?.getAttribute('href')).toBe('/clubs/deep-stack-society-11192/applicants');
   });
 
   it('badges the tool that has work waiting and leaves the others alone', async () => {

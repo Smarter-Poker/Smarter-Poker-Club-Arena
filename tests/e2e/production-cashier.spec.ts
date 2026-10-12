@@ -501,7 +501,10 @@ test.describe('Production Cashier Certification', () => {
         await expect(field).toHaveAccessibleDescription(
           rail === 'Mint' ? 'Mint Whole Chips Only' : 'Chips Go To Two Decimal Places'
         );
-        await expect(console.getByRole('status', { name: 'Amount Validation' })).toBeVisible();
+        const feedback = console.locator('#cashier-amount-validation');
+        await expect(feedback).toBeVisible();
+        await expect(feedback).toHaveAttribute('role', 'status');
+        await expect(feedback).not.toHaveAttribute('aria-label');
         const bounds = await field.boundingBox();
         expect(bounds).not.toBeNull();
         expect(bounds!.height).toBeGreaterThanOrEqual(44);
@@ -513,7 +516,7 @@ test.describe('Production Cashier Certification', () => {
         expect(geometry.scroll).toBeLessThanOrEqual(geometry.width);
         await field.fill('10');
         await expect(field).toHaveAttribute('aria-invalid', 'false');
-        await expect(console.getByRole('status', { name: 'Amount Validation' })).toHaveCount(0);
+        await expect(feedback).toHaveCount(0);
         await field.fill('');
         observedAmountRails.push(`${width}:${rail}`);
       }

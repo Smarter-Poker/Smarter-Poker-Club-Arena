@@ -247,7 +247,11 @@ describe('Cashier Classic launch audit', () => {
       fireEvent.change(field, { target: { value: invalid } });
       expect(field).toHaveAttribute('aria-invalid', 'true');
       expect(field).toHaveAccessibleDescription(message);
-      expect(screen.getByRole('status', { name: 'Amount Validation' })).toHaveTextContent(message);
+      const feedback = document.getElementById(field.getAttribute('aria-describedby') ?? '');
+      expect(feedback).toHaveAttribute('role', 'status');
+      // Chromium uses a referenced aria-label instead of its refusal text.
+      expect(feedback).not.toHaveAttribute('aria-label');
+      expect(feedback).toHaveTextContent(message);
       expect(
         rpcCalls.some(([name]) =>
           [
@@ -260,7 +264,7 @@ describe('Cashier Classic launch audit', () => {
       ).toBe(false);
       fireEvent.change(field, { target: { value: '10' } });
       expect(field).toHaveAttribute('aria-invalid', 'false');
-      expect(screen.queryByRole('status', { name: 'Amount Validation' })).toBeNull();
+      expect(document.getElementById('cashier-amount-validation')).toBeNull();
     }
   );
 

@@ -3,7 +3,5 @@
   "owner": "postgres",
   "acl": "{postgres=X/postgres,service_role=X/postgres}",
   "secdef": true,
-  "config": [
-    "search_path=public, pg_temp"
-  ]
+  "config": ["search_path=public, pg_temp"]
 }

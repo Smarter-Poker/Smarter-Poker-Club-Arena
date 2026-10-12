@@ -169,6 +169,7 @@ export function useTournamentRegistration() {
         startTime: t.start_time ?? null,
         userId: currentUserId,
         clubId: t.club_id ?? null,
+        tournamentId: t.id,
         isLateRegistration: t.is_late_registration ?? isLateStatus(t.status),
         tournamentTicketId: entryTicket?.id ?? null,
       });

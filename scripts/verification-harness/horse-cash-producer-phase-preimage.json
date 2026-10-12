@@ -32,9 +32,7 @@
         "owner": "postgres",
         "acl": "{postgres=X/postgres}",
         "secdef": false,
-        "config": [
-          "search_path=public, pg_temp"
-        ]
+        "config": ["search_path=public, pg_temp"]
       },
       {
         "signature": "smarter_private.horse_cash_retained_request_matches(uuid,bigint,text,jsonb)",
@@ -43,9 +41,7 @@
         "owner": "postgres",
         "acl": "{postgres=X/postgres}",
         "secdef": true,
-        "config": [
-          "search_path=pg_catalog, public, pg_temp"
-        ]
+        "config": ["search_path=pg_catalog, public, pg_temp"]
       },
       {
         "signature": "smarter_private.horse_cash_retained_atomic_matches(uuid,bigint,jsonb,jsonb,jsonb)",
@@ -54,9 +50,7 @@
         "owner": "postgres",
         "acl": "{postgres=X/postgres}",
         "secdef": true,
-        "config": [
-          "search_path=pg_catalog, public, pg_temp"
-        ]
+        "config": ["search_path=pg_catalog, public, pg_temp"]
       }
     ],
     "cash-phase-raw-preimage": [

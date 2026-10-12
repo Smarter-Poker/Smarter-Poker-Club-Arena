@@ -1,0 +1,10 @@
+{
+  "_owner": "fix/buyin-seat (Dan 2026-10-12 items 4 and 5). Migration 20261012131301_a_buyin_draws_from_the_wallet_that_can_pay_and_no_unfunded_s: union wallet selection helpers for cash buy-ins, tournament entries and seat holds.",
+  "functions": [
+    "fn_ca_union_wallet_that_can_pay",
+    "fn_ca_cash_paying_club",
+    "fn_ca_cash_entry_need",
+    "fn_ca_cash_wallet_covers",
+    "fn_ca_entry_paying_club"
+  ]
+}

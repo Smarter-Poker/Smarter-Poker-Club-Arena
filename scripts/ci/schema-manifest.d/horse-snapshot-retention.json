@@ -1,7 +1,5 @@
 {
   "_owner": "horse-retention-20261012",
   "_comment": "Original settled horse snapshot retention; no new schedule or financial write.",
-  "functions": [
-    "smarter_private.horse_snapshot_disposable"
-  ]
+  "functions": ["smarter_private.horse_snapshot_disposable"]
 }

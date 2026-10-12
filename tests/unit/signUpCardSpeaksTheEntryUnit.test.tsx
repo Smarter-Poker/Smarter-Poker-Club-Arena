@@ -102,7 +102,10 @@ describe('the sign up card speaks the unit the entry is priced in', () => {
     const dialog = await openCard(CHIP_UNIT_CENTS);
     expect(head(dialog)).toBe('5 Chips');
     await waitFor(() =>
-      expect(mocks.readBalance).toHaveBeenCalledWith('user-1', { clubId: 'club-1' })
+      expect(mocks.readBalance).toHaveBeenCalledWith('user-1', {
+        clubId: 'club-1',
+        tournamentId: 'tournament-1',
+      })
     );
     await waitFor(() => expect(dialog.textContent).toContain('500 Chips'));
     expect(screen.getByText('Your Balance')).toBeInTheDocument();

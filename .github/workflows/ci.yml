@@ -2320,6 +2320,26 @@ jobs:
           PGBIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/probe-satellite-same-hand-bust-order-pg17.sh
 
+      - name: Inventory seal preserves exact rows through bucket continuation
+        id: inventory_seal_buckets
+        if: matrix.shard == 3
+        env:
+          PGBIN: /usr/lib/postgresql/17/bin
+          PROBE_EVIDENCE: ${{ runner.temp }}/inventory-seal-buckets
+        run: |
+          set -euo pipefail
+          mkdir -p "$PROBE_EVIDENCE"
+          bash scripts/dev/probe-inventory-seal-buckets-pg17.sh 2>&1 | tee "$PROBE_EVIDENCE/qualification.log"
+
+      - name: Retain inventory seal PostgreSQL qualification
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.inventory_seal_buckets.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: inventory-seal-buckets-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/inventory-seal-buckets/
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Tournament blinds publish atomically across the field
         if: matrix.shard == 3
         env:

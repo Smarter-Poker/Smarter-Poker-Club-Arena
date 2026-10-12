@@ -14,8 +14,8 @@
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "supabase/migrations/20260918122532_five_original_spin_standings_retain_their_recorded_cash_outc.sql": "9f6e0b02abea54394d317c6d20f8e47ae10edefc9ba6c12f6542c23daf4540c4",
-    ".prettierignore": "09ce1f38a5e012220b004ee809caf9fdcf0e61d9d72e924fd82341de73d53874",
-    "tests/unit/fixtureNativeCi.test.ts": "14a67e65f162b0c02c406ae9b24726852f5d5678c28f01ba861633b9c6ea9682",
+    ".prettierignore": "4b3e2f36fddf7498665cf2a3bada347614dd73cfde793f9ab27aad1f38d88c08",
+    "tests/unit/fixtureNativeCi.test.ts": "6f25ef0b33cddfb9b5c0ed46ce689381f2aaedfd7b2ebb2cb8d1c7012463c560",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536"
   },
   "restamp_audit": [
@@ -246,5 +246,50 @@
         "current": "14a67e65f162b0c02c406ae9b24726852f5d5678c28f01ba861633b9c6ea9682"
       }
     ]
+  },
+  "scopedLaunchResetWiring20261012": {
+    "reason": "Reviewed additive scoped launch reset CI/classifier/wiring checks and nested source identity only. Financial originals, assertions, historical pins and qualification status remain unchanged. This is not production reset certification.",
+    "pins": {
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "before": "14a67e65f162b0c02c406ae9b24726852f5d5678c28f01ba861633b9c6ea9682",
+        "after": "474a93ffd29b77b252b85e4ed44391802f6076d421213f3fd10498642537bb0d"
+      }
+    }
+  },
+  "scopedLaunchResetPrefixEnforcement20261012": {
+    "reason": "Reviewed additive scoped64 prefix, source-bound treasury regression and existing Accounting1 enforcement; preserve all prior assertions, financial inputs, history and qualification statuses. Only reviewed routing/test/workflow and nested byte fingerprints change. Not a production certificate.",
+    "pins": {
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "before": "474a93ffd29b77b252b85e4ed44391802f6076d421213f3fd10498642537bb0d",
+        "after": "d6cf10b20516b4204473d31eaf215066b42a8b3ab69c56cd6fdb6099e1578a59"
+      }
+    }
+  },
+  "scopedLaunchExactCatalogPreservation20261012": {
+    "reason": "Add exact launch-reset original catalog JSON formatter exclusions only, preserving numeric scale and candidate fixture fingerprints. Prior exclusions and all financial assertions retained; nested fingerprint reflects this reviewed metadata only.",
+    "pins": {
+      ".prettierignore": {
+        "before": "09ce1f38a5e012220b004ee809caf9fdcf0e61d9d72e924fd82341de73d53874",
+        "after": "4b3e2f36fddf7498665cf2a3bada347614dd73cfde793f9ab27aad1f38d88c08"
+      }
+    }
+  },
+  "scopedLaunchAtomicInstallerEnforcement20261012": {
+    "reason": "Preserve approved installer route while committing schema and exact source history atomically, verify TLS, distinguish transport uncertainty, and enforce real native failure/commit recovery cases in existing Accounting1. Reviewed only these source/workflow/classifier/test bytes and resulting nested seals; historical financial input/assertions/status preserved. No production completion implied.",
+    "pins": {
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "before": "d6cf10b20516b4204473d31eaf215066b42a8b3ab69c56cd6fdb6099e1578a59",
+        "after": "090d6a4e6d21962c9b74ee3cdc4f27a3bfba226b36bc67346751a872c4b1e261"
+      }
+    }
+  },
+  "scopedLaunchFinalAdmissionRegression20261012": {
+    "reason": "Enforce the final integrated1903 financial regression, because bounded64 passed the observed cached-join regression, plus real source-bound creation/start and concurrent park fencing. Review preserves all existing assertions, original financial inputs, history and qualification statuses; nested pins track only these exact reviewed routing bytes.",
+    "pins": {
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "before": "090d6a4e6d21962c9b74ee3cdc4f27a3bfba226b36bc67346751a872c4b1e261",
+        "after": "6f25ef0b33cddfb9b5c0ed46ce689381f2aaedfd7b2ebb2cb8d1c7012463c560"
+      }
+    }
   }
 }

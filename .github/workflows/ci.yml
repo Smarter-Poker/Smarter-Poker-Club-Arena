@@ -1403,6 +1403,32 @@ jobs:
           TMPDIR: ${{ runner.temp }}
           NATIVE_PG_SOCKET_ROOT: ${{ runner.temp }}
         run: python3 -B -m unittest discover -s scripts/ci -p test_native_supabase_export.py
+      - name: Scoped launch reset preserves original money and reporting owners
+        id: scoped_launch_reset
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+          PROBE_EVIDENCE: ${{ runner.temp }}/scoped-launch-reset
+        run: |
+          set -euo pipefail
+          mkdir -p "$PROBE_EVIDENCE"
+          launch_candidate=supabase/migrations/20261012181905_scoped_club_launch_reset_and_guarded_recovery.sql
+          python3 -B scripts/ci/test_launch_reset_installer.py --installer scripts/ci/apply-recorded-migration.mjs --repository . --pgbin "$PG_BIN" --scratch "$RUNNER_TEMP" --output "$PROBE_EVIDENCE/installer.json"
+          python3 -B scripts/ci/test_launch_reset_balance.py --candidate-migration "$launch_candidate" --scratch-root "$RUNNER_TEMP" --output-dir "$PROBE_EVIDENCE/balance" --pg-bin "$PG_BIN" --production-roster
+          for launch_fixture in commission-assertion reporting invoice-visibility treasury-selftest; do
+            python3 -B scripts/ci/run_launch_reset_accounting_fixture.py --fixture "scripts/ci/fixtures/launch-reset/accounting/$launch_fixture-qualification.sql" --candidate "$launch_candidate" --work-root "$RUNNER_TEMP" --pg-bin "$PG_BIN"
+          done
+          python3 -B scripts/ci/test_launch_reset_floor_admission.py --candidate "$launch_candidate" --fixture scripts/ci/fixtures/launch-reset/accounting/floor-admission-qualification.sql --work-root "$RUNNER_TEMP" --pg-bin "$PG_BIN"
+          python3 -B scripts/ci/test_launch_reset_floor.py --candidate-migration "$launch_candidate" --pgbin "$PG_BIN" --scratch "$RUNNER_TEMP" --output "$PROBE_EVIDENCE/floor.json"
+      - name: Retain scoped launch reset qualification
+        if: always() && matrix.shard == 1 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.scoped_launch_reset.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: scoped-launch-reset-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/scoped-launch-reset/
+          if-no-files-found: error
+          retention-days: 7
       - name: Native recovery metadata client preserves the actual full archive
         if: matrix.shard == 4
         timeout-minutes: 8

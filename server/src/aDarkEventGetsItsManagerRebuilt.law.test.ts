@@ -13,6 +13,10 @@
  * retires the exact manager it holds so RUNNING resume re-admits it fresh,
  * once per tournament per rebuild window; a second dark reading after a
  * rebuild raises one CRITICAL financial alert.
+ *
+ * 2026-10-12: a parked table no longer exempts a dark event (satellite
+ * 61961519, three hours dark); only a named deliberate authority does. See
+ * aDarkEventIsRebuiltWhateverItsPauseTimerSays.law.test.ts.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -50,6 +54,7 @@ function manager(overrides: Partial<{ onBreak: boolean; tables: string[] }> = {}
   return {
     isOnBreak: () => overrides.onBreak ?? false,
     getTableIds: () => overrides.tables ?? [TABLE],
+    deliberateDealingHold: () => null,
   };
 }
 
@@ -58,6 +63,8 @@ function engine(overrides: Partial<{ parked: boolean; pausedMs: number; running:
     isRunning: () => overrides.running ?? true,
     isParkedByDesign: () => overrides.parked ?? false,
     msPaused: () => overrides.pausedMs ?? 0,
+    isMaintenancePaused: () => false,
+    isHeldByOperatorFloor: () => false,
   };
 }
 
@@ -94,7 +101,7 @@ describe('a dark event gets its manager rebuilt', () => {
     expect(alerts.raise).not.toHaveBeenCalled();
   });
 
-  it('leaves an unowned event to the resume lane, and a fresh admission or a healthy park alone', async () => {
+  it('leaves an unowned event to the resume lane and a fresh admission alone', async () => {
     const s = server();
     db.rows = [{ tournament_id: EVENT, name: 'x', alive: 2, live_minutes: 16 }];
     await s.rebuildManagersOfDarkTournaments();
@@ -106,20 +113,24 @@ describe('a dark event gets its manager rebuilt', () => {
     s.tournamentManagerAdmittedAtMs.set(fresh, Date.now());
     await s.rebuildManagersOfDarkTournaments();
     expect(s.retireTournamentManagerInDiscovery).not.toHaveBeenCalled();
+  });
 
+  it('rebuilds a dark event whose tables are parked, however young the park (2026-10-12)', async () => {
+    // Moved from "a healthy park is left alone": a park and its msPaused()
+    // timer are what every wedge looks like, and the zombie reaper's own
+    // rebuild resets that timer. Named authorities are pinned in
+    // aDarkEventIsRebuiltWhateverItsPauseTimerSays.law.test.ts.
+    const s = server();
     const parked = manager();
     s.tournamentEngines.set(EVENT, parked);
     s.tableEngines.set(TABLE, engine({ parked: true, pausedMs: 60_000 }));
+    db.rows = [{ tournament_id: EVENT, name: 'x', alive: 2, live_minutes: 16 }];
     await s.rebuildManagersOfDarkTournaments();
-    expect(s.retireTournamentManagerInDiscovery).not.toHaveBeenCalled();
-
-    // A park past MAX_HEALTHY_PAUSE_MS is never healthy: that one is rebuilt.
-    s.tableEngines.set(
-      TABLE,
-      engine({ parked: true, pausedMs: GameServer.MAX_HEALTHY_PAUSE_MS + 1 })
+    expect(s.retireTournamentManagerInDiscovery).toHaveBeenCalledWith(
+      EVENT,
+      parked,
+      'GameServer.dark_tournament_manager_rebuild'
     );
-    await s.rebuildManagersOfDarkTournaments();
-    expect(s.retireTournamentManagerInDiscovery).toHaveBeenCalledTimes(1);
   });
 
   it('rebuilds an event the database names as dark even when its manager believes it is on break (a break that never ended)', async () => {

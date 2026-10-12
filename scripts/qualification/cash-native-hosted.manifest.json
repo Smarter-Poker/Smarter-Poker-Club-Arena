@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 208650,
-      "sha256": "726fc785d4c857df179022236ca835b70891a323ba25f306a1ccd2f6d59b8000"
+      "bytes": 209558,
+      "sha256": "d37c75bdf8c9f04a356363c8cff9b919f66f0a1640d7748c40f29cc40bd5aea9"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -2370,6 +2370,13 @@
       "sha256": "f10cdd968c998575f18c28cf6e44c68ebaddea8d59386fc63d0eb205520170a4"
     },
     "combinedWorkflowPin": {
+      "bytes": 208650,
+      "sha256": "726fc785d4c857df179022236ca835b70891a323ba25f306a1ccd2f6d59b8000"
+    }
+  },
+  "originalLateSeatFlowNative20261012": {
+    "reason": "Enforce original departed-seat cash-flow qualification in the maintained Accounting3 lane with mandatory failure transcripts. Preserve protected retention, original unchanged-stack, inventory-seal and every prior native lane and historical pin. Financial inputs and qualification status are unchanged; source identity does not prove production installation.",
+    "previousWorkflowPin": {
       "bytes": 208650,
       "sha256": "726fc785d4c857df179022236ca835b70891a323ba25f306a1ccd2f6d59b8000"
     }

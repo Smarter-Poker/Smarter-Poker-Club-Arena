@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "717e43470db486c77e6995c2b94ca040a01472cc09035b1222b5dc12bbcbdd98",
+    "scripts/ci/classify-ci-changes.mjs": "89fc5f840a12fe52e11da8990ce81952a41d5fdb97607c9fe18005cf27326e0d",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
@@ -818,6 +818,17 @@
         "path": "scripts/ci/classify-ci-changes.mjs",
         "previous": "d23683095f969adc3d9fdb2d0ca4feadb6bb1afaaf762a0b1e1823bdbd95bdb7",
         "current": "717e43470db486c77e6995c2b94ca040a01472cc09035b1222b5dc12bbcbdd98"
+      }
+    ]
+  },
+  "tournamentChatDefaultDbHarnessRouting20261012": {
+    "reason": "Reviewed additive tournament chat default harness routing: the existing cashierDbHarnesses selector also names scripts/ci/test-tournament-chat-default-db-postgres.py (the PostgreSQL 17 qualification of migration 20261012040851, tournament chat is off by default) and its fixture directory tests/fixtures/tournament-chat-default-db/, and one accounting_postgres shard 2 step runs it. No selector is removed or narrowed; financial sources, assertions and historical evidence are unchanged. These byte bindings establish source identity only, not financial or production qualification.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "717e43470db486c77e6995c2b94ca040a01472cc09035b1222b5dc12bbcbdd98",
+        "current": "89fc5f840a12fe52e11da8990ce81952a41d5fdb97607c9fe18005cf27326e0d"
       }
     ]
   }

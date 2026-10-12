@@ -44,6 +44,11 @@ const HARNESSES = [
     'horse-reads-db/scenario.sql',
     '20261012040542_a_treasury_funded_seat_reads_as_a_club_bank_send.sql',
   ],
+  [
+    'test-tournament-chat-default-db-postgres.py',
+    'tournament-chat-default-db/fixture.sql',
+    '20261012040851_tournament_chat_is_off_by_default.sql',
+  ],
 ] as const;
 
 type Step = { name?: string; if?: string; run?: string; env?: Record<string, string> };

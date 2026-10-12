@@ -428,4 +428,23 @@ describe('chat stays off for multi-table tournaments', () => {
     const config = await submit(container);
     expect(config.banChat).toBe(true);
   });
+
+  // Dan, 2026-10-11: "Off by default for all tournaments. Spins and Sit N Gos
+  // can have chat on." Before this the modal sent banChat true for every
+  // format, so a Spin or a Sit N Go created here could never chat.
+  it.each(['sng', 'spin'] as const)(
+    'a %s starts with chat on and keeps the host switch',
+    async (f) => {
+      const { container } = mount(f);
+      fireEvent.click(screen.getByRole('button', { name: 'Show Advanced Options' }));
+      expect(screen.queryByText('Chat: Off')).toBeNull();
+      const toggle = screen.getByRole('switch', { name: 'Ban Chat' }) as HTMLInputElement;
+      expect(toggle.checked).toBe(false);
+      expect(toggle.disabled).toBe(false);
+      expect((await submit(container)).banChat).toBe(false);
+      fireEvent.click(toggle);
+      expect(toggle.checked).toBe(true);
+      expect((await submit(container, 2)).banChat).toBe(true);
+    }
+  );
 });

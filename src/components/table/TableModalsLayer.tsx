@@ -1,4 +1,4 @@
-import type { DiamondJackpotSnapshot } from '../../lib/diamondJackpotFeed';
+import { diamondMiniPlateAmount, type DiamondJackpotSnapshot } from '../../lib/diamondJackpotFeed';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TableModalsLayer — All overlay/modal JSX for the poker table
@@ -271,6 +271,7 @@ export interface TableModalsLayerProps {
   bbjAmount: number;
   jackpotAsset?: 'chips' | 'diamonds';
   diamondJackpot?: DiamondJackpotSnapshot | null;
+  diamondJackpotUnavailable?: boolean;
   /** Resolved BBJ pool id (union pool for union clubs) — for the details modal. */
   bbjPoolId?: string | null;
   /** Hero's display name, so their own payout row is highlighted. */
@@ -619,6 +620,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     bbjAmount,
     jackpotAsset = 'chips',
     diamondJackpot = null,
+    diamondJackpotUnavailable = false,
     bbjPoolId,
     bbjHeroName,
     bbjMini = null,
@@ -781,9 +783,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
   const diamondJackpotStake = diamondJackpot?.stakes.find((s) => s.big_blind === safeBB(blinds));
   const bbjMiniAmount =
     jackpotAsset === 'diamonds'
-      ? diamondJackpotStake?.mini_payable
-        ? diamondJackpotStake.mini_amount
-        : null
+      ? diamondMiniPlateAmount(diamondJackpot, safeBB(blinds))
       : miniPlateAmount(bbjMini, safeBB(blinds));
   const bbjMiniInfo = getBBJMiniQualifyingInfo(gameType);
   // Tapping the jackpot banner opens the last-5-jackpots view (Dan, 2026-08-18).
@@ -1040,6 +1040,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         poolId={bbjPoolId ?? null}
         asset={jackpotAsset}
         diamond={diamondJackpot}
+        diamondUnavailable={diamondJackpotUnavailable}
         poolAmount={bbjAmount}
         gameType={gameType}
         bigBlind={safeBB(blinds)}

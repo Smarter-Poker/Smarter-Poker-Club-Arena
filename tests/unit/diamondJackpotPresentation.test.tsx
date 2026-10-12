@@ -7,6 +7,25 @@ import { parseDiamondJackpotSnapshot } from '../../src/lib/diamondJackpotFeed';
 import { BBJCelebration } from '../../src/components/table/BBJCelebration';
 import { BadBeatJackpot } from '../../src/components/table/BadBeatJackpot';
 afterEach(cleanup);
+it('Diamond loading, read failure and recovery render distinct truthful states', () => {
+  const props = {
+    isOpen: true,
+    onClose: () => {},
+    poolId: null,
+    poolAmount: 0,
+    asset: 'diamonds' as const,
+  };
+  const { rerender } = render(<BBJInfoModal {...props} diamond={null} />);
+  expect(screen.getByText('Reading Diamond Jackpot Winners')).toBeTruthy();
+  rerender(<BBJInfoModal {...props} diamond={null} diamondUnavailable />);
+  expect(screen.getByText('Could Not Read Diamond Jackpot Winners.')).toBeTruthy();
+  expect(screen.queryByText('Reading Diamond Jackpot Winners')).toBeNull();
+  fireEvent.click(screen.getByRole('tab', { name: 'Basic' }));
+  expect(screen.getByText('Could Not Read Diamond Jackpot Settings.')).toBeTruthy();
+  rerender(<BBJInfoModal {...props} diamond={snapshot} diamondUnavailable={false} />);
+  expect(screen.queryByText(/Could Not Read/)).toBeNull();
+  expect(screen.getByText('200')).toBeTruthy();
+});
 const snapshot = {
   version: 1 as const,
   pool_id: 'pool',

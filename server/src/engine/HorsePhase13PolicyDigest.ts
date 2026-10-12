@@ -96,6 +96,13 @@ export const HORSE_PHASE13_POLICY_SOURCE_REASONS: Readonly<Record<string, string
   'src/engine/EquityLoadGovernor.ts':
     'the governor HorseEval reads; since 2026-10-11 it no longer scales the joint request, which is always the full count',
   'src/config/rakeSpec.ts': 'the rake arithmetic every deduction charges',
+  'src/domain/diamondCashFeeSnapshot.ts':
+    'the JSON-safe frozen Diamond fee envelope decoded by the joint deduction boundary',
+  'src/domain/diamondCashRakeSchedule.ts':
+    'exact published whole-Diamond rake arithmetic in the joint financial forecast',
+  'src/domain/diamondCashJackpotSchedule.ts':
+    'independent Diamond jackpot flop eligibility and whole drop pricing in the joint forecast',
+
   'src/config/tableSeating.ts': 'the cash seat ceilings the acquisition refuses above',
   'src/engine/plo4/Plo4LivePolicy.ts':
     'plo4BlindSeatsStatus and plo4ButtonOffset: the posted-blind check and button offset behind the action order and the binding',

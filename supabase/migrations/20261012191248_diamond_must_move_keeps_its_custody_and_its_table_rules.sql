@@ -255,6 +255,41 @@ BEGIN
 
   v_club := public.fn_seat_club_for_user$sql$),
   ('public.fn_cash_game_join(uuid)',
+   '  -- NO CHAIR IS HELD FOR A PLAYER WHO CANNOT PAY FOR IT',
+   $sql$  IF EXISTS(SELECT 1 FROM public.clubs c WHERE c.id=g.club_id AND c.asset='diamonds')
+     AND g.cluster_mode IS DISTINCT FROM 'must_move' THEN
+    RAISE EXCEPTION 'GAME_CLOSED: this Diamond game is not taking new players' USING ERRCODE='23514';
+  END IF;
+  -- NO CHAIR IS HELD FOR A PLAYER WHO CANNOT PAY FOR IT$sql$),
+  ('public.fn_poker_diamond_buyin(uuid,uuid,integer,numeric,boolean,uuid,uuid)',
+   ' v_t public.tables%ROWTYPE;',
+   $sql$ v_t public.tables%ROWTYPE;
+ v_game_id uuid;
+ v_locked_game public.cash_games%ROWTYPE;$sql$),
+  ('public.fn_poker_diamond_buyin(uuid,uuid,integer,numeric,boolean,uuid,uuid)',
+   $sql$ PERFORM pg_advisory_xact_lock(hashtextextended('table_cap:'||p_user_id,0));$sql$,
+   $sql$ -- Staff pause/close and allocation lock game before table. Take the
+ -- same lock before reserving money; a concurrent pause is observed here.
+ SELECT t.cluster_id INTO v_game_id FROM public.tables t WHERE t.id=p_table_id;
+ IF v_game_id IS NOT NULL THEN
+   SELECT cg.* INTO v_locked_game FROM public.cash_games cg
+     WHERE cg.id=v_game_id FOR UPDATE;
+   IF NOT FOUND OR NOT coalesce(v_locked_game.enabled,false)
+      OR v_locked_game.cluster_mode IS DISTINCT FROM 'must_move' THEN
+     RAISE EXCEPTION 'GAME_CLOSED: this Diamond game is not taking new players' USING ERRCODE='23514';
+   END IF;
+ END IF;
+ PERFORM pg_advisory_xact_lock(hashtextextended('table_cap:'||p_user_id,0));$sql$),
+  ('public.fn_poker_diamond_buyin(uuid,uuid,integer,numeric,boolean,uuid,uuid)',
+   $sql$ IF NOT public.fn_poker_diamond_plain_cash_table(v_t) THEN$sql$,
+   $sql$ IF v_t.cluster_id IS DISTINCT FROM v_game_id THEN
+   RAISE EXCEPTION 'diamond_cash_entry_scope_changed' USING ERRCODE='55000';
+ END IF;
+ IF v_t.cluster_id IS NOT NULL AND v_t.lifecycle NOT IN ('opening','live') THEN
+   RAISE EXCEPTION 'TABLE_CLOSING: this Diamond table is not taking new players' USING ERRCODE='23514';
+ END IF;
+ IF NOT public.fn_poker_diamond_plain_cash_table(v_t) THEN$sql$),
+  ('public.fn_cash_game_join(uuid)',
    '  -- Booted for low VPIP:',
    $sql$  IF EXISTS(SELECT 1 FROM public.clubs c WHERE c.id=g.club_id AND c.asset='diamonds') THEN
     IF NOT public.fn_caller_session_is_live() THEN

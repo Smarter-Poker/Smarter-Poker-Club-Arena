@@ -32,7 +32,7 @@ const snapshot = {
   pool_id: 'pool',
   stakes: [{ big_blind: 2, mini_payable: true, mini_amount: 100 }],
 };
-function start(asset: string, delayed = false) {
+function start(asset: string, delayed = false, lookupFailure = false) {
   let answer!: () => void;
   const ready = delayed
     ? new Promise<void>((resolve) => {
@@ -56,6 +56,7 @@ function start(asset: string, delayed = false) {
     setBbjPoolId: vi.fn(),
     setBbjMini: vi.fn(),
     setRecordedDiamondJackpot: vi.fn(),
+    setDiamondJackpotFailureKey: vi.fn(),
     reportError: vi.fn(),
     watchBbjPool: vi.fn(() => stop),
     watchBbjMini: vi.fn(() => stop),
@@ -73,7 +74,9 @@ function start(asset: string, delayed = false) {
           eq: () => ({
             maybeSingle: async () => {
               await ready;
-              return { data: { club_id: 'diamond-club' }, error: null };
+              return lookupFailure
+                ? { data: null, error: new Error('table read failed') }
+                : { data: { club_id: 'diamond-club' }, error: null };
             },
           }),
         }),
@@ -99,6 +102,52 @@ const flush = async () => {
   await Promise.resolve();
 };
 describe('the table observes its own Diamond jackpot', () => {
+  it('reports an initial table lookup failure as unavailable for its current identity', async () => {
+    const run = start('diamonds', false, true);
+    await flush();
+    expect(run.context.setDiamondJackpotFailureKey).toHaveBeenLastCalledWith('owned');
+    expect(run.context.subscribeDiamondJackpot).not.toHaveBeenCalled();
+    expect(run.context.reportError).toHaveBeenCalled();
+    run.cleanup();
+  });
+  it('masks a prior identity failure immediately, before feed cleanup runs', () => {
+    for (const [path, name, owner, failure] of [
+      [
+        'TablePage.tsx',
+        'diamondJackpotUnavailable',
+        'diamondJackpotKey',
+        'diamondJackpotFailureKey',
+      ],
+      [
+        'ClubHomePage.tsx',
+        'diamondJackpotUnavailable',
+        'diamondJackpotOwner',
+        'diamondJackpotFailureOwner',
+      ],
+    ]) {
+      const file = ts.createSourceFile(
+        path,
+        readFileSync(join(__dirname, '../../src/pages', path), 'utf8'),
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TSX
+      );
+      let expression: ts.Expression | undefined;
+      const find = (n: ts.Node) => {
+        if (ts.isVariableDeclaration(n) && n.name.getText(file) === name)
+          expression = n.initializer;
+        ts.forEachChild(n, find);
+      };
+      find(file);
+      expect(expression).toBeTruthy();
+      const renderFailure = new Function(owner, failure, 'return ' + expression!.getText(file));
+      expect(renderFailure('new-account:new-table', 'old-account:old-table')).toBe(false);
+      expect(renderFailure('current-account:current-table', 'current-account:current-table')).toBe(
+        true
+      );
+      expect(renderFailure('current-account:current-table', null)).toBe(false);
+    }
+  });
   it('routes Diamond exclusively, clears failed amounts, and cleans up its feed', async () => {
     const run = start('diamonds');
     await flush();
@@ -109,12 +158,18 @@ describe('the table observes its own Diamond jackpot', () => {
     );
     expect(run.context.watchBbjPool).not.toHaveBeenCalled();
     expect(run.context.watchBbjMini).not.toHaveBeenCalled();
+    expect(run.context.setDiamondJackpotFailureKey).toHaveBeenLastCalledWith(null);
     run.emit();
+    expect(run.context.setDiamondJackpotFailureKey).toHaveBeenLastCalledWith(null);
     expect(run.context.setRecordedDiamondJackpot).toHaveBeenLastCalledWith({
       key: 'owned',
       snapshot,
     });
     expect(run.context.setBbjAmount).toHaveBeenLastCalledWith(900);
+    run.fail();
+    expect(run.context.setDiamondJackpotFailureKey).toHaveBeenLastCalledWith('owned');
+    run.emit();
+    expect(run.context.setDiamondJackpotFailureKey).toHaveBeenLastCalledWith(null);
     run.fail();
     expect(run.context.setRecordedDiamondJackpot).toHaveBeenLastCalledWith(null);
     expect(run.context.setBbjAmount).toHaveBeenLastCalledWith(0);
@@ -133,6 +188,8 @@ describe('the table observes its own Diamond jackpot', () => {
     await flush();
     run.owner.current = 'next-table';
     run.emit();
+    run.fail();
+    expect(run.context.setDiamondJackpotFailureKey).toHaveBeenCalledTimes(1);
     expect(run.context.setRecordedDiamondJackpot).toHaveBeenCalledTimes(1); // initial reset only
     run.cleanup();
     run.owner.current = 'owned';

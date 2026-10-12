@@ -249,7 +249,7 @@ export function classifyChangedPaths(paths) {
   // by that prefix, deliberately, so they do not also select the eleven
   // tests/sql/diamond-*.sql game probes.
   const diamondSqlAcceptance = matches(
-    /^(tests\/sql\/(?:run-[a-z0-9-]*diamond[a-z0-9-]*\.py|poker-diamond-[a-z0-9-]+\.sql|poker-arena-access\.sql|diamond-controlled-play-driver\.ts|diamond-session-fixture\.sql|diamond-transfer-cap-fixture\.sql|diamond-tournament-[a-z0-9-]+\.sql|diamond-tournament-[a-z0-9-]+\.manifest\.json|diamond-concurrency-[a-z0-9-]+\.sql|diamond-concurrency-[a-z0-9-]+\.manifest\.json|diamond-cross-format-[a-z0-9-]+\.manifest\.json)|scripts\/ci\/(?:run-diamond-sql-acceptance\.py|check-diamond-runners-listed\.mjs))$/
+    /^(tests\/sql\/(?:run-[a-z0-9-]*diamond[a-z0-9-]*\.py|poker-diamond-[a-z0-9-]+\.sql|poker-arena-access\.sql|diamond-controlled-play-driver\.ts|diamond-session-fixture\.sql|diamond-transfer-cap-fixture\.sql|diamond-tournament-[a-z0-9-]+\.sql|diamond-tournament-[a-z0-9-]+\.manifest\.json|diamond-concurrency-[a-z0-9-]+\.sql|diamond-concurrency-[a-z0-9-]+\.manifest\.json|diamond-cross-format-[a-z0-9-]+\.manifest\.json|diamond-jackpot-integration-[a-z0-9-]+\.json|diamond-session-recap\.fixture\.sql)|tests\/fixtures\/diamond-must-move\/[a-z0-9-]+\.(?:json|sql)|scripts\/ci\/(?:run-diamond-sql-acceptance\.py|check-diamond-runners-listed\.mjs))$/
   );
   // The Phase 4 PostgreSQL step cannot run when its parent job is skipped.
   const phase4Changed = matches(phase4);

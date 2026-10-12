@@ -29,7 +29,7 @@ it.each([false, true])(
         })),
       },
     });
-    const result = applyJointDeductions({
+    const input = {
       settlement,
       rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
       bbjConfig: null,
@@ -60,6 +60,15 @@ it.each([false, true])(
           miniReserveFloor: 5000,
         },
       }),
+    };
+    const result = applyJointDeductions({
+      ...input,
+      asset: 'diamonds',
+      gameMode: 'cash',
+      rakeConfig: {
+        ...input.rakeConfig,
+        diamondCashFees: { schedule: input.diamondCashFees, variant: 'nlh', doubleBoard },
+      },
     });
     expect(result.gross).toBe(4000);
     expect(result.rake).toBe(200);

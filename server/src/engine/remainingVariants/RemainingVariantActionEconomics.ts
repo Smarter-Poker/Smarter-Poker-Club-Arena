@@ -141,8 +141,6 @@ export interface RemainingVariantActionEconomicsInput {
   dealerSeat: number;
   rakeConfig: RakeConfig;
   bbjConfig: HandConfig['bbjConfig'] | null;
-  diamondCashFees?: import('../../domain/diamondCashFeeSnapshot.js').DiamondCashFeeSnapshot;
-  doubleBoard?: boolean;
   /** False stops further work. A line short of `MIN_TERMINAL_SAMPLES` is
    * reported unavailable rather than averaged over whatever finished. */
   withinBudget?: () => boolean;
@@ -341,9 +339,6 @@ export function remainingVariantActionEconomics(
       settlement,
       rakeConfig: input.rakeConfig,
       bbjConfig: input.bbjConfig,
-      diamondCashFees: input.diamondCashFees,
-      variant: input.variant,
-      doubleBoard: input.doubleBoard,
       asset: input.asset,
       gameMode: input.gameMode,
       bigBlind: input.bigBlind,

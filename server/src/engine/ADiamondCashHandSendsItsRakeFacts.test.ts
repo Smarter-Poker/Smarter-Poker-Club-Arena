@@ -182,6 +182,7 @@ describe('the Diamond cash settlement payload carries the settler’s three fact
         contributed: 30,
         dealt_in: true,
         hand_saw_flop: true,
+        hand_double_board: false,
       },
       {
         user_id: 'b',
@@ -192,6 +193,7 @@ describe('the Diamond cash settlement payload carries the settler’s three fact
         contributed: 40,
         dealt_in: true,
         hand_saw_flop: true,
+        hand_double_board: false,
       },
       {
         user_id: 'c',
@@ -202,6 +204,7 @@ describe('the Diamond cash settlement payload carries the settler’s three fact
         contributed: 10,
         dealt_in: true,
         hand_saw_flop: true,
+        hand_double_board: false,
       },
     ]);
   });

@@ -298,6 +298,28 @@ describe('every diamond SQL probe the accounting job executes admits that job', 
   });
 });
 
+describe('Diamond Arena native financial fixture changes retain accounting qualification', () => {
+  const fixtures = [
+    ...listing(
+      'tests/sql',
+      (name) => name.startsWith('diamond-jackpot-integration-') && name.endsWith('.json')
+    ),
+    ...listing('tests/fixtures/diamond-must-move', (name) => /\.(json|sql)$/.test(name)),
+    'tests/sql/diamond-session-recap.fixture.sql',
+    'tests/sql/diamond-jackpot-integration-future-input.json',
+    'tests/fixtures/diamond-must-move/future-input.sql',
+  ];
+  it.each(fixtures)('%s admits its native accounting reader', (path) => {
+    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+  });
+  it('keeps fixture documentation outside the native accounting lane', () => {
+    expect(classifyChangedPaths(['tests/fixtures/diamond-must-move/README.md']).server).toBe(false);
+    expect(classifyChangedPaths(['tests/sql/diamond-session-recap.fixture.sql.md']).server).toBe(
+      false
+    );
+  });
+});
+
 /**
  * `tests/law-registry.law.test.ts` readdirSync's docs/laws.d/ and enforces the
  * registry both ways, and it runs in exactly one place: `npx vitest run tests/`

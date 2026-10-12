@@ -1,7 +1,4 @@
-import {
-  priceDiamondCashFees,
-  type DiamondCashFeeSnapshot,
-} from '../../domain/diamondCashFeeSnapshot.js';
+import { priceDiamondCashFees } from '../../domain/diamondCashFeeSnapshot.js';
 import type { HandConfig, RakeConfig } from '../../types.js';
 import { calculateRake } from '../PokerEngine.js';
 import { scaleMultiBoardWinnerUnits, scaleWinnerUnitsForRake } from '../WinnerUnitScaling.js';
@@ -18,9 +15,6 @@ export function applyJointDeductions(input: {
   bigBlind: number;
   dealtPlayers: number;
   sawFlop: boolean;
-  diamondCashFees?: DiamondCashFeeSnapshot;
-  variant?: string;
-  doubleBoard?: boolean;
 }) {
   const r = input.rakeConfig,
     b = input.bbjConfig;
@@ -63,14 +57,15 @@ export function applyJointDeductions(input: {
   )
     throw new Error('joint_deductions_nonzero_whole_unit_fees');
   const gross = Object.values(input.settlement.totals).reduce((a, v) => a + v, 0);
+  const diamondFees = r.diamondCashFees;
   const diamond =
-    input.asset === 'diamonds' && input.gameMode === 'cash' && input.diamondCashFees
-      ? priceDiamondCashFees(input.diamondCashFees, {
+    input.asset === 'diamonds' && input.gameMode === 'cash' && diamondFees
+      ? priceDiamondCashFees(diamondFees.schedule, {
           pot: gross,
           dealtIn: input.dealtPlayers,
           sawFlop: input.sawFlop,
-          variant: input.variant ?? '',
-          doubleBoard: input.doubleBoard === true,
+          variant: diamondFees.variant,
+          doubleBoard: diamondFees.doubleBoard,
         })
       : null;
   const rake =

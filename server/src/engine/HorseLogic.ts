@@ -953,7 +953,6 @@ export interface HorseGameStateV2 extends HorseGameState {
   chipUnit?: 0.01 | 1;
   asset?: 'chips' | 'diamonds';
   bbjConfig?: import('../types.js').HandConfig['bbjConfig'] | null;
-  diamondCashFees?: import('../domain/diamondCashFeeSnapshot.js').DiamondCashFeeSnapshot;
   heroSeat?: number;
   currentPlayerSeat?: number;
   legalActions?: ActionType[];

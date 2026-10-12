@@ -3903,6 +3903,17 @@ export class HandController {
   public getRakeConfigSnapshot(): RakeConfig {
     return {
       ...this.config.rakeConfig,
+      ...(this.config.asset === 'diamonds' &&
+      !this.config.isTournament &&
+      this.config.diamondRakeSchedule
+        ? {
+            diamondCashFees: {
+              schedule: snapshotDiamondCashFees(this.config.diamondRakeSchedule),
+              variant: this.config.gameVariant,
+              doubleBoard: this.multiBoardActive,
+            },
+          }
+        : {}),
       playerCountCaps: this.config.rakeConfig.playerCountCaps?.map((tier) => ({ ...tier })),
       timedRake: this.config.rakeConfig.timedRake
         ? { ...this.config.rakeConfig.timedRake }
@@ -3929,17 +3940,11 @@ export class HandController {
     asset: 'chips' | 'diamonds';
     chipUnit: 0.01 | 1;
     bbjConfig: HandConfig['bbjConfig'] | null;
-    diamondCashFees?: DiamondCashFeeSnapshot;
   } {
     return {
       asset: this.config.asset === 'diamonds' ? 'diamonds' : 'chips',
       chipUnit: this.config.isTournament || this.config.asset === 'diamonds' ? 1 : 0.01,
       bbjConfig: this.config.bbjConfig ? { ...this.config.bbjConfig } : null,
-      ...(this.config.asset === 'diamonds' &&
-      !this.config.isTournament &&
-      this.config.diamondRakeSchedule
-        ? { diamondCashFees: snapshotDiamondCashFees(this.config.diamondRakeSchedule) }
-        : {}),
     };
   }
 

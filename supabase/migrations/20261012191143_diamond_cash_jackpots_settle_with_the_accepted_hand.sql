@@ -1701,6 +1701,12 @@ END;
 $function$;
 
 REVOKE EXECUTE ON FUNCTION public.fn_poker_diamond_jackpot_pay(uuid,bigint,numeric,integer,uuid,uuid,uuid[]) FROM service_role;
+-- Replaced definitions retain their installed ACLs. State the same closed
+-- boundary explicitly so this migration is self-contained for qualification.
+REVOKE ALL ON FUNCTION public.fn_poker_diamond_jackpot_pay(uuid,bigint,numeric,integer,uuid,uuid,uuid[]) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_poker_diamond_settle_cash_hand(uuid,bigint,jsonb,numeric,numeric,text,numeric) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb) TO service_role;
 
 -- One causal accepted-hand event owns the payout and its immutable receipt.
 CREATE FUNCTION public.fn_poker_diamond_jackpot_accept_hand()
@@ -1911,6 +1917,8 @@ AS $function$
    +(SELECT COALESCE(sum(amount),0)::numeric FROM public.ca_diamond_rake_accrual WHERE swept_at IS NULL)
    +public.fn_poker_diamond_jackpot_diamonds();
 $function$;
+REVOKE ALL ON FUNCTION public.fn_ca_arena_diamonds() FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_arena_diamonds() TO service_role;
 
 
 -- The existing main-pool feed also serves the Diamond arena. This preserves
@@ -1947,6 +1955,8 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public,pg_temp AS $fn$
  SELECT p.pool_id,p.main_balance,p.backup_balance,p.promo_balance,p.is_union_pool,p.union_id
  FROM pools p ORDER BY p.is_union_pool DESC LIMIT 1;
 $fn$;
+REVOKE ALL ON FUNCTION public.fn_bbj_pool_for_club(uuid) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.fn_bbj_pool_for_club(uuid) TO authenticated,service_role;
 
 
 -- Jackpot hands retain their actual rundown, under the existing awarded-hand exception.

@@ -1714,12 +1714,17 @@ export class HorseFleetManager {
          beat, and this cycle treats no game as disabled. */
       let disabledGameIds = new Set<string>();
       try {
-        const disabledPage = await fetchAllRows<{ id: string }>(
+        const disabledPage = await fetchAllRows<{
+          id: string;
+          club_id: string;
+          enabled: boolean;
+          cluster_mode: string;
+        }>(
           (cursor, want) => {
             let q = supabase
               .from('cash_games')
-              .select('id')
-              .eq('enabled', false)
+              .select('id,club_id,enabled,cluster_mode')
+              .or('enabled.eq.false,cluster_mode.eq.paused')
               .order('id', { ascending: true })
               .limit(want);
             if (cursor) q = q.gt('id', cursor);
@@ -1729,7 +1734,13 @@ export class HorseFleetManager {
         );
         if (!readIsCurrent()) return;
         if (disabledPage.complete) {
-          disabledGameIds = buildDisabledGameIds(disabledPage.rows);
+          disabledGameIds = buildDisabledGameIds(
+            disabledPage.rows.filter(
+              (game) =>
+                game.enabled === false ||
+                (game.club_id === diamondArenaId && game.cluster_mode === 'paused')
+            )
+          );
         } else {
           beat.disabledGamesReadFailed = 1;
           console.warn(

@@ -1,3 +1,4 @@
+import { decodeDiamondCashFees } from '../../domain/diamondCashFeeSnapshot.js';
 import { horseTournamentProvenanceMatchesSnapshot } from '../HorseTournamentContextProvenance.js';
 import {
   horsePlanContextFromDecision,
@@ -1317,6 +1318,24 @@ export class HorseDecisionWorkerRuntime {
       typeof gs.rakeConfig.noFlopNoDrop !== 'boolean'
     ) {
       throw new Error('horse state requires the exact rake config');
+    }
+    const diamondFees = gs.rakeConfig.diamondCashFees;
+    if (diamondFees !== undefined) {
+      if (
+        gs.asset !== 'diamonds' ||
+        gs.gameMode !== 'cash' ||
+        gs.rakeConfig.percent !== 0 ||
+        gs.rakeConfig.cap !== 0 ||
+        typeof diamondFees !== 'object' ||
+        !diamondFees ||
+        diamondFees.variant !== gs.gameVariant ||
+        typeof diamondFees.doubleBoard !== 'boolean' ||
+        diamondFees.doubleBoard !==
+          ((gs.communityCards2?.length ?? 0) > 0 || (gs.communityCards3?.length ?? 0) > 0) ||
+        decodeDiamondCashFees(diamondFees.schedule).bigBlind !== gs.bigBlind
+      ) {
+        throw new Error('horse state Diamond fee envelope disagrees with the hand');
+      }
     }
     if (gs.gameMode !== 'cash' && gs.gameMode !== 'tournament') {
       throw new Error('horse state gameMode must be explicit');

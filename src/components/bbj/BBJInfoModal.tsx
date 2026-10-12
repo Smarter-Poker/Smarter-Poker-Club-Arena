@@ -57,6 +57,7 @@ export interface BBJInfoModalProps {
   isOpen: boolean;
   asset?: 'chips' | 'diamonds';
   diamond?: DiamondJackpotSnapshot | null;
+  diamondUnavailable?: boolean;
   onClose: () => void;
   poolId: string | null;
   poolAmount: number;
@@ -93,6 +94,7 @@ export function BBJInfoModal({
   isOpen,
   asset = 'chips',
   diamond = null,
+  diamondUnavailable = false,
   onClose,
   poolId,
   poolAmount,
@@ -290,7 +292,9 @@ export function BBJInfoModal({
   const diamondMiniAmounts =
     diamond?.stakes.filter((s) => s.mini_payable).map((s) => s.mini_amount) ?? [];
   const diamondHeadline = !diamond
-    ? 'Reading'
+    ? diamondUnavailable
+      ? 'Unavailable'
+      : 'Reading'
     : !diamond.enabled
       ? 'Off'
       : !isMini
@@ -435,6 +439,7 @@ export function BBJInfoModal({
               ) : asset === 'diamonds' ? (
                 <DiamondJackpotWinners
                   snapshot={diamond}
+                  unavailable={diamondUnavailable}
                   kind={tier}
                   onOpenHand={setOpenHandPayoutId}
                 />
@@ -452,7 +457,12 @@ export function BBJInfoModal({
               ))}
 
             {tab === 'basic' && asset === 'diamonds' && (
-              <DiamondJackpotBasic snapshot={diamond} kind={tier} bigBlind={bigBlind} />
+              <DiamondJackpotBasic
+                snapshot={diamond}
+                unavailable={diamondUnavailable}
+                kind={tier}
+                bigBlind={bigBlind}
+              />
             )}
             {tab === 'basic' && asset !== 'diamonds' && isMini && (
               <div className="bbj-modal__rules">

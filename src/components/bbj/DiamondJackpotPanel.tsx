@@ -8,14 +8,23 @@ const diamonds = (amount: number) =>
   amount.toLocaleString('en-US', { maximumFractionDigits: 0 }) + ' Diamonds';
 export function DiamondJackpotWinners({
   snapshot,
+  unavailable = false,
   kind,
   onOpenHand,
 }: {
   snapshot: DiamondJackpotSnapshot | null;
+  unavailable?: boolean;
   kind: 'main' | 'mini';
   onOpenHand: (id: string) => void;
 }) {
-  if (!snapshot) return <p className="bbj-modal__rule-text">Reading Diamond Jackpot Winners</p>;
+  if (!snapshot)
+    return (
+      <p className="bbj-modal__rule-text">
+        {unavailable
+          ? 'Could Not Read Diamond Jackpot Winners.'
+          : 'Reading Diamond Jackpot Winners'}
+      </p>
+    );
   const hits = snapshot.hits.filter((h) => h.kind === kind).slice(0, 5);
   if (!hits.length)
     return (
@@ -75,14 +84,23 @@ export function DiamondJackpotWinners({
 }
 export function DiamondJackpotBasic({
   snapshot,
+  unavailable = false,
   kind,
   bigBlind,
 }: {
   snapshot: DiamondJackpotSnapshot | null;
+  unavailable?: boolean;
   kind: 'main' | 'mini';
   bigBlind: number;
 }) {
-  if (!snapshot) return <p className="bbj-modal__rule-text">Reading Diamond Jackpot Settings</p>;
+  if (!snapshot)
+    return (
+      <p className="bbj-modal__rule-text">
+        {unavailable
+          ? 'Could Not Read Diamond Jackpot Settings.'
+          : 'Reading Diamond Jackpot Settings'}
+      </p>
+    );
   return (
     <div className="bbj-basic">
       <p className="bbj-basic__rules">

@@ -12,6 +12,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import time
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / 'tests/fixtures/diamond-must-move'
@@ -96,6 +97,52 @@ def main():
         migration = sorted((ROOT / 'supabase/migrations').glob('*diamond_must_move_keeps_its_custody_and_its_table_rules.sql'))
         assert len(migration) == 1, 'one owning compatible migration is required'
         run(file=migration[0])
+        # A pause retains live tables so existing hands/top-ups can settle,
+        # but neither the game door nor a physical new buy-in may fund a seat.
+        scene()
+        run("UPDATE cash_games SET cluster_mode='paused'")
+        before = state()
+        run(f"SET test.uid='{V}'; SELECT fn_cash_game_join('{G}')", error='GAME_CLOSED')
+        assert run('SELECT count(*) FROM table_waitlist') == '0'
+        assert value(f"SET test.uid='{U}'; SELECT fn_cash_game_join('{G}')")['action'] == 'seated'
+        arena = run(f"SELECT club_id FROM tables WHERE id='{T}'")
+        physical = f"SELECT fn_poker_diamond_buyin('{V}','{T}',2,20,false,'{arena}','99999999-9999-4999-8999-999999999999')"
+        run(physical, error='GAME_CLOSED')
+        assert state() == before, 'paused new-entry refusal changed money or seats'
+        run("UPDATE cash_games SET cluster_mode='must_move',enabled=false")
+        run(physical, error='GAME_CLOSED')
+        assert state() == before
+        run("UPDATE cash_games SET enabled=true; UPDATE tables SET lifecycle='breaking'")
+        run(physical, error='TABLE_CLOSING')
+        assert state() == before
+        # Control-flow witness only: the real funding core has separate native
+        # qualification. Stop the admitted unpaused call at its first reserve,
+        # and prove the new-entry gate leaves that existing path reachable.
+        run("CREATE TABLE blacklists(user_id uuid,club_id uuid,expires_at timestamptz)")
+        run("CREATE FUNCTION fn_poker_diamond_reserve(uuid,text,uuid,text,numeric,uuid) RETURNS jsonb LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'ENTRY_REACHED_RESERVATION'; END $$")
+        run("UPDATE tables SET lifecycle='live'")
+        run(physical, error='ENTRY_REACHED_RESERVATION')
+        assert state() == before
+        # A pause already owning the game lock must win before the admission
+        # can reach its funding call. Observe the isolated holder, then enter;
+        # no guessed scheduling delay or production fault is involved.
+        holder = subprocess.Popen(psql + ['-c',
+          f"BEGIN; UPDATE cash_games SET cluster_mode='paused' WHERE id='{G}'; SELECT pg_sleep(1); COMMIT;"],
+          text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            for _ in range(100):
+                if run("SELECT count(*) FROM pg_stat_activity WHERE wait_event='PgSleep' AND query LIKE 'BEGIN; UPDATE cash_games SET cluster_mode=%'") == '1':
+                    break
+                time.sleep(0.01)
+            else:
+                raise AssertionError('isolated pause never owned its game lock')
+            run(physical, error='GAME_CLOSED')
+            assert state() == before, 'concurrent pause refusal changed money or seats'
+        finally:
+            stdout, stderr = holder.communicate(timeout=5)
+            assert holder.returncode == 0, stderr
+        scene()
+
         run(f"UPDATE profiles SET diamonds=0 WHERE id='{V}'")
         run(f"SET test.uid='{V}'; SELECT fn_cash_game_join('{G}')",error='INSUFFICIENT_SETTLED_DIAMONDS:20')
         assert run('SELECT count(*) FROM table_waitlist') == '0'

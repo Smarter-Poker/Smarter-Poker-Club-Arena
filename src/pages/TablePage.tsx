@@ -243,7 +243,11 @@ import { gameCode } from '../utils/gameCode';
 import { masterBus } from '../core/MasterBus';
 import { watchBbjPool } from '../lib/bbjPoolFeed';
 import { watchBbjMini, miniPlateAmount, type BbjMiniSnapshot } from '../lib/bbjMiniFeed';
-import { subscribeDiamondJackpot, type DiamondJackpotSnapshot } from '../lib/diamondJackpotFeed';
+import {
+  subscribeDiamondJackpot,
+  diamondMiniPlateAmount,
+  type DiamondJackpotSnapshot,
+} from '../lib/diamondJackpotFeed';
 import { isBbjPlateShown } from '../components/table/bbjPlateVisibility';
 import { watchBbjHits } from '../lib/bbjHitFeed';
 import {
@@ -6936,15 +6940,9 @@ function LiveTablePage({
   } | null>(null);
   const diamondJackpot =
     recordedDiamondJackpot?.key === diamondJackpotKey ? recordedDiamondJackpot.snapshot : null;
-  const diamondJackpotStake = diamondJackpot?.stakes.find(
-    (stake) => stake.big_blind === safeBB(tableState.blinds)
-  );
-  const diamondMiniAmount =
-    diamondJackpot?.enabled &&
-    (diamondJackpotStake?.drop ?? 0) > 0 &&
-    diamondJackpotStake?.mini_payable
-      ? diamondJackpotStake.mini_amount
-      : null;
+  const [diamondJackpotFailureKey, setDiamondJackpotFailureKey] = useState<string | null>(null);
+  const diamondJackpotUnavailable = diamondJackpotFailureKey === diamondJackpotKey;
+  const diamondMiniAmount = diamondMiniPlateAmount(diamondJackpot, safeBB(tableState.blinds));
   // (tableSessionDate removed 2026-08-26 — item 5 dropped the date from the
   // felt masthead, and nothing else read it.)
 
@@ -8392,6 +8390,7 @@ function LiveTablePage({
     setBbjAmount(0);
     setBbjPoolId(null);
     setRecordedDiamondJackpot(null);
+    setDiamondJackpotFailureKey(null);
     if (!tableId) return;
     /* A different club's mini must never render under this one's heading.
        `watchBbjMini` replays immediately only for a club it has already
@@ -8414,7 +8413,16 @@ function LiveTablePage({
           .select('club_id')
           .eq('id', tableId)
           .maybeSingle();
-        if (bbjTableErr) reportError(bbjTableErr, 'TablePage.bbj_table_read_failed', { tableId });
+        if (bbjTableErr) {
+          reportError(bbjTableErr, 'TablePage.bbj_table_read_failed', { tableId });
+          if (
+            tableState.arenaAsset === 'diamonds' &&
+            !cancelled &&
+            isMounted.current &&
+            diamondJackpotOwner.current === diamondJackpotKey
+          )
+            setDiamondJackpotFailureKey(diamondJackpotKey);
+        }
         actualClubId = tableData?.club_id;
       }
       if (!actualClubId || cancelled || diamondJackpotOwner.current !== diamondJackpotKey) return;
@@ -8430,6 +8438,7 @@ function LiveTablePage({
             )
               return;
             setRecordedDiamondJackpot({ key: diamondJackpotKey, snapshot });
+            setDiamondJackpotFailureKey(null);
             setBbjAmount(snapshot.main_balance);
             setBbjPoolId(snapshot.pool_id);
           },
@@ -8441,6 +8450,7 @@ function LiveTablePage({
             )
               return;
             setRecordedDiamondJackpot(null);
+            setDiamondJackpotFailureKey(diamondJackpotKey);
             setBbjAmount(0);
             setBbjPoolId(null);
           }
@@ -8464,7 +8474,16 @@ function LiveTablePage({
       });
     };
 
-    start().catch((e) => reportError(e, 'TablePage.bbj_feed_start_failed', { tableId }));
+    start().catch((e) => {
+      if (
+        tableState.arenaAsset === 'diamonds' &&
+        !cancelled &&
+        isMounted.current &&
+        diamondJackpotOwner.current === diamondJackpotKey
+      )
+        setDiamondJackpotFailureKey(diamondJackpotKey);
+      reportError(e, 'TablePage.bbj_feed_start_failed', { tableId });
+    });
     return () => {
       cancelled = true;
       if (stopPool) stopPool();
@@ -28084,6 +28103,7 @@ function LiveTablePage({
         showBBJ={showBBJ}
         jackpotAsset={tableState.arenaAsset === 'diamonds' ? 'diamonds' : 'chips'}
         diamondJackpot={diamondJackpot}
+        diamondJackpotUnavailable={diamondJackpotUnavailable}
         bbjAmount={
           tableState.arenaAsset === 'diamonds' ? (diamondJackpot?.main_balance ?? 0) : bbjAmount
         }

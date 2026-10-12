@@ -201,3 +201,31 @@ export function subscribeDiamondJackpot(
     }
   };
 }
+
+/** The felt reservation and the Mini row make one whole-Diamond promise. */
+export function diamondMiniPlateAmount(
+  snapshot: DiamondJackpotSnapshot | null | undefined,
+  bigBlind: number
+): number | null {
+  if (
+    !snapshot?.enabled ||
+    !snapshot.mini_enabled ||
+    !Number.isSafeInteger(bigBlind) ||
+    bigBlind <= 0
+  )
+    return null;
+  const stake = snapshot.stakes.find((s) => s.big_blind === bigBlind);
+  if (
+    !stake ||
+    !stake.mini_payable ||
+    !Number.isSafeInteger(stake.drop) ||
+    stake.drop <= 0 ||
+    !Number.isSafeInteger(stake.mini_amount) ||
+    stake.mini_amount <= 0 ||
+    !Number.isSafeInteger(snapshot.backup_balance) ||
+    !Number.isSafeInteger(snapshot.reserve_floor) ||
+    snapshot.backup_balance - stake.mini_amount < snapshot.reserve_floor
+  )
+    return null;
+  return stake.mini_amount;
+}

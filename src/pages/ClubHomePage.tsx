@@ -934,6 +934,8 @@ function ClubHomePageContent({
   } | null>(null);
   const diamondJackpot =
     diamondJackpotRead?.owner === diamondJackpotOwner ? diamondJackpotRead.snapshot : null;
+  const [diamondJackpotFailureOwner, setDiamondJackpotFailureOwner] = useState<string | null>(null);
+  const diamondJackpotUnavailable = diamondJackpotFailureOwner === diamondJackpotOwner;
   const setDiamondJackpot = (snapshot: DiamondJackpotSnapshot | null) =>
     setDiamondJackpotRead(snapshot ? { owner: diamondJackpotOwner, snapshot } : null);
   const [lobbyMini, setLobbyMini] = useState<BbjMiniSnapshot | null>(null);
@@ -1386,6 +1388,7 @@ function ClubHomePageContent({
        club's payable range onto this club's tile. */
     setLobbyMini(null);
     setDiamondJackpot(null);
+    setDiamondJackpotFailureOwner(null);
     let stopBbjHits: (() => void) | null = null;
     let watchedBbjPoolId: string | null = null;
 
@@ -1669,12 +1672,14 @@ function ClubHomePageContent({
           (snapshot) => {
             if (!isCurrent()) return;
             setDiamondJackpot(snapshot);
+            setDiamondJackpotFailureOwner(null);
             setJackpotAmount(snapshot.main_balance);
             setBbjPoolId(snapshot.pool_id);
           },
           () => {
             if (!isCurrent()) return;
             setDiamondJackpot(null);
+            setDiamondJackpotFailureOwner(diamondJackpotOwner);
             setJackpotAmount(0);
             setBbjPoolId(null);
           }
@@ -5454,6 +5459,7 @@ function ClubHomePageContent({
         poolId={bbjPoolId}
         asset={isAutomaticArena ? 'diamonds' : 'chips'}
         diamond={diamondJackpot}
+        diamondUnavailable={diamondJackpotUnavailable}
         mini={lobbyMini}
         poolAmount={jackpotAmount}
         currentUserId={currentUserId}

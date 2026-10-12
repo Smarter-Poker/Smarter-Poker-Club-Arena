@@ -1,4 +1,24 @@
 SELECT fixture_assert(NOT fn_ca_diamond_economic_on('bbj_enabled'),'compatibility leaves the jackpot closed');
+SELECT fixture_assert(NOT has_function_privilege('authenticated','fn_ca_arena_diamonds()','EXECUTE')
+ AND NOT has_function_privilege('anon','fn_ca_arena_diamonds()','EXECUTE')
+ AND has_function_privilege('service_role','fn_ca_arena_diamonds()','EXECUTE')
+ AND has_function_privilege('authenticated','fn_bbj_pool_for_club(uuid)','EXECUTE')
+ AND has_function_privilege('service_role','fn_bbj_pool_for_club(uuid)','EXECUTE')
+ AND NOT has_function_privilege('anon','fn_bbj_pool_for_club(uuid)','EXECUTE'),
+ 'replacement arena float and pool feed retain their exact authenticated service and anonymous ACLs');
+SELECT fixture_assert(
+ NOT has_function_privilege('anon','fn_poker_diamond_settle_cash_hand(uuid,bigint,jsonb,numeric,numeric,text,numeric)','EXECUTE')
+ AND NOT has_function_privilege('authenticated','fn_poker_diamond_settle_cash_hand(uuid,bigint,jsonb,numeric,numeric,text,numeric)','EXECUTE')
+ AND NOT has_function_privilege('service_role','fn_poker_diamond_settle_cash_hand(uuid,bigint,jsonb,numeric,numeric,text,numeric)','EXECUTE')
+ AND has_function_privilege('postgres','fn_poker_diamond_settle_cash_hand(uuid,bigint,jsonb,numeric,numeric,text,numeric)','EXECUTE')
+ AND NOT has_function_privilege('anon','fn_poker_diamond_jackpot_pay(uuid,bigint,numeric,integer,uuid,uuid,uuid[])','EXECUTE')
+ AND NOT has_function_privilege('authenticated','fn_poker_diamond_jackpot_pay(uuid,bigint,numeric,integer,uuid,uuid,uuid[])','EXECUTE')
+ AND NOT has_function_privilege('service_role','fn_poker_diamond_jackpot_pay(uuid,bigint,numeric,integer,uuid,uuid,uuid[])','EXECUTE')
+ AND has_function_privilege('postgres','fn_poker_diamond_jackpot_pay(uuid,bigint,numeric,integer,uuid,uuid,uuid[])','EXECUTE')
+ AND has_function_privilege('service_role','fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)','EXECUTE')
+ AND NOT has_function_privilege('authenticated','fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)','EXECUTE')
+ AND NOT has_function_privilege('anon','fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)','EXECUTE'),
+ 'direct Diamond settler and Main payer are owner only while accepted-hand outer admits service_role only');
 SELECT fixture_assert((fixture_jackpot_commit(1100002)->>'success')::boolean,'compatibility accepts a zero-fee hand through the real wrapper');
 INSERT INTO ca_diamond_economics(name,scope,value_text,units,approved_quote,approved_on,basis,recorded_by)
  VALUES('bbj_enabled','all','yes','boolean','private fixture activation only',CURRENT_DATE,

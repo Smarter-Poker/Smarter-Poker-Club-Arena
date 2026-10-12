@@ -1,20 +1,7 @@
 /**
- * DiamondArenaCard - the Diamond Arena entry, on the club card chassis.
- *
- * Dan 2026-09-09: "THE DIAMOND ARENA CARD HAS TO LOOK AND FEEL EXACTLY LIKE
- * THE CLUB ARENA CARDS DO, SAME SQUARE SHAPE, ON THE BOTTOM HAVE AN ACTIVE
- * PLAYERS TAB, AND NEXT FREE ROLL STARTS IN X:XX TIMER."
- *
- * So this is the same four-zone card every club and union gets (ID plate,
- * square viewport, name plate, stats bar) drawn from ClubCardPanel.css, with
- * the approved Diamond Arena art in the viewport and two live figures on the
- * bottom rail: the players seated in the arena right now, and a countdown to
- * the next freeroll. The art is a square window cut from the original
- * public/cards/diamond-arena.png at native resolution - the same picture,
- * never a generated substitute (Poker Arena phase 5).
- *
- * It is a picture, not a control: the carousel owns the tap, exactly as it
- * does for ClubCardPanel.
+ * Diamond Arena owns a diamond-crested painted frame (owner, 2026-10-12).
+ * The approved square artwork, live seat count and freeroll clock remain intact.
+ * The carousel continues to own the tap and navigation.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { countText, isCountUnknown, type CountFigure } from '../../lib/countFigure';
@@ -26,7 +13,9 @@ import {
   useNextDiamondFreeroll,
   type FreerollClockState,
 } from '../../hooks/useNextDiamondFreeroll';
+import { SpadeConsole } from '../console/SpadeConsole';
 import './ClubCardPanel.css';
+import './DiamondArenaCard.css';
 
 const ARENA_FIGURE_SCOPE = 'arena:diamond';
 /** Under this many seconds the countdown turns red (console law). */
@@ -124,15 +113,14 @@ export const DiamondArenaCard: React.FC<DiamondArenaCardProps> = ({
     : `Next Freeroll Starts In ${timerText}`;
 
   return (
-    <div className="club-card-panel club-card-panel--arena">
+    <SpadeConsole
+      as="div"
+      className="club-card-panel club-card-panel--arena"
+      crest="diamond"
+      title="SMARTER.POKER"
+      foot="foot"
+    >
       {!imgLoaded && <div className="club-card-skeleton" />}
-
-      {/* ZONE 1: ID Plate. A club prints its join code here; the arena has
-          none and never says "automatic entry" (Dan 2026-09-09), so the plate
-          carries the house name instead, as the table in the art does. */}
-      <div className="club-card-id-plate">
-        <span className="club-card-id-text">SMARTER.POKER</span>
-      </div>
 
       {/* ZONE 2: Image Viewport */}
       <div className="club-card-viewport">
@@ -149,7 +137,7 @@ export const DiamondArenaCard: React.FC<DiamondArenaCardProps> = ({
 
       {/* ZONE 3: Name Plate */}
       <div className="club-card-name-plate">
-        <span className="club-card-name-text">DIAMOND ARENA</span>
+        <span className="club-card-name-text sc-ink--silver">DIAMOND ARENA</span>
       </div>
 
       {/* ZONE 4: Stats Bar */}
@@ -162,9 +150,9 @@ export const DiamondArenaCard: React.FC<DiamondArenaCardProps> = ({
                 THE NUMBER UNDER IT." It said ACTIVE PLAYERS, which was also
                 the one label on the carousel that did not match its
                 neighbours: every chip club card says ACTIVE. */}
-            <span className="club-card-stat-label">ACTIVE</span>
+            <span className="club-card-stat-label sc-label sc-ink--blue">ACTIVE</span>
             <span
-              className={`club-card-stat-value${activeIsUnknown ? ' club-card-stat-value--word' : ''}`}
+              className={`club-card-stat-value sc-ink--silver${activeIsUnknown ? ' club-card-stat-value--word' : ''}`}
               aria-label={activeIsUnknown ? `Active ${activeText}` : undefined}
             >
               {activeText}
@@ -174,7 +162,7 @@ export const DiamondArenaCard: React.FC<DiamondArenaCardProps> = ({
             className={`club-card-stat club-card-stat--timer ${imminent ? 'club-card-stat--imminent' : ''}`}
             title={timerTitle}
           >
-            <span className="club-card-stat-label">NEXT FREEROLL</span>
+            <span className="club-card-stat-label sc-label sc-ink--blue">NEXT FREEROLL</span>
             <span
               className={`club-card-stat-value club-card-stat-value--timer${timerIsWord ? ' club-card-stat-value--word' : ''}`}
               role="timer"
@@ -186,7 +174,7 @@ export const DiamondArenaCard: React.FC<DiamondArenaCardProps> = ({
           </div>
         </div>
       </div>
-    </div>
+    </SpadeConsole>
   );
 };
 

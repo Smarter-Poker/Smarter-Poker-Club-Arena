@@ -1,0 +1,37 @@
+/* Diamond Arena has its own painted diamond header, with no club ID slot.
+   All zones scale with the chassis width; the artwork stays a clipped square. */
+.club-card-panel--arena .sc__head {
+  background-image: url('/assets/club-buttons/console/diamond-arena-card-v1/top.png');
+}
+
+.club-card-panel--arena .sc__title {
+  left: 10% !important;
+  top: 49% !important;
+  width: 80% !important;
+  height: 32% !important;
+  justify-content: center;
+  text-align: center;
+  font-size: 5.8cqw;
+  letter-spacing: 0.09em;
+}
+
+.club-card-panel--arena .club-card-name-plate {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 2cqw 0;
+  text-align: center;
+}
+
+.club-card-panel--arena .club-card-name-text {
+  font-family: 'Roboto Condensed', sans-serif;
+  font-size: 5.6cqw;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+}
+
+.club-card-panel--arena .club-card-stats-row--two {
+  display: flex;
+  flex-direction: column;
+}

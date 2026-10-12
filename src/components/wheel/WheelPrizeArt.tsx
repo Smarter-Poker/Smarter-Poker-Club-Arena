@@ -19,7 +19,7 @@ const regions = [
 
 /**
  * The chip-stack art for an instant chip win: one stack up to 1x (including
- * the VIP 0.2x, 0.25x and 0.3x wins of the v4 wheel), two stacks from 2x,
+ * the 0.2x, 0.25x and 0.3x wins every player is dealt on the v4 wheel), two stacks from 2x,
  * three from 3x. A missing or unreadable multiplier is the single stack. The
  * wheel's sector cards (WheelPrizeCard) choose from the same rule.
  */

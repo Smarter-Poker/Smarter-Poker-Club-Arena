@@ -334,36 +334,6 @@
   }
 }
 
-/* ── Diamond Arena variant (Dan 2026-09-09) ───────────────────────────────
-   "THE DIAMOND ARENA CARD HAS TO LOOK AND FEEL EXACTLY LIKE THE CLUB ARENA
-   CARDS DO, SAME SQUARE SHAPE, ON THE BOTTOM HAVE AN ACTIVE PLAYERS TAB, AND
-   NEXT FREE ROLL STARTS IN X:XX TIMER."
-
-   Same chassis as every club card. The dress is the diamond's: an ice-white
-   exterior where a club is nickel and a union is gold, and the countdown in
-   the console's gold, red inside the last ten seconds. Nothing structural
-   changes - the frame, the plates, the square viewport and the rail are the
-   rules above, untouched. */
-.club-card-panel--arena {
-  border-color: rgba(214, 236, 255, 0.95); /* Diamond ice exterior */
-}
-
-.club-card-panel--arena .club-card-id-plate {
-  border-bottom: 2px solid rgba(214, 236, 255, 0.7);
-}
-
-.club-card-panel--arena .club-card-id-text {
-  color: #e8f6ff;
-  text-shadow:
-    0 0 6px rgba(0, 0, 0, 0.8),
-    0 0 10px rgba(120, 200, 255, 0.45);
-}
-
-.club-card-panel--arena .club-card-name-plate,
-.club-card-panel--arena .club-card-stats-bar {
-  border-top: 2px solid rgba(214, 236, 255, 0.7);
-}
-
 /* Two figures share the rail, so each gets half of it instead of a third. */
 .club-card-stats-row--two .club-card-stat {
   flex: 1 1 50%;

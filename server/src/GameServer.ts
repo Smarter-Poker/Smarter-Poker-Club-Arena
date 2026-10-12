@@ -10594,10 +10594,35 @@ export class GameServer {
    * owns it), a quarantined manager (its own retry schedule owns it), a
    * manager admitted inside the dark window (it has not had its chance), an
    * event on a break shorter than thirty minutes (the candidate read excludes
-   * it), or a manager whose every open table is parked
-   * on purpose for less than MAX_HEALTHY_PAUSE_MS (hand-for-hand, a final
-   * table deal, a Spin reveal). A pause past that is never healthy, which is
-   * the zombie reaper's own rule.
+   * it), or an event a NAMED deliberate authority is holding inside its own
+   * bound (darkEventHeldOnPurpose: the maintenance break, an operator floor
+   * hold, the add-on break, an open final-table deal review).
+   *
+   * ── THE DARK CLOCK IS DEALING, NOT A PAUSE TIMER (2026-10-12) ──────────
+   *
+   * Until this date the last exemption read "every open table is parked on
+   * purpose for less than MAX_HEALTHY_PAUSE_MS". Satellite 61961519 sat dark
+   * from 23:52 to 05:00 UTC on 2026-10-11 under it, while the database paged
+   * it dark at 00:18:
+   *
+   *   - its source table's dealer had been stopped by a break whose close
+   *     timed out, and a stopped engine was not counted at all;
+   *   - its one live table was parked by the satellite qualifier boundary
+   *     (a terminal closeout fence). Past ten minutes the zombie reaper
+   *     condemned it, the manager rebuilt the table engine, the boundary
+   *     re-parked the replacement, and msPaused() started again from zero:
+   *     25 zombie rebuilds in 4.7 hours, each one resetting the very timer
+   *     this sweep was trusting;
+   *   - so "every open table parked for under ten minutes" was true almost
+   *     every minute, and the manager was never rebuilt. Only the 04:56
+   *     engine release rebuilt it, and the event finished at 05:02.
+   *
+   * A park is what every wedge looks like from outside, and its timer is
+   * reset by the recovery that is supposed to end it. The clock here is the
+   * database's: no hand, no bust and no table write for the dark window in
+   * LIVE minutes (maintenance breaks already excluded). Once that clock says
+   * dark, only an authority that is deliberately holding the event, asked by
+   * name and inside its own bound, stands this sweep down.
    */
   private async rebuildManagersOfDarkTournaments(): Promise<void> {
     if (!this.running || isMaintenanceFrozen()) return;
@@ -10633,18 +10658,7 @@ export class GameServer {
          Trusting the manager's own in-memory flag would protect exactly the
          break that never ended, which a rebuild cures: a resumed manager
          clears an expired break and deals. */
-      const tableIds = manager.getTableIds();
-      let openEngines = 0;
-      let healthyParks = 0;
-      for (const tableId of tableIds) {
-        const engine = this.tableEngines.get(tableId);
-        if (!engine || !engine.isRunning()) continue;
-        openEngines += 1;
-        if (engine.isParkedByDesign() && engine.msPaused() <= GameServer.MAX_HEALTHY_PAUSE_MS) {
-          healthyParks += 1;
-        }
-      }
-      if (openEngines > 0 && healthyParks === openEngines) continue;
+      if (this.darkEventHeldOnPurpose(manager, now)) continue;
 
       const rebuiltAt = this.darkTournamentRebuiltAtMs.get(tournamentId);
       const name = String(row.name ?? tournamentId.slice(0, 8));
@@ -10707,6 +10721,36 @@ export class GameServer {
         this.darkAfterRebuildPagedAtMs.delete(tournamentId);
       }
     }
+  }
+
+  /**
+   * The named authority deliberately holding a dark event, or null
+   * (2026-10-12). See rebuildManagersOfDarkTournaments for why this asks
+   * authorities by name and never "is a table parked": a park and its timer
+   * are what a wedge looks like, and a zombie rebuild resets that timer.
+   *
+   *   - the manager's own: the add-on break and an open final-table deal
+   *     review, each inside its own bound (TournamentManagerBase.
+   *     deliberateDealingHold);
+   *   - the maintenance break, while it is still holding the table (the
+   *     freeze itself returns before this is asked);
+   *   - an operator floor hold that was read, not one that could not be.
+   *
+   * A table with no running dealer holds nothing: it is counted as nothing,
+   * never as a reason to wait.
+   */
+  private darkEventHeldOnPurpose(manager: TournamentManager, nowMs: number): string | null {
+    const managerHold = manager.deliberateDealingHold(nowMs);
+    if (managerHold) return managerHold;
+    for (const tableId of manager.getTableIds()) {
+      const engine = this.tableEngines.get(tableId);
+      if (!engine || !engine.isRunning()) continue;
+      if (engine.isMaintenancePaused() && this.maintenanceBreak.isHoldingTable(tableId)) {
+        return 'maintenance_break';
+      }
+      if (engine.isHeldByOperatorFloor()) return 'operator_floor_hold';
+    }
+    return null;
   }
 
   /**

@@ -657,6 +657,12 @@ export abstract class ServerTableEngineBase {
   // Bible V8 §6.17: Admin pause/maintenance lock — prevents new hands from starting
   protected adminPauseLock: boolean = false;
   protected operatorFloorPaused = false;
+  /**
+   * True only when the last floor read SUCCEEDED and named an operator hold
+   * (2026-10-12). operatorFloorPaused is also raised when the read fails,
+   * which is "could not tell", never an operator's decision (CLAUDE.md 10.86).
+   */
+  private operatorFloorHoldRead = false;
   protected readonly operatorClosureOnlyId: string | null;
   private operatorFloorReadSequence = 0;
   protected operatorCloseRequest: {
@@ -674,8 +680,10 @@ export abstract class ServerTableEngineBase {
     if (sequence !== this.operatorFloorReadSequence) return;
     if (error || !data || typeof data !== 'object') {
       this.operatorFloorPaused = true;
+      this.operatorFloorHoldRead = false;
       throw new Error('operator_floor_state_unknown');
     }
+    this.operatorFloorHoldRead = Boolean(data.hold);
     this.operatorCloseRequest = data.close ?? null;
     const paused = Boolean(this.operatorClosureOnlyId || data.hold || this.operatorCloseRequest);
     const wasPaused = this.operatorFloorPaused;
@@ -7759,6 +7767,16 @@ export abstract class ServerTableEngineBase {
   /** True while the scheduled maintenance break is holding this table. */
   isMaintenancePaused(): boolean {
     return this.maintenancePaused;
+  }
+
+  /**
+   * True while an operator's floor hold (ca_operator_floor_hold), read
+   * successfully, is holding this table (2026-10-12). Asked by the dark
+   * tournament rebuild, which must respect a hold an operator placed and must
+   * not mistake an unreadable floor for one.
+   */
+  isHeldByOperatorFloor(): boolean {
+    return this.operatorFloorPaused && this.operatorFloorHoldRead;
   }
 
   /**

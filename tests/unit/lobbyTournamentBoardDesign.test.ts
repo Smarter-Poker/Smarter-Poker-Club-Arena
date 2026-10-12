@@ -97,8 +97,17 @@ describe('Club Arena Tournament Board lobby design', () => {
 
     /* Dan 2026-10-11: "Remove the 'Level 29' under the playing Now and
        replace that with 'Share & Invite'". The blue box is painted on the
-       master; the words are live in the plate, and the plate is a button. */
+       master; the words are live in the plate, and pressing them shares.
+       Since 2026-10-12 the words are the label INSIDE the share button, not
+       a second button: the plate's centre is 24px below the copy frame's on
+       a 375px card, so two buttons there could never both own a 44px thumb
+       band (the post-deploy sweep measured the plate at 7px, reach 0). */
     expect(identityCard).toContain('club-identity__invite');
+    expect(identityCard).toContain(
+      'zoneStyleWithin(CLUB_IDENTITY_ZONES.invite, CLUB_IDENTITY_ZONES.share)'
+    );
+    expect(identityCard).not.toMatch(/<button[^>]*className="club-identity__invite"/);
+    expect(identityCard).toContain('aria-label="Share And Invite"');
     expect(identityCard).toContain("SHARE_AND_INVITE = 'Share & Invite'");
     expect(identityCard).not.toContain('Level {level}');
     expect(identityCardCss).toContain('.club-identity__invite');

@@ -1,4 +1,11 @@
 -- Run only in the private Diamond fixture created by test-accounting-delivery.sh.
+--
+-- HISTORY NOTE (2026-10-12). The harness runs this probe BEFORE
+-- 20261012041752_one_wheel_for_everyone.sql, against the two-table model the
+-- 2026-09-21 migration installed, so its standard/VIP wording describes that
+-- installed history. Since 2026-10-12 every player is dealt the item-free (VIP)
+-- table; tests/sql/diamond-wheel-one-table.sql proves that state, after the
+-- migration, with real spins.
 -- THE ARITHMETIC OF WHEEL v4 (owner rulings 2026-09-21, R2/R12/R13/R15), proved
 -- against the installed functions rather than against a copy of them. Read only:
 -- no money, no spin, and the whole thing rolls back anyway.

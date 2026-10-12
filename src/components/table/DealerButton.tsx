@@ -260,7 +260,33 @@ export function dealerButtonPositionClearOfSeat(
       }
     }
   }
-  return best ?? placed;
+  if (best) return best;
+
+  // A larger nameplate can close both the straight retreat and the rim swing.
+  // Search their combination within the same finite bounds, retaining every
+  // chip, board, masthead and seat-ownership predicate above.
+  for (let retreat = 2; retreat <= 30; retreat += 2) {
+    const vx = pv.x - cv.x;
+    const vy = pv.y - cv.y;
+    const length = Math.hypot(vx, vy);
+    if (length <= retreat) break;
+    const scale = (length - retreat) / length;
+    for (let i = 1; i <= 16; i++) {
+      for (const dir of [1, -1]) {
+        const phi = dir * i * 1.5 * (Math.PI / 180);
+        const cand = clampIntoFelt(
+          {
+            x: cv.x + scale * (vx * Math.cos(phi) - vy * Math.sin(phi)),
+            y: ((cv.y + scale * (vx * Math.sin(phi) + vy * Math.cos(phi))) * size.w) / size.h,
+          },
+          size,
+          BUTTON_FELT_MARGIN_WIDTH_PCT
+        );
+        if (clear(cand)) return cand;
+      }
+    }
+  }
+  return placed;
 }
 
 export interface DealerButtonProps {
@@ -385,7 +411,7 @@ export function DealerButton({
     scalerSize ?? undefined,
     typeof window === 'undefined'
       ? undefined
-      : seatPodPx(window.innerWidth, pos.y >= 100 && pos.x === 50),
+      : seatPodPx(window.innerWidth, pos.y >= 100 && pos.x === 50, scalerSize?.w),
     // Dan 2026-09-07, item 10: the whole ring, so the search can refuse any
     // position that reads as another player's button. This component is
     // already handed every seat; the constraint just needed to be given them.

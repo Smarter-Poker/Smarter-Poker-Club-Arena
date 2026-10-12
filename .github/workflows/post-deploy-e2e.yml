@@ -553,6 +553,7 @@ jobs:
       # Read the real operator doors and cancel a worker decision. This uses
       # the existing disposable zero-balance staff identity and makes no writes.
       - name: Certify the authenticated production notification inbox
+        id: notification_inbox
         if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
         env:
           BASE_URL: https://smarter.poker/hub/club-arena/
@@ -564,6 +565,17 @@ jobs:
         run: >-
           npx playwright test tests/e2e/production-notifications.spec.ts
           --project=chromium --reporter=line,json --workers=1 --retries=0
+
+      - name: Preserve the notification verdict before the broader page sweep
+        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-deploy-notification-report
+          path: |
+            e2e-report/notifications.json
+            test-results/production-notifications-*/
+          if-no-files-found: error
+          retention-days: 3
 
       - name: Certify the authenticated Lightning operator cold loads
         if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
@@ -833,6 +845,7 @@ jobs:
         if: always() && steps.live.outputs.ready == 'true'
         run: >-
           node scripts/ci/annotate-e2e-failures.mjs
+          e2e-report/notifications.json
           e2e-report/cashier.json
           e2e-report/cashier-statements.json
           e2e-report/lightning-operator.json
@@ -853,6 +866,7 @@ jobs:
         if: always() && steps.live.outputs.ready == 'true'
         run: >-
           node scripts/ci/assert-e2e-actually-ran.mjs
+          e2e-report/notifications.json
           e2e-report/cashier.json
           e2e-report/cashier-statements.json
           e2e-report/lightning-operator.json

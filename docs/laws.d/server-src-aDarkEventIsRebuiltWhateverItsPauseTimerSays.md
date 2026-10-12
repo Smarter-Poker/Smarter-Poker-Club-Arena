@@ -1,0 +1,3 @@
+# server/src/aDarkEventIsRebuiltWhateverItsPauseTimerSays.law.test.ts
+
+Once the database reads a RUNNING event dark, its manager is rebuilt whatever its table parks, pause timers or stopped dealers say (satellite 61961519, three hours dark while the zombie reaper kept resetting msPaused on its one parked table); only a named deliberate authority inside its own bound stands the rebuild down (the maintenance break while it holds the table, an operator floor hold that was read, the add-on break until its end plus the last-hand grace, an open final-table deal review inside fifteen minutes plus grace), and the rebuild stays bounded to one per tournament per window with one page per window after it.

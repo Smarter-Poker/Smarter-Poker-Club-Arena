@@ -22,6 +22,11 @@ const sql = readFileSync(
   ),
   'utf8'
 );
+const ci = readFileSync(join(process.cwd(), '.github/workflows/ci.yml'), 'utf8');
+const probe = readFileSync(
+  join(process.cwd(), 'scripts/dev/probe-inventory-seal-buckets-pg17.sh'),
+  'utf8'
+);
 
 describe('the inventory seal assembles its week bucket by bucket', () => {
   it('is one transaction with a live proof and pinned pre and post images', () => {
@@ -35,15 +40,32 @@ describe('the inventory seal assembles its week bucket by bucket', () => {
     expect(sql).toContain("'an inventory seal is in progress; install between seals'");
   });
 
-  it('caps the rows one call writes', () => {
+  it('yields between buckets after the row or time threshold', () => {
     expect(sql).toContain(
       "IF did_bucket AND (n_tick>=400000 OR clock_timestamp()>began+interval '75 seconds') THEN"
     );
-    // ~500 bytes a row in the checkpoint: 400,000 rows is ~200 MB, far under 1.5 GB
+    // This is the target between buckets; a whole bucket can exceed it.
     expect(400000 * 500).toBeLessThan(1.5 * 1024 ** 3 * 0.25);
     expect(sql).toContain(
       '-- The checkpoint row gets a call of its own once the last bucket is in.'
     );
+  });
+
+  it('executes retained native equivalence in the required accounting shard', () => {
+    const start = ci.indexOf(
+      '- name: Inventory seal preserves exact rows through bucket continuation'
+    );
+    const end = ci.indexOf('- name: Tournament blinds publish atomically across the field', start);
+    expect(start).toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(start);
+    const step = ci.slice(start, end);
+    expect(step).toContain('if: matrix.shard == 3');
+    expect(step).toContain('bash scripts/dev/probe-inventory-seal-buckets-pg17.sh');
+    expect(step).toContain('actions/upload-artifact@v4');
+    expect(step).toContain('if-no-files-found: error');
+    expect(probe).toContain('python3 -I');
+    expect(probe).toContain('listen_addresses=');
+    expect(probe).toContain('20261012135622_the_inventory_seal_assembles_bucket_by_bucket.sql');
   });
 
   it('hashes the assembled week exactly as the whole-week seal does', () => {

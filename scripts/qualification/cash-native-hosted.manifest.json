@@ -1,4 +1,161 @@
 {
+  "playerCommandGroupedHistoryQualification20261012": {
+    "reason": "Group the unchanged exact history qualifier under the existing Player Command totals owner. Reviewed checked bounded child execution and AST wiring test; shared CI is byte-identical to protected main. Preserve every historical object, financial input and qualification status. Task audit keys reordered without value changes solely to avoid shared append conflicts; active fingerprints are source identity, not production qualification.",
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 208825,
+          "sha256": "6ab97ab66d58f6d00e9c1cd6b63a3a34232c92d929234a3de17c83081a688116"
+        },
+        "current": {
+          "bytes": 208650,
+          "sha256": "726fc785d4c857df179022236ca835b70891a323ba25f306a1ccd2f6d59b8000"
+        }
+      },
+      {
+        "section": "files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": {
+          "bytes": 106596,
+          "sha256": "630e3537f398803817236eb916d27d256d8a0d89c8dc9aa4ca84e3a25838bddd"
+        },
+        "current": {
+          "bytes": 108744,
+          "sha256": "2602f828643e8fd24e26999eaf065198dc41ae3ae841468db11a95d2d9928dfd"
+        }
+      }
+    ]
+  },
+  "playerCommandHistoryQualification20261012": {
+    "reason": "Add exact isolated staff history qualification to existing Accounting4. Only workflow fingerprint changes; financial inputs, assertions, status and historical receipts remain unchanged.",
+    "previousWorkflowPin": {
+      "bytes": 202788,
+      "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
+    },
+    "previousClassifierPin": {
+      "bytes": 35480,
+      "sha256": "1fc422b810641eee2149abbdbbf5ddf50c54e87162fbea82f22456c506bd712d"
+    },
+    "previousRoutingTestPin": {
+      "bytes": 105657,
+      "sha256": "1e9a652b80aa851fb95d7780aeb6b62d360a7b61192c27edd9112ecd0b636392"
+    }
+  },
+  "playerCommandHistoryMainIntegration20261012": {
+    "reason": "Preserve both independent history and staff removal qualification routes and historical audit records. Refresh only integrated current source fingerprints; financial inputs, assertions, historical receipts and qualification status remain unchanged. Source identity is not runtime certification.",
+    "changes": [
+      {
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 202963,
+          "sha256": "9fe368e242f2784d9d9f03b43499e58c4854c0e5758550358489079f657e1529"
+        },
+        "current": {
+          "bytes": 203178,
+          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+        }
+      },
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 35710,
+          "sha256": "21bad2287248a7b8cd9b12c585b24d3c5949527340c13b95f4e763d2cebf0032"
+        },
+        "current": {
+          "bytes": 35763,
+          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        }
+      }
+    ]
+  },
+  "playerCommandHistoryInventoryIntegration20261012": {
+    "reason": "Preserve protected inventory, club-removal and history qualification routes and their immutable historical receipts. Refresh only current integrated workflow fingerprint; financial inputs, assertions and qualification status remain unchanged.",
+    "previousCandidateWorkflowPin": {
+      "bytes": 203178,
+      "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+    },
+    "previousMainWorkflowPin": {
+      "bytes": 203929,
+      "sha256": "4c8baf0332e0a416f9d4c07e8b2c4cfddac492d6c51ec22cfe2c37ff9077d059"
+    },
+    "currentWorkflowPin": {
+      "bytes": 204104,
+      "sha256": "e5d5d5cf627d9c76645259024280ec94acf8c3b6f62e97ee8418a87f714da3e5"
+    }
+  },
+  "playerCommandHistoryRecoveryIntegration20261012": {
+    "reason": "Preserve both history and native recovery enforcement, independent historical audit records and qualification status. Refresh only reviewed active workflow/classifier/test and nested source binding hashes; this is source identity, not financial or live qualification.",
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previousOwn": {
+          "bytes": 204104,
+          "sha256": "e5d5d5cf627d9c76645259024280ec94acf8c3b6f62e97ee8418a87f714da3e5"
+        },
+        "previousMain": {
+          "bytes": 204868,
+          "sha256": "526ce2cb5ae8c17319b7181238858a9d820a4609f4a90f7572c19d316d552ee9"
+        },
+        "current": {
+          "bytes": 205043,
+          "sha256": "9ff1e635df3746666ac70c01e36032d3105c8bf5998c1d7c3c9e87fb7ab4e9fc"
+        }
+      },
+      {
+        "section": "files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previousOwn": {
+          "bytes": 35763,
+          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        },
+        "previousMain": {
+          "bytes": 35991,
+          "sha256": "d064527051d9ca3b8687b8414144a81008571552ab3d73f104ee462c0dac2a80"
+        },
+        "current": {
+          "bytes": 36221,
+          "sha256": "431c3a4c70a1d0e278b5a1e96b113f423d57428f1bf30da672690ce44baa3123"
+        }
+      },
+      {
+        "section": "files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previousOwn": {
+          "bytes": 106522,
+          "sha256": "d87f24e32a12cbf7028887a83b540f36af478c80f30e0c208b7bd274fc849805"
+        },
+        "previousMain": {
+          "bytes": 105731,
+          "sha256": "14a67e65f162b0c02c406ae9b24726852f5d5678c28f01ba861633b9c6ea9682"
+        },
+        "current": {
+          "bytes": 106596,
+          "sha256": "630e3537f398803817236eb916d27d256d8a0d89c8dc9aa4ca84e3a25838bddd"
+        }
+      }
+    ]
+  },
+  "playerCommandHistoryUnchangedStackIntegration20261012": {
+    "reason": "Preserve original unchanged-stack native enforcement and history qualification, all historical metadata and financial assertions. Refresh current combined workflow and retain classifier/test fingerprints of reviewed combined source only; source identity is not runtime or release proof.",
+    "previousOwn": {
+      "bytes": 205043,
+      "sha256": "9ff1e635df3746666ac70c01e36032d3105c8bf5998c1d7c3c9e87fb7ab4e9fc"
+    },
+    "previousMain": {
+      "bytes": 205794,
+      "sha256": "e85cb68743eb7bc58e6b3c089e3f731ba0ae9a96cc9ef3b4b055d7e031fb518d"
+    },
+    "current": {
+      "bytes": 205969,
+      "sha256": "899f55091ecb3f66148bda7528acfd202601f4db2ac26439f28bbbc889769e6b"
+    }
+  },
+  "playerCommandHistoryRetentionIntegration20261012": {
+    "reason": "Preserve current protected retention qualification, history checks, original accounting inputs and every historical audit object. Refresh only reviewed combined workflow/classifier/test current pins; no financial or live qualification claim."
+  },
   "schemaVersion": 1,
   "leaderboardPlainPartitionRegression20261008": {
     "reason": "Enforce the native PG17 plain partition regression in the existing Accounting4 lane alongside all retained restore controls. Preserve concurrent main additions, financial inputs, historical pins and qualification status. Source fingerprint refresh is not actual Auth or financial qualification.",
@@ -56,8 +213,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 208825,
-      "sha256": "6ab97ab66d58f6d00e9c1cd6b63a3a34232c92d929234a3de17c83081a688116"
+      "bytes": 208650,
+      "sha256": "726fc785d4c857df179022236ca835b70891a323ba25f306a1ccd2f6d59b8000"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -160,8 +317,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 106596,
-      "sha256": "630e3537f398803817236eb916d27d256d8a0d89c8dc9aa4ca84e3a25838bddd"
+      "bytes": 108744,
+      "sha256": "2602f828643e8fd24e26999eaf065198dc41ae3ae841468db11a95d2d9928dfd"
     }
   },
   "nativePgCron": {
@@ -2156,21 +2313,6 @@
       }
     ]
   },
-  "playerCommandHistoryQualification20261012": {
-    "reason": "Add exact isolated staff history qualification to existing Accounting4. Only workflow fingerprint changes; financial inputs, assertions, status and historical receipts remain unchanged.",
-    "previousWorkflowPin": {
-      "bytes": 202788,
-      "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
-    },
-    "previousClassifierPin": {
-      "bytes": 35480,
-      "sha256": "1fc422b810641eee2149abbdbbf5ddf50c54e87162fbea82f22456c506bd712d"
-    },
-    "previousRoutingTestPin": {
-      "bytes": 105657,
-      "sha256": "1e9a652b80aa851fb95d7780aeb6b62d360a7b61192c27edd9112ecd0b636392"
-    }
-  },
   "onlyStaffRemoveMemberDbHarnessRouting20261012": {
     "reason": "Reviewed additive only-staff-remove-member harness routing: the existing cashierDbHarnesses selector also names scripts/ci/test-only-staff-remove-member-db-postgres.py (the PostgreSQL 17 qualification of migration 20261012132509, only club staff can remove a member) and its fixture directory tests/fixtures/only-staff-remove-member-db/, and one accounting_postgres shard 2 step runs it. No selector is removed or narrowed; financial sources, assertions and historical evidence are unchanged. These byte bindings establish source identity only, not financial or production qualification.",
     "changes": [
@@ -2198,33 +2340,6 @@
       }
     ]
   },
-  "playerCommandHistoryMainIntegration20261012": {
-    "reason": "Preserve both independent history and staff removal qualification routes and historical audit records. Refresh only integrated current source fingerprints; financial inputs, assertions, historical receipts and qualification status remain unchanged. Source identity is not runtime certification.",
-    "changes": [
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "bytes": 202963,
-          "sha256": "9fe368e242f2784d9d9f03b43499e58c4854c0e5758550358489079f657e1529"
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "bytes": 35710,
-          "sha256": "21bad2287248a7b8cd9b12c585b24d3c5949527340c13b95f4e763d2cebf0032"
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      }
-    ]
-  },
   "inventorySealNativeQualification20261012": {
     "reason": "Add exact bucketed inventory seal PostgreSQL17 equivalence to existing required Accounting3. Preserve every financial source, assertion, historical pin and SOURCE_ONLY_UNRUN status. Workflow fingerprint refresh is source identity only, not cash execution or production certification.",
     "previousWorkflowPin": {
@@ -2241,21 +2356,6 @@
     "previousCurrentMainWorkflowPin": {
       "bytes": 203003,
       "sha256": "1699ddcbdafde77bbb538e632911eb11663486d78a99571e67006ae4f4004995"
-    }
-  },
-  "playerCommandHistoryInventoryIntegration20261012": {
-    "reason": "Preserve protected inventory, club-removal and history qualification routes and their immutable historical receipts. Refresh only current integrated workflow fingerprint; financial inputs, assertions and qualification status remain unchanged.",
-    "previousCandidateWorkflowPin": {
-      "bytes": 203178,
-      "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-    },
-    "previousMainWorkflowPin": {
-      "bytes": 203929,
-      "sha256": "4c8baf0332e0a416f9d4c07e8b2c4cfddac492d6c51ec22cfe2c37ff9077d059"
-    },
-    "currentWorkflowPin": {
-      "bytes": 204104,
-      "sha256": "e5d5d5cf627d9c76645259024280ec94acf8c3b6f62e97ee8418a87f714da3e5"
     }
   },
   "nativeRecoveryExport20261012": {
@@ -2296,59 +2396,6 @@
       "sha256": "526ce2cb5ae8c17319b7181238858a9d820a4609f4a90f7572c19d316d552ee9"
     }
   },
-  "playerCommandHistoryRecoveryIntegration20261012": {
-    "reason": "Preserve both history and native recovery enforcement, independent historical audit records and qualification status. Refresh only reviewed active workflow/classifier/test and nested source binding hashes; this is source identity, not financial or live qualification.",
-    "changes": [
-      {
-        "section": "files",
-        "path": ".github/workflows/ci.yml",
-        "previousOwn": {
-          "bytes": 204104,
-          "sha256": "e5d5d5cf627d9c76645259024280ec94acf8c3b6f62e97ee8418a87f714da3e5"
-        },
-        "previousMain": {
-          "bytes": 204868,
-          "sha256": "526ce2cb5ae8c17319b7181238858a9d820a4609f4a90f7572c19d316d552ee9"
-        },
-        "current": {
-          "bytes": 205043,
-          "sha256": "9ff1e635df3746666ac70c01e36032d3105c8bf5998c1d7c3c9e87fb7ab4e9fc"
-        }
-      },
-      {
-        "section": "files",
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previousOwn": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        },
-        "previousMain": {
-          "bytes": 35991,
-          "sha256": "d064527051d9ca3b8687b8414144a81008571552ab3d73f104ee462c0dac2a80"
-        },
-        "current": {
-          "bytes": 36221,
-          "sha256": "431c3a4c70a1d0e278b5a1e96b113f423d57428f1bf30da672690ce44baa3123"
-        }
-      },
-      {
-        "section": "files",
-        "path": "tests/unit/fixtureNativeCi.test.ts",
-        "previousOwn": {
-          "bytes": 106522,
-          "sha256": "d87f24e32a12cbf7028887a83b540f36af478c80f30e0c208b7bd274fc849805"
-        },
-        "previousMain": {
-          "bytes": 105731,
-          "sha256": "14a67e65f162b0c02c406ae9b24726852f5d5678c28f01ba861633b9c6ea9682"
-        },
-        "current": {
-          "bytes": 106596,
-          "sha256": "630e3537f398803817236eb916d27d256d8a0d89c8dc9aa4ca84e3a25838bddd"
-        }
-      }
-    ]
-  },
   "originalUnchangedStackQualification20261012": {
     "reason": "Add directly triggered isolated PG17 original unchanged-stack qualification and always-retained native transcript in accounting shard3. Existing financial qualification components/assertions/captured fixtures/status unchanged. Workflow byte pin refresh alone does not prove native or production behavior.",
     "previousWorkflowPin": {
@@ -2387,21 +2434,6 @@
     "previousMainWorkflowPin": {
       "bytes": 204868,
       "sha256": "526ce2cb5ae8c17319b7181238858a9d820a4609f4a90f7572c19d316d552ee9"
-    }
-  },
-  "playerCommandHistoryUnchangedStackIntegration20261012": {
-    "reason": "Preserve original unchanged-stack native enforcement and history qualification, all historical metadata and financial assertions. Refresh current combined workflow and retain classifier/test fingerprints of reviewed combined source only; source identity is not runtime or release proof.",
-    "previousOwn": {
-      "bytes": 205043,
-      "sha256": "9ff1e635df3746666ac70c01e36032d3105c8bf5998c1d7c3c9e87fb7ab4e9fc"
-    },
-    "previousMain": {
-      "bytes": 205794,
-      "sha256": "e85cb68743eb7bc58e6b3c089e3f731ba0ae9a96cc9ef3b4b055d7e031fb518d"
-    },
-    "current": {
-      "bytes": 205969,
-      "sha256": "899f55091ecb3f66148bda7528acfd202601f4db2ac26439f28bbbc889769e6b"
     }
   },
   "horseRequestRetentionIntegration20261012": {
@@ -2498,8 +2530,5 @@
       "bytes": 208650,
       "sha256": "726fc785d4c857df179022236ca835b70891a323ba25f306a1ccd2f6d59b8000"
     }
-  },
-  "playerCommandHistoryRetentionIntegration20261012": {
-    "reason": "Preserve current protected retention qualification, history checks, original accounting inputs and every historical audit object. Refresh only reviewed combined workflow/classifier/test current pins; no financial or live qualification claim."
   }
 }

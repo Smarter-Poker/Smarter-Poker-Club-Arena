@@ -846,6 +846,19 @@
         "check-new-migration-version-collisions:69-character new name; this is now an exact already-installed ledger recording whose actual full name is verified"
       ],
       "liveVerdict": "Production19:23:12 helper02b1038d96aef58c02af6fd7c41bdf5c ownerpostgres SECURITY DEFINER search_path pg_catalog/public/smarter_private ACLpostgres-only; anon/authenticated/service_roleEXECUTEfalse. Exact finalnative34+24+27 validates original predicates, all-element validation before distinct insertion, byte ceilings, original locks, protected raw/replay and rollback. Name/source verified again19:41:44 through maintained fn_ca_migration_text. This records immutable installed bytes; the naming guard explicitly supports verified recordings and is not weakened."
+    },
+    {
+      "version": "20261012200422",
+      "name": "existing_horse_retention_runs_each_thirty_seconds",
+      "file": "supabase/migrations/20261012200422_existing_horse_retention_runs_each_thirty_seconds.sql",
+      "md5": "e84ad219dbe6a44bb4af18f5ca22f77f",
+      "appliedToProductionAt": "2026-10-12T20:04:22Z",
+      "recoveredOn": "2026-10-12",
+      "recoveredFrom": "Exact immutable applying-session source. Schema-migrations statement digest/2736 bytes read20:44:09 and public.fn_ca_migration_text20:44:47 independently match source MD5; no installed SQL changed or replayed.",
+      "refusedBy": [
+        "retention config source contract: existing budget references mistaken for pruner redefinition"
+      ],
+      "liveVerdict": "Production20:44:47 original sp_prune_hand_history definition remains379f83a598ff822ce30f25647bcf9bd1 and therefore its native-qualified config read, twenty-second budget and250-hand rounds remain unchanged. Job117 ACTIVE30seconds with original96244362bf46b39e75ef1100b1372203 command/postgres/database/node/port;119/279 ACTIVE unchanged. Exact original15+successor15 native cases passed and12 live new-interval runs succeeded. Only cron.alter_job schedule is changed; pg_get_functiondef references inspect the original budget rather than redefine it. This is byte-exact installed evidence; new/changed SQL rearms all guards."
     }
   ]
 }

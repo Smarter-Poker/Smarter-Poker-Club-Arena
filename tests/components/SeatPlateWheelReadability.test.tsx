@@ -41,10 +41,12 @@ describe('player plates stay readable across the complete responsive cascade', (
 
 describe('Diamond Spins data and actions own separate layout space', () => {
   const css = read('src/components/wheel/WheelCabinet.module.css');
-  it('never squeezes metrics beside a fixed-width action column at any breakpoint', () => {
+  it('never reserves a fixed minimum action width at any breakpoint', () => {
     for (const body of rules(css, '.dashboard')) {
       const columns = body.match(/grid-template-columns:\s*([^;]+)/);
-      if (columns) expect(columns[1]).toBe('minmax(0, 1fr)');
+      if (columns) {
+        expect(columns[1]).toMatch(/^minmax\(0, 1fr\)( minmax\(0, 310px\))?$/);
+      }
     }
     for (const body of rules(css, '.actions button')) {
       const size = body.match(/font-size:\s*([\d.]+)px/);

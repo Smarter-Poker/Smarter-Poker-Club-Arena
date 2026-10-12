@@ -64,8 +64,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 35991,
-      "sha256": "d064527051d9ca3b8687b8414144a81008571552ab3d73f104ee462c0dac2a80"
+      "bytes": 36133,
+      "sha256": "5c5de06d630dce62812f574dcbbb11f622f73c167c25d8847a320da5735d107a"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -2277,6 +2277,17 @@
     "previousMainWorkflowPin": {
       "bytes": 204868,
       "sha256": "526ce2cb5ae8c17319b7181238858a9d820a4609f4a90f7572c19d316d552ee9"
+    }
+  },
+  "diamondCompletionInputRouting20261012": {
+    "reason": "Reviewed additive Diamond jackpot JSON, exact session-recap SQL and must-move fixture routing into the existing required Diamond SQL acceptance lane. Refresh only current input fingerprints; financial SQL, assertions, fixed input inventories, historical pins and qualification statuses remain unchanged. This input declaration is not native execution, financial certification, installation or publication.",
+    "previousCurrentClassifierPin": {
+      "bytes": 35991,
+      "sha256": "d064527051d9ca3b8687b8414144a81008571552ab3d73f104ee462c0dac2a80"
+    },
+    "currentClassifierPin": {
+      "bytes": 36133,
+      "sha256": "5c5de06d630dce62812f574dcbbb11f622f73c167c25d8847a320da5735d107a"
     }
   }
 }

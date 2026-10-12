@@ -1,0 +1,38 @@
+# Engine Log Sources Tell The Truth (2026-10-12)
+
+Triage of the engine log sources left open by the tournament hardening lane, re-counted on engine b4475501 from its 06:55 UTC start to 11:30 UTC.
+
+## What Was Measured
+
+| Source                                                                                                                                 | Lines              | Verdict                                                                                                                                                                                                                                                                                               |
+| -------------------------------------------------------------------------------------------------------------------------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TournamentManager.finishing_ladder_exhausted                                                                                           | 19                 | Already a log line on main (2026-10-11). The finish ranks every bust by when its hand committed before paying: 0 finishing places out of order in 48 hours across every completed bounty, freezeout, mystery bounty, progressive bounty and satellite event, and 0 in 3,626 Spin places over 3 hours. |
+| Tournament.elimination_check_error                                                                                                     | 3                  | One mislabelled yield (fixed below); two fn_f06_discover_breaks statement timeouts during the 09:37 database stall.                                                                                                                                                                                   |
+| Tournament.satellite_qualifiers_refused                                                                                                | 0                  | None since the engine started; fn_satellite_conservation_audit(72) reads 0.                                                                                                                                                                                                                           |
+| TournamentBrainContext.refresh                                                                                                         | 1,284              | Every one a timeout during a database stall, one per live tournament every 20 seconds (fixed below).                                                                                                                                                                                                  |
+| ServerTableEngine.post_commit_obligations_pending                                                                                      | 133 first attempts | 106 were F06_RETRY_CANONICAL_LANE, an explicit retry request; no give-up alert was filed (fixed below).                                                                                                                                                                                               |
+| RakebackSettler.eco_record_failed                                                                                                      | 3 an hour          | Refused on every call since 2026-09-17 (fixed below).                                                                                                                                                                                                                                                 |
+| TimeBank.allowance_fetch_failed, Tournament.bust_batch_recorded_past_budget, Tournament.spin_reveal_window_overrun                     | 42, 16, 17         | All inside the database stalls at 09:37, 10:21, 10:44, 11:03 and 11:30. Left as they are: they report a real slow database.                                                                                                                                                                           |
+| RakebackSettler.weekly_close, treasury_selftest_rpc, governance_sentinel_rpc, FeeReconciler query failures, SpinMetrics.refresh_failed | 2 to 8 each        | Statement timeouts on monitors and the Monday close. Reported to the lane owners, not changed here.                                                                                                                                                                                                   |
+
+## What Changed
+
+1. **A spent budget at the custody claim is a stale custody.** The break retirement's claim step folded `eliminationMutationAllowed()` into its identity check, so a sweep whose budget ran out during the claim round trip threw "custody claim identity mismatch" with every identity field matching (07:09:00 UTC). It now throws `retirement_custody_stale`, the same yield every later step names, which the sweep already treats as a yield only when the budget has really expired.
+2. **An open week has no ECO to record.** `fn_union_eco_record` has required closed-week P&L evidence since 2026-09-17, so the settler's open-week call could only be refused. The call is retired; the closed week is still recorded at close by `fn_union_settlement_cascade` and checked by the governance sentinel.
+3. **A requested retry is not a failure.** The post-commit obligation loop no longer reports the first attempt of an F06_RETRY_CANONICAL_LANE answer. Every other first failure, every tenth attempt and the critical give-up alert are unchanged.
+4. **A database stall is one report, and it is not asked again every 20 seconds.** A horse tournament context refresh that timed out now waits 40 seconds, then 80, before the next attempt, instead of stacking new reads on a stalled database; a published context returns it to 20 seconds. Refresh failures are reported once a minute with the previous minute's count.
+
+## Finishing Order (Workstream B)
+
+The two cases named for review (db790269 and b5ede503, both 2026-10-11 between 17:49 and 18:48 UTC) are not inversions under the platform's rule. The rule decided on 2026-09-11 is that a place follows the commit time of the bust hand; hand number is the deal order and disagrees with commit time for about a third of cross-table busts. In both events every place follows commit time exactly (for example b5ede503 place 18 busted at 18:43:58 in hand 32292511 and place 19 at 18:43:51 in hand 32292547). The provisional place handed out at record time is renumbered by `fn_settle_tournament_places` and `fn_ca_tournament_bust_at` before anything is paid, pinned by `tests/a-bust-is-ranked-by-when-it-happened.law.test.ts`. No code or money change was needed.
+
+## Spin Reveal Lag (Workstream C)
+
+Outside the :50 to :03 window, 05:00 to 09:00 UTC ran at about 2 percent of Spins past the reveal instant (7 to 12 of about 520 an hour). The overruns that remain come in whole minutes in which nearly every Spin is late (09:42 to 09:44, 10:21 to 10:25, 10:40 to 10:46 and the :00 thaw), which are the database stalls above, not the start path. The start path was not changed.
+
+## Laws
+
+- `server/src/tournament/aProvisionalPlaceIsNotAnError.law.test.ts` (extended)
+- `tests/an-open-week-has-no-eco-to-record.law.test.ts`
+- `server/src/engine/aRequestedRetryIsNotAFailure.law.test.ts`
+- `server/src/services/aStalledDatabaseIsOneReport.law.test.ts`

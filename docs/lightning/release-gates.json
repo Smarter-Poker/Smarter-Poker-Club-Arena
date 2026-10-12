@@ -1,0 +1,440 @@
+{
+  "schemaVersion": 1,
+  "programmePhase": 14,
+  "specificationPhases": [23, 24],
+  "purpose": "Requirement traceability. File existence is not execution evidence or launch approval.",
+  "requirements": [
+    {
+      "id": "L01",
+      "requirement": "Existing wallet is authoritative",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase1-cluster-session.sh",
+        "scripts/dev/test-lightning-phase5-conversion.sh",
+        "scripts/dev/test-lightning-phase7-reversion.sh"
+      ]
+    },
+    {
+      "id": "L02",
+      "requirement": "Existing cash session is authoritative",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase1-cluster-session.sh",
+        "scripts/dev/test-lightning-phase5-conversion.sh",
+        "scripts/dev/test-lightning-phase7-reversion.sh"
+      ]
+    },
+    {
+      "id": "L03",
+      "requirement": "Existing rake is authoritative",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase6-settlement.sh",
+        "server/src/lightning/LightningHandHost.test.ts"
+      ]
+    },
+    {
+      "id": "L04",
+      "requirement": "Every Lightning-capable game starts as MUST-MOVE FEEDER",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase3-feeder-first.sh",
+        "scripts/dev/test-lightning-phase3-remediation.sh"
+      ]
+    },
+    {
+      "id": "L05",
+      "requirement": "6-max 18 threshold works",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase4-population.sh",
+        "scripts/dev/test-lightning-phase6-matcher.sh"
+      ]
+    },
+    {
+      "id": "L06",
+      "requirement": "6-max 12 reversion works",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase7-reversion.sh",
+        "scripts/dev/test-lightning-phase13-operator-recovery.sh"
+      ]
+    },
+    {
+      "id": "L07",
+      "requirement": "9-max 27 threshold works",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase4-population.sh",
+        "scripts/dev/test-lightning-phase6-matcher.sh"
+      ]
+    },
+    {
+      "id": "L08",
+      "requirement": "9-max 18 reversion works",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase7-reversion.sh",
+        "scripts/dev/test-lightning-phase13-operator-recovery.sh"
+      ]
+    },
+    {
+      "id": "L09",
+      "requirement": "Threshold hysteresis works",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase7-reversion.sh",
+        "scripts/dev/test-lightning-phase13-operator-recovery.sh"
+      ]
+    },
+    {
+      "id": "L10",
+      "requirement": "Conversion races are safe",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase5-conversion.sh",
+        "scripts/dev/test-lightning-phase7-reversion.sh",
+        "scripts/dev/test-lightning-phase8-session.sh"
+      ]
+    },
+    {
+      "id": "L11",
+      "requirement": "Stacks remain invariant through conversion",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase5-conversion.sh",
+        "scripts/dev/test-lightning-phase7-reversion.sh",
+        "scripts/dev/test-lightning-phase8-session.sh"
+      ]
+    },
+    {
+      "id": "L12",
+      "requirement": "Baseline remains invariant",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase5-conversion.sh",
+        "scripts/dev/test-lightning-phase7-reversion.sh",
+        "scripts/dev/test-lightning-phase8-session.sh"
+      ]
+    },
+    {
+      "id": "L13",
+      "requirement": "Stay clock remains invariant",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase5-conversion.sh",
+        "scripts/dev/test-lightning-phase7-reversion.sh",
+        "scripts/dev/test-lightning-phase8-session.sh"
+      ]
+    },
+    {
+      "id": "L14",
+      "requirement": "Rejoin obligations remain invariant",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase5-conversion.sh",
+        "scripts/dev/test-lightning-phase7-reversion.sh",
+        "scripts/dev/test-lightning-phase8-session.sh"
+      ]
+    },
+    {
+      "id": "L15",
+      "requirement": "VPIP/session history remains continuous",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase5-conversion.sh",
+        "scripts/dev/test-lightning-phase7-reversion.sh",
+        "scripts/dev/test-lightning-phase8-session.sh"
+      ]
+    },
+    {
+      "id": "L16",
+      "requirement": "Must-move rebuild works after Lightning",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase7-reversion.sh",
+        "scripts/dev/test-lightning-phase13-operator-recovery.sh"
+      ]
+    },
+    {
+      "id": "L17",
+      "requirement": "Matcher P0-P6 works",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase6-matcher.sh",
+        "scripts/dev/test-lightning-matcher-parity.sh"
+      ]
+    },
+    {
+      "id": "L18",
+      "requirement": "BB fairness simulation passes",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase6-matcher.sh",
+        "scripts/dev/test-lightning-matcher-parity.sh"
+      ]
+    },
+    {
+      "id": "L19",
+      "requirement": "Position fairness passes",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase6-matcher.sh",
+        "scripts/dev/test-lightning-matcher-parity.sh"
+      ]
+    },
+    {
+      "id": "L20",
+      "requirement": "Opponent-repeat suppression works without starving thin pools",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase6-matcher.sh",
+        "scripts/dev/test-lightning-matcher-parity.sh"
+      ]
+    },
+    {
+      "id": "L21",
+      "requirement": "Fast Fold works",
+      "qualificationFiles": [
+        "server/src/lightning/LightningHandHost.test.ts",
+        "tests/lightning/LightningFoldBar.test.tsx"
+      ]
+    },
+    {
+      "id": "L22",
+      "requirement": "Fold & Watch works where supported",
+      "qualificationFiles": [
+        "server/src/lightning/LightningHandHost.test.ts",
+        "tests/lightning/LightningFoldBar.test.tsx"
+      ]
+    },
+    {
+      "id": "L23",
+      "requirement": "Multi-table limits work",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase8-session.sh",
+        "tests/lightning/lightning-phase-8-session-app.test.tsx"
+      ]
+    },
+    {
+      "id": "L24",
+      "requirement": "Pre-action cannot leak across hands",
+      "qualificationFiles": ["server/src/lightning/LightningHandHost.test.ts"]
+    },
+    {
+      "id": "L25",
+      "requirement": "Time bank is correct",
+      "qualificationFiles": ["server/src/lightning/LightningHandHost.test.ts"]
+    },
+    {
+      "id": "L26",
+      "requirement": "Disconnect/reconnect is correct",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase9-reconnect.sh",
+        "server/src/lightning/LightningPhase9ReconnectApp.test.ts"
+      ]
+    },
+    {
+      "id": "L27",
+      "requirement": "Duplicate connection is safe",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase9-reconnect.sh",
+        "server/src/lightning/LightningPhase9ReconnectApp.test.ts"
+      ]
+    },
+    {
+      "id": "L28",
+      "requirement": "Hand formation barrier works",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase9-formation.sh",
+        "server/src/lightning/LightningFormWorker.test.ts"
+      ]
+    },
+    {
+      "id": "L29",
+      "requirement": "Hand history survives instance destruction",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase9-reconnect.sh",
+        "server/src/lightning/LightningPhase9ReconnectApp.test.ts"
+      ]
+    },
+    {
+      "id": "L30",
+      "requirement": "Replay works",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase9-reconnect.sh",
+        "server/src/lightning/LightningPhase9ReconnectApp.test.ts"
+      ]
+    },
+    {
+      "id": "L31",
+      "requirement": "Event ledger works",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase9-reconnect.sh",
+        "server/src/lightning/LightningPhase9ReconnectApp.test.ts"
+      ]
+    },
+    {
+      "id": "L32",
+      "requirement": "Settlement idempotency works",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase6-settlement.sh",
+        "server/src/lightning/LightningHandHost.test.ts"
+      ]
+    },
+    {
+      "id": "L33",
+      "requirement": "Reservation idempotency works",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase6-matcher.sh",
+        "scripts/dev/test-lightning-matcher-parity.sh"
+      ]
+    },
+    {
+      "id": "L34",
+      "requirement": "RNG architecture verified",
+      "qualificationFiles": [
+        "server/src/engine/CryptoRandom.test.ts",
+        "server/src/engine/PokerEngine.ts",
+        "server/src/lightning/LightningHandHost.ts"
+      ]
+    },
+    {
+      "id": "L35",
+      "requirement": "Hidden-card security verified",
+      "qualificationFiles": [
+        "server/src/lightning/ALightningHandsCardsAndMoneyStayWithTheirOwners.law.test.ts",
+        "server/src/lightning/LightningHandHost.test.ts"
+      ]
+    },
+    {
+      "id": "L36",
+      "requirement": "Integrity telemetry works",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase11-integrity-shadow.sh",
+        "scripts/dev/test-lightning-phase11-remediation.sh",
+        "server/src/lightning/LightningPhase11RemediationApp.test.ts"
+      ]
+    },
+    {
+      "id": "L37",
+      "requirement": "Responsible gaming integration works",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase10-rg-rebuy.sh",
+        "scripts/dev/test-lightning-phase12-rg-limits.sh",
+        "tests/lightning/lightning-phase-10-rg-rebuy-app.test.tsx"
+      ]
+    },
+    {
+      "id": "L38",
+      "requirement": "Auto-rebuy integration works where enabled",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase10-rg-rebuy.sh",
+        "server/src/lightning/LightningPhase10RgRebuyApp.test.ts"
+      ]
+    },
+    {
+      "id": "L39",
+      "requirement": "Pool health works",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase8-session.sh",
+        "tests/lightning/lightning-phase-8-session-app.test.tsx"
+      ]
+    },
+    {
+      "id": "L40",
+      "requirement": "Action latency telemetry works",
+      "qualificationFiles": [
+        "server/src/lightning/LightningPhase12LoadChaos.test.ts",
+        "server/src/lightning/LightningLatencyLedger.ts",
+        "scripts/dev/test-lightning-phase12-operator-alerts.sh"
+      ]
+    },
+    {
+      "id": "L41",
+      "requirement": "First-hand path optimized",
+      "qualificationFiles": [
+        "server/src/lightning/LightningPhase12LoadChaos.test.ts",
+        "server/src/lightning/LightningLatencyLedger.ts",
+        "scripts/dev/test-lightning-phase12-operator-alerts.sh"
+      ]
+    },
+    {
+      "id": "L42",
+      "requirement": "Surge protection works",
+      "qualificationFiles": [
+        "server/src/lightning/LightningPhase12LoadChaos.test.ts",
+        "server/src/lightning/LightningLatencyLedger.ts",
+        "scripts/dev/test-lightning-phase12-operator-alerts.sh"
+      ]
+    },
+    {
+      "id": "L43",
+      "requirement": "Emergency drain works",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase13-operator-recovery.sh",
+        "server/src/lightning/LightningPhase13RolloutDrain.test.ts"
+      ]
+    },
+    {
+      "id": "L44",
+      "requirement": "Cluster freeze works",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase13-operator-recovery.sh",
+        "server/src/lightning/LightningPhase13RolloutDrain.test.ts"
+      ]
+    },
+    {
+      "id": "L45",
+      "requirement": "Replay/forensics works",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase12-operator-alerts.sh",
+        "tests/lightning/lightning-phase-12-operator-dashboard.test.tsx"
+      ]
+    },
+    {
+      "id": "L46",
+      "requirement": "Shadow matcher passes",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase11-integrity-shadow.sh",
+        "scripts/dev/test-lightning-phase11-remediation.sh",
+        "server/src/lightning/LightningPhase11RemediationApp.test.ts"
+      ]
+    },
+    {
+      "id": "L47",
+      "requirement": "Load test passes",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase12-load-chaos.sh",
+        "server/src/lightning/LightningPhase12LoadChaos.test.ts"
+      ]
+    },
+    {
+      "id": "L48",
+      "requirement": "Chaos test passes",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase12-load-chaos.sh",
+        "server/src/lightning/LightningPhase12LoadChaos.test.ts"
+      ]
+    },
+    {
+      "id": "L49",
+      "requirement": "Operator dashboard works",
+      "qualificationFiles": [
+        "tests/lightning/lightning-phase-13-operator-controls.test.tsx",
+        "tests/e2e/production-lightning-operator.spec.ts"
+      ]
+    },
+    {
+      "id": "L50",
+      "requirement": "Alerts work",
+      "qualificationFiles": ["scripts/dev/test-lightning-phase12-operator-alerts.sh"]
+    },
+    {
+      "id": "L51",
+      "requirement": "Rollback tested",
+      "qualificationFiles": [
+        "scripts/dev/test-lightning-phase13-operator-recovery.sh",
+        "server/src/lightning/LightningPhase13RolloutDrain.test.ts"
+      ]
+    },
+    {
+      "id": "L52",
+      "requirement": "Documentation complete",
+      "qualificationFiles": ["docs/lightning/ROLLOUT.md", "docs/lightning/FINAL-RELEASE-REVIEW.md"]
+    },
+    {
+      "id": "L53",
+      "requirement": "No prohibited competitor terminology is exposed to players",
+      "qualificationFiles": [
+        "tests/lightning-phase-13-rollout-drain.test.ts",
+        "tests/lightning/lightning-phase14-release-review.test.ts"
+      ]
+    },
+    {
+      "id": "L54",
+      "requirement": "Final regression suite is green",
+      "qualificationFiles": [".github/workflows/ci.yml", ".github/workflows/post-deploy-e2e.yml"]
+    }
+  ]
+}

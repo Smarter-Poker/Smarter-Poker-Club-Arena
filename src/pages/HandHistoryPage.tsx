@@ -172,6 +172,7 @@ export default function HandHistoryPage() {
   /* A failed fetch is not an empty history. */
   const [loadFailed, setLoadFailed] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [firstReading, setFirstReading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [filter, setFilter] = useState<HistoryFilter>('all');
   /* Phase 5: the free-text term, and the caller's own notes keyed by hand id. */
@@ -221,6 +222,7 @@ export default function HandHistoryPage() {
     setLoadedScope(null);
     setLoading(Boolean(userId));
     setLoadingMore(false);
+    setFirstReading(false);
     setLoadFailed(false);
     setLinkedRead(null);
     setLinkedState('idle');
@@ -243,6 +245,7 @@ export default function HandHistoryPage() {
       return;
     const requestSequence = ++firstPageSequenceRef.current;
     firstReadPendingRef.current = { scope: archiveScope, sequence: requestSequence };
+    setFirstReading(true);
     moreSequenceRef.current += 1;
     morePendingRef.current = false;
     setLoadingMore(false);
@@ -317,7 +320,10 @@ export default function HandHistoryPage() {
         requestKeyRef.current === requestKey &&
         firstPageSequenceRef.current === requestSequence
       ) {
-        if (isMounted.current) setLoading(false);
+        if (isMounted.current) {
+          setLoading(false);
+          setFirstReading(false);
+        }
       }
     }
   }, [
@@ -333,7 +339,13 @@ export default function HandHistoryPage() {
   ]);
 
   const loadMore = useCallback(async () => {
-    if (!userId || loading || morePendingRef.current) return;
+    if (
+      !userId ||
+      loading ||
+      morePendingRef.current ||
+      firstReadPendingRef.current?.scope === archiveScope
+    )
+      return;
     morePendingRef.current = true;
     const moreSequence = ++moreSequenceRef.current;
     const firstSequence = firstPageSequenceRef.current;
@@ -1161,7 +1173,7 @@ export default function HandHistoryPage() {
           type="button"
           className="load-more-btn"
           onClick={() => void loadMore()}
-          disabled={loadingMore}
+          disabled={loadingMore || firstReading}
         >
           {loadingMore ? 'Loading' : 'Load More Hands'}
         </button>

@@ -94,6 +94,26 @@ beforeEach(() => {
   state.toast.error.mockReset();
 });
 describe('Hand archive request ownership', () => {
+  it('waits for a background first-page refresh before accepting pagination', async () => {
+    const refresh = deferred<unknown[]>();
+    state.getHands
+      .mockResolvedValueOnce(rows('first', 25))
+      .mockResolvedValueOnce(rows('second', 25))
+      .mockReturnValueOnce(refresh.promise);
+    render(<HandHistoryPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Load More Hands' }));
+    await waitFor(() => expect(document.getElementById('hand-second-0')).toBeTruthy());
+    act(() => state.refresh?.());
+    const more = screen.getByRole('button', { name: 'Load More Hands' });
+    expect(more).toBeDisabled();
+    fireEvent.click(more);
+    expect(state.getHands).toHaveBeenCalledTimes(3);
+    await act(async () => refresh.resolve(rows('fresh', 25)));
+    expect(document.getElementById('hand-fresh-0')).toBeTruthy();
+    expect(document.getElementById('hand-second-0')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Load More Hands' })).toBeEnabled();
+  });
+
   it('coalesces refreshes while a same-account first read is pending', async () => {
     const pending = deferred<unknown[]>();
     state.getHands.mockReturnValue(pending.promise);

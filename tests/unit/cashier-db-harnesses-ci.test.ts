@@ -49,6 +49,11 @@ const HARNESSES = [
     'tournament-chat-default-db/fixture.sql',
     '20261012040851_tournament_chat_is_off_by_default.sql',
   ],
+  [
+    'test-union-owner-membership-db-postgres.py',
+    'union-owner-membership-db/fixture.sql',
+    '20261012112707_the_union_owner_is_a_member_of_every_club.sql',
+  ],
 ] as const;
 
 type Step = { name?: string; if?: string; run?: string; env?: Record<string, string> };

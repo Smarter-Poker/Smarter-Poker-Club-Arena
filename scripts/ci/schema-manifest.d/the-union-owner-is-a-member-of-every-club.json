@@ -1,0 +1,9 @@
+{
+  "_owner": "agent/cowork/fix/union-owner-is-a-member. Promised, not yet observed: migration 20261012112707_the_union_owner_is_a_member_of_every_club creates these four functions and is installed by the release lead after this pull request merges. Until then production does not have them.",
+  "functions": [
+    "fn_union_clubs_owner_joins_the_club",
+    "fn_union_owner_holds_membership",
+    "fn_union_owner_membership_is_kept",
+    "fn_unions_new_owner_joins_every_club"
+  ]
+}

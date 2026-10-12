@@ -16,6 +16,7 @@ import { escapeIlikePattern } from '../utils/clubSlug';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
+import { serverRefusalMessage } from '../utils/safeErrorMessage';
 import { ClubCardGenerator } from './ClubCardGenerator';
 import { captureCashoutAccountGuard } from './CashoutService';
 import {
@@ -702,7 +703,8 @@ export async function leaveClub(clubId: string): Promise<void> {
   assertCurrent();
   if (leaveErr) {
     reportError(leaveErr, 'ClubsService.Leave_club_failed');
-    throw new Error('Failed to leave club - please try again');
+    // A union owner stays a member of every club in the union (20261012112707).
+    throw new Error(serverRefusalMessage(leaveErr) ?? 'Failed to leave club - please try again');
   }
   if (!leaveResult?.success) {
     const reason = leaveResult?.error || 'unknown error';

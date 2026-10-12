@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/the-weekly-close-never-holds-replication (2026-10-12): migration 20261012134146_the_weekly_close_never_holds_replication creates fn_accounting_close_problem. Applied through apply-merged-migration.yml after merge.",
+  "functions": ["fn_accounting_close_problem"]
+}

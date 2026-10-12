@@ -29,10 +29,14 @@ vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 
 import RabbitHunt from '../../src/components/table/RabbitHunt';
 import { vipService } from '../../src/services/VIPService';
+import { __resetRabbitEntitlementCache } from '../../src/components/table/rabbitEntitlement';
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  // The tile remembers each player's confirmed entitlement for the session;
+  // every case here starts from a fresh session.
+  __resetRabbitEntitlementCache();
 });
 
 describe('Rabbit Hunt human decision safety', () => {

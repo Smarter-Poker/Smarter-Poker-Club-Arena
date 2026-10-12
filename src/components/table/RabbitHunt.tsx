@@ -36,6 +36,12 @@ import { reportError } from '../../utils/errorReporter';
    emits to dist/assets/ and reaches production via the automated build. */
 import { useButtonImage } from '../../hooks/useButtonImage';
 import { useRabbitHuntReveal } from './useRabbitHuntReveal';
+import { useUserStore } from '../../stores/useUserStore';
+import {
+  initialRabbitEntitlement,
+  rememberRabbitEntitlement,
+  rememberRabbitVipRemaining,
+} from './rabbitEntitlement';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -119,12 +125,21 @@ export function RabbitHunt({
      action drift. This component is the felt TILE: the artwork, the price
      badge, the counts and the offer's own visibility. It decides nothing
      about money. */
-  const [isVIP, setIsVIP] = useState(false);
-  const [isLifetime, setIsLifetime] = useState(false);
+  /* START FROM WHAT IS ALREADY KNOWN, NEVER FROM "NOT VIP" (2026-10-11).
+     This tile is mounted fresh for every offer, and it used to open every
+     one of them as a non-member - a "5" diamond pill on a Lifetime VIP's
+     felt until a three-query lookup answered, and for the whole offer when
+     that lookup failed. See rabbitEntitlement.ts for the measurement. */
+  const signedInProfile = useUserStore((state) => state.user);
+  const [seed] = useState(() => initialRabbitEntitlement(userId, signedInProfile));
+  const profileSaysLifetime =
+    !!userId && signedInProfile?.id === userId && signedInProfile?.vip_status === 'lifetime';
+  const [isVIP, setIsVIP] = useState(seed.isVIP);
+  const [isLifetime, setIsLifetime] = useState(seed.isLifetime);
   const [entitlementStateUserId, setEntitlementStateUserId] = useState<string | null>(
     userId || null
   );
-  const entitlementUserRef = useRef<string | null>(null);
+  const entitlementUserRef = useRef<string | null>(userId || null);
   const activeUserRef = useRef<string | null>(userId || null);
   activeUserRef.current = userId || null;
   const {
@@ -138,9 +153,35 @@ export function RabbitHunt({
   } = useRabbitHuntReveal({ onReveal, userId, disabled: !isAvailable });
   const handleReveal = useCallback(() => void reveal(), [reveal]);
   const entitlementBelongsToUser = entitlementStateUserId === (userId || null);
-  const visibleIsVIP = entitlementBelongsToUser && isVIP;
-  const visibleIsLifetime = entitlementBelongsToUser && isLifetime;
-  const visibleVipRemaining = entitlementBelongsToUser ? vipRemaining : null;
+  /* An ordinary VIP's last confirmed count stands in until this mount's own
+     lookup (or a reveal) reports a newer one - read, not written, so the
+     reveal hook's reset on mount cannot erase it and no frame says "Free"
+     to a member whose pool is spent. Only ever for the player it was
+     confirmed for. */
+  const [knownRemaining, setKnownRemaining] = useState<{
+    userId: string | null;
+    value: number | null;
+  }>(() => ({ userId: userId || null, value: seed.vipRemaining }));
+  const seededRemaining = knownRemaining.userId === (userId || null) ? knownRemaining.value : null;
+  /* Whose lookup has actually answered on this mount. Until it has, the
+     signed-in profile's own resolved status (utils/vipStatus, read at sign-in)
+     is an answer for THIS user, so a Lifetime member is never shown the paid
+     tile while the lookup runs, nor after it fails. Once it has answered,
+     the fresher answer wins. */
+  const [answeredFor, setAnsweredFor] = useState<string | null>(null);
+  const lookupAnswered = !!userId && answeredFor === userId;
+  const visibleIsLifetime =
+    (entitlementBelongsToUser && isLifetime) || (!lookupAnswered && profileSaysLifetime);
+  const visibleIsVIP = (entitlementBelongsToUser && isVIP) || visibleIsLifetime;
+  const visibleVipRemaining = entitlementBelongsToUser ? (vipRemaining ?? seededRemaining) : null;
+
+  // The server's post-reveal count is the newest truth, for this tile after a
+  // reset and for the next hand's tile.
+  useEffect(() => {
+    if (!userId || typeof vipRemaining !== 'number') return;
+    rememberRabbitVipRemaining(userId, vipRemaining);
+    setKnownRemaining({ userId, value: vipRemaining });
+  }, [userId, vipRemaining]);
 
   // Server price when we have it, the constant only as a fallback.
   const cost =
@@ -168,11 +209,14 @@ export function RabbitHunt({
     if (entitlementUserRef.current !== entitlementUser) {
       // A failed refresh may keep the last known status for the same player,
       // but that status must never cross an account boundary.
+      // The new player starts from what is known about THEM, never from
+      // the previous player's answer.
+      const fresh = initialRabbitEntitlement(entitlementUser, useUserStore.getState().user);
       entitlementUserRef.current = entitlementUser;
       setEntitlementStateUserId(entitlementUser);
-      setIsVIP(false);
-      setIsLifetime(false);
-      setVipRemaining(null);
+      setIsVIP(fresh.isVIP);
+      setIsLifetime(fresh.isLifetime);
+      setVipRemaining(fresh.vipRemaining);
     }
     const checkVIP = async () => {
       if (!userId) {
@@ -188,6 +232,7 @@ export function RabbitHunt({
         const status = await vipService.checkVIPStatus(userId);
         if (cancelled || activeUserRef.current !== entitlementUser) return;
         setEntitlementStateUserId(entitlementUser);
+        setAnsweredFor(entitlementUser);
         setIsVIP(!!status?.isVIP);
         const lifetime = status?.status === 'lifetime';
         setIsLifetime(lifetime);
@@ -195,18 +240,33 @@ export function RabbitHunt({
           // An unlimited entitlement has no countdown. Clearing the previous
           // user's finite number also prevents stale account-switch paint.
           setVipRemaining(null);
+          rememberRabbitEntitlement(entitlementUser as string, {
+            isVIP: true,
+            isLifetime: true,
+            vipRemaining: null,
+          });
           return;
         }
         if (!status?.isVIP) {
           setVipRemaining(null);
+          rememberRabbitEntitlement(entitlementUser as string, {
+            isVIP: false,
+            isLifetime: false,
+            vipRemaining: null,
+          });
           return;
         }
         const pool = status?.monthlyLimits?.rabbitHunts;
-        if (pool && typeof pool.limit === 'number' && typeof pool.used === 'number') {
-          setVipRemaining(Math.max(0, pool.limit - pool.used));
-        } else {
-          setVipRemaining(null);
-        }
+        const remaining =
+          pool && typeof pool.limit === 'number' && typeof pool.used === 'number'
+            ? Math.max(0, pool.limit - pool.used)
+            : null;
+        setVipRemaining(remaining);
+        rememberRabbitEntitlement(entitlementUser as string, {
+          isVIP: true,
+          isLifetime: false,
+          vipRemaining: remaining,
+        });
       } catch (err) {
         /* 2026-08-28: was `setIsVIP(false)`. checkVIPStatus now THROWS when the
            read fails rather than answering "not VIP" (a failed read is not a

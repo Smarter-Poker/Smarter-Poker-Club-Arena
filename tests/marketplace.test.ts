@@ -61,7 +61,7 @@ const STRICT_SERVER_CATALOG = {
   })),
   vipPlans: FALLBACK_CATALOG.vipPlans.map((plan) => ({
     ...plan,
-    cardCheckoutReady: plan.planKey !== 'lifetime',
+    cardCheckoutReady: true,
     diamondCheckoutReady: true,
   })),
   shopCategories: [
@@ -1176,6 +1176,61 @@ describe('FALLBACK_CATALOG : used when /store-catalog is unreachable', () => {
 });
 
 describe('live Marketplace catalog verification', () => {
+  it('refuses stale lifetime payment capabilities and keeps offline plans non-purchasable', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          ...STRICT_SERVER_CATALOG,
+          vipPlans: STRICT_SERVER_CATALOG.vipPlans.map((plan) =>
+            plan.planKey === 'lifetime' ? { ...plan, cardCheckoutReady: false } : plan
+          ),
+        }),
+      })
+    );
+    try {
+      const catalog = await loadStoreCatalog({ force: true });
+      expect(catalog.fromServer).toBe(false);
+      expect(
+        catalog.vipPlans.every((plan) => !plan.cardCheckoutReady && !plan.diamondCheckoutReady)
+      ).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('accepts the current server catalog with approved one-time lifetime card checkout', async () => {
+    // Protected World Hub #2075 and the public strict catalog both advertise
+    // card checkout for all three existing VIP terms. No payment is sent here.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          ...STRICT_SERVER_CATALOG,
+          vipPlans: STRICT_SERVER_CATALOG.vipPlans.map((plan) => ({
+            ...plan,
+            cardCheckoutReady: true,
+          })),
+        }),
+      })
+    );
+    try {
+      const catalog = await loadStoreCatalog({ force: true });
+      expect(catalog.fromServer).toBe(true);
+      expect(catalog.diamondPackages).toHaveLength(8);
+      expect(catalog.vipPlans.find((plan) => plan.planKey === 'lifetime')).toMatchObject({
+        id: 'vip-lifetime',
+        priceUsd: 499,
+        priceDiamonds: 49900,
+        cardCheckoutReady: true,
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('does not turn an aborted catalog authorization into a fallback result', async () => {
     const controller = new AbortController();
     controller.abort();

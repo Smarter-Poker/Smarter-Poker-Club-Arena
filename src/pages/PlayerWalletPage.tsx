@@ -47,6 +47,7 @@ import { confirmDialog } from '../components/common/confirmDialog';
 import { TransactionHistory } from '../components/wallet/TransactionHistory';
 import DepositWithdrawModal from '../components/wallet/DepositWithdrawModal';
 import DisputeSubmitModal from '../components/wallet/DisputeSubmitModal';
+import RewardsOverlayPortal from '../components/rewards/RewardsOverlayPortal';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import ChipStatement from '../components/wallet/ChipStatement';
 import DiamondArenaStatement from '../components/wallet/DiamondArenaStatement';
@@ -1890,27 +1891,29 @@ export default function PlayerWalletPage() {
       </div>
 
       {/* ═══════════ MODALS ═══════════ */}
-      <DepositWithdrawModal
-        isOpen={showDepositModal}
-        onClose={() => setShowDepositModal(false)}
-        mode="deposit"
-        userId={user?.id || ''}
-        currentBalance={balances.PLAYER.available}
-        onComplete={() => user?.id && loadBalances(user.id, { force: true })}
-      />
-      <DepositWithdrawModal
-        isOpen={showWithdrawModal}
-        onClose={() => setShowWithdrawModal(false)}
-        mode="withdraw"
-        userId={user?.id || ''}
-        currentBalance={balances.PLAYER.available}
-        onComplete={() => user?.id && loadBalances(user.id, { force: true })}
-      />
-      <DisputeSubmitModal
-        isOpen={showDisputeModal && Boolean(currentClubId)}
-        onClose={() => setShowDisputeModal(false)}
-        clubId={currentClubId ?? ''}
-      />
+      <RewardsOverlayPortal>
+        <DepositWithdrawModal
+          isOpen={showDepositModal}
+          onClose={() => setShowDepositModal(false)}
+          mode="deposit"
+          userId={user?.id || ''}
+          currentBalance={balances.PLAYER.available}
+          onComplete={() => user?.id && loadBalances(user.id, { force: true })}
+        />
+        <DepositWithdrawModal
+          isOpen={showWithdrawModal}
+          onClose={() => setShowWithdrawModal(false)}
+          mode="withdraw"
+          userId={user?.id || ''}
+          currentBalance={balances.PLAYER.available}
+          onComplete={() => user?.id && loadBalances(user.id, { force: true })}
+        />
+        <DisputeSubmitModal
+          isOpen={showDisputeModal && Boolean(currentClubId)}
+          onClose={() => setShowDisputeModal(false)}
+          clubId={currentClubId ?? ''}
+        />
+      </RewardsOverlayPortal>
     </div>
   );
 }

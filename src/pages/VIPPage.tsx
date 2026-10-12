@@ -29,6 +29,7 @@ import DiamondWalletModal, { diamondTxLabel } from '../components/wallet/Diamond
 import './VIPPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import RewardsOverlayPortal from '../components/rewards/RewardsOverlayPortal';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import { formatPopupText } from '../utils/popupStyle';
 
@@ -675,14 +676,16 @@ export default function VIPPage() {
       />
 
       {/* Diamond Wallet History Modal */}
-      <DiamondWalletModal
-        isOpen={showDiamondHistory}
-        onClose={() => setShowDiamondHistory(false)}
-        onBuyClick={() => {
-          setShowDiamondHistory(false);
-          setShowTopUpModal(true);
-        }}
-      />
+      <RewardsOverlayPortal>
+        <DiamondWalletModal
+          isOpen={showDiamondHistory}
+          onClose={() => setShowDiamondHistory(false)}
+          onBuyClick={() => {
+            setShowDiamondHistory(false);
+            setShowTopUpModal(true);
+          }}
+        />
+      </RewardsOverlayPortal>
     </div>
   );
 }

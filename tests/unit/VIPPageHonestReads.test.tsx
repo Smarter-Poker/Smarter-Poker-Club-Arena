@@ -19,7 +19,7 @@
  * says "Diamond Arena Buy-In".
  */
 import React from 'react';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -153,7 +153,15 @@ vi.mock('../../src/components/wallet/DiamondWalletModal', async () => {
     '../../src/components/wallet/DiamondWalletModal'
   );
   // Keep the REAL `diamondTxLabel`: it is the thing under test in the last case.
-  return { ...actual, default: () => null };
+  return {
+    ...actual,
+    default: ({ isOpen }: { isOpen: boolean }) =>
+      isOpen ? (
+        <div role="dialog" aria-label="Diamond History">
+          History
+        </div>
+      ) : null,
+  };
 });
 
 import VIPPage from '../../src/pages/VIPPage';
@@ -225,6 +233,19 @@ describe('the VIP page keeps a failed read apart from a real zero', () => {
     expect(mocks.platePoints).not.toHaveProperty('points');
     expect(screen.queryByTestId('metric-Current Points')).toBeNull();
     expect(container.textContent).not.toContain('Points');
+  });
+
+  it('opens history outside the isolated page instead of underneath navigation', async () => {
+    const { container } = render(
+      <main style={{ isolation: 'isolate' }}>
+        <VIPPage />
+      </main>
+    );
+    await waitFor(() => expect(balanceText(container)).toBe('100'));
+    fireEvent.click(screen.getByRole('button', { name: 'View History', exact: true }));
+    const dialog = screen.getByRole('dialog', { name: 'Diamond History' });
+    expect(container.contains(dialog)).toBe(false);
+    expect(dialog.parentElement).toBe(document.body);
   });
 });
 

@@ -336,10 +336,10 @@ export default function RakebackPage() {
       <div className="rakeback-info">
         <h3>How Rakeback Works</h3>
         <p>
-          You Earn Back A Percentage Of The Rake You Generate At The Tables. Your Rate Increases As
-          You Play More And Move Up VIP Levels. Earning Periods Close At Midnight Pacific Time After
-          Their End Date. Rakeback Is Settled Automatically Every Monday At 4:00 AM Central Time,
-          And Every Transfer Is Recorded In Your Invoices.
+          You Earn Back A Percentage Of The Rake You Generate At The Tables. The Applicable Rate Is
+          Shown For Each Earning Period. Earning Periods Close At Midnight Pacific Time After Their
+          End Date. Rakeback Is Settled Automatically Every Monday At 4:00 AM Central Time, And
+          Every Transfer Is Recorded In Your Invoices.
         </p>
       </div>
 

@@ -1,6 +1,6 @@
 # Poker Spins Mobile Presentation
 
-Poker Spins now uses the Diamond Spins rendered chrome housing, selector and machined glass sectors, with a rotating face that lands the server-selected multiplier under the pointer. The shared reveal deadline, countdown, catch-up, sound and winner-only celebration remain authoritative.
+Poker Spins now uses the Diamond Spins rendered chrome housing, selector and machined glass sectors, with a rotating face that lands the server-selected multiplier under the pointer. Each segment prints its actual buy-in-based prize rather than a bare multiplier, with the read table currency named in the hub. The shared reveal deadline, countdown, catch-up, sound and winner-only celebration remain authoritative.
 
 PLO5 and PLO6 use PLO4's total fan footprint. Every hero card size shares the narrow-screen lane cap, while tabled cards keep full faces and fit beside the player plate. Spins and two-player Heads Up take a larger table canvas. Their felt masthead prints complete club and union names, the prize in its actual event currency, and the hand number; the yellow top multiplier badge and truncated format line are removed.
 

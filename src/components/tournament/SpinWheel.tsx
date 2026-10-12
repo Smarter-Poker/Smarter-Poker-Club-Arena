@@ -53,6 +53,7 @@ import {
   spinPostRevealMs,
 } from '../../config/spinSpec';
 import './SpinWheel.css';
+import { moneyWordAtUnit } from '../../utils/format';
 
 export interface SpinTier {
   multiplier: number;
@@ -146,6 +147,8 @@ export interface SpinWheelProps {
   playSounds?: boolean;
   /** Keep the reveal inside its table when several tables share the screen. */
   contained?: boolean;
+  /** The table's read currency; null withholds the currency noun. */
+  unitCents?: number | null;
 }
 
 type Phase = 'idle' | 'countdown' | 'chase' | 'result';
@@ -365,6 +368,7 @@ export default function SpinWheel({
   onDone,
   playSounds = true,
   contained = false,
+  unitCents = null,
 }: SpinWheelProps) {
   const lockedDetail = useMemo(() => {
     const map = new Map<number, SpinLockedTier>();
@@ -863,6 +867,9 @@ export default function SpinWheel({
                     i === (litIndex - 1 + order.length) % order.length;
                   const isWinner = phase === 'result' && i === targetIndex;
                   const label = segmentPoint(i, order.length, 78);
+                  const prizeLabel = Math.round(data.buyIn * tier.multiplier).toLocaleString(
+                    'en-US'
+                  );
                   const unlocksAt = lockedDetail.get(tier.multiplier)?.unlocksAt;
                   return (
                     <g
@@ -888,8 +895,13 @@ export default function SpinWheel({
                         d={wedgePath(i, order.length, SW_R - 4)}
                         fill="url(#swGlass)"
                       />
-                      <text className="sw__seg-label" x={label.x} y={label.y + 7}>
-                        {tier.multiplier}
+                      <text
+                        className="sw__seg-label"
+                        x={label.x}
+                        y={label.y + 7}
+                        style={{ fontSize: `${Math.min(18, 75 / prizeLabel.length)}px` }}
+                      >
+                        {prizeLabel}
                       </text>
                       {unlocksAt ? (
                         <title>
@@ -958,7 +970,9 @@ export default function SpinWheel({
                 {phase === 'result' ? (
                   <span className="sw__hub-mult">{won?.multiplier ?? data.multiplier}×</span>
                 ) : (
-                  <span className="sw__hub-brand">SPIN-IT</span>
+                  <span className="sw__hub-brand">
+                    {unitCents == null ? 'PRIZE POOL' : moneyWordAtUnit(unitCents).toUpperCase()}
+                  </span>
                 )}
               </div>
             </div>

@@ -4950,6 +4950,7 @@ button.post-bb-overlay-button {
 /* Spins and Heads Up take the full available table canvas. This class is
    table identity, so no action, dock toggle or hand phase can resize it. */
 .table-page.table-page--short-match .table-scaler {
+  --sp-table-ar-w: 700;
   --sp-table-ar-h: 1000;
   --sp-short-table-drop: 0px;
   max-width: min(100%, 760px);
@@ -4965,7 +4966,7 @@ button.post-bb-overlay-button {
     margin-top: 0;
   }
   .table-page--short-match .table-container {
-    --sp-table-top: calc(var(--sp-page-inset-top) + var(--sp-bbj-h, 22px) + 8px);
+    --sp-table-top: calc(var(--sp-page-inset-top) + var(--sp-bbj-h, 22px) + 22px);
   }
   .table-page--short-match .table-brand__meta {
     width: 100%;

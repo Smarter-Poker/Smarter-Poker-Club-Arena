@@ -176,6 +176,26 @@ describe('disc layout', () => {
 });
 
 describe('the chase is honest', () => {
+  it.each([100, 500])(
+    'prints actual prizes for a %s buy-in and identifies the table currency',
+    (buyIn) => {
+      const { container } = render(
+        <SpinWheel data={{ ...SPIN, buyIn }} unitCents={1} onDone={() => {}} />
+      );
+      runToChase();
+      expect([...container.querySelectorAll('.sw__seg-label')].map((el) => el.textContent)).toEqual(
+        buildWheelOrder(SPIN.tiers).map((tier) => (buyIn * tier.multiplier).toLocaleString('en-US'))
+      );
+      expect(container.querySelector('.sw__hub-brand')?.textContent).toBe('CHIPS');
+    }
+  );
+
+  it('identifies Diamond prizes without changing their amounts', () => {
+    const { container } = render(<SpinWheel data={SPIN} unitCents={100} onDone={() => {}} />);
+    runToChase();
+    expect(container.querySelector('.sw__hub-brand')?.textContent).toBe('DIAMONDS');
+  });
+
   it('ENDS on the SERVER value, every tier, exactly', () => {
     for (const tier of DEFAULT_SPIN_TIERS) {
       const { container, unmount } = render(
@@ -183,7 +203,9 @@ describe('the chase is honest', () => {
       );
       runToResult();
       const winner = container.querySelector('.sw__seg--winner .sw__seg-label');
-      expect(winner?.textContent, `server drew ${tier.multiplier}x`).toBe(String(tier.multiplier));
+      expect(winner?.textContent, `server drew ${tier.multiplier}x`).toBe(
+        Math.round(SPIN.buyIn * tier.multiplier).toLocaleString('en-US')
+      );
       // The hub shows the same answer.
       expect(container.querySelector('.sw__hub-mult')?.textContent).toBe(`${tier.multiplier}×`);
       unmount();
@@ -210,7 +232,7 @@ describe('the chase is honest', () => {
     act(() => {
       vi.advanceTimersByTime(LEAD_IN_MS + 1200);
     });
-    expect(screen.getByText('75')).toBeTruthy(); // 3 x 25
+    expect(document.querySelector('.sw__prize')?.textContent).toBe('75'); // 3 x 25
   });
 
   it('never crashes on a multiplier that is not on the disc', () => {
@@ -277,7 +299,7 @@ describe('sequence', () => {
     runToChase();
     expect(container.querySelector('.sw--chase')).toBeTruthy();
     expect(container.querySelector('.sw__disc')).toBeTruthy();
-    expect(container.querySelector('.sw__hub-brand')?.textContent).toBe('SPIN-IT');
+    expect(container.querySelector('.sw__hub-brand')?.textContent).toBe('PRIZE POOL');
 
     act(() => {
       vi.advanceTimersByTime(CHASE_MS + 50);

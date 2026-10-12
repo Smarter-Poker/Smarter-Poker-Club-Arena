@@ -24143,6 +24143,7 @@ function LiveTablePage({
       />
       <SpinWheel
         data={spinDraw}
+        unitCents={arenaAssetUnitCentsIfRead(tableState.arenaAsset)}
         contained={isMultiTable}
         onDone={() => {
           /* D1: the shared sessionStorage key is stamped HERE, at completion,

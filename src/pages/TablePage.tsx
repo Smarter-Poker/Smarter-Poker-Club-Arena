@@ -1,3 +1,4 @@
+import { formatPrizeAtUnit } from '../utils/format';
 import {
   getTournamentFormatKind,
   getTournamentEntryCapacity,
@@ -23952,7 +23953,7 @@ function LiveTablePage({
 
          Embedded instances now fill their slot instead of the viewport; the
          route case is untouched. */
-      className={`table-page${tableState.isTournament ? ' table-page--tournament' : ''}${embeddedTableId ? ' table-page--embedded' : ''}${isAllInMode ? ' table-page--allin-mode' : ''}${heroPromptedToAct ? ' table-page--hero-turn' : ''}${winnerBandActive ? ' table-page--winner-flash' : ''}`}
+      className={`table-page${tableState.isTournament ? ' table-page--tournament' : ''}${tableState.isTournament && (tournamentFormat === 'spin' || (tournamentFormat === 'sng' && Number(tableState.maxPlayers) === 2)) ? ' table-page--short-match' : ''}${embeddedTableId ? ' table-page--embedded' : ''}${isAllInMode ? ' table-page--allin-mode' : ''}${heroPromptedToAct ? ' table-page--hero-turn' : ''}${winnerBandActive ? ' table-page--winner-flash' : ''}`}
       /* Dan 2026-08-24: a spectator has no hero plate hanging below the
          scaler, so the --sp-hero-clear bottom reserve is dead space for them.
          CSS collapses it via [data-hero='false'] (see TablePage.css). */
@@ -24142,6 +24143,7 @@ function LiveTablePage({
       />
       <SpinWheel
         data={spinDraw}
+        unitCents={arenaAssetUnitCentsIfRead(tableState.arenaAsset)}
         contained={isMultiTable}
         onDone={() => {
           /* D1: the shared sessionStorage key is stamped HERE, at completion,
@@ -24889,50 +24891,70 @@ function LiveTablePage({
                            bleeding past the rail. */
                         return (
                           <>
-                            <span className="table-brand__line">
-                              {tableState.clubName && (
-                                <span className="table-brand__club">{tableState.clubName}</span>
-                              )}
-                              {tableState.unionName && (
-                                <span className="table-brand__union">
-                                  {tableState.clubName ? ' - ' : ''}
-                                  {tableState.unionName}
+                            <span className="table-brand__line table-brand__line--identity">
+                              <span className="table-brand__club">
+                                <span className="table-brand__club-name">
+                                  {tableState.clubName}
                                 </span>
-                              )}
-                            </span>
-                            <span className="table-brand__line table-brand__line--level">
-                              <span className="table-brand__game">
-                                {gameShort} {formatWord}
-                                {' \u00B7 '}
-                                Level {tableState.currentLevel || 1}
-                                {' \u00B7 '}
-                                {tableState.blinds || '10/20'}
+                                {tableState.unionName && (
+                                  <>
+                                    {' '}
+                                    {tableState.clubName ? ' - ' : ''}
+                                    <span className="table-brand__union">
+                                      {tableState.unionName}
+                                    </span>
+                                  </>
+                                )}
                               </span>
-                              {(tableState.handNumber ?? 0) > 0 && (
-                                <span className="table-brand__hand">
-                                  {'\u00B7 '}Hand #{tableState.handNumber}
-                                </span>
-                              )}
                             </span>
-                            {/* Dan 2026-08-30: the round-end countdown is GONE from the
-                                felt. In its place: the NEXT BLINDS, and a
-                                BREAK STARTS IN clock computed from the blind
-                                structure - the two numbers a player actually
-                                plans around between hands. Renders only while
-                                a level clock exists, same guard as before (no
-                                phantom clocks pre-start or post-finish). */}
-                            {(levelClock || tournamentBreak?.active) && (
-                              <MastheadNextInfo
-                                startedAtMs={levelClock?.startedAtMs ?? 0}
-                                durationSec={levelClock?.durationSec ?? 0}
-                                struct={blindStructRef.current}
-                                levelIdx={(tableState.currentLevel || 1) - 1}
-                                onBreak={!!tournamentBreak?.active}
-                                breakEndsAtMs={
-                                  (tournamentBreak as { breakEndsAtMs?: number | null })
-                                    ?.breakEndsAtMs ?? null
-                                }
-                              />
+                            {tournamentFormat === 'spin' ||
+                            (tournamentFormat === 'sng' && Number(tableState.maxPlayers) === 2) ? (
+                              <>
+                                {!spinDraw &&
+                                  (tableState.spinPrizePool ?? 0) > 0 &&
+                                  arenaAssetUnitCentsIfRead(tableState.arenaAsset) != null && (
+                                    <span className="table-brand__line table-brand__prize">
+                                      {formatPrizeAtUnit(
+                                        tableState.spinPrizePool as number,
+                                        arenaAssetUnitCents(tableState.arenaAsset)
+                                      )}{' '}
+                                      {moneyWordAtUnit(arenaAssetUnitCents(tableState.arenaAsset))}
+                                    </span>
+                                  )}
+                                {(tableState.handNumber ?? 0) > 0 && (
+                                  <span className="table-brand__line table-brand__hand">
+                                    Hand #{tableState.handNumber}
+                                  </span>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <span className="table-brand__line table-brand__line--level">
+                                  <span className="table-brand__game">
+                                    {gameShort} {formatWord} · Level {tableState.currentLevel || 1}{' '}
+                                    · {tableState.blinds || '10/20'}
+                                  </span>
+                                  {(tableState.handNumber ?? 0) > 0 && (
+                                    <span className="table-brand__hand">
+                                      {' '}
+                                      · Hand #{tableState.handNumber}
+                                    </span>
+                                  )}
+                                </span>
+                                {(levelClock || tournamentBreak?.active) && (
+                                  <MastheadNextInfo
+                                    startedAtMs={levelClock?.startedAtMs ?? 0}
+                                    durationSec={levelClock?.durationSec ?? 0}
+                                    struct={blindStructRef.current}
+                                    levelIdx={(tableState.currentLevel || 1) - 1}
+                                    onBreak={!!tournamentBreak?.active}
+                                    breakEndsAtMs={
+                                      (tournamentBreak as { breakEndsAtMs?: number | null })
+                                        ?.breakEndsAtMs ?? null
+                                    }
+                                  />
+                                )}
+                              </>
                             )}
                           </>
                         );
@@ -25447,40 +25469,6 @@ function LiveTablePage({
                     Observer count belongs inside the chat panel, not on the felt.
                     SpectatorBadge and SpectatorOverlay components still exist for
                     future integration into the chat panel. */}
-
-                {/* Spin Multiplier Badge.
-                    HELD BACK WHILE THE WHEEL IS UP (2026-08-20). This badge
-                    and the SpinWheel render in the same view, so the badge was
-                    sitting on the felt printing "4x" for the entire time the
-                    wheel was dramatically deciding whether the answer was 4x.
-                    `spinDraw` is non-null exactly while the wheel is on screen
-                    and is cleared by its onDone, so the wheel's landing IS the
-                    reveal and this becomes the persistent reminder afterwards.
-                    On a rejoin the wheel does not replay, spinDraw is already
-                    null, and the badge shows immediately — which is right. */}
-                {tableState.isTournament &&
-                  !spinDraw &&
-                  tableState.spinMultiplier &&
-                  tableState.spinMultiplier > 1 && (
-                    <div
-                      className={`spinMultiplierBadge ${tableState.spinMultiplier >= 100 ? 'premium' : ''}`}
-                    >
-                      <span className="spinMultiplierIcon">X</span>
-                      <span className="spinMultiplierValue">{tableState.spinMultiplier}x</span>
-                      {/* Dan 2026-09-05: "THE TOTAL PRIZE OR MULTIPLIER FOR THE
-                          SPIN NEEDS TO BE PRESENT ON THE FELT AFTER THE SPIN
-                          RUNS." The multiplier is the abstraction; the prize is
-                          the number a player is actually playing for, so both
-                          ride the badge. Only when it is known — an older row
-                          with no prize_pool keeps the multiplier alone rather
-                          than printing a confident 0. */}
-                      {(tableState.spinPrizePool ?? 0) > 0 && (
-                        <span className="spinMultiplierPrize">
-                          {Math.round(tableState.spinPrizePool as number).toLocaleString()}
-                        </span>
-                      )}
-                    </div>
-                  )}
 
                 {/* FIX 194: HandStrengthIndicator REMOVED — not allowed for live online gameplay */}
               </div>

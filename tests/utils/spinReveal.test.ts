@@ -145,9 +145,10 @@ describe('no surface prints the multiplier on its own again', () => {
     expect(recurring.slice(Math.max(0, i - 1400), i)).toMatch(/name:\s*config\.name,/);
   });
 
-  it('the table badge waits for the wheel to land', () => {
+  it('the felt prize waits for the wheel to land', () => {
     const table = read('src/pages/TablePage.tsx');
-    const i = table.indexOf('spinMultiplierBadge');
+    const i = table.indexOf('table-brand__prize');
+    expect(table).not.toContain('spinMultiplierBadge');
     expect(i).toBeGreaterThan(-1);
     // The guard sits just above the badge markup.
     expect(table.slice(Math.max(0, i - 900), i)).toMatch(/!spinDraw\s*&&/);

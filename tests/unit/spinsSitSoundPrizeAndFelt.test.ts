@@ -127,10 +127,11 @@ describe('the badge outlives the wheel', () => {
     expect(window).toContain('prize_pool');
   });
 
-  it('the felt badge renders the prize beside the multiplier', () => {
-    expect(TABLE_PAGE).toContain('spinMultiplierPrize');
+  it('the felt masthead names the prize without the top multiplier badge', () => {
+    expect(TABLE_PAGE).toContain('table-brand__prize');
+    expect(TABLE_PAGE).not.toContain('spinMultiplierBadge');
     expect(TABLE_PAGE).toContain('(tableState.spinPrizePool ?? 0) > 0');
-    expect(TABLE_CSS).toContain('.spinMultiplierPrize');
+    expect(TABLE_CSS).toContain('.table-brand__prize');
   });
 
   it('a rejoin reads the prize off the tournament row', () => {

@@ -2114,7 +2114,7 @@
      are repeated there because that rule is the one that governs every
      breakpoint; they are kept identical here so reading either tells the
      truth. */
-  left: calc(100% + 1px);
+  left: calc(100% + 8px);
   right: auto;
   top: 0;
   /* Fallback 60px, not 34px (corrected 2026-08-28). --sp-hero-clear is declared
@@ -2328,12 +2328,12 @@
 .seat__cards--hero:has(> *:nth-child(5)) {
   --sp-hero-card-w: calc(var(--sp-card2-w) * 0.95);
   --sp-hero-card-h: calc(var(--sp-card2-w) * 1.33);
-  --sp-hero-card-step: calc(var(--sp-card2-w) * 0.3833);
+  --sp-hero-card-step: calc(var(--sp-card2-w) * 0.325);
 }
 .seat__cards--hero:has(> *:nth-child(6)) {
   --sp-hero-card-w: calc(var(--sp-card2-w) * 0.9);
   --sp-hero-card-h: calc(var(--sp-card2-w) * 1.2667);
-  --sp-hero-card-step: calc(var(--sp-card2-w) * 0.35);
+  --sp-hero-card-step: calc(var(--sp-card2-w) * 0.27);
 }
 
 .seat__cards--hero .seat__card--face {
@@ -4132,11 +4132,11 @@
    above, so one rule governs every screen size instead of four copies that
    drift apart. */
 .seat__cards--hero {
-  /* Beside the hero and one pixel clear of the seat's own box — every hand
-     size, every breakpoint. The pixel is what makes "the hero is never covered
+  /* Beside the hero, eight pixels clear of the seat box to accommodate the
+     rotated outer corner, at every hand size and breakpoint. This clearance makes "the hero is never covered
      by anything" (item 9) structural rather than a layering argument; the full
      derivation is on the matching declaration in the base rule above. */
-  left: calc(100% + 1px);
+  left: calc(100% + 8px);
   right: auto;
   /* The band: hero block top -> action bar top, cards centred inside it. */
   top: 0;
@@ -4672,5 +4672,24 @@
 @media (prefers-reduced-motion: reduce) {
   .seat__peel-coach {
     animation: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .seat.seat--hero {
+    /* The pair and every PLO hand share one size, capped to the fan's lane. */
+    --sp-card2-w: min(
+      clamp(50px, calc(var(--table-w, 380px) * 0.139), 100px),
+      calc((100vw - var(--seat-avatar-size) * 8 / 7 - 36px) / 4.5)
+    );
+  }
+
+  .seat__cards--hero.seat__cards--revealed:has(> :nth-child(4)),
+  .seat__cards--hero.seat__cards--revealed:has(> :nth-child(5)),
+  .seat__cards--hero.seat__cards--revealed:has(> :nth-child(6)) {
+    --sp-hero-card-w: min(
+      var(--sp-cardrev-w, 44px),
+      calc((100vw - var(--seat-avatar-size) * 8 / 7 - 36px) / (2 * var(--sp-hfan-n, 4)) - 1px)
+    );
   }
 }

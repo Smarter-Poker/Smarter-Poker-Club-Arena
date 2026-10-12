@@ -487,11 +487,31 @@ export async function resolveLobbyClubId(opts: {
   userId?: string | null;
   viewerClubId?: string | null;
   tableClubId?: string | null;
+  /** Optional table-union affiliation constraint, verified from public metadata. */
+  unionId?: string | null;
 }): Promise<string | null> {
   const seen = new Set<string>();
   for (const candidate of lobbyClubCandidates(opts)) {
     if (seen.has(candidate)) continue;
     seen.add(candidate);
+    if (opts.unionId) {
+      try {
+        const { data, error } = await supabase
+          .from('clubs')
+          .select('is_union, union_id')
+          .eq('id', candidate)
+          .maybeSingle();
+        if (error) {
+          reportError(error, 'clubQuickLink.resolveLobbyClubAffiliation');
+          continue;
+        }
+        if (data?.is_union !== false || data.union_id !== opts.unionId) continue;
+      } catch (error) {
+        reportError(error, 'clubQuickLink.resolveLobbyClubAffiliation');
+        continue;
+      }
+      return candidate;
+    }
     if (await isUnionClubId(candidate)) continue;
     return candidate;
   }

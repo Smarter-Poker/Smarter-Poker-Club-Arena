@@ -28,7 +28,8 @@ import './ClubIdentityCard.css';
  * outside the chrome), and live DOM text is printed into coordinates
  * measured on the master. Sizes are in cqw against the card, so a 320px
  * phone and a 430px one get the same picture. The share button, the two ID
- * lines and the Share & Invite plate are real semantic controls sitting on
+ * lines and the share button (the copy frame, with "Share & Invite" printed
+ * on the plate below it as its label) are real semantic controls sitting on
  * the paint.
  *
  * The old master (`club-identity-template-no-level-v6.png`) and its sizing
@@ -64,8 +65,10 @@ export const CLUB_IDENTITY_ZONES = {
   playing: { x: 880, y: 380, width: 182, height: 62 },
   /* The painted blue plate under PLAYING NOW. It printed "LEVEL N" until
      Dan 2026-10-11: "Remove the 'Level 29' under the playing Now and replace
-     that with 'Share & Invite'". It is a button now, and it opens the same
-     invite the copy frame above it does. */
+     that with 'Share & Invite'". Pressing it opens the same invite the copy
+     frame above it does, because it is the visible label OF that one control
+     (2026-10-12): its centre is 24px below the frame's on a 375px phone, so
+     two separate buttons can never each own a 44px thumb band. */
   invite: { x: 990, y: 466, width: 325, height: 66 },
   /* The arena rail sits over BOTH of the two zones above. A chip club's
      master paints "PLAYING NOW" beside the count and carries a level plate;
@@ -87,6 +90,17 @@ function zoneStyle(zone: Zone) {
     top: `${(zone.y / CLUB_IDENTITY_CANVAS.height) * 100}%`,
     width: `${(zone.width / CLUB_IDENTITY_CANVAS.width) * 100}%`,
     height: `${(zone.height / CLUB_IDENTITY_CANVAS.height) * 100}%`,
+  };
+}
+
+/** A zone placed inside another zone's box (the plate label sits inside the
+    share button, whose box is the copy frame). */
+function zoneStyleWithin(zone: Zone, frame: Zone) {
+  return {
+    left: `${((zone.x - frame.x) / frame.width) * 100}%`,
+    top: `${((zone.y - frame.y) / frame.height) * 100}%`,
+    width: `${(zone.width / frame.width) * 100}%`,
+    height: `${(zone.height / frame.height) * 100}%`,
   };
 }
 
@@ -290,34 +304,47 @@ export function ClubIdentityCard({
           </span>
         )}
 
-        {!arenaStats && (
-          /* Dan 2026-10-11: the blue plate says "Share & Invite" instead of
-             the club level, and pressing it invites a friend - the same
-             action as the painted copy frame top right. */
+        {/* ONE share control, two painted faces (2026-10-12). The copy frame
+            top right and the blue "Share & Invite" plate under PLAYING NOW
+            run the same action. #6705 made the plate a second button 24px
+            below the frame's centre on a 375px card (75px tall), where two
+            44px thumb bands cannot both fit: whichever painted on top took
+            the other's band, and the plate kept 7px and no reach. So the
+            plate's words are printed INSIDE the frame's button, positioned
+            onto the plate: a tap on either face is the same button, the
+            frame keeps its full 44px band, and the keyboard meets one stop
+            named for the words it can see. An arena covers the plate with
+            its rail, so its button stays the bare copy frame. */}
+        {arenaStats ? (
           <button
             type="button"
-            className="club-identity__invite"
-            style={zoneStyle(CLUB_IDENTITY_ZONES.invite)}
+            className="club-identity__share"
+            style={zoneStyle(CLUB_IDENTITY_ZONES.share)}
+            onClick={onShare}
+            aria-label="Copy Referral Link"
+            title="Copy Referral Link"
+          />
+        ) : (
+          <button
+            type="button"
+            className="club-identity__share"
+            style={zoneStyle(CLUB_IDENTITY_ZONES.share)}
             onClick={onShare}
             aria-label="Share And Invite"
-            title="Share And Invite"
+            title="Copy Referral Link"
           >
             {/* The words fit an inset box inside the plate, so they never
                 touch the painted rim. */}
-            <span className="club-identity__invite-text">
-              <span ref={inviteRef}>{SHARE_AND_INVITE}</span>
+            <span
+              className="club-identity__invite"
+              style={zoneStyleWithin(CLUB_IDENTITY_ZONES.invite, CLUB_IDENTITY_ZONES.share)}
+            >
+              <span className="club-identity__invite-text">
+                <span ref={inviteRef}>{SHARE_AND_INVITE}</span>
+              </span>
             </span>
           </button>
         )}
-
-        <button
-          type="button"
-          className="club-identity__share"
-          style={zoneStyle(CLUB_IDENTITY_ZONES.share)}
-          onClick={onShare}
-          aria-label="Copy Referral Link"
-          title="Copy Referral Link"
-        />
       </div>
     </section>
   );

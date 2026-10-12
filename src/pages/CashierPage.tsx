@@ -866,12 +866,7 @@ function CashierContent() {
     message && amountInvalid && !fieldAmount.ok && message.text === fieldAmount.error;
   const amountFeedback =
     amountInvalid && !fieldAmount.ok ? (
-      <p
-        id="cashier-amount-validation"
-        className="sc-copy sc-ink--red"
-        role="status"
-        aria-label="Amount Validation"
-      >
+      <p id="cashier-amount-validation" className="sc-copy sc-ink--red" role="status">
         {formatPopupText(fieldAmount.error)}
       </p>
     ) : null;

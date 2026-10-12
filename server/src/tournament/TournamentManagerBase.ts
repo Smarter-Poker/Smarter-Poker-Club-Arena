@@ -2932,6 +2932,40 @@ export abstract class TournamentManagerBase {
   }
 
   /**
+   * Which deliberate authority of this manager is holding dealing on purpose
+   * right now, inside that authority's own bound, or null (2026-10-12).
+   *
+   * Asked ONLY by GameServer.rebuildManagersOfDarkTournaments, after the
+   * database has already read the event as dark (no hand, no bust and no
+   * table write for fifteen live minutes). It names an authority, never a
+   * generic "a table is parked": a park is the symptom of every wedge, and a
+   * generic park rule is what kept satellite 61961519 dark for three hours.
+   *
+   * The add-on break is the one authority held here: it is this manager's own
+   * timer, and the event is legitimately not dealing until its durable end
+   * plus the last-hand grace. Past that it is not a break, it is a wedge.
+   * Subclasses add theirs (the final-table deal review).
+   *
+   * Deliberately NOT here: the scheduled break (the database read is its
+   * authority, on_break for at most thirty minutes, and a break that never
+   * ended is exactly what a rebuild cures), hand-for-hand (it deals hands, so
+   * it is never fifteen minutes without one unless its barrier is wedged),
+   * the stage-end pause (the read excludes a multi-day event before its last
+   * day), and the satellite qualifier boundary or any terminal closeout (each
+   * resolves in seconds; fifteen minutes of one is the wedge).
+   */
+  deliberateDealingHold(nowMs: number): string | null {
+    if (
+      this.addOnBreakActive &&
+      this.addOnBreakEndsAtMs > 0 &&
+      nowMs < this.addOnBreakEndsAtMs + TournamentManagerBase.LAST_HAND_GRACE_MS
+    ) {
+      return 'add_on_break';
+    }
+    return null;
+  }
+
+  /**
    * Broadcast a tournament event to the `t-break-<id>` topic the clients watch.
    *
    * ═══ THE ENGINE STOPPED JOINING 425 CHANNELS TO SPEAK ON THEM (2026-09-06) ══

@@ -317,6 +317,7 @@ import {
   chipCollectOffsetPx,
   POT_ANCHOR_PCT,
   seatPodPx,
+  fitSeatToViewport,
 } from '../components/table/tableGeometry';
 import PreActionBar from '../components/table/PreActionBar';
 import LightningFoldBar from '../components/table/LightningFoldBar';
@@ -13285,7 +13286,7 @@ function LiveTablePage({
         if (table.club_id) {
           supabase
             .from('clubs')
-            .select('name, unions:union_id (name)')
+            .select('name, union_id, unions:union_id (name)')
             .eq('id', table.club_id)
             .maybeSingle()
             .then(async ({ data: clubData, error: clubIdentityError }) => {
@@ -13309,7 +13310,7 @@ function LiveTablePage({
               // lobby destination, including the persisted last entered club.
               const viewerClubId =
                 unionName && clubName === unionName
-                  ? await resolveLobbyClubId(lobbyClubArgs)
+                  ? await resolveLobbyClubId({ ...lobbyClubArgs, unionId: clubData.union_id })
                   : null;
               if (
                 unionName &&
@@ -13319,7 +13320,7 @@ function LiveTablePage({
               ) {
                 const { data: viewerClub, error: viewerClubErr } = await supabase
                   .from('clubs')
-                  .select('name')
+                  .select('name, union_id, is_union')
                   .eq('id', viewerClubId)
                   .maybeSingle();
                 // ROUND 9 (2026-08-29): cosmetic masthead fallback is fine;
@@ -13327,7 +13328,16 @@ function LiveTablePage({
                 if (viewerClubErr) {
                   reportError(viewerClubErr, 'TablePage.masthead_viewer_club_read_failed');
                 }
-                if (viewerClub?.name) clubName = viewerClub.name;
+                // A persisted/current club may belong to a different table or
+                // to no union at all. Routing metadata alone is not affiliation.
+                if (
+                  viewerClub?.name &&
+                  viewerClub.is_union === false &&
+                  clubData.union_id &&
+                  viewerClub.union_id === clubData.union_id
+                ) {
+                  clubName = viewerClub.name;
+                }
               }
               if (unionName && clubName === unionName) {
                 // Still identical (no distinct viewer club) — show it once.
@@ -20119,7 +20129,19 @@ function LiveTablePage({
     [tableState.blinds, tableState.gameType]
   );
 
-  const seatPositions = useMemo(() => seatRotationMap.map((s) => s.pos), [seatRotationMap]);
+  const seatViewportWidth = typeof window === 'undefined' ? 1024 : window.innerWidth;
+  const seatPositions = useMemo(() => {
+    const canvasLeft = tableScalerRef.current?.getBoundingClientRect().left;
+    return seatRotationMap.map(({ pos }) =>
+      fitSeatToViewport(
+        pos,
+        scalerSize,
+        seatViewportWidth,
+        seatPodPx(seatViewportWidth, pos.y >= 100 && pos.x === 50, scalerSize.w),
+        canvasLeft
+      )
+    );
+  }, [seatRotationMap, scalerSize, seatViewportWidth]);
   // Published for the deferred chip flights; the ref is declared far above
   // (see seatPositionsRef) so the event handlers can read it.
   seatPositionsRef.current = seatPositions;
@@ -23117,6 +23139,7 @@ function LiveTablePage({
     isSizingOpen: raiseIntent.open,
     isSpectator: !tableState.players.some((p) => p?.isHero),
     isModalOpen:
+      !!tournamentWinner ||
       showMustMoveLobby ||
       showSettings ||
       showInsurance ||
@@ -25894,7 +25917,8 @@ function LiveTablePage({
             // index means a different chair on every ring.
             const seatPod = seatPodPx(
               typeof window === 'undefined' ? Infinity : window.innerWidth,
-              pos.y >= 100 && pos.x === 50
+              pos.y >= 100 && pos.x === 50,
+              scalerSize.w
             );
             const dx = 50 - pos.x;
             const dy = 50 - pos.y;
@@ -27771,6 +27795,7 @@ function LiveTablePage({
         reason={maintenanceBreak.reason}
       />
       <TableModalsLayer
+        isActive={isActive}
         /* THE DIAMONDS-TO-CHIPS DOOR (Dan 2026-09-10). The club the player
            came in through, never the union that hosts the table: membership,
            and therefore the games' own admission check, is against that one.

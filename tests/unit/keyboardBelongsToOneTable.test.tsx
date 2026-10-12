@@ -95,38 +95,44 @@ describe('the keyboard reaches only the table the player is looking at', () => {
     expect(onFold).toHaveBeenCalledTimes(1);
   });
 
-  it('blocks betting shortcuts while the actual Must Move lobby flag is open', () => {
-    const expression = keyboardProperty('isModalOpen');
-    const flags: Record<string, boolean> = { showMustMoveLobby: true };
-    const visit = (node: ts.Node) => {
-      if (ts.isIdentifier(node)) flags[node.text] = node.text === 'showMustMoveLobby';
-      ts.forEachChild(node, visit);
-    };
-    visit(expression);
-    const modalOpen = () =>
-      Function(...Object.keys(flags), `return (${expression.getText()})`)(...Object.values(flags));
-    const onAction = vi.fn();
-    const { rerender } = renderHook(() =>
-      useTableKeyboard(
-        opts({
-          isModalOpen: modalOpen(),
-          isSizingOpen: true,
-          onFold: onAction,
-          onCallCheck: onAction,
-          onRaise: onAction,
-          onAllIn: onAction,
-          onBetPreset: onAction,
-          onRabbitHunt: onAction,
-        })
-      )
-    );
-    for (const key of ['f', 'q', 'c', 'w', 'r', 'e', 'a', '1', '2', '3', '4', 'b']) press(key);
-    expect(onAction).not.toHaveBeenCalled();
-    flags.showMustMoveLobby = false;
-    rerender();
-    press('f');
-    expect(onAction).toHaveBeenCalledTimes(1);
-  });
+  it.each(['showMustMoveLobby', 'tournamentWinner'])(
+    'blocks betting shortcuts while %s owns the table',
+    (modalFlag) => {
+      const expression = keyboardProperty('isModalOpen');
+      const flags: Record<string, boolean> = { [modalFlag]: true };
+      const visit = (node: ts.Node) => {
+        if (ts.isIdentifier(node)) flags[node.text] = node.text === modalFlag;
+        ts.forEachChild(node, visit);
+      };
+      visit(expression);
+      const modalOpen = () =>
+        Function(
+          ...Object.keys(flags),
+          `return (${expression.getText()})`
+        )(...Object.values(flags));
+      const onAction = vi.fn();
+      const { rerender } = renderHook(() =>
+        useTableKeyboard(
+          opts({
+            isModalOpen: modalOpen(),
+            isSizingOpen: true,
+            onFold: onAction,
+            onCallCheck: onAction,
+            onRaise: onAction,
+            onAllIn: onAction,
+            onBetPreset: onAction,
+            onRabbitHunt: onAction,
+          })
+        )
+      );
+      for (const key of ['f', 'q', 'c', 'w', 'r', 'e', 'a', '1', '2', '3', '4', 'b']) press(key);
+      expect(onAction).not.toHaveBeenCalled();
+      flags[modalFlag] = false;
+      rerender();
+      press('f');
+      expect(onAction).toHaveBeenCalledTimes(1);
+    }
+  );
 
   it('closes Must Move through the shared Escape handler without hiding a pending buy-in', () => {
     const expression = keyboardProperty('onClosePanel');

@@ -4183,7 +4183,33 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     proposalId: string | null;
     revision: string | null;
     closingReason?: 'stale' | 'expired' | 'cancelled';
+    /** When this manager opened the review and parked its dealer. */
+    openedAtMs?: number;
   } | null = null;
+
+  /**
+   * An open final-table deal review is a deliberate hold, by its own
+   * authority and inside its own bound (2026-10-12). The review parks the
+   * dealer for at most FINAL_TABLE_DEAL_PAUSE_MS while players read and vote;
+   * past that bound plus the last-hand grace, or once it is closing, it is no
+   * longer a reason to deal nothing. See TournamentManagerBase.
+   */
+  override deliberateDealingHold(nowMs: number): string | null {
+    const inherited = super.deliberateDealingHold(nowMs);
+    if (inherited) return inherited;
+    const review = this.finalTableDealReview;
+    if (
+      review &&
+      !review.closingReason &&
+      review.openedAtMs !== undefined &&
+      nowMs - review.openedAtMs <
+        TournamentManagerEliminations.FINAL_TABLE_DEAL_PAUSE_MS +
+          TournamentManagerBase.LAST_HAND_GRACE_MS
+    ) {
+      return 'final_table_deal_review';
+    }
+    return null;
+  }
 
   protected override async adoptCommittedTerminalOutcome(): Promise<boolean> {
     const lifecycle = this.captureLifecycleToken();
@@ -5095,6 +5121,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           engine,
           proposalId: consensus.proposalId,
           revision: consensus.revision,
+          openedAtMs: Date.now(),
         };
         const parked = await engine.parkForTerminalCloseout(
           TournamentManagerEliminations.FINAL_TABLE_DEAL_PAUSE_MS

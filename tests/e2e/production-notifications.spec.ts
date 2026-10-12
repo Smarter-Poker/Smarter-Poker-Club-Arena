@@ -76,7 +76,14 @@ test('published notifications retain pending signals and confirm durable actions
     await expect(row.getByRole('button', { name: `Dismiss ${title}`, exact: true })).toBeDisabled();
     await expect(row).toHaveCSS('opacity', '1');
     await expect(row).toBeVisible();
-    expect(deleteCalls).toBe(1);
+    // Pending UI precedes the authenticated request. Observe its receipt,
+    // rather than assuming that rendering has finished the session read.
+    await expect
+      .poll(() => deleteCalls, {
+        timeout: 10_000,
+        message: 'The Reserved Dismissal Must Reach Its Owning Route Exactly Once.',
+      })
+      .toBe(1);
     console.log('[notification-proof] Capture The Pending Signal');
     await page.screenshot({
       path: testInfo.outputPath('notification-pending-mobile.png'),

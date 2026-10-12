@@ -31,12 +31,12 @@ try:
     started=True
     fixture=(ROOT/'scripts/qualification/player-command-history.sql').read_text()
     schema, checks=fixture.split('-- QUALIFICATION CHECKS',1)
+    checks, join_checks=checks.split('-- REALTIME JOIN CHECKS',1)
     q(schema)
     q("SELECT ca_club_player_history('10000000-0000-4000-8000-000000000001');",'does not exist')
     print('PASS before: required history read is absent',flush=True)
     migration=ROOT/'supabase/migrations/20261012144105_player_command_history_reads_sanitized_staff_scope.sql'
     q(migration.read_text())
-    join_checks=(ROOT/'scripts/qualification/player-command-history-join.sql').read_text()
     q(join_checks,'staff join probe denied')
     print('PASS before: original policy rejects the actual default-false Realtime join probe',flush=True)
     correction=ROOT/'supabase/migrations/20261012220618_player_history_authorizes_realtime_join_check_rows.sql'

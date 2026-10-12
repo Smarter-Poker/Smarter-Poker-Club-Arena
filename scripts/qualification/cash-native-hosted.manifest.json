@@ -1,4 +1,5 @@
 {
+  "phase4PrivateJoinSourceAudit": {"reason": "One additive history migration routing case; existing fixture now reproduces actual Realtime default-false join denial before correction and verifies authority afterward. Only current routing-test and nested binding hashes change; historical pins and financial assertions are untouched."},
   "playerCommandGroupedHistoryFormatting20261012": {
     "reason": "Normal commit formatter wrapped only the reviewed AST wiring assertion. Refresh its active source hash and dependent binding bytes, preserving every historical object, assertion, financial input and status. This is source identity only.",
     "changes": [
@@ -334,8 +335,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 108901,
-      "sha256": "02cf185f93ef9f6a3d8bcccbd457b9af78263bf76eef76d9a3ff29010d04239e"
+      "bytes": 108840,
+      "sha256": "fb94dda014bd29ec71e87a50affd1049df971691e6d1da7469948e74ad50fc62"
     }
   },
   "nativePgCron": {

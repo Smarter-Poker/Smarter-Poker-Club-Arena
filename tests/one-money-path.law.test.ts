@@ -84,14 +84,17 @@ describe('the modal is no longer a fourth money path', () => {
     // 'player_wallet' while the recipient list was still loading, and
     // fn_club_bank_send honours p_destination, so funding a freshly promoted
     // agent could land in their player wallet.
+    // 2026-10-11: still read from the recipient's row, but a Club Bank send
+    // to someone holding BOTH wallets (an owner) pays the one the sender chose
+    // - a-club-owner-can-be-paid-into-their-player-wallet.law.test.ts.
     expect(MODAL_CODE).toMatch(
-      /const destination = canHoldAgentWallet\(recipientData\.role\) \? 'agent_wallet' : 'player_wallet'/
+      /const destination: ClubBankRecipientWallet = viaClubBank\s+\? clubBankDestinationFor\(recipientData\.role, chosenWallet\)\s+: canHoldAgentWallet\(recipientData\.role\)/
     );
     expect(MODAL_CODE).not.toMatch(/canHoldAgentWallet\(recipientData\?\.role\)/);
     expect(MODAL_CODE).toMatch(/if \(!selectedRecipientData\) \{/);
     expect(TRANSFER_CODE).toMatch(/p_destination: destination/);
     expect(TRANSFER_CODE.indexOf('if (!selectedRecipientData)')).toBeLessThan(
-      TRANSFER_CODE.indexOf('const destination =')
+      TRANSFER_CODE.indexOf('const destination: ClubBankRecipientWallet =')
     );
   });
 });

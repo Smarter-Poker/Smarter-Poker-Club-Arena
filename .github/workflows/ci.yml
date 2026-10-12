@@ -1414,6 +1414,8 @@ jobs:
           set -euo pipefail
           mkdir -p "$PROBE_EVIDENCE"
           launch_candidate=supabase/migrations/20261012181905_scoped_club_launch_reset_and_guarded_recovery.sql
+          # The installer imports the root lockfile pg closure; this job previously installed only server dependencies.
+          npm ci --ignore-scripts
           python3 -B scripts/ci/test_launch_reset_installer.py --installer scripts/ci/apply-recorded-migration.mjs --repository . --pgbin "$PG_BIN" --scratch "$RUNNER_TEMP" --output "$PROBE_EVIDENCE/installer.json"
           python3 -B scripts/ci/test_launch_reset_balance.py --candidate-migration "$launch_candidate" --scratch-root "$RUNNER_TEMP" --output-dir "$PROBE_EVIDENCE/balance" --pg-bin "$PG_BIN" --production-roster
           for launch_fixture in commission-assertion reporting invoice-visibility treasury-selftest; do

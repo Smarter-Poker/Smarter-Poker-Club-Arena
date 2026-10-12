@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 207941,
-      "sha256": "798c1c259ac952b7ce3db09b8d064c415a1d6f077324b1a3f25d770a4d19002c"
+      "bytes": 208095,
+      "sha256": "8fc17f8571b0ceaafbd425a50e83e169e9fc54d930f7b0f359926ca9a740f38f"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -160,8 +160,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 107824,
-      "sha256": "6f25ef0b33cddfb9b5c0ed46ce689381f2aaedfd7b2ebb2cb8d1c7012463c560"
+      "bytes": 107883,
+      "sha256": "a551b56b884f8b2b7d1178fcdf3dab45baed2b14e858951e63ef9efb59feaadc"
     }
   },
   "nativePgCron": {
@@ -2437,6 +2437,31 @@
         "after": {
           "bytes": 107824,
           "sha256": "6f25ef0b33cddfb9b5c0ed46ce689381f2aaedfd7b2ebb2cb8d1c7012463c560"
+        }
+      }
+    }
+  },
+  "scopedLaunchRootInstallerDependencies20261012": {
+    "reason": "Actual Accounting1 failure installed only server dependencies while the qualified maintained installer imports root-lockfile pg. Add root npm ci without lifecycle scripts before the actual native installer check; preserve financial originals, assertions, historical evidence and statuses.",
+    "pins": {
+      ".github/workflows/ci.yml": {
+        "before": {
+          "bytes": 207941,
+          "sha256": "798c1c259ac952b7ce3db09b8d064c415a1d6f077324b1a3f25d770a4d19002c"
+        },
+        "after": {
+          "bytes": 208095,
+          "sha256": "8fc17f8571b0ceaafbd425a50e83e169e9fc54d930f7b0f359926ca9a740f38f"
+        }
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "before": {
+          "bytes": 107824,
+          "sha256": "6f25ef0b33cddfb9b5c0ed46ce689381f2aaedfd7b2ebb2cb8d1c7012463c560"
+        },
+        "after": {
+          "bytes": 107883,
+          "sha256": "a551b56b884f8b2b7d1178fcdf3dab45baed2b14e858951e63ef9efb59feaadc"
         }
       }
     }

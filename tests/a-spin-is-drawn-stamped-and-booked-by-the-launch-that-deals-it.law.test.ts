@@ -217,7 +217,7 @@ describe('the draw, the booking and the stamp commit together', () => {
     const receipt = indexOfPattern(DRAW, /INSERT\s+INTO\s+public\.spin_draw_receipts\s*\(/);
     const stamp = indexOfPattern(
       DRAW,
-      /UPDATE\s+public\.tournaments\s+SET\s+spin_multiplier\s*=\s*v_multiplier\s*,\s*prize_pool\s*=\s*v_prize\s*,\s*spin_locked_tiers\s*=\s*v_locked/
+      /UPDATE\s+public\.tournaments\s+SET\s+spin_multiplier\s*=\s*v_multiplier\s*,\s*prize_pool\s*=\s*v_prize\s*,(?:\s*total_rake\s*=\s*round\(\(v_settle->>\x27house_rake\x27\)::numeric,\s*2\)\s*,)?\s*spin_locked_tiers\s*=\s*v_locked/
     );
     const readBack = indexOfPattern(DRAW, /GET\s+DIAGNOSTICS\s+v_stamped\s*=\s*ROW_COUNT/);
     expect(book).toBeLessThan(draw);

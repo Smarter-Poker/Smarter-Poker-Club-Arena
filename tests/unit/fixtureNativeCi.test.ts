@@ -2190,6 +2190,7 @@ describe('scoped launch reset keeps its real recovery regression enforced', () =
     expect(step.run).toContain('test_launch_reset_floor.py --candidate-migration');
     expect(step.run).toContain('test_launch_reset_floor_admission.py --candidate');
     expect(step.run).toContain('--production-roster');
+    expect(step.run).toContain('npm ci --ignore-scripts');
     expect(step.run).toContain(
       'test_launch_reset_installer.py --installer scripts/ci/apply-recorded-migration.mjs'
     );

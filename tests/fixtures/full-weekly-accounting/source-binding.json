@@ -443,12 +443,12 @@
     "tests/fixtures/sep8-spin-custody/README.md": "be6f3eb4eb716056e9ecc8863d326c78de3d176662b77e95c2951aa42453ff73",
     "tests/fixtures/sep8-spin-custody/late-fault.sql": "43653b983d870248707525058134de21821aa8f4f1c55df3d42f0a1e02d8b7b7",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
-    "tests/unit/fixtureNativeCi.test.ts": "6f25ef0b33cddfb9b5c0ed46ce689381f2aaedfd7b2ebb2cb8d1c7012463c560",
+    "tests/unit/fixtureNativeCi.test.ts": "a551b56b884f8b2b7d1178fcdf3dab45baed2b14e858951e63ef9efb59feaadc",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "48a0ac4059f60e827064245896184d82f6bbd46c432f5e5170ccf6f3a4e8ba44",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "aebdc374e280e2eaef6f5644201614e996bd52559039c8ae6d4b27334c8d6de6",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -488,7 +488,7 @@
     "tests/fixtures/earlybird-fee-custody/after.sql": "5c86539a1f6e4904d61c4f3c2ee79b98fbc29b976adbc89fc38f8a4be8c97e0b",
     "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62",
     "supabase/migrations/20260919025445_early_bird_original_fee_custody_after_player_finality.sql": "3b3fa10d81077d09fc997bb0549ee7dd73b12726406f92da17105d002d021ab8",
-    "tests/fixtures/earlybird-fee-custody/source-binding.json": "7da98dd5f8db34841813b06423d846d73ef28d0cd31c3ef0335ac43f5e1f2809",
+    "tests/fixtures/earlybird-fee-custody/source-binding.json": "3d76f0fe275f7eb88fe314d95714189db1ecbc2b0ba262f380b3f9447cda5fda",
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536",
@@ -4438,6 +4438,23 @@
       "tests/fixtures/earlybird-fee-custody/source-binding.json": {
         "before": "b7196b13dfe829a59c7acbe9e9de7b0e31fb6df48a6610cc067d46e6f3390a4d",
         "after": "7da98dd5f8db34841813b06423d846d73ef28d0cd31c3ef0335ac43f5e1f2809"
+      }
+    }
+  },
+  "scopedLaunchRootInstallerDependencies20261012": {
+    "reason": "Bind only corrected actual installer dependency routing, unchanged assertions, and reviewed nested source seals. All finance originals/statuses/evidence preserved. Not production installation or reset certification.",
+    "pins": {
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "before": "6f25ef0b33cddfb9b5c0ed46ce689381f2aaedfd7b2ebb2cb8d1c7012463c560",
+        "after": "a551b56b884f8b2b7d1178fcdf3dab45baed2b14e858951e63ef9efb59feaadc"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "before": "48a0ac4059f60e827064245896184d82f6bbd46c432f5e5170ccf6f3a4e8ba44",
+        "after": "aebdc374e280e2eaef6f5644201614e996bd52559039c8ae6d4b27334c8d6de6"
+      },
+      "tests/fixtures/earlybird-fee-custody/source-binding.json": {
+        "before": "7da98dd5f8db34841813b06423d846d73ef28d0cd31c3ef0335ac43f5e1f2809",
+        "after": "3d76f0fe275f7eb88fe314d95714189db1ecbc2b0ba262f380b3f9447cda5fda"
       }
     }
   }

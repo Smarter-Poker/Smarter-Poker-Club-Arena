@@ -7416,4 +7416,48 @@ REVOKE EXECUTE ON FUNCTION public.trg_hand_history_club_member_stats() FROM PUBL
 REVOKE EXECUTE ON FUNCTION public.trg_tournament_completed_stats() FROM PUBLIC,anon,authenticated;
 REVOKE EXECUTE ON FUNCTION public.trg_union_rake_weekly() FROM PUBLIC,anon,authenticated;
 
+-- Component: guard-definition-component/guard-declaration.sql
+-- The original guard watcher must recognize this one deliberate definition
+-- change in the same installation transaction. No other baseline is advanced.
+DO $declare_velocity_guard$
+DECLARE actual_hash text; actual_text text; returned_hash text; other_before jsonb; other_after jsonb;
+BEGIN
+ IF md5(pg_get_functiondef('public.fn_ca_declare_guard_redefinition(text,text)'::regprocedure))
+   IS DISTINCT FROM '3a3746dc6e0a5b7a1db97805588c0eb8'
+  OR md5(pg_get_functiondef('public.fn_ca_guard_watchlist()'::regprocedure))
+   IS DISTINCT FROM 'ab4f9d0e402186fff9b4af288e443609' THEN
+  RAISE EXCEPTION 'LAUNCH_GUARD_DECLARATION_ORIGINAL_CHANGED';
+ END IF;
+ IF NOT ('fn_ca_mint_velocity_watch'=ANY(public.fn_ca_guard_watchlist()))
+  OR (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+    WHERE n.nspname='public' AND p.proname='fn_ca_mint_velocity_watch')<>1 THEN
+  RAISE EXCEPTION 'LAUNCH_VELOCITY_GUARD_IDENTITY_CHANGED';
+ END IF;
+ IF encode(extensions.digest(convert_to(pg_get_functiondef('public.fn_ca_mint_velocity_watch()'::regprocedure),'UTF8'),'sha256'),'hex')
+   IS DISTINCT FROM '206eec0d1ca7108655e39e008f83aa4b8a6d5f8275d9a0b1e6134450df0eccbd' THEN
+  RAISE EXCEPTION 'LAUNCH_VELOCITY_GUARD_POSTIMAGE_CHANGED';
+ END IF;
+ IF (SELECT def_hash FROM public.ca_guard_defs WHERE proname='fn_ca_mint_velocity_watch')
+   IS DISTINCT FROM 'c22bbee2e281142c032212d4220a0a17' THEN
+  RAISE EXCEPTION 'LAUNCH_VELOCITY_GUARD_PREIMAGE_CHANGED';
+ END IF;
+ SELECT COALESCE(jsonb_agg(to_jsonb(d) ORDER BY proname),'[]'::jsonb) INTO other_before
+  FROM public.ca_guard_defs d WHERE proname<>'fn_ca_mint_velocity_watch';
+ SELECT md5(pg_get_functiondef('public.fn_ca_mint_velocity_watch()'::regprocedure)),
+  pg_get_functiondef('public.fn_ca_mint_velocity_watch()'::regprocedure) INTO actual_hash,actual_text;
+ returned_hash:=public.fn_ca_declare_guard_redefinition('fn_ca_mint_velocity_watch',
+  '20261012181905_scoped_club_launch_reset_and_guarded_recovery');
+ IF returned_hash IS DISTINCT FROM actual_hash OR NOT EXISTS(
+  SELECT 1 FROM public.ca_guard_defs WHERE proname='fn_ca_mint_velocity_watch'
+   AND def_hash=actual_hash AND declared_ref='20261012181905_scoped_club_launch_reset_and_guarded_recovery'
+   AND declared_at=transaction_timestamp()) OR NOT EXISTS(
+  SELECT 1 FROM public.ca_guard_def_history WHERE proname='fn_ca_mint_velocity_watch'
+   AND def_hash=actual_hash AND def_text=actual_text) THEN
+  RAISE EXCEPTION 'LAUNCH_VELOCITY_GUARD_DECLARATION_NOT_EXACT';
+ END IF;
+ SELECT COALESCE(jsonb_agg(to_jsonb(d) ORDER BY proname),'[]'::jsonb) INTO other_after
+  FROM public.ca_guard_defs d WHERE proname<>'fn_ca_mint_velocity_watch';
+ IF other_before IS DISTINCT FROM other_after THEN RAISE EXCEPTION 'LAUNCH_GUARD_DECLARATION_CHANGED_OTHER_BASELINE'; END IF;
+END $declare_velocity_guard$;
+
 COMMIT;

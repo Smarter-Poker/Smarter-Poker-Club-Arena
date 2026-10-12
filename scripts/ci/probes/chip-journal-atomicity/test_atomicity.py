@@ -486,8 +486,11 @@ elif os.environ.get("PGCONTAINER"):
  args=["docker","exec","-i",os.environ["PGCONTAINER"],"psql","-X","-q","-U","postgres","-d","journal_atomicity","-v","ON_ERROR_STOP=1"]
 else:
  args=[pg,"-X","-q","-h",os.environ["PGHOST"],"-p",os.environ["PGPORT"],"-U",os.environ.get("PGUSER","smarter.poker"),"-d",os.environ.get("PGDATABASE","postgres"),"-v","ON_ERROR_STOP=1"]
-def run(sql):
- r=subprocess.run(args,input=sql,text=True,capture_output=True)
+def run(sql,database=None):
+ command=list(args)
+ if database and "-d" in command:command[command.index("-d")+1]=database
+ environment=dict(os.environ,PGDATABASE=database) if database else None
+ r=subprocess.run(command,input=sql,text=True,capture_output=True,env=environment)
  if r.returncode: raise RuntimeError(r.stderr)
  return r.stdout
 if "--bootstrap" in sys.argv:

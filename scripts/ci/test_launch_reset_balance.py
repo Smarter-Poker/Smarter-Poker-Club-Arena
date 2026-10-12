@@ -24,7 +24,7 @@ for name,digest in fixture_hashes.items():
  if hashlib.sha256((FIX/name).read_bytes()).hexdigest()!=digest:raise AssertionError('Original fixture fingerprint changed: '+name)
 meta=json.loads((FIX/'original-authorities.json').read_text())
 functions=meta['functions'];seen=set(meta['seen']);selected=set(meta['selected']);triggered=set(meta['triggered']);triggers=meta['triggers']
-names=['reset-undo-component/closing-contract.sql', 'accounting-component/boundary.sql', 'accounting-component/treasury-selftest-wiring.sql', 'accounting-component/reporting-boundary.sql', 'accounting-component/source-wiring.sql', 'accounting-component/consumer-wiring.sql', 'accounting-component/hand-stats-wiring.sql', 'accounting-component/accounting-owner-wiring.sql', 'accounting-component/reporting-wiring.sql', 'accounting-component/fact-projection-wiring.sql', 'accounting-component/reporting-extra-wiring.sql', 'accounting-component/union-reporting-wiring.sql', 'accounting-component/commission-assertion-wiring.sql', 'cashier-cutoff-component/cashier-cutoff.sql', 'accounting-component/activation.sql', 'accounting-component/invoice-visibility.sql', 'incident-component.sql', 'reset-undo-component/balance-contract.sql', 'reset-undo-component/velocity-wiring.sql', 'reset-undo-component/bbj-reporting.sql', 'floor-component/scoped-floor.sql', 'accounting-component/floor-original-acl.sql', 'accounting-component/floor-admission-component.sql', 'accounting-component/original-reader-acl.sql']
+names=['reset-undo-component/closing-contract.sql', 'accounting-component/boundary.sql', 'accounting-component/treasury-selftest-wiring.sql', 'accounting-component/reporting-boundary.sql', 'accounting-component/source-wiring.sql', 'accounting-component/consumer-wiring.sql', 'accounting-component/hand-stats-wiring.sql', 'accounting-component/accounting-owner-wiring.sql', 'accounting-component/reporting-wiring.sql', 'accounting-component/fact-projection-wiring.sql', 'accounting-component/reporting-extra-wiring.sql', 'accounting-component/union-reporting-wiring.sql', 'accounting-component/commission-assertion-wiring.sql', 'cashier-cutoff-component/cashier-cutoff.sql', 'accounting-component/activation.sql', 'accounting-component/invoice-visibility.sql', 'incident-component.sql', 'reset-undo-component/balance-contract.sql', 'reset-undo-component/velocity-wiring.sql', 'reset-undo-component/bbj-reporting.sql', 'floor-component/scoped-floor.sql', 'accounting-component/floor-original-acl.sql', 'accounting-component/floor-admission-component.sql', 'accounting-component/original-reader-acl.sql', 'guard-definition-component/guard-declaration.sql']
 mapping=json.loads(args.component_map.read_text()) if args.component_map else {}
 if not args.candidate_migration and not args.component_root and not mapping:parser.error('component root or explicit component map required')
 if args.candidate_migration and (args.component_root or mapping):parser.error('Choose assembled candidate or component paths, not both')
@@ -107,6 +107,8 @@ with tempfile.TemporaryDirectory(prefix='fb-',dir=BASE) as folder:
   pinned=json.loads((FIX/'live-selected-catalog.json').read_text())
   expected=pinned['live'] if 'live' in pinned else pinned
   assert original_catalog==expected,'Original native catalog no longer matches independently read production fingerprints'
+  # Seed only the actual retained original target baseline, never all guards.
+  run(q,"SELECT fn_ca_declare_guard_redefinition('fn_ca_mint_velocity_watch','migration an_operators_declared_funding_is_not_a_mint_loop');")
   # Model current production creation defaults only after restoring original
   # objects and their archived ACLs. Current defaults do not retroactively
   # grant legacy routines to anon/authenticated/service_role.
@@ -123,6 +125,18 @@ with tempfile.TemporaryDirectory(prefix='fb-',dir=BASE) as folder:
    assert grant['execute']==expected,'New function privilege differs from scoped authority: '+str(grant)
   assert run(q,"SELECT bool_and(NOT has_table_privilege(r,c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN')) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN unnest(ARRAY['anon','authenticated','service_role'])r WHERE n.nspname='public' AND c.relname LIKE 'ca_launch_%' AND c.relkind IN('r','v');")=='t','Private launch store inherited production client-role privilege'
 
+  # The original watcher remains loud for an undeclared target change. Guards
+  # outside this finite fixture keep truthful missing reports; compare target
+  # deltas rather than claiming the whole watcher estate is quiet.
+  missing_watched=int(run(q,"SELECT count(*) FROM unnest(fn_ca_guard_watchlist())g WHERE NOT EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname=g);"))
+  target_finding="SELECT (SELECT count(*) FROM ca_drift_incidents WHERE dedupe_key LIKE 'guard-def-drift:fn_ca_mint_velocity_watch:%')+(SELECT count(*) FROM ca_incident_events WHERE detail->>'capped_dedupe_key' LIKE 'guard-def-drift:fn_ca_mint_velocity_watch:%');"
+  good_watch=run(q,'BEGIN;SELECT fn_ca_guard_defs_watch();'+target_finding+'ROLLBACK;').splitlines()
+  assert str(missing_watched) in good_watch and '0' in good_watch,'Declared velocity guard generated drift'
+  prior_watch=run(q,"BEGIN;UPDATE ca_guard_defs SET def_hash='c22bbee2e281142c032212d4220a0a17',declared_ref='migration an_operators_declared_funding_is_not_a_mint_loop' WHERE proname='fn_ca_mint_velocity_watch';SELECT fn_ca_guard_defs_watch();"+target_finding+'ROLLBACK;').splitlines()
+  assert str(missing_watched+1) in prior_watch and '1' in prior_watch,'Original undeclared target change was silent'
+  unknown_guard="DO $change$ DECLARE d text; BEGIN SELECT pg_get_functiondef('public.fn_ca_mint_velocity_watch()'::regprocedure) INTO d; EXECUTE replace(d,E'BEGIN\\n',E'BEGIN\\n -- Isolated Undeclared Guard Change\\n');END $change$;"
+  unknown_watch=run(q,'BEGIN;'+unknown_guard+'SELECT fn_ca_guard_defs_watch();'+target_finding+'ROLLBACK;').splitlines()
+  assert str(missing_watched+1) in unknown_watch and '1' in unknown_watch,'Later undeclared target change was silent'
   op='10000000-0000-0000-0000-000000000099'
   prefix=f"SET request.jwt.claims='{{\"role\":\"service_role\",\"sub\":\"{actor}\"}}';"
   # Use the original Mint to consume almost all of its normal rolling ceiling.

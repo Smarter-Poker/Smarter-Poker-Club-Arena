@@ -53,3 +53,14 @@ uses those production defaults so future changes cannot reopen these helpers.
 The new tournament admission trigger declares itself in the existing financial
 registry. The schema fragment records promised declarations until exact
 installation is verified; it makes no live-schema claim.
+
+Connected source checks now extract the requested routine using its own dollar
+delimiter, so a combined migration cannot make a law inspect a neighboring
+function. The calendar probe loads its real caller, cutoff and earning-source
+dependencies in an isolated database, retaining invalid-period, overlap,
+replay and bank-preservation checks. Native installer CI installs the root
+lockfile dependencies used by the qualified installer.
+
+The original online-index recovery test now follows the maintained installer through unchanged body selection, atomic history binding, and transaction send. Missing or reordered steps refuse; all ten focused cases pass. This repairs the observed Accounting4 source assertion without changing index recovery or financial installation behavior.
+
+The intentional Mint velocity definition is registered in the installation transaction through the unchanged original guard-declaration authority. Exact baseline and compiled-definition hashes refuse drift; the original watcher still reports subsequent undeclared changes. Other guard baselines are untouched. The native regression enforces declaration behavior and the actual original helper permissions.

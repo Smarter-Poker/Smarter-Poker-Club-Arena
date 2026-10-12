@@ -767,6 +767,19 @@
         "retention config source contract: anchored patch preserves existing config read"
       ],
       "liveVerdict": "Production readback2026-10-12: exact ledger hash as recorded; current prune278219bbf58cb30cfad6aa63017a407c retains horse_retention_days config, bounded250-row iteration and earning sources. Native37 original-classification,44 F06 safety,35 replay-certificate and34 cash qualification pass. Ownerpostgres, invokerprune ACLpostgres; financial consumer ACLpreserved. Records immutable installed SQL; does not authorize replay or exempt new SQL."
+    },
+    {
+      "version": "20261012170919",
+      "name": "horse_fact_cards_age_out_without_erasing_player_totals",
+      "file": "supabase/migrations/20261012170919_horse_fact_cards_age_out_without_erasing_player_totals.sql",
+      "md5": "ce3f09f07cf30260cd7069e3e5df84e5",
+      "appliedToProductionAt": "2026-10-12T17:09:19Z",
+      "recoveredOn": "2026-10-12",
+      "recoveredFrom": "Applying session immutable SQL bytes; installed schema_migrations statement digest and exact thirteen function/two table native readback verified. No SQL changed or replayed.",
+      "refusedBy": [
+        "check-definer-authorization: CREATE OR REPLACE preserves existing engine-only ACL, not printed in replacement body"
+      ],
+      "liveVerdict": "Production read2026-10-12T17:38UTC: fn_prune_ca_hand_facts(integer) md557ee12dc090b78191b9b459913e66b7b, ownerpostgres, SECURITY DEFINER, search_path public/pg_temp, ACLpostgres/service_role only; has_function_privilege anon=false/authenticated=false. Full connected53 native assertions enforce identical owner/ACL and cards-only exact earned summary preservation. This records immutable installed SQL through the existing recording path, does not exempt new SQL or authorize replay."
     }
   ]
 }

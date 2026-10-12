@@ -25,10 +25,12 @@ vi.mock('../../src/services/HandHistoryService', () => ({
     getHand: (...args: unknown[]) => state.getHand(...args),
   },
 }));
-vi.mock('../../src/services/HandNotesService', () => ({
+vi.mock('../../src/services/HandNotesService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/services/HandNotesService')>()),
   handNotesService: { listFor: async () => new Map() },
 }));
-vi.mock('../../src/services/HandFlagService', () => ({
+vi.mock('../../src/services/HandFlagService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/services/HandFlagService')>()),
   handFlagService: { mineFor: async () => new Map() },
 }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));

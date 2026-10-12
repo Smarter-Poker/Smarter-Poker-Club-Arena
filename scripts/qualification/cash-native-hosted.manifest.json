@@ -1,5 +1,7 @@
 {
-  "phase4PrivateJoinSourceAudit": {"reason": "One additive history migration routing case; existing fixture now reproduces actual Realtime default-false join denial before correction and verifies authority afterward. Only current routing-test and nested binding hashes change; historical pins and financial assertions are untouched."},
+  "phase4PrivateJoinSourceAudit": {
+    "reason": "One additive history migration routing case; existing fixture now reproduces actual Realtime default-false join denial before correction and verifies authority afterward. Only current routing-test and nested binding hashes change; historical pins and financial assertions are untouched."
+  },
   "playerCommandGroupedHistoryFormatting20261012": {
     "reason": "Normal commit formatter wrapped only the reviewed AST wiring assertion. Refresh its active source hash and dependent binding bytes, preserving every historical object, assertion, financial input and status. This is source identity only.",
     "changes": [
@@ -231,8 +233,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 211568,
-      "sha256": "64db57c5ff1d88eb1d481826b622a602e7418d4288458ba7d61cdcf47e76d13f"
+      "bytes": 212482,
+      "sha256": "4018545ae22f5ac8a6f20e2f7a8e241e463e6124f75ba30a59e43349042b2f1d"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -2585,6 +2587,26 @@
       "sha256": "193e61fdf98e93dcef7ae20fbc5fe447d4048a1e8605a452aa239f4a75e0f7dc"
     }
   },
+  "originalPosthandEscrowNative20261012": {
+    "reason": "Add actual original posthand escrow PostgreSQL17 qualification and always artifact in existing Accounting3. Preserve every prior native lane and historical pin. SQL/native and public financial projection qualification distinct from production installation or retention permission.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 209558,
+        "sha256": "d37c75bdf8c9f04a356363c8cff9b919f66f0a1640d7748c40f29cc40bd5aea9"
+      }
+    }
+  },
+  "originalPosthandEscrowProtectedMainIntegration20261012": {
+    "reason": "Preserve protected f209 all native qualification lanes and additive histories while integrating one new original posthand escrow probe. Financial SQL/native inputs unchanged. Workflow fingerprint is not installation proof.",
+    "previousBranchWorkflowPin": {
+      "bytes": 210472,
+      "sha256": "2ac563308b4b2a1f2a0bc3a4179d945a96a72d6719160a9c9f66fdb929cf753a"
+    },
+    "protectedMainWorkflowPin": {
+      "bytes": 210534,
+      "sha256": "f121396e2a47265ac66b95be65b77b88ed4aa128ec8f4230eb28458628cc8631"
+    }
+  },
   "originalInventoryFiniteNative20261012": {
     "reason": "Add the finite original245 raw/cache/retention/currentseven native qualification in Accounting3, preserving every existing lane, financial assertion and historical fingerprint. Source identity only, not installation or financial admission.",
     "changes": [
@@ -2601,5 +2623,20 @@
         }
       }
     ]
+  },
+  "originalInventoryPosthandProtectedIntegration20261012": {
+    "reason": "Preserve both protected original posthand and finite inventory native Accounting3 lanes plus all historical source receipts. Only active workflow fingerprint changes; financial inputs/status unchanged. Not installation or admission.",
+    "previousBranchWorkflowPin": {
+      "bytes": 211568,
+      "sha256": "64db57c5ff1d88eb1d481826b622a602e7418d4288458ba7d61cdcf47e76d13f"
+    },
+    "protectedMainWorkflowPin": {
+      "bytes": 211448,
+      "sha256": "65ab5c875b5514f798b5ff5cc2e9764a89babf5ea27d1c00c704b59a175755a9"
+    },
+    "currentWorkflowPin": {
+      "bytes": 212482,
+      "sha256": "4018545ae22f5ac8a6f20e2f7a8e241e463e6124f75ba30a59e43349042b2f1d"
+    }
   }
 }
